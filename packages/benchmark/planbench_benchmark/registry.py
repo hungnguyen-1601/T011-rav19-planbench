@@ -10,12 +10,40 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from planbench_planning import DWAConfig, DWAPlanner
 from planbench_planning.common.local_base import LocalPlanner
 from planbench_simulator.nav_stack import PurePursuitLocalPlanner
 from planbench_simulator.path_follower import PurePursuitConfig
+
+
+class PPOStackConfig(BaseModel):
+    """Which trained policy to run. There is no default checkpoint:
+    a benchmark must state exactly which model produced its numbers."""
+
+    model_config = ConfigDict(frozen=True)
+
+    model_path: str = Field(description="Path to the .zip checkpoint.")
+    metadata_path: str = Field(
+        default="", description="Sidecar JSON; defaults to <model_path>.json."
+    )
+    deterministic: bool = Field(
+        default=True,
+        description="Evaluation uses the mean action, never sampled noise.",
+    )
+    control_period: float = Field(default=0.1, gt=0)
+
+
+def _build_ppo(config: BaseModel) -> LocalPlanner:
+    """Import the RL package lazily: torch is optional infrastructure."""
+    from planbench_rl.policy import load_ppo_planner
+
+    return load_ppo_planner(
+        config.model_path,  # type: ignore[attr-defined]
+        config.metadata_path or None,  # type: ignore[attr-defined]
+        deterministic=config.deterministic,  # type: ignore[attr-defined]
+    )
 
 
 class AlgorithmInfo(BaseModel):
@@ -53,6 +81,22 @@ ALGORITHMS: dict[str, _Entry] = {
         ),
         config_model=DWAConfig,
         factory=lambda config: DWAPlanner(config),  # type: ignore[arg-type]
+    ),
+    "astar+ppo": _Entry(
+        info=AlgorithmInfo(
+            id="astar+ppo",
+            kind="stack",
+            description=(
+                "A* global planner with a PPO-trained controller. Requires a "
+                "checkpoint path; the model's observation and reward versions "
+                "are verified on load, and its metadata records whether it is "
+                "only a smoke-test model."
+            ),
+            benchmarkable=True,
+            config_schema=PPOStackConfig.model_json_schema(),
+        ),
+        config_model=PPOStackConfig,
+        factory=_build_ppo,
     ),
     "astar+pure_pursuit": _Entry(
         info=AlgorithmInfo(

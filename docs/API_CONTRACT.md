@@ -98,6 +98,30 @@ clearance và latency tính trên mọi episode).
 tham chiếu (hiện tại: `astar+pure_pursuit`) — chỉ để kiểm chứng pipeline,
 không dùng kết luận. `config_schema` là JSON Schema của config stack đó.
 
+## Agent (M8)
+
+| Method | Path | Role | Response |
+|---|---|---|---|
+| GET | `/agent/capabilities` | operator, reviewer | `{provider, model, deterministic, tools[], forbidden[], knowledge_documents}` |
+| POST | `/agent/chat` | operator, reviewer | `{provider, model, deterministic, turn:{text, tools_used[], tool_errors[], iterations, truncated}}` |
+| POST | `/agent/missions` | operator | `{session, draft?, refusal?, benchmark?, next_step}` |
+| POST | `/agent/benchmarks/{id}/run` | operator | `BenchmarkSummary`; **409** nếu chưa được approve |
+| GET | `/agent/benchmarks/{id}/evidence` | operator, reviewer | `EvidenceBundle` |
+| POST | `/agent/benchmarks/{id}/report` | operator, reviewer | `GeneratedReport` |
+
+Ghi chú:
+
+- Mission không parse được trả **201** kèm `refusal`, không phải lỗi:
+  "không biến được câu đó thành benchmark" là một kết quả hợp lệ.
+- `deterministic: true` nghĩa là câu trả lời do mock khớp từ khóa sinh
+  ra, **không phải** do model viết. Luôn hiển thị cờ này cho người đọc.
+- Agent chạy dưới danh nghĩa user gọi API. Benchmark nó tạo được quy về
+  người đó, và người đó **không** được tự approve.
+- `GeneratedReport.citations` chỉ chứa id có trong evidence bundle. Nếu
+  model bịa một id, cả báo cáo bị hủy (**422**).
+- Không có endpoint nào cho phép agent approve, accept kết quả, sửa map/
+  scenario, hay điều khiển robot.
+
 ## Ghi chú trạng thái
 
 - Lưu trữ metadata vẫn in-memory (mất khi restart) — PostgreSQL còn nợ.

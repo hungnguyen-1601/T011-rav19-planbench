@@ -5,8 +5,11 @@
 
 ## Milestone hiện tại
 
-**M5 hoàn thành** (trừ PostgreSQL/Alembic và frontend cho M5 — xem
-"Nợ kỹ thuật"). Tiếp theo: **M6 — PPO reinforcement learning**.
+**M8 hoàn thành** — Agentic AI + RAG: provider abstraction, mission
+parsing có validate bằng Pydantic, tool calling, cổng approval, evidence
++ citation, RAG trên docs. Tiếp theo: **M9 — 2.5D + UI cho M5/M6**.
+Còn nợ: PostgreSQL/Alembic, frontend cho M5/M6, chưa test với API key
+thật (xem "Nợ kỹ thuật").
 
 ## Bản đồ mã nguồn
 
@@ -19,6 +22,7 @@
 | `services/simulator/planbench_simulator/` | grid, kinematics, collision, lidar, engine, path_follower, `nav_stack.py`, `episode_runner.py` |
 | `services/tracking/planbench_tracking/` | ExperimentTracker interface + MLflow adapter + NullTracker |
 | `apps/api/planbench_api/` | FastAPI: config, errors, logging, auth, approval, artifacts, repositories, services, routers/ |
+| `services/agent_service/planbench_agent/` | Agentic AI: provider abstraction, specs, gateway, tools, evidence, rag, report, workflow |
 | `apps/web/` | Next.js 15 + React 19 + TS: lib/, components/, app/ |
 | `tests/` | pytest (core + `tests/api/`) |
 | `scripts/demo_astar_episode.py` | demo headless |
@@ -107,10 +111,51 @@
   hàng thì `heading` và `path` đều = 0, chỉ còn clearance quyết định.
   `clearance_cap` giảm 1.0 → 0.6 m để không phạt khoảng trống an toàn.
 
-## Nợ kỹ thuật (cập nhật sau M5)
+### M6 — PPO reinforcement learning
 
-- **Frontend cho M5**: scenario library, leaderboard, failure analysis và
-  job progress mới có API, chưa có trang UI → gộp vào M9.
+- **`ml/planbench_rl/`** (tách khỏi core: simulator không bao giờ phụ
+  thuộc framework RL):
+  - `observation.py` — encoding có version (`v1`), 35 chiều: LiDAR
+    down-sample **lấy min từng bin** (lấy mean sẽ che mất tia đơn lẻ phát
+    hiện vật mỏng), goal distance/bearing, vận tốc, 3 waypoint phía trước
+    **trong hệ toạ độ robot** (để policy generalize sang map khác), sai số
+    cross-track. Policy **không** thấy pose ground-truth của obstacle —
+    chỉ thấy qua LiDAR, đúng như robot thật.
+  - `rewards.py` — reward có version (`v1`): terminal (goal +200,
+    collision −200, timeout/stuck/no-progress −50) áp đảo shaping;
+    shaping theo *progress* (mét rút ngắn tới goal) + phạt time,
+    path-tracking, clearance thấp (scale theo mức thiếu hụt),
+    oscillation, control effort, đi lùi.
+  - `env.py` — `PlanBenchNavEnv` (Gymnasium): action `Box[-1,1]²` chuẩn
+    hoá theo giới hạn robot; **kiểm tra NaN/inf → dừng an toàn và đếm**
+    (`info["invalid_actions"]`), không bao giờ nuốt lỗi; `reset(seed=)`
+    quyết định seed scenario nên episode replay khớp tuyệt đối.
+  - `policy.py` — `PPOLocalPlanner` implement `LocalPlanner` (stack
+    `astar+ppo`); `ModelMetadata` sidecar ghi observation/reward version,
+    seed, curriculum, cờ `is_smoke_test`; **load kiểm tra version khớp**
+    (`VersionMismatch`) vì policy train trên encoding khác sẽ nhận rác mà
+    vẫn trông bình thường. Thiếu sidecar là lỗi, không phải mặc định.
+  - `training.py` — curriculum theo `CURRICULUM_ORDER` (mỗi stage train
+    trên tất cả scenario dễ hơn để không quên), PPO/SB3 trên CPU,
+    checkpoint + metadata + MLflow (params, hyperparameter, reward
+    version); `evaluate()` deterministic.
+- **`scripts/train_ppo.py`** — CLI có `--smoke` cho CPU.
+- **Đăng ký `astar+ppo`** trong benchmark registry với `PPOStackConfig`
+  (bắt buộc `model_path` — benchmark phải nói rõ model nào tạo ra số).
+- **Sửa lỗi seed thật**: seed trước đây **không đổi gì** với scenario chỉ
+  có motion tất định (periodic/waypoint/sudden_stop) → 5 seed cho ra 5
+  episode y hệt, variance giả bằng 0. Thêm `seed_time_offset`: lệch đồng
+  hồ obstacle theo hash(seed, name). Kiểm chứng: pedestrian ở
+  y=2.274/2.209/2.004/5.362/4.580 cho seed 1..5.
+
+## Nợ kỹ thuật (cập nhật sau M6)
+
+- **Frontend cho M5/M6**: scenario library, leaderboard, failure analysis,
+  job progress và model registry mới có API/CLI, chưa có trang UI → M9.
+- **Chưa có model PPO thật**: mới chỉ chạy smoke 4096 timestep để kiểm
+  chứng pipeline (success_rate 0.00 — đúng như kỳ vọng cho model chưa
+  train). Cần chạy dài (hàng triệu timestep) mới có số liệu PPO có nghĩa.
+- **Chưa có API model registry**: upload/liệt kê checkpoint qua HTTP.
 - **PostgreSQL + SQLAlchemy + Alembic**: chưa làm. Repository hiện in-memory
   nhưng interface đã tách sạch (`repositories.py`) và artifact đã nằm ngoài
   DB, nên thay thế là việc cục bộ → M10.
@@ -154,7 +199,47 @@ cd apps/web && NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 npm run dev
   liệu, lựa chọn kiến trúc lớn ngoài đặc tả, lỗi môi trường ngoài repo,
   cần sudo.
 
-## Bước tiếp theo (M6 — PPO)
+### M7 — ROS2/Nav2 closed-loop (hoàn thành)
+
+5 package trong `ros2_ws/src/`: `planbench_msgs`, `planbench_ros_bridge`,
+`planbench_simulator_node`, `planbench_nav2_bringup`,
+`planbench_benchmark_runner`. Không Gazebo, không AMCL (simulator có
+ground truth nên `map→odom` là identity).
+
+Chi tiết kiến trúc, cách chạy và các quyết định: **docs/ROS2_INTEGRATION.md**.
+Output kiểm chứng thật: docs/TEST_REPORT.md mục M7.
+
+## Bước tiếp theo (M8 — Agentic AI + RAG)
+
+1. `services/agent_service/`: LLM provider abstraction + mock provider
+   deterministic (chưa có API key thật → không chặn cả dự án).
+2. Natural-language → `BenchmarkSpec` với structured output + validate
+   Pydantic; từ chối thực thi nếu sai schema.
+3. Tool calling trên các API đã có (list/create map, scenario, benchmark,
+   approve, run, get metrics, replay, failure analysis).
+4. Approval gate: agent **không** được chạy benchmark chưa duyệt.
+5. RAG trên tài liệu + log + kết quả benchmark, trả về source ID; từ chối
+   trả lời khi không đủ evidence.
+6. Report generation chỉ trích dẫn benchmark_id/episode_id/metric có thật.
+
+## (Đã xong) M7 — kế hoạch gốc
+
+1. `ros2_ws/src/planbench_msgs`: message/service (ResetSimulator, LoadMap,
+   LoadScenario, StartEpisode, EpisodeStatus, BenchmarkEvent).
+2. `planbench_simulator` node: publish `/map`, `/scan`, `/odom`, `/tf`,
+   `/tf_static`, `/clock`; subscribe `/cmd_vel`. Bọc `SimulationEngine`,
+   không viết lại vật lý.
+3. `planbench_nav2_bringup`: params + lifecycle bringup (không Gazebo).
+4. `planbench_benchmark_runner`: gửi NavigateToPose, thu kết quả, xử lý
+   TF timeout / lifecycle chưa active / action server unavailable /
+   goal rejected / controller-planner failure.
+5. Chạy closed-loop thật và ghi output vào TEST_REPORT.
+
+Lưu ý môi trường: shell đã source ROS2 Jazzy nên phải chạy pytest với
+`PYTHONPATH=`; ngược lại khi build colcon thì cần môi trường ROS đầy đủ
+(không dùng `.venv` cho node ROS).
+
+## (Đã xong) M6 — PPO
 
 1. `ml/environments/`: Gymnasium env bọc `SimulationEngine`; observation
    (LiDAR chuẩn hóa + goal distance/bearing + vận tốc + waypoint phía
@@ -168,3 +253,41 @@ cd apps/web && NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 npm run dev
 5. `PPOLocalPlanner` đăng ký thành stack `astar+ppo` (benchmarkable) để
    so sánh A*+DWA vs A*+PPO.
 6. Curriculum theo `CURRICULUM_ORDER` của scenario library.
+
+### M8 — Agentic AI + RAG
+
+Chi tiết đầy đủ: `docs/AGENT_AI.md`.
+
+1. **Provider abstraction** (`provider.py`): `LLMProvider` ABC, message/
+   tool/response types. Không có tên vendor nào trong domain code.
+   `anthropic_provider.py` là module **duy nhất** biết đến một vendor —
+   import SDK lazy nên `pip install anthropic` là tùy chọn.
+2. **Mock tất định** (`deterministic.py`): responder rule-based, chạy
+   được toàn bộ M8 khi không có API key. Nó khớp từ khóa chứ không hiểu
+   ngôn ngữ; giá trị của nó là làm cho mọi lớp bảo vệ xung quanh được
+   chạy thật. Mọi response mang cờ `deterministic` để không ai nhầm.
+3. **Mission → spec** (`specs.py`): structured output → `MissionDraft`
+   (`extra="forbid"`) → `validate_draft()` đối chiếu registry thật.
+   Trượt bất kỳ lớp nào là refusal, không tạo gì cả.
+4. **Gateway protocol** (`gateway.py`): đúng bằng những gì agent được
+   phép làm. Không có method nào cho `/cmd_vel`, sửa map, hay approve —
+   sự vắng mặt chính là cơ chế cưỡng chế.
+5. **Tool calling** (`tools.py`): registry phân loại `READ`/`WRITE`,
+   `ToolPolicy` chặn tool ghi trong phiên read-only, trần episode,
+   `FORBIDDEN_CAPABILITIES` ghi tường minh những gì bị cấm.
+6. **Cổng approval hai lớp**: tool `run_benchmark` kiểm tra state
+   `approved` trước, gateway kiểm tra lần hai. Xóa một lớp vẫn còn lớp
+   kia. Không có tool nào approve được.
+7. **Evidence + citation** (`evidence.py`, `report.py`): citation
+   `[kind:locator]`; id không có trong bundle → `FabricatedCitation`,
+   hủy toàn bộ báo cáo. Báo cáo chưa được reviewer accept mang nhãn
+   PROVISIONAL + safety disclaimer.
+8. **RAG** (`rag.py`): chunk theo heading Markdown, TF-IDF, tất định,
+   offline. Chunk id `<file>#<section>` để trích dẫn được.
+9. **API**: 6 endpoint dưới `/api/v1/agent/`, chạy dưới danh nghĩa user
+   đang gọi nên separation of duties vẫn áp dụng.
+
+Ràng buộc phát hiện khi làm M8: **`astar+ppo` không nằm trong menu của
+agent** vì cần `model_path`. Agent không biết checkpoint nào đúng, và
+bịa đường dẫn là đúng kiểu bịa mà spec cấm — nên mọi stack có config
+bắt buộc đều bị loại khỏi `agent_selectable_algorithms()`.

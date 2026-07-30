@@ -2,6 +2,341 @@
 
 Output thật từ các lần chạy kiểm thử. Cập nhật sau mỗi milestone.
 
+## M8+ — 2026-07-30 (multi-provider)
+
+Thêm adapter OpenAI-compatible phủ OpenAI / Gemini / OpenRouter / Groq /
+DeepSeek / xAI / model local, cùng bảng chọn provider và script kiểm tra
+key.
+
+```
+$ .venv/bin/ruff check .
+All checks passed!
+
+$ PYTHONPATH= .venv/bin/pytest tests/ -q --cov=planbench_agent --cov-report=term
+services/agent_service/planbench_agent/factory.py                 87      2     30      3    96%
+services/agent_service/planbench_agent/openai_provider.py        158     27     50     10    81%
+TOTAL                                                           1273     76    330     43    92%
+790 passed, 1 warning in 190.21s (0:03:10)
+```
+
+`openai_provider.py` ở 81%: phần gọi mạng thật không chạy được ở đây.
+Phần dịch request/response — nơi bug thật nằm — được test đầy đủ bằng
+object giả (55 test trong `tests/test_agent_providers_multi.py`).
+
+### Trạng thái provider (output thật)
+
+```
+$ .venv/bin/python scripts/check_agent_provider.py
+Provider readiness
+  provider     ready  key env                what is missing
+  anthropic    no     ANTHROPIC_API_KEY      set ANTHROPIC_API_KEY; pip install anthropic
+  deepseek     no     DEEPSEEK_API_KEY       set DEEPSEEK_API_KEY; pip install openai
+  gemini       no     GEMINI_API_KEY         set GEMINI_API_KEY; pip install openai
+  groq         no     GROQ_API_KEY           set GROQ_API_KEY; pip install openai
+  local        no     (none)                 pip install openai
+  openai       no     OPENAI_API_KEY         set OPENAI_API_KEY; pip install openai
+  openrouter   no     OPENROUTER_API_KEY     set OPENROUTER_API_KEY; pip install openai
+  xai          no     XAI_API_KEY            set XAI_API_KEY; pip install openai
+
+Selected  : mock (deterministic-mock)
+Determinist: True
+
+This is the offline keyword-matching provider, not a model.
+Set PLANBENCH_AGENT_PROVIDER and the matching API key, then re-run to test a real one.
+```
+
+**Chưa provider ngoài nào được gọi thật** — không có key trong môi
+trường này, và cả `anthropic` lẫn `openai` đều chưa cài (không tự cài
+theo quy tắc). Cần chạy lại script trên sau khi dán key.
+
+## M8 — 2026-07-30 (Agentic AI + RAG)
+
+Provider: **mock tất định** (không có `ANTHROPIC_API_KEY` trong môi
+trường này, và `anthropic` chưa cài). Nên các số dưới đây kiểm chứng
+bảo đảm của platform — auth, cổng approval, toàn vẹn trích dẫn — chứ
+**không** kiểm chứng chất lượng văn bản của model.
+
+### Toàn bộ suite
+
+```
+$ .venv/bin/ruff check .
+All checks passed!
+
+$ PYTHONPATH= .venv/bin/pytest tests/ -q --cov=... --cov-report=term
+services/agent_service/planbench_agent/__init__.py                10      0      0      0   100%
+services/agent_service/planbench_agent/anthropic_provider.py     106     27     34      7    73%
+services/agent_service/planbench_agent/deterministic.py          112      8     52     11    88%
+services/agent_service/planbench_agent/evidence.py                77      0     18      3    97%
+services/agent_service/planbench_agent/factory.py                 23      1      8      1    94%
+services/agent_service/planbench_agent/gateway.py                 60      0      0      0   100%
+services/agent_service/planbench_agent/provider.py               128      2      8      0    99%
+services/agent_service/planbench_agent/rag.py                    106      2     32      1    98%
+services/agent_service/planbench_agent/report.py                  58      0     12      0   100%
+services/agent_service/planbench_agent/specs.py                  104      2     42      4    96%
+services/agent_service/planbench_agent/tools.py                  104      2     22      1    98%
+services/agent_service/planbench_agent/workflow.py               162      4     30      3    96%
+TOTAL                                                           4365    173    770     81    95%
+734 passed, 1 warning in 178.04s (0:02:58)
+```
+
+`anthropic_provider.py` ở 73% vì phần gọi mạng thật không chạy được ở
+đây; phần dịch request/response (nơi bug thực sự nằm) được test bằng
+object giả, không đụng mạng.
+
+### Chạy thật end-to-end (output thật, `scripts/demo_agent_flow.py`)
+
+```
+=== capabilities
+provider     : mock (deterministic-mock)
+deterministic: True
+tools        : analyse_episode, get_benchmark, get_benchmark_report,
+               get_leaderboard, list_algorithms, list_benchmarks,
+               list_episodes, list_scenarios, propose_benchmark,
+               run_benchmark, search_knowledge
+forbidden    : accept_result, approve_benchmark, declare_safe, drive_robot,
+               reject_result, write_map, write_metrics, write_scenario
+indexed docs : 7
+
+=== mission không parse được -> refusal, không tạo gì
+draft   : None
+refusal : the provider did not return a benchmark specification
+created : 0
+
+=== mission gọi stack cần checkpoint -> refusal
+error   : algorithm 'astar+ppo' requires configuration the agent must not
+          invent (model_path); a human has to create this benchmark and supply it
+
+=== mission hợp lệ -> draft, submit, dừng chờ người
+draft     : {"name": "open_space: astar+dwa", "scenario": "open_space",
+             "algorithms": ["astar+dwa"], "seeds": [1, 2]}
+benchmark : 8030820dbc6a state=pending_approval
+next step : A reviewer other than 'op-alice' must approve it before it can run.
+
+=== agent thử chạy trước khi được approve
+HTTP 409: benchmark '8030820dbc6a' is in state 'pending_approval'; a human
+          reviewer must approve it before the agent may run it
+
+=== operator thử tự approve benchmark của mình
+HTTP 403: role 'operator' may not access this endpoint (allowed: ['reviewer'])
+
+=== reviewer approve (gate 1), agent chạy
+state after approve: approved
+state after run    : pending_review  (gate 2 vẫn còn phía trước)
+conditions_checksum: af7af68085e3493d720161570c3f705f5009904aee34f921591027beae2a052a
+
+=== evidence lấy từ storage (9 item)
+[benchmark:8030820dbc6a]            state 'pending_review', algorithms ['astar+dwa'], seeds [1, 2]
+[benchmark:8030820dbc6a]            conditions_checksum af7af680... map 'open-space'
+[aggregate:8030820dbc6a#astar+dwa]  success_rate=1.000 collision_rate=0.000 over 2 episodes
+[aggregate:8030820dbc6a#astar+dwa]  mean travel time = 10.400 s
+[aggregate:8030820dbc6a#astar+dwa]  worst minimum clearance = 0.950 m
+[episode:c04fcd20382c]              seed=1 'success' (goal reached 0.294 m after 10.40s)
+[artifact:c04fcd20382c]             file://.../episodes/c04fcd20382c.json
+[episode:03aab36ec508]              seed=2 'success' (goal reached 0.294 m after 10.40s)
+[artifact:03aab36ec508]             file://.../episodes/03aab36ec508.json
+
+=== báo cáo sinh ra
+refused    : False
+provisional: True
+citations  : 9 (đều đối chiếu được với bundle)
+...
+This report summarises recorded simulation results. It is not a safety
+certification: ... The safety judgement belongs to a human reviewer.
+PROVISIONAL — a reviewer has not accepted these results yet, so they must
+not be published as a conclusion.
+```
+
+### Điều được kiểm chứng
+
+| Ràng buộc spec | Test |
+|---|---|
+| LLM không điều khiển `/cmd_vel` | `test_gateway_protocol_has_no_actuation_method`, `test_no_tool_grants_a_forbidden_capability` |
+| LLM không bịa map/scenario | `test_an_invented_scenario_is_refused`, `test_the_agent_only_uses_library_scenarios` |
+| LLM không bịa metric/kết quả | `test_a_fabricated_citation_is_rejected`, `test_uncited_prose_is_discarded` |
+| LLM không bỏ qua approval | `test_run_is_refused_in_every_unapproved_state` (5 state), `test_agent_run_is_refused_before_approval` |
+| LLM không tự kết luận an toàn | `test_the_deterministic_report_makes_no_safety_claim`, `test_every_report_carries_the_safety_disclaimer` |
+| Structured output sai schema thì không chạy | `test_a_schema_violating_answer_is_refused`, `test_rejects_unknown_fields_rather_than_ignoring_them` |
+| Từ chối khi không đủ bằng chứng | `test_empty_evidence_refuses_without_calling_the_provider` |
+| Separation of duties vẫn áp dụng cho agent | `test_the_operator_cannot_approve_their_own_agent_benchmark` |
+
+### Lỗi/ràng buộc phát hiện trong M8
+
+1. **`astar+ppo` không thể để agent tự chọn.** Test API đầu tiên đỏ với
+   `PPOStackConfig.model_path Field required`. Agent không biết checkpoint
+   nào đúng, và bịa đường dẫn là đúng kiểu bịa spec cấm → thêm
+   `agent_selectable_algorithms()` loại mọi stack có config bắt buộc.
+2. **Tokenizer RAG giữ dấu chấm cuối câu**, nên `conditions_checksum.`
+   không khớp query `conditions_checksum`. Sửa: strip `.-` ở hai đầu
+   token, vẫn giữ dấu ở giữa (`0.05`, `nav2-bringup`).
+
+## M7 — 2026-07-30 (ROS2 / Nav2 closed-loop)
+
+Môi trường: ROS2 Jazzy + Nav2 + colcon có sẵn; `rclpy`, `nav2_*` OK.
+System Python **không có pydantic** → PYTHONPATH trỏ vào `.venv`
+site-packages (cùng CPython 3.12), không cài global.
+
+### Build
+
+```
+$ cd ros2_ws && colcon build
+Summary: 5 packages finished
+```
+
+### Simulator node phát đủ topic (output thật)
+
+```
+$ ros2 topic list
+  /benchmark_event  /clock  /cmd_vel  /episode_status  /map
+  /odom  /scan  /tf  /tf_static
+
+$ ros2 topic echo /map --once --field info
+resolution: 0.25   width: 48   height: 36   origin: (0,0)
+
+$ ros2 topic echo /scan --once
+frame_id: base_scan   angle_min: -3.14159   angle_max: 3.05433   range_max: 6.0
+```
+
+### Closed-loop thủ công
+
+```
+armed 8s  -> status: running, elapsed_time: 0.0   (stuck detector KHÔNG kích hoạt)
+start_episode -> OK
+cmd_vel 0.5 m/s trong 4s -> x: 1.975 -> 4.010   (đi 2.035 m, đúng 0.5 x 4)
+ngừng cmd_vel 5s        -> x: 4.025 -> 4.025   (watchdog dừng robot)
+```
+
+### Nav2 lifecycle + NavigateToPose
+
+```
+$ ros2 lifecycle get /controller_server   -> active [3]
+$ ros2 lifecycle get /planner_server      -> active [3]
+$ ros2 lifecycle get /bt_navigator        -> active [3]
+$ ros2 lifecycle get /behavior_server     -> active [3]
+$ ros2 action list  -> /navigate_to_pose /compute_path_to_pose /follow_path ...
+
+$ ros2 action send_goal /navigate_to_pose ... {x: 10.5, y: 4.5}
+Goal finished with status: SUCCEEDED
+
+$ ros2 topic echo /episode_status --once
+  scenario_name: open_space
+  status: success
+  reason: goal reached (distance 0.294 m) after 12.05s
+  min_clearance: 1.24394736842106
+$ ros2 service call /planbench_simulator/episode_result ...
+  finished=True status='success' steps=241 trajectory_length=8.706 min_clearance=1.244
+```
+
+### Benchmark runner tự động (output thật)
+
+```
+scenario               seed outcome        nav2          t(s)  len(m)  clear
+open_space                1 success        unknown      10.75    8.70  1.246
+open_space                2 success        unknown      10.95    8.70  1.246
+static_obstacles          1 success        unknown      11.25    8.85  1.199
+static_obstacles          2 success        unknown      10.85    8.86  1.201
+doorway                   1 success        unknown       9.85    7.76  1.723
+doorway                   2 success        unknown      10.10    7.76  1.723
+
+success 6/6
+```
+
+`nav2` = `unknown` vì runner thoát vòng chờ ngay khi **simulator** phán
+quyết (trọng tài là simulator, không phải Nav2), nên action result chưa
+kịp về. Đây là hành vi cố ý, không phải lỗi.
+
+### Lỗi đã gặp và sửa trong M7
+
+1. **Episode chết vì stuck trước khi Nav2 kết nối**: node bắt đầu chạy
+   vật lý ngay lúc boot, robot đứng yên chờ controller → stuck detector
+   kết thúc episode sau 5 s. Sửa: tách arming, thêm service
+   `StartEpisode`/`StopEpisode`; trong lúc armed vẫn phát sensor/TF/clock
+   cho Nav2 khởi động. Bằng chứng: armed 8 s vẫn `running`, elapsed 0.0.
+2. **Runner giữ status cũ**: vòng chờ thoát ngay, báo "running" 0.00 s
+   cho cả 4 episode. Sửa: xoá cache status trước mỗi episode.
+3. **Episode thứ 2 trở đi luôn hỏng (3/6)**: reset dịch chuyển robot về
+   start nhưng costmap và BT của Nav2 vẫn giữ trạng thái cũ → abort hoặc
+   "succeeded" tức thì. Sửa: đợi TF ổn định 3 s rồi
+   `clear_entirely_{global,local}_costmap`. Sau khi sửa: **6/6**.
+4. **`PLANBENCH_ROOT=$PWD` sai** khi cwd đã đổi sang `ros2_ws` → dùng
+   đường dẫn tuyệt đối.
+5. **colcon chạy từ thư mục con** tạo `build/install/log` lạc trong
+   `src/` → xoá và luôn build từ `ros2_ws/`.
+
+## M6 — 2026-07-30
+
+```
+$ .venv/bin/ruff check .
+All checks passed!
+$ PYTHONPATH= .venv/bin/pytest tests/ -q
+560 passed, 1 warning in 121.36s
+```
+
+Test mới: `tests/test_rl.py` (30) — LiDAR down-sample lấy min, waypoint
+trong hệ robot, cross-track error, encoding bounded/finite, reward
+(terminal áp đảo shaping, collision không "mua" được bằng progress),
+env (NaN action → dừng an toàn + đếm, clamp giới hạn, cùng seed replay
+khớp, khác seed đổi traffic, truncate, success).
+
+### Smoke training PPO trên CPU (output thật)
+
+```
+$ PYTHONPATH= .venv/bin/python scripts/train_ppo.py --smoke \
+    --model-id ppo-smoke --mlflow-uri "file://$PWD/mlruns"
+training ppo-smoke: 4096 timesteps, curriculum=['open_space'], seed=0
+checkpoint: ml/checkpoints/ppo-smoke.zip
+metadata:   observation=v1 reward=v1 smoke=True
+
+deterministic evaluation
+  episodes        3
+  success_rate    0.00
+  collision_rate  0.00
+  mean_reward     -49.4
+  mean_steps      300
+  invalid_actions 0
+    open_space               success=0.00
+
+NOTE: smoke checkpoint. These numbers validate the pipeline, not the
+quality PPO can reach.
+```
+
+success_rate 0.00 là **đúng kỳ vọng**: 4096 timestep gần như chưa học gì.
+Điều được kiểm chứng ở đây là pipeline (env → PPO → checkpoint →
+metadata → MLflow → evaluation), không phải chất lượng thuật toán.
+`invalid_actions 0` xác nhận policy không sinh NaN.
+
+### Benchmark A*+DWA vs A*+PPO (output thật, cùng điều kiện)
+
+```
+Stacks đăng ký: [('astar+dwa', True), ('astar+ppo', True), ('astar+pure_pursuit', False)]
+
+conditions_checksum: 9d553000a6aac601  seeds=(1, 2, 3)
+stack             succ  coll timeout   travel  lat_ms
+astar+dwa         1.00  0.00    0.00   10.40s    6.63
+astar+ppo         0.00  0.00    0.00        -    0.46
+```
+
+Cùng `conditions_checksum` → so sánh hợp lệ về mặt điều kiện. **Không
+được kết luận "DWA tốt hơn PPO"** từ bảng này: model PPO chưa được train.
+Điều bảng này chứng minh là hạ tầng so sánh hai stack hoạt động.
+
+### Kiểm chứng seed thực sự thay đổi traffic
+
+```
+Vị trí pedestrian tại t=2.0s theo từng seed:
+  seed=1: y=2.274    seed=2: y=2.209    seed=3: y=2.004
+  seed=4: y=5.362    seed=5: y=4.580
+cùng seed lặp lại: True
+```
+
+### Lỗi đã phát hiện và sửa trong M6
+
+1. **Seed vô nghĩa với scenario tất định**: `periodic`/`waypoint`/
+   `sudden_stop` không đọc seed, nên benchmark 5 seed chạy 5 episode y
+   hệt và báo variance = 0 (sai lệch nghiêm trọng về tính công bằng).
+   Sửa: thêm `DynamicObstacle.seed_time_offset` — lệch đồng hồ obstacle
+   theo hash(seed, tên); library scenario khai báo offset bằng đúng một
+   chu kỳ.
+
 ## M5 — 2026-07-30
 
 ```

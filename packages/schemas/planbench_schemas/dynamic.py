@@ -104,6 +104,21 @@ class DynamicObstacle(BaseModel):
     name: str = "obstacle"
     radius: float = Field(gt=0)
     motion: Motion
+    seed_time_offset: float = Field(
+        default=0.0,
+        ge=0,
+        description=(
+            "Seconds of seed-derived head start. Without it, deterministic "
+            "motions (waypoint, periodic, sudden_stop) ignore the seed, so a "
+            "multi-seed benchmark would replay the identical episode N times "
+            "and report a fake variance of zero. A non-zero value shifts this "
+            "obstacle's clock by a hash of (seed, name) in [0, offset), which "
+            "is what makes traffic timing vary across seeds."
+        ),
+    )
+    seed_offset: int = Field(
+        default=0, description="Mixes into the hash so obstacles differ from each other."
+    )
 
 
 def position_at(obstacle: DynamicObstacle, time: float, seed: int) -> Point2D:
@@ -114,6 +129,7 @@ def position_at(obstacle: DynamicObstacle, time: float, seed: int) -> Point2D:
     """
     if time < 0:
         raise ValueError(f"time must be non-negative, got {time!r}")
+    time = time + _seed_time_shift(obstacle, seed)
     motion = obstacle.motion
     if isinstance(motion, WaypointMotion):
         return _waypoint_position(motion, time)
@@ -124,6 +140,17 @@ def position_at(obstacle: DynamicObstacle, time: float, seed: int) -> Point2D:
     if isinstance(motion, SuddenStopMotion):
         return _sudden_stop_position(motion, time)
     raise TypeError(f"unsupported motion kind: {type(motion).__name__}")
+
+
+def _seed_time_shift(obstacle: DynamicObstacle, seed: int) -> float:
+    """Deterministic clock offset in [0, seed_time_offset) for this seed."""
+    if obstacle.seed_time_offset <= 0:
+        return 0.0
+    # Reuse the angle hash and map [-pi, pi) onto [0, 1).
+    unit = (_hashed_angle(seed, obstacle.seed_offset + len(obstacle.name), 0) + math.pi) / (
+        2.0 * math.pi
+    )
+    return unit * obstacle.seed_time_offset
 
 
 def _waypoint_position(motion: WaypointMotion, time: float) -> Point2D:

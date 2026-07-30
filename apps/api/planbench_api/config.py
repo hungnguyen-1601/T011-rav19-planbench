@@ -37,6 +37,27 @@ class Settings(BaseSettings):
     mlflow_tracking_uri: str = ""
     mlflow_experiment: str = "planbench"
 
+    # Agentic AI (M8). "auto" picks the first configured provider and
+    # falls back to the deterministic mock, so the agent endpoints work
+    # in every environment. Named providers: anthropic, openai, gemini,
+    # openrouter, groq, deepseek, xai, local, mock.
+    #
+    # API keys are read from each provider's own environment variable
+    # (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, ...) — never a
+    # PlanBench setting, never stored in a config file in the repository.
+    agent_provider: str = "auto"
+    # Required for every provider except anthropic: model ids there
+    # change often enough that a hardcoded default would eventually 404.
+    agent_model: str = ""
+    # Override the provider endpoint (self-hosted or proxy). Empty uses
+    # the preset for the selected provider.
+    agent_base_url: str = ""
+    # Directories indexed for retrieval, comma separated, relative to the
+    # repository root. Empty disables retrieval.
+    agent_knowledge_dirs: str = "docs"
+    # Ceiling on episodes the agent may propose in one benchmark.
+    agent_max_episodes: int = 60
+
 
 @lru_cache
 def get_settings() -> Settings:

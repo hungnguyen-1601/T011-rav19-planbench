@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
-from fastapi import Request
+from typing import Annotated
 
+from fastapi import Depends, Request
+
+from planbench_agent import AgentService
+from planbench_agent.tools import ToolPolicy
+from planbench_api.agent_gateway import ApiAgentGateway
+from planbench_api.auth import CurrentUser
 from planbench_api.repositories import RepositoryHub
 from planbench_api.services import (
     BenchmarkJobService,
@@ -41,3 +47,29 @@ def get_benchmark_job_service(request: Request) -> BenchmarkJobService:
 
 def get_episode_service(request: Request) -> EpisodeService:
     return EpisodeService(get_repos(request))
+
+
+def get_agent_service(request: Request, user: CurrentUser) -> AgentService:
+    """An agent bound to the calling user.
+
+    Constructed per request so the gateway acts as that user: benchmarks
+    the agent creates are attributed to a real person, and separation of
+    duties still applies to whoever approves them. The provider and the
+    knowledge index are app-scoped and shared.
+    """
+    gateway = ApiAgentGateway(
+        repos=get_repos(request),
+        benchmarks=get_benchmark_service(request),
+        maps=get_map_service(request),
+        scenarios=get_scenario_service(request),
+        user=user,
+    )
+    return AgentService(
+        provider=request.app.state.agent_provider,
+        gateway=gateway,
+        knowledge=request.app.state.agent_knowledge,
+        policy=ToolPolicy(max_episodes=request.app.state.agent_max_episodes),
+    )
+
+
+AgentDependency = Annotated[AgentService, Depends(get_agent_service)]

@@ -164,6 +164,7 @@ def crossing_obstacle() -> tuple[MapData, Scenario]:
         name="pedestrian",
         radius=0.35,
         motion=PeriodicMotion(start=Point2D(x=7.0, y=1.5), end=Point2D(x=7.0, y=7.5), period=10.0),
+        seed_time_offset=10.0,  # one full cycle: seeds meet the pedestrian anywhere
     )
     return map_data, _scenario(
         "crossing_obstacle",
@@ -183,6 +184,7 @@ def sudden_stop() -> tuple[MapData, Scenario]:
         motion=SuddenStopMotion(
             start=Point2D(x=7.0, y=8.0), heading=-1.5707963267948966, speed=1.0, stop_time=3.5
         ),
+        seed_time_offset=4.0,  # the cart brakes at a different moment per seed
     )
     return map_data, _scenario(
         "sudden_stop",
@@ -205,6 +207,7 @@ def bidirectional_corridor() -> tuple[MapData, Scenario]:
             speed=0.6,
             loop=True,
         ),
+        seed_time_offset=16.0,  # a full there-and-back lap
     )
     return builder.build(), _scenario(
         "bidirectional_corridor",
@@ -234,6 +237,7 @@ def intersection() -> tuple[MapData, Scenario]:
             speed=0.8,
             ping_pong=True,
         ),
+        seed_time_offset=15.0,
     )
     return builder.build(), _scenario(
         "intersection",
@@ -257,6 +261,8 @@ def dynamic_warehouse() -> tuple[MapData, Scenario]:
             motion=PeriodicMotion(
                 start=Point2D(x=9.0, y=2.0), end=Point2D(x=9.0, y=10.0), period=14.0
             ),
+            seed_time_offset=14.0,
+            seed_offset=1,
         ),
         DynamicObstacle(
             name="cart-1",
@@ -269,6 +275,8 @@ def dynamic_warehouse() -> tuple[MapData, Scenario]:
                 speed=0.7,
                 ping_pong=True,
             ),
+            seed_time_offset=28.0,
+            seed_offset=2,
         ),
         DynamicObstacle(
             name="wanderer",

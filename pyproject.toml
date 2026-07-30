@@ -18,6 +18,8 @@ pythonpath = [
     "packages/benchmark",
     "services/simulator",
     "services/tracking",
+    "services/agent_service",
+    "ml",
     "apps/api",
 ]
 
@@ -45,6 +47,8 @@ known-first-party = [
     "planbench_metrics",
     "planbench_benchmark",
     "planbench_tracking",
+    "planbench_rl",
+    "planbench_agent",
     "planbench_api",
 ]
 

@@ -1,0 +1,4 @@
+# Abort the running episode; the result becomes STOPPED.
+---
+bool success
+string message
