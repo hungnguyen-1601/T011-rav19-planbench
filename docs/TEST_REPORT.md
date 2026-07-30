@@ -2,6 +2,107 @@
 
 Output thật từ các lần chạy kiểm thử. Cập nhật sau mỗi milestone.
 
+## M10 — 2026-07-30 (PostgreSQL + Docker Compose)
+
+### Toàn bộ suite
+
+```
+$ .venv/bin/ruff check .
+All checks passed!
+
+$ PYTHONPATH= .venv/bin/pytest tests/ -q
+864 passed, 1 warning in 141.81s (0:02:21)
+```
+
+74 test mới:
+
+| File | Test | Nội dung |
+|---|---|---|
+| `tests/api/test_sql_repositories.py` | 59 | Repository SQL; phần lớn chạy **cùng assertion qua cả hai backend** qua một fixture `params=["sql","memory"]` |
+| `tests/api/test_migrations.py` | 7 | `upgrade head`, `downgrade base`, upgrade lại, và so migration ↔ ORM từng bảng/cột/nullability/PK/cascade/index |
+| `tests/api/test_api_sql_backend.py` | 8 | Toàn bộ API qua HTTP trên SQL storage |
+
+### Ba điều đáng ghi
+
+**FK bắt được lỗi trong chính test của tôi.** Năm test episode fail lần
+chạy đầu:
+
+```
+sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) FOREIGN KEY constraint failed
+[SQL: INSERT INTO episodes (id, benchmark_id, ...) VALUES (?, ?, ...)]
+[parameters: ('1d70a50a88b0', 'bench-1', 'astar+dwa', 1, 0, 'success', ...)]
+```
+
+Test tạo episode với `benchmark_id='bench-1'` không tồn tại. Backend
+in-memory không diễn đạt được ràng buộc này nên nó im lặng chấp nhận;
+SQLite thì không. Sửa test (tạo benchmark cha trước) và thêm một test
+SQL-only khẳng định episode mồ côi bị từ chối.
+
+**Test khẳng định in-memory *mất* dữ liệu khi restart.** Đó chính là
+hành vi M10 sinh ra để loại bỏ, nên nó được viết thành assertion để
+không ai vô tình coi in-memory là đủ:
+
+```python
+def test_in_memory_backend_loses_data_on_restart(...):
+    ...
+    second = create_app(...)
+    assert client.get(f"/api/v1/maps/{map_id}").status_code == 404
+```
+
+**Test khẳng định app thật sự chọn backend SQL** — nếu không, 8 test
+API bên dưới sẽ âm thầm pass trên in-memory và chứng minh con số không:
+
+```python
+def test_the_app_actually_selected_the_sql_backend(sql_app):
+    assert isinstance(sql_app.state.repos, SqlRepositoryHub)
+```
+
+### Vòng đời benchmark đầy đủ trên SQL (output thật)
+
+```
+$ PYTHONPATH= .venv/bin/pytest tests/api/test_api_sql_backend.py -q
+8 passed, 1 warning in 12.46s
+```
+
+Test `test_full_benchmark_lifecycle_on_sql` chạy qua HTTP: gate 1 chặn
+`run` khi chưa approve (409), submit → approve → run → `pending_review`
+(gate 2 vẫn còn), audit trail lưu đúng thứ tự
+`["submit", "approve", "run", "complete"]`.
+
+`test_episode_replay_reads_from_the_artifact_store` chứng minh D15: row
+SQL giữ `artifact_uri` bắt đầu bằng `file://`, replay trả về trajectory
+đọc lại từ artifact.
+
+### Compose file
+
+```
+$ .venv/bin/python -c "import yaml; ..."
+YAML parses OK
+services: ['api', 'db', 'migrate', 'web']
+volumes : ['artifacts', 'db-data']
+  db       depends_on=-
+  migrate  depends_on={'db': {'condition': 'service_healthy'}}
+  api      depends_on={'db': {'condition': 'service_healthy'}, 'migrate': {'condition': 'service_completed_successfully'}}
+  web      depends_on=['api']
+```
+
+### Chưa kiểm chứng — nói thẳng
+
+```
+$ docker info
+The command 'docker' could not be found in this WSL 2 distro.
+We recommend to activate the WSL integration in Docker Desktop settings.
+```
+
+- **Chưa build image nào, chưa `docker compose up` lần nào.** Compose
+  file mới chỉ được parse YAML, không có gì chứng minh image build được.
+- **Chưa kết nối PostgreSQL thật** — không có server, không có docker.
+  SQLite không chứng minh JSONB, transaction đồng thời, connection pool,
+  hay cascade dưới dialect production.
+- **`psycopg` chưa cài** trong `.venv`.
+
+Xem KNOWN_LIMITATIONS mục 51–58.
+
 ## M9 — 2026-07-30 (2.5D + UI cho M5/M6/M8)
 
 ### Build và test frontend

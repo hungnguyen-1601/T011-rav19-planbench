@@ -5,11 +5,11 @@
 
 ## Milestone hiện tại
 
-**M9 hoàn thành** — 2.5D view + UI cho M5/M6/M8: thư viện scenario,
-leaderboard, registry stack, failure analysis, job progress, agent
-console. Tiếp theo: **M10 — Docker Compose + PostgreSQL**.
-Còn nợ: PostgreSQL/Alembic, chưa gọi provider LLM thật, Three.js chưa
-cài (xem "Nợ kỹ thuật").
+**M10 hoàn thành** — PostgreSQL persistence (SQLAlchemy + Alembic),
+Docker Compose, deployment docs. **Toàn bộ M0–M10 đã xong.**
+Còn nợ (xem "Nợ kỹ thuật"): chưa chạy Docker lần nào và chưa kết nối
+PostgreSQL thật (môi trường không có daemon/server), chưa gọi provider
+LLM thật.
 
 ## Bản đồ mã nguồn
 
@@ -21,7 +21,9 @@ cài (xem "Nợ kỹ thuật").
 | `packages/benchmark/planbench_benchmark/` | `registry.py` (stack registry), `spec.py` (BenchmarkSpec/FairnessRecord/aggregate), `runner.py` |
 | `services/simulator/planbench_simulator/` | grid, kinematics, collision, lidar, engine, path_follower, `nav_stack.py`, `episode_runner.py` |
 | `services/tracking/planbench_tracking/` | ExperimentTracker interface + MLflow adapter + NullTracker |
-| `apps/api/planbench_api/` | FastAPI: config, errors, logging, auth, approval, artifacts, repositories, services, routers/ |
+| `apps/api/planbench_api/` | FastAPI: config, errors, logging, auth, approval, artifacts, repositories, repository_ports, services, routers/, `db/` (SQLAlchemy) |
+| `alembic/` | Migration schema — `docs/DEPLOYMENT.md` |
+| `docker/`, `docker-compose.yml` | Image API/web + stack local (db, migrate, api, web) |
 | `services/agent_service/planbench_agent/` | Agentic AI: provider abstraction, specs, gateway, tools, evidence, rag, report, workflow |
 | `apps/web/` | Next.js 15 + React 19 + TS: lib/, components/, app/ — xem `docs/FRONTEND.md` |
 | `tests/` | pytest (core + `tests/api/`) |
@@ -319,3 +321,34 @@ Chi tiết đầy đủ: `docs/FRONTEND.md`.
 Toàn bộ 41 vitest pass, `tsc --noEmit` sạch, `next build` ra 12 route.
 Đã chạy thật backend + frontend và kiểm chứng end-to-end (xem
 TEST_REPORT).
+
+### M10 — PostgreSQL + Docker Compose
+
+Chi tiết đầy đủ: `docs/DEPLOYMENT.md`.
+
+1. **Repository ports** (`repository_ports.py`): Protocol structural cho
+   5 repository. Trước M10 chỉ có một implementation nên hai lớp "khớp
+   nhau" bằng may mắn; giờ đổi tên một tham số là type error chứ không
+   phải lỗi runtime ở deployment nào đó.
+2. **Tầng SQL** (`db/models.py`, `db/repositories.py`, `db/session.py`):
+   6 bảng, JSONB trên PostgreSQL và JSON ở nơi khác. Timestamp là chuỗi
+   ISO-8601 (không phải DATETIME) để hai backend không bất đồng ở giá
+   trị client nhìn thấy.
+3. **Episode đọc lại từ artifact store**: row giữ URI + checksum + size
+   (D15); `StackRun` được dựng lại khi replay. Mất volume artifact = mất
+   replay dù database còn nguyên — và code báo đúng episode nào.
+4. **Alembic**: migration đầu viết tay, `alembic.ini` **không** chứa
+   connection string (`env.py` chỉ đọc `PLANBENCH_DATABASE_URL`).
+5. **Docker Compose**: `db` (healthcheck `pg_isready -U <user>`),
+   `migrate` (one-shot, phải exit 0), `api`, `web`. Migration là service
+   riêng vì hai replica cùng `upgrade head` lúc boot là một race.
+6. **In-memory vẫn là mặc định**: checkout không có database vẫn chạy
+   toàn bộ API và toàn bộ test.
+
+Test: 74 test mới (SQL repositories chạy **cùng assertion qua cả hai
+backend**, migration upgrade/downgrade/drift, API end-to-end trên SQL).
+Tổng **864 passed**.
+
+FK phát hiện một lỗi thật trong chính test của tôi: episode tạo với
+`benchmark_id` không tồn tại. In-memory không diễn đạt được ràng buộc
+này nên nó im lặng; SQLite thì không.

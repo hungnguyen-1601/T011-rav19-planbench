@@ -9,6 +9,7 @@ packages/benchmark:services/simulator:apps/api" \
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -18,6 +19,12 @@ from planbench_agent import KnowledgeBase, build_provider, load_markdown_directo
 from planbench_api.artifacts import FileSystemArtifactStore
 from planbench_api.auth import UserDirectory
 from planbench_api.config import get_settings
+from planbench_api.db import (
+    SessionFactory,
+    SqlRepositoryHub,
+    create_all,
+    create_db_engine,
+)
 from planbench_api.errors import register_error_handlers
 from planbench_api.logging_config import configure_logging
 from planbench_api.repositories import RepositoryHub
@@ -39,6 +46,28 @@ from planbench_tracking import build_tracker
 
 API_PREFIX = "/api/v1"
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _build_repositories(settings, artifacts, app: FastAPI):
+    """In-memory unless a database URL is configured.
+
+    In-memory stays the default on purpose: a checkout with no database
+    still runs the whole API and the whole test suite, so an unreachable
+    database can never masquerade as an unrelated regression.
+    """
+    if not settings.database_url:
+        app.state.sessions = None
+        return RepositoryHub(artifacts)
+
+    engine = create_db_engine(settings.database_url, echo=settings.db_echo)
+    sessions = SessionFactory(engine)
+    if settings.db_create_all:
+        create_all(engine)
+    app.state.sessions = sessions
+    logging.getLogger("planbench.api").info(
+        "persistence: SQL", extra={"context": {"dialect": engine.dialect.name}}
+    )
+    return SqlRepositoryHub(sessions, artifacts)
 
 
 def _build_knowledge(settings) -> KnowledgeBase | None:
@@ -71,7 +100,7 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     )
     artifacts = FileSystemArtifactStore(artifact_dir or settings.artifact_dir)
     app.state.artifacts = artifacts
-    app.state.repos = RepositoryHub(artifacts)
+    app.state.repos = _build_repositories(settings, artifacts, app)
     app.state.users = UserDirectory(settings)
     app.state.jobs = JobQueue(settings.worker_concurrency)
     app.state.tracker = build_tracker(settings.mlflow_tracking_uri, settings.mlflow_experiment)

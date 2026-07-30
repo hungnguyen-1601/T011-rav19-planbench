@@ -24,11 +24,13 @@ from planbench_schemas.scenario import Scenario
 from planbench_simulator.nav_stack import StackRun
 
 
-def _new_id() -> str:
+def new_id() -> str:
+    """Short opaque identity. Not part of the deterministic contract."""
     return uuid.uuid4().hex[:12]
 
 
-def _now() -> str:
+def now_iso() -> str:
+    """UTC ISO-8601. Both storage backends persist exactly this string."""
     return datetime.now(UTC).isoformat()
 
 
@@ -98,7 +100,7 @@ class MapRepository:
 
     def create(self, map_data: MapData) -> StoredMap:
         with self._lock:
-            stored = StoredMap(id=_new_id(), version=1, created_at=_now(), map_data=map_data)
+            stored = StoredMap(id=new_id(), version=1, created_at=now_iso(), map_data=map_data)
             self._items[stored.id] = stored
             return stored
 
@@ -138,7 +140,7 @@ class ScenarioRepository:
     def create(self, map_id: str, scenario: Scenario) -> StoredScenario:
         with self._lock:
             stored = StoredScenario(
-                id=_new_id(), version=1, map_id=map_id, created_at=_now(), scenario=scenario
+                id=new_id(), version=1, map_id=map_id, created_at=now_iso(), scenario=scenario
             )
             self._items[stored.id] = stored
             return stored
@@ -182,12 +184,12 @@ class SimulationRepository:
     ) -> StoredSimulation:
         with self._lock:
             stored = StoredSimulation(
-                id=_new_id(),
+                id=new_id(),
                 map_id=map_id,
                 scenario_id=scenario_id,
                 algorithm=algorithm,
                 config=config,
-                created_at=_now(),
+                created_at=now_iso(),
             )
             self._items[stored.id] = stored
             return stored
@@ -220,7 +222,7 @@ class EpisodeRepository:
     def create(
         self, benchmark_id: str, algorithm: str, seed: int, run: StackRun, record: RunRecord
     ) -> StoredEpisode:
-        episode_id = _new_id()
+        episode_id = new_id()
         artifact = self._artifacts.write_episode(benchmark_id, episode_id, run)
         with self._lock:
             stored = StoredEpisode(
@@ -228,7 +230,7 @@ class EpisodeRepository:
                 benchmark_id=benchmark_id,
                 algorithm=algorithm,
                 seed=seed,
-                created_at=_now(),
+                created_at=now_iso(),
                 record=record,
                 artifact_uri=artifact.uri,
                 artifact_checksum=artifact.checksum,
@@ -262,12 +264,12 @@ class BenchmarkRepository:
     ) -> StoredBenchmark:
         with self._lock:
             stored = StoredBenchmark(
-                id=_new_id(),
+                id=new_id(),
                 spec=spec,
                 map_id=map_id,
                 scenario_id=scenario_id,
                 created_by=created_by,
-                created_at=_now(),
+                created_at=now_iso(),
             )
             self._items[stored.id] = stored
             return stored
@@ -290,7 +292,7 @@ class BenchmarkRepository:
             if approval is not None:
                 stored.approvals.append(approval)
             if state is BenchmarkState.RUNNING:
-                stored.started_at = _now()
+                stored.started_at = now_iso()
             return stored
 
     def set_report(self, benchmark_id: str, report: BenchmarkReport) -> StoredBenchmark:
@@ -299,7 +301,7 @@ class BenchmarkRepository:
             stored = self.get(benchmark_id)
             stored.report = report
             stored.report_artifact_uri = artifact.uri
-            stored.finished_at = _now()
+            stored.finished_at = now_iso()
             return stored
 
 

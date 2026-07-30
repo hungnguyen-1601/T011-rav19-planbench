@@ -29,6 +29,16 @@ class Settings(BaseSettings):
     # Artifact storage root for trajectories and reports.
     artifact_dir: str = "artifacts"
 
+    # Persistence (M10). Empty keeps everything in memory, which is what
+    # development and the test suite use. A URL switches to SQL:
+    #   postgresql://user:pass@host:5432/planbench   (production)
+    #   sqlite:///./planbench.db                     (single process only)
+    # The schema is applied with Alembic, never on startup; db_create_all
+    # exists for throwaway SQLite. See docs/DEPLOYMENT.md.
+    database_url: str = ""
+    db_echo: bool = False
+    db_create_all: bool = False
+
     # Background worker: hard cap on concurrent benchmark jobs so a few
     # large runs cannot starve the API process.
     worker_concurrency: int = 2

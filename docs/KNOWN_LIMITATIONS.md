@@ -180,6 +180,32 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     React kiểm chứng bằng `tsc`, `next build` và chạy thật, chưa có
     jsdom + Testing Library.
 
+## Persistence / Docker (M10)
+
+51. **Chưa build image nào, chưa `docker compose up` lần nào.** Docker
+    CLI có trong WSL distro này nhưng daemon không dùng được (chưa bật
+    WSL integration trong Docker Desktop). `docker-compose.yml` mới chỉ
+    được kiểm bằng parse YAML — chưa có gì chứng minh image build được.
+52. **Chưa kết nối PostgreSQL thật.** Mọi test SQL chạy trên SQLite.
+    SQLite **không** chứng minh: JSONB, transaction đồng thời, connection
+    pool, hay hành vi cascade dưới dialect production.
+53. **`psycopg` chưa cài trong `.venv`** (image có trong
+    `docker/requirements-api.txt`). Chạy local với `postgresql://` phải
+    cài trước; code báo `DatabaseUnavailable` kèm đúng lệnh.
+54. **Artifact tham chiếu bằng URI tuyệt đối** (`file:///data/...`). Đổi
+    `PLANBENCH_ARTIFACT_DIR` sau khi đã ghi dữ liệu sẽ làm hỏng URI đã
+    lưu. Chưa có lệnh rewrite.
+55. **Backup phải làm database + artifact cùng nhau.** Restore lệch nhau
+    cho một database đầy episode mà replay nào cũng 404.
+56. **Chưa có connection retry lúc khởi động.** Nếu database chưa sẵn
+    sàng, API chết ngay. Compose xử lý bằng `depends_on: service_healthy`,
+    ngoài compose thì cần supervisor restart.
+57. **API image không có torch/stable-baselines3** (cố ý: thêm vài GB
+    cho code API không chạy). Hệ quả: **stack `astar+ppo` không chạy
+    được từ image này**; training là workload riêng.
+58. **Chưa có index cho truy vấn theo thời gian.** `created_at` là chuỗi
+    nên `ORDER BY` vẫn đúng, nhưng hàm ngày tháng SQL cần cast.
+
 ## Môi trường
 
 - Test phải chạy với `PYTHONPATH=` do shell source ROS2 Jazzy (xem
