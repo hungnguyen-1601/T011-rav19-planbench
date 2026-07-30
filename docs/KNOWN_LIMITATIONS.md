@@ -149,6 +149,37 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     lọt. Lớp bảo vệ thật là: reviewer là người quyết định, và mọi báo
     cáo đều gắn disclaimer.
 
+## Frontend / 2.5D (M9)
+
+44. **Không dùng Three.js — quyết định có chủ đích, không phải nợ.**
+    Spec liệt kê Three.js/R3F trong tech stack; sau khi cân nhắc,
+    **người dùng chọn giữ Canvas 2D** (2026-07-30). Với occupancy grid
+    đùn lên, cảnh là vài nghìn quad lồi có thứ tự độ sâu toàn phần nên
+    painter's algorithm cho kết quả *chính xác*, không cần depth buffer
+    và không thêm dependency. Đánh đổi: không có occlusion culling
+    (mục 45) và không có ánh sáng/bóng đổ. Hình học đã tách sẵn
+    (`lib/scene25d.ts`) nên đổi renderer về sau chỉ sửa một file — xem
+    `docs/FRONTEND.md`.
+45. **2.5D không có occlusion culling.** Mọi ô đều được vẽ, kể cả ô bị
+    tường trước che hoàn toàn. Với map hiện tại (48×36) không thấy chậm;
+    map lớn hơn nhiều sẽ cần cắt bớt hoặc chuyển sang WebGL.
+46. **Replay chỉ hiện khung cuối, chưa có timeline scrub.** Trang
+    `/simulate` có playback theo thời gian thực; replay của episode đã
+    lưu thì vẽ toàn bộ trajectory cộng vị trí cuối.
+47. **Vật cản động không hiện trong 2.5D.** Snapshot vị trí vật cản có
+    trong `TrajectoryPoint.obstacles` nhưng renderer chưa dùng — hiện
+    chỉ vẽ map tĩnh, plan, trajectory và robot.
+48. **Chưa có endpoint model registry.** `/algorithms` hiển thị registry
+    stack (gồm `astar+ppo` và `model_path` nó đòi), nhưng danh sách
+    checkpoint đã train thì chưa có API — metadata mới nằm ở file sidecar
+    cạnh checkpoint.
+49. **Agent console không lưu hội thoại.** Mỗi lượt độc lập; `history`
+    chưa được truyền lại. Cần bảng riêng khi có PostgreSQL.
+50. **Chưa có test render cho component.** Vitest phủ phần hình học
+    thuần (`scene25d`, `transform`, `playback`, `demoMap`); component
+    React kiểm chứng bằng `tsc`, `next build` và chạy thật, chưa có
+    jsdom + Testing Library.
+
 ## Môi trường
 
 - Test phải chạy với `PYTHONPATH=` do shell source ROS2 Jazzy (xem

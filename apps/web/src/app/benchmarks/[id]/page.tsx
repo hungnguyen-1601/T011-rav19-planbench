@@ -1,17 +1,26 @@
 "use client";
 
-/** Benchmark detail: approval workflow, comparison table, episode replay. */
+/** Benchmark detail: approval workflow, comparison, replay, diagnosis.
+ *
+ * The replay offers a top-down and a 2.5D view of the same recorded
+ * episode. Both read the same trajectory — the view is presentation, and
+ * switching it never changes a number.
+ */
 
 import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { FailureFindings } from "@/components/FailureFindings";
+import { JobProgress } from "@/components/JobProgress";
 import { MapCanvas } from "@/components/MapCanvas";
+import { Scene25D } from "@/components/Scene25D";
 import { authFetch, loadSession, type Session } from "@/lib/auth";
 import type {
   BenchmarkResults,
   EpisodeReplay,
   EpisodeSummary,
 } from "@/lib/benchmarkTypes";
-import type { MapResource } from "@/lib/types";
+import type { FailureReport } from "@/lib/platformTypes";
+import type { MapResource, ScenarioResource } from "@/lib/types";
 
 function fmt(value: number | null | undefined, digits = 2, suffix = ""): string {
   if (value === null || value === undefined) return "—";
@@ -25,6 +34,9 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
   const [episodes, setEpisodes] = useState<EpisodeSummary[]>([]);
   const [replay, setReplay] = useState<EpisodeReplay | null>(null);
   const [map, setMap] = useState<MapResource | null>(null);
+  const [scenario, setScenario] = useState<ScenarioResource | null>(null);
+  const [failure, setFailure] = useState<{ episodeId: string; report: FailureReport } | null>(null);
+  const [view, setView] = useState<"top" | "25d">("top");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [comment, setComment] = useState("");
@@ -38,6 +50,8 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
       }
       if (!map) {
         setMap(await authFetch<MapResource>(`/maps/${data.benchmark.map_id}`));
+        const scenarios = await authFetch<ScenarioResource[]>("/scenarios");
+        setScenario(scenarios.find((item) => item.id === data.benchmark.scenario_id) ?? null);
       }
       setError(null);
     } catch (err) {
@@ -73,6 +87,16 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
   const openReplay = async (episodeId: string) => {
     try {
       setReplay(await authFetch<EpisodeReplay>(`/episodes/${episodeId}/replay`));
+      setFailure(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const openDiagnosis = async (episodeId: string) => {
+    try {
+      const report = await authFetch<FailureReport>(`/episodes/${episodeId}/failures`);
+      setFailure({ episodeId, report });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -182,6 +206,8 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
           <p className="muted">No decisions recorded yet.</p>
         )}
       </div>
+
+      <JobProgress benchmarkId={id} onFinished={() => void refresh()} canCancel={isOperator} />
 
       {results.report ? (
         <>
@@ -298,6 +324,12 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
                     <td>{fmt(episode.record.metrics.min_clearance, 3, " m")}</td>
                     <td>
                       <button onClick={() => void openReplay(episode.id)}>Replay</button>
+                      <button
+                        className="secondary"
+                        onClick={() => void openDiagnosis(episode.id)}
+                      >
+                        Diagnose
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -313,28 +345,77 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
 
       {replay && map ? (
         <div className="panel">
-          <h3>
-            Replay — {replay.algorithm} (seed {replay.seed})
-          </h3>
-          <MapCanvas
-            map={map.map_data}
-            plannedPath={replay.plan_path}
-            trajectory={replay.trajectory}
-            robotPose={
-              replay.trajectory.length > 0
-                ? replay.trajectory[replay.trajectory.length - 1]
-                : null
-            }
-            collisionPoint={
-              replay.metrics.collision && replay.trajectory.length > 0
-                ? replay.trajectory[replay.trajectory.length - 1]
-                : null
-            }
-          />
+          <div className="toolbar">
+            <h3 style={{ margin: 0 }}>
+              Replay — {replay.algorithm} (seed {replay.seed})
+            </h3>
+            <div className="view-toggle">
+              <button
+                type="button"
+                aria-pressed={view === "top"}
+                onClick={() => setView("top")}
+              >
+                Top-down
+              </button>
+              <button
+                type="button"
+                aria-pressed={view === "25d"}
+                onClick={() => setView("25d")}
+              >
+                2.5D
+              </button>
+            </div>
+          </div>
+          {view === "top" ? (
+            <MapCanvas
+              map={map.map_data}
+              plannedPath={replay.plan_path}
+              trajectory={replay.trajectory}
+              startPose={scenario?.scenario.start_pose}
+              goalPose={scenario?.scenario.goal_pose}
+              robotPose={
+                replay.trajectory.length > 0
+                  ? replay.trajectory[replay.trajectory.length - 1]
+                  : null
+              }
+              collisionPoint={
+                replay.metrics.collision && replay.trajectory.length > 0
+                  ? replay.trajectory[replay.trajectory.length - 1]
+                  : null
+              }
+            />
+          ) : (
+            <Scene25D
+              map={map.map_data}
+              plannedPath={replay.plan_path}
+              trajectory={replay.trajectory}
+              startPose={scenario?.scenario.start_pose}
+              goalPose={scenario?.scenario.goal_pose}
+              robotRadius={scenario?.scenario.robot.radius ?? 0.3}
+              robotPose={
+                replay.trajectory.length > 0
+                  ? replay.trajectory[replay.trajectory.length - 1]
+                  : null
+              }
+            />
+          )}
           <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
             {replay.trajectory.length} trajectory points · status {replay.metrics.status}
             {replay.events.length > 0 ? ` · ${replay.events[replay.events.length - 1].message}` : ""}
           </p>
+        </div>
+      ) : null}
+
+      {failure ? (
+        <div className="panel">
+          <h3>
+            Failure analysis — episode <code>{failure.episodeId}</code>
+          </h3>
+          <p className="muted">
+            Derived from recorded episode data only. Confidence is part of the finding: a{" "}
+            <em>low</em> finding is a hypothesis consistent with the data, not a conclusion.
+          </p>
+          <FailureFindings report={failure.report} />
         </div>
       ) : null}
     </>

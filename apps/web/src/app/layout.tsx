@@ -19,8 +19,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <nav>
               <Link href="/">Dashboard</Link>
               <Link href="/maps">Maps</Link>
+              <Link href="/library">Scenario Library</Link>
               <Link href="/simulate">Live Simulation</Link>
               <Link href="/benchmarks">Benchmarks</Link>
+              <Link href="/leaderboard">Leaderboard</Link>
+              <Link href="/algorithms">Algorithms</Link>
+              <Link href="/agent">Agent</Link>
             </nav>
             <SessionBar />
           </aside>

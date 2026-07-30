@@ -5,11 +5,11 @@
 
 ## Milestone hiện tại
 
-**M8 hoàn thành** — Agentic AI + RAG: provider abstraction, mission
-parsing có validate bằng Pydantic, tool calling, cổng approval, evidence
-+ citation, RAG trên docs. Tiếp theo: **M9 — 2.5D + UI cho M5/M6**.
-Còn nợ: PostgreSQL/Alembic, frontend cho M5/M6, chưa test với API key
-thật (xem "Nợ kỹ thuật").
+**M9 hoàn thành** — 2.5D view + UI cho M5/M6/M8: thư viện scenario,
+leaderboard, registry stack, failure analysis, job progress, agent
+console. Tiếp theo: **M10 — Docker Compose + PostgreSQL**.
+Còn nợ: PostgreSQL/Alembic, chưa gọi provider LLM thật, Three.js chưa
+cài (xem "Nợ kỹ thuật").
 
 ## Bản đồ mã nguồn
 
@@ -23,7 +23,7 @@ thật (xem "Nợ kỹ thuật").
 | `services/tracking/planbench_tracking/` | ExperimentTracker interface + MLflow adapter + NullTracker |
 | `apps/api/planbench_api/` | FastAPI: config, errors, logging, auth, approval, artifacts, repositories, services, routers/ |
 | `services/agent_service/planbench_agent/` | Agentic AI: provider abstraction, specs, gateway, tools, evidence, rag, report, workflow |
-| `apps/web/` | Next.js 15 + React 19 + TS: lib/, components/, app/ |
+| `apps/web/` | Next.js 15 + React 19 + TS: lib/, components/, app/ — xem `docs/FRONTEND.md` |
 | `tests/` | pytest (core + `tests/api/`) |
 | `scripts/demo_astar_episode.py` | demo headless |
 
@@ -291,3 +291,31 @@ Ràng buộc phát hiện khi làm M8: **`astar+ppo` không nằm trong menu c�
 agent** vì cần `model_path`. Agent không biết checkpoint nào đúng, và
 bịa đường dẫn là đúng kiểu bịa mà spec cấm — nên mọi stack có config
 bắt buộc đều bị loại khỏi `agent_selectable_algorithms()`.
+
+### M9 — 2.5D + UI cho M5/M6/M8
+
+Chi tiết đầy đủ: `docs/FRONTEND.md`.
+
+1. **2.5D** tách làm hai: `src/lib/scene25d.ts` là hình học thuần (phép
+   chiếu trực giao, thứ tự vẽ, đùn tường, marker robot) — 23 unit test;
+   `src/components/Scene25D.tsx` chỉ chọn màu và nét vẽ. Renderer là
+   Canvas 2D: cảnh là vài nghìn quad lồi có thứ tự độ sâu toàn phần nên
+   painter's algorithm xử lý chính xác, không thêm dependency. Đổi sang
+   WebGL sau này chỉ thay đúng file renderer.
+2. **`/library`** — 10 scenario theo thứ tự curriculum, import tạo map +
+   scenario server-side (client không bao giờ tự dựng geometry, nếu
+   không hai máy import cùng entry sẽ ra map khác nhau).
+3. **`/leaderboard`** — nhóm theo `conditions_checksum`, chỉnh trọng số
+   tại chỗ, cảnh báo đỏ khi xem kết quả chưa được accept.
+4. **`/algorithms`** — registry stack: `benchmarkable=false` (reference
+   adapter) và config bắt buộc (`astar+ppo` cần `model_path`) đều hiển
+   thị rõ.
+5. **`/agent`** — console M8: bảng provider readiness, chat có tool,
+   mission → draft/refusal, evidence bundle, report có trích dẫn.
+6. **`/benchmarks/[id]`** thêm: toggle top-down ↔ 2.5D cho replay, panel
+   **failure analysis** (finding + evidence + confidence), panel **job
+   progress** (poll khi chạy, cancel hợp tác).
+
+Toàn bộ 41 vitest pass, `tsc --noEmit` sạch, `next build` ra 12 route.
+Đã chạy thật backend + frontend và kiểm chứng end-to-end (xem
+TEST_REPORT).

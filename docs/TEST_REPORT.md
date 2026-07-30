@@ -2,6 +2,121 @@
 
 Output thật từ các lần chạy kiểm thử. Cập nhật sau mỗi milestone.
 
+## M9 — 2026-07-30 (2.5D + UI cho M5/M6/M8)
+
+### Build và test frontend
+
+```
+$ cd apps/web && npx tsc --noEmit
+(không lỗi)
+
+$ npx vitest run
+ ✓ src/lib/__tests__/playback.test.ts   (8 tests)
+ ✓ src/lib/__tests__/demoMap.test.ts    (4 tests)
+ ✓ src/lib/__tests__/transform.test.ts  (6 tests)
+ ✓ src/lib/__tests__/scene25d.test.ts  (23 tests)
+ Test Files  4 passed (4)
+      Tests  41 passed (41)
+
+$ npm run build
+Route (app)                                 Size  First Load JS
+┌ ○ /                                    1.78 kB         108 kB
+├ ○ /agent                               4.09 kB         110 kB
+├ ○ /algorithms                          2.47 kB         108 kB
+├ ○ /benchmarks                          2.66 kB         109 kB
+├ ƒ /benchmarks/[id]                     5.82 kB         115 kB
+├ ○ /leaderboard                         2.74 kB         109 kB
+├ ○ /library                             1.47 kB         111 kB
+├ ○ /login                               1.98 kB         104 kB
+├ ○ /maps                                2.03 kB         108 kB
+├ ƒ /maps/[id]                           3.68 kB         110 kB
+└ ○ /simulate                            6.05 kB         112 kB
+```
+
+23 test mới cho `scene25d`: phép chiếu (+z lên trên, hai trục tách
+ngang ngược chiều, elevation 0 thành top-down), thứ tự vẽ theo `x + y`,
+fit vào canvas kể cả khi tường cao, đùn ô OCCUPIED thành 3 mặt, ô
+UNKNOWN vẽ phẳng, marker robot bị bóp thành ellipse.
+
+### Chạy thật backend + frontend
+
+```
+$ .venv/bin/uvicorn planbench_api.main:app --port 8010     # backend
+$ NEXT_PUBLIC_API_URL=http://localhost:8010 npx next start -p 3010
+
+$ curl -s http://localhost:8010/api/v1/health
+{"status":"ok","app":"PlanBench API","version":"0.1.0"}
+
+trang            HTTP
+/                200
+/library         200
+/leaderboard     200
+/algorithms      200
+/agent           200
+/benchmarks      200
+/simulate        200
+/maps            200
+/login           200
+```
+
+### Dữ liệu thật mà từng trang tiêu thụ (output thật)
+
+```
+== /scenario-library  (Library page)
+   10 entries, curriculum order: open_space, static_obstacles, wide_corridor, narrow_corridor, doorway ...
+
+== import doorway
+   map=ab83c4a711f8 scenario=5a66e298d22c
+   grid 48x36 res=0.25m, 272 occupied cells -> extruded in the 2.5D view
+
+== /algorithms  (Algorithms page)
+   astar+dwa              benchmarkable=True  required=[]
+   astar+ppo              benchmarkable=True  required=['model_path']
+   astar+pure_pursuit     benchmarkable=False required=[]
+
+== create -> submit -> approve -> run-async  (Job progress panel)
+   accepted: running 0/2
+   poll: running    0/2
+   poll: succeeded  2/2  2/2 episodes finished
+
+== accept results (human gate 2) -> /leaderboard  (Leaderboard page)
+   1 comparable group(s)
+   conditions 6c767dc661ada452... doorway seeds [1, 2]
+      astar+dwa    score=0.999 success=1.00 worst_clearance=0.4856734016900955
+
+== /episodes/{id}/replay  (top-down và 2.5D đọc cùng dữ liệu)
+   astar+dwa seed=1 plan=2 pts trajectory=191 pts status=success
+
+== /agent/capabilities  (Agent console)
+   provider=mock model=deterministic-mock deterministic=True
+   11 tools, 8 forbidden capabilities, 7 docs indexed
+   providers listed: ['anthropic', 'deepseek', 'gemini', 'groq', 'local', 'openai', 'openrouter', 'xai']
+```
+
+### Failure analysis panel trên một episode hỏng thật
+
+Chạy reference adapter `astar+pure_pursuit` (bỏ qua sensing) trên
+`sudden_stop`. Ba scenario trước đó (`crossing_obstacle`) nó vẫn về
+đích, nên phải thử tiếp mới có va chạm — ghi lại đúng như đã xảy ra:
+
+```
+sudden_stop              -> collision      collision with dynamic obstacle at (6.325, 4.500) after 5.30s
+  primary  : dynamic_obstacle_collision (confidence high)
+  summary  : Collided with the moving obstacle 'cart'.
+    evidence[engine_event] t=5.30s: collision: collision with dynamic obstacle at (6.325, 4.500) after 5.30s
+    evidence[final_pose] t=5.30s: Robot at (6.325, 4.500)
+    evidence[nearest_dynamic_obstacle] t=5.30s value=0.675: cart at (7.000, 4.500)
+```
+
+### Chưa kiểm chứng
+
+- **Không có test render component** (jsdom + Testing Library). Vitest
+  phủ phần hình học thuần; component React kiểm chứng bằng `tsc`,
+  `next build` và chạy thật trên trình duyệt-less HTTP.
+- **Chưa chụp màn hình** — kiểm chứng dừng ở mức HTTP 200 + dữ liệu API
+  đúng, không phải kiểm chứng thị giác.
+- **Three.js chưa cài** (xem KNOWN_LIMITATIONS 44).
+
 ## M8+ — 2026-07-30 (multi-provider)
 
 Thêm adapter OpenAI-compatible phủ OpenAI / Gemini / OpenRouter / Groq /
