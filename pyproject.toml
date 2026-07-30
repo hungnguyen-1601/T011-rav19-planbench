@@ -1,0 +1,52 @@
+[project]
+name = "planbench"
+version = "0.1.0"
+description = "Agentic AI PlanBench — simulator and path/motion planning benchmark for AMR/AGV mobile robots (simulation only)."
+requires-python = ">=3.12"
+
+# NOTE (Phase 1A): this repository is not yet packaged for installation.
+# Tests import the packages directly from source via the pytest
+# `pythonpath` setting below. Per-package pyproject files will be added
+# when other services need to install them (Phase 2+).
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [
+    "packages/schemas",
+    "packages/planning",
+    "packages/metrics",
+    "packages/benchmark",
+    "services/simulator",
+    "services/tracking",
+    "apps/api",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "C4",  # flake8-comprehensions
+]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "planbench_schemas",
+    "planbench_simulator",
+    "planbench_planning",
+    "planbench_metrics",
+    "planbench_benchmark",
+    "planbench_tracking",
+    "planbench_api",
+]
+
+[tool.coverage.run]
+branch = true
