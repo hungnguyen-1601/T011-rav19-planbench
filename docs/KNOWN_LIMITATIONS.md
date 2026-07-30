@@ -120,10 +120,11 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     lượng văn bản của model, và **không** chứng minh adapter nói chuyện
     được với endpoint sống. Dán key rồi chạy
     `scripts/check_agent_provider.py` trước khi tin.
-37b. **Adapter OpenAI-compatible viết theo giao thức đã tài liệu hoá,
-    chưa chạm endpoint thật.** Phần dịch request/response được test bằng
-    object giả (đó là nơi bug thật nằm), nhưng nếu một hãng lệch giao
-    thức ở chi tiết nào đó thì chỉ lộ ra khi gọi thật.
+37b. **Adapter OpenAI-compatible đã chạy thật với Gemini** (completion,
+    structured output, multi-step tool calling). Multi-step từng hỏng với
+    `Function call is missing a thought_signature`; đã sửa bằng cách phát
+    lại nguyên văn assistant turn — xem `docs/AGENT_AI.md`. Các hãng còn
+    lại (OpenAI, OpenRouter, Groq, DeepSeek, xAI) **vẫn chưa gọi thật**.
 37c. **Gemini đi qua endpoint tương thích OpenAI**, không phải API
     native, nên các tính năng ngoài giao thức đó (grounding, safety
     settings, thinking config) chưa dùng được. Thêm adapter native khi

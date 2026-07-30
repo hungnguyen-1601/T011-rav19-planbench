@@ -24,11 +24,30 @@ SEED_USERS = ",".join(
 )
 
 
+def isolate_environment(monkeypatch) -> None:
+    """Pin every setting the suite depends on.
+
+    ``Settings`` reads ``.env``, so without this the developer's own
+    configuration leaks into the tests: a checkout with
+    ``PLANBENCH_AGENT_PROVIDER=gemini`` made every agent test fail with a
+    503, because the app tried to reach a real provider. These tests
+    assert PlanBench's guarantees — auth, the approval gates, citation
+    integrity — and must give the same answer on every machine.
+    """
+    monkeypatch.setenv("PLANBENCH_SEED_USERS", SEED_USERS)
+    monkeypatch.setenv("PLANBENCH_JWT_SECRET", "test-secret-not-used-in-production")
+    # The deterministic mock: offline, no key, no network.
+    monkeypatch.setenv("PLANBENCH_AGENT_PROVIDER", "mock")
+    monkeypatch.setenv("PLANBENCH_AGENT_MODEL", "")
+    monkeypatch.setenv("PLANBENCH_AGENT_BASE_URL", "")
+    monkeypatch.setenv("PLANBENCH_DATABASE_URL", "")
+    monkeypatch.setenv("PLANBENCH_MLFLOW_TRACKING_URI", "")
+
+
 @pytest.fixture
 def app(tmp_path, monkeypatch):
     """App with deterministic seed users and an isolated artifact root."""
-    monkeypatch.setenv("PLANBENCH_SEED_USERS", SEED_USERS)
-    monkeypatch.setenv("PLANBENCH_JWT_SECRET", "test-secret-not-used-in-production")
+    isolate_environment(monkeypatch)
     get_settings.cache_clear()
     application = create_app(artifact_dir=str(tmp_path / "artifacts"))
     yield application

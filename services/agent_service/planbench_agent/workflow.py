@@ -353,7 +353,15 @@ class AgentService:
                     ),
                     tuple(messages),
                 )
-            messages.append(LLMMessage.assistant(response.text, response.tool_calls))
+            # Carry the provider's own payload forward, not just the parts
+            # this layer parsed. Some vendors sign their tool calls and
+            # reject the follow-up turn if the signature is missing — see
+            # ProviderTurn.
+            messages.append(
+                LLMMessage.assistant(
+                    response.text, response.tool_calls, provider_turn=response.provider_turn
+                )
+            )
             if not response.wants_tools:
                 return (
                     ChatTurn(

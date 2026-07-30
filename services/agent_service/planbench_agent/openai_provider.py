@@ -39,12 +39,18 @@ from planbench_agent.provider import (
     LLMResponse,
     MessageRole,
     ProviderError,
+    ProviderTurn,
     ProviderUnavailable,
     StopReason,
     ToolCall,
 )
 
 logger = logging.getLogger("planbench.agent.openai_compatible")
+
+#: Identifies this wire format on a captured assistant turn. Every
+#: preset here speaks it, so a turn from Groq replays fine on OpenAI —
+#: but an Anthropic turn is correctly refused.
+WIRE_FORMAT = "openai-chat"
 
 _STOP_REASONS = {
     "stop": StopReason.END_TURN,
@@ -291,6 +297,16 @@ def _schema_is_strict(schema: Mapping[str, Any]) -> bool:
 def _to_wire(message: LLMMessage) -> list[dict[str, Any]]:
     """One domain message as one *or more* Chat Completions messages."""
     if message.role is MessageRole.ASSISTANT:
+        # Replay the provider's own payload when we have it. Rebuilding
+        # from the parsed fields is lossy, and for Gemini that loss is
+        # fatal: it signs every function call with a `thought_signature`
+        # and rejects the follow-up turn without it. Echoing back exactly
+        # what came out also covers whatever the next vendor invents,
+        # without this file having to learn the field name.
+        replay = _replayable(message)
+        if replay is not None:
+            return [replay]
+
         wire: dict[str, Any] = {"role": "assistant", "content": message.text or None}
         if message.tool_calls:
             wire["tool_calls"] = [
@@ -322,6 +338,73 @@ def _to_wire(message: LLMMessage) -> list[dict[str, Any]]:
             messages.append({"role": "user", "content": message.text})
         return messages
     return [{"role": "user", "content": message.text}]
+
+
+def _replayable(message: LLMMessage) -> dict[str, Any] | None:
+    """The provider's own assistant payload, if this format produced it.
+
+    Returns ``None`` for a turn from a different wire format — a
+    transcript may outlive a provider switch, and replaying an
+    Anthropic block list into a Chat Completions request would be worse
+    than rebuilding.
+    """
+    turn = message.provider_turn
+    if turn is None or turn.format != WIRE_FORMAT:
+        return None
+    payload = _strip_nulls(dict(turn.payload))
+    payload["role"] = "assistant"
+    # `content` is the one key whose null is meaningful: a pure
+    # tool-call turn has no text, and omitting the key entirely is not
+    # the same thing to every implementation.
+    payload.setdefault("content", message.text or None)
+    return payload
+
+
+def _strip_nulls(payload: dict[str, Any]) -> dict[str, Any]:
+    """Drop null-valued keys the SDK fills in but the API need not see.
+
+    A round-tripped message carries ``refusal: null``, ``audio: null``
+    and friends. OpenAI tolerates them; stricter compatibility layers do
+    not, so they are removed rather than gambled on. Nested tool-call
+    objects get the same treatment, since that is where vendor extras
+    such as ``thought_signature`` sit — and those are *not* null, so they
+    survive.
+    """
+    cleaned: dict[str, Any] = {}
+    for key, value in payload.items():
+        if value is None:
+            continue
+        if key == "tool_calls" and isinstance(value, list):
+            cleaned[key] = [
+                _strip_nulls(dict(call)) if isinstance(call, dict) else call for call in value
+            ]
+        elif isinstance(value, dict):
+            cleaned[key] = _strip_nulls(dict(value))
+        else:
+            cleaned[key] = value
+    return cleaned
+
+
+def _capture_turn(message: Any) -> ProviderTurn | None:
+    """Snapshot the assistant message exactly as the provider sent it.
+
+    The OpenAI SDK's models allow extra fields, so ``model_dump()``
+    includes vendor additions the SDK has no attribute for. That is the
+    whole point: this adapter never has to know that
+    ``thought_signature`` exists.
+    """
+    payload: Mapping[str, Any] | None = None
+    dump = getattr(message, "model_dump", None)
+    if callable(dump):
+        try:
+            payload = dump(mode="json")
+        except TypeError:  # a stand-in without pydantic's keyword
+            payload = dump()
+    elif isinstance(message, Mapping):
+        payload = dict(message)
+    if not payload:
+        return None
+    return ProviderTurn(format=WIRE_FORMAT, payload=dict(payload))
 
 
 def _from_wire(completion: Any, expect_structured: bool) -> LLMResponse:
@@ -365,6 +448,7 @@ def _from_wire(completion: Any, expect_structured: bool) -> LLMResponse:
         model=getattr(completion, "model", "") or "",
         input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
         output_tokens=getattr(usage, "completion_tokens", 0) or 0,
+        provider_turn=_capture_turn(message),
     )
 
 
@@ -391,4 +475,4 @@ def _parse_arguments(raw: Any) -> Mapping[str, Any]:
     return {}
 
 
-__all__ = ["PRESETS", "OpenAICompatibleProvider", "Preset"]
+__all__ = ["PRESETS", "WIRE_FORMAT", "OpenAICompatibleProvider", "Preset"]

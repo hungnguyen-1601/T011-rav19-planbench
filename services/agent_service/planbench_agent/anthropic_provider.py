@@ -26,12 +26,18 @@ from planbench_agent.provider import (
     LLMResponse,
     MessageRole,
     ProviderError,
+    ProviderTurn,
     ProviderUnavailable,
     StopReason,
     ToolCall,
 )
 
 logger = logging.getLogger("planbench.agent.anthropic")
+
+#: Identifies this wire format on a captured assistant turn, so a
+#: transcript recorded here is never replayed into a Chat Completions
+#: request (and vice versa).
+WIRE_FORMAT = "anthropic-messages"
 
 DEFAULT_MODEL = "claude-opus-5"
 API_KEY_ENV = "ANTHROPIC_API_KEY"
@@ -166,6 +172,16 @@ class AnthropicProvider(LLMProvider):
 def _to_wire(message: LLMMessage) -> dict[str, Any]:
     """One domain message as an Anthropic message dict."""
     if message.role is MessageRole.ASSISTANT:
+        # Replay the recorded content blocks when we have them. Anthropic
+        # requires thinking blocks echoed back unchanged while a turn is
+        # in progress, and rebuilding from text + tool calls drops them —
+        # the same failure Gemini reports as a missing thought_signature.
+        turn = message.provider_turn
+        if turn is not None and turn.format == WIRE_FORMAT:
+            blocks = turn.payload.get("content")
+            if blocks:
+                return {"role": "assistant", "content": list(blocks)}
+
         content: list[dict[str, Any]] = []
         if message.text:
             content.append({"type": "text", "text": message.text})
@@ -199,6 +215,30 @@ def _to_wire(message: LLMMessage) -> dict[str, Any]:
     return {"role": "user", "content": message.text}
 
 
+def _capture_turn(message: Any) -> ProviderTurn | None:
+    """Snapshot the assistant content blocks exactly as they arrived.
+
+    Thinking blocks carry signatures that must survive the round trip
+    untouched; serialising them ourselves would be a re-encoding, not a
+    copy.
+    """
+    blocks: list[Any] = []
+    for block in getattr(message, "content", ()) or ():
+        dump = getattr(block, "model_dump", None)
+        if callable(dump):
+            try:
+                blocks.append(dump(mode="json"))
+            except TypeError:  # a stand-in without pydantic's keyword
+                blocks.append(dump())
+        elif isinstance(block, Mapping):
+            blocks.append(dict(block))
+        else:
+            return None  # unknown shape: rebuild rather than guess
+    if not blocks:
+        return None
+    return ProviderTurn(format=WIRE_FORMAT, payload={"content": blocks})
+
+
 def _from_wire(message: Any, expect_structured: bool) -> LLMResponse:
     text_parts: list[str] = []
     calls: list[ToolCall] = []
@@ -230,6 +270,7 @@ def _from_wire(message: Any, expect_structured: bool) -> LLMResponse:
         model=getattr(message, "model", "") or "",
         input_tokens=getattr(usage, "input_tokens", 0) or 0,
         output_tokens=getattr(usage, "output_tokens", 0) or 0,
+        provider_turn=_capture_turn(message),
     )
 
 
@@ -241,4 +282,4 @@ def _as_mapping(value: Any) -> Mapping[str, Any]:
     return {"value": value}
 
 
-__all__ = ["API_KEY_ENV", "DEFAULT_MODEL", "AnthropicProvider"]
+__all__ = ["API_KEY_ENV", "DEFAULT_MODEL", "WIRE_FORMAT", "AnthropicProvider"]

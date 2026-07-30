@@ -42,9 +42,19 @@ class TestCapabilities:
         body = client.get("/api/v1/agent/capabilities", headers=operator_headers).json()
         names = {entry["name"] for entry in body["providers"]}
         assert {"anthropic", "openai", "gemini", "local"} <= names
+        # Readiness depends on the developer's own keys and installed
+        # SDKs, so assert the shape and the invariant — not that nothing
+        # happens to be configured on this machine.
         for entry in body["providers"]:
-            assert entry["ready"] is False
-            assert entry["missing"], entry
+            if entry["ready"]:
+                assert entry["missing"] == "", entry
+            else:
+                assert entry["missing"] != "", entry
+            # A provider that needs no key must not claim to want one.
+            if entry["name"] == "local":
+                assert entry["api_key_env"] == ""
+            else:
+                assert entry["api_key_env"].endswith("_API_KEY"), entry
 
     def test_no_tool_can_actuate_or_approve(self, client, operator_headers):
         tools = client.get("/api/v1/agent/capabilities", headers=operator_headers).json()["tools"]
@@ -197,6 +207,65 @@ class TestEvidenceAndReport:
             "/api/v1/agent/benchmarks/deadbeef1234/report", json={}, headers=operator_headers
         )
         assert response.status_code == 404
+
+
+class TestProviderFailures:
+    """A broken upstream model must not read as a broken PlanBench."""
+
+    def _break_provider(self, app, error):
+        from planbench_agent.provider import LLMProvider
+
+        class Failing(LLMProvider):
+            name = "gemini"
+            model = "gemini-3.5-flash-lite"
+            deterministic = False
+
+            def complete(self, request):
+                raise error
+
+        app.state.agent_provider = Failing()
+
+    def test_a_provider_error_is_502_with_the_upstream_message(self, client, app, operator_headers):
+        # "Function call is missing a thought_signature" is the piece
+        # that tells the reader what to fix; a bare 500 loses it.
+        from planbench_agent.provider import ProviderError
+
+        self._break_provider(
+            app, ProviderError("gemini request failed: missing a thought_signature")
+        )
+        response = client.post(
+            "/api/v1/agent/chat", json={"message": "list the benchmarks"}, headers=operator_headers
+        )
+        assert response.status_code == 502
+        body = response.json()["error"]
+        assert body["code"] == "provider_error"
+        assert "thought_signature" in body["message"]
+
+    def test_an_unconfigured_provider_is_503_with_the_fix(self, client, app, operator_headers):
+        from planbench_agent.provider import ProviderUnavailable
+
+        self._break_provider(
+            app, ProviderUnavailable("no API key for 'gemini': set GEMINI_API_KEY")
+        )
+        response = client.post(
+            "/api/v1/agent/chat", json={"message": "anything"}, headers=operator_headers
+        )
+        assert response.status_code == 503
+        body = response.json()["error"]
+        assert body["code"] == "provider_unavailable"
+        assert "GEMINI_API_KEY" in body["message"]
+
+    def test_a_failing_provider_does_not_leak_a_stack_trace(self, client, app, operator_headers):
+        from planbench_agent.provider import ProviderError
+
+        self._break_provider(app, ProviderError("upstream exploded"))
+        response = client.post(
+            "/api/v1/agent/missions",
+            json={"mission": "Benchmark DWA on open_space", "submit": False},
+            headers=operator_headers,
+        )
+        assert response.status_code == 502
+        assert "Traceback" not in response.text
 
 
 class TestSeparationOfDuties:

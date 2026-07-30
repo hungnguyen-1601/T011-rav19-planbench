@@ -13,7 +13,7 @@ docs/KNOWN_LIMITATIONS.md.
 from __future__ import annotations
 
 import pytest
-from conftest import OPERATOR, REVIEWER, SEED_USERS, auth_headers
+from conftest import OPERATOR, REVIEWER, auth_headers, isolate_environment
 from fastapi.testclient import TestClient
 from payloads import bordered_map_payload, scenario_payload
 
@@ -24,8 +24,7 @@ from planbench_api.main import create_app
 
 @pytest.fixture
 def sql_app(tmp_path, monkeypatch):
-    monkeypatch.setenv("PLANBENCH_SEED_USERS", SEED_USERS)
-    monkeypatch.setenv("PLANBENCH_JWT_SECRET", "test-secret-not-used-in-production")
+    isolate_environment(monkeypatch)
     monkeypatch.setenv("PLANBENCH_DATABASE_URL", f"sqlite:///{tmp_path / 'api.db'}")
     # Throwaway database: create the schema directly rather than running
     # Alembic per test. The migration is verified separately.
@@ -181,8 +180,7 @@ def test_leaderboard_groups_accepted_results_from_sql(sql_client):
 
 def test_data_outlives_the_application_instance(tmp_path, monkeypatch):
     """The point of M10: a restart does not lose anything."""
-    monkeypatch.setenv("PLANBENCH_SEED_USERS", SEED_USERS)
-    monkeypatch.setenv("PLANBENCH_JWT_SECRET", "test-secret-not-used-in-production")
+    isolate_environment(monkeypatch)
     monkeypatch.setenv("PLANBENCH_DATABASE_URL", f"sqlite:///{tmp_path / 'restart.db'}")
     monkeypatch.setenv("PLANBENCH_DB_CREATE_ALL", "true")
     get_settings.cache_clear()
@@ -205,8 +203,7 @@ def test_data_outlives_the_application_instance(tmp_path, monkeypatch):
 
 def test_in_memory_backend_loses_data_on_restart(tmp_path, monkeypatch):
     """The behaviour M10 exists to remove — asserted so it stays visible."""
-    monkeypatch.setenv("PLANBENCH_SEED_USERS", SEED_USERS)
-    monkeypatch.setenv("PLANBENCH_JWT_SECRET", "test-secret-not-used-in-production")
+    isolate_environment(monkeypatch)
     monkeypatch.delenv("PLANBENCH_DATABASE_URL", raising=False)
     get_settings.cache_clear()
 

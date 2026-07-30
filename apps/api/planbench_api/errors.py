@@ -44,9 +44,31 @@ def _error_body(code: str, message: str, details: Any = None) -> dict:
 def register_error_handlers(app: FastAPI) -> None:
     # Imported here to keep this module free of auth/domain imports at
     # module scope (errors.py is imported very early).
+    from planbench_agent.provider import ProviderError, ProviderUnavailable
     from planbench_api.approval import PermissionDenied, TransitionError
     from planbench_api.auth import AuthError, Forbidden
     from planbench_benchmark.registry import AlgorithmConfigError, UnknownAlgorithmError
+
+    # Registered before ProviderError because it is a subclass; FastAPI
+    # picks the handler for the most specific registered type, and a
+    # missing key deserves a different status and a different fix than a
+    # provider that answered badly.
+    @app.exception_handler(ProviderUnavailable)
+    async def provider_unavailable(_: Request, exc: ProviderUnavailable) -> JSONResponse:
+        logger.warning("agent provider unavailable: %s", exc)
+        return JSONResponse(
+            status_code=503,
+            content=_error_body("provider_unavailable", str(exc)),
+        )
+
+    @app.exception_handler(ProviderError)
+    async def provider_failed(_: Request, exc: ProviderError) -> JSONResponse:
+        # 502: PlanBench is fine, the upstream model is not. Returning
+        # the provider's own message matters — "Function call is missing
+        # a thought_signature" is actionable, "internal server error" is
+        # not.
+        logger.warning("agent provider error: %s", exc)
+        return JSONResponse(status_code=502, content=_error_body("provider_error", str(exc)))
 
     @app.exception_handler(AuthError)
     async def auth_failed(_: Request, exc: AuthError) -> JSONResponse:

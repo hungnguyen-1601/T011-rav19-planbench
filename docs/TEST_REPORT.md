@@ -2,6 +2,71 @@
 
 Output thật từ các lần chạy kiểm thử. Cập nhật sau mỗi milestone.
 
+## Sửa lỗi Gemini multi-step tool calling — 2026-07-30
+
+### Triệu chứng
+
+`/api/v1/agent/chat` gọi tool `list_benchmarks` thành công, lượt tiếp
+theo hỏng:
+
+```
+Function call is missing a thought_signature
+```
+
+### Nguyên nhân
+
+`_from_wire` chỉ giữ text + tool_calls; `_to_wire` **dựng lại** assistant
+message từ hai thứ đó. Mọi metadata khác của hãng bị bỏ — trong đó có
+`thought_signature` mà Gemini bắt buộc phải nhận lại.
+
+### Bản sửa
+
+Giữ nguyên payload provider trả về (`ProviderTurn`) và phát lại y hệt.
+Cùng cơ chế áp cho adapter Anthropic (thinking block cũng phải echo
+nguyên vẹn — cùng một lỗi tiềm ẩn).
+
+### Kiểm chứng với SDK openai THẬT (2.50.0, không gọi mạng, không đọc key)
+
+```
+$ .venv/bin/python scratchpad/sdk_check.py
+model_dump keys      : ['annotations', 'audio', 'content', 'function_call', 'refusal', 'role', 'tool_calls']
+tool_call keys       : ['function', 'id', 'thought_signature', 'type']
+signature survived   : SIGNATURE-FROM-GEMINI
+captured format      : openai-chat
+replay keys          : ['role', 'tool_calls']
+replay signature     : SIGNATURE-FROM-GEMINI
+```
+
+Xác nhận giả định nền của bản sửa: model của SDK cho phép extra field,
+nên `model_dump()` giữ trường mà SDK chưa từng biết tới.
+
+### Test
+
+```
+$ PYTHONPATH= .venv/bin/pytest tests/ -q
+878 passed, 1 warning in 196.25s (0:03:16)
+```
+
+14 test mới:
+
+| File | Test | Nội dung |
+|---|---|---|
+| `tests/test_agent_gemini_tools.py` | 11 | capture, replay, và **vòng đầy đủ**: user → `list_benchmarks` → tool result → câu trả lời cuối |
+| `tests/api/test_api_agent.py` | 3 | ProviderError → 502, ProviderUnavailable → 503, không lộ traceback |
+
+Test vòng đầy đủ khẳng định request thứ hai có đúng
+`["system", "user", "assistant", "tool"]` và assistant message vẫn mang
+`thought_signature`.
+
+### Lỗi phụ phát hiện khi chạy test
+
+Sau khi anh cấu hình `.env` với `PLANBENCH_AGENT_PROVIDER=gemini`, **17
+test API đỏ** với 503: fixture test đọc `.env` của máy nên cố gọi provider
+thật. Đã sửa: `isolate_environment()` ghim `PLANBENCH_AGENT_PROVIDER=mock`
+và các setting liên quan. Một test khác giả định "chưa provider nào
+ready" cũng đỏ sau khi `openai` được cài — sửa thành khẳng định bất biến
+(`ready` ⇒ `missing` rỗng) thay vì trạng thái của một máy cụ thể.
+
 ## M10 — 2026-07-30 (PostgreSQL + Docker Compose)
 
 ### Toàn bộ suite

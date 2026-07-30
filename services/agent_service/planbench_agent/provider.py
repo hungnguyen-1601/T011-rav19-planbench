@@ -82,6 +82,35 @@ class ToolResult:
 
 
 @dataclass(frozen=True)
+class ProviderTurn:
+    """A provider's own serialisation of an assistant turn, kept intact.
+
+    ``text`` and ``tool_calls`` are the parts the agent understands, and
+    for a long time they were all this layer kept. That loses whatever
+    else the vendor attached — and some vendors *require* it back on the
+    next request:
+
+    * Gemini signs each function call with a ``thought_signature`` and
+      rejects the follow-up turn without it ("Function call is missing a
+      thought_signature");
+    * Anthropic requires thinking blocks echoed back unchanged while a
+      turn is still in progress.
+
+    Rebuilding the assistant message from the parsed fields drops both.
+    So the provider stores its raw payload here and replays it verbatim
+    instead of reconstructing it.
+
+    ``format`` names the wire format, not the vendor: every
+    OpenAI-compatible provider shares one. A provider must ignore a turn
+    whose format it does not recognise — that is what makes a transcript
+    safe to carry across a provider switch.
+    """
+
+    format: str
+    payload: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
 class LLMMessage:
     """One conversation turn.
 
@@ -94,14 +123,26 @@ class LLMMessage:
     text: str = ""
     tool_calls: tuple[ToolCall, ...] = ()
     tool_results: tuple[ToolResult, ...] = ()
+    #: Set on assistant turns that came back from a provider. Replayed
+    #: verbatim so vendor metadata survives the round trip.
+    provider_turn: ProviderTurn | None = None
 
     @staticmethod
     def user(text: str) -> LLMMessage:
         return LLMMessage(role=MessageRole.USER, text=text)
 
     @staticmethod
-    def assistant(text: str = "", tool_calls: Sequence[ToolCall] = ()) -> LLMMessage:
-        return LLMMessage(role=MessageRole.ASSISTANT, text=text, tool_calls=tuple(tool_calls))
+    def assistant(
+        text: str = "",
+        tool_calls: Sequence[ToolCall] = (),
+        provider_turn: ProviderTurn | None = None,
+    ) -> LLMMessage:
+        return LLMMessage(
+            role=MessageRole.ASSISTANT,
+            text=text,
+            tool_calls=tuple(tool_calls),
+            provider_turn=provider_turn,
+        )
 
     @staticmethod
     def results(results: Sequence[ToolResult]) -> LLMMessage:
@@ -130,6 +171,9 @@ class LLMResponse:
     model: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
+    #: The provider's untouched assistant turn, for replay on the next
+    #: request. See :class:`ProviderTurn`.
+    provider_turn: ProviderTurn | None = None
 
     @property
     def wants_tools(self) -> bool:
@@ -268,6 +312,7 @@ __all__ = [
     "MessageRole",
     "MockProvider",
     "ProviderError",
+    "ProviderTurn",
     "ProviderUnavailable",
     "RecordingProvider",
     "Responder",

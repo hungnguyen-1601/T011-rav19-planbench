@@ -121,3 +121,6 @@ docs/                architecture, API contract, deployment, frontend, agent, RO
 - Tiếp xúc biên **được tính là collision** (quy tắc bảo thủ về an toàn).
 - Giá trị cell theo chuẩn ROS: FREE=0, OCCUPIED=100, UNKNOWN=-1.
 - Mọi thành phần deterministic với cùng input; không dùng global random state.
+
+- Cách chạy nhanh bằng 1 câu lệnh:
+bash scripts/dev_stack.sh start

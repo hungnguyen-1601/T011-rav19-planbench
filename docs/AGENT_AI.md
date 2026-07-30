@@ -58,6 +58,33 @@ tool result là **mỗi cái một message** (`role: "tool"`) chứ không gom
 vào một user turn; và tool arguments về dưới dạng **chuỗi JSON** chứ
 không phải object.
 
+### Assistant turn phải phát lại nguyên văn
+
+Adapter **không** dựng lại assistant message từ text + tool_calls đã
+parse. Nó giữ nguyên payload provider trả về (`ProviderTurn`) và gửi lại
+y hệt.
+
+Lý do cụ thể: Gemini ký mỗi function call bằng `thought_signature` và
+**từ chối lượt tiếp theo** nếu chữ ký không quay lại —
+`Function call is missing a thought_signature`. Dựng lại từ các trường
+đã parse làm mất nó. Anthropic có cùng vấn đề ở dạng khác: thinking
+block phải được echo lại nguyên vẹn khi lượt chưa kết thúc.
+
+Giữ nguyên văn thay vì nhặt đúng một trường có nghĩa là adapter **không
+cần biết** hãng nào đặt tên metadata là gì — hãng sau thêm trường mới
+vẫn chạy.
+
+`ProviderTurn.format` đánh dấu **wire format**, không phải vendor
+(`openai-chat` / `anthropic-messages`). Turn của format khác bị bỏ qua
+và dựng lại — một transcript có thể sống lâu hơn một lần đổi provider,
+và nhồi content block của Anthropic vào request Chat Completions còn tệ
+hơn là dựng lại.
+
+Lỗi provider trả về HTTP **502** (`provider_error`) kèm nguyên văn thông
+báo của hãng; thiếu key trả **503** (`provider_unavailable`) kèm cách
+sửa. Trước đây cả hai rơi vào handler chung và thành `500 internal server
+error`, làm mất đúng phần có ích.
+
 ### Chọn provider
 
 `build_provider("auto")` thử theo thứ tự `AUTO_ORDER` (Anthropic trước,
