@@ -7,33 +7,72 @@ quy trình phê duyệt human-in-the-loop.
 
 **Chỉ dùng cho mô phỏng — không điều khiển robot thật. Không dùng Gazebo.**
 
+## Chạy nhanh
+
+**Windows** — nháy đúp `start.bat`, hoặc từ cmd:
+
+```
+start.bat            khởi động API + web UI rồi mở trình duyệt
+start.bat stop       dừng cả hai
+start.bat status     kiểm tra đang chạy hay không
+start.bat logs       xem log
+```
+
+**Linux / WSL / macOS** — cùng logic, chạy trực tiếp:
+
+```bash
+./scripts/dev_stack.sh start      # http://localhost:3000
+./scripts/dev_stack.sh stop
+```
+
+Không có `.env`, API tự sinh user dev với mật khẩu ngẫu nhiên và script
+in ra màn hình (đổi mỗi lần khởi động). Muốn cố định: copy
+`.env.example` sang `.env` rồi đặt `PLANBENCH_SEED_USERS`.
+
+Ba thứ chạy ở chế độ giảm cho tới khi được cấu hình, không phải lỗi:
+
+| Mặc định | Hệ quả | Bật đầy đủ |
+|---|---|---|
+| Lưu trữ in-memory | mất dữ liệu khi restart | đặt `PLANBENCH_DATABASE_URL` + `alembic upgrade head` |
+| Agent dùng mock tất định | trả lời bằng khớp từ khóa, không phải model | dán API key, xem `.env.example` |
+| Chưa có model PPO đã train | stack `astar+ppo` không chạy được | train rồi truyền `model_path` |
+
 ## Trạng thái
 
-Dự án đang ở **Giai đoạn 1A — Core Simulator (phần nền)**:
+**M0–M10 đã hoàn thành.** Chi tiết:
+[docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) ·
+kết quả chạy thật: [docs/TEST_REPORT.md](docs/TEST_REPORT.md) ·
+**điều chưa kiểm chứng**: [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md)
 
 | Thành phần | Trạng thái |
 |---|---|
-| Domain schemas (geometry, robot, map, obstacle) | ✅ |
-| Occupancy grid + obstacle inflation | ✅ |
-| Differential-drive kinematics (Euler) | ✅ |
-| Static collision detection + clearance | ✅ |
-| LiDAR giả lập, A*, SimulationEngine, metrics | Giai đoạn 1B |
-| DWA, benchmark engine, FastAPI, frontend | Giai đoạn sau |
-| PPO, ROS2/Nav2 closed-loop, Agentic AI, RAG | Giai đoạn sau |
+| Schemas, occupancy grid, kinematics, collision, LiDAR | ✅ |
+| A*, DWA, pure-pursuit (adapter tham chiếu), SimulationEngine, metrics | ✅ |
+| Benchmark engine + fairness checksum + human-in-the-loop | ✅ |
+| FastAPI (43 endpoint), WebSocket, background worker | ✅ |
+| Next.js UI: map editor, 2.5D, leaderboard, failure analysis, agent console | ✅ |
+| Vật cản động, thư viện 10 scenario, MLflow | ✅ |
+| PPO (Gymnasium + SB3) | ✅ pipeline — chỉ có smoke model, chưa train thật |
+| ROS2 Jazzy + Nav2 closed-loop | ✅ 6/6 episode, chạy tay |
+| Agentic AI + RAG, 8 LLM provider | ✅ — chưa gọi provider ngoài lần nào |
+| PostgreSQL + Alembic + Docker Compose | ✅ code — **chưa build image, chưa chạy Postgres thật** |
 
 Xem [docs/architecture.md](docs/architecture.md) cho kiến trúc và các
 quyết định thiết kế.
 
 ## Yêu cầu môi trường
 
-- Python 3.12
+- Python 3.12, Node.js 20+
 
 ## Cài đặt
 
 ```bash
 python3.12 -m venv .venv
 .venv/bin/pip install --upgrade pip
-.venv/bin/pip install "pydantic>=2.7,<3" pytest pytest-cov ruff
+.venv/bin/pip install -r docker/requirements-api.txt
+.venv/bin/pip install pytest pytest-cov ruff
+
+cd apps/web && npm install && cd ../..
 ```
 
 ## Chạy kiểm thử
@@ -60,10 +99,19 @@ qua cấu hình `pythonpath` của pytest (xem `pyproject.toml`), chưa cần
 ## Cấu trúc thư mục
 
 ```
-packages/schemas/planbench_schemas/    # Pydantic domain schemas (contract-first)
-services/simulator/planbench_simulator/# Simulator core (Python thuần, không framework)
-tests/                                 # Unit tests
-docs/                                  # Tài liệu kiến trúc
+packages/            schemas, planning (A*/DWA), metrics, benchmark  — thư viện Python thuần
+services/simulator/  SimulationEngine, LiDAR, collision, nav_stack
+services/tracking/   MLflow adapter + null tracker
+services/agent_service/  Agentic AI: provider abstraction, tools, evidence, RAG
+apps/api/            FastAPI (thin adapter over the core) + db/ (SQLAlchemy)
+apps/web/            Next.js 15 + React 19
+ml/                  Gymnasium env, reward, PPO training
+ros2_ws/             5 ROS2 package (simulator node, Nav2 bringup, runner)
+alembic/             Migration schema
+docker/              Image API + web
+tests/               pytest — 864 test
+scripts/             demo, kiểm tra provider, dev_stack.sh
+docs/                architecture, API contract, deployment, frontend, agent, ROS2
 ```
 
 ## Quy ước cốt lõi
