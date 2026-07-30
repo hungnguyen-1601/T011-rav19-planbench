@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Scene25D } from "@/components/Scene25D";
-import { authFetch, loadSession, type Session } from "@/lib/auth";
+import { authFetch, useSession } from "@/lib/auth";
 import type { ImportedScenario, LibraryEntry } from "@/lib/platformTypes";
 import type { MapResource, ScenarioResource } from "@/lib/types";
 
@@ -22,15 +22,14 @@ interface Preview {
 }
 
 export default function LibraryPage() {
+  const session = useSession();
   const [entries, setEntries] = useState<LibraryEntry[]>([]);
-  const [session, setSession] = useState<Session | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [imported, setImported] = useState<ImportedScenario[]>([]);
 
   useEffect(() => {
-    setSession(loadSession());
     (async () => {
       try {
         setEntries(await authFetch<LibraryEntry[]>("/scenario-library"));

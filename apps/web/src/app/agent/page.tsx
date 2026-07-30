@@ -17,7 +17,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { authFetch, loadSession, type Session } from "@/lib/auth";
+import { authFetch, useSession } from "@/lib/auth";
 import type {
   AgentCapabilities,
   ChatResponse,
@@ -32,7 +32,7 @@ interface Exchange {
 }
 
 export default function AgentPage() {
-  const [session, setSession] = useState<Session | null>(null);
+  const session = useSession();
   const [capabilities, setCapabilities] = useState<AgentCapabilities | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,7 +52,6 @@ export default function AgentPage() {
   const [working, setWorking] = useState(false);
 
   useEffect(() => {
-    setSession(loadSession());
     (async () => {
       try {
         setCapabilities(await authFetch<AgentCapabilities>("/agent/capabilities"));

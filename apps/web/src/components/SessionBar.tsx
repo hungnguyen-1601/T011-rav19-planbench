@@ -1,18 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { clearSession, loadSession, type Session } from "@/lib/auth";
+import { clearSession, useSession } from "@/lib/auth";
 
-/** Shows who is signed in; benchmark pages require a session. */
+/** Shows who is signed in; benchmark pages require a session.
+ *
+ * This component lives in the root layout, so it mounts once per tab and
+ * client-side navigation never remounts it. It therefore has to
+ * *subscribe* to the session — reading it once on mount would show
+ * whatever was true before the user ever signed in.
+ */
 export function SessionBar() {
   const router = useRouter();
-  const [session, setSession] = useState<Session | null>(null);
-
-  useEffect(() => {
-    setSession(loadSession());
-  }, []);
+  const session = useSession();
 
   if (!session) {
     return (
@@ -31,7 +32,6 @@ export function SessionBar() {
         style={{ marginTop: 8, padding: "3px 8px", fontSize: 12 }}
         onClick={() => {
           clearSession();
-          setSession(null);
           router.push("/login");
         }}
       >

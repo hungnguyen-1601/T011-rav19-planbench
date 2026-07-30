@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { authFetch, loadSession, type Session } from "@/lib/auth";
+import { authFetch, useSession } from "@/lib/auth";
 import type { AlgorithmInfo, BenchmarkResource } from "@/lib/benchmarkTypes";
 import type { MapSummary, ScenarioResource } from "@/lib/types";
 
@@ -21,7 +21,7 @@ const STATE_BADGE: Record<string, string> = {
 };
 
 export default function BenchmarksPage() {
-  const [session, setSession] = useState<Session | null>(null);
+  const session = useSession();
   const [benchmarks, setBenchmarks] = useState<BenchmarkResource[]>([]);
   const [algorithms, setAlgorithms] = useState<AlgorithmInfo[]>([]);
   const [maps, setMaps] = useState<MapSummary[]>([]);
@@ -56,12 +56,12 @@ export default function BenchmarksPage() {
   }, [mapId, scenarioId]);
 
   useEffect(() => {
-    const current = loadSession();
-    setSession(current);
-    if (current) void refresh();
-    // refresh identity changes each render; run once on mount.
+    if (!session) return;
+    void refresh();
+    // refresh's identity changes every render; re-run only when the
+    // session appears or changes, not on each keystroke in the form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [session]);
 
   const create = async () => {
     setBusy(true);

@@ -10,14 +10,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { authFetch, loadSession, type Session } from "@/lib/auth";
+import { authFetch, useSession } from "@/lib/auth";
 import type { Leaderboard, LeaderboardEntry, LeaderboardGroup } from "@/lib/platformTypes";
 
 const DEFAULT_WEIGHTS = { success: 0.4, safety: 0.3, efficiency: 0.2, smoothness: 0.1 };
 
 export default function LeaderboardPage() {
+  const session = useSession();
   const [board, setBoard] = useState<Leaderboard | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
   const [weights, setWeights] = useState(DEFAULT_WEIGHTS);
   const [acceptedOnly, setAcceptedOnly] = useState(true);
   const [scenario, setScenario] = useState("");
@@ -44,9 +44,6 @@ export default function LeaderboardPage() {
     }
   }, [acceptedOnly, scenario, weights]);
 
-  useEffect(() => {
-    setSession(loadSession());
-  }, []);
 
   useEffect(() => {
     void load();

@@ -14,7 +14,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { authFetch, loadSession, type Session } from "@/lib/auth";
+import { authFetch, useSession } from "@/lib/auth";
 import type { AlgorithmInfo } from "@/lib/benchmarkTypes";
 
 interface SchemaField {
@@ -26,13 +26,12 @@ interface SchemaField {
 }
 
 export default function AlgorithmsPage() {
+  const session = useSession();
   const [algorithms, setAlgorithms] = useState<AlgorithmInfo[]>([]);
-  const [session, setSession] = useState<Session | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setSession(loadSession());
     (async () => {
       try {
         setAlgorithms(await authFetch<AlgorithmInfo[]>("/algorithms"));

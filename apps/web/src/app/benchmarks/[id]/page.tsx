@@ -13,7 +13,7 @@ import { FailureFindings } from "@/components/FailureFindings";
 import { JobProgress } from "@/components/JobProgress";
 import { MapCanvas } from "@/components/MapCanvas";
 import { Scene25D } from "@/components/Scene25D";
-import { authFetch, loadSession, type Session } from "@/lib/auth";
+import { authFetch, useSession } from "@/lib/auth";
 import type {
   BenchmarkResults,
   EpisodeReplay,
@@ -29,7 +29,7 @@ function fmt(value: number | null | undefined, digits = 2, suffix = ""): string 
 
 export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const [session, setSession] = useState<Session | null>(null);
+  const session = useSession();
   const [results, setResults] = useState<BenchmarkResults | null>(null);
   const [episodes, setEpisodes] = useState<EpisodeSummary[]>([]);
   const [replay, setReplay] = useState<EpisodeReplay | null>(null);
@@ -60,11 +60,10 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
   }, [id, map]);
 
   useEffect(() => {
-    const current = loadSession();
-    setSession(current);
-    if (current) void refresh();
+    if (!session) return;
+    void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, session]);
 
   const act = async (action: string) => {
     setBusy(true);
