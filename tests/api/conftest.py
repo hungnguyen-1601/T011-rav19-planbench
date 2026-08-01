@@ -1,9 +1,12 @@
 """Fixtures for API tests: fresh app per test, signed-in clients, resources.
 
-Four accounts, all members. There is no operator and no reviewer any
-more — who may do what is decided per benchmark by ownership, so the
-fixtures are named after people rather than roles, and a test that needs
-"somebody else" reaches for ``bob`` instead of a different role.
+Four accounts. ``alice`` is an Engineer — she creates benchmarks and
+owns them. ``bob`` and ``carol`` are Approvers, because the existing
+suite already uses both interchangeably as "the reviewer" and "a third
+member who is not the reviewer either"; making both Approvers keeps
+those tests exercising *identity* gating (are you the named reviewer?)
+rather than accidentally exercising *role* gating (are you an Approver
+at all?) when that is not what the test is about.
 
 ``dave`` is the admin, granted through ``PLANBENCH_ADMIN_NICKNAMES``:
 admin comes from deployment configuration, never from anything a user
@@ -19,12 +22,12 @@ from payloads import bordered_map_payload, scenario_payload
 from planbench_api.config import get_settings
 from planbench_api.main import create_app
 
-ALICE = ("alice", "alice-password")
-BOB = ("bob", "bob-password")
-CAROL = ("carol", "carol-password")
-ADMIN = ("dave", "dave-password")
+ALICE = ("alice", "engineer", "alice-password")
+BOB = ("bob", "approver", "bob-password")
+CAROL = ("carol", "approver", "carol-password")
+ADMIN = ("dave", "engineer", "dave-password")
 
-SEED_USERS = ",".join(f"{nickname}:{password}" for nickname, password in (ALICE, BOB, CAROL, ADMIN))
+SEED_USERS = ",".join(f"{nickname}:{role}:{password}" for nickname, role, password in (ALICE, BOB, CAROL, ADMIN))
 
 
 def isolate_environment(monkeypatch) -> None:
@@ -44,6 +47,10 @@ def isolate_environment(monkeypatch) -> None:
     monkeypatch.setenv("PLANBENCH_ENABLE_DEV_LOGIN", "true")
     monkeypatch.setenv("PLANBENCH_ADMIN_NICKNAMES", ADMIN[0])
     monkeypatch.setenv("PLANBENCH_ADMIN_EMAILS", "")
+    # On by default here so run_benchmark() and friends can clear the
+    # spec gate without a second account; TestAdminIntervention exercises
+    # the disabled case explicitly by overriding this back to false.
+    monkeypatch.setenv("PLANBENCH_ADMIN_OVERRIDE_ENABLED", "true")
     monkeypatch.setenv("AUTH_SECRET", "test-secret-not-used-in-production")
     monkeypatch.setenv("PLANBENCH_JWT_SECRET", "")
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "")
@@ -73,16 +80,17 @@ def client(app) -> TestClient:
     return TestClient(app, raise_server_exceptions=False)
 
 
-def login(client: TestClient, credentials: tuple[str, str]) -> str:
+def login(client: TestClient, credentials: tuple[str, str, str]) -> str:
+    nickname, _role, password = credentials
     response = client.post(
         "/api/v1/auth/login",
-        data={"username": credentials[0], "password": credentials[1]},
+        data={"username": nickname, "password": password},
     )
     assert response.status_code == 200, response.text
     return response.json()["access_token"]
 
 
-def auth_headers(client: TestClient, credentials: tuple[str, str]) -> dict[str, str]:
+def auth_headers(client: TestClient, credentials: tuple[str, str, str]) -> dict[str, str]:
     return {"Authorization": f"Bearer {login(client, credentials)}"}
 
 
@@ -110,17 +118,20 @@ def admin_headers(client: TestClient) -> dict[str, str]:
 
 
 @pytest.fixture
-def created_map(client: TestClient) -> dict:
-    response = client.post("/api/v1/maps", json=bordered_map_payload())
+def created_map(client: TestClient, alice_headers: dict[str, str]) -> dict:
+    response = client.post("/api/v1/maps", json=bordered_map_payload(), headers=alice_headers)
     assert response.status_code == 201, response.text
     return response.json()
 
 
 @pytest.fixture
-def created_scenario(client: TestClient, created_map: dict) -> dict:
+def created_scenario(
+    client: TestClient, created_map: dict, alice_headers: dict[str, str]
+) -> dict:
     response = client.post(
         "/api/v1/scenarios",
         json={"map_id": created_map["id"], "scenario": scenario_payload()},
+        headers=alice_headers,
     )
     assert response.status_code == 201, response.text
     return response.json()

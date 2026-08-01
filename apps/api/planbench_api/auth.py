@@ -1,11 +1,12 @@
 """Authentication: who the caller is. Not what they may do.
 
-Authorization moved out of this module in the accounts refactor. There
-is no ``require_roles`` any more, because there are no roles to require:
-every signed-in person is a member, and what they may do depends on the
-benchmark in front of them (see :mod:`planbench_api.approval`). Keeping
-a role check here would have been a second, weaker answer to a question
-that ownership already answers.
+This module only resolves identity from a token; it does not decide
+what that identity may do. A user's ``role`` travels on the ``User``
+record it returns, read through to storage on every call, so a role
+change takes effect on the caller's very next request rather than
+waiting for their token to expire. What a role permits is decided where
+the action happens (see :mod:`planbench_api.approval` and
+:mod:`planbench_api.services`), not here.
 
 **The token carries a user id, never a nickname.** Nicknames are how
 people find each other and they can be changed; an authorization key
@@ -35,7 +36,7 @@ from fastapi import Depends, Request
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, ConfigDict
 
-from planbench_api.accounts import NicknameError, User
+from planbench_api.accounts import NicknameError, User, UserRole
 from planbench_api.config import Settings
 from planbench_api.errors import NotFoundError
 from planbench_api.repository_ports import UserRepositoryPort
@@ -116,24 +117,29 @@ class AuthService:
         entries = [entry for entry in settings.seed_users.split(",") if entry.strip()]
         if entries:
             for entry in entries:
-                nickname, password = _parse_seed_entry(entry)
-                self._ensure_password_user(nickname, password)
+                nickname, role, password = _parse_seed_entry(entry)
+                self._ensure_password_user(nickname, password, role)
             return
         # Fresh checkout: one usable account, password generated per
         # process and logged once. Never hardcoded, never persisted to a
-        # tracked file.
+        # tracked file. Engineer by default — the role that can do the
+        # least on its own — so a fresh checkout demonstrates the
+        # approval gate rather than bypassing it.
         password = secrets.token_urlsafe(12)
-        if self._ensure_password_user("developer", password) is not None:
+        if self._ensure_password_user("developer", password, UserRole.ENGINEER) is not None:
             logger.warning(
                 "development login enabled; generated a password for 'developer' "
-                "(set PLANBENCH_SEED_USERS to control it)",
+                "(set PLANBENCH_SEED_USERS to control it, e.g. "
+                "'eng1:engineer:pw,app1:approver:pw' to test the approval gate locally)",
                 extra={"context": {"nickname": "developer"}},
             )
             # The password itself goes out separately so the line above
             # stays safe to keep in a log aggregator.
             logger.warning("developer password: %s", password)
 
-    def _ensure_password_user(self, nickname: str, password: str) -> User | None:
+    def _ensure_password_user(
+        self, nickname: str, password: str, role: UserRole
+    ) -> User | None:
         """Create the account if it is missing; never overwrite one."""
         existing = self._users.find_by_nickname(nickname)
         if existing is not None:
@@ -143,6 +149,7 @@ class AuthService:
                 nickname=nickname,
                 display_name=nickname,
                 is_admin=nickname.casefold() in self._admin_nicknames,
+                role=role,
                 password_hash=hash_password(password),
             )
         except NicknameError as exc:
@@ -173,7 +180,12 @@ class AuthService:
 
     def issue_token(self, user: User) -> tuple[str, int]:
         expires_at = datetime.now(UTC) + self._token_ttl
-        payload = {"sub": user.id, "exp": expires_at}
+        # "role" here is a convenience for reading the token by hand
+        # (debugging, support) — never trusted for authorization. Every
+        # permission check reads the current role from storage via
+        # decode_token()'s read-through, so a role change takes effect
+        # immediately even for tokens already issued.
+        payload = {"sub": user.id, "role": user.role.value, "exp": expires_at}
         token = jwt.encode(payload, self._secret, algorithm=ALGORITHM)
         return token, int(self._token_ttl.total_seconds())
 
@@ -195,18 +207,32 @@ class AuthService:
             raise AuthError("this account no longer exists") from exc
 
 
-def _parse_seed_entry(entry: str) -> tuple[str, str]:
-    """``name:password``, or the legacy ``name:role:password``.
+def _parse_seed_entry(entry: str) -> tuple[str, UserRole, str]:
+    """``name:role:password``, or bare ``name:password`` (role defaults to engineer).
 
-    The role field is accepted and discarded so an existing deployment's
-    PLANBENCH_SEED_USERS keeps working after the refactor.
+    A missing role must not be silently accepted as "whatever the enum's
+    first value is" if someone typos it — an unrecognised role fails
+    loudly, because a seed account with the wrong role is exactly the
+    kind of mistake that only shows up later, as "why can this account
+    approve its own benchmark".
     """
     parts = entry.strip().split(":")
     if len(parts) == 2:
-        return parts[0].strip(), parts[1]
+        return parts[0].strip(), UserRole.ENGINEER, parts[1]
     if len(parts) >= 3:
-        return parts[0].strip(), ":".join(parts[2:])
-    raise ValueError(f"PLANBENCH_SEED_USERS entry {entry!r} must be 'name:password'")
+        nickname, role_raw = parts[0].strip(), parts[1].strip()
+        try:
+            role = UserRole(role_raw.lower())
+        except ValueError:
+            valid = ", ".join(r.value for r in UserRole)
+            raise ValueError(
+                f"PLANBENCH_SEED_USERS entry {entry!r} has an unknown role "
+                f"{role_raw!r}; must be one of: {valid}"
+            ) from None
+        return nickname, role, ":".join(parts[2:])
+    raise ValueError(
+        f"PLANBENCH_SEED_USERS entry {entry!r} must be 'name:password' or 'name:role:password'"
+    )
 
 
 def get_auth(request: Request) -> AuthService:

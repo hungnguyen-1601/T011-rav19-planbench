@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from conftest import ALICE, auth_headers
 from fastapi.testclient import TestClient
-from test_api_benchmarks import create_benchmark
+from test_api_benchmarks import admin_override_approve, create_benchmark
 
 from planbench_api.accounts import NICKNAME_MAX, NICKNAME_MIN, NicknameError, validate_nickname
 
@@ -139,7 +139,7 @@ class TestSearch:
             "/api/v1/users/search", params={"nickname": "dave"}, headers=alice_headers
         ).json()
         assert results
-        assert set(results[0]) == {"id", "nickname", "display_name", "avatar_url"}
+        assert set(results[0]) == {"id", "nickname", "display_name", "avatar_url", "role"}
 
     def test_requires_a_signed_in_member(self, client: TestClient) -> None:
         assert client.get("/api/v1/users/search", params={"nickname": "bob"}).status_code == 401
@@ -150,6 +150,7 @@ class TestNicknameIsNotAnAuthorizationKey:
         self, client: TestClient, created_map, created_scenario, alice_headers
     ) -> None:
         benchmark = create_benchmark(client, created_map, created_scenario, alice_headers)
+        admin_override_approve(client, benchmark["id"])
         client.put(
             "/api/v1/users/me/nickname", json={"nickname": "alice-v2"}, headers=alice_headers
         )

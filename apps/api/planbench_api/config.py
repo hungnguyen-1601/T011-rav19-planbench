@@ -31,8 +31,8 @@ class Settings(BaseSettings):
     # Production must set AUTH_SECRET (see docs/DEPLOYMENT.md).
     jwt_secret: str = ""
     jwt_ttl_minutes: int = 60
-    # "name:password" entries, comma separated (a legacy third ":role"
-    # field is accepted and ignored — everyone is a member now). Only
+    # "name:role:password" entries, comma separated (role is "engineer"
+    # or "approver"; bare "name:password" defaults to engineer). Only
     # usable when dev login is enabled.
     seed_users: str = ""
     # Username/password sign-in. Off unless explicitly enabled, so a
@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     # Emails are matched only when the provider verified them.
     admin_nicknames: str = ""
     admin_emails: str = ""
+    # Lets an admin approve/reject a benchmark outside the normal
+    # Engineer/Approver flow, logged under its own action name so it is
+    # never mistaken for a real review. Off by default for the same
+    # reason enable_dev_login is: a bypass that is on by default is one
+    # that gets left on in production.
+    admin_override_enabled: bool = False
 
     # Artifact storage root for trajectories and reports.
     artifact_dir: str = "artifacts"

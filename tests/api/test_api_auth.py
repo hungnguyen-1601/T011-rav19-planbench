@@ -28,7 +28,7 @@ def benchmark_payload(created_map: dict, created_scenario: dict, name: str = "b"
 class TestLogin:
     def test_valid_credentials_return_a_token_and_the_account(self, client: TestClient) -> None:
         response = client.post(
-            "/api/v1/auth/login", data={"username": ALICE[0], "password": ALICE[1]}
+            "/api/v1/auth/login", data={"username": ALICE[0], "password": ALICE[2]}
         )
         assert response.status_code == 200
         body = response.json()
@@ -63,6 +63,7 @@ class TestLogin:
         body = response.json()
         assert body["nickname"] == BOB[0]
         assert body["is_admin"] is False
+        assert body["role"] == "approver"
         # No password hash, no token, nothing but the profile.
         assert set(body) == {
             "id",
@@ -71,6 +72,7 @@ class TestLogin:
             "display_name",
             "avatar_url",
             "is_admin",
+            "role",
             "needs_nickname",
             "providers",
         }

@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { wsUrl } from "./api";
+import { loadSession } from "./auth";
 import { frameIndexAt, trajectoryDuration } from "./playback";
 import type { EpisodeMetrics, Point2D, TrajectoryPoint, WsMessage } from "./types";
 
@@ -85,7 +86,7 @@ export function useEpisodeStream(): EpisodeStream {
       setPhase("connecting");
 
       // pace=false: receive the whole episode promptly, pace it locally.
-      const socket = new WebSocket(wsUrl(simulationId, false));
+      const socket = new WebSocket(wsUrl(simulationId, false, loadSession()?.token));
       socketRef.current = socket;
 
       socket.onmessage = (event) => {

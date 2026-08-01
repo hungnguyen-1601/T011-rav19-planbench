@@ -180,6 +180,7 @@
   "detail.waitingBlocked": "Bạn không tự quyết được cho tới khi họ trả lời, hoặc bạn hủy yêu cầu.",
   "detail.blockedBySpec": "Đang chờ duyệt cấu hình",
   "detail.blockedByResult": "Đang chờ duyệt kết quả",
+  "detail.needsApproval": "Cần một Approver duyệt trước khi chạy được — gửi yêu cầu duyệt bên dưới (hoặc nhờ admin override nếu được bật).",
   "detail.reviewRequests": "Yêu cầu duyệt",
   "detail.auditTrail": "Nhật ký quyết định",
   "detail.noDecisions": "Chưa có quyết định nào được ghi.",

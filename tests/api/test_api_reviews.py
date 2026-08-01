@@ -162,9 +162,13 @@ class TestSpecReviewBlocksTheRun:
             f"/api/v1/benchmarks/{benchmark['id']}/run", headers=alice_headers
         ).status_code in (200, 409)
 
-    def test_cancelling_the_request_frees_the_owner(
-        self, client: TestClient, created_map, created_scenario, alice_headers
+    def test_cancelling_the_request_frees_the_owner_to_ask_again(
+        self, client: TestClient, created_map, created_scenario, alice_headers, bob_headers
     ) -> None:
+        """Cancelling unblocks the owner's *self-service actions on the
+        request* (asking again) — it does not clear the spec gate.
+        Nothing but a real Approver decision or an admin override does
+        that; see TestSpecReviewBlocksTheRun for that guarantee."""
         benchmark = create_benchmark(
             client, created_map, created_scenario, alice_headers, seeds=[1]
         )
@@ -173,6 +177,14 @@ class TestSpecReviewBlocksTheRun:
         assert cancelled.status_code == 200
         assert cancelled.json()["request"]["status"] == "cancelled"
         assert cancelled.json()["request"]["cancelled_at"]
+
+        # Not stuck behind the cancelled request: a new one can be sent...
+        again = send_for_review(client, benchmark["id"], alice_headers, "bob")
+        approved = client.post(
+            f"/api/v1/reviews/{again['id']}/approve", json={}, headers=bob_headers
+        )
+        assert approved.status_code == 200, approved.text
+        # ...and once a real Approver has cleared it, running works.
         run = client.post(f"/api/v1/benchmarks/{benchmark['id']}/run", headers=alice_headers)
         assert run.status_code == 200, run.text
 
@@ -331,21 +343,59 @@ class TestInboxAndComments:
 
 
 class TestAdminIntervention:
-    def test_an_admin_can_unstick_a_pending_review_and_is_audited(
+    def test_admin_cannot_unstick_a_pending_review_through_the_ordinary_approve_route(
         self, client: TestClient, created_map, created_scenario, alice_headers, admin_headers
     ) -> None:
-        """Somebody must be able to act when a reviewer has left."""
+        """APPROVE is strictly the named reviewer's — not even an admin.
+        Recovery goes through admin-override-approve instead, its own
+        action, so the trail can never read as a real review."""
+        benchmark = create_benchmark(
+            client, created_map, created_scenario, alice_headers, seeds=[1]
+        )
+        send_for_review(client, benchmark["id"], alice_headers, "bob")
+        response = client.post(
+            f"/api/v1/benchmarks/{benchmark['id']}/approve",
+            json={"comment": "reviewer unavailable"},
+            headers=admin_headers,
+        )
+        assert response.status_code == 403
+
+    def test_an_admin_can_unstick_it_via_override_and_is_audited(
+        self, client: TestClient, created_map, created_scenario, alice_headers, admin_headers
+    ) -> None:
+        """Somebody must be able to act when a reviewer has left — through
+        the dedicated override, which the trail can never mistake for a
+        real review."""
         benchmark = create_benchmark(
             client, created_map, created_scenario, alice_headers, seeds=[1]
         )
         send_for_review(client, benchmark["id"], alice_headers, "bob")
         approved = client.post(
-            f"/api/v1/benchmarks/{benchmark['id']}/approve",
+            f"/api/v1/benchmarks/{benchmark['id']}/admin-override-approve",
             json={"comment": "reviewer unavailable"},
             headers=admin_headers,
         )
         assert approved.status_code == 200, approved.text
         entry = approved.json()["approvals"][-1]
+        assert entry["action"] == "admin_override_approve"
         assert entry["user"] == "dave"
         assert entry["role"] == "admin"
         assert entry["comment"] == "reviewer unavailable"
+
+    def test_admin_override_is_refused_when_disabled(
+        self, client: TestClient, created_map, created_scenario, alice_headers, admin_headers, monkeypatch
+    ) -> None:
+        monkeypatch.setenv("PLANBENCH_ADMIN_OVERRIDE_ENABLED", "false")
+        from planbench_api.config import get_settings
+
+        get_settings.cache_clear()
+        benchmark = create_benchmark(
+            client, created_map, created_scenario, alice_headers, seeds=[1]
+        )
+        response = client.post(
+            f"/api/v1/benchmarks/{benchmark['id']}/admin-override-approve",
+            json={},
+            headers=admin_headers,
+        )
+        assert response.status_code == 403
+        get_settings.cache_clear()

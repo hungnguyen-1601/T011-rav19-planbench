@@ -301,11 +301,14 @@ class TestSeparationOfDuties:
         assert response.status_code == 403
 
     def test_an_admin_can_approve_an_agent_benchmark(self, client, alice_headers, app):
+        """Through the override, not the ordinary route — see
+        TestApprovalGate and tests/api/test_api_reviews.py::TestAdminIntervention
+        for why APPROVE itself has no admin fallback any more."""
         benchmark_id = submit_mission(client, alice_headers)["benchmark"]["id"]
         from conftest import ADMIN
 
         response = client.post(
-            f"/api/v1/benchmarks/{benchmark_id}/approve",
+            f"/api/v1/benchmarks/{benchmark_id}/admin-override-approve",
             json={},
             headers=auth_headers(client, ADMIN),
         )

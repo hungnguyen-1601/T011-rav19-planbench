@@ -23,7 +23,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
 from planbench_api.account_service import AccountService
-from planbench_api.accounts import AccountError, AuthProvider, User
+from planbench_api.accounts import AccountError, AuthProvider, User, UserRole
 from planbench_api.auth import AuthService, CurrentUser, get_auth
 from planbench_api.config import Settings, get_settings, oauth_redirect_uri
 from planbench_api.oauth import (
@@ -54,6 +54,7 @@ class UserResource(BaseModel):
     display_name: str = ""
     avatar_url: str = ""
     is_admin: bool = False
+    role: UserRole = UserRole.ENGINEER
     needs_nickname: bool = False
     providers: list[str] = []
 
@@ -117,6 +118,7 @@ def _resource(user: User, accounts: AccountService) -> UserResource:
         display_name=user.display_name,
         avatar_url=user.avatar_url,
         is_admin=user.is_admin,
+        role=user.role,
         needs_nickname=user.needs_nickname,
         providers=[provider.value for provider in accounts.providers(user.id)],
     )

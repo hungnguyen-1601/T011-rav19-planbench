@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 
+from conftest import ADMIN, auth_headers
 from fastapi.testclient import TestClient
 
 
@@ -14,11 +15,8 @@ def import_library(client: TestClient, headers: dict, name: str = "open_space") 
 
 
 def owned_benchmark(client: TestClient, alice_headers: dict, **kw) -> dict:
-    """A benchmark ready to run, owned by the caller.
-
-    No approval step: with nobody asked to review, the owner clears their
-    own spec gate by pressing Run.
-    """
+    """A benchmark in DRAFT, owned by the caller. Still needs the spec
+    gate cleared (see approve_via_admin_override) before it can run."""
     imported = import_library(client, alice_headers, kw.pop("library", "open_space"))
     payload = {
         "name": "m5-benchmark",
@@ -33,9 +31,33 @@ def owned_benchmark(client: TestClient, alice_headers: dict, **kw) -> dict:
     return created.json()
 
 
+def approve_via_admin_override(client: TestClient, benchmark_id: str) -> None:
+    """Clear the spec gate the fastest legitimate way for a test that
+    is not about the approval gate itself. Requires
+    PLANBENCH_ADMIN_OVERRIDE_ENABLED=true, set by conftest."""
+    response = client.post(
+        f"/api/v1/benchmarks/{benchmark_id}/admin-override-approve",
+        json={"comment": "test fixture"},
+        headers=auth_headers(client, ADMIN),
+    )
+    assert response.status_code == 200, response.text
+
+
+def run_owned_benchmark(client: TestClient, alice_headers: dict, **kw) -> dict:
+    """Create, clear the spec gate, and run — the common case for tests
+    in this file that are not about the approval gate itself."""
+    benchmark = owned_benchmark(client, alice_headers, **kw)
+    approve_via_admin_override(client, benchmark["id"])
+    run = client.post(f"/api/v1/benchmarks/{benchmark['id']}/run", headers=alice_headers)
+    assert run.status_code == 200, run.text
+    return benchmark
+
+
 class TestScenarioLibrary:
-    def test_lists_scenarios_in_curriculum_order(self, client: TestClient) -> None:
-        response = client.get("/api/v1/scenario-library")
+    def test_lists_scenarios_in_curriculum_order(
+        self, client: TestClient, alice_headers: dict
+    ) -> None:
+        response = client.get("/api/v1/scenario-library", headers=alice_headers)
         assert response.status_code == 200
         entries = response.json()
         assert entries[0]["name"] == "open_space"
@@ -47,8 +69,13 @@ class TestScenarioLibrary:
     def test_import_creates_map_and_scenario(self, client: TestClient, alice_headers) -> None:
         imported = import_library(client, alice_headers, "doorway")
         assert imported["library_name"] == "doorway"
-        assert client.get(f"/api/v1/maps/{imported['map_id']}").status_code == 200
-        stored = client.get(f"/api/v1/scenarios/{imported['scenario_id']}")
+        assert (
+            client.get(f"/api/v1/maps/{imported['map_id']}", headers=alice_headers).status_code
+            == 200
+        )
+        stored = client.get(
+            f"/api/v1/scenarios/{imported['scenario_id']}", headers=alice_headers
+        )
         assert stored.status_code == 200
         assert stored.json()["scenario"]["name"] == "doorway"
 
@@ -73,6 +100,7 @@ class TestBackgroundWorker:
         self, client: TestClient, alice_headers, carol_headers
     ) -> None:
         benchmark = owned_benchmark(client, alice_headers)
+        approve_via_admin_override(client, benchmark["id"])
         queued = client.post(
             f"/api/v1/benchmarks/{benchmark['id']}/run-async", headers=alice_headers
         )
@@ -129,8 +157,7 @@ class TestFailureAnalysisEndpoint:
     def test_reports_evidence_for_an_episode(
         self, client: TestClient, alice_headers, carol_headers
     ) -> None:
-        benchmark = owned_benchmark(client, alice_headers, seeds=[1])
-        client.post(f"/api/v1/benchmarks/{benchmark['id']}/run", headers=alice_headers)
+        benchmark = run_owned_benchmark(client, alice_headers, seeds=[1])
         episode_id = client.get(
             f"/api/v1/benchmarks/{benchmark['id']}/episodes", headers=carol_headers
         ).json()[0]["id"]
@@ -148,8 +175,7 @@ class TestLeaderboard:
     def test_only_accepted_benchmarks_are_ranked(
         self, client: TestClient, alice_headers, carol_headers
     ) -> None:
-        benchmark = owned_benchmark(client, alice_headers, seeds=[1])
-        client.post(f"/api/v1/benchmarks/{benchmark['id']}/run", headers=alice_headers)
+        benchmark = run_owned_benchmark(client, alice_headers, seeds=[1])
 
         before = client.get("/api/v1/leaderboard", headers=carol_headers).json()
         assert before["groups"] == []  # pending review -> not published
@@ -170,16 +196,14 @@ class TestLeaderboard:
     def test_unreviewed_results_visible_only_on_request(
         self, client: TestClient, alice_headers, carol_headers
     ) -> None:
-        benchmark = owned_benchmark(client, alice_headers, seeds=[1])
-        client.post(f"/api/v1/benchmarks/{benchmark['id']}/run", headers=alice_headers)
+        benchmark = run_owned_benchmark(client, alice_headers, seeds=[1])
         response = client.get("/api/v1/leaderboard?accepted_only=false", headers=carol_headers)
         assert len(response.json()["groups"]) == 1
 
     def test_weights_are_configurable_and_returned(
         self, client: TestClient, alice_headers, carol_headers
     ) -> None:
-        benchmark = owned_benchmark(client, alice_headers, seeds=[1])
-        client.post(f"/api/v1/benchmarks/{benchmark['id']}/run", headers=alice_headers)
+        benchmark = run_owned_benchmark(client, alice_headers, seeds=[1])
         client.post(
             f"/api/v1/benchmarks/{benchmark['id']}/accept-result",
             json={},

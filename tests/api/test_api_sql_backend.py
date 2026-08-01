@@ -13,7 +13,7 @@ docs/KNOWN_LIMITATIONS.md.
 from __future__ import annotations
 
 import pytest
-from conftest import ALICE, BOB, auth_headers, isolate_environment
+from conftest import ADMIN, ALICE, BOB, auth_headers, isolate_environment
 from fastapi.testclient import TestClient
 from payloads import bordered_map_payload, scenario_payload
 
@@ -50,17 +50,19 @@ def test_the_app_actually_selected_the_sql_backend(sql_app):
 
 
 def test_map_round_trips_through_http(sql_client):
-    created = sql_client.post("/api/v1/maps", json=bordered_map_payload())
+    operator = auth_headers(sql_client, ALICE)
+    created = sql_client.post("/api/v1/maps", json=bordered_map_payload(), headers=operator)
     assert created.status_code == 201, created.text
     map_id = created.json()["id"]
 
-    fetched = sql_client.get(f"/api/v1/maps/{map_id}")
+    fetched = sql_client.get(f"/api/v1/maps/{map_id}", headers=operator)
     assert fetched.status_code == 200
     assert fetched.json()["map_data"]["cells"] == bordered_map_payload()["cells"]
 
 
 def test_unknown_map_is_a_404(sql_client):
-    assert sql_client.get("/api/v1/maps/does-not-exist").status_code == 404
+    operator = auth_headers(sql_client, ALICE)
+    assert sql_client.get("/api/v1/maps/does-not-exist", headers=operator).status_code == 404
 
 
 def test_full_benchmark_lifecycle_on_sql(sql_client):
@@ -73,9 +75,13 @@ def test_full_benchmark_lifecycle_on_sql(sql_client):
     operator = auth_headers(sql_client, ALICE)
     reviewer = auth_headers(sql_client, BOB)
 
-    map_id = sql_client.post("/api/v1/maps", json=bordered_map_payload()).json()["id"]
+    map_id = sql_client.post(
+        "/api/v1/maps", json=bordered_map_payload(), headers=operator
+    ).json()["id"]
     scenario_id = sql_client.post(
-        "/api/v1/scenarios", json={"map_id": map_id, "scenario": scenario_payload()}
+        "/api/v1/scenarios",
+        json={"map_id": map_id, "scenario": scenario_payload()},
+        headers=operator,
     ).json()["id"]
 
     benchmark = sql_client.post(
@@ -135,9 +141,13 @@ def test_episode_replay_reads_from_the_artifact_store(sql_client):
     """A SQL row keeps a pointer; the trajectory comes back from storage."""
     operator = auth_headers(sql_client, ALICE)
 
-    map_id = sql_client.post("/api/v1/maps", json=bordered_map_payload()).json()["id"]
+    map_id = sql_client.post(
+        "/api/v1/maps", json=bordered_map_payload(), headers=operator
+    ).json()["id"]
     scenario_id = sql_client.post(
-        "/api/v1/scenarios", json={"map_id": map_id, "scenario": scenario_payload()}
+        "/api/v1/scenarios",
+        json={"map_id": map_id, "scenario": scenario_payload()},
+        headers=operator,
     ).json()["id"]
     benchmark_id = sql_client.post(
         "/api/v1/benchmarks",
@@ -150,6 +160,11 @@ def test_episode_replay_reads_from_the_artifact_store(sql_client):
         },
         headers=operator,
     ).json()["id"]
+    sql_client.post(
+        f"/api/v1/benchmarks/{benchmark_id}/admin-override-approve",
+        json={},
+        headers=auth_headers(sql_client, ADMIN),
+    )
     sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/run", headers=operator)
 
     episodes = sql_client.get(
@@ -171,9 +186,13 @@ def test_episode_replay_reads_from_the_artifact_store(sql_client):
 def test_leaderboard_groups_accepted_results_from_sql(sql_client):
     operator = auth_headers(sql_client, ALICE)
 
-    map_id = sql_client.post("/api/v1/maps", json=bordered_map_payload()).json()["id"]
+    map_id = sql_client.post(
+        "/api/v1/maps", json=bordered_map_payload(), headers=operator
+    ).json()["id"]
     scenario_id = sql_client.post(
-        "/api/v1/scenarios", json={"map_id": map_id, "scenario": scenario_payload()}
+        "/api/v1/scenarios",
+        json={"map_id": map_id, "scenario": scenario_payload()},
+        headers=operator,
     ).json()["id"]
     benchmark_id = sql_client.post(
         "/api/v1/benchmarks",
@@ -186,6 +205,11 @@ def test_leaderboard_groups_accepted_results_from_sql(sql_client):
         },
         headers=operator,
     ).json()["id"]
+    sql_client.post(
+        f"/api/v1/benchmarks/{benchmark_id}/admin-override-approve",
+        json={},
+        headers=auth_headers(sql_client, ADMIN),
+    )
     sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/run", headers=operator)
 
     # Before acceptance the leaderboard stays empty: results nobody has
@@ -207,7 +231,10 @@ def test_data_outlives_the_application_instance(tmp_path, monkeypatch):
 
     first = create_app(artifact_dir=str(tmp_path / "artifacts"))
     with TestClient(first) as client:
-        map_id = client.post("/api/v1/maps", json=bordered_map_payload()).json()["id"]
+        operator = auth_headers(client, ALICE)
+        map_id = client.post(
+            "/api/v1/maps", json=bordered_map_payload(), headers=operator
+        ).json()["id"]
     first.state.sessions.dispose()
 
     # A completely separate application object, same database file.
@@ -215,7 +242,8 @@ def test_data_outlives_the_application_instance(tmp_path, monkeypatch):
     second = create_app(artifact_dir=str(tmp_path / "artifacts"))
     try:
         with TestClient(second) as client:
-            assert client.get(f"/api/v1/maps/{map_id}").status_code == 200
+            operator = auth_headers(client, ALICE)
+            assert client.get(f"/api/v1/maps/{map_id}", headers=operator).status_code == 200
     finally:
         second.state.sessions.dispose()
         get_settings.cache_clear()
@@ -230,11 +258,15 @@ def test_in_memory_backend_loses_data_on_restart(tmp_path, monkeypatch):
     first = create_app(artifact_dir=str(tmp_path / "artifacts"))
     assert first.state.sessions is None
     with TestClient(first) as client:
-        map_id = client.post("/api/v1/maps", json=bordered_map_payload()).json()["id"]
+        operator = auth_headers(client, ALICE)
+        map_id = client.post(
+            "/api/v1/maps", json=bordered_map_payload(), headers=operator
+        ).json()["id"]
 
     second = create_app(artifact_dir=str(tmp_path / "artifacts"))
     with TestClient(second, raise_server_exceptions=False) as client:
-        assert client.get(f"/api/v1/maps/{map_id}").status_code == 404
+        operator = auth_headers(client, ALICE)
+        assert client.get(f"/api/v1/maps/{map_id}", headers=operator).status_code == 404
     get_settings.cache_clear()
 
 
@@ -252,9 +284,13 @@ def test_a_benchmark_from_before_accounts_is_still_owned_by_its_creator(sql_clie
     alice = auth_headers(sql_client, ALICE)
     bob = auth_headers(sql_client, BOB)
 
-    map_id = sql_client.post("/api/v1/maps", json=bordered_map_payload()).json()["id"]
+    map_id = sql_client.post(
+        "/api/v1/maps", json=bordered_map_payload(), headers=alice
+    ).json()["id"]
     scenario_id = sql_client.post(
-        "/api/v1/scenarios", json={"map_id": map_id, "scenario": scenario_payload()}
+        "/api/v1/scenarios",
+        json={"map_id": map_id, "scenario": scenario_payload()},
+        headers=alice,
     ).json()["id"]
     benchmark_id = sql_client.post(
         "/api/v1/benchmarks",
@@ -277,11 +313,18 @@ def test_a_benchmark_from_before_accounts_is_still_owned_by_its_creator(sql_clie
 
     assert sql_client.get(f"/api/v1/benchmarks/{benchmark_id}", headers=alice).json()["is_owner"]
     assert not sql_client.get(f"/api/v1/benchmarks/{benchmark_id}", headers=bob).json()["is_owner"]
-    # And she can still run it.
-    assert (
-        sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/run", headers=alice).status_code == 200
-    )
+    # Bob has no standing here yet either way — no capability, and no
+    # approval to run against.
     assert sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/run", headers=bob).status_code in (
         403,
         409,
+    )
+    # And she can still run it, once the spec gate is cleared.
+    sql_client.post(
+        f"/api/v1/benchmarks/{benchmark_id}/admin-override-approve",
+        json={},
+        headers=auth_headers(sql_client, ADMIN),
+    )
+    assert (
+        sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/run", headers=alice).status_code == 200
     )

@@ -1,29 +1,40 @@
 """Benchmark lifecycle: states, transitions and the audit trail.
 
-    DRAFT ──self_approve──> APPROVED ──run──> RUNNING ──complete──> PENDING_REVIEW
-      │                        ^                                          │
-      └──submit──> PENDING_APPROVAL ──approve──┘             accept_result│└──reject_result──┐
-                            │                                             v                  v
-                            └──reject──> DRAFT                        ACCEPTED           REJECTED
+    DRAFT ──submit──> PENDING_APPROVAL ──approve──> APPROVED ──run──> RUNNING ──complete──> PENDING_REVIEW
+                            │                                                                      │
+                            └──reject──> DRAFT                                        accept_result│└──reject_result──┐
+                                                                                                     v                  v
+                                                                                                 ACCEPTED           REJECTED
 
-The states are unchanged from the role-based design, so benchmarks
-recorded before this refactor still load and still mean the same thing.
-What changed is **who** may drive them.
+A prior revision let the owner drive every step alone, including
+``self_approve`` straight from DRAFT — authority came from ownership,
+not role, and review was opt-in. That traded away the one thing this
+gate exists to guarantee: a benchmark result was seen by someone other
+than the person who produced it. ``SELF_APPROVE`` is kept as an enum
+value only so audit rows written during that period still parse; no
+transition reaches it any more.
 
-Authority is ownership, not role. The person who created a benchmark can
-carry it all the way to ACCEPTED on their own: that is the ordinary case
-and it needs no second person. Review is opt-in — when the owner asks a
-named member to look, that member becomes the only one who can answer,
-and the owner loses the corresponding self-service action until they do.
+Two roles decide the spec gate now:
 
-Two capabilities therefore decide everything:
+* an **Engineer** submits and runs;
+* an **Approver** is the only one who can move ``PENDING_APPROVAL`` to
+  ``APPROVED`` (or back to ``DRAFT``) — see :mod:`planbench_api.accounts`.
+
+Three capabilities:
 
 * ``OWNER`` — created this benchmark;
-* ``REVIEWER`` — named on the pending request for *this* action.
-
-``ADMIN`` exists for recovery and is deliberately not a benchmark role:
-an admin acting here is written to the audit trail like anyone else, so
-"an admin fixed it" is a visible event rather than an invisible one.
+* ``REVIEWER`` — named on the pending request for *this* action, and
+  holds the Approver role (the caller enforces the role check when the
+  request is created — see :mod:`planbench_api.review_service`);
+* ``ADMIN`` — an operational override, not a benchmark role. Ordinary
+  admin actions (recovery, unsticking a stale request) are written to
+  the audit trail like anyone else's. The two ``ADMIN_OVERRIDE_*``
+  actions are the one deliberate exception: they let an admin clear the
+  spec gate without an Approver, for a solo deployment that has no
+  second account to ask. They are gated a second time, at the service
+  layer, behind ``PLANBENCH_ADMIN_OVERRIDE_ENABLED`` (off by default),
+  and always recorded under their own action name so the trail never
+  claims a real review happened.
 
 The state machine stays pure. Whether a pending review blocks the owner
 is a question about stored review requests, so the *caller* computes the
@@ -39,15 +50,20 @@ from pydantic import BaseModel, ConfigDict
 
 
 class Role(StrEnum):
-    """What an account is, for audit purposes.
+    """What an account is, for audit purposes only — not used to decide
+    what an action may do (:class:`Capability` does that).
 
-    ``OPERATOR`` and ``REVIEWER`` are retained so audit rows written
-    before the refactor still parse. Nothing assigns them any more —
-    see the module docstring.
+    ``MEMBER``, ``OPERATOR`` and ``REVIEWER`` are retained so audit rows
+    written before this and the prior refactor still parse. Nothing
+    assigns them any more: a current row logs ``ENGINEER``, ``APPROVER``
+    or ``ADMIN``, matching :class:`planbench_api.accounts.UserRole` (plus
+    the separate ``is_admin`` override).
     """
 
-    MEMBER = "member"
+    ENGINEER = "engineer"
+    APPROVER = "approver"
     ADMIN = "admin"
+    MEMBER = "member"
     OPERATOR = "operator"
     REVIEWER = "reviewer"
 
@@ -76,12 +92,17 @@ class BenchmarkState(StrEnum):
 
 class Action(StrEnum):
     SUBMIT = "submit"
-    #: The owner clearing their own spec gate because nobody was asked to
-    #: review it. Recorded distinctly from APPROVE so the audit trail
-    #: never claims a second person looked.
+    #: No longer reachable — see the module docstring. Kept so audit rows
+    #: from before this refactor still parse.
     SELF_APPROVE = "self_approved"
     APPROVE = "approve"
     REJECT = "reject"
+    #: An admin clearing the spec gate without an Approver. Its own name,
+    #: never APPROVE, so the trail never claims a second person reviewed
+    #: it. Gated behind PLANBENCH_ADMIN_OVERRIDE_ENABLED at the service
+    #: layer — see planbench_api.services.BenchmarkService.admin_override.
+    ADMIN_OVERRIDE_APPROVE = "admin_override_approve"
+    ADMIN_OVERRIDE_REJECT = "admin_override_reject"
     RUN = "run"
     CANCEL = "cancel"
     COMPLETE = "complete"
@@ -96,8 +117,20 @@ class Action(StrEnum):
 
 
 OWNER_ONLY = frozenset({Capability.OWNER, Capability.ADMIN})
-REVIEWER_ONLY = frozenset({Capability.REVIEWER, Capability.ADMIN})
+#: Deliberately *no* ADMIN fallback, unlike the other capability sets in
+#: this module. APPROVE/REJECT are the spec-review gate itself — if an
+#: admin could reach them directly, "admin approved it" would be
+#: indistinguishable in the audit trail from "an Approver reviewed it",
+#: which is exactly the ambiguity ADMIN_OVERRIDE_APPROVE/REJECT exist to
+#: avoid. An admin who needs to clear this gate uses those instead, and
+#: only when PLANBENCH_ADMIN_OVERRIDE_ENABLED says so.
+REVIEWER_ONLY = frozenset({Capability.REVIEWER})
 OWNER_OR_REVIEWER = frozenset({Capability.OWNER, Capability.REVIEWER, Capability.ADMIN})
+#: Strictly the admin override — no fallback to OWNER or REVIEWER, unlike
+#: the sets above where ADMIN is *also* accepted alongside the normal
+#: capability. This is the one action where being an admin is the only
+#: acceptable reason to be here at all.
+ADMIN_ONLY = frozenset({Capability.ADMIN})
 
 # action -> (allowed source states, target state, capabilities permitted)
 TRANSITIONS: dict[Action, tuple[frozenset[BenchmarkState], BenchmarkState | None, frozenset]] = {
@@ -106,10 +139,13 @@ TRANSITIONS: dict[Action, tuple[frozenset[BenchmarkState], BenchmarkState | None
         BenchmarkState.PENDING_APPROVAL,
         OWNER_ONLY,
     ),
+    # No capability permits this any more — see the module docstring.
+    # Kept in the table (rather than removed) so a caller that somehow
+    # still reaches it gets PermissionDenied, not a KeyError.
     Action.SELF_APPROVE: (
         frozenset({BenchmarkState.DRAFT, BenchmarkState.REJECTED, BenchmarkState.PENDING_APPROVAL}),
         BenchmarkState.APPROVED,
-        OWNER_ONLY,
+        frozenset(),
     ),
     Action.APPROVE: (
         frozenset({BenchmarkState.PENDING_APPROVAL}),
@@ -120,6 +156,18 @@ TRANSITIONS: dict[Action, tuple[frozenset[BenchmarkState], BenchmarkState | None
         frozenset({BenchmarkState.PENDING_APPROVAL}),
         BenchmarkState.DRAFT,
         REVIEWER_ONLY,
+    ),
+    Action.ADMIN_OVERRIDE_APPROVE: (
+        frozenset(
+            {BenchmarkState.DRAFT, BenchmarkState.REJECTED, BenchmarkState.PENDING_APPROVAL}
+        ),
+        BenchmarkState.APPROVED,
+        ADMIN_ONLY,
+    ),
+    Action.ADMIN_OVERRIDE_REJECT: (
+        frozenset({BenchmarkState.PENDING_APPROVAL}),
+        BenchmarkState.DRAFT,
+        ADMIN_ONLY,
     ),
     Action.RUN: (
         frozenset({BenchmarkState.APPROVED}),
@@ -223,6 +271,7 @@ def next_state(
 
 
 __all__ = [
+    "ADMIN_ONLY",
     "OWNER_ONLY",
     "OWNER_OR_REVIEWER",
     "REVIEWER_ONLY",

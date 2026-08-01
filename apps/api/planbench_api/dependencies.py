@@ -10,6 +10,7 @@ from planbench_agent import AgentService
 from planbench_agent.tools import ToolPolicy
 from planbench_api.agent_gateway import ApiAgentGateway
 from planbench_api.auth import CurrentUser
+from planbench_api.config import get_settings
 from planbench_api.repositories import RepositoryHub
 from planbench_api.review_service import ReviewService
 from planbench_api.services import (
@@ -55,6 +56,7 @@ def get_benchmark_service(request: Request) -> BenchmarkService:
         request.app.state.tracker,
         request.app.state.jobs,
         reviews=get_review_service(request),
+        admin_override_enabled=get_settings().admin_override_enabled,
     )
 
 

@@ -108,8 +108,15 @@ export function pendingFor(
  * Whether the signed-in member may press Run.
  *
  * A hint for the UI, never a decision: the backend checks ownership and
- * pending reviews itself on every request, and this function existing
+ * approval state itself on every request, and this function existing
  * does not make hiding the button a security measure.
+ *
+ * Only "approved" qualifies — an Approver's decision (or an admin
+ * override), never the owner's own submission. Earlier states used to
+ * be included here because the owner could clear the gate themselves
+ * on the way to running; that self-approval path no longer exists, so
+ * showing Run as available from draft/pending_approval would invite a
+ * click that the backend now refuses.
  */
 export function canRun(
   isOwner: boolean,
@@ -118,7 +125,7 @@ export function canRun(
 ): boolean {
   if (!isOwner) return false;
   if (pendingFor(requests, "spec")) return false;
-  return ["draft", "rejected", "pending_approval", "approved"].includes(state);
+  return state === "approved";
 }
 
 /** Whether the signed-in member may accept their own results. */

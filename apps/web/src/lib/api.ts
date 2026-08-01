@@ -1,5 +1,6 @@
 /** REST client for the PlanBench backend. */
 
+import { loadSession } from "./auth";
 import type {
   MapData,
   MapResource,
@@ -14,10 +15,17 @@ export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 /** Socket URL. `pace=false` asks the server for every frame without
- *  server-side throttling — the client owns playback timing. */
-export function wsUrl(simulationId: string, pace = false): string {
+ *  server-side throttling — the client owns playback timing.
+ *
+ *  `token` goes on the query string, not a header: a WebSocket's
+ *  opening handshake is a plain browser GET, with no way to attach
+ *  `Authorization`. The server decodes it with the same
+ *  `AuthService.decode_token` the REST API uses. */
+export function wsUrl(simulationId: string, pace = false, token?: string): string {
   const base = API_BASE.replace(/^http/, "ws");
-  return `${base}/ws/simulations/${simulationId}?pace=${pace}`;
+  const params = new URLSearchParams({ pace: String(pace) });
+  if (token) params.set("token", token);
+  return `${base}/ws/simulations/${simulationId}?${params.toString()}`;
 }
 
 export class ApiError extends Error {
@@ -31,9 +39,14 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const session = loadSession();
   const response = await fetch(`${API_BASE}/api/v1${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...(session ? { Authorization: `Bearer ${session.token}` } : {}),
+      ...init?.headers,
+    },
     cache: "no-store",
   });
   if (!response.ok) {

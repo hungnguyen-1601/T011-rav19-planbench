@@ -24,6 +24,7 @@ from planbench_api.accounts import (
     OAuthAccount,
     StoredUser,
     User,
+    UserRole,
     normalise_nickname,
     now_iso,
     validate_nickname,
@@ -53,6 +54,7 @@ class InMemoryUserRepository:
         display_name: str = "",
         avatar_url: str = "",
         is_admin: bool = False,
+        role: UserRole = UserRole.ENGINEER,
         password_hash: str | None = None,
     ) -> User:
         with self._lock:
@@ -70,6 +72,7 @@ class InMemoryUserRepository:
                 display_name=display_name,
                 avatar_url=avatar_url,
                 is_admin=is_admin,
+                role=role,
                 created_at=stamp,
                 updated_at=stamp,
             )
@@ -146,6 +149,13 @@ class InMemoryUserRepository:
         with self._lock:
             stored = self.get_stored(user_id)
             user = stored.user.model_copy(update={"is_admin": is_admin, "updated_at": now_iso()})
+            self._users[user_id] = stored.model_copy(update={"user": user})
+            return user
+
+    def set_role(self, user_id: str, role: UserRole) -> User:
+        with self._lock:
+            stored = self.get_stored(user_id)
+            user = stored.user.model_copy(update={"role": role, "updated_at": now_iso()})
             self._users[user_id] = stored.model_copy(update={"user": user})
             return user
 

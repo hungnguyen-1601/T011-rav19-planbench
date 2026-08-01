@@ -152,10 +152,9 @@ def submit(
 def approve(
     benchmark_id: str, request: CommentRequest, service: Service, reviews: Reviews, user: ActiveUser
 ) -> BenchmarkResource:
-    """Clear the spec gate.
-
-    The owner does this implicitly by pressing Run; this route exists for
-    the reviewer answering from the benchmark page, and for an admin.
+    """Clear the spec gate. Only the Approver named on a pending spec
+    review may do this — the owner cannot clear their own gate; see
+    ``admin_override_approve`` for the deliberate, logged exception.
     """
     stored = service.decide(
         benchmark_id, user, ReviewStage.SPEC, ReviewStatus.APPROVED, request.comment
@@ -173,6 +172,35 @@ def reject(
     return _resource(stored, service, user, reviews)
 
 
+@router.post("/{benchmark_id}/admin-override-approve", response_model=BenchmarkResource)
+def admin_override_approve(
+    benchmark_id: str, request: CommentRequest, service: Service, reviews: Reviews, user: ActiveUser
+) -> BenchmarkResource:
+    """Clear the spec gate without an Approver.
+
+    Admin only, and only on a deployment with
+    ``PLANBENCH_ADMIN_OVERRIDE_ENABLED=true`` — see
+    ``BenchmarkService.admin_override``. Recorded as its own action,
+    never as ``approve``, so the audit trail never implies a second
+    person reviewed it.
+    """
+    stored = service.admin_override(
+        benchmark_id, user, Action.ADMIN_OVERRIDE_APPROVE, request.comment
+    )
+    return _resource(stored, service, user, reviews)
+
+
+@router.post("/{benchmark_id}/admin-override-reject", response_model=BenchmarkResource)
+def admin_override_reject(
+    benchmark_id: str, request: CommentRequest, service: Service, reviews: Reviews, user: ActiveUser
+) -> BenchmarkResource:
+    """The rejecting counterpart of ``admin_override_approve``."""
+    stored = service.admin_override(
+        benchmark_id, user, Action.ADMIN_OVERRIDE_REJECT, request.comment
+    )
+    return _resource(stored, service, user, reviews)
+
+
 @router.post("/{benchmark_id}/cancel", response_model=BenchmarkResource)
 def cancel(
     benchmark_id: str, request: CommentRequest, service: Service, reviews: Reviews, user: ActiveUser
@@ -185,7 +213,9 @@ def cancel(
 def run_benchmark_endpoint(
     benchmark_id: str, service: Service, reviews: Reviews, user: ActiveUser
 ) -> BenchmarkResultsResponse:
-    """Run it. The owner needs nobody's permission unless they asked for it."""
+    """Run it. Requires APPROVED — an Approver's decision or an admin
+    override, never the owner alone; see ``BenchmarkService.run``.
+    """
     stored = service.run(benchmark_id, user)
     return BenchmarkResultsResponse(
         benchmark=_resource(stored, service, user, reviews), report=stored.report

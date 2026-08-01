@@ -180,6 +180,7 @@
   "detail.waitingBlocked": "You cannot decide this yourself until they answer, or you cancel the request.",
   "detail.blockedBySpec": "A spec review is pending",
   "detail.blockedByResult": "A result review is pending",
+  "detail.needsApproval": "An Approver must review this before it can run — send it for review below (or ask an admin for an override, if enabled).",
   "detail.reviewRequests": "Review requests",
   "detail.auditTrail": "Audit trail",
   "detail.noDecisions": "No decisions recorded yet.",

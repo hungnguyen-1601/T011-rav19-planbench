@@ -196,7 +196,13 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
               <button
                 className="primary"
                 disabled={busy || !canRun(isOwner, state, requests)}
-                title={pendingSpec ? t("detail.blockedBySpec") : undefined}
+                title={
+                  pendingSpec
+                    ? t("detail.blockedBySpec")
+                    : state !== "approved"
+                      ? t("detail.needsApproval")
+                      : undefined
+                }
                 onClick={() => void act("run")}
               >
                 {t("detail.run")}

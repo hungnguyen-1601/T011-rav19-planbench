@@ -12,7 +12,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from planbench_api.account_service import AccountService
-from planbench_api.accounts import NicknameError, UserSummary, validate_nickname
+from planbench_api.accounts import NicknameError, UserRole, UserSummary, validate_nickname
 from planbench_api.auth import CurrentUser
 from planbench_api.config import get_settings
 from planbench_api.routers.auth import UserResource, _resource
@@ -71,3 +71,16 @@ def check_nickname(request: Request, nickname: str, _: CurrentUser) -> NicknameC
 def set_nickname(request: Request, payload: NicknameRequest, user: CurrentUser) -> UserResource:
     accounts = _accounts(request)
     return _resource(accounts.choose_nickname(user, payload.nickname), accounts)
+
+
+class RoleRequest(BaseModel):
+    role: UserRole
+
+
+@router.put("/{user_id}/role", response_model=UserSummary)
+def set_role(request: Request, user_id: str, payload: RoleRequest, actor: CurrentUser) -> UserSummary:
+    """Assign a member's role. Admin only — enforced in AccountService.set_role,
+    which raises :class:`PermissionDenied` (mapped to 403) for anyone else.
+    """
+    accounts = _accounts(request)
+    return UserSummary.of(accounts.set_role(actor, user_id, payload.role))

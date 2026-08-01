@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from planbench_api.accounts import AuthProvider, OAuthAccount, StoredUser, User
+from planbench_api.accounts import AuthProvider, OAuthAccount, StoredUser, User, UserRole
 from planbench_api.approval import ApprovalRecord, BenchmarkState
 from planbench_api.repositories import (
     StoredBenchmark,
@@ -91,6 +91,7 @@ class UserRepositoryPort(Protocol):
         display_name: str = "",
         avatar_url: str = "",
         is_admin: bool = False,
+        role: UserRole = UserRole.ENGINEER,
         password_hash: str | None = None,
     ) -> User: ...
     def get(self, user_id: str) -> User: ...
@@ -107,6 +108,7 @@ class UserRepositoryPort(Protocol):
         avatar_url: str | None = None,
     ) -> User: ...
     def set_admin(self, user_id: str, is_admin: bool) -> User: ...
+    def set_role(self, user_id: str, role: UserRole) -> User: ...
     def list(self) -> list[User]: ...
     def link_oauth(
         self,

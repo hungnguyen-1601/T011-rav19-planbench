@@ -29,8 +29,10 @@ from planbench_api.accounts import (
     NicknameError,
     OAuthAccount,
     User,
+    UserRole,
     validate_nickname,
 )
+from planbench_api.approval import PermissionDenied
 from planbench_api.oauth import OAuthIdentity
 from planbench_api.repository_ports import UserRepositoryPort
 
@@ -183,6 +185,16 @@ class AccountService:
 
     def providers(self, user_id: str) -> list[AuthProvider]:
         return [account.provider for account in self._users.list_oauth(user_id)]
+
+    def set_role(self, actor: User, target_user_id: str, role: UserRole) -> User:
+        """Assign a member's role. Only an admin may do this.
+
+        The check lives here, not just at the router, so any future
+        caller of this service gets the same guarantee for free.
+        """
+        if not actor.is_admin:
+            raise PermissionDenied("only an admin may change a member's role")
+        return self._users.set_role(target_user_id, role)
 
 
 __all__ = ["AccountService"]

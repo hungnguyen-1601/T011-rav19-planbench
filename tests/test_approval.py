@@ -30,30 +30,63 @@ ADMIN = frozenset({Capability.ADMIN})
 NOBODY = frozenset()
 
 
-class TestSoloPath:
-    """The default: one member, no reviewer, start to finish."""
+class TestNoSelfApproval:
+    """The guarantee this module exists to keep: an Engineer cannot clear
+    their own spec gate. A prior revision let SELF_APPROVE do exactly
+    that from DRAFT; the action stays in ``Action``/``TRANSITIONS`` only
+    so audit rows written during that period still parse — no capability
+    reaches it any more, not even ADMIN (see TestAdminOverride for the
+    deliberate, separately-named exception).
+    """
 
-    def test_owner_carries_a_benchmark_to_accepted_alone(self) -> None:
-        state = BenchmarkState.DRAFT
-        state = next_state(state, Action.SELF_APPROVE, OWNER)
-        assert state is BenchmarkState.APPROVED
-        state = next_state(state, Action.RUN, OWNER)
-        assert state is BenchmarkState.RUNNING
-        state = next_state(state, Action.COMPLETE, OWNER)
-        assert state is BenchmarkState.PENDING_REVIEW
-        state = next_state(state, Action.ACCEPT_RESULT, OWNER)
-        assert state is BenchmarkState.ACCEPTED
+    def test_self_approve_is_reachable_by_nobody(self) -> None:
+        for capabilities in (OWNER, REVIEWER, ADMIN, OWNER | REVIEWER | ADMIN):
+            with pytest.raises(PermissionDenied):
+                next_state(BenchmarkState.DRAFT, Action.SELF_APPROVE, capabilities)
 
-    def test_self_approve_also_clears_a_spec_that_was_submitted(self) -> None:
-        """Submitting and then deciding to run it yourself must work."""
+    def test_owner_cannot_approve_their_own_submission(self) -> None:
         state = next_state(BenchmarkState.DRAFT, Action.SUBMIT, OWNER)
-        assert state is BenchmarkState.PENDING_APPROVAL
-        assert next_state(state, Action.SELF_APPROVE, OWNER) is BenchmarkState.APPROVED
+        with pytest.raises(PermissionDenied):
+            next_state(state, Action.APPROVE, OWNER)
 
-    def test_a_rejected_benchmark_can_go_round_again(self) -> None:
-        state = next_state(BenchmarkState.PENDING_REVIEW, Action.REJECT_RESULT, REVIEWER)
-        assert state is BenchmarkState.REJECTED
-        assert next_state(state, Action.SELF_APPROVE, OWNER) is BenchmarkState.APPROVED
+    def test_admin_cannot_approve_through_the_ordinary_action_either(self) -> None:
+        """ADMIN satisfies OWNER_ONLY and OWNER_OR_REVIEWER elsewhere in
+        this table, but APPROVE/REJECT are strictly REVIEWER_ONLY with no
+        ADMIN fallback — that asymmetry is what makes ADMIN_OVERRIDE_*
+        exist as its own, separately-audited action instead."""
+        state = next_state(BenchmarkState.DRAFT, Action.SUBMIT, OWNER)
+        with pytest.raises(PermissionDenied):
+            next_state(state, Action.APPROVE, ADMIN)
+
+
+class TestAdminOverride:
+    """The deliberate, logged exception: an admin can clear the spec gate
+    without an Approver. Always through its own action, never through
+    APPROVE/REJECT, so the audit trail can never be read as "a second
+    person reviewed this".
+    """
+
+    def test_admin_override_approve_from_draft(self) -> None:
+        assert (
+            next_state(BenchmarkState.DRAFT, Action.ADMIN_OVERRIDE_APPROVE, ADMIN)
+            is BenchmarkState.APPROVED
+        )
+
+    def test_admin_override_approve_from_pending_approval(self) -> None:
+        state = next_state(BenchmarkState.DRAFT, Action.SUBMIT, OWNER)
+        assert next_state(state, Action.ADMIN_OVERRIDE_APPROVE, ADMIN) is BenchmarkState.APPROVED
+
+    def test_admin_override_reject_returns_to_draft(self) -> None:
+        state = next_state(BenchmarkState.DRAFT, Action.SUBMIT, OWNER)
+        assert next_state(state, Action.ADMIN_OVERRIDE_REJECT, ADMIN) is BenchmarkState.DRAFT
+
+    def test_owner_alone_cannot_use_the_override(self) -> None:
+        with pytest.raises(PermissionDenied):
+            next_state(BenchmarkState.DRAFT, Action.ADMIN_OVERRIDE_APPROVE, OWNER)
+
+    def test_reviewer_alone_cannot_use_the_override(self) -> None:
+        with pytest.raises(PermissionDenied):
+            next_state(BenchmarkState.DRAFT, Action.ADMIN_OVERRIDE_APPROVE, REVIEWER)
 
 
 class TestReviewedPath:
@@ -72,6 +105,25 @@ class TestReviewedPath:
             next_state(BenchmarkState.PENDING_REVIEW, Action.ACCEPT_RESULT, REVIEWER)
             is BenchmarkState.ACCEPTED
         )
+
+    def test_owner_carries_a_reviewed_benchmark_from_run_to_accepted(self) -> None:
+        """Only the spec gate needs an Approver; running and accepting
+        the owner's own results were never self-approval — see
+        OWNER_OR_REVIEWER in approval.py."""
+        state = next_state(BenchmarkState.DRAFT, Action.SUBMIT, OWNER)
+        state = next_state(state, Action.APPROVE, REVIEWER)
+        state = next_state(state, Action.RUN, OWNER)
+        assert state is BenchmarkState.RUNNING
+        state = next_state(state, Action.COMPLETE, OWNER)
+        assert state is BenchmarkState.PENDING_REVIEW
+        state = next_state(state, Action.ACCEPT_RESULT, OWNER)
+        assert state is BenchmarkState.ACCEPTED
+
+    def test_a_rejected_benchmark_can_be_resubmitted_and_approved(self) -> None:
+        state = next_state(BenchmarkState.PENDING_REVIEW, Action.REJECT_RESULT, REVIEWER)
+        assert state is BenchmarkState.REJECTED
+        state = next_state(state, Action.SUBMIT, OWNER)
+        assert next_state(state, Action.APPROVE, REVIEWER) is BenchmarkState.APPROVED
 
 
 class TestBookkeeping:
@@ -138,11 +190,13 @@ class TestCapabilities:
         with pytest.raises(PermissionDenied):
             next_state(BenchmarkState.PENDING_APPROVAL, Action.APPROVE, OWNER)
 
-    @pytest.mark.parametrize(
-        "action",
-        [Action.SELF_APPROVE, Action.APPROVE, Action.RUN, Action.REQUEST_REVIEW],
-    )
-    def test_an_admin_can_perform_any_action(self, action: Action) -> None:
-        """Recovery is possible; it is also always in the audit trail."""
-        state = BenchmarkState.APPROVED if action is Action.RUN else BenchmarkState.PENDING_APPROVAL
+    @pytest.mark.parametrize("action", [Action.RUN, Action.REQUEST_REVIEW, Action.SUBMIT])
+    def test_an_admin_can_perform_owner_only_actions(self, action: Action) -> None:
+        """Recovery is possible for ordinary owner actions, and it is
+        always in the audit trail. The spec-review gate itself
+        (APPROVE/REJECT) is deliberately *not* in this list — an admin
+        reaches it only through ADMIN_OVERRIDE_APPROVE/REJECT, tested in
+        TestAdminOverride, never through the ordinary action.
+        """
+        state = BenchmarkState.APPROVED if action is Action.RUN else BenchmarkState.DRAFT
         assert next_state(state, action, ADMIN) is not None

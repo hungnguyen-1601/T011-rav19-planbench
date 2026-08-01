@@ -1,15 +1,18 @@
 """API tests: benchmark lifecycle, gates, execution, replay.
 
-The default path has one person in it. Alice creates a benchmark, runs
-it, accepts the results, and nobody else is involved — that is what
-``run_benchmark`` exercises, and it is the flow most of these tests use.
-
-The two-person path is a deliberate extra step and lives in
-tests/api/test_api_reviews.py.
+Running requires APPROVED, and only an Approver's decision or an admin
+override reaches it — an Engineer cannot clear their own spec gate (see
+apps/api/planbench_api/approval.py). Most of these tests are not about
+that gate at all, so ``run_benchmark`` clears it the fastest legitimate
+way available in a single-fixture-app test: an admin override. The gate
+itself, exercised through a real Approver, is tested in
+tests/api/test_api_reviews.py; the override path itself is tested in
+TestSoloLifecycle below.
 """
 
 from __future__ import annotations
 
+from conftest import ADMIN, auth_headers
 from fastapi.testclient import TestClient
 
 
@@ -29,9 +32,24 @@ def create_benchmark(
     return response.json()
 
 
+def admin_override_approve(client: TestClient, benchmark_id: str, comment: str = "") -> dict:
+    """Clear the spec gate as the fixture admin. Requires
+    PLANBENCH_ADMIN_OVERRIDE_ENABLED=true, set in conftest's isolated
+    environment for exactly this reason.
+    """
+    response = client.post(
+        f"/api/v1/benchmarks/{benchmark_id}/admin-override-approve",
+        json={"comment": comment},
+        headers=auth_headers(client, ADMIN),
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
 def run_benchmark(client: TestClient, created_map, created_scenario, headers, **kw) -> dict:
-    """Create and run, the way one member does it on their own."""
+    """Create, clear the spec gate via admin override, and run."""
     benchmark = create_benchmark(client, created_map, created_scenario, headers, **kw)
+    admin_override_approve(client, benchmark["id"], comment="test fixture: no Approver in this flow")
     response = client.post(f"/api/v1/benchmarks/{benchmark['id']}/run", headers=headers)
     assert response.status_code == 200, response.text
     return response.json()["benchmark"]
@@ -109,7 +127,7 @@ class TestCreation:
 
 
 class TestSoloLifecycle:
-    """One member, start to finish, without switching accounts."""
+    """One owner, an admin override for the spec gate, no Approver involved."""
 
     def test_owner_creates_runs_and_accepts(
         self, client: TestClient, created_map, created_scenario, alice_headers
@@ -117,6 +135,7 @@ class TestSoloLifecycle:
         benchmark = create_benchmark(
             client, created_map, created_scenario, alice_headers, seeds=[1]
         )
+        admin_override_approve(client, benchmark["id"])
         run = client.post(f"/api/v1/benchmarks/{benchmark['id']}/run", headers=alice_headers).json()
         assert run["benchmark"]["state"] == "pending_review"
 
@@ -128,24 +147,32 @@ class TestSoloLifecycle:
         assert accepted.status_code == 200, accepted.text
         assert accepted.json()["state"] == "accepted"
 
-    def test_running_records_self_approval_not_approval(
+    def test_running_via_override_is_recorded_distinctly_from_a_real_approval(
         self, client: TestClient, created_map, created_scenario, alice_headers
     ) -> None:
-        """The audit trail must never claim a second person looked."""
+        """The audit trail must never claim an Approver looked when an
+        admin cleared the gate instead."""
         benchmark = run_benchmark(client, created_map, created_scenario, alice_headers, seeds=[1])
         actions = [entry["action"] for entry in benchmark["approvals"]]
-        assert actions == ["self_approved", "run", "complete"]
+        assert actions == ["admin_override_approve", "run", "complete"]
         assert "approve" not in actions
+        assert "self_approved" not in actions
 
     def test_the_audit_trail_carries_the_user_id(
         self, client: TestClient, created_map, created_scenario, alice_headers
     ) -> None:
         benchmark = run_benchmark(client, created_map, created_scenario, alice_headers, seeds=[1])
         me = client.get("/api/v1/auth/me", headers=alice_headers).json()
-        for entry in benchmark["approvals"]:
+        override_entry, *owner_entries = benchmark["approvals"]
+        # The override belongs to the admin, not the owner — that is the
+        # entire point of recording it separately.
+        assert override_entry["action"] == "admin_override_approve"
+        assert override_entry["user"] == ADMIN[0]
+        assert override_entry["role"] == "admin"
+        for entry in owner_entries:
             assert entry["user_id"] == me["id"]
             assert entry["user"] == "alice"
-            assert entry["role"] == "member"
+            assert entry["role"] == "engineer"
 
     def test_a_member_cannot_run_somebody_elses_benchmark(
         self, client: TestClient, created_map, created_scenario, alice_headers, bob_headers
@@ -185,6 +212,8 @@ class TestSoloLifecycle:
         client.post(
             f"/api/v1/benchmarks/{benchmark['id']}/reject-result", json={}, headers=alice_headers
         )
+        # REJECTED needs the spec gate cleared again, same as DRAFT.
+        admin_override_approve(client, benchmark["id"], comment="re-approving after rejection")
         again = client.post(f"/api/v1/benchmarks/{benchmark['id']}/run", headers=alice_headers)
         assert again.status_code == 200, again.text
         assert again.json()["benchmark"]["state"] == "pending_review"
@@ -202,6 +231,7 @@ class TestExecution:
             algorithms=[{"id": "astar+dwa"}, {"id": "astar+pure_pursuit"}],
             seeds=[1, 2],
         )
+        admin_override_approve(client, benchmark["id"])
         response = client.post(f"/api/v1/benchmarks/{benchmark['id']}/run", headers=alice_headers)
         assert response.status_code == 200, response.text
         body = response.json()

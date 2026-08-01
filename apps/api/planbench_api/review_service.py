@@ -5,6 +5,8 @@ approval only means something if the person who wanted it could not have
 produced it themselves.
 
 * the owner asks, and only the owner may ask or withdraw;
+* only a member with the Approver role (or an admin) can be named —
+  asking an Engineer to review would make the gate decorative;
 * a member cannot review their own benchmark;
 * only the named reviewer may answer, and only once;
 * one pending request per stage, so "who is this waiting on?" has one
@@ -21,7 +23,7 @@ from __future__ import annotations
 
 import logging
 
-from planbench_api.accounts import User, UserSummary, now_iso
+from planbench_api.accounts import User, UserRole, UserSummary, now_iso
 from planbench_api.errors import NotFoundError
 from planbench_api.repository_ports import (
     BenchmarkRepositoryPort,
@@ -98,6 +100,10 @@ class ReviewService:
             raise ReviewError(f"no member with the nickname {reviewer_nickname!r}")
         if reviewer.id == requester.id:
             raise ReviewError("you cannot send a review request to yourself")
+        if reviewer.role is not UserRole.APPROVER and not reviewer.is_admin:
+            raise ReviewError(
+                f"{reviewer_nickname!r} is not an Approver; only an Approver can be asked to review"
+            )
         if blocking_stage(self._reviews.list_for_benchmark(benchmark_id), stage) is not None:
             raise ReviewError(
                 f"a {stage.value} review is already pending on this benchmark; "

@@ -10,12 +10,13 @@ import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 
-from planbench_api.accounts import User
+from planbench_api.accounts import User, UserRole
 from planbench_api.approval import (
     Action,
     ApprovalRecord,
     BenchmarkState,
     Capability,
+    PermissionDenied,
     Role,
     TransitionError,
     next_state,
@@ -85,6 +86,39 @@ OWNER_BLOCKED_BY_REVIEW = frozenset(
         Action.REJECT_RESULT,
     }
 )
+
+
+def _audit_role(user: User) -> Role:
+    """What to write in an audit row's ``role`` field.
+
+    ``is_admin`` wins the label even for a plain OWNER_ONLY action taken
+    on the caller's own benchmark: it is a fact about the account, not
+    about which capability happened to satisfy this particular action,
+    and a reader scanning the trail for admin activity should be able to
+    find every row where it applied.
+    """
+    if user.is_admin:
+        return Role.ADMIN
+    return Role.APPROVER if user.role is UserRole.APPROVER else Role.ENGINEER
+
+
+def _approval_needed_message(state: BenchmarkState) -> str:
+    """Shared by :meth:`BenchmarkService.run` and ``check_runnable``, so
+    the synchronous and background-job paths refuse in exactly the same
+    words rather than drifting apart.
+
+    Only used to *enrich* a failure the state machine already decided to
+    raise — never to pre-empt it. Checking approval state before
+    permission would mean an unauthorized caller learns a benchmark's
+    state (and gets a 409 instead of the 403 they should get) just by
+    trying to run someone else's work.
+    """
+    return (
+        "benchmark must be approved by an Approver before it can run "
+        f"(current state: {state.value!r}); request a spec review, "
+        "or have an admin clear it with admin_override if "
+        "PLANBENCH_ADMIN_OVERRIDE_ENABLED is set"
+    )
 
 
 def require_algorithm(algorithm: str, config: dict | None = None) -> None:
@@ -222,11 +256,13 @@ class BenchmarkService:
         tracker: ExperimentTracker | None = None,
         jobs: JobQueue | None = None,
         reviews: ReviewService | None = None,
+        admin_override_enabled: bool = False,
     ) -> None:
         self._repos = repos
         self._tracker = tracker or NullTracker()
         self._jobs = jobs
         self._reviews = reviews
+        self._admin_override_enabled = admin_override_enabled
 
     # -- authorization -------------------------------------------------
 
@@ -303,7 +339,7 @@ class BenchmarkService:
             benchmark_id=benchmark_id,
             user=user.label,
             user_id=user.id,
-            role=Role.ADMIN if user.is_admin else Role.MEMBER,
+            role=_audit_role(user),
             action=action,
             previous_state=stored.state,
             new_state=target,
@@ -368,24 +404,23 @@ class BenchmarkService:
     ) -> StoredBenchmark:
         """Execute the benchmark; store the report and episodes.
 
-        The spec gate is still a gate — it just no longer needs a second
-        person by default. An owner with nobody reviewing clears it
-        themselves, and that is written to the audit trail as
-        ``self_approved`` rather than ``approve``, so a reader can always
-        tell which benchmarks a second pair of eyes actually saw.
-
-        If a spec review is pending, the owner does not hold OWNER for
-        SELF_APPROVE and this raises before any episode executes.
+        The spec gate is a real gate: a benchmark still in DRAFT,
+        REJECTED or PENDING_APPROVAL has not been reviewed by an
+        Approver, and this raises before any episode executes rather
+        than clearing the gate on the owner's behalf. The owner's own
+        options from here are ``request_review`` (ask a named Approver)
+        or, if the deployment allows it, ``admin_override``.
         """
         stored = self.get(benchmark_id)
-        if stored.state in SELF_APPROVABLE:
-            stored = self.transition(
-                benchmark_id,
-                Action.SELF_APPROVE,
-                user,
-                comment="approved by the owner; no reviewer was asked",
-            )
-        stored = self.transition(benchmark_id, Action.RUN, user)
+        try:
+            stored = self.transition(benchmark_id, Action.RUN, user)
+        except InvalidStateError as exc:
+            # Permission was already checked inside transition() — this
+            # only fires for a caller who could otherwise run it, so
+            # enriching the message here cannot leak state to anyone else.
+            if stored.state in SELF_APPROVABLE:
+                raise InvalidStateError(_approval_needed_message(stored.state)) from exc
+            raise
         map_data = self._repos.maps.get(stored.map_id).map_data
         scenario = self._repos.scenarios.get(stored.scenario_id).scenario
 
@@ -428,6 +463,38 @@ class BenchmarkService:
         self._tracker.log_benchmark(benchmark_id, report, {"created_by": stored.created_by})
         # Results now await the second human gate (Reviewer accept/reject).
         return self.transition(benchmark_id, Action.COMPLETE, user)
+
+    def admin_override(
+        self,
+        benchmark_id: str,
+        user: User,
+        action: Action,
+        comment: str,
+    ) -> StoredBenchmark:
+        """Clear the spec gate without an Approver — for a deployment with
+        no second account to ask, not for routine use.
+
+        Two independent checks before this reaches the state machine:
+        the deployment must have opted in
+        (``PLANBENCH_ADMIN_OVERRIDE_ENABLED``), and the caller must
+        actually be an admin. The state machine itself would reject a
+        non-admin via ``ADMIN_ONLY`` anyway, but failing here gives a
+        message that explains *why*, rather than a generic
+        "wrong capability".
+        """
+        if action not in (Action.ADMIN_OVERRIDE_APPROVE, Action.ADMIN_OVERRIDE_REJECT):
+            raise DomainValidationError(f"not an admin override action: {action.value!r}")
+        if not self._admin_override_enabled:
+            raise PermissionDenied(
+                "admin override is disabled on this deployment "
+                "(set PLANBENCH_ADMIN_OVERRIDE_ENABLED=true to allow it)"
+            )
+        if not user.is_admin:
+            raise PermissionDenied("admin override requires the admin flag")
+        # capabilities() will independently compute ADMIN from
+        # user.is_admin, which is exactly what ADMIN_ONLY requires — no
+        # need to override it here.
+        return self.transition(benchmark_id, action, user, comment=comment)
 
     # -- review bookkeeping --------------------------------------------
 
@@ -505,14 +572,14 @@ class BenchmarkService:
         minutes later, in a log they are not watching.
         """
         stored = self.get(benchmark_id)
-        if stored.state in SELF_APPROVABLE:
-            next_state(
-                stored.state,
-                Action.SELF_APPROVE,
-                self.capabilities(stored, user, Action.SELF_APPROVE),
-            )
-        else:
+        try:
             next_state(stored.state, Action.RUN, self.capabilities(stored, user, Action.RUN))
+        except TransitionError as exc:
+            # Same ordering guarantee as run(): PermissionDenied from
+            # next_state above always wins over this enrichment.
+            if stored.state in SELF_APPROVABLE:
+                raise TransitionError(_approval_needed_message(stored.state)) from exc
+            raise
 
     def decide(
         self,

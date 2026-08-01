@@ -29,6 +29,7 @@ from planbench_api.accounts import (
     OAuthAccount,
     StoredUser,
     User,
+    UserRole,
     normalise_nickname,
     validate_nickname,
 )
@@ -344,6 +345,7 @@ class SqlUserRepository:
         display_name: str = "",
         avatar_url: str = "",
         is_admin: bool = False,
+        role: UserRole = UserRole.ENGINEER,
         password_hash: str | None = None,
     ) -> User:
         key = None
@@ -359,6 +361,7 @@ class SqlUserRepository:
             display_name=display_name,
             avatar_url=avatar_url,
             is_admin=is_admin,
+            role=role.value,
             password_hash=password_hash,
             created_at=stamp,
             updated_at=stamp,
@@ -444,6 +447,14 @@ class SqlUserRepository:
         with self._sessions.begin() as session:
             row = _require(session, UserRow, user_id, "user")
             row.is_admin = is_admin
+            row.updated_at = now_iso()
+            session.flush()
+            return _to_user(row)
+
+    def set_role(self, user_id: str, role: UserRole) -> User:
+        with self._sessions.begin() as session:
+            row = _require(session, UserRow, user_id, "user")
+            row.role = role.value
             row.updated_at = now_iso()
             session.flush()
             return _to_user(row)
@@ -610,6 +621,7 @@ def _to_user(row: UserRow) -> User:
         display_name=row.display_name or "",
         avatar_url=row.avatar_url or "",
         is_admin=bool(row.is_admin),
+        role=UserRole(row.role) if row.role else UserRole.ENGINEER,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )

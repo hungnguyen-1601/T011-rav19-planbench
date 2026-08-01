@@ -1,19 +1,20 @@
-"""Accounts: one kind of user, identified by a stable id and a nickname.
+"""Accounts: a stable id, a nickname, and a role.
 
-The platform used to split people into ``operator`` and ``reviewer``,
-which forced a single person doing their own work to sign out and back
-in to get past their own approval gate. That was separation of duties
-applied to the wrong unit: the guarantee worth keeping is "the person
-who ran a benchmark did not silently rubber-stamp somebody *else's*
-review", not "one human may not finish their own experiment".
+An earlier revision collapsed everyone to a single "member" role, with
+ownership standing in for authority: whoever created a benchmark could
+approve it themselves if nobody else was asked. That traded away the
+one guarantee the platform exists to make — a benchmark result was
+seen by someone other than the person who produced it — for the
+convenience of not having to keep two accounts around locally.
 
-So there is now one role — member — and authority comes from
-**ownership**: you may act on what you created. Review is something you
-opt into by naming another member, and only that member can answer it.
-
-``is_admin`` remains for operational recovery. It is not a benchmark
-role: an admin acting on someone else's benchmark is recorded in the
-audit trail exactly like anyone else.
+So there are two roles again: :class:`UserRole.ENGINEER` runs
+benchmarks, :class:`UserRole.APPROVER` reviews them. A review may only
+be requested from an Approver; an Engineer cannot self-approve their
+own work (see :mod:`planbench_api.approval`). ``is_admin`` is a
+separate, orthogonal override for operational recovery — not a third
+role — and every action taken through it is recorded distinctly in the
+audit trail from an ordinary approval, so a reader can always tell
+whether a result was actually reviewed or just unblocked by an admin.
 
 Two identifiers, deliberately not interchangeable:
 
@@ -49,6 +50,20 @@ NICKNAME_RULES = (
 class AuthProvider(StrEnum):
     GOOGLE = "google"
     GITHUB = "github"
+
+
+class UserRole(StrEnum):
+    """Who a member is for approval purposes — separate from ``is_admin``.
+
+    Only two values: a benchmark needs someone who ran it (any member) and
+    someone else who reviews it, and only an :class:`UserRole.APPROVER`
+    may be named as that reviewer. ``is_admin`` is not a third value here
+    — it is an orthogonal override capability, checked independently
+    wherever a role is checked.
+    """
+
+    ENGINEER = "engineer"
+    APPROVER = "approver"
 
 
 class AccountError(ValueError):
@@ -114,6 +129,7 @@ class User(BaseModel):
     display_name: str = ""
     avatar_url: str = ""
     is_admin: bool = False
+    role: UserRole = UserRole.ENGINEER
     created_at: str = ""
     updated_at: str = ""
 
@@ -176,6 +192,7 @@ class UserSummary(BaseModel):
     nickname: str
     display_name: str = ""
     avatar_url: str = ""
+    role: UserRole = UserRole.ENGINEER
 
     @staticmethod
     def of(user: User) -> UserSummary:
@@ -184,6 +201,7 @@ class UserSummary(BaseModel):
             nickname=user.nickname,
             display_name=user.display_name,
             avatar_url=user.avatar_url,
+            role=user.role,
         )
 
 
@@ -198,6 +216,7 @@ __all__ = [
     "OAuthAccount",
     "StoredUser",
     "User",
+    "UserRole",
     "UserSummary",
     "normalise_nickname",
     "now_iso",

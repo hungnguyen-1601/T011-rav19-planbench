@@ -12,6 +12,13 @@ Two delivery modes (query parameters):
 - ``pace=false``: every frame is delivered as fast as the socket allows,
   no skipping. Use when the client owns playback (pause/scrub/speed) —
   this is what the web UI does.
+
+**Auth** is a ``?token=`` query parameter, not the ``Authorization``
+header the rest of the API uses: a WebSocket's opening handshake is a
+plain GET a browser issues itself, with no chance to attach a custom
+header. The same JWT the HTTP API accepts works here — decoded with the
+same ``AuthService.decode_token``, so a revoked or expired token is
+rejected identically in both places.
 """
 
 from __future__ import annotations
@@ -20,6 +27,7 @@ import asyncio
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from planbench_api.auth import AuthError
 from planbench_api.config import get_settings
 from planbench_api.errors import NotFoundError
 
@@ -29,6 +37,19 @@ router = APIRouter()
 @router.websocket("/ws/simulations/{simulation_id}")
 async def stream_simulation(websocket: WebSocket, simulation_id: str) -> None:
     await websocket.accept()
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.send_json(
+            {"type": "error", "code": "unauthorized", "message": "missing ?token="}
+        )
+        await websocket.close(code=4401)
+        return
+    try:
+        websocket.app.state.auth.decode_token(token)
+    except AuthError as exc:
+        await websocket.send_json({"type": "error", "code": "unauthorized", "message": str(exc)})
+        await websocket.close(code=4401)
+        return
     repos = websocket.app.state.repos
     try:
         speed = float(websocket.query_params.get("speed", "1.0"))

@@ -39,7 +39,7 @@ class ImportedScenario(BaseModel):
 
 
 @router.get("/scenario-library", response_model=list[LibraryEntry])
-def list_library() -> list[LibraryEntry]:
+def list_library(_: ActiveUser) -> list[LibraryEntry]:
     """Built-in scenarios, ordered easiest to hardest (curriculum order)."""
     entries = []
     for index, name in enumerate(CURRICULUM_ORDER):

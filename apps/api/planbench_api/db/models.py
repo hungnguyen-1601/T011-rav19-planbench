@@ -72,6 +72,12 @@ class UserRow(Base):
     display_name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     avatar_url: Mapped[str] = mapped_column(Text, nullable=False, default="")
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    #: "engineer" | "approver" — see planbench_api.accounts.UserRole. A
+    #: server-side default keeps existing rows (and any insert that
+    #: forgets the column) a valid, unprivileged role rather than NULL.
+    role: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="engineer", server_default="engineer"
+    )
     #: Only set for accounts usable with the development password login.
     password_hash: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
