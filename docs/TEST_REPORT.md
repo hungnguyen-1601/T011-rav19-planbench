@@ -2,6 +2,65 @@
 
 Output thật từ các lần chạy kiểm thử. Cập nhật sau mỗi milestone.
 
+## requirements.txt — kiểm chứng "clone về là chạy được" — 2026-08-01
+
+Câu hỏi cần trả lời: `requirements.txt` có **đủ** không? Không thể gỡ
+package khỏi venv của người dùng để thử, và cài venv sạch thì cần mạng
++ phê duyệt. Cách kiểm chứng thay thế: chặn đúng 7 package tùy chọn
+(`mlflow`, `gymnasium`, `stable_baselines3`, `torch`, `openai`,
+`anthropic`, `psycopg`) bằng một `sitecustomize.py` mô phỏng chính xác
+một checkout sạch, rồi chạy toàn bộ suite.
+
+```
+PYTHONPATH=<blocker> .venv/bin/pytest tests/ -q
+1008 passed, 1 skipped, 1 warning in 261.05s (0:04:21)
+```
+
+1 skipped là `tests/test_rl.py` — đúng như thiết kế: nó cần nhóm PPO
+trong `requirements-optional.txt`.
+
+API khởi động sạch với chỉ core deps:
+
+```
+health       {'status': 'ok', 'app': 'PlanBench API', 'version': '0.1.0'}
+providers    {'google': False, 'github': False, 'dev_login': False}
+algorithms   3 stacks
+library      10 scenarios
+agent        401 (cần đăng nhập — đúng)
+
+log: "agent provider: deterministic mock (no provider key found);
+      answers are keyword-matched, not model-generated."
+```
+
+15/15 phiên bản ghim trong `requirements.txt` khớp đúng với những gì đã
+cài và đã chạy test.
+
+### Ba lỗi mà kiểm chứng này bắt được
+
+1. **`pytest tests/` không chạy nổi trên checkout sạch.**
+   `tests/test_rl.py` import `gymnasium` ở module level, không có guard,
+   nên collection **dừng cả suite** — 1008 test còn lại không chạy được
+   chỉ vì thiếu một package tùy chọn. Sửa bằng `pytest.importorskip`.
+   Đây chính là thứ người mới clone về sẽ gặp đầu tiên.
+
+2. **Harness kiểm chứng nói dối lần một.** Nó raise `ImportError`, trong
+   khi package thiếu thật raise `ModuleNotFoundError` — và pytest 9 chỉ
+   `importorskip` trên loại sau. Lỗi ở công cụ đo, không phải ở code.
+
+3. **Harness nói dối lần hai.** `importlib.util.find_spec("anthropic")`
+   với package thiếu thật trả `None` **không raise**, còn harness thì
+   raise — làm `provider_status()` nổ thay vì báo "chưa cài". Phải mô
+   phỏng đúng **cả hai** hành vi thì kết luận mới có giá trị.
+
+### Không được kiểm chứng
+
+- **Chưa thật sự chạy `pip install -r requirements.txt` vào venv trống.**
+  Cần mạng và phê duyệt cài đặt. Cái đã chứng minh được là: mọi phiên
+  bản ghim khớp với những gì đang chạy, và code chạy đúng khi 7 package
+  tùy chọn vắng mặt. Cái **chưa** chứng minh được: pip giải được đúng bộ
+  dependency gián tiếp từ một máy sạch.
+- **Chưa kiểm `npm install` từ đầu** trên `node_modules` trống.
+
 ## M12 — App shell, theme, i18n, Dashboard — 2026-08-01
 
 Chỉ sửa frontend. Backend không đổi một dòng nào (`git status` sạch ở

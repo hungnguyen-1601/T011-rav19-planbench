@@ -1,0 +1,90 @@
+# PlanBench — Python dependencies to clone, install and run.
+#
+# ===================================================================
+#   CÀI ĐẶT
+# ===================================================================
+#
+#     python3.12 -m venv .venv
+#     .venv/bin/pip install --upgrade pip
+#     .venv/bin/pip install -r requirements.txt
+#
+#     cd apps/web && npm install && cd ../..
+#
+# Xong. Chạy dự án:  start.bat  (Windows)  hoặc
+#                    ./scripts/dev_stack.sh start  (Linux/WSL/macOS)
+#
+# ===================================================================
+#   FILE NÀY GỒM NHỮNG GÌ
+# ===================================================================
+#
+# Đủ để chạy **toàn bộ** những gì một người mới clone về cần:
+#
+#   - API FastAPI + WebSocket
+#   - Simulator, A*, DWA, benchmark engine
+#   - Đăng nhập (OAuth Google/GitHub + dev login)
+#   - Lưu trữ SQLite + migration Alembic
+#   - Trợ lý AI ở chế độ mock tất định (không cần API key)
+#   - Toàn bộ test suite, formatter và linter
+#
+# **Không** gồm bốn thứ, mỗi thứ có lý do — xem `requirements-optional.txt`:
+#
+#   PostgreSQL   chỉ cần khi deploy; local mặc định dùng SQLite
+#   MLflow       theo dõi thí nghiệm; thiếu thì tự động tắt, không lỗi
+#   PPO / RL     torch nặng vài GB, và chỉ dùng khi train
+#   LLM thật     chỉ cần khi bạn dán API key vào .env
+#
+# Thiếu chúng thì tính năng tương ứng giảm chế độ một cách có kiểm soát
+# và **báo rõ**, chứ không crash.
+#
+# ===================================================================
+#   VỀ VIỆC GHIM PHIÊN BẢN
+# ===================================================================
+#
+# Mọi thứ đều ghim `==` đúng phiên bản mà repo này đã phát triển và chạy
+# test. Một nền tảng benchmark mà dependency của chính nó trôi âm thầm
+# thì không còn đo đúng thứ nó tuyên bố đo nữa. Muốn nâng: sửa có chủ ý,
+# rồi chạy lại toàn bộ test suite.
+#
+# Chỉ liệt kê dependency **trực tiếp** — thứ mà code trong repo này thật
+# sự `import` hoặc gọi. Dependency gián tiếp (starlette, python-dotenv,
+# typing-inspection, …) do pip tự giải quyết.
+#
+# Cần Python 3.12 trở lên.
+
+# ---------- API và web framework ----------
+# uvicorn[standard] kéo theo websockets + httptools; route /ws phát lại
+# trajectory qua WebSocket nên cần nó.
+fastapi==0.141.1
+uvicorn[standard]==0.52.0
+websockets==16.1.1
+# Form đăng nhập của OAuth2PasswordRequestForm là multipart.
+python-multipart==0.0.32
+
+# ---------- Contract-first: Pydantic là nguồn sự thật của domain ----------
+pydantic==2.13.4
+pydantic-settings==2.14.2
+
+# ---------- Xác thực ----------
+# bcrypt dùng trực tiếp: passlib 1.7.4 không tương thích bcrypt 5.x
+# (xem docs/KNOWN_LIMITATIONS.md).
+bcrypt==5.0.0
+PyJWT==2.13.0
+# Gọi token endpoint của Google/GitHub **phía server**. Cũng là thứ
+# fastapi.testclient dùng, nên test cần nó kể cả khi không bật OAuth.
+httpx==0.28.1
+
+# ---------- Simulator, planner, metrics ----------
+numpy==2.5.1
+
+# ---------- Lưu trữ ----------
+# SQLite có sẵn trong Python, không cần driver. PostgreSQL cần psycopg —
+# xem requirements-optional.txt.
+SQLAlchemy==2.0.51
+alembic==1.18.5
+
+# ---------- Công cụ phát triển ----------
+# Ở đây chứ không ở file riêng: người mới clone về nên chạy được test
+# ngay, không phải đoán xem còn thiếu gì.
+pytest==9.1.1
+pytest-cov==7.1.0
+ruff==0.16.0

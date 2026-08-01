@@ -1,4 +1,11 @@
-"""Tests for the RL layer: observation encoding, rewards, Gym environment."""
+"""Tests for the RL layer: observation encoding, rewards, Gym environment.
+
+Skipped whole when Gymnasium is absent. RL is an optional install — torch
+and its friends are gigabytes, and `requirements.txt` deliberately leaves
+them out — so a fresh checkout must be able to run `pytest tests/` and
+see this file *skip*, not watch collection abort and take the other
+thousand tests with it.
+"""
 
 from __future__ import annotations
 
@@ -7,12 +14,27 @@ import math
 import numpy as np
 import pytest
 
-from planbench_benchmark import build_scenario
-from planbench_rl import ObservationConfig, PlanBenchNavEnv, RewardConfig, encode, step_reward
-from planbench_rl.observation import cross_track_error, downsample_lidar, lookahead_waypoints
-from planbench_schemas.episode import EpisodeStatus, Observation
-from planbench_schemas.geometry import Point2D, Pose2D
-from planbench_schemas.robot import RobotConfig
+gymnasium = pytest.importorskip(
+    "gymnasium",
+    reason="optional: install from requirements-optional.txt to exercise the RL layer",
+)
+
+from planbench_benchmark import build_scenario  # noqa: E402
+from planbench_rl import (  # noqa: E402
+    ObservationConfig,
+    PlanBenchNavEnv,
+    RewardConfig,
+    encode,
+    step_reward,
+)
+from planbench_rl.observation import (  # noqa: E402
+    cross_track_error,
+    downsample_lidar,
+    lookahead_waypoints,
+)
+from planbench_schemas.episode import EpisodeStatus, Observation  # noqa: E402
+from planbench_schemas.geometry import Point2D, Pose2D  # noqa: E402
+from planbench_schemas.robot import RobotConfig  # noqa: E402
 
 
 def p(x: float, y: float) -> Point2D:

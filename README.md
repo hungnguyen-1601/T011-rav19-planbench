@@ -122,16 +122,92 @@ quyết định thiết kế.
 
 - Python 3.12, Node.js 20+
 
-## Cài đặt
+Kiểm tra nhanh:
 
 ```bash
+python3 --version   # cần >= 3.12
+node --version      # cần >= 20
+npm --version
+```
+
+Trên Windows, dự án chạy trong WSL — mọi lệnh dưới đây gõ trong terminal
+WSL, không phải PowerShell.
+
+## Cài đặt
+
+Từ đầu, sau khi `git clone`:
+
+```bash
+cd Project_RAV19
+
+# 1. Python
 python3.12 -m venv .venv
 .venv/bin/pip install --upgrade pip
-.venv/bin/pip install -r docker/requirements-api.txt
-.venv/bin/pip install pytest pytest-cov ruff
+.venv/bin/pip install -r requirements.txt
 
+# 2. Frontend
 cd apps/web && npm install && cd ../..
+
+# 3. Cấu hình (tùy chọn — bỏ qua cũng chạy được)
+cp .env.example .env
 ```
+
+Xong. Chạy dự án:
+
+```bash
+./scripts/dev_stack.sh start      # Linux / WSL / macOS
+```
+
+hoặc trên Windows nháy đúp `start.bat`. Script tự chạy
+`alembic upgrade head` trước khi khởi động API.
+
+### Để đăng nhập được ngay lần đầu
+
+Clone sạch, chưa có `.env`, thì **chưa có cách đăng nhập nào** — trang
+login sẽ nói thẳng như vậy chứ không hỏng. Chọn một trong hai:
+
+**Cách nhanh (chỉ để phát triển cục bộ):** mở `.env` và đặt
+
+```
+PLANBENCH_ENABLE_DEV_LOGIN=true
+```
+
+Khởi động lại. Script in ra một tài khoản `developer` kèm mật khẩu sinh
+ngẫu nhiên. Muốn cố định tài khoản thì thêm:
+
+```
+PLANBENCH_SEED_USERS=alice:mat-khau-cua-ban,bob:mat-khau-khac
+```
+
+**Cách thật:** điền 5 biến OAuth ở mục [Đăng nhập](#đăng-nhập) phía trên.
+
+`PLANBENCH_ENABLE_DEV_LOGIN` mặc định `false` và **không được bật trong
+production** — khi tắt, endpoint đăng nhập bằng mật khẩu từ chối và tài
+khoản mật khẩu thậm chí không được tạo.
+
+### Ba file dependency, dùng cái nào
+
+| File | Dùng khi |
+|---|---|
+| **`requirements.txt`** | **Mặc định.** Clone về là cài cái này. Đủ để chạy API, simulator, benchmark, đăng nhập, SQLite, trợ lý AI ở chế độ mock, và **toàn bộ test suite**. |
+| `requirements-optional.txt` | Khi cần PostgreSQL, MLflow, PPO/RL, hoặc LLM thật. Đọc file — nó hướng dẫn cài **từng nhóm**, đừng cài cả file (nhóm PPO nặng vài GB). |
+| `docker/requirements-api.txt` | Chỉ dành cho image Docker của API. Không có công cụ test, không có gì thừa. Bạn không cần đụng tới nó khi làm việc cục bộ. |
+
+Bốn thứ **cố tình** không nằm trong `requirements.txt`, vì thiếu chúng
+thì tính năng giảm chế độ có kiểm soát và **báo rõ**, chứ không crash:
+
+| Thiếu | Chuyện gì xảy ra |
+|---|---|
+| `psycopg` | Local dùng SQLite (driver có sẵn trong Python). Chỉ cần khi trỏ `PLANBENCH_DATABASE_URL` vào PostgreSQL — thiếu thì API dừng lúc khởi động và nói rõ phải cài gì. |
+| `mlflow` | Không đặt `PLANBENCH_MLFLOW_TRACKING_URI` thì dùng null tracker. Benchmark vẫn chạy và vẫn ghi đủ kết quả. |
+| `torch` + `gymnasium` + `stable-baselines3` | Stack `astar+ppo` không chạy được; mọi stack khác bình thường. `tests/test_rl.py` tự **skip**. |
+| `openai` / `anthropic` | Trợ lý AI chạy bằng provider mock tất định — offline, khớp từ khóa — và **giao diện nói rõ điều đó** thay vì giả vờ là model viết. |
+
+### Không có mạng khi cài?
+
+`pip install` và `npm install` đều cần mạng ở lần đầu. Sau đó dự án chạy
+hoàn toàn offline: mock provider không gọi mạng, SQLite là file cục bộ,
+và OAuth chỉ cần mạng khi bạn thật sự bấm đăng nhập.
 
 ## Chạy kiểm thử
 
@@ -153,6 +229,19 @@ các giai đoạn ROS2 sau (chúng chạy trong môi trường ROS riêng).
 Ghi chú: ở giai đoạn này các package được import trực tiếp từ source
 qua cấu hình `pythonpath` của pytest (xem `pyproject.toml`), chưa cần
 `pip install -e`.
+
+Frontend:
+
+```bash
+cd apps/web
+npx tsc --noEmit     # type-check
+npx vitest run       # unit test
+npx next build       # build production
+```
+
+Nếu chỉ cài `requirements.txt`, `tests/test_rl.py` sẽ hiện **skipped** —
+đúng như thiết kế, vì nó cần nhóm PPO trong `requirements-optional.txt`.
+Mọi test còn lại vẫn chạy.
 
 ## Cấu trúc thư mục
 
