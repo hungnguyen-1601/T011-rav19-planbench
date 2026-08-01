@@ -4,9 +4,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { EmptyState } from "@/components/EmptyState";
 import { MapCanvas } from "@/components/MapCanvas";
 import { MetricsPanel } from "@/components/MetricsPanel";
 import { api } from "@/lib/api";
+import { useTranslation } from "@/lib/i18n";
 import { defaultScenario } from "@/lib/demoMap";
 import { useEpisodeStream } from "@/lib/useEpisodeStream";
 import type { MapData, MapSummary, PlanResult, Point2D, Scenario } from "@/lib/types";
@@ -14,6 +16,7 @@ import type { MapData, MapSummary, PlanResult, Point2D, Scenario } from "@/lib/t
 type PlaceMode = "start" | "goal" | "none";
 
 export default function SimulatePage() {
+  const { t } = useTranslation();
   const [maps, setMaps] = useState<MapSummary[]>([]);
   const [mapId, setMapId] = useState<string>("");
   const [map, setMap] = useState<MapData | null>(null);
@@ -127,21 +130,32 @@ export default function SimulatePage() {
 
   return (
     <>
-      <h2>Live Simulation</h2>
+      <div className="page-head">
+        <div>
+          <h2>{t("simulate.title")}</h2>
+          <p>{t("simulate.subtitle")}</p>
+        </div>
+      </div>
       {error ? <div className="error-box">{error}</div> : null}
-      {stream.error ? <div className="error-box">Stream: {stream.error}</div> : null}
+      {stream.error ? (
+        <div className="error-box">{t("simulate.stream", { message: stream.error })}</div>
+      ) : null}
 
       {maps.length === 0 ? (
         <div className="panel">
-          <p className="muted">
-            No maps available. Create one on the <Link href="/maps">Maps</Link> page first.
-          </p>
+          <EmptyState
+            icon="map"
+            title={t("maps.empty.title")}
+            body={t("simulate.noMaps")}
+            actionHref="/maps"
+            actionLabel={t("maps.create")}
+          />
         </div>
       ) : null}
 
       <div className="toolbar">
         <label className="inline">
-          Map:
+          {t("common.map")}:
           <select value={mapId} onChange={(event) => setMapId(event.target.value)}>
             {maps.map((item) => (
               <option key={item.id} value={item.id}>
@@ -151,28 +165,28 @@ export default function SimulatePage() {
           </select>
         </label>
         <span className="muted">|</span>
-        <span className="muted">Click to place:</span>
+        <span className="muted">{t("simulate.clickToPlace")}</span>
         {(["start", "goal", "none"] as PlaceMode[]).map((mode) => (
           <button
             key={mode}
             className={placeMode === mode ? "primary" : ""}
             onClick={() => setPlaceMode(mode)}
           >
-            {mode}
+            {t(`simulate.place.${mode}`)}
           </button>
         ))}
         <span className="muted">|</span>
         <button className="primary" disabled={busy || !map} onClick={() => void run()}>
-          {busy ? "Running…" : "Run simulation"}
+          {busy ? t("simulate.running") : t("simulate.runSimulation")}
         </button>
       </div>
 
       <div className="toolbar">
         <button onClick={stream.play} disabled={stream.frames.length === 0 || stream.playing}>
-          Play
+          {t("simulate.play")}
         </button>
         <button onClick={stream.pause} disabled={!stream.playing}>
-          Pause
+          {t("simulate.pause")}
         </button>
         <button onClick={stream.stop} disabled={stream.phase === "idle"}>
           Stop
@@ -201,7 +215,7 @@ export default function SimulatePage() {
           value={stream.playhead}
           onChange={(event) => stream.seek(Number(event.target.value))}
           style={{ flex: 1, minWidth: 160 }}
-          aria-label="Playback timeline"
+          aria-label={t("simulate.timeline")}
         />
         <span className="muted" style={{ fontVariantNumeric: "tabular-nums" }}>
           {stream.playhead.toFixed(2)} / {stream.duration.toFixed(2)} s
@@ -211,11 +225,11 @@ export default function SimulatePage() {
       <div className="toolbar">
         <label className="inline">
           <input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} />
-          Grid
+          {t("simulate.grid")}
         </label>
         <label className="inline">
           <input type="checkbox" checked={showPlan} onChange={(e) => setShowPlan(e.target.checked)} />
-          Global path
+          {t("simulate.globalPath")}
         </label>
         <label className="inline">
           <input
@@ -223,7 +237,7 @@ export default function SimulatePage() {
             checked={showTrajectory}
             onChange={(e) => setShowTrajectory(e.target.checked)}
           />
-          Actual trajectory
+          {t("simulate.trajectory")}
         </label>
         {stream.status ? (
           <span className={`badge ${stream.status === "success" ? "ok" : "err"}`}>
@@ -252,38 +266,38 @@ export default function SimulatePage() {
               onWorldClick={placePose}
             />
           ) : (
-            <p className="muted">Select a map.</p>
+            <p className="muted">{t("simulate.selectMap")}</p>
           )}
         </div>
 
         <div style={{ flex: "0 0 300px", minWidth: 280 }}>
           <div className="panel">
-            <h3>Scenario</h3>
+            <h3>{t("common.scenario")}</h3>
             {scenario ? (
               <table>
                 <tbody>
                   <tr>
-                    <td className="muted">Start</td>
+                    <td className="muted">{t("simulate.start")}</td>
                     <td>
                       {scenario.start_pose.x.toFixed(2)}, {scenario.start_pose.y.toFixed(2)} m
                     </td>
                   </tr>
                   <tr>
-                    <td className="muted">Goal</td>
+                    <td className="muted">{t("simulate.goal")}</td>
                     <td>
                       {scenario.goal_pose.x.toFixed(2)}, {scenario.goal_pose.y.toFixed(2)} m
                     </td>
                   </tr>
                   <tr>
-                    <td className="muted">Robot radius</td>
+                    <td className="muted">{t("simulate.robotRadius")}</td>
                     <td>{scenario.robot.radius} m</td>
                   </tr>
                   <tr>
-                    <td className="muted">Max speed</td>
+                    <td className="muted">{t("simulate.maxSpeed")}</td>
                     <td>{scenario.robot.max_linear_velocity} m/s</td>
                   </tr>
                   <tr>
-                    <td className="muted">Timeout</td>
+                    <td className="muted">{t("library.timeout")}</td>
                     <td>{scenario.timeout_seconds} s</td>
                   </tr>
                   <tr>
@@ -298,7 +312,7 @@ export default function SimulatePage() {
           </div>
 
           <div className="panel">
-            <h3>Robot state</h3>
+            <h3>{t("simulate.robotState")}</h3>
             {stream.currentFrame ? (
               <table>
                 <tbody>
@@ -324,7 +338,7 @@ export default function SimulatePage() {
                 </tbody>
               </table>
             ) : (
-              <p className="muted">No episode streamed yet.</p>
+              <p className="muted">{t("simulate.noEpisode")}</p>
             )}
           </div>
         </div>

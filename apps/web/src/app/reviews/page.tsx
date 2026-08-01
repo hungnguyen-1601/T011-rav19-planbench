@@ -12,7 +12,9 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { EmptyState } from "@/components/EmptyState";
 import { useSession } from "@/lib/auth";
+import { useTranslation } from "@/lib/i18n";
 import {
   answerReview,
   cancelReview,
@@ -49,6 +51,7 @@ function RequestCard({
   onCancel: (id: string) => void;
   busy: boolean;
 }) {
+  const { t } = useTranslation();
   const [comment, setComment] = useState("");
   const { request } = view;
   const pending = request.status === "pending";
@@ -64,12 +67,15 @@ function RequestCard({
             </Link>
           </strong>
           <div className="muted" style={{ fontSize: 12 }}>
-            {incoming ? "From" : "Sent to"} {other?.nickname ?? "an unknown member"} ·{" "}
-            {request.stage === "spec" ? "Spec review" : "Result review"} ·{" "}
+            {incoming ? t("reviews.from") : t("reviews.sentTo")}{" "}
+            {other?.nickname ?? "—"} ·{" "}
+            {request.stage === "spec" ? t("reviews.specReview") : t("reviews.resultReview")} ·{" "}
             {when(request.created_at)}
           </div>
         </div>
-        <span className={statusBadge(request.status)}>{request.status}</span>
+        <span className={statusBadge(request.status)} title={request.status}>
+          {t(`reviews.status.${request.status}`)}
+        </span>
       </div>
 
       {request.request_comment ? (
@@ -82,7 +88,11 @@ function RequestCard({
       {pending ? (
         <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
           <input
-            placeholder={incoming ? "Comment (optional)" : "Add a comment"}
+            placeholder={
+              incoming
+                ? t("reviews.commentPlaceholder", { optional: t("common.optional") })
+                : t("reviews.commentRequired")
+            }
             value={comment}
             onChange={(event) => setComment(event.target.value)}
           />
@@ -94,15 +104,15 @@ function RequestCard({
                   disabled={busy}
                   onClick={() => onAnswer(request.id, "approve", comment)}
                 >
-                  Approve
+                  {t("reviews.approve")}
                 </button>
                 <button disabled={busy} onClick={() => onAnswer(request.id, "reject", comment)}>
-                  Reject
+                  {t("reviews.reject")}
                 </button>
               </>
             ) : (
               <button disabled={busy} onClick={() => onCancel(request.id)}>
-                Cancel request
+                {t("reviews.cancelRequest")}
               </button>
             )}
             <button
@@ -112,17 +122,17 @@ function RequestCard({
                 setComment("");
               }}
             >
-              Add comment
+              {t("reviews.addComment")}
             </button>
             <Link href={`/benchmarks/${request.benchmark_id}`} className="button-link">
-              Open benchmark
+              {t("reviews.openBenchmark")}
             </Link>
           </div>
         </div>
       ) : (
         <div style={{ marginTop: 10 }}>
           <Link href={`/benchmarks/${request.benchmark_id}`} className="button-link">
-            Open benchmark
+            {t("reviews.openBenchmark")}
           </Link>
         </div>
       )}
@@ -131,6 +141,7 @@ function RequestCard({
 }
 
 export default function ReviewsPage() {
+  const { t } = useTranslation();
   const router = useRouter();
   const session = useSession();
   const [incoming, setIncoming] = useState<ReviewRequestView[]>([]);
@@ -174,31 +185,50 @@ export default function ReviewsPage() {
     [reload],
   );
 
-  if (!session) return <p className="muted">Loading…</p>;
+  if (!session) return <p className="muted">{t("common.loading")}</p>;
 
   const shown = tab === "inbox" ? incoming : outgoing;
   const pendingCount = incoming.filter((view) => view.request.status === "pending").length;
 
   return (
     <>
-      <h2>Reviews</h2>
+      <div className="page-head">
+        <div>
+          <h2>{t("reviews.title")}</h2>
+        </div>
+      </div>
       {error ? <div className="error-box">{error}</div> : null}
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-        <button className={tab === "inbox" ? "primary" : ""} onClick={() => setTab("inbox")}>
-          Inbox{pendingCount ? ` (${pendingCount})` : ""}
+      <div className="toolbar" role="tablist">
+        <button
+          role="tab"
+          aria-selected={tab === "inbox"}
+          className={tab === "inbox" ? "primary" : ""}
+          onClick={() => setTab("inbox")}
+        >
+          {t("reviews.inbox")}
+          {pendingCount ? ` (${pendingCount})` : ""}
         </button>
-        <button className={tab === "sent" ? "primary" : ""} onClick={() => setTab("sent")}>
-          Sent
+        <button
+          role="tab"
+          aria-selected={tab === "sent"}
+          className={tab === "sent" ? "primary" : ""}
+          onClick={() => setTab("sent")}
+        >
+          {t("reviews.sent")}
         </button>
       </div>
 
       {shown.length === 0 ? (
-        <p className="muted">
-          {tab === "inbox"
-            ? "Nobody has asked you to review anything."
-            : "You have not asked anyone for a review. Open a benchmark and use “Send for review”."}
-        </p>
+        <div className="panel">
+          <EmptyState
+            icon="inbox"
+            title={tab === "inbox" ? t("reviews.empty.inbox.title") : t("reviews.empty.sent.title")}
+            body={tab === "inbox" ? t("reviews.empty.inbox.body") : t("reviews.empty.sent.body")}
+            actionHref={tab === "inbox" ? undefined : "/benchmarks"}
+            actionLabel={tab === "inbox" ? undefined : t("nav.benchmarks")}
+          />
+        </div>
       ) : (
         shown.map((view) => (
           <RequestCard

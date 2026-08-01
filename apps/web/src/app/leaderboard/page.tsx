@@ -10,12 +10,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { EmptyState } from "@/components/EmptyState";
 import { authFetch, useSession } from "@/lib/auth";
+import { useTranslation } from "@/lib/i18n";
 import type { Leaderboard, LeaderboardEntry, LeaderboardGroup } from "@/lib/platformTypes";
 
 const DEFAULT_WEIGHTS = { success: 0.4, safety: 0.3, efficiency: 0.2, smoothness: 0.1 };
 
 export default function LeaderboardPage() {
+  const { t } = useTranslation();
   const session = useSession();
   const [board, setBoard] = useState<Leaderboard | null>(null);
   const [weights, setWeights] = useState(DEFAULT_WEIGHTS);
@@ -51,20 +54,25 @@ export default function LeaderboardPage() {
 
   return (
     <>
-      <h2>Leaderboard</h2>
+      <div className="page-head">
+        <div>
+          <h2>{t("leaderboard.title")}</h2>
+          <p>{t("leaderboard.subtitle")}</p>
+        </div>
+      </div>
       {!session ? (
-        <div className="error-box">
-          <Link href="/login">Sign in</Link> to see ranked results.
+        <div className="notice">
+          <Link href="/login">{t("topbar.signIn")}</Link> — {t("common.signInRequired")}
         </div>
       ) : null}
       {error ? <div className="error-box">{error}</div> : null}
 
       <div className="panel">
-        <h3>Scoring</h3>
+        <h3>{t("leaderboard.scoring")}</h3>
         <div className="toolbar">
           {(Object.keys(DEFAULT_WEIGHTS) as (keyof typeof DEFAULT_WEIGHTS)[]).map((key) => (
             <label key={key} className="field">
-              {key}
+              {t(`leaderboard.weight.${key}`)}
               <input
                 type="number"
                 min={0}
@@ -77,10 +85,10 @@ export default function LeaderboardPage() {
             </label>
           ))}
           <label className="field">
-            scenario filter
+            {t("leaderboard.scenarioFilter")}
             <input
               value={scenario}
-              placeholder="all scenarios"
+              placeholder={t("leaderboard.allScenarios")}
               onChange={(event) => setScenario(event.target.value.trim())}
             />
           </label>
@@ -90,28 +98,28 @@ export default function LeaderboardPage() {
               checked={acceptedOnly}
               onChange={(event) => setAcceptedOnly(event.target.checked)}
             />
-            accepted results only
+            {t("leaderboard.acceptedOnly")}
           </label>
         </div>
         {!acceptedOnly ? (
-          <div className="error-box">
-            Showing results a reviewer has not accepted. These are provisional and must not be
-            published as conclusions.
-          </div>
+          <div className="error-box">{t("leaderboard.unreviewedWarning")}</div>
         ) : null}
         {board ? <p className="muted formula">{board.score_formula}</p> : null}
       </div>
 
-      {loading ? <p className="muted">Loading…</p> : null}
+      {loading ? <p className="muted">{t("common.loading")}</p> : null}
 
       {board && board.groups.length === 0 && !loading ? (
         <div className="panel">
-          <p className="muted">
-            Nothing to rank yet.{" "}
-            {acceptedOnly
-              ? "Only benchmarks a reviewer has accepted appear here — untick the box to inspect unreviewed runs."
-              : "Run a benchmark first."}
-          </p>
+          <EmptyState
+            icon="trophy"
+            title={t("leaderboard.empty.title")}
+            body={
+              acceptedOnly ? t("leaderboard.emptyAccepted") : t("leaderboard.emptyAny")
+            }
+            actionHref="/benchmarks"
+            actionLabel={t("dashboard.action.createBenchmark")}
+          />
         </div>
       ) : null}
 
@@ -121,42 +129,53 @@ export default function LeaderboardPage() {
 }
 
 function GroupTable({ group }: { group: LeaderboardGroup }) {
+  const { t } = useTranslation();
   return (
     <div className="panel">
       <h3>
-        {group.scenario_name} <span className="muted">on {group.map_name}</span>
+        {group.scenario_name}{" "}
+        <span className="muted">{t("leaderboard.on", { map: group.map_name })}</span>
       </h3>
       <p className="muted">
-        seeds [{group.seeds.join(", ")}] · conditions <code>{group.conditions_checksum}</code>
+        {/* Seeds and the checksum are protocol values: never translated. */}
+        {t("leaderboard.groupHint", {
+          seeds: group.seeds.join(", "),
+          checksum: group.conditions_checksum,
+        })}
       </p>
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Stack</th>
-            <th>Score</th>
-            <th>Success</th>
-            <th>Collision</th>
-            <th>Travel (s)</th>
-            <th>Efficiency</th>
-            <th>Worst clearance</th>
-            <th>Benchmark</th>
-          </tr>
-        </thead>
-        <tbody>
-          {group.entries.map((entry, index) => (
-            <Row key={`${entry.benchmark_id}-${entry.algorithm}`} entry={entry} rank={index + 1} />
-          ))}
-        </tbody>
-      </table>
-      <p className="muted">
-        Rows in different groups ran under different conditions and are not comparable.
-      </p>
+      <div className="table-scroll wide">
+        <table>
+          <thead>
+            <tr>
+              <th>{t("leaderboard.rank")}</th>
+              <th>{t("algorithms.stack")}</th>
+              <th>{t("leaderboard.score")}</th>
+              <th>{t("leaderboard.success")}</th>
+              <th>{t("leaderboard.collision")}</th>
+              <th>{t("leaderboard.travel")}</th>
+              <th>{t("leaderboard.efficiency")}</th>
+              <th>{t("leaderboard.clearance")}</th>
+              <th>{t("leaderboard.benchmark")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {group.entries.map((entry, index) => (
+              <Row
+                key={`${entry.benchmark_id}-${entry.algorithm}`}
+                entry={entry}
+                rank={index + 1}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted">{t("leaderboard.notComparable")}</p>
     </div>
   );
 }
 
 function Row({ entry, rank }: { entry: LeaderboardEntry; rank: number }) {
+  const { t } = useTranslation();
   return (
     <tr>
       <td className="muted">{rank}</td>
@@ -165,7 +184,7 @@ function Row({ entry, rank }: { entry: LeaderboardEntry; rank: number }) {
       </td>
       <td>
         {entry.overall_score === null ? (
-          <span className="muted" title="no scorable component was recorded">
+          <span className="muted" title={t("leaderboard.noScore")}>
             —
           </span>
         ) : (

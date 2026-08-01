@@ -19,6 +19,7 @@ report.
 | `/leaderboard` | **M9** | Xếp hạng, nhóm theo `conditions_checksum` |
 | `/algorithms` | **M9** | Registry stack: benchmarkable, config bắt buộc |
 | `/agent` | **M9** | Agent console (M8): chat, mission, evidence, report |
+| `/system` | **M12** | Thông tin hệ thống: phiên bản, trạng thái API, API URL (chỉ development) |
 | `/login` | M4 + **M11** | Nút Google / GitHub (render từ `/auth/providers`), dev login khi được bật |
 | `/auth/callback` | **M11** | Đổi code dùng một lần lấy session, rồi `router.replace` |
 | `/welcome` | **M11** | Chọn nickname lần đầu, kiểm tra trùng theo từng ký tự (debounce 250 ms) |
@@ -76,6 +77,14 @@ không occlusion culling, không ánh sáng/bóng đổ. Xem
 | `MetricsPanel` | Metric của một episode |
 | `SessionBar` | Avatar + nickname + email, badge Review Inbox, logout |
 | `SendForReview` | Modal: nickname (autocomplete), stage, lời nhắn |
+| `AppShell` | Khung của mọi trang: sidebar + top bar + main |
+| `Sidebar` | Rail điều hướng; dưới 900px là drawer |
+| `TopBar` | Tiêu đề trang, breadcrumb, ngôn ngữ, theme, badge duyệt, avatar |
+| `Menu` | Dropdown dùng chung: Escape, click ra ngoài, `menuitemradio` |
+| `ThemeSwitcher` / `LanguageSwitcher` / `UserMenu` | Ba control trên top bar |
+| `StatCard` / `EmptyState` / `QuickActions` / `SystemStatus` | Khối của Dashboard |
+| `StateBadge` | Trạng thái benchmark, đã dịch, `title` giữ giá trị gốc |
+| `Icon` | Bộ SVG inline (không thêm dependency) |
 
 `FailureFindings` cố ý làm `confidence` nổi bật: một finding `low` là
 **giả thuyết** khớp dữ liệu, không phải kết luận, và người đọc không
@@ -157,3 +166,85 @@ Rồi viết lại **một** file `src/components/Scene25D.tsx` để tiêu th�
 `Scene25D` từ `scene25d.ts` (facets → mesh/instanced geometry).
 `scene25d.ts` và 23 test của nó không cần sửa. Đây là lý do phần hình
 học được tách ra ngay từ đầu.
+
+
+## App shell (M12)
+
+Trước M12, `layout.tsx` tự viết sidebar bằng tay và mọi trang tự lo phần
+còn lại. Giờ có `AppShell`: một chỗ sở hữu sidebar, top bar và badge
+duyệt. Trang chỉ render nội dung.
+
+`/login`, `/welcome`, `/auth/callback` **không** dùng shell — một rail
+điều hướng mà mọi link đều bật về trang đăng nhập thì tệ hơn là không có.
+
+### Sidebar thu gọn được
+
+Trạng thái nằm ở **một attribute trên `<html>`**, còn **chiều rộng nằm
+trong CSS** khớp theo attribute đó. React không bao giờ set pixel. Đó
+chính là thứ cho phép script chặn render trong `<head>` áp dụng trạng
+thái đã nhớ **trước khi paint lần đầu** — người dùng thu gọn sidebar hôm
+qua không phải nhìn nó trượt đóng mỗi lần tải trang hôm nay.
+
+| | Mở rộng | Thu gọn |
+|---|---|---|
+| Chiều rộng | 264 px | 68 px |
+| Hiển thị | icon + tên + mô tả + tài khoản | chỉ icon |
+| Tooltip | không (thừa) | có, kèm `aria-label` |
+| Active | `aria-current="page"` + thanh dọc bên trái | như trên |
+
+Dưới 900px sidebar thành drawer: hamburger ở top bar mở, click overlay
+hoặc **Escape** đóng, và **đổi route tự đóng**. Lúc đó chế độ thu gọn
+desktop bị vô hiệu — icon-only chồng lên drawer là vô nghĩa.
+
+### Theme
+
+Ba chế độ: Light, Dark, System. Mặc định System.
+
+Cái khó duy nhất là **flash**. React không giúp được: tới lúc nó hydrate
+thì trình duyệt đã paint. Nên theme đã resolve được đóng dấu lên
+`<html data-theme>` bởi một script chặn render trong `<head>`
+(`lib/theme-script.ts`), và **mọi màu trong stylesheet đều key theo
+attribute đó**. Store React chỉ điều khiển UI của nút chọn.
+
+`theme-script.ts` cố tình **không** import gì và **không** phải module
+`"use client"`: nó chặn render nên mọi byte đều phải trả giá, và
+`layout.tsx` là server component nên không gọi được vào client graph.
+
+`System` giữ đúng nghĩa: có listener `prefers-color-scheme`, laptop tối
+đi lúc hoàng hôn thì trang cũng tối theo.
+
+Màu tập trung ở CSS variables (`--bg`, `--panel`, `--text`, `--accent`,
+…). Không còn hex nào nằm ngoài khối token — kiểm được bằng
+`grep -nE "#[0-9a-fA-F]{3,8}" globals.css`.
+
+### i18n
+
+`en` và `vi`, file JSON riêng ở `lib/i18n/locales/`. Thiếu key thì rơi về
+tiếng Anh; thiếu ở cả hai thì render ra chính key (xấu có chủ ý — để bị
+phát hiện, không phải để giấu).
+
+Locale nằm ở **cookie**, không phải localStorage. Đây là quyết định đáng
+chú ý nhất: chữ do React render, nên nếu server không biết ngôn ngữ thì
+nó render tiếng Anh rồi browser sửa lại một frame sau — mỗi lần tải
+trang, với mọi người dùng Việt. Cookie là preference duy nhất server đọc
+được **trong lúc** render.
+
+Vì thế `lib/i18n/shared.ts` (dictionary + tra cứu + parse cookie) **không
+phải** module `"use client"`, còn `lib/i18n/index.ts` (store, context,
+hook) thì phải. Nhầm chỗ này thì `tsc` và `next build` đều **không** bắt
+được — chỉ khởi động server thật mới lộ.
+
+Không dịch: benchmark ID, tên thuật toán (A*, DWA, PPO), API path,
+conditions checksum, citation ID, dữ liệu người dùng nhập, nội dung báo
+cáo AI sinh ra.
+
+### Icon
+
+Bộ SVG inline (`components/Icon.tsx`), không thêm dependency. Project
+chưa cài thư viện icon nào; thêm một cái để dùng 25 glyph là một
+dependency và một bundle phải trả giá. Chúng vẽ theo đúng quy ước của
+Lucide (lưới 24×24, nét 2px, đầu bo tròn) nên sau này đổi sang
+`lucide-react` là find-and-replace, không phải thiết kế lại.
+
+Mọi icon đều `aria-hidden`: icon không bao giờ là accessible name — thứ
+bọc nó mới mang label.

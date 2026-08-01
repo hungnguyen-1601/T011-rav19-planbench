@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
 import type { EpisodeMetrics, PlanResult } from "@/lib/types";
 
 function format(value: number | null | undefined, digits = 2, suffix = ""): string {
@@ -14,45 +15,45 @@ export function MetricsPanel({
   metrics: EpisodeMetrics | null;
   plan?: PlanResult | null;
 }) {
+  const { t } = useTranslation();
   if (!metrics) {
     return (
       <div className="panel">
-        <h3>Metrics</h3>
-        <p className="muted">Run a simulation to see metrics computed by the backend.</p>
+        <h3>{t("metrics.title")}</h3>
+        <p className="muted">{t("metrics.runFirst")}</p>
       </div>
     );
   }
   const badge = metrics.success ? "ok" : metrics.collision ? "err" : "warn";
   return (
     <div className="panel">
-      <h3>Metrics</h3>
+      <h3>{t("metrics.title")}</h3>
       <div style={{ marginBottom: 12 }}>
         <span className={`badge ${badge}`}>{metrics.status}</span>
       </div>
       <div className="metrics">
-        <Metric label="Travel time" value={format(metrics.travel_time, 2, " s")} />
-        <Metric label="Trajectory length" value={format(metrics.trajectory_length, 2, " m")} />
-        <Metric label="Path efficiency" value={format(metrics.path_efficiency, 3)} />
-        <Metric label="Average speed" value={format(metrics.average_speed, 2, " m/s")} />
-        <Metric label="Max speed" value={format(metrics.max_speed, 2, " m/s")} />
-        <Metric label="Smoothness" value={format(metrics.smoothness, 3, " rad/m")} />
-        <Metric label="Min clearance" value={format(metrics.min_clearance, 3, " m")} />
-        <Metric label="Mean clearance" value={format(metrics.mean_clearance, 3, " m")} />
-        <Metric label="Steps" value={String(metrics.steps)} />
+        <Metric label={t("metrics.travelTime")} value={format(metrics.travel_time, 2, " s")} />
+        <Metric label={t("metrics.trajectoryLength")} value={format(metrics.trajectory_length, 2, " m")} />
+        <Metric label={t("metrics.pathEfficiency")} value={format(metrics.path_efficiency, 3)} />
+        <Metric label={t("metrics.averageSpeed")} value={format(metrics.average_speed, 2, " m/s")} />
+        <Metric label={t("metrics.maxSpeed")} value={format(metrics.max_speed, 2, " m/s")} />
+        <Metric label={t("metrics.smoothness")} value={format(metrics.smoothness, 3, " rad/m")} />
+        <Metric label={t("metrics.minClearance")} value={format(metrics.min_clearance, 3, " m")} />
+        <Metric label={t("metrics.meanClearance")} value={format(metrics.mean_clearance, 3, " m")} />
+        <Metric label={t("metrics.steps")} value={String(metrics.steps)} />
         {plan ? (
           <>
-            <Metric label="Planned length" value={format(plan.path_length, 2, " m")} />
+            <Metric label={t("metrics.plannedLength")} value={format(plan.path_length, 2, " m")} />
             <Metric
-              label="Global planning"
+              label={t("metrics.globalPlanning")}
               value={format(plan.planning_time_seconds * 1000, 1, " ms")}
             />
-            <Metric label="Expanded nodes" value={String(plan.expanded_nodes)} />
+            <Metric label={t("metrics.expandedNodes")} value={String(plan.expanded_nodes)} />
           </>
         ) : null}
       </div>
       <p className="muted" style={{ marginTop: 12, fontSize: 12 }}>
-        All values are computed by the backend from the recorded trajectory; the UI never
-        derives metrics itself.
+        {t("metrics.computedByBackend")}
       </p>
     </div>
   );

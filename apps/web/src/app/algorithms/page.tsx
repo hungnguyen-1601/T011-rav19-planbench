@@ -13,8 +13,9 @@
  */
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { EmptyState } from "@/components/EmptyState";
 import { authFetch, useSession } from "@/lib/auth";
+import { useTranslation } from "@/lib/i18n";
 import type { AlgorithmInfo } from "@/lib/benchmarkTypes";
 
 interface SchemaField {
@@ -26,7 +27,10 @@ interface SchemaField {
 }
 
 export default function AlgorithmsPage() {
-  const session = useSession();
+  const { t } = useTranslation();
+  // The registry is public: it describes what the software can do, not
+  // anyone's data, and hiding it behind sign-in helped nobody.
+  useSession();
   const [algorithms, setAlgorithms] = useState<AlgorithmInfo[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,18 +47,21 @@ export default function AlgorithmsPage() {
 
   return (
     <>
-      <h2>Algorithm registry</h2>
-      <p className="muted">
-        Every entry is a complete navigation stack — a global planner paired with a local planner.
-        Benchmarks compare stacks against stacks; a global planner is never compared against a
-        local one.
-      </p>
-      {!session ? (
-        <div className="error-box">
-          <Link href="/login">Sign in</Link> to view the registry.
+      <div className="page-head">
+        <div>
+          <h2>{t("algorithms.title")}</h2>
+          <p>{t("algorithms.pageHint")}</p>
         </div>
-      ) : null}
+      </div>
       {error ? <div className="error-box">{error}</div> : null}
+      {algorithms.length === 0 && !error ? <p className="muted">{t("common.loading")}</p> : null}
+      {algorithms.length === 0 && error ? (
+        <EmptyState
+          icon="cpu"
+          title={t("algorithms.empty.title")}
+          body={t("algorithms.empty.body")}
+        />
+      ) : null}
 
       {algorithms.map((algorithm) => {
         const fields = schemaFields(algorithm.config_schema);
@@ -66,27 +73,22 @@ export default function AlgorithmsPage() {
                 <code>{algorithm.id}</code>
               </h3>
               <span className={`badge ${algorithm.benchmarkable ? "ok" : "err"}`}>
-                {algorithm.benchmarkable ? "benchmarkable" : "reference only"}
+                {algorithm.benchmarkable ? t("algorithms.benchmarkable") : t("algorithms.reference")}
               </span>
               <span className="muted">{algorithm.kind}</span>
               {required.length > 0 ? (
-                <span className="badge warn">needs {required.map((f) => f.name).join(", ")}</span>
+                <span className="badge warn">
+                  {t("algorithms.needs", { fields: required.map((f) => f.name).join(", ") })}
+                </span>
               ) : null}
             </div>
             <p>{algorithm.description}</p>
 
             {!algorithm.benchmarkable ? (
-              <div className="error-box">
-                Reference adapter — runs the pipeline but must not be used to draw benchmark
-                conclusions.
-              </div>
+              <div className="error-box">{t("algorithms.referenceWarning")}</div>
             ) : null}
             {required.length > 0 ? (
-              <p className="muted">
-                Requires configuration a person has to supply, so the agent cannot propose this
-                stack: it has no way to know which checkpoint is the right one, and inventing a
-                path would be fabrication.
-              </p>
+              <p className="muted">{t("algorithms.requiredHint")}</p>
             ) : null}
 
             <button
@@ -94,20 +96,23 @@ export default function AlgorithmsPage() {
               className="secondary"
               onClick={() => setExpanded(expanded === algorithm.id ? null : algorithm.id)}
             >
-              {expanded === algorithm.id ? "Hide" : "Show"} configuration ({fields.length})
+              {expanded === algorithm.id
+                ? t("algorithms.hideConfig", { count: fields.length })
+                : t("algorithms.showConfig", { count: fields.length })}
             </button>
 
             {expanded === algorithm.id ? (
               fields.length === 0 ? (
-                <p className="muted">No configurable parameters.</p>
+                <p className="muted">{t("algorithms.noParams")}</p>
               ) : (
+                <div className="table-scroll">
                 <table>
                   <thead>
                     <tr>
-                      <th>Parameter</th>
-                      <th>Type</th>
-                      <th>Default</th>
-                      <th>Description</th>
+                      <th>{t("algorithms.parameter")}</th>
+                      <th>{t("algorithms.type")}</th>
+                      <th>{t("algorithms.default")}</th>
+                      <th>{t("algorithms.description")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -115,7 +120,9 @@ export default function AlgorithmsPage() {
                       <tr key={field.name}>
                         <td>
                           <code>{field.name}</code>
-                          {field.required ? <span className="badge warn">required</span> : null}
+                          {field.required ? (
+                            <span className="badge warn">{t("algorithms.required")}</span>
+                          ) : null}
                         </td>
                         <td className="muted">{field.type}</td>
                         <td className="muted">{field.fallback}</td>
@@ -124,6 +131,7 @@ export default function AlgorithmsPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               )
             ) : null}
           </div>

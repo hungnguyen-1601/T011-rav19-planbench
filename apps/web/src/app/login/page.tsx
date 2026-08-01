@@ -11,6 +11,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { fetchAuthProviders, login, oauthStartUrl, type AuthProviders } from "@/lib/auth";
+import { useTranslation } from "@/lib/i18n";
 
 function GoogleMark() {
   return (
@@ -44,6 +45,7 @@ function GitHubMark() {
 }
 
 function SignIn() {
+  const { t } = useTranslation();
   const router = useRouter();
   const params = useSearchParams();
   const [providers, setProviders] = useState<AuthProviders | null>(null);
@@ -80,10 +82,10 @@ function SignIn() {
 
   return (
     <>
-      <h2>Sign in</h2>
+      <h2>{t("login.title")}</h2>
       {error ? <div className="error-box">{error}</div> : null}
       {loadError ? (
-        <div className="error-box">Could not reach the API: {loadError}</div>
+        <div className="error-box">{t("login.unreachable", { message: loadError })}</div>
       ) : null}
 
       <div className="panel" style={{ maxWidth: 400 }}>
@@ -92,26 +94,26 @@ function SignIn() {
             {providers.google ? (
               <a className="oauth-button" href={oauthStartUrl("google")}>
                 <GoogleMark />
-                Continue with Google
+                {t("login.google")}
               </a>
             ) : null}
             {providers.github ? (
               <a className="oauth-button" href={oauthStartUrl("github")}>
                 <GitHubMark />
-                Continue with GitHub
+                {t("login.github")}
               </a>
             ) : null}
           </div>
         ) : null}
 
         {(providers?.google || providers?.github) && providers?.dev_login ? (
-          <div className="divider">or</div>
+          <div className="divider">{t("login.or")}</div>
         ) : null}
 
         {providers?.dev_login ? (
           <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
             <label className="field">
-              Nickname
+              {t("login.nickname")}
               <input
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
@@ -120,7 +122,7 @@ function SignIn() {
               />
             </label>
             <label className="field">
-              Password
+              {t("login.password")}
               <input
                 type="password"
                 value={password}
@@ -130,29 +132,24 @@ function SignIn() {
               />
             </label>
             <button className="primary" type="submit" disabled={busy}>
-              {busy ? "Signing in…" : "Sign in"}
+              {busy ? t("login.submitting") : t("login.submit")}
             </button>
             <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-              Development sign-in, enabled by <code>PLANBENCH_ENABLE_DEV_LOGIN</code>. Accounts come
-              from <code>PLANBENCH_SEED_USERS</code>; without it a password is generated and printed
-              in the API log at startup.
+              {t("login.devHint")}
             </p>
           </form>
         ) : null}
 
         {nothingConfigured ? (
           <div>
-            <p>No sign-in method is configured on this server.</p>
+            <p>{t("login.nothingConfigured")}</p>
             <p className="muted" style={{ fontSize: 13 }}>
-              Set <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code>, and/or{" "}
-              <code>GITHUB_CLIENT_ID</code> and <code>GITHUB_CLIENT_SECRET</code>, in{" "}
-              <code>.env</code> and restart. For local work,{" "}
-              <code>PLANBENCH_ENABLE_DEV_LOGIN=true</code> turns on password sign-in instead.
+              {t("login.nothingConfiguredHelp")}
             </p>
           </div>
         ) : null}
 
-        {!providers && !loadError ? <p className="muted">Loading sign-in options…</p> : null}
+        {!providers && !loadError ? <p className="muted">{t("login.loading")}</p> : null}
       </div>
     </>
   );
@@ -162,7 +159,7 @@ export default function LoginPage() {
   // useSearchParams reads the ?error= a failed OAuth round trip leaves
   // behind, and needs a Suspense boundary to prerender.
   return (
-    <Suspense fallback={<p className="muted">Loading sign-in options…</p>}>
+    <Suspense fallback={<p className="muted">…</p>}>
       <SignIn />
     </Suspense>
   );

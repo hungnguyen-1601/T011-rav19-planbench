@@ -254,7 +254,47 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     cũ. Cách xử lý dứt điểm: một migration điền `owner_user_id` khi đã
     biết ánh xạ tên → tài khoản.
 
+## Giao diện: shell, theme, i18n (M12)
+
+69. **Không có test render tương tác.** `@testing-library/react` và
+    `jsdom` chưa được cài, nên component được kiểm bằng
+    `renderToStaticMarkup` — HTML thật, nhưng chỉ là **lần render đầu**.
+    Điều đó bao phủ được mọi khác biệt mà đề bài hỏi (thu gọn / mở rộng,
+    đăng nhập / chưa, có badge / không, EN / VI) vì chúng đều là khác
+    biệt ở lần render đầu. Cái nó **không** bao phủ: bấm nút. Hành vi
+    đằng sau mỗi control vì thế được test ở tầng store
+    (`sidebar.test.ts`, `theme.test.ts`, `persisted.test.ts`). Muốn test
+    tương tác thật thì cần thêm dev dependency — chưa cài vì chưa được
+    duyệt.
+70. **Chưa kiểm bằng trình duyệt thật ở nhiều kích thước.** Responsive
+    được viết bằng breakpoint CSS (900px, 560px) và đã kiểm qua HTML
+    server-render, **không** phải bằng cách mở trình duyệt ở 320/375/768/
+    1024/1440 px. Không có công cụ chụp màn hình trong môi trường này.
+71. **Layout root giờ là dynamic.** Đọc cookie locale trong server
+    component làm mọi trang chuyển từ prerender tĩnh sang render theo
+    yêu cầu (`ƒ` thay vì `○` trong output build). Với app này không mất
+    gì — mọi trang đều fetch API lúc mount — nhưng đó là một thay đổi có
+    thật trong đặc tính build.
+72. **Có thể nháy sai theme trong một trường hợp**: trình duyệt chặn
+    localStorage (Safari private mode). Script chặn render nuốt lỗi và
+    trang paint theo mặc định của hệ thống. Không sửa được nếu vẫn dùng
+    localStorage.
+73. **Thư viện icon là bộ inline tự vẽ**, không phải `lucide-react`.
+    Không thêm dependency nào. Đổi sang Lucide sau này là find-and-replace
+    (cùng quy ước 24×24, nét 2px).
+74. **Badge Review Inbox poll 30 giây**, không realtime (đã ghi ở #65).
+75. **Số liệu Dashboard ghép ở client** từ các endpoint sẵn có, không có
+    endpoint `/dashboard/summary`. Với lượng dữ liệu hiện tại thì đúng;
+    khi danh sách benchmark đủ lớn để phải phân trang, đếm ở client sẽ
+    sai và lúc đó endpoint tổng hợp phía server mới xứng đáng tồn tại.
+76. **Một phần dữ liệu hỏng vẫn hiện phần còn lại.** Card nào không tải
+    được hiện `—` chứ không hiện `0`, và có dòng cảnh báo — nhưng nó
+    không nói *cái nào* hỏng. Đủ để không hiểu sai, chưa đủ để chẩn đoán.
+
 ## Môi trường
 
 - Test phải chạy với `PYTHONPATH=` do shell source ROS2 Jazzy (xem
   TEST_REPORT.md).
+- Test frontend chạy ở môi trường Node (không jsdom); `vitest.config.ts`
+  đặt `testTimeout: 20s` vì `auth.test.ts` reset module graph ở mỗi case
+  và 15 file chạy song song có lúc vượt mốc 5s mặc định.

@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { authFetch, updateSessionUser, useSession, type SessionUser } from "@/lib/auth";
+import { useTranslation } from "@/lib/i18n";
 
 interface NicknameCheck {
   nickname: string;
@@ -20,9 +21,8 @@ interface NicknameCheck {
   message: string;
 }
 
-const RULES = "3–30 characters: letters, digits, underscore or hyphen. No spaces.";
-
 export default function WelcomePage() {
+  const { t } = useTranslation();
   const router = useRouter();
   const session = useSession();
   const [nickname, setNickname] = useState("");
@@ -76,23 +76,20 @@ export default function WelcomePage() {
     [nickname, router],
   );
 
-  if (!session) return <p className="muted">Loading…</p>;
+  if (!session) return <p className="muted">{t("common.loading")}</p>;
 
   const ready = Boolean(check?.valid && check?.available) && !busy;
 
   return (
     <>
-      <h2>Choose your nickname</h2>
-      <p className="muted">
-        Other members will use it to send you review requests. You can change it later — it is a
-        name, not a password.
-      </p>
+      <h2>{t("welcome.title")}</h2>
+      <p className="muted">{t("welcome.subtitle")}</p>
       {error ? <div className="error-box">{error}</div> : null}
 
       <div className="panel" style={{ maxWidth: 420 }}>
         <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
           <label className="field">
-            Nickname
+            {t("welcome.nicknameLabel")}
             <input
               value={nickname}
               onChange={(event) => setNickname(event.target.value)}
@@ -103,21 +100,27 @@ export default function WelcomePage() {
           </label>
           <div style={{ minHeight: 18, fontSize: 12 }}>
             {check === null ? (
-              <span className="muted">{RULES}</span>
+              <span className="muted">{t("welcome.rules")}</span>
             ) : check.valid && check.available ? (
-              <span className="badge ok">{check.nickname} is available</span>
+              <span className="badge ok">
+                {t("welcome.available", { nickname: check.nickname })}
+              </span>
             ) : (
               <span className="badge warn">{check.message}</span>
             )}
           </div>
           <button className="primary" type="submit" disabled={!ready}>
-            {busy ? "Saving…" : "Continue"}
+            {busy ? t("welcome.saving") : t("welcome.continue")}
           </button>
         </form>
         {session.user.email ? (
           <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
-            Signed in as {session.user.email}
-            {session.user.providers.length ? ` via ${session.user.providers.join(", ")}` : ""}.
+            {session.user.providers.length
+              ? t("welcome.signedInVia", {
+                  email: session.user.email,
+                  providers: session.user.providers.join(", "),
+                })
+              : t("welcome.signedInAs", { email: session.user.email })}
           </p>
         ) : null}
       </div>

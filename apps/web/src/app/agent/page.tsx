@@ -18,6 +18,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { authFetch, useSession } from "@/lib/auth";
+import { StateBadge } from "@/components/StateBadge";
+import { useTranslation } from "@/lib/i18n";
 import type {
   AgentCapabilities,
   ChatResponse,
@@ -32,6 +34,7 @@ interface Exchange {
 }
 
 export default function AgentPage() {
+  const { t } = useTranslation();
   const session = useSession();
   const [capabilities, setCapabilities] = useState<AgentCapabilities | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -76,10 +79,15 @@ export default function AgentPage() {
 
   return (
     <>
-      <h2>Agent console</h2>
+      <div className="page-head">
+        <div>
+          <h2>{t("agent.title")}</h2>
+          <p>{t("agent.subtitle")}</p>
+        </div>
+      </div>
       {!session ? (
-        <div className="error-box">
-          <Link href="/login">Sign in</Link> to use the agent.
+        <div className="notice">
+          <Link href="/login">{t("topbar.signIn")}</Link> — {t("common.signInTo")}
         </div>
       ) : null}
       {error ? <div className="error-box">{error}</div> : null}
@@ -87,11 +95,8 @@ export default function AgentPage() {
       {capabilities ? <Capabilities capabilities={capabilities} /> : null}
 
       <div className="panel">
-        <h3>Ask about recorded results</h3>
-        <p className="muted">
-          The agent answers from tool results and indexed documentation. If the tools return nothing
-          relevant it says so rather than answering from memory.
-        </p>
+        <h3>{t("agent.askTitle")}</h3>
+        <p className="muted">{t("agent.askHint")}</p>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -115,12 +120,12 @@ export default function AgentPage() {
             <input
               style={{ flex: 1, minWidth: 320 }}
               value={question}
-              placeholder="Which scenarios exist? / Summarise benchmark <id>"
+              placeholder={t("agent.askPlaceholder")}
               onChange={(event) => setQuestion(event.target.value)}
               disabled={!session}
             />
             <button type="submit" disabled={!session || asking || !question.trim()}>
-              {asking ? "Thinking…" : "Ask"}
+              {asking ? t("agent.thinking") : t("agent.ask")}
             </button>
           </div>
         </form>
@@ -131,7 +136,7 @@ export default function AgentPage() {
             <pre className="transcript-a">{exchange.response.turn.text}</pre>
             <p className="muted">
               {exchange.response.provider} ({exchange.response.model})
-              {exchange.response.deterministic ? " — keyword-matched, not model-written" : ""}
+              {exchange.response.deterministic ? ` — ${t("agent.keywordMatched")}` : ""}
               {exchange.response.turn.tools_used.length > 0
                 ? ` · tools: ${exchange.response.turn.tools_used.join(", ")}`
                 : ""}
@@ -155,11 +160,8 @@ export default function AgentPage() {
       </div>
 
       <div className="panel">
-        <h3>Turn a request into a benchmark</h3>
-        <p className="muted">
-          The agent may draft and submit a benchmark. It cannot approve or run one that a reviewer
-          has not approved.
-        </p>
+        <h3>{t("agent.missionTitle")}</h3>
+        <p className="muted">{t("agent.missionHint")}</p>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -182,7 +184,7 @@ export default function AgentPage() {
             <input
               style={{ flex: 1, minWidth: 320 }}
               value={mission}
-              placeholder="Benchmark DWA on the doorway scenario with seeds 1 2"
+              placeholder={t("agent.missionPlaceholder")}
               onChange={(event) => setMission(event.target.value)}
               disabled={!isMember}
             />
@@ -192,35 +194,29 @@ export default function AgentPage() {
                 checked={submitForApproval}
                 onChange={(event) => setSubmitForApproval(event.target.checked)}
               />
-              submit for approval
+              {t("agent.submitForApproval")}
             </label>
             <button type="submit" disabled={!isMember || parsing || !mission.trim()}>
-              {parsing ? "Parsing…" : "Parse mission"}
+              {parsing ? t("agent.parsing") : t("agent.parse")}
             </button>
           </div>
         </form>
-        {session && !isMember ? (
-          <p className="muted">Creating benchmarks is an operator action.</p>
-        ) : null}
         {missionResult ? <MissionOutcome result={missionResult} /> : null}
       </div>
 
       <div className="panel">
-        <h3>Evidence and report</h3>
-        <p className="muted">
-          Evidence comes straight from storage. Every citation in a generated report is checked
-          against it — an invented id discards the whole report.
-        </p>
+        <h3>{t("agent.evidenceTitle")}</h3>
+        <p className="muted">{t("agent.evidenceHint")}</p>
         <div className="toolbar">
           <input
             value={benchmarkId}
-            placeholder="benchmark id"
+            placeholder={t("agent.benchmarkId")}
             onChange={(event) => setBenchmarkId(event.target.value.trim())}
           />
           <input
             style={{ flex: 1, minWidth: 240 }}
             value={reportQuestion}
-            placeholder="question (optional)"
+            placeholder={t("agent.question", { optional: t("common.optional") })}
             onChange={(event) => setReportQuestion(event.target.value)}
           />
           <button
@@ -238,7 +234,7 @@ export default function AgentPage() {
               ).finally(() => setWorking(false));
             }}
           >
-            Collect evidence
+            {t("agent.collectEvidence")}
           </button>
           <button
             type="button"
@@ -255,18 +251,19 @@ export default function AgentPage() {
               ).finally(() => setWorking(false));
             }}
           >
-            Generate report
+            {t("agent.generateReport")}
           </button>
         </div>
 
         {evidence ? (
           <>
-            <h4>{evidence.items.length} evidence items</h4>
+            <h4>{t("agent.evidenceItems", { count: evidence.items.length })}</h4>
+            <div className="table-scroll">
             <table>
               <thead>
                 <tr>
-                  <th>Citation</th>
-                  <th>Statement</th>
+                  <th>{t("agent.citation")}</th>
+                  <th>{t("agent.statement")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -282,6 +279,7 @@ export default function AgentPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </>
         ) : null}
 
@@ -292,33 +290,33 @@ export default function AgentPage() {
 }
 
 function Capabilities({ capabilities }: { capabilities: AgentCapabilities }) {
+  const { t } = useTranslation();
   const configured = capabilities.providers.filter((provider) => provider.ready);
   return (
     <div className="panel">
-      <h3>Provider</h3>
+      <h3>{t("agent.provider")}</h3>
       <div className="toolbar">
         <span className={`badge ${capabilities.deterministic ? "warn" : "ok"}`}>
           {capabilities.provider}
         </span>
         <code>{capabilities.model}</code>
-        <span className="muted">{capabilities.knowledge_documents} documents indexed</span>
+        <span className="muted">
+          {t("agent.documentsIndexed", { count: capabilities.knowledge_documents })}
+        </span>
       </div>
       {capabilities.deterministic ? (
-        <div className="error-box">
-          Running the offline deterministic provider: answers are keyword-matched, not written by a
-          model. Configure a provider key to change that — the readiness table below says what each
-          one still needs.
-        </div>
+        <div className="error-box">{t("agent.deterministicWarning")}</div>
       ) : null}
 
-      <h4>Providers</h4>
+      <h4>{t("agent.providers")}</h4>
+      <div className="table-scroll">
       <table>
         <thead>
           <tr>
-            <th>Provider</th>
-            <th>Ready</th>
-            <th>Key variable</th>
-            <th>Missing</th>
+            <th>{t("agent.provider")}</th>
+            <th>{t("agent.ready")}</th>
+            <th>{t("agent.keyVariable")}</th>
+            <th>{t("agent.missing")}</th>
           </tr>
         </thead>
         <tbody>
@@ -329,24 +327,25 @@ function Capabilities({ capabilities }: { capabilities: AgentCapabilities }) {
               </td>
               <td>
                 <span className={`badge ${provider.ready ? "ok" : "muted-badge"}`}>
-                  {provider.ready ? "yes" : "no"}
+                  {provider.ready ? t("common.yes") : t("common.no")}
                 </span>
               </td>
               <td className="muted">
-                {provider.api_key_env ? <code>{provider.api_key_env}</code> : "none needed"}
+                {provider.api_key_env ? (
+                  <code>{provider.api_key_env}</code>
+                ) : (
+                  t("agent.noneNeeded")
+                )}
               </td>
               <td className="muted">{provider.missing || "—"}</td>
             </tr>
           ))}
         </tbody>
       </table>
-      {configured.length === 0 ? (
-        <p className="muted">
-          No external provider configured — see <code>.env.example</code>.
-        </p>
-      ) : null}
+      </div>
+      {configured.length === 0 ? <p className="muted">{t("agent.noProvider")}</p> : null}
 
-      <h4>Tools ({capabilities.tools.length})</h4>
+      <h4>{t("agent.tools", { count: capabilities.tools.length })}</h4>
       <p>
         {capabilities.tools.map((tool) => (
           <code key={tool} className="chip">
@@ -354,10 +353,8 @@ function Capabilities({ capabilities }: { capabilities: AgentCapabilities }) {
           </code>
         ))}
       </p>
-      <h4>Cannot do</h4>
-      <p className="muted">
-        Enforced by absence, not by prompt — there is no tool and no API path for any of these:
-      </p>
+      <h4>{t("agent.cannotDo")}</h4>
+      <p className="muted">{t("agent.forbiddenHint")}</p>
       <p>
         {capabilities.forbidden.map((item) => (
           <code key={item} className="chip chip-off">
@@ -370,12 +367,13 @@ function Capabilities({ capabilities }: { capabilities: AgentCapabilities }) {
 }
 
 function MissionOutcome({ result }: { result: MissionResponse }) {
+  const { t } = useTranslation();
   if (result.refusal) {
     return (
       <div className="finding finding-primary">
         <div className="finding-head">
-          <strong>Refused</strong>
-          <span className="badge err">nothing was created</span>
+          <strong>{t("agent.refused")}</strong>
+          <span className="badge err">{t("agent.nothingCreated")}</span>
         </div>
         <p>{result.refusal.reason}</p>
         {result.refusal.errors.length > 0 ? (
@@ -394,24 +392,24 @@ function MissionOutcome({ result }: { result: MissionResponse }) {
   return (
     <div className="finding">
       <div className="finding-head">
-        <strong>Draft accepted</strong>
+        <strong>{t("agent.draftAccepted")}</strong>
         {result.benchmark ? (
-          <span className="badge warn">{result.benchmark.state}</span>
+          <StateBadge state={result.benchmark.state} />
         ) : (
-          <span className="badge muted-badge">not submitted</span>
+          <span className="badge muted-badge">{t("agent.notSubmitted")}</span>
         )}
       </div>
       {result.draft ? (
         <table>
           <tbody>
             <tr>
-              <th>Scenario</th>
+              <th>{t("common.scenario")}</th>
               <td>
                 <code>{result.draft.scenario}</code>
               </td>
             </tr>
             <tr>
-              <th>Stacks</th>
+              <th>{t("benchmarks.stacks")}</th>
               <td>
                 {result.draft.algorithms.map((algorithm) => (
                   <code key={algorithm} className="chip">
@@ -421,7 +419,7 @@ function MissionOutcome({ result }: { result: MissionResponse }) {
               </td>
             </tr>
             <tr>
-              <th>Seeds</th>
+              <th>{t("common.seeds")}</th>
               <td className="muted">[{result.draft.seeds.join(", ")}]</td>
             </tr>
           </tbody>
@@ -431,19 +429,22 @@ function MissionOutcome({ result }: { result: MissionResponse }) {
       {result.benchmark ? (
         <p>
           <Link href={`/benchmarks/${result.benchmark.id}`}>
-            Open benchmark <code>{result.benchmark.id}</code>
+            {t("agent.openBenchmark")} <code>{result.benchmark.id}</code>
           </Link>{" "}
-          — a reviewer approves it there.
+          {t("agent.runItThere")}
         </p>
       ) : null}
       <details>
-        <summary className="muted">Session transcript ({result.session.events.length})</summary>
+        <summary className="muted">
+          {t("agent.transcript", { count: result.session.events.length })}
+        </summary>
+        <div className="table-scroll">
         <table>
           <thead>
             <tr>
-              <th>State</th>
-              <th>Action</th>
-              <th>Detail</th>
+              <th>{t("agent.state")}</th>
+              <th>{t("detail.action")}</th>
+              <th>{t("agent.detail")}</th>
             </tr>
           </thead>
           <tbody>
@@ -458,30 +459,37 @@ function MissionOutcome({ result }: { result: MissionResponse }) {
             ))}
           </tbody>
         </table>
+        </div>
       </details>
     </div>
   );
 }
 
 function ReportView({ report }: { report: GeneratedReport }) {
+  const { t } = useTranslation();
   return (
     <div className={`finding${report.refused ? " finding-primary" : ""}`}>
       <div className="finding-head">
-        <strong>{report.refused ? "Refused" : "Report"}</strong>
+        <strong>{report.refused ? t("agent.refused") : t("agent.reportTitle")}</strong>
         {report.provisional ? (
-          <span className="badge warn">provisional</span>
+          <span className="badge warn">{t("agent.provisional")}</span>
         ) : (
-          <span className="badge ok">accepted results</span>
+          <span className="badge ok">{t("agent.acceptedResults")}</span>
         )}
         <span className="muted">
-          {report.citations.length} citations over {report.evidence_count} evidence items
+          {t("agent.citationCount", {
+            citations: report.citations.length,
+            evidence: report.evidence_count,
+          })}
         </span>
       </div>
-      {report.refused ? <p className="muted">Reason: {report.refusal_reason}</p> : null}
+      {report.refused ? (
+        <p className="muted">{t("agent.reason", { reason: report.refusal_reason })}</p>
+      ) : null}
       <pre className="transcript-a">{report.text}</pre>
       <p className="muted">
         {report.provider} ({report.model})
-        {report.deterministic ? " — keyword-matched, not model-written" : ""}
+        {report.deterministic ? ` — ${t("agent.keywordMatched")}` : ""}
       </p>
     </div>
   );

@@ -65,6 +65,17 @@ Lần đăng nhập đầu tiên sẽ hỏi **nickname** (3–30 ký tự, chữ
 Nickname là cách người khác gửi review cho bạn — không phải khóa phân
 quyền, phân quyền luôn dựa trên user ID.
 
+### Giao diện
+
+Thanh bên thu gọn được (nhớ trạng thái), và thành drawer trên màn hình
+nhỏ. Trên top bar có nút đổi **ngôn ngữ** (Tiếng Việt / English) và
+**giao diện** (Sáng / Tối / Theo hệ thống) — cả hai đều được nhớ, và đổi
+theme không bị nháy sai màu lúc tải trang.
+
+Thông tin kỹ thuật (phiên bản, địa chỉ API) nằm ở trang **Thông tin hệ
+thống**, không nằm trên Dashboard; địa chỉ API chỉ hiện khi chạy
+development.
+
 ### Quy trình
 
 Một người làm được toàn bộ việc của mình: tạo map/scenario/benchmark →

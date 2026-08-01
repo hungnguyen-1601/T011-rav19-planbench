@@ -6,6 +6,7 @@ import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { MapCanvas } from "@/components/MapCanvas";
 import { api } from "@/lib/api";
+import { useTranslation } from "@/lib/i18n";
 import { FREE, OCCUPIED, UNKNOWN } from "@/lib/demoMap";
 import { worldToCell } from "@/lib/transform";
 import type { MapData } from "@/lib/types";
@@ -19,6 +20,7 @@ const BRUSH_VALUE: Record<Brush, number> = {
 };
 
 export default function MapEditorPage({ params }: { params: Promise<{ id: string }> }) {
+  const { t } = useTranslation();
   const { id } = use(params);
   const [map, setMap] = useState<MapData | null>(null);
   const [version, setVersion] = useState<number>(0);
@@ -70,46 +72,51 @@ export default function MapEditorPage({ params }: { params: Promise<{ id: string
       setVersion(updated.version);
       setDirty(false);
       setError(null);
-      setStatus(`Saved as version ${updated.version}`);
+      setStatus(t("maps.savedAs", { version: updated.version }));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   };
 
   if (error && !map) return <div className="error-box">{error}</div>;
-  if (!map) return <p className="muted">Loading map…</p>;
+  if (!map) return <p className="muted">{t("maps.loadingMap")}</p>;
 
   return (
     <>
       <h2>
-        Map editor — {map.name} <span className="muted">v{version}</span>
+        {/* The map name is user-supplied: shown verbatim. */}
+        {t("maps.editorTitle", { name: map.name })} <span className="muted">v{version}</span>
       </h2>
       {error ? <div className="error-box">{error}</div> : null}
       {status ? <p className="muted">{status}</p> : null}
 
       <div className="toolbar">
-        <span className="muted">Brush:</span>
+        <span className="muted">{t("maps.brushLabel")}</span>
         {(["occupied", "free", "unknown"] as Brush[]).map((option) => (
           <button
             key={option}
             className={brush === option ? "primary" : ""}
             onClick={() => setBrush(option)}
           >
-            {option}
+            {t(`maps.brush.${option}`)}
           </button>
         ))}
         <button className="primary" disabled={!dirty} onClick={() => void save()}>
-          {dirty ? "Save new version" : "Saved"}
+          {dirty ? t("maps.saveNewVersion") : t("maps.saved")}
         </button>
-        <Link href="/simulate">Run a simulation →</Link>
+        <Link href="/simulate">{t("maps.runSimulation")}</Link>
       </div>
 
       <div className="panel">
         <MapCanvas map={map} onWorldClick={paint} onWorldDrag={paint} />
         <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
-          Click or drag to paint cells. {map.width} × {map.height} cells at {map.resolution} m —
-          world size {(map.width * map.resolution).toFixed(1)} × {(map.height * map.resolution).toFixed(1)} m.
-          Saving creates a new map version on the backend.
+          {t("maps.editorHint", {
+            width: map.width,
+            height: map.height,
+            resolution: map.resolution,
+            worldWidth: (map.width * map.resolution).toFixed(1),
+            worldHeight: (map.height * map.resolution).toFixed(1),
+          })}
         </p>
       </div>
     </>

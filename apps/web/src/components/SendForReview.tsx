@@ -9,7 +9,9 @@
  * exactly right without waiting for the dropdown is not blocked.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "@/lib/i18n";
+import { useDismiss } from "@/lib/useDismiss";
 import { searchMembers, sendForReview, type ReviewStage, type UserSummary } from "@/lib/reviews";
 
 export function SendForReview({
@@ -23,12 +25,18 @@ export function SendForReview({
   onSent: () => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const [nickname, setNickname] = useState("");
   const [stage, setStage] = useState<ReviewStage>(defaultStage);
   const [comment, setComment] = useState("");
   const [matches, setMatches] = useState<UserSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const dialog = useRef<HTMLDivElement>(null);
+
+  // Escape and a click on the backdrop both close it, like every other
+  // overlay in the app.
+  useDismiss(true, onClose, dialog);
 
   useEffect(() => {
     const term = nickname.trim();
@@ -62,24 +70,27 @@ export function SendForReview({
   };
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Send for review">
-      <div className="modal">
-        <h3 style={{ marginTop: 0 }}>Send for review</h3>
+    <div
+      className="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t("sendReview.title")}
+    >
+      <div className="modal" ref={dialog}>
+        <h3 style={{ marginTop: 0 }}>{t("sendReview.title")}</h3>
         <p className="muted" style={{ fontSize: 12 }}>
-          The member you name becomes the only person who can answer — and until they do, you
-          cannot {defaultStage === "spec" ? "run this benchmark" : "accept these results"}{" "}
-          yourself. You can cancel the request at any time.
+          {defaultStage === "spec" ? t("sendReview.hintSpec") : t("sendReview.hintResult")}
         </p>
         {error ? <div className="error-box">{error}</div> : null}
 
         <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
           <label className="field">
-            Reviewer nickname
+            {t("sendReview.reviewer")}
             <input
               value={nickname}
               onChange={(event) => setNickname(event.target.value)}
               list="member-suggestions"
-              placeholder="who should look at this?"
+              placeholder={t("sendReview.reviewerPlaceholder")}
               autoFocus
               required
             />
@@ -93,28 +104,28 @@ export function SendForReview({
           </label>
 
           <label className="field">
-            What to review
+            {t("sendReview.stage")}
             <select value={stage} onChange={(event) => setStage(event.target.value as ReviewStage)}>
-              <option value="spec">Spec — before the run</option>
-              <option value="result">Results — after the run</option>
+              <option value="spec">{t("sendReview.stageSpec")}</option>
+              <option value="result">{t("sendReview.stageResult")}</option>
             </select>
           </label>
 
           <label className="field">
-            Message (optional)
+            {t("sendReview.message")} ({t("common.optional")})
             <input
               value={comment}
               onChange={(event) => setComment(event.target.value)}
-              placeholder="anything they should look at in particular?"
+              placeholder={t("sendReview.messagePlaceholder")}
             />
           </label>
 
           <div style={{ display: "flex", gap: 8 }}>
             <button className="primary" type="submit" disabled={busy || !nickname.trim()}>
-              {busy ? "Sending…" : "Send request"}
+              {busy ? t("sendReview.sending") : t("sendReview.submit")}
             </button>
             <button type="button" onClick={onClose} disabled={busy}>
-              Cancel
+              {t("common.cancel")}
             </button>
           </div>
         </form>

@@ -4,23 +4,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { EmptyState } from "@/components/EmptyState";
+import { StateBadge } from "@/components/StateBadge";
 import { authFetch, useSession } from "@/lib/auth";
+import { useTranslation } from "@/lib/i18n";
 import type { AlgorithmInfo, BenchmarkResource } from "@/lib/benchmarkTypes";
 import type { MapSummary, ScenarioResource } from "@/lib/types";
 
-const STATE_BADGE: Record<string, string> = {
-  draft: "warn",
-  pending_approval: "warn",
-  approved: "ok",
-  running: "warn",
-  pending_review: "warn",
-  accepted: "ok",
-  rejected: "err",
-  failed: "err",
-  cancelled: "err",
-};
-
 export default function BenchmarksPage() {
+  const { t } = useTranslation();
   const session = useSession();
   const [benchmarks, setBenchmarks] = useState<BenchmarkResource[]>([]);
   const [algorithms, setAlgorithms] = useState<AlgorithmInfo[]>([]);
@@ -92,12 +84,20 @@ export default function BenchmarksPage() {
   if (!session) {
     return (
       <>
-        <h2>Benchmarks</h2>
+        <div className="page-head">
+          <div>
+            <h2>{t("benchmarks.title")}</h2>
+            <p>{t("benchmarks.subtitle")}</p>
+          </div>
+        </div>
         <div className="panel">
-          <p className="muted">
-            Benchmarks require a signed-in Operator or Reviewer.{" "}
-            <Link href="/login">Sign in</Link>.
-          </p>
+          <EmptyState
+            icon="user"
+            title={t("dashboard.empty.signedOut.title")}
+            body={t("common.signInTo")}
+            actionHref="/login"
+            actionLabel={t("topbar.signIn")}
+          />
         </div>
       </>
     );
@@ -108,19 +108,24 @@ export default function BenchmarksPage() {
 
   return (
     <>
-      <h2>Benchmarks</h2>
+      <div className="page-head">
+        <div>
+          <h2>{t("benchmarks.title")}</h2>
+          <p>{t("benchmarks.subtitle")}</p>
+        </div>
+      </div>
       {error ? <div className="error-box">{error}</div> : null}
 
       {isMember ? (
         <div className="panel">
-          <h3>New benchmark</h3>
+          <h3>{t("benchmarks.new")}</h3>
           <div className="row" style={{ alignItems: "flex-end" }}>
             <label className="field">
-              Name
+              {t("benchmarks.name")}
               <input value={name} onChange={(event) => setName(event.target.value)} />
             </label>
             <label className="field">
-              Map
+              {t("benchmarks.pickMap")}
               <select value={mapId} onChange={(event) => setMapId(event.target.value)}>
                 {maps.map((item) => (
                   <option key={item.id} value={item.id}>
@@ -130,7 +135,7 @@ export default function BenchmarksPage() {
               </select>
             </label>
             <label className="field">
-              Scenario
+              {t("benchmarks.pickScenario")}
               <select value={scenarioId} onChange={(event) => setScenarioId(event.target.value)}>
                 {scenarios.map((item) => (
                   <option key={item.id} value={item.id}>
@@ -140,7 +145,7 @@ export default function BenchmarksPage() {
               </select>
             </label>
             <label className="field">
-              Seeds (comma separated)
+              {t("benchmarks.seedsLabel")}
               <input value={seedText} onChange={(event) => setSeedText(event.target.value)} />
             </label>
             <button
@@ -148,12 +153,12 @@ export default function BenchmarksPage() {
               disabled={busy || !mapId || !scenarioId || selected.length === 0}
               onClick={() => void create()}
             >
-              Create draft
+              {busy ? t("benchmarks.creating") : t("benchmarks.createDraft")}
             </button>
           </div>
           <div style={{ marginTop: 12 }}>
             <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
-              Stacks under test (same map, scenario and seeds for every one):
+              {t("benchmarks.stacksUnderTest")}
             </div>
             {algorithms.map((algorithm) => (
               <label key={algorithm.id} className="inline" style={{ marginRight: 16 }}>
@@ -171,7 +176,7 @@ export default function BenchmarksPage() {
                 {algorithm.id}
                 {algorithm.benchmarkable ? null : (
                   <span className="badge warn" title={algorithm.description}>
-                    reference only
+                    {t("algorithms.reference")}
                   </span>
                 )}
               </label>
@@ -181,18 +186,25 @@ export default function BenchmarksPage() {
       ) : null}
 
       <div className="panel">
-        <h3>All benchmarks</h3>
+        <h3>{t("benchmarks.list")}</h3>
         {benchmarks.length === 0 ? (
-          <p className="muted">None yet.</p>
+          <EmptyState
+            icon="benchmark"
+            title={t("benchmarks.empty.title")}
+            body={t("benchmarks.empty.body")}
+            actionHref="/agent"
+            actionLabel={t("dashboard.action.openAgent")}
+          />
         ) : (
+          <div className="table-scroll wide">
           <table>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Stacks</th>
-                <th>Seeds</th>
-                <th>State</th>
-                <th>Created by</th>
+                <th>{t("common.name")}</th>
+                <th>{t("benchmarks.stacks")}</th>
+                <th>{t("common.seeds")}</th>
+                <th>{t("common.status")}</th>
+                <th>{t("benchmarks.createdBy")}</th>
               </tr>
             </thead>
             <tbody>
@@ -204,15 +216,21 @@ export default function BenchmarksPage() {
                   <td>{benchmark.spec.algorithms.map((a) => a.id).join(", ")}</td>
                   <td>{benchmark.spec.seeds.join(", ")}</td>
                   <td>
-                    <span className={`badge ${STATE_BADGE[benchmark.state] ?? "warn"}`}>
-                      {benchmark.state}
-                    </span>
+                    <StateBadge state={benchmark.state} />
                   </td>
-                  <td className="muted">{benchmark.created_by}</td>
+                  <td className="muted">
+                    {benchmark.created_by}
+                    {benchmark.is_owner ? (
+                      <span className="badge ok" style={{ marginLeft: 6 }}>
+                        {t("benchmarks.you")}
+                      </span>
+                    ) : null}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </>

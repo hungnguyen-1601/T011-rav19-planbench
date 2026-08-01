@@ -12,8 +12,10 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { exchangeOAuthCode } from "@/lib/auth";
+import { useTranslation } from "@/lib/i18n";
 
 function Callback() {
+  const { t } = useTranslation();
   const router = useRouter();
   const params = useSearchParams();
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +34,7 @@ function Callback() {
     }
     const code = params.get("code");
     if (!code) {
-      setError("This sign-in link is incomplete. Please start again.");
+      setError(t("callback.incomplete"));
       return;
     }
     exchangeOAuthCode(code)
@@ -40,23 +42,23 @@ function Callback() {
         router.replace(session.user.needs_nickname ? "/welcome" : "/benchmarks");
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)));
-  }, [params, router]);
+  }, [params, router, t]);
 
   if (error) {
     return (
       <>
-        <h2>Sign-in failed</h2>
+        <h2>{t("callback.failed")}</h2>
         <div className="error-box">{error}</div>
         <p>
-          <Link href="/login">Back to sign in</Link>
+          <Link href="/login">{t("callback.backToLogin")}</Link>
         </p>
       </>
     );
   }
   return (
     <>
-      <h2>Signing you in…</h2>
-      <p className="muted">Finishing the handshake with your provider.</p>
+      <h2>{t("callback.signingIn")}</h2>
+      <p className="muted">{t("callback.handshake")}</p>
     </>
   );
 }
@@ -64,7 +66,7 @@ function Callback() {
 export default function CallbackPage() {
   // useSearchParams needs a Suspense boundary during prerender.
   return (
-    <Suspense fallback={<p className="muted">Signing you in…</p>}>
+    <Suspense fallback={<p className="muted">…</p>}>
       <Callback />
     </Suspense>
   );

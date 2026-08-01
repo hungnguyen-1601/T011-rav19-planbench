@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { authFetch } from "@/lib/auth";
+import { useTranslation } from "@/lib/i18n";
 import type { JobState, JobStatus } from "@/lib/platformTypes";
 
 const ACTIVE: JobState[] = ["queued", "running"];
@@ -30,6 +31,7 @@ export interface JobProgressProps {
 }
 
 export function JobProgress({ benchmarkId, onFinished, canCancel = true }: JobProgressProps) {
+  const { t } = useTranslation();
   const [job, setJob] = useState<JobStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,15 +73,24 @@ export function JobProgress({ benchmarkId, onFinished, canCancel = true }: JobPr
 
   return (
     <div className="panel">
-      <h3>Background job</h3>
+      <h3>{t("job.title")}</h3>
       <div className="toolbar">
-        <span className={`badge ${BADGE[job.state]}`}>{job.state}</span>
+        <span className={`badge ${BADGE[job.state]}`} title={job.state}>
+          {t(`job.state.${job.state}`)}
+        </span>
         <span className="muted">
-          {job.progress}/{job.total} episodes
+          {t("job.episodes", { done: job.progress, total: job.total })}
         </span>
         {job.message ? <span className="muted">— {job.message}</span> : null}
       </div>
-      <div className="progress-track" aria-label="job progress">
+      <div
+        className="progress-track"
+        role="progressbar"
+        aria-label={t("job.progress")}
+        aria-valuenow={percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
         <div
           className={`progress-fill${active ? " progress-active" : ""}`}
           style={{ width: `${percent}%` }}
@@ -104,13 +115,11 @@ export function JobProgress({ benchmarkId, onFinished, canCancel = true }: JobPr
             }
           }}
         >
-          Cancel
+          {t("job.cancel")}
         </button>
       ) : null}
       {active ? (
-        <p className="muted">
-          Cancelling stops between episodes, so results already recorded stay consistent.
-        </p>
+        <p className="muted">{t("job.cancelHint")}</p>
       ) : null}
     </div>
   );

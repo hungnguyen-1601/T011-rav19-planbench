@@ -14,7 +14,9 @@ import { JobProgress } from "@/components/JobProgress";
 import { MapCanvas } from "@/components/MapCanvas";
 import { Scene25D } from "@/components/Scene25D";
 import { SendForReview } from "@/components/SendForReview";
+import { StateBadge } from "@/components/StateBadge";
 import { authFetch, useSession } from "@/lib/auth";
+import { useTranslation } from "@/lib/i18n";
 import { cancelReview, canAcceptResult, canRun, pendingFor, type ReviewStage } from "@/lib/reviews";
 import type {
   BenchmarkResults,
@@ -31,6 +33,7 @@ function fmt(value: number | null | undefined, digits = 2, suffix = ""): string 
 
 export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const { t } = useTranslation();
   const session = useSession();
   const [results, setResults] = useState<BenchmarkResults | null>(null);
   const [episodes, setEpisodes] = useState<EpisodeSummary[]>([]);
@@ -122,13 +125,17 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
     return (
       <div className="panel">
         <p className="muted">
-          <Link href="/login">Sign in</Link> to view benchmarks.
+          <Link href="/login">{t("topbar.signIn")}</Link> — {t("common.signInTo")}
         </p>
       </div>
     );
   }
   if (!results) {
-    return error ? <div className="error-box">{error}</div> : <p className="muted">Loading…</p>;
+    return error ? (
+      <div className="error-box">{error}</div>
+    ) : (
+      <p className="muted">{t("common.loading")}</p>
+    );
   }
 
   const benchmark = results.benchmark;
@@ -145,35 +152,40 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
 
   return (
     <>
-      <h2>
-        {benchmark.spec.name} <span className={`badge ${state === "accepted" ? "ok" : "warn"}`}>{state}</span>
-      </h2>
+      <div className="page-head">
+        <h2>
+          {/* The benchmark name is user-supplied: shown verbatim. */}
+          {benchmark.spec.name} <StateBadge state={state} />
+        </h2>
+      </div>
       {error ? <div className="error-box">{error}</div> : null}
 
       <div className="panel">
-        <h3>Workflow</h3>
+        <h3>{t("detail.workflow")}</h3>
         <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
           {isOwner
-            ? "You own this benchmark: run it and accept the results yourself, or ask another member to review first."
-            : `Created by ${benchmark.created_by}. You can read everything here; only the owner can run it.`}
+            ? t("detail.ownerHint")
+            : t("detail.readerHint", { name: benchmark.created_by })}
         </p>
 
         {blocking ? (
           <div className="notice">
-            Waiting on <strong>{blocking.reviewer?.nickname ?? "another member"}</strong> for a{" "}
-            {blocking.request.stage === "spec" ? "spec" : "result"} review
-            {blocking.request.request_comment ? ` — “${blocking.request.request_comment}”` : ""}.
+            {t("detail.waitingOn", {
+              name: blocking.reviewer?.nickname ?? "—",
+              stage: t(`detail.stage.${blocking.request.stage}`),
+            })}
+            {blocking.request.request_comment ? ` — “${blocking.request.request_comment}”` : ""}.{" "}
             {iAmSpecReviewer || iAmResultReviewer
-              ? " That is you — approve or reject below."
+              ? t("detail.waitingOnYou")
               : isOwner
-                ? " You cannot decide this yourself until they answer, or you cancel the request."
+                ? t("detail.waitingBlocked")
                 : ""}
           </div>
         ) : null}
 
         <div className="toolbar">
           <input
-            placeholder="Comment (recorded with the decision)"
+            placeholder={t("detail.commentPlaceholder")}
             value={comment}
             onChange={(event) => setComment(event.target.value)}
             style={{ flex: 1, minWidth: 220 }}
@@ -184,41 +196,41 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
               <button
                 className="primary"
                 disabled={busy || !canRun(isOwner, state, requests)}
-                title={pendingSpec ? "A spec review is pending" : undefined}
+                title={pendingSpec ? t("detail.blockedBySpec") : undefined}
                 onClick={() => void act("run")}
               >
-                Run benchmark
+                {t("detail.run")}
               </button>
               <button
                 className="primary"
                 disabled={busy || !canAcceptResult(isOwner, state, requests)}
-                title={pendingResult ? "A result review is pending" : undefined}
+                title={pendingResult ? t("detail.blockedByResult") : undefined}
                 onClick={() => void act("accept-result")}
               >
-                Accept results
+                {t("detail.acceptResults")}
               </button>
               <button
                 disabled={busy || state !== "pending_review" || Boolean(pendingResult)}
                 onClick={() => void act("reject-result")}
               >
-                Reject results
+                {t("detail.rejectResults")}
               </button>
               <button
                 disabled={busy || !["pending_approval", "approved", "running"].includes(state)}
                 onClick={() => void act("cancel")}
               >
-                Cancel run
+                {t("detail.cancelRun")}
               </button>
               {blocking ? (
                 <button disabled={busy} onClick={() => void withdraw(blocking.request.id)}>
-                  Cancel review request
+                  {t("detail.cancelReview")}
                 </button>
               ) : (
                 <button
                   disabled={busy}
                   onClick={() => setSending(state === "pending_review" ? "result" : "spec")}
                 >
-                  Send for review
+                  {t("detail.sendForReview")}
                 </button>
               )}
             </>
@@ -227,10 +239,10 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
           {iAmSpecReviewer ? (
             <>
               <button className="primary" disabled={busy} onClick={() => void act("approve")}>
-                Approve spec
+                {t("detail.approveSpec")}
               </button>
               <button disabled={busy} onClick={() => void act("reject")}>
-                Reject spec
+                {t("detail.rejectSpec")}
               </button>
             </>
           ) : null}
@@ -240,7 +252,7 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
                 Accept results
               </button>
               <button disabled={busy} onClick={() => void act("reject-result")}>
-                Reject results
+                {t("detail.rejectResults")}
               </button>
             </>
           ) : null}
@@ -248,15 +260,16 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
 
         {requests.length > 0 ? (
           <>
-            <h4>Review requests</h4>
+            <h4>{t("detail.reviewRequests")}</h4>
+            <div className="table-scroll">
             <table>
               <thead>
                 <tr>
-                  <th>Stage</th>
-                  <th>Reviewer</th>
-                  <th>Status</th>
-                  <th>Asked</th>
-                  <th>Comments</th>
+                  <th>{t("detail.stageCol")}</th>
+                  <th>{t("detail.reviewer")}</th>
+                  <th>{t("common.status")}</th>
+                  <th>{t("detail.asked")}</th>
+                  <th>{t("detail.comments")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -274,7 +287,7 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
                               : "warn"
                         }`}
                       >
-                        {view.request.status}
+                        {t(`reviews.status.${view.request.status}`)}
                       </span>
                     </td>
                     <td className="muted">{view.request.request_comment || "—"}</td>
@@ -285,19 +298,21 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
                 ))}
               </tbody>
             </table>
+            </div>
           </>
         ) : null}
 
-        <h4>Audit trail</h4>
+        <h4>{t("detail.auditTrail")}</h4>
         {benchmark.approvals.length > 0 ? (
+          <div className="table-scroll wide">
           <table>
             <thead>
               <tr>
-                <th>Action</th>
-                <th>User</th>
-                <th>Transition</th>
-                <th>Comment</th>
-                <th>When</th>
+                <th>{t("detail.action")}</th>
+                <th>{t("detail.user")}</th>
+                <th>{t("detail.transition")}</th>
+                <th>{t("common.comment")}</th>
+                <th>{t("detail.when")}</th>
               </tr>
             </thead>
             <tbody>
@@ -325,8 +340,9 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
               ))}
             </tbody>
           </table>
+          </div>
         ) : (
-          <p className="muted">No decisions recorded yet.</p>
+          <p className="muted">{t("detail.noDecisions")}</p>
         )}
       </div>
 
@@ -344,37 +360,36 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
       {results.report ? (
         <>
           <div className="panel">
-            <h3>Fairness evidence</h3>
+            <h3>{t("detail.fairness")}</h3>
             <p className="muted" style={{ fontSize: 12 }}>
-              Every stack ran under these identical conditions. Two reports sharing a conditions
-              checksum are directly comparable.
+              {t("detail.fairnessHint")}
             </p>
             <table>
               <tbody>
                 <tr>
-                  <td className="muted">Conditions checksum</td>
+                  <td className="muted">{t("detail.conditionsChecksum")}</td>
                   <td>
                     <code>{results.report.fairness.conditions_checksum.slice(0, 24)}</code>
                   </td>
                 </tr>
                 <tr>
-                  <td className="muted">Map / scenario</td>
+                  <td className="muted">{t("detail.mapScenario")}</td>
                   <td>
                     {results.report.fairness.map_name} / {results.report.fairness.scenario_name}
                   </td>
                 </tr>
                 <tr>
-                  <td className="muted">Seeds</td>
+                  <td className="muted">{t("common.seeds")}</td>
                   <td>{results.report.fairness.seeds.join(", ")}</td>
                 </tr>
                 <tr>
-                  <td className="muted">Timeout / dt</td>
+                  <td className="muted">{t("detail.timeoutDt")}</td>
                   <td>
                     {results.report.fairness.timeout_seconds} s / {results.report.fairness.simulation_dt} s
                   </td>
                 </tr>
                 <tr>
-                  <td className="muted">Robot radius / v_max</td>
+                  <td className="muted">{t("detail.robot")}</td>
                   <td>
                     {results.report.fairness.robot_radius} m / {results.report.fairness.max_linear_velocity} m/s
                   </td>
@@ -384,21 +399,21 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
           </div>
 
           <div className="panel">
-            <h3>Comparison</h3>
-            <div style={{ overflowX: "auto" }}>
+            <h3>{t("detail.comparison")}</h3>
+            <div className="table-scroll wide">
               <table>
                 <thead>
                   <tr>
-                    <th>Stack</th>
-                    <th>Episodes</th>
-                    <th>Success</th>
-                    <th>Collision</th>
-                    <th>Timeout</th>
-                    <th>Travel (ok)</th>
-                    <th>Efficiency</th>
-                    <th>Smoothness</th>
-                    <th>Worst clearance</th>
-                    <th>Latency</th>
+                    <th>{t("algorithms.stack")}</th>
+                    <th>{t("detail.episodesCol")}</th>
+                    <th>{t("detail.success")}</th>
+                    <th>{t("detail.collision")}</th>
+                    <th>{t("detail.timeout")}</th>
+                    <th>{t("detail.travelOk")}</th>
+                    <th>{t("detail.efficiency")}</th>
+                    <th>{t("detail.smoothness")}</th>
+                    <th>{t("detail.clearance")}</th>
+                    <th>{t("detail.latency")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -420,23 +435,25 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
               </table>
             </div>
             <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-              No single metric decides a winner: weigh safety (clearance, collision), success,
-              efficiency, smoothness and computation together.
+              {t("detail.comparisonHint")}
             </p>
           </div>
 
           <div className="panel">
-            <h3>Episodes ({episodes.length})</h3>
+            <h3>
+              {t("detail.episodes")} ({episodes.length})
+            </h3>
+            <div className="table-scroll wide">
             <table>
               <thead>
                 <tr>
-                  <th>Stack</th>
-                  <th>Seed</th>
-                  <th>Status</th>
-                  <th>Travel</th>
-                  <th>Length</th>
-                  <th>Min clearance</th>
-                  <th />
+                  <th>{t("algorithms.stack")}</th>
+                  <th>{t("detail.seed")}</th>
+                  <th>{t("common.status")}</th>
+                  <th>{t("detail.travel")}</th>
+                  <th>{t("detail.length")}</th>
+                  <th>{t("detail.minClearance")}</th>
+                  <th>{t("common.actions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -455,23 +472,26 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
                     <td>{fmt(episode.record.metrics.trajectory_length, 2, " m")}</td>
                     <td>{fmt(episode.record.metrics.min_clearance, 3, " m")}</td>
                     <td>
-                      <button onClick={() => void openReplay(episode.id)}>Replay</button>
+                      <button onClick={() => void openReplay(episode.id)}>
+                        {t("detail.replay")}
+                      </button>
                       <button
                         className="secondary"
                         onClick={() => void openDiagnosis(episode.id)}
                       >
-                        Diagnose
+                        {t("detail.diagnose")}
                       </button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </>
       ) : (
         <div className="panel">
-          <p className="muted">No results yet — the benchmark has not been run.</p>
+          <p className="muted">{t("detail.noResults")}</p>
         </div>
       )}
 
@@ -479,7 +499,7 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
         <div className="panel">
           <div className="toolbar">
             <h3 style={{ margin: 0 }}>
-              Replay — {replay.algorithm} (seed {replay.seed})
+              {t("detail.replayOf", { algorithm: replay.algorithm, seed: replay.seed })}
             </h3>
             <div className="view-toggle">
               <button
@@ -487,14 +507,14 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
                 aria-pressed={view === "top"}
                 onClick={() => setView("top")}
               >
-                Top-down
+                {t("detail.topDown")}
               </button>
               <button
                 type="button"
                 aria-pressed={view === "25d"}
                 onClick={() => setView("25d")}
               >
-                2.5D
+                {t("detail.view25d")}
               </button>
             </div>
           </div>
@@ -532,7 +552,10 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
             />
           )}
           <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-            {replay.trajectory.length} trajectory points · status {replay.metrics.status}
+            {t("detail.replayFooter", {
+              points: replay.trajectory.length,
+              status: replay.metrics.status,
+            })}
             {replay.events.length > 0 ? ` · ${replay.events[replay.events.length - 1].message}` : ""}
           </p>
         </div>
@@ -541,12 +564,9 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
       {failure ? (
         <div className="panel">
           <h3>
-            Failure analysis — episode <code>{failure.episodeId}</code>
+            {t("detail.failureAnalysis")} — <code>{failure.episodeId}</code>
           </h3>
-          <p className="muted">
-            Derived from recorded episode data only. Confidence is part of the finding: a{" "}
-            <em>low</em> finding is a hypothesis consistent with the data, not a conclusion.
-          </p>
+          <p className="muted">{t("detail.failureHint")}</p>
           <FailureFindings report={failure.report} />
         </div>
       ) : null}

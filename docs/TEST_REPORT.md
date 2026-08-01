@@ -2,6 +2,93 @@
 
 Output thật từ các lần chạy kiểm thử. Cập nhật sau mỗi milestone.
 
+## M12 — App shell, theme, i18n, Dashboard — 2026-08-01
+
+Chỉ sửa frontend. Backend không đổi một dòng nào (`git status` sạch ở
+`apps/api`, `packages`, `services`, `alembic`, `tests`, `scripts`).
+
+### Frontend
+
+```
+apps/web$ npx tsc --noEmit        # sạch
+apps/web$ npx vitest run
+  Test Files  15 passed (15)
+       Tests  229 passed (229)     (trước: 78)
+apps/web$ npx next build
+  ✓ Compiled successfully
+  16 route, thêm /system
+```
+
+Chống flaky: chạy `npx vitest run` **20 lần liên tiếp, 0 lần hỏng**.
+
+### Backend — kiểm tra không regression
+
+```
+PYTHONPATH= .venv/bin/pytest tests/ -q
+1038 passed, 1 warning in 260.13s (0:04:20)
+```
+
+Đúng con số của M11: không có gì bị hỏng.
+
+### Smoke test trên server thật
+
+Build standalone, chạy ở port riêng (không đụng server 3000/8000 đang
+chạy của người dùng), rồi kiểm bằng `curl`:
+
+```
+mọi route trả 200:
+  /  /maps  /library  /simulate  /benchmarks  /leaderboard
+  /algorithms  /agent  /reviews  /system  /login  /welcome  /auth/callback
+
+script chặn render có trong HTML:      planbench.theme  ✓
+lang mặc định:                          <html lang="en" ✓
+Cookie planbench.locale=vi  ->          <html lang="vi" ✓
+                                        "Tổng quan", "Bảng xếp hạng" ✓
+                                        (server-render, KHÔNG nháy tiếng Anh trước)
+mặc định EN không lẫn tiếng Việt:       0 kết quả ✓
+localhost:8000 trên Dashboard:          0 kết quả ✓  (card BACKEND đã bỏ)
+
+/benchmarks:  id="app-sidebar" ✓  class="topbar" ✓  aria-current="page" ✓
+              aria-label="Open navigation" ✓  "Theme" ✓  "Language" ✓
+/login:       id="app-sidebar" -> 0  ✓ (render không shell, đúng thiết kế)
+Dashboard:    18 stat-card · 10 quick-action · 3 empty-state · 6 skeleton ✓
+```
+
+### Ba lỗi thật mà kiểm chứng bắt được
+
+1. **`tsc` và `next build` đều pass, server thật trả 500.**
+   `lib/i18n/index.ts` là module `"use client"`, mà `layout.tsx` là
+   server component gọi `localeFromCookie()` từ đó. Next chỉ báo lúc
+   chạy: *"Attempted to call localeFromCookie() from the server but
+   localeFromCookie is on the client."* Sửa bằng cách tách
+   `lib/i18n/shared.ts` và `lib/theme-script.ts` (không `"use client"`)
+   ra khỏi phần client. **Không có smoke test này thì lỗi đã lọt.**
+
+2. **Script chặn render không chạy được ngoài scope window.** Nó dùng
+   `localStorage` trần; trong trình duyệt thì đó là `window.localStorage`,
+   nhưng test chạy script thật trong scope thường nên `try/catch` nuốt
+   `ReferenceError` và attribute không được set. Đổi thành
+   `window.localStorage`. Test viết ra để chứng minh "không nháy theme"
+   lại là thứ tìm ra chính lỗi đó.
+
+3. **Test flaky 1/3 lần.** `topbar.test.tsx` stub một `window` giả toàn
+   cục, làm `react-dom/server` đi nhánh code trình duyệt và treo. Bỏ
+   stub — các component đó không đụng `window` khi SSR. Riêng
+   `auth.test.ts` (có sẵn từ trước) thỉnh thoảng timeout vì nó
+   `resetModules()` + re-import ở **mỗi** case, và giờ có 15 file chạy
+   song song; nâng `testTimeout` lên 20s kèm giải thích. Cả hai đã kiểm
+   lại: 20/20 lần sạch.
+
+### Không được kiểm chứng
+
+- **Chưa mở trình duyệt thật** ở 320/375/768/1024/1440 px. Responsive
+  viết bằng breakpoint CSS và kiểm qua HTML server-render; môi trường
+  này không có công cụ chụp màn hình.
+- **Không có test tương tác** (bấm nút, mở drawer, chọn theme trong
+  menu): `@testing-library/react` chưa được cài. Component kiểm bằng
+  `renderToStaticMarkup` (lần render đầu), hành vi kiểm ở tầng store.
+- **Chưa kiểm đối chiếu màu** ở theme sáng bằng công cụ đo contrast.
+
 ## M11 — Tài khoản, OAuth, review tùy chọn — 2026-08-01
 
 ### Toàn bộ suite

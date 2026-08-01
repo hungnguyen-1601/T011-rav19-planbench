@@ -8,6 +8,7 @@
  * reader who cannot see that will over-trust it.
  */
 
+import { useTranslation } from "@/lib/i18n";
 import type { Confidence, FailureReport, Finding } from "@/lib/platformTypes";
 
 const CONFIDENCE_CLASS: Record<Confidence, string> = {
@@ -16,53 +17,52 @@ const CONFIDENCE_CLASS: Record<Confidence, string> = {
   low: "muted-badge",
 };
 
-const CONFIDENCE_NOTE: Record<Confidence, string> = {
-  high: "the engine recorded this cause directly",
-  medium: "derived from trajectory statistics with one clear reading",
-  low: "consistent with the data, but other readings exist",
-};
-
 export function FailureFindings({ report }: { report: FailureReport }) {
+  const { t } = useTranslation();
   const clean = report.primary.category === "none";
   return (
     <div className="findings">
       <FindingCard finding={report.primary} primary />
       {report.contributing.length > 0 ? (
         <>
-          <h4 className="muted">Contributing factors</h4>
+          <h4 className="muted">{t("findings.contributing")}</h4>
           {report.contributing.map((finding, index) => (
             <FindingCard key={`${finding.category}-${index}`} finding={finding} />
           ))}
         </>
       ) : null}
       {clean && report.contributing.length === 0 ? (
-        <p className="muted">Nothing went wrong in this episode.</p>
+        <p className="muted">{t("findings.nothingWrong")}</p>
       ) : null}
     </div>
   );
 }
 
 function FindingCard({ finding, primary = false }: { finding: Finding; primary?: boolean }) {
+  const { t } = useTranslation();
   return (
     <div className={`finding${primary ? " finding-primary" : ""}`}>
       <div className="finding-head">
         <code>{finding.category}</code>
         <span
           className={`badge ${CONFIDENCE_CLASS[finding.confidence]}`}
-          title={CONFIDENCE_NOTE[finding.confidence]}
+          title={t(`findings.note.${finding.confidence}`)}
         >
-          {finding.confidence} confidence
+          {t("findings.confidenceLabel", {
+            level: t(`findings.confidence.${finding.confidence}`),
+          })}
         </span>
       </div>
       <p>{finding.summary}</p>
       {finding.evidence.length > 0 ? (
+        <div className="table-scroll">
         <table className="evidence-table">
           <thead>
             <tr>
-              <th>Evidence</th>
-              <th>Detail</th>
+              <th>{t("findings.evidence")}</th>
+              <th>{t("findings.detail")}</th>
               <th>t (s)</th>
-              <th>Value</th>
+              <th>{t("findings.value")}</th>
             </tr>
           </thead>
           <tbody>
@@ -80,8 +80,9 @@ function FindingCard({ finding, primary = false }: { finding: Finding; primary?:
             ))}
           </tbody>
         </table>
+        </div>
       ) : (
-        <p className="muted">No evidence recorded for this finding.</p>
+        <p className="muted">{t("findings.noEvidence")}</p>
       )}
     </div>
   );

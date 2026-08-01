@@ -322,6 +322,49 @@ Toàn bộ 41 vitest pass, `tsc --noEmit` sạch, `next build` ra 12 route.
 Đã chạy thật backend + frontend và kiểm chứng end-to-end (xem
 TEST_REPORT).
 
+### M12 — App shell, theme, ngôn ngữ, Dashboard
+
+Chỉ frontend. Backend không đổi một dòng — mọi số liệu Dashboard ghép từ
+endpoint đã có, nên không thêm `/dashboard/summary`: một endpoint mới sẽ
+là định nghĩa thứ hai của "có bao nhiêu benchmark", và hai định nghĩa
+rồi sẽ lệch nhau.
+
+1. **`AppShell`** sở hữu sidebar + top bar + badge duyệt. Trước đó
+   `layout.tsx` tự viết sidebar và không có chỗ nào để thêm một control
+   cho mọi trang. `/login`, `/welcome`, `/auth/callback` cố tình nằm
+   ngoài shell.
+2. **Sidebar thu gọn được**, và trạng thái là **một attribute trên
+   `<html>`**, chiều rộng nằm trong CSS. React không set pixel — đó là
+   thứ cho phép script trong `<head>` áp trạng thái đã nhớ trước lần
+   paint đầu. Dưới 900px thành drawer (hamburger mở; overlay hoặc Escape
+   đóng; đổi route tự đóng).
+3. **Theme Light/Dark/System, không nháy.** Script chặn render đóng dấu
+   theme đã resolve lên `<html data-theme>`; mọi màu key theo attribute
+   đó. `System` có listener `prefers-color-scheme` nên nó giữ đúng nghĩa
+   "theo hệ thống", không phải "theo hệ thống lúc mở tab".
+4. **Token màu tập trung**: `globals.css` không còn hex nào nằm ngoài
+   khối `:root`. Hai bộ token đầy đủ cho sáng và tối, cộng
+   `prefers-color-scheme` cho người chưa chọn gì.
+5. **i18n EN/VI**, ~370 key trong hai file JSON. Locale nằm ở **cookie**
+   chứ không phải localStorage: chữ do React render, nên chỉ cookie mới
+   giúp *server* render đúng ngôn ngữ ngay lần đầu. Hệ quả kiến trúc:
+   `lib/i18n/shared.ts` và `lib/theme-script.ts` **không** phải module
+   `"use client"` — nhầm chỗ này thì `tsc` và `next build` đều không bắt
+   được, chỉ chạy server thật mới lộ (đã xảy ra, xem TEST_REPORT).
+6. **Dashboard mới**: bỏ card BACKEND (phiên bản + URL API — vô dụng với
+   người dùng thường, và chỉ cho người lạ biết chỗ gõ cửa). Thay bằng
+   sáu stat card, quick actions, ba khối hoạt động gần đây, empty state
+   cho từng khối, và một dòng "System online" nhỏ. Số nào không tải được
+   hiện `—`, **không bao giờ hiện `0`**.
+7. **`/system`** là nơi duy nhất còn hiện phiên bản và API URL — và URL
+   chỉ hiện trong development.
+8. **Icon là bộ SVG inline**, không thêm dependency (project chưa cài
+   thư viện icon nào). Vẽ theo quy ước Lucide nên đổi sau này là
+   find-and-replace.
+
+Test: 6 file frontend mới, **229 test** (trước: 78), chạy 20 lần liên
+tiếp không flaky. Backend chạy lại đầy đủ: **1038 passed**, không đổi.
+
 ### M11 — Tài khoản, OAuth và review tùy chọn
 
 Bỏ hẳn role `operator`/`reviewer`. Trước đây một người phải có hai tài
