@@ -16,11 +16,20 @@ visible (spec section 17). It is never the only number shown.
 
 from __future__ import annotations
 
+from statistics import fmean
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from planbench_api.approval import BenchmarkState
 from planbench_api.repositories import StoredBenchmark
-from planbench_benchmark import AlgorithmAggregate
+from planbench_benchmark import (
+    AlgorithmAggregate,
+    ObservationClass,
+    list_algorithms,
+    load_difficulty_cache,
+    scenario_split,
+)
+from planbench_metrics.statistics import average_rank
 
 
 class ScoreWeights(BaseModel):
@@ -58,6 +67,11 @@ class LeaderboardEntry(BaseModel):
     worst_min_clearance: float | None
     mean_local_planning_latency: float | None
     overall_score: float | None
+    #: What the stack was allowed to see (spec section 8.6b, P02).
+    #: None for an algorithm id no longer in the registry (a report from
+    #: a stack that has since been removed) — the leaderboard must still
+    #: render old results, just without a class to group them by.
+    observation_class: ObservationClass | None = None
 
 
 class LeaderboardGroup(BaseModel):
@@ -70,6 +84,11 @@ class LeaderboardGroup(BaseModel):
     scenario_name: str
     seeds: tuple[int, ...]
     entries: tuple[LeaderboardEntry, ...]
+    #: True when this group's entries do not all share one
+    #: observation_class (spec section 8.6b) — cross-class comparison is
+    #: still shown, never hidden, but flagged so a reader does not read
+    #: "DWA beat the privileged planner" as an apples-to-apples result.
+    mixed_observation_classes: bool = False
 
 
 class Leaderboard(BaseModel):
@@ -78,6 +97,21 @@ class Leaderboard(BaseModel):
     weights: ScoreWeights
     score_formula: str
     groups: tuple[LeaderboardGroup, ...]
+    #: Average rank per algorithm across every group it appears in (spec
+    #: section 8.6a) — lets "algorithm X averaged rank 1.8 across 5
+    #: scenarios" be said even though raw metrics are not comparable
+    #: across scenarios. None when there are no groups yet.
+    algorithm_ranks: dict[str, float] | None = None
+    #: mean(success_rate on dev scenarios) - mean(success_rate on
+    #: holdout scenarios), per algorithm (spec section 8.6e, P05). Only
+    #: for algorithms with accepted results in both splits; a large gap
+    #: means the algorithm (or its tuning) overfit the dev scenarios.
+    generalization_gap: dict[str, float] | None = None
+    #: (difficulty, success_rate) points per algorithm, sorted by
+    #: difficulty, built from scenarios that have been calibrated (spec
+    #: section 8.6d, P03 — see scripts/calibrate_difficulty.py). Empty
+    #: for a scenario with no calibration cached yet.
+    difficulty_curve: dict[str, list[tuple[float, float]]] | None = None
 
     @property
     def total_entries(self) -> int:
@@ -125,6 +159,7 @@ def build_leaderboard(
 ) -> Leaderboard:
     """Rank accepted benchmark results, grouped by identical conditions."""
     weights = weights or ScoreWeights()
+    observation_classes = {info.id: info.observation_class for info in list_algorithms()}
     groups: dict[str, list[LeaderboardEntry]] = {}
     metadata: dict[str, tuple[str, str, tuple[int, ...]]] = {}
 
@@ -158,6 +193,7 @@ def build_leaderboard(
                     worst_min_clearance=aggregate.worst_min_clearance,
                     mean_local_planning_latency=aggregate.mean_local_planning_latency,
                     overall_score=overall_score(aggregate, fairness.robot_radius, weights),
+                    observation_class=observation_classes.get(aggregate.algorithm),
                 )
             )
 
@@ -172,6 +208,7 @@ def build_leaderboard(
                 entry.mean_travel_time if entry.mean_travel_time is not None else float("inf"),
             ),
         )
+        classes = {entry.observation_class for entry in ranked if entry.observation_class}
         ordered.append(
             LeaderboardGroup(
                 conditions_checksum=checksum,
@@ -179,6 +216,60 @@ def build_leaderboard(
                 scenario_name=scenario,
                 seeds=seeds,
                 entries=tuple(ranked),
+                mixed_observation_classes=len(classes) > 1,
             )
         )
-    return Leaderboard(weights=weights, score_formula=SCORE_FORMULA, groups=tuple(ordered))
+    return Leaderboard(
+        weights=weights,
+        score_formula=SCORE_FORMULA,
+        groups=tuple(ordered),
+        algorithm_ranks=_algorithm_ranks(ordered) or None,
+        generalization_gap=_generalization_gap(ordered) or None,
+        difficulty_curve=_difficulty_curve(ordered) or None,
+    )
+
+
+def _algorithm_ranks(groups: list[LeaderboardGroup]) -> dict[str, float]:
+    """Average rank per algorithm across every group (scenario) it
+    appears in — spec section 8.6a."""
+    scores_by_group = [
+        {entry.algorithm: entry.overall_score for entry in group.entries if entry.overall_score is not None}
+        for group in groups
+    ]
+    return average_rank(scores_by_group)
+
+
+def _generalization_gap(groups: list[LeaderboardGroup]) -> dict[str, float]:
+    """mean(success_rate on dev) - mean(success_rate on holdout), per
+    algorithm — spec section 8.6e. Only for algorithms with at least one
+    accepted result in each split."""
+    dev_rates: dict[str, list[float]] = {}
+    holdout_rates: dict[str, list[float]] = {}
+    for group in groups:
+        bucket = holdout_rates if scenario_split(group.scenario_name) == "holdout" else dev_rates
+        for entry in group.entries:
+            bucket.setdefault(entry.algorithm, []).append(entry.success_rate)
+    return {
+        algorithm: fmean(dev_rates[algorithm]) - fmean(holdout_rates[algorithm])
+        for algorithm in dev_rates
+        if algorithm in holdout_rates
+    }
+
+
+def _difficulty_curve(groups: list[LeaderboardGroup]) -> dict[str, list[tuple[float, float]]]:
+    """(difficulty, success_rate) points per algorithm, sorted by
+    difficulty — spec section 8.6d. Only scenarios with a cached
+    calibration (scripts/calibrate_difficulty.py) contribute a point."""
+    cache = load_difficulty_cache()
+    points: dict[str, list[tuple[float, float]]] = {}
+    for group in groups:
+        calibrated = cache.get(group.scenario_name)
+        if calibrated is None:
+            continue
+        for entry in group.entries:
+            points.setdefault(entry.algorithm, []).append(
+                (calibrated.difficulty, entry.success_rate)
+            )
+    return {
+        algorithm: sorted(series, key=lambda point: point[0]) for algorithm, series in points.items()
+    }

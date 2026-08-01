@@ -8,13 +8,18 @@ from planbench_benchmark import (
     AlgorithmSpec,
     BenchmarkSpec,
     FairnessRecord,
+    ObservationClass,
     build_local_planner,
     list_algorithms,
     run_benchmark,
     validate_algorithm_config,
 )
 from planbench_benchmark.registry import AlgorithmConfigError, UnknownAlgorithmError
-from planbench_benchmark.runner import aggregate_algorithm
+from planbench_benchmark.runner import (
+    MIN_SEEDS_FOR_STATISTICAL_ADEQUACY,
+    aggregate_algorithm,
+    compare_algorithms,
+)
 from planbench_schemas.episode import EpisodeStatus
 from planbench_schemas.geometry import Pose2D
 from planbench_schemas.robot import RobotConfig
@@ -52,6 +57,12 @@ class TestRegistry:
         assert infos["astar+dwa"].benchmarkable is True
         assert infos["astar+pure_pursuit"].benchmarkable is False
         assert infos["astar+dwa"].config_schema["properties"]["weight_clearance"]
+
+    def test_every_stack_declares_an_observation_class(self) -> None:
+        """P02: comparing a privileged observer against a LiDAR-only
+        stack must be an explicit, declared fact — not an omission."""
+        for info in list_algorithms():
+            assert isinstance(info.observation_class, ObservationClass)
 
     def test_builds_a_configured_planner(self) -> None:
         planner = build_local_planner("astar+dwa", {"weight_clearance": 3.0})
@@ -285,3 +296,121 @@ class TestAggregation:
     def test_empty_runs_rejected(self) -> None:
         with pytest.raises(ValueError, match="no runs"):
             aggregate_algorithm("astar+dwa", [])
+
+    def test_statistical_fields_need_at_least_two_points(self) -> None:
+        """A CI or a spread needs more than one data point — None, not a
+        degenerate zero-width interval that would look like real data."""
+        aggregate = aggregate_algorithm("astar+dwa", [self._record(EpisodeStatus.SUCCESS)])
+        assert aggregate.success_rate_ci95 is None
+        assert aggregate.median_travel_time_successful is None
+        assert aggregate.iqr_travel_time_successful is None
+
+    def test_statistical_fields_populate_with_enough_data(self) -> None:
+        runs = [
+            self._record(EpisodeStatus.SUCCESS, travel_time=t) for t in (8.0, 9.0, 10.0, 11.0, 12.0)
+        ]
+        aggregate = aggregate_algorithm("astar+dwa", runs)
+        assert aggregate.success_rate_ci95 is not None
+        low, high = aggregate.success_rate_ci95
+        assert low <= 1.0 <= high  # every run succeeded
+        assert aggregate.median_travel_time_successful == 10.0
+        assert aggregate.iqr_travel_time_successful is not None
+        q1, q3 = aggregate.iqr_travel_time_successful
+        assert q1 < aggregate.median_travel_time_successful < q3
+
+
+class TestPairwiseComparisons:
+    def test_no_comparison_with_a_single_algorithm(
+        self, bordered_map_factory, robot: RobotConfig
+    ) -> None:
+        spec = BenchmarkSpec(name="solo", algorithms=(AlgorithmSpec(id="astar+dwa"),), seeds=(1, 2))
+        report = run_benchmark(bordered_map_factory(12, 12), make_scenario(robot), spec)
+        assert report.comparisons == ()
+
+    def test_no_comparison_with_a_single_seed(self, bordered_map_factory, robot: RobotConfig) -> None:
+        spec = BenchmarkSpec(
+            name="one-seed",
+            algorithms=(AlgorithmSpec(id="astar+dwa"), AlgorithmSpec(id="astar+pure_pursuit")),
+            seeds=(1,),
+        )
+        report = run_benchmark(bordered_map_factory(12, 12), make_scenario(robot), spec)
+        assert report.comparisons == ()
+
+    def test_compares_every_algorithm_against_the_best(
+        self, bordered_map_factory, robot: RobotConfig
+    ) -> None:
+        spec = BenchmarkSpec(
+            name="pair",
+            algorithms=(AlgorithmSpec(id="astar+dwa"), AlgorithmSpec(id="astar+pure_pursuit")),
+            seeds=(1, 2, 3),
+        )
+        report = run_benchmark(bordered_map_factory(12, 12), make_scenario(robot), spec)
+        assert len(report.comparisons) == 1
+        comparison = report.comparisons[0]
+        assert comparison.metric == "success"
+        assert {comparison.baseline_algorithm, comparison.compared_algorithm} == {
+            "astar+dwa",
+            "astar+pure_pursuit",
+        }
+        assert 0.0 <= comparison.p_value <= 1.0
+
+    def test_identical_success_pattern_is_not_significant(self) -> None:
+        """compare_algorithms is exercised directly here (rather than via
+        run_benchmark) so the paired success pattern is controlled
+        exactly, independent of what the simulator actually produces."""
+        from planbench_benchmark.spec import RunRecord
+        from planbench_metrics import EpisodeMetrics
+
+        def record(algorithm: str, seed: int, status: EpisodeStatus) -> RunRecord:
+            return RunRecord(
+                algorithm=algorithm,
+                seed=seed,
+                status=status,
+                reason="",
+                metrics=EpisodeMetrics(
+                    status=status,
+                    success=status is EpisodeStatus.SUCCESS,
+                    collision=False,
+                    travel_time=10.0,
+                    steps=10,
+                    trajectory_length=1.0,
+                    average_speed=1.0,
+                    max_speed=1.0,
+                    smoothness=0.0,
+                    min_clearance=0.5,
+                ),
+                trajectory_points=10,
+                episode_index=0,
+            )
+
+        spec = BenchmarkSpec(
+            name="tied",
+            algorithms=(AlgorithmSpec(id="astar+dwa"), AlgorithmSpec(id="astar+pure_pursuit")),
+            seeds=(1, 2, 3),
+        )
+        runs = [
+            record(algo.id, seed, EpisodeStatus.SUCCESS)
+            for algo in spec.algorithms
+            for seed in spec.seeds
+        ]
+        aggregates = [
+            aggregate_algorithm(algo.id, [r for r in runs if r.algorithm == algo.id])
+            for algo in spec.algorithms
+        ]
+        comparisons = compare_algorithms(spec, runs, aggregates)
+        assert len(comparisons) == 1
+        assert comparisons[0].p_value == 1.0
+        assert comparisons[0].significant is False
+
+
+class TestStatisticalAdequacy:
+    def test_flagged_inadequate_below_the_threshold(
+        self, bordered_map_factory, robot: RobotConfig
+    ) -> None:
+        spec = BenchmarkSpec(name="small", algorithms=(AlgorithmSpec(id="astar+dwa"),), seeds=(1, 2))
+        report = run_benchmark(bordered_map_factory(12, 12), make_scenario(robot), spec)
+        assert report.seed_count == 2
+        assert report.statistically_adequate is False
+
+    def test_threshold_is_thirty_seeds(self) -> None:
+        assert MIN_SEEDS_FOR_STATISTICAL_ADEQUACY == 30

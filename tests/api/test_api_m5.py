@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 
+import pytest
 from conftest import ADMIN, auth_headers
 from fastapi.testclient import TestClient
 
@@ -65,6 +66,31 @@ class TestScenarioLibrary:
         assert [e["curriculum_index"] for e in entries] == list(range(len(entries)))
         warehouse = entries[-1]
         assert warehouse["dynamic_obstacles"] == 3
+
+    def test_split_marks_the_two_holdout_scenarios(
+        self, client: TestClient, alice_headers: dict
+    ) -> None:
+        """P05: intersection and dynamic_warehouse are report-only."""
+        entries = {
+            e["name"]: e
+            for e in client.get(
+                "/api/v1/scenario-library", headers=alice_headers
+            ).json()
+        }
+        assert entries["intersection"]["split"] == "holdout"
+        assert entries["dynamic_warehouse"]["split"] == "holdout"
+        assert entries["open_space"]["split"] == "dev"
+
+    def test_difficulty_is_null_or_a_fraction(
+        self, client: TestClient, alice_headers: dict
+    ) -> None:
+        """P03: null until scripts/calibrate_difficulty.py has run; a
+        fraction in [0, 1] once it has — either is a valid response, an
+        exception is not."""
+        entries = client.get("/api/v1/scenario-library", headers=alice_headers).json()
+        for entry in entries:
+            difficulty = entry["difficulty"]
+            assert difficulty is None or 0.0 <= difficulty <= 1.0
 
     def test_import_creates_map_and_scenario(self, client: TestClient, alice_headers) -> None:
         imported = import_library(client, alice_headers, "doorway")
@@ -192,6 +218,50 @@ class TestLeaderboard:
         assert 0.0 <= entry["overall_score"] <= 1.0
         assert after["score_formula"]
         assert after["weights"]["success"] == 0.40
+        # P02: every entry declares what it was allowed to see.
+        assert entry["observation_class"] == "lidar_only"
+        assert after["groups"][0]["mixed_observation_classes"] is False
+        # P04: one algorithm, one group -> it ranked first, average 1.0.
+        assert after["algorithm_ranks"] == {"astar+dwa": 1.0}
+
+    def test_generalization_gap_spans_dev_and_holdout_scenarios(
+        self, client: TestClient, alice_headers, carol_headers
+    ) -> None:
+        """P05: an algorithm accepted on both a dev and a holdout
+        scenario gets a reported gap; the sign/magnitude are not the
+        point here, only that the field is actually populated."""
+        dev = run_owned_benchmark(client, alice_headers, seeds=[1], library="open_space")
+        client.post(
+            f"/api/v1/benchmarks/{dev['id']}/accept-result", json={}, headers=alice_headers
+        )
+        holdout = run_owned_benchmark(client, alice_headers, seeds=[1], library="intersection")
+        client.post(
+            f"/api/v1/benchmarks/{holdout['id']}/accept-result", json={}, headers=alice_headers
+        )
+        after = client.get("/api/v1/leaderboard", headers=carol_headers).json()
+        assert len(after["groups"]) == 2
+        assert "astar+dwa" in after["generalization_gap"]
+        assert -1.0 <= after["generalization_gap"]["astar+dwa"] <= 1.0
+
+    def test_difficulty_curve_present_when_a_scenario_is_calibrated(
+        self, client: TestClient, alice_headers, carol_headers
+    ) -> None:
+        """P03: a point only appears for scenarios with a cached
+        calibration — skips gracefully if the cache has never been
+        generated (see scripts/calibrate_difficulty.py)."""
+        from planbench_benchmark.difficulty import load_difficulty_cache
+
+        if "open_space" not in load_difficulty_cache():
+            pytest.skip("difficulty cache not generated — run scripts/calibrate_difficulty.py")
+        benchmark = run_owned_benchmark(client, alice_headers, seeds=[1], library="open_space")
+        client.post(
+            f"/api/v1/benchmarks/{benchmark['id']}/accept-result", json={}, headers=alice_headers
+        )
+        after = client.get("/api/v1/leaderboard", headers=carol_headers).json()
+        assert after["difficulty_curve"]["astar+dwa"]
+        difficulty, success_rate = after["difficulty_curve"]["astar+dwa"][0]
+        assert 0.0 <= difficulty <= 1.0
+        assert 0.0 <= success_rate <= 1.0
 
     def test_unreviewed_results_visible_only_on_request(
         self, client: TestClient, alice_headers, carol_headers

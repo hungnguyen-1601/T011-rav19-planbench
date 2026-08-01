@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from planbench_benchmark import CURRICULUM_ORDER, SCENARIO_LIBRARY, build_scenario
+from planbench_benchmark import CURRICULUM_ORDER, HOLDOUT_SCENARIOS, SCENARIO_LIBRARY, build_scenario
 from planbench_benchmark.scenarios import STANDARD_ROBOT
+from planbench_benchmark.scenarios import scenario_split
 from planbench_planning import DWAPlanner
 from planbench_schemas.episode import EpisodeStatus
 from planbench_simulator.engine import SimulationEngine
@@ -59,6 +60,25 @@ class TestLibraryContract:
         assert all(cells[(height - 1) * width + col] == 100 for col in range(width))
         assert all(cells[row * width] == 100 for row in range(height))
         assert all(cells[row * width + width - 1] == 100 for row in range(height))
+
+
+class TestHeldOutSplit:
+    """P05: dev/holdout split for final reporting (spec section 8.6e)."""
+
+    def test_holdout_scenarios_are_a_subset_of_the_library(self) -> None:
+        assert HOLDOUT_SCENARIOS <= set(SCENARIO_LIBRARY)
+        assert HOLDOUT_SCENARIOS  # not empty — a split with nothing held out is not a split
+
+    @pytest.mark.parametrize("name", sorted(HOLDOUT_SCENARIOS))
+    def test_holdout_scenarios_report_as_holdout(self, name: str) -> None:
+        assert scenario_split(name) == "holdout"
+
+    @pytest.mark.parametrize("name", sorted(set(SCENARIO_LIBRARY) - HOLDOUT_SCENARIOS))
+    def test_non_holdout_library_scenarios_report_as_dev(self, name: str) -> None:
+        assert scenario_split(name) == "dev"
+
+    def test_a_scenario_outside_the_library_is_dev_by_default(self) -> None:
+        assert scenario_split("some-users-own-map") == "dev"
 
 
 class TestDynamicScenarios:

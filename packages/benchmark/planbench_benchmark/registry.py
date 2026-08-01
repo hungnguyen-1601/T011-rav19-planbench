@@ -9,6 +9,7 @@ comparing a global planner with a local planner is meaningless
 from __future__ import annotations
 
 from collections.abc import Callable
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -16,6 +17,28 @@ from planbench_planning import DWAConfig, DWAPlanner
 from planbench_planning.common.local_base import LocalPlanner
 from planbench_simulator.nav_stack import PurePursuitLocalPlanner
 from planbench_simulator.path_follower import PurePursuitConfig
+
+
+class ObservationClass(StrEnum):
+    """What a stack is allowed to see (spec section 7.0/8.6b, P02).
+
+    Comparing a stack with privileged access to the map or to other
+    agents' true positions against one that only has LiDAR is comparing
+    a sighted player to a blindfolded one — the result may still be
+    real, but it does not mean what a flat leaderboard implies. None of
+    the three stacks currently registered claim ``FULL_MAP`` or
+    ``HUMAN_STATES``: DWA and PPO both plan from LiDAR plus the robot's
+    own state, and pure-pursuit ignores sensing entirely (hence
+    ``benchmarkable=False`` on that entry, independent of this field).
+    The enum's other values exist for the privileged planner this
+    project does not have yet, so adding one later is a one-line
+    declaration rather than a silent leaderboard mismatch.
+    """
+
+    FULL_MAP = "full_map"
+    HUMAN_STATES = "human_states"
+    LIDAR_ONLY = "lidar_only"
+    LIDAR_AND_HUMAN_STATES = "lidar+human_states"
 
 
 class PPOStackConfig(BaseModel):
@@ -56,6 +79,7 @@ class AlgorithmInfo(BaseModel):
     description: str
     benchmarkable: bool
     config_schema: dict
+    observation_class: ObservationClass
 
 
 class _Entry(BaseModel):
@@ -77,6 +101,7 @@ ALGORITHMS: dict[str, _Entry] = {
                 "rollouts and minimises a weighted cost."
             ),
             benchmarkable=True,
+            observation_class=ObservationClass.LIDAR_ONLY,
             config_schema=DWAConfig.model_json_schema(),
         ),
         config_model=DWAConfig,
@@ -93,6 +118,7 @@ ALGORITHMS: dict[str, _Entry] = {
                 "only a smoke-test model."
             ),
             benchmarkable=True,
+            observation_class=ObservationClass.LIDAR_ONLY,
             config_schema=PPOStackConfig.model_json_schema(),
         ),
         config_model=PPOStackConfig,
@@ -108,6 +134,7 @@ ALGORITHMS: dict[str, _Entry] = {
                 "be used to draw benchmark conclusions."
             ),
             benchmarkable=False,
+            observation_class=ObservationClass.LIDAR_ONLY,
             config_schema=PurePursuitConfig.model_json_schema(),
         ),
         config_model=PurePursuitConfig,

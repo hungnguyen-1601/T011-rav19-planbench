@@ -317,6 +317,27 @@ SCENARIO_LIBRARY: dict[str, Callable[[], tuple[MapData, Scenario]]] = {
 
 CURRICULUM_ORDER: tuple[str, ...] = tuple(SCENARIO_LIBRARY)
 
+#: Held out for final reporting only (spec section 8.6e, P05) — never
+#: used to tune parameters or pick a winning configuration. The two
+#: hardest scenarios in the curriculum: an untuned config's performance
+#: here is the honest signal, tuning against them would be studying for
+#: the answer key. A scenario outside the library (a user's own map)
+#: has no split of its own and is treated as "dev" — see
+#: :func:`scenario_split`.
+HOLDOUT_SCENARIOS: frozenset[str] = frozenset({"intersection", "dynamic_warehouse"})
+
+
+def scenario_split(name: str) -> str:
+    """"dev" or "holdout" for a library scenario name.
+
+    Anything not in :data:`SCENARIO_LIBRARY` — a user's own map/scenario
+    — is "dev" by definition: the dev/holdout distinction only means
+    something for the standard library, where "holdout" is a promise
+    about how the *library* is used, not a property intrinsic to any
+    one map.
+    """
+    return "holdout" if name in HOLDOUT_SCENARIOS else "dev"
+
 
 def build_scenario(name: str) -> tuple[MapData, Scenario]:
     """Build a library scenario by name."""

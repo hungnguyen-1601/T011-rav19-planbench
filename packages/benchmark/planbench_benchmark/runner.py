@@ -24,14 +24,21 @@ from planbench_benchmark.spec import (
     BenchmarkReport,
     BenchmarkSpec,
     FairnessRecord,
+    PairwiseComparison,
     RunRecord,
 )
+from planbench_metrics.statistics import bootstrap_ci, median_iqr, wilcoxon_compare
 from planbench_schemas.episode import EpisodeStatus
 from planbench_schemas.map import MapData
 from planbench_schemas.scenario import Scenario
 from planbench_simulator.nav_stack import StackRun, run_stack
 
 logger = logging.getLogger("planbench.benchmark")
+
+#: spec section 8.6a: "≥30 seed mỗi cặp (scenario, algorithm)". Below
+#: this, results are still computed and reported — see
+#: BenchmarkReport.statistically_adequate — just flagged, not blocked.
+MIN_SEEDS_FOR_STATISTICAL_ADEQUACY = 30
 
 
 def run_single(
@@ -91,7 +98,57 @@ def run_benchmark(
         aggregate_algorithm(algorithm.id, [r for r in runs if r.algorithm == algorithm.id])
         for algorithm in spec.algorithms
     )
-    return BenchmarkReport(spec=spec, fairness=fairness, runs=tuple(runs), aggregates=aggregates)
+    return BenchmarkReport(
+        spec=spec,
+        fairness=fairness,
+        runs=tuple(runs),
+        aggregates=aggregates,
+        comparisons=compare_algorithms(spec, runs, aggregates),
+        statistically_adequate=len(spec.seeds) >= MIN_SEEDS_FOR_STATISTICAL_ADEQUACY,
+        seed_count=len(spec.seeds),
+    )
+
+
+def compare_algorithms(
+    spec: BenchmarkSpec, runs: Sequence[RunRecord], aggregates: Sequence[AlgorithmAggregate]
+) -> tuple[PairwiseComparison, ...]:
+    """Every algorithm compared against the best-success one, paired by
+    seed on the binary success indicator.
+
+    Nothing to compare with fewer than two algorithms or fewer than two
+    seeds — Wilcoxon needs at least one pair, and one seed is one pair
+    with no variation to rank.
+    """
+    if len(spec.algorithms) < 2 or len(spec.seeds) < 2:
+        return ()
+    by_algorithm_seed: dict[tuple[str, int], RunRecord] = {
+        (run.algorithm, run.seed): run for run in runs
+    }
+    baseline = max(aggregates, key=lambda aggregate: aggregate.success_rate).algorithm
+
+    def successes(algorithm: str) -> list[float]:
+        return [
+            1.0 if by_algorithm_seed[(algorithm, seed)].status is EpisodeStatus.SUCCESS else 0.0
+            for seed in spec.seeds
+        ]
+
+    baseline_successes = successes(baseline)
+    comparisons = []
+    for algorithm in spec.algorithms:
+        if algorithm.id == baseline:
+            continue
+        result = wilcoxon_compare(baseline_successes, successes(algorithm.id))
+        comparisons.append(
+            PairwiseComparison(
+                baseline_algorithm=baseline,
+                compared_algorithm=algorithm.id,
+                metric="success",
+                p_value=result.p_value,
+                effect_size=result.effect_size,
+                significant=result.significant,
+            )
+        )
+    return tuple(comparisons)
 
 
 def aggregate_algorithm(algorithm_id: str, runs: Sequence[RunRecord]) -> AlgorithmAggregate:
@@ -127,6 +184,17 @@ def aggregate_algorithm(algorithm_id: str, runs: Sequence[RunRecord]) -> Algorit
         if run.metrics.global_planning_time is not None
     ]
 
+    success_indicator = [1.0 if run.status is EpisodeStatus.SUCCESS else 0.0 for run in runs]
+    success_rate_ci95 = bootstrap_ci(success_indicator) if len(success_indicator) > 1 else None
+
+    travel_times = [r.metrics.travel_time for r in successful]
+    median_travel_time, iqr_travel_time = _median_and_iqr(travel_times)
+
+    path_efficiencies = [
+        r.metrics.path_efficiency for r in successful if r.metrics.path_efficiency is not None
+    ]
+    median_path_efficiency, iqr_path_efficiency = _median_and_iqr(path_efficiencies)
+
     return AlgorithmAggregate(
         algorithm=algorithm_id,
         episodes=episodes,
@@ -149,4 +217,19 @@ def aggregate_algorithm(algorithm_id: str, runs: Sequence[RunRecord]) -> Algorit
         mean_local_planning_latency=mean_of(latencies),
         max_local_planning_latency=max(max_latencies) if max_latencies else None,
         mean_global_planning_time=mean_of(planning_times),
+        success_rate_ci95=success_rate_ci95,
+        median_travel_time_successful=median_travel_time,
+        iqr_travel_time_successful=iqr_travel_time,
+        median_path_efficiency_successful=median_path_efficiency,
+        iqr_path_efficiency_successful=iqr_path_efficiency,
     )
+
+
+def _median_and_iqr(values: list[float]) -> tuple[float | None, tuple[float, float] | None]:
+    """None for both when fewer than 2 values — a spread needs more than
+    one point, and a "median" of one point is just that point, not
+    informative enough to report as a statistic."""
+    if len(values) < 2:
+        return None, None
+    median, q1, q3 = median_iqr(values)
+    return median, (q1, q3)

@@ -1,0 +1,82 @@
+{
+  "bidirectional_corridor": {
+    "calibrated_at": "2026-08-01T16:16:22.736444+00:00",
+    "difficulty": 1.0,
+    "reference_algorithm": "astar+dwa",
+    "scenario": "bidirectional_corridor",
+    "seeds": 30,
+    "success_rate": 0.0
+  },
+  "crossing_obstacle": {
+    "calibrated_at": "2026-08-01T16:13:24.938129+00:00",
+    "difficulty": 0.2666666666666667,
+    "reference_algorithm": "astar+dwa",
+    "scenario": "crossing_obstacle",
+    "seeds": 30,
+    "success_rate": 0.7333333333333333
+  },
+  "doorway": {
+    "calibrated_at": "2026-08-01T16:12:16.747432+00:00",
+    "difficulty": 0.0,
+    "reference_algorithm": "astar+dwa",
+    "scenario": "doorway",
+    "seeds": 30,
+    "success_rate": 1.0
+  },
+  "dynamic_warehouse": {
+    "calibrated_at": "2026-08-01T16:19:34.122020+00:00",
+    "difficulty": 1.0,
+    "reference_algorithm": "astar+dwa",
+    "scenario": "dynamic_warehouse",
+    "seeds": 30,
+    "success_rate": 0.0
+  },
+  "intersection": {
+    "calibrated_at": "2026-08-01T16:17:27.544556+00:00",
+    "difficulty": 0.033333333333333326,
+    "reference_algorithm": "astar+dwa",
+    "scenario": "intersection",
+    "seeds": 30,
+    "success_rate": 0.9666666666666667
+  },
+  "narrow_corridor": {
+    "calibrated_at": "2026-08-01T16:11:04.806057+00:00",
+    "difficulty": 1.0,
+    "reference_algorithm": "astar+dwa",
+    "scenario": "narrow_corridor",
+    "seeds": 30,
+    "success_rate": 0.0
+  },
+  "open_space": {
+    "calibrated_at": "2026-08-01T16:07:34.044971+00:00",
+    "difficulty": 0.0,
+    "reference_algorithm": "astar+dwa",
+    "scenario": "open_space",
+    "seeds": 30,
+    "success_rate": 1.0
+  },
+  "static_obstacles": {
+    "calibrated_at": "2026-08-01T16:08:31.633945+00:00",
+    "difficulty": 0.0,
+    "reference_algorithm": "astar+dwa",
+    "scenario": "static_obstacles",
+    "seeds": 30,
+    "success_rate": 1.0
+  },
+  "sudden_stop": {
+    "calibrated_at": "2026-08-01T16:14:46.375428+00:00",
+    "difficulty": 1.0,
+    "reference_algorithm": "astar+dwa",
+    "scenario": "sudden_stop",
+    "seeds": 30,
+    "success_rate": 0.0
+  },
+  "wide_corridor": {
+    "calibrated_at": "2026-08-01T16:09:39.727502+00:00",
+    "difficulty": 0.0,
+    "reference_algorithm": "astar+dwa",
+    "scenario": "wide_corridor",
+    "seeds": 30,
+    "success_rate": 1.0
+  }
+}

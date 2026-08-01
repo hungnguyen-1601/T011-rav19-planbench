@@ -75,6 +75,8 @@ httpx==0.28.1
 
 # ---------- Simulator, planner, metrics ----------
 numpy==2.5.1
+# Bootstrap CI, Wilcoxon signed-rank — bộ giao thức thống kê P04.
+scipy==1.18.0
 
 # ---------- Lưu trữ ----------
 # SQLite có sẵn trong Python, không cần driver. PostgreSQL cần psycopg —

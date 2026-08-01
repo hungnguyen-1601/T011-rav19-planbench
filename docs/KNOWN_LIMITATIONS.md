@@ -291,6 +291,32 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     được hiện `—` chứ không hiện `0`, và có dòng cảnh báo — nhưng nó
     không nói *cái nào* hỏng. Đủ để không hiểu sai, chưa đủ để chẩn đoán.
 
+## Bộ giao thức đánh giá P02–P05 (Phase 2)
+
+77. **Seed < 30 chỉ cảnh báo, không chặn.** `BenchmarkReport.statistically_adequate`
+    tự báo `false` khi `len(seeds) < 30` (spec mục 8.6a) nhưng backend vẫn
+    chạy và trả kết quả bình thường — quyết định có chủ đích để không phá
+    vỡ demo/test hiện tại đang dùng 1-3 seed. Muốn chặn cứng, sửa
+    `BenchmarkSpec` validator trong `packages/benchmark/planbench_benchmark/spec.py`.
+78. **Không enforce "chạy holdout đúng 1 lần"** (spec mục 8.6e). `split`
+    trong `LibraryEntry`/`generalization_gap` trong leaderboard chỉ là
+    nhãn báo cáo — không có gì ngăn một benchmark chạy nhiều lần trên
+    scenario `holdout` để tinh chỉnh ngầm. Cần tầng kiểm soát riêng nếu
+    muốn enforce thật (theo dõi số lần chạy per user per scenario).
+79. **Cache độ khó (`difficulty_cache.json`) có thể lỗi thời.** Sinh ra
+    bằng `scripts/calibrate_difficulty.py` chạy 1 lần thủ công — nếu
+    simulator, DWA default config, hoặc chính scenario thay đổi, cache cũ
+    vẫn được đọc và hiển thị số liệu sai cho tới khi ai đó chạy lại
+    script. Không có cơ chế tự phát hiện cache lỗi thời (không hash
+    version simulator/scenario vào file cache).
+80. **`observation_class` hiện đồng nhất cho cả 3 stack** (`lidar_only`)
+    — trường tồn tại đúng thiết kế P02 nhưng chưa có tác dụng phân nhóm
+    thật vì chưa có planner nào truy cập full_map/human_states trong
+    codebase. `mixed_observation_classes` sẽ luôn `false` cho tới khi có
+    planner đặc quyền đầu tiên.
+81. **P01 (Optuna, ngân sách tinh chỉnh bằng nhau) chưa làm** — dời sang
+    roadmap Phase 3, cần thêm dependency `optuna` riêng.
+
 ## Môi trường
 
 - Test phải chạy với `PYTHONPATH=` do shell source ROS2 Jazzy (xem

@@ -11,7 +11,7 @@ from planbench_api.auth import ActiveUser
 from planbench_api.dependencies import get_map_service, get_repos, get_scenario_service
 from planbench_api.leaderboard import Leaderboard, ScoreWeights, build_leaderboard
 from planbench_api.services import MapService, ScenarioService
-from planbench_benchmark import CURRICULUM_ORDER, build_scenario
+from planbench_benchmark import CURRICULUM_ORDER, build_scenario, load_difficulty_cache, scenario_split
 from planbench_schemas.scenario import Scenario
 
 router = APIRouter(tags=["library"])
@@ -27,6 +27,13 @@ class LibraryEntry(BaseModel):
     dynamic_obstacles: int
     map_size_m: tuple[float, float]
     timeout_seconds: float
+    #: "dev" (free to tune against) or "holdout" (report-only — spec
+    #: section 8.6e, P05). See planbench_benchmark.scenarios.scenario_split.
+    split: str
+    #: 1 - success_rate of the reference stack over 30 seeds (spec
+    #: section 8.6d, P03). None until scripts/calibrate_difficulty.py has
+    #: been run at least once — a missing calibration, not an error.
+    difficulty: float | None = None
 
 
 class ImportedScenario(BaseModel):
@@ -41,9 +48,11 @@ class ImportedScenario(BaseModel):
 @router.get("/scenario-library", response_model=list[LibraryEntry])
 def list_library(_: ActiveUser) -> list[LibraryEntry]:
     """Built-in scenarios, ordered easiest to hardest (curriculum order)."""
+    difficulty_cache = load_difficulty_cache()
     entries = []
     for index, name in enumerate(CURRICULUM_ORDER):
         map_data, scenario = build_scenario(name)
+        calibrated = difficulty_cache.get(name)
         entries.append(
             LibraryEntry(
                 name=name,
@@ -55,6 +64,8 @@ def list_library(_: ActiveUser) -> list[LibraryEntry]:
                     map_data.height * map_data.resolution,
                 ),
                 timeout_seconds=scenario.timeout_seconds,
+                split=scenario_split(name),
+                difficulty=calibrated.difficulty if calibrated else None,
             )
         )
     return entries

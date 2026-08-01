@@ -26,6 +26,8 @@ PyJWT==2.13.0
 
 # Simulator and planners.
 numpy==2.5.1
+# Bootstrap CI, Wilcoxon signed-rank — statistical protocol suite (P04).
+scipy==1.18.0
 
 # Persistence. psycopg[binary] ships wheels, so no build toolchain is
 # needed in the image.

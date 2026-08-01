@@ -142,6 +142,14 @@ class AlgorithmAggregate(BaseModel):
     successful episodes, because travel time and path efficiency are
     undefined for a robot that never arrived — mixing them would reward
     fast failures.
+
+    ``success_rate_ci95``, the ``median_*``/``iqr_*`` pairs are the P04
+    statistical-rigor fields (spec section 8.6a): median/IQR instead of
+    mean/std because these metrics are typically right-skewed, and a
+    bootstrap CI on success rate because it is a proportion, not a
+    normally-distributed quantity a closed-form interval would fit. All
+    three are ``None`` when there is only one episode — a spread or
+    interval needs more than one data point to mean anything.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -163,6 +171,32 @@ class AlgorithmAggregate(BaseModel):
     mean_local_planning_latency: float | None = None
     max_local_planning_latency: float | None = None
     mean_global_planning_time: float | None = None
+    #: Bootstrap 95% CI on the mean success rate (per-episode 0/1),
+    #: 1000 resamples, fixed seed — see planbench_metrics.statistics.
+    success_rate_ci95: tuple[float, float] | None = None
+    median_travel_time_successful: float | None = None
+    iqr_travel_time_successful: tuple[float, float] | None = None
+    median_path_efficiency_successful: float | None = None
+    iqr_path_efficiency_successful: tuple[float, float] | None = None
+
+
+class PairwiseComparison(BaseModel):
+    """One algorithm compared against the run's best performer on
+    success (Wilcoxon signed-rank, paired by seed — see
+    planbench_metrics.statistics.wilcoxon_compare).
+
+    Absent when there is only one algorithm in the spec, or fewer than
+    two seeds (nothing to pair).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    baseline_algorithm: str
+    compared_algorithm: str
+    metric: str
+    p_value: float
+    effect_size: float
+    significant: bool
 
 
 class BenchmarkReport(BaseModel):
@@ -174,3 +208,12 @@ class BenchmarkReport(BaseModel):
     fairness: FairnessRecord
     runs: tuple[RunRecord, ...]
     aggregates: tuple[AlgorithmAggregate, ...]
+    #: Pairwise Wilcoxon comparisons against the best-success algorithm.
+    #: Empty when there is only one algorithm to compare.
+    comparisons: tuple[PairwiseComparison, ...] = ()
+    #: len(spec.seeds) >= 30 (spec section 8.6a). A smaller benchmark
+    #: still runs and reports — this is a caveat surfaced to the reader,
+    #: not a block; see the Phase 2 plan for why enforcement was
+    #: deliberately left out.
+    statistically_adequate: bool = False
+    seed_count: int = 0
