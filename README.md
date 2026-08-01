@@ -182,3 +182,5 @@ docs/                architecture, API contract, deployment, frontend, agent, RO
 
 - Cách chạy nhanh bằng 1 câu lệnh:
 bash scripts/dev_stack.sh start
+- Cách stop chương trình 
+bash scripts/dev_stack.sh stop
