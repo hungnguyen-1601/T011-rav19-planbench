@@ -1,4 +1,14 @@
-"""Fixtures for API tests: fresh app per test, auth clients, resources."""
+"""Fixtures for API tests: fresh app per test, signed-in clients, resources.
+
+Four accounts, all members. There is no operator and no reviewer any
+more — who may do what is decided per benchmark by ownership, so the
+fixtures are named after people rather than roles, and a test that needs
+"somebody else" reaches for ``bob`` instead of a different role.
+
+``dave`` is the admin, granted through ``PLANBENCH_ADMIN_NICKNAMES``:
+admin comes from deployment configuration, never from anything a user
+can set, and the tests exercise it the same way production does.
+"""
 
 from __future__ import annotations
 
@@ -9,19 +19,12 @@ from payloads import bordered_map_payload, scenario_payload
 from planbench_api.config import get_settings
 from planbench_api.main import create_app
 
-OPERATOR = ("op-alice", "operator-password")
-OPERATOR2 = ("op-bob", "operator2-password")
-REVIEWER = ("rev-carol", "reviewer-password")
-ADMIN = ("admin-dave", "admin-password")
+ALICE = ("alice", "alice-password")
+BOB = ("bob", "bob-password")
+CAROL = ("carol", "carol-password")
+ADMIN = ("dave", "dave-password")
 
-SEED_USERS = ",".join(
-    [
-        f"{OPERATOR[0]}:operator:{OPERATOR[1]}",
-        f"{OPERATOR2[0]}:operator:{OPERATOR2[1]}",
-        f"{REVIEWER[0]}:reviewer:{REVIEWER[1]}",
-        f"{ADMIN[0]}:admin:{ADMIN[1]}",
-    ]
-)
+SEED_USERS = ",".join(f"{nickname}:{password}" for nickname, password in (ALICE, BOB, CAROL, ADMIN))
 
 
 def isolate_environment(monkeypatch) -> None:
@@ -33,9 +36,20 @@ def isolate_environment(monkeypatch) -> None:
     503, because the app tried to reach a real provider. These tests
     assert PlanBench's guarantees — auth, the approval gates, citation
     integrity — and must give the same answer on every machine.
+
+    OAuth credentials are blanked for the same reason, and because no
+    automated test may ever reach a real provider.
     """
     monkeypatch.setenv("PLANBENCH_SEED_USERS", SEED_USERS)
-    monkeypatch.setenv("PLANBENCH_JWT_SECRET", "test-secret-not-used-in-production")
+    monkeypatch.setenv("PLANBENCH_ENABLE_DEV_LOGIN", "true")
+    monkeypatch.setenv("PLANBENCH_ADMIN_NICKNAMES", ADMIN[0])
+    monkeypatch.setenv("PLANBENCH_ADMIN_EMAILS", "")
+    monkeypatch.setenv("AUTH_SECRET", "test-secret-not-used-in-production")
+    monkeypatch.setenv("PLANBENCH_JWT_SECRET", "")
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "")
+    monkeypatch.setenv("GITHUB_CLIENT_ID", "")
+    monkeypatch.setenv("GITHUB_CLIENT_SECRET", "")
     # The deterministic mock: offline, no key, no network.
     monkeypatch.setenv("PLANBENCH_AGENT_PROVIDER", "mock")
     monkeypatch.setenv("PLANBENCH_AGENT_MODEL", "")
@@ -73,18 +87,21 @@ def auth_headers(client: TestClient, credentials: tuple[str, str]) -> dict[str, 
 
 
 @pytest.fixture
-def operator_headers(client: TestClient) -> dict[str, str]:
-    return auth_headers(client, OPERATOR)
+def alice_headers(client: TestClient) -> dict[str, str]:
+    """The default member: creates things and owns them."""
+    return auth_headers(client, ALICE)
 
 
 @pytest.fixture
-def operator2_headers(client: TestClient) -> dict[str, str]:
-    return auth_headers(client, OPERATOR2)
+def bob_headers(client: TestClient) -> dict[str, str]:
+    """Somebody else — the reviewer in most review tests."""
+    return auth_headers(client, BOB)
 
 
 @pytest.fixture
-def reviewer_headers(client: TestClient) -> dict[str, str]:
-    return auth_headers(client, REVIEWER)
+def carol_headers(client: TestClient) -> dict[str, str]:
+    """A third member, for "not the reviewer either" cases."""
+    return auth_headers(client, CAROL)
 
 
 @pytest.fixture

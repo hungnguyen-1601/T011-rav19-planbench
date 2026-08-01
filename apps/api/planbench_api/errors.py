@@ -45,8 +45,11 @@ def register_error_handlers(app: FastAPI) -> None:
     # Imported here to keep this module free of auth/domain imports at
     # module scope (errors.py is imported very early).
     from planbench_agent.provider import ProviderError, ProviderUnavailable
+    from planbench_api.accounts import AccountError
     from planbench_api.approval import PermissionDenied, TransitionError
     from planbench_api.auth import AuthError, Forbidden
+    from planbench_api.oauth import OAuthError
+    from planbench_api.review import ReviewError, ReviewNotAllowed
     from planbench_benchmark.registry import AlgorithmConfigError, UnknownAlgorithmError
 
     # Registered before ProviderError because it is a subclass; FastAPI
@@ -85,6 +88,27 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(PermissionDenied)
     async def permission_denied(_: Request, exc: PermissionDenied) -> JSONResponse:
         return JSONResponse(status_code=403, content=_error_body("forbidden", str(exc)))
+
+    # Before ReviewError, which it subclasses: being the wrong person is a
+    # 403, while asking for something impossible is a 422.
+    @app.exception_handler(ReviewNotAllowed)
+    async def review_not_allowed(_: Request, exc: ReviewNotAllowed) -> JSONResponse:
+        return JSONResponse(status_code=403, content=_error_body("forbidden", str(exc)))
+
+    @app.exception_handler(ReviewError)
+    async def review_invalid(_: Request, exc: ReviewError) -> JSONResponse:
+        return JSONResponse(status_code=422, content=_error_body("validation_error", str(exc)))
+
+    @app.exception_handler(AccountError)
+    async def bad_account_request(_: Request, exc: AccountError) -> JSONResponse:
+        return JSONResponse(status_code=422, content=_error_body("validation_error", str(exc)))
+
+    @app.exception_handler(OAuthError)
+    async def oauth_failed(_: Request, exc: OAuthError) -> JSONResponse:
+        # The message is written for the person who has to fix it and
+        # never contains a token, a code or a client secret.
+        logger.warning("oauth failure: %s", exc)
+        return JSONResponse(status_code=400, content=_error_body("oauth_error", str(exc)))
 
     @app.exception_handler(TransitionError)
     async def bad_transition(_: Request, exc: TransitionError) -> JSONResponse:

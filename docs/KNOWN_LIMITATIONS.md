@@ -207,6 +207,53 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
 58. **Chưa có index cho truy vấn theo thời gian.** `created_at` là chuỗi
     nên `ORDER BY` vẫn đúng, nhưng hàm ngày tháng SQL cần cast.
 
+## Accounts, OAuth và review (M11)
+
+59. **Chưa gọi Google hoặc GitHub thật lần nào.** Toàn bộ luồng OAuth
+    được test bằng provider giả trả về đúng payload mà Google/GitHub
+    gửi, và `normalise_identity` được test riêng trên các payload đó.
+    Cái test này **không** chứng minh được: endpoint thật vẫn nói đúng
+    shape ấy, client id/secret thật hợp lệ, và callback URL đã đăng ký
+    khớp. Ba thứ đó chỉ biết khi bấm nút lần đầu với key thật. Đây là
+    lựa chọn có chủ ý — quy tắc "không gọi OAuth thật trong automated
+    test" nằm trong yêu cầu.
+60. **Exchange code lưu in-memory.** Code dùng một lần đổi lấy JWT sống
+    vài giây và nằm trong RAM của tiến trình. Deploy nhiều worker cần
+    sticky routing, hoặc chuyển sang store dùng chung (Redis). Mất khi
+    restart chỉ có nghĩa là đăng nhập lại.
+61. **Chưa có refresh token.** Hết hạn `PLANBENCH_JWT_TTL_MINUTES` là
+    phải đăng nhập lại.
+62. **Chưa có gộp tài khoản.** Nếu lỡ tạo hai tài khoản (Google một cái,
+    GitHub một cái) thì không có cách gộp — chỉ liên kết được provider
+    thứ hai vào tài khoản đang dùng khi provider đó **chưa** thuộc về ai.
+    Cố tình như vậy: gộp hai lịch sử là thao tác không thể hoàn tác.
+63. **Chưa có UI đổi nickname sau onboarding.** API (`PUT
+    /users/me/nickname`) có sẵn và có test; frontend chỉ hiện màn hình
+    chọn tên lần đầu.
+64. **Chưa có UI liên kết provider thứ hai.** Endpoint
+    `POST /auth/oauth/{provider}/link` có sẵn và có test end-to-end;
+    chưa có nút trong giao diện.
+65. **Badge Review Inbox poll mỗi 30 giây**, không phải realtime. Đủ cho
+    quy mô hiện tại; WebSocket là bước sau nếu cần.
+66. **Không có test render component.** Frontend chỉ có unit test cho
+    logic thuần (session store, `canRun`/`canAcceptResult`). Các trang
+    được kiểm chứng bằng `tsc --noEmit` và `next build`, không phải bằng
+    test render — nên "nút hiện đúng lúc" được chứng minh ở tầng
+    helper + API, không phải ở tầng DOM.
+67. **Admin không bị chặn bởi review đang chờ.** Đó là điểm của admin
+    (gỡ kẹt khi người duyệt đã nghỉ), và mọi hành động đều vào audit
+    trail kèm user ID. Nghĩa là: một owner đồng thời là admin *có thể*
+    tự duyệt review của chính mình. Ai được là admin do
+    `PLANBENCH_ADMIN_NICKNAMES`/`PLANBENCH_ADMIN_EMAILS` quyết định, nên
+    đừng đặt member thường vào đó.
+68. **Fallback quyền sở hữu cho dữ liệu cũ dựa trên nickname.**
+    Benchmark tạo trước refactor không có `owner_user_id`; với riêng
+    những row đó, hệ thống so `created_by` với nickname người gọi. Yếu
+    hơn so ID, nên chỉ áp dụng ở nơi không có ID. Nếu người tạo cũ đã
+    đổi tên và người khác lấy nickname đó, người mới sẽ sở hữu benchmark
+    cũ. Cách xử lý dứt điểm: một migration điền `owner_user_id` khi đã
+    biết ánh xạ tên → tài khoản.
+
 ## Môi trường
 
 - Test phải chạy với `PYTHONPATH=` do shell source ROS2 Jazzy (xem

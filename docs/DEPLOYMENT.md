@@ -125,10 +125,34 @@ Xem `.env.example` cho danh sách đầy đủ. Bắt buộc cho production:
 
 | Biến | Vì sao bắt buộc |
 |---|---|
-| `PLANBENCH_JWT_SECRET` | Rỗng ⇒ sinh ngẫu nhiên mỗi process ⇒ mọi token chết khi restart |
-| `PLANBENCH_SEED_USERS` | Rỗng ⇒ sinh user dev với mật khẩu ngẫu nhiên, log ra stdout |
+| `AUTH_SECRET` | Ký JWT và cookie state OAuth. Rỗng ⇒ sinh ngẫu nhiên mỗi process ⇒ mọi token chết khi restart |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Không có ⇒ không có nút "Continue with Google" |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | Không có ⇒ không có nút "Continue with GitHub" |
+| `PLANBENCH_API_PUBLIC_URL` | Callback URL được suy ra từ đây. Sai ⇒ provider từ chối redirect_uri |
+| `PLANBENCH_WEB_APP_URL` | Nơi browser được đưa về sau khi đăng nhập |
 | `PLANBENCH_DATABASE_URL` | Rỗng ⇒ in-memory ⇒ mất dữ liệu khi restart |
 | `POSTGRES_PASSWORD` | Mặc định `planbench` chỉ dùng cho local |
+
+Callback URL phải đăng ký với provider, và nó **được suy ra** từ
+`PLANBENCH_API_PUBLIC_URL` chứ không cấu hình riêng — hai nguồn sự thật
+là nguyên nhân số một khiến OAuth hỏng:
+
+```
+{PLANBENCH_API_PUBLIC_URL}/api/v1/auth/oauth/google/callback
+{PLANBENCH_API_PUBLIC_URL}/api/v1/auth/oauth/github/callback
+```
+
+**Không bật `PLANBENCH_ENABLE_DEV_LOGIN` trong production.** Mặc định là
+`false`; khi tắt, endpoint `/auth/login` từ chối và tài khoản password
+thậm chí không được tạo.
+
+`PLANBENCH_JWT_SECRET` là tên cũ của `AUTH_SECRET`, vẫn được đọc khi
+`AUTH_SECRET` rỗng, để deployment sẵn có không gãy.
+
+Admin cấp qua `PLANBENCH_ADMIN_NICKNAMES` / `PLANBENCH_ADMIN_EMAILS`
+(email chỉ tính khi provider đã xác minh). Admin được can thiệp vào
+review đang chờ — mọi hành động đều vào audit trail kèm user ID, nên
+đừng đưa member thường vào danh sách này.
 
 Key LLM đọc từ biến của chính nhà cung cấp (`ANTHROPIC_API_KEY`,
 `OPENAI_API_KEY`, …), không phải setting PlanBench. Thiếu key ⇒ agent

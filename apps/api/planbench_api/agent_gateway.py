@@ -145,7 +145,7 @@ class ApiAgentGateway:
             scenario_id=stored_scenario.id,
             algorithms=[AlgorithmSpec(id=algorithm) for algorithm in draft.algorithms],
             seeds=list(draft.seeds),
-            created_by=self._user.username,
+            owner=self._user,
             description=draft.description,
         )
         return self._summary(created)

@@ -25,15 +25,62 @@ start.bat logs       xem log
 ./scripts/dev_stack.sh stop
 ```
 
-Không có `.env`, API tự sinh user dev với mật khẩu ngẫu nhiên và script
-in ra màn hình (đổi mỗi lần khởi động). Muốn cố định: copy
-`.env.example` sang `.env` rồi đặt `PLANBENCH_SEED_USERS`.
+`start.bat` tự chạy `alembic upgrade head` trước khi khởi động API, và
+in ra phương thức đăng nhập nào đang bật. Migration lỗi thì script dừng
+và báo rõ, không khởi động API với schema cũ.
+
+### Đăng nhập
+
+Copy `.env.example` sang `.env` rồi điền **đúng năm biến** này:
+
+```
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+AUTH_SECRET=
+```
+
+Callback URL cần đăng ký với provider (copy nguyên văn):
+
+| Provider | Callback URL |
+|---|---|
+| Google — [console](https://console.cloud.google.com/apis/credentials) | `http://localhost:8000/api/v1/auth/oauth/google/callback` |
+| GitHub — [settings](https://github.com/settings/developers) | `http://localhost:8000/api/v1/auth/oauth/github/callback` |
+
+Sinh `AUTH_SECRET`:
+
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Điền xong chỉ cần chạy lại `start.bat` — không sửa code, không lệnh phụ.
+
+Bỏ trống Google hoặc GitHub cũng được: nút đó không hiện, phần còn lại
+vẫn chạy. Bỏ trống cả hai cũng được — đặt
+`PLANBENCH_ENABLE_DEV_LOGIN=true` để dùng đăng nhập username/password
+cho phát triển cục bộ (mặc định tắt, không dùng cho production).
+
+Lần đăng nhập đầu tiên sẽ hỏi **nickname** (3–30 ký tự, chữ/số/`_`/`-`).
+Nickname là cách người khác gửi review cho bạn — không phải khóa phân
+quyền, phân quyền luôn dựa trên user ID.
+
+### Quy trình
+
+Một người làm được toàn bộ việc của mình: tạo map/scenario/benchmark →
+**Run** → **Accept results** → lên leaderboard. Không cần tài khoản thứ
+hai, không cần đổi tài khoản.
+
+Review là **tùy chọn**. Bấm *Send for review*, nhập nickname người khác,
+chọn *spec* (trước khi chạy) hoặc *result* (sau khi chạy). Khi đang chờ,
+chính chủ **không** tự duyệt được — đó là toàn bộ ý nghĩa của việc nhờ
+review. Có thể hủy yêu cầu bất cứ lúc nào.
 
 Ba thứ chạy ở chế độ giảm cho tới khi được cấu hình, không phải lỗi:
 
 | Mặc định | Hệ quả | Bật đầy đủ |
 |---|---|---|
-| Lưu trữ in-memory | mất dữ liệu khi restart | đặt `PLANBENCH_DATABASE_URL` + `alembic upgrade head` |
+| Chưa cấu hình OAuth | trang login báo rõ, không có nút | điền 5 biến ở trên |
 | Agent dùng mock tất định | trả lời bằng khớp từ khóa, không phải model | dán API key, xem `.env.example` |
 | Chưa có model PPO đã train | stack `astar+ppo` không chạy được | train rồi truyền `model_path` |
 

@@ -60,7 +60,7 @@ export default function LibraryPage() {
     }
   }, []);
 
-  const canImport = session?.role === "operator" || session?.role === "admin";
+  const canImport = Boolean(session);
 
   return (
     <>

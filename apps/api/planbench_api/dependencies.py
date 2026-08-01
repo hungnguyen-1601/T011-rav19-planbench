@@ -11,6 +11,7 @@ from planbench_agent.tools import ToolPolicy
 from planbench_api.agent_gateway import ApiAgentGateway
 from planbench_api.auth import CurrentUser
 from planbench_api.repositories import RepositoryHub
+from planbench_api.review_service import ReviewService
 from planbench_api.services import (
     BenchmarkJobService,
     BenchmarkService,
@@ -37,8 +38,24 @@ def get_simulation_service(request: Request) -> SimulationService:
     return SimulationService(get_repos(request))
 
 
+def get_review_service(request: Request) -> ReviewService:
+    repos = get_repos(request)
+    return ReviewService(repos.reviews, repos.users, repos.benchmarks)
+
+
 def get_benchmark_service(request: Request) -> BenchmarkService:
-    return BenchmarkService(get_repos(request), request.app.state.tracker, request.app.state.jobs)
+    """The benchmark service, wired to reviews.
+
+    It needs them: whether the owner may run or accept depends on
+    whether a review is pending, and that question is only answerable
+    from stored requests.
+    """
+    return BenchmarkService(
+        get_repos(request),
+        request.app.state.tracker,
+        request.app.state.jobs,
+        reviews=get_review_service(request),
+    )
 
 
 def get_benchmark_job_service(request: Request) -> BenchmarkJobService:

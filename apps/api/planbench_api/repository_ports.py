@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+from planbench_api.accounts import AuthProvider, OAuthAccount, StoredUser, User
 from planbench_api.approval import ApprovalRecord, BenchmarkState
 from planbench_api.repositories import (
     StoredBenchmark,
@@ -29,6 +30,7 @@ from planbench_api.repositories import (
     StoredScenario,
     StoredSimulation,
 )
+from planbench_api.review import ReviewRequest, ReviewStatus
 from planbench_benchmark import BenchmarkReport, BenchmarkSpec, RunRecord
 from planbench_schemas.map import MapData
 from planbench_schemas.scenario import Scenario
@@ -73,9 +75,74 @@ class EpisodeRepositoryPort(Protocol):
 
 
 @runtime_checkable
+class UserRepositoryPort(Protocol):
+    """Accounts and the provider identities linked to them.
+
+    OAuth accounts live here rather than in their own repository because
+    every operation on them is an operation on a user: no caller ever
+    wants an OAuth row on its own.
+    """
+
+    def create(
+        self,
+        *,
+        nickname: str = "",
+        email: str = "",
+        display_name: str = "",
+        avatar_url: str = "",
+        is_admin: bool = False,
+        password_hash: str | None = None,
+    ) -> User: ...
+    def get(self, user_id: str) -> User: ...
+    def get_stored(self, user_id: str) -> StoredUser: ...
+    def find_by_nickname(self, nickname: str) -> User | None: ...
+    def search_by_nickname(self, prefix: str, limit: int = 10) -> list[User]: ...
+    def set_nickname(self, user_id: str, nickname: str) -> User: ...
+    def update_profile(
+        self,
+        user_id: str,
+        *,
+        email: str | None = None,
+        display_name: str | None = None,
+        avatar_url: str | None = None,
+    ) -> User: ...
+    def set_admin(self, user_id: str, is_admin: bool) -> User: ...
+    def list(self) -> list[User]: ...
+    def link_oauth(
+        self,
+        *,
+        user_id: str,
+        provider: AuthProvider,
+        provider_account_id: str,
+        provider_email: str = "",
+    ) -> OAuthAccount: ...
+    def find_oauth(
+        self, provider: AuthProvider, provider_account_id: str
+    ) -> OAuthAccount | None: ...
+    def list_oauth(self, user_id: str) -> list[OAuthAccount]: ...
+
+
+@runtime_checkable
+class ReviewRepositoryPort(Protocol):
+    def create(self, request: ReviewRequest) -> ReviewRequest: ...
+    def get(self, request_id: str) -> ReviewRequest: ...
+    def save(self, request: ReviewRequest) -> ReviewRequest: ...
+    def list_for_benchmark(self, benchmark_id: str) -> list[ReviewRequest]: ...
+    def list_for_reviewer(
+        self, reviewer_user_id: str, status: ReviewStatus | None = None
+    ) -> list[ReviewRequest]: ...
+    def list_requested_by(self, user_id: str) -> list[ReviewRequest]: ...
+
+
+@runtime_checkable
 class BenchmarkRepositoryPort(Protocol):
     def create(
-        self, spec: BenchmarkSpec, map_id: str, scenario_id: str, created_by: str
+        self,
+        spec: BenchmarkSpec,
+        map_id: str,
+        scenario_id: str,
+        created_by: str,
+        owner_user_id: str = "",
     ) -> StoredBenchmark: ...
     def get(self, benchmark_id: str) -> StoredBenchmark: ...
     def list(self) -> list[StoredBenchmark]: ...
@@ -94,6 +161,8 @@ class RepositoryHubPort(Protocol):
     simulations: SimulationRepositoryPort
     episodes: EpisodeRepositoryPort
     benchmarks: BenchmarkRepositoryPort
+    users: UserRepositoryPort
+    reviews: ReviewRepositoryPort
 
 
 __all__ = [
@@ -101,6 +170,8 @@ __all__ = [
     "EpisodeRepositoryPort",
     "MapRepositoryPort",
     "RepositoryHubPort",
+    "ReviewRepositoryPort",
     "ScenarioRepositoryPort",
     "SimulationRepositoryPort",
+    "UserRepositoryPort",
 ]

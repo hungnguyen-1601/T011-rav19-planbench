@@ -70,7 +70,9 @@ export default function AgentPage() {
     }
   }, []);
 
-  const isOperator = session?.role === "operator" || session?.role === "admin";
+  // Every signed-in member can drive the agent; what it produces is a
+  // draft they own, and the gates on running it are unchanged.
+  const isMember = Boolean(session);
 
   return (
     <>
@@ -182,7 +184,7 @@ export default function AgentPage() {
               value={mission}
               placeholder="Benchmark DWA on the doorway scenario with seeds 1 2"
               onChange={(event) => setMission(event.target.value)}
-              disabled={!isOperator}
+              disabled={!isMember}
             />
             <label className="inline">
               <input
@@ -192,12 +194,12 @@ export default function AgentPage() {
               />
               submit for approval
             </label>
-            <button type="submit" disabled={!isOperator || parsing || !mission.trim()}>
+            <button type="submit" disabled={!isMember || parsing || !mission.trim()}>
               {parsing ? "Parsing…" : "Parse mission"}
             </button>
           </div>
         </form>
-        {session && !isOperator ? (
+        {session && !isMember ? (
           <p className="muted">Creating benchmarks is an operator action.</p>
         ) : null}
         {missionResult ? <MissionOutcome result={missionResult} /> : null}

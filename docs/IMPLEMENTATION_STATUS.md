@@ -322,6 +322,63 @@ Toàn bộ 41 vitest pass, `tsc --noEmit` sạch, `next build` ra 12 route.
 Đã chạy thật backend + frontend và kiểm chứng end-to-end (xem
 TEST_REPORT).
 
+### M11 — Tài khoản, OAuth và review tùy chọn
+
+Bỏ hẳn role `operator`/`reviewer`. Trước đây một người phải có hai tài
+khoản mới đi hết được quy trình của chính mình — điều đó không mô tả
+đúng ai đang dùng hệ thống, và biến "đã được review" thành thao tác
+đăng xuất đăng nhập.
+
+1. **Quyền lực = quyền sở hữu** (`approval.py`). `Capability{OWNER,
+   REVIEWER, ADMIN}` thay cho kiểm tra role. State machine giữ nguyên
+   9 state nên benchmark cũ vẫn đọc được và vẫn mang đúng nghĩa; chỉ
+   **ai** được đi mỗi cạnh là đổi. Machine vẫn thuần (không biết gì về
+   review request): *caller* tính capability set, nên test được nó mà
+   không cần database.
+2. **Review là tùy chọn** (`review.py`, `review_service.py`). Mặc định
+   không ai trong quy trình: tạo → Run → tự Accept. Nhờ review là hành
+   động chủ động, và **khi đã nhờ thì chính chủ mất quyền tự quyết ở
+   giai đoạn đó** — đó là toàn bộ giá trị của tính năng này. Hai stage:
+   `spec` chặn Run, `result` chặn Accept.
+3. **`self_approved` khác `approve`** trong audit trail. Chủ sở hữu tự
+   mở gate của mình được ghi bằng action riêng, nên đọc lịch sử luôn
+   phân biệt được benchmark nào thật sự có người thứ hai xem.
+4. **Nickname là khóa tra cứu, không phải khóa phân quyền**
+   (`accounts.py`). Unique không phân biệt hoa thường qua cột
+   `nickname_key` đã casefold + unique index thường (portable giữa
+   SQLite và PostgreSQL, khác với functional index trên `lower()`). JWT
+   mang **user ID**, không mang nickname: khóa phân quyền mà người dùng
+   tự đổi được thì không phải khóa.
+5. **OAuth với FastAPI là authority** (`oauth.py`, `routers/auth.py`).
+   Authorization code + PKCE S256 (Google; GitHub OAuth App không hỗ
+   trợ), state ký HMAC trong cookie httpOnly (sống qua nhiều worker, không
+   cần state server-side), đổi code lấy token **phía server**. JWT
+   **không bao giờ vào URL** — callback trả code dùng một lần, đổi qua
+   POST.
+6. **Không tự động gộp tài khoản trùng email** (`account_service.py`).
+   Khóa tra cứu là `(provider, provider_account_id)`. Liên kết Google +
+   GitHub vào một tài khoản là hành động chủ động khi đã đăng nhập. Chỉ
+   tin email provider đã xác minh — email chưa xác minh không chứng minh
+   được gì.
+7. **Dev login tắt mặc định** (`PLANBENCH_ENABLE_DEV_LOGIN`). Tài khoản
+   password chỉ được tạo khi cờ bật, nên không để lại hash cho tài khoản
+   không ai vào được.
+8. **Migration 0002** thuần thêm mới: `users`, `oauth_accounts`,
+   `review_requests`, cộng `benchmarks.owner_user_id` và
+   `approvals.user_id` / `approvals.review_request_id` (đều nullable).
+   Benchmark cũ không mất, và có fallback quyền sở hữu theo tên cho
+   riêng những row không có `owner_user_id`.
+9. **Gate được áp trước khi vào hàng đợi**. `run-async` trước đây nhận
+   job rồi mới hỏng bên trong worker — một 403 mà người gọi xử lý được
+   biến thành job chết trong log không ai xem. Giờ `check_runnable()`
+   raise ngay tại request.
+
+Test: 5 file mới (`test_api_reviews.py`, `test_api_oauth.py`,
+`test_api_users.py`, cộng repository và frontend), và toàn bộ test cũ
+được viết lại theo mô hình mới. Không gọi OAuth thật lần nào — provider
+giả trả đúng payload Google/GitHub gửi, `normalise_identity` test riêng
+trên payload đó. Giới hạn của cách này ghi ở KNOWN_LIMITATIONS #59.
+
 ### M10 — PostgreSQL + Docker Compose
 
 Chi tiết đầy đủ: `docs/DEPLOYMENT.md`.

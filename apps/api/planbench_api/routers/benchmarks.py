@@ -7,10 +7,16 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 
-from planbench_api.approval import Action, ApprovalRecord, BenchmarkState, Role
-from planbench_api.auth import User, require_roles
-from planbench_api.dependencies import get_benchmark_job_service, get_benchmark_service
+from planbench_api.approval import Action, ApprovalRecord, BenchmarkState
+from planbench_api.auth import ActiveUser
+from planbench_api.dependencies import (
+    get_benchmark_job_service,
+    get_benchmark_service,
+    get_review_service,
+)
 from planbench_api.repositories import StoredBenchmark
+from planbench_api.review import ReviewRequest, ReviewRequestView, ReviewStage, ReviewStatus
+from planbench_api.review_service import ReviewService
 from planbench_api.services import BenchmarkJobService, BenchmarkService
 from planbench_benchmark import AlgorithmSpec, BenchmarkReport, BenchmarkSpec
 
@@ -18,9 +24,7 @@ router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
 
 Service = Annotated[BenchmarkService, Depends(get_benchmark_service)]
 Jobs = Annotated[BenchmarkJobService, Depends(get_benchmark_job_service)]
-Operator = Annotated[User, Depends(require_roles(Role.OPERATOR))]
-Reviewer = Annotated[User, Depends(require_roles(Role.REVIEWER))]
-AnyUser = Annotated[User, Depends(require_roles(Role.OPERATOR, Role.REVIEWER))]
+Reviews = Annotated[ReviewService, Depends(get_review_service)]
 
 
 class BenchmarkCreateRequest(BaseModel):
@@ -48,6 +52,15 @@ class BenchmarkResource(BaseModel):
     finished_at: str | None = None
     approvals: tuple[ApprovalRecord, ...] = ()
     report_artifact_uri: str | None = None
+    #: Ownership and pending reviews, resolved for the calling member.
+    #: The UI uses them to decide what to show; the backend decides what
+    #: to allow, independently, on every request.
+    owner_user_id: str = ""
+    is_owner: bool = False
+    #: Resolved to nicknames here rather than in the browser: the client
+    #: has no way to turn a user id into a name, and asking it to would
+    #: mean a lookup endpoint that leaks the member list.
+    review_requests: tuple[ReviewRequestView, ...] = ()
 
 
 class BenchmarkResultsResponse(BaseModel):
@@ -55,7 +68,12 @@ class BenchmarkResultsResponse(BaseModel):
     report: BenchmarkReport | None = None
 
 
-def _resource(stored: StoredBenchmark) -> BenchmarkResource:
+def _resource(
+    stored: StoredBenchmark,
+    service: BenchmarkService | None = None,
+    user=None,
+    reviews: ReviewService | None = None,
+) -> BenchmarkResource:
     return BenchmarkResource(
         id=stored.id,
         spec=stored.spec,
@@ -68,17 +86,36 @@ def _resource(stored: StoredBenchmark) -> BenchmarkResource:
         finished_at=stored.finished_at,
         approvals=tuple(stored.approvals),
         report_artifact_uri=stored.report_artifact_uri,
+        owner_user_id=stored.owner_user_id,
+        is_owner=bool(service and user and service.is_owner(stored, user)),
+        review_requests=(
+            tuple(reviews.view(request) for request in reviews.for_benchmark(stored.id))
+            if reviews
+            else ()
+        ),
     )
 
 
 @router.get("", response_model=list[BenchmarkResource])
-def list_benchmarks(service: Service, _: AnyUser) -> list[BenchmarkResource]:
-    return [_resource(stored) for stored in service.list()]
+def list_benchmarks(
+    service: Service, reviews: Reviews, user: ActiveUser
+) -> list[BenchmarkResource]:
+    """Every benchmark. Reading is not restricted — acting is.
+
+    A shared leaderboard only means something if everyone can see the
+    runs behind it, so visibility is deliberately wide and every
+    mutating route re-checks ownership on its own.
+
+    Review requests are deliberately *not* resolved here: the list view
+    does not show them, and doing it per row would be a query per
+    benchmark for something nobody reads.
+    """
+    return [_resource(stored, service, user) for stored in service.list()]
 
 
 @router.post("", response_model=BenchmarkResource, status_code=status.HTTP_201_CREATED)
 def create_benchmark(
-    request: BenchmarkCreateRequest, service: Service, user: Operator
+    request: BenchmarkCreateRequest, service: Service, reviews: Reviews, user: ActiveUser
 ) -> BenchmarkResource:
     return _resource(
         service.create(
@@ -87,66 +124,135 @@ def create_benchmark(
             scenario_id=request.scenario_id,
             algorithms=request.algorithms,
             seeds=request.seeds,
-            created_by=user.username,
+            owner=user,
             description=request.description,
-        )
+        ),
+        service,
+        user,
+        reviews,
     )
 
 
 @router.get("/{benchmark_id}", response_model=BenchmarkResource)
-def get_benchmark(benchmark_id: str, service: Service, _: AnyUser) -> BenchmarkResource:
-    return _resource(service.get(benchmark_id))
+def get_benchmark(
+    benchmark_id: str, service: Service, reviews: Reviews, user: ActiveUser
+) -> BenchmarkResource:
+    return _resource(service.get(benchmark_id), service, user, reviews)
 
 
 @router.post("/{benchmark_id}/submit", response_model=BenchmarkResource)
 def submit(
-    benchmark_id: str, request: CommentRequest, service: Service, user: Operator
+    benchmark_id: str, request: CommentRequest, service: Service, reviews: Reviews, user: ActiveUser
 ) -> BenchmarkResource:
-    return _resource(service.transition(benchmark_id, Action.SUBMIT, user, request.comment))
+    stored = service.transition(benchmark_id, Action.SUBMIT, user, request.comment)
+    return _resource(stored, service, user, reviews)
 
 
 @router.post("/{benchmark_id}/approve", response_model=BenchmarkResource)
 def approve(
-    benchmark_id: str, request: CommentRequest, service: Service, user: Reviewer
+    benchmark_id: str, request: CommentRequest, service: Service, reviews: Reviews, user: ActiveUser
 ) -> BenchmarkResource:
-    return _resource(service.transition(benchmark_id, Action.APPROVE, user, request.comment))
+    """Clear the spec gate.
+
+    The owner does this implicitly by pressing Run; this route exists for
+    the reviewer answering from the benchmark page, and for an admin.
+    """
+    stored = service.decide(
+        benchmark_id, user, ReviewStage.SPEC, ReviewStatus.APPROVED, request.comment
+    )
+    return _resource(stored, service, user, reviews)
 
 
 @router.post("/{benchmark_id}/reject", response_model=BenchmarkResource)
 def reject(
-    benchmark_id: str, request: CommentRequest, service: Service, user: Reviewer
+    benchmark_id: str, request: CommentRequest, service: Service, reviews: Reviews, user: ActiveUser
 ) -> BenchmarkResource:
-    return _resource(service.transition(benchmark_id, Action.REJECT, user, request.comment))
+    stored = service.decide(
+        benchmark_id, user, ReviewStage.SPEC, ReviewStatus.REJECTED, request.comment
+    )
+    return _resource(stored, service, user, reviews)
 
 
 @router.post("/{benchmark_id}/cancel", response_model=BenchmarkResource)
 def cancel(
-    benchmark_id: str, request: CommentRequest, service: Service, user: Operator
+    benchmark_id: str, request: CommentRequest, service: Service, reviews: Reviews, user: ActiveUser
 ) -> BenchmarkResource:
-    return _resource(service.transition(benchmark_id, Action.CANCEL, user, request.comment))
+    stored = service.transition(benchmark_id, Action.CANCEL, user, request.comment)
+    return _resource(stored, service, user, reviews)
 
 
 @router.post("/{benchmark_id}/run", response_model=BenchmarkResultsResponse)
 def run_benchmark_endpoint(
-    benchmark_id: str, service: Service, user: Operator
+    benchmark_id: str, service: Service, reviews: Reviews, user: ActiveUser
 ) -> BenchmarkResultsResponse:
-    """Execute an approved benchmark synchronously (background worker: M5)."""
+    """Run it. The owner needs nobody's permission unless they asked for it."""
     stored = service.run(benchmark_id, user)
-    return BenchmarkResultsResponse(benchmark=_resource(stored), report=stored.report)
+    return BenchmarkResultsResponse(
+        benchmark=_resource(stored, service, user, reviews), report=stored.report
+    )
 
 
 @router.post("/{benchmark_id}/accept-result", response_model=BenchmarkResource)
 def accept_result(
-    benchmark_id: str, request: CommentRequest, service: Service, user: Reviewer
+    benchmark_id: str, request: CommentRequest, service: Service, reviews: Reviews, user: ActiveUser
 ) -> BenchmarkResource:
-    return _resource(service.transition(benchmark_id, Action.ACCEPT_RESULT, user, request.comment))
+    stored = service.decide(
+        benchmark_id, user, ReviewStage.RESULT, ReviewStatus.APPROVED, request.comment
+    )
+    return _resource(stored, service, user, reviews)
 
 
 @router.post("/{benchmark_id}/reject-result", response_model=BenchmarkResource)
 def reject_result(
-    benchmark_id: str, request: CommentRequest, service: Service, user: Reviewer
+    benchmark_id: str, request: CommentRequest, service: Service, reviews: Reviews, user: ActiveUser
 ) -> BenchmarkResource:
-    return _resource(service.transition(benchmark_id, Action.REJECT_RESULT, user, request.comment))
+    stored = service.decide(
+        benchmark_id, user, ReviewStage.RESULT, ReviewStatus.REJECTED, request.comment
+    )
+    return _resource(stored, service, user, reviews)
+
+
+# -- asking someone to look -------------------------------------------
+
+
+class ReviewRequestBody(BaseModel):
+    """Send for review: who, which stage, and an optional note."""
+
+    reviewer_nickname: str
+    stage: ReviewStage
+    comment: str = ""
+
+
+@router.post(
+    "/{benchmark_id}/review-requests",
+    response_model=ReviewRequest,
+    status_code=status.HTTP_201_CREATED,
+)
+def request_review(
+    benchmark_id: str, payload: ReviewRequestBody, service: Service, user: ActiveUser
+) -> ReviewRequest:
+    return service.request_review(
+        benchmark_id,
+        user,
+        stage=payload.stage,
+        reviewer_nickname=payload.reviewer_nickname,
+        comment=payload.comment,
+    )
+
+
+@router.get("/{benchmark_id}/review-requests", response_model=list[ReviewRequest])
+def list_review_requests(
+    benchmark_id: str, service: Service, reviews: Reviews, _: ActiveUser
+) -> list[ReviewRequest]:
+    service.get(benchmark_id)  # 404 if unknown
+    return reviews.for_benchmark(benchmark_id)
+
+
+@router.post("/{benchmark_id}/review-requests/{request_id}/cancel", response_model=ReviewRequest)
+def cancel_review_request(
+    benchmark_id: str, request_id: str, service: Service, user: ActiveUser
+) -> ReviewRequest:
+    return service.cancel_review(benchmark_id, user, request_id)
 
 
 class JobStatus(BaseModel):
@@ -166,7 +272,7 @@ class JobStatus(BaseModel):
 @router.post(
     "/{benchmark_id}/run-async", response_model=JobStatus, status_code=status.HTTP_202_ACCEPTED
 )
-def run_async(benchmark_id: str, jobs: Jobs, user: Operator) -> JobStatus:
+def run_async(benchmark_id: str, jobs: Jobs, user: ActiveUser) -> JobStatus:
     """Queue an approved benchmark on the bounded background worker.
 
     The approval gate is checked before queueing, so an unapproved
@@ -182,7 +288,7 @@ def run_async(benchmark_id: str, jobs: Jobs, user: Operator) -> JobStatus:
 
 
 @router.get("/{benchmark_id}/job", response_model=JobStatus)
-def job_status(benchmark_id: str, jobs: Jobs, _: AnyUser) -> JobStatus:
+def job_status(benchmark_id: str, jobs: Jobs, _: ActiveUser) -> JobStatus:
     from planbench_api.errors import NotFoundError
 
     job = jobs.status(benchmark_id)
@@ -192,7 +298,7 @@ def job_status(benchmark_id: str, jobs: Jobs, _: AnyUser) -> JobStatus:
 
 
 @router.post("/{benchmark_id}/job/cancel", response_model=JobStatus)
-def cancel_job(benchmark_id: str, jobs: Jobs, _: Operator) -> JobStatus:
+def cancel_job(benchmark_id: str, jobs: Jobs, _: ActiveUser) -> JobStatus:
     """Ask the worker to stop between episodes (cooperative cancel)."""
     from planbench_api.errors import InvalidStateError, NotFoundError
 
@@ -219,6 +325,10 @@ def _job_status(job) -> JobStatus:  # noqa: ANN001 - worker.Job
 
 
 @router.get("/{benchmark_id}/results", response_model=BenchmarkResultsResponse)
-def get_results(benchmark_id: str, service: Service, _: AnyUser) -> BenchmarkResultsResponse:
+def get_results(
+    benchmark_id: str, service: Service, reviews: Reviews, user: ActiveUser
+) -> BenchmarkResultsResponse:
     stored = service.get(benchmark_id)
-    return BenchmarkResultsResponse(benchmark=_resource(stored), report=stored.report)
+    return BenchmarkResultsResponse(
+        benchmark=_resource(stored, service, user, reviews), report=stored.report
+    )

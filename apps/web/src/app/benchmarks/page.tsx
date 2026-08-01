@@ -103,14 +103,15 @@ export default function BenchmarksPage() {
     );
   }
 
-  const isOperator = session.role === "operator" || session.role === "admin";
+  // Creating a benchmark needs an account and nothing else.
+  const isMember = Boolean(session);
 
   return (
     <>
       <h2>Benchmarks</h2>
       {error ? <div className="error-box">{error}</div> : null}
 
-      {isOperator ? (
+      {isMember ? (
         <div className="panel">
           <h3>New benchmark</h3>
           <div className="row" style={{ alignItems: "flex-end" }}>

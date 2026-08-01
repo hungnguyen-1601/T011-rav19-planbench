@@ -7,8 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
-from planbench_api.approval import Role
-from planbench_api.auth import User, require_roles
+from planbench_api.auth import ActiveUser
 from planbench_api.dependencies import get_episode_service
 from planbench_api.repositories import StoredEpisode
 from planbench_api.services import EpisodeService
@@ -20,7 +19,6 @@ from planbench_schemas.episode import EpisodeEvent, EpisodeResult, TrajectoryPoi
 router = APIRouter(tags=["episodes"])
 
 Service = Annotated[EpisodeService, Depends(get_episode_service)]
-AnyUser = Annotated[User, Depends(require_roles(Role.OPERATOR, Role.REVIEWER))]
 
 
 class EpisodeSummary(BaseModel):
@@ -62,28 +60,28 @@ def _summary(stored: StoredEpisode) -> EpisodeSummary:
 
 
 @router.get("/benchmarks/{benchmark_id}/episodes", response_model=list[EpisodeSummary])
-def list_episodes(benchmark_id: str, service: Service, _: AnyUser) -> list[EpisodeSummary]:
+def list_episodes(benchmark_id: str, service: Service, _: ActiveUser) -> list[EpisodeSummary]:
     return [_summary(stored) for stored in service.list_for_benchmark(benchmark_id)]
 
 
 @router.get("/episodes/{episode_id}", response_model=EpisodeSummary)
-def get_episode(episode_id: str, service: Service, _: AnyUser) -> EpisodeSummary:
+def get_episode(episode_id: str, service: Service, _: ActiveUser) -> EpisodeSummary:
     return _summary(service.get(episode_id))
 
 
 @router.get("/episodes/{episode_id}/result", response_model=EpisodeResult)
-def get_episode_result(episode_id: str, service: Service, _: AnyUser) -> EpisodeResult:
+def get_episode_result(episode_id: str, service: Service, _: ActiveUser) -> EpisodeResult:
     return service.get(episode_id).run.result
 
 
 @router.get("/episodes/{episode_id}/plan", response_model=PlanResult)
-def get_episode_plan(episode_id: str, service: Service, _: AnyUser) -> PlanResult:
+def get_episode_plan(episode_id: str, service: Service, _: ActiveUser) -> PlanResult:
     return service.get(episode_id).run.plan
 
 
 @router.get("/episodes/{episode_id}/failures", response_model=FailureReport)
 def analyse_failure(
-    episode_id: str, service: Service, request: Request, _: AnyUser
+    episode_id: str, service: Service, request: Request, _: ActiveUser
 ) -> FailureReport:
     """Evidence-based diagnosis of how this episode ended.
 
@@ -100,7 +98,7 @@ def analyse_failure(
 
 
 @router.get("/episodes/{episode_id}/replay", response_model=EpisodeReplay)
-def replay_episode(episode_id: str, service: Service, _: AnyUser) -> EpisodeReplay:
+def replay_episode(episode_id: str, service: Service, _: ActiveUser) -> EpisodeReplay:
     stored = service.get(episode_id)
     return EpisodeReplay(
         id=stored.id,

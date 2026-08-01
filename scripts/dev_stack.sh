@@ -92,6 +92,15 @@ API_PORT="${PLANBENCH_API_PORT:-${API_PORT:-8000}}"
 WEB_PORT="${PLANBENCH_WEB_PORT:-${WEB_PORT:-3000}}"
 STARTUP_TIMEOUT="${PLANBENCH_STARTUP_TIMEOUT:-120}"
 
+# Local development persists to SQLite by default, so accounts, review
+# requests and benchmarks survive a restart. Set PLANBENCH_DATABASE_URL
+# in .env to point somewhere else (PostgreSQL in production), or to an
+# empty string for the in-memory backend.
+if [[ -z "${PLANBENCH_DATABASE_URL+x}" ]]; then
+  PLANBENCH_DATABASE_URL="sqlite:///$ROOT/planbench.db"
+fi
+export PLANBENCH_DATABASE_URL
+
 API_LOG="$RUN_DIR/api.log"
 WEB_LOG="$RUN_DIR/web.log"
 
@@ -181,6 +190,79 @@ check_prerequisites() {
 
   info "Node  $NODE_BIN"
   info "npm   $NPM_BIN"
+}
+
+# ================================================================
+# Database migrations
+# ================================================================
+
+# Always before the API starts. An API serving a schema older than its
+# code fails one request at a time, in ways that look like bugs; a
+# migration that fails here says so once, plainly, and stops.
+run_migrations() {
+  if [[ -z "$PLANBENCH_DATABASE_URL" ]]; then
+    info "database  in-memory (no migrations; nothing persists)"
+    return 0
+  fi
+
+  if [[ ! -x "$ROOT/.venv/bin/alembic" ]]; then
+    die "alembic is missing from the virtualenv. Install it once:
+  '$ROOT/.venv/bin/pip' install alembic"
+  fi
+
+  info "database  $PLANBENCH_DATABASE_URL"
+
+  local output
+  if ! output="$(cd "$ROOT" && PYTHONPATH="$PY_PATH" \
+      "$ROOT/.venv/bin/alembic" upgrade head 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    die "database migration failed — the API was not started.
+Fix the error above, then run ./scripts/dev_stack.sh start again."
+  fi
+
+  info "migrations up to date"
+}
+
+# ================================================================
+# Sign-in configuration
+# ================================================================
+
+# Reports what sign-in will actually offer. Never fails: a checkout with
+# no OAuth credentials must still start, with those buttons simply not
+# shown. Values are never printed — only whether they are set.
+check_sign_in() {
+  local methods=()
+
+  [[ -n "${GOOGLE_CLIENT_ID:-}" && -n "${GOOGLE_CLIENT_SECRET:-}" ]] &&
+    methods+=("Google")
+
+  [[ -n "${GITHUB_CLIENT_ID:-}" && -n "${GITHUB_CLIENT_SECRET:-}" ]] &&
+    methods+=("GitHub")
+
+  case "${PLANBENCH_ENABLE_DEV_LOGIN:-}" in
+    1 | true | TRUE | True | yes | on)
+      methods+=("password (development)")
+      ;;
+  esac
+
+  if [[ ${#methods[@]} -eq 0 ]]; then
+    warn "no sign-in method is configured — the login page will say so."
+    warn "Fill GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET and/or"
+    warn "GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET in .env, or set"
+    warn "PLANBENCH_ENABLE_DEV_LOGIN=true for local password sign-in."
+  else
+    info "sign-in   ${methods[*]}"
+  fi
+
+  if [[ -z "${AUTH_SECRET:-}" ]]; then
+    warn "AUTH_SECRET is unset — a random one is generated per start, so"
+    warn "everyone is signed out on every restart. Set it in .env."
+  fi
+
+  if [[ -n "${GOOGLE_CLIENT_ID:-}" || -n "${GITHUB_CLIENT_ID:-}" ]]; then
+    info "callback  http://localhost:$API_PORT/api/v1/auth/oauth/google/callback"
+    info "          http://localhost:$API_PORT/api/v1/auth/oauth/github/callback"
+  fi
 }
 
 # ================================================================
@@ -274,24 +356,21 @@ wait_for() {
 print_credentials() {
   local found
 
+  # Only printed when the API generated one, which it does only when dev
+  # login is on and PLANBENCH_SEED_USERS is empty.
   found="$(
     grep -o \
-      '"username": "[^"]*", "password": "[^"]*"' \
+      '"message": "developer password: [^"]*"' \
       "$API_LOG" \
-      2>/dev/null ||
+      2>/dev/null |
+      sed 's/.*developer password: //; s/"$//' ||
       true
   )"
 
   if [[ -n "$found" ]]; then
-    printf '\n  Generated development logins (new on every restart):\n'
-
-    echo "$found" |
-      sed \
-        's/"username": "/    /; s/", "password": "/  \/  /; s/"$//'
-
-    printf '  Set PLANBENCH_SEED_USERS in .env to keep fixed logins.\n'
-  else
-    printf '\n  Logins come from .env (PLANBENCH_SEED_USERS).\n'
+    printf '\n  Generated development login (new on every restart):\n'
+    printf '    developer  /  %s\n' "$found"
+    printf '  Set PLANBENCH_SEED_USERS in .env to keep a fixed one.\n'
   fi
 }
 
@@ -313,6 +392,9 @@ start_stack() {
 
   printf '\nStarting PlanBench\n'
 
+  run_migrations
+  check_sign_in
+
   # --------------------------------------------------------------
   # Start FastAPI
   # --------------------------------------------------------------
@@ -320,6 +402,8 @@ start_stack() {
   setsid env \
     PYTHONPATH="$PY_PATH" \
     PLANBENCH_ARTIFACT_DIR="${PLANBENCH_ARTIFACT_DIR:-$ROOT/artifacts}" \
+    PLANBENCH_API_PUBLIC_URL="${PLANBENCH_API_PUBLIC_URL:-http://localhost:$API_PORT}" \
+    PLANBENCH_WEB_APP_URL="${PLANBENCH_WEB_APP_URL:-http://localhost:$WEB_PORT}" \
     "$ROOT/.venv/bin/uvicorn" \
       planbench_api.main:app \
       --host 0.0.0.0 \

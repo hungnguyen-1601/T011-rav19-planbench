@@ -1,5 +1,6 @@
 /** Benchmark contract mirrored from the backend. */
 
+import type { ReviewRequestView } from "./reviews";
 import type { EpisodeMetrics, TrajectoryPoint } from "./types";
 
 export type BenchmarkState =
@@ -38,13 +39,18 @@ export interface BenchmarkSpec {
 
 export interface ApprovalRecord {
   benchmark_id: string;
+  /** Nickname at the time of the decision — display only. */
   user: string;
+  /** The identity that acted. Empty on rows written before accounts. */
+  user_id: string;
   role: string;
   action: string;
   previous_state: BenchmarkState;
   new_state: BenchmarkState;
   comment: string;
   timestamp: string;
+  /** Set when the decision answered a review request. */
+  review_request_id: string | null;
 }
 
 export interface BenchmarkResource {
@@ -59,6 +65,11 @@ export interface BenchmarkResource {
   finished_at: string | null;
   approvals: ApprovalRecord[];
   report_artifact_uri: string | null;
+  /** Ownership and pending reviews, resolved by the API for the caller.
+   *  Used to decide what to show; the backend decides what to allow. */
+  owner_user_id: string;
+  is_owner: boolean;
+  review_requests: ReviewRequestView[];
 }
 
 export interface FairnessRecord {

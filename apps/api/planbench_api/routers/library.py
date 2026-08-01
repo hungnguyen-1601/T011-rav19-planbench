@@ -7,8 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel
 
-from planbench_api.approval import Role
-from planbench_api.auth import User, require_roles
+from planbench_api.auth import ActiveUser
 from planbench_api.dependencies import get_map_service, get_repos, get_scenario_service
 from planbench_api.leaderboard import Leaderboard, ScoreWeights, build_leaderboard
 from planbench_api.services import MapService, ScenarioService
@@ -19,8 +18,6 @@ router = APIRouter(tags=["library"])
 
 Maps = Annotated[MapService, Depends(get_map_service)]
 Scenarios = Annotated[ScenarioService, Depends(get_scenario_service)]
-Operator = Annotated[User, Depends(require_roles(Role.OPERATOR))]
-AnyUser = Annotated[User, Depends(require_roles(Role.OPERATOR, Role.REVIEWER))]
 
 
 class LibraryEntry(BaseModel):
@@ -69,7 +66,7 @@ def list_library() -> list[LibraryEntry]:
     status_code=status.HTTP_201_CREATED,
 )
 def import_library_scenario(
-    name: str, maps: Maps, scenarios: Scenarios, _: Operator
+    name: str, maps: Maps, scenarios: Scenarios, _: ActiveUser
 ) -> ImportedScenario:
     """Materialise a library scenario as a stored map + scenario pair."""
     from planbench_api.errors import DomainValidationError
@@ -90,14 +87,14 @@ def import_library_scenario(
 
 @router.get("/leaderboard", response_model=Leaderboard)
 def leaderboard(
-    request_user: AnyUser,
+    request_user: ActiveUser,
     repos=Depends(get_repos),  # noqa: B008 - FastAPI dependency
     scenario_name: str | None = Query(default=None),
     algorithm: str | None = Query(default=None),
     accepted_only: bool = Query(
         default=True,
         description=(
-            "Only rank benchmarks a Reviewer accepted. Set false to inspect "
+            "Only rank accepted benchmarks. Set false to inspect "
             "unreviewed runs — those must not be published as conclusions."
         ),
     ),

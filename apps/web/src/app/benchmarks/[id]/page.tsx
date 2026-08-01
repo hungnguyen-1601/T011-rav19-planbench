@@ -13,7 +13,9 @@ import { FailureFindings } from "@/components/FailureFindings";
 import { JobProgress } from "@/components/JobProgress";
 import { MapCanvas } from "@/components/MapCanvas";
 import { Scene25D } from "@/components/Scene25D";
+import { SendForReview } from "@/components/SendForReview";
 import { authFetch, useSession } from "@/lib/auth";
+import { cancelReview, canAcceptResult, canRun, pendingFor, type ReviewStage } from "@/lib/reviews";
 import type {
   BenchmarkResults,
   EpisodeReplay,
@@ -40,6 +42,8 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [comment, setComment] = useState("");
+  // Which stage the "send for review" modal opens on, or null when closed.
+  const [sending, setSending] = useState<ReviewStage | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -83,6 +87,19 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
     }
   };
 
+  const withdraw = async (requestId: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await cancelReview(requestId);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const openReplay = async (episodeId: string) => {
     try {
       setReplay(await authFetch<EpisodeReplay>(`/episodes/${episodeId}/replay`));
@@ -115,9 +132,16 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
   }
 
   const benchmark = results.benchmark;
-  const isOperator = session.role === "operator" || session.role === "admin";
-  const isReviewer = session.role === "reviewer" || session.role === "admin";
   const state = benchmark.state;
+  const isOwner = benchmark.is_owner;
+  const requests = benchmark.review_requests ?? [];
+  const pendingSpec = pendingFor(requests, "spec");
+  const pendingResult = pendingFor(requests, "result");
+  // Whether *this* member is the one being waited on. Shown so a
+  // reviewer arriving from a link knows why the buttons are there.
+  const iAmSpecReviewer = pendingSpec?.request.reviewer_user_id === session.user.id;
+  const iAmResultReviewer = pendingResult?.request.reviewer_user_id === session.user.id;
+  const blocking = pendingSpec ?? pendingResult;
 
   return (
     <>
@@ -127,7 +151,26 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
       {error ? <div className="error-box">{error}</div> : null}
 
       <div className="panel">
-        <h3>Human-in-the-loop</h3>
+        <h3>Workflow</h3>
+        <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+          {isOwner
+            ? "You own this benchmark: run it and accept the results yourself, or ask another member to review first."
+            : `Created by ${benchmark.created_by}. You can read everything here; only the owner can run it.`}
+        </p>
+
+        {blocking ? (
+          <div className="notice">
+            Waiting on <strong>{blocking.reviewer?.nickname ?? "another member"}</strong> for a{" "}
+            {blocking.request.stage === "spec" ? "spec" : "result"} review
+            {blocking.request.request_comment ? ` — “${blocking.request.request_comment}”` : ""}.
+            {iAmSpecReviewer || iAmResultReviewer
+              ? " That is you — approve or reject below."
+              : isOwner
+                ? " You cannot decide this yourself until they answer, or you cancel the request."
+                : ""}
+          </div>
+        ) : null}
+
         <div className="toolbar">
           <input
             placeholder="Comment (recorded with the decision)"
@@ -135,68 +178,149 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
             onChange={(event) => setComment(event.target.value)}
             style={{ flex: 1, minWidth: 220 }}
           />
-          {isOperator ? (
+
+          {isOwner ? (
             <>
-              <button disabled={busy || state !== "draft" && state !== "rejected"} onClick={() => void act("submit")}>
-                Submit for approval
-              </button>
               <button
                 className="primary"
-                disabled={busy || state !== "approved"}
+                disabled={busy || !canRun(isOwner, state, requests)}
+                title={pendingSpec ? "A spec review is pending" : undefined}
                 onClick={() => void act("run")}
               >
                 Run benchmark
               </button>
               <button
-                disabled={busy || !["pending_approval", "approved", "running"].includes(state)}
-                onClick={() => void act("cancel")}
-              >
-                Cancel
-              </button>
-            </>
-          ) : null}
-          {isReviewer ? (
-            <>
-              <button disabled={busy || state !== "pending_approval"} onClick={() => void act("approve")}>
-                Approve spec
-              </button>
-              <button disabled={busy || state !== "pending_approval"} onClick={() => void act("reject")}>
-                Reject spec
-              </button>
-              <button
                 className="primary"
-                disabled={busy || state !== "pending_review"}
+                disabled={busy || !canAcceptResult(isOwner, state, requests)}
+                title={pendingResult ? "A result review is pending" : undefined}
                 onClick={() => void act("accept-result")}
               >
                 Accept results
               </button>
-              <button disabled={busy || state !== "pending_review"} onClick={() => void act("reject-result")}>
+              <button
+                disabled={busy || state !== "pending_review" || Boolean(pendingResult)}
+                onClick={() => void act("reject-result")}
+              >
+                Reject results
+              </button>
+              <button
+                disabled={busy || !["pending_approval", "approved", "running"].includes(state)}
+                onClick={() => void act("cancel")}
+              >
+                Cancel run
+              </button>
+              {blocking ? (
+                <button disabled={busy} onClick={() => void withdraw(blocking.request.id)}>
+                  Cancel review request
+                </button>
+              ) : (
+                <button
+                  disabled={busy}
+                  onClick={() => setSending(state === "pending_review" ? "result" : "spec")}
+                >
+                  Send for review
+                </button>
+              )}
+            </>
+          ) : null}
+
+          {iAmSpecReviewer ? (
+            <>
+              <button className="primary" disabled={busy} onClick={() => void act("approve")}>
+                Approve spec
+              </button>
+              <button disabled={busy} onClick={() => void act("reject")}>
+                Reject spec
+              </button>
+            </>
+          ) : null}
+          {iAmResultReviewer ? (
+            <>
+              <button className="primary" disabled={busy} onClick={() => void act("accept-result")}>
+                Accept results
+              </button>
+              <button disabled={busy} onClick={() => void act("reject-result")}>
                 Reject results
               </button>
             </>
           ) : null}
         </div>
+
+        {requests.length > 0 ? (
+          <>
+            <h4>Review requests</h4>
+            <table>
+              <thead>
+                <tr>
+                  <th>Stage</th>
+                  <th>Reviewer</th>
+                  <th>Status</th>
+                  <th>Asked</th>
+                  <th>Comments</th>
+                </tr>
+              </thead>
+              <tbody>
+                {requests.map((view) => (
+                  <tr key={view.request.id}>
+                    <td>{view.request.stage}</td>
+                    <td>{view.reviewer?.nickname ?? "—"}</td>
+                    <td>
+                      <span
+                        className={`badge ${
+                          view.request.status === "approved"
+                            ? "ok"
+                            : view.request.status === "pending"
+                              ? ""
+                              : "warn"
+                        }`}
+                      >
+                        {view.request.status}
+                      </span>
+                    </td>
+                    <td className="muted">{view.request.request_comment || "—"}</td>
+                    <td className="muted" style={{ whiteSpace: "pre-wrap" }}>
+                      {view.request.review_comment || "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        ) : null}
+
+        <h4>Audit trail</h4>
         {benchmark.approvals.length > 0 ? (
           <table>
             <thead>
               <tr>
                 <th>Action</th>
                 <th>User</th>
-                <th>Role</th>
                 <th>Transition</th>
                 <th>Comment</th>
+                <th>When</th>
               </tr>
             </thead>
             <tbody>
               {benchmark.approvals.map((entry, index) => (
                 <tr key={index}>
-                  <td>{entry.action}</td>
-                  <td>{entry.user}</td>
-                  <td>{entry.role}</td>
+                  <td>
+                    {entry.action}
+                    {entry.review_request_id ? (
+                      <span className="muted" title="Answering a review request">
+                        {" "}
+                        ↩
+                      </span>
+                    ) : null}
+                  </td>
+                  <td>
+                    {entry.user}
+                    {entry.role === "admin" ? <span className="badge warn">admin</span> : null}
+                  </td>
                   <td className="muted">
                     {entry.previous_state} → {entry.new_state}
                   </td>
                   <td className="muted">{entry.comment || "—"}</td>
+                  <td className="muted">{new Date(entry.timestamp).toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>
@@ -206,7 +330,16 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
         )}
       </div>
 
-      <JobProgress benchmarkId={id} onFinished={() => void refresh()} canCancel={isOperator} />
+      {sending ? (
+        <SendForReview
+          benchmarkId={id}
+          defaultStage={sending}
+          onSent={() => void refresh()}
+          onClose={() => setSending(null)}
+        />
+      ) : null}
+
+      <JobProgress benchmarkId={id} onFinished={() => void refresh()} canCancel={isOwner} />
 
       {results.report ? (
         <>

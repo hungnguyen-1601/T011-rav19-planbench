@@ -13,7 +13,7 @@ docs/KNOWN_LIMITATIONS.md.
 from __future__ import annotations
 
 import pytest
-from conftest import OPERATOR, REVIEWER, auth_headers, isolate_environment
+from conftest import ALICE, BOB, auth_headers, isolate_environment
 from fastapi.testclient import TestClient
 from payloads import bordered_map_payload, scenario_payload
 
@@ -64,9 +64,14 @@ def test_unknown_map_is_a_404(sql_client):
 
 
 def test_full_benchmark_lifecycle_on_sql(sql_client):
-    """Both human gates, a real run, and the audit trail, all persisted."""
-    operator = auth_headers(sql_client, OPERATOR)
-    reviewer = auth_headers(sql_client, REVIEWER)
+    """The reviewed path end to end, over SQL.
+
+    Deliberately the two-person flow: it is the only one that writes
+    review-request rows, so it proves accounts, requests and the audit
+    trail all survive the database round trip together.
+    """
+    operator = auth_headers(sql_client, ALICE)
+    reviewer = auth_headers(sql_client, BOB)
 
     map_id = sql_client.post("/api/v1/maps", json=bordered_map_payload()).json()["id"]
     scenario_id = sql_client.post(
@@ -87,12 +92,28 @@ def test_full_benchmark_lifecycle_on_sql(sql_client):
     assert benchmark.status_code == 201, benchmark.text
     benchmark_id = benchmark.json()["id"]
 
-    # Gate 1: an unapproved benchmark must not run.
-    blocked = sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/run", headers=operator)
-    assert blocked.status_code == 409
+    # Sent for review by nickname, and stored.
+    request = sql_client.post(
+        f"/api/v1/benchmarks/{benchmark_id}/review-requests",
+        json={"reviewer_nickname": "bob", "stage": "spec", "comment": "fair?"},
+        headers=operator,
+    )
+    assert request.status_code == 201, request.text
+    request_id = request.json()["id"]
 
-    sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/submit", json={}, headers=operator)
-    sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/approve", json={}, headers=reviewer)
+    # Gate 1: while it is pending, not even the owner may run it.
+    blocked = sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/run", headers=operator)
+    assert blocked.status_code == 403
+
+    inbox = sql_client.get("/api/v1/reviews/inbox", headers=reviewer).json()
+    assert inbox["pending"] == 1
+    assert inbox["requests"][0]["requested_by"]["nickname"] == "alice"
+
+    approved = sql_client.post(
+        f"/api/v1/reviews/{request_id}/approve", json={"comment": "ok"}, headers=reviewer
+    )
+    assert approved.status_code == 200, approved.text
+
     run = sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/run", headers=operator)
     assert run.status_code == 200, run.text
 
@@ -102,13 +123,17 @@ def test_full_benchmark_lifecycle_on_sql(sql_client):
     assert results["report"]["fairness"]["conditions_checksum"]
 
     actions = [entry["action"] for entry in results["benchmark"]["approvals"]]
-    assert actions == ["submit", "approve", "run", "complete"]
+    assert actions == ["submit", "request_review", "approve", "run", "complete"]
+    # The reviewer's approval is traceable to the request that asked for it.
+    approval = next(e for e in results["benchmark"]["approvals"] if e["action"] == "approve")
+    assert approval["review_request_id"] == request_id
+    assert approval["user"] == "bob"
+    assert approval["user_id"]
 
 
 def test_episode_replay_reads_from_the_artifact_store(sql_client):
     """A SQL row keeps a pointer; the trajectory comes back from storage."""
-    operator = auth_headers(sql_client, OPERATOR)
-    reviewer = auth_headers(sql_client, REVIEWER)
+    operator = auth_headers(sql_client, ALICE)
 
     map_id = sql_client.post("/api/v1/maps", json=bordered_map_payload()).json()["id"]
     scenario_id = sql_client.post(
@@ -125,8 +150,6 @@ def test_episode_replay_reads_from_the_artifact_store(sql_client):
         },
         headers=operator,
     ).json()["id"]
-    sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/submit", json={}, headers=operator)
-    sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/approve", json={}, headers=reviewer)
     sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/run", headers=operator)
 
     episodes = sql_client.get(
@@ -146,8 +169,7 @@ def test_episode_replay_reads_from_the_artifact_store(sql_client):
 
 
 def test_leaderboard_groups_accepted_results_from_sql(sql_client):
-    operator = auth_headers(sql_client, OPERATOR)
-    reviewer = auth_headers(sql_client, REVIEWER)
+    operator = auth_headers(sql_client, ALICE)
 
     map_id = sql_client.post("/api/v1/maps", json=bordered_map_payload()).json()["id"]
     scenario_id = sql_client.post(
@@ -164,15 +186,13 @@ def test_leaderboard_groups_accepted_results_from_sql(sql_client):
         },
         headers=operator,
     ).json()["id"]
-    sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/submit", json={}, headers=operator)
-    sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/approve", json={}, headers=reviewer)
     sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/run", headers=operator)
 
-    # Before acceptance the leaderboard stays empty: results a reviewer
-    # has not accepted are not conclusions.
+    # Before acceptance the leaderboard stays empty: results nobody has
+    # accepted are not conclusions.
     assert sql_client.get("/api/v1/leaderboard", headers=operator).json()["groups"] == []
 
-    sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/accept-result", json={}, headers=reviewer)
+    sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/accept-result", json={}, headers=operator)
     groups = sql_client.get("/api/v1/leaderboard", headers=operator).json()["groups"]
     assert len(groups) == 1
     assert groups[0]["entries"][0]["algorithm"] == "astar+dwa"
@@ -216,3 +236,52 @@ def test_in_memory_backend_loses_data_on_restart(tmp_path, monkeypatch):
     with TestClient(second, raise_server_exceptions=False) as client:
         assert client.get(f"/api/v1/maps/{map_id}").status_code == 404
     get_settings.cache_clear()
+
+
+def test_a_benchmark_from_before_accounts_is_still_owned_by_its_creator(sql_client, sql_app):
+    """Rows written before this refactor have no owner id.
+
+    They must not be stranded: the fallback compares the stored creator
+    *name* against the caller's nickname. It is a weaker check, which is
+    why it applies only where the strong one is absent — a member who
+    later takes that nickname must not inherit the benchmark, and that
+    is what the second half asserts.
+    """
+    from sqlalchemy import text
+
+    alice = auth_headers(sql_client, ALICE)
+    bob = auth_headers(sql_client, BOB)
+
+    map_id = sql_client.post("/api/v1/maps", json=bordered_map_payload()).json()["id"]
+    scenario_id = sql_client.post(
+        "/api/v1/scenarios", json={"map_id": map_id, "scenario": scenario_payload()}
+    ).json()["id"]
+    benchmark_id = sql_client.post(
+        "/api/v1/benchmarks",
+        json={
+            "name": "legacy",
+            "map_id": map_id,
+            "scenario_id": scenario_id,
+            "algorithms": [{"id": "astar+dwa"}],
+            "seeds": [1],
+        },
+        headers=alice,
+    ).json()["id"]
+
+    # Make it look like a row written before owner_user_id existed.
+    with sql_app.state.sessions.begin() as session:
+        session.execute(
+            text("UPDATE benchmarks SET owner_user_id = NULL WHERE id = :id"),
+            {"id": benchmark_id},
+        )
+
+    assert sql_client.get(f"/api/v1/benchmarks/{benchmark_id}", headers=alice).json()["is_owner"]
+    assert not sql_client.get(f"/api/v1/benchmarks/{benchmark_id}", headers=bob).json()["is_owner"]
+    # And she can still run it.
+    assert (
+        sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/run", headers=alice).status_code == 200
+    )
+    assert sql_client.post(f"/api/v1/benchmarks/{benchmark_id}/run", headers=bob).status_code in (
+        403,
+        409,
+    )

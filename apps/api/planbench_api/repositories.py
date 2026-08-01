@@ -83,8 +83,13 @@ class StoredBenchmark:
     spec: BenchmarkSpec
     map_id: str
     scenario_id: str
+    #: Nickname of the creator at creation time — display only.
     created_by: str
     created_at: str
+    #: The identity authorization uses. Empty on benchmarks created
+    #: before accounts existed; see `_capabilities` in the benchmark
+    #: service for how those stay usable.
+    owner_user_id: str = ""
     state: BenchmarkState = BenchmarkState.DRAFT
     report: BenchmarkReport | None = None
     approvals: list[ApprovalRecord] = field(default_factory=list)
@@ -260,7 +265,12 @@ class BenchmarkRepository:
         self._lock = threading.Lock()
 
     def create(
-        self, spec: BenchmarkSpec, map_id: str, scenario_id: str, created_by: str
+        self,
+        spec: BenchmarkSpec,
+        map_id: str,
+        scenario_id: str,
+        created_by: str,
+        owner_user_id: str = "",
     ) -> StoredBenchmark:
         with self._lock:
             stored = StoredBenchmark(
@@ -269,6 +279,7 @@ class BenchmarkRepository:
                 map_id=map_id,
                 scenario_id=scenario_id,
                 created_by=created_by,
+                owner_user_id=owner_user_id,
                 created_at=now_iso(),
             )
             self._items[stored.id] = stored
@@ -309,9 +320,13 @@ class RepositoryHub:
     """All repositories for one application instance (no global state)."""
 
     def __init__(self, artifacts: ArtifactStore) -> None:
+        from planbench_api.user_store import InMemoryReviewRepository, InMemoryUserRepository
+
         self.artifacts = artifacts
         self.maps = MapRepository()
         self.scenarios = ScenarioRepository()
         self.simulations = SimulationRepository()
         self.episodes = EpisodeRepository(artifacts)
         self.benchmarks = BenchmarkRepository(artifacts)
+        self.users = InMemoryUserRepository()
+        self.reviews = InMemoryReviewRepository()

@@ -47,35 +47,114 @@ Mọi lỗi trả về dạng chuẩn:
   → `{type: "result", status, reason, elapsed_time, metrics}`.
 - Lỗi: `{type: "error", code: "not_found" | "not_ready"}` rồi đóng.
 
-## Authentication (M4)
+## Authentication (M11 — thay thế contract M4)
 
-- `POST /auth/login` — form `username`/`password` → `{access_token,
-  token_type, expires_in, role, username}`. Bearer token cho mọi endpoint
-  benchmark/episode.
-- `GET /auth/me` — thông tin caller.
-- Role: `operator` (tạo, submit, run, cancel), `reviewer` (approve/reject
-  spec, accept/reject kết quả), `admin` (cả hai, miễn trừ separation of
-  duties). Người tạo **không** được tự duyệt.
+Không còn role `operator`/`reviewer`. Mọi người đăng nhập đều là
+**member**; quyền làm gì phụ thuộc vào **quyền sở hữu benchmark**, không
+phụ thuộc nhãn tài khoản. `admin` giữ lại cho vận hành nội bộ (gỡ kẹt
+một review mà người duyệt đã nghỉ), và mọi hành động của admin đều được
+ghi vào audit trail như người khác.
 
-## Benchmarks (M4 — thay thế contract M2)
+| Method | Path | Mô tả |
+|---|---|---|
+| GET | /auth/providers | `{google, github, dev_login}` — deployment này thực sự bật gì. Trang login render từ đây |
+| GET | /auth/oauth/{provider}/start | 307 sang provider; đặt cookie state httpOnly đã ký (chống CSRF) |
+| GET | /auth/oauth/{provider}/callback | Provider gọi lại; đổi code lấy token **phía server**, rồi 307 về `{web}/auth/callback?code=<one-time>` |
+| POST | /auth/oauth/exchange | `{code}` → `{access_token, token_type, expires_in, user}`. Code dùng một lần, hết hạn sau 120s |
+| POST | /auth/oauth/{provider}/link | Cần bearer token. Bắt đầu liên kết provider thứ hai vào tài khoản đang đăng nhập → `{authorize_url}` |
+| POST | /auth/login | Form `username`/`password`. **Chỉ hoạt động khi `PLANBENCH_ENABLE_DEV_LOGIN=true`**, ngược lại 401 |
+| GET | /auth/me | `{id, nickname, email, display_name, avatar_url, is_admin, needs_nickname, providers[]}` |
 
-| Method | Path | Role | Mô tả |
+`provider` ∈ `google | github`.
+
+Bất biến về bảo mật, mỗi cái có test tương ứng:
+
+- Client secret **chỉ tồn tại ở server**; browser không bao giờ thấy.
+- JWT **không bao giờ nằm trong URL** — callback trả code dùng một lần,
+  đổi lấy token qua POST.
+- `state` được ký HMAC trong cookie httpOnly; lệch state → từ chối.
+  PKCE S256 cho Google (GitHub OAuth App không hỗ trợ).
+- Chỉ tin email **provider đã xác minh**; email chưa xác minh bị bỏ.
+- **Không tự động gộp** hai tài khoản chỉ vì trùng email. Liên kết
+  Google + GitHub vào một tài khoản là hành động chủ động qua
+  `/auth/oauth/{provider}/link` khi đã đăng nhập.
+- Một identity provider không thể gắn vào hai tài khoản PlanBench.
+
+## Users & nicknames (M11)
+
+| Method | Path | Mô tả |
+|---|---|---|
+| GET | /users/search?nickname= | Tìm theo **tiền tố**, không phân biệt hoa thường → `[{id, nickname, display_name, avatar_url}]`. Không trả email, không trả cờ admin |
+| GET | /users/nickname-available?nickname= | `{nickname, available, valid, message}` — trả lời chứ không báo lỗi, vì gọi theo từng ký tự |
+| PUT | /users/me/nickname | `{nickname}` → user resource. Unique không phân biệt hoa thường |
+
+Nickname: 3–30 ký tự, chỉ chữ/số/`_`/`-`, không khoảng trắng.
+**Nickname không bao giờ là khóa phân quyền** — chỉ để tìm người. Phân
+quyền luôn dùng user ID (bất biến), nên đổi tên hay chiếm lại một
+nickname đã bỏ đều không kế thừa được gì.
+
+## Reviews (M11)
+
+Review là **tùy chọn**. Mặc định không có ai trong quy trình: chủ sở hữu
+tạo → Run → tự Accept. Nhờ review là hành động chủ động, và khi đã nhờ
+thì chính chủ **mất** quyền tự quyết ở giai đoạn đó.
+
+| Method | Path | Ai được gọi | Mô tả |
 |---|---|---|---|
-| GET/POST | /benchmarks | any / operator | Danh sách / tạo `{name, map_id, scenario_id, algorithms:[{id,config}], seeds:[...]}` → state `draft` |
-| GET | /benchmarks/{id} | any | Metadata + audit trail |
-| POST | /benchmarks/{id}/submit | operator | draft/rejected → pending_approval |
-| POST | /benchmarks/{id}/approve | reviewer | pending_approval → approved (**gate 1**) |
-| POST | /benchmarks/{id}/reject | reviewer | pending_approval → draft |
-| POST | /benchmarks/{id}/cancel | operator | → cancelled |
-| POST | /benchmarks/{id}/run | operator | approved → running → pending_review; trả `{benchmark, report}` |
-| POST | /benchmarks/{id}/accept-result | reviewer | pending_review → accepted (**gate 2**) |
-| POST | /benchmarks/{id}/reject-result | reviewer | pending_review → rejected |
+| POST | /benchmarks/{id}/review-requests | owner | `{reviewer_nickname, stage, comment}`, `stage` ∈ `spec\|result` → 201 ReviewRequest |
+| GET | /benchmarks/{id}/review-requests | any | Mọi yêu cầu của benchmark |
+| POST | /benchmarks/{id}/review-requests/{rid}/cancel | người đã gửi | Rút lại yêu cầu đang chờ |
+| GET | /reviews/inbox?pending_only= | any | `{requests[], pending}` — `pending` là số cho badge |
+| GET | /reviews/sent | any | Những yêu cầu tôi đã gửi |
+| POST | /reviews/{rid}/approve | **chỉ** người được chỉ định | `{comment}` → duyệt, đồng thời chuyển state benchmark |
+| POST | /reviews/{rid}/reject | **chỉ** người được chỉ định | `{comment}` → từ chối |
+| POST | /reviews/{rid}/comment | người gửi hoặc người duyệt | Bình luận mà **không** quyết định (giữ nguyên pending) |
+| POST | /reviews/{rid}/cancel | **chỉ** người đã gửi | Rút lại |
+
+Quy tắc, mỗi cái là một test:
+
+- `spec` review chặn **Run**; `result` review chặn **Accept results**.
+- Không tự gửi review cho chính mình (422).
+- Nickname không tồn tại → 422 kèm tên đã nhập.
+- Người khác (kể cả chủ sở hữu) trả lời hộ → **403**.
+- Một yêu cầu chỉ trả lời được một lần (422 lần sau).
+- Mỗi stage chỉ có tối đa một yêu cầu đang chờ.
+- Gửi `spec` review khi benchmark còn `draft` cũng chính là submit — nếu
+  không, phê duyệt thật của người duyệt sẽ không có cạnh nào để đi và
+  bị ghi nhầm thành `self_approved`.
+
+## Benchmarks (M11 — thay thế contract M4)
+
+| Method | Path | Ai được gọi | Mô tả |
+|---|---|---|---|
+| GET/POST | /benchmarks | any / any | Danh sách / tạo `{name, map_id, scenario_id, algorithms:[{id,config}], seeds:[...]}` → state `draft`, người tạo là owner |
+| GET | /benchmarks/{id} | any | Metadata + audit trail + `is_owner` + `review_requests[]` |
+| POST | /benchmarks/{id}/submit | owner | draft/rejected → pending_approval |
+| POST | /benchmarks/{id}/approve | người duyệt được chỉ định, hoặc admin | pending_approval → approved (**gate 1**) |
+| POST | /benchmarks/{id}/reject | người duyệt được chỉ định, hoặc admin | pending_approval → draft |
+| POST | /benchmarks/{id}/cancel | owner | → cancelled |
+| POST | /benchmarks/{id}/run | owner | Tự mở gate 1 (ghi `self_approved`) rồi chạy → pending_review; trả `{benchmark, report}` |
+| POST | /benchmarks/{id}/accept-result | owner, hoặc người duyệt result | pending_review → accepted (**gate 2**) |
+| POST | /benchmarks/{id}/reject-result | owner, hoặc người duyệt result | pending_review → rejected |
 | GET | /benchmarks/{id}/results | any | Report đã lưu (null nếu chưa chạy) |
 | GET | /benchmarks/{id}/episodes | any | Danh sách episode + artifact URI/checksum/size |
 
-Body của các action nhận `{comment}` — được ghi vào audit trail.
+**Đọc thì mở, làm thì khóa.** Ai đăng nhập cũng xem được mọi benchmark —
+leaderboard chung chỉ có ý nghĩa khi xem được các run đằng sau nó. Mọi
+endpoint thay đổi trạng thái đều tự kiểm tra quyền sở hữu.
 
-Chạy khi chưa `approved` trả **409 invalid_state**; sai role trả **403**.
+Body của các action nhận `{comment}` — được ghi vào audit trail cùng
+user ID, nickname, thời điểm, và `review_request_id` khi hành động đó
+trả lời một yêu cầu review.
+
+Chạy sai trạng thái trả **409 invalid_state**; không đủ quyền trả
+**403 forbidden**. Hai cái khác nhau: 409 là "không làm được lúc này",
+403 là "không phải việc của bạn".
+
+State machine giữ nguyên (`draft`, `pending_approval`, `approved`,
+`running`, `pending_review`, `accepted`, `rejected`, `cancelled`,
+`failed`) nên benchmark cũ vẫn đọc được và vẫn mang đúng nghĩa cũ. Chỉ
+**ai** được đi mỗi cạnh là thay đổi.
 
 `report` gồm: `spec`, `fairness` (bằng chứng công bằng, có
 `conditions_checksum`), `runs[]` (mỗi (algorithm, seed)), `aggregates[]`

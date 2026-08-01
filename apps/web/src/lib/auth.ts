@@ -1,18 +1,22 @@
 "use client";
 
-/** Token storage and the authenticated fetch wrapper.
+/** Token storage, the session store, and the authenticated fetch wrapper.
  *
  * The token lives in sessionStorage: it disappears when the tab closes
- * and is never written to a cookie, so there is no CSRF surface.
+ * and is never written to a cookie, so there is no CSRF surface. The
+ * OAuth *state* cookie the backend sets is a different thing entirely —
+ * httpOnly, short-lived, and never read here.
+ *
+ * Nothing about a provider is stored: no provider access token, no
+ * client id, no secret. The browser trades a one-time code for a
+ * PlanBench JWT and keeps only that.
  *
  * The session is exposed as a subscribable store rather than a plain
  * read. Reading it once per component was wrong in a way that only
  * showed up in the sidebar: `SessionBar` lives in the root layout, so it
  * mounts once for the life of the tab. A one-shot read in `useEffect`
  * captured "signed out" before the user ever logged in, and no
- * client-side navigation ever remounted it to correct that. The same
- * staleness applied in reverse to every page — signing out from the
- * sidebar left them still believing they had a session.
+ * client-side navigation ever remounted it to correct that.
  */
 
 import { useSyncExternalStore } from "react";
@@ -21,10 +25,33 @@ import { API_BASE } from "./api";
 const TOKEN_KEY = "planbench.token";
 const USER_KEY = "planbench.user";
 
+/** The signed-in account, as the API describes it.
+ *
+ * `id` is the identity; `nickname` is how other people find them. The
+ * frontend never sends either as proof of anything — the bearer token
+ * is the only credential — so this is display state.
+ */
+export interface SessionUser {
+  id: string;
+  nickname: string;
+  email: string;
+  display_name: string;
+  avatar_url: string;
+  is_admin: boolean;
+  needs_nickname: boolean;
+  providers: string[];
+}
+
 export interface Session {
   token: string;
-  username: string;
-  role: "operator" | "reviewer" | "admin";
+  user: SessionUser;
+}
+
+/** Which sign-in methods this deployment offers. */
+export interface AuthProviders {
+  google: boolean;
+  github: boolean;
+  dev_login: boolean;
 }
 
 const listeners = new Set<() => void>();
@@ -35,14 +62,28 @@ const listeners = new Set<() => void>();
 let snapshot: Session | null = null;
 let loaded = false;
 
+function normaliseUser(raw: Partial<SessionUser> | null): SessionUser | null {
+  if (!raw || typeof raw.id !== "string" || !raw.id) return null;
+  return {
+    id: raw.id,
+    nickname: raw.nickname ?? "",
+    email: raw.email ?? "",
+    display_name: raw.display_name ?? "",
+    avatar_url: raw.avatar_url ?? "",
+    is_admin: raw.is_admin ?? false,
+    needs_nickname: raw.needs_nickname ?? !raw.nickname,
+    providers: raw.providers ?? [],
+  };
+}
+
 function readStorage(): Session | null {
   if (typeof window === "undefined") return null;
   const token = window.sessionStorage.getItem(TOKEN_KEY);
   const raw = window.sessionStorage.getItem(USER_KEY);
   if (!token || !raw) return null;
   try {
-    const user = JSON.parse(raw) as { username: string; role: Session["role"] };
-    return { token, ...user };
+    const user = normaliseUser(JSON.parse(raw));
+    return user ? { token, user } : null;
   } catch {
     // A corrupted entry is treated as no session rather than crashing
     // the whole layout.
@@ -53,7 +94,16 @@ function readStorage(): Session | null {
 function same(a: Session | null, b: Session | null): boolean {
   if (a === b) return true;
   if (!a || !b) return false;
-  return a.token === b.token && a.username === b.username && a.role === b.role;
+  return (
+    a.token === b.token &&
+    a.user.id === b.user.id &&
+    a.user.nickname === b.user.nickname &&
+    a.user.needs_nickname === b.user.needs_nickname &&
+    a.user.avatar_url === b.user.avatar_url &&
+    a.user.email === b.user.email &&
+    a.user.is_admin === b.user.is_admin &&
+    a.user.providers.join(",") === b.user.providers.join(",")
+  );
 }
 
 function refresh(): void {
@@ -110,11 +160,22 @@ export function useSession(): Session | null {
 
 export function saveSession(session: Session): void {
   window.sessionStorage.setItem(TOKEN_KEY, session.token);
-  window.sessionStorage.setItem(
-    USER_KEY,
-    JSON.stringify({ username: session.username, role: session.role }),
-  );
+  // The token is deliberately not duplicated into the user record: one
+  // place owns it, so the two copies cannot disagree.
+  window.sessionStorage.setItem(USER_KEY, JSON.stringify(session.user));
   refresh();
+}
+
+/** Replace the stored profile, keeping the current token.
+ *
+ * Used after choosing a nickname or linking a provider: the token is
+ * still valid, and re-authenticating just to see a new display name
+ * would send the user back through the provider for nothing.
+ */
+export function updateSessionUser(user: SessionUser): void {
+  const current = loadSession();
+  if (!current) return;
+  saveSession({ token: current.token, user });
 }
 
 export function clearSession(): void {
@@ -123,6 +184,54 @@ export function clearSession(): void {
   refresh();
 }
 
+interface TokenResponse {
+  access_token: string;
+  user: SessionUser;
+}
+
+function sessionFrom(data: TokenResponse): Session {
+  const user = normaliseUser(data.user);
+  if (!user) throw new Error("the server returned an unrecognisable account");
+  const session: Session = { token: data.access_token, user };
+  saveSession(session);
+  return session;
+}
+
+async function errorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = await response.json();
+    return body?.error?.message ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Which sign-in methods the backend actually offers. */
+export async function fetchAuthProviders(): Promise<AuthProviders> {
+  const response = await fetch(`${API_BASE}/api/v1/auth/providers`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Could not reach the API (${response.status})`);
+  return (await response.json()) as AuthProviders;
+}
+
+/** Where to send the browser to sign in with a provider. */
+export function oauthStartUrl(provider: "google" | "github"): string {
+  return `${API_BASE}/api/v1/auth/oauth/${provider}/start`;
+}
+
+/** Trade the one-time callback code for a session. */
+export async function exchangeOAuthCode(code: string): Promise<Session> {
+  const response = await fetch(`${API_BASE}/api/v1/auth/oauth/exchange`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, "This sign-in link is no longer valid."));
+  }
+  return sessionFrom((await response.json()) as TokenResponse);
+}
+
+/** Development password sign-in. Only offered when the API enables it. */
 export async function login(username: string, password: string): Promise<Session> {
   const body = new URLSearchParams({ username, password });
   const response = await fetch(`${API_BASE}/api/v1/auth/login`, {
@@ -131,18 +240,13 @@ export async function login(username: string, password: string): Promise<Session
     body,
   });
   if (!response.ok) {
-    throw new Error(
-      response.status === 401 ? "Invalid username or password" : `Login failed (${response.status})`,
-    );
+    const fallback =
+      response.status === 401
+        ? "Invalid username or password"
+        : `Login failed (${response.status})`;
+    throw new Error(await errorMessage(response, fallback));
   }
-  const data = await response.json();
-  const session: Session = {
-    token: data.access_token,
-    username: data.username,
-    role: data.role,
-  };
-  saveSession(session);
-  return session;
+  return sessionFrom((await response.json()) as TokenResponse);
 }
 
 /** Authenticated request against /api/v1; throws on non-2xx. */
@@ -158,13 +262,7 @@ export async function authFetch<T>(path: string, init?: RequestInit): Promise<T>
     cache: "no-store",
   });
   if (!response.ok) {
-    let message = response.statusText;
-    try {
-      const body = await response.json();
-      message = body?.error?.message ?? message;
-    } catch {
-      // keep the status text
-    }
+    const message = await errorMessage(response, response.statusText);
     if (response.status === 401) clearSession();
     throw new Error(message);
   }

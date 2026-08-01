@@ -24,7 +24,17 @@ the artifact store; these tables keep the URI, checksum and size
 
 from __future__ import annotations
 
-from sqlalchemy import JSON, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -37,6 +47,90 @@ TIMESTAMP_LENGTH = 40
 
 class Base(DeclarativeBase):
     pass
+
+
+class UserRow(Base):
+    """A member account.
+
+    ``nickname_key`` is the case-folded form and carries the unique
+    index; ``nickname`` keeps the capitalisation the person chose. A
+    functional index on ``lower(nickname)`` would work on PostgreSQL and
+    not on SQLite, so the key is a real column instead.
+
+    It is nullable because an account created by OAuth exists before its
+    owner has picked a nickname, and several such accounts can be
+    part-way through onboarding at once — a unique index treats multiple
+    NULLs as distinct on both backends, which is exactly what is needed.
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    nickname: Mapped[str] = mapped_column(String(30), nullable=False, default="")
+    nickname_key: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False, default="")
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    avatar_url: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    #: Only set for accounts usable with the development password login.
+    password_hash: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+
+    __table_args__ = (UniqueConstraint("nickname_key", name="uq_users_nickname_key"),)
+
+
+class OAuthAccountRow(Base):
+    """A provider identity bound to one account.
+
+    The unique constraint on (provider, provider_account_id) is the
+    guarantee that one Google or GitHub identity cannot be attached to
+    two PlanBench accounts.
+    """
+
+    __tablename__ = "oauth_accounts"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    provider_account_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    provider_email: Mapped[str] = mapped_column(String(320), nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_account_id", name="uq_oauth_provider_account"),
+        Index("ix_oauth_accounts_user_id", "user_id"),
+    )
+
+
+class ReviewRequestRow(Base):
+    """One request for a second opinion on a benchmark."""
+
+    __tablename__ = "review_requests"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    benchmark_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("benchmarks.id", ondelete="CASCADE"), nullable=False
+    )
+    stage: Mapped[str] = mapped_column(String(10), nullable=False)
+    requested_by_user_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+    reviewer_user_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False)
+    request_comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    review_comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+    reviewed_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+    cancelled_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+
+    __table_args__ = (
+        Index("ix_review_requests_benchmark_id", "benchmark_id"),
+        # The inbox query: my pending requests, newest first.
+        Index("ix_review_requests_reviewer", "reviewer_user_id", "status"),
+        Index("ix_review_requests_requester", "requested_by_user_id"),
+    )
 
 
 class MapRow(Base):
@@ -94,7 +188,12 @@ class BenchmarkRow(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     map_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
     scenario_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+    #: Display name of the creator, kept for rows written before
+    #: accounts existed.
     created_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    #: The identity authorization actually uses. NULL on benchmarks
+    #: created before the accounts refactor — see approval.py.
+    owner_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
     state: Mapped[str] = mapped_column(String(30), nullable=False)
     created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
     started_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
@@ -115,6 +214,7 @@ class BenchmarkRow(Base):
 
     __table_args__ = (
         Index("ix_benchmarks_state", "state"),
+        Index("ix_benchmarks_owner", "owner_user_id"),
         Index("ix_benchmarks_conditions_checksum", "conditions_checksum"),
     )
 
@@ -131,7 +231,13 @@ class ApprovalRow(Base):
     #: Explicit order, because two decisions can share a timestamp at
     #: whatever resolution the clock happens to have.
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: Nickname at the time of the decision — readable after a rename.
     username: Mapped[str] = mapped_column(String(100), nullable=False)
+    #: The identity that acted. NULL on rows written before accounts
+    #: existed, which is why nothing keys off it retroactively.
+    user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    #: Set when the decision answered a review request.
+    review_request_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     action: Mapped[str] = mapped_column(String(30), nullable=False)
     previous_state: Mapped[str] = mapped_column(String(30), nullable=False)
@@ -172,6 +278,9 @@ class EpisodeRow(Base):
 
 __all__ = [
     "ApprovalRow",
+    "OAuthAccountRow",
+    "ReviewRequestRow",
+    "UserRow",
     "Base",
     "BenchmarkRow",
     "EpisodeRow",

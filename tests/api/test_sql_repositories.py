@@ -17,6 +17,7 @@ from __future__ import annotations
 import pytest
 from payloads import bordered_map_payload, scenario_payload
 
+from planbench_api.accounts import AccountLinkError, AuthProvider, NicknameError
 from planbench_api.approval import Action, ApprovalRecord, BenchmarkState, Role
 from planbench_api.artifacts import FileSystemArtifactStore
 from planbench_api.db import SessionFactory, SqlRepositoryHub, create_all, create_db_engine
@@ -27,9 +28,12 @@ from planbench_api.repository_ports import (
     BenchmarkRepositoryPort,
     EpisodeRepositoryPort,
     MapRepositoryPort,
+    ReviewRepositoryPort,
     ScenarioRepositoryPort,
     SimulationRepositoryPort,
+    UserRepositoryPort,
 )
+from planbench_api.review import ReviewRequest, ReviewStage, ReviewStatus
 from planbench_benchmark import AlgorithmSpec, BenchmarkSpec, RunRecord
 from planbench_metrics import EpisodeMetrics
 from planbench_planning import PlanResult
@@ -131,6 +135,8 @@ class TestPorts:
             assert isinstance(backend.simulations, SimulationRepositoryPort)
             assert isinstance(backend.episodes, EpisodeRepositoryPort)
             assert isinstance(backend.benchmarks, BenchmarkRepositoryPort)
+            assert isinstance(backend.users, UserRepositoryPort)
+            assert isinstance(backend.reviews, ReviewRepositoryPort)
 
 
 class TestMaps:
@@ -249,34 +255,39 @@ class TestBenchmarks:
         assert hub.benchmarks.get(stored.id).started_at is not None
 
     def test_approvals_accumulate_in_order(self, hub):
-        # The audit trail is the deliverable here: order and content both
-        # have to survive a reload.
-        stored = hub.benchmarks.create(self.spec(), "map-1", "scenario-1", "op-alice")
-        for index, (action, previous, new, user, role) in enumerate(
-            [
-                (
-                    Action.SUBMIT,
-                    BenchmarkState.DRAFT,
-                    BenchmarkState.PENDING_APPROVAL,
-                    "op-alice",
-                    Role.OPERATOR,
-                ),
-                (
-                    Action.APPROVE,
-                    BenchmarkState.PENDING_APPROVAL,
-                    BenchmarkState.APPROVED,
-                    "rev-carol",
-                    Role.REVIEWER,
-                ),
-            ]
-        ):
+        # The audit trail is the deliverable here: order, content and the
+        # identity of the actor all have to survive a reload.
+        stored = hub.benchmarks.create(
+            self.spec(), "map-1", "scenario-1", "alice", owner_user_id="user-alice"
+        )
+        steps = [
+            (
+                Action.SUBMIT,
+                BenchmarkState.DRAFT,
+                BenchmarkState.PENDING_APPROVAL,
+                "alice",
+                "user-alice",
+                None,
+            ),
+            (
+                Action.APPROVE,
+                BenchmarkState.PENDING_APPROVAL,
+                BenchmarkState.APPROVED,
+                "bob",
+                "user-bob",
+                "request-1",
+            ),
+        ]
+        for index, (action, previous, new, user, user_id, request_id) in enumerate(steps):
             hub.benchmarks.set_state(
                 stored.id,
                 new,
                 ApprovalRecord(
                     benchmark_id=stored.id,
                     user=user,
-                    role=role,
+                    user_id=user_id,
+                    review_request_id=request_id,
+                    role=Role.MEMBER,
                     action=action,
                     previous_state=previous,
                     new_state=new,
@@ -286,8 +297,11 @@ class TestBenchmarks:
             )
         reloaded = hub.benchmarks.get(stored.id)
         assert [record.action for record in reloaded.approvals] == [Action.SUBMIT, Action.APPROVE]
-        assert [record.user for record in reloaded.approvals] == ["op-alice", "rev-carol"]
+        assert [record.user for record in reloaded.approvals] == ["alice", "bob"]
+        assert [record.user_id for record in reloaded.approvals] == ["user-alice", "user-bob"]
+        assert [record.review_request_id for record in reloaded.approvals] == [None, "request-1"]
         assert [record.comment for record in reloaded.approvals] == ["step 0", "step 1"]
+        assert reloaded.owner_user_id == "user-alice"
 
     def test_report_is_stored_with_its_artifact(self, hub, benchmark_report):
         stored = hub.benchmarks.create(self.spec(), "map-1", "scenario-1", "op-alice")
@@ -461,3 +475,189 @@ class TestTransactions:
 
         second = SqlRepositoryHub(SessionFactory(create_db_engine(url)), artifacts)
         assert second.maps.get(map_id).map_data.name == "sql-test-map"
+
+
+class TestUserRepositories:
+    """Accounts, across both backends.
+
+    Nickname uniqueness is the one that has to be identical: the
+    in-memory backend enforces it with a dict, SQL with a unique index on
+    a case-folded column, and a difference between them would show up as
+    "review requests go to the wrong person" only in production.
+    """
+
+    def test_round_trips_an_account(self, hub):
+        created = hub.users.create(
+            nickname="Alice", email="alice@example.com", display_name="Alice A"
+        )
+        loaded = hub.users.get(created.id)
+        assert loaded.nickname == "Alice"  # capitalisation preserved
+        assert loaded.email == "alice@example.com"
+        assert loaded.is_admin is False
+
+    def test_nicknames_are_unique_case_insensitively(self, hub):
+        hub.users.create(nickname="Alice")
+        with pytest.raises(NicknameError, match="already taken"):
+            hub.users.create(nickname="alice")
+
+    def test_lookup_is_case_insensitive(self, hub):
+        created = hub.users.create(nickname="Alice")
+        for spelling in ("alice", "ALICE", "AlIcE"):
+            assert hub.users.find_by_nickname(spelling).id == created.id
+
+    def test_an_account_can_exist_before_it_has_a_nickname(self, hub):
+        """OAuth creates the account first; onboarding names it."""
+        first = hub.users.create(email="a@example.com")
+        second = hub.users.create(email="b@example.com")
+        assert first.needs_nickname and second.needs_nickname
+        # Two nameless accounts must not collide on the unique index.
+        assert {first.id, second.id} == {user.id for user in hub.users.list()}
+
+    def test_renaming_frees_the_old_nickname(self, hub):
+        user = hub.users.create(nickname="alice")
+        hub.users.set_nickname(user.id, "alicia")
+        assert hub.users.find_by_nickname("alice") is None
+        assert hub.users.find_by_nickname("alicia").id == user.id
+        # And the freed name can be taken by somebody else.
+        other = hub.users.create(nickname="alice")
+        assert other.id != user.id
+
+    def test_taking_somebody_elses_nickname_is_refused(self, hub):
+        hub.users.create(nickname="alice")
+        bob = hub.users.create(nickname="bob")
+        with pytest.raises(NicknameError):
+            hub.users.set_nickname(bob.id, "ALICE")
+
+    def test_search_matches_a_prefix_only(self, hub):
+        hub.users.create(nickname="alice")
+        hub.users.create(nickname="alicia")
+        hub.users.create(nickname="bob")
+        assert [user.nickname for user in hub.users.search_by_nickname("ali")] == [
+            "alice",
+            "alicia",
+        ]
+        # Not a substring search: "lic" must not enumerate the members.
+        assert hub.users.search_by_nickname("lic") == []
+
+    def test_oauth_identities_are_unique_per_provider(self, hub):
+        alice = hub.users.create(nickname="alice")
+        bob = hub.users.create(nickname="bob")
+        hub.users.link_oauth(
+            user_id=alice.id,
+            provider=AuthProvider.GOOGLE,
+            provider_account_id="google-1",
+            provider_email="alice@example.com",
+        )
+        with pytest.raises(AccountLinkError, match="already linked"):
+            hub.users.link_oauth(
+                user_id=bob.id, provider=AuthProvider.GOOGLE, provider_account_id="google-1"
+            )
+
+    def test_the_same_account_id_at_two_providers_is_two_identities(self, hub):
+        alice = hub.users.create(nickname="alice")
+        hub.users.link_oauth(
+            user_id=alice.id, provider=AuthProvider.GOOGLE, provider_account_id="1"
+        )
+        hub.users.link_oauth(
+            user_id=alice.id, provider=AuthProvider.GITHUB, provider_account_id="1"
+        )
+        assert {account.provider for account in hub.users.list_oauth(alice.id)} == {
+            AuthProvider.GOOGLE,
+            AuthProvider.GITHUB,
+        }
+
+    def test_relinking_the_same_identity_updates_rather_than_duplicates(self, hub):
+        alice = hub.users.create(nickname="alice")
+        for email in ("old@example.com", "new@example.com"):
+            hub.users.link_oauth(
+                user_id=alice.id,
+                provider=AuthProvider.GOOGLE,
+                provider_account_id="google-1",
+                provider_email=email,
+            )
+        accounts = hub.users.list_oauth(alice.id)
+        assert len(accounts) == 1
+        assert accounts[0].provider_email == "new@example.com"
+
+    def test_admin_can_be_granted_and_revoked(self, hub):
+        user = hub.users.create(nickname="dave")
+        assert hub.users.set_admin(user.id, True).is_admin is True
+        assert hub.users.get(user.id).is_admin is True
+        assert hub.users.set_admin(user.id, False).is_admin is False
+
+    def test_password_hashes_are_not_on_the_public_user(self, hub):
+        user = hub.users.create(nickname="alice", password_hash="not-a-real-hash")
+        assert not hasattr(hub.users.get(user.id), "password_hash")
+        assert hub.users.get_stored(user.id).password_hash == "not-a-real-hash"
+
+    def test_missing_user_raises(self, hub):
+        with pytest.raises(NotFoundError):
+            hub.users.get("nope")
+
+
+class TestReviewRepositories:
+    def make_request(self, hub, benchmark_id: str, **kw) -> ReviewRequest:
+        defaults = {
+            "id": "",
+            "benchmark_id": benchmark_id,
+            "stage": ReviewStage.SPEC,
+            "requested_by_user_id": "user-alice",
+            "reviewer_user_id": "user-bob",
+            "created_at": "2026-07-30T00:00:00+00:00",
+        }
+        return hub.reviews.create(ReviewRequest(**{**defaults, **kw}))
+
+    @pytest.fixture
+    def benchmark_id(self, hub) -> str:
+        spec = BenchmarkSpec(
+            name="reviewed", algorithms=(AlgorithmSpec(id="astar+dwa"),), seeds=(1,)
+        )
+        return hub.benchmarks.create(spec, "map-1", "scenario-1", "alice").id
+
+    def test_round_trips(self, hub, benchmark_id):
+        created = self.make_request(hub, benchmark_id, request_comment="fair?")
+        loaded = hub.reviews.get(created.id)
+        assert loaded.status is ReviewStatus.PENDING
+        assert loaded.request_comment == "fair?"
+        assert loaded.reviewed_at is None
+
+    def test_answering_stamps_the_time_and_survives_a_reload(self, hub, benchmark_id):
+        created = self.make_request(hub, benchmark_id)
+        hub.reviews.save(created.answered(ReviewStatus.APPROVED, "looks fine"))
+        loaded = hub.reviews.get(created.id)
+        assert loaded.status is ReviewStatus.APPROVED
+        assert loaded.review_comment == "looks fine"
+        assert loaded.reviewed_at
+        assert loaded.cancelled_at is None
+
+    def test_cancelling_stamps_cancelled_at_not_reviewed_at(self, hub, benchmark_id):
+        created = self.make_request(hub, benchmark_id)
+        hub.reviews.save(created.answered(ReviewStatus.CANCELLED))
+        loaded = hub.reviews.get(created.id)
+        assert loaded.cancelled_at and loaded.reviewed_at is None
+
+    def test_the_inbox_filters_by_reviewer_and_status(self, hub, benchmark_id):
+        mine = self.make_request(hub, benchmark_id, reviewer_user_id="user-bob")
+        self.make_request(
+            hub, benchmark_id, stage=ReviewStage.RESULT, reviewer_user_id="user-carol"
+        )
+        answered = self.make_request(
+            hub, benchmark_id, stage=ReviewStage.RESULT, reviewer_user_id="user-bob"
+        )
+        hub.reviews.save(answered.answered(ReviewStatus.APPROVED))
+
+        assert {r.id for r in hub.reviews.list_for_reviewer("user-bob")} == {mine.id, answered.id}
+        assert [r.id for r in hub.reviews.list_for_reviewer("user-bob", ReviewStatus.PENDING)] == [
+            mine.id
+        ]
+
+    def test_sent_lists_only_my_requests(self, hub, benchmark_id):
+        mine = self.make_request(hub, benchmark_id, requested_by_user_id="user-alice")
+        self.make_request(
+            hub, benchmark_id, stage=ReviewStage.RESULT, requested_by_user_id="user-zoe"
+        )
+        assert [r.id for r in hub.reviews.list_requested_by("user-alice")] == [mine.id]
+
+    def test_missing_request_raises(self, hub):
+        with pytest.raises(NotFoundError):
+            hub.reviews.get("nope")

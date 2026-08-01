@@ -38,7 +38,18 @@ class MemoryStorage implements Storage {
   }
 }
 
-const SESSION: Session = { token: "token-abc", username: "op-alice", role: "operator" };
+const ALICE = {
+  id: "user-alice",
+  nickname: "alice",
+  email: "alice@example.com",
+  display_name: "Alice Example",
+  avatar_url: "",
+  is_admin: false,
+  needs_nickname: false,
+  providers: ["google"],
+};
+
+const SESSION: Session = { token: "token-abc", user: ALICE };
 
 /** A fresh module per test: the store caches at module scope. */
 async function freshAuth() {
@@ -82,9 +93,51 @@ describe("reading the session", () => {
     const auth = await freshAuth();
     auth.saveSession(SESSION);
     const before = auth.loadSession();
-    auth.saveSession({ ...SESSION, username: "rev-carol", role: "reviewer" });
+    auth.saveSession({ ...SESSION, user: { ...ALICE, id: "user-bob", nickname: "bob" } });
     expect(auth.loadSession()).not.toBe(before);
-    expect(auth.loadSession()?.username).toBe("rev-carol");
+    expect(auth.loadSession()?.user.nickname).toBe("bob");
+  });
+
+  it("notices a nickname change on the same account", async () => {
+    // The sidebar shows it, so a rename has to propagate without a
+    // fresh sign-in.
+    const auth = await freshAuth();
+    auth.saveSession(SESSION);
+    auth.updateSessionUser({ ...ALICE, nickname: "alice-v2" });
+    expect(auth.loadSession()?.user.nickname).toBe("alice-v2");
+    expect(auth.loadSession()?.token).toBe(SESSION.token);
+  });
+
+  it("ignores a profile update when nobody is signed in", async () => {
+    const auth = await freshAuth();
+    auth.updateSessionUser(ALICE);
+    expect(auth.loadSession()).toBeNull();
+  });
+
+  it("treats a stored account with no id as no session", async () => {
+    // An id is the only thing the app uses to identify anyone; without
+    // it the record is unusable, not partially usable.
+    const auth = await freshAuth();
+    window.sessionStorage.setItem("planbench.token", "token-abc");
+    window.sessionStorage.setItem("planbench.user", JSON.stringify({ nickname: "alice" }));
+    expect(auth.loadSession()).toBeNull();
+  });
+
+  it("fills in defaults for a record written by an older build", async () => {
+    const auth = await freshAuth();
+    window.sessionStorage.setItem("planbench.token", "token-abc");
+    window.sessionStorage.setItem("planbench.user", JSON.stringify({ id: "u1", nickname: "alice" }));
+    const session = auth.loadSession();
+    expect(session?.user.providers).toEqual([]);
+    expect(session?.user.is_admin).toBe(false);
+    expect(session?.user.needs_nickname).toBe(false);
+  });
+
+  it("marks an account with no nickname as needing one", async () => {
+    const auth = await freshAuth();
+    window.sessionStorage.setItem("planbench.token", "token-abc");
+    window.sessionStorage.setItem("planbench.user", JSON.stringify({ id: "u1" }));
+    expect(auth.loadSession()?.user.needs_nickname).toBe(true);
   });
 
   it("clears the session on sign out", async () => {
@@ -114,7 +167,21 @@ describe("reading the session", () => {
     auth.saveSession(SESSION);
     const raw = window.sessionStorage.getItem("planbench.user") ?? "";
     expect(raw).not.toContain(SESSION.token);
-    expect(JSON.parse(raw)).toEqual({ username: "op-alice", role: "operator" });
+    expect(JSON.parse(raw)).toEqual(ALICE);
+  });
+
+  it("stores nothing belonging to the identity provider", async () => {
+    // The browser holds a PlanBench token and a profile. No provider
+    // access token, no client id, no secret ever reaches it.
+    const auth = await freshAuth();
+    auth.saveSession(SESSION);
+    const everything = JSON.stringify([
+      window.sessionStorage.getItem("planbench.token"),
+      window.sessionStorage.getItem("planbench.user"),
+    ]).toLowerCase();
+    for (const forbidden of ["client_secret", "client_id", "refresh_token", "access_token"]) {
+      expect(everything).not.toContain(forbidden);
+    }
   });
 });
 

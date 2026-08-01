@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from planbench_agent import KnowledgeBase, build_provider, load_markdown_directory
 from planbench_api.artifacts import FileSystemArtifactStore
-from planbench_api.auth import UserDirectory
+from planbench_api.auth import AuthService
 from planbench_api.config import get_settings
 from planbench_api.db import (
     SessionFactory,
@@ -27,6 +27,7 @@ from planbench_api.db import (
 )
 from planbench_api.errors import register_error_handlers
 from planbench_api.logging_config import configure_logging
+from planbench_api.oauth import ExchangeCodes, OAuthClient
 from planbench_api.repositories import RepositoryHub
 from planbench_api.routers import (
     agent,
@@ -37,8 +38,10 @@ from planbench_api.routers import (
     health,
     library,
     maps,
+    reviews,
     scenarios,
     simulations,
+    users,
     ws,
 )
 from planbench_api.worker import JobQueue
@@ -101,7 +104,12 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     artifacts = FileSystemArtifactStore(artifact_dir or settings.artifact_dir)
     app.state.artifacts = artifacts
     app.state.repos = _build_repositories(settings, artifacts, app)
-    app.state.users = UserDirectory(settings)
+    app.state.auth = AuthService(settings, app.state.repos.users)
+    # One-time codes and the provider HTTP client are app-scoped: the
+    # codes must outlive a request, and the client is replaced wholesale
+    # in tests so no OAuth test ever reaches the network.
+    app.state.oauth_codes = ExchangeCodes()
+    app.state.oauth_client = OAuthClient()
     app.state.jobs = JobQueue(settings.worker_concurrency)
     app.state.tracker = build_tracker(settings.mlflow_tracking_uri, settings.mlflow_experiment)
     app.state.agent_provider = build_provider(
@@ -121,6 +129,8 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     register_error_handlers(app)
     app.include_router(health.router, prefix=API_PREFIX)
     app.include_router(auth.router, prefix=API_PREFIX)
+    app.include_router(users.router, prefix=API_PREFIX)
+    app.include_router(reviews.router, prefix=API_PREFIX)
     app.include_router(maps.router, prefix=API_PREFIX)
     app.include_router(scenarios.router, prefix=API_PREFIX)
     app.include_router(algorithms.router, prefix=API_PREFIX)

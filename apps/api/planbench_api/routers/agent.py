@@ -32,16 +32,13 @@ from planbench_agent.evidence import EvidenceBundle
 from planbench_agent.factory import provider_status
 from planbench_agent.report import FabricatedCitation
 from planbench_agent.tools import FORBIDDEN_CAPABILITIES
-from planbench_api.approval import Role
-from planbench_api.auth import User, require_roles
+from planbench_api.auth import ActiveUser
 from planbench_api.dependencies import get_agent_service
 from planbench_api.errors import DomainValidationError, InvalidStateError, NotFoundError
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
 Agent = Annotated[AgentService, Depends(get_agent_service)]
-Operator = Annotated[User, Depends(require_roles(Role.OPERATOR))]
-AnyUser = Annotated[User, Depends(require_roles(Role.OPERATOR, Role.REVIEWER))]
 
 
 class ProviderInfo(BaseModel):
@@ -94,7 +91,7 @@ class ReportRequest(BaseModel):
 
 
 @router.get("/capabilities", response_model=CapabilitiesResponse)
-def capabilities(agent: Agent, _: AnyUser) -> CapabilitiesResponse:
+def capabilities(agent: Agent, _: ActiveUser) -> CapabilitiesResponse:
     """What this agent can and cannot do, including the provider in use.
 
     Surfacing ``deterministic`` matters: an answer from the fallback
@@ -126,7 +123,7 @@ def capabilities(agent: Agent, _: AnyUser) -> CapabilitiesResponse:
 
 
 @router.post("/chat", response_model=ChatResponse)
-def chat(payload: ChatRequest, agent: Agent, _: AnyUser) -> ChatResponse:
+def chat(payload: ChatRequest, agent: Agent, _: ActiveUser) -> ChatResponse:
     """One conversational turn with read/write tools available."""
     turn, _messages = agent.converse(payload.message)
     return ChatResponse(
@@ -138,7 +135,7 @@ def chat(payload: ChatRequest, agent: Agent, _: AnyUser) -> ChatResponse:
 
 
 @router.post("/missions", response_model=MissionResponse, status_code=status.HTTP_201_CREATED)
-def create_mission(payload: MissionRequest, agent: Agent, user: Operator) -> MissionResponse:
+def create_mission(payload: MissionRequest, agent: Agent, user: ActiveUser) -> MissionResponse:
     """Parse a mission into a validated spec; optionally submit it.
 
     A refusal is a 201 with ``refusal`` populated, not an error: "I could
@@ -163,8 +160,8 @@ def create_mission(payload: MissionRequest, agent: Agent, user: Operator) -> Mis
         except (GatewayError, ValueError) as exc:
             raise DomainValidationError(str(exc)) from exc
         next_step = (
-            f"Benchmark {benchmark.id} is awaiting approval. A reviewer other than "
-            f"{user.username!r} must approve it before it can run."
+            f"Benchmark {benchmark.id} is ready. Run it yourself, or send it to "
+            f"another member for a spec review first."
         )
     return MissionResponse(
         session=session, draft=session.draft, benchmark=benchmark, next_step=next_step
@@ -172,7 +169,7 @@ def create_mission(payload: MissionRequest, agent: Agent, user: Operator) -> Mis
 
 
 @router.post("/benchmarks/{benchmark_id}/run", response_model=BenchmarkSummary)
-def run_benchmark(benchmark_id: str, agent: Agent, _: Operator) -> BenchmarkSummary:
+def run_benchmark(benchmark_id: str, agent: Agent, _: ActiveUser) -> BenchmarkSummary:
     """Run an already-approved benchmark. 409 in any other state."""
     session = agent.new_session(uuid.uuid4().hex[:12])
     try:
@@ -187,7 +184,7 @@ def run_benchmark(benchmark_id: str, agent: Agent, _: Operator) -> BenchmarkSumm
 def evidence(
     benchmark_id: str,
     agent: Agent,
-    _: AnyUser,
+    _: ActiveUser,
     question: str = Query(default=""),
 ) -> EvidenceBundle:
     """The citable facts behind any answer about this benchmark.
@@ -202,7 +199,9 @@ def evidence(
 
 
 @router.post("/benchmarks/{benchmark_id}/report", response_model=GeneratedReport)
-def report(benchmark_id: str, payload: ReportRequest, agent: Agent, _: AnyUser) -> GeneratedReport:
+def report(
+    benchmark_id: str, payload: ReportRequest, agent: Agent, _: ActiveUser
+) -> GeneratedReport:
     """Generate a cited report. Unverifiable output is refused, not returned."""
     session = agent.new_session(uuid.uuid4().hex[:12])
     try:

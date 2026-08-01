@@ -4,11 +4,20 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="PLANBENCH_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="PLANBENCH_",
+        env_file=".env",
+        extra="ignore",
+        # OAuth credentials are conventionally named GOOGLE_CLIENT_ID and
+        # so on; those fields carry an explicit alias, and populate_by_name
+        # keeps the prefixed spelling working for everything else.
+        populate_by_name=True,
+    )
 
     app_name: str = "PlanBench API"
     version: str = "0.1.0"
@@ -19,12 +28,43 @@ class Settings(BaseSettings):
 
     # Auth. An empty secret means "generate a random one per process":
     # fine for development, and no secret ever lives in the repository.
-    # Production must set PLANBENCH_JWT_SECRET (see docs/DEPLOYMENT.md).
+    # Production must set AUTH_SECRET (see docs/DEPLOYMENT.md).
     jwt_secret: str = ""
     jwt_ttl_minutes: int = 60
-    # "name:role:password" entries, comma separated. Empty -> generated
-    # development users with random passwords logged at startup.
+    # "name:password" entries, comma separated (a legacy third ":role"
+    # field is accepted and ignored — everyone is a member now). Only
+    # usable when dev login is enabled.
     seed_users: str = ""
+    # Username/password sign-in. Off unless explicitly enabled, so a
+    # deployment cannot accidentally expose a password login next to
+    # OAuth — the login page hides it based on the same flag.
+    enable_dev_login: bool = False
+
+    # OAuth. These four are the provider's, and the fifth signs our own
+    # tokens; all five are named without the PLANBENCH_ prefix because
+    # that is what the provider consoles and every deployment guide call
+    # them. Empty values are not an error: the corresponding button is
+    # simply not offered.
+    google_client_id: str = Field(default="", validation_alias="GOOGLE_CLIENT_ID")
+    google_client_secret: str = Field(default="", validation_alias="GOOGLE_CLIENT_SECRET")
+    github_client_id: str = Field(default="", validation_alias="GITHUB_CLIENT_ID")
+    github_client_secret: str = Field(default="", validation_alias="GITHUB_CLIENT_SECRET")
+    #: Signs JWTs and the OAuth state cookie. Falls back to
+    #: PLANBENCH_JWT_SECRET, then to a per-process random value.
+    auth_secret: str = Field(default="", validation_alias="AUTH_SECRET")
+
+    # Where the two halves of the app are reachable. The redirect URI
+    # registered with Google and GitHub is derived from api_public_url,
+    # so it cannot drift from what the callback route actually is.
+    api_public_url: str = "http://localhost:8000"
+    web_app_url: str = "http://localhost:3000"
+
+    # Admin is granted by configuration, never by anything a user can
+    # type: a nickname is chosen by its owner, so only a nickname the
+    # deployment already trusts counts. Comma-separated, case-insensitive.
+    # Emails are matched only when the provider verified them.
+    admin_nicknames: str = ""
+    admin_emails: str = ""
 
     # Artifact storage root for trajectories and reports.
     artifact_dir: str = "artifacts"
@@ -72,3 +112,13 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def oauth_redirect_uri(settings: Settings, provider: str) -> str:
+    """The callback URL to register with the provider.
+
+    Derived rather than configured: a mismatch between what is registered
+    and what the app actually serves is the single most common OAuth
+    setup failure, and there is no reason for two sources of truth.
+    """
+    return f"{settings.api_public_url.rstrip('/')}/api/v1/auth/oauth/{provider}/callback"

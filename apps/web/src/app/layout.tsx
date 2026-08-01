@@ -25,6 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/leaderboard">Leaderboard</Link>
               <Link href="/algorithms">Algorithms</Link>
               <Link href="/agent">Agent</Link>
+              <Link href="/reviews">Reviews</Link>
             </nav>
             <SessionBar />
           </aside>

@@ -22,6 +22,16 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from planbench_api.accounts import (
+    AccountLinkError,
+    AuthProvider,
+    NicknameError,
+    OAuthAccount,
+    StoredUser,
+    User,
+    normalise_nickname,
+    validate_nickname,
+)
 from planbench_api.approval import ApprovalRecord, BenchmarkState
 from planbench_api.artifacts import ArtifactStore
 from planbench_api.db.models import (
@@ -29,8 +39,11 @@ from planbench_api.db.models import (
     BenchmarkRow,
     EpisodeRow,
     MapRow,
+    OAuthAccountRow,
+    ReviewRequestRow,
     ScenarioRow,
     SimulationRow,
+    UserRow,
 )
 from planbench_api.db.session import SessionFactory
 from planbench_api.errors import NotFoundError
@@ -43,6 +56,7 @@ from planbench_api.repositories import (
     new_id,
     now_iso,
 )
+from planbench_api.review import ReviewRequest, ReviewStage, ReviewStatus
 from planbench_benchmark import BenchmarkReport, BenchmarkSpec, RunRecord
 from planbench_metrics import EpisodeMetrics
 from planbench_planning import PlanResult
@@ -240,7 +254,12 @@ class SqlBenchmarkRepository:
         self._artifacts = artifacts
 
     def create(
-        self, spec: BenchmarkSpec, map_id: str, scenario_id: str, created_by: str
+        self,
+        spec: BenchmarkSpec,
+        map_id: str,
+        scenario_id: str,
+        created_by: str,
+        owner_user_id: str = "",
     ) -> StoredBenchmark:
         row = BenchmarkRow(
             id=new_id(),
@@ -248,6 +267,7 @@ class SqlBenchmarkRepository:
             map_id=map_id,
             scenario_id=scenario_id,
             created_by=created_by,
+            owner_user_id=owner_user_id or None,
             state=BenchmarkState.DRAFT.value,
             created_at=now_iso(),
             spec=spec.model_dump(mode="json"),
@@ -277,6 +297,8 @@ class SqlBenchmarkRepository:
                     ApprovalRow(
                         sequence=len(row.approvals),
                         username=approval.user,
+                        user_id=approval.user_id or None,
+                        review_request_id=approval.review_request_id,
                         role=approval.role.value,
                         action=approval.action.value,
                         previous_state=approval.previous_state.value,
@@ -302,6 +324,255 @@ class SqlBenchmarkRepository:
             return _to_benchmark(row)
 
 
+class SqlUserRepository:
+    """Accounts and their linked provider identities.
+
+    Uniqueness is enforced twice on purpose: a lookup first, so the
+    caller gets a readable message, and a database constraint, so two
+    simultaneous requests cannot both pass the lookup and both insert.
+    Only the constraint is a guarantee; only the lookup is a good error.
+    """
+
+    def __init__(self, sessions: SessionFactory) -> None:
+        self._sessions = sessions
+
+    def create(
+        self,
+        *,
+        nickname: str = "",
+        email: str = "",
+        display_name: str = "",
+        avatar_url: str = "",
+        is_admin: bool = False,
+        password_hash: str | None = None,
+    ) -> User:
+        key = None
+        if nickname:
+            nickname = validate_nickname(nickname)
+            key = normalise_nickname(nickname)
+        stamp = now_iso()
+        row = UserRow(
+            id=new_id(),
+            nickname=nickname,
+            nickname_key=key,
+            email=email,
+            display_name=display_name,
+            avatar_url=avatar_url,
+            is_admin=is_admin,
+            password_hash=password_hash,
+            created_at=stamp,
+            updated_at=stamp,
+        )
+        with self._sessions.begin() as session:
+            if key is not None and _nickname_owner(session, key) is not None:
+                raise NicknameError(f"nickname {nickname!r} is already taken")
+            session.add(row)
+            session.flush()
+            return _to_user(row)
+
+    def get(self, user_id: str) -> User:
+        with self._sessions.begin() as session:
+            return _to_user(_require(session, UserRow, user_id, "user"))
+
+    def get_stored(self, user_id: str) -> StoredUser:
+        with self._sessions.begin() as session:
+            row = _require(session, UserRow, user_id, "user")
+            return StoredUser(
+                user=_to_user(row),
+                nickname_key=row.nickname_key or "",
+                password_hash=row.password_hash,
+            )
+
+    def find_by_nickname(self, nickname: str) -> User | None:
+        key = normalise_nickname(nickname)
+        if not key:
+            return None
+        with self._sessions.begin() as session:
+            row = _nickname_owner(session, key)
+            return _to_user(row) if row is not None else None
+
+    def search_by_nickname(self, prefix: str, limit: int = 10) -> list[User]:
+        needle = normalise_nickname(prefix)
+        if not needle:
+            return []
+        with self._sessions.begin() as session:
+            rows = session.scalars(
+                select(UserRow)
+                # Prefix match only: a substring search would let anyone
+                # enumerate the member list from a single character.
+                .where(UserRow.nickname_key.startswith(needle))
+                .order_by(UserRow.nickname_key)
+                .limit(limit)
+            ).all()
+            return [_to_user(row) for row in rows]
+
+    def set_nickname(self, user_id: str, nickname: str) -> User:
+        cleaned = validate_nickname(nickname)
+        key = normalise_nickname(cleaned)
+        with self._sessions.begin() as session:
+            row = _require(session, UserRow, user_id, "user")
+            owner = _nickname_owner(session, key)
+            if owner is not None and owner.id != user_id:
+                raise NicknameError(f"nickname {cleaned!r} is already taken")
+            row.nickname = cleaned
+            row.nickname_key = key
+            row.updated_at = now_iso()
+            session.flush()
+            return _to_user(row)
+
+    def update_profile(
+        self,
+        user_id: str,
+        *,
+        email: str | None = None,
+        display_name: str | None = None,
+        avatar_url: str | None = None,
+    ) -> User:
+        with self._sessions.begin() as session:
+            row = _require(session, UserRow, user_id, "user")
+            if email is not None:
+                row.email = email
+            if display_name is not None:
+                row.display_name = display_name
+            if avatar_url is not None:
+                row.avatar_url = avatar_url
+            row.updated_at = now_iso()
+            session.flush()
+            return _to_user(row)
+
+    def set_admin(self, user_id: str, is_admin: bool) -> User:
+        with self._sessions.begin() as session:
+            row = _require(session, UserRow, user_id, "user")
+            row.is_admin = is_admin
+            row.updated_at = now_iso()
+            session.flush()
+            return _to_user(row)
+
+    def list(self) -> list[User]:
+        with self._sessions.begin() as session:
+            rows = session.scalars(select(UserRow).order_by(UserRow.created_at)).all()
+            return [_to_user(row) for row in rows]
+
+    def link_oauth(
+        self,
+        *,
+        user_id: str,
+        provider: AuthProvider,
+        provider_account_id: str,
+        provider_email: str = "",
+    ) -> OAuthAccount:
+        stamp = now_iso()
+        with self._sessions.begin() as session:
+            _require(session, UserRow, user_id, "user")
+            row = session.scalars(
+                select(OAuthAccountRow).where(
+                    OAuthAccountRow.provider == provider.value,
+                    OAuthAccountRow.provider_account_id == provider_account_id,
+                )
+            ).first()
+            if row is not None and row.user_id != user_id:
+                raise AccountLinkError(
+                    f"that {provider.value} account is already linked to another PlanBench account"
+                )
+            if row is None:
+                row = OAuthAccountRow(
+                    id=new_id(),
+                    user_id=user_id,
+                    provider=provider.value,
+                    provider_account_id=provider_account_id,
+                    provider_email=provider_email,
+                    created_at=stamp,
+                    updated_at=stamp,
+                )
+                session.add(row)
+            else:
+                row.provider_email = provider_email
+                row.updated_at = stamp
+            session.flush()
+            return _to_oauth(row)
+
+    def find_oauth(self, provider: AuthProvider, provider_account_id: str) -> OAuthAccount | None:
+        with self._sessions.begin() as session:
+            row = session.scalars(
+                select(OAuthAccountRow).where(
+                    OAuthAccountRow.provider == provider.value,
+                    OAuthAccountRow.provider_account_id == provider_account_id,
+                )
+            ).first()
+            return _to_oauth(row) if row is not None else None
+
+    def list_oauth(self, user_id: str) -> list[OAuthAccount]:
+        with self._sessions.begin() as session:
+            rows = session.scalars(
+                select(OAuthAccountRow)
+                .where(OAuthAccountRow.user_id == user_id)
+                .order_by(OAuthAccountRow.created_at)
+            ).all()
+            return [_to_oauth(row) for row in rows]
+
+
+class SqlReviewRepository:
+    def __init__(self, sessions: SessionFactory) -> None:
+        self._sessions = sessions
+
+    def create(self, request: ReviewRequest) -> ReviewRequest:
+        row = ReviewRequestRow(
+            id=request.id or new_id(),
+            benchmark_id=request.benchmark_id,
+            stage=request.stage.value,
+            requested_by_user_id=request.requested_by_user_id,
+            reviewer_user_id=request.reviewer_user_id,
+            status=request.status.value,
+            request_comment=request.request_comment,
+            review_comment=request.review_comment,
+            created_at=request.created_at or now_iso(),
+            reviewed_at=request.reviewed_at,
+            cancelled_at=request.cancelled_at,
+        )
+        with self._sessions.begin() as session:
+            session.add(row)
+            session.flush()
+            return _to_review(row)
+
+    def get(self, request_id: str) -> ReviewRequest:
+        with self._sessions.begin() as session:
+            return _to_review(_require(session, ReviewRequestRow, request_id, "review request"))
+
+    def save(self, request: ReviewRequest) -> ReviewRequest:
+        with self._sessions.begin() as session:
+            row = _require(session, ReviewRequestRow, request.id, "review request")
+            row.status = request.status.value
+            row.request_comment = request.request_comment
+            row.review_comment = request.review_comment
+            row.reviewed_at = request.reviewed_at
+            row.cancelled_at = request.cancelled_at
+            session.flush()
+            return _to_review(row)
+
+    def list_for_benchmark(self, benchmark_id: str) -> list[ReviewRequest]:
+        return self._query(ReviewRequestRow.benchmark_id == benchmark_id)
+
+    def list_for_reviewer(
+        self, reviewer_user_id: str, status: ReviewStatus | None = None
+    ) -> list[ReviewRequest]:
+        clauses = [ReviewRequestRow.reviewer_user_id == reviewer_user_id]
+        if status is not None:
+            clauses.append(ReviewRequestRow.status == status.value)
+        return self._query(*clauses)
+
+    def list_requested_by(self, user_id: str) -> list[ReviewRequest]:
+        return self._query(ReviewRequestRow.requested_by_user_id == user_id)
+
+    def _query(self, *clauses) -> list[ReviewRequest]:
+        with self._sessions.begin() as session:
+            rows = session.scalars(
+                select(ReviewRequestRow)
+                .where(*clauses)
+                .order_by(ReviewRequestRow.created_at.desc())
+            ).all()
+            return [_to_review(row) for row in rows]
+
+
 class SqlRepositoryHub:
     """All SQL repositories for one application instance."""
 
@@ -313,6 +584,8 @@ class SqlRepositoryHub:
         self.simulations = SqlSimulationRepository(sessions)
         self.episodes = SqlEpisodeRepository(sessions, artifacts)
         self.benchmarks = SqlBenchmarkRepository(sessions, artifacts)
+        self.users = SqlUserRepository(sessions)
+        self.reviews = SqlReviewRepository(sessions)
 
 
 # -- row <-> domain ----------------------------------------------------
@@ -323,6 +596,51 @@ def _require(session: Session, model: type, key: str, label: str):
     if row is None:
         raise NotFoundError(label, key)
     return row
+
+
+def _nickname_owner(session: Session, key: str) -> UserRow | None:
+    return session.scalars(select(UserRow).where(UserRow.nickname_key == key)).first()
+
+
+def _to_user(row: UserRow) -> User:
+    return User(
+        id=row.id,
+        nickname=row.nickname or "",
+        email=row.email or "",
+        display_name=row.display_name or "",
+        avatar_url=row.avatar_url or "",
+        is_admin=bool(row.is_admin),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _to_oauth(row: OAuthAccountRow) -> OAuthAccount:
+    return OAuthAccount(
+        id=row.id,
+        user_id=row.user_id,
+        provider=AuthProvider(row.provider),
+        provider_account_id=row.provider_account_id,
+        provider_email=row.provider_email or "",
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _to_review(row: ReviewRequestRow) -> ReviewRequest:
+    return ReviewRequest(
+        id=row.id,
+        benchmark_id=row.benchmark_id,
+        stage=ReviewStage(row.stage),
+        requested_by_user_id=row.requested_by_user_id,
+        reviewer_user_id=row.reviewer_user_id,
+        status=ReviewStatus(row.status),
+        request_comment=row.request_comment or "",
+        review_comment=row.review_comment or "",
+        created_at=row.created_at,
+        reviewed_at=row.reviewed_at,
+        cancelled_at=row.cancelled_at,
+    )
 
 
 def _to_map(row: MapRow) -> StoredMap:
@@ -380,12 +698,15 @@ def _to_benchmark(row: BenchmarkRow) -> StoredBenchmark:
         scenario_id=row.scenario_id,
         created_by=row.created_by,
         created_at=row.created_at,
+        owner_user_id=row.owner_user_id or "",
         state=BenchmarkState(row.state),
         report=BenchmarkReport.model_validate(row.report) if row.report else None,
         approvals=[
             ApprovalRecord(
                 benchmark_id=row.id,
                 user=approval.username,
+                user_id=approval.user_id or "",
+                review_request_id=approval.review_request_id,
                 role=approval.role,
                 action=approval.action,
                 previous_state=approval.previous_state,
@@ -422,6 +743,8 @@ def _load_run(payload: dict) -> StackRun:
 
 __all__ = [
     "SqlBenchmarkRepository",
+    "SqlReviewRepository",
+    "SqlUserRepository",
     "SqlEpisodeRepository",
     "SqlMapRepository",
     "SqlRepositoryHub",

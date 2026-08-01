@@ -15,11 +15,14 @@ report.
 | `/library` | **M9** | Thư viện scenario theo thứ tự curriculum + import + preview 2.5D |
 | `/simulate` | M3 | Chạy live qua WebSocket |
 | `/benchmarks` | M4 | Tạo benchmark, danh sách |
-| `/benchmarks/[id]` | M4 + **M9** | Approval workflow, so sánh, replay (top-down / 2.5D), **failure analysis**, **job progress** |
+| `/benchmarks/[id]` | M4 + M9 + **M11** | Run / Accept của chủ sở hữu, **send for review**, so sánh, replay (top-down / 2.5D), failure analysis, job progress |
 | `/leaderboard` | **M9** | Xếp hạng, nhóm theo `conditions_checksum` |
 | `/algorithms` | **M9** | Registry stack: benchmarkable, config bắt buộc |
 | `/agent` | **M9** | Agent console (M8): chat, mission, evidence, report |
-| `/login` | M4 | JWT, token trong sessionStorage |
+| `/login` | M4 + **M11** | Nút Google / GitHub (render từ `/auth/providers`), dev login khi được bật |
+| `/auth/callback` | **M11** | Đổi code dùng một lần lấy session, rồi `router.replace` |
+| `/welcome` | **M11** | Chọn nickname lần đầu, kiểm tra trùng theo từng ký tự (debounce 250 ms) |
+| `/reviews` | **M11** | Review Inbox + Sent: approve, reject, comment, cancel |
 
 ## 2.5D
 
@@ -71,7 +74,8 @@ không occlusion culling, không ánh sáng/bóng đổ. Xem
 | `FailureFindings` | Finding + evidence + **confidence hiển thị nổi** |
 | `JobProgress` | Poll job khi đang chạy, dừng poll khi kết thúc, cancel |
 | `MetricsPanel` | Metric của một episode |
-| `SessionBar` | User/role hiện tại, logout |
+| `SessionBar` | Avatar + nickname + email, badge Review Inbox, logout |
+| `SendForReview` | Modal: nickname (autocomplete), stage, lời nhắn |
 
 `FailureFindings` cố ý làm `confidence` nổi bật: một finding `low` là
 **giả thuyết** khớp dữ liệu, không phải kết luận, và người đọc không
@@ -88,7 +92,24 @@ thế là mời người đọc so sánh xuyên điều kiện, đúng thứ mà
 record tồn tại để ngăn.
 
 Khi bỏ tick "accepted results only", trang hiện cảnh báo đỏ: đó là kết
-quả reviewer chưa nhận, không được publish thành kết luận.
+quả chưa ai nhận, không được publish thành kết luận.
+
+## Đăng nhập và quyền (M11)
+
+Trang login **không** có cờ build-time nào cả: nó gọi `/auth/providers`
+và chỉ vẽ nút mà server thật sự bật. Deployment chưa cấu hình Google thì
+không có nút Google — thay vì có nút dẫn tới trang lỗi.
+
+Browser giữ đúng hai thứ trong `sessionStorage`: token PlanBench và
+profile để hiển thị. **Không** giữ access token của provider, không giữ
+client id, không giữ secret. Callback trả về một code dùng một lần chứ
+không phải JWT, nên token không nằm lại trong history hay Referer.
+
+`canRun` / `canAcceptResult` trong `lib/reviews.ts` quyết định **hiện**
+nút, không quyết định **cho phép**. Backend kiểm tra độc lập trên mọi
+request, và mỗi trường hợp trong hai hàm đó đều có một test API tương
+ứng chứng minh server tự từ chối. Ẩn nút chỉ để người dùng không bấm vào
+thứ chắc chắn sẽ lỗi.
 
 ## Agent console
 
@@ -99,8 +120,10 @@ Ba điểm cẩn thận, vì làm sai sẽ vô hiệu hoá bảo đảm mà back
    bao giờ phải đoán.
 2. **Mission bị từ chối render thành refusal kèm lý do**, không phải lỗi
    và không phải kết quả rỗng.
-3. **Không có nút approve ở đây.** Agent không tự approve được, trang này
-   cũng vậy — approve nằm ở trang benchmark detail, cho reviewer.
+3. **Không có nút approve ở đây.** Agent không tự mở gate được, trang
+   này cũng vậy. Chủ sở hữu mở gate bằng nút **Run** ở trang benchmark
+   detail — được ghi vào audit trail là `self_approved`, khác với
+   `approve` của người thứ hai, nên đọc lịch sử luôn phân biệt được.
 
 ## Chạy
 

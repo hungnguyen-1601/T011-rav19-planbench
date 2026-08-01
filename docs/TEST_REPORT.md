@@ -2,6 +2,110 @@
 
 Output thật từ các lần chạy kiểm thử. Cập nhật sau mỗi milestone.
 
+## M11 — Tài khoản, OAuth, review tùy chọn — 2026-08-01
+
+### Toàn bộ suite
+
+```
+PYTHONPATH= .venv/bin/pytest tests/ -q --cov=planbench_api \
+  --cov=planbench_schemas --cov=planbench_simulator --cov-report=term
+
+1038 passed, 1 warning in 638.10s (0:10:38)
+TOTAL   3958 stmts   222 miss   534 branch   58 partial   93%
+```
+
+Trước refactor: 878 passed. Sau: **1038** (+160).
+
+### Coverage phần mới
+
+```
+PYTHONPATH= .venv/bin/pytest tests/api tests/test_approval.py -q --cov=planbench_api
+339 passed in 497.70s
+
+apps/api/planbench_api/approval.py           63    0    100%
+apps/api/planbench_api/repository_ports.py   34    0    100%
+apps/api/planbench_api/review.py             47    0    100%
+apps/api/planbench_api/routers/reviews.py    41    0    100%
+apps/api/planbench_api/routers/users.py      34    0    100%
+apps/api/planbench_api/accounts.py           70    1     99%
+apps/api/planbench_api/routers/auth.py      142    4     97%
+apps/api/planbench_api/user_store.py        134    3     96%
+apps/api/planbench_api/db/repositories.py   328   24     91%
+apps/api/planbench_api/review_service.py     80    9     88%
+apps/api/planbench_api/auth.py              114   13     85%
+apps/api/planbench_api/routers/benchmarks.py 136  17     85%
+apps/api/planbench_api/oauth.py             150   35     74%
+```
+
+`oauth.py` ở 74% vì phần chưa chạy là `OAuthClient` — lớp thật sự gọi
+HTTP. Nó được thay nguyên khối trong test, đúng theo yêu cầu "không gọi
+OAuth thật". Phần logic thuần (`normalise_identity`, `seal_state`,
+`open_state`, PKCE, `authorize_url`) thì có test đầy đủ.
+
+### Frontend
+
+```
+apps/web$ npx tsc --noEmit          # sạch
+apps/web$ npx vitest run
+  Test Files  6 passed (6)
+       Tests  78 passed (78)
+apps/web$ npx next build
+  ✓ Compiled successfully in 10.7s
+  15 route, /login /welcome /reviews /auth/callback đều build
+```
+
+### Migration chạy thật (SQLite)
+
+```
+PLANBENCH_DATABASE_URL=sqlite:///<scratch>/e2e.db .venv/bin/alembic upgrade head
+INFO  Running upgrade  -> 0001, Initial schema: ...
+INFO  Running upgrade 0001 -> 0002, Accounts, OAuth links, review requests; benchmark ownership.
+```
+
+`tests/api/test_migrations.py` so schema sau `upgrade head` với
+`Base.metadata` theo từng bảng, từng cột, từng nullability — nên
+migration và ORM không thể lệch nhau âm thầm.
+
+### Bốn tiêu chí nghiệm thu, chạy trên database đã migrate
+
+```
+A: create -> run -> accept -> leaderboard  OK (no account switching)
+B: review by nickname -> inbox -> approve -> audit trail  OK
+   audit: ['submit', 'request_review', 'approve', 'run', 'complete']
+C: providers -> {'google': False, 'github': False, 'dev_login': True}
+D: a pre-accounts benchmark is still owned by its creator  OK
+```
+
+C là trường hợp "chưa cấu hình gì": site vẫn chạy, trang login báo rõ,
+không crash. D đã được chuyển thành test thường trực trong
+`test_api_sql_backend.py`.
+
+### Ba lỗi thật mà test bắt được
+
+1. **Gate `run-async` chưa được áp trước khi vào hàng đợi.** Docstring
+   nói có, code thì không: benchmark bị chặn vẫn được nhận vào hàng đợi
+   rồi chết bên trong worker. Một 403 mà người gọi xử lý được đã biến
+   thành job hỏng trong log không ai theo dõi. Sửa bằng
+   `BenchmarkService.check_runnable()`, raise ngay tại request.
+2. **Gửi spec review khi benchmark còn `draft` làm mất công của người
+   duyệt.** `APPROVE` chỉ hợp lệ từ `pending_approval`, nên phê duyệt
+   thật được ghi nhận trên request nhưng benchmark không nhúc nhích —
+   lần Run sau đó lại ghi `self_approved`, tức audit trail nói dối rằng
+   không ai xem. Sửa: gửi spec review **chính là** submit.
+3. **Lỗi liên kết tài khoản bị nuốt thành thông báo chung.** Callback
+   bắt `Exception` nên "tài khoản Google này đã thuộc tài khoản
+   PlanBench khác" ra thành "sign-in failed". Tách `AccountLinkError`
+   khỏi `NicknameError` để callback trả đúng lý do — đó là thông tin duy
+   nhất giúp người dùng biết phải làm gì.
+
+### Không được kiểm chứng
+
+- **Chưa gọi Google/GitHub thật lần nào** (provider giả, theo yêu cầu).
+- **Chưa chạy PostgreSQL thật** — SQLite chứng minh cấu trúc, không
+  chứng minh hành vi dialect production.
+- **Không có test render component** — trang được kiểm bằng `tsc` và
+  `next build`; logic "nút hiện đúng lúc" test ở tầng helper + API.
+
 ## Sửa lỗi Gemini multi-step tool calling — 2026-07-30
 
 ### Triệu chứng
