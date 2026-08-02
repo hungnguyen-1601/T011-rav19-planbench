@@ -133,6 +133,165 @@ class ReviewRequestRow(Base):
     )
 
 
+class RobotProfileRow(Base):
+    """The robot a model was trained for, and a benchmark runs.
+
+    Exists so swapping robots is a form, not a code edit — the PPO
+    adapter reads limits from here rather than from constants.
+    """
+
+    __tablename__ = "robot_profiles"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    version: Mapped[str] = mapped_column(String(40), nullable=False, default="1")
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    radius: Mapped[float] = mapped_column(Float, nullable=False)
+    footprint: Mapped[str] = mapped_column(String(40), nullable=False, default="circle")
+    max_linear_velocity: Mapped[float] = mapped_column(Float, nullable=False)
+    max_angular_velocity: Mapped[float] = mapped_column(Float, nullable=False)
+    lidar_beams: Mapped[int] = mapped_column(Integer, nullable=False, default=24)
+    lidar_range: Mapped[float] = mapped_column(Float, nullable=False, default=6.0)
+    observation_type: Mapped[str] = mapped_column(String(60), nullable=False)
+    action_type: Mapped[str] = mapped_column(String(60), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+
+    __table_args__ = (Index("ix_robot_profiles_owner", "created_by_user_id"),)
+
+
+class ModelRow(Base):
+    """One uploaded, trained policy.
+
+    The binary never lands here — only `storage_key` plus the checksum,
+    so "which model produced these numbers?" has an answer that survives
+    the file being replaced (decision D15 again).
+    """
+
+    __tablename__ = "models"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    version: Mapped[str] = mapped_column(String(40), nullable=False, default="1")
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    algorithm_type: Mapped[str] = mapped_column(String(40), nullable=False, default="ppo")
+    framework: Mapped[str] = mapped_column(String(60), nullable=False, default="")
+    framework_version: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    storage_key: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    original_filename: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    uploaded_by_user_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False, default="")
+    robot_profile_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False, default="")
+    observation_schema: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
+    action_schema: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
+    training_environment: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    training_steps: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    validation_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    validation_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+
+    __table_args__ = (
+        Index("ix_models_owner", "uploaded_by_user_id"),
+        Index("ix_models_status", "status", "validation_status"),
+        # Two models may share a name only if their versions differ.
+        UniqueConstraint("uploaded_by_user_id", "name", "version", name="uq_models_name_version"),
+    )
+
+
+class ModelDocumentRow(Base):
+    """A metadata sidecar or a PDF attached to a model.
+
+    Separate from the model row because these are *not* the model: a PDF
+    is documentation and a JSON is a description. Keeping them in their
+    own table makes it structurally impossible to run one.
+    """
+
+    __tablename__ = "model_documents"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    model_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("models.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(200), nullable=False)
+    storage_key: Mapped[str] = mapped_column(Text, nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+
+    __table_args__ = (Index("ix_model_documents_model", "model_id"),)
+
+
+class ModelUsageRow(Base):
+    """Which benchmark used which model, at which checksum.
+
+    Written when a benchmark runs. Answers "can I delete this model?"
+    without a scan, and "exactly what ran?" after the fact — the
+    checksum is recorded at use time, so a later re-upload cannot
+    rewrite history.
+    """
+
+    __tablename__ = "model_usages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    model_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+    benchmark_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    model_checksum: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+
+    __table_args__ = (
+        Index("ix_model_usages_model", "model_id"),
+        Index("ix_model_usages_benchmark", "benchmark_id"),
+    )
+
+
+class ConversationRow(Base):
+    """One chat with the assistant."""
+
+    __tablename__ = "conversations"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    locale: Mapped[str] = mapped_column(String(8), nullable=False, default="en")
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+
+    messages: Mapped[list[ConversationMessageRow]] = relationship(
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="ConversationMessageRow.sequence",
+    )
+
+    __table_args__ = (Index("ix_conversations_user", "user_id", "updated_at"),)
+
+
+class ConversationMessageRow(Base):
+    """One turn. Append-only: a transcript that can be edited is not one."""
+
+    __tablename__ = "conversation_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    #: A benchmark proposal or a result card, when the turn produced one.
+    payload: Mapped[dict | None] = mapped_column(JsonColumn, nullable=True)
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+
+    conversation: Mapped[ConversationRow] = relationship(back_populates="messages")
+
+    __table_args__ = (Index("ix_conversation_messages_conversation", "conversation_id"),)
+
+
 class MapRow(Base):
     __tablename__ = "maps"
 
@@ -278,6 +437,12 @@ class EpisodeRow(Base):
 
 __all__ = [
     "ApprovalRow",
+    "ConversationMessageRow",
+    "ConversationRow",
+    "ModelDocumentRow",
+    "ModelRow",
+    "ModelUsageRow",
+    "RobotProfileRow",
     "OAuthAccountRow",
     "ReviewRequestRow",
     "UserRow",

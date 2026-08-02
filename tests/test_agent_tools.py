@@ -186,7 +186,7 @@ class TestProposal:
                 seeds=[1],
             )
         )
-        assert result.is_error and "model_path" in result.content
+        assert result.is_error and "model_id" in result.content
         assert gateway.benchmarks == {}
 
     def test_reference_adapter_cannot_be_proposed(self, gateway):

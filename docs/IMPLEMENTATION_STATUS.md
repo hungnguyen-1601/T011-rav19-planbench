@@ -5,11 +5,15 @@
 
 ## Milestone hiện tại
 
-**M10 hoàn thành** — PostgreSQL persistence (SQLAlchemy + Alembic),
-Docker Compose, deployment docs. **Toàn bộ M0–M10 đã xong.**
-Còn nợ (xem "Nợ kỹ thuật"): chưa chạy Docker lần nào và chưa kết nối
-PostgreSQL thật (môi trường không có daemon/server), chưa gọi provider
-LLM thật.
+**M13 hoàn thành** — Model Registry (upload PPO qua web thay cho
+`model_path`), Robot Profile, kiểm tra tương thích, và trợ lý hội thoại
+thay cho ba biểu mẫu kỹ thuật. **Toàn bộ M0–M13 đã xong.**
+
+Còn nợ (xem "Nợ kỹ thuật" và KNOWN_LIMITATIONS #77–#89): chưa chạy
+Docker lần nào và chưa kết nối PostgreSQL thật (môi trường không có
+daemon/server), chưa gọi provider LLM thật, **và việc nạp model upload
+chưa chạy trong sandbox container** — hạn chế bảo mật quan trọng nhất
+của M13, ghi rõ ở KNOWN_LIMITATIONS #77.
 
 ## Bản đồ mã nguồn
 
@@ -22,6 +26,10 @@ LLM thật.
 | `services/simulator/planbench_simulator/` | grid, kinematics, collision, lidar, engine, path_follower, `nav_stack.py`, `episode_runner.py` |
 | `services/tracking/planbench_tracking/` | ExperimentTracker interface + MLflow adapter + NullTracker |
 | `apps/api/planbench_api/` | FastAPI: config, errors, logging, auth, approval, artifacts, repositories, repository_ports, services, routers/, `db/` (SQLAlchemy) |
+| `apps/api/planbench_api/model_registry.py` | Model là bản ghi có chủ sở hữu, checksum và schema quan sát — không phải đường dẫn file |
+| `apps/api/planbench_api/model_storage.py` | `ModelStorage` (interface cho S3/R2) + backend cục bộ + soi zip **không giải tuần tự** |
+| `apps/api/planbench_api/registry_service.py` | Upload, tương thích, tài liệu đính kèm, sidecar cho loader |
+| `apps/api/planbench_api/chat_service.py` | Hội thoại: đề xuất → người bấm → **bản nháp**. Không có đường chạy. |
 | `alembic/` | Migration schema — `docs/DEPLOYMENT.md` |
 | `docker/`, `docker-compose.yml` | Image API/web + stack local (db, migrate, api, web) |
 | `services/agent_service/planbench_agent/` | Agentic AI: provider abstraction, specs, gateway, tools, evidence, rag, report, workflow |
@@ -321,6 +329,48 @@ Chi tiết đầy đủ: `docs/FRONTEND.md`.
 Toàn bộ 41 vitest pass, `tsc --noEmit` sạch, `next build` ra 12 route.
 Đã chạy thật backend + frontend và kiểm chứng end-to-end (xem
 TEST_REPORT).
+
+### M13 — Model Registry + trợ lý hội thoại
+
+**Vấn đề đã giải quyết.** Chạy `astar+ppo` trước đây nghĩa là gõ một
+đường dẫn filesystem vào cấu hình benchmark. Điều đó bắt người dùng biết
+file nằm ở đâu trên server, không kiểm tra được gì trước khi chạy, và
+bản ghi "model nào đã sinh ra con số này" chỉ là một chuỗi có thể trỏ
+sang chỗ khác vào ngày mai.
+
+**Model Registry.** Một bản ghi mang theo checksum (nên câu hỏi "model
+nào?" có câu trả lời không trôi được), mang theo hình dạng quan sát và
+hành động (nên sai lệch bị bắt *trước* khi chạy chứ không thành số rác
+*trong* khi chạy), và mang theo chủ sở hữu (nên chia sẻ là một quyết
+định chứ không phải tai nạn của filesystem).
+
+Ba loại file, phân biệt có ý nghĩa: `.zip` của Stable-Baselines3 là thứ
+duy nhất chạy được như một policy; `.json` là metadata *về* nó; `.pdf`
+là văn xuôi cho người đọc. **Upload PDF không cho bạn một model chạy
+được**, và mã nguồn từ chối giả vờ ngược lại.
+
+**Robot Profile.** Tham số robot là dữ liệu chứ không phải hằng số trong
+adapter PPO. Một model huấn luyện cho robot bán kính 0.3 m không nói gì
+về robot 0.8 m, và trước M13 sự khác biệt đó không ở đâu ghi lại.
+
+**Tương thích** trả về `compatible` / `warning` / `incompatible` kèm câu
+tiếng người. Cùng một hàm thuần trả lời cả "tôi chọn được model này
+không?" lẫn "model này chạy được không?" — nên câu trả lời không thể
+lệch giữa lúc chọn và lúc chạy.
+
+**Trợ lý.** Thay ba biểu mẫu ("Hỏi về kết quả", "Biến yêu cầu thành
+benchmark", "Bằng chứng và báo cáo"), bảng trạng thái provider, danh
+sách tool nội bộ, danh sách hành động bị cấm, và hướng dẫn `pip install`
+— tất cả đều đúng, và không thứ nào thuộc về trước mặt người muốn thử
+một con robot. Phần chẩn đoán chuyển sang `/system`; cái còn lại là một
+cuộc trò chuyện.
+
+Hai hành vi chịu lực: đề xuất hiện ra dưới dạng **thẻ có nút bấm**, và
+không gì được tạo cho tới khi nút đó được bấm — bấm rồi thì tạo ra một
+**bản nháp**. Không có nút "chạy" ở đâu trên trang đó.
+
+Chi tiết endpoint: `docs/API_CONTRACT.md`. Hạn chế bảo mật:
+`docs/KNOWN_LIMITATIONS.md` #77–#89.
 
 ### M12 — App shell, theme, ngôn ngữ, Dashboard
 

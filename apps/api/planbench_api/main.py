@@ -27,6 +27,7 @@ from planbench_api.db import (
 )
 from planbench_api.errors import register_error_handlers
 from planbench_api.logging_config import configure_logging
+from planbench_api.model_storage import LocalModelStorage
 from planbench_api.oauth import ExchangeCodes, OAuthClient
 from planbench_api.repositories import RepositoryHub
 from planbench_api.routers import (
@@ -34,10 +35,12 @@ from planbench_api.routers import (
     algorithms,
     auth,
     benchmarks,
+    chat,
     episodes,
     health,
     library,
     maps,
+    models,
     reviews,
     scenarios,
     simulations,
@@ -103,6 +106,9 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     )
     artifacts = FileSystemArtifactStore(artifact_dir or settings.artifact_dir)
     app.state.artifacts = artifacts
+    # Uploaded checkpoints. Separate from the artifact store because the
+    # lifecycles differ: artifacts belong to a run, models outlive many.
+    app.state.model_storage = LocalModelStorage(settings.model_dir)
     app.state.repos = _build_repositories(settings, artifacts, app)
     app.state.auth = AuthService(settings, app.state.repos.users)
     # One-time codes and the provider HTTP client are app-scoped: the
@@ -138,6 +144,8 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     app.include_router(benchmarks.router, prefix=API_PREFIX)
     app.include_router(episodes.router, prefix=API_PREFIX)
     app.include_router(library.router, prefix=API_PREFIX)
+    app.include_router(models.router, prefix=API_PREFIX)
+    app.include_router(chat.router, prefix=API_PREFIX)
     app.include_router(agent.router, prefix=API_PREFIX)
     app.include_router(ws.router)  # websockets are not under /api/v1
     return app

@@ -120,7 +120,7 @@ class TestMissions:
             client, alice_headers, "Compare DWA and PPO on open_space", submit=True
         )
         assert body["benchmark"] is None
-        assert any("model_path" in error for error in body["refusal"]["errors"])
+        assert any("model_id" in error for error in body["refusal"]["errors"])
 
     def test_a_valid_mission_drafts_without_submitting(self, client, alice_headers):
         body = submit_mission(client, alice_headers, submit=False)

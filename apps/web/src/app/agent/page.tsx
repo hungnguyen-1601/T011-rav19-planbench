@@ -1,496 +1,396 @@
 "use client";
 
-/** Agent console (M8).
+/** The assistant: an ordinary chat.
  *
- * Three things this page is careful about, because getting them wrong
- * would undo the guarantees the backend enforces:
+ * What this replaced: three separate forms ("Ask about results", "Turn a
+ * request into a benchmark", "Evidence and report"), a provider
+ * readiness table, a list of internal tool names, a list of forbidden
+ * capabilities, and instructions about `pip install`. All of it was true
+ * and none of it belonged in front of someone who wants to test a robot.
+ * The diagnostics moved to /system; what is left is a conversation.
  *
- * 1. It always shows which provider answered. `deterministic: true`
- *    means the reply was keyword-matched offline, not written by a
- *    model — a reader must never have to guess which they are looking at.
- * 2. A refused mission is rendered as a refusal with its reasons, not as
- *    an error and not as an empty result.
- * 3. There is no approve button here. The agent cannot approve its own
- *    benchmark, and neither can this page: approval lives on the
- *    benchmark detail page, for a reviewer.
+ * Two behaviours are load-bearing and visible here:
+ *
+ * - A proposal is shown as a **card with a button**. Nothing is created
+ *   until that button is pressed, and pressing it creates a *draft*.
+ * - There is no "run" anywhere on this page. Running a benchmark is a
+ *   deliberate act on the benchmark page, by a person.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { authFetch, useSession } from "@/lib/auth";
-import { StateBadge } from "@/components/StateBadge";
+
+import { EmptyState } from "@/components/EmptyState";
+import { Icon } from "@/components/Icon";
+import { useSession } from "@/lib/auth";
+import {
+  QUICK_PROMPTS,
+  confirmDraft,
+  isMessageKey,
+  sendMessage,
+  startConversation,
+  type BenchmarkProposal,
+  type ChatMessage,
+  type ResultCard,
+} from "@/lib/chat";
 import { useTranslation } from "@/lib/i18n";
-import type {
-  AgentCapabilities,
-  ChatResponse,
-  EvidenceBundle,
-  GeneratedReport,
-  MissionResponse,
-} from "@/lib/platformTypes";
 
-interface Exchange {
-  question: string;
-  response: ChatResponse;
-}
-
-export default function AgentPage() {
-  const { t } = useTranslation();
+export default function AssistantPage() {
+  const { t, locale } = useTranslation();
   const session = useSession();
-  const [capabilities, setCapabilities] = useState<AgentCapabilities | null>(null);
+  const [conversationId, setConversationId] = useState("");
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [confirming, setConfirming] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const endOfThread = useRef<HTMLDivElement>(null);
+  // Lets Stop actually stop: the in-flight reply is ignored on abort.
+  const inFlight = useRef<AbortController | null>(null);
 
-  const [question, setQuestion] = useState("");
-  const [exchanges, setExchanges] = useState<Exchange[]>([]);
-  const [asking, setAsking] = useState(false);
-
-  const [mission, setMission] = useState("");
-  const [submitForApproval, setSubmitForApproval] = useState(true);
-  const [missionResult, setMissionResult] = useState<MissionResponse | null>(null);
-  const [parsing, setParsing] = useState(false);
-
-  const [benchmarkId, setBenchmarkId] = useState("");
-  const [evidence, setEvidence] = useState<EvidenceBundle | null>(null);
-  const [report, setReport] = useState<GeneratedReport | null>(null);
-  const [reportQuestion, setReportQuestion] = useState("");
-  const [working, setWorking] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        setCapabilities(await authFetch<AgentCapabilities>("/agent/capabilities"));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    })();
-  }, []);
-
-  const guard = useCallback(async <T,>(work: () => Promise<T>, done: (value: T) => void) => {
-    setError(null);
+  const begin = useCallback(async () => {
     try {
-      done(await work());
+      const conversation = await startConversation(locale);
+      setConversationId(conversation.id);
+      setMessages([]);
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, []);
+  }, [locale]);
 
-  // Every signed-in member can drive the agent; what it produces is a
-  // draft they own, and the gates on running it are unchanged.
-  const isMember = Boolean(session);
+  const userId = session?.user.id ?? "";
+  useEffect(() => {
+    if (!userId) return;
+    void begin();
+  }, [userId, begin]);
+
+  useEffect(() => {
+    endOfThread.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages.length]);
+
+  const ask = async (text: string) => {
+    const message = text.trim();
+    if (!message || !conversationId || sending) return;
+
+    const controller = new AbortController();
+    inFlight.current = controller;
+    setSending(true);
+    setError(null);
+    // Show the question immediately: waiting for a round trip to see
+    // your own words makes the page feel broken.
+    setMessages((current) => [
+      ...current,
+      {
+        sequence: current.length,
+        role: "user",
+        content: message,
+        proposal: null,
+        result: null,
+        created_at: new Date().toISOString(),
+      },
+    ]);
+    setDraft("");
+
+    try {
+      const reply = await sendMessage(conversationId, message);
+      if (controller.signal.aborted) return;
+      setMessages((current) => [...current, reply]);
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      if (inFlight.current === controller) inFlight.current = null;
+      setSending(false);
+    }
+  };
+
+  const confirm = async (proposal: BenchmarkProposal) => {
+    setConfirming(proposal.id);
+    setError(null);
+    try {
+      const reply = await confirmDraft(conversationId, proposal.id);
+      setMessages((current) => [...current, reply]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setConfirming("");
+    }
+  };
+
+  if (!session) {
+    return (
+      <>
+        <div className="page-head">
+          <div>
+            <h2>{t("chat.title")}</h2>
+            <p>{t("chat.subtitle")}</p>
+          </div>
+        </div>
+        <div className="panel">
+          <EmptyState
+            icon="user"
+            title={t("dashboard.empty.signedOut.title")}
+            body={t("common.signInTo")}
+            actionHref="/login"
+            actionLabel={t("topbar.signIn")}
+          />
+        </div>
+      </>
+    );
+  }
 
   return (
-    <>
+    <div className="chat-page">
       <div className="page-head">
         <div>
-          <h2>{t("agent.title")}</h2>
-          <p>{t("agent.subtitle")}</p>
+          <h2>{t("chat.title")}</h2>
+          <p>{t("chat.subtitle")}</p>
         </div>
+        <button
+          onClick={() => {
+            void begin();
+          }}
+        >
+          <Icon name="plus" size={14} /> {t("chat.newChat")}
+        </button>
       </div>
-      {!session ? (
-        <div className="notice">
-          <Link href="/login">{t("topbar.signIn")}</Link> — {t("common.signInTo")}
-        </div>
-      ) : null}
+
       {error ? <div className="error-box">{error}</div> : null}
 
-      {capabilities ? <Capabilities capabilities={capabilities} /> : null}
-
-      <div className="panel">
-        <h3>{t("agent.askTitle")}</h3>
-        <p className="muted">{t("agent.askHint")}</p>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!question.trim()) return;
-            setAsking(true);
-            const asked = question;
-            void guard(
-              () =>
-                authFetch<ChatResponse>("/agent/chat", {
-                  method: "POST",
-                  body: JSON.stringify({ message: asked }),
-                }),
-              (response) => {
-                setExchanges((current) => [...current, { question: asked, response }]);
-                setQuestion("");
-              },
-            ).finally(() => setAsking(false));
-          }}
-        >
-          <div className="toolbar">
-            <input
-              style={{ flex: 1, minWidth: 320 }}
-              value={question}
-              placeholder={t("agent.askPlaceholder")}
-              onChange={(event) => setQuestion(event.target.value)}
-              disabled={!session}
+      <div className="chat-thread" role="log" aria-live="polite">
+        {messages.length === 0 ? (
+          <div className="chat-welcome">
+            <EmptyState
+              icon="sparkles"
+              title={t("chat.empty.title")}
+              body={t("chat.empty.body")}
             />
-            <button type="submit" disabled={!session || asking || !question.trim()}>
-              {asking ? t("agent.thinking") : t("agent.ask")}
-            </button>
-          </div>
-        </form>
-
-        {exchanges.map((exchange, index) => (
-          <div className="transcript" key={index}>
-            <p className="transcript-q">{exchange.question}</p>
-            <pre className="transcript-a">{exchange.response.turn.text}</pre>
-            <p className="muted">
-              {exchange.response.provider} ({exchange.response.model})
-              {exchange.response.deterministic ? ` — ${t("agent.keywordMatched")}` : ""}
-              {exchange.response.turn.tools_used.length > 0
-                ? ` · tools: ${exchange.response.turn.tools_used.join(", ")}`
-                : ""}
-              {exchange.response.turn.iterations > 1
-                ? ` · ${exchange.response.turn.iterations} iterations`
-                : ""}
-            </p>
-            {exchange.response.turn.truncated ? (
-              <div className="error-box">
-                Stopped after the tool-call budget was exhausted without a final answer. Nothing is
-                asserted.
-              </div>
-            ) : null}
-            {exchange.response.turn.tool_errors.map((toolError, errorIndex) => (
-              <p className="muted" key={errorIndex}>
-                tool error — {toolError}
-              </p>
-            ))}
-          </div>
-        ))}
-      </div>
-
-      <div className="panel">
-        <h3>{t("agent.missionTitle")}</h3>
-        <p className="muted">{t("agent.missionHint")}</p>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!mission.trim()) return;
-            setParsing(true);
-            void guard(
-              () =>
-                authFetch<MissionResponse>("/agent/missions", {
-                  method: "POST",
-                  body: JSON.stringify({ mission, submit: submitForApproval }),
-                }),
-              (result) => {
-                setMissionResult(result);
-                if (result.benchmark) setBenchmarkId(result.benchmark.id);
-              },
-            ).finally(() => setParsing(false));
-          }}
-        >
-          <div className="toolbar">
-            <input
-              style={{ flex: 1, minWidth: 320 }}
-              value={mission}
-              placeholder={t("agent.missionPlaceholder")}
-              onChange={(event) => setMission(event.target.value)}
-              disabled={!isMember}
-            />
-            <label className="inline">
-              <input
-                type="checkbox"
-                checked={submitForApproval}
-                onChange={(event) => setSubmitForApproval(event.target.checked)}
-              />
-              {t("agent.submitForApproval")}
-            </label>
-            <button type="submit" disabled={!isMember || parsing || !mission.trim()}>
-              {parsing ? t("agent.parsing") : t("agent.parse")}
-            </button>
-          </div>
-        </form>
-        {missionResult ? <MissionOutcome result={missionResult} /> : null}
-      </div>
-
-      <div className="panel">
-        <h3>{t("agent.evidenceTitle")}</h3>
-        <p className="muted">{t("agent.evidenceHint")}</p>
-        <div className="toolbar">
-          <input
-            value={benchmarkId}
-            placeholder={t("agent.benchmarkId")}
-            onChange={(event) => setBenchmarkId(event.target.value.trim())}
-          />
-          <input
-            style={{ flex: 1, minWidth: 240 }}
-            value={reportQuestion}
-            placeholder={t("agent.question", { optional: t("common.optional") })}
-            onChange={(event) => setReportQuestion(event.target.value)}
-          />
-          <button
-            type="button"
-            className="secondary"
-            disabled={!benchmarkId || working}
-            onClick={() => {
-              setWorking(true);
-              void guard(
-                () =>
-                  authFetch<EvidenceBundle>(
-                    `/agent/benchmarks/${benchmarkId}/evidence?question=${encodeURIComponent(reportQuestion)}`,
-                  ),
-                setEvidence,
-              ).finally(() => setWorking(false));
-            }}
-          >
-            {t("agent.collectEvidence")}
-          </button>
-          <button
-            type="button"
-            disabled={!benchmarkId || working}
-            onClick={() => {
-              setWorking(true);
-              void guard(
-                () =>
-                  authFetch<GeneratedReport>(`/agent/benchmarks/${benchmarkId}/report`, {
-                    method: "POST",
-                    body: JSON.stringify({ question: reportQuestion }),
-                  }),
-                setReport,
-              ).finally(() => setWorking(false));
-            }}
-          >
-            {t("agent.generateReport")}
-          </button>
-        </div>
-
-        {evidence ? (
-          <>
-            <h4>{t("agent.evidenceItems", { count: evidence.items.length })}</h4>
-            <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t("agent.citation")}</th>
-                  <th>{t("agent.statement")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {evidence.items.map((item, index) => (
-                  <tr key={index}>
-                    <td>
-                      <code>
-                        {item.citation.kind}:{item.citation.locator}
-                      </code>
-                    </td>
-                    <td>{item.statement}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="quick-actions" style={{ justifyContent: "center" }}>
+              {QUICK_PROMPTS.map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  className="quick-action"
+                  onClick={() => void ask(t(key))}
+                >
+                  {t(key)}
+                </button>
+              ))}
             </div>
-          </>
+          </div>
+        ) : (
+          messages.map((message, index) => (
+            <Bubble
+              key={`${message.sequence}-${index}`}
+              message={message}
+              confirming={confirming}
+              onConfirm={confirm}
+            />
+          ))
+        )}
+        {sending ? (
+          <div className="chat-bubble assistant">
+            <span className="spinner" aria-hidden="true" /> {t("chat.thinking")}
+          </div>
         ) : null}
-
-        {report ? <ReportView report={report} /> : null}
+        <div ref={endOfThread} />
       </div>
-    </>
-  );
-}
 
-function Capabilities({ capabilities }: { capabilities: AgentCapabilities }) {
-  const { t } = useTranslation();
-  const configured = capabilities.providers.filter((provider) => provider.ready);
-  return (
-    <div className="panel">
-      <h3>{t("agent.provider")}</h3>
-      <div className="toolbar">
-        <span className={`badge ${capabilities.deterministic ? "warn" : "ok"}`}>
-          {capabilities.provider}
-        </span>
-        <code>{capabilities.model}</code>
-        <span className="muted">
-          {t("agent.documentsIndexed", { count: capabilities.knowledge_documents })}
-        </span>
-      </div>
-      {capabilities.deterministic ? (
-        <div className="error-box">{t("agent.deterministicWarning")}</div>
-      ) : null}
-
-      <h4>{t("agent.providers")}</h4>
-      <div className="table-scroll">
-      <table>
-        <thead>
-          <tr>
-            <th>{t("agent.provider")}</th>
-            <th>{t("agent.ready")}</th>
-            <th>{t("agent.keyVariable")}</th>
-            <th>{t("agent.missing")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {capabilities.providers.map((provider) => (
-            <tr key={provider.name}>
-              <td>
-                <code>{provider.name}</code>
-              </td>
-              <td>
-                <span className={`badge ${provider.ready ? "ok" : "muted-badge"}`}>
-                  {provider.ready ? t("common.yes") : t("common.no")}
-                </span>
-              </td>
-              <td className="muted">
-                {provider.api_key_env ? (
-                  <code>{provider.api_key_env}</code>
-                ) : (
-                  t("agent.noneNeeded")
-                )}
-              </td>
-              <td className="muted">{provider.missing || "—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      </div>
-      {configured.length === 0 ? <p className="muted">{t("agent.noProvider")}</p> : null}
-
-      <h4>{t("agent.tools", { count: capabilities.tools.length })}</h4>
-      <p>
-        {capabilities.tools.map((tool) => (
-          <code key={tool} className="chip">
-            {tool}
-          </code>
-        ))}
-      </p>
-      <h4>{t("agent.cannotDo")}</h4>
-      <p className="muted">{t("agent.forbiddenHint")}</p>
-      <p>
-        {capabilities.forbidden.map((item) => (
-          <code key={item} className="chip chip-off">
-            {item}
-          </code>
-        ))}
+      <form
+        className="chat-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void ask(draft);
+        }}
+      >
+        <input
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder={t("chat.placeholder")}
+          aria-label={t("chat.placeholder")}
+          disabled={!conversationId}
+        />
+        {sending ? (
+          <button
+            type="button"
+            onClick={() => {
+              inFlight.current?.abort();
+              setSending(false);
+            }}
+            aria-label={t("chat.stop")}
+          >
+            {t("chat.stop")}
+          </button>
+        ) : (
+          <button className="primary" type="submit" disabled={!draft.trim() || !conversationId}>
+            {t("chat.send")}
+          </button>
+        )}
+      </form>
+      <p className="muted" style={{ fontSize: 11, textAlign: "center", marginTop: 8 }}>
+        {t("chat.noRun")}
       </p>
     </div>
   );
 }
 
-function MissionOutcome({ result }: { result: MissionResponse }) {
+function Bubble({
+  message,
+  confirming,
+  onConfirm,
+}: {
+  message: ChatMessage;
+  confirming: string;
+  onConfirm: (proposal: BenchmarkProposal) => void;
+}) {
   const { t } = useTranslation();
-  if (result.refusal) {
-    return (
-      <div className="finding finding-primary">
-        <div className="finding-head">
-          <strong>{t("agent.refused")}</strong>
-          <span className="badge err">{t("agent.nothingCreated")}</span>
-        </div>
-        <p>{result.refusal.reason}</p>
-        {result.refusal.errors.length > 0 ? (
-          <ul>
-            {result.refusal.errors.map((detail, index) => (
-              <li key={index} className="muted">
-                {detail}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        <p className="muted">{result.next_step}</p>
-      </div>
-    );
-  }
+  // Assistant replies arrive as translation keys; a user's own words
+  // are shown exactly as typed.
+  const text =
+    message.role === "assistant" && isMessageKey(message.content)
+      ? t(message.content)
+      : message.content;
+
   return (
-    <div className="finding">
-      <div className="finding-head">
-        <strong>{t("agent.draftAccepted")}</strong>
-        {result.benchmark ? (
-          <StateBadge state={result.benchmark.state} />
-        ) : (
-          <span className="badge muted-badge">{t("agent.notSubmitted")}</span>
-        )}
+    <div className={`chat-bubble ${message.role}`}>
+      <div className="chat-author">
+        {message.role === "user" ? t("chat.you") : t("chat.assistant")}
       </div>
-      {result.draft ? (
-        <table>
-          <tbody>
-            <tr>
-              <th>{t("common.scenario")}</th>
-              <td>
-                <code>{result.draft.scenario}</code>
-              </td>
-            </tr>
-            <tr>
-              <th>{t("benchmarks.stacks")}</th>
-              <td>
-                {result.draft.algorithms.map((algorithm) => (
-                  <code key={algorithm} className="chip">
-                    {algorithm}
-                  </code>
-                ))}
-              </td>
-            </tr>
-            <tr>
-              <th>{t("common.seeds")}</th>
-              <td className="muted">[{result.draft.seeds.join(", ")}]</td>
-            </tr>
-          </tbody>
-        </table>
+      <div>{text}</div>
+      {message.proposal ? (
+        <ProposalCard
+          proposal={message.proposal}
+          busy={confirming === message.proposal.id}
+          onConfirm={onConfirm}
+        />
       ) : null}
-      <p className="muted">{result.next_step}</p>
-      {result.benchmark ? (
-        <p>
-          <Link href={`/benchmarks/${result.benchmark.id}`}>
-            {t("agent.openBenchmark")} <code>{result.benchmark.id}</code>
-          </Link>{" "}
-          {t("agent.runItThere")}
+      {message.result ? <ResultCardView result={message.result} /> : null}
+    </div>
+  );
+}
+
+function ProposalCard({
+  proposal,
+  busy,
+  onConfirm,
+}: {
+  proposal: BenchmarkProposal;
+  busy: boolean;
+  onConfirm: (proposal: BenchmarkProposal) => void;
+}) {
+  const { t } = useTranslation();
+  const confirmed = proposal.status === "confirmed";
+  const ready = proposal.missing_fields.length === 0;
+
+  return (
+    <div className="proposal-card">
+      <div className="panel-head">
+        <h4 style={{ margin: 0 }}>{t("chat.proposal")}</h4>
+        {confirmed ? <span className="badge ok">{t("benchmarks.state.draft")}</span> : null}
+      </div>
+      <table>
+        <tbody>
+          <tr>
+            <td className="muted">{t("common.scenario")}</td>
+            <td>{proposal.scenario_name || "—"}</td>
+          </tr>
+          <tr>
+            <td className="muted">{t("benchmarks.stacks")}</td>
+            {/* Stack ids are protocol tokens: never translated. */}
+            <td>
+              {proposal.stacks.map((stack) => (
+                <code key={stack} className="chip">
+                  {stack}
+                </code>
+              ))}
+            </td>
+          </tr>
+          {proposal.model_label ? (
+            <tr>
+              <td className="muted">{t("benchmarks.ppoModel")}</td>
+              <td>{proposal.model_label}</td>
+            </tr>
+          ) : null}
+          <tr>
+            <td className="muted">{t("common.seeds")}</td>
+            <td>{proposal.seeds.join(", ")}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {proposal.assumptions.length > 0 ? (
+        <p className="muted" style={{ fontSize: 11 }}>
+          {t("chat.assumed")}: {proposal.assumptions.join("; ")}
         </p>
       ) : null}
-      <details>
-        <summary className="muted">
-          {t("agent.transcript", { count: result.session.events.length })}
-        </summary>
-        <div className="table-scroll">
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+        {confirmed && proposal.benchmark_id ? (
+          <Link className="quick-action primary" href={`/benchmarks/${proposal.benchmark_id}`}>
+            {t("chat.openBenchmark")}
+          </Link>
+        ) : ready ? (
+          <button className="primary" disabled={busy} onClick={() => onConfirm(proposal)}>
+            {busy ? t("chat.creating") : t("chat.createDraft")}
+          </button>
+        ) : (
+          <Link className="quick-action" href="/models">
+            {t("benchmarks.uploadModel")}
+          </Link>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ResultCardView({ result }: { result: ResultCard }) {
+  const { t } = useTranslation();
+  const percent = (value: number) => `${(value * 100).toFixed(0)}%`;
+
+  return (
+    <div className="proposal-card">
+      <div className="panel-head">
+        <h4 style={{ margin: 0 }}>{t("chat.results")}</h4>
+        <Link href={`/benchmarks/${result.benchmark_id}`}>{t("chat.openBenchmark")}</Link>
+      </div>
+      <div className="table-scroll">
         <table>
           <thead>
             <tr>
-              <th>{t("agent.state")}</th>
-              <th>{t("detail.action")}</th>
-              <th>{t("agent.detail")}</th>
+              <th>{t("algorithms.stack")}</th>
+              <th>{t("chat.successRate")}</th>
+              <th>{t("chat.collisionRate")}</th>
+              <th>{t("chat.clearance")}</th>
             </tr>
           </thead>
           <tbody>
-            {result.session.events.map((event, index) => (
-              <tr key={index}>
+            {result.aggregates.map((row) => (
+              <tr key={row.algorithm}>
                 <td>
-                  <code>{event.state}</code>
+                  <code>{row.algorithm}</code>
                 </td>
-                <td>{event.action}</td>
-                <td className="muted">{event.detail}</td>
+                <td>{percent(row.success_rate)}</td>
+                <td>{percent(row.collision_rate)}</td>
+                <td>
+                  {row.worst_min_clearance === null
+                    ? "—"
+                    : `${row.worst_min_clearance.toFixed(3)} m`}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        </div>
-      </details>
-    </div>
-  );
-}
-
-function ReportView({ report }: { report: GeneratedReport }) {
-  const { t } = useTranslation();
-  return (
-    <div className={`finding${report.refused ? " finding-primary" : ""}`}>
-      <div className="finding-head">
-        <strong>{report.refused ? t("agent.refused") : t("agent.reportTitle")}</strong>
-        {report.provisional ? (
-          <span className="badge warn">{t("agent.provisional")}</span>
-        ) : (
-          <span className="badge ok">{t("agent.acceptedResults")}</span>
-        )}
-        <span className="muted">
-          {t("agent.citationCount", {
-            citations: report.citations.length,
-            evidence: report.evidence_count,
-          })}
-        </span>
       </div>
-      {report.refused ? (
-        <p className="muted">{t("agent.reason", { reason: report.refusal_reason })}</p>
-      ) : null}
-      <pre className="transcript-a">{report.text}</pre>
-      <p className="muted">
-        {report.provider} ({report.model})
-        {report.deterministic ? ` — ${t("agent.keywordMatched")}` : ""}
-      </p>
+      <details style={{ marginTop: 8 }}>
+        <summary className="muted">{t("chat.viewEvidence")}</summary>
+        <p className="muted" style={{ fontSize: 11 }}>
+          {/* The checksum is evidence, not decoration — but it belongs
+              behind a disclosure, not in the main flow. */}
+          <code>{result.conditions_checksum.slice(0, 24)}</code>
+        </p>
+      </details>
     </div>
   );
 }

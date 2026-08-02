@@ -101,25 +101,29 @@ def agent_selectable_algorithms() -> set[str]:
     """Stacks the agent may propose on its own.
 
     Narrower than :func:`benchmarkable_algorithms`, and for a reason
-    that goes to the heart of M8: ``astar+ppo`` needs a ``model_path``
-    pointing at a trained checkpoint. The agent has no way to know which
-    checkpoint is the right one, and inventing a path is exactly the
-    fabrication the spec forbids — so any stack with required
-    configuration is off the agent's menu. A human names the checkpoint
-    and creates that benchmark through the ordinary endpoints.
+    that goes to the heart of M8: ``astar+ppo`` needs a trained model,
+    and this agent has no way to know which one is the right one.
+    Choosing for the user would be a guess presented as a decision, so
+    any stack that requires a model is off the agent's menu. A person
+    picks the model in the registry and creates that benchmark through
+    the ordinary endpoints.
+
+    The exclusion reads ``requires_model`` rather than inspecting the
+    config schema's ``required`` list. The old inference was true only by
+    accident: it held because the model field happened to have no
+    default, and it stopped holding the moment one was added.
     """
-    return {
-        info.id
-        for info in list_algorithms()
-        if info.benchmarkable and not info.config_schema.get("required")
-    }
+    return {info.id for info in list_algorithms() if info.benchmarkable and not info.requires_model}
 
 
 def required_config_fields(algorithm: str) -> tuple[str, ...]:
     """Config fields a human must supply for this stack, if any."""
     for info in list_algorithms():
         if info.id == algorithm:
-            return tuple(info.config_schema.get("required", ()))
+            fields = list(info.config_schema.get("required", ()))
+            if info.requires_model and "model_id" not in fields:
+                fields.append("model_id")
+            return tuple(fields)
     return ()
 
 

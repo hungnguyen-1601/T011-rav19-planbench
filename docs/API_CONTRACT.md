@@ -201,6 +201,100 @@ Ghi chú:
 - Không có endpoint nào cho phép agent approve, accept kết quả, sửa map/
   scenario, hay điều khiển robot.
 
+## Robot profiles (M13)
+
+Tham số robot là **dữ liệu**, không phải hằng số nằm trong adapter PPO.
+Một model được huấn luyện cho robot bán kính 0.3 m không nói gì về robot
+bán kính 0.8 m, và trước M13 sự khác biệt đó không ở đâu ghi lại.
+
+| Method | Path | Ghi chú |
+|---|---|---|
+| `GET` | `/api/v1/robot-profiles` | Profile của người gọi, kèm profile mặc định. |
+| `POST` | `/api/v1/robot-profiles` | Tạo. |
+| `GET` | `/api/v1/robot-profiles/{id}` | |
+| `PATCH` | `/api/v1/robot-profiles/{id}` | Chỉ chủ sở hữu. |
+| `DELETE` | `/api/v1/robot-profiles/{id}` | Chỉ chủ sở hữu; từ chối nếu đang có model tham chiếu. |
+| `POST` | `/api/v1/robot-profiles/{id}/clone` | Sao chép để sửa mà không đụng bản gốc. |
+
+Trường: `radius`, `max_linear_velocity`, `max_angular_velocity`,
+`max_linear_acceleration`, `max_angular_acceleration`, `lidar_beams`,
+`lidar_range`, `lidar_fov`.
+
+## Model registry (M13)
+
+| Method | Path | Ghi chú |
+|---|---|---|
+| `GET` | `/api/v1/models` | `?usable=true` chỉ trả model chạy được. |
+| `POST` | `/api/v1/models/upload` | `multipart/form-data`. Xem dưới. |
+| `GET` | `/api/v1/models/{id}` | |
+| `PATCH` | `/api/v1/models/{id}` | Tên, mô tả, `status`. Chỉ chủ sở hữu. |
+| `DELETE` | `/api/v1/models/{id}` | Chỉ chủ sở hữu hoặc admin; từ chối nếu đã có benchmark dùng. |
+| `POST` | `/api/v1/models/{id}/validate` | Kiểm tra lại cấu trúc + checksum. |
+| `GET` | `/api/v1/models/{id}/compatibility` | `?robot_profile_id=` để hỏi với profile khác. |
+| `POST` | `/api/v1/models/{id}/documents` | Đính kèm `.json` hoặc `.pdf`. |
+
+**Upload** nhận các phần: `model` (`.zip` bắt buộc), `metadata`
+(`.json`, tùy chọn), `document` (`.pdf`, tùy chọn), cùng `name`,
+`version`, `description`, `robot_profile_id`.
+
+Giới hạn: `PLANBENCH_MAX_MODEL_UPLOAD_MB` (mặc định 200) và
+`PLANBENCH_MAX_DOCUMENT_UPLOAD_MB` (mặc định 20), cưỡng chế **trong lúc
+ghi**. Vượt giới hạn → `413`, file dở dang bị xóa.
+
+Mã lỗi: `400` sai định dạng, `403` không phải chủ sở hữu, `404` không
+tồn tại, `413` quá lớn, `422` registry từ chối (kèm câu giải thích).
+
+**Response không bao giờ chứa `model_file_path`, `storage_key`, hay
+`uploaded_by_user_id`.** Đường dẫn nội bộ là chi tiết triển khai; ID
+nghiệp vụ là `id`, không phải tên file. Test khẳng định điều này.
+
+Trường trả về gồm `id`, `name`, `version`, `algorithm_type`,
+`framework`, `framework_version`, `original_filename`, `file_size`,
+`checksum`, `robot_profile_id`, `observation_schema`, `action_schema`,
+`training_environment`, `training_steps`, `status`, `validation_status`,
+`validation_message`, `created_at`, `updated_at`.
+
+`validation_status`: `pending` → `structural` (bảng mục lục zip hợp lệ,
+**không giải tuần tự**) → `loaded` (một tiến trình khác đã nạp thật) |
+`failed`. Khoảng cách giữa `structural` và `loaded` là ranh giới bảo
+mật, không phải chi tiết thủ tục — xem KNOWN_LIMITATIONS #77.
+
+### Chạy benchmark PPO
+
+`BenchmarkSpec.algorithm_configs["astar+ppo"]` nay nhận `model_id`.
+Server tự phân giải sang file, kiểm tra lại tương thích **tại thời điểm
+chạy**, và ghi lại `model_version`, `model_checksum`,
+`compatibility_snapshot` vào spec — nên một kết quả luôn truy được về
+đúng byte đã sinh ra nó.
+
+`model_path` vẫn được chấp nhận để benchmark cũ đọc được, nhưng không
+xuất hiện trong giao diện.
+
+Thiếu cả hai → `422` với câu:
+*"Bạn chưa chọn PPO model..."* — không phải lỗi Pydantic thô.
+
+## Trợ lý (M13 — thay thế contract M8 cho phần giao diện)
+
+| Method | Path | Ghi chú |
+|---|---|---|
+| `POST` | `/api/v1/ai/conversations` | Mở hội thoại. |
+| `GET` | `/api/v1/ai/conversations` | Hội thoại của người gọi. |
+| `GET` | `/api/v1/ai/conversations/{id}` | Toàn bộ lịch sử. |
+| `DELETE` | `/api/v1/ai/conversations/{id}` | |
+| `POST` | `/api/v1/ai/conversations/{id}/messages` | Gửi tin nhắn; **không tạo gì cả**. |
+| `POST` | `/api/v1/ai/conversations/{id}/confirm-draft` | Ghi duy nhất: tạo **bản nháp**. |
+| `GET` | `/api/v1/ai/results/{benchmark_id}` | Thẻ kết quả, số lấy từ report thật. |
+| `GET` | `/api/v1/ai/latest-result` | |
+
+**Không tồn tại** đường dẫn `/ai/**` nào để chạy, duyệt, chấp nhận, từ
+chối benchmark hay điều khiển robot. Đây là bất biến được test kiểm
+chứng bằng cách đọc `openapi.json` — tức kiểm tra bề mặt mà client thực
+sự gọi được, chứ không phải bảng định tuyến nội bộ.
+
+Nội dung tin nhắn của trợ lý là **khóa dịch** (`chat.proposalReady`,
+`chat.needModel`, …), không phải câu tiếng Anh hay tiếng Việt cứng —
+nên hai ngôn ngữ không bao giờ lệch nhau.
+
 ## Ghi chú trạng thái
 
 - Lưu trữ metadata vẫn in-memory (mất khi restart) — PostgreSQL còn nợ.

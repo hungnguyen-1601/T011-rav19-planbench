@@ -10,6 +10,8 @@ from planbench_agent import AgentService
 from planbench_agent.tools import ToolPolicy
 from planbench_api.agent_gateway import ApiAgentGateway
 from planbench_api.auth import CurrentUser
+from planbench_api.chat_service import ChatService
+from planbench_api.registry_service import ModelRegistryService, RobotProfileService
 from planbench_api.repositories import RepositoryHub
 from planbench_api.review_service import ReviewService
 from planbench_api.services import (
@@ -38,6 +40,15 @@ def get_simulation_service(request: Request) -> SimulationService:
     return SimulationService(get_repos(request))
 
 
+def get_profile_service(request: Request) -> RobotProfileService:
+    return RobotProfileService(get_repos(request).robot_profiles)
+
+
+def get_model_service(request: Request) -> ModelRegistryService:
+    repos = get_repos(request)
+    return ModelRegistryService(repos.models, repos.robot_profiles, request.app.state.model_storage)
+
+
 def get_review_service(request: Request) -> ReviewService:
     repos = get_repos(request)
     return ReviewService(repos.reviews, repos.users, repos.benchmarks)
@@ -55,11 +66,22 @@ def get_benchmark_service(request: Request) -> BenchmarkService:
         request.app.state.tracker,
         request.app.state.jobs,
         reviews=get_review_service(request),
+        models=get_model_service(request),
     )
 
 
 def get_benchmark_job_service(request: Request) -> BenchmarkJobService:
     return BenchmarkJobService(get_benchmark_service(request), request.app.state.jobs)
+
+
+def get_chat_service(request: Request) -> ChatService:
+    repos = get_repos(request)
+    return ChatService(
+        repos,
+        get_model_service(request),
+        get_profile_service(request),
+        get_benchmark_service(request),
+    )
 
 
 def get_episode_service(request: Request) -> EpisodeService:

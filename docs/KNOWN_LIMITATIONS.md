@@ -291,6 +291,106 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     được hiện `—` chứ không hiện `0`, và có dòng cảnh báo — nhưng nó
     không nói *cái nào* hỏng. Đủ để không hiểu sai, chưa đủ để chẩn đoán.
 
+## Model Registry và trợ lý hội thoại (M13)
+
+### Bảo mật model upload — đọc kỹ phần này
+
+77. **Model upload KHÔNG được chạy trong sandbox container.** Đây là hạn
+    chế quan trọng nhất của M13 và không được che giấu. Những gì *đã*
+    làm được:
+
+    - Kiểm tra phần mở rộng **trước khi ghi byte đầu tiên**; chỉ chấp
+      nhận `.zip` (model), `.json` (metadata), `.pdf` (tài liệu).
+    - Kiểm tra **magic bytes** (`PK\x03\x04`), `zipfile.testzip()`, và
+      sự có mặt của các thành viên SB3 (`data`, `policy.pth`).
+    - Làm sạch tên file: mọi dấu phân cách bị loại, `../../etc/passwd`
+      trở thành `passwd`. Đường dẫn lưu trữ **dựng hoàn toàn từ ID**,
+      không lấy từ tên file.
+    - Giới hạn kích thước **cưỡng chế trong lúc ghi**, không phải sau.
+    - SHA-256 của đúng byte đã ghi.
+    - **Không `pickle.load` trong tiến trình API.** Việc kiểm tra ở web
+      process chỉ đọc *bảng mục lục* của zip — không giải tuần tự.
+
+    Những gì **chưa** làm được:
+
+    - Không có container, không có seccomp, không có namespace riêng.
+    - Không có giới hạn CPU/RAM cho tiến trình nạp model.
+    - Không có timeout cứng khi nạp.
+
+    Hệ quả cụ thể: **khi một benchmark PPO thật sự chạy**, checkpoint
+    được `torch.load` trong tiến trình worker của benchmark. Một file
+    `.zip` độc hại có thể thực thi code ở đó với quyền của tiến trình
+    đó. Trạng thái `structural` nghĩa là *"cấu trúc đúng"*, không phải
+    *"an toàn"* — sự phân biệt này là lý do hai trạng thái tồn tại
+    riêng (`structural` vs `loaded`).
+
+    **Không được kết luận model upload là an toàn tuyệt đối.** Ở triển
+    khai nhiều người dùng không tin nhau, hãy chạy worker benchmark
+    trong container riêng với quota, hoặc chỉ cho phép upload từ tài
+    khoản đã được kiểm duyệt.
+
+78. **Tách tiến trình mới ở mức "khác tiến trình web", chưa phải cách
+    ly thật.** Benchmark chạy trong worker riêng nên API process không
+    bao giờ giải tuần tự file người dùng; nhưng worker vẫn cùng máy,
+    cùng user, cùng filesystem.
+
+79. **`validation_status` không bao giờ tự lên `loaded`.** Muốn biết
+    chắc checkpoint nạp được thì phải nạp nó, và điều đó chỉ xảy ra khi
+    người dùng chạy benchmark thật. Nút "Validate" chỉ kiểm tra lại
+    cấu trúc và checksum — nó nói đúng những gì nó làm.
+
+### Model, robot profile, tương thích
+
+80. **Chỉ hỗ trợ Stable-Baselines3.** `SUPPORTED_FRAMEWORKS` có đúng một
+    phần tử. Model của framework khác upload được nhưng bị đánh dấu
+    không tương thích, kèm câu giải thích.
+
+81. **Observation encoding do người upload khai báo, không tự phát
+    hiện được.** Không có cách nào đọc ra từ file `.zip` xem policy được
+    huấn luyện với bố cục quan sát nào. Nếu metadata không khai
+    `observation.version`, hệ thống ghi **cảnh báo** (không từ chối) và
+    khi chạy sẽ giả định phiên bản hiện hành. Một policy huấn luyện với
+    bố cục khác sẽ nhận đầu vào vô nghĩa mà vẫn "chạy được" — đây là lý
+    do cảnh báo tồn tại chứ không im lặng.
+
+82. **Không có UI huấn luyện model.** PlanBench hiện chỉ *đánh giá*
+    model PPO đã huấn luyện. Không có nút "Train" giả, không có thanh
+    tiến trình giả — vì chưa có job huấn luyện thật đứng sau.
+
+83. **Storage backend production chưa viết.** `ModelStorage` là
+    interface có sẵn cho S3/R2, nhưng chỉ `LocalModelStorage` được cài
+    đặt và chạy thử. Chuyển sang object storage là viết thêm một lớp,
+    không phải sửa lời gọi.
+
+84. **Xóa model bị chặn khi đã có benchmark dùng nó.** Đúng về mặt bằng
+    chứng (một kết quả phải luôn truy được về model đã tạo ra nó), nhưng
+    nghĩa là registry chỉ lớn thêm. Chưa có cơ chế lưu trữ nguội.
+
+85. **Benchmark cũ dùng `model_path` vẫn đọc được nhưng không nâng cấp
+    tự động.** Chuyển chúng sang `model_id` đòi hỏi đoán xem file trên
+    đĩa ứng với model nào — chính là điều registry sinh ra để chấm dứt.
+
+### Trợ lý hội thoại
+
+86. **Trợ lý không chạy benchmark, và đó là thiết kế chứ không phải
+    thiếu sót.** Không tồn tại endpoint `/ai/**` nào chạy, duyệt, chấp
+    nhận hay từ chối kết quả — kiểm chứng bằng test đọc `openapi.json`.
+    Ghi write duy nhất là tạo **bản nháp**.
+
+87. **Trợ lý hiểu ý định bằng khớp từ khóa, không phải bằng LLM.**
+    `chat_service` nhận diện stack và seed bằng luật. Đơn giản, xác
+    định, không gọi mạng — nhưng nó sẽ không hiểu câu hỏi diễn đạt lạ.
+    Đường dẫn LLM (Gemini và các provider khác) vẫn còn nguyên trong
+    backend, chỉ bị ẩn khỏi giao diện người dùng.
+
+88. **Nút Stop hủy ở phía client.** Nó bỏ qua phản hồi đang bay chứ
+    không hủy công việc phía server. Với các phản hồi hiện tại (mili
+    giây, không gọi mạng) sự khác biệt không quan sát được, nhưng nó là
+    khác biệt thật.
+
+89. **Lịch sử hội thoại chưa có UI liệt kê.** Backend lưu và trả về đầy
+    đủ; giao diện hiện chỉ có "Cuộc trò chuyện mới".
+
 ## Môi trường
 
 - Test phải chạy với `PYTHONPATH=` do shell source ROS2 Jazzy (xem

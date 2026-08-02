@@ -21,6 +21,7 @@ from planbench_api.approval import (
     next_state,
 )
 from planbench_api.errors import DomainValidationError, InvalidStateError, NotFoundError
+from planbench_api.registry_service import ModelRegistryService
 from planbench_api.repositories import (
     RepositoryHub,
     StoredBenchmark,
@@ -87,6 +88,16 @@ OWNER_BLOCKED_BY_REVIEW = frozenset(
 )
 
 
+#: The one message a user should ever see for "you did not pick a model".
+#: The raw Pydantic version of this — `invalid config for astar+ppo
+#: model_path Field required` — names an internal field and tells the
+#: reader nothing they can act on.
+NO_PPO_MODEL_MESSAGE = (
+    "You have not chosen a PPO model. Pick one you have uploaded, or upload a new "
+    "one — PPO needs a trained model, which is the .zip that Stable-Baselines3 saves."
+)
+
+
 def require_algorithm(algorithm: str, config: dict | None = None) -> None:
     """Validate an algorithm id and its config, as domain errors."""
     try:
@@ -94,6 +105,10 @@ def require_algorithm(algorithm: str, config: dict | None = None) -> None:
     except UnknownAlgorithmError as exc:
         raise DomainValidationError(str(exc)) from exc
     except AlgorithmConfigError as exc:
+        # Rewrite the one case a user hits by clicking rather than by
+        # crafting a request: choosing PPO and not choosing a model.
+        if algorithm == "astar+ppo" and not (config or {}).get("model_id"):
+            raise DomainValidationError(NO_PPO_MODEL_MESSAGE) from exc
         raise DomainValidationError(str(exc)) from exc
 
 
@@ -222,11 +237,13 @@ class BenchmarkService:
         tracker: ExperimentTracker | None = None,
         jobs: JobQueue | None = None,
         reviews: ReviewService | None = None,
+        models: ModelRegistryService | None = None,
     ) -> None:
         self._repos = repos
         self._tracker = tracker or NullTracker()
         self._jobs = jobs
         self._reviews = reviews
+        self._models = models
 
     # -- authorization -------------------------------------------------
 
@@ -388,6 +405,10 @@ class BenchmarkService:
         stored = self.transition(benchmark_id, Action.RUN, user)
         map_data = self._repos.maps.get(stored.map_id).map_data
         scenario = self._repos.scenarios.get(stored.scenario_id).scenario
+        # Registry ids become file paths here and nowhere else: the
+        # benchmark package must not know about API storage, and the
+        # frontend must never see a path.
+        spec = self._resolve_models(stored)
 
         # Episodes are persisted as they finish, so replay works without
         # re-running anything and the report itself stays metrics-only.
@@ -405,7 +426,7 @@ class BenchmarkService:
                 raise BenchmarkCancelled(f"benchmark {benchmark_id!r} cancelled by operator")
 
         try:
-            report = run_benchmark(map_data, scenario, stored.spec, on_run=store_episode)
+            report = run_benchmark(map_data, scenario, spec, on_run=store_episode)
         except BenchmarkCancelled:
             self.transition(benchmark_id, Action.CANCEL, user, comment="cancelled during run")
             raise
@@ -428,6 +449,52 @@ class BenchmarkService:
         self._tracker.log_benchmark(benchmark_id, report, {"created_by": stored.created_by})
         # Results now await the second human gate (Reviewer accept/reject).
         return self.transition(benchmark_id, Action.COMPLETE, user)
+
+    # -- PPO models ----------------------------------------------------
+
+    def _resolve_models(self, stored: StoredBenchmark) -> BenchmarkSpec:
+        """Turn every registry ``model_id`` into a path the runner can open.
+
+        Returns a spec for *this run only* — the stored spec keeps the
+        id, which is what makes the benchmark reproducible. Writing the
+        resolved path back would pin the result to a filesystem layout.
+
+        Compatibility is re-checked here rather than trusted from
+        creation time: a model can be disabled, replaced or deleted
+        between drafting a benchmark and running it, and discovering
+        that halfway through a run is worse than refusing at the start.
+        """
+        algorithms: list[AlgorithmSpec] = []
+        changed = False
+        for algorithm in stored.spec.algorithms:
+            config = dict(algorithm.config or {})
+            model_id = config.get("model_id", "")
+            if algorithm.id != "astar+ppo" or not model_id:
+                algorithms.append(algorithm)
+                continue
+            if self._models is None:  # pragma: no cover - wired in create_app
+                raise InvalidStateError("the model registry is not available")
+
+            report = self._models.compatibility(model_id, config.get("robot_profile_id") or None)
+            if not report.ok:
+                raise DomainValidationError(
+                    f"the PPO model for this benchmark cannot be run: {report.errors[0]}",
+                    list(report.errors),
+                )
+            record = self._models.get(model_id)
+            config["model_path"] = self._models.internal_location(record)
+            # The loader wants a sidecar naming the observation and
+            # reward versions; the registry renders one from the record.
+            config["metadata_path"] = self._models.sidecar_location(record)
+            config["model_checksum"] = record.checksum
+            config["model_version"] = record.version
+            self._models.record_usage(model_id, stored.id)
+            algorithms.append(AlgorithmSpec(id=algorithm.id, config=config))
+            changed = True
+
+        if not changed:
+            return stored.spec
+        return stored.spec.model_copy(update={"algorithms": tuple(algorithms)})
 
     # -- review bookkeeping --------------------------------------------
 

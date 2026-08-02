@@ -45,6 +45,11 @@ from planbench_api.db.models import (
     SimulationRow,
     UserRow,
 )
+from planbench_api.db.registry_repositories import (
+    SqlConversationRepository,
+    SqlModelRepository,
+    SqlRobotProfileRepository,
+)
 from planbench_api.db.session import SessionFactory
 from planbench_api.errors import NotFoundError
 from planbench_api.repositories import (
@@ -586,6 +591,9 @@ class SqlRepositoryHub:
         self.benchmarks = SqlBenchmarkRepository(sessions, artifacts)
         self.users = SqlUserRepository(sessions)
         self.reviews = SqlReviewRepository(sessions)
+        self.robot_profiles = SqlRobotProfileRepository(sessions)
+        self.models = SqlModelRepository(sessions)
+        self.conversations = SqlConversationRepository(sessions)
 
 
 # -- row <-> domain ----------------------------------------------------

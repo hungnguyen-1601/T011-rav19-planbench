@@ -59,7 +59,7 @@ class TestMissionParsing:
         session = agent.new_session("s1")
         agent.parse_mission(session, "Compare DWA and PPO on doorway")
         assert session.state is AgentState.REFUSED
-        assert any("model_path" in error for error in session.refusal.errors)
+        assert any("model_id" in error for error in session.refusal.errors)
         assert gateway.benchmarks == {}
 
     def test_an_unparseable_mission_is_refused(self, agent):

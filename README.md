@@ -97,7 +97,7 @@ Ba thứ chạy ở chế độ giảm cho tới khi được cấu hình, khôn
 
 ## Trạng thái
 
-**M0–M10 đã hoàn thành.** Chi tiết:
+**M0–M13 đã hoàn thành.** Chi tiết:
 [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) ·
 kết quả chạy thật: [docs/TEST_REPORT.md](docs/TEST_REPORT.md) ·
 **điều chưa kiểm chứng**: [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md)
@@ -114,6 +114,11 @@ kết quả chạy thật: [docs/TEST_REPORT.md](docs/TEST_REPORT.md) ·
 | ROS2 Jazzy + Nav2 closed-loop | ✅ 6/6 episode, chạy tay |
 | Agentic AI + RAG, 8 LLM provider | ✅ — chưa gọi provider ngoài lần nào |
 | PostgreSQL + Alembic + Docker Compose | ✅ code — **chưa build image, chưa chạy Postgres thật** |
+| Đăng nhập Google/GitHub, nickname, review tùy chọn | ✅ — không gọi OAuth thật trong test |
+| App shell: sidebar thu gọn, theme Light/Dark/System, VI/EN | ✅ |
+| **Model Registry**: upload PPO qua web, checksum, tương thích | ✅ — **nạp model chưa chạy trong sandbox**, xem KNOWN_LIMITATIONS #77 |
+| **Robot Profile** | ✅ |
+| **Trợ lý hội thoại** (đề xuất → bản nháp, không tự chạy) | ✅ |
 
 Xem [docs/architecture.md](docs/architecture.md) cho kiến trúc và các
 quyết định thiết kế.
@@ -256,7 +261,7 @@ ml/                  Gymnasium env, reward, PPO training
 ros2_ws/             5 ROS2 package (simulator node, Nav2 bringup, runner)
 alembic/             Migration schema
 docker/              Image API + web
-tests/               pytest — 864 test
+tests/               pytest — xem docs/TEST_REPORT.md cho số đã chạy thật
 scripts/             demo, kiểm tra provider, dev_stack.sh
 docs/                architecture, API contract, deployment, frontend, agent, ROS2
 ```

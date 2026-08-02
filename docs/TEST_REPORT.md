@@ -61,6 +61,128 @@ cài và đã chạy test.
   dependency gián tiếp từ một máy sạch.
 - **Chưa kiểm `npm install` từ đầu** trên `node_modules` trống.
 
+## M13 — Model Registry + trợ lý hội thoại — 2026-08-01
+
+### Backend
+
+```
+.venv/bin/ruff format . && .venv/bin/ruff check .
+181 files left unchanged
+All checks passed!
+
+PYTHONPATH= .venv/bin/pytest tests/ -q
+1116 passed, 2 warnings in 356.04s (0:05:56)
+```
+
+Trong đó M13 đóng góp **78 test mới**: 50 ở
+`tests/api/test_api_models.py`, 28 ở `tests/api/test_api_chat.py`.
+
+### Frontend
+
+```
+npx tsc --noEmit          → không lỗi
+npx vitest run            → Test Files 18 passed (18)
+                            Tests 274 passed (274)
+npx next build            → thành công
+                            /agent      4.83 kB   131 kB
+                            /models     2.86 kB   132 kB
+                            /models/[id] 1.46 kB  131 kB
+```
+
+### Kiểm chứng riêng: server KHÔNG có torch/SB3
+
+Câu hỏi: người dùng thấy gì khi chạy benchmark PPO trên server chưa cài
+nhóm phụ thuộc RL? Đáp án tệ là HTTP 500 kèm traceback.
+
+Chạy lại toàn bộ test registry + chat dưới `sitecustomize.py` chặn
+đúng 7 package tùy chọn (cùng harness đã dùng cho `requirements.txt`,
+mô phỏng *cả hai* hành vi: `import` raise `ModuleNotFoundError` **và**
+`find_spec` trả `None`):
+
+```
+PYTHONPATH=<blocker> .venv/bin/python -m pytest \
+    tests/api/test_api_models.py tests/api/test_api_chat.py -q
+77 passed, 1 skipped, 2 warnings in 86.50s (0:01:26)
+```
+
+Và trực tiếp ở lớp registry, với SB3 vắng mặt thật:
+
+```
+SB3 visible to this process: None
+AlgorithmConfigError -> this server cannot run PPO models: the
+reinforcement-learning dependencies are not installed. Install them
+from requirements-optional.txt, or benchmark A* + DWA instead.
+```
+
+1 skipped là test sidecar — nó đọc phiên bản observation từ
+`planbench_rl`, và server không import được gói đó thì cũng không chạy
+được PPO.
+
+### Ba lỗi mà kiểm chứng này bắt được
+
+1. **Bọc `try/except` sai chỗ.** Lần đầu tôi bắt `ModuleNotFoundError`
+   quanh `from planbench_rl.policy import load_ppo_planner` — nhưng
+   `planbench_rl.policy` import được bình thường; `from
+   stable_baselines3 import PPO` nằm *bên trong* `load_ppo_planner()`,
+   sau bước kiểm tra sidecar. Bản vá không chạm đúng lỗi. Chuyển sang
+   `find_spec("stable_baselines3")` — hỏi trước khi import, và không thể
+   che nhầm `ModuleNotFoundError` phát sinh khi giải tuần tự một
+   checkpoint tham chiếu module server không có.
+
+2. **`sidecar_location` nổ trước cả thông báo thân thiện.** Nó import
+   `planbench_rl` (kéo theo `gymnasium`), và bước phân giải model gọi nó
+   *trước* khi tới chỗ kiểm tra SB3 — nên trên server thiếu torch, người
+   dùng nhận lỗi nội bộ về một package họ chưa từng nghe tới. Đồng thời
+   `record_usage()` không bao giờ chạy, làm test "model đang dùng thì
+   không xóa được" hỏng theo. Một nguyên nhân, hai triệu chứng, chỉ lộ
+   ra khi optional stack vắng mặt.
+
+3. **Cổng chặn agent chọn PPO hỏng âm thầm.** `agent_selectable_algorithms()`
+   loại stack bằng cách xem JSON-schema có `required` không. Điều đó
+   đúng chỉ vì `model_path` tình cờ không có default. Khi mọi trường
+   nhận default, `astar+ppo` lọt vào thực đơn của agent — nó sẽ đề xuất
+   một benchmark không có model nào. Thay bằng cờ `requires_model` khai
+   báo thẳng: một tính chất quan trọng không nên là hệ quả phụ của
+   default.
+
+### Bảo mật đã kiểm bằng test, không phải bằng lời
+
+`tests/api/test_api_models.py::TestUploadIsPicky` — 11 test:
+
+- Từ chối `.py`, `.sh`, `.exe`, không có phần mở rộng.
+- **Từ chối `.pdf` ở vị trí model** — PDF là tài liệu, không chạy được.
+- File `.zip` đặt tên `.pdf` bị đánh dấu; archive không phải SB3 bị đánh
+  dấu; archive hỏng bị đánh dấu.
+- `../../../../etc/passwd.zip` lưu thành `passwd.zip` **bên trong** thư
+  mục model; kiểm chứng bằng cách đọc đường dẫn thật trên đĩa.
+- Dạng Windows `..\..\evil.zip` cũng bị làm phẳng.
+- Upload không kèm token bị từ chối.
+
+`TestCompatibility` — model bị sửa byte sau khi upload bị checksum bắt;
+model thiếu file bị bắt; số beam LiDAR lệch thì thông báo nêu **cả hai
+con số**.
+
+`TestNoTechnicalLeakage` — không phản hồi nào của trợ lý chứa
+`gemini`, `openai`, `anthropic`, `api_key`, `provider`, `pip install`,
+hay tên tool nội bộ.
+
+`test_there_is_no_run_endpoint_on_the_assistant` — đọc `openapi.json`
+và khẳng định không đường dẫn `/ai/**` nào chứa run/approve/accept/
+reject/drive. Assertion ban đầu duyệt `app.routes` và trả về rỗng (bản
+FastAPI này gói route con trong `_IncludedRouter`) — tức là nó "pass"
+mà không kiểm gì cả. Đọc tài liệu OpenAPI đúng hơn: đó là bề mặt client
+thật sự gọi được.
+
+### Chưa được kiểm chứng
+
+- **Chưa nạp một checkpoint PPO thật qua registry.** Test dùng zip đúng
+  hình dạng SB3 dựng trong bộ nhớ (`data`, `policy.pth`,
+  `pytorch_variables.pth`) — đủ để kiểm mọi thứ ở tầng registry, không
+  đủ để nói "model upload lên chạy được". Người dùng phải tự xác nhận
+  bằng model của mình.
+- **Chưa chạy với PostgreSQL thật**; migration 0003 chỉ chạy trên SQLite.
+- **Không có sandbox.** Xem KNOWN_LIMITATIONS #77.
+
 ## M12 — App shell, theme, i18n, Dashboard — 2026-08-01
 
 Chỉ sửa frontend. Backend không đổi một dòng nào (`git status` sạch ở

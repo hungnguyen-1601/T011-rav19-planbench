@@ -69,6 +69,15 @@ class Settings(BaseSettings):
     # Artifact storage root for trajectories and reports.
     artifact_dir: str = "artifacts"
 
+    # Uploaded model files. Kept out of the source tree and out of Git —
+    # a checkpoint is data, not code, and a repository is not a CDN.
+    model_dir: str = "artifacts/models"
+    # Upload ceilings, in megabytes. A trained PPO checkpoint is
+    # typically a few MB; 200 leaves room for a large policy without
+    # letting one request fill the disk.
+    max_model_upload_mb: int = 200
+    max_document_upload_mb: int = 20
+
     # Persistence (M10). Empty keeps everything in memory, which is what
     # development and the test suite use. A URL switches to SQL:
     #   postgresql://user:pass@host:5432/planbench   (production)

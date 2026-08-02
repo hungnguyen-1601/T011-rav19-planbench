@@ -5,9 +5,11 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
+import { Icon } from "@/components/Icon";
 import { StateBadge } from "@/components/StateBadge";
 import { authFetch, useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
+import { listModels, type ModelSummary } from "@/lib/models";
 import type { AlgorithmInfo, BenchmarkResource } from "@/lib/benchmarkTypes";
 import type { MapSummary, ScenarioResource } from "@/lib/types";
 
@@ -25,27 +27,37 @@ export default function BenchmarksPage() {
   const [mapId, setMapId] = useState("");
   const [scenarioId, setScenarioId] = useState("");
   const [selected, setSelected] = useState<string[]>(["astar+dwa"]);
+  // PPO needs a model from the registry. Loaded once and filtered to
+  // the usable ones, so the dropdown never offers something that will
+  // be refused at launch.
+  const [models, setModels] = useState<ModelSummary[]>([]);
+  const [modelId, setModelId] = useState("");
   const [seedText, setSeedText] = useState("1,2,3");
 
   const refresh = useCallback(async () => {
     try {
-      const [list, algorithmList, mapList, scenarioList] = await Promise.all([
+      const [list, algorithmList, mapList, scenarioList, modelList] = await Promise.all([
         authFetch<BenchmarkResource[]>("/benchmarks"),
         authFetch<AlgorithmInfo[]>("/algorithms"),
         authFetch<MapSummary[]>("/maps"),
         authFetch<ScenarioResource[]>("/scenarios"),
+        // usable_only: a model that is disabled or failed validation
+        // would be refused at launch, so it is never offered here.
+        listModels(true),
       ]);
       setBenchmarks(list);
       setAlgorithms(algorithmList);
       setMaps(mapList);
       setScenarios(scenarioList);
+      setModels(modelList);
+      if (!modelId && modelList.length > 0) setModelId(modelList[0].id);
       if (!mapId && mapList.length > 0) setMapId(mapList[0].id);
       if (!scenarioId && scenarioList.length > 0) setScenarioId(scenarioList[0].id);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [mapId, scenarioId]);
+  }, [mapId, scenarioId, modelId]);
 
   useEffect(() => {
     if (!session) return;
@@ -69,7 +81,12 @@ export default function BenchmarksPage() {
           name,
           map_id: mapId,
           scenario_id: scenarioId,
-          algorithms: selected.map((id) => ({ id, config: {} })),
+          // A model *id*, never a path: the server resolves it to a
+          // file at launch and records the checksum that ran.
+          algorithms: selected.map((id) => ({
+            id,
+            config: id === "astar+ppo" ? { model_id: modelId } : {},
+          })),
           seeds,
         }),
       });
@@ -150,7 +167,15 @@ export default function BenchmarksPage() {
             </label>
             <button
               className="primary"
-              disabled={busy || !mapId || !scenarioId || selected.length === 0}
+              disabled={
+                busy ||
+                !mapId ||
+                !scenarioId ||
+                selected.length === 0 ||
+                // PPO with no model would be refused by the server; the
+                // button is disabled so nobody has to discover that.
+                (selected.includes("astar+ppo") && !modelId)
+              }
               onClick={() => void create()}
             >
               {busy ? t("benchmarks.creating") : t("benchmarks.createDraft")}
@@ -182,6 +207,56 @@ export default function BenchmarksPage() {
               </label>
             ))}
           </div>
+
+          {selected.includes("astar+ppo") ? (
+            <div style={{ marginTop: 14 }}>
+              {models.length === 0 ? (
+                // Not a validation error: a person who has never
+                // uploaded a model has done nothing wrong, and telling
+                // them what PPO needs is more use than a red box.
+                <div className="notice">
+                  <strong>{t("benchmarks.noModels.title")}</strong>
+                  <p style={{ margin: "6px 0 10px", fontSize: 12 }}>
+                    {t("benchmarks.noModels.body")}
+                  </p>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Link className="quick-action primary" href="/models">
+                      <Icon name="plus" size={14} /> {t("benchmarks.uploadModel")}
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelected((current) => current.filter((id) => id !== "astar+ppo"))
+                      }
+                    >
+                      {t("benchmarks.useDwaInstead")}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="row" style={{ gap: 12, alignItems: "flex-end" }}>
+                  <label className="field" style={{ flex: 1, minWidth: 220 }}>
+                    {t("benchmarks.ppoModel")}
+                    <select value={modelId} onChange={(event) => setModelId(event.target.value)}>
+                      {models.map((model) => (
+                        <option key={model.id} value={model.id}>
+                          {model.name} v{model.version}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {modelId ? (
+                    <Link className="button-link" href={`/models/${modelId}`}>
+                      {t("benchmarks.viewModel")}
+                    </Link>
+                  ) : null}
+                  <Link className="button-link" href="/models">
+                    {t("benchmarks.uploadModel")}
+                  </Link>
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
       ) : null}
 

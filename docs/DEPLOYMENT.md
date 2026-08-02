@@ -31,6 +31,11 @@ bao giờ giả dạng thành một regression không liên quan.
 | `benchmarks` | spec + report (metrics-only) + `conditions_checksum` denormalise |
 | `approvals` | append-only, có `sequence` tường minh |
 | `episodes` | **metadata + URI artifact**, không có trajectory |
+| `robot_profiles` | tham số robot, để adapter PPO không hardcode chúng |
+| `models` | bản ghi model: checksum, schema quan sát/hành động, chủ sở hữu, **khóa lưu trữ chứ không phải đường dẫn** |
+| `model_documents` | `.json` metadata và `.pdf` tài liệu đính kèm |
+| `model_usages` | benchmark nào đã dùng model nào, ở phiên bản và checksum nào |
+| `conversations`, `conversation_messages` | hội thoại với trợ lý, kèm đề xuất benchmark |
 
 **Vì sao `scenarios` không có FK tới `maps`:** scenario phải sống sót khi
 map bị xoá, nếu không xoá một map sẽ âm thầm xoá luôn provenance của mọi
@@ -158,12 +163,44 @@ Key LLM đọc từ biến của chính nhà cung cấp (`ANTHROPIC_API_KEY`,
 `OPENAI_API_KEY`, …), không phải setting PlanBench. Thiếu key ⇒ agent
 rơi về mock tất định chứ không hỏng.
 
+## Model storage
+
+Model upload đi cùng đường lối với artifact (quyết định D15): database
+giữ khóa lưu trữ + SHA-256 + kích thước, byte nằm ngoài database.
+
+```
+$PLANBENCH_MODEL_DIR/<user_id>/<model_id>/<version>/<tên-file-đã-làm-sạch>
+```
+
+Đường dẫn **dựng hoàn toàn từ ID**. Tên file người dùng gửi lên chỉ để
+hiển thị lại; nó không quyết định vị trí nào cả, nên `../../etc/passwd`
+không đi tới đâu — và lớp lưu trữ vẫn `resolve()` rồi kiểm tra kết quả
+có nằm trong thư mục gốc không, vì một phòng tuyến không đủ.
+
+Thư mục này **nằm ngoài source tree, ngoài `.next`, và `artifacts/` đã
+có trong `.gitignore`** — một file upload không thể lọt vào repository.
+
+Chuyển sang S3/R2 là cài đặt thêm một lớp `ModelStorage`
+(`save/open/exists/delete/checksum/internal_location`), không phải sửa
+nơi gọi. Bản cục bộ là bản duy nhất đã chạy thật.
+
+**Giới hạn bảo mật quan trọng:** khi benchmark PPO chạy, checkpoint được
+giải tuần tự trong tiến trình worker — không phải trong sandbox có
+quota. Tiến trình API không bao giờ giải tuần tự file người dùng, nhưng
+đó là ranh giới tiến trình chứ chưa phải ranh giới cách ly. Xem
+KNOWN_LIMITATIONS #77 trước khi mở upload cho người dùng không tin cậy.
+
 ## Backup
 
-Hai thứ phải backup **cùng nhau**, và đây là điểm dễ sai nhất:
+Ba thứ phải backup **cùng nhau**, và đây là điểm dễ sai nhất:
 
 1. **Database** — `pg_dump`
 2. **Artifact store** — thư mục/volume `PLANBENCH_ARTIFACT_DIR`
+3. **Model store** — thư mục/volume `PLANBENCH_MODEL_DIR`
+
+Mất model store mà còn database sẽ cho một registry đầy bản ghi mà mọi
+lần chạy đều báo thiếu file — checksum vẫn khớp với thứ không còn tồn
+tại.
 
 Restore lệch nhau sẽ cho một database đầy episode mà replay nào cũng
 `404 episode artifact`. Artifact được tham chiếu bằng URI tuyệt đối

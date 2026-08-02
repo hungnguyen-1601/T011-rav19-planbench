@@ -48,6 +48,7 @@ def register_error_handlers(app: FastAPI) -> None:
     from planbench_api.accounts import AccountError
     from planbench_api.approval import PermissionDenied, TransitionError
     from planbench_api.auth import AuthError, Forbidden
+    from planbench_api.model_registry import ModelNotAllowed, RegistryError
     from planbench_api.oauth import OAuthError
     from planbench_api.review import ReviewError, ReviewNotAllowed
     from planbench_benchmark.registry import AlgorithmConfigError, UnknownAlgorithmError
@@ -101,6 +102,18 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(AccountError)
     async def bad_account_request(_: Request, exc: AccountError) -> JSONResponse:
+        return JSONResponse(status_code=422, content=_error_body("validation_error", str(exc)))
+
+    # Before RegistryError, which it subclasses: being the wrong person
+    # is a 403, asking for something impossible is a 422.
+    @app.exception_handler(ModelNotAllowed)
+    async def model_not_allowed(_: Request, exc: ModelNotAllowed) -> JSONResponse:
+        return JSONResponse(status_code=403, content=_error_body("forbidden", str(exc)))
+
+    @app.exception_handler(RegistryError)
+    async def registry_invalid(_: Request, exc: RegistryError) -> JSONResponse:
+        # Every message here is written for the person uploading, not
+        # for a log: "this is not a zip archive" rather than a traceback.
         return JSONResponse(status_code=422, content=_error_body("validation_error", str(exc)))
 
     @app.exception_handler(OAuthError)

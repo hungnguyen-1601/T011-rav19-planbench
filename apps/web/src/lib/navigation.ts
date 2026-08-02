@@ -40,6 +40,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
       { href: "/benchmarks", labelKey: "nav.benchmarks", icon: "benchmark" },
       { href: "/leaderboard", labelKey: "nav.leaderboard", icon: "trophy" },
       { href: "/algorithms", labelKey: "nav.algorithms", icon: "cpu" },
+      { href: "/models", labelKey: "nav.models", icon: "library", session: true },
       { href: "/agent", labelKey: "nav.agent", icon: "sparkles" },
     ],
   },

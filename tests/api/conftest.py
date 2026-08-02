@@ -62,6 +62,9 @@ def isolate_environment(monkeypatch) -> None:
 def app(tmp_path, monkeypatch):
     """App with deterministic seed users and an isolated artifact root."""
     isolate_environment(monkeypatch)
+    # Uploaded models go to a per-test directory. Without this they
+    # would land in the developer's checkout and leak between cases.
+    monkeypatch.setenv("PLANBENCH_MODEL_DIR", str(tmp_path / "models"))
     get_settings.cache_clear()
     application = create_app(artifact_dir=str(tmp_path / "artifacts"))
     yield application

@@ -320,6 +320,11 @@ class RepositoryHub:
     """All repositories for one application instance (no global state)."""
 
     def __init__(self, artifacts: ArtifactStore) -> None:
+        from planbench_api.registry_store import (
+            InMemoryConversationRepository,
+            InMemoryModelRepository,
+            InMemoryRobotProfileRepository,
+        )
         from planbench_api.user_store import InMemoryReviewRepository, InMemoryUserRepository
 
         self.artifacts = artifacts
@@ -330,3 +335,6 @@ class RepositoryHub:
         self.benchmarks = BenchmarkRepository(artifacts)
         self.users = InMemoryUserRepository()
         self.reviews = InMemoryReviewRepository()
+        self.robot_profiles = InMemoryRobotProfileRepository()
+        self.models = InMemoryModelRepository()
+        self.conversations = InMemoryConversationRepository()

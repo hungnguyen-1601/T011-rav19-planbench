@@ -104,7 +104,7 @@ class TestValidateDraft:
 
     def test_stack_needing_a_checkpoint_is_refused_with_the_missing_field(self):
         errors = validate_draft(draft(algorithms=("astar+dwa", "astar+ppo")))
-        assert any("model_path" in error for error in errors)
+        assert any("model_id" in error for error in errors)
         assert any("a human has to create this benchmark" in error for error in errors)
 
     def test_reference_adapter_may_not_be_benchmarked(self):
