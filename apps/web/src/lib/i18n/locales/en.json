@@ -184,6 +184,7 @@
   "detail.reviewRequests": "Review requests",
   "detail.auditTrail": "Audit trail",
   "detail.noDecisions": "No decisions recorded yet.",
+  "detail.downloadReport": "Download report (.md)",
   "detail.fairness": "Fairness evidence",
   "detail.fairnessHint": "Every stack ran under these identical conditions. Two reports sharing a conditions checksum are directly comparable.",
   "detail.comparison": "Comparison",

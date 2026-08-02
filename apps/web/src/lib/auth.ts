@@ -269,3 +269,22 @@ export async function authFetch<T>(path: string, init?: RequestInit): Promise<T>
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
+
+/** Authenticated request that returns a binary/text body (file downloads). */
+export async function authFetchBlob(path: string, init?: RequestInit): Promise<Blob> {
+  const session = loadSession();
+  const response = await fetch(`${API_BASE}/api/v1${path}`, {
+    ...init,
+    headers: {
+      ...(session ? { Authorization: `Bearer ${session.token}` } : {}),
+      ...init?.headers,
+    },
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const message = await errorMessage(response, response.statusText);
+    if (response.status === 401) clearSession();
+    throw new Error(message);
+  }
+  return response.blob();
+}

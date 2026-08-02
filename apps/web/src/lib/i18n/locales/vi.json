@@ -184,6 +184,7 @@
   "detail.reviewRequests": "Yêu cầu duyệt",
   "detail.auditTrail": "Nhật ký quyết định",
   "detail.noDecisions": "Chưa có quyết định nào được ghi.",
+  "detail.downloadReport": "Tải báo cáo (.md)",
   "detail.fairness": "Bằng chứng công bằng",
   "detail.fairnessHint": "Mọi stack đều chạy trong đúng các điều kiện này. Hai báo cáo cùng conditions checksum thì so sánh trực tiếp được.",
   "detail.comparison": "So sánh",

@@ -261,6 +261,36 @@ class TestExecution:
         assert response.json()["report"]["runs"][0]["algorithm"] == "astar+dwa"
 
 
+class TestReportMarkdown:
+    def test_downloads_a_markdown_report_after_a_run(
+        self, client: TestClient, created_map, created_scenario, alice_headers
+    ) -> None:
+        benchmark = run_benchmark(client, created_map, created_scenario, alice_headers, seeds=[1])
+        response = client.get(
+            f"/api/v1/benchmarks/{benchmark['id']}/report.md", headers=alice_headers
+        )
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/markdown")
+        assert "attachment" in response.headers["content-disposition"]
+        assert "astar+dwa" in response.text
+
+    def test_before_a_run_is_a_409(
+        self, client: TestClient, created_map, created_scenario, alice_headers
+    ) -> None:
+        benchmark = create_benchmark(client, created_map, created_scenario, alice_headers)
+        response = client.get(
+            f"/api/v1/benchmarks/{benchmark['id']}/report.md", headers=alice_headers
+        )
+        assert response.status_code == 409
+
+    def test_unauthenticated_is_rejected(
+        self, client: TestClient, created_map, created_scenario, alice_headers
+    ) -> None:
+        benchmark = run_benchmark(client, created_map, created_scenario, alice_headers, seeds=[1])
+        response = client.get(f"/api/v1/benchmarks/{benchmark['id']}/report.md")
+        assert response.status_code == 401
+
+
 class TestEpisodesAndReplay:
     def test_episodes_are_stored_with_artifacts(
         self, client: TestClient, created_map, created_scenario, alice_headers

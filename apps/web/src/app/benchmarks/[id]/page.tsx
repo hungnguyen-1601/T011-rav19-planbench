@@ -15,7 +15,7 @@ import { MapCanvas } from "@/components/MapCanvas";
 import { Scene25D } from "@/components/Scene25D";
 import { SendForReview } from "@/components/SendForReview";
 import { StateBadge } from "@/components/StateBadge";
-import { authFetch, useSession } from "@/lib/auth";
+import { authFetch, authFetchBlob, useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import { cancelReview, canAcceptResult, canRun, pendingFor, type ReviewStage } from "@/lib/reviews";
 import type {
@@ -100,6 +100,21 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const downloadReport = async () => {
+    setError(null);
+    try {
+      const blob = await authFetchBlob(`/benchmarks/${id}/report.md`);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${id}-report.md`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -365,6 +380,10 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
 
       {results.report ? (
         <>
+          <div className="panel">
+            <button onClick={() => void downloadReport()}>{t("detail.downloadReport")}</button>
+          </div>
+
           <div className="panel">
             <h3>{t("detail.fairness")}</h3>
             <p className="muted" style={{ fontSize: 12 }}>
