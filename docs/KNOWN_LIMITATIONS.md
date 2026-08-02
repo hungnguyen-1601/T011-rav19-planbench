@@ -414,6 +414,32 @@ v5.1.4), daemon Linux containers:
     (`MapCanvas`) — đúng scope F08 ("vẽ chướng ngại động trong view
     2.5D"). Scrubbing thời gian thì áp dụng cho cả 2 view.
 
+## P01: Optuna (Phase 3b-4)
+
+94. **Chỉ tune `astar+dwa`/`rrtstar+dwa`; `astar+ppo` không tune
+    được.** "Tinh chỉnh" cho PPO nghĩa là train lại policy mỗi trial
+    (hàng giờ/trial) — hoàn toàn khác scope Optuna-search-30-trial
+    trong 1 script chạy vài phút. Cùng lý do đã dùng để không đăng ký
+    `rrtstar+ppo` ở Phase 3b-1.
+    `packages/benchmark/planbench_benchmark/tuning.py`.
+95. **Kết quả tuning không tự áp dụng làm default sản xuất.**
+    `GET /tuning` chỉ trả artifact/báo cáo (tham số tốt nhất tìm được +
+    lịch sử trial); `registry.py` vẫn dùng default cũ. Muốn dùng tham
+    số tốt nhất thật sự phải tự sửa `registry.py` thủ công sau khi xem
+    kết quả — quyết định có chủ đích, không phải thiếu sót.
+96. **Tune trên 1 scenario cố định** (`static_obstacles`, 5 seed) —
+    tham số tốt nhất có thể overfit scenario này, không chắc tối ưu
+    trên toàn bộ thư viện scenario. Mở rộng ra nhiều scenario để lại
+    cho đợt sau.
+97. **Cache `tuning_cache.json` cần chạy tay
+    `scripts/tune_hyperparameters.py`** để sinh — không tự chạy lại
+    khi code đổi, giống `difficulty_cache.json` (P03, mục #79).
+98. **`optuna` nằm trong `requirements-optional.txt`, không phải
+    core** — thiếu nó thì `scripts/tune_hyperparameters.py` và
+    `tests/test_tuning.py` không chạy được (test tự skip qua
+    `pytest.importorskip`), nhưng `GET /tuning` vẫn hoạt động bình
+    thường (đọc cache JSON tĩnh, không cần optuna).
+
 ## Môi trường
 
 - Test phải chạy với `PYTHONPATH=` do shell source ROS2 Jazzy (xem

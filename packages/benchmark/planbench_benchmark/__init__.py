@@ -39,12 +39,20 @@ from planbench_benchmark.spec import (
     PairwiseComparison,
     RunRecord,
 )
+from planbench_benchmark.tuning import (
+    SEARCH_SPACES,
+    TuningResult,
+    load_tuning_cache,
+    save_tuning_cache,
+    tune_algorithm,
+)
 
 __all__ = [
     "ALGORITHMS",
     "CURRICULUM_ORDER",
     "HOLDOUT_SCENARIOS",
     "SCENARIO_LIBRARY",
+    "SEARCH_SPACES",
     "AlgorithmAggregate",
     "AlgorithmInfo",
     "AlgorithmSpec",
@@ -55,6 +63,7 @@ __all__ = [
     "ObservationClass",
     "PairwiseComparison",
     "RunRecord",
+    "TuningResult",
     "Confidence",
     "Evidence",
     "FailureCategory",
@@ -68,8 +77,11 @@ __all__ = [
     "compare_algorithms",
     "list_algorithms",
     "load_difficulty_cache",
+    "load_tuning_cache",
     "run_benchmark",
     "run_single",
+    "save_tuning_cache",
     "scenario_split",
+    "tune_algorithm",
     "validate_algorithm_config",
 ]
