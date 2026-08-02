@@ -37,7 +37,10 @@ export function MetricsPanel({
         <Metric label={t("metrics.pathEfficiency")} value={format(metrics.path_efficiency, 3)} />
         <Metric label={t("metrics.averageSpeed")} value={format(metrics.average_speed, 2, " m/s")} />
         <Metric label={t("metrics.maxSpeed")} value={format(metrics.max_speed, 2, " m/s")} />
-        <Metric label={t("metrics.smoothness")} value={format(metrics.smoothness, 3, " rad/m")} />
+        <Metric
+          label={t("metrics.smoothness")}
+          value={format(metrics.smoothness_per_metre, 3, " rad/m")}
+        />
         <Metric label={t("metrics.minClearance")} value={format(metrics.min_clearance, 3, " m")} />
         <Metric label={t("metrics.meanClearance")} value={format(metrics.mean_clearance, 3, " m")} />
         <Metric label={t("metrics.steps")} value={String(metrics.steps)} />

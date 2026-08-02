@@ -6,6 +6,7 @@ from planbench_metrics.statistics import (
     average_rank,
     bootstrap_ci,
     median_iqr,
+    percentile,
     wilcoxon_compare,
 )
 
@@ -16,5 +17,6 @@ __all__ = [
     "bootstrap_ci",
     "compute_episode_metrics",
     "median_iqr",
+    "percentile",
     "wilcoxon_compare",
 ]

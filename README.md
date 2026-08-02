@@ -29,6 +29,66 @@ start.bat logs       xem log
 in ra phương thức đăng nhập nào đang bật. Migration lỗi thì script dừng
 và báo rõ, không khởi động API với schema cũ.
 
+### Windows không cần WSL
+
+`start.bat`/`scripts/dev_stack.sh` viết cho WSL (dùng `lsof`, `setsid` —
+lệnh Linux) và path hardcode trong `start.bat` trỏ vào project bên
+trong WSL. Không có WSL vẫn chạy được — chỉ cần tự set biến môi trường
+và gọi thẳng `uvicorn`/`npm` bằng PowerShell hoặc git-bash, 2 terminal
+riêng (API + web). Không dùng Docker, không cần Postgres — mặc định
+in-memory (mất dữ liệu khi restart, đúng thiết kế cho local dev).
+
+**PowerShell — Terminal A (API):**
+
+```powershell
+python3.12 -m venv .venv
+.venv\Scripts\pip install --upgrade pip
+.venv\Scripts\pip install -r requirements.txt
+
+$env:PYTHONPATH = "packages\schemas;packages\planning;packages\metrics;packages\benchmark;services\simulator;services\tracking;services\agent_service;ml;apps\api"
+$env:PLANBENCH_ARTIFACT_DIR = "artifacts"
+$env:PLANBENCH_ENABLE_DEV_LOGIN = "true"
+.venv\Scripts\uvicorn planbench_api.main:app --host 0.0.0.0 --port 8000
+```
+
+Không đặt `PLANBENCH_SEED_USERS` thì API tự sinh tài khoản `developer` +
+mật khẩu ngẫu nhiên, in ra ngay trong log terminal này — chép lại để
+đăng nhập. Muốn cố định nhiều tài khoản theo role, xem mục
+[Để đăng nhập được ngay lần đầu](#để-đăng-nhập-được-ngay-lần-đầu).
+
+**PowerShell — Terminal B (web):**
+
+```powershell
+cd apps\web
+npm install
+$env:NEXT_PUBLIC_API_URL = "http://localhost:8000"
+npm run dev
+```
+
+Mở `http://localhost:3000`, đăng nhập bằng tài khoản in ở Terminal A.
+
+Trên git-bash, cú pháp giống hệt PowerShell ngoại trừ set biến môi
+trường:
+
+```bash
+export PYTHONPATH="packages/schemas;packages/planning;packages/metrics;packages/benchmark;services/simulator;services/tracking;services/agent_service;ml;apps/api"
+export PLANBENCH_ARTIFACT_DIR="artifacts"
+export PLANBENCH_ENABLE_DEV_LOGIN=true
+.venv/Scripts/uvicorn.exe planbench_api.main:app --host 0.0.0.0 --port 8000
+```
+
+**Lưu ý bắt buộc:** `PYTHONPATH` trên Windows nối bằng `;`, không phải
+`:` — dùng `:` sẽ lỗi `ModuleNotFoundError: No module named 'planbench_api'`
+dù đã set biến, vì Python trên Windows không hiểu dấu `:` là dấu phân
+tách đường dẫn.
+
+Dừng: `Ctrl+C` ở mỗi terminal, hoặc tìm port đang chiếm rồi tắt:
+
+```powershell
+netstat -ano | findstr :8000
+taskkill /PID <pid> /F
+```
+
 ### Đăng nhập
 
 Copy `.env.example` sang `.env` rồi điền **đúng năm biến** này:
@@ -113,7 +173,7 @@ kết quả chạy thật: [docs/TEST_REPORT.md](docs/TEST_REPORT.md) ·
 | PPO (Gymnasium + SB3) | ✅ pipeline — chỉ có smoke model, chưa train thật |
 | ROS2 Jazzy + Nav2 closed-loop | ✅ 6/6 episode, chạy tay |
 | Agentic AI + RAG, 8 LLM provider | ✅ — chưa gọi provider ngoài lần nào |
-| PostgreSQL + Alembic + Docker Compose | ✅ code — **chưa build image, chưa chạy Postgres thật** |
+| PostgreSQL + Alembic + Docker Compose | ✅ đã build image, chạy `docker compose up` thật trên Postgres (xem docs/TEST_REPORT.md) |
 
 Xem [docs/architecture.md](docs/architecture.md) cho kiến trúc và các
 quyết định thiết kế.
@@ -130,8 +190,10 @@ node --version      # cần >= 20
 npm --version
 ```
 
-Trên Windows, dự án chạy trong WSL — mọi lệnh dưới đây gõ trong terminal
-WSL, không phải PowerShell.
+Các lệnh dưới đây viết theo cú pháp bash (WSL/Linux/macOS). Trên
+Windows không có WSL, dùng PowerShell/git-bash theo mục
+[Windows không cần WSL](#windows-không-cần-wsl) — cùng logic, chỉ khác
+cách set biến môi trường và dấu phân tách `PYTHONPATH`.
 
 ## Cài đặt
 

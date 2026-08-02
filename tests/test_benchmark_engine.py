@@ -248,6 +248,7 @@ class TestAggregation:
             "average_speed": 1.2,
             "max_speed": 1.5,
             "smoothness": 0.3,
+            "smoothness_per_metre": 0.025,
             "min_clearance": 0.4,
         }
         defaults.update(metric_overrides)
@@ -377,6 +378,7 @@ class TestPairwiseComparisons:
                     average_speed=1.0,
                     max_speed=1.0,
                     smoothness=0.0,
+                    smoothness_per_metre=0.0,
                     min_clearance=0.5,
                 ),
                 trajectory_points=10,

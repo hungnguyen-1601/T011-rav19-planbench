@@ -77,6 +77,8 @@ httpx==0.28.1
 numpy==2.5.1
 # Bootstrap CI, Wilcoxon signed-rank — bộ giao thức thống kê P04.
 scipy==1.18.0
+# Đọc YAML sidecar của bản đồ chuẩn ROS map_server (F01).
+PyYAML==6.0.3
 
 # ---------- Lưu trữ ----------
 # SQLite có sẵn trong Python, không cần driver. PostgreSQL cần psycopg —

@@ -103,13 +103,23 @@ export interface EpisodeMetrics {
   trajectory_length: number;
   average_speed: number;
   max_speed: number;
+  /** Σ(Δθ_i)², unnormalized — the spec-literal formula. Not comparable
+   * across episodes of different length; see smoothness_per_metre. */
   smoothness: number;
+  /** Σ|Δθ_i)| / trajectory_length, rad/m — length-normalized. */
+  smoothness_per_metre: number;
   planned_path_length: number | null;
   path_efficiency: number | null;
   min_clearance: number | null;
   mean_clearance: number | null;
   global_planning_time: number | null;
   expanded_nodes: number | null;
+  mean_local_planning_latency: number | null;
+  max_local_planning_latency: number | null;
+  local_planning_latency_p50: number | null;
+  local_planning_latency_p95: number | null;
+  local_planning_latency_p99: number | null;
+  stop_and_go_count: number;
 }
 
 export interface PlanResult {

@@ -212,6 +212,9 @@ def aggregate_algorithm(algorithm_id: str, runs: Sequence[RunRecord]) -> Algorit
             [r.metrics.path_efficiency for r in successful if r.metrics.path_efficiency is not None]
         ),
         mean_smoothness_successful=mean_of([r.metrics.smoothness for r in successful]),
+        mean_smoothness_per_metre_successful=mean_of(
+            [r.metrics.smoothness_per_metre for r in successful]
+        ),
         mean_min_clearance=mean_of(clearances),
         worst_min_clearance=min(clearances) if clearances else None,
         mean_local_planning_latency=mean_of(latencies),

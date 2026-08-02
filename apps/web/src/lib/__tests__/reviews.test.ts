@@ -59,24 +59,29 @@ describe("pendingFor", () => {
 });
 
 describe("canRun", () => {
-  it("lets the owner run a fresh draft — the default path", () => {
-    expect(canRun(true, "draft", [])).toBe(true);
+  it("refuses a fresh draft — nobody has approved it yet", () => {
+    // No self-approval any more: an Engineer cannot clear their own
+    // spec gate, so a draft needs a real Approver (or admin override)
+    // before Run does anything but fail. See apps/api's approval.py.
+    expect(canRun(true, "draft", [])).toBe(false);
   });
 
   it("lets the owner run an approved benchmark", () => {
     expect(canRun(true, "approved", [])).toBe(true);
   });
 
-  it("lets the owner run again after their results were rejected", () => {
-    expect(canRun(true, "rejected", [])).toBe(true);
+  it("refuses to run again after results were rejected — needs approval again", () => {
+    // REJECTED is one of the states that still needs a spec gate
+    // cleared, same as DRAFT.
+    expect(canRun(true, "rejected", [])).toBe(false);
   });
 
   it("refuses somebody who does not own it", () => {
-    expect(canRun(false, "draft", [])).toBe(false);
+    expect(canRun(false, "approved", [])).toBe(false);
   });
 
   it("refuses while a spec review is pending — the whole point of asking", () => {
-    expect(canRun(true, "draft", [view("spec", "pending")])).toBe(false);
+    expect(canRun(true, "approved", [view("spec", "pending")])).toBe(false);
   });
 
   it("allows it again once the reviewer has approved", () => {
@@ -84,12 +89,12 @@ describe("canRun", () => {
   });
 
   it("allows it again once the request is cancelled", () => {
-    expect(canRun(true, "draft", [view("spec", "cancelled")])).toBe(true);
+    expect(canRun(true, "approved", [view("spec", "cancelled")])).toBe(true);
   });
 
   it("is not blocked by a pending *result* review", () => {
     // Different gate, different question.
-    expect(canRun(true, "draft", [view("result", "pending")])).toBe(true);
+    expect(canRun(true, "approved", [view("result", "pending")])).toBe(true);
   });
 
   it("refuses a benchmark that already ran", () => {

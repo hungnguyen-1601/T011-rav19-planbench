@@ -183,13 +183,13 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
 
 ## Persistence / Docker (M10)
 
-51. **Chưa build image nào, chưa `docker compose up` lần nào.** Docker
-    CLI có trong WSL distro này nhưng daemon không dùng được (chưa bật
-    WSL integration trong Docker Desktop). `docker-compose.yml` mới chỉ
-    được kiểm bằng parse YAML — chưa có gì chứng minh image build được.
-52. **Chưa kết nối PostgreSQL thật.** Mọi test SQL chạy trên SQLite.
-    SQLite **không** chứng minh: JSONB, transaction đồng thời, connection
-    pool, hay hành vi cascade dưới dialect production.
+51. **Đã build và chạy thật `docker compose up --build` (Phase 3a, xem
+    mục "Docker Compose" bên dưới).** Không còn là giả định.
+52. **Đã kết nối PostgreSQL thật (Phase 3a).** `docker compose up` chạy
+    `db` (postgres:17-alpine) + `migrate` (alembic upgrade head, exit 0)
+    + toàn bộ luồng account/map/scenario/benchmark/run qua API container
+    trên Postgres thật, không còn chỉ SQLite. Chi tiết ở mục "Docker
+    Compose" bên dưới.
 53. **`psycopg` chưa cài trong `.venv`** (image có trong
     `docker/requirements-api.txt`). Chạy local với `postgresql://` phải
     cài trước; code báo `DatabaseUnavailable` kèm đúng lệnh.
@@ -316,6 +316,62 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     planner đặc quyền đầu tiên.
 81. **P01 (Optuna, ngân sách tinh chỉnh bằng nhau) chưa làm** — dời sang
     roadmap Phase 3, cần thêm dependency `optuna` riêng.
+
+## Map loader + công thức metric (Phase 3a)
+
+82. **F01 chỉ hỗ trợ PGM (P5 binary + P2 ASCII), không hỗ trợ PNG.**
+    ROS `map_server` tự nó xuất PGM mặc định nên đây là format thật sự
+    dùng; PNG cần decoder ảnh riêng (Pillow) — chi phí không tương xứng
+    cho một format phụ. `packages/schemas/planbench_schemas/map_io.py`.
+83. **`smoothness` (spec Σ(Δθ)²) không chuẩn hóa theo chiều dài đường
+    đi** — đúng công thức đề bài, nhưng nghĩa là đường dài tự nhiên có
+    tổng lớn hơn dù mỗi khúc cua đều nhẹ. Không so sánh trực tiếp giá
+    trị này giữa các scenario khác kích thước; dùng
+    `smoothness_per_metre` (đã chuẩn hóa, giữ công thức cũ) cho việc đó
+    — leaderboard `overall_score()` đã tự dùng field này, không phải
+    `smoothness` thô.
+84. **F05 không đo peak memory.** Đo memory tin cậy, độc lập máy chạy
+    mâu thuẫn với nguyên tắc `conditions_checksum` phải nắm bắt hết yếu
+    tố công bằng (memory phụ thuộc OS/máy, không phải điều kiện benchmark
+    kiểm soát được). Spec cũng liệt kê đây là chỉ số phụ. p50/p95/p99
+    latency và `stop_and_go_count` đã làm.
+85. **`stop_and_go_count` dùng ngưỡng cố định `0.02 m/s`** để coi là
+    "đứng yên" — chưa cấu hình được theo robot; đủ cho robot chuẩn trong
+    thư viện scenario hiện tại, có thể cần tinh chỉnh nếu thêm robot có
+    vận tốc tối thiểu khác biệt lớn.
+
+## Docker Compose (Phase 3a)
+
+Verify thật ngày 2026-08-02 trên Windows 11 + Docker Desktop v29.5.3 (Compose
+v5.1.4), daemon Linux containers:
+
+- `docker compose up --build -d`: build 2 image (`planbench-api`,
+  `planbench-web`) — không lỗi, không thiếu gói (`PyYAML` mới thêm cho F01
+  build đúng layer cache).
+- `docker compose ps`: cả 3 service `db`/`api`/`web` lên `healthy`;
+  `migrate` (`alembic upgrade head`) exit 0.
+- Verify qua container thật: `GET /api/v1/health` → 200; login qua
+  `POST /auth/login` (password dev-login); tạo map thường (`POST /maps`)
+  và **map import ROS thật** (`POST /maps/import-ros` với PGM+YAML tự tạo,
+  occupancy convert đúng — tâm free, viền occupied); tạo scenario, tạo
+  benchmark 2 thuật toán × 3 seed; gửi review request tới Approver → duyệt
+  → Engineer `run` — chạy thành công, **lần đầu tiên trên PostgreSQL thật**
+  (không phải SQLite). Report trả về đủ field Phase 3a mới:
+  `smoothness`/`smoothness_per_metre`, `local_planning_latency_p50/p95/p99`,
+  `stop_and_go_count`, `comparisons` (Wilcoxon), `statistically_adequate:
+  false` (đúng vì seed=3 < 30). `docker compose logs api` không có
+  traceback. Dữ liệu sống sót qua một lần `docker compose up -d
+  --force-recreate api` (đổi `.env`, restart riêng container `api`) — xác
+  nhận Postgres volume độc lập với vòng đời container `api`.
+- `docker compose down` (không xóa volume) sau khi verify xong.
+- **Phát hiện thật, không phải giả định**: `PLANBENCH_ADMIN_NICKNAMES` chỉ
+  có tác dụng qua luồng OAuth (`account_service.identify_or_create()` gọi
+  `apply_admin_policy()`); tài khoản seed qua `PLANBENCH_SEED_USERS`/
+  dev-login **không** tự được gắn `is_admin=true` dù nickname có trong danh
+  sách admin, vì luồng password-login không gọi `apply_admin_policy()`.
+  Muốn test admin override ở môi trường dev-login-only phải tạo cách khác
+  (không có trong scope Phase 3a) — không sửa trong đợt này, ghi nhận làm
+  giới hạn.
 
 ## Môi trường
 

@@ -165,7 +165,14 @@ class AlgorithmAggregate(BaseModel):
     mean_travel_time_successful: float | None = None
     mean_trajectory_length_successful: float | None = None
     mean_path_efficiency_successful: float | None = None
+    #: Mean of episode.smoothness — the spec-literal, unnormalized
+    #: Σ(Δθ_i)² (see planbench_metrics.episode_metrics). Not used for
+    #: leaderboard scoring, because it is not length-comparable across
+    #: episodes; see mean_smoothness_per_metre_successful for that.
     mean_smoothness_successful: float | None = None
+    #: Mean of episode.smoothness_per_metre — length-normalized, what
+    #: the leaderboard's overall_score actually uses.
+    mean_smoothness_per_metre_successful: float | None = None
     mean_min_clearance: float | None = None
     worst_min_clearance: float | None = None
     mean_local_planning_latency: float | None = None

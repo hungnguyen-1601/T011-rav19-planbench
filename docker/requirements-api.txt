@@ -28,6 +28,8 @@ PyJWT==2.13.0
 numpy==2.5.1
 # Bootstrap CI, Wilcoxon signed-rank — statistical protocol suite (P04).
 scipy==1.18.0
+# YAML sidecar for ROS map_server-format map import (F01).
+PyYAML==6.0.3
 
 # Persistence. psycopg[binary] ships wheels, so no build toolchain is
 # needed in the image.

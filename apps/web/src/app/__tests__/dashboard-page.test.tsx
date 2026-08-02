@@ -53,7 +53,9 @@ describe("the API base URL appears on exactly one page", () => {
   it("is only referenced by /system", () => {
     const offenders = pageFiles(APP)
       .filter((file) => readFileSync(file, "utf8").includes("API_BASE"))
-      .map((file) => file.replace(APP, ""));
+      // Normalize to forward slashes: join() uses the OS separator, and
+      // this assertion should not depend on whether it runs on Windows.
+      .map((file) => file.replace(APP, "").split("\\").join("/"));
     expect(offenders).toEqual(["/system/page.tsx"]);
   });
 

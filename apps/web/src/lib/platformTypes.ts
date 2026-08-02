@@ -8,6 +8,11 @@ export interface LibraryEntry {
   dynamic_obstacles: number;
   map_size_m: [number, number];
   timeout_seconds: number;
+  /** "dev" (free to tune against) or "holdout" (report-only, P05). */
+  split: "dev" | "holdout";
+  /** 1 - success_rate of the reference stack over 30 seeds (P03). Null
+   *  until scripts/calibrate_difficulty.py has been run. */
+  difficulty: number | null;
 }
 
 export interface ImportedScenario {
@@ -22,6 +27,14 @@ export interface ScoreWeights {
   efficiency: number;
   smoothness: number;
 }
+
+/** What a stack was allowed to see (P02) — declared per algorithm in
+ *  the registry, not per run. */
+export type ObservationClass =
+  | "full_map"
+  | "human_states"
+  | "lidar_only"
+  | "lidar+human_states";
 
 export interface LeaderboardEntry {
   algorithm: string;
@@ -39,6 +52,7 @@ export interface LeaderboardEntry {
   worst_min_clearance: number | null;
   mean_local_planning_latency: number | null;
   overall_score: number | null;
+  observation_class: ObservationClass | null;
 }
 
 /** Entries are grouped by conditions_checksum: rows in different groups
@@ -49,12 +63,23 @@ export interface LeaderboardGroup {
   scenario_name: string;
   seeds: number[];
   entries: LeaderboardEntry[];
+  /** True when entries here do not all share one observation_class
+   *  (P02) — cross-class comparison is still shown, just flagged. */
+  mixed_observation_classes: boolean;
 }
 
 export interface Leaderboard {
   weights: ScoreWeights;
   score_formula: string;
   groups: LeaderboardGroup[];
+  /** Average rank per algorithm across every group it appears in (P04). */
+  algorithm_ranks: Record<string, number> | null;
+  /** mean(success_rate dev) - mean(success_rate holdout), per algorithm
+   *  (P05) — only for algorithms accepted in both splits. */
+  generalization_gap: Record<string, number> | null;
+  /** (difficulty, success_rate) points per algorithm, sorted by
+   *  difficulty (P03) — only for calibrated scenarios. */
+  difficulty_curve: Record<string, [number, number][]> | null;
 }
 
 export type Confidence = "high" | "medium" | "low";

@@ -110,12 +110,32 @@ export interface AlgorithmAggregate {
   mean_travel_time_successful: number | null;
   mean_trajectory_length_successful: number | null;
   mean_path_efficiency_successful: number | null;
+  /** Mean of the spec-literal, unnormalized smoothness — not
+   *  length-comparable across episodes; see the _per_metre variant. */
   mean_smoothness_successful: number | null;
+  mean_smoothness_per_metre_successful: number | null;
   mean_min_clearance: number | null;
   worst_min_clearance: number | null;
   mean_local_planning_latency: number | null;
   max_local_planning_latency: number | null;
   mean_global_planning_time: number | null;
+  /** Bootstrap 95% CI on the mean success rate (P04). */
+  success_rate_ci95: [number, number] | null;
+  median_travel_time_successful: number | null;
+  iqr_travel_time_successful: [number, number] | null;
+  median_path_efficiency_successful: number | null;
+  iqr_path_efficiency_successful: [number, number] | null;
+}
+
+/** One algorithm compared against the run's best performer on success,
+ *  paired by seed (Wilcoxon signed-rank — P04). */
+export interface PairwiseComparison {
+  baseline_algorithm: string;
+  compared_algorithm: string;
+  metric: string;
+  p_value: number;
+  effect_size: number;
+  significant: boolean;
 }
 
 export interface BenchmarkReport {
@@ -123,6 +143,10 @@ export interface BenchmarkReport {
   fairness: FairnessRecord;
   runs: RunRecord[];
   aggregates: AlgorithmAggregate[];
+  comparisons: PairwiseComparison[];
+  /** len(spec.seeds) >= 30 (P04) — a caveat flag, not an enforced gate. */
+  statistically_adequate: boolean;
+  seed_count: number;
 }
 
 export interface BenchmarkResults {

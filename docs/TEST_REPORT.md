@@ -2,6 +2,60 @@
 
 Output thật từ các lần chạy kiểm thử. Cập nhật sau mỗi milestone.
 
+## Phase 3a — Docker Compose chạy thật lần đầu trên PostgreSQL — 2026-08-02
+
+Môi trường: Windows 11 + Docker Desktop v29.5.3 (Compose v5.1.4), Linux
+containers. Trước đợt này `docker compose up` chưa từng chạy thành công
+(KNOWN_LIMITATIONS #51 cũ) và mọi test SQL chỉ chạy trên SQLite (#52 cũ).
+
+```
+docker compose up --build -d
+  → build planbench-api, planbench-web: OK, không lỗi (PyYAML mới thêm
+    cho F01 map loader build đúng)
+docker compose ps
+  db       postgres:17-alpine   healthy
+  api      planbench-api        healthy
+  web      planbench-web        healthy
+  migrate  planbench-migrate    Exited (0)   # alembic upgrade head
+```
+
+Verify end-to-end thật qua container (không phải TestClient):
+
+- `GET /api/v1/health` → 200.
+- `POST /auth/login` (dev password login, hai account seed
+  `engineer`/`approver`) → JWT có claim `role` đúng.
+- `POST /maps` (map 12×12 viền occupied) → 201.
+- `POST /maps/import-ros` với PGM (P5, tự build tay trong request) + YAML
+  → 201, occupancy convert đúng (viền OCCUPIED, tâm FREE) — lần đầu tiên
+  endpoint F01 được gọi qua HTTP thật, không phải `TestClient`.
+- `POST /scenarios`, `POST /benchmarks` (2 thuật toán `astar+dwa` +
+  `astar+pure_pursuit`, 3 seed).
+- `POST /benchmarks/{id}/review-requests` (stage `spec`, gửi Approver) →
+  `POST /reviews/{id}/approve` (Approver) → benchmark chuyển `approved`.
+- `POST /benchmarks/{id}/run` (Engineer) → chạy thành công, state
+  `pending_review`. Report trả đủ field Phase 3a:
+  `smoothness`/`smoothness_per_metre`, `local_planning_latency_p50/p95/p99`,
+  `stop_and_go_count`, `comparisons` (Wilcoxon `p_value=1.0` vì 2 thuật
+  toán đều success_rate=1.0 trên map/scenario nhỏ dùng để test),
+  `statistically_adequate: false` (seed_count=3 < 30, đúng thiết kế P04).
+- `docker compose logs api` — không traceback.
+- Restart riêng container `api` (`--force-recreate`, đổi `.env`) trong lúc
+  `db` vẫn chạy → benchmark/map/scenario tạo trước đó vẫn còn nguyên khi
+  gọi lại `GET /benchmarks/{id}` — xác nhận dữ liệu nằm ở Postgres volume,
+  không phải in-memory theo tiến trình API.
+- `docker compose down` (không xóa volume).
+
+### Phát hiện thật trong lúc verify
+
+`PLANBENCH_ADMIN_NICKNAMES` chỉ có tác dụng qua luồng OAuth
+(`AccountService.identify_or_create()` gọi `apply_admin_policy()`);
+account seed qua `PLANBENCH_SEED_USERS`/dev-login login bằng
+`POST /auth/login` **không** đi qua `apply_admin_policy()`, nên nickname
+có trong danh sách admin vẫn không được gắn `is_admin=true` nếu tài khoản
+đó chỉ từng đăng nhập bằng password. Không sửa trong Phase 3a (ngoài
+scope F01/F05/F12) — ghi vào `docs/KNOWN_LIMITATIONS.md` mục "Docker
+Compose (Phase 3a)".
+
 ## requirements.txt — kiểm chứng "clone về là chạy được" — 2026-08-01
 
 Câu hỏi cần trả lời: `requirements.txt` có **đủ** không? Không thể gỡ

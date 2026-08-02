@@ -67,6 +67,21 @@ def _percentile(ordered: list[float], pct: float) -> float:
     return ordered[lower] + (ordered[upper] - ordered[lower]) * fraction
 
 
+def percentile(values: Sequence[float], pct: float) -> float:
+    """Linear-interpolation percentile (numpy's default "linear" method)
+    of ``values`` in any order — sorts internally.
+
+    Public entry point for a caller with a single percentile to compute
+    on unsorted data (e.g. p95 latency from a raw sample list); code
+    inside this module that already has a sorted list and wants several
+    percentiles from it uses the private ``_percentile`` instead, to
+    avoid re-sorting per call.
+    """
+    if not values:
+        raise ValueError("percentile requires at least one value")
+    return _percentile(sorted(values), pct)
+
+
 def bootstrap_ci(
     values: Sequence[float],
     *,
@@ -204,5 +219,6 @@ __all__ = [
     "average_rank",
     "bootstrap_ci",
     "median_iqr",
+    "percentile",
     "wilcoxon_compare",
 ]

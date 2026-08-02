@@ -86,3 +86,58 @@ class TestMaps:
         """The auth gap this router used to have (F: no auth at all)."""
         assert client.get("/api/v1/maps").status_code == 401
         assert client.post("/api/v1/maps", json=bordered_map_payload()).status_code == 401
+
+
+def _pgm(rows: list[list[int]]) -> bytes:
+    height, width = len(rows), len(rows[0])
+    header = f"P5\n{width} {height}\n255\n".encode("ascii")
+    return header + bytes(v for row in rows for v in row)
+
+
+class TestImportRos:
+    """F01: import a map in the ROS map_server format (PGM + YAML)."""
+
+    def test_imports_a_pgm_and_yaml_pair(self, client: TestClient, alice_headers: dict) -> None:
+        image = _pgm([[0, 0, 0], [0, 255, 0], [0, 0, 0]])
+        yaml_text = "resolution: 0.1\norigin: [0.0, 0.0, 0.0]\n"
+        response = client.post(
+            "/api/v1/maps/import-ros",
+            headers=alice_headers,
+            data={"name": "ros-import"},
+            files={
+                "image": ("map.pgm", image, "application/octet-stream"),
+                "yaml": ("map.yaml", yaml_text, "application/x-yaml"),
+            },
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["map_data"]["name"] == "ros-import"
+        assert body["map_data"]["width"] == 3
+        assert body["map_data"]["height"] == 3
+        # Border occupied, centre free — matches the pixel grid above.
+        assert body["map_data"]["cells"][4] == 0  # centre, FREE
+
+    def test_malformed_yaml_is_a_422_not_a_500(
+        self, client: TestClient, alice_headers: dict
+    ) -> None:
+        response = client.post(
+            "/api/v1/maps/import-ros",
+            headers=alice_headers,
+            data={"name": "bad"},
+            files={
+                "image": ("map.pgm", _pgm([[255]]), "application/octet-stream"),
+                "yaml": ("map.yaml", "not: valid: yaml: [", "application/x-yaml"),
+            },
+        )
+        assert response.status_code == 422
+
+    def test_unauthenticated_is_rejected(self, client: TestClient) -> None:
+        response = client.post(
+            "/api/v1/maps/import-ros",
+            data={"name": "x"},
+            files={
+                "image": ("map.pgm", _pgm([[255]]), "application/octet-stream"),
+                "yaml": ("map.yaml", "resolution: 0.1\norigin: [0,0,0]\n", "application/x-yaml"),
+            },
+        )
+        assert response.status_code == 401
