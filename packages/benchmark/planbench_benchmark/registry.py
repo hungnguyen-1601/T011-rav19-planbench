@@ -13,7 +13,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from planbench_planning import DWAConfig, DWAPlanner
+from planbench_planning import AStarPlanner, DWAConfig, DWAPlanner, RRTStarPlanner
+from planbench_planning.common.base import GlobalPlanner
 from planbench_planning.common.local_base import LocalPlanner
 from planbench_simulator.nav_stack import PurePursuitLocalPlanner
 from planbench_simulator.path_follower import PurePursuitConfig
@@ -88,6 +89,7 @@ class _Entry(BaseModel):
     info: AlgorithmInfo
     config_model: type[BaseModel]
     factory: Callable[[BaseModel], LocalPlanner]
+    global_planner_factory: Callable[[], GlobalPlanner]
 
 
 ALGORITHMS: dict[str, _Entry] = {
@@ -106,6 +108,7 @@ ALGORITHMS: dict[str, _Entry] = {
         ),
         config_model=DWAConfig,
         factory=lambda config: DWAPlanner(config),  # type: ignore[arg-type]
+        global_planner_factory=lambda: AStarPlanner(),
     ),
     "astar+ppo": _Entry(
         info=AlgorithmInfo(
@@ -123,6 +126,7 @@ ALGORITHMS: dict[str, _Entry] = {
         ),
         config_model=PPOStackConfig,
         factory=_build_ppo,
+        global_planner_factory=lambda: AStarPlanner(),
     ),
     "astar+pure_pursuit": _Entry(
         info=AlgorithmInfo(
@@ -139,6 +143,41 @@ ALGORITHMS: dict[str, _Entry] = {
         ),
         config_model=PurePursuitConfig,
         factory=lambda config: PurePursuitLocalPlanner(config),  # type: ignore[arg-type]
+        global_planner_factory=lambda: AStarPlanner(),
+    ),
+    "rrtstar+dwa": _Entry(
+        info=AlgorithmInfo(
+            id="rrtstar+dwa",
+            kind="stack",
+            description=(
+                "RRT* global planner with a Dynamic Window Approach controller. "
+                "Sampling-based alternative to A*, so algorithm comparisons are "
+                "not always A* vs A* with a different controller."
+            ),
+            benchmarkable=True,
+            observation_class=ObservationClass.LIDAR_ONLY,
+            config_schema=DWAConfig.model_json_schema(),
+        ),
+        config_model=DWAConfig,
+        factory=lambda config: DWAPlanner(config),  # type: ignore[arg-type]
+        global_planner_factory=lambda: RRTStarPlanner(),
+    ),
+    "rrtstar+pure_pursuit": _Entry(
+        info=AlgorithmInfo(
+            id="rrtstar+pure_pursuit",
+            kind="reference_stack",
+            description=(
+                "RRT* global planner with a pure-pursuit follower. Temporary "
+                "pipeline reference only — it ignores sensing, so it must not "
+                "be used to draw benchmark conclusions."
+            ),
+            benchmarkable=False,
+            observation_class=ObservationClass.LIDAR_ONLY,
+            config_schema=PurePursuitConfig.model_json_schema(),
+        ),
+        config_model=PurePursuitConfig,
+        factory=lambda config: PurePursuitLocalPlanner(config),  # type: ignore[arg-type]
+        global_planner_factory=lambda: RRTStarPlanner(),
     ),
 }
 
@@ -177,3 +216,8 @@ def build_local_planner(algorithm_id: str, config: dict | None = None) -> LocalP
     """Instantiate the controller for a registered stack."""
     entry = _entry(algorithm_id)
     return entry.factory(validate_algorithm_config(algorithm_id, config))
+
+
+def build_global_planner(algorithm_id: str) -> GlobalPlanner:
+    """Instantiate the global planner for a registered stack."""
+    return _entry(algorithm_id).global_planner_factory()

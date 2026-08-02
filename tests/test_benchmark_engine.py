@@ -9,6 +9,7 @@ from planbench_benchmark import (
     BenchmarkSpec,
     FairnessRecord,
     ObservationClass,
+    build_global_planner,
     build_local_planner,
     list_algorithms,
     run_benchmark,
@@ -57,6 +58,12 @@ class TestRegistry:
         assert infos["astar+dwa"].benchmarkable is True
         assert infos["astar+pure_pursuit"].benchmarkable is False
         assert infos["astar+dwa"].config_schema["properties"]["weight_clearance"]
+        assert infos["rrtstar+dwa"].benchmarkable is True
+        assert infos["rrtstar+pure_pursuit"].benchmarkable is False
+
+    def test_rrtstar_stacks_use_the_rrtstar_global_planner(self) -> None:
+        assert build_global_planner("rrtstar+dwa").name == "rrtstar"
+        assert build_global_planner("astar+dwa").name == "astar"
 
     def test_every_stack_declares_an_observation_class(self) -> None:
         """P02: comparing a privileged observer against a LiDAR-only
@@ -174,6 +181,20 @@ class TestRunBenchmark:
         assert {run.seed for run in report.runs} == {1, 2}
         assert len(report.aggregates) == 2
         assert [run.episode_index for run in report.runs] == [0, 1, 2, 3]
+
+    def test_astar_and_rrtstar_stacks_compare_in_one_benchmark(
+        self, bordered_map_factory, robot: RobotConfig
+    ) -> None:
+        spec = BenchmarkSpec(
+            name="global-planner-comparison",
+            algorithms=(AlgorithmSpec(id="astar+dwa"), AlgorithmSpec(id="rrtstar+dwa")),
+            seeds=(1, 2),
+        )
+        report = run_benchmark(bordered_map_factory(14, 14), make_scenario(robot), spec)
+        assert {run.algorithm for run in report.runs} == {"astar+dwa", "rrtstar+dwa"}
+        assert len(report.comparisons) == 1
+        rrtstar_runs = [r for r in report.runs if r.algorithm == "rrtstar+dwa"]
+        assert all(r.status != EpisodeStatus.NO_GLOBAL_PATH for r in rrtstar_runs)
 
     def test_reports_progress_per_run(self, bordered_map_factory, robot: RobotConfig) -> None:
         seen: list[str] = []

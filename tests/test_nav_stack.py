@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from planbench_planning import DWAConfig, DWAPlanner
+from planbench_planning import DWAConfig, DWAPlanner, RRTStarConfig, RRTStarPlanner
 from planbench_schemas.episode import EpisodeStatus
 from planbench_schemas.geometry import Pose2D
 from planbench_schemas.robot import RobotConfig
@@ -112,6 +112,23 @@ class TestAStarDWAStack:
         assert not run.plan.success
         assert run.result.status is EpisodeStatus.NO_GLOBAL_PATH
         assert run.result.events[0].type == "no_global_path"
+
+
+class TestRRTStarDWAStack:
+    def test_reaches_the_goal_with_rrtstar_as_the_global_planner(
+        self, bordered_map_factory, robot: RobotConfig
+    ) -> None:
+        run = run_stack(
+            bordered_map_factory(14, 14),
+            make_scenario(robot),
+            DWAPlanner(),
+            RRTStarPlanner(RRTStarConfig(max_iterations=1000, seed=1)),
+        )
+        assert run.algorithm == "rrtstar+dwa"
+        assert run.plan.success
+        assert run.result.status is EpisodeStatus.SUCCESS
+        assert run.metrics.success
+        assert not run.metrics.collision
 
 
 class TestPurePursuitStackAdapter:

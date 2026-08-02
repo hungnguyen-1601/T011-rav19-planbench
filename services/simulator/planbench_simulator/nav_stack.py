@@ -19,7 +19,8 @@ from collections.abc import Sequence
 from pydantic import BaseModel, ConfigDict
 
 from planbench_metrics import EpisodeMetrics, compute_episode_metrics
-from planbench_planning import AStarConfig, AStarPlanner, PlanResult
+from planbench_planning import AStarPlanner, PlanResult
+from planbench_planning.common.base import GlobalPlanner
 from planbench_planning.common.local_base import LocalPlanner, LocalPlanResult
 from planbench_schemas.episode import EpisodeEvent, EpisodeResult, EpisodeStatus
 from planbench_schemas.geometry import EPS, Point2D
@@ -67,13 +68,15 @@ class StackRun(BaseModel):
 
 
 def plan_global_path(
-    map_data: MapData, scenario: Scenario, astar_config: AStarConfig | None = None
+    map_data: MapData, scenario: Scenario, global_planner: GlobalPlanner | None = None
 ) -> tuple[PlanResult, OccupancyGrid]:
-    """Run A* on the inflated planning grid; also return the raw grid."""
+    """Run a global planner (A* by default) on the inflated planning grid;
+    also return the raw grid."""
     planning_map = rasterize_obstacles(map_data, scenario.static_obstacles)
     inflation_radius = scenario.robot.radius + math.sqrt(2.0) * map_data.resolution
     planning_grid = OccupancyGrid(planning_map).inflate(inflation_radius)
-    plan = AStarPlanner(astar_config).plan(
+    planner = global_planner or AStarPlanner()
+    plan = planner.plan(
         planning_grid, scenario.start_pose.position, scenario.goal_pose.position
     )
     return plan, OccupancyGrid(map_data)
@@ -83,16 +86,17 @@ def run_stack(
     map_data: MapData,
     scenario: Scenario,
     local_planner: LocalPlanner,
-    astar_config: AStarConfig | None = None,
+    global_planner: GlobalPlanner | None = None,
 ) -> StackRun:
-    """Run one episode of ``astar+<local_planner>`` on a scenario.
+    """Run one episode of ``<global_planner>+<local_planner>`` on a scenario.
 
     Deterministic for identical inputs (given a deterministic local
     planner). Local-planner failures are recorded as episode events, not
     swallowed.
     """
-    algorithm = f"astar+{local_planner.name}"
-    plan, raw_grid = plan_global_path(map_data, scenario, astar_config)
+    global_planner = global_planner or AStarPlanner()
+    algorithm = f"{global_planner.name}+{local_planner.name}"
+    plan, raw_grid = plan_global_path(map_data, scenario, global_planner)
 
     if not plan.success:
         result = EpisodeResult(

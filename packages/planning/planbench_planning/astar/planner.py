@@ -53,6 +53,10 @@ class AStarPlanner(GlobalPlanner):
     def config(self) -> AStarConfig:
         return self._config
 
+    @property
+    def name(self) -> str:
+        return "astar"
+
     def plan(self, grid: OccupancyGrid, start: Point2D, goal: Point2D) -> PlanResult:
         started_at = time.perf_counter()
         expanded = 0

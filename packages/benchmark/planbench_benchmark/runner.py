@@ -17,7 +17,7 @@ import logging
 from collections.abc import Callable, Sequence
 from statistics import fmean
 
-from planbench_benchmark.registry import build_local_planner
+from planbench_benchmark.registry import build_global_planner, build_local_planner
 from planbench_benchmark.spec import (
     AlgorithmAggregate,
     AlgorithmSpec,
@@ -47,7 +47,8 @@ def run_single(
     """Run one episode of one algorithm at one seed."""
     seeded = scenario.model_copy(update={"random_seed": seed})
     planner = build_local_planner(algorithm.id, algorithm.config)
-    return run_stack(map_data, seeded, planner)
+    global_planner = build_global_planner(algorithm.id)
+    return run_stack(map_data, seeded, planner, global_planner)
 
 
 def run_benchmark(

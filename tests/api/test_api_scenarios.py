@@ -91,6 +91,8 @@ class TestAlgorithms:
         # The pure-pursuit stack exists only to validate the pipeline.
         assert algorithms["astar+pure_pursuit"]["benchmarkable"] is False
         assert algorithms["astar+dwa"]["config_schema"]["properties"]["weight_clearance"]
+        assert algorithms["rrtstar+dwa"]["benchmarkable"] is True
+        assert algorithms["rrtstar+pure_pursuit"]["benchmarkable"] is False
 
     def test_single_algorithm_lookup(self, client: TestClient) -> None:
         assert client.get("/api/v1/algorithms/astar+dwa").json()["id"] == "astar+dwa"

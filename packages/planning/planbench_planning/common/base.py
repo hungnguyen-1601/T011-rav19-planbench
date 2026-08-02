@@ -36,6 +36,11 @@ class GlobalPlanner(ABC):
     the robot radius) — planners treat it as the configuration space.
     """
 
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Short id used to build a stack label, e.g. ``"astar"``."""
+
     @abstractmethod
     def plan(self, grid: OccupancyGrid, start: Point2D, goal: Point2D) -> PlanResult:
         """Compute a path from ``start`` to ``goal`` in world coordinates."""

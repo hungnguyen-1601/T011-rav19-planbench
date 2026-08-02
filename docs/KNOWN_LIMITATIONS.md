@@ -373,6 +373,31 @@ v5.1.4), daemon Linux containers:
   (không có trong scope Phase 3a) — không sửa trong đợt này, ghi nhận làm
   giới hạn.
 
+## RRT* (Phase 3b-1)
+
+86. **Nearest/near-neighbor scan là O(n) mỗi iteration** (không dùng
+    KD-tree) — đủ nhanh ở quy mô map/scenario hiện tại (`max_iterations`
+    mặc định 1500), sẽ chậm rõ rệt nếu tăng iteration hoặc map lớn hơn
+    nhiều. `packages/planning/planbench_planning/rrtstar/planner.py`.
+87. **`expanded_nodes` với RRT* là số node cây đã thêm**, không cùng ý
+    nghĩa với "ô đã expand" của A* — không so sánh trực tiếp field này
+    giữa 2 thuật toán trong report. Các field khác (success, travel_time,
+    path_efficiency, smoothness, collision...) vẫn so sánh công bằng vì
+    đo trên hành vi robot thật, không phải nội bộ planner.
+88. **`RRTStarConfig.seed` cố định trong config, không lấy từ
+    `scenario.random_seed` của benchmark run.** Mọi seed benchmark chạy
+    cùng một cây/đường RRT* — đúng theo contract "deterministic cho
+    input giống hệt" của `GlobalPlanner`, nhưng nghĩa là RRT* không có
+    đa dạng đường đi qua các seed như một sampling planner "thật" người
+    ta thường kỳ vọng.
+89. **`"rrtstar+ppo"` cố tình không đăng ký.** PPO được huấn luyện giả
+    định hình dạng đường của A*; ghép RRT* vào registry có thể cho số
+    liệu gây hiểu lầm thay vì một so sánh công bằng.
+90. **Bảng alias ngôn ngữ tự nhiên của agent**
+    (`services/agent_service/planbench_agent/specs.py:187-193`) chưa
+    nhận diện "rrt*" — người dùng agent console gõ "rrt" sẽ không map
+    được sang `rrtstar+dwa`. Chưa sửa trong đợt này.
+
 ## Môi trường
 
 - Test phải chạy với `PYTHONPATH=` do shell source ROS2 Jazzy (xem
