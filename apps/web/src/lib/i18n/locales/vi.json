@@ -406,6 +406,7 @@
   "detail.length": "Quãng đường",
   "detail.minClearance": "Khoảng cách nhỏ nhất",
   "detail.replayOf": "Phát lại — {algorithm} (seed {seed})",
+  "detail.replayTimeline": "Dòng thời gian phát lại",
   "detail.replayFooter": "{points} điểm quỹ đạo · trạng thái {status}",
   "detail.episodeLabel": "episode {id}",
   "agent.askTitle": "Hỏi về kết quả đã ghi",

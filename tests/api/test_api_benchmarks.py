@@ -261,6 +261,40 @@ class TestExecution:
         assert response.json()["report"]["runs"][0]["algorithm"] == "astar+dwa"
 
 
+class TestReplayDynamicObstacles:
+    def test_replay_trajectory_carries_obstacle_snapshots(
+        self, client: TestClient, alice_headers
+    ) -> None:
+        """F08: dynamic obstacle positions are recorded per trajectory
+        sample, so a replay UI can draw them moving frame by frame."""
+        imported = client.post(
+            "/api/v1/scenario-library/crossing_obstacle/import", headers=alice_headers
+        ).json()
+        payload = {
+            "name": "obstacle-replay-benchmark",
+            "map_id": imported["map_id"],
+            "scenario_id": imported["scenario_id"],
+            "algorithms": [{"id": "astar+dwa"}],
+            "seeds": [1],
+        }
+        created = client.post("/api/v1/benchmarks", json=payload, headers=alice_headers)
+        assert created.status_code == 201, created.text
+        benchmark_id = created.json()["id"]
+        admin_override_approve(client, benchmark_id)
+        run = client.post(f"/api/v1/benchmarks/{benchmark_id}/run", headers=alice_headers)
+        assert run.status_code == 200, run.text
+
+        episode_id = client.get(
+            f"/api/v1/benchmarks/{benchmark_id}/episodes", headers=alice_headers
+        ).json()[0]["id"]
+        replay = client.get(f"/api/v1/episodes/{episode_id}/replay", headers=alice_headers)
+        assert replay.status_code == 200
+        trajectory = replay.json()["trajectory"]
+        obstacle_frames = [point for point in trajectory if point["obstacles"]]
+        assert obstacle_frames, "no trajectory sample carried an obstacle snapshot"
+        assert obstacle_frames[0]["obstacles"][0]["name"] == "pedestrian"
+
+
 class TestReportMarkdown:
     def test_downloads_a_markdown_report_after_a_run(
         self, client: TestClient, created_map, created_scenario, alice_headers

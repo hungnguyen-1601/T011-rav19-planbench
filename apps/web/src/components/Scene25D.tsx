@@ -53,6 +53,8 @@ const COLOR = {
   robotSide: "#9aa3b2",
   heading: "#f0b429",
   outline: "rgba(0,0,0,0.25)",
+  obstacle: "#ff6b6b",
+  obstacleSide: "#c0454a",
 };
 
 export function Scene25D({
@@ -73,6 +75,7 @@ export function Scene25D({
   robotRadius = 0.3,
   plannedPath,
   trajectory,
+  obstacles,
 }: Scene25DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [azimuth, setAzimuth] = useState(azimuthDeg);
@@ -95,6 +98,7 @@ export function Scene25D({
       robotRadius,
       plannedPath,
       trajectory,
+      obstacles,
     });
   }, [
     map,
@@ -111,6 +115,7 @@ export function Scene25D({
     robotRadius,
     plannedPath,
     trajectory,
+    obstacles,
   ]);
 
   useEffect(() => {
@@ -172,6 +177,21 @@ export function Scene25D({
       ctx.moveTo(top.sx, top.sy);
       ctx.lineTo(heading.sx, heading.sy);
       ctx.stroke();
+    }
+
+    for (const obstacle of scene.obstacles) {
+      const { base, top, radiusX, radiusY } = obstacle;
+      ctx.strokeStyle = COLOR.obstacleSide;
+      ctx.lineWidth = Math.max(2, radiusX * 0.6);
+      ctx.beginPath();
+      ctx.moveTo(base.sx, base.sy);
+      ctx.lineTo(top.sx, top.sy);
+      ctx.stroke();
+
+      ctx.fillStyle = COLOR.obstacle;
+      ctx.beginPath();
+      ctx.ellipse(top.sx, top.sy, Math.max(2, radiusX), Math.max(1.5, radiusY), 0, 0, Math.PI * 2);
+      ctx.fill();
     }
   }, [scene, width, height, showPlan, showTrajectory]);
 

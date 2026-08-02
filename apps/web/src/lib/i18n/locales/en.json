@@ -406,6 +406,7 @@
   "detail.length": "Length",
   "detail.minClearance": "Min clearance",
   "detail.replayOf": "Replay — {algorithm} (seed {seed})",
+  "detail.replayTimeline": "Replay timeline",
   "detail.replayFooter": "{points} trajectory points · status {status}",
   "detail.episodeLabel": "episode {id}",
   "agent.askTitle": "Ask about recorded results",

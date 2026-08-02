@@ -76,6 +76,13 @@ export interface SimulationResource {
   created_at: string;
 }
 
+export interface ObstacleSnapshot {
+  name: string;
+  x: number;
+  y: number;
+  radius: number;
+}
+
 export interface TrajectoryPoint {
   time: number;
   x: number;
@@ -83,6 +90,7 @@ export interface TrajectoryPoint {
   theta: number;
   linear_velocity: number;
   angular_velocity: number;
+  obstacles?: ObstacleSnapshot[];
 }
 
 export interface EpisodeResult {

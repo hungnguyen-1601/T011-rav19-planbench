@@ -182,6 +182,22 @@ describe("buildScene", () => {
     expect(scene.start).toBeNull();
     expect(scene.goal).toBeNull();
     expect(scene.robot).toBeNull();
+    expect(scene.obstacles).toEqual([]);
+  });
+
+  it("builds one obstacle marker per snapshot, positioned like the robot marker", () => {
+    const scene = buildScene(FREE_3X3, PROJECTION, {
+      obstacles: [
+        { name: "person-1", x: 1, y: 1, radius: 0.3 },
+        { name: "person-2", x: 2, y: 0, radius: 0.4 },
+      ],
+    });
+    expect(scene.obstacles).toHaveLength(2);
+    const [first, second] = scene.obstacles;
+    expect(first.top).toEqual(project(PROJECTION, 1, 1, 0.35));
+    expect(first.radiusX).toBeGreaterThan(0);
+    expect(first.radiusY).toBeGreaterThan(0);
+    expect(second.top).toEqual(project(PROJECTION, 2, 0, 0.35));
   });
 
   it("builds a robot marker with a raised top and a heading tip", () => {

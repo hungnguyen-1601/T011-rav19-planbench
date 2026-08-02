@@ -17,6 +17,7 @@ import { SendForReview } from "@/components/SendForReview";
 import { StateBadge } from "@/components/StateBadge";
 import { authFetch, authFetchBlob, useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
+import { frameIndexAt, trajectoryDuration } from "@/lib/playback";
 import { cancelReview, canAcceptResult, canRun, pendingFor, type ReviewStage } from "@/lib/reviews";
 import type {
   BenchmarkResults,
@@ -38,6 +39,7 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
   const [results, setResults] = useState<BenchmarkResults | null>(null);
   const [episodes, setEpisodes] = useState<EpisodeSummary[]>([]);
   const [replay, setReplay] = useState<EpisodeReplay | null>(null);
+  const [replayPlayhead, setReplayPlayhead] = useState(0);
   const [map, setMap] = useState<MapResource | null>(null);
   const [scenario, setScenario] = useState<ScenarioResource | null>(null);
   const [failure, setFailure] = useState<{ episodeId: string; report: FailureReport } | null>(null);
@@ -121,6 +123,7 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
   const openReplay = async (episodeId: string) => {
     try {
       setReplay(await authFetch<EpisodeReplay>(`/episodes/${episodeId}/replay`));
+      setReplayPlayhead(0);
       setFailure(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -543,39 +546,58 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
               </button>
             </div>
           </div>
-          {view === "top" ? (
-            <MapCanvas
-              map={map.map_data}
-              plannedPath={replay.plan_path}
-              trajectory={replay.trajectory}
-              startPose={scenario?.scenario.start_pose}
-              goalPose={scenario?.scenario.goal_pose}
-              robotPose={
-                replay.trajectory.length > 0
-                  ? replay.trajectory[replay.trajectory.length - 1]
-                  : null
-              }
-              collisionPoint={
-                replay.metrics.collision && replay.trajectory.length > 0
-                  ? replay.trajectory[replay.trajectory.length - 1]
-                  : null
-              }
-            />
-          ) : (
-            <Scene25D
-              map={map.map_data}
-              plannedPath={replay.plan_path}
-              trajectory={replay.trajectory}
-              startPose={scenario?.scenario.start_pose}
-              goalPose={scenario?.scenario.goal_pose}
-              robotRadius={scenario?.scenario.robot.radius ?? 0.3}
-              robotPose={
-                replay.trajectory.length > 0
-                  ? replay.trajectory[replay.trajectory.length - 1]
-                  : null
-              }
-            />
-          )}
+          {(() => {
+            const duration = trajectoryDuration(replay.trajectory);
+            const index = frameIndexAt(replay.trajectory, replayPlayhead);
+            const visibleTrajectory = replay.trajectory.slice(0, index + 1);
+            const currentPose = index >= 0 ? replay.trajectory[index] : null;
+            const currentObstacles = currentPose?.obstacles;
+            return (
+              <>
+                <div className="toolbar" style={{ marginBottom: 8 }}>
+                  <input
+                    type="range"
+                    min={0}
+                    max={Math.max(duration, 0.001)}
+                    step={0.01}
+                    value={replayPlayhead}
+                    onChange={(event) => setReplayPlayhead(Number(event.target.value))}
+                    style={{ flex: 1, minWidth: 160 }}
+                    aria-label={t("detail.replayTimeline")}
+                  />
+                  <span className="muted" style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {replayPlayhead.toFixed(2)} / {duration.toFixed(2)} s
+                  </span>
+                </div>
+                {view === "top" ? (
+                  <MapCanvas
+                    map={map.map_data}
+                    plannedPath={replay.plan_path}
+                    trajectory={visibleTrajectory}
+                    startPose={scenario?.scenario.start_pose}
+                    goalPose={scenario?.scenario.goal_pose}
+                    robotPose={currentPose}
+                    collisionPoint={
+                      replay.metrics.collision && replay.trajectory.length > 0
+                        ? replay.trajectory[replay.trajectory.length - 1]
+                        : null
+                    }
+                  />
+                ) : (
+                  <Scene25D
+                    map={map.map_data}
+                    plannedPath={replay.plan_path}
+                    trajectory={visibleTrajectory}
+                    startPose={scenario?.scenario.start_pose}
+                    goalPose={scenario?.scenario.goal_pose}
+                    robotRadius={scenario?.scenario.robot.radius ?? 0.3}
+                    robotPose={currentPose}
+                    obstacles={currentObstacles}
+                  />
+                )}
+              </>
+            );
+          })()}
           <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
             {t("detail.replayFooter", {
               points: replay.trajectory.length,

@@ -398,6 +398,22 @@ v5.1.4), daemon Linux containers:
     nhận diện "rrt*" — người dùng agent console gõ "rrt" sẽ không map
     được sang `rrtstar+dwa`. Chưa sửa trong đợt này.
 
+## UI replay scrubbing + vật cản động (Phase 3b-3)
+
+91. **Obstacle marker trong 2.5D vẽ sau tất cả facet tường, không tham
+    gia depth-sort painter's algorithm** (`scene25d.ts::buildScene`) —
+    giống cách robot marker đã vẽ từ trước. Vật cản động luôn hiện đè
+    lên trên, không bị tường che khuất đúng theo chiều sâu thật. Đủ cho
+    mục đích "thấy vật cản ở đâu tại mỗi thời điểm"; không đúng
+    occlusion 100%.
+92. **Không có nút play/pause tự động** — chỉ kéo tay thanh scrubber
+    (`<input type="range">`). `lib/playback.ts::tick()` đã có sẵn cho
+    auto-playback nhưng chưa được gọi ở trang benchmark detail; thêm
+    sau nếu cần.
+93. **Vật cản động chỉ vẽ ở view 2.5D, không vẽ ở view top-down**
+    (`MapCanvas`) — đúng scope F08 ("vẽ chướng ngại động trong view
+    2.5D"). Scrubbing thời gian thì áp dụng cho cả 2 view.
+
 ## Môi trường
 
 - Test phải chạy với `PYTHONPATH=` do shell source ROS2 Jazzy (xem
