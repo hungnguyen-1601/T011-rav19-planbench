@@ -280,6 +280,26 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
               </button>
             </>
           ) : null}
+
+          {session.user.is_admin &&
+          ["draft", "pending_approval", "pending_review"].includes(state) ? (
+            <>
+              <button
+                disabled={busy}
+                title={t("detail.adminOverrideHint")}
+                onClick={() => void act("admin-override-approve")}
+              >
+                {t("detail.adminOverrideApprove")}
+              </button>
+              <button
+                disabled={busy}
+                title={t("detail.adminOverrideHint")}
+                onClick={() => void act("admin-override-reject")}
+              >
+                {t("detail.adminOverrideReject")}
+              </button>
+            </>
+          ) : null}
         </div>
 
         {requests.length > 0 ? (
