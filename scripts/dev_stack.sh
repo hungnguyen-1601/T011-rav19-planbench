@@ -201,7 +201,15 @@ check_prerequisites() {
 # migration that fails here says so once, plainly, and stops.
 run_migrations() {
   if [[ -z "$PLANBENCH_DATABASE_URL" ]]; then
-    info "database  in-memory (no migrations; nothing persists)"
+    # Reached when .env contains a bare `PLANBENCH_DATABASE_URL=`. That
+    # sets the variable to an empty string, so the default a few lines
+    # above never applies — a difference between "unset" and "set to
+    # nothing" that is easy to miss and costs a whole session's work.
+    warn "database  in-memory: maps, benchmarks and accounts are lost on restart."
+    warn "          PLANBENCH_DATABASE_URL is set to an empty string in .env."
+    warn "          To keep your data, put this in .env instead:"
+    warn "              PLANBENCH_DATABASE_URL=sqlite:///$ROOT/planbench.db"
+    warn "          then run:  .venv/bin/alembic upgrade head"
     return 0
   fi
 

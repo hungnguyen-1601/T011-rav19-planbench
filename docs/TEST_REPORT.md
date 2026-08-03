@@ -61,6 +61,81 @@ cài và đã chạy test.
   dependency gián tiếp từ một máy sạch.
 - **Chưa kiểm `npm install` từ đầu** trên `node_modules` trống.
 
+## Persistence — kiểm chứng dữ liệu có thật sự được lưu — 2026-08-03
+
+Câu hỏi: benchmark của người dùng có sống sót qua một lần khởi động lại
+không? Trước hôm nay câu trả lời là **không**, và không ai biết.
+
+### Nguyên nhân
+
+`.env` chứa dòng `PLANBENCH_DATABASE_URL=` (rỗng). `scripts/dev_stack.sh`
+nạp `.env` bằng `set -a`, nên biến trở thành **đã đặt nhưng rỗng**. Điều
+kiện chọn mặc định SQLite là `[[ -z "${PLANBENCH_DATABASE_URL+x}" ]]` —
+chỉ đúng khi biến **chưa đặt**. Nên nó không kích hoạt, URL vẫn rỗng,
+`main.py` chọn repository trong bộ nhớ, và không migration nào chạy.
+
+`.env.example` tự mâu thuẫn: chú thích nói "để trống thì dev_stack tự
+dùng SQLite", trong khi chính nó ship dòng gán rỗng — thứ vô hiệu hóa
+đúng cái mặc định đó.
+
+### Migration
+
+```
+PLANBENCH_DATABASE_URL=sqlite:///./planbench.db .venv/bin/alembic upgrade head
+
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001, Initial schema: maps, scenarios, simulations, benchmarks, approvals, episodes.
+INFO  [alembic.runtime.migration] Running upgrade 0001 -> 0002, Accounts, OAuth links, review requests; benchmark ownership.
+INFO  [alembic.runtime.migration] Running upgrade 0002 -> 0003, Robot profiles, the model registry, and assistant conversations.
+```
+
+16 bảng được tạo (15 bảng nghiệp vụ + `alembic_version`), `alembic
+current` trả về `0003 (head)`.
+
+### Kiểm chứng bằng hai tiến trình riêng biệt
+
+Không dùng một tiến trình rồi tự tin là nó lưu được. Tiến trình 1 ghi
+rồi thoát hẳn; tiến trình 2 khởi động mới hoàn toàn, không chia sẻ bộ
+nhớ với tiến trình 1.
+
+```
+TIEN TRINH 1 (ghi)
+  tao benchmark: 201
+  benchmark id : 2c4a8b032e99
+  chay         : 200 -> pending_review
+
+TIEN TRINH 2 (doc lai sau khi "khoi dong lai")
+  benchmark    : 200 -> pending_review
+  ten          : kiem-chung-luu-tru
+  seeds        : [1, 2]
+  episodes     : 200 -> 2
+  map          : 200
+  so benchmark trong danh sach: 1
+```
+
+Log khởi động in `persistence: SQL` kèm `{"dialect": "sqlite"}` — nếu
+không thấy dòng này thì URL chưa vào tới ứng dụng.
+
+Trạng thái trên đĩa sau lượt chạy:
+
+```
+planbench.db 224K
+  users        1 ban ghi
+  maps         3 ban ghi
+  scenarios    2 ban ghi
+  benchmarks   1 ban ghi
+  episodes     2 ban ghi
+  approvals    3 ban ghi
+
+artifacts/benchmarks/2c4a8b032e99/report.json   (report nam ngoai DB — quyet dinh D15)
+```
+
+### Chưa được kiểm chứng
+
+- **Chưa chạy với PostgreSQL thật.** Migration mới chỉ chạy trên SQLite;
+  máy phát triển không có Docker daemon.
+- **SQLite chỉ hợp một tiến trình.** Nhiều worker ghi đồng thời sẽ gặp
+  khóa; triển khai thật phải dùng PostgreSQL.
+
 ## M13 — Model Registry + trợ lý hội thoại — 2026-08-01
 
 ### Backend

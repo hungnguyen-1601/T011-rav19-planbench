@@ -29,6 +29,28 @@ start.bat logs       xem log
 in ra phương thức đăng nhập nào đang bật. Migration lỗi thì script dừng
 và báo rõ, không khởi động API với schema cũ.
 
+### Lưu dữ liệu
+
+Mặc định dữ liệu **được lưu vào SQLite** (`planbench.db` ở gốc repo), nên
+map, scenario, benchmark và tài khoản sống sót qua lần khởi động lại.
+
+Có một cái bẫy đáng biết: trong `.env`, viết `PLANBENCH_DATABASE_URL=`
+với vế phải để trống **không giống** việc bỏ hẳn dòng đó. Vế trái đặt
+biến thành chuỗi rỗng, và chuỗi rỗng chọn backend trong bộ nhớ — tắt
+server là mất sạch, không migration nào chạy.
+
+- **Muốn lưu:** để dòng đó ở dạng chú thích, hoặc ghi rõ
+  `PLANBENCH_DATABASE_URL=sqlite:///./planbench.db`
+- **Cố tình không lưu** (chạy thử rồi bỏ): đặt nó bằng rỗng
+
+Lúc khởi động, script in ra chế độ đang dùng. Thấy dòng
+`! database in-memory` nghĩa là dữ liệu sẽ không được giữ lại.
+
+Hai thứ phải backup **cùng nhau**: `planbench.db` và thư mục
+`artifacts/`. Trajectory với report nằm ngoài database (quyết định D15),
+bảng chỉ giữ URI và checksum — mất thư mục artifact thì database còn
+nguyên nhưng mọi lần phát lại đều báo thiếu file.
+
 ### Đăng nhập
 
 Copy `.env.example` sang `.env` rồi điền **đúng năm biến** này:

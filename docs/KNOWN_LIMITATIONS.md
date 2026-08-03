@@ -391,6 +391,28 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
 89. **Lịch sử hội thoại chưa có UI liệt kê.** Backend lưu và trả về đầy
     đủ; giao diện hiện chỉ có "Cuộc trò chuyện mới".
 
+## Lưu trữ (kiểm chứng 2026-08-03)
+
+90. **Mặc định của một checkout mới là KHÔNG lưu gì.** `.env.example`
+    từng ship `PLANBENCH_DATABASE_URL=` rỗng, mà "đặt bằng rỗng" khác
+    "không đặt": nó chọn thẳng backend trong bộ nhớ, và không migration
+    nào chạy. Đã sửa — dòng đó nay để dạng chú thích, và `dev_stack.sh`
+    cảnh báo rõ khi rơi vào chế độ không lưu. Nhưng ai đã trót copy
+    `.env.example` cũ thì vẫn phải tự sửa `.env` của mình.
+
+91. **SQLite chỉ dùng được cho một tiến trình.** Đủ cho phát triển và
+    demo. Nhiều worker ghi song song sẽ gặp `database is locked`; triển
+    khai thật phải dùng PostgreSQL.
+
+92. **Vẫn chưa chạy PostgreSQL thật.** Migration 0001–0003 mới chỉ chạy
+    trên SQLite. `docker-compose.yml` có sẵn service `db` nhưng máy phát
+    triển không có Docker daemon.
+
+93. **Mất thư mục artifact là mất replay, dù database còn nguyên.**
+    Trajectory và report nằm ngoài database (quyết định D15); bảng chỉ
+    giữ URI + checksum. Phải backup `planbench.db` **và** `artifacts/`
+    cùng nhau.
+
 ## Môi trường
 
 - Test phải chạy với `PYTHONPATH=` do shell source ROS2 Jazzy (xem
