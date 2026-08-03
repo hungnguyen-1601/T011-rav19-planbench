@@ -74,7 +74,7 @@ PyJWT==2.13.0
 httpx==0.28.1
 
 # ---------- Simulator, planner, metrics ----------
-numpy==2.5.1
+numpy==2.4.1
 
 # ---------- Lưu trữ ----------
 # SQLite có sẵn trong Python, không cần driver. PostgreSQL cần psycopg —
