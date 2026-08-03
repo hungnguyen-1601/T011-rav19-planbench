@@ -16,17 +16,25 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          # pyproject.toml declares `requires-python = ">=3.12"`, and the
+          # ruff target is py312. Testing on 3.11 would exercise a version
+          # the project does not claim to support.
+          python-version: "3.12"
           cache: pip
 
       - name: Install dependencies
+        # requirements.txt is the core set. The optional extras (torch,
+        # Stable-Baselines3, MLflow, LLM providers) live in
+        # requirements-optional.txt and are deliberately not installed
+        # here: the suite must pass without them, and one test skips
+        # itself when they are absent.
         run: pip install -r requirements.txt
 
+      - name: Check formatting
+        run: ruff format --check .
+
       - name: Lint with ruff
-        run: ruff check src/ tests/
+        run: ruff check .
 
       - name: Run tests
         run: pytest tests/ -v --tb=short
-        env:
-          APP_ENV: test
-          OPENAI_API_KEY: test-key

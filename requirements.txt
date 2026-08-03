@@ -74,7 +74,9 @@ PyJWT==2.13.0
 httpx==0.28.1
 
 # ---------- Simulator, planner, metrics ----------
-numpy==2.4.1
+# Bản đang chạy toàn bộ test suite. NumPy 2.5.x yêu cầu Python >= 3.12,
+# trùng với `requires-python` của dự án và với phiên bản CI dùng.
+numpy==2.5.1
 
 # ---------- Lưu trữ ----------
 # SQLite có sẵn trong Python, không cần driver. PostgreSQL cần psycopg —
