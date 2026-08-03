@@ -1,0 +1,9 @@
+# Begin stepping the loaded scenario.
+#
+# A node that started the episode at boot would be killed by the stuck
+# detector before Nav2 finished initialising, so physics stays frozen at
+# the start pose until this is called. Sensor data and TF are published
+# throughout, which is exactly what Nav2 needs to warm up its costmaps.
+---
+bool success
+string message

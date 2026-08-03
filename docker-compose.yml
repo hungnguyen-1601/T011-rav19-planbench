@@ -1,19 +1,119 @@
-version: "3.8"
+# PlanBench local stack: PostgreSQL, the API, the web UI.
+#
+#   cp .env.example .env       # then set AUTH_SECRET at least
+#   docker compose up --build
+#
+# The API waits for PostgreSQL to be *healthy*, not merely started —
+# Postgres accepts connections only after its init scripts finish, and a
+# `depends_on` without a health condition races that.
+#
+# Migrations run in a one-shot `migrate` service rather than on API
+# startup. Two API replicas both running `upgrade head` at boot is a
+# race; a job that must exit 0 before the API starts is not.
+
+name: planbench
 
 services:
-  backend:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-planbench}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-planbench}
+      POSTGRES_DB: ${POSTGRES_DB:-planbench}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      # -U matters: without it pg_isready checks the *root* user and can
+      # report ready before the application role exists.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-planbench} -d ${POSTGRES_DB:-planbench}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    # Not published by default: nothing outside the compose network needs
+    # it, and an exposed database with a default password is a liability.
+    # Uncomment to inspect with psql from the host.
+    # ports:
+    #   - "5432:5432"
+
+  migrate:
     build:
       context: .
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
+      dockerfile: docker/Dockerfile.api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PLANBENCH_DATABASE_URL: postgresql://${POSTGRES_USER:-planbench}:${POSTGRES_PASSWORD:-planbench}@db:5432/${POSTGRES_DB:-planbench}
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      PLANBENCH_DATABASE_URL: postgresql://${POSTGRES_USER:-planbench}:${POSTGRES_PASSWORD:-planbench}@db:5432/${POSTGRES_DB:-planbench}
+      # Signs PlanBench tokens and the OAuth state cookie. Empty
+      # generates a random secret per process, which signs everyone out
+      # on restart. Set it in .env.
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      PLANBENCH_JWT_SECRET: ${PLANBENCH_JWT_SECRET:-}
+      # OAuth. Client secrets are read here and never reach the browser;
+      # unset ones simply hide that button on the login page.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      # The OAuth callback URL is derived from this, so it must be the
+      # URL the *browser* reaches the API on — not the compose service.
+      PLANBENCH_API_PUBLIC_URL: ${PLANBENCH_API_PUBLIC_URL:-http://localhost:8000}
+      PLANBENCH_WEB_APP_URL: ${PLANBENCH_WEB_APP_URL:-http://localhost:3000}
+      # Off by default: a password login next to OAuth in production is
+      # a door nobody remembers closing.
+      PLANBENCH_ENABLE_DEV_LOGIN: ${PLANBENCH_ENABLE_DEV_LOGIN:-false}
+      PLANBENCH_SEED_USERS: ${PLANBENCH_SEED_USERS:-}
+      PLANBENCH_ADMIN_NICKNAMES: ${PLANBENCH_ADMIN_NICKNAMES:-}
+      PLANBENCH_ADMIN_EMAILS: ${PLANBENCH_ADMIN_EMAILS:-}
+      PLANBENCH_CORS_ORIGINS: '["http://localhost:3000"]'
+      PLANBENCH_ARTIFACT_DIR: /data/artifacts
+      PLANBENCH_WORKER_CONCURRENCY: ${PLANBENCH_WORKER_CONCURRENCY:-2}
+      # Agent provider. Unset keys leave the deterministic mock in place,
+      # which is a working default rather than a failure.
+      PLANBENCH_AGENT_PROVIDER: ${PLANBENCH_AGENT_PROVIDER:-auto}
+      PLANBENCH_AGENT_MODEL: ${PLANBENCH_AGENT_MODEL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     volumes:
-      - ./data:/app/data
+      # Trajectories and reports live here and are referenced by URI from
+      # the database, so losing this volume orphans every episode replay.
+      - artifacts:/data/artifacts
+    ports:
+      - "${API_PORT:-8000}:8000"
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+      args:
+        # The browser calls this, not the compose network, so it is the
+        # host-visible URL — "http://api:8000" would resolve only inside
+        # the network and fail in the user's browser.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  artifacts:

@@ -1,60 +1,131 @@
-# Python
+# =============================================================
+# PlanBench — files that must never be committed
+#
+# Rule of thumb: anything a tool can regenerate (caches, builds,
+# installed dependencies) or anything produced by a run (artifacts,
+# logs, tracking data) stays out. Source, tests, docs and lockfiles
+# go in.
+# =============================================================
+
+# ---------- Python ----------
 __pycache__/
 *.py[cod]
+*$py.class
 *.so
-*.egg-info/
-dist/
+.Python
 build/
+dist/
+*.egg-info/
 .eggs/
+pip-wheel-metadata/
 
 # Virtual environments
-venv/
 .venv/
+venv/
 env/
+ENV/
 
-# Environment variables
-.env
-.env.local
-.env.production
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Data (never commit large data)
-data/
-*.db
-*.sqlite3
-
-# Logs
-logs/
-*.log
-
-# Test coverage
-htmlcov/
+# Test, lint and type caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.nox/
+.hypothesis/
 .coverage
+.coverage.*
 coverage.xml
+htmlcov/
+nosetests.xml
 
-# Docker
-docker-compose.override.yml
-
-# Node (frontend)
+# ---------- Node / Next.js (apps/web) ----------
 node_modules/
 .next/
 out/
-.nuxt/
+.turbo/
+.vercel/
+next-env.d.ts
+*.tsbuildinfo
+.eslintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+.yarn/cache/
+.yarn/install-state.gz
 
-# Build
-*.pyc
-*.pyo
+# ---------- ROS2 workspace (added in M7) ----------
+# colcon regenerates all of these from src/
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+# Root-anchored: only if colcon is run from the repo root, so a
+# legitimate "log" folder deeper in the tree is not swallowed.
+/install/
+/log/
+.colcon/
 
-# AI logs — tracked structure, ignored content
-.ai-log/*.jsonl
-.ai-log/archive/
+# ---------- Secrets and environment ----------
+# Never commit real credentials. Only the example template is tracked.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.json
+credentials.json
+
+# ---------- Run output: artifacts, tracking, models ----------
+# Trajectories, benchmark reports and episode JSON (decision D15:
+# artifacts live in storage, the repo keeps only code).
+artifacts/
+# MLflow local tracking store and its SQLite backend
+mlruns/
+mlflow.db
+mlartifacts/
+# Trained RL checkpoints and TensorBoard output (M6).
+# Stable-Baselines3 writes models as .zip, so the pattern is scoped to
+# the model folders rather than banning every .zip in the repo.
+ml/checkpoints/
+ml/runs/
+ml/**/*.zip
+models/
+*.pt
+*.pth
+*.ckpt
+tensorboard/
+
+# ---------- Databases and local data ----------
+*.sqlite
+*.sqlite3
+*.db
+pgdata/
+postgres-data/
+
+# ---------- Logs and temporary files ----------
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# ---------- Editors and OS ----------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- Claude Code local state ----------
+.claude/settings.local.json
+CLAUDE.md
+
+# Local dev stack: PID files and server logs (scripts/dev_stack.sh)
+.run/

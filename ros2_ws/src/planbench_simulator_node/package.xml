@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>planbench_simulator_node</name>
+  <version>0.1.0</version>
+  <description>
+    ROS 2 node exposing the in-house PlanBench 2D simulator to Nav2.
+    Named *_node so it cannot shadow the core planbench_simulator library.
+    No Gazebo.
+  </description>
+  <maintainer email="mebayluon@gmail.com">PlanBench</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>rosgraph_msgs</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>planbench_msgs</exec_depend>
+  <exec_depend>planbench_ros_bridge</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

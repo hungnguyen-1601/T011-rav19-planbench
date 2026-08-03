@@ -1,0 +1,34 @@
+# Runtime dependencies for the API image.
+#
+# Pinned to the versions this repository was developed and tested
+# against (`.venv/bin/pip freeze`), so an image built next month runs the
+# same code as the test suite did. Bump deliberately, then re-run the
+# suite — a benchmark platform whose own dependencies drift silently is
+# not measuring what it claims to.
+#
+# ML training dependencies (torch, stable-baselines3, gymnasium) are NOT
+# here: training is a separate workload, and pulling torch into the API
+# image would add gigabytes for code the API never executes. The
+# astar+ppo stack therefore cannot be run from this image — see
+# docs/DEPLOYMENT.md.
+
+fastapi==0.141.1
+uvicorn[standard]==0.52.0
+pydantic==2.13.4
+pydantic-settings==2.14.2
+python-multipart==0.0.32
+websockets==16.1.1
+
+# Auth: bcrypt directly (passlib 1.7.4 is incompatible with bcrypt 5.x)
+# plus PyJWT. See docs/KNOWN_LIMITATIONS.md.
+bcrypt==5.0.0
+PyJWT==2.13.0
+
+# Simulator and planners.
+numpy==2.5.1
+
+# Persistence. psycopg[binary] ships wheels, so no build toolchain is
+# needed in the image.
+SQLAlchemy==2.0.51
+alembic==1.18.5
+psycopg[binary]==3.2.10

@@ -1,0 +1,79 @@
+"use client";
+
+/** The bar above every page: where you are, and the controls that apply
+ *  everywhere.
+ *
+ * Deliberately one row of 34px controls — the brief asked for it not to
+ * eat the screen, and a page title plus four buttons does not need two.
+ *
+ * The hamburger only exists below 900px (CSS decides, via `.mobile-only`)
+ * because above that the sidebar is always present and a button to
+ * reveal it would do nothing.
+ */
+
+import Link from "next/link";
+
+import { Icon } from "./Icon";
+import { LanguageSwitcher } from "./LanguageSwitcher";
+import { NotificationButton } from "./NotificationButton";
+import { ThemeSwitcher } from "./ThemeSwitcher";
+import { UserMenu } from "./UserMenu";
+import type { SessionUser } from "@/lib/auth";
+import type { Translator } from "@/lib/i18n";
+import { breadcrumbs, pageTitleKey } from "@/lib/navigation";
+
+export function TopBar({
+  pathname,
+  t,
+  user,
+  pendingReviews,
+  onOpenSidebar,
+}: {
+  pathname: string;
+  t: Translator["t"];
+  user: SessionUser | null;
+  pendingReviews: number;
+  onOpenSidebar: () => void;
+}) {
+  const crumbs = breadcrumbs(pathname);
+
+  return (
+    <header className="topbar">
+      <button
+        type="button"
+        className="icon-button mobile-only"
+        onClick={onOpenSidebar}
+        aria-label={t("sidebar.open")}
+        aria-controls="app-sidebar"
+      >
+        <Icon name="menu" />
+      </button>
+
+      <div className="topbar-title">
+        <h2>{t(pageTitleKey(pathname))}</h2>
+        {crumbs.length > 1 ? (
+          <nav className="breadcrumb" aria-label="Breadcrumb">
+            {crumbs.map((crumb, index) => (
+              <span key={`${crumb.href ?? crumb.label}-${index}`}>
+                {index > 0 ? <span aria-hidden="true">/ </span> : null}
+                {crumb.href ? (
+                  <Link href={crumb.href}>{crumb.labelKey ? t(crumb.labelKey) : crumb.label}</Link>
+                ) : (
+                  // Ids and names are shown verbatim — never translated.
+                  <span>{crumb.label}</span>
+                )}
+              </span>
+            ))}
+          </nav>
+        ) : null}
+      </div>
+
+      <div className="topbar-actions">
+        <LanguageSwitcher />
+        <ThemeSwitcher />
+        {user ? <NotificationButton pending={pendingReviews} /> : null}
+        <UserMenu user={user} />
+      </div>
+    </header>
+  );
+}
