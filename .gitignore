@@ -129,3 +129,5 @@ CLAUDE.md
 
 # Local dev stack: PID files and server logs (scripts/dev_stack.sh)
 .run/
+
+.omx/
