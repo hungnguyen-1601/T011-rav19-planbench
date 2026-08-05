@@ -404,9 +404,20 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     demo. Nhiều worker ghi song song sẽ gặp `database is locked`; triển
     khai thật phải dùng PostgreSQL.
 
-92. **Vẫn chưa chạy PostgreSQL thật.** Migration 0001–0003 mới chỉ chạy
-    trên SQLite. `docker-compose.yml` có sẵn service `db` nhưng máy phát
-    triển không có Docker daemon.
+92. ~~Vẫn chưa chạy PostgreSQL thật.~~ **Đã gỡ 2026-08-03.** Migration
+    0001–0003 đã chạy trên PostgreSQL 17 trong Docker (`PostgresqlImpl`,
+    16 bảng, `alembic_version = 0003`), và toàn bộ stack đã build và chạy
+    thật. Kiểm chứng bằng cách **xóa hẳn container API** rồi tạo lại: dữ
+    liệu vẫn còn trong PostgreSQL. Xem TEST_REPORT.md.
+
+    Việc chạy thật này bắt được một lỗi mà không lần test nào phát hiện
+    được: `PLANBENCH_MODEL_DIR` mặc định là đường dẫn *tương đối*
+    (`artifacts/models`), giải ra `/app/artifacts` trong container —
+    thư mục của root, trong khi tiến trình chạy bằng user `planbench`.
+    API chết lúc khởi động với `PermissionError` trước khi phục vụ được
+    request nào. `docker-compose.yml` khai `PLANBENCH_ARTIFACT_DIR` từ
+    M10 nhưng chưa ai thêm `PLANBENCH_MODEL_DIR` khi M13 sinh ra nó. Đã
+    sửa.
 
 93. **Mất thư mục artifact là mất replay, dù database còn nguyên.**
     Trajectory và report nằm ngoài database (quyết định D15); bảng chỉ

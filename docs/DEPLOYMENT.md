@@ -103,6 +103,39 @@ Bốn service:
 `upgrade head` lúc boot là một race. Một job phải exit 0 trước khi API
 khởi động thì không.
 
+### Chạy song song với dev stack
+
+Cổng 8000 và 3000 thường đã bị `scripts/dev_stack.sh` chiếm. Đổi cổng
+qua biến môi trường thay vì tắt dev stack — cách này đã dùng để kiểm
+chứng lần đầu:
+
+```bash
+API_PORT=8001 WEB_PORT=3001 \
+NEXT_PUBLIC_API_URL=http://localhost:8001 \
+PLANBENCH_API_PUBLIC_URL=http://localhost:8001 \
+PLANBENCH_WEB_APP_URL=http://localhost:3001 \
+PLANBENCH_CORS_ORIGINS='["http://localhost:3001"]' \
+docker compose up -d
+```
+
+Bốn biến URL phải đổi cùng nhau. `NEXT_PUBLIC_API_URL` được nướng vào
+bundle lúc build nên trình duyệt gọi đúng địa chỉ đó; `CORS_ORIGINS`
+phải khớp cổng web, nếu không mọi request từ trình duyệt bị chặn.
+
+### Kiểm tra và dọn
+
+```bash
+docker compose ps                      # trạng thái từng container
+docker compose logs api --tail 50      # log khi API không lên
+docker compose exec db psql -U planbench -d planbench -c "\dt"
+
+docker compose down                    # dừng, GIỮ dữ liệu
+docker compose down -v                 # dừng và XOÁ luôn volume
+```
+
+`down -v` xoá cả `db-data` lẫn `artifacts` — mất toàn bộ benchmark đã
+chạy. Chỉ dùng khi thật sự muốn bắt đầu lại từ đầu.
+
 **Vì sao chờ `service_healthy` chứ không phải `service_started`:**
 Postgres chỉ nhận kết nối sau khi init script xong; `depends_on` không có
 điều kiện health sẽ đua với việc đó.
@@ -230,16 +263,35 @@ lệnh cài, chứ không phải `ModuleNotFoundError` trần.
 
 ## Chưa kiểm chứng
 
-Nói thẳng, vì đây là những thứ chỉ lộ ra khi chạy thật:
+Nói thẳng, vì đây là những thứ chỉ lộ ra khi chạy thật.
 
-- **Chưa build image nào, chưa `docker compose up` lần nào.** Docker CLI
-  có trong WSL distro này nhưng daemon không dùng được (chưa bật WSL
-  integration trong Docker Desktop). Compose file mới chỉ được kiểm bằng
-  parse YAML.
-- **Chưa kết nối PostgreSQL thật.** Toàn bộ test SQL chạy trên SQLite.
-  SQLite **không** chứng minh: JSONB, transaction đồng thời, connection
-  pool thật, hành vi cascade dưới dialect production.
-- **`psycopg` chưa cài** trong `.venv` (image có trong requirements).
+**Đã kiểm chứng 2026-08-03** (chi tiết ở [TEST_REPORT.md](./TEST_REPORT.md)):
+
+- Image build được; `docker compose up` chạy cả `db`, `migrate`, `api`,
+  `web`.
+- Migration 0001–0003 chạy trên **PostgreSQL 17** (`PostgresqlImpl`,
+  16 bảng, `alembic_version = 0003`).
+- Dữ liệu sống sót khi **xóa hẳn container API** rồi tạo lại.
+
+Lần chạy đầu tiên bắt được một lỗi mà không test nào phát hiện được:
+`PLANBENCH_MODEL_DIR` mặc định là đường dẫn tương đối, giải ra
+`/app/artifacts` trong container — thư mục của root, còn tiến trình chạy
+bằng user `planbench`. API chết lúc khởi động với `PermissionError`. Đã
+sửa bằng cách khai `PLANBENCH_MODEL_DIR: /data/artifacts/models`.
+
+**Vẫn chưa kiểm chứng:**
+
+- **Chưa chạy nhiều người dùng đồng thời** trên PostgreSQL. Transaction
+  tranh chấp và connection pool dưới tải thật vẫn là ẩn số.
+- **Chưa triển khai lên máy chủ thật** — mới chạy Docker cục bộ, chưa qua
+  reverse proxy, TLS hay tên miền.
+- **`psycopg` chưa cài trong `.venv`.** Không cần: image đã có nó, và
+  phát triển cục bộ dùng SQLite. Chỉ cần khi muốn trỏ `.venv` thẳng vào
+  PostgreSQL:
+
+  ```bash
+  .venv/bin/pip install "psycopg[binary]==3.2.10"
+  ```
 
 Việc đầu tiên khi có Docker: `docker compose up --build`, rồi chạy
 `scripts/demo_agent_flow.py` trỏ vào API trong container để kiểm chứng

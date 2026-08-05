@@ -569,7 +569,7 @@
   "chat.stop": "Dừng",
   "chat.thinking": "Đang xử lý…",
   "chat.newChat": "Cuộc trò chuyện mới",
-  "chat.history": "Lịch sử",
+  "chat.history": "Cuộc trò chuyện",
   "chat.quick.createBenchmark": "Tạo benchmark mới",
   "chat.quick.whichAlgorithm": "Tôi nên chọn thuật toán nào?",
   "chat.quick.analyseLatest": "Phân tích benchmark gần nhất",
@@ -612,5 +612,11 @@
   "robot.maxAngular": "Vận tốc góc tối đa",
   "robot.lidarBeams": "Số tia LiDAR",
   "robot.lidarRange": "Tầm LiDAR",
-  "models.trainingNote": "PlanBench hiện hỗ trợ đánh giá model PPO đã được huấn luyện. Tính năng huấn luyện trực tiếp đang được phát triển; chừng nào chưa có thật thì cũng không có nút cho nó."
+  "models.trainingNote": "PlanBench hiện hỗ trợ đánh giá model PPO đã được huấn luyện. Tính năng huấn luyện trực tiếp đang được phát triển; chừng nào chưa có thật thì cũng không có nút cho nó.",
+  "chat.history.empty": "Các cuộc trò chuyện trước sẽ hiện ở đây.",
+  "chat.history.show": "Hiện danh sách trò chuyện",
+  "chat.history.hide": "Ẩn danh sách trò chuyện",
+  "chat.history.untitled": "Cuộc trò chuyện mới",
+  "chat.history.delete": "Xoá cuộc trò chuyện",
+  "chat.history.deleting": "Đang xoá…"
 }

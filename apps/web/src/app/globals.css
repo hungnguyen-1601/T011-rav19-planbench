@@ -1518,3 +1518,160 @@ main.content.bare-page {
     max-width: 100%;
   }
 }
+
+/* ---------------------------------------------------------------
+   Conversation history
+   ---------------------------------------------------------------
+   Two columns on a wide screen; below the breakpoint the list stops
+   being a column and becomes a panel that slides over the thread. A
+   permanent narrow column on a phone would leave neither the list nor
+   the conversation usable.
+   --------------------------------------------------------------- */
+
+.chat-layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 16px;
+  min-height: 0;
+}
+
+.chat-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.chat-history {
+  border-right: 1px solid var(--border);
+  padding-right: 12px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.chat-history h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.chat-history ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-history li {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 6px;
+}
+
+.chat-history li:hover,
+.chat-history li.active {
+  background: var(--surface-2);
+}
+
+.chat-history-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 7px 8px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.chat-history-title {
+  width: 100%;
+  font-size: 13px;
+  /* One line: a wrapped title pushes the list around as it loads. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-history li.active .chat-history-title {
+  font-weight: 600;
+}
+
+.chat-history-date {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.chat-history-delete {
+  flex: none;
+  padding: 5px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 5px;
+  /* Hidden until the row is touched, so a list of ten conversations is
+     not a wall of X buttons — but never hidden from the keyboard. */
+  opacity: 0;
+}
+
+.chat-history li:hover .chat-history-delete,
+.chat-history-delete:focus-visible {
+  opacity: 1;
+}
+
+.chat-history-delete:hover {
+  color: var(--danger);
+  background: var(--surface-3);
+}
+
+.chat-history-delete:disabled {
+  cursor: progress;
+  opacity: 0.5;
+}
+
+/* Desktop shows the list permanently, so the toggle would be a control
+   with nothing to do. */
+.chat-history-toggle {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .chat-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chat-history-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .chat-history {
+    display: none;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 0 0 12px;
+    margin-bottom: 12px;
+    max-height: 45vh;
+  }
+
+  .chat-history.open {
+    display: block;
+  }
+
+  /* Touch has no hover, so the delete button must always be visible. */
+  .chat-history-delete {
+    opacity: 1;
+  }
+}

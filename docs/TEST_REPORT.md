@@ -61,6 +61,160 @@ cài và đã chạy test.
   dependency gián tiếp từ một máy sạch.
 - **Chưa kiểm `npm install` từ đầu** trên `node_modules` trống.
 
+## Checkpoint PPO thật qua Model Registry — 2026-08-03
+
+Tới hôm nay, mọi test của Model Registry đều dùng một zip **giả hình
+dạng** SB3 dựng trong bộ nhớ: đủ để kiểm lưu trữ, checksum và kiểm tra
+cấu trúc, nhưng không chứng minh được rằng một checkpoint thật nạp và
+chạy được. Đã kiểm chứng.
+
+### Huấn luyện
+
+```
+scripts/train_ppo.py --model-id registry-check --timesteps 30000 --seed 7
+
+training registry-check: 30000 timesteps, curriculum=['open_space'], seed=7
+metadata:   observation=v1 reward=v1 smoke=False
+
+deterministic evaluation
+  episodes        3
+  success_rate    1.00
+  collision_rate  0.00
+  mean_reward     301.5
+```
+
+Checkpoint 531 KB, các thành phần: `data`, `pytorch_variables.pth`,
+`policy.pth`, `policy.optimizer.pth`, `_stable_baselines3_version`,
+`system_info.txt`.
+
+### Toàn bộ chuỗi qua HTTP
+
+```
+robot profile : Default AMR (r=0.3, 24 tia)
+upload        : 201 -> structural
+checksum      : 4814d5e56b479295 | size: 543222 bytes
+duong dan noi bo lo ra?: False
+tuong thich   : compatible | loi: [] | canh bao: 0
+tao benchmark : 201
+chay          : 200 -> pending_review
+model_path lo ra?: False
+so episode    : 1
+  thuat toan  : astar+ppo
+  ket qua     : collision
+ghi nhan da dung: ['208a63dcc4f2']
+```
+
+Episode kết thúc `collision` — và đó là **kết quả**, không phải lỗi của
+chuỗi. Model chỉ huấn luyện 30 000 bước trên `open_space`, còn benchmark
+chạy trên map có tường bao; nó đâm vào tường là điều dự đoán được. Điều
+được chứng minh là: checkpoint thật nạp được, policy sinh ra lệnh điều
+khiển, simulator chạy tới cùng, metrics được ghi, và lượt dùng được ghi
+nhận vào `model_usages`.
+
+### Lỗi bắt được: 422 biến thành 500
+
+Lần chạy đầu, upload trả **HTTP 500**:
+
+```
+File "planbench_api/errors.py", line 156, in request_invalid
+  details = jsonable_encoder(exc.errors(), custom_encoder={Exception: str})
+ValueError: [TypeError("'ellipsis' object is not iterable"), ...]
+```
+
+Handler cho lỗi 422 **tự nó crash** khi tuần tự hóa chi tiết lỗi: một
+tham số `File()` bắt buộc mang giá trị mặc định là literal `...`, và
+`jsonable_encoder` chết trên đó. Handler 500 tiếp quản, nên một sai sót
+tầm thường (thiếu field) tới tay client dưới dạng "internal server
+error" — đúng thứ mà dự án đã đặt ra nguyên tắc phải tránh.
+
+Đã sửa bằng `_safe_details()`: chuyển mọi thứ không phải JSON nguyên
+thủy thành chuỗi. Thêm 3 test hồi quy trong `TestUploadErrorsStayReadable`.
+
+Lỗi này tồn tại từ M13 và không test nào bắt được, vì mọi test đều gửi
+request **đúng**. Chỉ khi gõ nhầm tên field mới lộ ra.
+
+## Docker + PostgreSQL — chạy thật lần đầu — 2026-08-03
+
+Từ M10 tới nay, `docker-compose.yml` và hai Dockerfile chỉ tồn tại dưới
+dạng mã nguồn: chưa ai build image, chưa ai chạy PostgreSQL. Hôm nay đã
+chạy thật.
+
+### Build và migration
+
+```
+docker compose build migrate
+ => naming to docker.io/library/planbench-migrate done
+ migrate  Built
+
+docker compose run --rm migrate
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001, ...
+INFO  [alembic.runtime.migration] Running upgrade 0001 -> 0002, ...
+INFO  [alembic.runtime.migration] Running upgrade 0002 -> 0003, ...
+```
+
+`PostgresqlImpl` — không còn là SQLite. 16 bảng, `alembic_version = 0003`.
+
+### Lỗi mà chỉ việc chạy thật mới lộ ra
+
+API vào vòng lặp khởi động lại:
+
+```
+File "/app/apps/api/planbench_api/model_storage.py", line 103, in __init__
+  self._root.mkdir(parents=True, exist_ok=True)
+PermissionError: [Errno 13] Permission denied: 'artifacts'
+```
+
+`PLANBENCH_MODEL_DIR` mặc định là đường dẫn **tương đối**
+`artifacts/models`, giải ra `/app/artifacts` trong container — thư mục
+của root, trong khi tiến trình chạy bằng user `planbench` (uid 10001).
+`docker-compose.yml` đã khai `PLANBENCH_ARTIFACT_DIR: /data/artifacts` từ
+M10, nhưng khi M13 sinh ra `PLANBENCH_MODEL_DIR` thì không ai thêm nó vào
+compose.
+
+Không test nào bắt được lỗi này: test chạy với thư mục tạm, và cả suite
+chưa từng chạy trong container. Đã sửa bằng cách khai
+`PLANBENCH_MODEL_DIR: /data/artifacts/models`.
+
+### Luồng đầy đủ trên PostgreSQL
+
+```
+dang nhap: OK
+tao map  : 785a3e2f6c84
+scenario : 775907cb5e00
+benchmark: fdb220df7865
+chay     : pending_review
+```
+
+Phép thử quyết định — **xóa hẳn container API** (không phải restart) rồi
+tạo lại từ đầu:
+
+```
+docker compose rm -sf api
+  Container planbench-api-1  Removed
+
+du lieu trong PostgreSQL luc khong con API:
+  benchmarks: 1
+  episodes  : 2
+
+sau khi tao lai container:
+  doc lai benchmark: pending_review
+  ten              : docker-postgres
+  seeds            : [1, 2]
+  episodes         : 2
+```
+
+Container web trả HTTP 200, API trả
+`{"status":"ok","app":"PlanBench API","version":"0.1.0"}`.
+
+Chạy trên cổng 8001/3001 để không đụng dev stack đang chạy ở 8000/3000.
+
+### Chưa được kiểm chứng
+
+- **Chưa chạy nhiều người dùng đồng thời** trên PostgreSQL.
+- **Chưa triển khai lên máy chủ thật**; mới chạy Docker cục bộ.
+
 ## Persistence — kiểm chứng dữ liệu có thật sự được lưu — 2026-08-03
 
 Câu hỏi: benchmark của người dùng có sống sót qua một lần khởi động lại

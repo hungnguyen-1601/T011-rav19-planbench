@@ -115,7 +115,7 @@ Ba thứ chạy ở chế độ giảm cho tới khi được cấu hình, khôn
 |---|---|---|
 | Chưa cấu hình OAuth | trang login báo rõ, không có nút | điền 5 biến ở trên |
 | Agent dùng mock tất định | trả lời bằng khớp từ khóa, không phải model | dán API key, xem `.env.example` |
-| Chưa có model PPO đã train | stack `astar+ppo` không chạy được | train rồi truyền `model_path` |
+| Chưa có model PPO đã train | stack `astar+ppo` không chạy được | tải model `.zip` lên qua trang **Kho mô hình** |
 
 ## Trạng thái
 
@@ -129,13 +129,13 @@ kết quả chạy thật: [docs/TEST_REPORT.md](docs/TEST_REPORT.md) ·
 | Schemas, occupancy grid, kinematics, collision, LiDAR | ✅ |
 | A*, DWA, pure-pursuit (adapter tham chiếu), SimulationEngine, metrics | ✅ |
 | Benchmark engine + fairness checksum + human-in-the-loop | ✅ |
-| FastAPI (43 endpoint), WebSocket, background worker | ✅ |
+| FastAPI (91 endpoint), WebSocket, background worker | ✅ |
 | Next.js UI: map editor, 2.5D, leaderboard, failure analysis, agent console | ✅ |
 | Vật cản động, thư viện 10 scenario, MLflow | ✅ |
 | PPO (Gymnasium + SB3) | ✅ pipeline — chỉ có smoke model, chưa train thật |
 | ROS2 Jazzy + Nav2 closed-loop | ✅ 6/6 episode, chạy tay |
 | Agentic AI + RAG, 8 LLM provider | ✅ — chưa gọi provider ngoài lần nào |
-| PostgreSQL + Alembic + Docker Compose | ✅ code — **chưa build image, chưa chạy Postgres thật** |
+| PostgreSQL + Alembic + Docker Compose | ✅ — đã build image và chạy thật, migration verify trên PostgreSQL 17 |
 | Đăng nhập Google/GitHub, nickname, review tùy chọn | ✅ — không gọi OAuth thật trong test |
 | App shell: sidebar thu gọn, theme Light/Dark/System, VI/EN | ✅ |
 | **Model Registry**: upload PPO qua web, checksum, tương thích | ✅ — **nạp model chưa chạy trong sandbox**, xem KNOWN_LIMITATIONS #77 |

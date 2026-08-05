@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -32,6 +31,29 @@ class DomainValidationError(Exception):
 
 class InvalidStateError(Exception):
     """Operation not allowed in the resource's current state."""
+
+
+def _safe_details(errors: Any) -> Any:
+    """Make a validation error safe to serialise, whatever is inside it.
+
+    Pydantic puts arbitrary Python objects into an error's ``ctx`` and
+    ``input``, and FastAPI's own encoder raises on some of them. A file
+    upload is the case that bites: a required ``File()`` parameter carries
+    the literal ``...`` as its default, and ``jsonable_encoder`` dies on
+    it with ``'ellipsis' object is not iterable``.
+
+    The handler then raises *while reporting an error*, so the 500 handler
+    takes over and a plain missing-field mistake reaches the client as an
+    opaque internal error. Anything not natively JSON is stringified here
+    instead — a slightly less precise message beats an unusable one.
+    """
+    if isinstance(errors, dict):
+        return {str(key): _safe_details(value) for key, value in errors.items()}
+    if isinstance(errors, (list, tuple)):
+        return [_safe_details(item) for item in errors]
+    if errors is None or isinstance(errors, (str, bool, int, float)):
+        return errors
+    return str(errors)
 
 
 def _error_body(code: str, message: str, details: Any = None) -> dict:
@@ -152,11 +174,11 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def request_invalid(_: Request, exc: RequestValidationError) -> JSONResponse:
-        # errors() can contain raw exception objects in ctx -> encode safely.
-        details = jsonable_encoder(exc.errors(), custom_encoder={Exception: str})
         return JSONResponse(
             status_code=422,
-            content=_error_body("request_validation_error", "invalid request", details),
+            content=_error_body(
+                "request_validation_error", "invalid request", _safe_details(exc.errors())
+            ),
         )
 
     @app.exception_handler(Exception)

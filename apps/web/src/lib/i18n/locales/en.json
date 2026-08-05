@@ -569,7 +569,7 @@
   "chat.stop": "Stop",
   "chat.thinking": "Thinking…",
   "chat.newChat": "New chat",
-  "chat.history": "History",
+  "chat.history": "Conversations",
   "chat.quick.createBenchmark": "Create a new benchmark",
   "chat.quick.whichAlgorithm": "Which algorithm should I choose?",
   "chat.quick.analyseLatest": "Analyse my latest benchmark",
@@ -612,5 +612,11 @@
   "robot.maxAngular": "Max angular velocity",
   "robot.lidarBeams": "LiDAR beams",
   "robot.lidarRange": "LiDAR range",
-  "models.trainingNote": "PlanBench currently evaluates PPO models you have already trained. Training here is being built; until it exists there is no button for it."
+  "models.trainingNote": "PlanBench currently evaluates PPO models you have already trained. Training here is being built; until it exists there is no button for it.",
+  "chat.history.empty": "Your past conversations appear here.",
+  "chat.history.show": "Show conversations",
+  "chat.history.hide": "Hide conversations",
+  "chat.history.untitled": "New conversation",
+  "chat.history.delete": "Delete conversation",
+  "chat.history.deleting": "Deleting…"
 }
