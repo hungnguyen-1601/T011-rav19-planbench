@@ -31,10 +31,18 @@ class PlanResult(BaseModel):
 class GlobalPlanner(ABC):
     """A global planner maps (grid, start, goal) to a world-frame path.
 
-    Planners must be deterministic for identical inputs. The grid passed
-    in should already account for the robot footprint (e.g. inflated by
-    the robot radius) — planners treat it as the configuration space.
+    Planners must be deterministic for identical inputs. A randomised
+    planner satisfies this by drawing from a generator seeded from its
+    own config — never from process-global randomness (see
+    ``RRTStarPlanner``). The grid passed in should already account for
+    the robot footprint (e.g. inflated by the robot radius) — planners
+    treat it as the configuration space.
     """
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Short id used as the left half of a stack id (``<global>+<local>``)."""
 
     @abstractmethod
     def plan(self, grid: OccupancyGrid, start: Point2D, goal: Point2D) -> PlanResult:

@@ -10,6 +10,9 @@
  * - a stack with required config (`astar+ppo` needs a trained
  *   checkpoint) cannot be run until a human supplies it — which is also
  *   why the agent is not allowed to propose one.
+ * - a stack whose global planner samples randomly (`rrtstar+*`) is
+ *   flagged, because a single run of it is an anecdote: the reader has
+ *   to know to look at many seeds before quoting a number.
  */
 
 import { useEffect, useState } from "react";
@@ -76,6 +79,9 @@ export default function AlgorithmsPage() {
                 {algorithm.benchmarkable ? t("algorithms.benchmarkable") : t("algorithms.reference")}
               </span>
               <span className="muted">{algorithm.kind}</span>
+              {algorithm.stochastic_global_planner ? (
+                <span className="badge warn">{t("algorithms.randomised")}</span>
+              ) : null}
               {required.length > 0 ? (
                 <span className="badge warn">
                   {t("algorithms.needs", { fields: required.map((f) => f.name).join(", ") })}
@@ -86,6 +92,9 @@ export default function AlgorithmsPage() {
 
             {!algorithm.benchmarkable ? (
               <div className="error-box">{t("algorithms.referenceWarning")}</div>
+            ) : null}
+            {algorithm.stochastic_global_planner ? (
+              <p className="muted">{t("algorithms.randomisedWarning")}</p>
             ) : null}
             {required.length > 0 ? (
               <p className="muted">{t("algorithms.requiredHint")}</p>

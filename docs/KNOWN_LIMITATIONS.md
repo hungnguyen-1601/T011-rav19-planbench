@@ -404,14 +404,67 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     demo. Nhiều worker ghi song song sẽ gặp `database is locked`; triển
     khai thật phải dùng PostgreSQL.
 
-92. **Vẫn chưa chạy PostgreSQL thật.** Migration 0001–0003 mới chỉ chạy
-    trên SQLite. `docker-compose.yml` có sẵn service `db` nhưng máy phát
-    triển không có Docker daemon.
+92. ~~**Vẫn chưa chạy PostgreSQL thật.**~~ **Đã gỡ 2026-08-05.** Toàn bộ
+    migration đã chạy trên `postgres:17-alpine` trong `docker compose`,
+    tạo đủ 10 bảng, và một benchmark 2 stack × 5 seed đã chạy end-to-end
+    trong container với dữ liệu ghi xuống PostgreSQL. Xem
+    `docs/antongduy/reports/2026-08-05/tongduyan_docker-compose-chay-that.md`.
 
 93. **Mất thư mục artifact là mất replay, dù database còn nguyên.**
     Trajectory và report nằm ngoài database (quyết định D15); bảng chỉ
     giữ URI + checksum. Phải backup `planbench.db` **và** `artifacts/`
     cùng nhau.
+94. **RRT\* chỉ tái lập được khi biết cả hai seed.** Cây được sinh từ
+    `RRTStarConfig.seed` **trộn với seed episode**; chạy lại đúng cặp seed
+    đó ra đúng đường cũ, nhưng một `PlanResult` đứng riêng không nói được
+    nó thuộc cây nào. Muốn tái lập phải giữ nguyên cả spec lẫn seed list.
+95. **Một lần chạy RRT\* không kết luận được gì.** Nó là thuật toán ngẫu
+    nhiên: hai seed cho hai đường khác nhau, khác cả độ dài. Chỉ đọc qua
+    phân phối nhiều seed (P04 sẽ cho median/IQR/CI). UI đánh dấu stack
+    `stochastic_global_planner=true`, nhưng không cưỡng chế số seed tối
+    thiểu.
+96. **Config của global planner chưa vào `BenchmarkSpec`.** `AlgorithmSpec.config`
+    chỉ cấu hình local planner; RRT\* luôn chạy mặc định (3000 iteration,
+    step 0.5 m). Vì vậy `config_schema` trên `/algorithms` cũng chỉ là
+    schema của local planner. Hệ quả: chưa tune được RRT\* — đó là phần
+    việc của P01.
+97. **RRT\* đắt hơn A\* nhiều lần trên cùng bản đồ.** Nó chạy hết ngân
+    sách iteration kể cả khi đã tìm ra đường (đổi lấy tính tối ưu tiệm
+    cận), nên `global_planning_time` giữa hai stack lệch nhau theo bản
+    chất thuật toán, không phải do cấu hình bất công.
+
+## Docker Compose (kiểm chứng 2026-08-05)
+
+98. **`AUTH_SECRET` rỗng làm mọi người bị đăng xuất sau mỗi lần restart
+    API.** `docker-compose.yml` nói rõ điều này, nhưng `.env.example`
+    vẫn ship giá trị rỗng nên trạng thái mặc định của một máy mới là
+    "token chết sau mỗi `docker compose up --build api`". Trong lúc
+    kiểm chứng Đợt 0.2, mỗi lần rebuild `api` là phải đăng nhập lại.
+    Không phải lỗi, nhưng là cái bẫy chắc chắn gặp khi demo.
+
+99. **Vai trò cũ trong audit trail phải được giữ trong `Role` mãi mãi.**
+    Dữ liệu từ lần chạy Docker trước (2026-08-02) có `role='engineer'`
+    và `role='approver'` trong bảng `approvals`; enum `Role` sau refactor
+    không còn hai giá trị đó, nên **mọi** endpoint gọi
+    `repos.benchmarks.list()` (danh sách benchmark, leaderboard) trả 500.
+    Đã sửa bằng cách giữ lại hai giá trị legacy trong enum thay vì viết
+    migration ghi đè lịch sử. Hệ quả cần nhớ: đổi tên vai trò trong
+    tương lai **không được** xóa giá trị cũ khỏi enum.
+
+100. **Cấu hình đường dẫn tương đối trong container là bẫy quyền ghi.**
+    `model_dir` từng mặc định `"artifacts/models"` độc lập với
+    `artifact_dir`; trong image, `WORKDIR /app` thuộc root còn tiến
+    trình chạy dưới user `planbench`, nên `mkdir artifacts` ném
+    `PermissionError` **lúc import**, tức API chết ngay khi khởi động.
+    Đã sửa: `model_dir` rỗng nghĩa là `<artifact_dir>/models`. Bất kỳ
+    setting đường dẫn nào thêm sau này phải bám theo `artifact_dir`
+    hoặc được set tường minh trong compose.
+
+101. **Volume `planbench_db-data` và `planbench_artifacts` sống lâu hơn
+    `docker compose down`.** Chúng được tạo 2026-08-02 và vẫn còn nguyên
+    dữ liệu ở lần chạy 2026-08-05 — chính chỗ này để lộ lỗi #99. Muốn
+    kiểm chứng "máy sạch" phải `docker compose down -v`, và ngược lại,
+    dữ liệu benchmark cũ **không** mất khi rebuild image.
 
 ## Môi trường
 

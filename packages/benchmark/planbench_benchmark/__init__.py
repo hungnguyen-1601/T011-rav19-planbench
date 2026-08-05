@@ -11,6 +11,7 @@ from planbench_benchmark.failure import (
 from planbench_benchmark.registry import (
     ALGORITHMS,
     AlgorithmInfo,
+    build_global_planner,
     build_local_planner,
     list_algorithms,
     validate_algorithm_config,
@@ -47,6 +48,7 @@ __all__ = [
     "FailureReport",
     "Finding",
     "analyse_episode",
+    "build_global_planner",
     "build_local_planner",
     "build_scenario",
     "list_algorithms",

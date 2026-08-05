@@ -22,6 +22,10 @@ export interface AlgorithmInfo {
   description: string;
   benchmarkable: boolean;
   config_schema: Record<string, unknown>;
+  /** Which global planner runs, stated by the registry rather than parsed out of `id`. */
+  global_planner: string;
+  /** True when that planner samples randomly, so results need many seeds to mean anything. */
+  stochastic_global_planner: boolean;
 }
 
 export interface AlgorithmSpec {

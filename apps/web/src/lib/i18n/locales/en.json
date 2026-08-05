@@ -208,6 +208,8 @@
   "algorithms.subtitle": "Every navigation stack the backend can run.",
   "algorithms.benchmarkable": "Benchmarkable",
   "algorithms.reference": "Reference only",
+  "algorithms.randomised": "Randomised",
+  "algorithms.randomisedWarning": "This stack's global planner samples randomly. One run says nothing on its own — read it across many seeds, and expect the path to differ from seed to seed.",
   "algorithms.requiredConfig": "Required configuration",
   "algorithms.referenceHint": "A reference stack verifies the pipeline; it must not appear in a comparison as a conclusion.",
   "agent.title": "Agent console",

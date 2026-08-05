@@ -8,13 +8,14 @@ from planbench_benchmark import (
     AlgorithmSpec,
     BenchmarkSpec,
     FairnessRecord,
+    build_global_planner,
     build_local_planner,
     list_algorithms,
     run_benchmark,
     validate_algorithm_config,
 )
 from planbench_benchmark.registry import AlgorithmConfigError, UnknownAlgorithmError
-from planbench_benchmark.runner import aggregate_algorithm
+from planbench_benchmark.runner import aggregate_algorithm, run_single
 from planbench_schemas.episode import EpisodeStatus
 from planbench_schemas.geometry import Pose2D
 from planbench_schemas.robot import RobotConfig
@@ -69,6 +70,34 @@ class TestRegistry:
     def test_empty_config_uses_defaults(self) -> None:
         config = validate_algorithm_config("astar+dwa", None)
         assert config.velocity_samples == 9  # type: ignore[attr-defined]
+
+    def test_two_stacks_are_benchmarkable_without_extra_installs(self) -> None:
+        # The point of adding RRT*: a fresh clone can compare two real
+        # stacks. astar+ppo does not count — it needs a trained model.
+        ready = {
+            info.id for info in list_algorithms() if info.benchmarkable and not info.requires_model
+        }
+        assert ready == {"astar+dwa", "rrtstar+dwa"}
+
+    def test_declares_the_global_planner_of_every_stack(self) -> None:
+        infos = {info.id: info for info in list_algorithms()}
+        assert infos["astar+dwa"].global_planner == "astar"
+        assert infos["astar+dwa"].stochastic_global_planner is False
+        assert infos["rrtstar+dwa"].global_planner == "rrtstar"
+        assert infos["rrtstar+dwa"].stochastic_global_planner is True
+        assert infos["rrtstar+pure_pursuit"].benchmarkable is False
+        for info in infos.values():
+            assert info.global_planner == info.id.split("+", 1)[0]
+
+    def test_builds_the_global_planner_for_a_stack(self) -> None:
+        assert build_global_planner("astar+dwa").name == "astar"
+        planner = build_global_planner("rrtstar+dwa", episode_seed=11)
+        assert planner.name == "rrtstar"
+        assert planner.episode_seed == 11  # type: ignore[attr-defined]
+
+    def test_unknown_stack_has_no_global_planner(self) -> None:
+        with pytest.raises(UnknownAlgorithmError, match="unknown algorithm"):
+            build_global_planner("teleport+dwa")
 
 
 class TestBenchmarkSpec:
@@ -163,6 +192,41 @@ class TestRunBenchmark:
         assert {run.seed for run in report.runs} == {1, 2}
         assert len(report.aggregates) == 2
         assert [run.episode_index for run in report.runs] == [0, 1, 2, 3]
+
+    def test_the_episode_seed_reaches_a_sampling_global_planner(
+        self, bordered_map_factory, robot: RobotConfig
+    ) -> None:
+        # Without this wiring every episode would replay one tree, and
+        # sweeping many seeds would measure nothing about RRT*.
+        map_data = bordered_map_factory(12, 12)
+        scenario = make_scenario(robot)
+        algorithm = AlgorithmSpec(id="rrtstar+dwa")
+        first = run_single(map_data, scenario, algorithm, seed=1)
+        second = run_single(map_data, scenario, algorithm, seed=2)
+        assert first.plan.success and second.plan.success
+        assert first.plan.path != second.plan.path
+
+    def test_the_same_seed_reproduces_a_sampling_stack(
+        self, bordered_map_factory, robot: RobotConfig
+    ) -> None:
+        map_data = bordered_map_factory(12, 12)
+        scenario = make_scenario(robot)
+        algorithm = AlgorithmSpec(id="rrtstar+dwa")
+        first = run_single(map_data, scenario, algorithm, seed=5)
+        second = run_single(map_data, scenario, algorithm, seed=5)
+        assert first.plan.path == second.plan.path
+        assert first.result.trajectory == second.result.trajectory
+
+    def test_a_deterministic_stack_ignores_the_planner_seed(
+        self, bordered_map_factory, robot: RobotConfig
+    ) -> None:
+        map_data = bordered_map_factory(12, 12)
+        scenario = make_scenario(robot)
+        algorithm = AlgorithmSpec(id="astar+dwa")
+        assert (
+            run_single(map_data, scenario, algorithm, seed=1).plan.path
+            == run_single(map_data, scenario, algorithm, seed=2).plan.path
+        )
 
     def test_reports_progress_per_run(self, bordered_map_factory, robot: RobotConfig) -> None:
         seen: list[str] = []

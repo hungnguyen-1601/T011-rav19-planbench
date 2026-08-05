@@ -17,7 +17,7 @@ import logging
 from collections.abc import Callable, Sequence
 from statistics import fmean
 
-from planbench_benchmark.registry import build_local_planner
+from planbench_benchmark.registry import build_global_planner, build_local_planner
 from planbench_benchmark.spec import (
     AlgorithmAggregate,
     AlgorithmSpec,
@@ -37,10 +37,17 @@ logger = logging.getLogger("planbench.benchmark")
 def run_single(
     map_data: MapData, scenario: Scenario, algorithm: AlgorithmSpec, seed: int
 ) -> StackRun:
-    """Run one episode of one algorithm at one seed."""
+    """Run one episode of one algorithm at one seed.
+
+    The same seed drives the scenario (dynamic obstacles) and the global
+    planner. A sampling planner therefore grows a different tree per
+    seed instead of replaying one lucky tree for the whole sweep, while
+    every algorithm still faces the identical set of conditions.
+    """
     seeded = scenario.model_copy(update={"random_seed": seed})
     planner = build_local_planner(algorithm.id, algorithm.config)
-    return run_stack(map_data, seeded, planner)
+    global_planner = build_global_planner(algorithm.id, episode_seed=seed)
+    return run_stack(map_data, seeded, planner, global_planner)
 
 
 def run_benchmark(

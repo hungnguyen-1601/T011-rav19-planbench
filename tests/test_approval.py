@@ -14,9 +14,11 @@ tests/api/test_api_reviews.py.
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from planbench_api.approval import (
     Action,
+    ApprovalRecord,
     BenchmarkState,
     Capability,
     PermissionDenied,
@@ -146,3 +148,40 @@ class TestCapabilities:
         """Recovery is possible; it is also always in the audit trail."""
         state = BenchmarkState.APPROVED if action is Action.RUN else BenchmarkState.PENDING_APPROVAL
         assert next_state(state, action, ADMIN) is not None
+
+
+class TestLegacyAuditRows:
+    """Rows written by older versions must still deserialise.
+
+    Found by running the stack against a database from an earlier Docker
+    run: one approval with ``role='engineer'`` made *every* endpoint that
+    lists benchmarks — including the leaderboard — return 500, because a
+    single unparseable row fails the whole list. Renaming a role is
+    therefore an append to this enum, never a replacement.
+    """
+
+    @pytest.mark.parametrize("legacy", ["engineer", "approver", "operator", "reviewer"])
+    def test_a_retired_role_still_parses(self, legacy: str) -> None:
+        record = ApprovalRecord(
+            benchmark_id="b1",
+            user="someone",
+            role=legacy,
+            action=Action.APPROVE,
+            previous_state=BenchmarkState.PENDING_APPROVAL,
+            new_state=BenchmarkState.APPROVED,
+            timestamp="2026-08-02T04:42:54+00:00",
+        )
+        assert record.role == legacy
+
+    def test_a_role_nobody_ever_wrote_is_still_rejected(self) -> None:
+        """Tolerating history is not the same as accepting anything."""
+        with pytest.raises(ValidationError):
+            ApprovalRecord(
+                benchmark_id="b1",
+                user="someone",
+                role="superuser",
+                action=Action.APPROVE,
+                previous_state=BenchmarkState.PENDING_APPROVAL,
+                new_state=BenchmarkState.APPROVED,
+                timestamp="2026-08-02T04:42:54+00:00",
+            )

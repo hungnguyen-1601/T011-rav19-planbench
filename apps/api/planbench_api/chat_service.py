@@ -43,6 +43,9 @@ STACK_WORDS: dict[str, tuple[str, ...]] = {
     "astar+dwa": ("dwa", "dynamic window", "cửa sổ động"),
     "astar+ppo": ("ppo", "reinforcement", "học tăng cường", "mô hình"),
     "astar+pure_pursuit": ("pure pursuit", "pure-pursuit", "bám đường"),
+    # "dwa" alone stays A*+DWA: it is the older, deterministic stack and
+    # the one people mean by default. RRT* has to be named to be chosen.
+    "rrtstar+dwa": ("rrt", "rrt*", "rrt star", "rrt-star"),
 }
 
 

@@ -50,6 +50,10 @@ class AStarPlanner(GlobalPlanner):
         self._config = config or AStarConfig()
 
     @property
+    def name(self) -> str:
+        return "astar"
+
+    @property
     def config(self) -> AStarConfig:
         return self._config
 

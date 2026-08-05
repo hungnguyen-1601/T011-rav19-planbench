@@ -37,7 +37,7 @@ Benchmark Orchestrator ──► PostgreSQL │ Artifact storage │ MLflow
         │
 CORE (Python thuần)
   services/simulator  : grid, kinematics, collision, lidar, engine
-  packages/planning   : astar │ dwa │ rrt_star │ common
+  packages/planning   : astar │ dwa │ rrtstar │ common
   packages/metrics    : per-episode + aggregate
   packages/schemas    : Pydantic domain models
         │

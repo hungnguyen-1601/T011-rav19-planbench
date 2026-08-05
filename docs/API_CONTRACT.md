@@ -168,14 +168,28 @@ clearance và latency tính trên mọi episode).
 |---|---|---|
 | GET | /episodes/{id} | Metadata + RunRecord + artifact reference |
 | GET | /episodes/{id}/result | EpisodeResult (trajectory + events) |
-| GET | /episodes/{id}/plan | PlanResult của A* |
+| GET | /episodes/{id}/plan | PlanResult của global planner (A* hoặc RRT*) |
 | GET | /episodes/{id}/replay | `{plan_path, trajectory, events, metrics}` cho UI replay |
 
 ## Algorithms (M4)
 
 `GET /algorithms` trả registry stack. `benchmarkable=false` đánh dấu stack
-tham chiếu (hiện tại: `astar+pure_pursuit`) — chỉ để kiểm chứng pipeline,
-không dùng kết luận. `config_schema` là JSON Schema của config stack đó.
+tham chiếu (hiện tại: `astar+pure_pursuit`, `rrtstar+pure_pursuit`) — chỉ
+để kiểm chứng pipeline, không dùng kết luận. `config_schema` là JSON Schema
+của config **local planner** của stack đó.
+
+Hai trường mô tả nửa global của stack:
+
+| Trường | Ý nghĩa |
+|---|---|
+| `global_planner` | Id global planner (`astar`, `rrtstar`). Registry khai báo tường minh, không suy ra từ chuỗi `id`. |
+| `stochastic_global_planner` | `true` khi global planner lấy mẫu ngẫu nhiên. Kết quả chỉ đọc được qua nhiều seed; UI hiện cảnh báo. |
+
+Seed của một stack ngẫu nhiên **được dẫn xuất từ seed episode** (cùng seed
+điều khiển vật cản động), nên mỗi episode mọc một cây khác nhau còn chạy
+lại cùng seed thì tái lập đúng đường cũ. Config của global planner chưa
+nằm trong `BenchmarkSpec` — MVP chạy mặc định; đây là chỗ P01 (Optuna) sẽ
+cắm vào.
 
 ## Agent (M8)
 

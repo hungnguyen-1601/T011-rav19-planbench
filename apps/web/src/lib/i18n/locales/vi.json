@@ -208,6 +208,8 @@
   "algorithms.subtitle": "Mọi stack điều hướng mà backend chạy được.",
   "algorithms.benchmarkable": "Dùng để benchmark",
   "algorithms.reference": "Chỉ tham chiếu",
+  "algorithms.randomised": "Ngẫu nhiên",
+  "algorithms.randomisedWarning": "Bộ lập kế hoạch toàn cục của stack này lấy mẫu ngẫu nhiên. Một lần chạy không nói lên điều gì — phải đọc trên nhiều seed, và đường đi sẽ khác nhau giữa các seed.",
   "algorithms.requiredConfig": "Cấu hình bắt buộc",
   "algorithms.referenceHint": "Stack tham chiếu chỉ để kiểm chứng pipeline; không được đưa vào so sánh như một kết luận.",
   "agent.title": "Trợ lý AI",

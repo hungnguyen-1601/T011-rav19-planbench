@@ -35,6 +35,7 @@ from planbench_api.worker import Job, JobQueue
 from planbench_benchmark import (
     AlgorithmSpec,
     BenchmarkSpec,
+    build_global_planner,
     build_local_planner,
     list_algorithms,
     run_benchmark,
@@ -206,7 +207,10 @@ class SimulationService:
         map_data = self._repos.maps.get(stored.map_id).map_data
         scenario = self._repos.scenarios.get(stored.scenario_id).scenario
         planner = build_local_planner(stored.algorithm, stored.config)
-        stack_run: StackRun = run_stack(map_data, scenario, planner)
+        # The scenario's own seed also seeds a sampling global planner,
+        # so re-running a stored simulation reproduces the same path.
+        global_planner = build_global_planner(stored.algorithm, episode_seed=scenario.random_seed)
+        stack_run: StackRun = run_stack(map_data, scenario, planner, global_planner)
         logger.info(
             "simulation finished",
             extra={

@@ -1,9 +1,9 @@
-"""Algorithm registry: stack id -> local-planner factory.
+"""Algorithm registry: stack id -> global planner + local-planner factory.
 
-Every benchmarkable entry is a *stack* (``astar+<controller>``) because
-comparing a global planner with a local planner is meaningless
-(decision D13). The pure-pursuit stack is registered but flagged
-``benchmarkable=False``: it exists only as a pipeline reference (D12).
+Every benchmarkable entry is a *stack* (``<global>+<controller>``)
+because comparing a global planner with a local planner is meaningless
+(decision D13). The pure-pursuit stacks are registered but flagged
+``benchmarkable=False``: they exist only as a pipeline reference (D12).
 """
 
 from __future__ import annotations
@@ -13,7 +13,14 @@ from importlib.util import find_spec
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from planbench_planning import DWAConfig, DWAPlanner
+from planbench_planning import (
+    AStarPlanner,
+    DWAConfig,
+    DWAPlanner,
+    GlobalPlanner,
+    RRTStarConfig,
+    RRTStarPlanner,
+)
 from planbench_planning.common.local_base import LocalPlanner
 from planbench_simulator.nav_stack import PurePursuitLocalPlanner
 from planbench_simulator.path_follower import PurePursuitConfig
@@ -133,6 +140,14 @@ class AlgorithmInfo(BaseModel):
     description: str
     benchmarkable: bool
     config_schema: dict
+    #: Which global planner the stack runs. Stated rather than parsed
+    #: out of ``id``: the id is a display convention, this is the fact
+    #: a report has to be able to quote.
+    global_planner: str = "astar"
+    #: True when the global planner draws random samples. Such a stack
+    #: needs more seeds to say anything, and a report that hides this
+    #: invites the reader to compare one lucky tree against A*.
+    stochastic_global_planner: bool = False
     #: This stack cannot run without a trained model chosen by a person.
     #:
     #: It used to be inferred from the config schema's ``required`` list,
@@ -145,11 +160,39 @@ class AlgorithmInfo(BaseModel):
 
 
 class _Entry(BaseModel):
+    """One registered stack.
+
+    ``config_model``/``factory`` describe the *local* planner: that is
+    the half a benchmark spec configures today. ``global_factory`` takes
+    the episode seed and returns the global planner, because a sampling
+    planner must draw a different tree per episode (see
+    ``RRTStarPlanner``); deterministic planners simply ignore it. When
+    tuning arrives (P01) it replaces the config baked into these
+    closures — the seed plumbing does not have to change again.
+    """
+
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     info: AlgorithmInfo
     config_model: type[BaseModel]
     factory: Callable[[BaseModel], LocalPlanner]
+    global_factory: Callable[[int], GlobalPlanner]
+
+
+def _astar(episode_seed: int) -> GlobalPlanner:  # noqa: ARG001 - A* ignores the seed
+    return AStarPlanner()
+
+
+def _rrtstar(episode_seed: int) -> GlobalPlanner:
+    return RRTStarPlanner(RRTStarConfig(), episode_seed=episode_seed)
+
+
+_RRT_STAR_DESCRIPTION = (
+    "RRT* global planner: samples the free space, rewires the tree towards "
+    "shorter paths, and keeps improving for its whole iteration budget. "
+    "Randomised — the tree is seeded from the episode seed, so results "
+    "must be read across many seeds, not from one run."
+)
 
 
 ALGORITHMS: dict[str, _Entry] = {
@@ -167,6 +210,7 @@ ALGORITHMS: dict[str, _Entry] = {
         ),
         config_model=DWAConfig,
         factory=lambda config: DWAPlanner(config),  # type: ignore[arg-type]
+        global_factory=_astar,
     ),
     "astar+ppo": _Entry(
         info=AlgorithmInfo(
@@ -184,6 +228,7 @@ ALGORITHMS: dict[str, _Entry] = {
         ),
         config_model=PPOStackConfig,
         factory=_build_ppo,
+        global_factory=_astar,
     ),
     "astar+pure_pursuit": _Entry(
         info=AlgorithmInfo(
@@ -199,6 +244,43 @@ ALGORITHMS: dict[str, _Entry] = {
         ),
         config_model=PurePursuitConfig,
         factory=lambda config: PurePursuitLocalPlanner(config),  # type: ignore[arg-type]
+        global_factory=_astar,
+    ),
+    "rrtstar+dwa": _Entry(
+        info=AlgorithmInfo(
+            id="rrtstar+dwa",
+            kind="stack",
+            description=(
+                _RRT_STAR_DESCRIPTION + " Paired here with the Dynamic Window "
+                "Approach controller, so it differs from astar+dwa in the "
+                "global planner alone."
+            ),
+            benchmarkable=True,
+            config_schema=DWAConfig.model_json_schema(),
+            global_planner="rrtstar",
+            stochastic_global_planner=True,
+        ),
+        config_model=DWAConfig,
+        factory=lambda config: DWAPlanner(config),  # type: ignore[arg-type]
+        global_factory=_rrtstar,
+    ),
+    "rrtstar+pure_pursuit": _Entry(
+        info=AlgorithmInfo(
+            id="rrtstar+pure_pursuit",
+            kind="reference_stack",
+            description=(
+                "RRT* global planner with a pure-pursuit follower. Temporary "
+                "pipeline reference only — it ignores sensing, so it must not "
+                "be used to draw benchmark conclusions."
+            ),
+            benchmarkable=False,
+            config_schema=PurePursuitConfig.model_json_schema(),
+            global_planner="rrtstar",
+            stochastic_global_planner=True,
+        ),
+        config_model=PurePursuitConfig,
+        factory=lambda config: PurePursuitLocalPlanner(config),  # type: ignore[arg-type]
+        global_factory=_rrtstar,
     ),
 }
 
@@ -229,3 +311,13 @@ def build_local_planner(algorithm_id: str, config: dict | None = None) -> LocalP
     """Instantiate the controller for a registered stack."""
     entry = _entry(algorithm_id)
     return entry.factory(validate_algorithm_config(algorithm_id, config))
+
+
+def build_global_planner(algorithm_id: str, *, episode_seed: int = 0) -> GlobalPlanner:
+    """Instantiate the global planner for a registered stack.
+
+    ``episode_seed`` is the seed of the episode about to run. Passing it
+    is what makes a sampling planner explore a different tree per
+    episode; a deterministic planner ignores it.
+    """
+    return _entry(algorithm_id).global_factory(episode_seed)
