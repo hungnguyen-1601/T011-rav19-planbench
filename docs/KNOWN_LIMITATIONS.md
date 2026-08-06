@@ -576,6 +576,61 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     thời gian di chuyển, trung vị hiệu quả đường đi. Clearance, độ mượt
     và latency chưa có mặt.
 
+## Hiệu chuẩn độ khó (P03)
+
+119. **Thang độ khó hiện tại lưỡng cực, gần như không có khoảng giữa.**
+    Đo thật với `astar+dwa`, 30 seed, replanning tắt (calibration
+    `1.0.0`): 5 scenario ở 0.000, 1 scenario ở 0.267
+    (`crossing_obstacle`), 4 scenario ở 1.000 (`narrow_corridor`,
+    `sudden_stop`, `bidirectional_corridor`, `dynamic_warehouse`). Dải
+    trải 0.000–1.000 nhưng **rỗng ở giữa**: hầu như không có scenario nào
+    phân biệt được hai stack đều khá. Đây là việc của Scenario Editor
+    (Đợt 2.3) — tạo scenario lấp khoảng 0.2–0.8, **không** sửa tay cache.
+    Lưu ý: biên độ (`spread`) của bộ này là 1.000, tức điểm tối đa —
+    nên `difficulty_coverage()` phải kiểm thêm `midrange_count` (số
+    scenario trong `(0.2, 0.8)`, hiện là **1**) mới thấy được vấn đề.
+
+120. **Bốn scenario baseline chưa từng giải được** nên độ khó bị ghim ở
+    1.0 và **không xếp thứ tự với nhau được**: không nói được cái nào khó
+    hơn cái nào. Vì vậy `unsolved` là một band riêng, không gộp vào
+    `hard`. Cũng có nghĩa là thang đo đang bị chặn trên bởi năng lực của
+    baseline, chứ không phải bởi bản thân scenario.
+
+121. **Curriculum order và độ khó đo được lệch nhau rõ rệt.**
+    `intersection` (vị trí 8/10 trong curriculum, được viết như một
+    scenario khó) đo ra 0.033 — dễ; `narrow_corridor` (vị trí 3) và
+    `sudden_stop` (vị trí 6) đo ra 1.000. Curriculum order là **dự định
+    của người viết** và hiện chưa được cập nhật theo số đo; hai cột nằm
+    cạnh nhau trong UI đúng để chỗ lệch này nhìn thấy được. Thứ tự
+    curriculum của PPO vẫn đang dùng bản cũ.
+
+122. **Một baseline duy nhất định nghĩa toàn bộ thang.** Độ khó là
+    `1 - success_rate(astar+dwa)`, nên nó đo "khó với A*+DWA", không phải
+    "khó nói chung". Một scenario khó với DWA có thể dễ với planner
+    khác. Muốn thang đo ít phụ thuộc một stack thì cần nhiều baseline —
+    chưa làm, và sẽ là một calibration version khác.
+
+123. **Replanning tắt trong calibration `1.0.0`.** Khi replanning được
+    triển khai (Đợt 4), phần lớn scenario 1.000 có thể tụt xuống. Lúc đó
+    phải tạo calibration version mới, **không ghi đè** cache cũ, vì hai
+    thang đo dưới hai chế độ khác nhau không so được với nhau.
+
+124. **Cache chỉ phát hiện được scenario đổi, không tự đo lại.** Entry
+    lưu `map_checksum` + `scenario_checksum`; scenario đổi thì label trả
+    về `stale=true` và UI gắn cờ, nhưng số cũ vẫn hiện cho tới khi có
+    người chạy lại script. Đổi code planner hoặc simulator thì **không**
+    bị bắt — chỉ có `git_sha` trong baseline để đối chiếu bằng mắt.
+
+125. **Độ khó chưa nối vào leaderboard, report hay biểu đồ.** Hiện chỉ
+    có ở `/scenario-library`, `/difficulty-calibration` và trang library.
+    Đường cong `success_rate(difficulty)` thuộc F09 (Đợt 3).
+
+126. **Calibration chạy trên cả scenario holdout** (3 lần "nhìn" vào tập
+    held-out, script có in cảnh báo). Không tránh được — không đo thì
+    không biết tập holdout nằm ở đâu trên thang — nhưng đây là chi phí
+    thật, và nó **chưa** được ghi vào `holdout_usage[]` của
+    `GET /generalization` vì calibration không tạo benchmark lưu trữ.
+
 ## Môi trường
 
 - Test phải chạy với `PYTHONPATH=` do shell source ROS2 Jazzy (xem

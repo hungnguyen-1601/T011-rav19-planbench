@@ -31,6 +31,64 @@ export interface LibraryEntry {
   split: ScenarioSplit;
   protocol_version: string | null;
   split_notes: string | null;
+  /** Measured difficulty (P03). Null means uncalibrated — never render
+   *  `curriculum_index` in its place; the two disagreeing is the finding. */
+  difficulty: DifficultyLabel | null;
+}
+
+/** Coarse difficulty band. `unsolved` is kept apart from `hard`: the
+ *  baseline never solved it, so it cannot be ordered against anything. */
+export type DifficultyBand = "easy" | "moderate" | "hard" | "unsolved";
+
+/** One scenario's measured difficulty against the pinned baseline. */
+export interface DifficultyLabel {
+  scenario_name: string;
+  /** `1 - success_rate(baseline)`, in [0, 1]. */
+  value: number;
+  ci95: [number, number];
+  band: DifficultyBand;
+  calibration_version: string;
+  baseline_algorithm: string;
+  seed_count: number;
+  /** False when measured over fewer seeds than the calibration minimum. */
+  adequate: boolean;
+  /** True when the scenario has changed since it was measured. */
+  stale: boolean;
+}
+
+/** Whether the calibrated scenarios span a useful range of difficulty. */
+export interface DifficultyCoverage {
+  calibration_version: string | null;
+  scenario_count: number;
+  min_difficulty: number | null;
+  max_difficulty: number | null;
+  spread: number | null;
+  band_counts: Record<string, number>;
+  /** Scenarios in the interior of the scale — the only ones that can
+   *  separate two stacks that are both competent. */
+  midrange_count: number;
+  uncalibrated: string[];
+  warnings: string[];
+}
+
+/** What the baseline was pinned to when the scale was measured. */
+export interface DifficultyBaseline {
+  algorithm: string;
+  algorithm_config: Record<string, unknown>;
+  replanning_enabled: boolean;
+  seeds: number[];
+  robot_profile: Record<string, unknown>;
+  benchmark_spec_version: string;
+  protocol_version: string | null;
+  git_sha: string;
+}
+
+export interface DifficultyCalibrationSummary {
+  calibration_version: string | null;
+  baseline: DifficultyBaseline | null;
+  scenarios: DifficultyLabel[];
+  coverage: DifficultyCoverage;
+  notes: string | null;
 }
 
 /** One metric the dev/held-out gap is computed on. */

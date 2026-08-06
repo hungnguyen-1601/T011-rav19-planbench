@@ -14,13 +14,19 @@ from planbench_api.leaderboard import Leaderboard, ScoreWeights, build_leaderboa
 from planbench_api.services import MapService, ScenarioService
 from planbench_benchmark import (
     CURRICULUM_ORDER,
+    DifficultyCoverage,
+    DifficultyLabel,
     GeneralizationSummary,
     ScenarioProtocolMetadata,
     ScenarioSplit,
     build_scenario,
+    difficulty_coverage,
+    get_difficulty,
+    load_calibration,
     protocol_version,
     scenario_protocol_metadata,
 )
+from planbench_benchmark.difficulty import BaselineSpec
 from planbench_schemas.scenario import Scenario
 
 router = APIRouter(tags=["library"])
@@ -47,6 +53,12 @@ class LibraryEntry(BaseModel):
     #: thing standing between a held-out set and "the ones we kept
     #: failing".
     split_notes: str | None = None
+    #: Measured difficulty (P03), or None when nobody has calibrated this
+    #: scenario. Null is the honest answer: ``curriculum_index`` is a
+    #: hand-written intention about ordering, and quietly serving it as a
+    #: difficulty would hide exactly the disagreement calibration exists
+    #: to expose.
+    difficulty: DifficultyLabel | None = None
 
 
 class ImportedScenario(BaseModel):
@@ -79,9 +91,49 @@ def list_library() -> list[LibraryEntry]:
                 split=protocol.split,
                 protocol_version=protocol.protocol_version,
                 split_notes=protocol.notes,
+                difficulty=get_difficulty(name),
             )
         )
     return entries
+
+
+class DifficultyCalibrationSummary(BaseModel):
+    """The measured difficulty scale, plus how well it covers the range.
+
+    Read-only, like the protocol endpoint and for the same reason: these
+    numbers are produced by ``scripts/calibrate_difficulty.py`` and are
+    reproducible from it. A difficulty that can be set from a form is not
+    a measurement.
+    """
+
+    calibration_version: str | None = None
+    baseline: BaselineSpec | None = None
+    #: One label per built-in scenario, in curriculum order. Entries the
+    #: cache does not cover are simply absent — see ``coverage.uncalibrated``.
+    scenarios: list[DifficultyLabel] = []
+    coverage: DifficultyCoverage
+    notes: str | None = None
+
+
+@router.get("/difficulty-calibration", response_model=DifficultyCalibrationSummary)
+def difficulty_calibration() -> DifficultyCalibrationSummary:
+    """Measured scenario difficulty against the pinned baseline (P03).
+
+    Returns an empty scale rather than an error when nothing has been
+    calibrated: "not measured" is a normal state of the platform, and the
+    coverage warnings say so in words.
+    """
+    calibration = load_calibration()
+    labels = [
+        label for label in (get_difficulty(name) for name in CURRICULUM_ORDER) if label is not None
+    ]
+    return DifficultyCalibrationSummary(
+        calibration_version=calibration.calibration_version if calibration else None,
+        baseline=calibration.baseline if calibration else None,
+        scenarios=labels,
+        coverage=difficulty_coverage(),
+        notes=calibration.notes if calibration else None,
+    )
 
 
 @router.get("/scenario-protocol", response_model=list[ScenarioProtocolMetadata])

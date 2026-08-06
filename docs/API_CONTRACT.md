@@ -250,6 +250,56 @@ version, và chỉ đổi qua review + deploy — không có endpoint ghi.
   không làm nó lấn át các scenario còn lại.
 - `accepted_only` mặc định `true`, giống leaderboard.
 
+### P03 — độ khó đo được
+
+```text
+difficulty(scenario) = 1 - success_rate(baseline đã ghim, seed cố định)
+```
+
+Độ khó **không** nằm trong `Scenario` và **không** vào
+`conditions_checksum` — nó là kết quả đo, không phải đặc tính của
+scenario. Nguồn sự thật là
+`packages/benchmark/planbench_benchmark/difficulty_calibration.json`, do
+`scripts/calibrate_difficulty.py` sinh ra và **không có endpoint ghi**.
+
+| Method | Path | Mô tả |
+|---|---|---|
+| GET | /difficulty-calibration | Thang độ khó đang cài + baseline + báo cáo dải difficulty. |
+
+`GET /scenario-library` mỗi entry thêm `difficulty`:
+`DifficultyLabel | null`. `null` nghĩa là **chưa đo** — không được thay
+bằng `curriculum_index`, vì đó là dự định của người viết, còn cái này là
+số đo, và việc hai thứ lệch nhau chính là điều cần thấy.
+
+`DifficultyLabel`:
+
+- `value` — độ khó trong `[0, 1]`; `ci95` — khoảng Wilson của chính độ
+  khó (lấy gương từ khoảng của success rate).
+- `band` — `easy ≤ 0.2 < moderate ≤ 0.6 < hard ≤ 0.999 < unsolved`.
+  `unsolved` tách riêng khỏi `hard`: baseline chưa từng giải được, nên
+  không xếp thứ tự với nhau được.
+- `calibration_version`, `baseline_algorithm`, `seed_count`.
+- `adequate = false` khi đo trên ít hơn 30 seed (số liệu tạm).
+- `stale = true` khi scenario đã đổi so với lúc đo. Vẫn trả số, có cờ —
+  ẩn đi sẽ thành ô trống, mà ô trống nghĩa là "chưa đo", một vấn đề
+  khác hẳn.
+
+`GET /difficulty-calibration` trả `DifficultyCalibrationSummary`:
+
+- `baseline` — thuật toán, config, `replanning_enabled`, danh sách seed,
+  robot profile, `benchmark_spec_version`, `protocol_version`,
+  `git_sha`. Ghi tên `astar+dwa` không là baseline: cùng stack trên robot
+  khác, seed khác hay commit khác là một thang đo khác.
+- `scenarios[]` — `DifficultyLabel` theo thứ tự curriculum.
+- `coverage` — `min/max/spread`, `band_counts`, `midrange_count`,
+  `uncalibrated[]` và `warnings[]` (dải quá hẹp, **rỗng ở khoảng giữa**,
+  toàn dễ, toàn khó, có scenario chưa từng giải được, ít seed).
+  `midrange_count` là số scenario nằm trong `(0.2, 0.8)` — tách riêng
+  khỏi `spread` vì một bộ scenario dồn hết về 0.0 và 1.0 đạt `spread`
+  tối đa mà vẫn không phân biệt được stack nào với stack nào.
+- Chưa hiệu chuẩn thì trả `200` với thang rỗng + cảnh báo, **không phải
+  lỗi**: "chưa đo" là một trạng thái bình thường.
+
 ## Episodes (M4)
 
 | Method | Path | Mô tả |
