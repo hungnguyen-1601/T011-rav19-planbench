@@ -169,10 +169,86 @@ registry sau này không dán nhãn khác lên số đã đo. Report lưu trư�
 không có ba trường này (`null` = không rõ, **không** mặc định là
 `lidar_only`).
 
+**Thống kê P04.** Mỗi `aggregate` có thêm, bên cạnh các trường `mean_*`
+cũ (giữ nguyên, đánh dấu deprecated trong docstring):
+
+| Trường | Ý nghĩa |
+|---|---|
+| `median_*_successful` | Trung vị trên episode thành công. Đây là số nên trích dẫn. |
+| `iqr_*_successful` | `[q1, q3]` — nửa giữa các lần chạy rơi vào khoảng nào. |
+| `ci95_*_successful` | Bootstrap percentile 1000 lần cho trung vị, seed cố định = 0 nên tái lập được. |
+| `ci95_success_rate` | Khoảng Wilson cho tỉ lệ thành công (chính xác, không cần seed). |
+
+Cả bốn đều nullable: stack không có episode thành công nào thì không có
+phân phối để mô tả, 1 episode thành công thì có trung vị nhưng không có
+khoảng tin cậy. `null` nghĩa là **không tính được**, không phải 0.
+
+`report` thêm:
+
+- `comparisons[]` — `PairwiseComparison`: `{algorithm_a, algorithm_b,
+  metric, statistic, p_value, effect_size, significant,
+  paired_seed_count, warning}`. Wilcoxon signed-rank **ghép cặp theo
+  seed**; seed nào có stack không về đích thì không có `travel_time` nên
+  bị loại, và số cặp còn lại đi kèm kết quả. Dưới 5 cặp thì không chạy
+  kiểm định (`statistic`/`p_value`/`effect_size` = `null`) chứ không trả
+  một p-value vô nghĩa. `effect_size` là Cliff's delta của A so với B.
+- `seed_count`, `statistically_adequate` — computed field, suy ra từ
+  `spec.seeds` nên report cũ cũng có. `statistically_adequate=false`
+  (dưới 30 seed) **không chặn gì**; nó nói kết quả là chỉ dấu đáng điều
+  tra, không phải kết luận.
+
 `GET /leaderboard` nhóm theo `conditions_checksum` **và**
 `local_observation_class`. Query `group_by_observation_class` (mặc định
 `true`) tắt việc tách nhóm; nhóm bị trộn trả về kèm
 `cross_observation_class_warning=true`.
+
+### P05 — tập held-out và chênh lệch tổng quát hóa
+
+`report` thêm ba trường:
+
+- `scenario_split` — `"dev" | "holdout" | "unassigned"`. **Snapshot lúc
+  chạy**, không phải tra lại lúc đọc: đổi phân loại của một scenario
+  hôm nay không được biến số liệu hôm qua thành số liệu holdout.
+- `protocol_version` — phiên bản giao thức lúc chạy. `null` trên report
+  ghi trước P05, và những report đó đọc ra `scenario_split="unassigned"`
+  — đúng, vì lúc đó chưa ai phân loại gì.
+- `generalization_gap` — **luôn `null` hiện nay**: một benchmark chạy
+  đúng một scenario nên toàn bộ report thuộc một split, không có gì để
+  trừ. Chênh lệch được tính **giữa các report** ở `GET /generalization`.
+  Trường này để sẵn cho benchmark nhiều scenario sau này.
+
+Split **không** nằm trong `Scenario` và **không** vào
+`conditions_checksum`. Nguồn sự thật là
+`packages/benchmark/planbench_benchmark/scenario_protocol.json`, có
+version, và chỉ đổi qua review + deploy — không có endpoint ghi.
+
+| Method | Path | Mô tả |
+|---|---|---|
+| GET | /scenario-protocol | Phân loại dev/holdout của scenario; `?scenario_name=` tra một cái. Scenario không có trong file trả `unassigned`. |
+| GET | /generalization | Chênh lệch dev − holdout theo từng stack + nhật ký dùng holdout. |
+
+`GET /scenario-library` mỗi entry thêm `split`, `protocol_version`,
+`split_notes`.
+
+`GET /generalization` trả `GeneralizationSummary`:
+
+- `entries[]` — mỗi stack: `dev`, `holdout` (`SplitSummary`: scenario
+  đóng góp, số report, số episode, metric trung bình, cờ đủ seed),
+  `gap` (`dev − holdout` theo metric) và `warnings[]`.
+- `metrics[]` — `{name, higher_is_better}`. Dấu của `gap` **không tự
+  đọc được**: `+` nghĩa là dev cao hơn, còn như thế là tốt hay xấu do
+  `higher_is_better` quyết định.
+- `gap = null` khi thiếu một phía. `null` là **không tính được**, không
+  phải "không có chênh lệch".
+- Scenario `unassigned` bị **loại và đếm** (`unassigned_report_count`),
+  không gộp vào dev.
+- `holdout_usage[]` — mọi benchmark từng chạy scenario holdout
+  (`benchmark_id`, tên, scenario, số seed, thời điểm kết thúc). Tập
+  held-out mất giá trị vì bị xem nhiều lần; đây là con số để đối chiếu.
+- Scenario có trọng số **bằng nhau**: trung bình trong từng scenario
+  trước, rồi mới trung bình qua các scenario — chạy một scenario 10 lần
+  không làm nó lấn át các scenario còn lại.
+- `accepted_only` mặc định `true`, giống leaderboard.
 
 ## Episodes (M4)
 

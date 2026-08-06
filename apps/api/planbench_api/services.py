@@ -444,6 +444,12 @@ class BenchmarkService:
                     "benchmark_id": benchmark_id,
                     "episodes": len(report.runs),
                     "conditions_checksum": report.fairness.conditions_checksum,
+                    # P05: every look at a held-out scenario is recorded.
+                    # A held-out set erodes by being consulted, and that
+                    # erosion is only auditable if each consultation left
+                    # a trace.
+                    "scenario_split": report.scenario_split,
+                    "protocol_version": report.protocol_version,
                 }
             },
         )

@@ -347,6 +347,13 @@ class ChatService:
                 "collision_rate": aggregate.collision_rate,
                 "timeout_rate": aggregate.timeout_rate,
                 "mean_travel_time": aggregate.mean_travel_time_successful,
+                # The median and its interval travel with the mean so a
+                # generated summary can quote the robust number; leaving
+                # only the mean here would push every written report
+                # towards the figure one stalled episode can dominate.
+                "median_travel_time": aggregate.median_travel_time_successful,
+                "ci95_travel_time": aggregate.ci95_travel_time_successful,
+                "ci95_success_rate": aggregate.ci95_success_rate,
                 "worst_min_clearance": aggregate.worst_min_clearance,
                 "mean_latency": aggregate.mean_local_planning_latency,
             }
@@ -358,6 +365,14 @@ class ChatService:
             "state": stored.state.value,
             "conditions_checksum": stored.report.fairness.conditions_checksum,
             "aggregates": aggregates,
+            # Seed adequacy and the paired tests are part of the figures,
+            # not a footnote: a card that shows only success rates invites
+            # "A beat B" from a five-seed run.
+            "seed_count": stored.report.seed_count,
+            "statistically_adequate": stored.report.statistically_adequate,
+            "comparisons": [
+                comparison.model_dump(mode="json") for comparison in stored.report.comparisons
+            ],
         }
 
     def latest_finished_id(self) -> str:

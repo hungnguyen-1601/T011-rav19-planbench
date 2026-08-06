@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
 import { Scene25D } from "@/components/Scene25D";
+import { SplitBadge } from "@/components/SplitBadge";
 import { authFetch, useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import type { ImportedScenario, LibraryEntry } from "@/lib/platformTypes";
@@ -90,6 +91,7 @@ export default function LibraryPage() {
             <tr>
               <th>{t("library.difficulty")}</th>
               <th>{t("common.scenario")}</th>
+              <th title={t("protocol.splitHint")}>{t("protocol.split")}</th>
               <th>{t("algorithms.description")}</th>
               <th>{t("maps.size")}</th>
               <th>{t("library.obstacles")}</th>
@@ -103,6 +105,9 @@ export default function LibraryPage() {
                 <td className="muted">{entry.curriculum_index}</td>
                 <td>
                   <code>{entry.name}</code>
+                </td>
+                <td>
+                  <SplitBadge split={entry.split} notes={entry.split_notes} />
                 </td>
                 <td>{entry.description}</td>
                 <td className="muted">

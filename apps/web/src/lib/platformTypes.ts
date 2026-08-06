@@ -5,6 +5,21 @@ import type { ObservationClass } from "./benchmarkTypes";
 
 export type { ObservationClass };
 
+/** Evaluation-protocol status of a scenario (P05).
+ *
+ *  `unassigned` is a real answer, not a missing one: a scenario nobody
+ *  has classified — anything created in the app — supports no claim
+ *  about generalization, and must never be shown as `dev`. */
+export type ScenarioSplit = "dev" | "holdout" | "unassigned";
+
+export interface ScenarioProtocolMetadata {
+  scenario_name: string;
+  split: ScenarioSplit;
+  protocol_version: string;
+  /** Why the scenario sits where it does. */
+  notes: string | null;
+}
+
 export interface LibraryEntry {
   name: string;
   description: string;
@@ -12,6 +27,57 @@ export interface LibraryEntry {
   dynamic_obstacles: number;
   map_size_m: [number, number];
   timeout_seconds: number;
+  /** Protocol status; see `ScenarioSplit`. */
+  split: ScenarioSplit;
+  protocol_version: string | null;
+  split_notes: string | null;
+}
+
+/** One metric the dev/held-out gap is computed on. */
+export interface GapMetric {
+  name: string;
+  /** The gap is always `dev - holdout`; this says which sign is bad. */
+  higher_is_better: boolean;
+}
+
+export interface SplitSummary {
+  split: ScenarioSplit;
+  scenarios: string[];
+  report_count: number;
+  episodes: number;
+  metrics: Record<string, number>;
+  metric_scenario_counts: Record<string, number>;
+  statistically_adequate: boolean;
+}
+
+export interface GeneralizationEntry {
+  algorithm: string;
+  dev: SplitSummary | null;
+  holdout: SplitSummary | null;
+  /** `dev - holdout` per metric; null when either side is missing. */
+  gap: Record<string, number> | null;
+  warnings: string[];
+}
+
+export interface HoldoutUse {
+  benchmark_id: string | null;
+  benchmark_name: string;
+  scenario_name: string;
+  algorithms: string[];
+  seed_count: number;
+  finished_at: string | null;
+}
+
+export interface GeneralizationSummary {
+  entries: GeneralizationEntry[];
+  metrics: GapMetric[];
+  protocol_versions: string[];
+  dev_scenarios: string[];
+  holdout_scenarios: string[];
+  unassigned_report_count: number;
+  /** Every recorded look at a held-out scenario. */
+  holdout_usage: HoldoutUse[];
+  warnings: string[];
 }
 
 export interface ImportedScenario {

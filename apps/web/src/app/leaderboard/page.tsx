@@ -18,7 +18,12 @@ import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
 import { authFetch, useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
-import type { Leaderboard, LeaderboardEntry, LeaderboardGroup } from "@/lib/platformTypes";
+import type {
+  GeneralizationSummary,
+  Leaderboard,
+  LeaderboardEntry,
+  LeaderboardGroup,
+} from "@/lib/platformTypes";
 
 const DEFAULT_WEIGHTS = { success: 0.4, safety: 0.3, efficiency: 0.2, smoothness: 0.1 };
 
@@ -26,6 +31,7 @@ export default function LeaderboardPage() {
   const { t } = useTranslation();
   const session = useSession();
   const [board, setBoard] = useState<Leaderboard | null>(null);
+  const [generalization, setGeneralization] = useState<GeneralizationSummary | null>(null);
   const [weights, setWeights] = useState(DEFAULT_WEIGHTS);
   const [acceptedOnly, setAcceptedOnly] = useState(true);
   const [groupByObservation, setGroupByObservation] = useState(true);
@@ -46,6 +52,15 @@ export default function LeaderboardPage() {
       });
       if (scenario) query.set("scenario_name", scenario);
       setBoard(await authFetch<Leaderboard>(`/leaderboard?${query}`));
+      // The gap follows the same acceptance rule as the ranking, and
+      // ignores the scenario filter: it is a statement about dev against
+      // held-out scenarios, so narrowing it to one scenario would be a
+      // different question with the same name.
+      setGeneralization(
+        await authFetch<GeneralizationSummary>(
+          `/generalization?accepted_only=${String(acceptedOnly)}`,
+        ),
+      );
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -142,7 +157,102 @@ export default function LeaderboardPage() {
       ) : null}
 
       {board?.groups.map((group) => <GroupTable key={group.conditions_checksum} group={group} />)}
+
+      {generalization && generalization.entries.length > 0 ? (
+        <GeneralizationPanel summary={generalization} />
+      ) : null}
     </>
+  );
+}
+
+/** Dev against held-out results (P05).
+ *
+ * Deliberately plain: every cell is a number with the scenarios behind
+ * it named, and a stack with only one side gets "not computable" rather
+ * than a zero. The charts land in F09; what must exist first is a place
+ * where a missing held-out result is visible as missing.
+ */
+function GeneralizationPanel({ summary }: { summary: GeneralizationSummary }) {
+  const { t } = useTranslation();
+  return (
+    <div className="panel">
+      <h3>{t("generalization.title")}</h3>
+      <p className="muted" style={{ fontSize: 12 }}>
+        {t("generalization.hint")}
+      </p>
+      {summary.warnings.map((warning) => (
+        <div className="notice" key={warning}>
+          {warning}
+        </div>
+      ))}
+      <div className="table-scroll wide">
+        <table>
+          <thead>
+            <tr>
+              <th>{t("algorithms.stack")}</th>
+              <th>{t("detail.metric")}</th>
+              <th>{t("generalization.dev")}</th>
+              <th>{t("generalization.holdout")}</th>
+              <th>{t("generalization.gap")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {summary.entries.flatMap((entry) =>
+              summary.metrics.map((metric) => {
+                const dev = entry.dev?.metrics[metric.name];
+                const holdout = entry.holdout?.metrics[metric.name];
+                const gap = entry.gap?.[metric.name];
+                // A positive gap means dev scored higher. Whether that is
+                // a degradation depends on the metric's direction, which
+                // the backend states rather than the UI assuming.
+                const worse =
+                  gap === undefined ? null : metric.higher_is_better ? gap > 0 : gap < 0;
+                return (
+                  <tr key={`${entry.algorithm}-${metric.name}`}>
+                    <td>
+                      <code>{entry.algorithm}</code>
+                    </td>
+                    <td className="muted">{metric.name}</td>
+                    <td title={entry.dev?.scenarios.join(", ")}>{fmt(dev ?? null, 3)}</td>
+                    <td title={entry.holdout?.scenarios.join(", ")}>{fmt(holdout ?? null, 3)}</td>
+                    <td>
+                      {gap === undefined ? (
+                        <span className="muted">{t("generalization.noGap")}</span>
+                      ) : (
+                        <span
+                          className={worse ? "badge warn" : "badge ok"}
+                          title={
+                            worse
+                              ? t("generalization.worseOnHoldout")
+                              : t("generalization.betterOnHoldout")
+                          }
+                        >
+                          {gap > 0 ? "+" : ""}
+                          {gap.toFixed(3)}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              }),
+            )}
+          </tbody>
+        </table>
+      </div>
+      {summary.entries.map((entry) =>
+        entry.warnings.map((warning) => (
+          <p className="muted" key={`${entry.algorithm}-${warning}`} style={{ fontSize: 12 }}>
+            <code>{entry.algorithm}</code> — {warning}
+          </p>
+        )),
+      )}
+      {summary.holdout_usage.length > 0 ? (
+        <p className="muted" style={{ fontSize: 12 }} title={t("generalization.holdoutUsageHint")}>
+          {t("generalization.holdoutUsage")}: {summary.holdout_usage.length} —{" "}
+          {summary.holdout_usage.map((use) => use.scenario_name).join(", ")}
+        </p>
+      ) : null}
+    </div>
   );
 }
 

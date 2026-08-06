@@ -6,11 +6,13 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
 import { Icon } from "@/components/Icon";
+import { SplitBadge } from "@/components/SplitBadge";
 import { StateBadge } from "@/components/StateBadge";
 import { authFetch, useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import { listModels, type ModelSummary } from "@/lib/models";
 import type { AlgorithmInfo, BenchmarkResource } from "@/lib/benchmarkTypes";
+import type { ScenarioProtocolMetadata, ScenarioSplit } from "@/lib/platformTypes";
 import type { MapSummary, ScenarioResource } from "@/lib/types";
 
 export default function BenchmarksPage() {
@@ -33,10 +35,15 @@ export default function BenchmarksPage() {
   const [models, setModels] = useState<ModelSummary[]>([]);
   const [modelId, setModelId] = useState("");
   const [seedText, setSeedText] = useState("1,2,3");
+  // P05: which scenarios are held out. Resolved by scenario *name*,
+  // because the split belongs to the evaluation protocol and not to the
+  // stored scenario row — two imports of `intersection` are two rows and
+  // one held-out scenario.
+  const [splits, setSplits] = useState<Record<string, ScenarioSplit>>({});
 
   const refresh = useCallback(async () => {
     try {
-      const [list, algorithmList, mapList, scenarioList, modelList] = await Promise.all([
+      const [list, algorithmList, mapList, scenarioList, modelList, protocol] = await Promise.all([
         authFetch<BenchmarkResource[]>("/benchmarks"),
         authFetch<AlgorithmInfo[]>("/algorithms"),
         authFetch<MapSummary[]>("/maps"),
@@ -44,12 +51,19 @@ export default function BenchmarksPage() {
         // usable_only: a model that is disabled or failed validation
         // would be refused at launch, so it is never offered here.
         listModels(true),
+        authFetch<ScenarioProtocolMetadata[]>("/scenario-protocol"),
       ]);
       setBenchmarks(list);
       setAlgorithms(algorithmList);
       setMaps(mapList);
       setScenarios(scenarioList);
       setModels(modelList);
+      setSplits(
+        Object.fromEntries(protocol.map((row) => [row.scenario_name, row.split])) as Record<
+          string,
+          ScenarioSplit
+        >,
+      );
       if (!modelId && modelList.length > 0) setModelId(modelList[0].id);
       if (!mapId && mapList.length > 0) setMapId(mapList[0].id);
       if (!scenarioId && scenarioList.length > 0) setScenarioId(scenarioList[0].id);
@@ -123,6 +137,11 @@ export default function BenchmarksPage() {
   // Creating a benchmark needs an account and nothing else.
   const isMember = Boolean(session);
 
+  const selectedScenario = scenarios.find((item) => item.id === scenarioId);
+  const selectedSplit: ScenarioSplit = selectedScenario
+    ? (splits[selectedScenario.scenario.name] ?? "unassigned")
+    : "unassigned";
+
   return (
     <>
       <div className="page-head">
@@ -160,6 +179,11 @@ export default function BenchmarksPage() {
                   </option>
                 ))}
               </select>
+              {selectedScenario ? (
+                <span style={{ marginTop: 6 }}>
+                  <SplitBadge split={selectedSplit} />
+                </span>
+              ) : null}
             </label>
             <label className="field">
               {t("benchmarks.seedsLabel")}
@@ -181,6 +205,15 @@ export default function BenchmarksPage() {
               {busy ? t("benchmarks.creating") : t("benchmarks.createDraft")}
             </button>
           </div>
+          {selectedSplit === "holdout" && selectedScenario ? (
+            // Warn before the run, not after: the cost of consulting a
+            // held-out scenario is paid the moment the result is seen.
+            // It does not block — a held-out set exists to be used once —
+            // but nobody gets to use it without being told what it is.
+            <div className="notice" style={{ marginTop: 12 }}>
+              {t("protocol.holdoutWarning", { scenario: selectedScenario.scenario.name })}
+            </div>
+          ) : null}
           <div style={{ marginTop: 12 }}>
             <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
               {t("benchmarks.stacksUnderTest")}

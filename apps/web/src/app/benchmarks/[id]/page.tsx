@@ -14,11 +14,13 @@ import { JobProgress } from "@/components/JobProgress";
 import { MapCanvas } from "@/components/MapCanvas";
 import { Scene25D } from "@/components/Scene25D";
 import { SendForReview } from "@/components/SendForReview";
+import { SplitBadge } from "@/components/SplitBadge";
 import { StateBadge } from "@/components/StateBadge";
 import { authFetch, useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import { cancelReview, canAcceptResult, canRun, pendingFor, type ReviewStage } from "@/lib/reviews";
 import type {
+  BenchmarkReport,
   BenchmarkResults,
   EpisodeReplay,
   EpisodeSummary,
@@ -29,6 +31,27 @@ import type { MapResource, ScenarioResource } from "@/lib/types";
 function fmt(value: number | null | undefined, digits = 2, suffix = ""): string {
   if (value === null || value === undefined) return "—";
   return `${value.toFixed(digits)}${suffix}`;
+}
+
+/** Tooltip text for a cell whose headline number is a median.
+ *
+ *  The spread lives in the title rather than the cell because a table
+ *  with three numbers per cell stops being readable — but it has to be
+ *  reachable, or the median alone implies a precision the runs do not
+ *  have. */
+function spreadTitle(
+  iqr: [number, number] | null,
+  ci: [number, number] | null,
+  digits: number,
+): string {
+  const parts: string[] = [];
+  if (iqr) parts.push(`IQR ${iqr[0].toFixed(digits)}–${iqr[1].toFixed(digits)}`);
+  if (ci) parts.push(`CI95 ${ci[0].toFixed(digits)}–${ci[1].toFixed(digits)}`);
+  return parts.join(" · ");
+}
+
+function ciTitle(ci: [number, number] | null, digits: number): string {
+  return ci ? `CI95 ${ci[0].toFixed(digits)}–${ci[1].toFixed(digits)}` : "";
 }
 
 export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -364,6 +387,12 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
             <p className="muted" style={{ fontSize: 12 }}>
               {t("detail.fairnessHint")}
             </p>
+            {results.report.scenario_split === "holdout" ? (
+              <div className="notice">{t("protocol.holdoutBenchmarkNotice")}</div>
+            ) : null}
+            {results.report.scenario_split === "unassigned" ? (
+              <div className="notice">{t("protocol.unassignedBenchmarkNotice")}</div>
+            ) : null}
             <table>
               <tbody>
                 <tr>
@@ -381,6 +410,21 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
                 <tr>
                   <td className="muted">{t("common.seeds")}</td>
                   <td>{results.report.fairness.seeds.join(", ")}</td>
+                </tr>
+                <tr>
+                  {/* P05 snapshot: the split as it was when this ran, not
+                      as it is today. Shown beside the checksum because it
+                      is the same kind of fact — what this result is
+                      allowed to be compared with. */}
+                  <td className="muted">{t("protocol.split")}</td>
+                  <td>
+                    <SplitBadge split={results.report.scenario_split} />
+                    {results.report.protocol_version ? (
+                      <span className="muted" style={{ marginLeft: 8, fontSize: 12 }}>
+                        {t("protocol.version")} {results.report.protocol_version}
+                      </span>
+                    ) : null}
+                  </td>
                 </tr>
                 <tr>
                   <td className="muted">{t("detail.timeoutDt")}</td>
@@ -409,9 +453,9 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
                     <th>{t("detail.success")}</th>
                     <th>{t("detail.collision")}</th>
                     <th>{t("detail.timeout")}</th>
-                    <th>{t("detail.travelOk")}</th>
-                    <th>{t("detail.efficiency")}</th>
-                    <th>{t("detail.smoothness")}</th>
+                    <th title={t("detail.medianHint")}>{t("detail.travelOk")}</th>
+                    <th title={t("detail.medianHint")}>{t("detail.efficiency")}</th>
+                    <th title={t("detail.medianHint")}>{t("detail.smoothness")}</th>
                     <th>{t("detail.clearance")}</th>
                     <th>{t("detail.latency")}</th>
                   </tr>
@@ -421,12 +465,42 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
                     <tr key={aggregate.algorithm}>
                       <td>{aggregate.algorithm}</td>
                       <td>{aggregate.episodes}</td>
-                      <td>{(aggregate.success_rate * 100).toFixed(0)}%</td>
+                      <td title={ciTitle(aggregate.ci95_success_rate, 3)}>
+                        {(aggregate.success_rate * 100).toFixed(0)}%
+                      </td>
                       <td>{(aggregate.collision_rate * 100).toFixed(0)}%</td>
                       <td>{(aggregate.timeout_rate * 100).toFixed(0)}%</td>
-                      <td>{fmt(aggregate.mean_travel_time_successful, 2, " s")}</td>
-                      <td>{fmt(aggregate.mean_path_efficiency_successful, 3)}</td>
-                      <td>{fmt(aggregate.mean_smoothness_successful, 3)}</td>
+                      {/* Median, not mean: one episode that dithered until
+                       *  the timeout would drag a mean past anything that
+                       *  actually happened. Spread and interval are in the
+                       *  cell title so the table stays readable. */}
+                      <td
+                        title={spreadTitle(
+                          aggregate.iqr_travel_time_successful,
+                          aggregate.ci95_travel_time_successful,
+                          2,
+                        )}
+                      >
+                        {fmt(aggregate.median_travel_time_successful, 2, " s")}
+                      </td>
+                      <td
+                        title={spreadTitle(
+                          aggregate.iqr_path_efficiency_successful,
+                          aggregate.ci95_path_efficiency_successful,
+                          3,
+                        )}
+                      >
+                        {fmt(aggregate.median_path_efficiency_successful, 3)}
+                      </td>
+                      <td
+                        title={spreadTitle(
+                          aggregate.iqr_smoothness_successful,
+                          aggregate.ci95_smoothness_successful,
+                          3,
+                        )}
+                      >
+                        {fmt(aggregate.median_smoothness_successful, 3)}
+                      </td>
                       <td>{fmt(aggregate.worst_min_clearance, 3, " m")}</td>
                       <td>{fmt((aggregate.mean_local_planning_latency ?? 0) * 1000, 1, " ms")}</td>
                     </tr>
@@ -437,7 +511,12 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
             <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
               {t("detail.comparisonHint")}
             </p>
+            <p className="muted" style={{ fontSize: 12 }}>
+              {t("detail.medianHint")}
+            </p>
           </div>
+
+          <StatisticsPanel report={results.report} />
 
           <div className="panel">
             <h3>
@@ -571,5 +650,79 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
         </div>
       ) : null}
     </>
+  );
+}
+
+/** Head-to-head tests (P04), with the caveats attached to each row.
+ *
+ *  Deliberately not a verdict. Every row shows the paired seed count and
+ *  its own warning, and the panel refuses to call a result significant
+ *  when the benchmark did not run enough seeds to say so — the p-value
+ *  is still printed, because hiding it would be its own distortion, but
+ *  it is printed next to the reason not to lean on it. */
+function StatisticsPanel({ report }: { report: BenchmarkReport }) {
+  const { t } = useTranslation();
+  if (report.comparisons.length === 0) return null;
+  return (
+    <div className="panel">
+      <h3>{t("detail.statistics")}</h3>
+      <p className="muted" style={{ fontSize: 12 }}>
+        {t("detail.statisticsHint")}
+      </p>
+      {!report.statistically_adequate ? (
+        <div className="error-box">
+          {t("detail.fewSeedsWarning", { seeds: report.seed_count })}
+        </div>
+      ) : null}
+      <div className="table-scroll wide">
+        <table>
+          <thead>
+            <tr>
+              <th>{t("detail.pair")}</th>
+              <th>{t("detail.metric")}</th>
+              <th>{t("detail.pairedSeeds")}</th>
+              <th>{t("detail.pValue")}</th>
+              <th title={t("detail.effectSizeHint")}>{t("detail.effectSize")}</th>
+              <th>{t("detail.verdict")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.comparisons.map((comparison) => (
+              <tr key={`${comparison.algorithm_a}-${comparison.algorithm_b}-${comparison.metric}`}>
+                <td>
+                  <code>{comparison.algorithm_a}</code> vs{" "}
+                  <code>{comparison.algorithm_b}</code>
+                </td>
+                <td>{comparison.metric}</td>
+                <td>{comparison.paired_seed_count}</td>
+                <td>{comparison.p_value === null ? "—" : comparison.p_value.toFixed(4)}</td>
+                <td>{fmt(comparison.effect_size, 3)}</td>
+                <td>
+                  {comparison.p_value === null
+                    ? t("detail.noTest")
+                    : comparison.significant && report.statistically_adequate
+                      ? t("detail.differenceFound")
+                      : t("detail.noConclusion")}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {report.comparisons
+        .filter((comparison) => comparison.warning)
+        .map((comparison) => (
+          <p
+            key={`${comparison.algorithm_a}-${comparison.algorithm_b}-warning`}
+            className="muted"
+            style={{ fontSize: 12 }}
+          >
+            <code>{comparison.algorithm_b}</code>: {comparison.warning}
+          </p>
+        ))}
+      <p className="muted" style={{ fontSize: 12 }}>
+        {t("detail.noStrongClaim")}
+      </p>
+    </div>
   );
 }

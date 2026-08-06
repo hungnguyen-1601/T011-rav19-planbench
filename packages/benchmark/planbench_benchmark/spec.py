@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from planbench_benchmark.observation import ObservationClass
+from planbench_benchmark.scenario_protocol import ScenarioSplit
 from planbench_metrics import EpisodeMetrics
+from planbench_metrics.statistics import statistically_adequate as _statistically_adequate
 from planbench_schemas.episode import EpisodeStatus
 from planbench_schemas.map import MapData
 from planbench_schemas.scenario import Scenario
@@ -139,10 +141,18 @@ class RunRecord(BaseModel):
 class AlgorithmAggregate(BaseModel):
     """Aggregate over all seeds for one algorithm.
 
-    Rates are over *all* episodes. Means marked ``_successful`` use only
+    Rates are over *all* episodes. Values marked ``_successful`` use only
     successful episodes, because travel time and path efficiency are
     undefined for a robot that never arrived — mixing them would reward
     fast failures.
+
+    Read the medians, not the means (P04). Per-seed benchmark numbers are
+    skewed: one episode where the robot dithers until the timeout drags
+    the mean past anything that actually happened, while the median plus
+    its interquartile range says what a typical run looked like and how
+    much the runs disagreed. The ``mean_*`` fields are kept because
+    stored reports and existing clients read them, and removing a field
+    breaks both; they are deprecated, not maintained as the answer.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -155,9 +165,13 @@ class AlgorithmAggregate(BaseModel):
     stuck_rate: float
     no_progress_rate: float
     no_global_path_rate: float
+    #: Deprecated in favour of ``median_travel_time_successful``. Still
+    #: returned, still computed; not the number to quote.
     mean_travel_time_successful: float | None = None
     mean_trajectory_length_successful: float | None = None
+    #: Deprecated in favour of ``median_path_efficiency_successful``.
     mean_path_efficiency_successful: float | None = None
+    #: Deprecated in favour of ``median_smoothness_successful``.
     mean_smoothness_successful: float | None = None
     mean_min_clearance: float | None = None
     worst_min_clearance: float | None = None
@@ -177,6 +191,70 @@ class AlgorithmAggregate(BaseModel):
     local_observation_class: ObservationClass | None = None
     requires_global_path: bool | None = None
 
+    #: Robust summaries (P04). ``iqr_*`` is ``(q1, q3)`` — the range the
+    #: middle half of the runs fell in — and ``ci95_*`` is a percentile
+    #: bootstrap interval for the median itself. The two answer different
+    #: questions: the IQR is how much the runs varied, the CI is how well
+    #: this many seeds pin the median down. A report that shows one
+    #: without the other invites the reader to mistake a tight estimate
+    #: of a wildly varying quantity for a consistent algorithm.
+    #:
+    #: All optional: a stack that never succeeded has no distribution to
+    #: describe, a single success has no interval, and reports written
+    #: before P04 have none of these. ``None`` means "not computed", and
+    #: must be displayed as such rather than as zero.
+    median_travel_time_successful: float | None = None
+    iqr_travel_time_successful: tuple[float, float] | None = None
+    ci95_travel_time_successful: tuple[float, float] | None = None
+    median_path_efficiency_successful: float | None = None
+    iqr_path_efficiency_successful: tuple[float, float] | None = None
+    ci95_path_efficiency_successful: tuple[float, float] | None = None
+    median_smoothness_successful: float | None = None
+    iqr_smoothness_successful: tuple[float, float] | None = None
+    ci95_smoothness_successful: tuple[float, float] | None = None
+    #: Wilson score interval for the success rate. Exact rather than
+    #: bootstrapped, so it needs no seed and stays inside [0, 1] at the
+    #: extremes — where a success rate usually sits, and where a naive
+    #: interval would report certainty nobody has after five episodes.
+    ci95_success_rate: tuple[float, float] | None = None
+
+
+class PairwiseComparison(BaseModel):
+    """One head-to-head result, with everything needed to discount it.
+
+    Lives in the contract module rather than beside the code that builds
+    it (``planbench_benchmark.comparison``) because a stored report
+    contains these: the schema has to be importable without pulling in
+    the statistics stack.
+
+    ``statistic``, ``p_value`` and ``effect_size`` are all optional. Too
+    few paired seeds is a normal outcome of a small benchmark, and the
+    honest answer then is "no test was run", not a number carrying a
+    footnote nobody reads.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    algorithm_a: str
+    algorithm_b: str
+    metric: str
+    #: Wilcoxon signed-rank statistic; None when no test was run.
+    statistic: float | None = None
+    p_value: float | None = None
+    #: Cliff's delta of A against B — how big the difference is, not just
+    #: how unlikely. Negative means A's values are lower, which for
+    #: travel time means A is faster; the metric decides which is better.
+    effect_size: float | None = None
+    #: Only ever True when a test actually ran on enough pairs.
+    significant: bool = False
+    #: How many seeds contributed a pair. The headline caveat: "A was
+    #: faster on the four seeds where both arrived" is a different claim
+    #: from "A was faster".
+    paired_seed_count: int = 0
+    #: Why the reader should hesitate: dropped seeds, too few pairs,
+    #: mismatched seed sets. None when there is nothing to disclose.
+    warning: str | None = None
+
 
 class BenchmarkReport(BaseModel):
     """Full benchmark outcome: conditions, per-run records, aggregates."""
@@ -187,3 +265,50 @@ class BenchmarkReport(BaseModel):
     fairness: FairnessRecord
     runs: tuple[RunRecord, ...]
     aggregates: tuple[AlgorithmAggregate, ...]
+    #: Head-to-head tests, paired seed by seed (P04). Empty on reports
+    #: written before P04 and on benchmarks with a single algorithm.
+    comparisons: tuple[PairwiseComparison, ...] = ()
+    #: Evaluation-protocol snapshot (P05): which split this scenario was
+    #: in, and under which protocol version, *at the time this benchmark
+    #: ran*. Snapshotted rather than resolved on read for the same reason
+    #: as the observation classes: promoting a scenario to holdout next
+    #: month must not turn last month's dev numbers into holdout numbers.
+    #:
+    #: ``protocol_version`` is None only on reports stored before P05.
+    #: ``scenario_split`` defaults to ``unassigned``, which is also what
+    #: those old reports read as — correct, because nobody had classified
+    #: anything when they were written.
+    protocol_version: str | None = None
+    scenario_split: ScenarioSplit = "unassigned"
+    #: Dev-minus-holdout, per metric, when one report spans both splits.
+    #:
+    #: Always None today: a benchmark runs exactly one scenario, so a
+    #: single report is entirely one split and has nothing to subtract
+    #: from. The generalization gap is computed *across* reports —
+    #: ``planbench_benchmark.generalization`` — and the field is here so
+    #: that a future multi-scenario benchmark can carry its own gap
+    #: without a schema break. A reader must treat None as "not
+    #: computed", never as "no gap".
+    generalization_gap: dict[str, float] | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def seed_count(self) -> int:
+        """How many seeds every algorithm faced.
+
+        Derived from the spec rather than stored, so it is right for
+        reports written before this field existed too.
+        """
+        return len(self.spec.seeds)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def statistically_adequate(self) -> bool:
+        """Whether the seed count supports a conclusion, not just a number.
+
+        False does not block anything: a 5-seed benchmark still runs,
+        still stores, still displays. It marks the report as evidence
+        that a difference is worth investigating rather than evidence
+        that one algorithm is better.
+        """
+        return _statistically_adequate(self.seed_count)

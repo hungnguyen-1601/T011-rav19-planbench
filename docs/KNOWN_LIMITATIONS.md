@@ -494,6 +494,88 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     policy end-to-end sau này; chưa có stack nào bỏ qua đường toàn cục
     nên nhánh `false` chưa từng chạy trong production.
 
+## Thống kê đánh giá — P04 (2026-08-06)
+
+106. **Chỉ so trung vị của thuật toán dẫn đầu với từng thuật toán còn
+    lại, không phải mọi cặp.** Với 2–3 stack thì hai cách là một; khi có
+    nhiều stack hơn, bảng hiện tại không trả lời được "B so với C".
+    Schema `PairwiseComparison` là danh sách cặp độc lập nên mở rộng
+    được, nhưng **chưa** hiệu chỉnh đa so sánh (Bonferroni/Holm) — chạy
+    nhiều kiểm định trên cùng dữ liệu làm tăng xác suất dương tính giả.
+    Ai bật full pairwise phải quyết định hiệu chỉnh trước.
+
+107. **Ngưỡng "đủ dữ liệu" 30 seed là quy ước, không phải tính toán
+    power.** `ADEQUATE_SEED_COUNT = 30` không được suy ra từ effect size
+    mong muốn và độ lệch thực tế của từng scenario. Nó là ngưỡng cảnh
+    báo, không phải bảo đảm rằng 30 seed đủ cho mọi so sánh.
+
+108. **Dưới 5 cặp thì không chạy kiểm định.** `MIN_PAIRS_FOR_TEST = 5`:
+    với 3–4 cặp, p-value nhỏ nhất mà Wilcoxon có thể trả vẫn lớn hơn
+    0.05, nên "không có ý nghĩa thống kê" chỉ phản ánh cỡ mẫu. Hệ quả:
+    benchmark nhỏ trả `p_value=null` chứ không phải một con số.
+
+109. **Bootstrap dùng seed cố định 0.** Cùng dữ liệu cho cùng khoảng tin
+    cậy — điều kiện để hai người đọc cùng report trích cùng số. Đổi lại,
+    khoảng tin cậy này là **một** lần lấy mẫu chứ không phải trung bình
+    trên nhiều lần bootstrap; với n rất nhỏ, khoảng có thể hẹp một cách
+    lạc quan.
+
+110. **`travel_time` chỉ ghép cặp trên seed mà cả hai stack cùng về
+    đích.** Đây là lựa chọn có chủ ý (thời gian di chuyển vô nghĩa với
+    robot không tới nơi), nhưng nó tạo thiên lệch: stack chỉ thành công
+    ở các seed dễ sẽ được so trên đúng tập seed dễ đó. Số cặp và số seed
+    bị loại luôn đi kèm kết quả, nhưng **người đọc phải tự trừ hao** —
+    hệ thống không tự điều chỉnh.
+
+111. **`average_rank_score` chưa được nối vào leaderboard hay report.**
+    Hàm đã có, đã test, nhưng xếp hạng trung bình qua nhiều scenario cần
+    quyết định về cách chọn tập scenario — thuộc P03/P05, chưa làm.
+
+## Tập held-out và tổng quát hóa (P05)
+
+112. **Tập holdout do người chọn, chưa hiệu chuẩn thực nghiệm.**
+    `bidirectional_corridor`, `intersection`, `dynamic_warehouse` được
+    chọn vì đòi hỏi hành vi không scenario dev nào thưởng (nhường đường,
+    giao cắt vuông góc, nhiều vật cản khác mô hình chuyển động cùng lúc)
+    — lý do ghi trong `scenario_protocol.json`. Nhưng cả ba cũng nằm
+    cuối thang độ khó, nên **chưa loại trừ được** khả năng chênh lệch
+    dev/holdout phản ánh độ khó chứ không phải khả năng tổng quát hóa.
+    Chỉ P03 (hiệu chuẩn độ khó) mới tách được hai nguyên nhân này.
+
+113. **Chênh lệch tổng quát hóa là hiệu của hai trung bình, không phải
+    kiểm định.** Không có p-value, không có khoảng tin cậy cho chính
+    chênh lệch. Với 3 scenario mỗi phía, chưa đủ để nói chênh lệch bao
+    nhiêu là đáng kể. Số scenario mỗi phía và cờ đủ seed luôn hiện, và
+    coverage lệch bị cảnh báo, nhưng **người đọc phải tự trừ hao**.
+
+114. **Scenario có trọng số bằng nhau, không theo số episode.** Trung
+    bình trong từng scenario trước rồi mới trung bình qua các scenario.
+    Lựa chọn có chủ ý (chạy một scenario 10 lần không được lấn át), đổi
+    lại một scenario chạy 1 seed có cùng tiếng nói với scenario chạy 30
+    seed.
+
+115. **`generalization_gap` trên `BenchmarkReport` luôn `null`.** Một
+    benchmark chạy đúng một scenario nên thuộc trọn một split. Trường
+    tồn tại để benchmark nhiều scenario sau này không phải phá schema;
+    hiện tại chênh lệch chỉ có ở `GET /generalization`.
+
+116. **MVP không chặn việc chạy holdout nhiều lần.** UI cảnh báo trước
+    khi tạo, mỗi lần chạy được ghi log và liệt kê trong
+    `holdout_usage[]`, có cảnh báo khi đã chạy hơn một lần — nhưng không
+    có giới hạn cứng và không có "ngân sách lần xem". Tập held-out mòn
+    dần theo số lần được xem; hệ thống chỉ làm việc mòn đó **đếm được**,
+    không ngăn được.
+
+117. **Không có đường chuyển split trong ứng dụng.** Đổi phân loại phải
+    sửa `scenario_protocol.json` + review + deploy. Cố ý (không ai được
+    đổi split sau khi thấy kết quả), nhưng nghĩa là scenario tạo trong
+    app đứng mãi ở `unassigned` cho tới lần release sau, và kết quả trên
+    chúng không vào được chênh lệch tổng quát hóa.
+
+118. **Chỉ ba metric được so giữa hai split**: success rate, trung vị
+    thời gian di chuyển, trung vị hiệu quả đường đi. Clearance, độ mượt
+    và latency chưa có mặt.
+
 ## Môi trường
 
 - Test phải chạy với `PYTHONPATH=` do shell source ROS2 Jazzy (xem

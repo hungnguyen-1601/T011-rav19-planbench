@@ -1,5 +1,12 @@
 """Benchmark engine: fair multi-seed comparison of navigation stacks."""
 
+from planbench_benchmark.comparison import (
+    DEFAULT_COMPARISON_METRIC,
+    MIN_PAIRS_FOR_TEST,
+    SIGNIFICANCE_LEVEL,
+    build_comparisons,
+    compare_pair,
+)
 from planbench_benchmark.failure import (
     Confidence,
     Evidence,
@@ -7,6 +14,16 @@ from planbench_benchmark.failure import (
     FailureReport,
     Finding,
     analyse_episode,
+)
+from planbench_benchmark.generalization import (
+    COMPARABLE_SPLITS,
+    GAP_METRICS,
+    GapMetric,
+    GeneralizationEntry,
+    GeneralizationSummary,
+    HoldoutUse,
+    SplitSummary,
+    build_generalization,
 )
 from planbench_benchmark.observation import OBSERVATION_CLASSES, ObservationClass
 from planbench_benchmark.registry import (
@@ -19,6 +36,19 @@ from planbench_benchmark.registry import (
     validate_algorithm_config,
 )
 from planbench_benchmark.runner import run_benchmark, run_single
+from planbench_benchmark.scenario_protocol import (
+    PROTOCOL_FILE,
+    SCENARIO_SPLITS,
+    ScenarioProtocol,
+    ScenarioProtocolError,
+    ScenarioProtocolMetadata,
+    ScenarioSplit,
+    load_protocol,
+    protocol_version,
+    scenario_protocol_metadata,
+    scenario_split,
+    scenarios_in_split,
+)
 from planbench_benchmark.scenarios import (
     CURRICULUM_ORDER,
     SCENARIO_LIBRARY,
@@ -30,24 +60,50 @@ from planbench_benchmark.spec import (
     BenchmarkReport,
     BenchmarkSpec,
     FairnessRecord,
+    PairwiseComparison,
     RunRecord,
 )
 
 __all__ = [
     "ALGORITHMS",
+    "COMPARABLE_SPLITS",
     "CURRICULUM_ORDER",
+    "DEFAULT_COMPARISON_METRIC",
+    "GAP_METRICS",
+    "MIN_PAIRS_FOR_TEST",
     "OBSERVATION_CLASSES",
+    "PROTOCOL_FILE",
     "SCENARIO_LIBRARY",
+    "SCENARIO_SPLITS",
+    "SIGNIFICANCE_LEVEL",
     "AlgorithmAggregate",
     "AlgorithmInfo",
     "AlgorithmSpec",
     "BenchmarkReport",
     "BenchmarkSpec",
     "FairnessRecord",
+    "GapMetric",
+    "GeneralizationEntry",
+    "GeneralizationSummary",
+    "HoldoutUse",
     "ObservationClass",
+    "PairwiseComparison",
     "RunRecord",
+    "ScenarioProtocol",
+    "ScenarioProtocolError",
+    "ScenarioProtocolMetadata",
+    "ScenarioSplit",
+    "SplitSummary",
     "Confidence",
     "algorithm_info",
+    "build_comparisons",
+    "build_generalization",
+    "compare_pair",
+    "load_protocol",
+    "protocol_version",
+    "scenario_protocol_metadata",
+    "scenario_split",
+    "scenarios_in_split",
     "Evidence",
     "FailureCategory",
     "FailureReport",
