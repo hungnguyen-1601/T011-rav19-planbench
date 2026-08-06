@@ -66,6 +66,8 @@ from planbench_benchmark.spec import (  # noqa: E402
 )
 from planbench_metrics.statistics import proportion_ci  # noqa: E402
 from planbench_schemas.episode import EpisodeStatus  # noqa: E402
+from planbench_schemas.map import MapData  # noqa: E402
+from planbench_schemas.scenario import Scenario  # noqa: E402
 
 logger = logging.getLogger("planbench.calibrate")
 
@@ -98,12 +100,39 @@ def git_sha() -> str:
     return sha if result.returncode == 0 and sha else "unknown"
 
 
+def load_bundle(path: Path) -> tuple[MapData, Scenario]:
+    """Read a ``{map, scenario}`` bundle exported from the API.
+
+    This is how a scenario authored in the editor (plan 2.3) gets onto
+    the difficulty scale: it is not in the built-in library, so there is
+    nothing to build it from by name. Both API resource shapes are
+    accepted — ``{"map_data": ...}`` from ``GET /maps/{id}`` and
+    ``{"scenario": ...}`` from ``GET /scenarios/{id}`` — as well as the
+    bare objects, because the person doing this is usually pasting two
+    curl outputs together.
+    """
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    map_raw = raw.get("map", raw.get("map_data"))
+    scenario_raw = raw.get("scenario")
+    if map_raw is None or scenario_raw is None:
+        raise ValueError(
+            f"{path} must contain a map and a scenario: "
+            '{"map": <MapData>, "scenario": <Scenario>}'
+        )
+    if "map_data" in map_raw:  # a whole /maps/{id} resource was pasted in
+        map_raw = map_raw["map_data"]
+    if "scenario" in scenario_raw:  # likewise for /scenarios/{id}
+        scenario_raw = scenario_raw["scenario"]
+    return MapData.model_validate(map_raw), Scenario.model_validate(scenario_raw)
+
+
 def calibrate_scenario(
     scenario_name: str,
     *,
     algorithm: str,
     algorithm_config: dict,
     seeds: tuple[int, ...],
+    source: tuple[MapData, Scenario] | None = None,
 ) -> tuple[ScenarioCalibration, dict]:
     """Run the baseline over one scenario and turn it into a difficulty.
 
@@ -114,8 +143,14 @@ def calibrate_scenario(
     on purpose: difficulty has to be measured by the same machinery that
     produces benchmark results, or the scale would describe a code path
     nobody is scored on.
+
+    ``source`` supplies a scenario that is not in the built-in library —
+    one authored in the editor. Its split resolves to ``unassigned``,
+    which is correct and is snapshotted into the entry: measuring how
+    hard a scenario is says nothing about whether it belongs in the
+    held-out set.
     """
-    map_data, scenario = build_scenario(scenario_name)
+    map_data, scenario = source if source is not None else build_scenario(scenario_name)
     spec = BenchmarkSpec(
         name=f"difficulty-calibration:{scenario_name}",
         description="Difficulty calibration run (P03); not a leaderboard benchmark.",
@@ -162,6 +197,7 @@ def build_calibration(
     seeds: tuple[int, ...],
     version: str,
     notes: str | None,
+    sources: dict[str, tuple[MapData, Scenario]] | None = None,
     on_scenario=None,
 ) -> DifficultyCalibration:
     """Calibrate every scenario and assemble the cache.
@@ -169,12 +205,19 @@ def build_calibration(
     Every scenario must use the same robot. Difficulties measured on
     robots of different size are not points on one scale, and a cache that
     mixed them would rank scenarios by how big the robot was.
+
+    ``sources`` carries scenarios that are not in the built-in library
+    (see :func:`load_bundle`); names absent from it are built by name.
     """
     entries: dict[str, ScenarioCalibration] = {}
     robot_profile: dict | None = None
     for name in scenario_names:
         entry, facts = calibrate_scenario(
-            name, algorithm=algorithm, algorithm_config=algorithm_config, seeds=seeds
+            name,
+            algorithm=algorithm,
+            algorithm_config=algorithm_config,
+            seeds=seeds,
+            source=(sources or {}).get(name),
         )
         if robot_profile is None:
             robot_profile = facts["robot_profile"]
@@ -275,6 +318,15 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="Comma-separated scenario names. Default: the whole built-in library.",
     )
+    parser.add_argument(
+        "--scenario-file",
+        action="append",
+        default=[],
+        help=(
+            'JSON bundle {"map": <MapData>, "scenario": <Scenario>} for a scenario '
+            "outside the built-in library — one authored in the editor. Repeatable."
+        ),
+    )
     parser.add_argument("--algorithm", default=DEFAULT_BASELINE, help="Baseline stack id.")
     parser.add_argument(
         "--algorithm-config",
@@ -309,9 +361,24 @@ def main(argv: list[str] | None = None) -> int:
 
     logging.basicConfig(level=logging.WARNING, format="%(message)s")
 
+    sources: dict[str, tuple[MapData, Scenario]] = {}
+    for raw_path in args.scenario_file:
+        try:
+            map_data, scenario = load_bundle(Path(raw_path))
+        except (OSError, ValueError) as exc:
+            parser.error(f"--scenario-file {raw_path}: {exc}")
+        sources[scenario.name] = (map_data, scenario)
+
     names = tuple(part.strip() for part in args.scenarios.split(",") if part.strip())
-    scenario_names = names or CURRICULUM_ORDER
-    unknown = [name for name in scenario_names if name not in CURRICULUM_ORDER]
+    # Bundles are calibrated alongside whatever was asked for by name;
+    # with only bundles given, they are the whole run rather than the
+    # whole library plus them.
+    scenario_names = names or (tuple(sources) if sources else CURRICULUM_ORDER)
+    if sources:
+        scenario_names = tuple(dict.fromkeys(scenario_names + tuple(sources)))
+    unknown = [
+        name for name in scenario_names if name not in CURRICULUM_ORDER and name not in sources
+    ]
     if unknown:
         parser.error(f"unknown scenario(s): {', '.join(unknown)}")
 
@@ -358,6 +425,7 @@ def main(argv: list[str] | None = None) -> int:
         seeds=seeds,
         version=version,
         notes=args.notes or None,
+        sources=sources,
         on_scenario=progress,
     )
 

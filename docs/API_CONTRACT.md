@@ -19,6 +19,7 @@ Mọi lỗi trả về dạng chuẩn:
 | GET/POST | /scenarios | Danh sách / tạo `{map_id, scenario}` (validate placement với map) |
 | GET/PUT/DELETE | /scenarios/{id} | CRUD scenario |
 | POST | /scenarios/validate | `{map_id, scenario}` → `{valid, errors}` |
+| POST | /scenarios/preview | `{map_id, scenario, time, seed}` → vị trí vật cản động tại thời điểm đó + verdict |
 | GET | /algorithms | Registry; `astar_pure_pursuit` là reference stack, `benchmarkable=false` |
 | GET/POST | /simulations | Danh sách / tạo `{map_id, scenario_id, algorithm}` |
 | GET | /simulations/{id} | Trạng thái session (`created`/`finished`) |
@@ -299,6 +300,30 @@ số đo, và việc hai thứ lệch nhau chính là điều cần thấy.
   tối đa mà vẫn không phân biệt được stack nào với stack nào.
 - Chưa hiệu chuẩn thì trả `200` với thang rỗng + cảnh báo, **không phải
   lỗi**: "chưa đo" là một trạng thái bình thường.
+
+### Scenario Editor (2.3)
+
+`ScenarioResource` thêm `split` — **chỉ đọc**, resolve từ
+`scenario_protocol.json`. Không có trường request nào đặt được nó: gửi
+kèm `"split": "dev"` trong body scenario cũng bị bỏ qua và kết quả vẫn
+là `unassigned`. Chuyển nhóm là thay đổi giao thức, phải review.
+
+`POST /scenarios/preview`:
+
+- request `{map_id, scenario, time ≥ 0, seed}`;
+- response `{time, seed, valid, errors[], dynamic_obstacles[]}`, mỗi
+  phần tử `{name, radius, position}`.
+- Vị trí do backend tính bằng `position_at` — **đúng hàm simulator
+  dùng**. Frontend không tự cài lại quy luật chuyển động: bản thứ hai sẽ
+  trôi khỏi bản thứ nhất, và một preview mâu thuẫn với episode còn tệ
+  hơn không có preview.
+- Trả cả vị trí lẫn `errors[]`: người đang sửa một bố cục sai vẫn cần
+  nhìn thấy bố cục đó.
+- `time < 0` → `422`. Thời gian âm không có nghĩa trong một episode.
+
+`POST /scenarios/validate` là **đúng phép kiểm mà `create`/`update`
+chạy** (cùng `SimulationEngine.load_scenario`). Nhờ vậy không có chuyện
+editor báo hợp lệ rồi lúc lưu bị từ chối vì một luật chưa ai nói.
 
 ## Episodes (M4)
 

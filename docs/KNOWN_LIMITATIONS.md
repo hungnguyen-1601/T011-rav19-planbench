@@ -631,6 +631,51 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     thật, và nó **chưa** được ghi vào `holdout_usage[]` của
     `GET /generalization` vì calibration không tạo benchmark lưu trữ.
 
+## Scenario Editor (2.3)
+
+127. **Engine chỉ trả lỗi hợp lệ đầu tiên.** `load_scenario` raise ngay
+    ở lỗi đầu, nên một scenario có cả start lẫn goal nằm trong tường chỉ
+    hiện một lỗi; sửa xong mới thấy lỗi tiếp theo. `errors[]` là danh
+    sách để sau này trả được nhiều lỗi, hiện tại luôn có 0 hoặc 1 phần
+    tử.
+
+128. **Form chỉ tạo được vật cản động kiểu `waypoint`.** Schema có thêm
+    `periodic`, `random_walk`, `sudden_stop`; scenario đã có các kiểu đó
+    (nhập từ thư viện) vẫn sửa được tên/bán kính/độ lệch seed và vẫn
+    preview đúng, nhưng **không đổi được quy luật chuyển động** trong
+    UI. Ô tốc độ bị khóa với các kiểu không phải waypoint.
+
+129. **Không kéo chuột để xoay heading.** Heading nhập bằng số (độ). Cố
+    ý cắt theo plan; hệ quả là đặt hướng chính xác thì được, mà cảm giác
+    trực quan thì không.
+
+130. **Không có version history cho scenario.** `PUT` ghi đè và tăng
+    `version`, không giữ bản cũ. Benchmark đã chạy vẫn an toàn (chúng
+    lưu snapshot điều kiện), nhưng **không hoàn tác được** một lần sửa.
+
+131. **Không có khóa khi hai người cùng sửa.** `PUT` cuối cùng thắng,
+    không cảnh báo. Chưa phải vấn đề ở quy mô hiện tại, sẽ là vấn đề khi
+    nhiều người cùng dùng.
+
+132. **Preview là một seed, một thời điểm.** Thanh trượt cho xem từng
+    thời điểm nhưng mỗi lần chỉ một seed; không có cách xem "vùng vật
+    cản có thể đi qua" trên toàn bộ tập seed. Người dùng dễ đặt start
+    tránh đúng một quỹ đạo mà quên các seed khác.
+
+133. **Mỗi lần kéo thanh trượt là một request.** Không debounce, không
+    cache. Chấp nhận được vì preview rẻ và chạy local, nhưng sẽ nặng khi
+    API ở xa.
+
+134. **Scenario tự tạo không tự vào thang độ khó.**
+    `scripts/calibrate_difficulty.py --scenario-file` nhận được bundle
+    `{map, scenario}` xuất từ API, nhưng đây là thao tác tay: không có
+    nút "hiệu chuẩn scenario này" trong app, và cache đang commit trong
+    repo chỉ chứa 10 scenario thư viện.
+
+135. **Không có đường đưa scenario tự tạo vào thư viện.** Nó sống trong
+    database, nên `CURRICULUM_ORDER`, PPO curriculum và cache độ khó mặc
+    định đều không thấy nó.
+
 ## Môi trường
 
 - Test phải chạy với `PYTHONPATH=` do shell source ROS2 Jazzy (xem
