@@ -98,6 +98,14 @@ def leaderboard(
             "unreviewed runs — those must not be published as conclusions."
         ),
     ),
+    group_by_observation_class: bool = Query(
+        default=True,
+        description=(
+            "Keep stacks with different observation classes in separate "
+            "groups. Set false to rank them together — the affected groups "
+            "come back flagged, because the comparison is not like for like."
+        ),
+    ),
     weight_success: float = Query(default=0.40, ge=0),
     weight_safety: float = Query(default=0.30, ge=0),
     weight_efficiency: float = Query(default=0.20, ge=0),
@@ -116,4 +124,5 @@ def leaderboard(
         scenario_name=scenario_name,
         algorithm=algorithm,
         accepted_only=accepted_only,
+        group_by_observation_class=group_by_observation_class,
     )

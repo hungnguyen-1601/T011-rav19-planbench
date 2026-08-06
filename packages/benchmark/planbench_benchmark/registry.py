@@ -13,6 +13,7 @@ from importlib.util import find_spec
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from planbench_benchmark.observation import ObservationClass
 from planbench_planning import (
     AStarPlanner,
     DWAConfig,
@@ -157,6 +158,20 @@ class AlgorithmInfo(BaseModel):
     #: fabrication the spec forbids, so the property is now stated
     #: outright instead of being a side effect of field defaults.
     requires_model: bool = False
+    #: What each half of the stack is allowed to see (P02).
+    #:
+    #: Deliberately without a default. A default would be a guess made
+    #: on behalf of whoever adds the next planner, and the one thing
+    #: worse than an unlabelled stack on the leaderboard is a wrongly
+    #: labelled one: the ranking would then look fair while comparing a
+    #: sensing planner against one reading ground truth. Registering a
+    #: stack must fail loudly until someone states both classes.
+    global_observation_class: ObservationClass
+    local_observation_class: ObservationClass
+    #: True when the controller is steered by a global path. A stack
+    #: that ignores it (end-to-end policies, in principle) solves a
+    #: different problem and a report should be able to say so.
+    requires_global_path: bool
 
 
 class _Entry(BaseModel):
@@ -207,6 +222,9 @@ ALGORITHMS: dict[str, _Entry] = {
             ),
             benchmarkable=True,
             config_schema=DWAConfig.model_json_schema(),
+            global_observation_class="full_static_map",
+            local_observation_class="lidar_only",
+            requires_global_path=True,
         ),
         config_model=DWAConfig,
         factory=lambda config: DWAPlanner(config),  # type: ignore[arg-type]
@@ -225,6 +243,9 @@ ALGORITHMS: dict[str, _Entry] = {
             benchmarkable=True,
             requires_model=True,
             config_schema=PPOStackConfig.model_json_schema(),
+            global_observation_class="full_static_map",
+            local_observation_class="lidar_only",
+            requires_global_path=True,
         ),
         config_model=PPOStackConfig,
         factory=_build_ppo,
@@ -241,6 +262,9 @@ ALGORITHMS: dict[str, _Entry] = {
             ),
             benchmarkable=False,
             config_schema=PurePursuitConfig.model_json_schema(),
+            global_observation_class="full_static_map",
+            local_observation_class="lidar_only",
+            requires_global_path=True,
         ),
         config_model=PurePursuitConfig,
         factory=lambda config: PurePursuitLocalPlanner(config),  # type: ignore[arg-type]
@@ -259,6 +283,9 @@ ALGORITHMS: dict[str, _Entry] = {
             config_schema=DWAConfig.model_json_schema(),
             global_planner="rrtstar",
             stochastic_global_planner=True,
+            global_observation_class="full_static_map",
+            local_observation_class="lidar_only",
+            requires_global_path=True,
         ),
         config_model=DWAConfig,
         factory=lambda config: DWAPlanner(config),  # type: ignore[arg-type]
@@ -277,12 +304,26 @@ ALGORITHMS: dict[str, _Entry] = {
             config_schema=PurePursuitConfig.model_json_schema(),
             global_planner="rrtstar",
             stochastic_global_planner=True,
+            global_observation_class="full_static_map",
+            local_observation_class="lidar_only",
+            requires_global_path=True,
         ),
         config_model=PurePursuitConfig,
         factory=lambda config: PurePursuitLocalPlanner(config),  # type: ignore[arg-type]
         global_factory=_rrtstar,
     ),
 }
+
+
+def algorithm_info(algorithm_id: str) -> AlgorithmInfo | None:
+    """The registry entry for ``algorithm_id``, or None if unregistered.
+
+    Returns None rather than raising because callers are usually reading
+    an old stored report: a benchmark run before a stack was renamed (or
+    removed) must still be displayable, just without its metadata.
+    """
+    entry = ALGORITHMS.get(algorithm_id)
+    return entry.info if entry is not None else None
 
 
 def list_algorithms() -> list[AlgorithmInfo]:

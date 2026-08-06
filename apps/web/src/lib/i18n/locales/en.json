@@ -614,5 +614,19 @@
   "robot.maxAngular": "Max angular velocity",
   "robot.lidarBeams": "LiDAR beams",
   "robot.lidarRange": "LiDAR range",
-  "models.trainingNote": "PlanBench currently evaluates PPO models you have already trained. Training here is being built; until it exists there is no button for it."
+  "models.trainingNote": "PlanBench currently evaluates PPO models you have already trained. Training here is being built; until it exists there is no button for it.",
+  "leaderboard.observation": "Sees",
+  "leaderboard.observationHint": "What the controller was allowed to see. Stacks shown different things are solving different problems and are ranked separately.",
+  "leaderboard.observationRowHint": "Global planner sees {global}; controller sees {local}.",
+  "leaderboard.observationUnknown": "unknown",
+  "leaderboard.observationUnknownHint": "This result was stored before stacks declared what they see. It is not assumed to match the others.",
+  "leaderboard.groupObservation": "Controller observation: {observation}",
+  "leaderboard.groupByObservation": "Separate by observation class",
+  "leaderboard.observationGroupingHint": "On: only stacks shown the same data are ranked together. Off: they are ranked together anyway, with a warning.",
+  "leaderboard.mixedObservationWarning": "These rows were not shown the same data. A stack with more information solves an easier problem, so this order is not evidence that one algorithm is better.",
+  "algorithms.observationGlobal": "Global planner sees",
+  "algorithms.observationLocal": "Controller sees",
+  "algorithms.observationHint": "Declared by the registry (P02). Benchmarks compare stacks that were shown the same data; the leaderboard keeps different declarations apart.",
+  "algorithms.usesGlobalPath": "follows a global path",
+  "algorithms.noGlobalPath": "no global path"
 }

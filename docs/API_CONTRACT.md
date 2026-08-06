@@ -162,6 +162,18 @@ State machine giữ nguyên (`draft`, `pending_approval`, `approved`,
 path efficiency, smoothness — **chỉ tính trên episode thành công**;
 clearance và latency tính trên mọi episode).
 
+Mỗi `aggregate` còn mang **bản chụp khai báo quan sát** lúc chạy:
+`global_observation_class`, `local_observation_class`,
+`requires_global_path`. Chụp lại thay vì tra registry lúc đọc, để sửa
+registry sau này không dán nhãn khác lên số đã đo. Report lưu trước P02
+không có ba trường này (`null` = không rõ, **không** mặc định là
+`lidar_only`).
+
+`GET /leaderboard` nhóm theo `conditions_checksum` **và**
+`local_observation_class`. Query `group_by_observation_class` (mặc định
+`true`) tắt việc tách nhóm; nhóm bị trộn trả về kèm
+`cross_observation_class_warning=true`.
+
 ## Episodes (M4)
 
 | Method | Path | Mô tả |
@@ -184,6 +196,20 @@ Hai trường mô tả nửa global của stack:
 |---|---|
 | `global_planner` | Id global planner (`astar`, `rrtstar`). Registry khai báo tường minh, không suy ra từ chuỗi `id`. |
 | `stochastic_global_planner` | `true` khi global planner lấy mẫu ngẫu nhiên. Kết quả chỉ đọc được qua nhiều seed; UI hiện cảnh báo. |
+
+Ba trường khai báo **cân bằng thông tin** (P02) — stack nhìn thấy dữ liệu gì:
+
+| Trường | Ý nghĩa |
+|---|---|
+| `global_observation_class` | Dữ liệu global planner được xem. Hiện mọi stack là `full_static_map`. |
+| `local_observation_class` | Dữ liệu bộ điều khiển được xem. Hiện mọi stack là `lidar_only`. |
+| `requires_global_path` | `true` khi bộ điều khiển bám đường toàn cục. |
+
+Giá trị hợp lệ: `full_static_map`, `lidar_only`, `human_states`,
+`lidar+human_states`. **Không có default** — đăng ký stack mới mà không
+khai báo thì `AlgorithmInfo` fail validation ngay lúc import. Nhãn sai
+nguy hiểm hơn nhãn thiếu: nó làm một so sánh không công bằng trông như
+đã được kiểm.
 
 Seed của một stack ngẫu nhiên **được dẫn xuất từ seed episode** (cùng seed
 điều khiển vật cản động), nên mỗi episode mọc một cây khác nhau còn chạy

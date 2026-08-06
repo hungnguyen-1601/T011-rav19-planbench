@@ -1,6 +1,10 @@
 /** Types for the M5/M6/M8 surfaces: library, leaderboard, failures,
  *  background jobs and the agent. Mirrors docs/API_CONTRACT.md. */
 
+import type { ObservationClass } from "./benchmarkTypes";
+
+export type { ObservationClass };
+
 export interface LibraryEntry {
   name: string;
   description: string;
@@ -39,16 +43,26 @@ export interface LeaderboardEntry {
   worst_min_clearance: number | null;
   mean_local_planning_latency: number | null;
   overall_score: number | null;
+  /** What the stack was declared to see when it ran (P02). Null on rows
+   *  stored before the declaration existed — unknown, not "the same". */
+  global_observation_class: ObservationClass | null;
+  local_observation_class: ObservationClass | null;
+  requires_global_path: boolean | null;
 }
 
-/** Entries are grouped by conditions_checksum: rows in different groups
- *  ran under different conditions and are not comparable. */
+/** Entries are grouped by conditions_checksum *and* observation class:
+ *  rows in different groups either ran under different conditions or
+ *  were shown different things, and are not comparable. */
 export interface LeaderboardGroup {
   conditions_checksum: string;
   map_name: string;
   scenario_name: string;
   seeds: number[];
   entries: LeaderboardEntry[];
+  /** The class every row here shares; null when the group is mixed. */
+  local_observation_class: ObservationClass | null;
+  /** True when the rows were not shown the same thing. */
+  cross_observation_class_warning: boolean;
 }
 
 export interface Leaderboard {

@@ -6,6 +6,7 @@ import hashlib
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from planbench_benchmark.observation import ObservationClass
 from planbench_metrics import EpisodeMetrics
 from planbench_schemas.episode import EpisodeStatus
 from planbench_schemas.map import MapData
@@ -163,6 +164,18 @@ class AlgorithmAggregate(BaseModel):
     mean_local_planning_latency: float | None = None
     max_local_planning_latency: float | None = None
     mean_global_planning_time: float | None = None
+    #: Information parity snapshot (P02): what this stack was declared to
+    #: see *at the time the benchmark ran*. Snapshotted rather than looked
+    #: up on read, because a later edit to the registry must not silently
+    #: relabel numbers that were produced under the old declaration.
+    #:
+    #: Nullable only for backward compatibility: reports stored before
+    #: P02 carry no declaration, and inventing one for them would be the
+    #: fabrication this field exists to prevent. A missing value must be
+    #: displayed as unknown, never treated as ``lidar_only``.
+    global_observation_class: ObservationClass | None = None
+    local_observation_class: ObservationClass | None = None
+    requires_global_path: bool | None = None
 
 
 class BenchmarkReport(BaseModel):

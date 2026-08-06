@@ -3,9 +3,14 @@
 /** Leaderboard (M5): stacks ranked within identical conditions.
  *
  * Groups are the whole point. Two rows only mean something next to each
- * other when they share a `conditions_checksum`; the UI therefore never
- * renders one flat table, because that would invite exactly the
- * cross-condition comparison the fairness record exists to prevent.
+ * other when they share a `conditions_checksum` *and* were shown the
+ * same thing (P02); the UI therefore never renders one flat table,
+ * because that would invite exactly the comparison the fairness record
+ * and the observation class exist to prevent.
+ *
+ * Mixing observation classes is possible but opt-in, and a mixed table
+ * is rendered with the warning attached — a screenshot of the ranking
+ * should never travel without it.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -23,6 +28,7 @@ export default function LeaderboardPage() {
   const [board, setBoard] = useState<Leaderboard | null>(null);
   const [weights, setWeights] = useState(DEFAULT_WEIGHTS);
   const [acceptedOnly, setAcceptedOnly] = useState(true);
+  const [groupByObservation, setGroupByObservation] = useState(true);
   const [scenario, setScenario] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -32,6 +38,7 @@ export default function LeaderboardPage() {
     try {
       const query = new URLSearchParams({
         accepted_only: String(acceptedOnly),
+        group_by_observation_class: String(groupByObservation),
         weight_success: String(weights.success),
         weight_safety: String(weights.safety),
         weight_efficiency: String(weights.efficiency),
@@ -45,7 +52,7 @@ export default function LeaderboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [acceptedOnly, scenario, weights]);
+  }, [acceptedOnly, groupByObservation, scenario, weights]);
 
 
   useEffect(() => {
@@ -100,9 +107,20 @@ export default function LeaderboardPage() {
             />
             {t("leaderboard.acceptedOnly")}
           </label>
+          <label className="inline" title={t("leaderboard.observationGroupingHint")}>
+            <input
+              type="checkbox"
+              checked={groupByObservation}
+              onChange={(event) => setGroupByObservation(event.target.checked)}
+            />
+            {t("leaderboard.groupByObservation")}
+          </label>
         </div>
         {!acceptedOnly ? (
           <div className="error-box">{t("leaderboard.unreviewedWarning")}</div>
+        ) : null}
+        {!groupByObservation ? (
+          <div className="error-box">{t("leaderboard.mixedObservationWarning")}</div>
         ) : null}
         {board ? <p className="muted formula">{board.score_formula}</p> : null}
       </div>
@@ -143,12 +161,23 @@ function GroupTable({ group }: { group: LeaderboardGroup }) {
           checksum: group.conditions_checksum,
         })}
       </p>
+      {/* What every row here was shown. Stated on the group, because it
+       *  is a property of the comparison, not of one algorithm. */}
+      {group.local_observation_class ? (
+        <p className="muted" title={t("leaderboard.observationHint")}>
+          {t("leaderboard.groupObservation", { observation: group.local_observation_class })}
+        </p>
+      ) : null}
+      {group.cross_observation_class_warning ? (
+        <div className="error-box">{t("leaderboard.mixedObservationWarning")}</div>
+      ) : null}
       <div className="table-scroll wide">
         <table>
           <thead>
             <tr>
               <th>{t("leaderboard.rank")}</th>
               <th>{t("algorithms.stack")}</th>
+              <th title={t("leaderboard.observationHint")}>{t("leaderboard.observation")}</th>
               <th>{t("leaderboard.score")}</th>
               <th>{t("leaderboard.success")}</th>
               <th>{t("leaderboard.collision")}</th>
@@ -181,6 +210,23 @@ function Row({ entry, rank }: { entry: LeaderboardEntry; rank: number }) {
       <td className="muted">{rank}</td>
       <td>
         <code>{entry.algorithm}</code>
+      </td>
+      <td>
+        {entry.local_observation_class === null ? (
+          <span className="muted" title={t("leaderboard.observationUnknownHint")}>
+            {t("leaderboard.observationUnknown")}
+          </span>
+        ) : (
+          <span
+            className="muted"
+            title={t("leaderboard.observationRowHint", {
+              global: entry.global_observation_class ?? "—",
+              local: entry.local_observation_class,
+            })}
+          >
+            <code>{entry.local_observation_class}</code>
+          </span>
+        )}
       </td>
       <td>
         {entry.overall_score === null ? (

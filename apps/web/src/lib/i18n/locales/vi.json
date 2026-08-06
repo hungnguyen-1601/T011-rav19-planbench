@@ -614,5 +614,19 @@
   "robot.maxAngular": "Vận tốc góc tối đa",
   "robot.lidarBeams": "Số tia LiDAR",
   "robot.lidarRange": "Tầm LiDAR",
-  "models.trainingNote": "PlanBench hiện hỗ trợ đánh giá model PPO đã được huấn luyện. Tính năng huấn luyện trực tiếp đang được phát triển; chừng nào chưa có thật thì cũng không có nút cho nó."
+  "models.trainingNote": "PlanBench hiện hỗ trợ đánh giá model PPO đã được huấn luyện. Tính năng huấn luyện trực tiếp đang được phát triển; chừng nào chưa có thật thì cũng không có nút cho nó.",
+  "leaderboard.observation": "Nhìn thấy",
+  "leaderboard.observationHint": "Dữ liệu mà bộ điều khiển được phép nhìn thấy. Hai stack nhìn thấy dữ liệu khác nhau đang giải hai bài toán khác nhau, nên được xếp hạng riêng.",
+  "leaderboard.observationRowHint": "Bộ lập kế hoạch toàn cục nhìn thấy {global}; bộ điều khiển nhìn thấy {local}.",
+  "leaderboard.observationUnknown": "không rõ",
+  "leaderboard.observationUnknownHint": "Kết quả này được lưu trước khi các stack khai báo dữ liệu quan sát. Không mặc định coi nó cùng lớp với các dòng khác.",
+  "leaderboard.groupObservation": "Quan sát của bộ điều khiển: {observation}",
+  "leaderboard.groupByObservation": "Tách theo lớp quan sát",
+  "leaderboard.observationGroupingHint": "Bật: chỉ xếp hạng chung các stack được xem cùng loại dữ liệu. Tắt: vẫn xếp chung nhưng kèm cảnh báo.",
+  "leaderboard.mixedObservationWarning": "Các dòng này không được xem cùng loại dữ liệu. Stack có nhiều thông tin hơn đang giải bài toán dễ hơn, nên thứ tự này không phải bằng chứng thuật toán nào tốt hơn.",
+  "algorithms.observationGlobal": "Bộ toàn cục nhìn thấy",
+  "algorithms.observationLocal": "Bộ điều khiển nhìn thấy",
+  "algorithms.observationHint": "Do registry khai báo (P02). Benchmark chỉ so sánh các stack được xem cùng loại dữ liệu; bảng xếp hạng giữ các khai báo khác nhau ở nhóm riêng.",
+  "algorithms.usesGlobalPath": "bám đường toàn cục",
+  "algorithms.noGlobalPath": "không dùng đường toàn cục"
 }

@@ -8,9 +8,11 @@ from planbench_benchmark.failure import (
     Finding,
     analyse_episode,
 )
+from planbench_benchmark.observation import OBSERVATION_CLASSES, ObservationClass
 from planbench_benchmark.registry import (
     ALGORITHMS,
     AlgorithmInfo,
+    algorithm_info,
     build_global_planner,
     build_local_planner,
     list_algorithms,
@@ -34,6 +36,7 @@ from planbench_benchmark.spec import (
 __all__ = [
     "ALGORITHMS",
     "CURRICULUM_ORDER",
+    "OBSERVATION_CLASSES",
     "SCENARIO_LIBRARY",
     "AlgorithmAggregate",
     "AlgorithmInfo",
@@ -41,8 +44,10 @@ __all__ = [
     "BenchmarkReport",
     "BenchmarkSpec",
     "FairnessRecord",
+    "ObservationClass",
     "RunRecord",
     "Confidence",
+    "algorithm_info",
     "Evidence",
     "FailureCategory",
     "FailureReport",

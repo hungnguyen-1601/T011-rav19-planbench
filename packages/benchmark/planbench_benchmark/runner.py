@@ -17,7 +17,11 @@ import logging
 from collections.abc import Callable, Sequence
 from statistics import fmean
 
-from planbench_benchmark.registry import build_global_planner, build_local_planner
+from planbench_benchmark.registry import (
+    algorithm_info,
+    build_global_planner,
+    build_local_planner,
+)
 from planbench_benchmark.spec import (
     AlgorithmAggregate,
     AlgorithmSpec,
@@ -134,8 +138,16 @@ def aggregate_algorithm(algorithm_id: str, runs: Sequence[RunRecord]) -> Algorit
         if run.metrics.global_planning_time is not None
     ]
 
+    # Copy the information-parity declaration into the result rather
+    # than resolving it when the leaderboard renders: the registry can
+    # change, these numbers cannot.
+    info = algorithm_info(algorithm_id)
+
     return AlgorithmAggregate(
         algorithm=algorithm_id,
+        global_observation_class=info.global_observation_class if info else None,
+        local_observation_class=info.local_observation_class if info else None,
+        requires_global_path=info.requires_global_path if info else None,
         episodes=episodes,
         success_rate=rate(EpisodeStatus.SUCCESS),
         collision_rate=rate(EpisodeStatus.COLLISION),

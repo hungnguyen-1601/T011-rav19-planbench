@@ -16,6 +16,17 @@ export type BenchmarkState =
   | "accepted"
   | "rejected";
 
+/** What a planner layer is allowed to see (P02, information parity).
+ *
+ *  A stack that reads ground-truth pedestrian states is solving an
+ *  easier problem than one running on LiDAR; the label is what stops the
+ *  leaderboard from reporting that as a better algorithm. */
+export type ObservationClass =
+  | "full_static_map"
+  | "lidar_only"
+  | "human_states"
+  | "lidar+human_states";
+
 export interface AlgorithmInfo {
   id: string;
   kind: string;
@@ -26,6 +37,12 @@ export interface AlgorithmInfo {
   global_planner: string;
   /** True when that planner samples randomly, so results need many seeds to mean anything. */
   stochastic_global_planner: boolean;
+  /** What the global planner is given — normally the whole static map. */
+  global_observation_class: ObservationClass;
+  /** What the controller is given. Stacks differing here are not comparable. */
+  local_observation_class: ObservationClass;
+  /** True when the controller is steered by a global path. */
+  requires_global_path: boolean;
 }
 
 export interface AlgorithmSpec {

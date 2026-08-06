@@ -466,6 +466,34 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     kiểm chứng "máy sạch" phải `docker compose down -v`, và ngược lại,
     dữ liệu benchmark cũ **không** mất khi rebuild image.
 
+## Cân bằng thông tin — P02 (2026-08-06)
+
+102. **Lớp quan sát là lời khai, không phải cơ chế cưỡng chế.**
+    `global_observation_class` / `local_observation_class` do registry
+    khai báo; nền tảng không chứng minh được một planner thật sự chỉ đọc
+    đúng chừng đó — planner là code tùy ý, nó có thể import thẳng
+    scenario. Cái nền tảng làm được: (a) `Observation` không mang vị trí
+    ground-truth của vật cản, (b) `LocalPlanner.compute()` chỉ nhận
+    `(state, observation)`, (c) hai test chống hồi quy khóa hai điều
+    trên lại, (d) leaderboard không xếp chung hai lớp khai báo khác
+    nhau. Khai sai vẫn qua được — đó là lý do phải review khi thêm stack.
+
+103. **Aggregate cũ (trước P02) không có bản chụp khai báo.** Ba trường
+    mới nullable. Leaderboard tra ngược registry cho stack còn tồn tại,
+    còn stack đã bị gỡ tên thì hiện "không rõ" và **không** được coi là
+    cùng lớp với bất cứ dòng nào. Cố đoán ở đây chính là thứ P02 sinh ra
+    để chặn.
+
+104. **Hiện mọi stack đều `full_static_map` + `lidar_only`,** nên việc
+    tách nhóm chưa đổi hình dạng leaderboard trên dữ liệu thật. Đường đi
+    tách nhóm được kiểm bằng test dựng aggregate lớp
+    `lidar+human_states`, chưa bằng một planner thật đọc human states —
+    sẽ chỉ kiểm được thật khi có stack như vậy.
+
+105. **`requires_global_path` hiện luôn `true`.** Trường tồn tại cho
+    policy end-to-end sau này; chưa có stack nào bỏ qua đường toàn cục
+    nên nhánh `false` chưa từng chạy trong production.
+
 ## Môi trường
 
 - Test phải chạy với `PYTHONPATH=` do shell source ROS2 Jazzy (xem

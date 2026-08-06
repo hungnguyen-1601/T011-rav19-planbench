@@ -90,6 +90,19 @@ export default function AlgorithmsPage() {
             </div>
             <p>{algorithm.description}</p>
 
+            {/* Information parity (P02): what each half of the stack is
+             *  allowed to see. Shown on the algorithm itself so the
+             *  declaration is visible before a benchmark is created. */}
+            <p className="muted" title={t("algorithms.observationHint")}>
+              {t("algorithms.observationGlobal")}: <code>{algorithm.global_observation_class}</code>
+              {" · "}
+              {t("algorithms.observationLocal")}: <code>{algorithm.local_observation_class}</code>
+              {" · "}
+              {algorithm.requires_global_path
+                ? t("algorithms.usesGlobalPath")
+                : t("algorithms.noGlobalPath")}
+            </p>
+
             {!algorithm.benchmarkable ? (
               <div className="error-box">{t("algorithms.referenceWarning")}</div>
             ) : null}
