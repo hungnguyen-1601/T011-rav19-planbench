@@ -9,11 +9,20 @@
 `model_path`), Robot Profile, kiểm tra tương thích, và trợ lý hội thoại
 thay cho ba biểu mẫu kỹ thuật. **Toàn bộ M0–M13 đã xong.**
 
-Còn nợ (xem "Nợ kỹ thuật" và KNOWN_LIMITATIONS #77–#89): chưa chạy
-Docker lần nào và chưa kết nối PostgreSQL thật (môi trường không có
-daemon/server), chưa gọi provider LLM thật, **và việc nạp model upload
-chưa chạy trong sandbox container** — hạn chế bảo mật quan trọng nhất
-của M13, ghi rõ ở KNOWN_LIMITATIONS #77.
+Còn nợ (xem "Nợ kỹ thuật" và KNOWN_LIMITATIONS #77–#89): chưa gọi
+provider LLM thật, **và việc nạp model upload chưa chạy trong sandbox
+container** — hạn chế bảo mật quan trọng nhất của M13, ghi rõ ở
+KNOWN_LIMITATIONS #77.
+
+**Docker + PostgreSQL: đã chạy thật (2026-08-05, Đợt 0.2).** Cả 4
+service `db`/`migrate`/`api`/`web` lên healthy, migration chạy trên
+`postgres:17-alpine` tạo đủ 10 bảng, và một benchmark 2 stack × 5 seed
+chạy end-to-end **trong container** với dữ liệu ghi xuống PostgreSQL —
+số liệu trùng khít lần chạy trên host. Hai lỗi chặn được phát hiện và
+sửa trong lúc kiểm chứng (`model_dir` tương đối gây `PermissionError`
+lúc import; vai trò legacy `engineer`/`approver` làm mọi endpoint danh
+sách trả 500). Báo cáo:
+`docs/antongduy/reports/2026-08-05/tongduyan_docker-compose-chay-that.md`.
 
 ## Bản đồ mã nguồn
 
@@ -492,6 +501,8 @@ Chi tiết đầy đủ: `docs/DEPLOYMENT.md`.
 5. **Docker Compose**: `db` (healthcheck `pg_isready -U <user>`),
    `migrate` (one-shot, phải exit 0), `api`, `web`. Migration là service
    riêng vì hai replica cùng `upgrade head` lúc boot là một race.
+   **Đã chạy thật ngày 2026-08-05**: thứ tự phụ thuộc hoạt động đúng —
+   `api` chỉ khởi động sau khi `migrate` exit 0 và `db` báo healthy.
 6. **In-memory vẫn là mặc định**: checkout không có database vẫn chạy
    toàn bộ API và toàn bộ test.
 

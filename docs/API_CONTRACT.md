@@ -19,6 +19,7 @@ Mọi lỗi trả về dạng chuẩn:
 | GET/POST | /scenarios | Danh sách / tạo `{map_id, scenario}` (validate placement với map) |
 | GET/PUT/DELETE | /scenarios/{id} | CRUD scenario |
 | POST | /scenarios/validate | `{map_id, scenario}` → `{valid, errors}` |
+| POST | /scenarios/preview | `{map_id, scenario, time, seed}` → vị trí vật cản động tại thời điểm đó + verdict |
 | GET | /algorithms | Registry; `astar_pure_pursuit` là reference stack, `benchmarkable=false` |
 | GET/POST | /simulations | Danh sách / tạo `{map_id, scenario_id, algorithm}` |
 | GET | /simulations/{id} | Trạng thái session (`created`/`finished`) |
@@ -162,20 +163,210 @@ State machine giữ nguyên (`draft`, `pending_approval`, `approved`,
 path efficiency, smoothness — **chỉ tính trên episode thành công**;
 clearance và latency tính trên mọi episode).
 
+Mỗi `aggregate` còn mang **bản chụp khai báo quan sát** lúc chạy:
+`global_observation_class`, `local_observation_class`,
+`requires_global_path`. Chụp lại thay vì tra registry lúc đọc, để sửa
+registry sau này không dán nhãn khác lên số đã đo. Report lưu trước P02
+không có ba trường này (`null` = không rõ, **không** mặc định là
+`lidar_only`).
+
+**Thống kê P04.** Mỗi `aggregate` có thêm, bên cạnh các trường `mean_*`
+cũ (giữ nguyên, đánh dấu deprecated trong docstring):
+
+| Trường | Ý nghĩa |
+|---|---|
+| `median_*_successful` | Trung vị trên episode thành công. Đây là số nên trích dẫn. |
+| `iqr_*_successful` | `[q1, q3]` — nửa giữa các lần chạy rơi vào khoảng nào. |
+| `ci95_*_successful` | Bootstrap percentile 1000 lần cho trung vị, seed cố định = 0 nên tái lập được. |
+| `ci95_success_rate` | Khoảng Wilson cho tỉ lệ thành công (chính xác, không cần seed). |
+
+Cả bốn đều nullable: stack không có episode thành công nào thì không có
+phân phối để mô tả, 1 episode thành công thì có trung vị nhưng không có
+khoảng tin cậy. `null` nghĩa là **không tính được**, không phải 0.
+
+`report` thêm:
+
+- `comparisons[]` — `PairwiseComparison`: `{algorithm_a, algorithm_b,
+  metric, statistic, p_value, effect_size, significant,
+  paired_seed_count, warning}`. Wilcoxon signed-rank **ghép cặp theo
+  seed**; seed nào có stack không về đích thì không có `travel_time` nên
+  bị loại, và số cặp còn lại đi kèm kết quả. Dưới 5 cặp thì không chạy
+  kiểm định (`statistic`/`p_value`/`effect_size` = `null`) chứ không trả
+  một p-value vô nghĩa. `effect_size` là Cliff's delta của A so với B.
+- `seed_count`, `statistically_adequate` — computed field, suy ra từ
+  `spec.seeds` nên report cũ cũng có. `statistically_adequate=false`
+  (dưới 30 seed) **không chặn gì**; nó nói kết quả là chỉ dấu đáng điều
+  tra, không phải kết luận.
+
+`GET /leaderboard` nhóm theo `conditions_checksum` **và**
+`local_observation_class`. Query `group_by_observation_class` (mặc định
+`true`) tắt việc tách nhóm; nhóm bị trộn trả về kèm
+`cross_observation_class_warning=true`.
+
+### P05 — tập held-out và chênh lệch tổng quát hóa
+
+`report` thêm ba trường:
+
+- `scenario_split` — `"dev" | "holdout" | "unassigned"`. **Snapshot lúc
+  chạy**, không phải tra lại lúc đọc: đổi phân loại của một scenario
+  hôm nay không được biến số liệu hôm qua thành số liệu holdout.
+- `protocol_version` — phiên bản giao thức lúc chạy. `null` trên report
+  ghi trước P05, và những report đó đọc ra `scenario_split="unassigned"`
+  — đúng, vì lúc đó chưa ai phân loại gì.
+- `generalization_gap` — **luôn `null` hiện nay**: một benchmark chạy
+  đúng một scenario nên toàn bộ report thuộc một split, không có gì để
+  trừ. Chênh lệch được tính **giữa các report** ở `GET /generalization`.
+  Trường này để sẵn cho benchmark nhiều scenario sau này.
+
+Split **không** nằm trong `Scenario` và **không** vào
+`conditions_checksum`. Nguồn sự thật là
+`packages/benchmark/planbench_benchmark/scenario_protocol.json`, có
+version, và chỉ đổi qua review + deploy — không có endpoint ghi.
+
+| Method | Path | Mô tả |
+|---|---|---|
+| GET | /scenario-protocol | Phân loại dev/holdout của scenario; `?scenario_name=` tra một cái. Scenario không có trong file trả `unassigned`. |
+| GET | /generalization | Chênh lệch dev − holdout theo từng stack + nhật ký dùng holdout. |
+
+`GET /scenario-library` mỗi entry thêm `split`, `protocol_version`,
+`split_notes`.
+
+`GET /generalization` trả `GeneralizationSummary`:
+
+- `entries[]` — mỗi stack: `dev`, `holdout` (`SplitSummary`: scenario
+  đóng góp, số report, số episode, metric trung bình, cờ đủ seed),
+  `gap` (`dev − holdout` theo metric) và `warnings[]`.
+- `metrics[]` — `{name, higher_is_better}`. Dấu của `gap` **không tự
+  đọc được**: `+` nghĩa là dev cao hơn, còn như thế là tốt hay xấu do
+  `higher_is_better` quyết định.
+- `gap = null` khi thiếu một phía. `null` là **không tính được**, không
+  phải "không có chênh lệch".
+- Scenario `unassigned` bị **loại và đếm** (`unassigned_report_count`),
+  không gộp vào dev.
+- `holdout_usage[]` — mọi benchmark từng chạy scenario holdout
+  (`benchmark_id`, tên, scenario, số seed, thời điểm kết thúc). Tập
+  held-out mất giá trị vì bị xem nhiều lần; đây là con số để đối chiếu.
+- Scenario có trọng số **bằng nhau**: trung bình trong từng scenario
+  trước, rồi mới trung bình qua các scenario — chạy một scenario 10 lần
+  không làm nó lấn át các scenario còn lại.
+- `accepted_only` mặc định `true`, giống leaderboard.
+
+### P03 — độ khó đo được
+
+```text
+difficulty(scenario) = 1 - success_rate(baseline đã ghim, seed cố định)
+```
+
+Độ khó **không** nằm trong `Scenario` và **không** vào
+`conditions_checksum` — nó là kết quả đo, không phải đặc tính của
+scenario. Nguồn sự thật là
+`packages/benchmark/planbench_benchmark/difficulty_calibration.json`, do
+`scripts/calibrate_difficulty.py` sinh ra và **không có endpoint ghi**.
+
+| Method | Path | Mô tả |
+|---|---|---|
+| GET | /difficulty-calibration | Thang độ khó đang cài + baseline + báo cáo dải difficulty. |
+
+`GET /scenario-library` mỗi entry thêm `difficulty`:
+`DifficultyLabel | null`. `null` nghĩa là **chưa đo** — không được thay
+bằng `curriculum_index`, vì đó là dự định của người viết, còn cái này là
+số đo, và việc hai thứ lệch nhau chính là điều cần thấy.
+
+`DifficultyLabel`:
+
+- `value` — độ khó trong `[0, 1]`; `ci95` — khoảng Wilson của chính độ
+  khó (lấy gương từ khoảng của success rate).
+- `band` — `easy ≤ 0.2 < moderate ≤ 0.6 < hard ≤ 0.999 < unsolved`.
+  `unsolved` tách riêng khỏi `hard`: baseline chưa từng giải được, nên
+  không xếp thứ tự với nhau được.
+- `calibration_version`, `baseline_algorithm`, `seed_count`.
+- `adequate = false` khi đo trên ít hơn 30 seed (số liệu tạm).
+- `stale = true` khi scenario đã đổi so với lúc đo. Vẫn trả số, có cờ —
+  ẩn đi sẽ thành ô trống, mà ô trống nghĩa là "chưa đo", một vấn đề
+  khác hẳn.
+
+`GET /difficulty-calibration` trả `DifficultyCalibrationSummary`:
+
+- `baseline` — thuật toán, config, `replanning_enabled`, danh sách seed,
+  robot profile, `benchmark_spec_version`, `protocol_version`,
+  `git_sha`. Ghi tên `astar+dwa` không là baseline: cùng stack trên robot
+  khác, seed khác hay commit khác là một thang đo khác.
+- `scenarios[]` — `DifficultyLabel` theo thứ tự curriculum.
+- `coverage` — `min/max/spread`, `band_counts`, `midrange_count`,
+  `uncalibrated[]` và `warnings[]` (dải quá hẹp, **rỗng ở khoảng giữa**,
+  toàn dễ, toàn khó, có scenario chưa từng giải được, ít seed).
+  `midrange_count` là số scenario nằm trong `(0.2, 0.8)` — tách riêng
+  khỏi `spread` vì một bộ scenario dồn hết về 0.0 và 1.0 đạt `spread`
+  tối đa mà vẫn không phân biệt được stack nào với stack nào.
+- Chưa hiệu chuẩn thì trả `200` với thang rỗng + cảnh báo, **không phải
+  lỗi**: "chưa đo" là một trạng thái bình thường.
+
+### Scenario Editor (2.3)
+
+`ScenarioResource` thêm `split` — **chỉ đọc**, resolve từ
+`scenario_protocol.json`. Không có trường request nào đặt được nó: gửi
+kèm `"split": "dev"` trong body scenario cũng bị bỏ qua và kết quả vẫn
+là `unassigned`. Chuyển nhóm là thay đổi giao thức, phải review.
+
+`POST /scenarios/preview`:
+
+- request `{map_id, scenario, time ≥ 0, seed}`;
+- response `{time, seed, valid, errors[], dynamic_obstacles[]}`, mỗi
+  phần tử `{name, radius, position}`.
+- Vị trí do backend tính bằng `position_at` — **đúng hàm simulator
+  dùng**. Frontend không tự cài lại quy luật chuyển động: bản thứ hai sẽ
+  trôi khỏi bản thứ nhất, và một preview mâu thuẫn với episode còn tệ
+  hơn không có preview.
+- Trả cả vị trí lẫn `errors[]`: người đang sửa một bố cục sai vẫn cần
+  nhìn thấy bố cục đó.
+- `time < 0` → `422`. Thời gian âm không có nghĩa trong một episode.
+
+`POST /scenarios/validate` là **đúng phép kiểm mà `create`/`update`
+chạy** (cùng `SimulationEngine.load_scenario`). Nhờ vậy không có chuyện
+editor báo hợp lệ rồi lúc lưu bị từ chối vì một luật chưa ai nói.
+
 ## Episodes (M4)
 
 | Method | Path | Mô tả |
 |---|---|---|
 | GET | /episodes/{id} | Metadata + RunRecord + artifact reference |
 | GET | /episodes/{id}/result | EpisodeResult (trajectory + events) |
-| GET | /episodes/{id}/plan | PlanResult của A* |
+| GET | /episodes/{id}/plan | PlanResult của global planner (A* hoặc RRT*) |
 | GET | /episodes/{id}/replay | `{plan_path, trajectory, events, metrics}` cho UI replay |
 
 ## Algorithms (M4)
 
 `GET /algorithms` trả registry stack. `benchmarkable=false` đánh dấu stack
-tham chiếu (hiện tại: `astar+pure_pursuit`) — chỉ để kiểm chứng pipeline,
-không dùng kết luận. `config_schema` là JSON Schema của config stack đó.
+tham chiếu (hiện tại: `astar+pure_pursuit`, `rrtstar+pure_pursuit`) — chỉ
+để kiểm chứng pipeline, không dùng kết luận. `config_schema` là JSON Schema
+của config **local planner** của stack đó.
+
+Hai trường mô tả nửa global của stack:
+
+| Trường | Ý nghĩa |
+|---|---|
+| `global_planner` | Id global planner (`astar`, `rrtstar`). Registry khai báo tường minh, không suy ra từ chuỗi `id`. |
+| `stochastic_global_planner` | `true` khi global planner lấy mẫu ngẫu nhiên. Kết quả chỉ đọc được qua nhiều seed; UI hiện cảnh báo. |
+
+Ba trường khai báo **cân bằng thông tin** (P02) — stack nhìn thấy dữ liệu gì:
+
+| Trường | Ý nghĩa |
+|---|---|
+| `global_observation_class` | Dữ liệu global planner được xem. Hiện mọi stack là `full_static_map`. |
+| `local_observation_class` | Dữ liệu bộ điều khiển được xem. Hiện mọi stack là `lidar_only`. |
+| `requires_global_path` | `true` khi bộ điều khiển bám đường toàn cục. |
+
+Giá trị hợp lệ: `full_static_map`, `lidar_only`, `human_states`,
+`lidar+human_states`. **Không có default** — đăng ký stack mới mà không
+khai báo thì `AlgorithmInfo` fail validation ngay lúc import. Nhãn sai
+nguy hiểm hơn nhãn thiếu: nó làm một so sánh không công bằng trông như
+đã được kiểm.
+
+Seed của một stack ngẫu nhiên **được dẫn xuất từ seed episode** (cùng seed
+điều khiển vật cản động), nên mỗi episode mọc một cây khác nhau còn chạy
+lại cùng seed thì tái lập đúng đường cũ. Config của global planner chưa
+nằm trong `BenchmarkSpec` — MVP chạy mặc định; đây là chỗ P01 (Optuna) sẽ
+cắm vào.
 
 ## Agent (M8)
 

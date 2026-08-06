@@ -173,6 +173,24 @@ def collect_benchmark_evidence(
                         value=aggregate.mean_travel_time_successful,
                     )
                 )
+            if aggregate.median_travel_time_successful is not None:
+                # Offered alongside the mean, and phrased so a generated
+                # sentence carries the interval with the number. An agent
+                # given only a point estimate writes "A is faster"; given
+                # the interval it can write what the runs support.
+                interval = aggregate.ci95_travel_time_successful
+                spread = f", 95% CI [{interval[0]:.3f}, {interval[1]:.3f}]" if interval else ""
+                items.append(
+                    EvidenceItem(
+                        citation=citation,
+                        statement=(
+                            f"{aggregate.algorithm}: median travel time over successful "
+                            f"episodes = {aggregate.median_travel_time_successful:.3f} s"
+                            f"{spread}"
+                        ),
+                        value=aggregate.median_travel_time_successful,
+                    )
+                )
             if aggregate.worst_min_clearance is not None:
                 items.append(
                     EvidenceItem(

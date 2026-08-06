@@ -16,12 +16,33 @@ export type BenchmarkState =
   | "accepted"
   | "rejected";
 
+/** What a planner layer is allowed to see (P02, information parity).
+ *
+ *  A stack that reads ground-truth pedestrian states is solving an
+ *  easier problem than one running on LiDAR; the label is what stops the
+ *  leaderboard from reporting that as a better algorithm. */
+export type ObservationClass =
+  | "full_static_map"
+  | "lidar_only"
+  | "human_states"
+  | "lidar+human_states";
+
 export interface AlgorithmInfo {
   id: string;
   kind: string;
   description: string;
   benchmarkable: boolean;
   config_schema: Record<string, unknown>;
+  /** Which global planner runs, stated by the registry rather than parsed out of `id`. */
+  global_planner: string;
+  /** True when that planner samples randomly, so results need many seeds to mean anything. */
+  stochastic_global_planner: boolean;
+  /** What the global planner is given — normally the whole static map. */
+  global_observation_class: ObservationClass;
+  /** What the controller is given. Stacks differing here are not comparable. */
+  local_observation_class: ObservationClass;
+  /** True when the controller is steered by a global path. */
+  requires_global_path: boolean;
 }
 
 export interface AlgorithmSpec {
@@ -116,6 +137,36 @@ export interface AlgorithmAggregate {
   mean_local_planning_latency: number | null;
   max_local_planning_latency: number | null;
   mean_global_planning_time: number | null;
+  /** Robust summaries (P04). `iqr_*` is [q1, q3] — how much the runs
+   *  varied; `ci95_*` is a bootstrap interval for the median — how well
+   *  this many seeds pin it down. Null means not computed (no successful
+   *  episode, or a report written before P04), never zero. */
+  median_travel_time_successful: number | null;
+  iqr_travel_time_successful: [number, number] | null;
+  ci95_travel_time_successful: [number, number] | null;
+  median_path_efficiency_successful: number | null;
+  iqr_path_efficiency_successful: [number, number] | null;
+  ci95_path_efficiency_successful: [number, number] | null;
+  median_smoothness_successful: number | null;
+  iqr_smoothness_successful: [number, number] | null;
+  ci95_smoothness_successful: [number, number] | null;
+  ci95_success_rate: [number, number] | null;
+}
+
+/** One head-to-head test, paired seed by seed. Every numeric field is
+ *  nullable: too few paired seeds means no test was run, and that is a
+ *  normal outcome rather than an error. */
+export interface PairwiseComparison {
+  algorithm_a: string;
+  algorithm_b: string;
+  metric: string;
+  statistic: number | null;
+  p_value: number | null;
+  /** Cliff's delta of A against B. Negative = A's values are lower. */
+  effect_size: number | null;
+  significant: boolean;
+  paired_seed_count: number;
+  warning: string | null;
 }
 
 export interface BenchmarkReport {
@@ -123,6 +174,23 @@ export interface BenchmarkReport {
   fairness: FairnessRecord;
   runs: RunRecord[];
   aggregates: AlgorithmAggregate[];
+  /** Empty on single-algorithm benchmarks and on reports predating P04. */
+  comparisons: PairwiseComparison[];
+  /** Seeds every algorithm faced. */
+  seed_count: number;
+  /** False when the seed count is too small to support a conclusion.
+   *  Does not block anything — it changes what the numbers may claim. */
+  statistically_adequate: boolean;
+  /** Which split this scenario was in when the benchmark ran (P05), and
+   *  under which protocol version. Snapshotted, so re-classifying the
+   *  scenario later does not relabel these numbers. Null/`unassigned` on
+   *  reports written before P05. */
+  protocol_version: string | null;
+  scenario_split: "dev" | "holdout" | "unassigned";
+  /** Always null today: one benchmark is one scenario, so it is entirely
+   *  one split. The gap is computed across benchmarks — see
+   *  `GET /generalization`. Null means "not computed", not "no gap". */
+  generalization_gap: Record<string, number> | null;
 }
 
 export interface BenchmarkResults {

@@ -9,6 +9,7 @@ from planbench_planning.common.path_utils import (
     simplify_path,
 )
 from planbench_planning.dwa.planner import DWAConfig, DWAPlanner
+from planbench_planning.rrtstar.planner import RRTStarConfig, RRTStarPlanner
 
 __all__ = [
     "AStarConfig",
@@ -19,6 +20,8 @@ __all__ = [
     "LocalPlanResult",
     "LocalPlanner",
     "PlanResult",
+    "RRTStarConfig",
+    "RRTStarPlanner",
     "has_line_of_sight",
     "path_length",
     "simplify_path",
