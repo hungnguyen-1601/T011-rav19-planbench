@@ -9,7 +9,21 @@
 import { useCallback, useEffect, useRef } from "react";
 import { OCCUPIED, UNKNOWN } from "@/lib/demoMap";
 import { canvasToWorld, fitViewport, type Viewport } from "@/lib/transform";
-import type { MapData, Point2D, Pose2D, TrajectoryPoint } from "@/lib/types";
+import type { MapData, Point2D, Pose2D, StaticObstacle, TrajectoryPoint } from "@/lib/types";
+
+/** One moving obstacle, already resolved to a position.
+ *
+ * The canvas takes a *position*, not a motion law. Evaluating motion in
+ * the browser would be a second implementation of the simulator's, and
+ * the two would drift; every position drawn here comes from the backend
+ * (`POST /scenarios/preview` in the editor, the episode stream in
+ * replay), so the picture cannot disagree with the run.
+ */
+export interface ObstacleMarker {
+  name: string;
+  radius: number;
+  position: Point2D;
+}
 
 export interface MapCanvasProps {
   map: MapData;
@@ -23,6 +37,14 @@ export interface MapCanvasProps {
   trajectory?: TrajectoryPoint[];
   robotPose?: Pose2D | null;
   collisionPoint?: Point2D | null;
+  /** Static obstacles as authored: circles and axis-aligned rectangles.
+   *  Pure geometry, so the canvas can draw these itself. */
+  staticObstacles?: StaticObstacle[];
+  /** Moving obstacles at one instant — see {@link ObstacleMarker}. */
+  dynamicObstacles?: ObstacleMarker[];
+  /** The instant `dynamicObstacles` describes, in seconds, for the label.
+   *  The editor passes the scrubber position; replay passes the playhead. */
+  previewTime?: number;
   showGrid?: boolean;
   showPlan?: boolean;
   showTrajectory?: boolean;
@@ -41,6 +63,11 @@ const COLOR = {
   start: "#3fb950",
   goal: "#d24d9a",
   collision: "#f85149",
+  // Static obstacles read as part of the world, like walls; moving ones
+  // are warm and outlined, because where they are is a fact about one
+  // instant and one seed, not about the map.
+  staticObstacle: "#8a94a6",
+  dynamicObstacle: "#f0b429",
 };
 
 export function MapCanvas({
@@ -55,6 +82,9 @@ export function MapCanvas({
   trajectory,
   robotPose,
   collisionPoint,
+  staticObstacles,
+  dynamicObstacles,
+  previewTime,
   showGrid = true,
   showPlan = true,
   showTrajectory = true,
@@ -127,6 +157,53 @@ export function MapCanvas({
         ctx.lineTo(x1, y);
       }
       ctx.stroke();
+    }
+
+    // Obstacles go under the plan and trajectory: the question the
+    // picture answers is where the path runs relative to them.
+    if (staticObstacles) {
+      ctx.fillStyle = COLOR.staticObstacle;
+      for (const obstacle of staticObstacles) {
+        if (obstacle.type === "circle") {
+          const [x, y] = toCanvas(obstacle.center.x, obstacle.center.y);
+          ctx.beginPath();
+          ctx.arc(x, y, Math.max(2, obstacle.radius * viewport.scale), 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          const [x, y] = toCanvas(obstacle.min_x, obstacle.max_y);
+          ctx.fillRect(
+            x,
+            y,
+            (obstacle.max_x - obstacle.min_x) * viewport.scale,
+            (obstacle.max_y - obstacle.min_y) * viewport.scale,
+          );
+        }
+      }
+    }
+
+    if (dynamicObstacles) {
+      for (const obstacle of dynamicObstacles) {
+        const [x, y] = toCanvas(obstacle.position.x, obstacle.position.y);
+        const r = Math.max(3, obstacle.radius * viewport.scale);
+        ctx.fillStyle = "rgba(240, 180, 41, 0.25)";
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = COLOR.dynamicObstacle;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = COLOR.dynamicObstacle;
+        ctx.font = "11px ui-sans-serif, system-ui";
+        ctx.fillText(obstacle.name, x + r + 4, y - r - 2);
+      }
+      if (dynamicObstacles.length > 0 && previewTime !== undefined) {
+        // The instant is part of the picture: two obstacles that never
+        // meet at t=0 may well meet at t=7, and a snapshot with no clock
+        // on it invites the reader to take it for the whole episode.
+        ctx.fillStyle = COLOR.dynamicObstacle;
+        ctx.font = "11px ui-sans-serif, system-ui";
+        ctx.fillText(`t = ${previewTime.toFixed(1)}s`, 8, 14);
+      }
     }
 
     if (showPlan && plannedPath && plannedPath.length > 1) {
@@ -215,6 +292,9 @@ export function MapCanvas({
     trajectory,
     robotPose,
     collisionPoint,
+    staticObstacles,
+    dynamicObstacles,
+    previewTime,
     showGrid,
     showPlan,
     showTrajectory,

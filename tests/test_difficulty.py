@@ -452,3 +452,83 @@ class TestCalibrationScript:
     def test_git_sha_is_stated_even_when_unknown(self) -> None:
         sha = script.git_sha()
         assert sha, "a missing commit must be recorded as unknown, not omitted"
+
+
+class TestCalibratingAnAuthoredScenario:
+    """A scenario drawn in the editor (plan 2.3) can get on the scale.
+
+    It is not in the built-in library, so there is nothing to build by
+    name; the calibration takes a bundle exported from the API instead.
+    Without this, the editor could fill the empty middle of the
+    difficulty range and nobody could measure that it had.
+    """
+
+    def _bundle(self, tmp_path, *, wrapped: bool = False) -> Path:
+        map_data, scenario = build_scenario("open_space")
+        renamed = scenario.model_copy(update={"name": "authored_scenario"})
+        payload = (
+            {
+                # The shapes GET /maps/{id} and GET /scenarios/{id} return,
+                # which is what someone pasting two curl outputs will have.
+                "map": {"id": "m1", "map_data": map_data.model_dump(mode="json")},
+                "scenario": {"id": "s1", "scenario": renamed.model_dump(mode="json")},
+            }
+            if wrapped
+            else {
+                "map": map_data.model_dump(mode="json"),
+                "scenario": renamed.model_dump(mode="json"),
+            }
+        )
+        path = tmp_path / "bundle.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
+
+    def test_bundle_loads_bare_objects(self, tmp_path) -> None:
+        map_data, scenario = script.load_bundle(self._bundle(tmp_path))
+        assert scenario.name == "authored_scenario"
+        assert map_data.name == "open-space"
+
+    def test_bundle_loads_api_resources(self, tmp_path) -> None:
+        map_data, scenario = script.load_bundle(self._bundle(tmp_path, wrapped=True))
+        assert scenario.name == "authored_scenario"
+        assert map_data.name == "open-space"
+
+    def test_bundle_missing_a_half_is_refused(self, tmp_path) -> None:
+        path = tmp_path / "half.json"
+        path.write_text(json.dumps({"scenario": {}}), encoding="utf-8")
+        with pytest.raises(ValueError, match="map and a scenario"):
+            script.load_bundle(path)
+
+    def test_an_authored_scenario_is_calibrated_as_unassigned(self, tmp_path) -> None:
+        """Measuring how hard it is says nothing about where it belongs.
+
+        Difficulty and split are separate facts (P03 and P05); a
+        calibration run must not be a back door into the dev set.
+        """
+        map_data, scenario = script.load_bundle(self._bundle(tmp_path))
+        calibration = script.build_calibration(
+            ("authored_scenario",),
+            algorithm="astar+dwa",
+            algorithm_config={},
+            seeds=(0,),
+            version="authored",
+            notes=None,
+            sources={"authored_scenario": (map_data, scenario)},
+        )
+        entry = calibration.scenarios["authored_scenario"]
+        assert entry.scenario_split == "unassigned"
+        assert 0.0 <= entry.difficulty <= 1.0
+        assert entry.map_checksum == map_data.checksum()
+
+    def test_a_bundle_scenario_is_not_rejected_as_unknown(self, tmp_path, capsys) -> None:
+        exit_code = script.main(
+            [
+                "--dry-run",
+                "--dry-run-seeds",
+                "1",
+                "--scenario-file",
+                str(self._bundle(tmp_path)),
+            ]
+        )
+        assert exit_code == 0
+        assert "authored_scenario" in capsys.readouterr().out

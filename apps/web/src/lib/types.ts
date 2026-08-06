@@ -47,6 +47,54 @@ export interface RobotConfig {
   max_angular_acceleration: number;
 }
 
+export interface CircleObstacle {
+  type: "circle";
+  center: Point2D;
+  radius: number;
+}
+
+export interface RectangleObstacle {
+  type: "rectangle";
+  min_x: number;
+  min_y: number;
+  max_x: number;
+  max_y: number;
+}
+
+export type StaticObstacle = CircleObstacle | RectangleObstacle;
+
+/** Motion laws, mirroring `planbench_schemas.dynamic`. The UI authors
+ *  these and sends them to the backend; it never evaluates them — see
+ *  `ObstacleMarker` in MapCanvas. */
+export interface WaypointMotion {
+  kind: "waypoint";
+  waypoints: Point2D[];
+  speed: number;
+  loop?: boolean;
+  ping_pong?: boolean;
+}
+
+export interface PeriodicMotion {
+  kind: "periodic";
+  start: Point2D;
+  end: Point2D;
+  period: number;
+  phase?: number;
+}
+
+export type Motion = WaypointMotion | PeriodicMotion;
+
+export interface DynamicObstacle {
+  name: string;
+  radius: number;
+  motion: Motion;
+  /** Seconds of seed-derived head start. Zero means every seed replays
+   *  the identical traffic, which reports a variance of zero that is not
+   *  real — the editor defaults it above zero for that reason. */
+  seed_time_offset?: number;
+  seed_offset?: number;
+}
+
 export interface Scenario {
   name: string;
   description?: string;
@@ -56,7 +104,10 @@ export interface Scenario {
   goal_tolerance: number;
   timeout_seconds: number;
   simulation_dt: number;
-  static_obstacles?: unknown[];
+  static_obstacles?: StaticObstacle[];
+  dynamic_obstacles?: DynamicObstacle[];
+  random_seed?: number;
+  progress_time_window?: number;
 }
 
 export interface ScenarioResource {
@@ -65,6 +116,23 @@ export interface ScenarioResource {
   map_id: string;
   created_at: string;
   scenario: Scenario;
+  /** Evaluation split (P05), resolved server-side. Anything authored in
+   *  the app is `unassigned` and cannot be changed from here. */
+  split: "dev" | "holdout" | "unassigned";
+}
+
+export interface ValidationReport {
+  valid: boolean;
+  errors: string[];
+}
+
+/** Obstacle positions at one instant, computed by the backend. */
+export interface ScenarioPreview {
+  time: number;
+  seed: number;
+  valid: boolean;
+  errors: string[];
+  dynamic_obstacles: { name: string; radius: number; position: Point2D }[];
 }
 
 export interface SimulationResource {

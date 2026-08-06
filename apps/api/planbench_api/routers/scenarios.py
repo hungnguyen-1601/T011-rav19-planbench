@@ -8,8 +8,17 @@ from fastapi import APIRouter, Depends, status
 
 from planbench_api.dependencies import get_map_service, get_scenario_service
 from planbench_api.repositories import StoredScenario
-from planbench_api.schemas import ScenarioCreateRequest, ScenarioResource, ValidationReport
+from planbench_api.schemas import (
+    DynamicObstacleSnapshot,
+    ScenarioCreateRequest,
+    ScenarioPreview,
+    ScenarioPreviewRequest,
+    ScenarioResource,
+    ValidationReport,
+)
 from planbench_api.services import MapService, ScenarioService
+from planbench_benchmark import scenario_split
+from planbench_schemas.dynamic import position_at
 
 router = APIRouter(prefix="/scenarios", tags=["scenarios"])
 
@@ -24,6 +33,10 @@ def _resource(stored: StoredScenario) -> ScenarioResource:
         map_id=stored.map_id,
         created_at=stored.created_at,
         scenario=stored.scenario,
+        # Resolved, never stored and never accepted from the request: a
+        # scenario authored here is unassigned until a reviewed change to
+        # scenario_protocol.json says otherwise.
+        split=scenario_split(stored.scenario.name),
     )
 
 
@@ -58,6 +71,45 @@ def delete_scenario(scenario_id: str, service: Service) -> None:
 def validate_scenario(
     request: ScenarioCreateRequest, service: Service, maps: Maps
 ) -> ValidationReport:
+    """Check a scenario against a map with the real engine.
+
+    The editor calls this before saving. It is the same check ``create``
+    and ``update`` run, so a scenario that validates here cannot be
+    rejected on save for a reason the author was not shown — and the
+    browser never decides for itself that a scenario is legal.
+    """
     stored_map = maps.get(request.map_id)
     errors = service.validate_against_map(stored_map.map_data, request.scenario)
     return ValidationReport(valid=not errors, errors=tuple(errors))
+
+
+@router.post("/preview", response_model=ScenarioPreview)
+def preview_scenario(
+    request: ScenarioPreviewRequest, service: Service, maps: Maps
+) -> ScenarioPreview:
+    """Where the moving obstacles are at ``time``, plus the verdict.
+
+    Exists so the editor can draw traffic without implementing motion
+    laws in the browser. Two reasons that matters beyond tidiness: a
+    second implementation would drift from the simulator's, and a preview
+    that disagrees with the episode is worse than no preview at all —
+    the author would place the start pose clear of an obstacle that is
+    somewhere else when the episode actually runs.
+    """
+    stored_map = maps.get(request.map_id)
+    errors = service.validate_against_map(stored_map.map_data, request.scenario)
+    snapshots = tuple(
+        DynamicObstacleSnapshot(
+            name=obstacle.name,
+            radius=obstacle.radius,
+            position=position_at(obstacle, request.time, request.seed),
+        )
+        for obstacle in request.scenario.dynamic_obstacles
+    )
+    return ScenarioPreview(
+        time=request.time,
+        seed=request.seed,
+        valid=not errors,
+        errors=tuple(errors),
+        dynamic_obstacles=snapshots,
+    )
