@@ -17,7 +17,13 @@ import logging
 from collections.abc import Callable, Sequence
 from statistics import fmean
 
-from planbench_benchmark.registry import build_local_planner
+from planbench_benchmark.comparison import build_comparisons
+from planbench_benchmark.registry import (
+    algorithm_info,
+    build_global_planner,
+    build_local_planner,
+)
+from planbench_benchmark.scenario_protocol import scenario_protocol_metadata
 from planbench_benchmark.spec import (
     AlgorithmAggregate,
     AlgorithmSpec,
@@ -26,6 +32,7 @@ from planbench_benchmark.spec import (
     FairnessRecord,
     RunRecord,
 )
+from planbench_metrics.statistics import bootstrap_ci, median_iqr, proportion_ci
 from planbench_schemas.episode import EpisodeStatus
 from planbench_schemas.map import MapData
 from planbench_schemas.scenario import Scenario
@@ -37,10 +44,17 @@ logger = logging.getLogger("planbench.benchmark")
 def run_single(
     map_data: MapData, scenario: Scenario, algorithm: AlgorithmSpec, seed: int
 ) -> StackRun:
-    """Run one episode of one algorithm at one seed."""
+    """Run one episode of one algorithm at one seed.
+
+    The same seed drives the scenario (dynamic obstacles) and the global
+    planner. A sampling planner therefore grows a different tree per
+    seed instead of replaying one lucky tree for the whole sweep, while
+    every algorithm still faces the identical set of conditions.
+    """
     seeded = scenario.model_copy(update={"random_seed": seed})
     planner = build_local_planner(algorithm.id, algorithm.config)
-    return run_stack(map_data, seeded, planner)
+    global_planner = build_global_planner(algorithm.id, episode_seed=seed)
+    return run_stack(map_data, seeded, planner, global_planner)
 
 
 def run_benchmark(
@@ -91,7 +105,43 @@ def run_benchmark(
         aggregate_algorithm(algorithm.id, [r for r in runs if r.algorithm == algorithm.id])
         for algorithm in spec.algorithms
     )
-    return BenchmarkReport(spec=spec, fairness=fairness, runs=tuple(runs), aggregates=aggregates)
+    # Snapshot the evaluation protocol as it stands right now (P05). Read
+    # once, stored with the report: a later re-classification of this
+    # scenario describes later benchmarks, not this one.
+    protocol = scenario_protocol_metadata(scenario.name)
+    return BenchmarkReport(
+        spec=spec,
+        fairness=fairness,
+        runs=tuple(runs),
+        aggregates=aggregates,
+        comparisons=build_comparisons(runs, aggregates),
+        protocol_version=protocol.protocol_version,
+        scenario_split=protocol.split,
+    )
+
+
+#: Fixed so re-analysing the same runs gives the same interval. A
+#: bootstrap seeded from the clock would make two people quoting the
+#: same report disagree in the third decimal and have no way to tell
+#: which of them was right.
+BOOTSTRAP_SEED = 0
+
+
+def _robust_summary(
+    values: Sequence[float],
+) -> tuple[float | None, tuple[float, float] | None, tuple[float, float] | None]:
+    """``(median, (q1, q3), ci95)`` for one metric, or Nones when undefined.
+
+    A stack that never succeeded has no distribution to describe, and a
+    single success has a median but nothing to bootstrap from — one
+    resample of one value is that value. Returning None there is the
+    difference between "we did not measure this" and "this is zero".
+    """
+    if not values:
+        return (None, None, None)
+    median, q1, q3 = median_iqr(values)
+    interval = bootstrap_ci(values, seed=BOOTSTRAP_SEED) if len(values) >= 2 else None
+    return (median, (q1, q3), interval)
 
 
 def aggregate_algorithm(algorithm_id: str, runs: Sequence[RunRecord]) -> AlgorithmAggregate:
@@ -127,8 +177,25 @@ def aggregate_algorithm(algorithm_id: str, runs: Sequence[RunRecord]) -> Algorit
         if run.metrics.global_planning_time is not None
     ]
 
+    # Copy the information-parity declaration into the result rather
+    # than resolving it when the leaderboard renders: the registry can
+    # change, these numbers cannot.
+    info = algorithm_info(algorithm_id)
+
+    travel_times = [run.metrics.travel_time for run in successful]
+    efficiencies = [
+        run.metrics.path_efficiency for run in successful if run.metrics.path_efficiency is not None
+    ]
+    smoothnesses = [run.metrics.smoothness for run in successful]
+    travel_stats = _robust_summary(travel_times)
+    efficiency_stats = _robust_summary(efficiencies)
+    smoothness_stats = _robust_summary(smoothnesses)
+
     return AlgorithmAggregate(
         algorithm=algorithm_id,
+        global_observation_class=info.global_observation_class if info else None,
+        local_observation_class=info.local_observation_class if info else None,
+        requires_global_path=info.requires_global_path if info else None,
         episodes=episodes,
         success_rate=rate(EpisodeStatus.SUCCESS),
         collision_rate=rate(EpisodeStatus.COLLISION),
@@ -149,4 +216,14 @@ def aggregate_algorithm(algorithm_id: str, runs: Sequence[RunRecord]) -> Algorit
         mean_local_planning_latency=mean_of(latencies),
         max_local_planning_latency=max(max_latencies) if max_latencies else None,
         mean_global_planning_time=mean_of(planning_times),
+        median_travel_time_successful=travel_stats[0],
+        iqr_travel_time_successful=travel_stats[1],
+        ci95_travel_time_successful=travel_stats[2],
+        median_path_efficiency_successful=efficiency_stats[0],
+        iqr_path_efficiency_successful=efficiency_stats[1],
+        ci95_path_efficiency_successful=efficiency_stats[2],
+        median_smoothness_successful=smoothness_stats[0],
+        iqr_smoothness_successful=smoothness_stats[1],
+        ci95_smoothness_successful=smoothness_stats[2],
+        ci95_success_rate=proportion_ci(len(successful), episodes),
     )

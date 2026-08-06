@@ -1,10 +1,10 @@
-"""End-to-end tests for navigation stacks (A* + local planner)."""
+"""End-to-end tests for navigation stacks (global + local planner)."""
 
 from __future__ import annotations
 
 import pytest
 
-from planbench_planning import DWAConfig, DWAPlanner
+from planbench_planning import DWAConfig, DWAPlanner, RRTStarConfig, RRTStarPlanner
 from planbench_schemas.episode import EpisodeStatus
 from planbench_schemas.geometry import Pose2D
 from planbench_schemas.robot import RobotConfig
@@ -112,6 +112,47 @@ class TestAStarDWAStack:
         assert not run.plan.success
         assert run.result.status is EpisodeStatus.NO_GLOBAL_PATH
         assert run.result.events[0].type == "no_global_path"
+
+
+def rrtstar(episode_seed: int = 0) -> RRTStarPlanner:
+    """RRT* with a test-sized budget on the metre-scale test maps."""
+    return RRTStarPlanner(
+        RRTStarConfig(max_iterations=2000, step_size=1.0, rewire_radius=2.0),
+        episode_seed=episode_seed,
+    )
+
+
+class TestRRTStarDWAStack:
+    def test_reaches_the_goal_in_an_open_map(
+        self, bordered_map_factory, robot: RobotConfig
+    ) -> None:
+        run = run_stack(bordered_map_factory(14, 14), make_scenario(robot), DWAPlanner(), rrtstar())
+        assert run.algorithm == "rrtstar+dwa"
+        assert run.plan.success
+        assert run.result.status is EpisodeStatus.SUCCESS, run.result.reason
+
+    def test_differs_from_the_astar_stack_in_the_global_path_only(
+        self, bordered_map_factory, robot: RobotConfig
+    ) -> None:
+        # What makes the two stacks comparable: same map, same scenario,
+        # same controller — the global planner is the single variable.
+        map_data = bordered_map_factory(14, 14, occupied=((6, 6), (6, 7), (7, 6)))
+        scenario = make_scenario(robot)
+        astar_run = run_stack(map_data, scenario, DWAPlanner())
+        rrt_run = run_stack(map_data, scenario, DWAPlanner(), rrtstar())
+        assert astar_run.algorithm == "astar+dwa"
+        assert rrt_run.algorithm == "rrtstar+dwa"
+        assert rrt_run.plan.path != astar_run.plan.path
+
+    def test_same_seed_reproduces_the_episode(
+        self, bordered_map_factory, robot: RobotConfig
+    ) -> None:
+        map_data = bordered_map_factory(14, 14, occupied=((6, 6), (6, 7), (7, 6)))
+        scenario = make_scenario(robot)
+        first = run_stack(map_data, scenario, DWAPlanner(), rrtstar(episode_seed=7))
+        second = run_stack(map_data, scenario, DWAPlanner(), rrtstar(episode_seed=7))
+        assert first.plan.path == second.plan.path
+        assert first.result.trajectory == second.result.trajectory
 
 
 class TestPurePursuitStackAdapter:

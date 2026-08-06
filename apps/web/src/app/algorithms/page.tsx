@@ -10,6 +10,9 @@
  * - a stack with required config (`astar+ppo` needs a trained
  *   checkpoint) cannot be run until a human supplies it — which is also
  *   why the agent is not allowed to propose one.
+ * - a stack whose global planner samples randomly (`rrtstar+*`) is
+ *   flagged, because a single run of it is an anecdote: the reader has
+ *   to know to look at many seeds before quoting a number.
  */
 
 import { useEffect, useState } from "react";
@@ -76,6 +79,9 @@ export default function AlgorithmsPage() {
                 {algorithm.benchmarkable ? t("algorithms.benchmarkable") : t("algorithms.reference")}
               </span>
               <span className="muted">{algorithm.kind}</span>
+              {algorithm.stochastic_global_planner ? (
+                <span className="badge warn">{t("algorithms.randomised")}</span>
+              ) : null}
               {required.length > 0 ? (
                 <span className="badge warn">
                   {t("algorithms.needs", { fields: required.map((f) => f.name).join(", ") })}
@@ -84,8 +90,24 @@ export default function AlgorithmsPage() {
             </div>
             <p>{algorithm.description}</p>
 
+            {/* Information parity (P02): what each half of the stack is
+             *  allowed to see. Shown on the algorithm itself so the
+             *  declaration is visible before a benchmark is created. */}
+            <p className="muted" title={t("algorithms.observationHint")}>
+              {t("algorithms.observationGlobal")}: <code>{algorithm.global_observation_class}</code>
+              {" · "}
+              {t("algorithms.observationLocal")}: <code>{algorithm.local_observation_class}</code>
+              {" · "}
+              {algorithm.requires_global_path
+                ? t("algorithms.usesGlobalPath")
+                : t("algorithms.noGlobalPath")}
+            </p>
+
             {!algorithm.benchmarkable ? (
               <div className="error-box">{t("algorithms.referenceWarning")}</div>
+            ) : null}
+            {algorithm.stochastic_global_planner ? (
+              <p className="muted">{t("algorithms.randomisedWarning")}</p>
             ) : null}
             {required.length > 0 ? (
               <p className="muted">{t("algorithms.requiredHint")}</p>

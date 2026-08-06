@@ -1,0 +1,205 @@
+{
+  "baseline": {
+    "algorithm": "astar+dwa",
+    "algorithm_config": {},
+    "benchmark_spec_version": "1",
+    "git_sha": "800b2410c552eaf1752a20de3ba2caa4ad80f209",
+    "protocol_version": "1.0.0",
+    "replanning_enabled": false,
+    "robot_profile": {
+      "max_angular_acceleration": 3.0,
+      "max_angular_velocity": 2.0,
+      "max_linear_acceleration": 1.0,
+      "max_linear_velocity": 1.0,
+      "radius": 0.3
+    },
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29
+    ]
+  },
+  "calibration_version": "1.0.0",
+  "notes": "Initial difficulty scale: astar+dwa, seeds 0-29, replanning off.",
+  "scenarios": {
+    "bidirectional_corridor": {
+      "ci95": [
+        0.8864866068260313,
+        1.0
+      ],
+      "difficulty": 1.0,
+      "episodes": 30,
+      "map_checksum": "3cd23a7e9f810390a528fb001d097a19f0500292c0d820b5fe3517a97c76f1ff",
+      "scenario_checksum": "77b2bc8d11826dd61d432928501543a618a2b77711e4901ef5554f6c624eafd4",
+      "scenario_split": "holdout",
+      "status_counts": {
+        "collision": 30
+      },
+      "success_rate": 0.0
+    },
+    "crossing_obstacle": {
+      "ci95": [
+        0.14182663319596323,
+        0.444479616951889
+      ],
+      "difficulty": 0.2666666666666667,
+      "episodes": 30,
+      "map_checksum": "fd1ad73f5474b9a5c07335afc948e2f41de87965b710702e4bfa19ef23d3ba69",
+      "scenario_checksum": "c84a3965ff988d8ea862effcc7a7ac348e479dec884ff7aee3fb380766172dd2",
+      "scenario_split": "dev",
+      "status_counts": {
+        "collision": 8,
+        "success": 22
+      },
+      "success_rate": 0.7333333333333333
+    },
+    "doorway": {
+      "ci95": [
+        0.0,
+        0.1135133931739688
+      ],
+      "difficulty": 0.0,
+      "episodes": 30,
+      "map_checksum": "355937d7c8e1acce06084dabae275775f70e535a743303e5439862a642cb113d",
+      "scenario_checksum": "011e8bee907eaaa98fbc9a83594f2254e3e160c5805dcbcc3c2751252a7b38bc",
+      "scenario_split": "dev",
+      "status_counts": {
+        "success": 30
+      },
+      "success_rate": 1.0
+    },
+    "dynamic_warehouse": {
+      "ci95": [
+        0.8864866068260313,
+        1.0
+      ],
+      "difficulty": 1.0,
+      "episodes": 30,
+      "map_checksum": "6381908c4e5708105df5a0689452f4706830236a334fbdc2bec6f71437d056be",
+      "scenario_checksum": "bac5ce4a0df88d49ca9098de6f021d56680047c00a54922b9263fe29d0bc5579",
+      "scenario_split": "holdout",
+      "status_counts": {
+        "collision": 30
+      },
+      "success_rate": 0.0
+    },
+    "intersection": {
+      "ci95": [
+        0.005908590381612511,
+        0.16670390991409167
+      ],
+      "difficulty": 0.033333333333333326,
+      "episodes": 30,
+      "map_checksum": "95792c9ff9bc659e6c9c5cae43d03588782e8f5c0e6661227789c90da1764850",
+      "scenario_checksum": "d825912dd0671207675fc550dbca9ce4cf09a8ed3c9d3b0b295d9e0d7a63e300",
+      "scenario_split": "holdout",
+      "status_counts": {
+        "collision": 1,
+        "success": 29
+      },
+      "success_rate": 0.9666666666666667
+    },
+    "narrow_corridor": {
+      "ci95": [
+        0.8864866068260313,
+        1.0
+      ],
+      "difficulty": 1.0,
+      "episodes": 30,
+      "map_checksum": "f2f15ce30bf45a5b85a9d3971e0f85f6f1c17059456e60ed33c293d2fd5d8ef0",
+      "scenario_checksum": "6477056cc5a8d8295ab83f95c7f0224f617f7b42b2578c00fc2dee3de7a7c55d",
+      "scenario_split": "dev",
+      "status_counts": {
+        "stuck": 30
+      },
+      "success_rate": 0.0
+    },
+    "open_space": {
+      "ci95": [
+        0.0,
+        0.1135133931739688
+      ],
+      "difficulty": 0.0,
+      "episodes": 30,
+      "map_checksum": "5b03ea780e9335404c3d5d6f7a9aa629fc91df7287e2b4de2a2310fd16752cc1",
+      "scenario_checksum": "2a4c039ea11491ba10a2aea3d6345008a5597d6ed877b58e9ae9cf717d68c1ac",
+      "scenario_split": "dev",
+      "status_counts": {
+        "success": 30
+      },
+      "success_rate": 1.0
+    },
+    "static_obstacles": {
+      "ci95": [
+        0.0,
+        0.1135133931739688
+      ],
+      "difficulty": 0.0,
+      "episodes": 30,
+      "map_checksum": "0b2760ac7a17aac030f24a0407ec647908a92fa8a4a812c8fc91aed67366813c",
+      "scenario_checksum": "753103f1fa8abe65465f4c5951ed20fef65b9c9522e1461e22559ea3091f847b",
+      "scenario_split": "dev",
+      "status_counts": {
+        "success": 30
+      },
+      "success_rate": 1.0
+    },
+    "sudden_stop": {
+      "ci95": [
+        0.8864866068260313,
+        1.0
+      ],
+      "difficulty": 1.0,
+      "episodes": 30,
+      "map_checksum": "64574faeb0bea6ff1d05a7eda5f332c188ea4d86d57d12cea9ba28f6665530f0",
+      "scenario_checksum": "5a597123d6acb08c33a2caf802e9d3e3963023ad718ea4e9706da8549c207bad",
+      "scenario_split": "dev",
+      "status_counts": {
+        "stuck": 30
+      },
+      "success_rate": 0.0
+    },
+    "wide_corridor": {
+      "ci95": [
+        0.0,
+        0.1135133931739688
+      ],
+      "difficulty": 0.0,
+      "episodes": 30,
+      "map_checksum": "b9cacc3403b347f7a91e9ca30cdd2d0b06fceb60952b2b26d6ef15e5397e3cfa",
+      "scenario_checksum": "0bb3431750548860f1efde6d997d947bd22d345d041c515150ab765224829297",
+      "scenario_split": "dev",
+      "status_counts": {
+        "success": 30
+      },
+      "success_rate": 1.0
+    }
+  }
+}
