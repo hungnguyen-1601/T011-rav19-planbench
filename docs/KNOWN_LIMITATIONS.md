@@ -639,9 +639,11 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     người chạy lại script. Đổi code planner hoặc simulator thì **không**
     bị bắt — chỉ có `git_sha` trong baseline để đối chiếu bằng mắt.
 
-125. **Độ khó chưa nối vào leaderboard, report hay biểu đồ.** Hiện chỉ
-    có ở `/scenario-library`, `/difficulty-calibration` và trang library.
-    Đường cong `success_rate(difficulty)` thuộc F09 (Đợt 3).
+125. **Độ khó chưa nối vào leaderboard.** Từ 3.1 đã có đường cong
+    `success_rate(difficulty)` trên trang leaderboard và một dòng độ khó
+    trong report Markdown, nhưng **thứ hạng** vẫn không tính đến độ khó:
+    hai stack xếp cạnh nhau trong một nhóm có thể đã chạy các scenario
+    dễ khác nhau, và `overall_score` không biết điều đó.
 
 126. **Calibration chạy trên cả scenario holdout** (3 lần "nhìn" vào tập
     held-out, script có in cảnh báo). Không tránh được — không đo thì
@@ -693,6 +695,65 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
 135. **Không có đường đưa scenario tự tạo vào thư viện.** Nó sống trong
     database, nên `CURRICULUM_ORDER`, PPO curriculum và cache độ khó mặc
     định đều không thấy nó.
+
+## Biểu đồ và xuất báo cáo (3.1)
+
+136. **Đường cong độ khó chỉ vẽ được scenario đã hiệu chuẩn.** Scenario
+    có kết quả nhưng chưa đo độ khó thì không có toạ độ x nên vắng mặt
+    khỏi mọi đường; UI liệt kê tên chúng dưới biểu đồ, nhưng người đọc
+    vẫn phải tự trừ hao. Với cache hiện tại (10 scenario thư viện, rỗng
+    ở khoảng giữa — xem #125 và báo cáo P03), đường cong gần như chỉ có
+    hai cụm ở hai đầu.
+
+137. **Một điểm trên đường cong có thể là trung bình nhiều report.**
+    Cùng một (stack, scenario) chạy nhiều benchmark thì các report được
+    lấy trung bình **theo report**, không gộp theo episode. Tooltip ghi
+    số report và số episode, nhưng nhìn đường cong thì một điểm từ 1 lần
+    chạy và một điểm từ 5 lần chạy trông giống hệt nhau.
+
+138. **Biểu đồ trộn nhóm quan sát nếu người dùng bật trộn.** Đường cong
+    dựng từ chính leaderboard đang xem, nên khi
+    `group_by_observation_class=false` thì các stack nhìn thấy dữ liệu
+    khác nhau nằm chung một biểu đồ. Cảnh báo trộn nhóm hiện ở bảng phía
+    trên, **không** lặp lại trên biểu đồ.
+
+139. **Bộ lọc scenario không áp cho biểu đồ.** Đường cong và chênh lệch
+    dev/holdout luôn dựng từ dữ liệu không lọc — một scenario là một
+    điểm, không phải một đường cong — nên bảng và biểu đồ trên cùng một
+    trang có thể đang nói về hai tập dữ liệu khác nhau.
+
+140. **Clearance và latency không có biểu đồ phân phối.** Chúng được
+    tổng hợp thành worst/mean chứ không phải trung vị + khoảng, nên
+    không có gì để vẽ râu. Vẫn nằm trong bảng và trong report. Percentile
+    latency thuộc F05 (mục 3.2).
+
+141. **Report Markdown không nhúng biểu đồ.** Chỉ có bảng. Ai cần hình
+    phải mở web. PDF cũng chưa có — plan để ngoài MVP, tạm thời in trang
+    web hoặc Markdown ra PDF.
+
+142. **`git_sha` trong report là commit của tiến trình API đang chạy,
+    không phải commit lúc benchmark chạy.** Report cũ xuất lại hôm nay
+    sẽ mang SHA hôm nay. Chỉ đúng khi API không được deploy lại giữa lúc
+    chạy và lúc xuất; muốn chặt chẽ thì phải chụp SHA vào `report` lúc
+    chạy, và đó là thay đổi schema.
+
+143. **Độ khó và chênh lệch tổng quát hóa trong report đọc theo trạng
+    thái *hiện tại*, không phải lúc chạy.** Khác với `scenario_split` và
+    lớp quan sát (đã snapshot). Hiệu chuẩn lại rồi xuất report cũ sẽ ra
+    một con số độ khó khác. Report có ghi `calibration_version` nên
+    người đọc phân biệt được, nhưng bản thân tài liệu không tự cảnh báo.
+
+144. **Biểu đồ không có test render.** Môi trường test là Node, không có
+    jsdom, nên `recharts` không dựng được SVG để kiểm. Phần được test là
+    tầng dữ liệu (`lib/charts.ts` — cái quyết định điểm nào bị loại, giá
+    trị thiếu hiển thị ra sao) và phần nối dây ở mức source. Lỗi thuần
+    thị giác — trục sai nhãn, màu trùng nhau — sẽ không bị bắt.
+
+145. **`recharts` là dependency runtime đầu tiên ngoài Next/React.**
+    Bundle của `/leaderboard` và `/benchmarks/[id]` tăng lên ~262 kB
+    first-load (từ ~140 kB). Chấp nhận được cho trang phân tích, nhưng
+    đây là chi phí thật và nó nằm trên đường tải của mọi người xem
+    leaderboard.
 
 ## Môi trường
 

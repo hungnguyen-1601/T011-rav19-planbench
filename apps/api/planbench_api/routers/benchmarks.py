@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from planbench_api.approval import Action, ApprovalRecord, BenchmarkState
@@ -14,6 +15,9 @@ from planbench_api.dependencies import (
     get_benchmark_service,
     get_review_service,
 )
+from planbench_api.errors import InvalidStateError
+from planbench_api.generalization import build_generalization_summary
+from planbench_api.report_markdown import render_report_markdown, report_filename
 from planbench_api.repositories import StoredBenchmark
 from planbench_api.review import ReviewRequest, ReviewRequestView, ReviewStage, ReviewStatus
 from planbench_api.review_service import ReviewService
@@ -321,6 +325,40 @@ def _job_status(job) -> JobStatus:  # noqa: ANN001 - worker.Job
         created_at=job.created_at,
         started_at=job.started_at,
         finished_at=job.finished_at,
+    )
+
+
+@router.get(
+    "/{benchmark_id}/report.md",
+    response_class=PlainTextResponse,
+    responses={200: {"content": {"text/markdown": {}}}},
+)
+def download_report_markdown(
+    benchmark_id: str, service: Service, _: ActiveUser
+) -> PlainTextResponse:
+    """The whole report as a Markdown document (F09).
+
+    Authenticated like every other read, which is why the browser cannot
+    fetch it with a plain link: the token is in a header, so the client
+    has to read the body and save it itself.
+
+    The generalization gap is computed across *accepted* benchmarks and
+    passed in, because a single benchmark runs a single scenario and has
+    no second split to subtract. A run that has not finished has no
+    report and is refused rather than exported as a document of blanks.
+    """
+    stored = service.get(benchmark_id)
+    if stored.report is None:
+        raise InvalidStateError(
+            f"benchmark {benchmark_id!r} has no report yet: run it before exporting"
+        )
+    summary = build_generalization_summary(service.list(), accepted_only=True)
+    return PlainTextResponse(
+        render_report_markdown(stored, generalization=summary),
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{report_filename(stored)}"',
+        },
     )
 
 

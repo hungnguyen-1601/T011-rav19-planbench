@@ -13,12 +13,16 @@
  * should never travel without it.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { DifficultyCurveChart } from "@/components/DifficultyCurveChart";
 import { EmptyState } from "@/components/EmptyState";
+import { GeneralizationGapChart } from "@/components/GeneralizationGapChart";
 import { authFetch, useSession } from "@/lib/auth";
+import { buildDifficultyCurve, buildGapSeries } from "@/lib/charts";
 import { useTranslation } from "@/lib/i18n";
 import type {
+  DifficultyCalibrationSummary,
   GeneralizationSummary,
   Leaderboard,
   LeaderboardEntry,
@@ -32,6 +36,10 @@ export default function LeaderboardPage() {
   const session = useSession();
   const [board, setBoard] = useState<Leaderboard | null>(null);
   const [generalization, setGeneralization] = useState<GeneralizationSummary | null>(null);
+  const [calibration, setCalibration] = useState<DifficultyCalibrationSummary | null>(null);
+  // The board the difficulty curve is drawn from: the same one when no
+  // scenario filter is set, an unfiltered one when there is.
+  const [curveBoard, setCurveBoard] = useState<Leaderboard | null>(null);
   const [weights, setWeights] = useState(DEFAULT_WEIGHTS);
   const [acceptedOnly, setAcceptedOnly] = useState(true);
   const [groupByObservation, setGroupByObservation] = useState(true);
@@ -51,7 +59,8 @@ export default function LeaderboardPage() {
         weight_smoothness: String(weights.smoothness),
       });
       if (scenario) query.set("scenario_name", scenario);
-      setBoard(await authFetch<Leaderboard>(`/leaderboard?${query}`));
+      const ranked = await authFetch<Leaderboard>(`/leaderboard?${query}`);
+      setBoard(ranked);
       // The gap follows the same acceptance rule as the ranking, and
       // ignores the scenario filter: it is a statement about dev against
       // held-out scenarios, so narrowing it to one scenario would be a
@@ -60,6 +69,21 @@ export default function LeaderboardPage() {
         await authFetch<GeneralizationSummary>(
           `/generalization?accepted_only=${String(acceptedOnly)}`,
         ),
+      );
+      // The difficulty curve is a shape across scenarios, so it is built
+      // from an unfiltered board for the same reason. Refetched rather
+      // than reused: one scenario is one point, and a "curve" through a
+      // single point is a line the reader would draw themselves.
+      setCurveBoard(
+        scenario
+          ? await authFetch<Leaderboard>(
+              `/leaderboard?accepted_only=${String(acceptedOnly)}` +
+                `&group_by_observation_class=${String(groupByObservation)}`,
+            )
+          : ranked,
+      );
+      setCalibration(
+        await authFetch<DifficultyCalibrationSummary>("/difficulty-calibration"),
       );
       setError(null);
     } catch (err) {
@@ -156,6 +180,8 @@ export default function LeaderboardPage() {
         </div>
       ) : null}
 
+      <DifficultyCurvePanel board={curveBoard} calibration={calibration} />
+
       {board?.groups.map((group) => <GroupTable key={group.conditions_checksum} group={group} />)}
 
       {generalization && generalization.entries.length > 0 ? (
@@ -165,15 +191,74 @@ export default function LeaderboardPage() {
   );
 }
 
-/** Dev against held-out results (P05).
+/** Success rate against measured difficulty (F09).
  *
- * Deliberately plain: every cell is a number with the scenarios behind
- * it named, and a stack with only one side gets "not computable" rather
- * than a zero. The charts land in F09; what must exist first is a place
- * where a missing held-out result is visible as missing.
+ * The panel refuses to draw a curve it cannot honestly draw. Without a
+ * calibration there is no x axis at all, and the answer is to run
+ * `scripts/calibrate_difficulty.py` — not to fall back on curriculum
+ * order, which is a hand-written intention and would produce a chart that
+ * looks measured and is not.
+ *
+ * Scenarios with results but no measured difficulty are named under the
+ * chart. They are missing from every line, and a reader comparing two
+ * stacks has to know how much of the evidence is not on screen.
+ */
+function DifficultyCurvePanel({
+  board,
+  calibration,
+}: {
+  board: Leaderboard | null;
+  calibration: DifficultyCalibrationSummary | null;
+}) {
+  const { t } = useTranslation();
+  const curve = useMemo(() => buildDifficultyCurve(board, calibration), [board, calibration]);
+  if (!board) return null;
+  return (
+    <div className="panel">
+      <h3>{t("charts.difficultyCurve")}</h3>
+      <p className="muted" style={{ fontSize: 12 }}>
+        {t("charts.difficultyCurveHint")}
+      </p>
+      {curve.calibrationVersion === null ? (
+        <div className="notice">{t("charts.noCalibration")}</div>
+      ) : null}
+      {curve.series.length === 0 ? (
+        <p className="muted">{t("charts.noCurveData")}</p>
+      ) : (
+        <>
+          <DifficultyCurveChart curve={curve} />
+          <p className="muted" style={{ fontSize: 12 }}>
+            {t("charts.difficultyBaseline", {
+              algorithm: curve.baselineAlgorithm ?? "—",
+              version: curve.calibrationVersion ?? "—",
+            })}
+          </p>
+        </>
+      )}
+      {curve.uncalibrated.length > 0 ? (
+        <p className="muted" style={{ fontSize: 12 }}>
+          {t("charts.uncalibratedScenarios", { scenarios: curve.uncalibrated.join(", ") })}
+        </p>
+      ) : null}
+      {curve.stale.length > 0 ? (
+        <p className="muted" style={{ fontSize: 12 }}>
+          {t("charts.staleScenarios", { scenarios: curve.stale.join(", ") })}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** Dev against held-out results (P05), as a table and as bars (F09).
+ *
+ * The table stays. It is the surface where a missing held-out result is
+ * visible as missing — a chart can only omit that bar, and an omission is
+ * easy to read past. The bars are there because a gap is a comparison,
+ * and a comparison is faster to see than to read.
  */
 function GeneralizationPanel({ summary }: { summary: GeneralizationSummary }) {
   const { t } = useTranslation();
+  const series = useMemo(() => buildGapSeries(summary), [summary]);
   return (
     <div className="panel">
       <h3>{t("generalization.title")}</h3>
@@ -239,6 +324,22 @@ function GeneralizationPanel({ summary }: { summary: GeneralizationSummary }) {
           </tbody>
         </table>
       </div>
+      {/* One chart per metric: success rate, travel time and path
+          efficiency do not share a unit, and a single axis carrying all
+          three would invite comparison by height. */}
+      {series
+        .filter((one) => one.rows.length > 0)
+        .map((one) => (
+          <div key={one.metric} style={{ marginTop: 12 }}>
+            <h4 style={{ marginBottom: 4 }}>{one.metric}</h4>
+            <GeneralizationGapChart series={one} />
+            {one.incomplete.length > 0 ? (
+              <p className="muted" style={{ fontSize: 12 }}>
+                {t("charts.incompleteGap", { algorithms: one.incomplete.join(", ") })}
+              </p>
+            ) : null}
+          </div>
+        ))}
       {summary.entries.map((entry) =>
         entry.warnings.map((warning) => (
           <p className="muted" key={`${entry.algorithm}-${warning}`} style={{ fontSize: 12 }}>
