@@ -81,7 +81,7 @@ def normalize(data: dict, tool: str) -> dict | None:
         "repo": repo,
         "branch": git("git rev-parse --abbrev-ref HEAD"),
         "commit": git("git rev-parse --short HEAD"),
-        "student": git("git config user.email"),
+        "student": git("git config user.email") or os.environ.get("USERNAME", os.environ.get("USER", "unknown")),
     }
 
     if tool == "claude":
