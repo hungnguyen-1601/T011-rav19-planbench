@@ -7,11 +7,11 @@
  * switching it never changes a number.
  */
 
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { FailureFindings } from "@/components/FailureFindings";
 import { JobProgress } from "@/components/JobProgress";
-import { MapCanvas } from "@/components/MapCanvas";
+import { MapCanvas, type ObstacleMarker } from "@/components/MapCanvas";
 import { MetricIntervalChart } from "@/components/MetricIntervalChart";
 import { Scene25D } from "@/components/Scene25D";
 import { SendForReview } from "@/components/SendForReview";
@@ -21,6 +21,7 @@ import { authFetch, useSession } from "@/lib/auth";
 import { buildIntervalSeries, INTERVAL_METRICS } from "@/lib/charts";
 import { useTranslation } from "@/lib/i18n";
 import { downloadReportMarkdown } from "@/lib/reports";
+import { useTrajectoryPlayback } from "@/lib/useTrajectoryPlayback";
 import { cancelReview, canAcceptResult, canRun, pendingFor, type ReviewStage } from "@/lib/reviews";
 import type {
   BenchmarkReport,
@@ -129,14 +130,33 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
     }
   };
 
-  const openReplay = async (episodeId: string) => {
+  // The replay panel sits below two chart panels and the episode table;
+  // without a scroll, clicking "Replay" appears to do nothing.
+  const replayPanelRef = useRef<HTMLDivElement | null>(null);
+
+  const openReplay = async (episodeId: string, options?: { scroll?: boolean }) => {
     try {
       setReplay(await authFetch<EpisodeReplay>(`/episodes/${episodeId}/replay`));
       setFailure(null);
+      if (options?.scroll) {
+        requestAnimationFrame(() => {
+          replayPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   };
+
+  // Open the first episode's replay as soon as episodes arrive, so the
+  // 2D/2.5D view of how the agent moved through the map is on the page
+  // by default instead of hidden behind a per-row button. No scroll:
+  // jumping the page on load would steal the reader's place.
+  useEffect(() => {
+    if (episodes.length === 0 || replay !== null) return;
+    void openReplay(episodes[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [episodes]);
 
   const openDiagnosis = async (episodeId: string) => {
     try {
@@ -558,7 +578,7 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
                     <td>{fmt(episode.record.metrics.trajectory_length, 2, " m")}</td>
                     <td>{fmt(episode.record.metrics.min_clearance, 3, " m")}</td>
                     <td>
-                      <button onClick={() => void openReplay(episode.id)}>
+                      <button onClick={() => void openReplay(episode.id, { scroll: true })}>
                         {t("detail.replay")}
                       </button>
                       <button
@@ -582,68 +602,14 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
       )}
 
       {replay && map ? (
-        <div className="panel">
-          <div className="toolbar">
-            <h3 style={{ margin: 0 }}>
-              {t("detail.replayOf", { algorithm: replay.algorithm, seed: replay.seed })}
-            </h3>
-            <div className="view-toggle">
-              <button
-                type="button"
-                aria-pressed={view === "top"}
-                onClick={() => setView("top")}
-              >
-                {t("detail.topDown")}
-              </button>
-              <button
-                type="button"
-                aria-pressed={view === "25d"}
-                onClick={() => setView("25d")}
-              >
-                {t("detail.view25d")}
-              </button>
-            </div>
-          </div>
-          {view === "top" ? (
-            <MapCanvas
-              map={map.map_data}
-              plannedPath={replay.plan_path}
-              trajectory={replay.trajectory}
-              startPose={scenario?.scenario.start_pose}
-              goalPose={scenario?.scenario.goal_pose}
-              robotPose={
-                replay.trajectory.length > 0
-                  ? replay.trajectory[replay.trajectory.length - 1]
-                  : null
-              }
-              collisionPoint={
-                replay.metrics.collision && replay.trajectory.length > 0
-                  ? replay.trajectory[replay.trajectory.length - 1]
-                  : null
-              }
-            />
-          ) : (
-            <Scene25D
-              map={map.map_data}
-              plannedPath={replay.plan_path}
-              trajectory={replay.trajectory}
-              startPose={scenario?.scenario.start_pose}
-              goalPose={scenario?.scenario.goal_pose}
-              robotRadius={scenario?.scenario.robot.radius ?? 0.3}
-              robotPose={
-                replay.trajectory.length > 0
-                  ? replay.trajectory[replay.trajectory.length - 1]
-                  : null
-              }
-            />
-          )}
-          <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-            {t("detail.replayFooter", {
-              points: replay.trajectory.length,
-              status: replay.metrics.status,
-            })}
-            {replay.events.length > 0 ? ` · ${replay.events[replay.events.length - 1].message}` : ""}
-          </p>
+        <div className="panel" ref={replayPanelRef}>
+          <ReplayViewer
+            replay={replay}
+            map={map}
+            scenario={scenario}
+            view={view}
+            setView={setView}
+          />
         </div>
       ) : null}
 
@@ -656,6 +622,154 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
           <FailureFindings report={failure.report} />
         </div>
       ) : null}
+    </>
+  );
+}
+
+/** Playback of one saved episode (F08).
+ *
+ * The static picture used to show only the final frame — the trajectory
+ * line said where the robot went, but not when, how fast, or what the
+ * moving obstacles were doing while it went there. Playback answers
+ * those: the robot moves along the recorded samples, the trajectory
+ * line grows behind it, and each frame's ground-truth obstacle snapshot
+ * (recorded for replay, never shown to planners) is drawn at its time.
+ *
+ * Everything shown is a recorded sample — the viewer interpolates
+ * nothing, so the picture cannot disagree with the run.
+ */
+function ReplayViewer({
+  replay,
+  map,
+  scenario,
+  view,
+  setView,
+}: {
+  replay: EpisodeReplay;
+  map: MapResource;
+  scenario: ScenarioResource | null;
+  view: "top" | "25d";
+  setView: (view: "top" | "25d") => void;
+}) {
+  const { t } = useTranslation();
+  const playback = useTrajectoryPlayback(replay.trajectory);
+  // Draw only what has happened up to the playhead: a full trajectory
+  // under a mid-episode robot would show the future.
+  const shownTrajectory =
+    playback.frameIndex >= 0 ? replay.trajectory.slice(0, playback.frameIndex + 1) : [];
+  const obstacleMarkers: ObstacleMarker[] = (playback.frame?.obstacles ?? []).map(
+    (obstacle) => ({
+      name: obstacle.name,
+      radius: obstacle.radius,
+      position: { x: obstacle.x, y: obstacle.y },
+    }),
+  );
+  // Collision terminates an episode, so its time is the last sample's.
+  const collisionTime =
+    replay.metrics.collision && replay.trajectory.length > 0
+      ? replay.trajectory[replay.trajectory.length - 1].time
+      : null;
+  const collisionReached =
+    collisionTime !== null && playback.playhead >= collisionTime - 1e-9;
+  const atEnd = playback.playhead >= playback.duration - 1e-9;
+
+  return (
+    <>
+      <div className="toolbar">
+        <h3 style={{ margin: 0 }}>
+          {t("detail.replayOf", { algorithm: replay.algorithm, seed: replay.seed })}
+        </h3>
+        <div className="view-toggle">
+          <button type="button" aria-pressed={view === "top"} onClick={() => setView("top")}>
+            {t("detail.topDown")}
+          </button>
+          <button type="button" aria-pressed={view === "25d"} onClick={() => setView("25d")}>
+            {t("detail.view25d")}
+          </button>
+        </div>
+      </div>
+      {view === "top" ? (
+        <MapCanvas
+          map={map.map_data}
+          plannedPath={replay.plan_path}
+          trajectory={shownTrajectory}
+          startPose={scenario?.scenario.start_pose}
+          goalPose={scenario?.scenario.goal_pose}
+          robotRadius={scenario?.scenario.robot.radius ?? 0.3}
+          robotPose={playback.frame}
+          dynamicObstacles={obstacleMarkers}
+          previewTime={obstacleMarkers.length > 0 ? playback.playhead : undefined}
+          collisionPoint={collisionReached ? playback.frame : null}
+        />
+      ) : (
+        <Scene25D
+          map={map.map_data}
+          plannedPath={replay.plan_path}
+          trajectory={shownTrajectory}
+          startPose={scenario?.scenario.start_pose}
+          goalPose={scenario?.scenario.goal_pose}
+          robotRadius={scenario?.scenario.robot.radius ?? 0.3}
+          robotPose={playback.frame}
+        />
+      )}
+      <div className="toolbar" style={{ marginTop: 8, gap: 12, alignItems: "center" }}>
+        <button type="button" onClick={playback.toggle} disabled={playback.duration <= 0}>
+          {playback.playing ? t("simulate.pause") : atEnd ? t("simulate.restart") : t("simulate.play")}
+        </button>
+        <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          {t("simulate.speed")}
+          <select
+            value={playback.speed}
+            onChange={(event) => playback.setSpeed(Number(event.target.value))}
+          >
+            {[0.25, 0.5, 1, 2, 4, 8].map((value) => (
+              <option key={value} value={value}>
+                {value}×
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="muted" style={{ fontSize: 12 }}>
+          {playback.playhead.toFixed(2)} / {playback.duration.toFixed(2)} s
+        </span>
+      </div>
+      <div style={{ position: "relative", marginTop: 4 }}>
+        <input
+          type="range"
+          aria-label={t("simulate.timeline")}
+          min={0}
+          max={Math.max(playback.duration, 0.001)}
+          step={0.05}
+          value={playback.playhead}
+          onChange={(event) => playback.seek(Number(event.target.value))}
+          style={{ width: "100%" }}
+        />
+        {collisionTime !== null && playback.duration > 0 ? (
+          // Red tick on the timeline where the collision happened, so the
+          // reader can jump straight to the moment that ended the episode.
+          <span
+            title={t("detail.collisionAt", { time: collisionTime.toFixed(2) })}
+            style={{
+              position: "absolute",
+              left: `${(collisionTime / playback.duration) * 100}%`,
+              top: -4,
+              transform: "translateX(-50%)",
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: "#f85149",
+              pointerEvents: "none",
+            }}
+          />
+        ) : null}
+      </div>
+      <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+        {t("detail.replayFooter", {
+          points: replay.trajectory.length,
+          status: replay.metrics.status,
+        })}
+        {replay.events.length > 0 ? ` · ${replay.events[replay.events.length - 1].message}` : ""}
+      </p>
     </>
   );
 }

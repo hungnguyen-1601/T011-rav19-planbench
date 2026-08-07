@@ -241,12 +241,32 @@ export function MapCanvas({
 
     const marker = (pose: Pose2D, color: string, radius: number, label: string) => {
       const [x, y] = toCanvas(pose.x, pose.y);
+      const r = Math.max(4, radius * viewport.scale);
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(x, y, Math.max(4, radius * viewport.scale), 0, Math.PI * 2);
+      ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.stroke();
+      // Heading arrow: theta is part of the pose the simulator will use,
+      // so the picture must show it — a number field alone leaves the
+      // author guessing which way the robot actually faces. World theta
+      // is counter-clockwise from +x; canvas y grows downward, hence -sin.
+      const len = Math.max(16, r * 2.2);
+      const tipX = x + Math.cos(pose.theta) * len;
+      const tipY = y - Math.sin(pose.theta) * len;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(tipX, tipY);
+      ctx.stroke();
+      const head = 6;
+      const angle = Math.atan2(tipY - y, tipX - x);
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(tipX - head * Math.cos(angle - Math.PI / 6), tipY - head * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(tipX - head * Math.cos(angle + Math.PI / 6), tipY - head * Math.sin(angle + Math.PI / 6));
+      ctx.closePath();
       ctx.fillStyle = color;
+      ctx.fill();
       ctx.font = "11px ui-sans-serif, system-ui";
       ctx.fillText(label, x + 8, y - 8);
     };
