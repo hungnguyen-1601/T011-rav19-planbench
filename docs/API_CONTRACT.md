@@ -165,6 +165,17 @@ State machine giữ nguyên (`draft`, `pending_approval`, `approved`,
 path efficiency, smoothness — **chỉ tính trên episode thành công**;
 clearance và latency tính trên mọi episode).
 
+**Metric F05 (cấp episode).** `runs[].metrics` từ Đợt 3.2 có thêm, bên
+cạnh field cũ (không field nào bị xóa): `smoothness_squared` (spec 8.2,
+`Σ(Δθ)²`; field `smoothness` cũ là heading-change rate `Σ|Δθ|/L`, giữ
+nguyên nghĩa, đã deprecated), `local_planning_latency_p50/p95/p99`,
+`stop_and_go_count`, `near_miss_count`, `time_to_first_collision`, và
+`metric_config` — bản chụp ngưỡng versioned (`version`,
+`stop_speed_threshold`, `resume_speed_threshold`,
+`near_miss_clearance_threshold`) mà các count được tính dưới đó. Metrics
+lưu trước F05 trả `null` cho toàn bộ field mới; `null` nghĩa là "không
+tính", **không** phải 0. Aggregate chưa tổng hợp các metric này.
+
 Mỗi `aggregate` còn mang **bản chụp khai báo quan sát** lúc chạy:
 `global_observation_class`, `local_observation_class`,
 `requires_global_path`. Chụp lại thay vì tra registry lúc đọc, để sửa

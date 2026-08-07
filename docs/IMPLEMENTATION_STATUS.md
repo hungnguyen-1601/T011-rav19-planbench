@@ -184,7 +184,16 @@ sách trả 500). Báo cáo:
 - **Resource monitoring** (CPU/memory per job): chưa có.
 - `pause/resume` benchmark: state PAUSED có trong enum nhưng chưa có
   transition; hiện chỉ có cancel hợp tác.
-- **RRT***: chưa triển khai (spec ghi rõ không bắt buộc cho MVP).
+- ~~**RRT***: chưa triển khai~~ — đã xong (Đợt 0.1, 2026-08-05):
+  `packages/planning/planbench_planning/rrtstar/`, stack `rrtstar+dwa`
+  benchmarkable, tái lập theo seed.
+- **Metric F05 cấp aggregate**: Đợt 3.2 (2026-08-07) thêm
+  `smoothness_squared` (đúng spec 8.2 `Σ(Δθ)²`), latency p50/p95/p99,
+  `stop_and_go_count` (hysteresis, `MetricConfig` v1.0.0),
+  `near_miss_count`, `time_to_first_collision` vào `EpisodeMetrics` +
+  bảng Runs của report Markdown (kèm ngưỡng). `AlgorithmAggregate`,
+  leaderboard và biểu đồ **chưa** tổng hợp các metric mới — xem
+  KNOWN_LIMITATIONS #146–#151.
 
 ## Kiểm thử
 
