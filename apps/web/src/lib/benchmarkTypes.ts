@@ -111,6 +111,14 @@ export interface AlgorithmAggregate {
   mean_trajectory_length_successful: number | null;
   mean_path_efficiency_successful: number | null;
   mean_smoothness_successful: number | null;
+  mean_smoothness_per_metre_successful: number | null;
+  /** Khoảng tin cậy 95% của success_rate (bootstrap). null khi chỉ có
+   *  một episode: một điểm dữ liệu không có khoảng tin cậy. */
+  success_rate_ci95: [number, number] | null;
+  median_travel_time_successful: number | null;
+  iqr_travel_time_successful: [number, number] | null;
+  median_path_efficiency_successful: number | null;
+  iqr_path_efficiency_successful: [number, number] | null;
   mean_min_clearance: number | null;
   worst_min_clearance: number | null;
   mean_local_planning_latency: number | null;

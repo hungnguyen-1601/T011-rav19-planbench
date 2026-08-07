@@ -13,7 +13,8 @@ from importlib.util import find_spec
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from planbench_planning import DWAConfig, DWAPlanner
+from planbench_planning import AStarPlanner, DWAConfig, DWAPlanner, RRTStarPlanner
+from planbench_planning.common.base import GlobalPlanner
 from planbench_planning.common.local_base import LocalPlanner
 from planbench_simulator.nav_stack import PurePursuitLocalPlanner
 from planbench_simulator.path_follower import PurePursuitConfig
@@ -150,6 +151,9 @@ class _Entry(BaseModel):
     info: AlgorithmInfo
     config_model: type[BaseModel]
     factory: Callable[[BaseModel], LocalPlanner]
+    #: Global planner của stack. Mặc định A* để các entry cũ không phải
+    #: khai lại; từ khi có RRT* thì nó không còn là hằng số nữa.
+    global_planner_factory: Callable[[], GlobalPlanner] = AStarPlanner
 
 
 ALGORITHMS: dict[str, _Entry] = {
@@ -184,6 +188,38 @@ ALGORITHMS: dict[str, _Entry] = {
         ),
         config_model=PPOStackConfig,
         factory=_build_ppo,
+    ),
+    "rrtstar+dwa": _Entry(
+        info=AlgorithmInfo(
+            id="rrtstar+dwa",
+            kind="stack",
+            description=(
+                "RRT* global planner với controller Dynamic Window Approach. "
+                "Lấy mẫu thay vì duyệt lưới, nên phép so sánh không còn luôn là "
+                "A* đấu A* với controller khác."
+            ),
+            benchmarkable=True,
+            config_schema=DWAConfig.model_json_schema(),
+        ),
+        config_model=DWAConfig,
+        factory=lambda config: DWAPlanner(config),  # type: ignore[arg-type]
+        global_planner_factory=RRTStarPlanner,
+    ),
+    "rrtstar+pure_pursuit": _Entry(
+        info=AlgorithmInfo(
+            id="rrtstar+pure_pursuit",
+            kind="reference_stack",
+            description=(
+                "RRT* với bộ bám đường pure-pursuit. Chỉ là mốc tham chiếu cho "
+                "pipeline — nó bỏ qua cảm biến, nên không được dùng để rút ra "
+                "kết luận benchmark."
+            ),
+            benchmarkable=False,
+            config_schema=PurePursuitConfig.model_json_schema(),
+        ),
+        config_model=PurePursuitConfig,
+        factory=lambda config: PurePursuitLocalPlanner(config),  # type: ignore[arg-type]
+        global_planner_factory=RRTStarPlanner,
     ),
     "astar+pure_pursuit": _Entry(
         info=AlgorithmInfo(
@@ -223,6 +259,11 @@ def validate_algorithm_config(algorithm_id: str, config: dict | None) -> BaseMod
         return entry.config_model.model_validate(config or {})
     except ValidationError as exc:
         raise AlgorithmConfigError(f"invalid config for {algorithm_id!r}: {exc}") from exc
+
+
+def build_global_planner(algorithm_id: str) -> GlobalPlanner:
+    """Global planner của một stack đã đăng ký."""
+    return _entry(algorithm_id).global_planner_factory()
 
 
 def build_local_planner(algorithm_id: str, config: dict | None = None) -> LocalPlanner:

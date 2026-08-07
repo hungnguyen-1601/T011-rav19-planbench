@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from pydantic import BaseModel, Field
 
 from planbench_api.approval import Action, ApprovalRecord, BenchmarkState
@@ -14,6 +14,8 @@ from planbench_api.dependencies import (
     get_benchmark_service,
     get_review_service,
 )
+from planbench_api.errors import InvalidStateError
+from planbench_api.report_markdown import render_report_markdown
 from planbench_api.repositories import StoredBenchmark
 from planbench_api.review import ReviewRequest, ReviewRequestView, ReviewStage, ReviewStatus
 from planbench_api.review_service import ReviewService
@@ -331,4 +333,23 @@ def get_results(
     stored = service.get(benchmark_id)
     return BenchmarkResultsResponse(
         benchmark=_resource(stored, service, user, reviews), report=stored.report
+    )
+
+
+@router.get("/{benchmark_id}/report.md")
+def get_report_markdown(benchmark_id: str, service: Service, _: ActiveUser) -> Response:
+    """The report as a Markdown file, for attaching to something.
+
+    A separate path rather than a query flag on the JSON endpoint: this
+    one returns a download, not a resource, and conflating the two makes
+    the JSON contract answer to a formatting concern.
+    """
+    stored = service.get(benchmark_id)
+    if stored.report is None:
+        raise InvalidStateError(f"benchmark {benchmark_id!r} has no report yet; run it first")
+    markdown = render_report_markdown(stored.spec.name, benchmark_id, stored.report)
+    return Response(
+        content=markdown,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{benchmark_id}-report.md"'},
     )

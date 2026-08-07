@@ -100,6 +100,7 @@ def make_run(algorithm: str = "astar+dwa", status: EpisodeStatus = EpisodeStatus
         average_speed=1.0,
         max_speed=1.0,
         smoothness=0.05,
+        smoothness_per_metre=0.017,
         min_clearance=0.4,
     )
     plan = PlanResult(

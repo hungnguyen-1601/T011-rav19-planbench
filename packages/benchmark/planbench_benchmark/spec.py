@@ -157,12 +157,49 @@ class AlgorithmAggregate(BaseModel):
     mean_travel_time_successful: float | None = None
     mean_trajectory_length_successful: float | None = None
     mean_path_efficiency_successful: float | None = None
+    #: Trung bình của episode.smoothness — công thức đúng theo spec
+    #: 8.2, Σ(Δθ)², KHÔNG chuẩn hóa theo độ dài. So sánh nó giữa các
+    #: episode dài ngắn khác nhau sẽ lẫn "đường dài" với "đường gồ ghề";
+    #: dùng trường dưới cho việc đó.
     mean_smoothness_successful: float | None = None
+    #: Trung bình của episode.smoothness_per_metre — Σ|Δθ| chia độ dài,
+    #: rad/m. Đây là công thức PlanBench dùng từ đầu, và là trường mà
+    #: leaderboard tính điểm, vì chỉ nó mới so sánh được giữa các
+    #: episode có độ dài khác nhau.
+    mean_smoothness_per_metre_successful: float | None = None
+    #: Khoảng tin cậy 95% của success_rate, tính bằng bootstrap. None khi
+    #: chỉ có một episode — một điểm dữ liệu không có khoảng tin cậy.
+    success_rate_ci95: tuple[float, float] | None = None
+    #: Median/IQR thay cho mean/std: metric robot lệch phải, vài episode
+    #: chậm kéo trung bình lên mà không đại diện cho lần chạy điển hình.
+    median_travel_time_successful: float | None = None
+    iqr_travel_time_successful: tuple[float, float] | None = None
+    median_path_efficiency_successful: float | None = None
+    iqr_path_efficiency_successful: tuple[float, float] | None = None
     mean_min_clearance: float | None = None
     worst_min_clearance: float | None = None
     mean_local_planning_latency: float | None = None
     max_local_planning_latency: float | None = None
     mean_global_planning_time: float | None = None
+
+
+class PairwiseComparison(BaseModel):
+    """One algorithm compared against the run's best performer on
+    success (Wilcoxon signed-rank, paired by seed — see
+    planbench_metrics.statistics.wilcoxon_compare).
+
+    Absent when there is only one algorithm in the spec, or fewer than
+    two seeds (nothing to pair).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    baseline_algorithm: str
+    compared_algorithm: str
+    metric: str
+    p_value: float
+    effect_size: float
+    significant: bool
 
 
 class BenchmarkReport(BaseModel):
@@ -174,3 +211,10 @@ class BenchmarkReport(BaseModel):
     fairness: FairnessRecord
     runs: tuple[RunRecord, ...]
     aggregates: tuple[AlgorithmAggregate, ...]
+    #: So sánh Wilcoxon theo cặp với thuật toán có success cao nhất.
+    #: Rỗng khi chỉ có một thuật toán để so.
+    comparisons: tuple[PairwiseComparison, ...] = ()
+    #: len(spec.seeds) >= 30. Benchmark nhỏ hơn vẫn chạy và vẫn báo cáo
+    #: — đây là cảnh báo cho người đọc, không phải chặn.
+    statistically_adequate: bool = False
+    seed_count: int = 0

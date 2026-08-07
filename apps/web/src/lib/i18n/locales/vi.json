@@ -618,5 +618,6 @@
   "chat.history.hide": "Ẩn danh sách trò chuyện",
   "chat.history.untitled": "Cuộc trò chuyện mới",
   "chat.history.delete": "Xoá cuộc trò chuyện",
-  "chat.history.deleting": "Đang xoá…"
+  "chat.history.deleting": "Đang xoá…",
+  "metrics.smoothnessPerMetre": "Độ mượt / mét"
 }

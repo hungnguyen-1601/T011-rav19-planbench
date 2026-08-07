@@ -61,6 +61,90 @@ cài và đã chạy test.
   dependency gián tiếp từ một máy sạch.
 - **Chưa kiểm `npm install` từ đầu** trên `node_modules` trống.
 
+## Tiếp nhận công việc từ nhánh `tongduyan` — 2026-08-03
+
+Ba phần được đưa sang, chọn theo tiêu chí "phục vụ thẳng mục tiêu so
+sánh công bằng, không đụng mô hình phân quyền".
+
+### Đã nhận
+
+| Phần | Nội dung |
+|---|---|
+| `planbench_metrics.statistics` | Median/IQR, bootstrap CI, kiểm định Wilcoxon theo cặp, gộp hạng |
+| `smoothness` tách đôi | `smoothness` = Σ(Δθ)² theo spec; `smoothness_per_metre` = Σ\|Δθ\| / độ dài |
+| Latency p50/p95/p99, `stop_and_go_count` | Đi kèm `episode_metrics.py` |
+| `PairwiseComparison` | So sánh Wilcoxon giữa các stack, ghép vào `BenchmarkReport` |
+| CI 95% + median/IQR trong `AlgorithmAggregate` | 5 trường tùy chọn, tương thích ngược |
+| Xuất report Markdown | `GET /benchmarks/{id}/report.md` |
+
+### Không nhận
+
+**RBAC Engineer/Approver.** Mô hình hiện tại phân quyền theo quan hệ sở
+hữu benchmark (`OWNER`/`REVIEWER`/`ADMIN`), nên một người làm việc một
+mình đi hết được luồng và review là tùy chọn. Engineer/Approver là vai
+trò toàn cục: phải có người được cấp quyền Approver thì benchmark mới
+duyệt được — một nút thắt không có lợi ích tương ứng với nhóm 4 người.
+Toàn bộ tài liệu Gate G1 cũng đang mô tả mô hình member.
+
+### Chỗ phải sửa để không phá dữ liệu cũ
+
+`smoothness` bị **đổi định nghĩa**, không phải thêm mới. Leaderboard kẹp
+`mean_smoothness` vào [0, 1] để tính điểm; tổng bình phương chưa chuẩn
+hóa vượt 1 ở gần như mọi episode, nên nếu để nguyên thì mọi stack cùng
+được 0 ở trục đó và trọng số smoothness thành vô nghĩa.
+
+Cách xử lý: `runner.py` gộp cả hai trường, `leaderboard.py` chấm điểm
+bằng `mean_smoothness_per_metre_successful`, `spec.py` ghi rõ trường nào
+dùng ở đâu. `MetricsPanel` trước đây hiển thị `smoothness` kèm đơn vị
+"rad/m" — sai sau khi đổi công thức; nay hiện hai số với hai đơn vị.
+
+### Đợt hai — phần còn lại
+
+Sau đợt đầu (thống kê, smoothness, report Markdown), bốn phần còn lại
+cũng được đưa sang:
+
+| Phần | Nội dung |
+|---|---|
+| `difficulty.py` | Độ khó = `1 − success_rate` của stack tham chiếu qua 30 seed, cache sẵn |
+| `map_io.py` | Đọc định dạng ROS `map_server`: PGM + YAML sidecar |
+| RRT\* | Global planner thứ hai; registry có `global_planner_factory`, thêm `rrtstar+dwa` và `rrtstar+pure_pursuit` |
+| Optuna tuning | `GET /tuning` đọc cache; optuna chỉ cần khi chạy script |
+| 2.5D vật cản động | Vẽ vật cản trong khung nhìn 2.5D |
+
+Thay đổi kiến trúc đáng kể nhất: `run_stack()` không còn hardcode A*.
+Nó nhận một `GlobalPlanner` và dựng tên stack từ `planner.name`, nên
+`rrtstar+dwa` chạy đúng RRT* chứ không phải A* đội tên khác. `GlobalPlanner`
+được thêm thuộc tính trừu tượng `name`.
+
+Xác nhận registry sau khi ghép:
+
+```
+astar+dwa                benchmarkable=True   global=astar
+astar+ppo                benchmarkable=True   global=astar
+astar+pure_pursuit       benchmarkable=False  global=astar
+rrtstar+dwa              benchmarkable=True   global=rrtstar
+rrtstar+pure_pursuit     benchmarkable=False  global=rrtstar
+```
+
+### Kết quả
+
+```
+ruff format --check .    All checks passed
+ruff check .             All checks passed
+pytest tests/ -q         1195 passed, 3 skipped in 394.13s
+tsc --noEmit             không lỗi
+vitest run               274 passed (18 file)
+```
+
+76 test mới so với trước khi tiếp nhận: `test_statistics.py` (21),
+`test_map_io.py`, `test_difficulty.py`, `test_rrtstar.py`,
+`test_report_markdown.py`, `test_tuning.py`, `test_api_tuning.py` cùng
+các test metric bổ sung.
+
+Skip thứ ba là `test_tuning.py` — nó cần optuna, và optuna nằm ở
+`requirements-optional.txt` chứ không phải phụ thuộc lõi: API đọc
+`tuning_cache.json` tĩnh, không tính lại lúc request.
+
 ## Checkpoint PPO thật qua Model Registry — 2026-08-03
 
 Tới hôm nay, mọi test của Model Registry đều dùng một zip **giả hình

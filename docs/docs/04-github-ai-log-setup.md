@@ -1513,9 +1513,10 @@ Module owner hoàn thành task
 | Nguyễn Hữu Khánh Tùng | Frontend deployment |
 | Tống Duy An | Kiểm tra simulator và thuật toán trên môi trường deploy |
 
-**[Hiện trạng]** — `docker/Dockerfile.api`, `docker/Dockerfile.web` và
-`docker-compose.yml` đã có trong repository, nhưng **chưa build image
-lần nào** và **chưa chạy PostgreSQL thật**. Chi tiết ở
+**[Hiện trạng]** — image đã build và cả 4 service (`db`, `migrate`,
+`api`, `web`) đã chạy thật trên PostgreSQL 17; dữ liệu sống sót khi xoá
+hẳn container API rồi tạo lại. Chưa triển khai lên máy chủ thật và chưa
+chạy nhiều người dùng đồng thời. Chi tiết ở
 [../KNOWN_LIMITATIONS.md](../KNOWN_LIMITATIONS.md).
 
 ---

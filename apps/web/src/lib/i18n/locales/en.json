@@ -618,5 +618,6 @@
   "chat.history.hide": "Hide conversations",
   "chat.history.untitled": "New conversation",
   "chat.history.delete": "Delete conversation",
-  "chat.history.deleting": "Deleting…"
+  "chat.history.deleting": "Deleting…",
+  "metrics.smoothnessPerMetre": "Smoothness / metre"
 }

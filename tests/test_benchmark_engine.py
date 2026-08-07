@@ -236,7 +236,13 @@ class TestAggregation:
             "trajectory_length": 12.0,
             "average_speed": 1.2,
             "max_speed": 1.5,
+            # Two smoothness numbers, on purpose: `smoothness` is the
+            # spec-literal Σ(Δθ)², `smoothness_per_metre` is Σ|Δθ| over
+            # path length. Only the second is comparable across episodes
+            # of different length, and only the second feeds the
+            # leaderboard score.
             "smoothness": 0.3,
+            "smoothness_per_metre": 0.025,
             "min_clearance": 0.4,
         }
         defaults.update(metric_overrides)

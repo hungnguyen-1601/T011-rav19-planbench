@@ -107,8 +107,14 @@ def overall_score(
         parts.append((weights.safety, _clamp(aggregate.worst_min_clearance / robot_radius)))
     if aggregate.mean_path_efficiency_successful is not None:
         parts.append((weights.efficiency, _clamp(aggregate.mean_path_efficiency_successful)))
-    if aggregate.mean_smoothness_successful is not None:
-        parts.append((weights.smoothness, 1.0 - _clamp(aggregate.mean_smoothness_successful)))
+    # per_metre, không phải smoothness thô: điểm số kẹp giá trị vào
+    # [0, 1], mà tổng bình phương chưa chuẩn hóa thì vượt 1 ở gần như
+    # mọi episode — mọi stack sẽ cùng được 0 ở trục này và trọng số
+    # smoothness thành vô nghĩa.
+    if aggregate.mean_smoothness_per_metre_successful is not None:
+        parts.append(
+            (weights.smoothness, 1.0 - _clamp(aggregate.mean_smoothness_per_metre_successful))
+        )
     weight_sum = sum(weight for weight, _ in parts)
     if weight_sum <= 0:
         return None

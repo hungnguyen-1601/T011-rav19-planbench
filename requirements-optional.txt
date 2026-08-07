@@ -70,3 +70,16 @@
 #
 # openai==2.50.0
 # anthropic
+
+# ===================================================================
+#   5. Optuna (script tune tham số, P01)
+# ===================================================================
+#
+#   .venv/bin/pip install optuna==4.9.0
+#
+# Chỉ cần khi chạy `scripts/tune_hyperparameters.py` hoặc
+# `tests/test_tuning.py` (test tự skip qua `pytest.importorskip` nếu
+# thiếu). API đọc `tuning_cache.json` qua `GET /tuning` không cần cài
+# optuna — cache là file JSON tĩnh, không tính lại lúc request.
+#
+# optuna==4.9.0

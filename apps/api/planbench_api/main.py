@@ -44,6 +44,7 @@ from planbench_api.routers import (
     reviews,
     scenarios,
     simulations,
+    tuning,
     users,
     ws,
 )
@@ -140,6 +141,7 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     app.include_router(maps.router, prefix=API_PREFIX)
     app.include_router(scenarios.router, prefix=API_PREFIX)
     app.include_router(algorithms.router, prefix=API_PREFIX)
+    app.include_router(tuning.router, prefix=API_PREFIX)
     app.include_router(simulations.router, prefix=API_PREFIX)
     app.include_router(benchmarks.router, prefix=API_PREFIX)
     app.include_router(episodes.router, prefix=API_PREFIX)

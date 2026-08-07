@@ -295,6 +295,28 @@ Nội dung tin nhắn của trợ lý là **khóa dịch** (`chat.proposalReady`
 `chat.needModel`, …), không phải câu tiếng Anh hay tiếng Việt cứng —
 nên hai ngôn ngữ không bao giờ lệch nhau.
 
+## Tuning siêu tham số
+
+| Method | Path | Ghi chú |
+|---|---|---|
+| `GET` | `/api/v1/tuning` | Kết quả tune đã cache, theo từng planner |
+
+Đọc từ `tuning_cache.json` tĩnh — **không** chạy lại Optuna lúc request.
+Tune một lượt là 300 episode; đó là việc của `scripts/tune_hyperparameters.py`,
+không phải của một HTTP request. Vì vậy API không cần cài optuna.
+
+## Xuất report Markdown
+
+| Method | Path | Ghi chú |
+|---|---|---|
+| `GET` | `/api/v1/benchmarks/{id}/report.md` | Tải report dạng Markdown |
+
+Đường dẫn riêng chứ không phải cờ query trên endpoint JSON: cái này trả
+về một **file tải xuống**, không phải một resource. Gộp hai thứ làm hợp
+đồng JSON phải chiều theo một mối quan tâm về định dạng.
+
+Chưa chạy benchmark thì trả `409` kèm câu giải thích.
+
 ## Ghi chú trạng thái
 
 - Lưu trữ metadata vẫn in-memory (mất khi restart) — PostgreSQL còn nợ.

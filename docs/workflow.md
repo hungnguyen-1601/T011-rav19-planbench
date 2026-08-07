@@ -43,7 +43,7 @@ Không điều khiển robot thật, không cấp chứng nhận an toàn.
 | Endpoint | 91 |
 | Migration Alembic | 3 (16 bảng) |
 | Scenario dựng sẵn | 10 |
-| Stack thuật toán | 3 (`astar+dwa`, `astar+ppo`, `astar+pure_pursuit`) |
+| Stack thuật toán | 5 (`astar+dwa`, `astar+ppo`, `astar+pure_pursuit`, `rrtstar+dwa`, `rrtstar+pure_pursuit`) |
 | Test backend | 1116 passed, 2 skipped |
 | Test frontend | 274 passed (18 file) |
 
@@ -76,6 +76,8 @@ Không điều khiển robot thật, không cấp chứng nhận an toàn.
 | Occupancy grid, kinematics, collision | Completed | `services/simulator/planbench_simulator/` |
 | LiDAR (ray casting DDA) | Completed | `.../lidar.py` |
 | A* global planner | Completed | `packages/planning/planbench_planning/astar/` |
+| RRT* global planner | Completed | `packages/planning/planbench_planning/rrtstar/` |
+| Đọc map ROS (`map_server`) | Completed | `packages/schemas/planbench_schemas/map_io.py` |
 | DWA local planner | Completed | `.../dwa/` |
 | Pure Pursuit (tham chiếu, không dự benchmark) | Completed | `.../path_follower.py` |
 | PPO adapter | Completed | `ml/planbench_rl/policy.py` |
@@ -89,7 +91,12 @@ Không điều khiển robot thật, không cấp chứng nhận an toàn.
 | Benchmark nhiều seed, nhiều stack | Completed | `packages/benchmark/` |
 | `conditions_checksum` (khóa điều kiện, so sánh công bằng) | Completed | `.../spec.py` |
 | State machine + hai cổng con người | Completed | `apps/api/planbench_api/approval.py` |
-| Metrics (9 chỉ số) | Completed | `packages/metrics/` |
+| Metrics (9 chỉ số + latency p50/p95/p99, stop-and-go) | Completed | `packages/metrics/episode_metrics.py` |
+| Thống kê so sánh: median/IQR, bootstrap CI, Wilcoxon | Completed | `packages/metrics/planbench_metrics/statistics.py` |
+| So sánh theo cặp giữa các stack | Completed | `packages/benchmark/planbench_benchmark/runner.py` |
+| Xuất report Markdown | Completed | `apps/api/planbench_api/report_markdown.py` |
+| Độ khó scenario đo được | Completed | `packages/benchmark/planbench_benchmark/difficulty.py` |
+| Tuning siêu tham số (Optuna) | Completed | `packages/benchmark/planbench_benchmark/tuning.py` |
 | Episode replay từ artifact | Completed | `.../routers/episodes.py` |
 | Failure analysis | Completed | `.../routers/episodes.py` |
 | Leaderboard | Completed | `.../leaderboard.py` |
@@ -173,7 +180,7 @@ database; bảng chỉ giữ URI + SHA-256 + kích thước.
 ```
 ruff format --check .    204 files already formatted
 ruff check .             All checks passed!
-pytest tests/ -q         1119 passed, 2 skipped
+pytest tests/ -q         1195 passed, 3 skipped
 tsc --noEmit             không lỗi
 vitest run               274 passed (18 file)
 next build               thành công

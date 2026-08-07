@@ -76,6 +76,14 @@ export interface SimulationResource {
   created_at: string;
 }
 
+/** Một vật cản động tại một thời điểm, để vẽ lại đúng khung hình. */
+export interface ObstacleSnapshot {
+  name: string;
+  x: number;
+  y: number;
+  radius: number;
+}
+
 export interface TrajectoryPoint {
   time: number;
   x: number;
@@ -83,6 +91,7 @@ export interface TrajectoryPoint {
   theta: number;
   linear_velocity: number;
   angular_velocity: number;
+  obstacles?: ObstacleSnapshot[];
 }
 
 export interface EpisodeResult {
@@ -103,7 +112,11 @@ export interface EpisodeMetrics {
   trajectory_length: number;
   average_speed: number;
   max_speed: number;
+  /** Σ(Δθ)², đúng công thức spec, KHÔNG chuẩn hóa theo độ dài. */
   smoothness: number;
+  /** Σ|Δθ| chia độ dài quỹ đạo, rad/m — số duy nhất so sánh được giữa
+   *  các episode dài ngắn khác nhau, và là số leaderboard chấm điểm. */
+  smoothness_per_metre: number;
   planned_path_length: number | null;
   path_efficiency: number | null;
   min_clearance: number | null;

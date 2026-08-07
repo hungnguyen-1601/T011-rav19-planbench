@@ -20,7 +20,7 @@
  * so +z is up on screen, and a taller wall reaches further up.
  */
 
-import type { MapData, Point2D, Pose2D, TrajectoryPoint } from "./types";
+import type { MapData, ObstacleSnapshot, Point2D, Pose2D, TrajectoryPoint } from "./types";
 
 export const OCCUPIED_VALUE = 100;
 export const UNKNOWN_VALUE = -1;
@@ -63,6 +63,9 @@ export interface Scene25D {
   start: ScreenPoint | null;
   goal: ScreenPoint | null;
   robot: RobotMarker | null;
+  /** Dynamic obstacles at this frame — see docs/KNOWN_LIMITATIONS.md:
+   * drawn after every facet, so they are never occluded by a wall. */
+  obstacles: ObstacleMarker[];
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
 }
 
@@ -74,6 +77,15 @@ export interface RobotMarker {
   /** Projected horizontal radius, in pixels. */
   radiusX: number;
   /** Projected vertical radius of the (foreshortened) footprint circle. */
+  radiusY: number;
+}
+
+/** Same projected footprint as RobotMarker, minus heading — obstacles
+ * carry no orientation. */
+export interface ObstacleMarker {
+  base: ScreenPoint;
+  top: ScreenPoint;
+  radiusX: number;
   radiusY: number;
 }
 
@@ -161,6 +173,7 @@ export interface SceneOptions {
   robotRadius?: number;
   plannedPath?: Point2D[];
   trajectory?: TrajectoryPoint[];
+  obstacles?: ObstacleSnapshot[];
 }
 
 /**
@@ -220,6 +233,9 @@ export function buildScene(
     robot: options.robotPose
       ? robotMarker(projection, options.robotPose, options.robotRadius ?? 0.3, robotHeight)
       : null,
+    obstacles: (options.obstacles ?? []).map((o) =>
+      obstacleMarker(projection, o.x, o.y, o.radius, robotHeight),
+    ),
     bounds: sceneBounds(facets),
   };
 }
@@ -296,6 +312,25 @@ function robotMarker(
     base,
     top,
     heading,
+    radiusX: Math.hypot(edgeX.sx - top.sx, edgeX.sy - top.sy),
+    radiusY: Math.hypot(edgeY.sx - top.sx, edgeY.sy - top.sy),
+  };
+}
+
+function obstacleMarker(
+  projection: Projection,
+  x: number,
+  y: number,
+  radius: number,
+  height: number,
+): ObstacleMarker {
+  const base = project(projection, x, y, 0);
+  const top = project(projection, x, y, height);
+  const edgeX = project(projection, x + radius, y, height);
+  const edgeY = project(projection, x, y + radius, height);
+  return {
+    base,
+    top,
     radiusX: Math.hypot(edgeX.sx - top.sx, edgeX.sy - top.sy),
     radiusY: Math.hypot(edgeY.sx - top.sx, edgeY.sy - top.sy),
   };
