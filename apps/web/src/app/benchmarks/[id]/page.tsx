@@ -12,12 +12,15 @@ import Link from "next/link";
 import { FailureFindings } from "@/components/FailureFindings";
 import { JobProgress } from "@/components/JobProgress";
 import { MapCanvas } from "@/components/MapCanvas";
+import { MetricIntervalChart } from "@/components/MetricIntervalChart";
 import { Scene25D } from "@/components/Scene25D";
 import { SendForReview } from "@/components/SendForReview";
 import { SplitBadge } from "@/components/SplitBadge";
 import { StateBadge } from "@/components/StateBadge";
 import { authFetch, useSession } from "@/lib/auth";
+import { buildIntervalSeries, INTERVAL_METRICS } from "@/lib/charts";
 import { useTranslation } from "@/lib/i18n";
+import { downloadReportMarkdown } from "@/lib/reports";
 import { cancelReview, canAcceptResult, canRun, pendingFor, type ReviewStage } from "@/lib/reviews";
 import type {
   BenchmarkReport,
@@ -516,7 +519,11 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
             </p>
           </div>
 
+          <DistributionPanel report={results.report} />
+
           <StatisticsPanel report={results.report} />
+
+          <ExportPanel benchmarkId={id} />
 
           <div className="panel">
             <h3>
@@ -650,6 +657,102 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
         </div>
       ) : null}
     </>
+  );
+}
+
+/** Median, IQR and CI95 as bars with two whiskers (F09).
+ *
+ * The table above already carries these numbers, with the spread in a
+ * tooltip. That was a compromise — three numbers per cell stops being
+ * readable — and it has a cost: a spread nobody hovers over is a spread
+ * nobody sees. The chart is where the comparison happens, and it puts the
+ * variation on screen without being asked.
+ *
+ * Two whiskers, and they mean different things: the wide one is the
+ * interquartile range (how much the runs varied), the narrow one is the
+ * bootstrap interval for the median (how well this many seeds pin it
+ * down). The panel says so, because a chart with an unexplained error bar
+ * gets read as whichever of the two the reader already had in mind.
+ */
+function DistributionPanel({ report }: { report: BenchmarkReport }) {
+  const { t } = useTranslation();
+  const drawn = INTERVAL_METRICS.map((metric) => ({
+    metric,
+    series: buildIntervalSeries(report.aggregates, metric),
+  })).filter((one) => one.series.rows.length > 0);
+  if (drawn.length === 0) return null;
+  return (
+    <div className="panel">
+      <h3>{t("charts.distributions")}</h3>
+      <p className="muted" style={{ fontSize: 12 }}>
+        {t("charts.distributionsHint")}
+      </p>
+      {!report.statistically_adequate ? (
+        <div className="error-box">
+          {t("detail.fewSeedsWarning", { seeds: report.seed_count })}
+        </div>
+      ) : null}
+      {drawn.map(({ metric, series }) => (
+        <div key={metric.key} style={{ marginTop: 12 }}>
+          <h4 style={{ marginBottom: 4 }}>
+            {t(metric.labelKey)}
+          </h4>
+          <MetricIntervalChart series={series} digits={metric.digits} unit={metric.unit} />
+          {series.missing.length > 0 ? (
+            <p className="muted" style={{ fontSize: 12 }}>
+              {t("charts.noDistribution", { algorithms: series.missing.join(", ") })}
+            </p>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Take the whole report out of the platform (F09).
+ *
+ * The export is the deliverable this milestone is judged on: everything
+ * P02 to P05 computed is worth nothing to a reviewer who cannot open it
+ * without an account. The button reports the filename it saved rather
+ * than a generic success — on a browser that silently drops downloads,
+ * "saved X" is the difference between a working feature and a click that
+ * appears to do nothing.
+ */
+function ExportPanel({ benchmarkId }: { benchmarkId: string }) {
+  const { t } = useTranslation();
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const download = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setSaved(await downloadReportMarkdown(benchmarkId));
+    } catch (err) {
+      setSaved(null);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="panel">
+      <h3>{t("charts.export")}</h3>
+      <p className="muted" style={{ fontSize: 12 }}>
+        {t("charts.exportHint")}
+      </p>
+      {error ? <div className="error-box">{error}</div> : null}
+      <div className="toolbar">
+        <button className="primary" disabled={busy} onClick={() => void download()}>
+          {busy ? t("charts.exporting") : t("charts.downloadMarkdown")}
+        </button>
+        {saved ? (
+          <span className="muted">{t("charts.exportSaved", { filename: saved })}</span>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

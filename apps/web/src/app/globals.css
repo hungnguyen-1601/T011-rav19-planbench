@@ -995,6 +995,28 @@ details summary {
   gap: 12px;
 }
 
+/* Recharts tooltip body.
+ *
+ * Recharts renders the tooltip into a plain absolutely-positioned div, so
+ * it inherits nothing from the panel it floats over. Styled here rather
+ * than inline on each chart so the three of them cannot drift apart, and
+ * kept opaque: a translucent tooltip over a dense chart is unreadable
+ * exactly when a reader most needs the number. */
+.chart-tooltip {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.chart-tooltip .muted {
+  font-size: 11px;
+}
+
 .notice {
   background: var(--warn-soft);
   border: 1px solid var(--warn);

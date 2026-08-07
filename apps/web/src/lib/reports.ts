@@ -1,0 +1,58 @@
+"use client";
+
+/** Downloading the Markdown report (F09).
+ *
+ * Not an `<a href>`. The export is authenticated like every other read
+ * and the token lives in an `Authorization` header, which a plain link
+ * cannot send — a link would either 401 or force the token into the URL,
+ * where it would end up in history and in every proxy log on the way.
+ *
+ * So the browser fetches the body itself, turns it into a Blob, and
+ * drives a synthetic anchor. The object URL is always revoked — a Blob
+ * that is still referenced is held for the life of the document, and
+ * somebody exporting twenty reports to compare them would keep all
+ * twenty — but revoked on the next tick rather than immediately, because
+ * some browsers have not started reading the URL by the time `click()`
+ * returns and would save an empty file.
+ */
+
+import { API_BASE } from "./api";
+import { clearSession, loadSession } from "./auth";
+import { filenameFromDisposition } from "./charts";
+
+/** Fetch the report and save it. Throws with the API's message on failure. */
+export async function downloadReportMarkdown(benchmarkId: string): Promise<string> {
+  const session = loadSession();
+  const response = await fetch(`${API_BASE}/api/v1/benchmarks/${benchmarkId}/report.md`, {
+    headers: session ? { Authorization: `Bearer ${session.token}` } : {},
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    if (response.status === 401) clearSession();
+    let message = response.statusText;
+    try {
+      const body = await response.json();
+      message = body?.error?.message ?? message;
+    } catch {
+      // The error body is JSON even though the success body is not; a
+      // non-JSON failure keeps the status text.
+    }
+    throw new Error(message);
+  }
+  const filename = filenameFromDisposition(
+    response.headers.get("content-disposition"),
+    benchmarkId,
+  );
+  const url = URL.createObjectURL(await response.blob());
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+  return filename;
+}

@@ -29,6 +29,7 @@ Mọi lỗi trả về dạng chuẩn:
 | GET | /benchmarks/{id} | Metadata benchmark |
 | POST | /benchmarks/{id}/run | Chạy tuần tự mọi (algorithm × seed) → runs + aggregates |
 | GET | /benchmarks/{id}/results | Kết quả đã lưu |
+| GET | /benchmarks/{id}/report.md | Toàn bộ report dạng Markdown (`text/markdown`, tải về) |
 
 ## WebSocket
 
@@ -139,6 +140,7 @@ Quy tắc, mỗi cái là một test:
 | POST | /benchmarks/{id}/reject-result | owner, hoặc người duyệt result | pending_review → rejected |
 | GET | /benchmarks/{id}/results | any | Report đã lưu (null nếu chưa chạy) |
 | GET | /benchmarks/{id}/episodes | any | Danh sách episode + artifact URI/checksum/size |
+| GET | /benchmarks/{id}/report.md | any | Report dạng Markdown; **409** nếu benchmark chưa chạy |
 
 **Đọc thì mở, làm thì khóa.** Ai đăng nhập cũng xem được mọi benchmark —
 leaderboard chung chỉ có ý nghĩa khi xem được các run đằng sau nó. Mọi
@@ -324,6 +326,37 @@ là `unassigned`. Chuyển nhóm là thay đổi giao thức, phải review.
 `POST /scenarios/validate` là **đúng phép kiểm mà `create`/`update`
 chạy** (cùng `SimulationEngine.load_scenario`). Nhờ vậy không có chuyện
 editor báo hợp lệ rồi lúc lưu bị từ chối vì một luật chưa ai nói.
+
+### F09 — biểu đồ và xuất báo cáo (3.1)
+
+`GET /benchmarks/{id}/report.md` trả **toàn bộ** report dạng Markdown:
+
+- `Content-Type: text/markdown; charset=utf-8`;
+- `Content-Disposition: attachment; filename="benchmark-<slug>-<id>.md"`
+  — tên do server đặt (tên benchmark là dữ liệu người dùng nên được rút
+  gọn thành slug an toàn, và `id` luôn được nối vào vì hai benchmark
+  trùng tên là chuyện bình thường);
+- **409** khi benchmark chưa chạy. Xuất một report chưa có là xuất một
+  tài liệu toàn ô trống, mà ô trống đọc như kết quả.
+
+Nội dung theo thứ tự: nguồn gốc (id, thời điểm, `git_sha`, checksum
+điều kiện/map/scenario, seed, `protocol_version`, split, độ khó +
+`calibration_version`) → điều kiện chạy → stack và lớp quan sát → tỉ lệ
+kết cục → phân phối (trung vị, IQR, CI95) → kiểm định ghép cặp →
+chênh lệch tổng quát hóa → bảng từng run → **giới hạn đã biết**.
+
+Hai điều tài liệu này không làm: không suy ra giá trị thiếu (`—` nghĩa
+là không tính được, không phải 0), và không phát biểu mạnh hơn dữ liệu —
+mỗi cảnh báo nằm cạnh chính con số nó áp vào, không chỉ ở mục cuối.
+
+Chênh lệch tổng quát hóa in trong report được tính **giữa các benchmark
+đã accepted** (giống `GET /generalization`), có ghi rõ như vậy: một
+benchmark chạy một scenario nên tự nó không có gì để trừ.
+
+Endpoint yêu cầu đăng nhập như mọi endpoint đọc khác, nên trình duyệt
+**không** tải bằng `<a href>` — token nằm ở header, và đưa nó vào URL sẽ
+để lại dấu vết trong history và log của mọi proxy trên đường đi. Client
+`fetch` rồi tự dựng Blob (`apps/web/src/lib/reports.ts`).
 
 ## Episodes (M4)
 
