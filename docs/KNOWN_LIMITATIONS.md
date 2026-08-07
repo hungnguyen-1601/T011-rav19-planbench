@@ -755,6 +755,46 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     đây là chi phí thật và nó nằm trên đường tải của mọi người xem
     leaderboard.
 
+146. **Metric F05 mới chỉ có ở cấp episode, chưa có ở cấp aggregate.**
+    `smoothness_squared`, latency p50/p95/p99, `stop_and_go_count`,
+    `near_miss_count`, `time_to_first_collision` nằm trong
+    `EpisodeMetrics` của từng run (và bảng Runs của report Markdown),
+    nhưng `AlgorithmAggregate`, leaderboard và biểu đồ vẫn tổng hợp
+    trên các field cũ. Đưa metric mới lên aggregate đụng contract
+    leaderboard + charts, để đợt riêng. Overall score của leaderboard
+    vẫn dùng `mean_smoothness_successful` (công thức cũ, đã đánh dấu
+    deprecated) — chưa đổi sang `smoothness_squared` vì đổi trọng số
+    xếp hạng phải được review riêng.
+
+147. **`smoothness_squared` không chuẩn hóa theo chiều dài đường đi.**
+    Đúng công thức spec 8.2 `S = Σ(Δθ)²`, nhưng vì không chia cho L nên
+    chỉ so được giữa các trajectory trên cùng một scenario; so giữa hai
+    map khác kích thước sẽ thiên vị đường ngắn. Field cũ `smoothness`
+    (Σ|Δθ|/L — heading-change rate) vẫn được tính cho mục đích đó.
+
+148. **`stop_and_go_count` đo bằng ngưỡng tốc độ có hysteresis
+    (0.05/0.10 m/s, `MetricConfig` v1.0.0), không đo bằng lệnh dừng.**
+    Robot bò chậm dưới 0.05 m/s mà không hề "dừng" theo nghĩa điều khiển
+    vẫn bị đếm. Ngưỡng nằm trong `MetricConfig` versioned và được
+    snapshot vào từng `EpisodeMetrics` + ghi trong report, nên đổi
+    ngưỡng không làm số cũ đổi nghĩa âm thầm.
+
+149. **`near_miss_count` đếm theo frame, không theo sự kiện.** Robot cà
+    sát tường trong 40 frame liên tiếp được đếm 40, không phải 1 lần
+    near-miss kéo dài. So sánh giữa các thuật toán vẫn công bằng (cùng
+    cách đếm, cùng dt), nhưng con số tuyệt đối phải đọc là "số frame
+    dưới ngưỡng an toàn", không phải "số lần suýt va".
+
+150. **`time_to_first_collision` hiện luôn trùng thời điểm kết thúc
+    episode** vì engine chấm dứt episode ngay tại va chạm đầu tiên. Field
+    tồn tại để giữ nghĩa đúng khi có chế độ chạy tiếp sau va chạm
+    (multi-collision) trong tương lai; hôm nay nó không mang thêm thông
+    tin so với `elapsed_time` của episode va chạm.
+
+151. **Peak memory không đo.** Quyết định chủ ý theo plan 3.2: phụ thuộc
+    máy, có overhead, mâu thuẫn với tính tái lập nếu không ghi môi
+    trường đo. Không nằm trong leaderboard hay overall score.
+
 ## Môi trường
 
 - Test phải chạy với `PYTHONPATH=` do shell source ROS2 Jazzy (xem

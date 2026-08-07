@@ -178,6 +178,25 @@ export interface EpisodeMetrics {
   mean_clearance: number | null;
   global_planning_time: number | null;
   expanded_nodes: number | null;
+  // F05 additions — absent (undefined) on payloads stored before them,
+  // null when not computed. Never coalesce to 0.
+  mean_local_planning_latency?: number | null;
+  max_local_planning_latency?: number | null;
+  smoothness_squared?: number | null;
+  local_planning_latency_p50?: number | null;
+  local_planning_latency_p95?: number | null;
+  local_planning_latency_p99?: number | null;
+  stop_and_go_count?: number | null;
+  near_miss_count?: number | null;
+  time_to_first_collision?: number | null;
+  metric_config?: MetricConfig | null;
+}
+
+export interface MetricConfig {
+  version: string;
+  stop_speed_threshold: number;
+  resume_speed_threshold: number;
+  near_miss_clearance_threshold: number;
 }
 
 export interface PlanResult {

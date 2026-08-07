@@ -166,8 +166,7 @@ def _provenance(stored: StoredBenchmark, report: BenchmarkReport) -> list[str]:
         rows.append(
             [
                 "Scenario difficulty (P03)",
-                f"{DASH} (not calibrated; calibration in force: "
-                f"{_cell(calibration_version())})",
+                f"{DASH} (not calibrated; calibration in force: {_cell(calibration_version())})",
             ]
         )
     else:
@@ -390,8 +389,8 @@ def _comparisons(report: BenchmarkReport) -> list[str]:
         "seed run by both stacks, so a seed that only one of them survived",
         "contributes to neither. Cliff's delta is the effect size — how large",
         "the difference is, not only how unlikely. The paired seed count is",
-        "printed beside every p-value because \"A was faster on the four seeds",
-        "where both arrived\" is a different claim from \"A was faster\".",
+        'printed beside every p-value because "A was faster on the four seeds',
+        'where both arrived" is a different claim from "A was faster".',
         "",
     ]
     if not report.comparisons:
@@ -444,9 +443,7 @@ def _comparisons(report: BenchmarkReport) -> list[str]:
     return lines
 
 
-def _generalization(
-    report: BenchmarkReport, summary: GeneralizationSummary | None
-) -> list[str]:
+def _generalization(report: BenchmarkReport, summary: GeneralizationSummary | None) -> list[str]:
     lines = [
         "## Generalization gap (P05)",
         "",
@@ -515,6 +512,8 @@ def _runs(report: BenchmarkReport) -> list[str]:
             _num(run.metrics.trajectory_length, 2, " m"),
             _num(run.metrics.path_efficiency, 3),
             _num(run.metrics.min_clearance, 3, " m"),
+            DASH if run.metrics.near_miss_count is None else str(run.metrics.near_miss_count),
+            DASH if run.metrics.stop_and_go_count is None else str(run.metrics.stop_and_go_count),
             _cell(run.reason),
         ]
         for run in _sorted_runs(report.runs)
@@ -531,12 +530,43 @@ def _runs(report: BenchmarkReport) -> list[str]:
                 "Path length",
                 "Efficiency",
                 "Min clearance",
+                "Near misses",
+                "Stop-and-go",
                 "Reason",
             ],
             rows,
         ),
         "",
+        *_metric_thresholds(report),
     ]
+
+
+def _metric_thresholds(report: BenchmarkReport) -> list[str]:
+    """State the thresholds behind the counts — a count without its
+    threshold is a number nobody can reproduce or dispute."""
+    configs = {
+        run.metrics.metric_config.version: run.metrics.metric_config
+        for run in report.runs
+        if run.metrics.metric_config is not None
+    }
+    if not configs:
+        return [
+            "Near-miss and stop-and-go counts were not computed for this report "
+            "(recorded before metric config v1).",
+            "",
+        ]
+    lines = []
+    for config in configs.values():
+        lines.append(
+            f"Metric thresholds (config v{_cell(config.version)}): a near miss is a "
+            f"trajectory point with clearance below "
+            f"{_num(config.near_miss_clearance_threshold, 2)} m (collisions are not "
+            f"double-counted); a stop-and-go is a drop below "
+            f"{_num(config.stop_speed_threshold, 2)} m/s followed by a recovery above "
+            f"{_num(config.resume_speed_threshold, 2)} m/s, after the robot first moved."
+        )
+    lines.append("")
+    return lines
 
 
 def _sorted_runs(runs: tuple[RunRecord, ...]) -> list[RunRecord]:
