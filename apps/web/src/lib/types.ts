@@ -151,6 +151,10 @@ export interface TrajectoryPoint {
   theta: number;
   linear_velocity: number;
   angular_velocity: number;
+  /** Ground-truth dynamic-obstacle snapshot at this sample — recorded
+   *  for replay only, never shown to a planner. Absent on payloads
+   *  stored before it was recorded. */
+  obstacles?: { name: string; x: number; y: number; radius: number }[];
 }
 
 export interface EpisodeResult {

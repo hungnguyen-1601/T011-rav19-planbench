@@ -770,5 +770,6 @@
   "charts.exportHint": "The whole report as Markdown: provenance, conditions, observation classes, medians with their intervals, the paired tests and every run. Written so it can be read outside the platform, by somebody without an account.",
   "charts.downloadMarkdown": "Download Markdown report",
   "charts.exporting": "Preparing…",
-  "charts.exportSaved": "Saved {filename}"
+  "charts.exportSaved": "Saved {filename}",
+  "detail.collisionAt": "Collision at {time} s"
 }

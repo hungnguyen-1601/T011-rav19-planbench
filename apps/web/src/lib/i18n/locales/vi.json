@@ -770,5 +770,6 @@
   "charts.exportHint": "Toàn bộ báo cáo dạng Markdown: nguồn gốc, điều kiện, lớp quan sát, trung vị kèm khoảng, các kiểm định ghép cặp và mọi lần chạy. Viết để đọc được bên ngoài hệ thống, bởi người không có tài khoản.",
   "charts.downloadMarkdown": "Tải báo cáo Markdown",
   "charts.exporting": "Đang chuẩn bị…",
-  "charts.exportSaved": "Đã lưu {filename}"
+  "charts.exportSaved": "Đã lưu {filename}",
+  "detail.collisionAt": "Va chạm tại giây {time}"
 }

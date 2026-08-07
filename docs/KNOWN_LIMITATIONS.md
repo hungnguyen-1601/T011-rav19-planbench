@@ -164,12 +164,16 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
 45. **2.5D không có occlusion culling.** Mọi ô đều được vẽ, kể cả ô bị
     tường trước che hoàn toàn. Với map hiện tại (48×36) không thấy chậm;
     map lớn hơn nhiều sẽ cần cắt bớt hoặc chuyển sang WebGL.
-46. **Replay chỉ hiện khung cuối, chưa có timeline scrub.** Trang
-    `/simulate` có playback theo thời gian thực; replay của episode đã
-    lưu thì vẽ toàn bộ trajectory cộng vị trí cuối.
+46. ~~**Replay chỉ hiện khung cuối, chưa có timeline scrub.**~~ Đã xong
+    (F08, 2026-08-07): replay episode đã lưu có play/pause, scrubber,
+    tốc độ 0.25×–8×, robot chạy theo frame, trajectory vẽ tới playhead,
+    vật cản động vẽ theo snapshot từng frame (view 2D), điểm va chạm
+    đánh dấu trên timeline. Hook `useTrajectoryPlayback` tách riêng
+    khỏi stream WebSocket của `/simulate`.
 47. **Vật cản động không hiện trong 2.5D.** Snapshot vị trí vật cản có
-    trong `TrajectoryPoint.obstacles` nhưng renderer chưa dùng — hiện
-    chỉ vẽ map tĩnh, plan, trajectory và robot.
+    trong `TrajectoryPoint.obstacles`; view 2D top-down của replay đã
+    vẽ theo playhead (F08), nhưng renderer `Scene25D` vẫn chưa dùng —
+    2.5D chỉ vẽ map tĩnh, plan, trajectory và robot.
 48. **Chưa có endpoint model registry.** `/algorithms` hiển thị registry
     stack (gồm `astar+ppo` và `model_path` nó đòi), nhưng danh sách
     checkpoint đã train thì chưa có API — metadata mới nằm ở file sidecar
