@@ -16,6 +16,12 @@ from planbench_schemas.geometry import (
     normalize_angle,
 )
 from planbench_schemas.map import CellState, MapData
+from planbench_schemas.observations import (
+    KNOWN_OBSERVATIONS,
+    ObservationToken,
+    UnknownObservationError,
+    canonical_observations,
+)
 from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
 from planbench_schemas.robot import RobotConfig, RobotState, SimAction
 from planbench_schemas.scenario import (
@@ -37,6 +43,7 @@ from planbench_schemas.task_profile import (
 
 __all__ = [
     "EPS",
+    "KNOWN_OBSERVATIONS",
     "NO_REPLANNING",
     "CellState",
     "CircleObstacle",
@@ -50,6 +57,7 @@ __all__ = [
     "MapData",
     "Mission",
     "Observation",
+    "ObservationToken",
     "Point2D",
     "Pose2D",
     "RectangleObstacle",
@@ -63,6 +71,8 @@ __all__ = [
     "TaskProfile",
     "TaskRobotSpec",
     "TrajectoryPoint",
+    "UnknownObservationError",
+    "canonical_observations",
     "distance_point_to_aabb",
     "euclidean_distance",
     "normalize_angle",
