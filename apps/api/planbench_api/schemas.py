@@ -10,6 +10,7 @@ from planbench_planning import PlanResult
 from planbench_schemas.episode import EpisodeResult
 from planbench_schemas.geometry import Point2D
 from planbench_schemas.map import MapData
+from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
 from planbench_schemas.scenario import Scenario
 
 
@@ -115,6 +116,13 @@ class SimulationCreateRequest(BaseModel):
     scenario_id: str
     algorithm: str = "astar+dwa"
     config: dict = Field(default_factory=dict)
+    #: Whether this robot may ask for a new global path when it gets
+    #: blocked. Omitted means no, which is what every simulation created
+    #: before this field existed did. ``ReplanningConfig`` itself rejects
+    #: ``enabled`` with a budget of zero — a switch that turns nothing on
+    #: is the worst of the three states, because the result then claims a
+    #: capability it never used.
+    replanning: ReplanningConfig = NO_REPLANNING
 
 
 class SimulationResource(BaseModel):
@@ -127,6 +135,9 @@ class SimulationResource(BaseModel):
     config: dict = Field(default_factory=dict)
     state: str  # created | finished
     created_at: str
+    #: Echoed back so a client never has to remember what it asked for,
+    #: and so a stored simulation can be read for what it actually ran.
+    replanning: ReplanningConfig = NO_REPLANNING
 
 
 class SimulationResultResponse(BaseModel):

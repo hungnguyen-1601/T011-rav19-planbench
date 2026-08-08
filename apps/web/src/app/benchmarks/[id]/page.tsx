@@ -671,6 +671,13 @@ function ReplayViewer({
       : null;
   const collisionReached =
     collisionTime !== null && playback.playhead >= collisionTime - 1e-9;
+  // Every moment the robot was handed a new global path. Read off the
+  // recorded events rather than inferred from the trajectory: a replan
+  // leaves no signature in the samples, which is exactly why the engine
+  // emits an event for it.
+  const replanTimes = replay.events
+    .filter((event) => event.type === "replan")
+    .map((event) => event.time);
   const atEnd = playback.playhead >= playback.duration - 1e-9;
 
   return (
@@ -744,6 +751,29 @@ function ReplayViewer({
           onChange={(event) => playback.seek(Number(event.target.value))}
           style={{ width: "100%" }}
         />
+        {playback.duration > 0
+          ? replanTimes.map((time, index) => (
+              // Amber tick, same mechanism as the collision marker. A
+              // replan is not a failure, so it must not read as one —
+              // but it is the moment the route changed, and without it
+              // the robot appears to wander off its drawn path.
+              <span
+                key={`${time}-${index}`}
+                title={t("detail.replanAt", { time: time.toFixed(2) })}
+                style={{
+                  position: "absolute",
+                  left: `${(time / playback.duration) * 100}%`,
+                  top: -4,
+                  transform: "translateX(-50%)",
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: "#d29922",
+                  pointerEvents: "none",
+                }}
+              />
+            ))
+          : null}
         {collisionTime !== null && playback.duration > 0 ? (
           // Red tick on the timeline where the collision happened, so the
           // reader can jump straight to the moment that ended the episode.

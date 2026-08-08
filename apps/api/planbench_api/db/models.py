@@ -338,6 +338,11 @@ class SimulationRow(Base):
     #: Full StackRun dump. Single simulations are one-off and small
     #: enough to keep inline; benchmark episodes are not (see EpisodeRow).
     run: Mapped[dict | None] = mapped_column(JsonColumn, nullable=True)
+    #: ``ReplanningConfig`` dump, or NULL on rows written before the rule
+    #: could be set here. NULL reads back as disabled, which is what
+    #: those runs actually did — a default of "enabled" would rewrite
+    #: history, and NOT NULL would break the upgrade.
+    replanning: Mapped[dict | None] = mapped_column(JsonColumn, nullable=True)
 
 
 class BenchmarkRow(Base):

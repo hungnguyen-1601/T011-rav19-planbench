@@ -11,7 +11,8 @@ import { StateBadge } from "@/components/StateBadge";
 import { authFetch, useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import { listModels, type ModelSummary } from "@/lib/models";
-import type { AlgorithmInfo, BenchmarkResource } from "@/lib/benchmarkTypes";
+import { NO_REPLANNING, ReplanningControls } from "@/components/ReplanningControls";
+import type { AlgorithmInfo, BenchmarkResource, ReplanningConfig } from "@/lib/benchmarkTypes";
 import type { ScenarioProtocolMetadata, ScenarioSplit } from "@/lib/platformTypes";
 import type { MapSummary, ScenarioResource } from "@/lib/types";
 
@@ -35,6 +36,11 @@ export default function BenchmarksPage() {
   const [models, setModels] = useState<ModelSummary[]>([]);
   const [modelId, setModelId] = useState("");
   const [seedText, setSeedText] = useState("1,2,3");
+  // One rule for the whole sweep. It sits beside the seeds rather than
+  // beside the stack checkboxes on purpose: replanning is a condition of
+  // the comparison, and a per-algorithm control would be the unfairness
+  // the whole platform exists to rule out.
+  const [replanning, setReplanning] = useState<ReplanningConfig>(NO_REPLANNING);
   // P05: which scenarios are held out. Resolved by scenario *name*,
   // because the split belongs to the evaluation protocol and not to the
   // stored scenario row — two imports of `intersection` are two rows and
@@ -102,6 +108,10 @@ export default function BenchmarksPage() {
             config: id === "astar+ppo" ? { model_id: modelId } : {},
           })),
           seeds,
+          // Omitted when off, so a payload that never mentions
+          // replanning cannot turn it on and cannot change the
+          // conditions checksum of a run that did not use it.
+          ...(replanning.enabled ? { replanning } : {}),
         }),
       });
       await refresh();
@@ -205,6 +215,7 @@ export default function BenchmarksPage() {
               {busy ? t("benchmarks.creating") : t("benchmarks.createDraft")}
             </button>
           </div>
+          <ReplanningControls value={replanning} onChange={setReplanning} scope="benchmark" />
           {selectedSplit === "holdout" && selectedScenario ? (
             // Warn before the run, not after: the cost of consulting a
             // held-out scenario is paid the moment the result is seen.

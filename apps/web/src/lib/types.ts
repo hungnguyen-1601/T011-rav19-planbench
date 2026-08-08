@@ -1,5 +1,7 @@
 /** TypeScript mirrors of the backend API contract (docs/API_CONTRACT.md). */
 
+import type { ReplanningConfig } from "./benchmarkTypes";
+
 export interface Pose2D {
   x: number;
   y: number;
@@ -142,6 +144,9 @@ export interface SimulationResource {
   algorithm: string;
   state: "created" | "finished";
   created_at: string;
+  /** The replanning rule this run executed under. Absent on payloads
+   *  from a server that predates the field; those runs did not replan. */
+  replanning?: ReplanningConfig;
 }
 
 export interface TrajectoryPoint {

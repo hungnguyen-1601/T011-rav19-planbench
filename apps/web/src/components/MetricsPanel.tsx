@@ -41,6 +41,11 @@ export function MetricsPanel({
         <Metric label={t("metrics.minClearance")} value={format(metrics.min_clearance, 3, " m")} />
         <Metric label={t("metrics.meanClearance")} value={format(metrics.mean_clearance, 3, " m")} />
         <Metric label={t("metrics.steps")} value={String(metrics.steps)} />
+        {/* Only when replanning was on. A column of zeros on every other
+         *  run says nothing and buries the metrics that do. */}
+        {metrics.replan_count ? (
+          <Metric label={t("metrics.replanCount")} value={String(metrics.replan_count)} />
+        ) : null}
         {plan ? (
           <>
             <Metric label={t("metrics.plannedLength")} value={format(plan.path_length, 2, " m")} />

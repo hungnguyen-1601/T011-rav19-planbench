@@ -185,7 +185,12 @@ class SimulationService:
         self._repos = repos
 
     def create(
-        self, map_id: str, scenario_id: str, algorithm: str, config: dict | None = None
+        self,
+        map_id: str,
+        scenario_id: str,
+        algorithm: str,
+        config: dict | None = None,
+        replanning: ReplanningConfig | None = None,
     ) -> StoredSimulation:
         require_algorithm(algorithm, config)
         stored_map = self._repos.maps.get(map_id)
@@ -193,7 +198,9 @@ class SimulationService:
         errors = ScenarioService.validate_against_map(stored_map.map_data, stored_scenario.scenario)
         if errors:
             raise DomainValidationError("scenario is invalid for this map", errors)
-        return self._repos.simulations.create(map_id, scenario_id, algorithm, config or {})
+        return self._repos.simulations.create(
+            map_id, scenario_id, algorithm, config or {}, replanning or NO_REPLANNING
+        )
 
     def get(self, simulation_id: str) -> StoredSimulation:
         return self._repos.simulations.get(simulation_id)
@@ -211,7 +218,12 @@ class SimulationService:
         # The scenario's own seed also seeds a sampling global planner,
         # so re-running a stored simulation reproduces the same path.
         global_planner = build_global_planner(stored.algorithm, episode_seed=scenario.random_seed)
-        stack_run: StackRun = run_stack(map_data, scenario, planner, global_planner)
+        # The rule comes from the stored simulation, so re-running one
+        # replays the conditions it was created with rather than whatever
+        # the default happens to be today.
+        stack_run: StackRun = run_stack(
+            map_data, scenario, planner, global_planner, stored.replanning
+        )
         logger.info(
             "simulation finished",
             extra={
@@ -220,6 +232,7 @@ class SimulationService:
                     "algorithm": stored.algorithm,
                     "status": stack_run.result.status.value,
                     "steps": stack_run.result.steps,
+                    "replans": stack_run.metrics.replan_count,
                 }
             },
         )
