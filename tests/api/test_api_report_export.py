@@ -123,6 +123,37 @@ class TestProvenance:
         assert "full_static_map" in document
         assert "lidar_only" in document
 
+    def test_a_report_without_replanning_claims_no_upgrade(
+        self, client: TestClient, created_map, created_scenario, alice_headers
+    ) -> None:
+        benchmark = run_benchmark(client, created_map, created_scenario, alice_headers)
+        document = export(client, benchmark["id"], alice_headers).text
+        assert "higher than the registry" not in document
+        assert "full_static_map+human_states" not in document
+
+    def test_replanning_upgrades_the_global_class_and_says_why(
+        self, client: TestClient, created_map, created_scenario, alice_headers
+    ) -> None:
+        """The label alone would look like a registry bug to a reader.
+
+        Anyone checking this report can look ``astar+dwa`` up and find
+        ``full_static_map``. The report has to explain the discrepancy in
+        the same section, or the honest label reads as a mistake.
+        """
+        benchmark = run_benchmark(
+            client,
+            created_map,
+            created_scenario,
+            alice_headers,
+            replanning={"enabled": True, "max_replans": 2},
+        )
+        document = export(client, benchmark["id"], alice_headers).text
+        assert "full_static_map+human_states" in document
+        assert "higher than the registry" in document
+        assert "ground-truth positions" in document
+        # The controller is untouched, and the report must not imply it was.
+        assert "lidar_only" in document
+
 
 class TestNumbers:
     def test_quotes_medians_with_their_spread_and_interval(
@@ -157,9 +188,7 @@ class TestNumbers:
             algorithms=[{"id": "astar+dwa"}, {"id": "rrtstar+dwa"}],
         )
         document = export(client, benchmark["id"], alice_headers).text
-        header = next(
-            line for line in document.splitlines() if line.startswith("| Pair |")
-        )
+        header = next(line for line in document.splitlines() if line.startswith("| Pair |"))
         assert "Paired seeds" in header
         assert "p-value" in header
         assert "Effect size" in header

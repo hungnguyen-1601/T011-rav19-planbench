@@ -799,6 +799,78 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     máy, có overhead, mâu thuẫn với tính tái lập nếu không ghi môi
     trường đo. Không nằm trong leaderboard hay overall score.
 
+152. **Replanning chỉ kích hoạt sau khi engine đã kết luận STUCK hoặc
+    NO_PROGRESS.** Không có trigger sớm kiểu "LiDAR thấy đường bị chặn
+    thì replan ngay". Hệ quả: robot luôn phải đứng chờ hết
+    `stuck_time_window` (mặc định 5 s) trước khi được cấp đường mới, nên
+    `travel_time` của một run có replan gồm cả khoảng chờ đó. Đây là chủ
+    ý — một trigger nhạy hơn là một tham số, và tham số đó sẽ phải vào
+    chung vòng tune P01 để không thành lợi thế riêng của một thuật toán.
+
+153. **Khi replan, ô lưới chứa tâm robot được ép về FREE.** Robot bị
+    chặn thường đứng gần vật cản hơn bán kính inflate, nên ô của chính
+    nó bị coi là occupied và global planner trả "no path" — replan sẽ
+    không bao giờ chạy được đúng lúc cần nhất. Chỉ đúng **một ô** được
+    mở, và mở được vì engine đã chứng minh robot không va chạm (nếu va
+    chạm episode đã kết thúc). Các ô lân cận giữ nguyên inflation.
+
+154. **`replan_count` chưa lên `AlgorithmAggregate` và leaderboard.**
+    Số lần replan hiện chỉ có ở cấp episode (`runs[].metrics` và bảng
+    Runs của report Markdown, cột chỉ hiện khi replanning bật). Đưa lên
+    aggregate đụng contract leaderboard và overall score — cùng lý do
+    hoãn như #146.
+
+155. **`path_efficiency` của run có replan lấy đường của lần replan cuối
+    làm mốc**, còn `global_planning_time`/`expanded_nodes` là tổng cộng
+    dồn qua mọi lần plan. Vì vậy so `path_efficiency` giữa một run có
+    replan và một run không replan là so với hai mốc khác nhau. Cấu hình
+    replanning nằm trong `conditions_checksum` chính là để trong cùng
+    một phép so sánh, mọi thuật toán đều dùng cùng luật.
+
+156. **Replanning chưa nối vào `/simulate`, và chưa có UI ở đâu cả.**
+    Chỉ `POST /benchmarks` nhận trường `replanning`. `SimulationService.run`
+    (`apps/api/planbench_api/services.py`) gọi `run_stack()` **không**
+    truyền luật replanning, và `StoredSimulation`/`SimulationCreateRequest`
+    không có trường tương ứng — nên trang `/simulate`, đúng cái trang
+    người ta ngồi xem robot bị kẹt, không bao giờ replan được. Form tạo
+    benchmark trên web cũng chưa có ô chọn. Hiện chỉ bật được qua API
+    benchmark hoặc script. (Bản ghi trước của mục này chỉ nói thiếu ô
+    chọn ở form benchmark, bỏ sót nửa quan trọng hơn.)
+
+157. **Cache difficulty hiện tại (P03) đo với replanning tắt.** Bật
+    replanning làm scenario dễ đi, tức là một thang đo khác;
+    `scripts/calibrate_difficulty.py --max-replans N` bắt buộc phải kèm
+    `--calibration-version` riêng và không ghi đè cache cũ.
+
+158. **Replan đọc ground truth, và cái đã sửa là *nhãn*, không phải
+    nguồn dữ liệu.** `_replan()` lấy vị trí vật cản động qua
+    `engine.dynamic_obstacles_now()` — chính xác tuyệt đối, không nhiễu,
+    không che khuất, không cần cảm biến. Từ Đợt A, khi replanning bật,
+    `global_observation_class` được **suy ra lúc chạy** thành
+    `full_static_map+human_states` thay vì đọc cứng `full_static_map` từ
+    registry, nên báo cáo và leaderboard không còn dán nhãn sai. Nhưng
+    đây mới là khai báo trung thực về một đặc quyền, **chưa phải là bỏ
+    đặc quyền đó đi**. Lời giải thật là dựng lớp vật cản từ chính LiDAR
+    scan của robot (một `local_costmap` kiểu Nav2, tích luỹ theo thời
+    gian) — ước lượng ~3 ngày và cần plan riêng; xem "Lựa chọn 2" trong
+    `docs/antongduy/plans/2026-08-07/replanning-lien-tuc-va-noi-day-vao-simulate.md`.
+
+    Hệ quả trực tiếp: **run có replanning không so được với run không
+    replanning trong cùng một bảng xếp hạng** — chúng ở hai lớp quan sát
+    khác nhau. Ép xem chung thì leaderboard trả về
+    `cross_observation_class_warning = True`.
+
+159. **Việc nâng lớp quan sát là bảng tra cố định, không phải suy luận.**
+    `global_class_under_replanning()` ánh xạ từng giá trị `ObservationClass`
+    sang giá trị tương ứng khi replanning bật. Thêm một lớp quan sát mới
+    mà quên thêm vào bảng đó sẽ `KeyError` ngay — chủ ý, vì im lặng bịa ra
+    một tên lớp không ai nhận là đúng thứ P02 sinh ra để chặn. Có test
+    quét toàn bộ `OBSERVATION_CLASSES` để bắt trường hợp này.
+
+    Kèm theo: khóa nhóm của leaderboard giờ gồm **cả hai** lớp
+    (global + local), không chỉ local như trước. Dữ liệu cũ không đổi
+    nhóm — mọi aggregate cũ đều `full_static_map`.
+
 ## Môi trường
 
 - Test phải chạy với `PYTHONPATH=` do shell source ROS2 Jazzy (xem

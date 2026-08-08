@@ -706,6 +706,8 @@
   "leaderboard.observationUnknown": "không rõ",
   "leaderboard.observationUnknownHint": "Kết quả này được lưu trước khi các stack khai báo dữ liệu quan sát. Không mặc định coi nó cùng lớp với các dòng khác.",
   "leaderboard.groupObservation": "Quan sát của bộ điều khiển: {observation}",
+  "leaderboard.groupGlobalObservation": "Quan sát của bộ lập kế hoạch toàn cục: {observation}",
+  "leaderboard.groupGlobalObservationReplanning": "Quan sát của bộ lập kế hoạch toàn cục: {observation} — replanning đang bật, nên bộ toàn cục đọc được vị trí thật của vật cản động. Các dòng này không so được với run không replan.",
   "leaderboard.groupByObservation": "Tách theo lớp quan sát",
   "leaderboard.observationGroupingHint": "Bật: chỉ xếp hạng chung các stack được xem cùng loại dữ liệu. Tắt: vẫn xếp chung nhưng kèm cảnh báo.",
   "leaderboard.mixedObservationWarning": "Các dòng này không được xem cùng loại dữ liệu. Stack có nhiều thông tin hơn đang giải bài toán dễ hơn, nên thứ tự này không phải bằng chứng thuật toán nào tốt hơn.",

@@ -8,6 +8,10 @@ Termination checks run after every step in a fixed priority order
 (first match wins): collision > goal reached > timeout > stuck >
 failure to progress.
 
+A stuck or no-progress termination is not necessarily final: a stack
+with replanning enabled can hand the robot a new global path and call
+``resume_after_replan()``. Collision and timeout never reopen.
+
 Sensing note: LiDAR scans a grid with static shape obstacles rasterized
 in (cell-resolution approximation) plus the current dynamic obstacles
 rasterized per step; collision uses the raw grid plus exact geometry for
@@ -260,6 +264,64 @@ class SimulationEngine:
 
     def is_done(self) -> bool:
         return self._state in (EngineState.FINISHED, EngineState.STOPPED)
+
+    def dynamic_obstacles_now(self) -> tuple[CircleObstacle, ...]:
+        """Ground-truth positions of the dynamic obstacles at this instant.
+
+        Public because replanning needs it: a global planner handed only
+        the static map replans the exact route it just planned, since
+        nothing in its input changed. The stack burns these circles into
+        a throwaway planning grid so the new route goes around whatever
+        is blocking the robot *now*.
+
+        This is ground truth, and it is only ever read by the stack
+        between control steps, never by a planner through
+        :meth:`get_observation` — the information-parity declaration
+        (P02) still holds, because what a controller sees is unchanged.
+        """
+        if self._scenario is None:
+            raise RuntimeError("load_scenario() must be called before dynamic_obstacles_now()")
+        return self._dynamic_now()
+
+    def resume_after_replan(self, note: str) -> None:
+        """Revive an episode that ended STUCK or NO_PROGRESS, once replanned.
+
+        Only those two statuses: a collision or a timeout is a verdict on
+        the episode, and letting a new path undo it would let replanning
+        buy results it did not earn.
+
+        Two things have to be undone, not one. Flipping the state back to
+        RUNNING is the obvious half; the other is the sliding window that
+        detected the standstill. Its samples all still describe a robot
+        that has not moved, so without reseeding it the very next step
+        re-derives the same verdict and the replan achieves nothing.
+        Seeding it with a single sample at the current time restarts both
+        the stuck and the no-progress clocks from here.
+
+        The terminating event is replaced by a ``replan`` event carrying
+        ``note``. Leaving the ``stuck`` event in place would put a
+        termination in the record of an episode that did not terminate
+        there; the replan event keeps the same moment, and the reason,
+        visible.
+        """
+        if self._state is not EngineState.FINISHED or self._status not in (
+            EpisodeStatus.STUCK,
+            EpisodeStatus.NO_PROGRESS,
+        ):
+            raise RuntimeError(
+                f"cannot resume after replan: engine state is {self._state.value} "
+                f"with status {self._status.value}"
+            )
+        assert self._robot is not None
+        if self._events and self._events[-1].type == self._status.value:
+            self._events.pop()
+        self._events.append(EpisodeEvent(time=self._time, type="replan", message=note))
+        self._status = EpisodeStatus.RUNNING
+        self._reason = ""
+        self._window = deque(
+            [(self._time, self._robot.pose.x, self._robot.pose.y, self._goal_distance())]
+        )
+        self._state = EngineState.RUNNING
 
     def get_result(self) -> EpisodeResult:
         if not self.is_done():

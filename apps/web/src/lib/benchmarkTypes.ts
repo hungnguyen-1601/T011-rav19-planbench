@@ -20,12 +20,18 @@ export type BenchmarkState =
  *
  *  A stack that reads ground-truth pedestrian states is solving an
  *  easier problem than one running on LiDAR; the label is what stops the
- *  leaderboard from reporting that as a better algorithm. */
+ *  leaderboard from reporting that as a better algorithm.
+ *
+ *  `full_static_map+human_states` is not declared by any stack in the
+ *  registry: it is derived at run time for the global planner whenever
+ *  replanning is on, because a replan is computed from the ground-truth
+ *  obstacle positions. */
 export type ObservationClass =
   | "full_static_map"
   | "lidar_only"
   | "human_states"
-  | "lidar+human_states";
+  | "lidar+human_states"
+  | "full_static_map+human_states";
 
 export interface AlgorithmInfo {
   id: string;
@@ -56,6 +62,13 @@ export interface BenchmarkSpec {
   algorithms: AlgorithmSpec[];
   seeds: number[];
   spec_version: string;
+  /** One replanning rule for the whole benchmark, never per algorithm. */
+  replanning?: ReplanningConfig;
+}
+
+export interface ReplanningConfig {
+  enabled: boolean;
+  max_replans: number;
 }
 
 export interface ApprovalRecord {
@@ -106,6 +119,11 @@ export interface FairnessRecord {
   max_angular_velocity: number;
   lidar_num_rays: number;
   lidar_max_range: number;
+  // The replanning rule every algorithm ran under. Optional because
+  // reports stored before it exist; absent reads as disabled, which is
+  // what those runs did.
+  replanning_enabled?: boolean;
+  max_replans?: number;
   conditions_checksum: string;
 }
 

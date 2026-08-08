@@ -183,8 +183,12 @@ export interface LeaderboardGroup {
   scenario_name: string;
   seeds: number[];
   entries: LeaderboardEntry[];
-  /** The class every row here shares; null when the group is mixed. */
+  /** The classes every row here shares; null when the group is mixed on
+   *  that layer. Both layers are part of the grouping key: replanning
+   *  upgrades the global class only, and a stack allowed to replan saw
+   *  strictly more than one that was not. */
   local_observation_class: ObservationClass | null;
+  global_observation_class: ObservationClass | null;
   /** True when the rows were not shown the same thing. */
   cross_observation_class_warning: boolean;
 }
