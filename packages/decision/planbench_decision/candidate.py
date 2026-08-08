@@ -30,13 +30,12 @@ noise by exactly the person who needs to stop.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from collections.abc import Mapping, Sequence
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
+from planbench_schemas.identity import canonical_json, sha256_short
 from planbench_schemas.observations import ObservationToken, canonical_observations
 
 #: Length of the hex digest kept as an id (HĐ-1.3).
@@ -64,20 +63,6 @@ class ExperimentScopeViolation(ValueError):
     Raised at startup rather than reported at the end: by the time the
     numbers exist, the wrong comparison has already been paid for.
     """
-
-
-def _canonical_json(payload: object) -> str:
-    """Deterministic JSON: sorted keys, no incidental whitespace.
-
-    Sorted keys are the point — a dict is unordered as data but ordered
-    as text, and an id that depended on typing order would split one
-    candidate into two.
-    """
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-
-
-def _sha256_short(payload: str) -> str:
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:CANDIDATE_ID_LENGTH]
 
 
 class StackComponent(BaseModel):
@@ -218,15 +203,16 @@ class Candidate(BaseModel):
         observation requirements. Excluded: the author-supplied ``id``
         itself, which would make the hash self-referential.
         """
-        return _sha256_short(
-            _canonical_json(
+        return sha256_short(
+            canonical_json(
                 {
                     "type": self.type,
                     "stack": self._stack_payload(),
                     "params": self.params,
                     "observation_requirements": list(self.observation_requirements),
                 }
-            )
+            ),
+            length=CANDIDATE_ID_LENGTH,
         )
 
     def _stack_payload(self) -> dict[str, Any]:
@@ -290,7 +276,7 @@ def _layer_fingerprint(candidate: Candidate, layer: Literal["global", "local"]) 
     """
     component = candidate.global_planner if layer == "global" else candidate.local_controller
     assert component is not None
-    return _canonical_json(
+    return canonical_json(
         {
             "component": component.model_dump(mode="json"),
             "params": candidate.layer_params(component.name),

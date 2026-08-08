@@ -19,6 +19,13 @@ from planbench_decision.candidate import (
     load_candidate,
     validate_experiment_scope,
 )
+from planbench_decision.pairing import (
+    PairingViolation,
+    SampleSetViolation,
+    context_ids,
+    require_sample_set,
+    require_shared_contexts,
+)
 
 __all__ = [
     "CANDIDATE_ID_LENGTH",
@@ -27,8 +34,13 @@ __all__ = [
     "CandidateType",
     "ExperimentScope",
     "ExperimentScopeViolation",
+    "PairingViolation",
     "PolicyComponent",
+    "SampleSetViolation",
     "StackComponent",
+    "context_ids",
     "load_candidate",
+    "require_sample_set",
+    "require_shared_contexts",
     "validate_experiment_scope",
 ]
