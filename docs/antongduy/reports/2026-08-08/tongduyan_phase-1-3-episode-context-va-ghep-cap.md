@@ -153,7 +153,9 @@ contract. **Chưa chặn 1.3** vì context chỉ là định danh; nó chặn 2.
 
 ## 5. Kết quả full suite
 
-*(cập nhật khi lệnh chạy nền xong)*
+`pytest tests/ -q` → **1564 passed, 6 skipped** (8 phút 31). Baseline sau Phase
+1.2 là 1529 — thêm 35 test mới, **không vỡ test nào**. Việc tách fixture sang
+`task_profile_fakes.py` và sửa import chéo không ảnh hưởng file test nào khác.
 
 ## 6. Mở khóa gì tiếp theo
 

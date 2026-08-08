@@ -1,8 +1,9 @@
 # CONTRACTS.md — Planner Selector
 
-> **Phiên bản hợp đồng:** `contracts_version: 1.0.0`
-> **Trạng thái:** cần cả nhóm đọc và ký ở mục 16 trước khi viết dòng code đầu tiên.
-> **Tài liệu mẹ:** `de-tai-moi-planner-selector.md`. Khi hai tài liệu mâu thuẫn, **CONTRACTS.md thắng** — plan là lý do, contract là luật.
+> **Phiên bản hợp đồng:** `contracts_version: 1.1.0`
+> **Trạng thái:** cần cả nhóm đọc và ký ở mục 16. Phase 1 (schema gốc) đã hiện thực theo bản này; xem lịch sử phiên bản ở mục 18.
+> **Vị trí:** `contracts/CONTRACTS.md` ở gốc repo (trước đây là `docs/antongduy/CONTRACTS_1.md`).
+> **Tài liệu mẹ:** `docs/antongduy/de-tai-moi-planner-selector.md`. Khi hai tài liệu mâu thuẫn, **CONTRACTS.md thắng** — plan là lý do, contract là luật.
 
 ---
 
@@ -95,6 +96,12 @@ task_profile:
   environment:
     map: maps/warehouse_a.pgm    # định dạng ROS map_server
     map_yaml: maps/warehouse_a.yaml
+    dynamic_obstacles:           # traffic deployment khai — xem 2.3
+      - name: forklift
+        radius: 0.4
+        seed_time_offset: 6.0    # BẮT BUỘC > 0 với motion tất định theo thời gian
+        motion: {kind: periodic, start: {x: 12.0, y: 4.0},
+                 end: {x: 12.0, y: 18.0}, period: 24.0}
 
   missions:                      # 1 phần tử ⇒ claim_level tối đa là `mission`
     - {id: m1, start: [2.0, 3.0, 0.0], goal: [38.0, 21.0, 1.57], probability: 1.0}
@@ -135,6 +142,26 @@ len(missions) >  1  và đã chạy neighborhood ⇒ robust_deployment
 ```
 
 **Vi phạm trông như thế nào:** Decision Card in `ROBUST DEPLOYMENT-LEVEL` trong khi `missions` chỉ có một phần tử.
+
+### 2.3. Vật cản động thuộc environment, không thuộc candidate
+
+*(Thêm ở 1.1.0. Bản 1.0.0 định nghĩa bộ `evaluation` là "mission × **lần hiện thực vật cản** × seed" ở HĐ-3.3 nhưng không nói vật cản động đến từ đâu — task profile không có, candidate cũng không.)*
+
+`environment.dynamic_obstacles` khai population traffic mà deployment mong đợi (người, xe nâng, AMR khác). Nó nằm ở đây vì **mật độ traffic là thuộc tính của hiện trường, không phải của thuật toán**: để nó trên candidate thì một stack được đánh giá trong kho trống còn stack khác gặp giờ đổi ca, và bảng xếp hạng báo "thuật toán tốt hơn" cho một bài toán dễ hơn.
+
+Environment **không có** vật cản động là hợp lệ (hiện trường tĩnh, hoặc chỉ nghiên cứu chất lượng đường toàn cục). Nhưng phải hiểu hệ quả thống kê: với planner tất định và không có traffic, mọi seed phát lại **cùng một episode**, nên 300 lần chạy mang lượng thông tin của một lần. Chỗ phải nói thẳng điều đó là bảng cổng (G2 giả định các lần chạy độc lập), không phải schema.
+
+**Luật cứng — traffic phải thật sự đổi theo seed:**
+
+```
+motion.kind ∈ {waypoint, periodic, sudden_stop}  ⇒  seed_time_offset > 0
+```
+
+Ba motion đó là hàm thuần của thời gian, nên với `seed_time_offset = 0` chúng **bỏ qua seed hoàn toàn**: 300 seed phát lại một episode 300 lần, báo phương sai bằng 0, và đưa cho G2 một cận trên rule-of-three có **số mẫu hiệu dụng là 1** chứ không phải 300. Cận trên khi đó tuyên bố 1% trong khi bằng chứng không đỡ được gì cả — đúng chiều sai mà một phát biểu an toàn không bao giờ được phép mắc. `random_walk` lấy hướng từ seed episode sẵn nên không cần offset.
+
+**Vi phạm trông như thế nào:** một profile có `motion.kind: waypoint` và `seed_time_offset: 0` được nạp thành công. Loader phải **từ chối** ngay lúc parse.
+
+Tên obstacle phải **duy nhất** trong một environment: tên được trộn vào hash seed của từng obstacle, nên hai obstacle cùng tên sẽ di chuyển đồng bộ với nhau.
 
 ---
 
@@ -277,6 +304,12 @@ Cổng chạy **trước** mọi phép chấm điểm. Ngưỡng lấy từ `tas
 | G5 | `peak_rss_mb ≤ available_ram_mb` | hardware |
 | G6 | `set(observation_requirements) ⊆ set(available_observations)` | task_profile |
 
+### 7.0. G6 — từ vựng quan sát là tập đóng
+
+*(Thêm ở 1.1.0.)* G6 so hai tập **theo mặt chữ**. Nên từ vựng phải đóng: cả hai phía validate cùng một danh sách (`planbench_schemas.observations.KNOWN_OBSERVATIONS`), token lạ **fail lúc parse** chứ không fail lúc gate. Không có luật này thì candidate khai `lidar2d` gặp deployment khai `lidar_2d` sẽ bị loại ở G6 vì một lỗi chính tả, và Decision Card báo một sự không tương thích phần cứng **không tồn tại** — câu trả lời sai nhưng trông đúng.
+
+Từ vựng chỉ gồm **perception runtime mà deployment phải sở hữu**: hiện tại `lidar_2d` và `human_state_estimates`. Bản đồ tĩnh **không** là một token: deployment cung cấp nó trong `environment`, nên mọi deployment đều có; đưa nó vào yêu cầu thì mọi candidate modular sẽ trượt G6 trên profile mà tác giả không nghĩ tới việc khai lại điều hiển nhiên. Thêm cảm biến = thêm một dòng vào danh sách, kèm khai chi phí bổ sung phía deployment (N6).
+
 ### 7.1. G2 — số lần chạy tối thiểu
 
 ```python
@@ -293,6 +326,15 @@ Báo cáo bắt buộc kèm: `"0 va chạm quan sát trong {N} lần chạy; c�
 | P2 xác nhận | chạy thẳng trên bo mạch đích, chỉ 2–3 candidate chung kết, ~20 episode | **điều kiện đủ** | `verified_on_target` |
 
 **Cấm dùng hệ số quy đổi giữa hai máy.** A\* (nặng truy cập bộ nhớ) và DWA (nặng tính toán) co giãn khác nhau giữa x86 và ARM; một hệ số dùng chung là con số bịa. Nếu chưa chạy P2 thì trạng thái là `screened_on_host` và **không được phát biểu candidate đạt thời gian thực trên bo mạch đích**.
+
+**Bảo lưu của nhóm (1.1.0): dự án không có bo mạch đích.** Không có Jetson hay board ARM nào để chạy pha P2, nên:
+
+- `realtime_gate.status` **luôn** là `screened_on_host`; giá trị `verified_on_target` không xuất hiện trong bất kỳ Decision Card nào của dự án này;
+- trường `target_p99_ms` luôn null;
+- mọi Decision Card in nguyên văn **"G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"**;
+- Target Verifier (§8 tài liệu mẹ) **ngoài phạm vi**.
+
+Đây là một giới hạn được khai báo, không phải một lỗ hổng bị bỏ qua: phép sàng lọc pha P1 vẫn hợp lệ **theo đúng một chiều** (trượt trên máy nhanh ⇒ chắc chắn trượt trên máy chậm), và điều duy nhất bị mất là quyền tuyên bố chiều ngược lại. Khi nào có board thì gỡ bảo lưu này và tăng `contracts_version` MINOR.
 
 ### 7.3. Môi trường đo
 
@@ -466,7 +508,7 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
 
 ```json
 {
-  "contracts_version": "1.0.0",
+  "contracts_version": "1.1.0",
   "recommendation_scope": "MISSION_LEVEL | DEPLOYMENT_LEVEL | ROBUST_DEPLOYMENT_LEVEL",
   "experiment_scope": "full_stack_selection",
   "decision_mode": "technical | business_adjusted",
@@ -512,7 +554,7 @@ Mọi lần ra quyết định ghi một `manifest.json`:
 
 ```json
 {
-  "contracts_version": "1.0.0",
+  "contracts_version": "1.1.0",
   "git_sha": "...",
   "docker_image_digest": "sha256:...",
   "task_profile_id": "warehouse_a_v1",
@@ -587,26 +629,35 @@ Sau khi hợp đồng được ký, **chỉ sửa plan khi lát cắt dọc phá
 | Frontend, Decision Card, Approval | Dev C | HĐ-12, HĐ-14 |
 | Schema, anchor, manifest | cả nhóm | HĐ-1, HĐ-2, HĐ-8, HĐ-13 |
 
-```
-Bố cục repo
-  contracts/     CONTRACTS.md · schemas/*.json · metric_anchors.yaml
-  sim/           SimBackend, robot model, costmap, collision
-  planners/      global/ · local/ · policies/ · registry.py
-  metrics/       definitions.py  ← nơi DUY NHẤT định nghĩa metric
-  decision/      gates.py · objectives.py · pareto.py · utility.py · stats.py
-  runner/        contexts.py · batch.py
-  api/           fastapi app, rbac, approval
-  web/           frontend
-  runs/          trace parquet · manifest.json · decision_card.json
-```
+### Bố cục — logic và vật lý
+
+Bản 1.0.0 vẽ một cây thư mục mới. Repo đã có bố cục `packages/ services/ apps/` với ~24k dòng Python, ~31k dòng TS và hơn 1.500 test chạy trên đó; đổi cây thư mục để khớp một hình vẽ là công việc thuần cơ học có rủi ro merge conflict mà không đổi hành vi. Nên **bố cục logic giữ nguyên làm cách nói, bố cục vật lý là repo hiện tại**, và bảng này là ánh xạ chính thức:
+
+| Tên logic (cách nói trong tài liệu) | Vị trí thật |
+|---|---|
+| `contracts/` | `contracts/` — `CONTRACTS.md` · `schemas/*.json` · `metric_anchors.yaml` |
+| `sim/` | `services/simulator/planbench_simulator/` |
+| `planners/` | `packages/planning/planbench_planning/` (+ `ml/planbench_rl/` cho policy) |
+| `metrics/` | `packages/metrics/planbench_metrics/` — `definitions.py` là nơi DUY NHẤT định nghĩa metric |
+| `decision/` | `packages/decision/planbench_decision/` — `gates.py` · `objectives.py` · `pareto.py` · `utility.py` · `stats.py` · `pairing.py` |
+| `runner/` | `packages/benchmark/planbench_benchmark/` — `contexts.py` · `batch.py` |
+| `api/` | `apps/api/planbench_api/` |
+| `web/` | `apps/web/` |
+| `runs/` | `artifacts/runs/` — trace parquet · `manifest.json` · `decision_card.json` |
+
+**Một ngoại lệ có lý do:** `EpisodeContext` (HĐ-3.1) nằm ở `packages/schemas/`, không ở `runner/`. Ba nơi cần nó — runner (sinh danh sách), trace recorder (metadata HĐ-5), decision engine (ghép cặp ΔU). Đặt trong `runner/` thì decision phải import runner, ngược chiều với bridge candidate (runner import decision) và thành vòng import. Phần **sinh** context vẫn ở `runner/contexts.py` đúng như bảng.
+
+Hai định danh frozen của contract (`candidate_id`, `episode_context_id`) dùng chung primitive hash ở `packages/schemas/planbench_schemas/identity.py` — hai bản copy sẽ trôi khỏi nhau và làm một candidate bị tách thành hai.
 
 **Ký xác nhận đã đọc và đồng ý:**
 
 | Tên | Vai | Ngày | Ghi chú / bảo lưu |
 |---|---|---|---|
+| Tống Duy An | Dev B | 2026-08-09 | Ký bản 1.1.0. Đã hiện thực Phase 1 (HĐ-1, HĐ-2, HĐ-3) theo bản này. Bảo lưu: không có bo mạch đích (7.2). |
 | | Dev A | | |
-| | Dev B | | |
 | | Dev C | | |
+
+> **Chưa đủ chữ ký.** Quy trình sửa hợp đồng (mục 0) cần ≥2 người approve. Bản 1.1.0 đang chờ Dev A và Dev C đọc — phần đáng đọc trước nhất là mục 18, nó liệt kê đúng 4 chỗ đổi so với bản mọi người đã xem.
 
 ---
 
@@ -622,3 +673,23 @@ Bố cục repo
 8. Nhân một hệ số quy đổi để suy p99 trên bo mạch đích.
 9. Đếm thời gian di chuyển ở cả O3 lẫn O4.
 10. Viết chữ **"an toàn"** hoặc **"TCO"** cạnh một con số của hệ thống.
+11. Khai vật cản động tất định với `seed_time_offset = 0` rồi đếm N lần chạy như N mẫu độc lập.
+12. In `verified_on_target` khi dự án không có bo mạch đích (xem bảo lưu ở 7.2).
+
+---
+
+## 18. Lịch sử phiên bản
+
+| Phiên bản | Ngày | Loại | Nội dung |
+|---|---|---|---|
+| 1.0.0 | 2026-08-08 | — | Bản đầu, viết cùng `de-tai-moi-planner-selector.md`. |
+| 1.1.0 | 2026-08-09 | MINOR | Bốn thay đổi dưới đây. |
+
+**Chi tiết 1.1.0** — phát sinh khi hiện thực Phase 1 (schema gốc), tức đúng cơ chế mà HĐ-15.2 dự trù: chỉ sửa hợp đồng khi việc chạy code phát hiện một giả định thiếu.
+
+1. **HĐ-2.3 mới — `environment.dynamic_obstacles`** (thêm trường có mặc định `()` ⇒ MINOR). Bản 1.0.0 định nghĩa bộ `evaluation` là "mission × lần hiện thực vật cản × seed" nhưng không nói vật cản động đến từ đâu. Kèm luật cứng `seed_time_offset > 0` cho motion tất định theo thời gian, và luật tên duy nhất.
+2. **HĐ-7.0 mới — từ vựng quan sát là tập đóng.** Siết `available_observations` và `observation_requirements` từ chuỗi tự do thành một danh sách token cố định. Đây là một phép **thu hẹp** ngữ nghĩa: input trước đây parse được giờ có thể bị từ chối. Ghi rõ ở đây thay vì để nó lặng lẽ, dù chưa có dữ liệu nào bị ảnh hưởng (schema mới hoàn toàn, chưa lưu bản ghi nào).
+3. **HĐ-7.2 — bảo lưu sim-only.** Dự án không có bo mạch đích; `realtime_gate.status` luôn `screened_on_host`, Target Verifier ngoài phạm vi.
+4. **§16 — bảng ánh xạ bố cục logic → vật lý**, thay cho cây thư mục của 1.0.0. Kèm một ngoại lệ có lý do (`EpisodeContext` ở `schemas/`) và ghi chú primitive hash dùng chung.
+
+Ba thứ **không đổi** ở 1.1.0, đúng như §0 yêu cầu: định danh candidate (HĐ-1.3), payload hash của episode context (HĐ-3.1), và schema trace (HĐ-5).

@@ -32,6 +32,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from planbench_schemas.dynamic import DynamicObstacle
 from planbench_schemas.geometry import Pose2D
 from planbench_schemas.observations import ObservationToken, canonical_observations
 from planbench_schemas.robot import RobotConfig
@@ -46,18 +47,86 @@ _CLAIM_ORDER: dict[str, int] = {"mission": 0, "deployment": 1, "robust_deploymen
 #: binary floating point (0.40 + 0.35 + 0.25).
 _PROBABILITY_SUM_TOLERANCE = 1e-6
 
+#: Motion kinds that are pure functions of time and therefore ignore the
+#: episode seed unless given a seed-derived clock offset. Listed as a set
+#: rather than tested with ``isinstance`` so a new motion kind has to be
+#: classified deliberately: forgetting to add one here would silently
+#: reintroduce the zero-variance failure described in
+#: :meth:`EnvironmentSpec._validate_obstacles`.
+_TIME_DETERMINISTIC_MOTIONS = frozenset({"waypoint", "periodic", "sudden_stop"})
 
-class EnvironmentRef(BaseModel):
-    """Where the map lives, in ROS ``map_server`` format (HĐ-2/HĐ-4).
 
-    Paths are stored as given; resolving and loading them is the map
-    loader's job, so a profile can be validated without touching disk.
+class EnvironmentSpec(BaseModel):
+    """The environment episodes run in: static map plus moving traffic.
+
+    The static layer is a ROS ``map_server`` pair (HĐ-2/HĐ-4). Paths are
+    stored as given; resolving and loading them is the map loader's job,
+    so a profile validates without touching disk.
+
+    The moving layer lives here because HĐ-3.3 defines the evaluation
+    sample set as *mission × obstacle realisation × seed*: without a
+    declared traffic population there is no realisation to draw, and the
+    deployment — not the candidate — is what decides how busy the site is.
+    Putting it on the candidate would let one stack be evaluated in an
+    empty warehouse and another at shift change.
+
+    An environment with no dynamic obstacles is legal (a purely static
+    site, or a run studying global path quality alone), but note what it
+    means statistically: with deterministic planners and no moving
+    traffic, every seed replays the same episode, so 300 runs carry the
+    information of one. The gates are where that has to be said out loud
+    (G2's bound assumes independent draws); the schema does not forbid it.
     """
 
     model_config = ConfigDict(frozen=True, allow_inf_nan=False)
 
     map: str = Field(min_length=1, description="Path to the .pgm occupancy image.")
     map_yaml: str = Field(min_length=1, description="Path to the map_server .yaml metadata.")
+    dynamic_obstacles: tuple[DynamicObstacle, ...] = Field(
+        default=(),
+        description="Moving traffic the deployment expects (people, carts, other AMRs).",
+    )
+
+    @model_validator(mode="after")
+    def _validate_obstacles(self) -> EnvironmentSpec:
+        """Names unique, and traffic timing must actually vary with the seed.
+
+        The second rule is the one that matters. ``waypoint``,
+        ``periodic`` and ``sudden_stop`` are pure functions of time, so
+        with ``seed_time_offset = 0`` they ignore the seed entirely: 300
+        seeds would replay one identical episode 300 times, report a
+        variance of zero, and hand G2 a rule-of-three bound whose
+        effective sample size is 1 rather than 300. The bound would then
+        claim 1% when the evidence supports nothing of the sort — the
+        exact direction of error a safety claim must never take
+        (HĐ-7.1, HĐ-11.4).
+
+        ``random_walk`` draws its heading from the episode seed already,
+        so it needs no offset.
+        """
+        names = [obstacle.name for obstacle in self.dynamic_obstacles]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            raise ValueError(
+                f"dynamic obstacle names must be unique, got duplicates {duplicates}; "
+                "the name is mixed into each obstacle's seed hash, so two obstacles "
+                "sharing one name would move in lockstep"
+            )
+        frozen_in_time = sorted(
+            obstacle.name
+            for obstacle in self.dynamic_obstacles
+            if obstacle.motion.kind in _TIME_DETERMINISTIC_MOTIONS
+            and obstacle.seed_time_offset <= 0.0
+        )
+        if frozen_in_time:
+            raise ValueError(
+                f"dynamic obstacle(s) {frozen_in_time} have deterministic motion but "
+                "seed_time_offset = 0, so every seed replays the identical episode. "
+                "An evaluation set built from them has an effective sample size of 1, "
+                "which would make G2's collision upper bound far too optimistic. Set "
+                "seed_time_offset > 0 (a few seconds) so traffic timing varies per seed"
+            )
+        return self
 
 
 class Mission(BaseModel):
@@ -156,7 +225,7 @@ class TaskProfile(BaseModel):
 
     id: str = Field(min_length=1)
     claim_level: ClaimLevel = "mission"
-    environment: EnvironmentRef
+    environment: EnvironmentSpec
     missions: tuple[Mission, ...] = Field(min_length=1)
     robot: TaskRobotSpec
     available_observations: tuple[ObservationToken, ...] = Field(min_length=1)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
-from task_profile_fakes import constraints, make_profile, three_missions
+from task_profile_fakes import TRAFFIC, constraints, environment, make_profile, three_missions
 
 from planbench_schemas.task_profile import (
     HardwareSpec,
@@ -51,6 +51,77 @@ class TestParsing:
     def test_blank_observation_rejected(self) -> None:
         with pytest.raises(ValidationError, match="unknown observation"):
             make_profile(available_observations=["lidar_2d", "  "])
+
+
+class TestEnvironmentTraffic:
+    def test_traffic_is_declared_by_the_deployment(self) -> None:
+        """HĐ-3.3 draws an obstacle realisation per episode, so the
+        population has to come from somewhere — and it is the site's
+        property, not the candidate's."""
+        profile = make_profile()
+        assert len(profile.environment.dynamic_obstacles) == 1
+        assert profile.environment.dynamic_obstacles[0].name == "forklift"
+
+    def test_static_only_environment_is_legal(self) -> None:
+        profile = make_profile(environment=environment(dynamic_obstacles=[]))
+        assert profile.environment.dynamic_obstacles == ()
+
+    def test_deterministic_motion_without_seed_offset_rejected(self) -> None:
+        """Otherwise 300 seeds replay one episode and G2's rule-of-three
+        bound has an effective sample size of 1."""
+        frozen = [{**dict(TRAFFIC[0]), "seed_time_offset": 0.0}]
+        with pytest.raises(ValidationError, match="effective sample size of 1"):
+            make_profile(environment=environment(dynamic_obstacles=frozen))
+
+    @pytest.mark.parametrize("kind", ["waypoint", "sudden_stop"])
+    def test_every_time_deterministic_motion_is_covered(self, kind: str) -> None:
+        motions: dict[str, dict[str, object]] = {
+            "waypoint": {
+                "kind": "waypoint",
+                "waypoints": [{"x": 1.0, "y": 1.0}, {"x": 5.0, "y": 1.0}],
+                "speed": 0.9,
+            },
+            "sudden_stop": {
+                "kind": "sudden_stop",
+                "start": {"x": 2.0, "y": 2.0},
+                "heading": 0.0,
+                "speed": 0.7,
+                "stop_time": 4.0,
+            },
+        }
+        obstacle: dict[str, object] = {
+            "name": "walker",
+            "radius": 0.3,
+            "motion": motions[kind],
+            "seed_time_offset": 0.0,
+        }
+        with pytest.raises(ValidationError, match="effective sample size of 1"):
+            make_profile(environment=environment(dynamic_obstacles=[obstacle]))
+        obstacle["seed_time_offset"] = 5.0
+        assert make_profile(environment=environment(dynamic_obstacles=[obstacle]))
+
+    def test_random_walk_needs_no_offset(self) -> None:
+        """It draws its heading from the episode seed already."""
+        obstacle = {
+            "name": "wanderer",
+            "radius": 0.3,
+            "motion": {
+                "kind": "random_walk",
+                "origin": {"x": 8.0, "y": 8.0},
+                "speed": 0.6,
+                "change_interval": 2.0,
+                "max_radius": 4.0,
+            },
+        }
+        profile = make_profile(environment=environment(dynamic_obstacles=[obstacle]))
+        assert profile.environment.dynamic_obstacles[0].seed_time_offset == 0.0
+
+    def test_duplicate_obstacle_names_rejected(self) -> None:
+        """The name is mixed into the seed hash; two obstacles sharing one
+        would move in lockstep."""
+        pair = [dict(TRAFFIC[0]), dict(TRAFFIC[0])]
+        with pytest.raises(ValidationError, match="unique"):
+            make_profile(environment=environment(dynamic_obstacles=pair))
 
 
 class TestMissions:

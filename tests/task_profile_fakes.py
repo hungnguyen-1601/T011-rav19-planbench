@@ -14,6 +14,23 @@ from __future__ import annotations
 
 from planbench_schemas.task_profile import TaskProfile
 
+#: One moving obstacle with a seed-derived clock offset, so episodes at
+#: different seeds are genuinely different draws (see
+#: ``EnvironmentSpec._validate_obstacles``).
+TRAFFIC: list[dict[str, object]] = [
+    {
+        "name": "forklift",
+        "radius": 0.4,
+        "seed_time_offset": 6.0,
+        "motion": {
+            "kind": "periodic",
+            "start": {"x": 12.0, "y": 4.0},
+            "end": {"x": 12.0, "y": 18.0},
+            "period": 24.0,
+        },
+    }
+]
+
 CONSTRAINTS: dict[str, object] = {
     "success_rate_min": 0.95,
     "collision_probability_max": 0.01,
@@ -32,6 +49,7 @@ def make_profile(**overrides: object) -> TaskProfile:
         "environment": {
             "map": "maps/warehouse_a.pgm",
             "map_yaml": "maps/warehouse_a.yaml",
+            "dynamic_obstacles": [dict(obstacle) for obstacle in TRAFFIC],
         },
         "missions": [
             {"id": "m1", "start": [2.0, 3.0, 0.0], "goal": [38.0, 21.0, 1.57], "probability": 1.0}
@@ -65,3 +83,14 @@ def three_missions() -> list[dict[str, object]]:
 def constraints(**overrides: object) -> dict[str, object]:
     """Constraint block with fields replaced, for gate-threshold tests."""
     return {**CONSTRAINTS, **overrides}
+
+
+def environment(**overrides: object) -> dict[str, object]:
+    """Environment block with fields replaced, for traffic tests."""
+    payload: dict[str, object] = {
+        "map": "maps/warehouse_a.pgm",
+        "map_yaml": "maps/warehouse_a.yaml",
+        "dynamic_obstacles": [dict(obstacle) for obstacle in TRAFFIC],
+    }
+    payload.update(overrides)
+    return payload
