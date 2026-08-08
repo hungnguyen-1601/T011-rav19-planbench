@@ -221,6 +221,26 @@ sách trả 500). Báo cáo:
   report Markdown in kèm đoạn giải thích vì sao nhãn khác registry.
   Replanning tắt → nhãn **không đổi một bit**, mọi report cũ giữ nguyên.
   Giới hạn còn lại: KNOWN_LIMITATIONS #158–#159.
+- **Nối dây replanning vào `/simulate` và UI**: Đợt B (2026-08-08) — xong.
+  `POST /simulations` nhận `replanning`; `StoredSimulation` lưu lại
+  (`SimulationRow.replanning`, migration Alembic **`0004`**, nullable —
+  `NULL` đọc ra là tắt, đúng thứ những run đó đã chạy);
+  `SimulationService.run` truyền xuống `run_stack()`, nên chạy lại một
+  simulation cũ tái hiện đúng luật lúc nó được tạo. Trên web, một
+  component chung `ReplanningControls` phục vụ cả `/simulate` lẫn form
+  tạo benchmark: mặc định tắt, **không** nhớ giữa các lần load, và khi
+  bật thì hiện cảnh báo rằng robot phải chờ hết cửa sổ stuck nên run lâu
+  hơn hẳn (là thời gian mô phỏng, không phải app treo). Replay của
+  benchmark detail vẽ marker replan trên timeline, đọc từ
+  `result.events`. Giới hạn còn lại: KNOWN_LIMITATIONS #160–#163.
+
+  **Scenario để kiểm chứng replanning là `sudden_stop`** (`stuck` 5/5 khi
+  tắt → `success` 5/5 khi bật, 1 replan mỗi run). **Không** dùng
+  `bidirectional_corridor` hay `crossing_obstacle`: hai scenario đó kết
+  thúc bằng `COLLISION`, mà va chạm cố ý **không** kích hoạt replan, nên
+  bật hay tắt cho kết quả giống hệt nhau — xem KNOWN_LIMITATIONS
+  #164–#165 và
+  `docs/antongduy/notes/2026-08-08/tongduyan_dieu-tra-replanning-tren-corridor.md`.
 
 ## Kiểm thử
 

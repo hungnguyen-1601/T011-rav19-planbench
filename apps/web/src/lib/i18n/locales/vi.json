@@ -773,5 +773,12 @@
   "charts.downloadMarkdown": "Tải báo cáo Markdown",
   "charts.exporting": "Đang chuẩn bị…",
   "charts.exportSaved": "Đã lưu {filename}",
-  "detail.collisionAt": "Va chạm tại giây {time}"
+  "detail.collisionAt": "Va chạm tại giây {time}",
+  "replanning.enable": "Replanning",
+  "replanning.hint": "Cho phép robot xin đường toàn cục mới khi bị chặn. Mặc định tắt: lần replan tính từ vị trí thật của vật cản động, nên run có bật không so được với run không bật.",
+  "replanning.maxReplans": "Số lần replan tối đa",
+  "replanning.slowWarning": "Robot phải đứng yên hết cửa sổ stuck rồi mới được cấp đường mới, nên run chạy lâu hơn hẳn. Khoảng chờ đó là thời gian mô phỏng, không phải app bị treo.",
+  "replanning.benchmarkScope": "Luật này áp cho mọi stack trong sweep — nó là điều kiện của benchmark, không phải tham số của thuật toán.",
+  "detail.replanAt": "Replan lúc {time} s",
+  "metrics.replanCount": "Số lần replan"
 }

@@ -21,7 +21,7 @@ Mọi lỗi trả về dạng chuẩn:
 | POST | /scenarios/validate | `{map_id, scenario}` → `{valid, errors}` |
 | POST | /scenarios/preview | `{map_id, scenario, time, seed}` → vị trí vật cản động tại thời điểm đó + verdict |
 | GET | /algorithms | Registry; `astar_pure_pursuit` là reference stack, `benchmarkable=false` |
-| GET/POST | /simulations | Danh sách / tạo `{map_id, scenario_id, algorithm}` |
+| GET/POST | /simulations | Danh sách / tạo `{map_id, scenario_id, algorithm, replanning?}` |
 | GET | /simulations/{id} | Trạng thái session (`created`/`finished`) |
 | POST | /simulations/{id}/run | Chạy headless đồng bộ → plan + result + metrics (409 nếu chạy lại) |
 | GET | /simulations/{id}/result | Kết quả đầy đủ (null nếu chưa chạy) |
@@ -176,11 +176,20 @@ nguyên nghĩa, đã deprecated), `local_planning_latency_p50/p95/p99`,
 lưu trước F05 trả `null` cho toàn bộ field mới; `null` nghĩa là "không
 tính", **không** phải 0. Aggregate chưa tổng hợp các metric này.
 
-**Replanning (Đợt 4.1).** `POST /benchmarks` nhận thêm trường tùy chọn
-`replanning: {enabled, max_replans}` — **một luật cho cả benchmark**,
-không nằm trong config của từng thuật toán. Bỏ trống nghĩa là tắt, đúng
-như mọi benchmark trước khi có tính năng này. `enabled: true` kèm
-`max_replans: 0` bị từ chối (bật mà không làm gì thì report sẽ nói sai).
+**Replanning (Đợt 4.1, nối dây `/simulate` ở Đợt B).** `POST /benchmarks`
+**và** `POST /simulations` đều nhận trường tùy chọn
+`replanning: {enabled, max_replans}`. Với benchmark đây là **một luật cho
+cả sweep**, không nằm trong config của từng thuật toán. Bỏ trống nghĩa là
+tắt, đúng như mọi benchmark/simulation trước khi có tính năng này.
+`enabled: true` kèm `max_replans: 0` bị từ chối với 422 (bật mà không làm
+gì thì report sẽ nói sai).
+
+`SimulationResource` echo lại `replanning`, và `POST /simulations/{id}/run`
+chạy đúng luật đã lưu — chạy lại một simulation cũ tái hiện điều kiện lúc
+nó được tạo, không phải mặc định của hôm nay. Simulation lưu trước Đợt B
+(cột DB là `NULL`) đọc ra `{enabled: false, max_replans: 0}`: đó là điều
+chúng thật sự đã chạy, không phải giá trị thay thế. Migration Alembic
+`0004` thêm cột nullable này.
 
 Luật này đi vào `fairness`: `replanning_enabled` và `max_replans` được
 ghi lại, và nó **được hash vào `conditions_checksum` chỉ khi bật** — nhờ

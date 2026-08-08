@@ -43,6 +43,15 @@ describe("the replay panel plays back the saved trajectory", () => {
   it("marks the collision on the timeline", () => {
     expect(PAGE).toContain("detail.collisionAt");
   });
+
+  it("marks every replan on the timeline, read from the events", () => {
+    // A replan leaves no trace in the trajectory samples — that is why
+    // the engine emits an event for it — so the marker must come from
+    // `replay.events` and not from anything inferred about the path.
+    expect(PAGE).toContain('event.type === "replan"');
+    expect(PAGE).toContain("detail.replanAt");
+    expect(PAGE).toContain("replanTimes.map");
+  });
 });
 
 describe("the playback hook", () => {

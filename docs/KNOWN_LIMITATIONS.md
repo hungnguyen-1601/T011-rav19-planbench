@@ -827,15 +827,12 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     replanning nằm trong `conditions_checksum` chính là để trong cùng
     một phép so sánh, mọi thuật toán đều dùng cùng luật.
 
-156. **Replanning chưa nối vào `/simulate`, và chưa có UI ở đâu cả.**
-    Chỉ `POST /benchmarks` nhận trường `replanning`. `SimulationService.run`
-    (`apps/api/planbench_api/services.py`) gọi `run_stack()` **không**
-    truyền luật replanning, và `StoredSimulation`/`SimulationCreateRequest`
-    không có trường tương ứng — nên trang `/simulate`, đúng cái trang
-    người ta ngồi xem robot bị kẹt, không bao giờ replan được. Form tạo
-    benchmark trên web cũng chưa có ô chọn. Hiện chỉ bật được qua API
-    benchmark hoặc script. (Bản ghi trước của mục này chỉ nói thiếu ô
-    chọn ở form benchmark, bỏ sót nửa quan trọng hơn.)
+156. ~~**Replanning chưa nối vào `/simulate`, và chưa có UI ở đâu cả.**~~
+    **Đã sửa ở Đợt B (2026-08-08).** `POST /simulations` nhận
+    `replanning`, `SimulationService.run` truyền xuống `run_stack()`,
+    `StoredSimulation` lưu lại (migration Alembic `0004`), và cả
+    `/simulate` lẫn form tạo benchmark có ô bật kèm cảnh báo. Giới hạn
+    còn lại của UI: xem #160.
 
 157. **Cache difficulty hiện tại (P03) đo với replanning tắt.** Bật
     replanning làm scenario dễ đi, tức là một thang đo khác;
@@ -870,6 +867,116 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     Kèm theo: khóa nhóm của leaderboard giờ gồm **cả hai** lớp
     (global + local), không chỉ local như trước. Dữ liệu cũ không đổi
     nhóm — mọi aggregate cũ đều `full_static_map`.
+
+## Nối dây replanning vào `/simulate` và UI (Đợt B, 2026-08-08)
+
+160. **Lựa chọn replanning không được nhớ giữa các lần vào trang, và đó
+    là chủ ý.** Cả `/simulate` lẫn form benchmark khởi tạo về tắt mỗi lần
+    load, không đi qua `persisted.ts` như các tùy chọn khác. Lý do: bật
+    replanning là đổi lớp quan sát của global planner (#158), nên nó phải
+    là một hành động có ý thức mỗi lần, không phải một setting còn sót
+    lại từ phiên trước. Có test khóa tính chất này.
+
+161. **`/simulate` không vẽ marker replan trên timeline.** Marker đã có ở
+    replay của benchmark detail (đọc từ `result.events`), nhưng trang
+    `/simulate` dùng `useEpisodeStream` (WebSocket) chứ không dùng
+    `useTrajectoryPlayback`, và luồng WS hiện **không phát `events`** —
+    chỉ phát `start`, `state`, rồi `result` (`routers/ws.py`). Người dùng
+    vẫn thấy `Replans` ở `MetricsPanel` và thấy robot đi đường vòng,
+    nhưng không biết **thời điểm** đổi đường. Sửa đúng cách là cho WS
+    phát cả events, tức đụng contract của socket — để riêng, không nhét
+    vào Đợt B.
+
+163. **Đường toàn cục vẽ trên màn hình là đường của lần plan ĐẦU, kể cả
+    sau khi đã replan.** `StackRun.plan` giữ `plan` đầu tiên
+    (`nav_stack.py`), trong khi metrics dùng `plans[-1]`. Hệ quả nhìn
+    thấy được ở **cả hai** trang: robot rời khỏi đường đang được vẽ và đi
+    một lối khác, trông như bug của renderer. Ảnh hưởng đúng vào tính
+    năng vừa nối dây, nên phải nói rõ.
+
+    Không sửa trong Đợt B vì sửa đúng là đổi contract: cần
+    `StackRun.plans: tuple[PlanResult, ...]` (giữ cả chuỗi đường), kéo
+    theo payload WebSocket, `SimulationResultResponse`, artifact của
+    episode và bản đọc ngược cho dữ liệu cũ. Đổi `plan` thành đường cuối
+    thì rẻ nhưng sai: nó xoá mất đường ban đầu, và
+    `plan.path_length`/`expanded_nodes` của lần plan đầu là số đang được
+    dùng ở chỗ khác.
+
+162. **Trang `/simulate` tạo scenario mới cho mỗi lần chạy**
+    (`${scenario.name}-${Date.now()}`), nên bật/tắt replanning rồi chạy
+    lại sinh ra hai scenario row khác nhau. Không ảnh hưởng tính đúng —
+    nội dung scenario giống hệt và replanning không nằm trong scenario —
+    nhưng nghĩa là không so được hai lần chạy bằng `scenario_id`. Đây là
+    hành vi có từ trước Đợt B, ghi lại vì giờ nó dễ gặp hơn.
+
+## Replanning không giúp gì ở scenario va chạm (điều tra 2026-08-08)
+
+Hai mục dưới đây đến từ một quan sát của dev: bật replanning trên
+`bidirectional_corridor` với `max_replans=2` mà robot **vẫn va chạm**, và
+đường đi không đổi gì so với khi tắt. Điều tra cho thấy quan sát đó đúng
+và không phải lỗi báo cáo. Bằng chứng và số liệu đầy đủ:
+`docs/antongduy/notes/2026-08-08/tongduyan_dieu-tra-replanning-tren-corridor.md`.
+
+164. **`COLLISION` không nằm trong `_REPLANNABLE`, nên replanning vô dụng
+    ở mọi scenario mà robot *đâm* thay vì *kẹt*.**
+    `_REPLANNABLE = (STUCK, NO_PROGRESS)` (`nav_stack.py`). Đây là chủ ý
+    và không nên đổi: va chạm là kết luận của episode, cho một đường mới
+    xoá nó đi là để replanning mua một kết quả nó không kiếm được, và
+    `success_rate` mất nghĩa. Nhưng hệ quả phải nói thẳng:
+
+    ```text
+    bidirectional_corridor, astar+dwa, 5 seed
+      off    {collision: 5}  replans=[0,0,0,0,0]  t=[21.0, 20.9, 5.9, 5.8, 20.4]
+      on(2)  {collision: 5}  replans=[0,0,0,0,0]  t=[21.0, 20.9, 5.9, 5.8, 20.4]
+    ```
+
+    Trajectory **giống hệt từng con số** — nhánh replan không bao giờ
+    tới. `crossing_obstacle` cũng vậy.
+
+    Thêm một lý do độc lập ở đúng map này: hành lang đơn chỉ có **một**
+    route tôpô, nên global planner có replan bao nhiêu lần cũng trả về
+    cùng một đường. Né đối đầu là maneuver của **local** planner, không
+    phải việc của replanning.
+
+    **Scenario để demo/kiểm chứng replanning là `sudden_stop`**, nơi
+    robot bị kẹt chứ không đâm:
+
+    ```text
+    sudden_stop, astar+dwa, 5 seed
+      off    {stuck: 5}    replans=[0,0,0,0,0]  t=12.9
+      on(2)  {success: 5}  replans=[1,1,1,1,1]  t=23.3
+    ```
+
+165. **DWA coi vật cản động là đứng yên, nên không né được xe đi ngược
+    chiều.** `_rollout_batch` (`packages/planning/planbench_planning/dwa/planner.py`)
+    tính clearance của mọi ứng viên dựa trên **điểm LiDAR đóng băng** tại
+    vị trí vừa đo được. Vật cản chạy 0.6 m/s, horizon 1.5 s → 0.9 m sai
+    số không được mô hình hóa; controller tưởng an toàn khi thật ra
+    không. Cộng thêm: trọng số kéo về đường (`goal` 2.0 + `path` 1.4 +
+    `heading` 1.0 = 4.4) lấn át `clearance` (1.2, lại bão hòa ở
+    `clearance_cap` = 0.6), nên né sang bên trả giá ngay còn lợi ích chỉ
+    xuất hiện ở cuối horizon.
+
+    Đo được: trên `bidirectional_corridor`, `angular_velocity` **bằng 0
+    suốt cả episode** và tọa độ `y` của robot đứng nguyên ở tim hành lang
+    cho tới lúc va chạm. Nới hành lang từ 2.0 m lên **4.0 m** — thừa chỗ
+    né — vẫn va chạm 5/5. Nên đây **không** phải vấn đề hình học.
+
+    **Đây là kết quả benchmark hợp lệ, không phải bug cần vá gấp**: nền
+    tảng vừa đo được một giới hạn thật của DWA, và đó đúng là việc nó
+    sinh ra để làm. Nhưng con số va chạm trên các scenario có vật cản
+    động phải được đọc là **giới hạn của baseline**, không phải đặc tính
+    của scenario, và **không** được dùng làm bằng chứng rằng một planner
+    khác tốt hơn cho tới khi cả hai chạy dưới cùng ngân sách tinh chỉnh.
+
+    Lời giải đúng là một stack **mới** (`dwa_predictive`): ước lượng vận
+    tốc vật cản từ hai scan LiDAR liên tiếp rồi dịch điểm theo thời gian
+    trong rollout — đúng nhóm "Human Prediction-based" của đề bài, và
+    **không** đọc `dynamic_obstacles_now()`. Phải đăng ký như một stack
+    riêng với ngân sách riêng: luật P01 cấm nâng cấp kiến trúc của một
+    planner giữa chừng vì nó chạy kém (đó chính là lỗ hổng S2 mà đề bài
+    phê phán ở Alyassi et al.). Tune tay `weight_path`/`clearance_cap`
+    cho riêng DWA cũng vướng đúng luật đó.
 
 ## Môi trường
 

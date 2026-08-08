@@ -28,6 +28,7 @@ def _resource(stored: StoredSimulation) -> SimulationResource:
         algorithm=stored.algorithm,
         state=stored.state,
         created_at=stored.created_at,
+        replanning=stored.replanning,
     )
 
 
@@ -39,7 +40,13 @@ def list_simulations(service: Service) -> list[SimulationResource]:
 @router.post("", response_model=SimulationResource, status_code=status.HTTP_201_CREATED)
 def create_simulation(request: SimulationCreateRequest, service: Service) -> SimulationResource:
     return _resource(
-        service.create(request.map_id, request.scenario_id, request.algorithm, request.config)
+        service.create(
+            request.map_id,
+            request.scenario_id,
+            request.algorithm,
+            request.config,
+            request.replanning,
+        )
     )
 
 

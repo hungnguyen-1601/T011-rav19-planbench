@@ -773,5 +773,12 @@
   "charts.downloadMarkdown": "Download Markdown report",
   "charts.exporting": "Preparing…",
   "charts.exportSaved": "Saved {filename}",
-  "detail.collisionAt": "Collision at {time} s"
+  "detail.collisionAt": "Collision at {time} s",
+  "replanning.enable": "Replanning",
+  "replanning.hint": "Let the robot ask for a new global path when it gets blocked. Off by default: a replan is computed from the true positions of the moving obstacles, so a run with it on is not comparable with one without.",
+  "replanning.maxReplans": "Max replans",
+  "replanning.slowWarning": "The robot must stand still for the whole stuck window before it is granted a new path, so the run takes noticeably longer. That wait is simulated time, not the app freezing.",
+  "replanning.benchmarkScope": "This rule applies to every stack in the sweep — it is a benchmark condition, not an algorithm parameter.",
+  "detail.replanAt": "Replanned at {time} s",
+  "metrics.replanCount": "Replans"
 }
