@@ -194,6 +194,33 @@ sách trả 500). Báo cáo:
   bảng Runs của report Markdown (kèm ngưỡng). `AlgorithmAggregate`,
   leaderboard và biểu đồ **chưa** tổng hợp các metric mới — xem
   KNOWN_LIMITATIONS #146–#151.
+- **Replanning khi bị vật cản động chặn**: Đợt 4.1 (2026-08-07) — xong.
+  `ReplanningConfig` (`packages/schemas/.../replanning.py`) nằm trên
+  `BenchmarkSpec`, **không** nằm trên `Scenario` (thêm field vào
+  `Scenario` sẽ đổi `scenario_checksum` của mọi scenario cũ) và **không**
+  nằm trong config của thuật toán nào. Logic cắm ở
+  `nav_stack.run_stack()` — nơi mọi stack đều đi qua. Engine có thêm
+  `resume_after_replan()` (reseed cửa sổ stuck, không chỉ đổi state) và
+  `dynamic_obstacles_now()`; khi replan, vị trí vật cản động hiện tại
+  được rasterize vào grid quy hoạch tạm, nếu không thì planner trả lại
+  đúng đường cũ. Mặc định **tắt**: run tắt cho trajectory và checksum
+  giống hệt trước khi có tính năng. Giới hạn: KNOWN_LIMITATIONS
+  #152–#157.
+- **Khai báo cân bằng thông tin khi replanning bật (P02)**: Đợt A
+  (2026-08-08) — xong. Lớp quan sát của global planner được **suy ra lúc
+  chạy** thay vì chép nguyên từ registry:
+  `global_class_under_replanning()`
+  (`packages/benchmark/planbench_benchmark/observation.py`) nâng
+  `full_static_map` thành `full_static_map+human_states` khi
+  `replanning.enabled`, vì `_replan()` đọc ground truth qua
+  `engine.dynamic_obstacles_now()`. `aggregate_algorithm()` nhận thêm
+  tham số `replanning` và **chụp** giá trị đã nâng vào
+  `AlgorithmAggregate`, nên sửa registry sau này không dán nhãn khác lên
+  số đã đo. Khóa nhóm của leaderboard giờ gồm cả hai lớp (global +
+  local), nên run có replan không bao giờ bị xếp chung run không replan;
+  report Markdown in kèm đoạn giải thích vì sao nhãn khác registry.
+  Replanning tắt → nhãn **không đổi một bit**, mọi report cũ giữ nguyên.
+  Giới hạn còn lại: KNOWN_LIMITATIONS #158–#159.
 
 ## Kiểm thử
 

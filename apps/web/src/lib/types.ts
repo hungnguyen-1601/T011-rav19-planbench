@@ -194,6 +194,9 @@ export interface EpisodeMetrics {
   near_miss_count?: number | null;
   time_to_first_collision?: number | null;
   metric_config?: MetricConfig | null;
+  // How many extra global paths the stack asked for. 0 whenever
+  // replanning was off, which is every run before the feature existed.
+  replan_count?: number | null;
 }
 
 export interface MetricConfig {

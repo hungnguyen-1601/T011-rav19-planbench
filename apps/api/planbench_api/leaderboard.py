@@ -76,8 +76,14 @@ class LeaderboardGroup(BaseModel):
     """Entries that are genuinely comparable (identical conditions).
 
     Identical conditions means both halves of the fairness argument: the
-    same ``conditions_checksum`` *and* the same controller observation
-    class, unless the caller explicitly asked to see classes mixed.
+    same ``conditions_checksum`` *and* the same observation classes —
+    both layers, not just the controller — unless the caller explicitly
+    asked to see classes mixed.
+
+    Both layers matter because replanning upgrades the *global* class
+    while leaving the local one untouched: a stack allowed to replan
+    reads ground-truth obstacle positions its non-replanning twin never
+    saw. Grouping on the controller alone would rank those two together.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -87,12 +93,15 @@ class LeaderboardGroup(BaseModel):
     scenario_name: str
     seeds: tuple[int, ...]
     entries: tuple[LeaderboardEntry, ...]
-    #: The class every entry here shares. ``None`` means either the group
-    #: is mixed (see the warning below) or its entries predate P02.
+    #: The classes every entry here shares. ``None`` means either the
+    #: group is mixed on that layer (see the warning below) or its
+    #: entries predate P02.
     local_observation_class: ObservationClass | None = None
-    #: True when these rows do *not* share one observation class. The
-    #: ranking is then between stacks that were shown different things,
-    #: and the order says as much about the inputs as the algorithms.
+    global_observation_class: ObservationClass | None = None
+    #: True when these rows do *not* share one observation class on
+    #: either layer. The ranking is then between stacks that were shown
+    #: different things, and the order says as much about the inputs as
+    #: the algorithms.
     cross_observation_class_warning: bool = False
 
 
@@ -178,8 +187,11 @@ def build_leaderboard(
     flagged with ``cross_observation_class_warning``.
     """
     weights = weights or ScoreWeights()
-    # Key is (conditions_checksum, observation class) so that a mixed
-    # request only has to collapse the second half of the key.
+    # Key is (conditions_checksum, observation classes) so that a mixed
+    # request only has to collapse the second half of the key. Both
+    # layers go into that half: replanning changes the global class
+    # only, and a key built from the controller alone would put a
+    # replanning stack in the same ranking as one that never replanned.
     groups: dict[tuple[str, str], list[LeaderboardEntry]] = {}
     metadata: dict[str, tuple[str, str, tuple[int, ...]]] = {}
 
@@ -197,7 +209,9 @@ def build_leaderboard(
             if algorithm and aggregate.algorithm != algorithm:
                 continue
             global_class, local_class, needs_path = _observation_classes(aggregate)
-            class_key = (local_class or "") if group_by_observation_class else ""
+            class_key = (
+                f"{global_class or ''}|{local_class or ''}" if group_by_observation_class else ""
+            )
             group_key = (checksum, class_key)
             groups.setdefault(group_key, []).append(
                 LeaderboardEntry(
@@ -226,7 +240,9 @@ def build_leaderboard(
     for (checksum, _class_key), entries in sorted(groups.items()):
         map_name, scenario, seeds = metadata[checksum]
         present = {entry.local_observation_class for entry in entries}
+        present_global = {entry.global_observation_class for entry in entries}
         shared_class = next(iter(present)) if len(present) == 1 else None
+        shared_global = next(iter(present_global)) if len(present_global) == 1 else None
         ranked = sorted(
             entries,
             key=lambda entry: (
@@ -243,7 +259,8 @@ def build_leaderboard(
                 seeds=seeds,
                 entries=tuple(ranked),
                 local_observation_class=shared_class,
-                cross_observation_class_warning=len(present) > 1,
+                global_observation_class=shared_global,
+                cross_observation_class_warning=len(present) > 1 or len(present_global) > 1,
             )
         )
     return Leaderboard(weights=weights, score_formula=SCORE_FORMULA, groups=tuple(ordered))

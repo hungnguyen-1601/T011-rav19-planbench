@@ -706,6 +706,8 @@
   "leaderboard.observationUnknown": "unknown",
   "leaderboard.observationUnknownHint": "This result was stored before stacks declared what they see. It is not assumed to match the others.",
   "leaderboard.groupObservation": "Controller observation: {observation}",
+  "leaderboard.groupGlobalObservation": "Global planner observation: {observation}",
+  "leaderboard.groupGlobalObservationReplanning": "Global planner observation: {observation} — replanning was on, so the global planner read the true positions of the moving obstacles. These rows are not comparable with runs that did not replan.",
   "leaderboard.groupByObservation": "Separate by observation class",
   "leaderboard.observationGroupingHint": "On: only stacks shown the same data are ranked together. Off: they are ranked together anyway, with a warning.",
   "leaderboard.mixedObservationWarning": "These rows were not shown the same data. A stack with more information solves an easier problem, so this order is not evidence that one algorithm is better.",

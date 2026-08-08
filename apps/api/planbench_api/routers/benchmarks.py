@@ -23,6 +23,7 @@ from planbench_api.review import ReviewRequest, ReviewRequestView, ReviewStage, 
 from planbench_api.review_service import ReviewService
 from planbench_api.services import BenchmarkJobService, BenchmarkService
 from planbench_benchmark import AlgorithmSpec, BenchmarkReport, BenchmarkSpec
+from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
 
 router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
 
@@ -38,6 +39,10 @@ class BenchmarkCreateRequest(BaseModel):
     scenario_id: str
     algorithms: list[AlgorithmSpec] = Field(min_length=1)
     seeds: list[int] = Field(min_length=1)
+    #: One replanning rule for the whole benchmark. Omitted means
+    #: disabled, which is what every benchmark created before this field
+    #: existed ran with.
+    replanning: ReplanningConfig = NO_REPLANNING
 
 
 class CommentRequest(BaseModel):
@@ -130,6 +135,7 @@ def create_benchmark(
             seeds=request.seeds,
             owner=user,
             description=request.description,
+            replanning=request.replanning,
         ),
         service,
         user,

@@ -379,6 +379,20 @@ function GroupTable({ group }: { group: LeaderboardGroup }) {
           {t("leaderboard.groupObservation", { observation: group.local_observation_class })}
         </p>
       ) : null}
+      {/* Stated separately from the controller line because the two can
+       *  disagree: replanning upgrades the global class and leaves the
+       *  controller alone. Without this, a replanning group and a
+       *  non-replanning one look identical here. */}
+      {group.global_observation_class ? (
+        <p className="muted" title={t("leaderboard.observationHint")}>
+          {t(
+            group.global_observation_class.includes("human_states")
+              ? "leaderboard.groupGlobalObservationReplanning"
+              : "leaderboard.groupGlobalObservation",
+            { observation: group.global_observation_class },
+          )}
+        </p>
+      ) : null}
       {group.cross_observation_class_warning ? (
         <div className="error-box">{t("leaderboard.mixedObservationWarning")}</div>
       ) : null}

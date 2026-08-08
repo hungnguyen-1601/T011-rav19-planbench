@@ -115,6 +115,7 @@ function board(entries: LeaderboardEntry[]): Leaderboard {
       seeds: [1, 2],
       entries: rows,
       local_observation_class: "lidar_only" as const,
+      global_observation_class: "full_static_map" as const,
       cross_observation_class_warning: false,
     })),
   };

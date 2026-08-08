@@ -43,6 +43,7 @@ from planbench_benchmark import (
 )
 from planbench_benchmark.registry import AlgorithmConfigError, UnknownAlgorithmError
 from planbench_schemas.map import MapData
+from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
 from planbench_schemas.scenario import Scenario
 from planbench_simulator.engine import SimulationEngine
 from planbench_simulator.nav_stack import StackRun, run_stack
@@ -356,6 +357,7 @@ class BenchmarkService:
         seeds: list[int],
         owner: User,
         description: str = "",
+        replanning: ReplanningConfig | None = None,
     ) -> StoredBenchmark:
         for algorithm in algorithms:
             require_algorithm(algorithm.id, algorithm.config)
@@ -367,6 +369,7 @@ class BenchmarkService:
                 description=description,
                 algorithms=tuple(algorithms),
                 seeds=tuple(seeds),
+                replanning=replanning or NO_REPLANNING,
             )
         except ValueError as exc:
             raise DomainValidationError("invalid benchmark spec", [str(exc)]) from exc

@@ -37,6 +37,7 @@ from planbench_api.leaderboard import _observation_classes
 from planbench_api.repositories import StoredBenchmark
 from planbench_benchmark import (
     BenchmarkReport,
+    FairnessRecord,
     GeneralizationSummary,
     RunRecord,
     calibration_version,
@@ -188,6 +189,17 @@ def _provenance(stored: StoredBenchmark, report: BenchmarkReport) -> list[str]:
     return ["## Provenance", "", *_table(["Field", "Value"], rows), ""]
 
 
+def _replanning(fairness: FairnessRecord) -> str:
+    """How the replanning rule reads in the conditions table.
+
+    Reports written before replanning existed carry the field defaults,
+    which describe exactly what those runs did: nothing replanned.
+    """
+    if not fairness.replanning_enabled:
+        return "disabled (a blocked robot stays blocked)"
+    return f"enabled, up to {fairness.max_replans} replan(s) per episode"
+
+
 def _conditions(report: BenchmarkReport) -> list[str]:
     fairness = report.fairness
     rows = [
@@ -198,6 +210,7 @@ def _conditions(report: BenchmarkReport) -> list[str]:
         ["Max angular velocity", _num(fairness.max_angular_velocity, 2, " rad/s")],
         ["LiDAR rays", str(fairness.lidar_num_rays)],
         ["LiDAR max range", _num(fairness.lidar_max_range, 2, " m")],
+        ["Replanning", _replanning(fairness)],
     ]
     return [
         "## Conditions",
@@ -208,6 +221,29 @@ def _conditions(report: BenchmarkReport) -> list[str]:
         "",
         *_table(["Field", "Value"], rows),
         "",
+    ]
+
+
+def _replanning_observation_note(report: BenchmarkReport) -> list[str]:
+    """Why the global class below differs from the one in the registry.
+
+    A reader who looks up ``astar+dwa`` in the algorithm registry finds
+    ``full_static_map`` and finds this table saying something else. That
+    discrepancy is the honest answer, not a bug, and a report that shows
+    the upgraded label without explaining it invites the reader to
+    assume the opposite.
+    """
+    if not report.fairness.replanning_enabled:
+        return []
+    return [
+        "",
+        "The global observation class here is **higher than the registry",
+        "declares**, and deliberately so: replanning was enabled, and a",
+        "replan is computed from the ground-truth positions of the dynamic",
+        "obstacles at that instant — information no sensor on this robot",
+        "produces. The registry declaration describes a stack that plans",
+        "once on the static map; these runs are not that. The controller",
+        "class is unchanged, because the controller still sees only LiDAR.",
     ]
 
 
@@ -237,6 +273,7 @@ def _algorithms(report: BenchmarkReport) -> list[str]:
         "benchmark ran. Stacks that were shown different things are not",
         "ranked against each other, and an unknown class is printed as such",
         "rather than assumed to match the others.",
+        *_replanning_observation_note(report),
         "",
         *_table(
             [
@@ -503,6 +540,10 @@ def _generalization(report: BenchmarkReport, summary: GeneralizationSummary | No
 
 
 def _runs(report: BenchmarkReport) -> list[str]:
+    # The replan column earns its width only when replanning was on. With
+    # it off the column is a wall of zeroes that says the same thing the
+    # conditions table already said once.
+    show_replans = report.fairness.replanning_enabled
     rows = [
         [
             f"`{_cell(run.algorithm)}`",
@@ -514,6 +555,11 @@ def _runs(report: BenchmarkReport) -> list[str]:
             _num(run.metrics.min_clearance, 3, " m"),
             DASH if run.metrics.near_miss_count is None else str(run.metrics.near_miss_count),
             DASH if run.metrics.stop_and_go_count is None else str(run.metrics.stop_and_go_count),
+            *(
+                [DASH if run.metrics.replan_count is None else str(run.metrics.replan_count)]
+                if show_replans
+                else []
+            ),
             _cell(run.reason),
         ]
         for run in _sorted_runs(report.runs)
@@ -532,6 +578,7 @@ def _runs(report: BenchmarkReport) -> list[str]:
                 "Min clearance",
                 "Near misses",
                 "Stop-and-go",
+                *(["Replans"] if show_replans else []),
                 "Reason",
             ],
             rows,

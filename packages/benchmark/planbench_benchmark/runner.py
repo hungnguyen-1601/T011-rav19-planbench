@@ -7,6 +7,9 @@ Fairness rules enforced here:
   algorithm (paired comparison).
 - A fresh controller instance is built per run, so no state leaks
   between seeds or algorithms.
+- The replanning rule comes from the spec, so every algorithm gets the
+  same trigger and the same budget. It is never read from an
+  algorithm's own config, where it could differ between stacks.
 - The conditions are hashed into a :class:`FairnessRecord` stored with
   the report, so a comparison can be proven valid after the fact.
 """
@@ -18,6 +21,7 @@ from collections.abc import Callable, Sequence
 from statistics import fmean
 
 from planbench_benchmark.comparison import build_comparisons
+from planbench_benchmark.observation import global_class_under_replanning
 from planbench_benchmark.registry import (
     algorithm_info,
     build_global_planner,
@@ -35,6 +39,7 @@ from planbench_benchmark.spec import (
 from planbench_metrics.statistics import bootstrap_ci, median_iqr, proportion_ci
 from planbench_schemas.episode import EpisodeStatus
 from planbench_schemas.map import MapData
+from planbench_schemas.replanning import ReplanningConfig
 from planbench_schemas.scenario import Scenario
 from planbench_simulator.nav_stack import StackRun, run_stack
 
@@ -42,7 +47,11 @@ logger = logging.getLogger("planbench.benchmark")
 
 
 def run_single(
-    map_data: MapData, scenario: Scenario, algorithm: AlgorithmSpec, seed: int
+    map_data: MapData,
+    scenario: Scenario,
+    algorithm: AlgorithmSpec,
+    seed: int,
+    replanning: ReplanningConfig | None = None,
 ) -> StackRun:
     """Run one episode of one algorithm at one seed.
 
@@ -50,11 +59,14 @@ def run_single(
     planner. A sampling planner therefore grows a different tree per
     seed instead of replaying one lucky tree for the whole sweep, while
     every algorithm still faces the identical set of conditions.
+
+    ``replanning`` comes from the benchmark, never from ``algorithm``:
+    it is the same object for every stack in the sweep.
     """
     seeded = scenario.model_copy(update={"random_seed": seed})
     planner = build_local_planner(algorithm.id, algorithm.config)
     global_planner = build_global_planner(algorithm.id, episode_seed=seed)
-    return run_stack(map_data, seeded, planner, global_planner)
+    return run_stack(map_data, seeded, planner, global_planner, replanning)
 
 
 def run_benchmark(
@@ -70,12 +82,12 @@ def run_benchmark(
     episodes for replay without re-running anything. It must not mutate
     what it receives.
     """
-    fairness = FairnessRecord.build(map_data, scenario, spec.seeds)
+    fairness = FairnessRecord.build(map_data, scenario, spec.seeds, spec.replanning)
     runs: list[RunRecord] = []
     episode_index = 0
     for algorithm in spec.algorithms:
         for seed in spec.seeds:
-            stack_run = run_single(map_data, scenario, algorithm, seed)
+            stack_run = run_single(map_data, scenario, algorithm, seed, spec.replanning)
             record = RunRecord(
                 algorithm=algorithm.id,
                 seed=seed,
@@ -102,7 +114,11 @@ def run_benchmark(
                 on_run(record, stack_run)
 
     aggregates = tuple(
-        aggregate_algorithm(algorithm.id, [r for r in runs if r.algorithm == algorithm.id])
+        aggregate_algorithm(
+            algorithm.id,
+            [r for r in runs if r.algorithm == algorithm.id],
+            replanning=spec.replanning,
+        )
         for algorithm in spec.algorithms
     )
     # Snapshot the evaluation protocol as it stands right now (P05). Read
@@ -144,8 +160,20 @@ def _robust_summary(
     return (median, (q1, q3), interval)
 
 
-def aggregate_algorithm(algorithm_id: str, runs: Sequence[RunRecord]) -> AlgorithmAggregate:
-    """Aggregate one algorithm's runs (see AlgorithmAggregate for semantics)."""
+def aggregate_algorithm(
+    algorithm_id: str,
+    runs: Sequence[RunRecord],
+    *,
+    replanning: ReplanningConfig | None = None,
+) -> AlgorithmAggregate:
+    """Aggregate one algorithm's runs (see AlgorithmAggregate for semantics).
+
+    ``replanning`` is the rule these runs executed under. It belongs here
+    because the global planner's observation class depends on it: a stack
+    allowed to replan reads ground-truth obstacle positions, which the
+    static registry declaration does not describe. Defaulted to off so
+    existing callers keep the label they always produced.
+    """
     episodes = len(runs)
     if episodes == 0:
         raise ValueError(f"no runs to aggregate for {algorithm_id!r}")
@@ -179,8 +207,15 @@ def aggregate_algorithm(algorithm_id: str, runs: Sequence[RunRecord]) -> Algorit
 
     # Copy the information-parity declaration into the result rather
     # than resolving it when the leaderboard renders: the registry can
-    # change, these numbers cannot.
+    # change, these numbers cannot. The global half is the *run-time*
+    # class, not the registry one — replanning hands the global planner
+    # ground-truth obstacle positions, and the label has to say so.
     info = algorithm_info(algorithm_id)
+    replanning_on = replanning is not None and replanning.enabled
+    global_class = global_class_under_replanning(
+        info.global_observation_class if info else None,
+        replanning_enabled=replanning_on,
+    )
 
     travel_times = [run.metrics.travel_time for run in successful]
     efficiencies = [
@@ -193,7 +228,7 @@ def aggregate_algorithm(algorithm_id: str, runs: Sequence[RunRecord]) -> Algorit
 
     return AlgorithmAggregate(
         algorithm=algorithm_id,
-        global_observation_class=info.global_observation_class if info else None,
+        global_observation_class=global_class,
         local_observation_class=info.local_observation_class if info else None,
         requires_global_path=info.requires_global_path if info else None,
         episodes=episodes,

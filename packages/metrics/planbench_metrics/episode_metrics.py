@@ -36,6 +36,19 @@ Metric definitions (documented contract):
   double-count one event as two.
 - ``time_to_first_collision``: simulation time of the first recorded
   collision event; None when the episode had no collision.
+- ``replan_count``: how many extra global paths the stack requested,
+  counted by the stack as it runs rather than derived afterwards — a
+  replan leaves no signature in the trajectory to recover it from.
+
+When an episode replanned, two fields change meaning and the docstrings
+above are read with this caveat: ``global_planning_time`` and
+``expanded_nodes`` are totals over every plan the episode used, and
+``planned_path_length`` (hence ``path_efficiency``) describes the last
+path only, the one the robot was following at the end. Comparing
+``path_efficiency`` between a run that replanned and one that did not
+therefore compares against two different references — the replanning
+config is part of the benchmark conditions precisely so that within one
+comparison it is the same for everybody.
 
 Thresholds live in :class:`MetricConfig`, which is versioned and
 snapshotted into every :class:`EpisodeMetrics` (``metric_config``): a
@@ -143,6 +156,11 @@ class EpisodeMetrics(BaseModel):
     time_to_first_collision: float | None = None
     #: Snapshot of the thresholds these metrics were computed under.
     metric_config: MetricConfig | None = None
+    #: How many times the stack asked for a new global path. 0 for every
+    #: run with replanning disabled, which is every run before the
+    #: feature existed; None only for metrics stored before the field
+    #: existed, where "not recorded" is the honest answer.
+    replan_count: int | None = None
 
 
 def _percentiles(values: Sequence[float]) -> tuple[float, float, float] | None:
@@ -193,6 +211,7 @@ def compute_episode_metrics(
     robot_radius: float | None = None,
     local_planner_latencies: Sequence[float] = (),
     metric_config: MetricConfig | None = None,
+    replan_count: int | None = None,
 ) -> EpisodeMetrics:
     """Compute metrics from an episode result and optional plan context.
 
@@ -275,4 +294,5 @@ def compute_episode_metrics(
         near_miss_count=near_miss_count,
         time_to_first_collision=_time_to_first_collision(result.events),
         metric_config=config,
+        replan_count=replan_count,
     )

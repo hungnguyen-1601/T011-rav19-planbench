@@ -67,6 +67,7 @@ from planbench_benchmark.spec import (  # noqa: E402
 from planbench_metrics.statistics import proportion_ci  # noqa: E402
 from planbench_schemas.episode import EpisodeStatus  # noqa: E402
 from planbench_schemas.map import MapData  # noqa: E402
+from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig  # noqa: E402
 from planbench_schemas.scenario import Scenario  # noqa: E402
 
 logger = logging.getLogger("planbench.calibrate")
@@ -132,6 +133,7 @@ def calibrate_scenario(
     algorithm: str,
     algorithm_config: dict,
     seeds: tuple[int, ...],
+    replanning: ReplanningConfig = NO_REPLANNING,
     source: tuple[MapData, Scenario] | None = None,
 ) -> tuple[ScenarioCalibration, dict]:
     """Run the baseline over one scenario and turn it into a difficulty.
@@ -149,6 +151,12 @@ def calibrate_scenario(
     which is correct and is snapshotted into the entry: measuring how
     hard a scenario is says nothing about whether it belongs in the
     held-out set.
+
+    ``replanning`` is part of what is being measured, not an
+    implementation detail: a baseline allowed to replan gets past
+    obstacles that would otherwise end the episode, so the same scenario
+    scores easier. Turning it on therefore means a new calibration
+    version, never an edit to an existing one.
     """
     map_data, scenario = source if source is not None else build_scenario(scenario_name)
     spec = BenchmarkSpec(
@@ -156,6 +164,7 @@ def calibrate_scenario(
         description="Difficulty calibration run (P03); not a leaderboard benchmark.",
         algorithms=(AlgorithmSpec(id=algorithm, config=algorithm_config),),
         seeds=seeds,
+        replanning=replanning,
     )
     started = time.monotonic()
     report = run_benchmark(map_data, scenario, spec)
@@ -197,6 +206,7 @@ def build_calibration(
     seeds: tuple[int, ...],
     version: str,
     notes: str | None,
+    replanning: ReplanningConfig = NO_REPLANNING,
     sources: dict[str, tuple[MapData, Scenario]] | None = None,
     on_scenario=None,
 ) -> DifficultyCalibration:
@@ -217,6 +227,7 @@ def build_calibration(
             algorithm=algorithm,
             algorithm_config=algorithm_config,
             seeds=seeds,
+            replanning=replanning,
             source=(sources or {}).get(name),
         )
         if robot_profile is None:
@@ -234,7 +245,7 @@ def build_calibration(
     baseline = BaselineSpec(
         algorithm=algorithm,
         algorithm_config=algorithm_config,
-        replanning_enabled=False,
+        replanning_enabled=replanning.enabled,
         seeds=seeds,
         robot_profile=robot_profile,
         benchmark_spec_version=BENCHMARK_SPEC_VERSION,
@@ -341,6 +352,16 @@ def main(argv: list[str] | None = None) -> int:
             "A different list is a different measurement."
         ),
     )
+    parser.add_argument(
+        "--max-replans",
+        type=int,
+        default=0,
+        help=(
+            "Replans the baseline is allowed per episode. 0 (default) is the "
+            "no-replanning scale. Anything else measures a different scale and "
+            "requires its own --calibration-version."
+        ),
+    )
     parser.add_argument("--calibration-version", default="1.0.0")
     parser.add_argument("--notes", default="")
     parser.add_argument(
@@ -396,7 +417,24 @@ def main(argv: list[str] | None = None) -> int:
     except json.JSONDecodeError as exc:
         parser.error(f"--algorithm-config is not valid JSON: {exc}")
 
+    if args.max_replans < 0:
+        parser.error("--max-replans cannot be negative")
+    replanning = (
+        ReplanningConfig(enabled=True, max_replans=args.max_replans)
+        if args.max_replans
+        else NO_REPLANNING
+    )
+
     version = args.calibration_version
+    if replanning.enabled and version == parser.get_default("calibration_version"):
+        # A replanning baseline measures a different scale. Sharing the
+        # default version with the no-replanning cache would let one
+        # overwrite the other and leave two incompatible difficulties
+        # wearing the same label.
+        parser.error(
+            "--max-replans changes what difficulty means, so it needs its own "
+            "--calibration-version (the default belongs to the no-replanning scale)"
+        )
     if args.dry_run:
         # A dry run must never be mistaken for the real scale, including
         # when someone copies its output into the cache by hand.
@@ -425,6 +463,7 @@ def main(argv: list[str] | None = None) -> int:
         seeds=seeds,
         version=version,
         notes=args.notes or None,
+        replanning=replanning,
         sources=sources,
         on_scenario=progress,
     )

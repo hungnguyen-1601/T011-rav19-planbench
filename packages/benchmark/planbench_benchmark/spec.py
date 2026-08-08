@@ -12,6 +12,7 @@ from planbench_metrics import EpisodeMetrics
 from planbench_metrics.statistics import statistically_adequate as _statistically_adequate
 from planbench_schemas.episode import EpisodeStatus
 from planbench_schemas.map import MapData
+from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
 from planbench_schemas.scenario import Scenario
 
 BENCHMARK_SPEC_VERSION = "1"
@@ -41,6 +42,13 @@ class BenchmarkSpec(BaseModel):
     algorithms: tuple[AlgorithmSpec, ...] = Field(min_length=1)
     seeds: tuple[int, ...] = Field(min_length=1)
     spec_version: str = BENCHMARK_SPEC_VERSION
+    #: Whether a blocked robot may ask for a new global path, and how
+    #: often. One rule for the whole benchmark, deliberately: replanning
+    #: sits here rather than in ``AlgorithmSpec.config`` so it cannot be
+    #: granted to one stack and withheld from another. Disabled by
+    #: default, and a disabled benchmark hashes exactly as it did before
+    #: the field existed.
+    replanning: ReplanningConfig = NO_REPLANNING
 
     @model_validator(mode="after")
     def _validate(self) -> BenchmarkSpec:
@@ -76,18 +84,36 @@ class FairnessRecord(BaseModel):
     max_angular_velocity: float
     lidar_num_rays: int
     lidar_max_range: float
+    #: The replanning rule every algorithm ran under. Part of the
+    #: conditions, not of any algorithm: a stack allowed three replans is
+    #: solving an easier problem than one allowed none, and a report that
+    #: does not state which was in force cannot be checked.
+    replanning_enabled: bool = False
+    max_replans: int = 0
     conditions_checksum: str
 
     @staticmethod
-    def build(map_data: MapData, scenario: Scenario, seeds: tuple[int, ...]) -> FairnessRecord:
+    def build(
+        map_data: MapData,
+        scenario: Scenario,
+        seeds: tuple[int, ...],
+        replanning: ReplanningConfig | None = None,
+    ) -> FairnessRecord:
         scenario_checksum = _scenario_checksum(scenario)
-        payload = "|".join(
-            [
-                map_data.checksum(),
-                scenario_checksum,
-                ",".join(str(seed) for seed in seeds),
-            ]
-        )
+        replanning = replanning or NO_REPLANNING
+        parts = [
+            map_data.checksum(),
+            scenario_checksum,
+            ",".join(str(seed) for seed in seeds),
+        ]
+        # Appended only when replanning is actually on. The alternative —
+        # always hashing it — would change the checksum of every
+        # benchmark ever stored on the day this field shipped, announcing
+        # that all previous results had become incomparable when nothing
+        # about their conditions had changed.
+        if not replanning.is_default:
+            parts.append(replanning.checksum_payload())
+        payload = "|".join(parts)
         return FairnessRecord(
             map_name=map_data.name,
             map_checksum=map_data.checksum(),
@@ -101,6 +127,8 @@ class FairnessRecord(BaseModel):
             max_angular_velocity=scenario.robot.max_angular_velocity,
             lidar_num_rays=scenario.lidar.num_rays,
             lidar_max_range=scenario.lidar.max_range,
+            replanning_enabled=replanning.enabled,
+            max_replans=replanning.max_replans,
             conditions_checksum=hashlib.sha256(payload.encode("utf-8")).hexdigest(),
         )
 

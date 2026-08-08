@@ -176,6 +176,26 @@ nguyên nghĩa, đã deprecated), `local_planning_latency_p50/p95/p99`,
 lưu trước F05 trả `null` cho toàn bộ field mới; `null` nghĩa là "không
 tính", **không** phải 0. Aggregate chưa tổng hợp các metric này.
 
+**Replanning (Đợt 4.1).** `POST /benchmarks` nhận thêm trường tùy chọn
+`replanning: {enabled, max_replans}` — **một luật cho cả benchmark**,
+không nằm trong config của từng thuật toán. Bỏ trống nghĩa là tắt, đúng
+như mọi benchmark trước khi có tính năng này. `enabled: true` kèm
+`max_replans: 0` bị từ chối (bật mà không làm gì thì report sẽ nói sai).
+
+Luật này đi vào `fairness`: `replanning_enabled` và `max_replans` được
+ghi lại, và nó **được hash vào `conditions_checksum` chỉ khi bật** — nhờ
+vậy checksum của mọi benchmark cũ không đổi một bit nào. Đổi
+`max_replans` giữa hai lần chạy là đổi điều kiện, checksum khác nhau,
+hai report không so chung được.
+
+`runs[].metrics.replan_count` là số lần stack xin đường mới (0 khi tắt;
+`null` chỉ với metrics lưu trước đợt này). Trong episode có replan,
+`global_planning_time` và `expanded_nodes` là **tổng cộng dồn** qua mọi
+lần plan, còn `planned_path_length`/`path_efficiency` tính theo **đường
+của lần replan cuối**. Mỗi lần replan để lại một `EpisodeEvent` kiểu
+`replan`; kết luận `stuck`/`no_progress` bị thay bởi event đó vì episode
+đã không kết thúc ở đấy.
+
 Mỗi `aggregate` còn mang **bản chụp khai báo quan sát** lúc chạy:
 `global_observation_class`, `local_observation_class`,
 `requires_global_path`. Chụp lại thay vì tra registry lúc đọc, để sửa
@@ -211,10 +231,19 @@ khoảng tin cậy. `null` nghĩa là **không tính được**, không phải 0
   (dưới 30 seed) **không chặn gì**; nó nói kết quả là chỉ dấu đáng điều
   tra, không phải kết luận.
 
-`GET /leaderboard` nhóm theo `conditions_checksum` **và**
-`local_observation_class`. Query `group_by_observation_class` (mặc định
-`true`) tắt việc tách nhóm; nhóm bị trộn trả về kèm
-`cross_observation_class_warning=true`.
+`GET /leaderboard` nhóm theo `conditions_checksum` **và cả hai lớp quan
+sát** (`global_observation_class` + `local_observation_class`). Query
+`group_by_observation_class` (mặc định `true`) tắt việc tách nhóm; nhóm
+bị trộn trả về kèm `cross_observation_class_warning=true`, và trường lớp
+nào không thống nhất trong nhóm thì trả `null`.
+
+Lấy cả hai lớp làm khóa chứ không chỉ lớp local, vì replanning nâng
+**riêng lớp global**: một run được phép replan đọc vị trí ground-truth
+của vật cản động mà run không replan không bao giờ thấy. Nhóm theo lớp
+local sẽ xếp chung hai run đó.
+
+`LeaderboardGroup` vì vậy có thêm trường `global_observation_class`
+(`null` khi nhóm không thống nhất hoặc khi dữ liệu có trước P02).
 
 ### P05 — tập held-out và chênh lệch tổng quát hóa
 
@@ -396,15 +425,33 @@ Ba trường khai báo **cân bằng thông tin** (P02) — stack nhìn thấy d
 
 | Trường | Ý nghĩa |
 |---|---|
-| `global_observation_class` | Dữ liệu global planner được xem. Hiện mọi stack là `full_static_map`. |
+| `global_observation_class` | Dữ liệu global planner được xem. Mọi stack **khai báo** `full_static_map`. |
 | `local_observation_class` | Dữ liệu bộ điều khiển được xem. Hiện mọi stack là `lidar_only`. |
 | `requires_global_path` | `true` khi bộ điều khiển bám đường toàn cục. |
 
 Giá trị hợp lệ: `full_static_map`, `lidar_only`, `human_states`,
-`lidar+human_states`. **Không có default** — đăng ký stack mới mà không
-khai báo thì `AlgorithmInfo` fail validation ngay lúc import. Nhãn sai
-nguy hiểm hơn nhãn thiếu: nó làm một so sánh không công bằng trông như
-đã được kiểm.
+`lidar+human_states`, `full_static_map+human_states`. **Không có
+default** — đăng ký stack mới mà không khai báo thì `AlgorithmInfo` fail
+validation ngay lúc import. Nhãn sai nguy hiểm hơn nhãn thiếu: nó làm
+một so sánh không công bằng trông như đã được kiểm.
+
+**Lớp global của một *run* được suy ra lúc chạy, không phải chép nguyên
+từ registry.** Registry khai báo theo stack id, nhưng cùng một stack
+nhìn thấy nhiều hơn khi được phép replan: `_replan()` lấy vị trí vật cản
+động qua `engine.dynamic_obstacles_now()` — ground truth, không cảm biến
+nào cho. Nên `AlgorithmAggregate.global_observation_class` chụp lại giá
+trị **đã nâng**:
+
+| Điều kiện chạy | `global_observation_class` trong report |
+|---|---|
+| `replanning.enabled = false` (mặc định) | `full_static_map` — y hệt registry, mọi report cũ giữ nguyên nhãn |
+| `replanning.enabled = true` | `full_static_map+human_states` |
+
+`full_static_map+human_states` **không stack nào khai báo** trong
+registry; nó chỉ xuất hiện ở tầng kết quả. Report Markdown in kèm một
+đoạn giải thích vì sao nhãn khác registry, để người đọc đối chiếu không
+tưởng đó là bug. Lớp local **không đổi** — bộ điều khiển vẫn chỉ có
+LiDAR.
 
 Seed của một stack ngẫu nhiên **được dẫn xuất từ seed episode** (cùng seed
 điều khiển vật cản động), nên mỗi episode mọc một cây khác nhau còn chạy
