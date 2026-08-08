@@ -7,6 +7,12 @@ from planbench_schemas.episode import (
     Observation,
     TrajectoryPoint,
 )
+from planbench_schemas.episode_context import (
+    EPISODE_CONTEXT_ID_LENGTH,
+    NOMINAL_VARIANT,
+    EpisodeContext,
+    SampleSet,
+)
 from planbench_schemas.geometry import (
     EPS,
     Point2D,
@@ -42,13 +48,16 @@ from planbench_schemas.task_profile import (
 )
 
 __all__ = [
+    "EPISODE_CONTEXT_ID_LENGTH",
     "EPS",
     "KNOWN_OBSERVATIONS",
+    "NOMINAL_VARIANT",
     "NO_REPLANNING",
     "CellState",
     "CircleObstacle",
     "ClaimLevel",
     "EnvironmentRef",
+    "EpisodeContext",
     "EpisodeEvent",
     "EpisodeResult",
     "EpisodeStatus",
@@ -64,6 +73,7 @@ __all__ = [
     "ReplanningConfig",
     "RobotConfig",
     "RobotState",
+    "SampleSet",
     "Scenario",
     "SimAction",
     "StaticObstacle",
