@@ -25,17 +25,30 @@ from planbench_schemas.scenario import (
     StaticObstacle,
 )
 from planbench_schemas.sensor import LidarConfig
+from planbench_schemas.task_profile import (
+    ClaimLevel,
+    EnvironmentRef,
+    HardwareSpec,
+    Mission,
+    TaskConstraints,
+    TaskProfile,
+    TaskRobotSpec,
+)
 
 __all__ = [
     "EPS",
     "NO_REPLANNING",
     "CellState",
     "CircleObstacle",
+    "ClaimLevel",
+    "EnvironmentRef",
     "EpisodeEvent",
     "EpisodeResult",
     "EpisodeStatus",
+    "HardwareSpec",
     "LidarConfig",
     "MapData",
+    "Mission",
     "Observation",
     "Point2D",
     "Pose2D",
@@ -46,6 +59,9 @@ __all__ = [
     "Scenario",
     "SimAction",
     "StaticObstacle",
+    "TaskConstraints",
+    "TaskProfile",
+    "TaskRobotSpec",
     "TrajectoryPoint",
     "distance_point_to_aabb",
     "euclidean_distance",
