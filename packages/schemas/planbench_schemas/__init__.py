@@ -1,5 +1,6 @@
 """Shared Pydantic domain schemas for PlanBench (contract-first core)."""
 
+from planbench_schemas.contracts import CONTRACTS_VERSION
 from planbench_schemas.episode import (
     EpisodeEvent,
     EpisodeResult,
@@ -39,7 +40,7 @@ from planbench_schemas.scenario import (
 from planbench_schemas.sensor import LidarConfig
 from planbench_schemas.task_profile import (
     ClaimLevel,
-    EnvironmentRef,
+    EnvironmentSpec,
     HardwareSpec,
     Mission,
     TaskConstraints,
@@ -48,6 +49,7 @@ from planbench_schemas.task_profile import (
 )
 
 __all__ = [
+    "CONTRACTS_VERSION",
     "EPISODE_CONTEXT_ID_LENGTH",
     "EPS",
     "KNOWN_OBSERVATIONS",
@@ -56,7 +58,7 @@ __all__ = [
     "CellState",
     "CircleObstacle",
     "ClaimLevel",
-    "EnvironmentRef",
+    "EnvironmentSpec",
     "EpisodeContext",
     "EpisodeEvent",
     "EpisodeResult",
