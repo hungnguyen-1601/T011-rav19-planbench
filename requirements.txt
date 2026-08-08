@@ -74,10 +74,6 @@ PyJWT==2.13.0
 httpx==0.28.1
 
 # ---------- Simulator, planner, metrics ----------
-# Kiểm định Wilcoxon theo cặp trong planbench_metrics.statistics. Dùng
-# scipy thay vì tự viết: bảng giá trị tới hạn của kiểm định hạng có dấu
-# là thứ không nên chép tay.
-scipy==1.18.0
 # Sidecar YAML của định dạng map_server (planbench_schemas.map_io).
 PyYAML==6.0.3
 # Bản đang chạy toàn bộ test suite. NumPy 2.5.x yêu cầu Python >= 3.12,
