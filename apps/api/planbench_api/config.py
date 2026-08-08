@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -71,7 +72,14 @@ class Settings(BaseSettings):
 
     # Uploaded model files. Kept out of the source tree and out of Git —
     # a checkpoint is data, not code, and a repository is not a CDN.
-    model_dir: str = "artifacts/models"
+    #
+    # Empty means "<artifact_dir>/models", so moving the artifact root
+    # moves the checkpoints with it. A fixed default here would keep
+    # pointing at ./artifacts/models after a deployment set
+    # PLANBENCH_ARTIFACT_DIR elsewhere — in the container that path is
+    # under a root-owned WORKDIR and the API cannot create it, which is
+    # a crash at import time rather than a wrong path at upload time.
+    model_dir: str = ""
     # Upload ceilings, in megabytes. A trained PPO checkpoint is
     # typically a few MB; 200 leaves room for a large policy without
     # letting one request fill the disk.
@@ -116,6 +124,14 @@ class Settings(BaseSettings):
     agent_knowledge_dirs: str = "docs"
     # Ceiling on episodes the agent may propose in one benchmark.
     agent_max_episodes: int = 60
+
+    @model_validator(mode="after")
+    def _default_model_dir_under_artifacts(self) -> Settings:
+        if not self.model_dir:
+            # object.__setattr__ is not needed (Settings is mutable), but
+            # assigning through the field keeps validation in play.
+            self.model_dir = str(Path(self.artifact_dir) / "models")
+        return self
 
 
 @lru_cache

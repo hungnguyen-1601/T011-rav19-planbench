@@ -1,5 +1,7 @@
 /** TypeScript mirrors of the backend API contract (docs/API_CONTRACT.md). */
 
+import type { ReplanningConfig } from "./benchmarkTypes";
+
 export interface Pose2D {
   x: number;
   y: number;
@@ -47,6 +49,54 @@ export interface RobotConfig {
   max_angular_acceleration: number;
 }
 
+export interface CircleObstacle {
+  type: "circle";
+  center: Point2D;
+  radius: number;
+}
+
+export interface RectangleObstacle {
+  type: "rectangle";
+  min_x: number;
+  min_y: number;
+  max_x: number;
+  max_y: number;
+}
+
+export type StaticObstacle = CircleObstacle | RectangleObstacle;
+
+/** Motion laws, mirroring `planbench_schemas.dynamic`. The UI authors
+ *  these and sends them to the backend; it never evaluates them — see
+ *  `ObstacleMarker` in MapCanvas. */
+export interface WaypointMotion {
+  kind: "waypoint";
+  waypoints: Point2D[];
+  speed: number;
+  loop?: boolean;
+  ping_pong?: boolean;
+}
+
+export interface PeriodicMotion {
+  kind: "periodic";
+  start: Point2D;
+  end: Point2D;
+  period: number;
+  phase?: number;
+}
+
+export type Motion = WaypointMotion | PeriodicMotion;
+
+export interface DynamicObstacle {
+  name: string;
+  radius: number;
+  motion: Motion;
+  /** Seconds of seed-derived head start. Zero means every seed replays
+   *  the identical traffic, which reports a variance of zero that is not
+   *  real — the editor defaults it above zero for that reason. */
+  seed_time_offset?: number;
+  seed_offset?: number;
+}
+
 export interface Scenario {
   name: string;
   description?: string;
@@ -56,7 +106,10 @@ export interface Scenario {
   goal_tolerance: number;
   timeout_seconds: number;
   simulation_dt: number;
-  static_obstacles?: unknown[];
+  static_obstacles?: StaticObstacle[];
+  dynamic_obstacles?: DynamicObstacle[];
+  random_seed?: number;
+  progress_time_window?: number;
 }
 
 export interface ScenarioResource {
@@ -65,6 +118,23 @@ export interface ScenarioResource {
   map_id: string;
   created_at: string;
   scenario: Scenario;
+  /** Evaluation split (P05), resolved server-side. Anything authored in
+   *  the app is `unassigned` and cannot be changed from here. */
+  split: "dev" | "holdout" | "unassigned";
+}
+
+export interface ValidationReport {
+  valid: boolean;
+  errors: string[];
+}
+
+/** Obstacle positions at one instant, computed by the backend. */
+export interface ScenarioPreview {
+  time: number;
+  seed: number;
+  valid: boolean;
+  errors: string[];
+  dynamic_obstacles: { name: string; radius: number; position: Point2D }[];
 }
 
 export interface SimulationResource {
@@ -74,6 +144,9 @@ export interface SimulationResource {
   algorithm: string;
   state: "created" | "finished";
   created_at: string;
+  /** The replanning rule this run executed under. Absent on payloads
+   *  from a server that predates the field; those runs did not replan. */
+  replanning?: ReplanningConfig;
 }
 
 /** Một vật cản động tại một thời điểm, để vẽ lại đúng khung hình. */
@@ -91,6 +164,9 @@ export interface TrajectoryPoint {
   theta: number;
   linear_velocity: number;
   angular_velocity: number;
+  /** Ground-truth dynamic-obstacle snapshot at this sample — recorded
+   *  for replay only, never shown to a planner. Absent on payloads
+   *  stored before it was recorded. */
   obstacles?: ObstacleSnapshot[];
 }
 
@@ -112,17 +188,39 @@ export interface EpisodeMetrics {
   trajectory_length: number;
   average_speed: number;
   max_speed: number;
-  /** Σ(Δθ)², đúng công thức spec, KHÔNG chuẩn hóa theo độ dài. */
-  smoothness: number;
   /** Σ|Δθ| chia độ dài quỹ đạo, rad/m — số duy nhất so sánh được giữa
-   *  các episode dài ngắn khác nhau, và là số leaderboard chấm điểm. */
-  smoothness_per_metre: number;
+   *  các episode dài ngắn khác nhau, và là số leaderboard chấm điểm.
+   *  Tên trường giữ nguyên là ``smoothness`` để client cũ không vỡ;
+   *  công thức spec Σ(Δθ)² nằm ở ``smoothness_squared``. */
+  smoothness: number;
   planned_path_length: number | null;
   path_efficiency: number | null;
   min_clearance: number | null;
   mean_clearance: number | null;
   global_planning_time: number | null;
   expanded_nodes: number | null;
+  // F05 additions — absent (undefined) on payloads stored before them,
+  // null when not computed. Never coalesce to 0.
+  mean_local_planning_latency?: number | null;
+  max_local_planning_latency?: number | null;
+  smoothness_squared?: number | null;
+  local_planning_latency_p50?: number | null;
+  local_planning_latency_p95?: number | null;
+  local_planning_latency_p99?: number | null;
+  stop_and_go_count?: number | null;
+  near_miss_count?: number | null;
+  time_to_first_collision?: number | null;
+  metric_config?: MetricConfig | null;
+  // How many extra global paths the stack asked for. 0 whenever
+  // replanning was off, which is every run before the feature existed.
+  replan_count?: number | null;
+}
+
+export interface MetricConfig {
+  version: string;
+  stop_speed_threshold: number;
+  resume_speed_threshold: number;
+  near_miss_clearance_threshold: number;
 }
 
 export interface PlanResult {

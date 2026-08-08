@@ -107,10 +107,12 @@ def _score(aggregate: AlgorithmAggregate, robot_radius: float) -> float:
         parts.append((0.30, min(1.0, max(0.0, aggregate.worst_min_clearance / robot_radius))))
     if aggregate.mean_path_efficiency_successful is not None:
         parts.append((0.20, min(1.0, max(0.0, aggregate.mean_path_efficiency_successful))))
-    if aggregate.mean_smoothness_per_metre_successful is not None:
-        parts.append(
-            (0.10, 1.0 - min(1.0, max(0.0, aggregate.mean_smoothness_per_metre_successful)))
-        )
+    # ``mean_smoothness_successful`` is the per-metre heading-change rate
+    # (see episode_metrics): the score clamps to [0, 1], and the raw
+    # Σ(Δθ)² in ``smoothness_squared`` exceeds 1 on nearly every episode,
+    # which would flatten every stack to 0 on this axis.
+    if aggregate.mean_smoothness_successful is not None:
+        parts.append((0.10, 1.0 - min(1.0, max(0.0, aggregate.mean_smoothness_successful))))
     weight_sum = sum(weight for weight, _ in parts)
     if weight_sum <= 0:
         return 0.0

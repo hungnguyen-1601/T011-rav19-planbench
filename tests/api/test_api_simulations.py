@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from blocked_route import blocked_scenario, two_doorway_map
 from fastapi.testclient import TestClient
 
 
@@ -60,6 +61,98 @@ class TestSimulations:
             },
         )
         assert response.status_code == 422
+
+
+class TestReplanningOverTheApi:
+    """`/simulate` is the page people watch a robot get stuck on.
+
+    Until this wiring existed, the only way to reach the replanning code
+    was a benchmark: the simulation service called ``run_stack`` without
+    the rule and there was no field to put it in. A test that only
+    checked the field round-trips would have passed on that broken
+    version, so the premise test here runs a genuinely blocked route and
+    demands the outcome change.
+    """
+
+    def _blocked(self, client: TestClient) -> tuple[str, str]:
+        map_response = client.post("/api/v1/maps", json=two_doorway_map().model_dump(mode="json"))
+        assert map_response.status_code == 201, map_response.text
+        map_id = map_response.json()["id"]
+        scenario_response = client.post(
+            "/api/v1/scenarios",
+            json={"map_id": map_id, "scenario": blocked_scenario().model_dump(mode="json")},
+        )
+        assert scenario_response.status_code == 201, scenario_response.text
+        return map_id, scenario_response.json()["id"]
+
+    def _run(self, client: TestClient, map_id: str, scenario_id: str, **body) -> dict:
+        created = client.post(
+            "/api/v1/simulations",
+            json={"map_id": map_id, "scenario_id": scenario_id, **body},
+        )
+        assert created.status_code == 201, created.text
+        run = client.post(f"/api/v1/simulations/{created.json()['id']}/run")
+        assert run.status_code == 200, run.text
+        return run.json()
+
+    def test_a_blocked_robot_stays_blocked_without_it(self, client: TestClient) -> None:
+        """The control. Without this the next test proves nothing."""
+        map_id, scenario_id = self._blocked(client)
+        body = self._run(client, map_id, scenario_id)
+        assert body["result"]["status"] == "stuck"
+        assert body["metrics"]["replan_count"] == 0
+
+    def test_the_same_run_reaches_the_goal_with_it(self, client: TestClient) -> None:
+        map_id, scenario_id = self._blocked(client)
+        body = self._run(
+            client,
+            map_id,
+            scenario_id,
+            replanning={"enabled": True, "max_replans": 3},
+        )
+        assert body["result"]["status"] == "success"
+        assert body["metrics"]["replan_count"] >= 1
+        # The event is what the replay timeline draws its marker from.
+        assert any(event["type"] == "replan" for event in body["result"]["events"])
+
+    def test_the_rule_is_echoed_back_on_the_resource(self, client: TestClient) -> None:
+        map_id, scenario_id = self._blocked(client)
+        created = client.post(
+            "/api/v1/simulations",
+            json={
+                "map_id": map_id,
+                "scenario_id": scenario_id,
+                "replanning": {"enabled": True, "max_replans": 2},
+            },
+        )
+        assert created.json()["replanning"] == {"enabled": True, "max_replans": 2}
+        fetched = client.get(f"/api/v1/simulations/{created.json()['id']}")
+        assert fetched.json()["replanning"] == {"enabled": True, "max_replans": 2}
+
+    def test_a_payload_that_never_mentions_it_runs_with_it_off(
+        self, client: TestClient, created_map: dict, created_scenario: dict
+    ) -> None:
+        """Simulations stored before this field existed must still run."""
+        simulation = create_simulation(client, created_map, created_scenario)
+        assert simulation["replanning"] == {"enabled": False, "max_replans": 0}
+        body = client.post(f"/api/v1/simulations/{simulation['id']}/run").json()
+        assert body["metrics"]["replan_count"] == 0
+
+    def test_enabled_with_a_zero_budget_is_refused_with_a_readable_reason(
+        self, client: TestClient, created_map: dict, created_scenario: dict
+    ) -> None:
+        response = client.post(
+            "/api/v1/simulations",
+            json={
+                "map_id": created_map["id"],
+                "scenario_id": created_scenario["id"],
+                "replanning": {"enabled": True, "max_replans": 0},
+            },
+        )
+        assert response.status_code == 422
+        # A switch that turns nothing on would make the stored run claim
+        # a capability it never used; the message has to say so.
+        assert "does nothing" in response.text
 
 
 def drain(websocket) -> tuple[dict, int, dict]:

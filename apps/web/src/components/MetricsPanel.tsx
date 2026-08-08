@@ -37,18 +37,15 @@ export function MetricsPanel({
         <Metric label={t("metrics.pathEfficiency")} value={format(metrics.path_efficiency, 3)} />
         <Metric label={t("metrics.averageSpeed")} value={format(metrics.average_speed, 2, " m/s")} />
         <Metric label={t("metrics.maxSpeed")} value={format(metrics.max_speed, 2, " m/s")} />
-        {/* Two numbers, two units. `smoothness` is the spec formula
-            Σ(Δθ)² and carries no per-length unit; `smoothness_per_metre`
-            is Σ|Δθ| over path length. Showing the first one labelled
-            "rad/m" — as this panel used to — was simply wrong. */}
-        <Metric label={t("metrics.smoothness")} value={format(metrics.smoothness, 3)} />
-        <Metric
-          label={t("metrics.smoothnessPerMetre")}
-          value={format(metrics.smoothness_per_metre, 3, " rad/m")}
-        />
+        <Metric label={t("metrics.smoothness")} value={format(metrics.smoothness, 3, " rad/m")} />
         <Metric label={t("metrics.minClearance")} value={format(metrics.min_clearance, 3, " m")} />
         <Metric label={t("metrics.meanClearance")} value={format(metrics.mean_clearance, 3, " m")} />
         <Metric label={t("metrics.steps")} value={String(metrics.steps)} />
+        {/* Only when replanning was on. A column of zeros on every other
+         *  run says nothing and buries the metrics that do. */}
+        {metrics.replan_count ? (
+          <Metric label={t("metrics.replanCount")} value={String(metrics.replan_count)} />
+        ) : null}
         {plan ? (
           <>
             <Metric label={t("metrics.plannedLength")} value={format(plan.path_length, 2, " m")} />

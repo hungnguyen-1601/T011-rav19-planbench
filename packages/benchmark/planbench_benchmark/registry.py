@@ -1,9 +1,9 @@
-"""Algorithm registry: stack id -> local-planner factory.
+"""Algorithm registry: stack id -> global planner + local-planner factory.
 
-Every benchmarkable entry is a *stack* (``astar+<controller>``) because
-comparing a global planner with a local planner is meaningless
-(decision D13). The pure-pursuit stack is registered but flagged
-``benchmarkable=False``: it exists only as a pipeline reference (D12).
+Every benchmarkable entry is a *stack* (``<global>+<controller>``)
+because comparing a global planner with a local planner is meaningless
+(decision D13). The pure-pursuit stacks are registered but flagged
+``benchmarkable=False``: they exist only as a pipeline reference (D12).
 """
 
 from __future__ import annotations
@@ -13,8 +13,15 @@ from importlib.util import find_spec
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from planbench_planning import AStarPlanner, DWAConfig, DWAPlanner, RRTStarPlanner
-from planbench_planning.common.base import GlobalPlanner
+from planbench_benchmark.observation import ObservationClass
+from planbench_planning import (
+    AStarPlanner,
+    DWAConfig,
+    DWAPlanner,
+    GlobalPlanner,
+    RRTStarConfig,
+    RRTStarPlanner,
+)
 from planbench_planning.common.local_base import LocalPlanner
 from planbench_simulator.nav_stack import PurePursuitLocalPlanner
 from planbench_simulator.path_follower import PurePursuitConfig
@@ -134,6 +141,14 @@ class AlgorithmInfo(BaseModel):
     description: str
     benchmarkable: bool
     config_schema: dict
+    #: Which global planner the stack runs. Stated rather than parsed
+    #: out of ``id``: the id is a display convention, this is the fact
+    #: a report has to be able to quote.
+    global_planner: str = "astar"
+    #: True when the global planner draws random samples. Such a stack
+    #: needs more seeds to say anything, and a report that hides this
+    #: invites the reader to compare one lucky tree against A*.
+    stochastic_global_planner: bool = False
     #: This stack cannot run without a trained model chosen by a person.
     #:
     #: It used to be inferred from the config schema's ``required`` list,
@@ -143,17 +158,56 @@ class AlgorithmInfo(BaseModel):
     #: fabrication the spec forbids, so the property is now stated
     #: outright instead of being a side effect of field defaults.
     requires_model: bool = False
+    #: What each half of the stack is allowed to see (P02).
+    #:
+    #: Deliberately without a default. A default would be a guess made
+    #: on behalf of whoever adds the next planner, and the one thing
+    #: worse than an unlabelled stack on the leaderboard is a wrongly
+    #: labelled one: the ranking would then look fair while comparing a
+    #: sensing planner against one reading ground truth. Registering a
+    #: stack must fail loudly until someone states both classes.
+    global_observation_class: ObservationClass
+    local_observation_class: ObservationClass
+    #: True when the controller is steered by a global path. A stack
+    #: that ignores it (end-to-end policies, in principle) solves a
+    #: different problem and a report should be able to say so.
+    requires_global_path: bool
 
 
 class _Entry(BaseModel):
+    """One registered stack.
+
+    ``config_model``/``factory`` describe the *local* planner: that is
+    the half a benchmark spec configures today. ``global_factory`` takes
+    the episode seed and returns the global planner, because a sampling
+    planner must draw a different tree per episode (see
+    ``RRTStarPlanner``); deterministic planners simply ignore it. When
+    tuning arrives (P01) it replaces the config baked into these
+    closures — the seed plumbing does not have to change again.
+    """
+
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     info: AlgorithmInfo
     config_model: type[BaseModel]
     factory: Callable[[BaseModel], LocalPlanner]
-    #: Global planner của stack. Mặc định A* để các entry cũ không phải
-    #: khai lại; từ khi có RRT* thì nó không còn là hằng số nữa.
-    global_planner_factory: Callable[[], GlobalPlanner] = AStarPlanner
+    global_factory: Callable[[int], GlobalPlanner]
+
+
+def _astar(episode_seed: int) -> GlobalPlanner:  # noqa: ARG001 - A* ignores the seed
+    return AStarPlanner()
+
+
+def _rrtstar(episode_seed: int) -> GlobalPlanner:
+    return RRTStarPlanner(RRTStarConfig(), episode_seed=episode_seed)
+
+
+_RRT_STAR_DESCRIPTION = (
+    "RRT* global planner: samples the free space, rewires the tree towards "
+    "shorter paths, and keeps improving for its whole iteration budget. "
+    "Randomised — the tree is seeded from the episode seed, so results "
+    "must be read across many seeds, not from one run."
+)
 
 
 ALGORITHMS: dict[str, _Entry] = {
@@ -168,9 +222,13 @@ ALGORITHMS: dict[str, _Entry] = {
             ),
             benchmarkable=True,
             config_schema=DWAConfig.model_json_schema(),
+            global_observation_class="full_static_map",
+            local_observation_class="lidar_only",
+            requires_global_path=True,
         ),
         config_model=DWAConfig,
         factory=lambda config: DWAPlanner(config),  # type: ignore[arg-type]
+        global_factory=_astar,
     ),
     "astar+ppo": _Entry(
         info=AlgorithmInfo(
@@ -185,41 +243,13 @@ ALGORITHMS: dict[str, _Entry] = {
             benchmarkable=True,
             requires_model=True,
             config_schema=PPOStackConfig.model_json_schema(),
+            global_observation_class="full_static_map",
+            local_observation_class="lidar_only",
+            requires_global_path=True,
         ),
         config_model=PPOStackConfig,
         factory=_build_ppo,
-    ),
-    "rrtstar+dwa": _Entry(
-        info=AlgorithmInfo(
-            id="rrtstar+dwa",
-            kind="stack",
-            description=(
-                "RRT* global planner với controller Dynamic Window Approach. "
-                "Lấy mẫu thay vì duyệt lưới, nên phép so sánh không còn luôn là "
-                "A* đấu A* với controller khác."
-            ),
-            benchmarkable=True,
-            config_schema=DWAConfig.model_json_schema(),
-        ),
-        config_model=DWAConfig,
-        factory=lambda config: DWAPlanner(config),  # type: ignore[arg-type]
-        global_planner_factory=RRTStarPlanner,
-    ),
-    "rrtstar+pure_pursuit": _Entry(
-        info=AlgorithmInfo(
-            id="rrtstar+pure_pursuit",
-            kind="reference_stack",
-            description=(
-                "RRT* với bộ bám đường pure-pursuit. Chỉ là mốc tham chiếu cho "
-                "pipeline — nó bỏ qua cảm biến, nên không được dùng để rút ra "
-                "kết luận benchmark."
-            ),
-            benchmarkable=False,
-            config_schema=PurePursuitConfig.model_json_schema(),
-        ),
-        config_model=PurePursuitConfig,
-        factory=lambda config: PurePursuitLocalPlanner(config),  # type: ignore[arg-type]
-        global_planner_factory=RRTStarPlanner,
+        global_factory=_astar,
     ),
     "astar+pure_pursuit": _Entry(
         info=AlgorithmInfo(
@@ -232,11 +262,68 @@ ALGORITHMS: dict[str, _Entry] = {
             ),
             benchmarkable=False,
             config_schema=PurePursuitConfig.model_json_schema(),
+            global_observation_class="full_static_map",
+            local_observation_class="lidar_only",
+            requires_global_path=True,
         ),
         config_model=PurePursuitConfig,
         factory=lambda config: PurePursuitLocalPlanner(config),  # type: ignore[arg-type]
+        global_factory=_astar,
+    ),
+    "rrtstar+dwa": _Entry(
+        info=AlgorithmInfo(
+            id="rrtstar+dwa",
+            kind="stack",
+            description=(
+                _RRT_STAR_DESCRIPTION + " Paired here with the Dynamic Window "
+                "Approach controller, so it differs from astar+dwa in the "
+                "global planner alone."
+            ),
+            benchmarkable=True,
+            config_schema=DWAConfig.model_json_schema(),
+            global_planner="rrtstar",
+            stochastic_global_planner=True,
+            global_observation_class="full_static_map",
+            local_observation_class="lidar_only",
+            requires_global_path=True,
+        ),
+        config_model=DWAConfig,
+        factory=lambda config: DWAPlanner(config),  # type: ignore[arg-type]
+        global_factory=_rrtstar,
+    ),
+    "rrtstar+pure_pursuit": _Entry(
+        info=AlgorithmInfo(
+            id="rrtstar+pure_pursuit",
+            kind="reference_stack",
+            description=(
+                "RRT* global planner with a pure-pursuit follower. Temporary "
+                "pipeline reference only — it ignores sensing, so it must not "
+                "be used to draw benchmark conclusions."
+            ),
+            benchmarkable=False,
+            config_schema=PurePursuitConfig.model_json_schema(),
+            global_planner="rrtstar",
+            stochastic_global_planner=True,
+            global_observation_class="full_static_map",
+            local_observation_class="lidar_only",
+            requires_global_path=True,
+        ),
+        config_model=PurePursuitConfig,
+        factory=lambda config: PurePursuitLocalPlanner(config),  # type: ignore[arg-type]
+        global_factory=_rrtstar,
     ),
 }
+
+
+def algorithm_info(algorithm_id: str) -> AlgorithmInfo | None:
+    """The registry entry for ``algorithm_id``, or None if unregistered.
+
+    Returns None rather than raising because callers are usually reading
+    an old stored report: a benchmark run before a stack was renamed (or
+    removed) must still be displayable, just without its metadata.
+    """
+    entry = ALGORITHMS.get(algorithm_id)
+    return entry.info if entry is not None else None
 
 
 def list_algorithms() -> list[AlgorithmInfo]:
@@ -261,12 +348,17 @@ def validate_algorithm_config(algorithm_id: str, config: dict | None) -> BaseMod
         raise AlgorithmConfigError(f"invalid config for {algorithm_id!r}: {exc}") from exc
 
 
-def build_global_planner(algorithm_id: str) -> GlobalPlanner:
-    """Global planner của một stack đã đăng ký."""
-    return _entry(algorithm_id).global_planner_factory()
-
-
 def build_local_planner(algorithm_id: str, config: dict | None = None) -> LocalPlanner:
     """Instantiate the controller for a registered stack."""
     entry = _entry(algorithm_id)
     return entry.factory(validate_algorithm_config(algorithm_id, config))
+
+
+def build_global_planner(algorithm_id: str, *, episode_seed: int = 0) -> GlobalPlanner:
+    """Instantiate the global planner for a registered stack.
+
+    ``episode_seed`` is the seed of the episode about to run. Passing it
+    is what makes a sampling planner explore a different tree per
+    episode; a deterministic planner ignores it.
+    """
+    return _entry(algorithm_id).global_factory(episode_seed)

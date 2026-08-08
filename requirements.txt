@@ -83,6 +83,11 @@ PyYAML==6.0.3
 # Bản đang chạy toàn bộ test suite. NumPy 2.5.x yêu cầu Python >= 3.12,
 # trùng với `requires-python` của dự án và với phiên bản CI dùng.
 numpy==2.5.1
+# Thống kê của giao thức đánh giá (P04): Wilcoxon signed-rank và
+# bootstrap CI. Không tự cài lại — kiểm định thống kê cài sai không ném
+# exception, nó chỉ trả một con số trông hợp lý và sai. Độ tin cậy của
+# benchmark đáng giá hơn việc bớt một dependency.
+scipy==1.18.0
 
 # ---------- Lưu trữ ----------
 # SQLite có sẵn trong Python, không cần driver. PostgreSQL cần psycopg —

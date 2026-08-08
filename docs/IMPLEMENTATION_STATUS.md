@@ -9,11 +9,20 @@
 `model_path`), Robot Profile, kiểm tra tương thích, và trợ lý hội thoại
 thay cho ba biểu mẫu kỹ thuật. **Toàn bộ M0–M13 đã xong.**
 
-Còn nợ (xem "Nợ kỹ thuật" và KNOWN_LIMITATIONS #77–#89): chưa chạy
-Docker lần nào và chưa kết nối PostgreSQL thật (môi trường không có
-daemon/server), chưa gọi provider LLM thật, **và việc nạp model upload
-chưa chạy trong sandbox container** — hạn chế bảo mật quan trọng nhất
-của M13, ghi rõ ở KNOWN_LIMITATIONS #77.
+Còn nợ (xem "Nợ kỹ thuật" và KNOWN_LIMITATIONS #77–#89): chưa gọi
+provider LLM thật, **và việc nạp model upload chưa chạy trong sandbox
+container** — hạn chế bảo mật quan trọng nhất của M13, ghi rõ ở
+KNOWN_LIMITATIONS #77.
+
+**Docker + PostgreSQL: đã chạy thật (2026-08-05, Đợt 0.2).** Cả 4
+service `db`/`migrate`/`api`/`web` lên healthy, migration chạy trên
+`postgres:17-alpine` tạo đủ 10 bảng, và một benchmark 2 stack × 5 seed
+chạy end-to-end **trong container** với dữ liệu ghi xuống PostgreSQL —
+số liệu trùng khít lần chạy trên host. Hai lỗi chặn được phát hiện và
+sửa trong lúc kiểm chứng (`model_dir` tương đối gây `PermissionError`
+lúc import; vai trò legacy `engineer`/`approver` làm mọi endpoint danh
+sách trả 500). Báo cáo:
+`docs/antongduy/reports/2026-08-05/tongduyan_docker-compose-chay-that.md`.
 
 ## Bản đồ mã nguồn
 
@@ -175,7 +184,63 @@ của M13, ghi rõ ở KNOWN_LIMITATIONS #77.
 - **Resource monitoring** (CPU/memory per job): chưa có.
 - `pause/resume` benchmark: state PAUSED có trong enum nhưng chưa có
   transition; hiện chỉ có cancel hợp tác.
-- **RRT***: chưa triển khai (spec ghi rõ không bắt buộc cho MVP).
+- ~~**RRT***: chưa triển khai~~ — đã xong (Đợt 0.1, 2026-08-05):
+  `packages/planning/planbench_planning/rrtstar/`, stack `rrtstar+dwa`
+  benchmarkable, tái lập theo seed.
+- **Metric F05 cấp aggregate**: Đợt 3.2 (2026-08-07) thêm
+  `smoothness_squared` (đúng spec 8.2 `Σ(Δθ)²`), latency p50/p95/p99,
+  `stop_and_go_count` (hysteresis, `MetricConfig` v1.0.0),
+  `near_miss_count`, `time_to_first_collision` vào `EpisodeMetrics` +
+  bảng Runs của report Markdown (kèm ngưỡng). `AlgorithmAggregate`,
+  leaderboard và biểu đồ **chưa** tổng hợp các metric mới — xem
+  KNOWN_LIMITATIONS #146–#151.
+- **Replanning khi bị vật cản động chặn**: Đợt 4.1 (2026-08-07) — xong.
+  `ReplanningConfig` (`packages/schemas/.../replanning.py`) nằm trên
+  `BenchmarkSpec`, **không** nằm trên `Scenario` (thêm field vào
+  `Scenario` sẽ đổi `scenario_checksum` của mọi scenario cũ) và **không**
+  nằm trong config của thuật toán nào. Logic cắm ở
+  `nav_stack.run_stack()` — nơi mọi stack đều đi qua. Engine có thêm
+  `resume_after_replan()` (reseed cửa sổ stuck, không chỉ đổi state) và
+  `dynamic_obstacles_now()`; khi replan, vị trí vật cản động hiện tại
+  được rasterize vào grid quy hoạch tạm, nếu không thì planner trả lại
+  đúng đường cũ. Mặc định **tắt**: run tắt cho trajectory và checksum
+  giống hệt trước khi có tính năng. Giới hạn: KNOWN_LIMITATIONS
+  #152–#157.
+- **Khai báo cân bằng thông tin khi replanning bật (P02)**: Đợt A
+  (2026-08-08) — xong. Lớp quan sát của global planner được **suy ra lúc
+  chạy** thay vì chép nguyên từ registry:
+  `global_class_under_replanning()`
+  (`packages/benchmark/planbench_benchmark/observation.py`) nâng
+  `full_static_map` thành `full_static_map+human_states` khi
+  `replanning.enabled`, vì `_replan()` đọc ground truth qua
+  `engine.dynamic_obstacles_now()`. `aggregate_algorithm()` nhận thêm
+  tham số `replanning` và **chụp** giá trị đã nâng vào
+  `AlgorithmAggregate`, nên sửa registry sau này không dán nhãn khác lên
+  số đã đo. Khóa nhóm của leaderboard giờ gồm cả hai lớp (global +
+  local), nên run có replan không bao giờ bị xếp chung run không replan;
+  report Markdown in kèm đoạn giải thích vì sao nhãn khác registry.
+  Replanning tắt → nhãn **không đổi một bit**, mọi report cũ giữ nguyên.
+  Giới hạn còn lại: KNOWN_LIMITATIONS #158–#159.
+- **Nối dây replanning vào `/simulate` và UI**: Đợt B (2026-08-08) — xong.
+  `POST /simulations` nhận `replanning`; `StoredSimulation` lưu lại
+  (`SimulationRow.replanning`, migration Alembic **`0004`**, nullable —
+  `NULL` đọc ra là tắt, đúng thứ những run đó đã chạy);
+  `SimulationService.run` truyền xuống `run_stack()`, nên chạy lại một
+  simulation cũ tái hiện đúng luật lúc nó được tạo. Trên web, một
+  component chung `ReplanningControls` phục vụ cả `/simulate` lẫn form
+  tạo benchmark: mặc định tắt, **không** nhớ giữa các lần load, và khi
+  bật thì hiện cảnh báo rằng robot phải chờ hết cửa sổ stuck nên run lâu
+  hơn hẳn (là thời gian mô phỏng, không phải app treo). Replay của
+  benchmark detail vẽ marker replan trên timeline, đọc từ
+  `result.events`. Giới hạn còn lại: KNOWN_LIMITATIONS #160–#163.
+
+  **Scenario để kiểm chứng replanning là `sudden_stop`** (`stuck` 5/5 khi
+  tắt → `success` 5/5 khi bật, 1 replan mỗi run). **Không** dùng
+  `bidirectional_corridor` hay `crossing_obstacle`: hai scenario đó kết
+  thúc bằng `COLLISION`, mà va chạm cố ý **không** kích hoạt replan, nên
+  bật hay tắt cho kết quả giống hệt nhau — xem KNOWN_LIMITATIONS
+  #164–#165 và
+  `docs/antongduy/notes/2026-08-08/tongduyan_dieu-tra-replanning-tren-corridor.md`.
 
 ## Kiểm thử
 
@@ -492,6 +557,8 @@ Chi tiết đầy đủ: `docs/DEPLOYMENT.md`.
 5. **Docker Compose**: `db` (healthcheck `pg_isready -U <user>`),
    `migrate` (one-shot, phải exit 0), `api`, `web`. Migration là service
    riêng vì hai replica cùng `upgrade head` lúc boot là một race.
+   **Đã chạy thật ngày 2026-08-05**: thứ tự phụ thuộc hoạt động đúng —
+   `api` chỉ khởi động sau khi `migrate` exit 0 và `db` báo healthy.
 6. **In-memory vẫn là mặc định**: checkout không có database vẫn chạy
    toàn bộ API và toàn bộ test.
 

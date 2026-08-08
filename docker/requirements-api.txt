@@ -26,6 +26,10 @@ PyJWT==2.13.0
 
 # Simulator and planners.
 numpy==2.5.1
+# Evaluation statistics (P04): Wilcoxon signed-rank and bootstrap CIs.
+# The API computes them when it aggregates a report, so this is runtime,
+# not a development extra. Ships wheels — no build toolchain needed.
+scipy==1.18.0
 
 # Persistence. psycopg[binary] ships wheels, so no build toolchain is
 # needed in the image.

@@ -35,6 +35,7 @@ from planbench_api.worker import Job, JobQueue
 from planbench_benchmark import (
     AlgorithmSpec,
     BenchmarkSpec,
+    build_global_planner,
     build_local_planner,
     list_algorithms,
     run_benchmark,
@@ -42,6 +43,7 @@ from planbench_benchmark import (
 )
 from planbench_benchmark.registry import AlgorithmConfigError, UnknownAlgorithmError
 from planbench_schemas.map import MapData
+from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
 from planbench_schemas.scenario import Scenario
 from planbench_simulator.engine import SimulationEngine
 from planbench_simulator.nav_stack import StackRun, run_stack
@@ -183,7 +185,12 @@ class SimulationService:
         self._repos = repos
 
     def create(
-        self, map_id: str, scenario_id: str, algorithm: str, config: dict | None = None
+        self,
+        map_id: str,
+        scenario_id: str,
+        algorithm: str,
+        config: dict | None = None,
+        replanning: ReplanningConfig | None = None,
     ) -> StoredSimulation:
         require_algorithm(algorithm, config)
         stored_map = self._repos.maps.get(map_id)
@@ -191,7 +198,9 @@ class SimulationService:
         errors = ScenarioService.validate_against_map(stored_map.map_data, stored_scenario.scenario)
         if errors:
             raise DomainValidationError("scenario is invalid for this map", errors)
-        return self._repos.simulations.create(map_id, scenario_id, algorithm, config or {})
+        return self._repos.simulations.create(
+            map_id, scenario_id, algorithm, config or {}, replanning or NO_REPLANNING
+        )
 
     def get(self, simulation_id: str) -> StoredSimulation:
         return self._repos.simulations.get(simulation_id)
@@ -206,7 +215,15 @@ class SimulationService:
         map_data = self._repos.maps.get(stored.map_id).map_data
         scenario = self._repos.scenarios.get(stored.scenario_id).scenario
         planner = build_local_planner(stored.algorithm, stored.config)
-        stack_run: StackRun = run_stack(map_data, scenario, planner)
+        # The scenario's own seed also seeds a sampling global planner,
+        # so re-running a stored simulation reproduces the same path.
+        global_planner = build_global_planner(stored.algorithm, episode_seed=scenario.random_seed)
+        # The rule comes from the stored simulation, so re-running one
+        # replays the conditions it was created with rather than whatever
+        # the default happens to be today.
+        stack_run: StackRun = run_stack(
+            map_data, scenario, planner, global_planner, stored.replanning
+        )
         logger.info(
             "simulation finished",
             extra={
@@ -215,6 +232,7 @@ class SimulationService:
                     "algorithm": stored.algorithm,
                     "status": stack_run.result.status.value,
                     "steps": stack_run.result.steps,
+                    "replans": stack_run.metrics.replan_count,
                 }
             },
         )
@@ -352,6 +370,7 @@ class BenchmarkService:
         seeds: list[int],
         owner: User,
         description: str = "",
+        replanning: ReplanningConfig | None = None,
     ) -> StoredBenchmark:
         for algorithm in algorithms:
             require_algorithm(algorithm.id, algorithm.config)
@@ -363,6 +382,7 @@ class BenchmarkService:
                 description=description,
                 algorithms=tuple(algorithms),
                 seeds=tuple(seeds),
+                replanning=replanning or NO_REPLANNING,
             )
         except ValueError as exc:
             raise DomainValidationError("invalid benchmark spec", [str(exc)]) from exc
@@ -440,6 +460,12 @@ class BenchmarkService:
                     "benchmark_id": benchmark_id,
                     "episodes": len(report.runs),
                     "conditions_checksum": report.fairness.conditions_checksum,
+                    # P05: every look at a held-out scenario is recorded.
+                    # A held-out set erodes by being consulted, and that
+                    # erosion is only auditable if each consultation left
+                    # a trace.
+                    "scenario_split": report.scenario_split,
+                    "protocol_version": report.protocol_version,
                 }
             },
         )
