@@ -160,7 +160,14 @@ cho người khác, họ dựng lại đúng card đó) âm thầm ngừng đún
 
 ## 6. Kết quả full suite
 
-*(cập nhật khi lệnh chạy nền xong)*
+`pytest tests/ -q` → **1575 passed, 6 skipped** (7 phút 52). Baseline sau Phase
+1.3 là 1564 — thêm 11 test (6 traffic + 4 contract version + 1 test motion
+parametrize), **không vỡ test nào**.
+
+Đáng lưu ý: thêm `dynamic_obstacles` vào fixture `make_profile()` **không** làm
+vỡ test nào của 1.1–1.3, vì `TaskProfile` là schema mới, chưa có nơi nào khác
+trong repo tiêu thụ nó. Đây cũng là lần cuối còn được sửa `EnvironmentSpec` rẻ
+như vậy — từ Phase 2 trở đi nó đi vào trace metadata và manifest.
 
 ## 7. Phase 1 đóng — trạng thái và việc tiếp theo
 
