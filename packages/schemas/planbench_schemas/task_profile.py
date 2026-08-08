@@ -33,6 +33,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from planbench_schemas.geometry import Pose2D
+from planbench_schemas.observations import ObservationToken, canonical_observations
 from planbench_schemas.robot import RobotConfig
 
 ClaimLevel = Literal["mission", "deployment", "robust_deployment"]
@@ -158,19 +159,26 @@ class TaskProfile(BaseModel):
     environment: EnvironmentRef
     missions: tuple[Mission, ...] = Field(min_length=1)
     robot: TaskRobotSpec
-    available_observations: tuple[str, ...] = Field(min_length=1)
+    available_observations: tuple[ObservationToken, ...] = Field(min_length=1)
     constraints: TaskConstraints
     hardware: HardwareSpec
 
-    @field_validator("available_observations")
+    @field_validator("available_observations", mode="before")
     @classmethod
-    def _canonical_observations(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        """Sorted, deduplicated, no blanks — G6 is a set-subset check,
-        and two spellings of the same set must compare equal."""
-        cleaned = {entry.strip() for entry in value}
-        if "" in cleaned:
-            raise ValueError("available_observations must not contain blank entries")
-        return tuple(sorted(cleaned))
+    def _canonical_observations(cls, value: object) -> object:
+        """Canonicalise against the closed G6 vocabulary.
+
+        Deferred to :mod:`planbench_schemas.observations` so the
+        deployment side and the candidate side cannot drift apart — a
+        gate that compares tokens literally is only as good as the two
+        validators feeding it.
+        """
+        if isinstance(value, (list, tuple)):
+            return canonical_observations(
+                (entry for entry in value if isinstance(entry, str)),
+                field="available_observations",
+            )
+        return value
 
     @model_validator(mode="after")
     def _validate_missions(self) -> TaskProfile:

@@ -80,11 +80,19 @@ class TestParsing:
             make_profile(hardware=None)
 
     def test_observations_are_canonicalised(self) -> None:
-        profile = make_profile(available_observations=["lidar_2d", "camera", "lidar_2d "])
-        assert profile.available_observations == ("camera", "lidar_2d")
+        profile = make_profile(
+            available_observations=["lidar_2d", "human_state_estimates", "lidar_2d "]
+        )
+        assert profile.available_observations == ("human_state_estimates", "lidar_2d")
+
+    def test_unknown_observation_rejected(self) -> None:
+        """G6 compares tokens literally, so a typo must not parse — see
+        planbench_schemas.observations."""
+        with pytest.raises(ValidationError, match="unknown observation"):
+            make_profile(available_observations=["lidar_2d", "camera"])
 
     def test_blank_observation_rejected(self) -> None:
-        with pytest.raises(ValidationError, match="blank"):
+        with pytest.raises(ValidationError, match="unknown observation"):
             make_profile(available_observations=["lidar_2d", "  "])
 
 

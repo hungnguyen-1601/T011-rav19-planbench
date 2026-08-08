@@ -76,7 +76,8 @@ thứ tự alphabet).
 - `pytest tests/test_task_profile.py` → **27 passed**.
 - Chạy kèm hàng xóm (`test_scenario_protocol.py`, `test_map_io.py`) → 77 passed.
 - `ruff check` + `ruff format` sạch.
-- Full suite đang chạy nền lúc viết báo cáo — kết quả cập nhật bên dưới.
+- Full suite: `pytest tests/ -q` → **1474 passed, 6 skipped** (9 phút 40).
+  Không vỡ gì — thay đổi thuần additive như dự kiến.
 
 ## 3. Dọn dẹp plan cũ trong lượt này
 
