@@ -17,7 +17,7 @@ setlocal
 REM WSL path to the project. Change this if you move the repository.
 REM It is a Linux path (/home/...), not a Windows one (C:\...), because
 REM the command below runs inside WSL.
-set "PROJECT_DIR=/home/hungnguyen/projects/Project_RAV19"
+set PROJECT_DIR=/home/acer/T011-rav19-planbench
 
 set "WEB_URL=http://localhost:3000"
 set "COMMAND=%~1"

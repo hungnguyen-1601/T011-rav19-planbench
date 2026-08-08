@@ -170,6 +170,95 @@ class LocalModelStorage(ModelStorage):
             shutil.rmtree(directory, ignore_errors=True)
 
 
+class S3ModelStorage(ModelStorage):
+    """Storage backend for S3 / Cloudflare R2 / MinIO object stores."""
+
+    def __init__(
+        self,
+        bucket_name: str,
+        *,
+        endpoint_url: str | None = None,
+        aws_access_key_id: str | None = None,
+        aws_secret_access_key: str | None = None,
+        region_name: str | None = None,
+        local_cache_root: str | Path = "/tmp/planbench_s3_cache",
+    ) -> None:
+        self.bucket_name = bucket_name
+        self.endpoint_url = endpoint_url
+        self.aws_access_key_id = aws_access_key_id
+        self.aws_secret_access_key = aws_secret_access_key
+        self.region_name = region_name
+        self.local_cache = Path(local_cache_root)
+        self.local_cache.mkdir(parents=True, exist_ok=True)
+        self._client: Any = None
+
+    def _get_client(self) -> Any:
+        if self._client is None:
+            import boto3
+
+            kwargs: dict[str, Any] = {}
+            if self.endpoint_url:
+                kwargs["endpoint_url"] = self.endpoint_url
+            if self.aws_access_key_id:
+                kwargs["aws_access_key_id"] = self.aws_access_key_id
+            if self.aws_secret_access_key:
+                kwargs["aws_secret_access_key"] = self.aws_secret_access_key
+            if self.region_name:
+                kwargs["region_name"] = self.region_name
+
+            self._client = boto3.client("s3", **kwargs)
+        return self._client
+
+    def save(self, key: str, source: Iterator[bytes], *, max_bytes: int) -> StoredFile:
+        digest = hashlib.sha256()
+        buffer = bytearray()
+        size = 0
+        for chunk in source:
+            size += len(chunk)
+            if size > max_bytes:
+                raise UploadTooLarge(f"file is larger than the {max_bytes // (1024 * 1024)} MB limit")
+            digest.update(chunk)
+            buffer.extend(chunk)
+
+        client = self._get_client()
+        client.put_object(
+            Bucket=self.bucket_name,
+            Key=key,
+            Body=bytes(buffer),
+        )
+        return StoredFile(storage_key=key, size_bytes=size, checksum=digest.hexdigest())
+
+    def open(self, key: str) -> bytes:
+        client = self._get_client()
+        response = client.get_object(Bucket=self.bucket_name, Key=key)
+        return response["Body"].read()
+
+    def exists(self, key: str) -> bool:
+        client = self._get_client()
+        try:
+            client.head_object(Bucket=self.bucket_name, Key=key)
+            return True
+        except Exception:
+            return False
+
+    def delete(self, key: str) -> None:
+        client = self._get_client()
+        try:
+            client.delete_object(Bucket=self.bucket_name, Key=key)
+        except Exception:
+            pass
+
+    def checksum(self, key: str) -> str:
+        data = self.open(key)
+        return hashlib.sha256(data).hexdigest()
+
+    def internal_location(self, key: str) -> str:
+        cache_path = self.local_cache / key.replace("/", "_")
+        if not cache_path.exists():
+            cache_path.write_bytes(self.open(key))
+        return str(cache_path)
+
+
 def inspect_archive(data: bytes) -> list[str]:
     """Structural check of an uploaded `.zip`. Executes nothing.
 
@@ -223,8 +312,10 @@ __all__ = [
     "ZIP_MAGIC",
     "LocalModelStorage",
     "ModelStorage",
+    "S3ModelStorage",
     "StoredFile",
     "UploadTooLarge",
     "inspect_archive",
     "storage_key",
 ]
+

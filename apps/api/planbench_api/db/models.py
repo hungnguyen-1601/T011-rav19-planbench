@@ -435,13 +435,49 @@ class EpisodeRow(Base):
     )
 
 
+class BenchmarkJobRow(Base):
+    """Job status and progress persistence for background benchmarks."""
+
+    __tablename__ = "benchmark_jobs"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(50), nullable=False)
+    state: Mapped[str] = mapped_column(String(30), nullable=False)
+    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+    started_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+    finished_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+
+
+class RefreshTokenRow(Base):
+    """Server-side refresh token storage for revocation and rotation."""
+
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    expires_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+    revoked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+
+    __table_args__ = (Index("ix_refresh_tokens_user_id", "user_id"),)
+
+
 __all__ = [
     "ApprovalRow",
+    "BenchmarkJobRow",
     "ConversationMessageRow",
     "ConversationRow",
     "ModelDocumentRow",
     "ModelRow",
     "ModelUsageRow",
+    "RefreshTokenRow",
     "RobotProfileRow",
     "OAuthAccountRow",
     "ReviewRequestRow",
@@ -454,3 +490,4 @@ __all__ = [
     "ScenarioRow",
     "SimulationRow",
 ]
+

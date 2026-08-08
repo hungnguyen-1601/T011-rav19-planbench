@@ -305,9 +305,41 @@ def oauth_callback(
     return response
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class RefreshTokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+
 @router.post("/oauth/exchange", response_model=TokenResponse)
 def oauth_exchange(payload: ExchangeRequest, request: Request) -> TokenResponse:
     """Trade the one-time callback code for a PlanBench token."""
     user_id = _codes(request).redeem(payload.code)
     accounts = _accounts(request)
     return _token_response(accounts.get(user_id), get_auth(request), accounts)
+
+
+@router.post("/refresh", response_model=RefreshTokenResponse)
+def refresh_token(payload: RefreshRequest, request: Request) -> RefreshTokenResponse:
+    """Exchange a valid refresh token for a new access token and refresh token pair."""
+    auth = get_auth(request)
+    access_token, new_refresh_token, expires_in = auth.refresh(payload.refresh_token)
+    return RefreshTokenResponse(
+        access_token=access_token,
+        refresh_token=new_refresh_token,
+        expires_in=expires_in,
+    )
+
+
+@router.post("/logout")
+def logout(payload: RefreshRequest, request: Request) -> dict[str, str]:
+    """Revoke the refresh token on logout."""
+    auth = get_auth(request)
+    auth.revoke(payload.refresh_token)
+    return {"message": "logged out successfully"}
+

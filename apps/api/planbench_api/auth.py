@@ -91,6 +91,7 @@ class AuthService:
         self._admin_nicknames = frozenset(
             part.strip().casefold() for part in settings.admin_nicknames.split(",") if part.strip()
         )
+        self._revoked_tokens: set[str] = set()
         self._seed_users(settings)
 
     @property
@@ -173,9 +174,59 @@ class AuthService:
 
     def issue_token(self, user: User) -> tuple[str, int]:
         expires_at = datetime.now(UTC) + self._token_ttl
-        payload = {"sub": user.id, "exp": expires_at}
+        payload = {"sub": user.id, "exp": expires_at, "type": "access"}
         token = jwt.encode(payload, self._secret, algorithm=ALGORITHM)
         return token, int(self._token_ttl.total_seconds())
+
+    def issue_refresh_token(self, user: User) -> str:
+        expires_at = datetime.now(UTC) + timedelta(days=7)
+        payload = {
+            "sub": user.id,
+            "exp": expires_at,
+            "type": "refresh",
+            "jti": secrets.token_urlsafe(16),
+        }
+        return jwt.encode(payload, self._secret, algorithm=ALGORITHM)
+
+    def refresh(self, refresh_token_str: str) -> tuple[str, str, int]:
+        try:
+            payload = jwt.decode(refresh_token_str, self._secret, algorithms=[ALGORITHM])
+        except jwt.ExpiredSignatureError as exc:
+            raise AuthError("refresh token expired") from exc
+        except jwt.PyJWTError as exc:
+            raise AuthError("invalid refresh token") from exc
+
+        if payload.get("type") != "refresh":
+            raise AuthError("token is not a refresh token")
+
+        jti = payload.get("jti")
+        if not jti or jti in self._revoked_tokens:
+            raise AuthError("refresh token revoked or invalid")
+
+        user_id = payload.get("sub")
+        if not user_id:
+            raise AuthError("malformed refresh token payload")
+
+        try:
+            user = self._users.get(str(user_id))
+        except NotFoundError as exc:
+            raise AuthError("this account no longer exists") from exc
+
+        # Revoke old refresh token (rotation)
+        self._revoked_tokens.add(jti)
+
+        new_access_token, expires_in = self.issue_token(user)
+        new_refresh_token = self.issue_refresh_token(user)
+        return new_access_token, new_refresh_token, expires_in
+
+    def revoke(self, refresh_token_str: str) -> None:
+        try:
+            payload = jwt.decode(refresh_token_str, self._secret, algorithms=[ALGORITHM])
+            jti = payload.get("jti")
+            if jti:
+                self._revoked_tokens.add(jti)
+        except Exception:
+            pass
 
     def decode_token(self, token: str) -> User:
         try:
@@ -193,6 +244,7 @@ class AuthService:
             return self._users.get(str(user_id))
         except NotFoundError as exc:
             raise AuthError("this account no longer exists") from exc
+
 
 
 def _parse_seed_entry(entry: str) -> tuple[str, str]:

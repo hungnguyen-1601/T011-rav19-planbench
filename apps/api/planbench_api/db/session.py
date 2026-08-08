@@ -47,7 +47,13 @@ def normalise_url(url: str) -> str:
     return url
 
 
-def create_db_engine(url: str, *, echo: bool = False) -> Engine:
+def create_db_engine(
+    url: str,
+    *,
+    echo: bool = False,
+    max_retries: int = 5,
+    backoff_factor: float = 1.0,
+) -> Engine:
     """Build an engine for ``url``, with sane defaults per backend."""
     url = normalise_url(url)
     if url.startswith("postgresql"):
@@ -62,11 +68,50 @@ def create_db_engine(url: str, *, echo: bool = False) -> Engine:
             pool_size=5,
             max_overflow=5,
         )
+        _verify_connection_with_retry(
+            engine,
+            max_retries=max_retries,
+            backoff_factor=backoff_factor,
+        )
     else:
         engine = create_engine(url, echo=echo)
         if url.startswith("sqlite"):
             _enable_sqlite_foreign_keys(engine)
     return engine
+
+
+def _verify_connection_with_retry(
+    engine: Engine,
+    max_retries: int = 5,
+    backoff_factor: float = 1.0,
+) -> None:
+    """Attempt connecting to the engine with exponential backoff on OperationalError."""
+    import time
+    from sqlalchemy.exc import OperationalError
+
+    last_exc: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            conn = engine.connect()
+            conn.close()
+            return
+        except (OperationalError, DatabaseUnavailable) as exc:
+            last_exc = exc
+            if attempt < max_retries:
+                sleep_time = backoff_factor * (2 ** (attempt - 1))
+                logger.warning(
+                    "Database connection attempt %d/%d failed (%s); retrying in %.2fs...",
+                    attempt,
+                    max_retries,
+                    exc,
+                    sleep_time,
+                )
+                time.sleep(sleep_time)
+
+    raise DatabaseUnavailable(
+        f"Could not connect to PostgreSQL after {max_retries} attempts: {last_exc}"
+    ) from last_exc
+
 
 
 def _enable_sqlite_foreign_keys(engine: Engine) -> None:
