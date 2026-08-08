@@ -67,6 +67,7 @@ from planbench_metrics import EpisodeMetrics
 from planbench_planning import PlanResult
 from planbench_schemas.episode import EpisodeResult
 from planbench_schemas.map import MapData
+from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
 from planbench_schemas.scenario import Scenario
 from planbench_simulator.nav_stack import StackRun
 
@@ -164,7 +165,12 @@ class SqlSimulationRepository:
         self._sessions = sessions
 
     def create(
-        self, map_id: str, scenario_id: str, algorithm: str, config: dict
+        self,
+        map_id: str,
+        scenario_id: str,
+        algorithm: str,
+        config: dict,
+        replanning: ReplanningConfig = NO_REPLANNING,
     ) -> StoredSimulation:
         row = SimulationRow(
             id=new_id(),
@@ -175,6 +181,7 @@ class SqlSimulationRepository:
             state="created",
             created_at=now_iso(),
             run=None,
+            replanning=replanning.model_dump(),
         )
         with self._sessions.begin() as session:
             session.add(row)
@@ -680,6 +687,12 @@ def _to_simulation(row: SimulationRow) -> StoredSimulation:
         created_at=row.created_at,
         state=row.state,
         run=_load_run(row.run) if row.run else None,
+        # NULL means the row predates the column, and those runs did not
+        # replan. Reading it as disabled is the recorded truth, not a
+        # fallback.
+        replanning=(
+            ReplanningConfig.model_validate(row.replanning) if row.replanning else NO_REPLANNING
+        ),
     )
 
 

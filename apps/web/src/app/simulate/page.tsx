@@ -7,11 +7,13 @@ import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
 import { MapCanvas } from "@/components/MapCanvas";
 import { MetricsPanel } from "@/components/MetricsPanel";
+import { NO_REPLANNING, ReplanningControls } from "@/components/ReplanningControls";
 import { api } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
 import { defaultScenario } from "@/lib/demoMap";
 import { useEpisodeStream } from "@/lib/useEpisodeStream";
 import type { MapData, MapSummary, PlanResult, Point2D, Scenario } from "@/lib/types";
+import type { ReplanningConfig } from "@/lib/benchmarkTypes";
 
 type PlaceMode = "start" | "goal" | "none";
 
@@ -28,6 +30,10 @@ export default function SimulatePage() {
   const [showGrid, setShowGrid] = useState(true);
   const [showPlan, setShowPlan] = useState(true);
   const [showTrajectory, setShowTrajectory] = useState(true);
+  // Off on every page load, deliberately not remembered: replanning
+  // changes what the global planner is allowed to see, so it has to be
+  // an act each time rather than a setting that lingers.
+  const [replanning, setReplanning] = useState<ReplanningConfig>(NO_REPLANNING);
 
   const stream = useEpisodeStream();
 
@@ -90,7 +96,7 @@ export default function SimulatePage() {
         ...scenario,
         name: `${scenario.name}-${Date.now()}`,
       });
-      const simulation = await api.createSimulation(mapId, scenarioResource.id);
+      const simulation = await api.createSimulation(mapId, scenarioResource.id, replanning);
       const result = await api.runSimulation(simulation.id);
       setPlan(result.plan);
       if (result.result && result.result.trajectory.length > 0) {
@@ -180,6 +186,8 @@ export default function SimulatePage() {
           {busy ? t("simulate.running") : t("simulate.runSimulation")}
         </button>
       </div>
+
+      <ReplanningControls value={replanning} onChange={setReplanning} scope="simulation" />
 
       <div className="toolbar">
         <button onClick={stream.play} disabled={stream.frames.length === 0 || stream.playing}>

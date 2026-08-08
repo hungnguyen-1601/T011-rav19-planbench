@@ -33,6 +33,7 @@ from planbench_api.repositories import (
 from planbench_api.review import ReviewRequest, ReviewStatus
 from planbench_benchmark import BenchmarkReport, BenchmarkSpec, RunRecord
 from planbench_schemas.map import MapData
+from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
 from planbench_schemas.scenario import Scenario
 from planbench_simulator.nav_stack import StackRun
 
@@ -58,7 +59,12 @@ class ScenarioRepositoryPort(Protocol):
 @runtime_checkable
 class SimulationRepositoryPort(Protocol):
     def create(
-        self, map_id: str, scenario_id: str, algorithm: str, config: dict
+        self,
+        map_id: str,
+        scenario_id: str,
+        algorithm: str,
+        config: dict,
+        replanning: ReplanningConfig = NO_REPLANNING,
     ) -> StoredSimulation: ...
     def get(self, simulation_id: str) -> StoredSimulation: ...
     def list(self) -> list[StoredSimulation]: ...

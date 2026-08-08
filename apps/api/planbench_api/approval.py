@@ -41,15 +41,25 @@ from pydantic import BaseModel, ConfigDict
 class Role(StrEnum):
     """What an account is, for audit purposes.
 
-    ``OPERATOR`` and ``REVIEWER`` are retained so audit rows written
-    before the refactor still parse. Nothing assigns them any more —
-    see the module docstring.
+    Only ``MEMBER`` and ``ADMIN`` are ever written now. The rest are
+    retained so audit rows recorded by earlier versions still parse —
+    an audit trail that cannot be read is not an audit trail, and the
+    alternative (rewriting historical rows in a migration) would edit
+    the record of who did what.
+
+    ``ENGINEER`` and ``APPROVER`` are the oldest pair, from the original
+    role-based design; ``OPERATOR`` and ``REVIEWER`` came next. Nothing
+    assigns any of the four, and nothing branches on Role for
+    authorisation — see the module docstring. A stored role is a label
+    on a past event, never a permission.
     """
 
     MEMBER = "member"
     ADMIN = "admin"
     OPERATOR = "operator"
     REVIEWER = "reviewer"
+    ENGINEER = "engineer"
+    APPROVER = "approver"
 
 
 class Capability(StrEnum):

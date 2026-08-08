@@ -16,6 +16,7 @@ from planbench_schemas.geometry import (
     normalize_angle,
 )
 from planbench_schemas.map import CellState, MapData
+from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
 from planbench_schemas.robot import RobotConfig, RobotState, SimAction
 from planbench_schemas.scenario import (
     CircleObstacle,
@@ -27,6 +28,7 @@ from planbench_schemas.sensor import LidarConfig
 
 __all__ = [
     "EPS",
+    "NO_REPLANNING",
     "CellState",
     "CircleObstacle",
     "EpisodeEvent",
@@ -38,6 +40,7 @@ __all__ = [
     "Point2D",
     "Pose2D",
     "RectangleObstacle",
+    "ReplanningConfig",
     "RobotConfig",
     "RobotState",
     "Scenario",

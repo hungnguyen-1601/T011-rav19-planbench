@@ -1,0 +1,46 @@
+{
+  "protocol_version": "1.0.0",
+  "notes": "Evaluation-protocol metadata (P05). Deliberately separate from the scenario definitions: a split is a statement about how a scenario is used, not about what it contains, so editing this file must never change a scenario's conditions_checksum. Scenarios absent from this file are unassigned.",
+  "scenarios": {
+    "open_space": {
+      "split": "dev",
+      "notes": "Sanity baseline; tuning against it is expected."
+    },
+    "static_obstacles": {
+      "split": "dev",
+      "notes": null
+    },
+    "wide_corridor": {
+      "split": "dev",
+      "notes": null
+    },
+    "narrow_corridor": {
+      "split": "dev",
+      "notes": "Tight clearance, static geometry."
+    },
+    "doorway": {
+      "split": "dev",
+      "notes": "Precision alignment, static geometry."
+    },
+    "crossing_obstacle": {
+      "split": "dev",
+      "notes": "Single periodic pedestrian: dynamic avoidance is developed here."
+    },
+    "sudden_stop": {
+      "split": "dev",
+      "notes": "Emergency braking of one obstacle."
+    },
+    "bidirectional_corridor": {
+      "split": "holdout",
+      "notes": "Held out: oncoming traffic in a tight corridor requires yielding, a behaviour no dev scenario rewards."
+    },
+    "intersection": {
+      "split": "holdout",
+      "notes": "Held out: perpendicular crossing traffic at a junction, unlike any dev layout."
+    },
+    "dynamic_warehouse": {
+      "split": "holdout",
+      "notes": "Held out: several obstacles with mixed motion models at once, including a random walk."
+    }
+  }
+}
