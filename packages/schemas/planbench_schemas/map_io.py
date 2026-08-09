@@ -19,14 +19,28 @@ YAML fields read (ROS map_server's own names, not renamed):
   taken from ``map_server``'s own conversion.
 - ``occupied_thresh`` (default 0.65), ``free_thresh`` (default 0.196):
   occupancy-probability cutoffs, same defaults `map_server` ships with.
+- ``mode`` (default ``trinary``): how pixels between the two thresholds
+  are interpreted. Only ``trinary`` is supported; the others are
+  rejected rather than approximated — see :data:`SUPPORTED_MODES`.
 """
 
 from __future__ import annotations
 
+import numpy as np
 import yaml
 
 from planbench_schemas.geometry import Pose2D
 from planbench_schemas.map import CellState, MapData
+
+#: The ``mode`` values map_server defines. Only the default is
+#: implemented, and the other two are refused instead of being silently
+#: treated as trinary: under ``scale`` a mid-grey pixel is a *partially
+#: occupied* cell rather than an unknown one, so reading a scale map as
+#: trinary turns a corridor of light-grey clutter into open floor. The
+#: robot then plans straight through it and every candidate looks
+#: equally good on a map that does not exist.
+SUPPORTED_MODES = ("trinary",)
+KNOWN_MODES = ("trinary", "scale", "raw")
 
 
 class MapServerFormatError(ValueError):
@@ -66,9 +80,27 @@ def load_map_server(image_bytes: bytes, yaml_text: str, name: str) -> MapData:
             f"rotated map origins are not supported: origin theta = {origin_theta!r}, must be 0"
         )
 
+    mode = str(meta.get("mode", "trinary"))
+    if mode not in SUPPORTED_MODES:
+        known = f"{mode!r}" if mode in KNOWN_MODES else f"{mode!r} (not a map_server mode)"
+        raise MapServerFormatError(
+            f"unsupported map_server mode {known}; this loader implements "
+            f"{list(SUPPORTED_MODES)}. Reading it as trinary would reinterpret partially "
+            "occupied cells as open floor, which changes the map the robot plans on"
+        )
+
     negate = bool(int(meta.get("negate", 0)))
     occupied_thresh = float(meta.get("occupied_thresh", 0.65))
     free_thresh = float(meta.get("free_thresh", 0.196))
+    if free_thresh >= occupied_thresh:
+        # Ordered the other way round every pixel falls in the middle
+        # band and the whole map loads as UNKNOWN — which, with
+        # unknown_as_occupied, is a solid wall the planner reports as
+        # "no path" for every candidate alike.
+        raise MapServerFormatError(
+            f"free_thresh ({free_thresh}) must be below occupied_thresh ({occupied_thresh}); "
+            "with them reversed every pixel reads as unknown and the entire map is a wall"
+        )
 
     width, height, maxval, pixels = _parse_pgm(image_bytes)
     cells = _pixels_to_cells(pixels, width, height, negate, occupied_thresh, free_thresh, maxval)
@@ -112,15 +144,20 @@ def _pixels_to_cells(
 ) -> list[int]:
     """Convert PGM pixels (row 0 = image top) to MapData cells (row 0 =
     map origin, at the bottom) — the two disagree about which edge is
-    row 0, so this flips vertically while converting."""
-    cells = [0] * (width * height)
-    for pgm_row in range(height):
-        map_row = height - 1 - pgm_row
-        for col in range(width):
-            pixel = pixels[pgm_row * width + col]
-            cell = _pixel_to_cell(pixel, maxval, negate, occupied_thresh, free_thresh)
-            cells[map_row * width + col] = cell.value
-    return cells
+    row 0, so this flips vertically while converting.
+
+    Vectorised because real deployment maps are large: the contract's own
+    warehouse is 40 x 25 m at 0.05 m, i.e. 400 000 cells, and a Python
+    loop over that runs per map load. The arithmetic is exactly
+    :func:`_pixel_to_cell`, which stays as the readable statement of the
+    rule (and as what the tests pin).
+    """
+    values = np.asarray(pixels, dtype=np.float64).reshape(height, width)
+    occ = (values / maxval) if negate else ((maxval - values) / maxval)
+    cells = np.full((height, width), CellState.UNKNOWN.value, dtype=np.int16)
+    cells[occ > occupied_thresh] = CellState.OCCUPIED.value
+    cells[occ < free_thresh] = CellState.FREE.value
+    return [int(value) for value in np.flipud(cells).reshape(-1)]
 
 
 def _parse_pgm(data: bytes) -> tuple[int, int, int, list[int]]:
@@ -191,4 +228,4 @@ def _read_pgm_header_tokens(data: bytes, count: int) -> tuple[list[str], int]:
     return tokens, i + 1  # skip the single separator byte before pixel data
 
 
-__all__ = ["MapServerFormatError", "load_map_server"]
+__all__ = ["KNOWN_MODES", "SUPPORTED_MODES", "MapServerFormatError", "load_map_server"]
