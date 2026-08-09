@@ -7,6 +7,17 @@ is why it can be built and tested without running an episode
 (CONTRACTS §16, plan phase 3).
 """
 
+from planbench_decision.anchors import (
+    ANCHORABLE_METRICS,
+    DEFAULT_ANCHORS_PATH,
+    GATED_METRICS,
+    Anchor,
+    AnchorError,
+    AnchorSet,
+    ResolvedAnchors,
+    load_anchors,
+    u,
+)
 from planbench_decision.candidate import (
     CANDIDATE_ID_LENGTH,
     ArtifactResourceProfile,
@@ -31,7 +42,13 @@ from planbench_decision.pairing import (
 )
 
 __all__ = [
+    "ANCHORABLE_METRICS",
     "CANDIDATE_ID_LENGTH",
+    "DEFAULT_ANCHORS_PATH",
+    "GATED_METRICS",
+    "Anchor",
+    "AnchorError",
+    "AnchorSet",
     "ArtifactResourceProfile",
     "Candidate",
     "CandidateSchemaError",
@@ -40,13 +57,16 @@ __all__ = [
     "ExperimentScopeViolation",
     "PairingViolation",
     "PolicyComponent",
+    "ResolvedAnchors",
     "ResourceProfile",
     "SampleSetViolation",
     "StackComponent",
     "StructuralResourceProfile",
     "context_ids",
+    "load_anchors",
     "load_candidate",
     "require_sample_set",
     "require_shared_contexts",
+    "u",
     "validate_experiment_scope",
 ]

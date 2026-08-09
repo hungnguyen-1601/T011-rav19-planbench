@@ -1,6 +1,6 @@
 # CONTRACTS.md — Planner Selector
 
-> **Phiên bản hợp đồng:** `contracts_version: 2.0.0`
+> **Phiên bản hợp đồng:** `contracts_version: 2.0.1`
 > **Trạng thái:** cần cả nhóm đọc và ký ở mục 16. Phase 1 (schema gốc) đã hiện thực theo bản 1.1.0; bản 2.0.0 sửa G5 — xem lịch sử phiên bản ở mục 18.
 > **Vị trí:** `contracts/CONTRACTS.md` ở gốc repo (trước đây là `docs/antongduy/CONTRACTS_1.md`).
 > **Tài liệu mẹ:** `docs/antongduy/de-tai-moi-planner-selector.md`. Khi hai tài liệu mâu thuẫn, **CONTRACTS.md thắng** — plan là lý do, contract là luật.
@@ -60,12 +60,16 @@ Chỉ hai giá trị `type` được chấp nhận: `modular` | `monolithic`. `m
 ### 1.3. Định danh
 
 ```python
-candidate_id = sha256_short(canonical_json({
-    "type": type,
-    "stack": {...},              # planners/controller hoặc policy, kèm name+version
-    "params": params,            # đã sắp xếp khóa
-    "observation_requirements": sorted(observation_requirements),
-}))[:12]
+candidate_id = sha256_short(
+    canonical_json(
+        {
+            "type": type,
+            "stack": {...},  # planners/controller hoặc policy, kèm name+version
+            "params": params,  # đã sắp xếp khóa
+            "observation_requirements": sorted(observation_requirements),
+        }
+    )
+)[:12]
 ```
 
 Hai candidate khác nhau ở **bất kỳ tham số nào** là hai candidate độc lập. `A* + DWA(config_A)` và `A* + DWA(config_B)` được phép cùng vào chung kết.
@@ -209,12 +213,16 @@ Tên obstacle phải **duy nhất** trong một environment: tên được trộ
 ### 3.1. Định danh ngữ cảnh
 
 ```python
-episode_context_id = sha256_short(canonical_json({
-    "task_profile_id": ...,
-    "mission_id":      ...,
-    "environment_variant": ...,   # "nominal" hoặc id biến thể neighborhood
-    "seed":            int,
-}))[:12]
+episode_context_id = sha256_short(
+    canonical_json(
+        {
+            "task_profile_id": ...,
+            "mission_id": ...,
+            "environment_variant": ...,  # "nominal" hoặc id biến thể neighborhood
+            "seed": int,
+        }
+    )
+)[:12]
 ```
 
 ### 3.2. Luật ghép cặp — **không được vi phạm trong bất kỳ hoàn cảnh nào**
@@ -224,8 +232,8 @@ episode_context_id = sha256_short(canonical_json({
 Batch Runner sinh danh sách context **trước**, rồi lặp candidate bên trong context — không phải ngược lại:
 
 ```python
-for ctx in contexts:              # vòng ngoài
-    for cand in candidates:       # vòng trong
+for ctx in contexts:  # vòng ngoài
+    for cand in candidates:  # vòng trong
         run(cand, ctx)
 ```
 
@@ -251,21 +259,27 @@ Không thành phần nào được import trực tiếp thành phần khác ngo�
 ```python
 from typing import Protocol
 
+
 class SimBackend(Protocol):
     def reset(self, ctx: EpisodeContext) -> Observation: ...
     def step(self, cmd: Twist, dt: float) -> tuple[Observation, StepInfo]: ...
     def get_costmap(self) -> Costmap2D: ...
 
+
 class GlobalPlanner(Protocol):
     def plan(self, start: Pose2D, goal: Pose2D, costmap: Costmap2D) -> Path: ...
+
 
 class LocalController(Protocol):
     def compute_velocity(self, pose: Pose2D, path: Path, obs: Observation) -> Twist: ...
 
+
 class MonolithicPolicy(Protocol):
     """Adapter cho candidate type=monolithic. Runner gọi đúng interface này
     thay cho cặp GlobalPlanner + LocalController."""
+
     def act(self, pose: Pose2D, goal: Pose2D, obs: Observation) -> Twist: ...
+
 
 class TraceRecorder(Protocol):
     def record(self, t: float, state: RobotState, event: Event | None) -> None: ...
@@ -359,7 +373,7 @@ Từ vựng chỉ gồm **perception runtime mà deployment phải sở hữu**:
 ### 7.1. G2 — số lần chạy tối thiểu
 
 ```python
-N_min = ceil(3 / constraints.collision_probability_max)   # 0.01 ⇒ 300
+N_min = ceil(3 / constraints.collision_probability_max)  # 0.01 ⇒ 300
 ```
 
 Báo cáo bắt buộc kèm: `"0 va chạm quan sát trong {N} lần chạy; cận trên 95% dưới phân phối kịch bản đã mô phỏng: {3/N:.1%}"`. Chuỗi "an toàn" **bị cấm** xuất hiện cạnh kết quả G2 (có test kiểm tra chuỗi này trong CI).
@@ -393,9 +407,9 @@ G4 hai pha vì **tốc độ** máy khác nhau. G5 hai pha vì **ngôn ngữ và
 ```python
 # kind: structural
 memory_estimate_mb = (
-      peak_search_nodes * bytes_per_search_node
-    + peak_tree_nodes   * bytes_per_tree_node
-    + costmap_cells     * bytes_per_costmap_cell * costmap_layers
+    peak_search_nodes * bytes_per_search_node
+    + peak_tree_nodes * bytes_per_tree_node
+    + costmap_cells * bytes_per_costmap_cell * costmap_layers
 ) / 1_048_576 + fixed_overhead_mb
 
 # kind: artifact
@@ -452,7 +466,7 @@ metric_anchors:
   success_rate:      {good: 1.00, bad: "${constraints.success_rate_min}"}
   path_efficiency:   {good: 1.00, bad: 0.65}
   time_efficiency:   {good: 1.00, bad: 0.35}
-  min_clearance_m:   {good: "${robot.radius * 2.0}", bad: "${robot.radius * 1.05}"}
+  min_clearance:     {good: "${robot.radius * 2.0}", bad: "${robot.radius * 1.05}"}
   near_miss_rate:    {good: 0.0,  bad: 0.5}
   p99_latency_ms:    {good: "${robot.control_period * 200}", bad: "${robot.control_period * 1000}"}
   memory_estimate_mb: {good: "${hardware.available_ram_mb * 0.25}", bad: "${hardware.available_ram_mb}"}
@@ -474,7 +488,7 @@ metric_anchors:
 
 ```python
 U_R = u(success)                                             # theo episode: 0 hoặc 1 → u()
-U_S = 0.5*u(near_miss_rate) + 0.5*u(min_clearance_m)
+U_S = 0.5*u(near_miss_rate) + 0.5*u(min_clearance)
 U_E = 0.5*u(path_efficiency) + 0.5*u(time_efficiency)
 U_C = β1*u(p99_latency_ms) + β2*u(memory_estimate_mb)
     + β3*u(cpu_time_per_mission_s) + β4*u(engineering_cost)   # Σβ = 1
@@ -556,9 +570,9 @@ Mặc định `ε_j = 0.02` cho cả bốn objective.
 ### 11.2. Bootstrap ghép cặp
 
 ```python
-deltas = [U_A[ctx] - U_B[ctx] for ctx in shared_contexts]   # bắt buộc cùng tập context
-boot   = [mean(resample_with_replacement(deltas)) for _ in range(1000)]
-ci     = (percentile(boot, 2.5), percentile(boot, 97.5))
+deltas = [U_A[ctx] - U_B[ctx] for ctx in shared_contexts]  # bắt buộc cùng tập context
+boot = [mean(resample_with_replacement(deltas)) for _ in range(1000)]
+ci = (percentile(boot, 2.5), percentile(boot, 97.5))
 ```
 
 Lấy mẫu lại **theo episode context**, không theo từng metric rời.
@@ -599,7 +613,7 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
 
 ```json
 {
-  "contracts_version": "2.0.0",
+  "contracts_version": "2.0.1",
   "recommendation_scope": "MISSION_LEVEL | DEPLOYMENT_LEVEL | ROBUST_DEPLOYMENT_LEVEL",
   "experiment_scope": "full_stack_selection",
   "decision_mode": "technical | business_adjusted",
@@ -651,7 +665,7 @@ Mọi lần ra quyết định ghi một `manifest.json`:
 
 ```json
 {
-  "contracts_version": "2.0.0",
+  "contracts_version": "2.0.1",
   "git_sha": "...",
   "docker_image_digest": "sha256:...",
   "task_profile_id": "warehouse_a_v1",
@@ -785,6 +799,7 @@ Hai định danh frozen của contract (`candidate_id`, `episode_context_id`) d�
 | 1.0.0 | 2026-08-08 | — | Bản đầu, viết cùng `de-tai-moi-planner-selector.md`. |
 | 1.1.0 | 2026-08-09 | MINOR | Bốn thay đổi, chi tiết dưới đây. |
 | 2.0.0 | 2026-08-09 | **MAJOR** | Sửa G5: bỏ `peak_rss_mb ≤ available_ram_mb`, thay bằng `memory_estimate_mb`. Chi tiết dưới đây. |
+| 2.0.1 | 2026-08-09 | PATCH | HĐ-8.2 và HĐ-9.1 gọi metric clearance là `min_clearance_m`, HĐ-6 gọi là `min_clearance`. Đổi hai chỗ đầu theo HĐ-6 — anchor key tra theo đúng tên metric, nên hai tên là một anchor không bao giờ khớp và một metric âm thầm không có thang. Phát hiện khi hiện thực 3.1. |
 
 **Chi tiết 2.0.0** — làm ngay trước Phase 2.1 (TraceRecorder), tức trước khi tồn tại một file trace nào.
 

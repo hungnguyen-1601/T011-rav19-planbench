@@ -1,0 +1,45 @@
+# Absolute anchors for metric normalisation (CONTRACTS HĐ-8).
+#
+# u(m) = clip((m - bad) / (good - bad), 0, 1)
+#
+# `good` and `bad` are the values that score 1 and 0. Their order encodes
+# the direction, so a metric where less is better needs no special case.
+#
+# The anchors are EXOGENOUS: they come from the physics of the problem or
+# from the deployment's own constraints, never from the set of candidates
+# being compared. Min-max over the candidate set is banned (§17 ban 3)
+# because adding one bad candidate would then re-rank the others.
+#
+# `${...}` resolves against the task profile at load time. Every metric
+# that has a feasibility gate MUST anchor its `bad` to that gate's
+# threshold by reference, never to a literal — otherwise this file and the
+# deployment's constraints drift apart silently, and a candidate is scored
+# for clearing a bar nobody set (HĐ-8.3 law 2).
+#
+# This file is versioned, and `anchor_config_version` is mandatory in
+# every manifest (HĐ-13): a recommendation computed under other anchors is
+# a different recommendation.
+
+metric_anchors:
+  version: v1.0
+
+  # Reliability — gated by G3, so `bad` is the deployment's own minimum.
+  success_rate: {good: 1.00, bad: "${constraints.success_rate_min}"}
+
+  # Efficiency — anchored to the physics of the task. 0.65 and 0.35 are
+  # the contract's declared "this is a bad route / a bad drive" points,
+  # not measurements of anybody's planner.
+  path_efficiency: {good: 1.00, bad: 0.65}
+  time_efficiency: {good: 1.00, bad: 0.35}
+
+  # Safety — anchored to robot geometry: two radii of room is good, a 5%
+  # margin over the radius is as bad as it gets before it is a collision.
+  min_clearance: {good: "${robot.radius * 2.0}", bad: "${robot.radius * 1.05}"}
+  near_miss_rate: {good: 0.0, bad: 0.5}
+
+  # Cost — latency and memory are gated (G4, G5), so both `bad` values are
+  # references to the deployment's own budget.
+  p99_latency_ms: {good: "${robot.control_period * 200}", bad: "${robot.control_period * 1000}"}
+  memory_estimate_mb: {good: "${hardware.available_ram_mb * 0.25}", bad: "${hardware.available_ram_mb}"}
+  cpu_time_per_mission_s: {good: 0.5, bad: 10.0}
+  tuning_wall_clock_h: {good: 0.0, bad: 40.0}
