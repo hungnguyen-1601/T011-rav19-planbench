@@ -34,7 +34,7 @@ from planbench_benchmark.registry import (
     build_local_planner,
     validate_algorithm_config,
 )
-from planbench_decision.candidate import Candidate, StackComponent
+from planbench_decision.candidate import Candidate, StackComponent, StructuralResourceProfile
 from planbench_planning.common.base import GlobalPlanner
 from planbench_planning.common.local_base import LocalPlanner
 from planbench_schemas.observations import ObservationToken
@@ -103,12 +103,32 @@ def _reject_unknown_params(
         )
 
 
+#: Byte sizes of the *target* implementation's data structures (HĐ-1.5),
+#: not of the Python objects this simulator allocates. The figures are
+#: the contract's worked example for a C++/ROS2 navigation stack: a
+#: search node holding (index, g, f, parent) packs into 40 bytes, a
+#: costmap cell is one byte per layer, and 8 MB covers the fixed
+#: allocations of the process. They are a project-wide declaration
+#: because every registry stack targets the same implementation; a
+#: candidate that does not can pass its own profile.
+DEFAULT_STRUCTURAL_PROFILE = StructuralResourceProfile(
+    kind="structural",
+    target_implementation="cpp_ros2",
+    bytes_per_search_node=40,
+    bytes_per_tree_node=40,
+    bytes_per_costmap_cell=1,
+    costmap_layers=3,
+    fixed_overhead_mb=8.0,
+)
+
+
 def candidate_from_stack(
     stack_id: str,
     *,
     params: dict[str, Any] | None = None,
     global_version: str = "v1",
     local_version: str = "v1",
+    resource_profile: StructuralResourceProfile | None = None,
 ) -> Candidate:
     """Build the candidate for a registry stack and one parameter set.
 
@@ -157,6 +177,7 @@ def candidate_from_stack(
         local_controller=StackComponent(name=local_name, version=local_version),
         params={local_name: validated.model_dump(mode="json")},
         observation_requirements=observation_requirements_for(info),
+        resource_profile=resource_profile or DEFAULT_STRUCTURAL_PROFILE,
     )
 
 

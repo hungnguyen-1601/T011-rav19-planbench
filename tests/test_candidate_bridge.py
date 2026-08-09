@@ -109,6 +109,11 @@ class TestBuildPlanners:
             type="monolithic",
             policy={"name": "ppo_navigation", "checkpoint": "c1"},  # type: ignore[arg-type]
             observation_requirements=("lidar_2d",),
+            resource_profile={  # type: ignore[arg-type]
+                "kind": "artifact",
+                "model_artifact_mb": 340.0,
+                "runtime_footprint_mb": 2100.0,
+            },
         )
         with pytest.raises(NotBenchmarkableError, match="MonolithicPolicy"):
             build_planners(mono, episode_seed=0)

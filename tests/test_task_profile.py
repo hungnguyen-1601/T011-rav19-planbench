@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
-from task_profile_fakes import TRAFFIC, constraints, environment, make_profile, three_missions
+from task_profile_fakes import (
+    TRAFFIC,
+    constraints,
+    environment,
+    hardware,
+    make_profile,
+    three_missions,
+)
 
 from planbench_schemas.task_profile import (
     HardwareSpec,
@@ -235,4 +242,37 @@ class TestSubSchemas:
 
     def test_hardware_bounds(self) -> None:
         with pytest.raises(ValidationError):
-            HardwareSpec(target_device="jetson", available_ram_mb=0)
+            HardwareSpec.model_validate(hardware(available_ram_mb=0))
+
+
+class TestRamBudget:
+    """HĐ-2.4: ``available_ram_mb`` is an allocation decision and must be
+    explained, because G5 compares every candidate against it."""
+
+    def test_contract_budget_adds_up(self) -> None:
+        spec = HardwareSpec.model_validate(hardware())
+        assert spec.total_ram_mb - spec.ram_budget_breakdown.total_mb == spec.available_ram_mb
+
+    def test_breakdown_is_required(self) -> None:
+        payload = {k: v for k, v in hardware().items() if k != "ram_budget_breakdown"}
+        with pytest.raises(ValidationError):
+            HardwareSpec.model_validate(payload)
+
+    def test_budget_that_does_not_add_up_is_refused(self) -> None:
+        """The failure this rule exists for: perception grows, nobody
+        edits the line that says what is left, and G5 keeps judging
+        against a budget the board no longer has."""
+        with pytest.raises(ValidationError, match="does not add up"):
+            HardwareSpec.model_validate(hardware(available_ram_mb=6000))
+
+    def test_rounding_slack_is_tolerated(self) -> None:
+        """Within 1% of total: a hand-written budget in round megabytes."""
+        HardwareSpec.model_validate(hardware(available_ram_mb=3277 - 40))
+
+    def test_unknown_breakdown_item_refused(self) -> None:
+        """A typo would silently drop a claimant and inflate what
+        navigation appears to be allowed."""
+        breakdown = dict(hardware()["ram_budget_breakdown"])  # type: ignore[arg-type]
+        breakdown["perceptionstack_mb"] = breakdown.pop("perception_stack_mb")
+        with pytest.raises(ValidationError):
+            HardwareSpec.model_validate(hardware(ram_budget_breakdown=breakdown))

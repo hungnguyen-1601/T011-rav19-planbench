@@ -178,7 +178,7 @@ u(m) = clip( (m_bad − m) / (m_bad − m_good), 0, 1 )
 | Near-miss rate | 0 | 0,5 lần/mét | Ngưỡng cảnh báo khai báo |
 | Success rate | 1,00 | **= `success_rate_min`** (ngưỡng cổng G3) | Ràng buộc vận hành, không phải hằng số |
 
-**Anchor của một metric có cổng phải neo vào chính ngưỡng cổng đó, không phải một hằng số trong file anchor.** Nếu `metric_anchors.yaml` ghi cứng `success_rate.bad = 0,90` trong khi khách hàng khai `success_rate_min = 0,95`, thì nguyên tắc "điểm chấm trên phần dôi" (N4) bị phá: candidate đạt 0,96 được chấm như vượt ngưỡng 0,90 chứ không phải vượt ngưỡng thật của họ. File anchor và ràng buộc deployment sẽ trôi khỏi nhau mà không ai thấy. Quy định: với `success_rate`, `p99_latency`, `peak_RAM` và mọi metric có cổng, trường `bad` **phải** là tham chiếu `${constraints.<tên>}`, không được là số.
+**Anchor của một metric có cổng phải neo vào chính ngưỡng cổng đó, không phải một hằng số trong file anchor.** Nếu `metric_anchors.yaml` ghi cứng `success_rate.bad = 0,90` trong khi khách hàng khai `success_rate_min = 0,95`, thì nguyên tắc "điểm chấm trên phần dôi" (N4) bị phá: candidate đạt 0,96 được chấm như vượt ngưỡng 0,90 chứ không phải vượt ngưỡng thật của họ. File anchor và ràng buộc deployment sẽ trôi khỏi nhau mà không ai thấy. Quy định: với `success_rate`, `p99_latency`, `memory_estimate` và mọi metric có cổng, trường `bad` **phải** là tham chiếu `${constraints.<tên>}`, không được là số.
 
 **Anchor cũng là một giả định, nên phải được đối xử như giả định:**
 - File `metric_anchors.yaml` có trường `version`, và `anchor_config_version` **bắt buộc nằm trong manifest** — nếu không, khuyến nghị không tái lập được.
@@ -260,7 +260,7 @@ Không bao giờ bật cả hai. Đại lượng vật lý xuất hiện ở đ�
 | G2 | **An toàn quan sát được** | `collision_quan_sát = 0` **AND** `N_runs ≥ N_min` | Mức rủi ro chấp nhận (xem dưới) |
 | G3 | Độ tin cậy | `success_rate ≥ success_rate_min` | Constraint |
 | G4 | Thời gian thực | `p99(control_latency) ≤ T_cycle` | Hardware spec |
-| G5 | Bộ nhớ | `peak_RAM ≤ RAM_khả_dụng` | Hardware spec |
+| G5 | Bộ nhớ | `memory_estimate ≤ RAM_khả_dụng` | Hardware spec + khai báo tài nguyên của candidate |
 | G6 | **Tương thích quan sát** | `observation_requirements` của candidate ⊆ `available_observations` của deployment, HOẶC người dùng cho phép bổ sung kèm chi phí | Hardware spec |
 
 > **Vì sao G4 dùng p99 chứ không dùng trung bình:** robot chạy 20 Hz, mỗi bước có 50 ms. Trung bình 10 ms nhưng p99 = 200 ms nghĩa là cứ 100 bước lại có 1 bước robot đi mù trong 200 ms — đủ để đâm vào người. **Trung bình che giấu đúng cái rủi ro cần thấy.**
@@ -289,7 +289,10 @@ realtime_gate:
 
 - `screened_on_host` ⇒ Decision Card in **"G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"**. Không được phát biểu candidate đạt thời gian thực.
 - Chi phí của P2 rất nhỏ vì chỉ áp cho 2–3 candidate chung kết, mỗi cái ~20 episode — vài phút trên một con Jetson. **Đo thật rẻ hơn nhiều so với việc bảo vệ một hệ số quy đổi bịa.**
-- `peak_RAM` ít phụ thuộc kiến trúc hơn nhiều so với tốc độ CPU, nên sàng lọc trên host là dự báo tương đối tốt — nhưng vẫn phải xác nhận ở P2 cùng lúc, vì cùng một lần chạy.
+- **G5 cũng hai pha, nhưng vì lý do khác G4.** G4 hai pha vì tốc độ máy khác nhau; G5 hai pha vì **ngôn ngữ và runtime** khác nhau — sim viết bằng Python, robot chạy C++/ROS2. RSS của tiến trình Python gồm interpreter, numpy và bản thân simulator, và một object Python nặng gấp 5–20 lần struct C++ tương đương (node A\*: ~200 byte so với ~40 byte). Đem RSS so với ngân sách RAM bo mạch là phép so sai cả một bậc, sai theo chiều không đoán trước được.
+  Điều may mắn: với planner cổ điển, thứ quyết định bộ nhớ là **số lượng cấu trúc dữ liệu** — đó là hành vi thuật toán, sim đếm chính xác bất kể ngôn ngữ. Sàng lọc dùng `memory_estimate = peak_nodes × bytes_per_node(theo hiện thực đích) + costmap_cells × bytes_per_cell × layers + overhead`. Với bản đồ 40×25 m ở 0,05 m (400.000 ô): A\* worst case ~16 MB, RRT\* 5.000 mẫu ~1 MB, DWA ~0,6 MB, costmap 3 layer ~1,2 MB.
+  Ứng viên học máy thì ngược lại — bộ nhớ do trọng số mô hình cộng runtime quyết định, **sim không mô phỏng được** nhưng **biết trước được**: khai lúc đăng ký candidate rồi xác nhận một lần trên bo mạch đích cùng lượt với P2 của G4.
+  `peak_RSS` đo trong sim xuống vai chẩn đoán: dùng để phát hiện rò rỉ bộ nhớ và so tương đối giữa các candidate, không bao giờ đem so với ngân sách.
 - Điều kiện tiên quyết chung: **mọi candidate chạy trên cùng một máy, cùng một Docker image, cùng mức cấp phát CPU và cùng số luồng** — nếu không thì cả phép so tương đối cũng vô nghĩa.
 
 **Cách phát biểu G2 — chỗ dễ tự lừa mình nhất.** Quan sát 0 va chạm trong N lần chạy **không** chứng minh xác suất va chạm bằng 0. Theo **quy tắc số 3**, cận trên 95% của xác suất thật ≈ `3/N`:
@@ -518,7 +521,8 @@ Sáu cổng G1–G6 đã đặc tả ở N4. Nhắc lại điểm mấu chốt: 
 | | `time_efficiency = T_ideal / T` | Score | `T_ideal = L_ref / v_max` |
 | | `smoothness Σ(Δθ)²`, `jerk`, `stop_and_go` | Diagnostic (pha 2 mới vào Score) | Tương quan mạnh với E; vào Score sớm là tính hai lần |
 | **C — Cost** | `p99_latency` | Gate G4 + Score trên phần dôi | |
-| | `peak_RAM` | Gate G5 + Score trên phần dôi | **Hàm bậc thang**, không nội suy tuyến tính |
+| | `memory_estimate` | Gate G5 + Score trên phần dôi | Ước lượng cấu trúc (planner cổ điển) hoặc khai báo artifact (RL). **Hàm bậc thang**, không nội suy tuyến tính |
+| | `peak_RSS` của tiến trình sim | Diagnostic | Phát hiện rò rỉ, so tương đối. **Không bao giờ** đem so với RAM bo mạch |
 | | `cpu_time_per_mission` | Score | |
 | | `tuning_trials_used`, `tuning_wall_clock_h`, `n_tunable_params` | Score (chi phí kỹ thuật, khấu hao theo horizon) | |
 | | `observation_requirements` | Gate G6 + Score nếu người dùng khai chi phí bổ sung | |
@@ -527,7 +531,7 @@ Sáu cổng G1–G6 đã đặc tả ở N4. Nhắc lại điểm mấu chốt: 
 
 > **Giải thích "smoothness" bằng ví dụ:** hai xe đi cùng quãng đường, cùng thời gian. Xe A đi đường cong đều, xe B đi zig-zag giật cục. Quãng đường như nhau, nhưng xe B làm bạn say xe, hao pin hơn, mòn bánh hơn. Smoothness là đại lượng phân biệt A với B. Nó **không** vào Score ở MVP vì nó tương quan mạnh với hiệu quả di chuyển vốn đã được chấm.
 
-> **`peak_RAM` là hàm bậc thang, không phải biến liên tục.** Vượt 2 GB thì phải đổi Jetson Orin Nano lên Orin NX — chênh tiền thật × số robot trong đội. Cost Model phải mô hình hóa bước nhảy này. Đây là một trong ít chỗ mà chi phí khai báo có ground truth rất chắc (bảng giá công khai).
+> **`memory_estimate` là hàm bậc thang, không phải biến liên tục.** Vượt 2 GB thì phải đổi Jetson Orin Nano lên Orin NX — chênh tiền thật × số robot trong đội. Cost Model phải mô hình hóa bước nhảy này. Đây là một trong ít chỗ mà chi phí khai báo có ground truth rất chắc (bảng giá công khai).
 
 ### Tầng 2 — Chỉ số về độ tin cậy của chính kết luận (không vào điểm, bắt buộc hiển thị)
 
@@ -587,10 +591,10 @@ Bước 8 — ROBUSTNESS: chạy lại trên K biến thể neighborhood        
 
 | | G1 đường | G2 va chạm | G3 success ≥ 95% | G4 p99 ≤ 50 ms | G5 RAM ≤ 2 GB | G6 quan sát | Kết quả |
 |---|---|---|---|---|---|---|---|
-| K1 | ✅ 0% | ✅ 0/300 (UCB 1,0%) | ✅ 96,7% | ✅ 21 ms | ✅ 340 MB | ✅ lidar | **Qua** |
-| K2 | ✅ 0% | ✅ 0/300 (UCB 1,0%) | ✅ 99,3% | ✅ 23 ms | ✅ 350 MB | ✅ lidar | **Qua** |
-| K3 | ✅ 0% | ✅ 0/300 | ✅ 96,0% | ❌ **68 ms** (replan khi gặp vật cản động) | ✅ 410 MB | ✅ lidar | ❌ Loại G4 |
-| K4 | ✅ 0% | ❌ **5/300 va chạm** | ✅ 96,2% | ✅ 9 ms | ❌ **2,4 GB** | ✅ lidar | ❌ Loại G2 + G5 |
+| K1 | ✅ 0% | ✅ 0/300 (UCB 1,0%) | ✅ 96,7% | ✅ 21 ms | ✅ ~19 MB (ước lượng cấu trúc) | ✅ lidar | **Qua** |
+| K2 | ✅ 0% | ✅ 0/300 (UCB 1,0%) | ✅ 99,3% | ✅ 23 ms | ✅ ~19 MB (ước lượng cấu trúc) | ✅ lidar | **Qua** |
+| K3 | ✅ 0% | ✅ 0/300 | ✅ 96,0% | ❌ **68 ms** (replan khi gặp vật cản động) | ✅ ~4 MB | ✅ lidar | ❌ Loại G4 |
+| K4 | ✅ 0% | ❌ **5/300 va chạm** | ✅ 96,2% | ✅ 9 ms | ❌ **2,4 GB** (340 MB trọng số + ~2,1 GB runtime, khai báo) | ✅ lidar | ❌ Loại G2 + G5 |
 
 > **Trạng thái cổng thời gian thực trong ví dụ này là `screened_on_host`.** K3 bị loại hợp lệ dù đo trên laptop, vì laptop nhanh hơn Jetson — trượt ở đây thì chắc chắn trượt ở đó. Ngược lại, K1 và K2 **chưa** được phép tuyên bố đạt 20 Hz trên bo mạch đích: hai ứng viên này đi tiếp tới pha xác nhận, chạy ~20 episode trực tiếp trên Jetson trước khi Decision Card đổi nhãn thành `verified_on_target`.
 >

@@ -84,6 +84,11 @@ numpy==2.5.1
 # exception, nó chỉ trả một con số trông hợp lý và sai. Độ tin cậy của
 # benchmark đáng giá hơn việc bớt một dependency.
 scipy==1.18.0
+# Trace files (CONTRACTS HĐ-5): mỗi episode ghi đúng một file Parquet, và
+# đó là nguồn dữ liệu DUY NHẤT của Metrics Engine. Không phải optional:
+# thiếu nó thì không episode nào ghi được bằng chứng, và mọi con số trên
+# Decision Card mất nguồn gốc.
+pyarrow==25.0.0
 
 # ---------- Lưu trữ ----------
 # SQLite có sẵn trong Python, không cần driver. PostgreSQL cần psycopg —

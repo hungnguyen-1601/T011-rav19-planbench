@@ -31,6 +31,22 @@ TRAFFIC: list[dict[str, object]] = [
     }
 ]
 
+#: The contract's own board budget (HĐ-2.4): 8 GB Jetson with the OS,
+#: perception, localisation and logging already claimed, leaving 3277 MB
+#: for navigation. Kept as one block so a test that needs a different
+#: budget states which line it is changing.
+HARDWARE: dict[str, object] = {
+    "target_device": "jetson_orin_nano",
+    "total_ram_mb": 8192,
+    "ram_budget_breakdown": {
+        "os_and_middleware_mb": 1536,
+        "perception_stack_mb": 2048,
+        "localization_mapping_mb": 819,
+        "logging_and_reserve_mb": 512,
+    },
+    "available_ram_mb": 3277,
+}
+
 CONSTRAINTS: dict[str, object] = {
     "success_rate_min": 0.95,
     "collision_probability_max": 0.01,
@@ -64,7 +80,7 @@ def make_profile(**overrides: object) -> TaskProfile:
         },
         "available_observations": ["lidar_2d"],
         "constraints": dict(CONSTRAINTS),
-        "hardware": {"target_device": "jetson_orin_nano", "available_ram_mb": 2048},
+        "hardware": hardware(),
     }
     payload.update(overrides)
     return TaskProfile.model_validate(payload)
@@ -83,6 +99,13 @@ def three_missions() -> list[dict[str, object]]:
 def constraints(**overrides: object) -> dict[str, object]:
     """Constraint block with fields replaced, for gate-threshold tests."""
     return {**CONSTRAINTS, **overrides}
+
+
+def hardware(**overrides: object) -> dict[str, object]:
+    """Hardware block with fields replaced, for G4/G5 threshold tests."""
+    payload = {**HARDWARE, "ram_budget_breakdown": dict(HARDWARE["ram_budget_breakdown"])}  # type: ignore[arg-type]
+    payload.update(overrides)
+    return payload
 
 
 def environment(**overrides: object) -> dict[str, object]:

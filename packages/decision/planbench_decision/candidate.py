@@ -31,7 +31,7 @@ noise by exactly the person who needs to stop.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
@@ -79,6 +79,56 @@ class StackComponent(BaseModel):
     version: str = Field(default="v1", min_length=1)
 
 
+class StructuralResourceProfile(BaseModel):
+    """Memory declared as *counts × sizes* — the classical-planner case.
+
+    What decides a classical planner's memory is how many nodes and cells
+    it holds, and that is algorithm behaviour: the simulator counts it
+    exactly, in any language. The per-item sizes are declared for the
+    *target* implementation (C++/ROS2), never for Python — which is the
+    whole reason this profile exists instead of measuring RSS (HĐ-7.3).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["structural"]
+    target_implementation: str = Field(
+        min_length=1,
+        description="Implementation the byte sizes describe, e.g. cpp_ros2.",
+    )
+    bytes_per_search_node: int = Field(gt=0)
+    bytes_per_tree_node: int = Field(gt=0)
+    bytes_per_costmap_cell: int = Field(gt=0)
+    costmap_layers: int = Field(gt=0)
+    fixed_overhead_mb: float = Field(ge=0)
+
+
+class ArtifactResourceProfile(BaseModel):
+    """Memory declared as *weights + runtime* — the learned-policy case.
+
+    A simulator cannot count this: the footprint is the checkpoint plus
+    whatever the inference runtime allocates. It is, however, knowable in
+    advance, so the author declares it at registration. ``source`` keeps
+    the epistemic status attached to the number — with ``declared`` the
+    G5 result may only *reject*, never certify (HĐ-7.3).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["artifact"]
+    model_artifact_mb: float = Field(gt=0)
+    runtime_footprint_mb: float = Field(gt=0)
+    source: Literal["declared", "measured_on_target"] = "declared"
+
+
+#: HĐ-1.5. Tagged by ``kind`` so a malformed profile fails at parse with
+#: the field named, rather than matching the other shape by accident.
+ResourceProfile = Annotated[
+    StructuralResourceProfile | ArtifactResourceProfile,
+    Field(discriminator="kind"),
+]
+
+
 class PolicyComponent(BaseModel):
     """The single layer of a monolithic candidate (RL end-to-end)."""
 
@@ -112,6 +162,7 @@ class Candidate(BaseModel):
     policy: PolicyComponent | None = None
     params: dict[str, Any] = Field(default_factory=dict)
     observation_requirements: tuple[ObservationToken, ...] = ()
+    resource_profile: ResourceProfile
 
     @model_validator(mode="before")
     @classmethod
@@ -157,6 +208,12 @@ class Candidate(BaseModel):
                 )
             if self.policy is None:
                 raise CandidateSchemaError("monolithic candidate requires a policy")
+            if self.resource_profile.kind != "artifact":
+                raise CandidateSchemaError(
+                    "monolithic candidate needs resource_profile.kind='artifact': its "
+                    "memory is model weights plus an inference runtime, which the "
+                    "simulator cannot count from data-structure sizes (HĐ-7.3)"
+                )
         else:
             if self.policy is not None:
                 raise CandidateSchemaError(
@@ -173,6 +230,12 @@ class Candidate(BaseModel):
             ]
             if missing:
                 raise CandidateSchemaError(f"modular candidate requires {missing}")
+            if self.resource_profile.kind != "structural":
+                raise CandidateSchemaError(
+                    "modular candidate needs resource_profile.kind='structural': the "
+                    "simulator counts its nodes and cells exactly, so declaring a "
+                    "footprint instead would skip a measurement that exists (HĐ-7.3)"
+                )
             self._validate_modular_params()
         return self
 
@@ -201,7 +264,12 @@ class Candidate(BaseModel):
 
         Included: type, stack (names and versions), parameters,
         observation requirements. Excluded: the author-supplied ``id``
-        itself, which would make the hash self-referential.
+        itself, which would make the hash self-referential, and
+        ``resource_profile`` — restating ``bytes_per_search_node`` for a
+        different target implementation changes no robot behaviour, and
+        hashing it would split one candidate that already ran 300
+        episodes into two orphans over a memory-accounting edit
+        (HĐ-1.5).
         """
         return sha256_short(
             canonical_json(

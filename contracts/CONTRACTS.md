@@ -1,7 +1,7 @@
 # CONTRACTS.md — Planner Selector
 
-> **Phiên bản hợp đồng:** `contracts_version: 1.1.0`
-> **Trạng thái:** cần cả nhóm đọc và ký ở mục 16. Phase 1 (schema gốc) đã hiện thực theo bản này; xem lịch sử phiên bản ở mục 18.
+> **Phiên bản hợp đồng:** `contracts_version: 2.0.0`
+> **Trạng thái:** cần cả nhóm đọc và ký ở mục 16. Phase 1 (schema gốc) đã hiện thực theo bản 1.1.0; bản 2.0.0 sửa G5 — xem lịch sử phiên bản ở mục 18.
 > **Vị trí:** `contracts/CONTRACTS.md` ở gốc repo (trước đây là `docs/antongduy/CONTRACTS_1.md`).
 > **Tài liệu mẹ:** `docs/antongduy/de-tai-moi-planner-selector.md`. Khi hai tài liệu mâu thuẫn, **CONTRACTS.md thắng** — plan là lý do, contract là luật.
 
@@ -82,6 +82,33 @@ Mọi lần chạy phải khai một trong ba giá trị, và giá trị này **
 
 **Vi phạm trông như thế nào:** khai `global_planner_selection` mà hai candidate có `params.dwa` khác nhau. Batch Runner phải kiểm tra điều này và **fail ngay khi khởi động**, không phải cảnh báo.
 
+### 1.5. Khai báo tài nguyên (bắt buộc, phục vụ G5)
+
+*(Thêm ở 2.0.0.)* Bộ nhớ của hai loại candidate bị chi phối bởi hai thứ khác nhau, nên khai theo hai cách khác nhau:
+
+```yaml
+# modular — bộ nhớ do SỐ LƯỢNG cấu trúc dữ liệu quyết định, sim đếm được chính xác
+resource_profile:
+  kind: structural
+  target_implementation: cpp_ros2          # hiện thực sẽ chạy trên robot
+  bytes_per_search_node: 40                # khai theo struct của hiện thực đích
+  bytes_per_tree_node: 40
+  bytes_per_costmap_cell: 1
+  costmap_layers: 3
+  fixed_overhead_mb: 8
+
+# monolithic — bộ nhớ do TRỌNG SỐ MÔ HÌNH + runtime quyết định, sim không đo được
+resource_profile:
+  kind: artifact
+  model_artifact_mb: 340
+  runtime_footprint_mb: 2100               # PyTorch / TensorRT / ONNX runtime
+  source: declared                         # declared | measured_on_target
+```
+
+**`resource_profile` không vào `candidate_id`.** Định danh (1.3) là hash của những gì đổi *hành vi*; khai lại `bytes_per_search_node` theo một hiện thực C++ khác không làm robot chạy khác đi một mét nào. Đưa nó vào hash sẽ tách một candidate đã chạy 300 episode thành hai candidate mồ côi chỉ vì sửa một con số kế toán bộ nhớ — và 1.3 là một trong ba thứ đóng băng sau tuần 1.
+
+**Vi phạm trông như thế nào:** một candidate `monolithic` đăng ký với `source: declared` rồi được tuyên bố qua G5 như thể đã kiểm chứng. Với `kind: artifact`, `source: declared` **chỉ cho phép sàng lọc**, không cho phép kết luận đạt (HĐ-7.3).
+
 ---
 
 ## HĐ-2 — Task / Deployment Profile
@@ -128,7 +155,13 @@ task_profile:
 
   hardware:
     target_device: jetson_orin_nano
-    available_ram_mb: 2048
+    total_ram_mb: 8192
+    ram_budget_breakdown:              # BẮT BUỘC — xem 2.4
+      os_and_middleware_mb: 1536
+      perception_stack_mb: 2048
+      localization_mapping_mb: 819
+      logging_and_reserve_mb: 512
+    available_ram_mb: 3277             # = total − Σ breakdown, validator tự kiểm
 ```
 
 ### 2.2. Quy tắc mức tuyên bố
@@ -162,6 +195,12 @@ Ba motion đó là hàm thuần của thời gian, nên với `seed_time_offset 
 **Vi phạm trông như thế nào:** một profile có `motion.kind: waypoint` và `seed_time_offset: 0` được nạp thành công. Loader phải **từ chối** ngay lúc parse.
 
 Tên obstacle phải **duy nhất** trong một environment: tên được trộn vào hash seed của từng obstacle, nên hai obstacle cùng tên sẽ di chuyển đồng bộ với nhau.
+
+### 2.4. `available_ram_mb` là một quyết định phân bổ, không phải một phép đo
+
+*(Thêm ở 2.0.0.)* Nó là phần RAM còn lại sau khi trừ hệ điều hành và mọi stack khác cùng chạy trên bo mạch. Vì vậy nó **phải đi kèm bảng chiết tính**, để người khác kiểm được và để khi sau này perception phình ra thì biết phải sửa ở đâu. Validator kiểm `total_ram_mb − Σ(breakdown) == available_ram_mb`, lệch quá 1% thì từ chối task profile.
+
+**Vi phạm trông như thế nào:** `available_ram_mb: 2048` xuất hiện một mình, không ai giải thích được vì sao là 2048 chứ không phải 3277.
 
 ---
 
@@ -253,7 +292,9 @@ Mỗi episode ghi ra đúng một file Parquet. Đây là **nguồn dữ liệu 
 | `planner_latency_ms` | float | thời gian tính của bước điều khiển đó |
 | `event` | string \| null | `collision` \| `goal_reached` \| `timeout` \| `stuck` \| `replan` \| `no_path` |
 
-Metadata đi kèm mỗi trace: `episode_context_id`, `candidate_id`, `task_profile_id`, `sample_set` (`evaluation` \| `neighborhood`), `global_plan_length_m`, `global_plan_time_ms`, `peak_rss_mb`, `cpu_time_s`.
+Metadata đi kèm mỗi trace: `episode_context_id`, `candidate_id`, `task_profile_id`, `sample_set` (`evaluation` \| `neighborhood`), `global_plan_length_m`, `global_plan_time_ms`, `peak_search_nodes`, `peak_tree_nodes`, `costmap_cells`, `peak_rss_mb`, `cpu_time_s`.
+
+*(Ba trường `peak_search_nodes`, `peak_tree_nodes`, `costmap_cells` thêm ở 2.0.0 — chúng là toàn bộ đầu vào của `memory_estimate_mb` ở HĐ-7.3. Đây là lần duy nhất schema trace được mở rộng sau khi đóng băng, và nó được làm **trước** khi có file trace nào tồn tại; xem mục 18.)*
 
 **Vi phạm trông như thế nào:** Metrics Engine cần một đại lượng mà trace không có, và ai đó "tiện tay" tính nó trong vòng lặp mô phỏng. Điều này phá tính tái lập và phá luôn khả năng tính lại metric từ trace cũ.
 
@@ -278,7 +319,11 @@ Mỗi metric có **đúng một** định nghĩa, viết ở **đúng một** ch
 | `smoothness` | `Σ (Δθ_i)²` | Diagnostic |
 | `stop_and_go_count` | số lần `v` chạm 0 rồi > 0 trở lại | Diagnostic |
 | `p99_latency_ms` | phân vị 99 của `planner_latency_ms` | Gate G4 + Score O4 |
-| `peak_rss_mb` | đỉnh RSS của tiến trình | Gate G5 + Score O4 |
+| `peak_search_nodes` | đỉnh số node trong open+closed của global planner | trung gian (G5) |
+| `peak_tree_nodes` | đỉnh số node của cây RRT/RRT\* | trung gian (G5) |
+| `costmap_cells` | `width × height` của costmap | trung gian (G5) |
+| `memory_estimate_mb` | ước lượng cấu trúc, xem HĐ-7.3 | Gate G5 + Score O4 |
+| `peak_rss_mb` | đỉnh RSS của tiến trình mô phỏng | **Diagnostic** — xem cảnh báo dưới |
 | `cpu_time_per_mission_s` | tổng CPU time | Score O4 |
 | `tuning_trials_used`, `tuning_wall_clock_h`, `n_tunable_params` | khai báo lúc đăng ký candidate, có bằng chứng log | Score O4 |
 
@@ -288,6 +333,7 @@ Mỗi metric có **đúng một** định nghĩa, viết ở **đúng một** ch
 - `travel_time_s` **không bao giờ** xuất hiện trong O4 ở chế độ `technical` (xem HĐ-9.3).
 - `collision_count` chỉ ở Gate G2, **không** vào O2.
 - `smoothness`, `jerk`, `stop_and_go` là Diagnostic ở MVP; muốn đưa vào Score phải sửa hợp đồng này (MAJOR).
+- **`peak_rss_mb` không bao giờ được đem so với `available_ram_mb`.** RSS của tiến trình Python gồm interpreter, numpy, bản thân simulator và TraceRecorder; Python cũng không trả bộ nhớ đã giải phóng về OS. Ngoài ra một object Python nặng gấp 5–20 lần struct C++ tương đương (node A\*: ~200 byte so với ~40 byte). Con số sai cả một bậc và sai theo chiều không đoán trước được. `peak_rss_mb` chỉ dùng để phát hiện rò rỉ bộ nhớ và so **tương đối** giữa các candidate chạy cùng môi trường.
 
 ---
 
@@ -301,7 +347,7 @@ Cổng chạy **trước** mọi phép chấm điểm. Ngưỡng lấy từ `tas
 | G2 | `collision_count == 0` trên toàn bộ bộ `evaluation` **AND** `N_eval ≥ N_min` | xem 7.1 |
 | G3 | `success_rate ≥ success_rate_min` | constraints |
 | G4 | `p99_latency_ms ≤ control_period × 1000` | robot.control_period |
-| G5 | `peak_rss_mb ≤ available_ram_mb` | hardware |
+| G5 | `memory_estimate_mb ≤ available_ram_mb` | hardware + `resource_profile` |
 | G6 | `set(observation_requirements) ⊆ set(available_observations)` | task_profile |
 
 ### 7.0. G6 — từ vựng quan sát là tập đóng
@@ -318,7 +364,7 @@ N_min = ceil(3 / constraints.collision_probability_max)   # 0.01 ⇒ 300
 
 Báo cáo bắt buộc kèm: `"0 va chạm quan sát trong {N} lần chạy; cận trên 95% dưới phân phối kịch bản đã mô phỏng: {3/N:.1%}"`. Chuỗi "an toàn" **bị cấm** xuất hiện cạnh kết quả G2 (có test kiểm tra chuỗi này trong CI).
 
-### 7.2. G4/G5 — hai pha, và giới hạn của mỗi pha
+### 7.2. G4 — hai pha, và giới hạn của mỗi pha
 
 | Pha | Đo ở đâu | Tư cách logic | `realtime_gate.status` |
 |---|---|---|---|
@@ -336,7 +382,52 @@ Báo cáo bắt buộc kèm: `"0 va chạm quan sát trong {N} lần chạy; c�
 
 Đây là một giới hạn được khai báo, không phải một lỗ hổng bị bỏ qua: phép sàng lọc pha P1 vẫn hợp lệ **theo đúng một chiều** (trượt trên máy nhanh ⇒ chắc chắn trượt trên máy chậm), và điều duy nhất bị mất là quyền tuyên bố chiều ngược lại. Khi nào có board thì gỡ bảo lưu này và tăng `contracts_version` MINOR.
 
-### 7.3. Môi trường đo
+### 7.3. G5 — bộ nhớ cũng hai pha, nhưng vì lý do khác G4
+
+*(Viết lại ở 2.0.0. Bản 1.x đặt G5 là `peak_rss_mb ≤ available_ram_mb`.)*
+
+G4 hai pha vì **tốc độ** máy khác nhau. G5 hai pha vì **ngôn ngữ và runtime** khác nhau — sim viết bằng Python, robot chạy C++/ROS2 hoặc một runtime học máy. Không được đo RSS rồi so với ngân sách bo mạch (HĐ-6).
+
+**Điều may mắn khiến pha sàng lọc vẫn có giá trị:** với planner cổ điển, thứ quyết định bộ nhớ là **số lượng cấu trúc dữ liệu**, mà cái đó là hành vi thuật toán — sim đếm trung thực, không phụ thuộc ngôn ngữ. Ba bộ đếm đó là ba trường thêm vào metadata trace ở HĐ-5.
+
+```python
+# kind: structural
+memory_estimate_mb = (
+      peak_search_nodes * bytes_per_search_node
+    + peak_tree_nodes   * bytes_per_tree_node
+    + costmap_cells     * bytes_per_costmap_cell * costmap_layers
+) / 1_048_576 + fixed_overhead_mb
+
+# kind: artifact
+memory_estimate_mb = model_artifact_mb + runtime_footprint_mb
+```
+
+Ví dụ kiểm tra bằng tay, bản đồ 40×25 m ở 0,05 m = 400.000 ô, `bytes_per_node = 40`:
+
+| Thành phần | Ước lượng |
+|---|---|
+| A\* worst case (open+closed phủ toàn bản đồ) | ~16 MB |
+| RRT\* 5.000 mẫu + KD-tree | ~1 MB |
+| DWA 20×40 mẫu × 30 bước | ~0,6 MB |
+| Costmap 3 layer | ~1,2 MB |
+
+| Pha | Đo/ước lượng ở đâu | Tư cách logic | `memory_gate.status` |
+|---|---|---|---|
+| P1 sàng lọc | `memory_estimate_mb` từ bộ đếm trong sim | **điều kiện cần** | `estimated_from_structure` |
+| P1 sàng lọc (artifact) | số khai lúc đăng ký candidate | **điều kiện cần** | `declared_by_author` |
+| P2 xác nhận | đo RSS thật trên bo mạch đích, cùng lượt với P2 của G4 | **điều kiện đủ** | `verified_on_target` |
+
+**Bảo lưu sim-only áp cho cả G5.** Dự án không có bo mạch đích (7.2), nên `memory_gate.status` **chỉ** nhận `estimated_from_structure` hoặc `declared_by_author`; `verified_on_target` không xuất hiện ở G5 cũng như ở G4.
+
+**Ba luật:**
+
+1. `bytes_per_*` phải khai theo **hiện thực đích**, không phải theo Python. Ghi rõ `target_implementation` để sau này kiểm được.
+2. Với `kind: artifact` và `source: declared`, kết quả G5 **chỉ có giá trị loại bỏ**. Không được phát biểu candidate đó vừa bộ nhớ cho tới khi có `verified_on_target` — mà theo bảo lưu trên, dự án này không bao giờ có.
+3. `available_ram_mb` là hàm bậc thang về mặt tiền: vượt ngân sách nghĩa là phải đổi cấp bo mạch, không phải "hơi tốn hơn". Cost Model không nội suy tuyến tính qua ngưỡng này.
+
+**Vi phạm trông như thế nào:** Decision Card in `G5: pass` kèm `peak_rss_mb: 340` — con số RSS của tiến trình Python xuất hiện ở vị trí đáng lẽ phải là `memory_estimate_mb`.
+
+### 7.4. Môi trường đo
 
 Mọi candidate chạy trên **cùng máy, cùng Docker image (ghi digest), cùng số CPU được cấp, cùng số luồng**. Thiếu điều kiện này thì cả phép so tương đối cũng vô nghĩa.
 
@@ -364,7 +455,7 @@ metric_anchors:
   min_clearance_m:   {good: "${robot.radius * 2.0}", bad: "${robot.radius * 1.05}"}
   near_miss_rate:    {good: 0.0,  bad: 0.5}
   p99_latency_ms:    {good: "${robot.control_period * 200}", bad: "${robot.control_period * 1000}"}
-  peak_rss_mb:       {good: "${hardware.available_ram_mb * 0.25}", bad: "${hardware.available_ram_mb}"}
+  memory_estimate_mb: {good: "${hardware.available_ram_mb * 0.25}", bad: "${hardware.available_ram_mb}"}
   cpu_time_per_mission_s: {good: 0.5, bad: 10.0}
   tuning_wall_clock_h:    {good: 0.0, bad: 40.0}
 ```
@@ -385,7 +476,7 @@ metric_anchors:
 U_R = u(success)                                             # theo episode: 0 hoặc 1 → u()
 U_S = 0.5*u(near_miss_rate) + 0.5*u(min_clearance_m)
 U_E = 0.5*u(path_efficiency) + 0.5*u(time_efficiency)
-U_C = β1*u(p99_latency_ms) + β2*u(peak_rss_mb)
+U_C = β1*u(p99_latency_ms) + β2*u(memory_estimate_mb)
     + β3*u(cpu_time_per_mission_s) + β4*u(engineering_cost)   # Σβ = 1
 ```
 
@@ -508,7 +599,7 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
 
 ```json
 {
-  "contracts_version": "1.1.0",
+  "contracts_version": "2.0.0",
   "recommendation_scope": "MISSION_LEVEL | DEPLOYMENT_LEVEL | ROBUST_DEPLOYMENT_LEVEL",
   "experiment_scope": "full_stack_selection",
   "decision_mode": "technical | business_adjusted",
@@ -520,8 +611,14 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
   "gates": [
     {"candidate_id": "...", "G1": "pass", "G2": {"result": "pass", "observed": 0,
       "n_runs": 300, "upper_bound_95": 0.010, "note": "dưới phân phối kịch bản đã mô phỏng"},
-     "G3": "pass", "G4": {"result": "pass", "status": "screened_on_host", "p99_ms": 23},
-     "G5": "pass", "G6": "pass"}
+     "G3": "pass",
+     "G4": {"result": "pass", "status": "screened_on_host", "p99_ms": 23},
+     "G5": {"result": "pass", "status": "estimated_from_structure",
+            "memory_estimate_mb": 19, "available_ram_mb": 3277,
+            "peak_search_nodes": 412000, "bytes_per_search_node": 40,
+            "target_implementation": "cpp_ros2",
+            "peak_rss_mb_diagnostic": 340},
+     "G6": "pass"}
   ],
 
   "objectives": {"U_R": 0.86, "U_S": 0.78, "U_E": 0.84, "U_C": 0.71},
@@ -554,7 +651,7 @@ Mọi lần ra quyết định ghi một `manifest.json`:
 
 ```json
 {
-  "contracts_version": "1.1.0",
+  "contracts_version": "2.0.0",
   "git_sha": "...",
   "docker_image_digest": "sha256:...",
   "task_profile_id": "warehouse_a_v1",
@@ -606,6 +703,7 @@ Chưa cần: web UI, RBAC, MLflow, neighborhood, Pareto, độ nhạy.
 3. Bảng gate in ra đủ sáu cổng kèm số lần chạy.
 4. `ΔU` và CI 95% ghép cặp tính được và không phải NaN.
 5. `L_ref` từ Dijkstra ≤ `path_length_m` ở **mọi** episode thành công. Vi phạm điều này nghĩa là `L_ref` hoặc bộ đếm quãng đường đang sai.
+6. `peak_search_nodes` ≤ `costmap_cells` ở mọi episode. Vi phạm nghĩa là bộ đếm node đang đếm trùng, và `memory_estimate_mb` sai theo.
 
 ### 15.2. Không quay lại sửa phương pháp luận
 
@@ -653,11 +751,11 @@ Hai định danh frozen của contract (`candidate_id`, `episode_context_id`) d�
 
 | Tên | Vai | Ngày | Ghi chú / bảo lưu |
 |---|---|---|---|
-| Tống Duy An | Dev B | 2026-08-09 | Ký bản 1.1.0. Đã hiện thực Phase 1 (HĐ-1, HĐ-2, HĐ-3) theo bản này. Bảo lưu: không có bo mạch đích (7.2). |
+| Tống Duy An | Dev B | 2026-08-09 | Ký bản 2.0.0 (đã ký 1.1.0 cùng ngày). Đã hiện thực Phase 1 (HĐ-1, HĐ-2, HĐ-3) và Phase 2.1 (HĐ-5) theo bản này. Bảo lưu: không có bo mạch đích (7.2, 7.3). |
 | | Dev A | | |
 | | Dev C | | |
 
-> **Chưa đủ chữ ký.** Quy trình sửa hợp đồng (mục 0) cần ≥2 người approve. Bản 1.1.0 đang chờ Dev A và Dev C đọc — phần đáng đọc trước nhất là mục 18, nó liệt kê đúng 4 chỗ đổi so với bản mọi người đã xem.
+> **Chưa đủ chữ ký.** Quy trình sửa hợp đồng (mục 0) cần ≥2 người approve. Bản 2.0.0 đang chờ Dev A và Dev C đọc — phần đáng đọc trước nhất là mục 18, nó liệt kê đúng những chỗ đổi so với bản mọi người đã xem. **2.0.0 là MAJOR**, nên theo mục 0 nó cũng đòi chạy lại lát cắt dọc; lát cắt dọc chưa tồn tại (Phase 4), nên nghĩa vụ đó rơi vào lần đầu chạy nó.
 
 ---
 
@@ -674,7 +772,9 @@ Hai định danh frozen của contract (`candidate_id`, `episode_context_id`) d�
 9. Đếm thời gian di chuyển ở cả O3 lẫn O4.
 10. Viết chữ **"an toàn"** hoặc **"TCO"** cạnh một con số của hệ thống.
 11. Khai vật cản động tất định với `seed_time_offset = 0` rồi đếm N lần chạy như N mẫu độc lập.
-12. In `verified_on_target` khi dự án không có bo mạch đích (xem bảo lưu ở 7.2).
+12. In `verified_on_target` khi dự án không có bo mạch đích (xem bảo lưu ở 7.2 và 7.3).
+13. So `peak_rss_mb` của tiến trình Python với `available_ram_mb` của bo mạch.
+14. Khai `available_ram_mb` mà không kèm bảng chiết tính.
 
 ---
 
@@ -683,7 +783,18 @@ Hai định danh frozen của contract (`candidate_id`, `episode_context_id`) d�
 | Phiên bản | Ngày | Loại | Nội dung |
 |---|---|---|---|
 | 1.0.0 | 2026-08-08 | — | Bản đầu, viết cùng `de-tai-moi-planner-selector.md`. |
-| 1.1.0 | 2026-08-09 | MINOR | Bốn thay đổi dưới đây. |
+| 1.1.0 | 2026-08-09 | MINOR | Bốn thay đổi, chi tiết dưới đây. |
+| 2.0.0 | 2026-08-09 | **MAJOR** | Sửa G5: bỏ `peak_rss_mb ≤ available_ram_mb`, thay bằng `memory_estimate_mb`. Chi tiết dưới đây. |
+
+**Chi tiết 2.0.0** — làm ngay trước Phase 2.1 (TraceRecorder), tức trước khi tồn tại một file trace nào.
+
+1. **HĐ-7.3 viết lại — G5 là hai pha vì ngôn ngữ, không vì tốc độ.** Bản 1.x so RSS của tiến trình Python với ngân sách RAM của bo mạch C++/ROS2. Phép so đó sai cả một bậc và sai theo chiều không đoán trước được, nên nó là **đổi ngữ nghĩa của một cổng** ⇒ MAJOR. Thay bằng `memory_estimate_mb` tính từ số lượng cấu trúc dữ liệu — thứ sim đếm trung thực bất kể ngôn ngữ. `peak_rss_mb` xuống vai Diagnostic (HĐ-6).
+2. **HĐ-1.5 mới — `resource_profile` bắt buộc trên candidate.** Hai dạng: `structural` (khai `bytes_per_*` theo hiện thực đích) và `artifact` (khai dung lượng model + runtime). Không vào `candidate_id`.
+3. **HĐ-2.4 mới — `available_ram_mb` phải kèm `total_ram_mb` + `ram_budget_breakdown`**, validator kiểm tổng lệch ≤ 1%. Một ngân sách RAM không giải thích được là một con số bịa được gắn nhãn phần cứng.
+4. **HĐ-5 — thêm 3 trường metadata**: `peak_search_nodes`, `peak_tree_nodes`, `costmap_cells`. Đây là đầu vào duy nhất của `memory_estimate_mb`.
+5. Kéo theo: HĐ-6 (4 dòng metric mới + luật cấm so RSS), HĐ-7 bảng cổng G5, HĐ-8 anchor, HĐ-9 `U_C`, HĐ-12 khối `G5` của Decision Card, HĐ-15.1 tiêu chí nghiệm thu thứ 6, §17 cấm 13–14.
+
+**Về việc đụng vào HĐ-5 — một schema đã đóng băng.** §0 cấm đổi trace schema sau tuần 1 vì mọi dữ liệu đã ghi sẽ mồ côi. Ở đây chưa có dữ liệu nào: TraceRecorder chưa được viết (Phase 2.1 là việc kế tiếp), `artifacts/runs/` rỗng. Đây là thời điểm cuối cùng thay đổi này còn miễn phí — sau khi 300 episode đầu tiên chạy xong, cùng thay đổi đó buộc phải chạy lại toàn bộ. Ba định danh vẫn **không đổi**: `candidate_id` (HĐ-1.3), payload hash của `episode_context_id` (HĐ-3.1), và các **cột** của trace (chỉ metadata được thêm).
 
 **Chi tiết 1.1.0** — phát sinh khi hiện thực Phase 1 (schema gốc), tức đúng cơ chế mà HĐ-15.2 dự trù: chỉ sửa hợp đồng khi việc chạy code phát hiện một giả định thiếu.
 
