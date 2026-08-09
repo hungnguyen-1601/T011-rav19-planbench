@@ -163,3 +163,33 @@ class TestThresholds:
         assert default.cells[0] == CellState.UNKNOWN.value
         stricter = load_map_server(pgm, make_yaml(occupied_thresh=0.5), name="s")
         assert stricter.cells[0] == CellState.OCCUPIED.value
+
+
+class TestModeAndThresholdSanity:
+    """Two YAML fields that load happily and change what the map *is*."""
+
+    def test_scale_mode_is_refused_not_approximated(self) -> None:
+        """Under `scale` a mid-grey pixel is a partially occupied cell,
+        not an unknown one: read as trinary, a corridor of light-grey
+        clutter becomes open floor and every candidate plans through it."""
+        pgm = make_pgm([[254, 254]])
+        with pytest.raises(MapServerFormatError, match="unsupported map_server mode"):
+            load_map_server(pgm, make_yaml() + "mode: scale\n", name="scaled")
+
+    def test_explicit_trinary_mode_is_accepted(self) -> None:
+        pgm = make_pgm([[254, 254]])
+        assert load_map_server(pgm, make_yaml() + "mode: trinary\n", name="ok").width == 2
+
+    def test_unknown_mode_says_it_is_not_a_map_server_mode(self) -> None:
+        pgm = make_pgm([[254, 254]])
+        with pytest.raises(MapServerFormatError, match="not a map_server mode"):
+            load_map_server(pgm, make_yaml() + "mode: binry\n", name="typo")
+
+    def test_reversed_thresholds_are_refused(self) -> None:
+        """With them the other way round every pixel lands in the middle
+        band, the whole map reads UNKNOWN, and (unknown_as_occupied) the
+        map is one solid wall that gives every candidate no_path."""
+        pgm = make_pgm([[254, 0]])
+        yaml_text = make_yaml(occupied_thresh=0.2, free_thresh=0.7)
+        with pytest.raises(MapServerFormatError, match="must be below occupied_thresh"):
+            load_map_server(pgm, yaml_text, name="reversed")
