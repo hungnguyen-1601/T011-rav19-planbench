@@ -14,6 +14,26 @@ from planbench_decision.candidate import (
     validate_experiment_scope,
 )
 
+#: HĐ-1.5 profiles. The structural one declares the *target* C++/ROS2
+#: struct sizes, not Python's; the artifact one declares a checkpoint
+#: plus its inference runtime, which no simulator can count.
+STRUCTURAL: dict[str, object] = {
+    "kind": "structural",
+    "target_implementation": "cpp_ros2",
+    "bytes_per_search_node": 40,
+    "bytes_per_tree_node": 40,
+    "bytes_per_costmap_cell": 1,
+    "costmap_layers": 3,
+    "fixed_overhead_mb": 8.0,
+}
+
+ARTIFACT: dict[str, object] = {
+    "kind": "artifact",
+    "model_artifact_mb": 340.0,
+    "runtime_footprint_mb": 2100.0,
+    "source": "declared",
+}
+
 MODULAR: dict[str, object] = {
     "id": None,
     "type": "modular",
@@ -24,6 +44,7 @@ MODULAR: dict[str, object] = {
         "dwa": {"sim_time": 1.5, "vx_samples": 20},
     },
     "observation_requirements": ["lidar_2d"],
+    "resource_profile": dict(STRUCTURAL),
 }
 
 MONOLITHIC: dict[str, object] = {
@@ -32,6 +53,7 @@ MONOLITHIC: dict[str, object] = {
     "policy": {"name": "ppo_navigation", "checkpoint": "ckpt_12", "version": "v1"},
     "params": {"deterministic": True},
     "observation_requirements": ["lidar_2d"],
+    "resource_profile": dict(ARTIFACT),
 }
 
 
@@ -100,6 +122,47 @@ class TestObservationRequirements:
         assert a.candidate_id == b.candidate_id
 
 
+class TestResourceProfile:
+    """HĐ-1.5: how a candidate declares what memory it will need, and why
+    the two shapes are not interchangeable."""
+
+    def test_required(self) -> None:
+        payload = {k: v for k, v in MODULAR.items() if k != "resource_profile"}
+        with pytest.raises(ValidationError, match="resource_profile"):
+            Candidate.model_validate(payload)
+
+    def test_modular_must_be_structural(self) -> None:
+        """A classical stack whose nodes and cells the simulator counts
+        exactly must not substitute a declared number for the count."""
+        with pytest.raises(ValidationError, match="structural"):
+            Candidate.model_validate({**MODULAR, "resource_profile": dict(ARTIFACT)})
+
+    def test_monolithic_must_be_artifact(self) -> None:
+        """Weights plus an inference runtime are not data-structure
+        counts; no bytes_per_node makes that number appear."""
+        with pytest.raises(ValidationError, match="artifact"):
+            Candidate.model_validate({**MONOLITHIC, "resource_profile": dict(STRUCTURAL)})
+
+    def test_unknown_kind_refused(self) -> None:
+        profile = {**STRUCTURAL, "kind": "guess"}
+        with pytest.raises(ValidationError):
+            Candidate.model_validate({**MODULAR, "resource_profile": profile})
+
+    def test_artifact_source_defaults_to_declared(self) -> None:
+        """The epistemic status travels with the number: `declared` is
+        what stops G5 certifying it (HĐ-7.3)."""
+        profile = {k: v for k, v in ARTIFACT.items() if k != "source"}
+        candidate = Candidate.model_validate({**MONOLITHIC, "resource_profile": profile})
+        assert candidate.resource_profile.source == "declared"
+
+    def test_not_part_of_identity(self) -> None:
+        """Restating byte sizes for another target implementation changes
+        no behaviour. Hashing it would split one candidate that already
+        ran 300 episodes into two orphans."""
+        other = {**STRUCTURAL, "target_implementation": "rust_embedded", "fixed_overhead_mb": 2.0}
+        assert modular(resource_profile=other).candidate_id == modular().candidate_id
+
+
 class TestIdentity:
     def test_id_is_stable_and_short(self) -> None:
         assert modular().candidate_id == modular().candidate_id
@@ -115,6 +178,7 @@ class TestIdentity:
                 "dwa": {"vx_samples": 20, "sim_time": 1.5},
                 "astar": {"tie_break": 1.001, "heuristic": "euclidean"},
             },
+            "resource_profile": dict(STRUCTURAL),
         }
         assert Candidate.model_validate(reordered).candidate_id == modular().candidate_id
 
@@ -184,6 +248,7 @@ def stack(global_name: str, local_name: str, **local_params: object) -> Candidat
         local_controller={"name": local_name},  # type: ignore[arg-type]
         params={local_name: dict(local_params)} if local_params else {},
         observation_requirements=("lidar_2d",),
+        resource_profile=dict(STRUCTURAL),  # type: ignore[arg-type]
     )
 
 
@@ -217,6 +282,7 @@ class TestExperimentScope:
             global_planner={"name": "rrtstar"},  # type: ignore[arg-type]
             local_controller={"name": "dwa", "version": "v2"},  # type: ignore[arg-type]
             observation_requirements=("lidar_2d",),
+            resource_profile=dict(STRUCTURAL),  # type: ignore[arg-type]
         )
         with pytest.raises(ExperimentScopeViolation, match="identical local layer"):
             validate_experiment_scope("global_planner_selection", [a, b])

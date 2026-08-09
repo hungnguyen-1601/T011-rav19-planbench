@@ -9,13 +9,16 @@ is why it can be built and tested without running an episode
 
 from planbench_decision.candidate import (
     CANDIDATE_ID_LENGTH,
+    ArtifactResourceProfile,
     Candidate,
     CandidateSchemaError,
     CandidateType,
     ExperimentScope,
     ExperimentScopeViolation,
     PolicyComponent,
+    ResourceProfile,
     StackComponent,
+    StructuralResourceProfile,
     load_candidate,
     validate_experiment_scope,
 )
@@ -29,6 +32,7 @@ from planbench_decision.pairing import (
 
 __all__ = [
     "CANDIDATE_ID_LENGTH",
+    "ArtifactResourceProfile",
     "Candidate",
     "CandidateSchemaError",
     "CandidateType",
@@ -36,8 +40,10 @@ __all__ = [
     "ExperimentScopeViolation",
     "PairingViolation",
     "PolicyComponent",
+    "ResourceProfile",
     "SampleSetViolation",
     "StackComponent",
+    "StructuralResourceProfile",
     "context_ids",
     "load_candidate",
     "require_sample_set",

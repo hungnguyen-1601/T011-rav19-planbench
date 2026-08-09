@@ -55,6 +55,12 @@ _PROBABILITY_SUM_TOLERANCE = 1e-6
 #: :meth:`EnvironmentSpec._validate_obstacles`.
 _TIME_DETERMINISTIC_MOTIONS = frozenset({"waypoint", "periodic", "sudden_stop"})
 
+#: How far the RAM budget arithmetic may drift before a profile is
+#: refused, as a fraction of ``total_ram_mb`` (HĐ-2.4). Rounded megabyte
+#: figures in a hand-written budget will not add up to the last MB; 1%
+#: absorbs that without absorbing a forgotten claimant on the board.
+_RAM_BUDGET_TOLERANCE = 0.01
+
 
 class EnvironmentSpec(BaseModel):
     """The environment episodes run in: static map plus moving traffic.
@@ -198,6 +204,31 @@ class TaskConstraints(BaseModel):
         return math.ceil(round(3.0 / self.collision_probability_max, 6))
 
 
+class RamBudgetItem(BaseModel):
+    """What else is resident on the target board besides navigation.
+
+    The four items are the contract's (HĐ-2.4); unknown keys are refused
+    so a typo cannot silently drop a claimant on the RAM budget and
+    inflate what navigation appears to be allowed.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
+
+    os_and_middleware_mb: float = Field(ge=0)
+    perception_stack_mb: float = Field(ge=0)
+    localization_mapping_mb: float = Field(ge=0)
+    logging_and_reserve_mb: float = Field(ge=0)
+
+    @property
+    def total_mb(self) -> float:
+        return (
+            self.os_and_middleware_mb
+            + self.perception_stack_mb
+            + self.localization_mapping_mb
+            + self.logging_and_reserve_mb
+        )
+
+
 class HardwareSpec(BaseModel):
     """Target-board budget — the thresholds gates G4/G5 read.
 
@@ -205,12 +236,37 @@ class HardwareSpec(BaseModel):
     against these budgets are one-directional screening only
     (``screened_on_host``): failing here proves failure on the target,
     passing proves nothing (HĐ-7.2).
+
+    ``available_ram_mb`` is an *allocation decision*, not a measurement
+    (HĐ-2.4): it is what remains after the OS and every other stack
+    sharing the board. Requiring the breakdown alongside it is what makes
+    the number checkable by somebody else, and it names the place to edit
+    when perception later grows. A bare ``available_ram_mb: 2048`` is a
+    guess wearing a hardware label — and G5 loses its meaning if the
+    threshold it compares against was invented.
     """
 
     model_config = ConfigDict(frozen=True, allow_inf_nan=False)
 
     target_device: str = Field(min_length=1)
-    available_ram_mb: float = Field(gt=0)
+    total_ram_mb: float = Field(gt=0, description="Physical RAM on the target board.")
+    ram_budget_breakdown: RamBudgetItem
+    available_ram_mb: float = Field(gt=0, description="What is left for navigation.")
+
+    @model_validator(mode="after")
+    def _validate_budget(self) -> HardwareSpec:
+        """``total − Σ(breakdown) == available``, within 1% (HĐ-2.4)."""
+        expected = self.total_ram_mb - self.ram_budget_breakdown.total_mb
+        drift = abs(expected - self.available_ram_mb)
+        if drift > self.total_ram_mb * _RAM_BUDGET_TOLERANCE:
+            raise ValueError(
+                f"ram budget does not add up: total {self.total_ram_mb} MB minus the "
+                f"breakdown ({self.ram_budget_breakdown.total_mb} MB) leaves {expected} MB, "
+                f"but available_ram_mb says {self.available_ram_mb} MB (off by {drift} MB). "
+                "G5 compares candidates against available_ram_mb, so an unexplained "
+                "budget makes the gate meaningless"
+            )
+        return self
 
 
 class TaskProfile(BaseModel):
