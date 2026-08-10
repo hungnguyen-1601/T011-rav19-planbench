@@ -1,6 +1,6 @@
 # CONTRACTS.md — Planner Selector
 
-> **Phiên bản hợp đồng:** `contracts_version: 2.1.0`
+> **Phiên bản hợp đồng:** `contracts_version: 2.2.0`
 > **Trạng thái:** cần cả nhóm đọc và ký ở mục 16. Phase 1 (schema gốc) đã hiện thực theo bản 1.1.0; bản 2.0.0 sửa G5 — xem lịch sử phiên bản ở mục 18.
 > **Vị trí:** `contracts/CONTRACTS.md` ở gốc repo (trước đây là `docs/antongduy/CONTRACTS_1.md`).
 > **Tài liệu mẹ:** `docs/antongduy/de-tai-moi-planner-selector.md`. Khi hai tài liệu mâu thuẫn, **CONTRACTS.md thắng** — plan là lý do, contract là luật.
@@ -644,10 +644,11 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
 
 ```json
 {
-  "contracts_version": "2.1.0",
+  "contracts_version": "2.2.0",
   "recommendation_scope": "MISSION_LEVEL | DEPLOYMENT_LEVEL | ROBUST_DEPLOYMENT_LEVEL",
   "experiment_scope": "full_stack_selection",
   "decision_mode": "technical | business_adjusted",
+  "decision_mode_label": "Khuyến nghị kỹ thuật — chỉ dựa trên số liệu đo được",
   "status": "CLEAR_RECOMMENDATION | NEAR_EQUIVALENT",
 
   "recommended": {"candidate_id": "...", "stack": "...", "params_ref": "..."},
@@ -688,6 +689,16 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
 
 Trường `alternative` **chỉ được lấy từ candidate mang nhãn `PARETO_FRONTIER`**.
 
+*(Thêm ở 2.2.0.)* **`decision_mode_label` in nguyên văn câu HĐ-9.3 bắt buộc cho chế độ đang chạy.** HĐ-9.3 đã yêu cầu nhãn này từ 1.0.0 nhưng ví dụ JSON không có chỗ cho nó, nên nó chỉ tồn tại dưới dạng lời dặn — và một lời dặn thì tầng render nào quên cũng không ai biết. Cho nó một trường bắt buộc là cách duy nhất để việc thiếu nhãn trở thành lỗi validate thay vì một tấm card trông bình thường.
+
+**Ba trường chờ Phase 5, và giá trị đúng của chúng lúc này:**
+
+| Trường | Giá trị khi chưa chạy phân tích tương ứng | Vì sao **không** để trống hay bịa |
+|---|---|---|
+| `pareto_label` | `UNCERTAIN_DOMINANCE` | HĐ-10.1 định nghĩa nhãn này đúng là "chưa đủ dữ liệu để kết luận". In `PARETO_FRONTIER` khi chưa chạy phân tích Pareto là tuyên bố một điều chưa kiểm |
+| `alternative` | `null` | Chỉ được lấy từ candidate mang nhãn `PARETO_FRONTIER`; chưa có nhãn đó thì không có nguồn hợp lệ. Hạng nhì theo thống kê **không phải** `alternative` |
+| `evidence.weight_stability_margin`, `evidence.anchor_stability`, `evidence.robustness_margin` | `null` | Phase 5.3 / 5.1. `null` đọc được là "chưa đo"; một con số mặc định đọc được là "đã đo và ổn" |
+
 ---
 
 ## HĐ-13 — Manifest tái lập
@@ -696,7 +707,7 @@ Mọi lần ra quyết định ghi một `manifest.json`:
 
 ```json
 {
-  "contracts_version": "2.1.0",
+  "contracts_version": "2.2.0",
   "git_sha": "...",
   "docker_image_digest": "sha256:...",
   "task_profile_id": "warehouse_a_v1",
@@ -706,12 +717,17 @@ Mọi lần ra quyết định ghi một `manifest.json`:
   "travel_time_accounting": "efficiency",
   "candidates": ["...", "..."],
   "episode_context_ids": {"evaluation": ["..."], "neighborhood": ["..."]},
+  "bootstrap": {"seed": 0, "n_resamples": 1000},
   "benchmark_host": {"cpu": "...", "cores_allocated": 4, "threads": 1},
   "created_at": "..."
 }
 ```
 
 **Tiêu chí nghiệm thu:** đưa manifest cho một người khác, họ dựng lại được **cùng một Decision Card**, sai khác chỉ ở thời gian tường.
+
+*(Thêm ở 2.2.0.)* **Khối `bootstrap` là điều kiện cần của chính tiêu chí nghiệm thu ở trên.** `evidence.ci95` trên card đến từ một phép lấy mẫu lại ngẫu nhiên (HĐ-11.2); hai người chạy cùng manifest với hai seed khác nhau sẽ ra hai khoảng tin cậy khác nhau, và khác biệt đó **không phải** "thời gian tường". Bản 2.1.x thiếu trường này, nên tiêu chí nghiệm thu của HĐ-13 không thể đạt được bằng chính dữ liệu mà HĐ-13 yêu cầu ghi. `n_resamples` đi kèm vì đổi số lần lấy mẫu cũng đổi khoảng.
+
+**Vi phạm trông như thế nào:** hai lần chạy cùng một manifest cho ra `ci95` khác nhau, và không có gì trong manifest giải thích được vì sao.
 
 ---
 
@@ -832,6 +848,14 @@ Hai định danh frozen của contract (`candidate_id`, `episode_context_id`) d�
 | 2.0.0 | 2026-08-09 | **MAJOR** | Sửa G5: bỏ `peak_rss_mb ≤ available_ram_mb`, thay bằng `memory_estimate_mb`. Chi tiết dưới đây. |
 | 2.0.1 | 2026-08-09 | PATCH | HĐ-8.2 và HĐ-9.1 gọi metric clearance là `min_clearance_m`, HĐ-6 gọi là `min_clearance`. Đổi hai chỗ đầu theo HĐ-6 — anchor key tra theo đúng tên metric, nên hai tên là một anchor không bao giờ khớp và một metric âm thầm không có thang. Phát hiện khi hiện thực 3.1. |
 | 2.1.0 | 2026-08-10 | MINOR | Hai thay đổi, phát hiện khi hiện thực Phase 3.3. Chi tiết dưới đây. |
+| 2.2.0 | 2026-08-10 | MINOR | Hai trường thêm, phát hiện khi hiện thực Phase 3.5. Chi tiết dưới đây. |
+
+**Chi tiết 2.2.0** — cả hai là trường thêm có giá trị xác định ⇒ MINOR. Không đụng ba định danh đóng băng, không đổi công thức nào.
+
+1. **HĐ-13 — khối `bootstrap` (`seed`, `n_resamples`).** Tiêu chí nghiệm thu của chính HĐ-13 là "người khác dựng lại được cùng một Decision Card, sai khác chỉ ở thời gian tường". `evidence.ci95` đến từ bootstrap ngẫu nhiên, nên nếu manifest không ghi seed thì tiêu chí đó **không thể đạt** bằng đúng dữ liệu HĐ-13 yêu cầu ghi. Phát hiện khi viết `manifest.json` thật ở Phase 3.5.
+2. **HĐ-12 — trường `decision_mode_label`.** HĐ-9.3 bắt buộc in một câu nhãn cho mỗi `decision_mode` từ bản 1.0.0, nhưng ví dụ JSON của HĐ-12 không có chỗ cho nó, nên yêu cầu đó chỉ là một câu văn xuôi mà tầng render quên là không ai phát hiện. Cho nó một trường bắt buộc để việc thiếu nhãn thành lỗi validate.
+
+Kèm theo (không phải thay đổi hợp đồng, chỉ ghi rõ điều đã đúng): bảng giá trị của `pareto_label`, `alternative` và ba trường `evidence` của Phase 5 khi các phân tích đó chưa chạy.
 
 **Chi tiết 2.1.0** — đúng cơ chế HĐ-15.2 dự trù: chỉ sửa hợp đồng khi việc chạy code phát hiện một giả định thiếu. Không đụng vào ba định danh đóng băng.
 
