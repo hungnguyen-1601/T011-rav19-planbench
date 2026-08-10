@@ -102,3 +102,8 @@ alembic==1.18.5
 pytest==9.1.1
 pytest-cov==7.1.0
 ruff==0.16.0
+# Kiểm Decision Card và manifest sinh ra có đúng `contracts/schemas/*.json`
+# không (CONTRACTS HĐ-12, HĐ-13). Không phải runtime: API và simulator
+# không cần nó. Nhưng test thì cần — kiểm output bằng chính model Pydantic
+# đã sinh ra nó thì không chứng minh được gì, hợp đồng nằm ở file schema.
+jsonschema==4.26.0

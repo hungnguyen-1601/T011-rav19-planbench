@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://planbench.local/contracts/schemas/manifest.schema.json",
+  "title": "Reproducibility manifest",
+  "description": "CONTRACTS HĐ-13. Acceptance criterion: hand this file to somebody else and they rebuild the same Decision Card, differing only in wall-clock time. Every field below exists because leaving it out breaks exactly that — including `bootstrap`, without which the confidence interval cannot be reproduced at all.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contracts_version",
+    "git_sha",
+    "docker_image_digest",
+    "task_profile_id",
+    "anchor_config_version",
+    "preference_profile",
+    "decision_mode",
+    "travel_time_accounting",
+    "candidates",
+    "episode_context_ids",
+    "bootstrap",
+    "benchmark_host",
+    "created_at"
+  ],
+  "properties": {
+    "contracts_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "git_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,40}$",
+      "description": "The code that produced the card. Lower-case hex so a rebuilt manifest cannot differ by letter case alone."
+    },
+    "docker_image_digest": {
+      "type": ["string", "null"],
+      "description": "Null when the run was not containerised. HĐ-7.4 requires the same image for every candidate in one comparison; recording it is how that is checkable afterwards."
+    },
+    "task_profile_id": { "type": "string", "minLength": 1 },
+    "anchor_config_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Mandatory (HĐ-8.3 law 3): a recommendation computed under unknown anchors cannot be rebuilt."
+    },
+    "preference_profile": { "type": "string", "minLength": 1 },
+    "decision_mode": { "enum": ["technical", "business_adjusted"] },
+    "travel_time_accounting": { "enum": ["efficiency", "monetized_cost"] },
+    "candidates": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "episode_context_ids": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evaluation", "neighborhood"],
+      "description": "The exact conditions, not just how many. HĐ-3.2 requires every candidate to have run the same set, and only the ids prove it.",
+      "properties": {
+        "evaluation": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "neighborhood": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "bootstrap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seed", "n_resamples"],
+      "description": "Added at 2.2.0. The CI on the card comes from a random resample; without the seed two people running this manifest get two intervals, and that difference is not wall-clock time.",
+      "properties": {
+        "seed": { "type": "integer" },
+        "n_resamples": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "benchmark_host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cpu", "cores_allocated", "threads"],
+      "description": "HĐ-7.4: same machine, same allocation, same thread count for every candidate — otherwise even the relative comparison is meaningless.",
+      "properties": {
+        "cpu": { "type": "string", "minLength": 1 },
+        "cores_allocated": { "type": "integer", "minimum": 1 },
+        "threads": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ISO-8601. The one field a rebuild is allowed to differ on."
+    }
+  }
+}
