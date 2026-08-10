@@ -62,7 +62,7 @@ from planbench_schemas.episode_context import EpisodeContext, SampleSet
 from planbench_schemas.geometry import Point2D, Pose2D
 from planbench_schemas.robot import RobotState
 from planbench_schemas.scenario import CircleObstacle, RectangleObstacle
-from planbench_simulator.collision import clearance_to_obstacles
+from planbench_simulator.collision import clearance_to_grid_within, clearance_to_obstacles
 from planbench_simulator.grid import OccupancyGrid
 
 #: Where run artifacts live (CONTRACTS §16: logical ``runs/``).
@@ -323,6 +323,22 @@ class EpisodeTraceRecorder:
             )
         return self._clearance(pose)
 
+    def bind_clearance(self, probe: Callable[[Pose2D], float]) -> None:
+        """Attach a clearance probe that only the episode loop can build.
+
+        The probe has to query the moving obstacles *now* (see
+        :func:`clearance_probe`), so it needs the running engine — which
+        exists inside ``run_stack``, after the caller has already built
+        this recorder. Hence a second entry point rather than a
+        constructor argument.
+
+        An explicit probe passed to ``__init__`` wins: swapping the
+        instrument halfway through an episode would give one file two
+        definitions of the same column.
+        """
+        if self._clearance is None:
+            self._clearance = probe
+
     @staticmethod
     def _require_finite(name: str, value: float) -> None:
         if not math.isfinite(value):
@@ -428,9 +444,16 @@ def clearance_probe(
     statics = tuple(static_obstacles)
 
     def probe(pose: Pose2D) -> float:
+        center = Point2D(x=pose.x, y=pose.y)
         moving = tuple(dynamic_obstacles_now()) if dynamic_obstacles_now is not None else ()
-        return clearance_to_obstacles(
-            Point2D(x=pose.x, y=pose.y), robot_radius, statics + moving, grid
+        # Windowed against the grid: this runs once per recorded control
+        # step, and the exhaustive scan is a whole-map sweep per row (see
+        # clearance_to_grid_within). The shape obstacles stay exact —
+        # there are a handful of them, and they are the moving ones.
+        return min(
+            clearance_to_obstacles(center, robot_radius, statics),
+            clearance_to_obstacles(center, robot_radius, moving),
+            clearance_to_grid_within(center, robot_radius, grid),
         )
 
     return probe

@@ -13,6 +13,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+import numpy as np
 import pytest
 from task_profile_fakes import make_profile
 
@@ -22,6 +23,7 @@ from planbench_metrics.definitions import (
     MetricError,
     compute_metrics,
     memory_estimate_mb,
+    pooled_p99_latency_ms,
 )
 from planbench_metrics.reference_path import (
     ReferencePathError,
@@ -413,6 +415,39 @@ class TestMemoryEstimate:
             trace, profile_with_mission((1.0, 1.0), (5.0, 1.0)), context(), empty_map()
         )
         assert metrics.memory_estimate_mb is None
+
+
+class TestPooledLatency:
+    """G4's measurement over the whole evaluation set (HĐ-7.2)."""
+
+    def test_one_slow_episode_does_not_decide_the_verdict(self, tmp_path: Path) -> None:
+        """The property the first vertical slice needed and did not have.
+
+        Two hundred episodes at 5 ms and one at 500 ms. The worst
+        episode's p99 is 500 ms — the old rule — while the pooled figure
+        is 5 ms, because the slow episode is half a percent of the
+        control steps, which is what it is. In the real slice that
+        outlier was a test suite running on the same machine, and the
+        candidate it eliminated measured 5 ms on an idle one.
+        """
+        traces = [straight_run(tmp_path, ctx=context(seed=i), latency_ms=5.0) for i in range(200)]
+        traces.append(straight_run(tmp_path, ctx=context(seed=999), latency_ms=500.0))
+
+        worst_episode = max(
+            float(np.percentile(t.column("planner_latency_ms"), 99)) for t in traces
+        )
+        assert worst_episode == pytest.approx(500.0)
+        assert pooled_p99_latency_ms(traces) == pytest.approx(5.0)
+
+    def test_a_genuinely_slow_candidate_is_still_caught(self, tmp_path: Path) -> None:
+        """Robustness is not blindness: when most steps miss the
+        deadline, the pooled percentile says so."""
+        traces = [straight_run(tmp_path, ctx=context(seed=i), latency_ms=250.0) for i in range(20)]
+        assert pooled_p99_latency_ms(traces) == pytest.approx(250.0)
+
+    def test_no_steps_is_refused(self) -> None:
+        with pytest.raises(MetricError, match="no control steps"):
+            pooled_p99_latency_ms([])
 
 
 class TestRefusals:

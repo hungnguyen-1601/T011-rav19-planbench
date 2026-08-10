@@ -14,8 +14,10 @@ from pydantic import ValidationError
 from planbench_schemas.geometry import EPS, Point2D
 from planbench_schemas.scenario import CircleObstacle, RectangleObstacle
 from planbench_simulator.collision import (
+    DEFAULT_CLEARANCE_WINDOW_M,
     clearance_to_circle,
     clearance_to_grid,
+    clearance_to_grid_within,
     clearance_to_obstacle,
     clearance_to_obstacles,
     clearance_to_rectangle,
@@ -155,3 +157,39 @@ class TestClearance:
 
     def test_empty_obstacles_without_grid_is_infinite(self) -> None:
         assert clearance_to_obstacles(Point2D(x=0.0, y=0.0), 0.5, []) == math.inf
+
+
+class TestWindowedGridClearance:
+    """``clearance_to_grid_within`` — the per-sample variant (HĐ-5).
+
+    The exhaustive scan is a whole-map sweep, which is affordable once
+    per episode and ruinous once per control step. The windowed version
+    trades far-field precision for that, and the two properties below are
+    what make the trade safe.
+    """
+
+    def test_it_agrees_exactly_with_the_full_scan_near_obstacles(
+        self, mixed_grid: OccupancyGrid
+    ) -> None:
+        """Inside the window the answer is not an approximation — it is
+        the same number, because it is the same arithmetic over a subset
+        of cells that provably contains the nearest one."""
+        for x, y in ((2.5, 2.5), (1.9, 2.5), (2.5, 3.4), (0.4, 0.4)):
+            centre = Point2D(x=x, y=y)
+            assert clearance_to_grid_within(centre, 0.2, mixed_grid) == pytest.approx(
+                clearance_to_grid(centre, 0.2, mixed_grid)
+            )
+
+    def test_far_from_everything_it_reports_the_window_as_a_floor(self, map_factory) -> None:
+        """Not the true distance, and deliberately under it: reporting
+        less clearance than there is can only make a candidate look
+        worse, never wave one through."""
+        grid = OccupancyGrid(map_factory(200, 200))
+        centre = Point2D(x=10.0, y=10.0)
+        windowed = clearance_to_grid_within(centre, 0.2, grid)
+        assert windowed == pytest.approx(DEFAULT_CLEARANCE_WINDOW_M - 0.2)
+        assert windowed < clearance_to_grid(centre, 0.2, grid)
+
+    def test_a_non_positive_window_is_refused(self, empty_grid: OccupancyGrid) -> None:
+        with pytest.raises(ValueError, match="window must be positive"):
+            clearance_to_grid_within(Point2D(x=1.0, y=1.0), 0.2, empty_grid, window_m=0.0)

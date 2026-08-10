@@ -13,7 +13,7 @@ import pytest
 from pydantic import ValidationError
 from task_profile_fakes import constraints, make_profile
 
-from planbench_decision.anchors import load_anchors
+from planbench_decision.anchors import AnchorError, load_anchors
 from planbench_decision.candidate import Candidate
 from planbench_decision.objectives import (
     DEFAULT_BETA,
@@ -61,6 +61,26 @@ def candidate(**overrides: object) -> Candidate:
 
 def anchors():  # type: ignore[no-untyped-def]
     return load_anchors().resolve(make_profile())
+
+
+#: A site that declared what a mission may cost it. Business mode needs
+#: this; technical mode must keep working without it, which is why the
+#: default fake profile does not carry it.
+def money_anchors(cost_per_mission_max: float = 1.0):  # type: ignore[no-untyped-def]
+    return load_anchors().resolve(
+        make_profile(constraints=constraints(cost_per_mission_max=cost_per_mission_max))
+    )
+
+
+def business(**overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "engineer_cost_per_hour": 30.0,
+        "deployment_horizon_missions": 50_000,
+        "hardware_upgrade_cost": 0.0,
+        "currency": "USD",
+    }
+    payload.update(overrides)
+    return payload
 
 
 def episode(owner: Candidate, seed: int = 0, **overrides: object) -> EpisodeMetricSet:
@@ -157,33 +177,140 @@ class TestSettingsValidation:
         """Carrying assumptions that are never applied invites a reader to
         assume they were."""
         with pytest.raises(ValidationError, match="never used"):
-            DecisionSettings(
-                decision_mode="technical",
-                business_profile={  # type: ignore[arg-type]
-                    "engineer_cost_per_hour": 30.0,
-                    "deployment_horizon_missions": 50_000,
-                    "hardware_upgrade_cost": 0.0,
-                },
-            )
+            DecisionSettings(decision_mode="technical", business_profile=business())  # type: ignore[arg-type]
 
-    def test_business_mode_is_validated_but_not_computable_yet(self) -> None:
-        """Refused rather than approximated: there is no anchor for a
-        cost in currency per mission."""
+    def test_monetized_travel_time_is_still_refused(self) -> None:
+        """Pricing engineering effort needs a declared rate and horizon,
+        both of which the business profile carries. Pricing travel time
+        needs a declared value of throughput, which nothing carries."""
         settings = DecisionSettings(
             decision_mode="business_adjusted",
-            business_profile={  # type: ignore[arg-type]
-                "engineer_cost_per_hour": 30.0,
-                "deployment_horizon_missions": 50_000,
-                "hardware_upgrade_cost": 0.0,
-            },
+            travel_time_accounting="monetized_cost",
+            business_profile=business(),  # type: ignore[arg-type]
         )
         with pytest.raises(ObjectiveError, match="not implemented"):
-            episode_objectives(episode(candidate()), anchors(), candidate(), settings)
+            episode_objectives(episode(candidate()), money_anchors(), candidate(), settings)
 
     def test_card_label_is_the_mandated_sentence(self) -> None:
         assert DecisionSettings().card_label == (
             "Khuyến nghị kỹ thuật — chỉ dựa trên số liệu đo được"
         )
+
+
+class TestBusinessAdjusted:
+    """HĐ-9.3 and pain point N3: a one-off cost is not a per-mission cost.
+
+    The mode exists for one claim — that tuning effort is real money and
+    how much it matters depends on how many missions will pay for it.
+    These check the arithmetic, the refusals that keep it honest, and the
+    consequence the topic document leads with.
+    """
+
+    def test_effort_is_amortised_over_the_declared_horizon(self) -> None:
+        """24 h at 30/h over 50,000 missions is 0.0144 per mission."""
+        settings = DecisionSettings(
+            decision_mode="business_adjusted",
+            business_profile=business(),  # type: ignore[arg-type]
+        )
+        assert settings.business_profile is not None
+        assert settings.business_profile.engineering_cost_per_mission(24.0) == pytest.approx(
+            24.0 * 30.0 / 50_000
+        )
+
+    def test_a_one_off_subsystem_price_is_amortised_the_same_way(self) -> None:
+        """G6's "you may add the sensor, at your price" lands here: paid
+        once, used by every mission after."""
+        settings = DecisionSettings(
+            decision_mode="business_adjusted",
+            business_profile=business(hardware_upgrade_cost=1_000.0),  # type: ignore[arg-type]
+        )
+        assert settings.business_profile is not None
+        assert settings.business_profile.engineering_cost_per_mission(0.0) == pytest.approx(0.02)
+
+    def test_the_horizon_flips_the_recommendation(self) -> None:
+        """N3, as one assertion — the claim the topic document opens on.
+
+        Two candidates alike but for one trade: the tuned one spent 24
+        hours of engineering and runs at 10 ms; the default-parameters
+        one spent nothing and runs at 40 ms. Nothing measured differs
+        between the two runs below. Only the declared horizon does.
+
+        Over 50,000 missions the tuning is 0.0144 per mission against a
+        1.0 ceiling and effectively free, so the faster candidate wins.
+        Over a 200-mission pilot the same tuning is 3.60 per mission,
+        far past the ceiling, and the untuned candidate wins. Same
+        weights, same anchors, same measurements, opposite answers.
+        """
+        tuned = candidate(tuning={**TUNING, "tuning_wall_clock_h": 24.0})
+        untuned = candidate(
+            params={"astar": {"heuristic": "manhattan"}, "dwa": {"sim_time": 1.5}},
+            tuning={**TUNING, "tuning_trials_used": 0, "tuning_wall_clock_h": 0.0},
+        )
+        tuned_metrics = [episode(tuned, p99_latency_ms=10.0)]
+        untuned_metrics = [episode(untuned, p99_latency_ms=40.0)]
+
+        def utility(owner, metrics, missions: int) -> float:  # type: ignore[no-untyped-def]
+            settings = DecisionSettings(
+                decision_mode="business_adjusted",
+                business_profile=business(deployment_horizon_missions=missions),  # type: ignore[arg-type]
+            )
+            return set_objectives(metrics, money_anchors(), owner, settings).decision_utility
+
+        assert utility(tuned, tuned_metrics, 50_000) > utility(untuned, untuned_metrics, 50_000)
+        assert utility(untuned, untuned_metrics, 200) > utility(tuned, tuned_metrics, 200)
+
+    def test_it_refuses_when_the_site_declared_no_budget(self) -> None:
+        """The money scale is the customer's to set. Without it the
+        anchor does not resolve, and the refusal says which declaration
+        is missing rather than reporting a generic missing anchor."""
+        settings = DecisionSettings(
+            decision_mode="business_adjusted",
+            business_profile=business(),  # type: ignore[arg-type]
+        )
+        with pytest.raises(AnchorError, match="cost_per_mission_max"):
+            set_objectives([episode(candidate())], anchors(), candidate(), settings)
+
+    def test_effort_is_priced_on_one_scale_or_the_other_never_both(self) -> None:
+        """§17 ban 9 inside U_C: hours and money are two scales for one
+        quantity, so business mode replaces the hours term rather than
+        adding to it. Detectable because the hours anchor saturates at
+        40 h while the money anchor does not."""
+        long_tuning = candidate(tuning={**TUNING, "tuning_wall_clock_h": 80.0})
+        metrics = [episode(long_tuning)]
+
+        technical = set_objectives(metrics, money_anchors(), long_tuning)
+        adjusted = set_objectives(
+            metrics,
+            money_anchors(cost_per_mission_max=10.0),
+            long_tuning,
+            DecisionSettings(
+                decision_mode="business_adjusted",
+                business_profile=business(deployment_horizon_missions=1_000),  # type: ignore[arg-type]
+            ),
+        )
+        # 80 h is past the hours anchor's `bad` (40) so technical scores
+        # the effort at 0; 80 h x 30 / 1000 = 2.40 against a ceiling of
+        # 10.0 scores 0.76. Different numbers prove one term, not two.
+        assert technical.u_c < adjusted.u_c
+
+    def test_the_card_label_names_whose_assumptions_these_are(self) -> None:
+        """HĐ-9.3. A business-mode figure that does not say it rests on
+        declared assumptions is the overclaim the mode is designed
+        around."""
+        settings = DecisionSettings(
+            decision_mode="business_adjusted",
+            business_profile=business(),  # type: ignore[arg-type]
+        )
+        assert settings.card_label == "Đã hiệu chỉnh theo giả định kinh doanh do người dùng khai"
+
+    def test_the_currency_must_be_declared(self) -> None:
+        """Three money figures and a ceiling compared against them, with
+        no stated unit, is a comparison across currencies waiting to
+        happen."""
+        payload = business()
+        del payload["currency"]
+        with pytest.raises(ValidationError, match="currency"):
+            DecisionSettings(decision_mode="business_adjusted", business_profile=payload)  # type: ignore[arg-type]
 
 
 class TestTwoAggregationLevels:
@@ -245,10 +372,10 @@ class TestTwoAggregationLevels:
 
 class TestObjectiveFormulas:
     def test_safety_is_half_clearance_half_near_miss(self) -> None:
-        """HĐ-9.1. min_clearance 0.3965 is the midpoint of [0.273, 0.52];
+        """HĐ-9.1. min_clearance 0.13 is the midpoint of [0.0, 0.26];
         near_miss_rate 0.25 is the midpoint of [0.5, 0.0]."""
         resolved, owner = anchors(), candidate()
-        metric = episode(owner, min_clearance=0.3965, near_miss_rate=0.25)
+        metric = episode(owner, min_clearance=0.13, near_miss_rate=0.25)
         assert episode_objectives(metric, resolved, owner).u_s == pytest.approx(0.5, abs=1e-3)
 
     def test_efficiency_is_half_path_half_time(self) -> None:
@@ -354,8 +481,8 @@ class TestDecisionUtility:
         resolved = anchors()
         careful = candidate(params={"astar": {"heuristic": "euclidean"}})
         brisk = candidate(params={"astar": {"heuristic": "manhattan"}})
-        careful_metrics = [episode(careful, min_clearance=0.52, p99_latency_ms=45.0)]
-        brisk_metrics = [episode(brisk, min_clearance=0.30, p99_latency_ms=10.0)]
+        careful_metrics = [episode(careful, min_clearance=0.26, p99_latency_ms=45.0)]
+        brisk_metrics = [episode(brisk, min_clearance=0.04, p99_latency_ms=10.0)]
 
         night = DecisionSettings(preference_profile="kho_ban_dem")
         hospital = DecisionSettings(preference_profile="benh_vien_gio_cao_diem")

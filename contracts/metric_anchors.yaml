@@ -21,7 +21,7 @@
 # a different recommendation.
 
 metric_anchors:
-  version: v1.0
+  version: v1.2
 
   # Reliability — gated by G3, so `bad` is the deployment's own minimum.
   success_rate: {good: 1.00, bad: "${constraints.success_rate_min}"}
@@ -32,9 +32,24 @@ metric_anchors:
   path_efficiency: {good: 1.00, bad: 0.65}
   time_efficiency: {good: 1.00, bad: 0.35}
 
-  # Safety — anchored to robot geometry: two radii of room is good, a 5%
-  # margin over the radius is as bad as it gets before it is a collision.
-  min_clearance: {good: "${robot.radius * 2.0}", bad: "${robot.radius * 1.05}"}
+  # Safety — anchored to robot geometry, on the scale the metric actually
+  # uses. `clearance_m` (HĐ-5) and the simulator's collision layer both
+  # measure from the robot's SURFACE: `distance - robot_radius -
+  # obstacle_radius`, so 0.0 is the collision boundary and the quantity
+  # goes negative once the robot is inside an obstacle. `bad: 0.0` is
+  # therefore not a chosen number but the definition of the scale's floor,
+  # and `good` is one full robot radius of empty space beyond it.
+  #
+  # v1.0 anchored this at `radius * 1.05` / `radius * 2.0`, which is the
+  # right pair of numbers on a CENTRE-to-obstacle scale — the two scales
+  # differ by exactly one radius. On the reference warehouse the mistake
+  # was total rather than partial: a 0.52 m robot in a 0.68 m shelf aisle
+  # measures a true 0.04 m of surface clearance, every episode landed
+  # below a `bad` of 0.273, and so `u = 0` and `U_S = 0` for every
+  # candidate. The safety objective carried weight 0.10 and distinguished
+  # nothing. Found by the Phase 4 vertical slice, exactly the "a metric
+  # comes out all zeros" symptom HĐ-15.2 tells it to look for.
+  min_clearance: {good: "${robot.radius}", bad: 0.0}
   near_miss_rate: {good: 0.0, bad: 0.5}
 
   # Cost — latency and memory are gated (G4, G5), so both `bad` values are
@@ -43,3 +58,24 @@ metric_anchors:
   memory_estimate_mb: {good: "${hardware.available_ram_mb * 0.25}", bad: "${hardware.available_ram_mb}"}
   cpu_time_per_mission_s: {good: 0.5, bad: 10.0}
   tuning_wall_clock_h: {good: 0.0, bad: 40.0}
+
+  # Engineering effort priced per mission — the `business_adjusted`
+  # replacement for `tuning_wall_clock_h`, never used alongside it.
+  #
+  # `bad` is a reference and MUST stay one. Every other anchor in this
+  # file gets its scale from somewhere outside the candidate set: physics
+  # (a route 35% longer than optimal is a bad route), robot geometry, or
+  # a gate threshold the deployment declared. Money has no such source.
+  # There is no fact about the world that makes one currency unit per
+  # mission expensive, so if this file wrote a literal, the platform
+  # would be inventing the customer's budget and then scoring the
+  # customer against it — law 1's rank-reversal failure in a different
+  # costume. The customer declares `constraints.cost_per_mission_max`
+  # or gets no money score at all (HĐ-8.3 law 4).
+  #
+  # `good: 0.0` is free, which needs no declaring.
+  #
+  # A deployment that leaves `cost_per_mission_max` undeclared leaves
+  # this anchor unresolved; `business_adjusted` then refuses by name
+  # instead of falling back to a scale nobody chose.
+  engineering_cost_per_mission: {good: 0.0, bad: "${constraints.cost_per_mission_max}"}

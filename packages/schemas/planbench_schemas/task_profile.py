@@ -192,6 +192,14 @@ class TaskConstraints(BaseModel):
     episode_timeout_s: float = Field(gt=0)
     stuck_threshold_s: float = Field(gt=0)
     clearance_warning_m: float = Field(ge=0, description="Near-miss counting threshold.")
+    #: What the site is willing to pay per mission, in the currency the
+    #: business profile declares. Optional and defaulted to nothing on
+    #: purpose: it is the scale that ``business_adjusted`` prices
+    #: engineering effort against, and a default here would be the
+    #: platform inventing a budget for the customer. Absent, the money
+    #: anchor does not resolve and business mode refuses rather than
+    #: guesses (HĐ-8.3 law 4, HĐ-9.3).
+    cost_per_mission_max: float | None = Field(default=None, gt=0)
 
     @property
     def n_min_evaluation_episodes(self) -> int:
