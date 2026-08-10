@@ -1,6 +1,6 @@
 # CONTRACTS.md — Planner Selector
 
-> **Phiên bản hợp đồng:** `contracts_version: 2.0.1`
+> **Phiên bản hợp đồng:** `contracts_version: 2.1.0`
 > **Trạng thái:** cần cả nhóm đọc và ký ở mục 16. Phase 1 (schema gốc) đã hiện thực theo bản 1.1.0; bản 2.0.0 sửa G5 — xem lịch sử phiên bản ở mục 18.
 > **Vị trí:** `contracts/CONTRACTS.md` ở gốc repo (trước đây là `docs/antongduy/CONTRACTS_1.md`).
 > **Tài liệu mẹ:** `docs/antongduy/de-tai-moi-planner-selector.md`. Khi hai tài liệu mâu thuẫn, **CONTRACTS.md thắng** — plan là lý do, contract là luật.
@@ -112,6 +112,24 @@ resource_profile:
 **`resource_profile` không vào `candidate_id`.** Định danh (1.3) là hash của những gì đổi *hành vi*; khai lại `bytes_per_search_node` theo một hiện thực C++ khác không làm robot chạy khác đi một mét nào. Đưa nó vào hash sẽ tách một candidate đã chạy 300 episode thành hai candidate mồ côi chỉ vì sửa một con số kế toán bộ nhớ — và 1.3 là một trong ba thứ đóng băng sau tuần 1.
 
 **Vi phạm trông như thế nào:** một candidate `monolithic` đăng ký với `source: declared` rồi được tuyên bố qua G5 như thể đã kiểm chứng. Với `kind: artifact`, `source: declared` **chỉ cho phép sàng lọc**, không cho phép kết luận đạt (HĐ-7.3).
+
+### 1.6. Khai báo chi phí kỹ thuật (phục vụ O4 và tie-break)
+
+*(Thêm ở 2.1.0.)* HĐ-6 nói ba đại lượng `tuning_trials_used`, `tuning_wall_clock_h`, `n_tunable_params` được "khai báo lúc đăng ký candidate, có bằng chứng log", nhưng bản 2.0.x không cho chúng một chỗ trong schema. Đây là chỗ đó:
+
+```yaml
+tuning:
+  tuning_trials_used: 30
+  tuning_wall_clock_h: 24.0        # engineering_cost ở chế độ technical (HĐ-9.3)
+  n_tunable_params: 12             # tie-break bậc 3 (HĐ-11.3)
+  evidence_log: artifacts/tuning/k2_optuna.log   # bằng chứng, bắt buộc
+```
+
+**Trường `tuning` có mặc định `null`** — một candidate chưa khai vẫn parse được (nó vẫn chạy được episode và vẫn qua được cổng). Nhưng `U_C` **không tính được** khi thiếu nó, và tầng objective phải từ chối thay vì thay bằng 0: coi "chưa khai" là "không tốn công" thì candidate lười khai luôn thắng ở O4.
+
+**`tuning` không vào `candidate_id`**, cùng lý do với `resource_profile` (1.5): số giờ đã bỏ ra để tìm ra bộ tham số không làm robot chạy khác đi — bộ tham số tìm được thì có, và nó đã nằm trong hash qua `params`.
+
+**Vi phạm trông như thế nào:** một candidate khai `tuning_wall_clock_h: 0` mà không có `evidence_log`, rồi thắng ở O4 nhờ "miễn phí". Trường bằng chứng là bắt buộc chính vì con số này là **tự khai** và nó đi thẳng vào điểm.
 
 ---
 
@@ -496,6 +514,19 @@ U_C = β1*u(p99_latency_ms) + β2*u(memory_estimate_mb)
 
 Mặc định `β = (0.30, 0.20, 0.20, 0.30)`. Ở chế độ `measured_only`, `β4 = 0` và ba β còn lại được chuẩn hóa lại về tổng 1.
 
+**Hai mức tổng hợp, và chúng không bằng nhau ở `U_R`.** *(Làm rõ ở 2.1.0 — phát hiện khi hiện thực Phase 3.3.)* Hệ tính objective ở hai mức, cả hai đều cần và không được lẫn:
+
+| Mức | Đầu vào | Dùng ở đâu |
+|---|---|---|
+| **episode** | metric của **một** episode; `success` là 0 hoặc 1 | `decision_utility` theo từng episode ⇒ `ΔU` ghép cặp (HĐ-11.1, 11.2) |
+| **set** | metric tổng hợp trên **cả tập** `evaluation`; `success_rate` là trung bình | khối `objectives` và `decision_utility` in trên Decision Card (HĐ-12) |
+
+Vì `u()` là hàm affine **có clip**, hai mức trùng nhau ở mọi metric mà không episode nào chạm biên clip — và **lệch nhau ở `U_R`**, nơi biên clip luôn bị chạm: `u(success = 0) = 0` và `u(success = 1) = 1`, nên trung bình theo episode bằng đúng `success_rate` (0,967), trong khi mức set cho `u(0,967) = 0,34` với `success_rate_min = 0,95`. Con số **0,34 là con số của Decision Card** — đúng như ví dụ chạy tay §6.2 của tài liệu mẹ, và đúng ý đồ "chấm trên phần dôi so với ngưỡng".
+
+Hệ quả bắt buộc: **`decision_utility` in trên card không phải trung bình của `decision_utility` theo episode**, và không được trình bày như thể là. Card in số mức set; thống kê ΔU chạy trên số mức episode. Cả hai đều tái lập được từ manifest, nên HĐ-13 không bị ảnh hưởng.
+
+**Vi phạm trông như thế nào:** một `U_R` bằng 0,967 xuất hiện trên Decision Card — đó là mức episode bị đem in ở chỗ của mức set, và nó xóa mất toàn bộ ý nghĩa "dôi bao nhiêu so với ngưỡng khách hàng khai".
+
 ### 9.2. Decision Utility
 
 ```python
@@ -613,7 +644,7 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
 
 ```json
 {
-  "contracts_version": "2.0.1",
+  "contracts_version": "2.1.0",
   "recommendation_scope": "MISSION_LEVEL | DEPLOYMENT_LEVEL | ROBUST_DEPLOYMENT_LEVEL",
   "experiment_scope": "full_stack_selection",
   "decision_mode": "technical | business_adjusted",
@@ -665,7 +696,7 @@ Mọi lần ra quyết định ghi một `manifest.json`:
 
 ```json
 {
-  "contracts_version": "2.0.1",
+  "contracts_version": "2.1.0",
   "git_sha": "...",
   "docker_image_digest": "sha256:...",
   "task_profile_id": "warehouse_a_v1",
@@ -800,6 +831,12 @@ Hai định danh frozen của contract (`candidate_id`, `episode_context_id`) d�
 | 1.1.0 | 2026-08-09 | MINOR | Bốn thay đổi, chi tiết dưới đây. |
 | 2.0.0 | 2026-08-09 | **MAJOR** | Sửa G5: bỏ `peak_rss_mb ≤ available_ram_mb`, thay bằng `memory_estimate_mb`. Chi tiết dưới đây. |
 | 2.0.1 | 2026-08-09 | PATCH | HĐ-8.2 và HĐ-9.1 gọi metric clearance là `min_clearance_m`, HĐ-6 gọi là `min_clearance`. Đổi hai chỗ đầu theo HĐ-6 — anchor key tra theo đúng tên metric, nên hai tên là một anchor không bao giờ khớp và một metric âm thầm không có thang. Phát hiện khi hiện thực 3.1. |
+| 2.1.0 | 2026-08-10 | MINOR | Hai thay đổi, phát hiện khi hiện thực Phase 3.3. Chi tiết dưới đây. |
+
+**Chi tiết 2.1.0** — đúng cơ chế HĐ-15.2 dự trù: chỉ sửa hợp đồng khi việc chạy code phát hiện một giả định thiếu. Không đụng vào ba định danh đóng băng.
+
+1. **HĐ-1.6 mới — schema cho khai báo chi phí kỹ thuật** (thêm trường có mặc định `null` ⇒ MINOR). HĐ-6 đã yêu cầu `tuning_wall_clock_h` và `n_tunable_params` "khai lúc đăng ký candidate", nhưng không có chỗ nào trong schema nhận chúng — nên `U_C` (β4 = 0,30, đồng hạng lớn nhất) và tie-break bậc 3 của HĐ-11.3 đều không hiện thực được. Không vào `candidate_id`.
+2. **HĐ-9.1 làm rõ — objective có hai mức tổng hợp, và chúng lệch nhau ở `U_R`.** Bản 2.0.x vừa chú thích `U_R = u(success)` "theo episode: 0 hoặc 1", vừa in `U_R = 0,34` trên card mẫu — hai phát biểu không thể cùng đúng, vì `u` có clip nên trung bình theo episode ra 0,967 chứ không ra 0,34. Bản này đặt tên và tách vai cho cả hai: mức episode nuôi `ΔU` ghép cặp (HĐ-11.1), mức set in trên card (HĐ-12). Đây là **làm rõ câu chữ** (không đổi công thức nào), nhưng đi cùng thay đổi 1 nên cả bump là MINOR.
 
 **Chi tiết 2.0.0** — làm ngay trước Phase 2.1 (TraceRecorder), tức trước khi tồn tại một file trace nào.
 
