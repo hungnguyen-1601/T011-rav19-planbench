@@ -5,20 +5,26 @@ scored them, the paired bootstrap decided whether the leader is actually
 ahead — and all of it exists to produce one document a person can act on
 and another person can rebuild.
 
-**The card may only say what was established.** Three fields belong to
-analyses that phase 3 does not run: ``pareto_label`` is
-``UNCERTAIN_DOMINANCE`` (HĐ-10.1's own name for "not enough data to
-conclude"), ``alternative`` is null because it may only ever be a
-``PARETO_FRONTIER`` candidate, and the three stability figures in
-``evidence`` are null. Null reads as *not measured*; a plausible default
-would read as *measured and fine*, and nobody downstream could tell the
-difference.
+**The card may only say what was established.** Every analysis that
+feeds it is optional and every one of them is *absent* rather than
+assumed when it did not run: no Pareto analysis leaves ``pareto_label``
+at ``UNCERTAIN_DOMINANCE`` — HĐ-10.1's own name for "not enough data to
+conclude" — and ``alternative`` null; no sensitivity sweep leaves the
+stability figures null. Null reads as *not measured*; a plausible
+default would read as *measured and fine*, and nobody downstream could
+tell the difference.
 
 **The runner-up is not the alternative.** ``recommend`` returns the
 second-ranked candidate because that is what the label is defined
-against (HĐ-11.3). The card's ``alternative`` is a different claim — "you
-could also ship this one" — and it needs the Pareto analysis to support
-it. The two are deliberately not wired together.
+against (HĐ-11.3) — second on one weighted sum, which a candidate worse
+on every objective at once can still be. The card's ``alternative`` is a
+different claim, "you could also ship this one", so it comes only from
+the Pareto frontier. The two are deliberately not wired together.
+
+**A dominated candidate is never recommended.** If the weighted sum puts
+one on top anyway, some rival is no worse on all four objectives and
+better on at least one, so the recommendation is an artefact of the
+weights rather than a finding. That is a refusal, not a warning.
 
 **A recommendation must have cleared every gate.** Gates run before
 scoring, so a candidate that failed one is not a worse choice, it is not
@@ -47,6 +53,13 @@ from planbench_decision.anchors import ResolvedAnchors
 from planbench_decision.candidate import ExperimentScope
 from planbench_decision.gates import GateReport, assert_no_banned_language
 from planbench_decision.objectives import DecisionSettings
+from planbench_decision.pareto import (
+    ParetoLabel,
+    ParetoReport,
+    choose_alternative,
+    require_labelled,
+)
+from planbench_decision.sensitivity import AnchorStability, WeightStability
 from planbench_decision.stats import CandidateEvidence, Recommendation, RecommendationStatus
 from planbench_schemas.contracts import CONTRACTS_VERSION
 from planbench_schemas.episode_context import EpisodeContext
@@ -74,7 +87,11 @@ _CONTRACTS_DIR = Path(__file__).resolve().parents[3] / "contracts"
 CARD_SCHEMA_PATH = _CONTRACTS_DIR / "schemas" / "decision_card.schema.json"
 MANIFEST_SCHEMA_PATH = _CONTRACTS_DIR / "schemas" / "manifest.schema.json"
 
-ParetoLabel = Literal["PARETO_FRONTIER", "LIKELY_DOMINATED", "UNCERTAIN_DOMINANCE"]
+#: ``ParetoLabel`` is imported from :mod:`planbench_decision.pareto`,
+#: which owns the three labels and the rule that assigns them, and
+#: re-exported here because HĐ-12 is what most readers arrive through.
+#: Two spellings of the same Literal would drift the moment HĐ-10.1
+#: gained a fourth label.
 RecommendationScope = Literal["MISSION_LEVEL", "DEPLOYMENT_LEVEL", "ROBUST_DEPLOYMENT_LEVEL"]
 
 #: HĐ-2.2's claim levels, in the card's vocabulary.
@@ -303,6 +320,9 @@ def build_decision_card(
     manifest_ref: str,
     *,
     neighborhood_evaluated: bool = False,
+    weight_stability: WeightStability | None = None,
+    anchor_stability: AnchorStability | None = None,
+    pareto: ParetoReport | None = None,
 ) -> DecisionCard:
     """Assemble HĐ-12 from what the previous phases established.
 
@@ -326,6 +346,10 @@ def build_decision_card(
 
     _require_gates_reported(evidence, gate_reports)
     _require_all_gates_passed(recommendation.recommended_id, gate_reports)
+    _require_stability_matches(recommendation, weight_stability, anchor_stability)
+    if pareto is not None:
+        require_labelled(pareto, {item.candidate_id: None for item in evidence})
+    _require_not_dominated(recommendation, pareto)
 
     comparison = recommendation.comparison
     return DecisionCard(
@@ -340,10 +364,11 @@ def build_decision_card(
             candidate_id=winner.candidate_id,
             stack=winner.candidate.stack_label,
         ),
-        # HĐ-12: only ever a PARETO_FRONTIER candidate, and that label
-        # does not exist until phase 5.2 runs. The statistical runner-up
-        # is a different claim and is not promoted here.
-        alternative=None,
+        # HĐ-12: only ever a PARETO_FRONTIER candidate. The statistical
+        # runner-up is a different claim — second on one weighted sum,
+        # possibly worse on every objective at once — so without a Pareto
+        # analysis there is nothing this field may say.
+        alternative=_alternative_block(pareto, recommendation),
         # Sorted by id rather than by rank: the gate table is the
         # eliminated candidates' row too, and a rebuild has to produce
         # the same file byte for byte (HĐ-13), which a rank-dependent
@@ -351,15 +376,23 @@ def build_decision_card(
         gates=tuple(gate_reports[key].to_card() for key in sorted(gate_reports)),
         objectives=winner.set_objectives.to_card(),
         decision_utility=winner.set_objectives.decision_utility,
-        # HĐ-10.1's own name for "not enough data to conclude". Printing
-        # PARETO_FRONTIER without having run the analysis would assert
-        # something unchecked.
-        pareto_label="UNCERTAIN_DOMINANCE",
+        # HĐ-10.1's own name for "not enough data to conclude", which is
+        # exactly the honest label when the analysis did not run.
+        pareto_label=(
+            "UNCERTAIN_DOMINANCE"
+            if pareto is None
+            else pareto.label_of(recommendation.recommended_id)
+        ),
         evidence=EvidenceBlock(
             delta_u_vs_second=comparison.delta_median,
             ci95=comparison.ci95,
             n_episodes=comparison.n_episodes,
             effect_size=comparison.effect_size,
+            # Still null when the sweep was not run: HĐ-12's own reading
+            # is that null means "not measured", and a default number
+            # would read as "measured, and fine".
+            weight_stability_margin=None if weight_stability is None else weight_stability.margin,
+            anchor_stability=None if anchor_stability is None else anchor_stability.verdict,
         ),
         declared_assumptions=None
         if settings.business_profile is None
@@ -396,7 +429,7 @@ def build_manifest(
         docker_image_digest=provenance.docker_image_digest,
         task_profile_id=profile.id,
         anchor_config_version=anchors.version,
-        preference_profile=settings.preference_profile,
+        preference_profile=settings.profile_label,
         decision_mode=settings.decision_mode,
         travel_time_accounting=settings.travel_time_accounting,
         candidates=tuple(sorted(gate_reports)),
@@ -461,6 +494,82 @@ def _require_all_gates_passed(candidate_id: str, gate_reports: Mapping[str, Gate
             f"{list(report.blocking_gates)}. A gate is not a low score to be outweighed — a "
             "candidate that fails one is not a choice at all (HĐ-7)"
         )
+
+
+def _alternative_block(
+    pareto: ParetoReport | None, recommendation: Recommendation
+) -> AlternativeBlock | None:
+    """HĐ-12's ``alternative``, or ``None`` when nothing may be offered.
+
+    ``None`` in three distinct situations, all of which the contract
+    treats the same way — say nothing:
+
+    - no Pareto analysis ran, so no candidate holds the label that
+      qualifies it;
+    - the frontier holds only the recommendation itself;
+    - the frontier holds others, but none of them was scored into the
+      ranking.
+    """
+    if pareto is None:
+        return None
+    alternative_id = choose_alternative(
+        pareto, recommendation.recommended_id, recommendation.ranking
+    )
+    if alternative_id is None:
+        return None
+    return AlternativeBlock(
+        candidate_id=alternative_id,
+        reason=(
+            "trên biên Pareto — không bị candidate nào lấn át, nên là lựa chọn hợp lệ "
+            "dưới một bộ trọng số khác"
+        ),
+    )
+
+
+def _require_not_dominated(recommendation: Recommendation, pareto: ParetoReport | None) -> None:
+    """A ``LIKELY_DOMINATED`` candidate must never be the recommendation.
+
+    HĐ-10.1 says a dominated candidate is scored and shown but never
+    proposed. If the weighted sum still put one on top, the disagreement
+    is not a rounding matter: some rival is no worse on all four
+    objectives and better on at least one, so the recommendation is an
+    artefact of the weights and the card would be handing it over as
+    advice.
+    """
+    if pareto is None:
+        return
+    if pareto.label_of(recommendation.recommended_id) == "LIKELY_DOMINATED":
+        dominators = pareto.dominated_by(recommendation.recommended_id)
+        raise CardError(
+            f"candidate {recommendation.recommended_id} leads on decision_utility but is "
+            f"dominated by {list(dominators)}: no worse on every objective and better on at "
+            "least one. HĐ-10.1 does not let a dominated candidate be recommended"
+        )
+
+
+def _require_stability_matches(
+    recommendation: Recommendation,
+    weight_stability: WeightStability | None,
+    anchor_stability: AnchorStability | None,
+) -> None:
+    """A sweep may only be printed beside the run it was swept on.
+
+    Both sweeps re-derive the baseline recommendation themselves, so
+    theirs disagreeing with this card's is not a rounding difference —
+    it means the numbers came from a different field, a different anchor
+    set or different settings. Printed unchecked, the card would carry a
+    stability margin measured for somebody else, which is worse than
+    carrying none: ``null`` reads as "not measured" and a wrong number
+    reads as fact.
+    """
+    for name, sweep in (("weight", weight_stability), ("anchor", anchor_stability)):
+        if sweep is not None and sweep.recommended_id != recommendation.recommended_id:
+            raise CardError(
+                f"the {name} sensitivity sweep was run on a field recommending "
+                f"{sweep.recommended_id}, but this card recommends "
+                f"{recommendation.recommended_id}; a stability margin belongs to one run and "
+                "cannot be carried onto another"
+            )
 
 
 def _shared_evaluation_ids(evidence: Sequence[CandidateEvidence]) -> tuple[str, ...]:

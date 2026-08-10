@@ -18,6 +18,7 @@ from planbench_schemas.geometry import Point2D, Pose2D
 from planbench_schemas.map import MapData
 from planbench_schemas.robot import RobotState, SimAction
 from planbench_schemas.scenario import CircleObstacle, Scenario
+from planbench_simulator.collision import DEFAULT_CLEARANCE_WINDOW_M
 from planbench_simulator.engine import SimulationEngine
 from planbench_simulator.grid import OccupancyGrid
 from planbench_simulator.trace import (
@@ -229,11 +230,28 @@ class TestClearanceProbe:
     def test_obstacle_free_world_still_measures_the_walls(self) -> None:
         """Clearance to an empty set of shapes is infinity, which no
         float column can hold and no percentile survives. The grid is
-        what keeps the answer finite: the map boundary always replies."""
+        what keeps the answer finite: the map boundary always replies.
+
+        Far from everything the probe reports its search window rather
+        than the true distance (``clearance_to_grid_within``): this pose
+        is 5 m from the nearest wall and the answer is the 2 m window
+        minus the radius. That is a floor, not a measurement, and it is
+        deliberately on the pessimistic side — both safety anchors
+        saturate well below 2 m, so nothing downstream can tell the
+        difference, and the exhaustive alternative costs a whole-map scan
+        per recorded control step.
+        """
         probe = clearance_probe(self.grid(), (), 0.3)
         value = probe(Pose2D(x=5.0, y=5.0, theta=0.0))
         assert math.isfinite(value)
-        assert value == pytest.approx(5.0 - 0.3)
+        assert value == pytest.approx(DEFAULT_CLEARANCE_WINDOW_M - 0.3)
+
+    def test_near_field_clearance_is_exact(self) -> None:
+        """Inside the window — where every safety metric lives — the
+        probe still reports the true distance."""
+        probe = clearance_probe(self.grid(), (), 0.3)
+        value = probe(Pose2D(x=0.8, y=5.0, theta=0.0))
+        assert value == pytest.approx(0.8 - 0.3)
 
     def test_recorder_uses_the_probe(self, tmp_path: Path) -> None:
         probe = clearance_probe(

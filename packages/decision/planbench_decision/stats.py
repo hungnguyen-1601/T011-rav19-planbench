@@ -61,6 +61,7 @@ if TYPE_CHECKING:  # pragma: no cover - import cycle, see gates.py
 __all__ = [
     "BOOTSTRAP_RESAMPLES",
     "DEGENERATE_SPREAD",
+    "OBJECTIVE_NAMES",
     "TIE_BREAK_ORDER",
     "CandidateEvidence",
     "PairedComparison",
@@ -69,10 +70,20 @@ __all__ = [
     "StatisticsRefusal",
     "build_evidence",
     "compare_pair",
+    "paired_bootstrap_ci",
     "recommend",
 ]
 
 RecommendationStatus = Literal["CLEAR_RECOMMENDATION", "NEAR_EQUIVALENT"]
+
+#: HĐ-9.1's four objectives, mapped to where they live on an
+#: :class:`~planbench_decision.objectives.ObjectiveBreakdown`. Keyed by
+#: the contract's names because those are what a Pareto report prints
+#: and what a reader looks up in HĐ-9.1.
+_OBJECTIVE_FIELDS: dict[str, str] = {"U_R": "u_r", "U_S": "u_s", "U_E": "u_e", "U_C": "u_c"}
+
+#: The same four, in the contract's order, for callers that iterate.
+OBJECTIVE_NAMES: tuple[str, ...] = ("U_R", "U_S", "U_E", "U_C")
 
 #: Spread below which the differences count as identical. Utilities live
 #: in [0, 1], so a standard deviation of 1e-12 is not measured
@@ -109,19 +120,33 @@ class CandidateEvidence(BaseModel):
     Holds both aggregation levels of HĐ-9.1 because they answer different
     questions and neither substitutes for the other: ``set_objectives``
     is what the card prints and what ranks the field,
-    ``episode_utilities`` is what the paired bootstrap resamples.
+    ``episode_objectives`` is what the paired bootstrap resamples.
+
+    The per-episode side keeps the whole breakdown rather than only the
+    utility it folds down to. HĐ-10.2 compares candidates **objective by
+    objective**, so a Pareto analysis needs ``U_R``/``U_S``/``U_E``/``U_C``
+    per episode; storing the scalar and reconstituting the four later is
+    not possible, and storing both invites the two to disagree.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
     candidate: Candidate
     set_objectives: ObjectiveBreakdown
-    #: ``episode_context_id`` → ``decision_utility`` for that episode.
-    episode_utilities: dict[str, float]
+    #: ``episode_context_id`` → that episode's four objectives.
+    episode_objectives: dict[str, ObjectiveBreakdown]
+
+    @property
+    def episode_utilities(self) -> dict[str, float]:
+        """``episode_context_id`` → ``decision_utility`` for that episode."""
+        return {
+            context: breakdown.decision_utility
+            for context, breakdown in self.episode_objectives.items()
+        }
 
     @model_validator(mode="after")
     def _validate(self) -> CandidateEvidence:
-        if not self.episode_utilities:
+        if not self.episode_objectives:
             raise StatisticsRefusal(
                 f"candidate {self.candidate.candidate_id} has no scored episodes"
             )
@@ -143,7 +168,25 @@ class CandidateEvidence(BaseModel):
 
     @property
     def contexts(self) -> tuple[str, ...]:
-        return tuple(sorted(self.episode_utilities))
+        return tuple(sorted(self.episode_objectives))
+
+    def objective_series(self, objective: str) -> dict[str, float]:
+        """``episode_context_id`` → one objective's value (HĐ-10.2).
+
+        Keyed by context rather than returned as a list because the
+        caller pairs on the context, and a list would silently pair on
+        position — which is only the same thing while two candidates
+        happen to have their episodes in the same order.
+        """
+        if objective not in _OBJECTIVE_FIELDS:
+            raise StatisticsRefusal(
+                f"unknown objective {objective!r}; HĐ-9.1 defines {sorted(_OBJECTIVE_FIELDS)}"
+            )
+        field = _OBJECTIVE_FIELDS[objective]
+        return {
+            context: float(getattr(breakdown, field))
+            for context, breakdown in self.episode_objectives.items()
+        }
 
     @property
     def utility_iqr(self) -> float:
@@ -240,22 +283,22 @@ def build_evidence(
             "cannot take part"
         )
 
-    utilities: dict[str, float] = {}
+    breakdowns: dict[str, ObjectiveBreakdown] = {}
     for metric in metrics:
-        if metric.episode_context_id in utilities:
+        if metric.episode_context_id in breakdowns:
             raise StatisticsRefusal(
                 f"context {metric.episode_context_id} appears twice for candidate "
                 f"{candidate.candidate_id}; the bootstrap resamples contexts, and a repeated "
                 "condition would be drawn as two independent episodes"
             )
-        utilities[metric.episode_context_id] = episode_objectives(
+        breakdowns[metric.episode_context_id] = episode_objectives(
             metric, anchors, candidate, settings
-        ).decision_utility
+        )
 
     return CandidateEvidence(
         candidate=candidate,
         set_objectives=set_objectives(metrics, anchors, candidate, settings),
-        episode_utilities=utilities,
+        episode_objectives=breakdowns,
     )
 
 
@@ -291,10 +334,7 @@ def compare_pair(
         [a.episode_utilities[c] - b.episode_utilities[c] for c in shared], dtype=float
     )
 
-    rng = np.random.default_rng(seed)
-    indices = rng.integers(0, len(deltas), size=(n_resamples, len(deltas)))
-    boot_means = deltas[indices].mean(axis=1)
-    low, high = np.percentile(boot_means, [2.5, 97.5])
+    low, high = paired_bootstrap_ci(deltas, seed=seed, n_resamples=n_resamples)
 
     return PairedComparison(
         candidate_a=a.candidate_id,
@@ -308,6 +348,30 @@ def compare_pair(
         n_resamples=n_resamples,
         seed=seed,
     )
+
+
+def paired_bootstrap_ci(
+    deltas: np.ndarray, *, seed: int, n_resamples: int = BOOTSTRAP_RESAMPLES
+) -> tuple[float, float]:
+    """HĐ-11.2's 95% CI of a paired difference, and the one place it lives.
+
+    Shared by the head-to-head comparison (HĐ-11.3) and the Pareto
+    dominance test (HĐ-10.2). One implementation because the two must
+    agree: a candidate cannot be ``CLEAR_RECOMMENDATION`` against a rival
+    on one bootstrap and inconclusive against the same rival on another.
+
+    Deterministic given ``seed`` — the interval reaches a card that
+    HĐ-13 says somebody else rebuilds.
+    """
+    if deltas.size == 0:
+        raise StatisticsRefusal("a bootstrap needs at least one paired difference")
+    if n_resamples < 1:
+        raise StatisticsRefusal(f"n_resamples must be positive, got {n_resamples}")
+    rng = np.random.default_rng(seed)
+    indices = rng.integers(0, len(deltas), size=(n_resamples, len(deltas)))
+    boot_means = deltas[indices].mean(axis=1)
+    low, high = np.percentile(boot_means, [2.5, 97.5])
+    return float(low), float(high)
 
 
 def recommend(

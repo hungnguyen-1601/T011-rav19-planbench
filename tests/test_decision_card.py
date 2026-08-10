@@ -33,6 +33,13 @@ from planbench_decision.card import (
 )
 from planbench_decision.gates import assert_no_banned_language, evaluate_gates
 from planbench_decision.objectives import DecisionSettings
+from planbench_decision.pareto import ParetoError, label_field
+from planbench_decision.sensitivity import (
+    AnchorStability,
+    ScoredField,
+    WeightStability,
+    weight_stability,
+)
 from planbench_decision.stats import build_evidence, recommend
 from planbench_metrics.definitions import EpisodeMetricSet
 from planbench_schemas.contracts import CONTRACTS_VERSION
@@ -148,9 +155,22 @@ class Run:
         self.contexts = [context(seed) for seed in range(n)]
         self.evidence = []
         self.gate_reports = {}
+        #: Kept so a test can re-score this same field — the sensitivity
+        #: sweeps need the metrics, not the scores.
+        self.metrics_by_candidate: dict[str, list[EpisodeMetricSet]] = {}
         for owner, common in field:
             metrics = [episode(owner, ctx, **common) for ctx in self.contexts]
-            report = evaluate_gates(owner, self.profile, metrics, self.contexts)
+            self.metrics_by_candidate[owner.candidate_id] = metrics
+            report = evaluate_gates(
+                owner,
+                self.profile,
+                metrics,
+                self.contexts,
+                # G4's real input is pooled over every control step; a
+                # fixture built from per-episode metric sets has no such
+                # pool, and every episode here shares one latency anyway.
+                pooled_p99_latency_ms=max(m.p99_latency_ms for m in metrics),
+            )
             self.gate_reports[owner.candidate_id] = report
             # HĐ-7: gates run *before* any scoring. An eliminated
             # candidate still gets a row on the card, but it is never
@@ -364,6 +384,96 @@ class TestWhatTheCardRefuses:
             two_candidates.card()
 
 
+class TestStabilityFields:
+    """HĐ-11.5's three ``evidence`` fields, and the one way they can lie:
+    by describing a different run than the card they sit on."""
+
+    def test_they_stay_null_when_no_sweep_was_run(self, two_candidates: Run) -> None:
+        """HĐ-12's own reading: null means "not measured". A default
+        number would read as "measured, and fine"."""
+        evidence = two_candidates.card().to_json_dict()["evidence"]
+        assert evidence["weight_stability_margin"] is None
+        assert evidence["anchor_stability"] is None
+        assert evidence["robustness_margin"] is None
+
+    def test_a_sweep_is_printed_when_it_was_run(self, two_candidates: Run) -> None:
+        scored = ScoredField.from_survivors(
+            [item.candidate for item in two_candidates.evidence],
+            two_candidates.metrics_by_candidate,
+            two_candidates.contexts,
+            {item.candidate_id: True for item in two_candidates.evidence},
+        )
+        sweep = weight_stability(scored, two_candidates.anchors, two_candidates.settings)
+        # The fixture's two candidates differ only in latency, so this
+        # sweep is a real one; what matters here is that it reaches the
+        # card rather than what value it takes.
+        card = two_candidates.card(weight_stability=sweep)
+        assert card.to_json_dict()["evidence"]["weight_stability_margin"] == sweep.margin
+
+    def test_a_sweep_from_another_run_is_refused(self, two_candidates: Run) -> None:
+        """The failure this guard exists for: a margin measured for a
+        different field printed as if it described this one. Null reads
+        as "not measured"; a wrong number reads as fact."""
+        foreign = WeightStability(recommended_id="deadbeefcafe", margin=0.42, nearest_flip=None)
+        with pytest.raises(CardError, match="cannot be carried onto another"):
+            two_candidates.card(weight_stability=foreign)
+
+    def test_the_same_guard_covers_the_anchor_sweep(self, two_candidates: Run) -> None:
+        foreign = AnchorStability(recommended_id="deadbeefcafe", changed_at=(), sweep=0.10)
+        with pytest.raises(CardError, match="cannot be carried onto another"):
+            two_candidates.card(anchor_stability=foreign)
+
+
+class TestParetoOnTheCard:
+    """HĐ-10.1 and HĐ-12: the label, and the one field it gates."""
+
+    def test_without_the_analysis_nothing_is_claimed(self, two_candidates: Run) -> None:
+        """``UNCERTAIN_DOMINANCE`` is HĐ-10.1's own name for "not enough
+        data to conclude", which is exactly right when the analysis did
+        not run. ``alternative`` stays null for the same reason."""
+        card = two_candidates.card()
+        assert card.pareto_label == "UNCERTAIN_DOMINANCE"
+        assert card.alternative is None
+
+    def test_the_label_comes_from_the_analysis(self, two_candidates: Run) -> None:
+        report = label_field(two_candidates.evidence, seed=11)
+        card = two_candidates.card(pareto=report)
+        assert card.pareto_label == report.label_of(card.recommended.candidate_id)
+
+    def test_the_alternative_is_a_frontier_candidate(self, two_candidates: Run) -> None:
+        report = label_field(two_candidates.evidence, seed=11)
+        card = two_candidates.card(pareto=report)
+        if card.alternative is not None:
+            assert report.label_of(card.alternative.candidate_id) == "PARETO_FRONTIER"
+            assert card.alternative.candidate_id != card.recommended.candidate_id
+
+    def test_a_dominated_leader_cannot_be_recommended(self, two_candidates: Run) -> None:
+        """The failure this guard exists for: the weighted sum puts a
+        candidate on top that some rival beats on every objective at
+        once. That recommendation is an artefact of the weights, and the
+        card would be handing it over as advice (HĐ-10.1)."""
+        winner = two_candidates.recommendation.recommended_id
+        report = label_field(two_candidates.evidence, seed=11)
+        forged = report.model_copy(update={"labels": {**report.labels, winner: "LIKELY_DOMINATED"}})
+        with pytest.raises(CardError, match="dominated by"):
+            two_candidates.card(pareto=forged)
+
+    def test_an_unlabelled_candidate_is_refused(self, two_candidates: Run) -> None:
+        """HĐ-10.1: nobody disappears from the report."""
+        report = label_field(two_candidates.evidence, seed=11)
+        dropped = report.model_copy(
+            update={
+                "labels": {
+                    cid: label
+                    for cid, label in report.labels.items()
+                    if cid != two_candidates.recommendation.runner_up_id
+                }
+            }
+        )
+        with pytest.raises(ParetoError, match="carry no Pareto label"):
+            two_candidates.card(pareto=dropped)
+
+
 class TestManifest:
     def test_it_records_the_bootstrap_seed(self, two_candidates: Run) -> None:
         """Added at 2.2.0. Without it two people running this manifest get
@@ -376,7 +486,7 @@ class TestManifest:
     def test_it_records_the_anchor_version(self, two_candidates: Run) -> None:
         """HĐ-8.3 law 3: a recommendation computed under unknown anchors
         cannot be rebuilt."""
-        assert two_candidates.manifest().anchor_config_version == "v1.0"
+        assert two_candidates.manifest().anchor_config_version == "v1.2"
 
     def test_it_lists_the_context_ids_not_just_the_count(self, two_candidates: Run) -> None:
         """HĐ-3.2 requires every candidate to have run the same set, and
@@ -432,7 +542,9 @@ class TestManifest:
         b = candidate(params={"astar": {"heuristic": "manhattan"}})
         run = Run([(a, {"p99_latency_ms": 12.0}), (b, {"p99_latency_ms": 45.0})])
         shortened = run.evidence[1].model_copy(
-            update={"episode_utilities": dict(list(run.evidence[1].episode_utilities.items())[:10])}
+            update={
+                "episode_objectives": dict(list(run.evidence[1].episode_objectives.items())[:10])
+            }
         )
         run.evidence[1] = shortened
         with pytest.raises(CardError, match="different context sets"):

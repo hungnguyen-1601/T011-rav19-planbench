@@ -1,6 +1,6 @@
 # CONTRACTS.md — Planner Selector
 
-> **Phiên bản hợp đồng:** `contracts_version: 2.2.0`
+> **Phiên bản hợp đồng:** `contracts_version: 4.2.0`
 > **Trạng thái:** cần cả nhóm đọc và ký ở mục 16. Phase 1 (schema gốc) đã hiện thực theo bản 1.1.0; bản 2.0.0 sửa G5 — xem lịch sử phiên bản ở mục 18.
 > **Vị trí:** `contracts/CONTRACTS.md` ở gốc repo (trước đây là `docs/antongduy/CONTRACTS_1.md`).
 > **Tài liệu mẹ:** `docs/antongduy/de-tai-moi-planner-selector.md`. Khi hai tài liệu mâu thuẫn, **CONTRACTS.md thắng** — plan là lý do, contract là luật.
@@ -16,7 +16,13 @@
 1. Mở PR sửa `CONTRACTS.md`, nêu rõ hợp đồng nào và vì sao.
 2. Tăng `contracts_version` theo semver: PATCH = làm rõ câu chữ; MINOR = thêm trường có mặc định; **MAJOR = đổi ngữ nghĩa hoặc xóa trường**.
 3. MAJOR bắt buộc: chạy lại lát cắt dọc (mục 15) và ghi lại kết quả trong PR.
-4. Cần ≥2 người trong nhóm approve.
+4. Cần ≥2 người trong nhóm approve. — **Tạm bỏ qua từ 2026-08-10, xem dưới.**
+
+> **Ngoại lệ đang có hiệu lực — quy trình duyệt một người.** Từ `3.1.0`, hợp đồng được sửa và duyệt bởi **một người (An)**, không đợi đủ hai approve. Lý do: nhóm chưa vận hành đủ người ở giai đoạn này, và các bản từ `2.0.0` tới `3.0.0` đều được viết, hiện thực và nghiệm thu trong cùng một luồng làm việc — điều khoản ≥2 approve đã bị vi phạm im lặng qua sáu lần bump. Một điều khoản không ai theo làm mọi điều khoản còn lại mất trọng lượng, nên ghi ngoại lệ ra đây thay vì để nó tiếp tục bị bỏ qua.
+>
+> Điều **không** được nới cùng: mọi luật khác của mục 0 vẫn áp dụng nguyên vẹn — vẫn phải nêu rõ sửa hợp đồng nào và vì sao, vẫn bump semver đúng loại, và MAJOR vẫn bắt buộc chạy lại lát cắt dọc. Ngoại lệ này chỉ nói về **số chữ ký**, không nói về mức cẩn thận.
+>
+> Gỡ ngoại lệ khi nhóm có ≥2 người đọc được contract; lúc đó tăng PATCH và xóa khối này.
 
 **Ba thứ tuyệt đối không đổi sau tuần 1** vì mọi thứ khác phụ thuộc vào chúng: định danh candidate (HĐ-1), episode context ghép cặp (HĐ-3), và schema trace (HĐ-5).
 
@@ -378,7 +384,7 @@ Cổng chạy **trước** mọi phép chấm điểm. Ngưỡng lấy từ `tas
 | G1 | `no_path_rate ≤ 0.02` | constraints |
 | G2 | `collision_count == 0` trên toàn bộ bộ `evaluation` **AND** `N_eval ≥ N_min` | xem 7.1 |
 | G3 | `success_rate ≥ success_rate_min` | constraints |
-| G4 | `p99_latency_ms ≤ control_period × 1000` | robot.control_period |
+| G4 | `p99_latency_ms ≤ control_period × 1000`, gộp toàn bộ bước điều khiển của bộ `evaluation` — xem 7.2 | robot.control_period |
 | G5 | `memory_estimate_mb ≤ available_ram_mb` | hardware + `resource_profile` |
 | G6 | `set(observation_requirements) ⊆ set(available_observations)` | task_profile |
 
@@ -397,6 +403,23 @@ N_min = ceil(3 / constraints.collision_probability_max)  # 0.01 ⇒ 300
 Báo cáo bắt buộc kèm: `"0 va chạm quan sát trong {N} lần chạy; cận trên 95% dưới phân phối kịch bản đã mô phỏng: {3/N:.1%}"`. Chuỗi "an toàn" **bị cấm** xuất hiện cạnh kết quả G2 (có test kiểm tra chuỗi này trong CI).
 
 ### 7.2. G4 — hai pha, và giới hạn của mỗi pha
+
+**Phép gộp trên cả bộ: phân vị 99 của *mọi bước điều khiển*, không phải của episode tệ nhất.** *(Đổi ở 3.0.0 — xem mục 18.)* HĐ-6 định nghĩa `p99_latency_ms` theo từng episode; câu hỏi "cả bộ thì lấy con số nào" bản 2.x không trả lời, và hiện thực đầu tiên chọn **max theo episode** với lập luận "ngân sách là trần, một episode vượt là một vi phạm".
+
+Lần chạy lát cắt dọc đầu tiên cho thấy lựa chọn đó sai. Năm trong ba mươi episode của `astar+dwa` được đo đúng lúc một bộ test chạy trên cùng máy; `p99` của chúng lên 119 ms so với ngân sách 100 ms, trong khi chính candidate đó trên máy rảnh đo được **5 ms** — nhanh hơn đối thủ đã qua cổng. **G4 đã loại một candidate vì tải của máy, không vì chi phí của nó.**
+
+Đây không chỉ là bất tiện, nó **đảo ngược đúng cái tư cách logic** mà pha sàng lọc có: P1 là **điều kiện cần** — trượt trên máy benchmark nhanh ⇒ chắc chắn trượt trên bo mạch đích chậm hơn. Một lần trượt giả phá đúng suy luận đó, và không để lại triệu chứng gì trên card ngoài chữ `fail`.
+
+Nên phép gộp là **phân vị 99 gộp trên toàn bộ bước điều khiển của cả bộ `evaluation`**:
+
+- **Không phải max theo episode:** biến cổng thành hàm của khoảnh khắc kém may nhất trên máy đo.
+- **Không phải trung bình các `p99` episode:** phân vị của phân vị không phải phân vị của cái gì cả.
+- **Gộp không trọng số:** episode dài đóng góp nhiều mẫu hơn. Đúng ý: câu hỏi là *bao nhiêu phần trăm số bước điều khiển deployment thực sự chạy sẽ trễ hạn*, và episode dài thì thật sự chạy nhiều bước hơn.
+
+Robust không phải mù: khi candidate chậm thật, đa số bước đều trễ và phân vị gộp nói đúng điều đó — có test cho cả hai chiều.
+
+**G5 vẫn lấy max theo episode**, và khác biệt này có lý do: `memory_estimate_mb` được **đếm** chứ không **đo thời gian** — số cấu trúc dữ liệu nhân kích thước byte khai báo — nên nó không có nhiễu đo để sinh ra outlier, và một episode thật sự cần nhiều bộ nhớ hơn bo mạch có là một lý do loại thật.
+
 
 | Pha | Đo ở đâu | Tư cách logic | `realtime_gate.status` |
 |---|---|---|---|
@@ -479,24 +502,30 @@ Thứ tự `good`/`bad` tự mã hóa chiều tốt/xấu — không cần công
 
 ```yaml
 metric_anchors:
-  version: v1.0
+  version: v1.2
 
   success_rate:      {good: 1.00, bad: "${constraints.success_rate_min}"}
   path_efficiency:   {good: 1.00, bad: 0.65}
   time_efficiency:   {good: 1.00, bad: 0.35}
-  min_clearance:     {good: "${robot.radius * 2.0}", bad: "${robot.radius * 1.05}"}
+  min_clearance:     {good: "${robot.radius}", bad: 0.0}
   near_miss_rate:    {good: 0.0,  bad: 0.5}
   p99_latency_ms:    {good: "${robot.control_period * 200}", bad: "${robot.control_period * 1000}"}
   memory_estimate_mb: {good: "${hardware.available_ram_mb * 0.25}", bad: "${hardware.available_ram_mb}"}
   cpu_time_per_mission_s: {good: 0.5, bad: 10.0}
   tuning_wall_clock_h:    {good: 0.0, bad: 40.0}
+  engineering_cost_per_mission: {good: 0.0, bad: "${constraints.cost_per_mission_max}"}
 ```
+
+**Thang của `min_clearance` là thang MẶT robot, không phải thang tâm.** `clearance_m` (HĐ-5) và tầng va chạm của simulator cùng trả `khoảng_cách − bán_kính_robot − bán_kính_vật_cản`, nên `0.0` **là** biên va chạm và đại lượng âm khi robot đã nằm trong vật cản. Vì vậy `bad: 0.0` không phải một con số được chọn mà là định nghĩa của sàn thang đo, và `good` là đúng một bán kính khoảng trống bên trên nó. Bản `v1.0` neo ở `radius * 1.05` / `radius * 2.0` — đúng cặp số cho thang **tâm**, lệch đúng một bán kính.
 
 ### 8.3. Ba luật
 
 1. **Cấm min-max theo tập candidate.** Anchor phải ngoại sinh, nếu không thì thêm một candidate tệ sẽ đổi thứ hạng của các candidate cũ (*rank reversal*).
 2. **Metric có cổng thì `bad` phải neo vào chính ngưỡng cổng** bằng tham chiếu `${...}`, không được là số cứng. Nếu không, file anchor và ràng buộc deployment sẽ trôi khỏi nhau mà không ai thấy.
 3. `anchor_config_version` **bắt buộc** nằm trong manifest; và mỗi lần ra quyết định phải chạy kiểm tra độ nhạy anchor ±10%.
+4. **Metric đo bằng tiền thì `bad` phải neo vào ngân sách người dùng khai** (`${constraints.cost_per_mission_max}`), không được là số cứng. Lý do khác luật 2 nhưng cùng một nỗi lo: vật lý quyết định thế nào là khoảng hở tệ, hình học robot quyết định thế nào là chật — nhưng **không có sự thật nào quyết định một nhiệm vụ tốn bao nhiêu tiền là đắt**. Viết số cứng ở đây là nền tảng tự đặt ngân sách hộ khách hàng rồi chấm điểm khách hàng theo ngân sách đó, tức đúng lỗi rank-reversal của luật 1 trong bộ áo khác.
+
+**Anchor trỏ vào một trường tùy chọn mà deployment không khai thì không giải được, và không làm hỏng cả file.** Một file anchor phục vụ mọi deployment; một site chạy chế độ `technical` không có lý do gì phải khai ngân sách. Anchor đó được ghi lại là *unresolved* kèm lý do, và chỉ khi có ai chấm chính metric ấy thì hệ mới từ chối — **kèm tên trường còn thiếu**, không phải một câu "thiếu anchor" chung chung. Phân biệt bắt buộc: trường **có mà để trống** thì unresolved; trường **không tồn tại** là lỗi chính tả và vẫn fatal.
 
 ---
 
@@ -554,10 +583,29 @@ business_profile:                 # chỉ dùng khi decision_mode = business_adj
   engineer_cost_per_hour: ...
   deployment_horizon_missions: 50000
   hardware_upgrade_cost: ...
+  currency: USD                   # bắt buộc — xem dưới
 travel_time_accounting: efficiency      # efficiency | monetized_cost — CHỌN MỘT
+
+constraints:
+  cost_per_mission_max: ...       # bắt buộc ở chế độ business, cùng đơn vị `currency`
 ```
 
+**Công thức của chế độ business, đúng N3:**
+
+```
+engineering_cost_per_mission = (tuning_wall_clock_h × engineer_cost_per_hour
+                                + hardware_upgrade_cost) / deployment_horizon_missions
+```
+
+`hardware_upgrade_cost` đi cùng vì nó cùng bản chất: giá một lần của hệ thống con mà candidate đòi thêm ở G6, trả một lần rồi mọi nhiệm vụ sau đều dùng.
+
+**β4 chấm trên đúng MỘT thang, không bao giờ cả hai.** `technical` chấm số giờ thô theo anchor `tuning_wall_clock_h`; `business_adjusted` **thay thế** số hạng đó bằng `engineering_cost_per_mission` chấm theo `${constraints.cost_per_mission_max}`. Đây là hai thang cho cùng một đại lượng, nên cộng cả hai là nhân đôi trọng số công tinh chỉnh ngay bên trong U_C — đúng loại lỗi §17 cấm 9 chặn ở giữa các objective.
+
+**`currency` bắt buộc khai.** Nền tảng không quy đổi tiền tệ và không giả định đơn vị nào; nó mang chuỗi này lên card để ngân sách trần và chi phí không bị so với nhau qua hai đơn vị khác nhau mà không ai thấy.
+
 **`travel_time_accounting` là khóa chống tính hai lần.** `efficiency` ⇒ thời gian di chuyển chỉ ở O3. `monetized_cost` (chỉ hợp lệ ở chế độ business) ⇒ nó **chuyển** sang O4 dưới dạng throughput quy tiền và **rời khỏi** O3. Không bao giờ bật cả hai; validator phải chặn.
+
+> **`monetized_cost` vẫn chưa hiện thực, và lý do hẹp hơn "chưa làm".** Quy tiền công tinh chỉnh cần đúng hai khai báo mà `business_profile` đã có: một đơn giá giờ công và một chân trời. Quy tiền **thời gian di chuyển** cần một khai báo thứ ba mà chưa profile nào mang: một nhiệm vụ throughput đáng bao nhiêu tiền. Thiếu nó mà vẫn đẩy thời gian di chuyển ra khỏi O3 thì nó bị chấm bởi **không gì cả** — tệ hơn hẳn việc để nguyên ở O3, nơi thang đo ít nhất là vật lý. Từ chối thay vì xấp xỉ, đúng nguyên tắc chi phối cả chế độ này: câu nhãn "đã hiệu chỉnh theo giả định người dùng khai" không được đứng trên một con số tính dưới thang không ai khai.
 
 **Cấm dùng chữ "TCO"** ở bất kỳ đâu trong UI và báo cáo.
 
@@ -589,6 +637,21 @@ Mặc định `ε_j = 0.02` cho cả bốn objective.
 **Cấm dùng quy tắc "CI không nằm hoàn toàn dưới 0".** Nó lẫn *không có bằng chứng A tệ hơn* với *có bằng chứng A không tệ hơn*: dữ liệu càng ít, CI càng rộng, càng dễ tuyên bố lấn át — đúng chiều sai nguy hiểm nhất. Dạng trên có tính chất đúng: dữ liệu ít ⇒ `LCB` rất âm ⇒ không kết luận ⇒ candidate được giữ và gắn `UNCERTAIN_DOMINANCE`.
 
 **Bài kiểm tra dùng cho mọi quy tắc loại bỏ trong dự án này:** *nếu không có dữ liệu thì quy tắc làm gì?* Câu trả lời đúng luôn là "không làm gì".
+
+**Sàn số episode — `n < 10` thì không ra phán quyết nào.** Bản thân khoảng tin cậy **không** đủ để vượt bài kiểm tra trên, và chỗ này lộ ra khi hiện thực. Bootstrap phân vị trên `n` điểm chỉ sinh được `n` giá trị khác nhau, nên phân vị 2,5 của nó không phải một ước lượng đuôi: với `n = 1`, mọi lần lấy lại đều ra đúng một điểm, "CI 95%" rộng bằng 0, `LCB` bằng chính hiệu số — và quy tắc **kết luận lấn át từ một episode với độ tin cậy tối đa**. Đúng chiều mà mục này cấm.
+
+Máy móc khoảng tin cậy không tự diễn đạt được điều đó, vì **"không có phương sai" và "không có dữ liệu" trông giống hệt nhau** với nó — cùng điểm mù mà `DEGENERATE_SPREAD` của HĐ-11 phải chặn ở effect size. Nên sàn được **khai báo**, không suy ra: dưới `MIN_EPISODES_FOR_DOMINANCE = 10`, một cặp không lấn át nhau **và cũng không** được kết luận là không lấn át — nó rơi vào `UNCERTAIN_DOMINANCE`, đúng nghĩa của nhãn đó.
+
+**Ba nhãn cần hai phép kiểm, không phải một.** "Không bị ai lấn át" **không** đồng nghĩa với "trên biên Pareto": một candidate chưa ai *chứng minh được* là bị lấn át có thể chỉ là chưa đo đủ. Nên `PARETO_FRONTIER` đòi **bằng chứng dương** rằng không đối thủ nào lấn át nó, đọc từ **cận trên** đúng cách lấn át đọc từ cận dưới:
+
+```
+A KHÔNG THỂ lấn át B  ⟸  ∃j: UCB₉₅(ΔU_j) < −ε_j      (B hơn hẳn ở đâu đó)
+                       ∨  ∀k: UCB₉₅(ΔU_k) ≤ +ε_k      (A không hơn hẳn ở đâu cả)
+```
+
+Vế thứ hai là thứ cho phép hai candidate **thật sự tương đương, đo kỹ**, cùng lên biên: khoảng tin cậy của chúng ôm lấy 0, không bên nào hơn quá ε, và đó là một **kết luận** chứ không phải thiếu dữ liệu. Còn lại — không lấn át được ai, cũng chưa loại trừ được ai lấn át mình — là `UNCERTAIN_DOMINANCE`.
+
+**Candidate đơn độc luôn là `UNCERTAIN_DOMINANCE`.** "Không ai lấn át nó" đúng một cách tầm thường khi không có đối thủ, mà trên card thì câu đó đọc như một phát hiện.
 
 ---
 
@@ -638,13 +701,23 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
 | `anchor_stability` | xê dịch mọi anchor ±10% | khuyến nghị đổi ⇒ cảnh báo |
 | `robustness_margin` | tỷ lệ biến thể neighborhood giữ nguyên khuyến nghị | < 60% ⇒ hạ nhãn xuống `NEAR_EQUIVALENT` |
 
+**Cách quét trọng số.** Mỗi trọng số trong bốn được đi về **cả hai** cực của nó — 0, và 1 với ba cái còn lại về 0 — trong khi ba cái còn lại **giữ nguyên tỷ lệ với nhau**, để vector luôn tổng bằng 1 và để mỗi lần quét chỉ đổi **đúng một** giả định. Đổi hai thứ cùng lúc thì một lần lật không quy được cho cái nào. `weight_stability_margin` là **lệch nhỏ nhất trong tám hướng** làm đổi candidate được khuyến nghị, tính theo tỷ lệ quãng đường tới cực; **bằng 1,0 khi không hướng nào lật** — đó là một phát biểu thật, không phải một phép tìm kiếm bỏ cuộc: kể cả đưa một trọng số về 0 hoặc lên 1 thì khuyến nghị vẫn thế.
+
+**Tiêu chí lật là candidate được khuyến nghị, không phải nhãn.** Một lần quét giữ nguyên candidate nhưng đi từ `CLEAR_RECOMMENDATION` sang `NEAR_EQUIVALENT` **không** đổi lời khuyên; tính nó là bất ổn định sẽ làm mọi biên trông tệ hơn thực tế.
+
+**Quét lưới trước, chia đôi sau.** Khuyến nghị là hàm bậc thang theo độ lệch và **không** đảm bảo chỉ cắt một lần, nên chia đôi ngay từ đầu có thể bước qua một lần lật rồi báo cáo một sự ổn định không có thật. Lưới quyết định cái gì có thể bị bỏ sót — bước lưới phải nhỏ hơn ngưỡng 10% ở trên — còn chia đôi chỉ làm sắc nét một lần cắt mà lưới đã tìm ra.
+
+**Kết quả quét phải tự khai là kết quả quét.** Một lần chấm dưới trọng số đã dịch không được lưu như một lần chấm dưới trọng số đã khai (`preference_profile` ghi `"<tên> (perturbed)"`), và chuỗi `anchor_stability` phải nói đúng biên độ đã dùng — một trường card ghi `±10%` về một phép quét 30% là mô tả một thí nghiệm không hề chạy. Cùng một luật với `anchor_config_version` mang dấu `±10%` ở HĐ-8.3.
+
+**Cảnh báo thang chết.** Nhân cả hai đầu của một metric bị chặn trên theo định nghĩa có thể đẩy cả thang ra khỏi miền giá trị: `success_rate` từ `{good: 1.0, bad: 0.95}` thành `{1.10, 1.045}`, và mọi tỷ lệ thành công thật đều clip về 0. Khuyến nghị khi đó rất có thể "không đổi" — nhưng không đổi **vì metric đã chết**, không phải vì lựa chọn bền. Báo cáo độ nhạy **phải liệt kê** những metric rơi vào trạng thái này; đó là khác biệt giữa một báo cáo độ ổn định và một báo cáo trấn an.
+
 ---
 
 ## HĐ-12 — Decision Card
 
 ```json
 {
-  "contracts_version": "2.2.0",
+  "contracts_version": "4.2.0",
   "recommendation_scope": "MISSION_LEVEL | DEPLOYMENT_LEVEL | ROBUST_DEPLOYMENT_LEVEL",
   "experiment_scope": "full_stack_selection",
   "decision_mode": "technical | business_adjusted",
@@ -707,11 +780,11 @@ Mọi lần ra quyết định ghi một `manifest.json`:
 
 ```json
 {
-  "contracts_version": "2.2.0",
+  "contracts_version": "4.2.0",
   "git_sha": "...",
   "docker_image_digest": "sha256:...",
   "task_profile_id": "warehouse_a_v1",
-  "anchor_config_version": "v1.0",
+  "anchor_config_version": "v1.2",
   "preference_profile": "kho_ban_dem",
   "decision_mode": "technical",
   "travel_time_accounting": "efficiency",
@@ -763,7 +836,11 @@ Chưa cần: web UI, RBAC, MLflow, neighborhood, Pareto, độ nhạy.
 2. Chạy lại với cùng manifest ⇒ ra cùng `decision_utility` tới 6 chữ số thập phân.
 3. Bảng gate in ra đủ sáu cổng kèm số lần chạy.
 4. `ΔU` và CI 95% ghép cặp tính được và không phải NaN.
-5. `L_ref` từ Dijkstra ≤ `path_length_m` ở **mọi** episode thành công. Vi phạm điều này nghĩa là `L_ref` hoặc bộ đếm quãng đường đang sai.
+5. `L_ref` từ Dijkstra ≤ `path_length_m` **+ `goal_tolerance_m`** ở **mọi** episode thành công. Vi phạm điều này nghĩa là `L_ref` hoặc bộ đếm quãng đường đang sai.
+
+   *(Nới đúng bằng `goal_tolerance_m` ở 2.2.1 — phát hiện khi chạy lát cắt dọc lần đầu.)* `L_ref` đo tới **điểm** goal, còn episode thành công khi robot vào tới **quả cầu dung sai** quanh điểm đó và dừng lại ở đấy. Nên quãng đường thực đi hợp lệ ngắn hơn `L_ref` một lượng tối đa bằng bán kính quả cầu: trong lát cắt đầu tiên, `L_ref = 4,205 m` với đường đi `4,024 m` và dung sai `0,20 m` — không có gì sai, chỉ là hai đầu đo hai đích khác nhau. Phần dôi ngoài `goal_tolerance_m` thì vẫn là lỗi thật, và đó vẫn là thứ tiêu chí này bắt.
+
+   **Hệ quả phải biết:** với episode dừng bên trong quả cầu, `path_efficiency = L_ref / path_length_m` vượt 1 và bị clip về 1,0 (HĐ-6). Sai lệch bị chặn bởi `goal_tolerance_m / L_ref` — 5% trên một nhiệm vụ 4 m, 0,5% trên nhiệm vụ 40 m của kho tham chiếu. Nghĩa là O3 **bão hòa** với những lộ trình gần tối ưu trên nhiệm vụ ngắn, và không còn phân biệt được ở đoạn đó. Chấp nhận có ý thức ở MVP; sửa đúng là đo `L_ref` tới quả cầu dung sai chứ không tới tâm, và đó là một thay đổi ngữ nghĩa của HĐ-6 (MAJOR) nên không làm trong bản này.
 6. `peak_search_nodes` ≤ `costmap_cells` ở mọi episode. Vi phạm nghĩa là bộ đếm node đang đếm trùng, và `memory_estimate_mb` sai theo.
 
 ### 15.2. Không quay lại sửa phương pháp luận
@@ -798,7 +875,7 @@ Bản 1.0.0 vẽ một cây thư mục mới. Repo đã có bố cục `packages
 | `sim/` | `services/simulator/planbench_simulator/` |
 | `planners/` | `packages/planning/planbench_planning/` (+ `ml/planbench_rl/` cho policy) |
 | `metrics/` | `packages/metrics/planbench_metrics/` — `definitions.py` là nơi DUY NHẤT định nghĩa metric |
-| `decision/` | `packages/decision/planbench_decision/` — `gates.py` · `objectives.py` · `pareto.py` · `utility.py` · `stats.py` · `pairing.py` |
+| `decision/` | `packages/decision/planbench_decision/` — `gates.py` · `objectives.py` · `pareto.py` · `utility.py` · `stats.py` · `pairing.py` · `sensitivity.py` |
 | `runner/` | `packages/benchmark/planbench_benchmark/` — `contexts.py` · `batch.py` |
 | `api/` | `apps/api/planbench_api/` |
 | `web/` | `apps/web/` |
@@ -849,6 +926,35 @@ Hai định danh frozen của contract (`candidate_id`, `episode_context_id`) d�
 | 2.0.1 | 2026-08-09 | PATCH | HĐ-8.2 và HĐ-9.1 gọi metric clearance là `min_clearance_m`, HĐ-6 gọi là `min_clearance`. Đổi hai chỗ đầu theo HĐ-6 — anchor key tra theo đúng tên metric, nên hai tên là một anchor không bao giờ khớp và một metric âm thầm không có thang. Phát hiện khi hiện thực 3.1. |
 | 2.1.0 | 2026-08-10 | MINOR | Hai thay đổi, phát hiện khi hiện thực Phase 3.3. Chi tiết dưới đây. |
 | 2.2.0 | 2026-08-10 | MINOR | Hai trường thêm, phát hiện khi hiện thực Phase 3.5. Chi tiết dưới đây. |
+| 2.2.1 | 2026-08-10 | PATCH | HĐ-15.1 tiêu chí 5 nới đúng bằng `goal_tolerance_m`. Lát cắt dọc chạy lần đầu cho `L_ref = 4,205 m` với đường đi `4,024 m`: `L_ref` đo tới tâm goal, robot dừng ở rìa quả cầu dung sai. Không có lỗi nào, chỉ là tiêu chí viết thiếu một số hạng. Kèm ghi chú hệ quả: `path_efficiency` bão hòa ở 1,0 với lộ trình gần tối ưu trên nhiệm vụ ngắn. |
+| 3.0.0 | 2026-08-10 | **MAJOR** | Đổi phép gộp của G4: `p99_latency_ms` lấy phân vị 99 **gộp trên mọi bước điều khiển** của bộ `evaluation`, thay cho max theo episode. Đổi ngữ nghĩa một cổng ⇒ MAJOR, cùng loại với 2.0.0. Chi tiết dưới đây. |
+
+| 4.0.0 | 2026-08-10 | **MAJOR** | Ba thay đổi: ① anchor `min_clearance` đổi sang **thang mặt robot** (MAJOR, chi tiết dưới đây); ② **HĐ-8.3 luật 4** + anchor `engineering_cost_per_mission` + `constraints.cost_per_mission_max` + `business_profile.currency` ⇒ `business_adjusted` **tính được thật** (MINOR nếu đứng riêng); ③ ngoại lệ quy trình duyệt một người ở mục 0. Anchor file `v1.0` → `v1.2`. |
+
+**Chi tiết 4.0.0** — phát hiện thứ sáu của lát cắt dọc (báo cáo Phase 4, mục 5.2).
+
+`clearance_m` của HĐ-5 đo từ **mặt** robot; anchor `v1.0` viết theo thang **tâm**. Hai thang lệch đúng một bán kính. Trên kho tham chiếu, sai lệch này không làm điểm số hơi lệch mà làm nó chết hẳn: robot 0,52 m trong khe kệ 0,68 m đo được 0,04 m khoảng hở mặt, mọi episode nằm dưới `bad = 0,273` ⇒ `u = 0` ⇒ `U_S = 0` cho **mọi** candidate. Objective an toàn mang trọng số 0,10 và không phân biệt được gì.
+
+| 4.2.0 | 2026-08-10 | MINOR | HĐ-10.2 viết đủ: **sàn `n < 10` không ra phán quyết** (bootstrap phân vị trên 1 điểm cho CI rộng 0 và kết luận lấn át với độ tin cậy tối đa — phát hiện khi chạy chính bài kiểm tra "không dữ liệu thì làm gì" của mục này), điều kiện **không-thể-lấn-át** đọc từ cận trên để tách `PARETO_FRONTIER` khỏi `UNCERTAIN_DOMINANCE`, và candidate đơn độc luôn `UNCERTAIN_DOMINANCE`. Hiện thực ở `decision/pareto.py` (Phase 5.2). `alternative` và `pareto_label` của HĐ-12 lần đầu có giá trị thật; cả hai trường đã tồn tại từ 1.0.0. |
+| 4.1.0 | 2026-08-10 | MINOR | HĐ-11.5 viết đủ: cách quét trọng số (hai cực, ba cái còn lại giữ tỷ lệ, margin = lệch nhỏ nhất trong tám hướng, 1.0 khi không lật), tiêu chí lật là candidate chứ không phải nhãn, quét lưới trước chia đôi sau, kết quả quét phải tự khai, và cảnh báo thang chết. Hiện thực ở `decision/sensitivity.py` (Phase 5.3). Không đổi trường nào của HĐ-12 — ba trường `evidence` đã tồn tại từ 1.0.0 và tới bản này mới được điền. |
+
+**Chi tiết 4.0.0 ② — chế độ `business_adjusted` tính được.** Trước bản này nó validate đủ nhưng từ chối tính, vì chi phí kỹ thuật quy tiền có đơn vị tiền/nhiệm vụ mà file anchor không có thang nào cho đơn vị đó. Bản này thêm thang — và chỗ đặt nó mới là phần đáng bàn.
+
+Cám dỗ là viết `engineering_cost_per_mission: {good: 0.0, bad: 5.0}` vào `metric_anchors.yaml` cho xong. Làm vậy là **tự phá luật 1 của chính mục 8.3**: mọi anchor khác trong file lấy thang từ ngoài tập candidate — vật lý bài toán, hình học robot, hoặc một ngưỡng deployment đã khai. Không có sự thật nào nói một nhiệm vụ tốn 5 đồng là đắt. Con số đó sẽ là **nền tảng đặt ngân sách hộ khách hàng rồi chấm điểm khách hàng theo ngân sách mình vừa đặt**.
+
+Nên thang tiền neo vào `${constraints.cost_per_mission_max}` — khách hàng khai, giống hệt cách metric có cổng neo vào ngưỡng cổng — và luật 4 cưỡng chế điều đó bằng validator, không bằng lời dặn. Kèm theo là cơ chế *unresolved* (mục 8.3): site chạy `technical` không khai ngân sách vẫn nạp được file, chỉ mất đúng một anchor, và chỉ biết khi có ai chấm chính metric ấy.
+
+Hệ quả đáng giá nhất là thứ N3 hứa và tới bản này mới chạy được: **cùng bộ số đo, cùng bộ trọng số, hai chân trời khác nhau cho hai người thắng khác nhau.** 24 giờ tinh chỉnh là 0,0144/nhiệm vụ trên 50.000 nhiệm vụ (không đáng kể, candidate đã tinh chỉnh thắng) và 3,60/nhiệm vụ trên pilot 200 nhiệm vụ (áp đảo, candidate tham số mặc định thắng). Có test khẳng định đúng cặp bất đẳng thức đó.
+
+**Vì sao MAJOR chứ không MINOR.** Anchor file có `version` riêng và HĐ-13 bắt manifest ghi `anchor_config_version`, nên có thể lập luận rằng đổi anchor không phải đổi hợp đồng. Không nhận lập luận đó ở đây: §8.2 in thẳng cặp số này trong hợp đồng, và mọi `U_S` — do đó mọi `decision_utility`, mọi ΔU, mọi nhãn CLEAR/NEAR_EQUIVALENT — tính dưới `v1.0` **không so sánh được** với bản tính dưới `v1.1`. Đó đúng là định nghĩa "đổi ngữ nghĩa". Dùng ranh giới file để né nghĩa vụ của mục 0 luật 3 (MAJOR ⇒ chạy lại lát cắt dọc) là lách chính cái luật đó, trong khi ở đây nghĩa vụ ấy rẻ: HĐ-5 đặt trace làm nguồn duy nhất nên "chạy lại" là tính lại từ cùng bộ trace trong vài giây.
+
+**Chi tiết 3.0.0** — phát hiện bởi chính lát cắt dọc, đúng cơ chế HĐ-15.2 dự trù, và là **thay đổi phương pháp luận cuối cùng** trước khi mục 15.2 khóa lại.
+
+`p99_latency_ms` của cả bộ `evaluation` giờ là phân vị 99 **gộp trên mọi bước điều khiển**, thay cho max của `p99` từng episode. Lý do đầy đủ ở 7.2; tóm tắt: lần chạy đầu tiên loại `astar+dwa` ở G4 vì 5/30 episode của nó tình cờ được đo lúc một bộ test chạy trên cùng máy (p99 119 ms), trong khi trên máy rảnh chính nó đo 5 ms. Một lần trượt giả ở G4 phá đúng tư cách logic duy nhất mà pha sàng lọc có (trượt ở máy nhanh ⇒ chắc chắn trượt ở bo mạch chậm).
+
+Đây là **đổi ngữ nghĩa của một cổng** ⇒ MAJOR, cùng loại với 2.0.0. Theo mục 0 luật 3, MAJOR bắt buộc chạy lại lát cắt dọc và ghi kết quả trong PR — và vì phép gộp mới chỉ đọc lại trace đã ghi (HĐ-5: trace là nguồn duy nhất), việc "chạy lại" ở đây là tính lại từ cùng bộ trace, không phải mô phỏng lại.
+
+Kéo theo: `evaluate_gates` nhận `pooled_p99_latency_ms` như một tham số, tính bởi `metrics/definitions.py`. Cổng so ngưỡng, Metrics Engine định nghĩa đại lượng — HĐ-15.3 giữ mọi định nghĩa metric ở đúng một chỗ, và phân vị gộp **không** dựng lại được từ `EpisodeMetricSet` (mỗi bản ghi chỉ mang một phân vị của một episode).
 
 **Chi tiết 2.2.0** — cả hai là trường thêm có giá trị xác định ⇒ MINOR. Không đụng ba định danh đóng băng, không đổi công thức nào.
 

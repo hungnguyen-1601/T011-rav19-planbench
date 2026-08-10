@@ -14,6 +14,9 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable
 
+import numpy as np
+from scipy import ndimage
+
 from planbench_schemas.geometry import EPS, Point2D, distance_point_to_aabb
 from planbench_schemas.map import CellState, MapData
 from planbench_schemas.scenario import CircleObstacle, RectangleObstacle
@@ -103,6 +106,19 @@ class OccupancyGrid:
         of the centre of some source cell; UNKNOWN cells not covered by
         any source's inflation disk stay UNKNOWN. The original grid is
         never modified.
+
+        This is a binary dilation of the occupied mask by a disk, and it
+        is written as one because the nested-loop version was the single
+        most expensive thing in an episode. Every replan re-inflates
+        (the whole point of a replan is that something new is in the
+        way), so the cost is paid tens of times per episode, and it
+        scales as cells × disk area: 400,000 cells against a 0.54 m disk
+        at 5 cm is ~140 million cell visits in Python. ``binary_dilation``
+        does the same visits in C.
+
+        The disk is symmetric, so there is no structuring-element origin
+        subtlety, and ``binary_dilation`` treats out-of-bounds as unset,
+        which matches the old loop iterating only over in-bounds sources.
         """
         if not math.isfinite(radius) or radius < 0:
             raise ValueError(f"radius must be finite and non-negative, got {radius!r}")
@@ -111,27 +127,15 @@ class OccupancyGrid:
 
         resolution = self._map.resolution
         reach = math.ceil(radius / resolution)
-        offsets = [
-            (dr, dc)
-            for dr in range(-reach, reach + 1)
-            for dc in range(-reach, reach + 1)
-            if math.hypot(dr, dc) * resolution <= radius + EPS
-        ]
+        span = np.arange(-reach, reach + 1)
+        disk = np.hypot(span[:, None], span[None, :]) * resolution <= radius + EPS
 
         width, height = self._map.width, self._map.height
-        source_cells = self._map.cells
-        new_cells = list(source_cells)
-        for row in range(height):
-            base = row * width
-            for col in range(width):
-                if source_cells[base + col] != CellState.OCCUPIED:
-                    continue
-                for dr, dc in offsets:
-                    r, c = row + dr, col + dc
-                    if 0 <= r < height and 0 <= c < width:
-                        new_cells[r * width + c] = CellState.OCCUPIED.value
+        cells = np.asarray(self._map.cells, dtype=np.int16).reshape(height, width)
+        covered = ndimage.binary_dilation(cells == CellState.OCCUPIED.value, structure=disk)
+        cells[covered] = CellState.OCCUPIED.value
 
-        inflated_map = self._map.model_copy(update={"cells": tuple(new_cells)})
+        inflated_map = self._map.model_copy(update={"cells": tuple(cells.ravel().tolist())})
         return OccupancyGrid(inflated_map, self._unknown_as_occupied)
 
     def _check_index(self, row: int, col: int) -> None:

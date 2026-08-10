@@ -123,8 +123,17 @@ def run(
     *,
     failures: dict[int, dict[str, object]] | None = None,
     sample_set: str = "evaluation",
+    pooled_p99_ms: float | None = None,
 ):  # type: ignore[no-untyped-def]
-    """``n`` paired episodes, with per-index overrides for the failures."""
+    """``n`` paired episodes, with per-index overrides for the failures.
+
+    ``pooled_p99_ms`` is G4's measurement, which the Metrics Engine pools
+    over every control step of every episode and which therefore cannot
+    be derived from the per-episode metric sets built here. Defaults to
+    the worst episode's p99 — not because that is the gate's rule (it is
+    not, see ``pooled_p99_latency_ms``) but because it keeps a test that
+    is about some *other* gate from having to think about this one.
+    """
     failures = failures or {}
     variant: dict[str, object] = (
         {}
@@ -133,7 +142,15 @@ def run(
     )
     contexts = [context(seed, **variant) for seed in range(n)]
     metrics = [episode(candidate, ctx, **failures.get(i, {})) for i, ctx in enumerate(contexts)]
-    return evaluate_gates(candidate, task_profile, metrics, contexts)  # type: ignore[arg-type]
+    if pooled_p99_ms is None:
+        pooled_p99_ms = max(m.p99_latency_ms for m in metrics)
+    return evaluate_gates(
+        candidate,
+        task_profile,  # type: ignore[arg-type]
+        metrics,
+        contexts,
+        pooled_p99_latency_ms=pooled_p99_ms,
+    )
 
 
 class TestThresholdsComeFromTheProfile:
@@ -307,12 +324,28 @@ class TestG2Collisions:
 
 
 class TestG4Realtime:
-    def test_worst_episode_decides_not_the_mean(self) -> None:
-        """A budget is a ceiling. One episode over it is a violation that
-        an average across 29 good ones would hide."""
-        report = run(modular(), profile(), n=30, failures={11: {"p99_latency_ms": 61.0}})
-        assert report.g4.p99_ms == 61.0
-        assert report.g4.result == "fail"
+    def test_the_gate_reads_the_pooled_percentile(self) -> None:
+        """G4's measurement is the 99th percentile over every control
+        step of the evaluation set, pooled by the Metrics Engine — not
+        anything this gate can derive from per-episode summaries."""
+        assert run(modular(), profile(), n=30, pooled_p99_ms=61.0).g4.result == "fail"
+        assert run(modular(), profile(), n=30, pooled_p99_ms=49.0).g4.result == "pass"
+
+    def test_one_slow_episode_no_longer_decides_the_verdict(self) -> None:
+        """The lesson of the first vertical slice, as a test.
+
+        Five of thirty A\\* episodes were measured while a test suite ran
+        on the same machine and reached a p99 of 119 ms against a 100 ms
+        budget; the same candidate on an idle machine measured 5 ms. The
+        old worst-episode rule eliminated it for the load. Pooling makes
+        that outlier one episode's worth of tail among thirty, which is
+        what it is — and it matters because a false failure destroys the
+        one implication host screening carries (HĐ-7.2).
+        """
+        outlier = {11: {"p99_latency_ms": 119.0}}
+        report = run(modular(), profile(), n=30, failures=outlier, pooled_p99_ms=18.0)
+        assert report.g4.p99_ms == 18.0
+        assert report.g4.result == "pass"
 
     def test_status_is_always_host_screening(self) -> None:
         """Sim-only reservation: no target board exists (§17 ban 12)."""
@@ -475,7 +508,7 @@ class TestInputsThatCannotSupportAVerdict:
     def test_no_episodes(self) -> None:
         candidate = modular()
         with pytest.raises(GateInputError, match="no episodes"):
-            evaluate_gates(candidate, profile(), [], [])
+            evaluate_gates(candidate, profile(), [], [], pooled_p99_latency_ms=10.0)
 
     def test_metrics_from_another_candidate(self) -> None:
         mine, theirs = modular(), modular(params={"astar": {"heuristic": "manhattan"}})
@@ -486,21 +519,21 @@ class TestInputsThatCannotSupportAVerdict:
             episode(mine, contexts[2]),
         ]
         with pytest.raises(GateInputError, match="pooled across candidates"):
-            evaluate_gates(mine, profile(), metrics, contexts)
+            evaluate_gates(mine, profile(), metrics, contexts, pooled_p99_latency_ms=10.0)
 
     def test_repeated_context_inflates_n(self) -> None:
         candidate = modular()
         contexts = [context(0), context(1)]
         metrics = [episode(candidate, contexts[0]), episode(candidate, contexts[0])]
         with pytest.raises(GateInputError, match="more than once"):
-            evaluate_gates(candidate, profile(), metrics, contexts)
+            evaluate_gates(candidate, profile(), metrics, contexts, pooled_p99_latency_ms=10.0)
 
     def test_contexts_and_metrics_must_describe_the_same_run(self) -> None:
         candidate = modular()
         contexts = [context(0), context(1)]
         metrics = [episode(candidate, contexts[0])]
         with pytest.raises(GateInputError, match="same run"):
-            evaluate_gates(candidate, profile(), metrics, contexts)
+            evaluate_gates(candidate, profile(), metrics, contexts, pooled_p99_latency_ms=10.0)
 
     def test_episodes_from_another_deployment(self) -> None:
         """Every threshold comes from the profile, so the runs have to be
@@ -509,4 +542,4 @@ class TestInputsThatCannotSupportAVerdict:
         contexts = [context(seed, task_profile_id="other_site_v1") for seed in range(3)]
         metrics = [episode(candidate, ctx) for ctx in contexts]
         with pytest.raises(GateInputError, match="task profile"):
-            evaluate_gates(candidate, profile(), metrics, contexts)
+            evaluate_gates(candidate, profile(), metrics, contexts, pooled_p99_latency_ms=10.0)

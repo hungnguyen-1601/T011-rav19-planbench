@@ -147,6 +147,71 @@ def clearance_to_grid(center: Point2D, radius: float, grid: OccupancyGrid) -> fl
     return best - radius
 
 
+#: How far a windowed clearance query looks before giving up and
+#: reporting the window as a floor. Two metres is far outside anything
+#: the safety metrics can distinguish: ``min_clearance`` is anchored at
+#: two robot radii (~0.52 m for the reference robot), so every value past
+#: that already scores a flat 1.0, and ``near_miss_rate`` counts against
+#: ``clearance_warning_m``, smaller still.
+DEFAULT_CLEARANCE_WINDOW_M = 2.0
+
+
+def clearance_to_grid_within(
+    center: Point2D,
+    radius: float,
+    grid: OccupancyGrid,
+    window_m: float = DEFAULT_CLEARANCE_WINDOW_M,
+) -> float:
+    """Clearance to the grid, exact nearby and floored far away.
+
+    :func:`clearance_to_grid` visits every cell, which is fine for a
+    metric computed once and ruinous for HĐ-5's ``clearance_m`` — that is
+    one query per recorded control step, and on a 40×25 m map at 5 cm it
+    is 400 000 cell visits per row. An episode of 600 rows spends a
+    quarter of a billion cell visits on a column whose useful range is
+    half a metre.
+
+    So this variant scans only the cells within ``window_m`` of the
+    robot and reports ``window_m - radius`` when it finds nothing. The
+    result is **exact wherever the value can change a metric** and a
+    floor beyond that: both safety anchors saturate far below the window,
+    so a robot two metres from anything scores identically whether the
+    true distance is 2 m or 20 m.
+
+    The floor is also the safe direction. Reporting *less* clearance than
+    there is can only make a candidate look worse, never wave one
+    through.
+    """
+    _validate_radius(radius)
+    if window_m <= 0.0:
+        raise ValueError(f"clearance window must be positive, got {window_m}")
+
+    best = min(_boundary_clearance(center, grid), window_m)
+    resolution = grid.resolution
+    min_x, min_y, _, _ = _map_bounds(grid)
+    row_lo = max(0, math.floor((center.y - window_m - min_y) / resolution))
+    row_hi = min(grid.height - 1, math.floor((center.y + window_m - min_y) / resolution))
+    col_lo = max(0, math.floor((center.x - window_m - min_x) / resolution))
+    col_hi = min(grid.width - 1, math.floor((center.x + window_m - min_x) / resolution))
+    for row in range(row_lo, row_hi + 1):
+        cell_min_y = min_y + row * resolution
+        for col in range(col_lo, col_hi + 1):
+            if not grid.is_blocked_cell(row, col):
+                continue
+            cell_min_x = min_x + col * resolution
+            distance = distance_point_to_aabb(
+                center.x,
+                center.y,
+                cell_min_x,
+                cell_min_y,
+                cell_min_x + resolution,
+                cell_min_y + resolution,
+            )
+            if distance < best:
+                best = distance
+    return best - radius
+
+
 def clearance_to_obstacles(
     center: Point2D,
     radius: float,

@@ -217,11 +217,14 @@ class G3Result(_GateResult):
 class G4Result(_GateResult):
     """``p99_latency_ms ≤ control_period × 1000``, on the host only.
 
-    ``p99_ms`` is the worst per-episode p99 over the evaluation set, not
-    an average of them. The gate asks whether the control loop's budget
-    holds; an episode that blew it is a violation that a mean over 300
-    well-behaved episodes would hide. Averaging percentiles would also be
-    a quantile of nothing.
+    ``p99_ms`` is the 99th percentile over **every control step of the
+    evaluation set**, pooled — see
+    :func:`~planbench_metrics.definitions.pooled_p99_latency_ms`, which
+    is where it is computed and where the reasoning lives. It is
+    deliberately neither the worst episode's p99 (which makes the gate a
+    function of the unluckiest moment on the benchmark host) nor a mean
+    of per-episode p99s (a percentile of percentiles is a statistic of
+    nothing).
 
     No conversion factor to the target board exists here and none may be
     invented: A\\* is memory-bound and DWA is compute-bound, so they scale
@@ -377,8 +380,19 @@ def evaluate_gates(
     profile: TaskProfile,
     metrics: Sequence[EpisodeMetricSet],
     contexts: Sequence[EpisodeContext],
+    *,
+    pooled_p99_latency_ms: float,
 ) -> GateReport:
     """Run G1–G6 for one candidate over its evaluation episodes.
+
+    ``pooled_p99_latency_ms`` is G4's measurement and arrives already
+    computed, from
+    :func:`~planbench_metrics.definitions.pooled_p99_latency_ms`. Gates
+    compare against thresholds; defining a metric is the Metrics Engine's
+    job and HĐ-15.3 keeps it to one module. The pooled percentile also
+    cannot be reconstructed from :class:`EpisodeMetricSet`, which carries
+    one p99 per episode — pooling those would be a percentile of
+    percentiles.
 
     ``contexts`` is required, and required to be the ``evaluation`` set,
     because G2's bound assumes independent draws. Neighborhood episodes
@@ -404,7 +418,7 @@ def evaluate_gates(
         g1=_gate_1(profile, metrics),
         g2=_gate_2(profile, metrics),
         g3=_gate_3(profile, metrics),
-        g4=_gate_4(profile, metrics),
+        g4=_gate_4(profile, metrics, pooled_p99_latency_ms),
         g5=_gate_5(candidate, profile, metrics),
         g6=_gate_6(candidate, profile, n_runs),
     )
@@ -539,13 +553,14 @@ def _gate_3(profile: TaskProfile, metrics: Sequence[EpisodeMetricSet]) -> G3Resu
     )
 
 
-def _gate_4(profile: TaskProfile, metrics: Sequence[EpisodeMetricSet]) -> G4Result:
+def _gate_4(
+    profile: TaskProfile, metrics: Sequence[EpisodeMetricSet], pooled_p99_ms: float
+) -> G4Result:
     threshold_ms = profile.robot.t_cycle_ms
-    p99_ms = max(m.p99_latency_ms for m in metrics)
     return G4Result(
-        result="pass" if p99_ms <= threshold_ms else "fail",
+        result="pass" if pooled_p99_ms <= threshold_ms else "fail",
         n_runs=len(metrics),
-        p99_ms=p99_ms,
+        p99_ms=pooled_p99_ms,
         threshold_ms=threshold_ms,
     )
 
@@ -570,9 +585,14 @@ def _gate_5(
 ) -> G5Result:
     """Worst-case memory estimate against the board's navigation budget.
 
-    The worst episode decides, for the same reason as G4: the budget is a
-    ceiling, and a mean over episodes would let one run that exceeded it
-    disappear into the ones that did not.
+    The worst episode decides here, unlike G4, and the difference is not
+    an inconsistency. ``memory_estimate_mb`` is counted, not timed: it is
+    data-structure counts multiplied by declared byte sizes, so it has no
+    measurement noise for an outlier to come from, and an episode that
+    genuinely needed more memory than the board has is a real
+    disqualification. G4's input is a wall-clock measurement on a shared
+    host, where the largest value in the set is frequently the operating
+    system rather than the candidate.
     """
     resource_profile = candidate.resource_profile
     artifact = resource_profile if isinstance(resource_profile, ArtifactResourceProfile) else None

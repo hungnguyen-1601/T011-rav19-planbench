@@ -55,6 +55,7 @@ __all__ = [
     "MetricError",
     "compute_metrics",
     "memory_estimate_mb",
+    "pooled_p99_latency_ms",
 ]
 
 BYTES_PER_MB = 1024 * 1024
@@ -208,6 +209,42 @@ def compute_metrics(
         peak_rss_mb=trace.metadata.peak_rss_mb,
         cpu_time_per_mission_s=trace.metadata.cpu_time_s,
     )
+
+
+def pooled_p99_latency_ms(traces: Sequence[LoadedTrace]) -> float:
+    """G4's figure: the 99th percentile over **every** control step run.
+
+    Not the worst episode's p99, and not an average of per-episode p99s.
+    A percentile of percentiles is a statistic of nothing, and the worst
+    episode makes the gate a function of the unluckiest moment on the
+    benchmark host — which the first vertical slice demonstrated the hard
+    way. Five of thirty A\\* episodes were measured while a test suite was
+    running on the same machine; their p99 reached 119 ms against a
+    100 ms budget, while the same candidate on an idle machine measured
+    5 ms. The gate eliminated a candidate for the load, not for its cost.
+
+    That failure mode is not merely inconvenient, it inverts the only
+    thing the host phase is good for. G4 on the benchmark host is a
+    *necessary* condition — failing there proves failure on the slower
+    target board (HĐ-7.2) — and a false failure destroys exactly that
+    implication. Pooling makes one unlucky episode one episode's worth of
+    tail among thirty, instead of the whole verdict.
+
+    Steps are pooled unweighted, so a long episode contributes more
+    samples than a short one. That is the intended reading: the question
+    is what fraction of the control steps this deployment will actually
+    execute would miss their deadline, and a long episode really does
+    execute more of them.
+    """
+    samples: list[float] = []
+    for trace in traces:
+        samples.extend(trace.column("planner_latency_ms"))
+    if not samples:
+        raise MetricError(
+            "no control steps to take a latency percentile over; G4 would be comparing "
+            "the deadline against nothing"
+        )
+    return float(np.percentile(np.asarray(samples, dtype=float), 99))
 
 
 def memory_estimate_mb(

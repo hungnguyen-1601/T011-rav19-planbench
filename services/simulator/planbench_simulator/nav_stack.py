@@ -30,6 +30,11 @@ from planbench_schemas.scenario import CircleObstacle, Scenario
 from planbench_simulator.engine import SimulationEngine
 from planbench_simulator.grid import OccupancyGrid, rasterize_obstacles
 from planbench_simulator.path_follower import PurePursuitConfig, PurePursuitFollower
+from planbench_simulator.trace import (
+    EpisodeTraceRecorder,
+    clearance_probe,
+    event_for_status,
+)
 
 
 class PurePursuitLocalPlanner(LocalPlanner):
@@ -57,14 +62,21 @@ class PurePursuitLocalPlanner(LocalPlanner):
 
 
 class StackRun(BaseModel):
-    """Everything one stack episode produced."""
+    """Everything one stack episode produced.
+
+    ``metrics`` is the *previous* topic's in-memory metric set. It is
+    ``None`` when the caller asked for it to be skipped — which the
+    contract pipeline does, because HĐ-5 makes the trace file the single
+    input of the Metrics Engine and a second set computed during the
+    simulation is exactly the parallel source that rule forbids.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     algorithm: str
     plan: PlanResult
     result: EpisodeResult
-    metrics: EpisodeMetrics
+    metrics: EpisodeMetrics | None
 
 
 def _planning_grid(
@@ -171,6 +183,8 @@ def run_stack(
     local_planner: LocalPlanner,
     global_planner: GlobalPlanner | None = None,
     replanning: ReplanningConfig | None = None,
+    recorder: EpisodeTraceRecorder | None = None,
+    legacy_metrics: bool = True,
 ) -> StackRun:
     """Run one episode of ``<global_planner>+<local_planner>`` on a scenario.
 
@@ -184,6 +198,38 @@ def run_stack(
     one trigger and one budget for all of them. It defaults to disabled,
     and a disabled run is byte-identical to the behaviour before
     replanning existed.
+
+    ``recorder`` writes the HĐ-5 trace as the episode happens. It has to
+    happen here, inside the one loop, rather than afterwards from
+    ``result.trajectory``: ``clearance_m`` is a distance to obstacles that
+    have since moved, and no amount of post-processing recovers it. The
+    caller owns the recorder's lifetime, so a run that raises still leaves
+    the samples it collected on disk.
+
+    Note what one recorded row means: **one control step**, not one
+    simulation tick. HĐ-6 defines ``p99_latency_ms`` as the compute time
+    of a control step, and a controller running slower than the simulator
+    holds its last command for several ticks. Emitting those held ticks
+    with a latency of zero would drag the 99th percentile down and make
+    G4 pass on steps where nothing was computed — optimistic in exactly
+    the direction a real-time gate must not be.
+
+    The one exception is the final row, which carries the terminal event
+    at the moment the episode ended and reports a latency of zero because
+    nothing was computed there. It is a single sample among the hundreds a
+    normal episode records, so its effect on the 99th percentile is
+    bounded by one rank; the alternative — dating ``goal_reached`` to the
+    last control tick — would move the final pose that HĐ-6 checks against
+    the goal tolerance, which is not bounded at all.
+
+    ``legacy_metrics=False`` skips the previous topic's ``EpisodeMetrics``
+    entirely. Two reasons, and the first is the one that matters: HĐ-5
+    makes the trace the single input of the Metrics Engine, so computing
+    a second metric set inside the simulation is the parallel source the
+    contract exists to prevent. The second is cost — that computation
+    calls the exhaustive whole-map clearance scan once per trajectory
+    sample, and on a 40×25 m map it was three quarters of the wall-clock
+    time of a contract episode.
     """
     global_planner = global_planner or AStarPlanner()
     replanning = replanning or NO_REPLANNING
@@ -191,6 +237,26 @@ def run_stack(
     plan, raw_grid = plan_global_path(map_data, scenario, global_planner)
 
     if not plan.success:
+        # One row, so the episode exists in the paired comparison. A
+        # candidate that found no route still ran this context, and a
+        # missing file would silently shrink its N and unbalance the
+        # pairing (HĐ-3.2) — while also hiding the failure from G1,
+        # whose whole job is to count exactly this.
+        if recorder is not None:
+            # Static-only clearance: there is no engine to ask where the
+            # moving obstacles are, and building one to measure a robot
+            # that never moved would be theatre. The number is the start
+            # pose's distance to the fixed world, and that is what the
+            # episode is.
+            recorder.bind_clearance(
+                clearance_probe(raw_grid, scenario.static_obstacles, scenario.robot.radius)
+            )
+            recorder.record(
+                0.0,
+                RobotState(pose=scenario.start_pose),
+                event="no_path",
+                planner_latency_ms=plan.planning_time_seconds * 1000.0,
+            )
         result = EpisodeResult(
             status=EpisodeStatus.NO_GLOBAL_PATH,
             reason=plan.failure_reason,
@@ -199,14 +265,18 @@ def run_stack(
             trajectory=(),
             events=(EpisodeEvent(time=0.0, type="no_global_path", message=plan.failure_reason),),
         )
-        metrics = compute_episode_metrics(
-            result,
-            global_planning_time=plan.planning_time_seconds,
-            expanded_nodes=plan.expanded_nodes,
-            grid=raw_grid,
-            obstacles=scenario.static_obstacles,
-            robot_radius=scenario.robot.radius,
-            replan_count=0,
+        metrics = (
+            compute_episode_metrics(
+                result,
+                global_planning_time=plan.planning_time_seconds,
+                expanded_nodes=plan.expanded_nodes,
+                grid=raw_grid,
+                obstacles=scenario.static_obstacles,
+                robot_radius=scenario.robot.radius,
+                replan_count=0,
+            )
+            if legacy_metrics
+            else None
         )
         return StackRun(algorithm=algorithm, plan=plan, result=result, metrics=metrics)
 
@@ -215,6 +285,15 @@ def run_stack(
     engine.load_scenario(scenario)
     engine.reset()
     local_planner.reset(plan.path, scenario.robot)
+    if recorder is not None:
+        recorder.bind_clearance(
+            clearance_probe(
+                raw_grid,
+                scenario.static_obstacles,
+                scenario.robot.radius,
+                engine.dynamic_obstacles_now,
+            )
+        )
 
     latencies: list[float] = []
     failures: list[EpisodeEvent] = []
@@ -230,9 +309,22 @@ def run_stack(
     held_action = None
     next_control_time = 0.0
     while not engine.is_done():
-        if held_action is None or control_period is None or engine.time >= next_control_time - EPS:
+        recompute = (
+            held_action is None or control_period is None or engine.time >= next_control_time - EPS
+        )
+        if recompute:
             decision = local_planner.compute(engine.get_state(), engine.get_observation())
             latencies.append(decision.latency_seconds)
+            if recorder is not None:
+                # Recorded before the step, so the row says "at time t the
+                # robot was here and deciding cost this much" — pairing the
+                # latency with the state it was computed from rather than
+                # with the state it produced.
+                recorder.record(
+                    engine.time,
+                    engine.get_state(),
+                    planner_latency_ms=decision.latency_seconds * 1000.0,
+                )
             if decision.failure_reason:
                 failures.append(
                     EpisodeEvent(
@@ -266,19 +358,36 @@ def run_stack(
                 # held command was computed for the path that just failed.
                 held_action = None
 
+    if recorder is not None:
+        # The verdict is a row of its own, at the time the episode
+        # actually ended. Attaching it to the last control tick instead
+        # would date `goal_reached` to whenever the controller last
+        # thought, which can be several ticks early — and HĐ-6 reads the
+        # final pose of the trace against the profile's goal tolerance.
+        recorder.record(
+            engine.time,
+            engine.get_state(),
+            event=event_for_status(engine.episode_status),
+            planner_latency_ms=0.0,
+        )
+
     result = engine.get_result()
     if failures:
         result = result.model_copy(update={"events": tuple(failures) + result.events})
     final_plan = plans[-1]
-    metrics = compute_episode_metrics(
-        result,
-        planned_path_length=final_plan.path_length,
-        global_planning_time=sum(entry.planning_time_seconds for entry in plans),
-        expanded_nodes=sum(entry.expanded_nodes for entry in plans),
-        grid=raw_grid,
-        obstacles=scenario.static_obstacles,
-        robot_radius=scenario.robot.radius,
-        local_planner_latencies=latencies,
-        replan_count=len(plans) - 1,
+    metrics = (
+        compute_episode_metrics(
+            result,
+            planned_path_length=final_plan.path_length,
+            global_planning_time=sum(entry.planning_time_seconds for entry in plans),
+            expanded_nodes=sum(entry.expanded_nodes for entry in plans),
+            grid=raw_grid,
+            obstacles=scenario.static_obstacles,
+            robot_radius=scenario.robot.radius,
+            local_planner_latencies=latencies,
+            replan_count=len(plans) - 1,
+        )
+        if legacy_metrics
+        else None
     )
     return StackRun(algorithm=algorithm, plan=plan, result=result, metrics=metrics)

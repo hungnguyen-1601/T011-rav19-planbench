@@ -174,7 +174,7 @@ class TestBuildEvidence:
             CandidateEvidence(
                 candidate=owner,
                 set_objectives=item.set_objectives.model_copy(update={"level": "episode"}),
-                episode_utilities=item.episode_utilities,
+                episode_objectives=item.episode_objectives,
             )
 
     def test_objectives_of_another_candidate_are_refused(self) -> None:
@@ -186,7 +186,7 @@ class TestBuildEvidence:
             CandidateEvidence(
                 candidate=mine,
                 set_objectives=theirs_evidence.set_objectives,
-                episode_utilities=mine_evidence.episode_utilities,
+                episode_objectives=mine_evidence.episode_objectives,
             )
 
 

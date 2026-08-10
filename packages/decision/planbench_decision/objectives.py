@@ -89,13 +89,45 @@ class ObjectiveError(ValueError):
 
 
 class BusinessProfile(BaseModel):
-    """Declared money assumptions (HĐ-9.3, ``business_adjusted`` only)."""
+    """Declared money assumptions (HĐ-9.3, ``business_adjusted`` only).
+
+    Every field here is *declared*, never measured, which is why the
+    whole object is copied onto the card as ``declared_assumptions``: a
+    reader has to be able to see which numbers came from the platform
+    and which came from whoever filled in the form. The contract's own
+    warning applies — this is a cost model with declared assumptions,
+    and calling it "the real TCO" is banned language (§17 ban 10).
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
     engineer_cost_per_hour: float = Field(gt=0)
     deployment_horizon_missions: int = Field(gt=0)
     hardware_upgrade_cost: float = Field(ge=0)
+    #: The unit the three figures above are in, and the unit
+    #: ``constraints.cost_per_mission_max`` had better be in too. The
+    #: platform never converts between currencies and never assumes one:
+    #: it carries the string onto the card so the ceiling and the cost
+    #: cannot be silently compared across units.
+    currency: str = Field(min_length=1)
+
+    def engineering_cost_per_mission(self, tuning_wall_clock_h: float) -> float:
+        """One-off engineering effort amortised over the horizon (N3).
+
+        The point of the whole mode, in one line: a one-off cost divided
+        by the number of missions that will pay for it. Three
+        person-days of tuning is 0.5 seconds per mission over 50,000
+        missions and 432 seconds per mission over a 200-mission pilot,
+        so the same candidates under the same weights can rank
+        differently at different horizons. Adding hours to milliseconds
+        without this division is the modelling error N3 exists to name.
+
+        ``hardware_upgrade_cost`` rides along because it is the same kind
+        of number: the one-off price of the subsystem a candidate needed
+        at G6, paid once and used by every mission after.
+        """
+        one_off = tuning_wall_clock_h * self.engineer_cost_per_hour + self.hardware_upgrade_cost
+        return one_off / self.deployment_horizon_missions
 
 
 class PreferenceWeights(BaseModel):
@@ -185,6 +217,13 @@ class DecisionSettings(BaseModel):
     decision_mode: DecisionMode = "technical"
     travel_time_accounting: TravelTimeAccounting = "efficiency"
     business_profile: BusinessProfile | None = None
+    #: Weights that replace the named profile's, for the HĐ-11.5 stability
+    #: sweep and nothing else. The named profile stays on the object so
+    #: :attr:`profile_label` can say what was perturbed and from where —
+    #: the same discipline :meth:`ResolvedAnchors.scaled` follows, and for
+    #: the same reason: a result computed under moved weights must not be
+    #: storable as a result under the declared ones.
+    weights_override: PreferenceWeights | None = None
 
     @model_validator(mode="after")
     def _validate_combination(self) -> DecisionSettings:
@@ -217,7 +256,24 @@ class DecisionSettings(BaseModel):
 
     @property
     def weights(self) -> PreferenceWeights:
-        return PREFERENCE_PROFILES[self.preference_profile]
+        return self.weights_override or PREFERENCE_PROFILES[self.preference_profile]
+
+    @property
+    def profile_label(self) -> str:
+        """What to record as the preference profile of a run.
+
+        A sweep run is not a run under the named profile, and storing it
+        as one would let a card computed at ``w_S = 0.03`` be filed under
+        ``benh_vien_gio_cao_diem``. Marked here rather than left to each
+        caller to remember.
+        """
+        if self.weights_override is None:
+            return self.preference_profile
+        return f"{self.preference_profile} (perturbed)"
+
+    def with_weights(self, weights: PreferenceWeights) -> DecisionSettings:
+        """This deployment scored under different weights (HĐ-11.5)."""
+        return self.model_copy(update={"weights_override": weights})
 
     @property
     def card_label(self) -> str:
@@ -273,7 +329,7 @@ def episode_objectives(
     the level of ΔU without touching its variance.
     """
     settings = settings or DecisionSettings()
-    _refuse_unimplemented_business_mode(settings)
+    _refuse_monetized_travel_time(settings)
     engineering_cost_h = _engineering_cost_hours(candidate, settings)
 
     u_r = anchors.u("success_rate", 1.0 if metric.success else 0.0)
@@ -309,7 +365,7 @@ def set_objectives(
     the same bad episode while saying nothing about typical behaviour.
     """
     settings = settings or DecisionSettings()
-    _refuse_unimplemented_business_mode(settings)
+    _refuse_monetized_travel_time(settings)
     if not metrics:
         raise ObjectiveError(
             f"candidate {candidate.candidate_id} has no episodes to score; an objective over "
@@ -366,7 +422,7 @@ def _breakdown(
         u_e=_clamp(u_e),
         u_c=_clamp(u_c),
         decision_utility=_clamp(utility),
-        preference_profile=settings.preference_profile,
+        preference_profile=settings.profile_label,
         decision_mode=settings.decision_mode,
     )
 
@@ -421,8 +477,38 @@ def _cost(
     )
     if b4 > 0.0:
         assert engineering_cost_h is not None  # guaranteed by _engineering_cost_hours
-        total += b4 * anchors.u("tuning_wall_clock_h", engineering_cost_h)
+        total += b4 * _engineering_term(anchors, settings, engineering_cost_h)
     return total
+
+
+def _engineering_term(
+    anchors: ResolvedAnchors, settings: DecisionSettings, engineering_cost_h: float
+) -> float:
+    """β4's contribution: the same effort on one of two scales.
+
+    Technical mode scores the raw hours against the contract's hours
+    anchor — a number the platform measured, on a scale it can defend
+    from nothing but convention (good 0 h, bad 40 h).
+
+    Business mode divides that effort by the declared horizon and scores
+    the currency-per-mission figure against the customer's own declared
+    ceiling. Same effort, different question: not "is 24 hours of tuning
+    a lot" but "does 24 hours of tuning matter across the missions that
+    will pay for it".
+
+    Never both. The two are alternative scales for one quantity, so
+    adding them would double-weight engineering effort inside U_C the
+    way §17 ban 9 forbids across objectives.
+    """
+    if settings.decision_mode == "technical":
+        return anchors.u("tuning_wall_clock_h", engineering_cost_h)
+
+    business = settings.business_profile
+    assert business is not None  # guaranteed by DecisionSettings validation
+    return anchors.u(
+        "engineering_cost_per_mission",
+        business.engineering_cost_per_mission(engineering_cost_h),
+    )
 
 
 def _engineering_cost_hours(candidate: Candidate, settings: DecisionSettings) -> float | None:
@@ -470,27 +556,28 @@ def _require_one_candidate(metrics: Sequence[EpisodeMetricSet], candidate: Candi
         )
 
 
-def _refuse_unimplemented_business_mode(settings: DecisionSettings) -> None:
-    """``business_adjusted`` is validated but not yet computable.
+def _refuse_monetized_travel_time(settings: DecisionSettings) -> None:
+    """``travel_time_accounting='monetized_cost'`` is still not computable.
 
-    Pricing engineering effort produces a figure in currency per mission,
-    and there is no anchor for that: ``metric_anchors.yaml`` scales
-    ``tuning_wall_clock_h`` in hours (good 0, bad 40), and reusing that
-    scale for money would be a unit error wearing a number. Adding the
-    anchor is an anchor-file plus contract change, deliberately left out
-    of the current backlog along with ``monetized_cost``.
+    ``business_adjusted`` prices *engineering effort*, which needs one
+    declared rate (currency per hour) and one declared horizon, both of
+    which :class:`BusinessProfile` now carries. Pricing *travel time*
+    needs a different declaration the platform does not have: what one
+    mission of throughput is worth. Without it, moving travel time out
+    of O3 would leave it priced by nothing at all — strictly worse than
+    leaving it as an efficiency, where at least the scale is physical.
 
-    Refused rather than approximated: a card in this mode carries the
-    label "adjusted by the assumptions the user declared", and that
-    sentence must not appear over a figure computed under a scale nobody
-    declared.
+    Refused rather than approximated, for the reason that governs this
+    whole mode: the card carries the label "adjusted by the assumptions
+    the user declared", and that sentence must not stand over a figure
+    computed under a scale nobody declared.
     """
-    if settings.decision_mode == "business_adjusted":
+    if settings.travel_time_accounting == "monetized_cost":
         raise ObjectiveError(
-            "decision_mode='business_adjusted' is not implemented: monetised engineering "
-            "cost is measured in currency per mission and metric_anchors.yaml has no anchor "
-            "for that scale (tuning_wall_clock_h is in hours). Adding one is an anchor-file "
-            "and contract change; until then run decision_mode='technical'"
+            "travel_time_accounting='monetized_cost' is not implemented: pricing travel time "
+            "needs a declared value per mission of throughput, which no profile carries. "
+            "business_adjusted prices engineering effort and leaves travel time in U_E, where "
+            "its scale is physical (HĐ-9.3)"
         )
 
 

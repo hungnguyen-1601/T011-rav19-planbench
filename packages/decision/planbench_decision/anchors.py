@@ -52,6 +52,7 @@ from planbench_schemas.task_profile import TaskProfile
 
 __all__ = [
     "ANCHORABLE_METRICS",
+    "DECLARED_SCALE_METRICS",
     "DEFAULT_ANCHORS_PATH",
     "GATED_METRICS",
     "Anchor",
@@ -85,6 +86,7 @@ ANCHORABLE_METRICS: frozenset[str] = frozenset(
         "tuning_wall_clock_h",
         "tuning_trials_used",
         "n_tunable_params",
+        "engineering_cost_per_mission",
     }
 )
 
@@ -92,6 +94,15 @@ ANCHORABLE_METRICS: frozenset[str] = frozenset(
 #: Their ``bad`` must reference the deployment's threshold — see the
 #: module docstring and HĐ-8.3 law 2.
 GATED_METRICS: frozenset[str] = frozenset({"success_rate", "p99_latency_ms", "memory_estimate_mb"})
+
+#: Metrics measured in a unit the platform cannot derive from physics —
+#: money. Their ``bad`` must reference the deployment's own declared
+#: budget for the same reason gated metrics reference their gate: there
+#: is no exogenous "a mission costing this much is as bad as it gets".
+#: Writing a literal here would be the platform choosing the customer's
+#: budget and then scoring them against it, which is the min-max failure
+#: of law 1 wearing different clothes (HĐ-8.3 law 4).
+DECLARED_SCALE_METRICS: frozenset[str] = frozenset({"engineering_cost_per_mission"})
 
 #: ``${path.to.field}`` or ``${path.to.field * 2.0}`` / ``${... / 4}``.
 #: Deliberately this small: see the module docstring on not using eval.
@@ -103,6 +114,26 @@ _REFERENCE = re.compile(
 
 class AnchorError(ValueError):
     """An anchor file that would score candidates against the wrong bar."""
+
+
+class _UndeclaredOptional(Exception):
+    """A reference into a field the profile has but left undeclared.
+
+    Not an ``AnchorError``: the file is fine and the reference is
+    spelled correctly — this deployment simply did not declare the
+    quantity the scale is defined against. Caught by
+    :meth:`AnchorSet.resolve`, never raised to callers.
+    """
+
+    def __init__(self, path: str) -> None:
+        super().__init__(path)
+        self.path = path
+
+
+#: Distinguishes "no such field" (a typo, fatal) from "field is None"
+#: (declared optional, not filled in). ``getattr(obj, name, None)``
+#: cannot tell those apart, and they need opposite treatment.
+_MISSING = object()
 
 
 def u(value: float, good: float, bad: float) -> float:
@@ -181,21 +212,53 @@ class AnchorSet(BaseModel):
                 "2). With a literal, a candidate is scored for clearing a bar nobody set, and "
                 "this file drifts away from the deployment without a symptom"
             )
+        invented = sorted(
+            name
+            for name in self.anchors
+            if name in DECLARED_SCALE_METRICS and not self.anchors[name].references("bad")
+        )
+        if invented:
+            raise AnchorError(
+                f"metric(s) {invented} are measured in money, so their 'bad' must reference the "
+                "deployment's own declared budget with ${...} rather than a literal (HĐ-8.3 law "
+                "4). Physics fixes what a bad clearance is; nothing fixes what an expensive "
+                "mission is except the customer saying so"
+            )
         return self
 
     def resolve(self, profile: TaskProfile) -> ResolvedAnchors:
-        """Bind every reference against one deployment's thresholds."""
+        """Bind every reference against one deployment's thresholds.
+
+        An anchor pointing at a field the profile *has* but left
+        undeclared — an optional constraint like
+        ``cost_per_mission_max`` — does not fail the whole file. One
+        anchor file serves every deployment, and a site running in
+        technical mode has no reason to name a budget; refusing to
+        resolve anything would make the money anchor's existence break
+        every such site. It is recorded as unresolved instead, and
+        :meth:`ResolvedAnchors.u` refuses that one metric with the reason
+        attached. A reference to a field that does not exist at all is
+        still a typo and still fatal.
+        """
         resolved: dict[str, tuple[float, float]] = {}
+        unresolved: dict[str, str] = {}
         for name, anchor in self.anchors.items():
-            good = _resolve_value(anchor.good, profile, name, "good")
-            bad = _resolve_value(anchor.bad, profile, name, "bad")
+            try:
+                good = _resolve_value(anchor.good, profile, name, "good")
+                bad = _resolve_value(anchor.bad, profile, name, "bad")
+            except _UndeclaredOptional as undeclared:
+                unresolved[name] = (
+                    f"task profile {profile.id!r} does not declare "
+                    f"{undeclared.path!r}, which this anchor's scale is defined against"
+                )
+                continue
             if good == bad:
                 raise AnchorError(
                     f"anchor {name!r} resolves to good == bad == {good} for task profile "
                     f"{profile.id!r}; the metric would have no scale"
                 )
             resolved[name] = (good, bad)
-        return ResolvedAnchors(version=self.version, anchors=resolved)
+        return ResolvedAnchors(version=self.version, anchors=resolved, unresolved=unresolved)
 
 
 class ResolvedAnchors(BaseModel):
@@ -205,6 +268,10 @@ class ResolvedAnchors(BaseModel):
 
     version: str
     anchors: dict[str, tuple[float, float]]
+    #: Metric -> why its anchor could not be bound to this deployment.
+    #: Kept rather than dropped so the refusal can name the missing
+    #: declaration instead of reporting a generic "no anchor".
+    unresolved: dict[str, str] = Field(default_factory=dict)
 
     def u(self, metric: str, value: float) -> float:
         """Normalise one measurement (HĐ-8.1).
@@ -215,6 +282,12 @@ class ResolvedAnchors(BaseModel):
         """
         pair = self.anchors.get(metric)
         if pair is None:
+            reason = self.unresolved.get(metric)
+            if reason is not None:
+                raise AnchorError(
+                    f"anchor for {metric!r} could not be resolved: {reason}. Declare it, or "
+                    "score under a mode that does not use this metric"
+                )
             raise AnchorError(
                 f"no anchor for {metric!r} in anchor config {self.version}; a metric without "
                 f"an anchor has no scale. Anchored metrics: {sorted(self.anchors)}"
@@ -242,6 +315,7 @@ class ResolvedAnchors(BaseModel):
             anchors={
                 name: (good * factor, bad * factor) for name, (good, bad) in self.anchors.items()
             },
+            unresolved=dict(self.unresolved),
         )
 
 
@@ -313,12 +387,14 @@ def _lookup(profile: TaskProfile, path: str, metric: str, side: str) -> float:
     for part in path.split("."):
         if part.startswith("_"):
             raise AnchorError(f"anchor {metric}.{side} references private field {path!r}")
-        current = getattr(current, part, None)
-        if current is None:
+        current = getattr(current, part, _MISSING)
+        if current is _MISSING:
             raise AnchorError(
                 f"anchor {metric}.{side} references {path!r}, which task profile "
                 f"{profile.id!r} does not have"
             )
+        if current is None:
+            raise _UndeclaredOptional(path)
     if isinstance(current, bool) or not isinstance(current, int | float):
         raise AnchorError(
             f"anchor {metric}.{side} references {path!r}, which is "

@@ -71,14 +71,39 @@ class TestProjectAnchorFile:
         """HĐ-13 puts anchor_config_version in every manifest: a
         recommendation computed under unknown anchors cannot be rebuilt."""
         anchors = load_anchors()
-        assert anchors.version == "v1.0"
+        assert anchors.version == "v1.2"
 
     def test_resolves_against_the_contract_profile(self) -> None:
         resolved = load_anchors().resolve(make_profile())
         assert resolved.anchors["success_rate"] == (1.0, 0.95)
         assert resolved.anchors["p99_latency_ms"] == (10.0, 50.0)
-        assert resolved.anchors["min_clearance"] == pytest.approx((0.52, 0.273))
+        assert resolved.anchors["min_clearance"] == pytest.approx((0.26, 0.0))
         assert resolved.anchors["memory_estimate_mb"] == pytest.approx((819.25, 3277.0))
+
+    def test_clearance_is_anchored_on_the_surface_scale(self) -> None:
+        """HĐ-8.2. ``clearance_m`` is measured from the robot's surface —
+        ``distance - robot_radius - obstacle_radius`` — so 0.0 *is* the
+        collision boundary rather than a number anybody picked.
+
+        Anchor v1.0 used ``radius * 1.05`` / ``radius * 2.0``, the right
+        pair on a centre-to-obstacle scale, one radius away from this
+        one. On the reference warehouse the two scales do not merely
+        disagree: a 0.52 m robot in a 0.68 m aisle has 0.04 m of surface
+        clearance, which lands under a ``bad`` of 0.273 on every episode,
+        so ``U_S`` was a constant 0 for every candidate and the safety
+        objective decided nothing at weight 0.10.
+        """
+        resolved = load_anchors().resolve(make_profile())
+        good, bad = resolved.anchors["min_clearance"]
+        assert bad == 0.0
+        assert good == pytest.approx(make_profile().robot.radius)
+
+        # The aisle that scored 0.00 under v1.0 now scores on-scale.
+        assert resolved.u("min_clearance", 0.04) == pytest.approx(0.04 / 0.26, abs=1e-9)
+        assert resolved.u("min_clearance", 0.04) > 0.0
+        # Touching an obstacle still scores 0, and so does being inside it.
+        assert resolved.u("min_clearance", 0.0) == 0.0
+        assert resolved.u("min_clearance", -0.10) == 0.0
 
     def test_reproduces_the_contract_worked_example(self) -> None:
         """§6.2 scores K1 at U_R = 0.34 with success_rate 96.7% against a
@@ -134,6 +159,68 @@ class TestLawTwoGatedMetrics:
         anchors = load_anchors()
         for metric in ("success_rate", "p99_latency_ms", "memory_estimate_mb"):
             assert anchors.anchors[metric].references("bad")
+
+
+class TestLawFourDeclaredScales:
+    """HĐ-8.3 law 4 — money has no physics to anchor against.
+
+    Every other anchor in the shipped file gets its scale from outside
+    the candidate set: the geometry of the robot, the physics of the
+    route, or a threshold the deployment declared. There is no fact that
+    makes one currency unit per mission expensive. A literal here would
+    be the platform picking the customer's budget and then grading the
+    customer against it — law 1's failure in a different costume.
+    """
+
+    def test_a_literal_money_bad_is_refused(self) -> None:
+        with pytest.raises(ValidationError, match="measured in money"):
+            anchor_set(engineering_cost_per_mission={"good": 0.0, "bad": 5.0})
+
+    def test_the_shipped_file_obeys_it(self) -> None:
+        assert load_anchors().anchors["engineering_cost_per_mission"].references("bad")
+
+    def test_a_site_that_declares_a_budget_gets_the_scale(self) -> None:
+        resolved = load_anchors().resolve(
+            make_profile(constraints=constraints(cost_per_mission_max=2.0))
+        )
+        assert resolved.anchors["engineering_cost_per_mission"] == (0.0, 2.0)
+        assert resolved.u("engineering_cost_per_mission", 0.5) == pytest.approx(0.75)
+
+
+class TestUndeclaredOptionalReferences:
+    """One anchor file serves every deployment, so an anchor whose scale
+    a given site never declared cannot be fatal to that site.
+
+    It is not silently dropped either: the reason is kept, and scoring
+    the metric names the missing declaration. The distinction that makes
+    this safe is between a field the profile *has and left empty* and a
+    field that does not exist — the second is a typo and stays fatal.
+    """
+
+    def test_a_technical_site_loads_the_file_without_declaring_money(self) -> None:
+        resolved = load_anchors().resolve(make_profile())
+        assert "engineering_cost_per_mission" not in resolved.anchors
+        assert "engineering_cost_per_mission" in resolved.unresolved
+        # Every other anchor resolved normally.
+        assert resolved.anchors["success_rate"] == (1.0, 0.95)
+
+    def test_scoring_it_names_the_missing_declaration(self) -> None:
+        resolved = load_anchors().resolve(make_profile())
+        with pytest.raises(AnchorError, match="cost_per_mission_max"):
+            resolved.u("engineering_cost_per_mission", 0.5)
+
+    def test_a_misspelled_field_is_still_fatal(self) -> None:
+        """The failure this must not be confused with: quietly treating a
+        typo as "this site declined to declare it"."""
+        with pytest.raises(AnchorError, match="does not have"):
+            anchor_set(
+                path_efficiency={"good": 1.0, "bad": "${constraints.cost_per_mision_max}"}
+            ).resolve(make_profile())
+
+    def test_the_reason_survives_the_sensitivity_sweep(self) -> None:
+        swept = load_anchors().resolve(make_profile()).scaled(1.10)
+        with pytest.raises(AnchorError, match="cost_per_mission_max"):
+            swept.u("engineering_cost_per_mission", 0.5)
 
 
 class TestReferenceResolution:
@@ -238,8 +325,22 @@ class TestSensitivitySweep:
         """A card produced under perturbed anchors must never be
         mistaken for one produced under the declared anchors."""
         resolved = load_anchors().resolve(make_profile())
-        assert resolved.scaled(1.10).version == "v1.0±+10%"
-        assert resolved.scaled(0.90).version == "v1.0±-10%"
+        assert resolved.scaled(1.10).version == "v1.2±+10%"
+        assert resolved.scaled(0.90).version == "v1.2±-10%"
+
+    def test_a_physical_floor_does_not_move_under_the_sweep(self) -> None:
+        """``min_clearance.bad`` is 0.0 — the collision boundary — so
+        scaling leaves it alone and only ``good`` moves.
+
+        That is the intended reading of HĐ-8.3 law 3 rather than a gap in
+        it: the sweep asks whether the *chosen* end of a scale was chosen
+        well, and on this metric only ``good`` was chosen. Perturbing the
+        floor would be perturbing geometry.
+        """
+        resolved = load_anchors().resolve(make_profile())
+        good, bad = resolved.scaled(1.10).anchors["min_clearance"]
+        assert bad == 0.0
+        assert good == pytest.approx(resolved.anchors["min_clearance"][0] * 1.10)
 
     def test_non_positive_factor_is_refused(self) -> None:
         with pytest.raises(AnchorError, match="must be positive"):
