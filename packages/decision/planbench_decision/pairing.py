@@ -47,17 +47,37 @@ def require_shared_contexts(
     same count. The returned tuple is sorted so the resampling order in a
     paired bootstrap does not depend on dictionary iteration order, which
     would make a seeded bootstrap irreproducible.
+    """
+    return require_shared_context_ids(
+        {
+            candidate_id: context_ids(contexts)
+            for candidate_id, contexts in contexts_by_candidate.items()
+        }
+    )
+
+
+def require_shared_context_ids(
+    ids_by_candidate: Mapping[str, Sequence[str]],
+) -> tuple[str, ...]:
+    """The same rule, for callers that hold ids rather than contexts.
+
+    The statistics layer works from ids: by the time utilities exist, the
+    contexts have already been validated where they were generated and
+    where the metrics were computed, and an id cannot be turned back into
+    a context anyway — it is a hash. Two copies of "did they run the same
+    episodes" would drift apart, and the copy that drifted would be the
+    one that stopped refusing, so both entry points land here.
 
     Reported failures name the candidates and the difference, because the
     person reading this is deciding whether to re-run episodes or to fix a
     runner bug, and those need different evidence.
     """
-    if not contexts_by_candidate:
+    if not ids_by_candidate:
         raise PairingViolation("no candidates to compare")
 
     per_candidate: dict[str, tuple[str, ...]] = {}
-    for candidate_id, contexts in contexts_by_candidate.items():
-        identifiers = context_ids(contexts)
+    for candidate_id, raw_ids in ids_by_candidate.items():
+        identifiers = tuple(raw_ids)
         if not identifiers:
             raise PairingViolation(f"candidate {candidate_id} has no episodes")
         duplicates = sorted({i for i in identifiers if identifiers.count(i) > 1})
