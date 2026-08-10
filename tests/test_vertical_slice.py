@@ -29,7 +29,11 @@ import pytest
 import yaml
 from jsonschema import Draft202012Validator
 
+from planbench_benchmark.task_map import load_task_map
 from planbench_decision.card import CARD_SCHEMA_PATH, MANIFEST_SCHEMA_PATH
+from planbench_metrics.definitions import compute_metrics
+from planbench_schemas.episode_context import EpisodeContext
+from planbench_simulator.trace import read_trace, trace_path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -189,6 +193,70 @@ class TestItRunsAtAll:
         )
         assert sorted(validator.iter_errors(manifest), key=str) == []
         assert manifest["bootstrap"] == {"seed": 3, "n_resamples": 1000}
+
+
+class TestTheManifestCanActuallyRebuild:
+    """HĐ-13's acceptance test, run rather than asserted about.
+
+    "Hand somebody the manifest and they rebuild the same card" was
+    stated from 1.0.0 and did not hold until 5.0.0: the manifest carried
+    ``episode_context_ids``, and ``episode_context_id`` is a hash of the
+    conditions (HĐ-3.1). Hashes do not invert, so a holder knew *which*
+    episodes ran but had no mission and no seed to recompute a metric
+    from — and HĐ-6 needs both.
+
+    The gap was invisible in every run the project had made, because the
+    slice builds the manifest and the metrics in one process where the
+    ``EpisodeContext`` objects are still in memory. So this test throws
+    them away: it reads the manifest and the traces off disk and
+    recomputes, exactly as a stranger would.
+    """
+
+    def test_metrics_recompute_from_the_manifest_and_traces_alone(
+        self, tmp_path_factory: pytest.TempPathFactory, slice_result: dict[str, object]
+    ) -> None:
+        base = Path(tmp_path_factory.getbasetemp())
+        manifest = json.loads(next(base.rglob("manifest.json")).read_text(encoding="utf-8"))
+        profile_path = next(base.rglob("profile.yaml"))
+        profile = slice_module.load_profile(profile_path)
+        map_data = load_task_map(profile, base_dir=profile_path.parent)
+
+        contexts = [
+            EpisodeContext.model_validate(record)
+            for record in manifest["episode_contexts"]["evaluation"]
+        ]
+        assert contexts, "the manifest carried no conditions to rebuild from"
+
+        candidate_id = manifest["candidates"][0]
+        trace_root = next(base.rglob("traces"))
+        rebuilt = 0
+        for context in contexts:
+            path = trace_path(candidate_id, context.episode_context_id, root=trace_root)
+            if not path.is_file():
+                continue
+            metrics = compute_metrics(read_trace(path), profile, context, map_data)
+            assert metrics.episode_context_id == context.episode_context_id
+            assert metrics.path_length_m > 0.0
+            rebuilt += 1
+        assert rebuilt == len(contexts), "not every recorded episode could be recomputed"
+
+    def test_the_records_carry_what_a_rebuild_needs(
+        self, tmp_path_factory: pytest.TempPathFactory, slice_result: dict[str, object]
+    ) -> None:
+        """Named separately from the rebuild so a regression says which
+        half broke: the fields, or the recomputation."""
+        base = Path(tmp_path_factory.getbasetemp())
+        manifest = json.loads(next(base.rglob("manifest.json")).read_text(encoding="utf-8"))
+        for record in manifest["episode_contexts"]["evaluation"]:
+            assert record["mission_id"]
+            assert record["seed"] >= 0
+            assert record["environment_variant"]
+            assert record["sample_set"] == "evaluation"
+            # And the id it hashes to, so a reader can find the trace file.
+            assert (
+                EpisodeContext.model_validate(record).episode_context_id
+                == (record["episode_context_id"])
+            )
 
 
 class TestAcceptanceCriteria:

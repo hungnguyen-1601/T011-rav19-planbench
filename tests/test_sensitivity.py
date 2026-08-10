@@ -155,6 +155,15 @@ KNIFE_EDGE = {
     "b": {"p99_latency_ms": 33.0, "min_clearance": 0.26},
 }
 
+#: Tuned to sit on the boundary where the *anchor* choice decides it —
+#: 34.5 ms is where the two candidates change places, so a 10% shift of
+#: either scale involved tips the recommendation. Also measured, not
+#: guessed.
+ANCHOR_KNIFE = {
+    "a": {"p99_latency_ms": 25.0, "min_clearance": 0.13},
+    "b": {"p99_latency_ms": 34.5, "min_clearance": 0.26},
+}
+
 
 class TestWeightShifting:
     """The arithmetic underneath: one weight moves, the vector stays a
@@ -321,17 +330,43 @@ class TestAnchorStability:
         assert sweep.changed_at == ()
         assert sweep.verdict == "unchanged_at_±10%"
 
-    def test_a_flip_names_the_direction_that_caused_it(self) -> None:
+    def test_a_flip_names_the_anchor_and_the_direction(self) -> None:
         """ "Our own scale choice decided this" is only actionable if the
-        report says which way it had to move.
+        report says *which* scale and which way.
 
-        The knife-edge field really does flip inside the contract's own
-        ±10%, so this is the warning firing on a genuine case rather
-        than on an exaggerated sweep.
+        A reader can argue with "the recommendation turns on where we
+        drew the line for latency". They can do nothing at all with
+        "changed at -10%".
         """
-        sweep = anchor_stability(field(KNIFE_EDGE["a"], KNIFE_EDGE["b"]), anchors())
-        assert sweep.changed_at == ("-10%",)
-        assert sweep.verdict == "changed_at_-10%"
+        sweep = anchor_stability(field(ANCHOR_KNIFE["a"], ANCHOR_KNIFE["b"]), anchors())
+        assert sweep.changed_at
+        assert any(label.startswith("p99_latency_ms") for label in sweep.changed_at)
+        assert sweep.verdict.startswith("changed_at_")
+        assert all(label.endswith(("+10%", "-10%")) for label in sweep.changed_at)
+
+    def test_a_uniform_sweep_is_provably_unable_to_flip_anything(self) -> None:
+        """Why this check sweeps one metric at a time.
+
+        HĐ-8.3 law 3 reads "shift every anchor ±10%", and taken literally
+        that check cannot fail. Widening every scale by the same factor
+        maps every ``u`` by one affine function — ``u ↦ 1 - (1-u)/f`` —
+        and the decision utility, being a convex combination of ``u``
+        values, maps the same way. A strictly increasing map applied to
+        every candidate alike cannot reorder them.
+
+        Asserted on the field that *does* flip under a per-metric sweep,
+        so the two cannot both pass by accident.
+        """
+        scored = field(ANCHOR_KNIFE["a"], ANCHOR_KNIFE["b"])
+        resolved, settings = anchors(), DecisionSettings()
+        baseline = scored.recommend_under(resolved, settings, seed=0).recommended_id
+        for factor in (1.10, 0.90, 1.50, 0.50):
+            everything = resolved.scaled(factor)
+            assert (
+                scored.recommend_under(everything, settings, seed=0).recommended_id == baseline
+            ), f"a uniform sweep at {factor} should be order-preserving"
+        # ...while the per-metric sweep on the same field does find flips.
+        assert anchor_stability(scored, resolved).changed_at
 
     def test_the_verdict_never_misreports_its_own_sweep(self) -> None:
         """A card field that says ``±10%`` about a 30% shift describes an
@@ -343,26 +378,46 @@ class TestAnchorStability:
         assert anchor_stability(scored, anchors()).verdict == "unchanged_at_±10%"
         assert anchor_stability(scored, anchors(), sweep=0.30).verdict == "unchanged_at_±30%"
 
-    def test_it_names_metrics_whose_scale_left_the_domain(self) -> None:
-        """The finding that makes this report honest rather than
-        reassuring.
+    def test_no_metric_is_swept_off_its_own_domain(self) -> None:
+        """The invariant that makes an "unchanged" verdict mean anything.
 
-        ``success_rate`` is anchored at ``good = 1.0, bad = 0.95``, and
-        scaling both ends by +10% puts the whole scale at 1.10 / 1.045 —
-        past the maximum the metric can take. Every real success rate
-        then clips to 0. The recommendation may well be "unchanged"
-        under that shift, but it is unchanged because the metric went
-        dead, not because the choice was robust.
+        The first version of the sweep scaled *both* ends, which for a
+        metric bounded at 1.0 by definition moved the whole scale past
+        the domain: ``success_rate`` at ``{1.00, 0.95}`` became
+        ``{1.10, 1.045}``, every real success rate clipped to 0, and
+        ``U_R`` went dead for every candidate. The sweep then reported
+        "recommendation unchanged" — unchanged because the metric had
+        stopped existing.
+
+        Holding ``good`` still and moving only ``bad`` makes that
+        impossible: the perturbed scale always shares an endpoint with
+        the declared one, so a measurement that used to score inside
+        [0, 1] still does. Asserted on the shipped anchors rather than
+        argued, because the failure was invisible in exactly this file's
+        output.
         """
-        sweep = anchor_stability(field(SAFE_VS_FAST["a"], SAFE_VS_FAST["b"]), anchors())
-        assert "success_rate" in sweep.degenerate_metrics
+        resolved = load_anchors().resolve(
+            make_profile(constraints=constraints(cost_per_mission_max=1.0))
+        )
+        for factor in (1.10, 0.90):
+            for name, (good, bad) in resolved.scaled(factor).anchors.items():
+                was_good, was_bad = resolved.anchors[name]
+                assert good == pytest.approx(was_good), f"{name} moved its reference point"
+                # Same direction, so the metric still reads the same way.
+                assert (bad > good) == (was_bad > was_good), f"{name} inverted"
+                # And the value that used to sit mid-scale still does.
+                midpoint = (was_good + was_bad) / 2
+                assert 0.0 < resolved.scaled(factor).u(name, midpoint) < 1.0, name
 
-    def test_a_physically_floored_anchor_is_not_degenerate(self) -> None:
-        """``min_clearance`` keeps ``bad = 0.0`` under scaling, so its
-        range still covers the measurements — only its top moves, which
-        is the question law 3 asks."""
-        sweep = anchor_stability(field(SAFE_VS_FAST["a"], SAFE_VS_FAST["b"]), anchors())
-        assert "min_clearance" not in sweep.degenerate_metrics
+    def test_success_rate_survives_the_sweep(self) -> None:
+        """The specific metric the old rule killed, named so a regression
+        is legible rather than showing up as a distant assertion."""
+        resolved = load_anchors().resolve(make_profile())
+        for factor in (1.10, 0.90):
+            good, bad = resolved.scaled(factor).anchors["success_rate"]
+            assert good == 1.0
+            assert 0.9 < bad < 1.0
+            assert resolved.scaled(factor).u("success_rate", 0.967) > 0.0
 
 
 class TestRefusals:

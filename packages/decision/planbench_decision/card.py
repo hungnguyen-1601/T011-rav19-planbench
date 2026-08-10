@@ -272,7 +272,21 @@ class DecisionCard(BaseModel):
 
 
 class Manifest(BaseModel):
-    """HĐ-13. Enough to rebuild the card, and nothing that cannot be."""
+    """HĐ-13. Enough to rebuild the card, and nothing that cannot be.
+
+    **Full context records, not a list of ids.** Until 5.0.0 this stored
+    ``episode_context_ids``, and that failed the section's own acceptance
+    test. ``episode_context_id`` is a hash of the conditions (HĐ-3.1) and
+    hashes do not invert, so a holder of the manifest could tell which
+    episodes were used but not *what they were* — and HĐ-6 needs the
+    mission and the seed to recompute a metric. The promise of HĐ-5, that
+    a stored run can be re-analysed from its files after the process that
+    produced it is gone, quietly did not hold: it worked only while the
+    ``EpisodeContext`` objects were still in memory.
+
+    Each record carries its own id as a computed field, so the id list is
+    still there — derived rather than stored a second time.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -285,10 +299,17 @@ class Manifest(BaseModel):
     decision_mode: str
     travel_time_accounting: str
     candidates: tuple[str, ...]
-    episode_context_ids: dict[str, tuple[str, ...]]
+    #: ``"evaluation"`` / ``"neighborhood"`` → the conditions themselves.
+    episode_contexts: dict[str, tuple[EpisodeContext, ...]]
     bootstrap: dict[str, int]
     benchmark_host: BenchmarkHost
     created_at: datetime
+
+    def context_ids(self, sample_set: str = "evaluation") -> tuple[str, ...]:
+        """The ids of one sample set, derived from the records."""
+        return tuple(
+            context.episode_context_id for context in self.episode_contexts.get(sample_set, ())
+        )
 
     def to_json_dict(self) -> dict[str, Any]:
         return {
@@ -301,8 +322,9 @@ class Manifest(BaseModel):
             "decision_mode": self.decision_mode,
             "travel_time_accounting": self.travel_time_accounting,
             "candidates": list(self.candidates),
-            "episode_context_ids": {
-                key: list(value) for key, value in self.episode_context_ids.items()
+            "episode_contexts": {
+                key: [context.model_dump(mode="json") for context in value]
+                for key, value in self.episode_contexts.items()
             },
             "bootstrap": dict(self.bootstrap),
             "benchmark_host": self.benchmark_host.model_dump(),
@@ -410,6 +432,7 @@ def build_manifest(
     settings: DecisionSettings,
     anchors: ResolvedAnchors,
     provenance: Provenance,
+    evaluation_contexts: Sequence[EpisodeContext],
     *,
     neighborhood_contexts: Sequence[EpisodeContext] = (),
 ) -> Manifest:
@@ -419,11 +442,21 @@ def build_manifest(
     scored ones — a rebuild has to reproduce the gate table too, and a
     candidate eliminated at G2 is part of the result.
 
-    The evaluation context ids come from the evidence rather than from a
-    separate argument, so the manifest cannot claim a set the numbers
-    were not computed over.
+    ``evaluation_contexts`` carries the conditions, not just their
+    hashes, because HĐ-6 cannot recompute a metric from a hash. It is
+    still checked against the ids the evidence was actually scored over,
+    so the manifest cannot describe a set the numbers did not come from —
+    the same guard as before, now over records instead of ids.
     """
     evaluation_ids = _shared_evaluation_ids(evidence)
+    supplied = {context.episode_context_id: context for context in evaluation_contexts}
+    missing = sorted(set(evaluation_ids) - set(supplied))
+    if missing:
+        raise CardError(
+            f"the manifest was given no context record for episode(s) {missing[:3]}, which the "
+            "candidates were scored over. HĐ-13 has to carry the conditions themselves: an id "
+            "is a hash and does not invert, so a rebuild could not recompute the metrics"
+        )
     return Manifest(
         git_sha=provenance.git_sha,
         docker_image_digest=provenance.docker_image_digest,
@@ -433,10 +466,12 @@ def build_manifest(
         decision_mode=settings.decision_mode,
         travel_time_accounting=settings.travel_time_accounting,
         candidates=tuple(sorted(gate_reports)),
-        episode_context_ids={
-            "evaluation": evaluation_ids,
+        # Sorted by id so a rebuild produces the same file byte for byte
+        # (HĐ-13), which the caller's iteration order would not.
+        episode_contexts={
+            "evaluation": tuple(supplied[context_id] for context_id in evaluation_ids),
             "neighborhood": tuple(
-                sorted(context.episode_context_id for context in neighborhood_contexts)
+                sorted(neighborhood_contexts, key=lambda c: c.episode_context_id)
             ),
         },
         bootstrap={

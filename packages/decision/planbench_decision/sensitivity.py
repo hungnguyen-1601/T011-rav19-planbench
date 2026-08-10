@@ -227,9 +227,6 @@ class AnchorStability(BaseModel):
     #: — a card field that misreports its own experiment is worse than
     #: one that is absent.
     sweep: float = Field(gt=0.0)
-    #: Metrics whose scale stopped being usable under the shift rather
-    #: than merely moving — see :func:`anchor_stability`.
-    degenerate_metrics: tuple[str, ...] = ()
 
     @property
     def verdict(self) -> str:
@@ -293,63 +290,53 @@ def anchor_stability(
     seed: int = 0,
     sweep: float = ANCHOR_SWEEP,
 ) -> AnchorStability:
-    """Does shifting every anchor ±10% change the advice (HĐ-8.3 law 3)?
+    """Does our own choice of scale decide this (HĐ-8.3 law 3)?
 
-    Both ends of every scale move together, which is the question the law
-    asks: whether the *scale* was chosen well, not whether one end of it
-    was. An anchor whose ``bad`` is a physical floor — ``min_clearance``
-    at 0.0 — therefore keeps its floor and moves only its top, correctly:
-    perturbing the collision boundary would be perturbing geometry.
+    **One metric at a time, not all at once.** The law is written as
+    "shift every anchor ±10%", and taken literally that check cannot
+    fail. With ``bad' = good + (bad - good)·f`` every ``u`` maps by the
+    same affine function ``u ↦ 1 - (1-u)/f``; the decision utility is a
+    convex combination of ``u`` values so it maps identically; and a
+    strictly increasing map applied to every candidate alike leaves the
+    order untouched. A uniform sweep returns "unchanged" on any input
+    whatsoever, which is not evidence — it is arithmetic.
 
-    **Degenerate metrics are reported, not hidden.** Scaling both ends of
-    a metric that is bounded at 1.0 by definition can push its whole
-    scale past the domain: ``success_rate`` at ``good = 1.0, bad = 0.95``
-    becomes ``1.10 / 1.045``, and every real success rate then clips to
-    0. The recommendation may well be "unchanged" under that shift, but
-    it is unchanged because the metric went dead, not because the choice
-    was robust. Naming those metrics is the difference between a
-    stability report and a reassuring one.
+    So each anchored metric is swept on its own, which is the same shape
+    as the weight sweep and for the same reason: one assumption moves at
+    a time, so a flip can be attributed to it. What comes back is not
+    just *whether* our scales decided the outcome but *which one* did,
+    and that is the actionable form — "the recommendation turns on where
+    we drew the line for latency" is something a reader can argue with.
+
+    The shift itself is a change of *width*: ``good`` holds still and
+    ``bad`` moves. Scaling both ends instead translates the scale off the
+    domain of any metric bounded at 1.0 — ``success_rate`` at
+    ``{1.00, 0.95}`` became ``{1.10, 1.045}``, every real rate clipped to
+    0, and ``U_R`` went dead for the whole field while the sweep happily
+    reported "unchanged".
     """
     settings = settings or DecisionSettings()
     baseline = field.recommend_under(anchors, settings, seed=seed).recommended_id
 
     changed: list[str] = []
-    degenerate: set[str] = set()
-    for factor, label in ((1.0 + sweep, f"+{sweep:.0%}"), (1.0 - sweep, f"-{sweep:.0%}")):
-        shifted = anchors.scaled(factor)
-        degenerate.update(_degenerate_metrics(anchors, shifted))
-        try:
-            moved = field.recommend_under(shifted, settings, seed=seed).recommended_id
-        except AnchorError as exc:  # pragma: no cover - defensive
-            raise SensitivityError(
-                f"anchors shifted by {label} could not score the field: {exc}"
-            ) from exc
-        if moved != baseline:
-            changed.append(label)
+    for metric in sorted(anchors.anchors):
+        for factor, sign in ((1.0 + sweep, "+"), (1.0 - sweep, "-")):
+            shifted = anchors.scaled(factor, only=metric)
+            try:
+                moved = field.recommend_under(shifted, settings, seed=seed).recommended_id
+            except AnchorError as exc:  # pragma: no cover - defensive
+                raise SensitivityError(
+                    f"anchors with {metric} shifted by {sign}{sweep:.0%} could not score the "
+                    f"field: {exc}"
+                ) from exc
+            if moved != baseline:
+                changed.append(f"{metric}{sign}{sweep:.0%}")
 
     return AnchorStability(
         recommended_id=baseline,
         changed_at=tuple(changed),
         sweep=sweep,
-        degenerate_metrics=tuple(sorted(degenerate)),
     )
-
-
-def _degenerate_metrics(original: ResolvedAnchors, shifted: ResolvedAnchors) -> set[str]:
-    """Metrics the shift moved off the range their measurements live in.
-
-    Detected as the interval between ``good`` and ``bad`` no longer
-    containing any of the original interval: after the shift, every value
-    that used to score between 0 and 1 now clips to an end.
-    """
-    degenerate: set[str] = set()
-    for name, (good, bad) in shifted.anchors.items():
-        was_good, was_bad = original.anchors[name]
-        low, high = min(good, bad), max(good, bad)
-        was_low, was_high = min(was_good, was_bad), max(was_good, was_bad)
-        if low >= was_high or high <= was_low:
-            degenerate.add(name)
-    return degenerate
 
 
 def _scan_one_direction(

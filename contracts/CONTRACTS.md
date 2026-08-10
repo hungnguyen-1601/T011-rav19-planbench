@@ -1,6 +1,6 @@
 # CONTRACTS.md — Planner Selector
 
-> **Phiên bản hợp đồng:** `contracts_version: 4.2.0`
+> **Phiên bản hợp đồng:** `contracts_version: 5.0.0`
 > **Trạng thái:** cần cả nhóm đọc và ký ở mục 16. Phase 1 (schema gốc) đã hiện thực theo bản 1.1.0; bản 2.0.0 sửa G5 — xem lịch sử phiên bản ở mục 18.
 > **Vị trí:** `contracts/CONTRACTS.md` ở gốc repo (trước đây là `docs/antongduy/CONTRACTS_1.md`).
 > **Tài liệu mẹ:** `docs/antongduy/de-tai-moi-planner-selector.md`. Khi hai tài liệu mâu thuẫn, **CONTRACTS.md thắng** — plan là lý do, contract là luật.
@@ -522,7 +522,15 @@ metric_anchors:
 
 1. **Cấm min-max theo tập candidate.** Anchor phải ngoại sinh, nếu không thì thêm một candidate tệ sẽ đổi thứ hạng của các candidate cũ (*rank reversal*).
 2. **Metric có cổng thì `bad` phải neo vào chính ngưỡng cổng** bằng tham chiếu `${...}`, không được là số cứng. Nếu không, file anchor và ràng buộc deployment sẽ trôi khỏi nhau mà không ai thấy.
-3. `anchor_config_version` **bắt buộc** nằm trong manifest; và mỗi lần ra quyết định phải chạy kiểm tra độ nhạy anchor ±10%.
+3. `anchor_config_version` **bắt buộc** nằm trong manifest; và mỗi lần ra quyết định phải chạy kiểm tra độ nhạy anchor ±10% — **từng metric một**, và **xê dịch bề rộng** của thang. Xem dưới: cách viết ngây thơ của luật này là một phép kiểm không bao giờ hỏng.
+
+**Xê dịch ±10% nghĩa là đổi bề rộng, không phải nhân cả hai đầu.** Giữ `good` đứng yên, dời `bad` sao cho khoảng cách giữa hai đầu thành `f` lần: `bad' = good + (bad − good)·f`. Câu hỏi "thang có được chọn khéo không" chính là "khoảng cách từ điểm ăn 1 tới điểm ăn 0 có đúng không".
+
+Nhân cả hai đầu là **sai, và sai vô hình**: nó vừa giãn vừa **tịnh tiến** thang, nên với metric bị chặn trên theo định nghĩa thì cả thang trôi ra khỏi miền. `success_rate` từ `{good: 1.00, bad: 0.95}` thành `{1.10, 1.045}` — không tỷ lệ thành công thật nào chạm tới đầu nào, mọi candidate clip về 0, `U_R` **chết** cho cả trường. Phép quét khi đó báo "khuyến nghị không đổi" — không đổi vì metric đã ngừng tồn tại.
+
+**Và phải quét từng metric một, vì quét đồng loạt chứng minh được là vô nghĩa.** Với `bad' = good + (bad − good)·f`, mọi `u` đi qua **đúng một** phép affine `u ↦ 1 − (1−u)/f`; `decision_utility` là tổ hợp lồi của các `u` nên biến đổi y hệt; một phép tăng nghiêm ngặt áp cho **mọi** candidate như nhau thì **không đổi được thứ hạng**. Quét đồng loạt trả về "không đổi" trên **mọi** đầu vào — đó là số học, không phải bằng chứng.
+
+Nên mỗi metric có anchor được quét riêng, cùng hình dạng với phép quét trọng số và cùng lý do: **mỗi lần chỉ một giả định dịch chuyển, nên một lần lật quy được trách nhiệm.** Kết quả không chỉ nói *có phải thang của ta quyết định hay không* mà nói *thang nào* — và đó mới là dạng dùng được: người đọc cãi lại được câu "khuyến nghị này phụ thuộc vào chỗ ta vạch ranh giới cho latency", chứ không cãi lại được câu "đổi ở −10%".
 4. **Metric đo bằng tiền thì `bad` phải neo vào ngân sách người dùng khai** (`${constraints.cost_per_mission_max}`), không được là số cứng. Lý do khác luật 2 nhưng cùng một nỗi lo: vật lý quyết định thế nào là khoảng hở tệ, hình học robot quyết định thế nào là chật — nhưng **không có sự thật nào quyết định một nhiệm vụ tốn bao nhiêu tiền là đắt**. Viết số cứng ở đây là nền tảng tự đặt ngân sách hộ khách hàng rồi chấm điểm khách hàng theo ngân sách đó, tức đúng lỗi rank-reversal của luật 1 trong bộ áo khác.
 
 **Anchor trỏ vào một trường tùy chọn mà deployment không khai thì không giải được, và không làm hỏng cả file.** Một file anchor phục vụ mọi deployment; một site chạy chế độ `technical` không có lý do gì phải khai ngân sách. Anchor đó được ghi lại là *unresolved* kèm lý do, và chỉ khi có ai chấm chính metric ấy thì hệ mới từ chối — **kèm tên trường còn thiếu**, không phải một câu "thiếu anchor" chung chung. Phân biệt bắt buộc: trường **có mà để trống** thì unresolved; trường **không tồn tại** là lỗi chính tả và vẫn fatal.
@@ -698,7 +706,7 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
 | Kiểm tra | Cách làm | Ngưỡng cảnh báo |
 |---|---|---|
 | `weight_stability_margin` | quét trọng số quanh profile hiện tại | đổi khuyến nghị khi lệch < 10% ⇒ dán nhãn `SENSITIVE_TO_PREFERENCES` |
-| `anchor_stability` | xê dịch mọi anchor ±10% | khuyến nghị đổi ⇒ cảnh báo |
+| `anchor_stability` | xê dịch bề rộng thang **từng metric một** ±10% (HĐ-8.3 luật 3) | khuyến nghị đổi ⇒ cảnh báo, **nêu tên metric và chiều** |
 | `robustness_margin` | tỷ lệ biến thể neighborhood giữ nguyên khuyến nghị | < 60% ⇒ hạ nhãn xuống `NEAR_EQUIVALENT` |
 
 **Cách quét trọng số.** Mỗi trọng số trong bốn được đi về **cả hai** cực của nó — 0, và 1 với ba cái còn lại về 0 — trong khi ba cái còn lại **giữ nguyên tỷ lệ với nhau**, để vector luôn tổng bằng 1 và để mỗi lần quét chỉ đổi **đúng một** giả định. Đổi hai thứ cùng lúc thì một lần lật không quy được cho cái nào. `weight_stability_margin` là **lệch nhỏ nhất trong tám hướng** làm đổi candidate được khuyến nghị, tính theo tỷ lệ quãng đường tới cực; **bằng 1,0 khi không hướng nào lật** — đó là một phát biểu thật, không phải một phép tìm kiếm bỏ cuộc: kể cả đưa một trọng số về 0 hoặc lên 1 thì khuyến nghị vẫn thế.
@@ -709,7 +717,7 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
 
 **Kết quả quét phải tự khai là kết quả quét.** Một lần chấm dưới trọng số đã dịch không được lưu như một lần chấm dưới trọng số đã khai (`preference_profile` ghi `"<tên> (perturbed)"`), và chuỗi `anchor_stability` phải nói đúng biên độ đã dùng — một trường card ghi `±10%` về một phép quét 30% là mô tả một thí nghiệm không hề chạy. Cùng một luật với `anchor_config_version` mang dấu `±10%` ở HĐ-8.3.
 
-**Cảnh báo thang chết.** Nhân cả hai đầu của một metric bị chặn trên theo định nghĩa có thể đẩy cả thang ra khỏi miền giá trị: `success_rate` từ `{good: 1.0, bad: 0.95}` thành `{1.10, 1.045}`, và mọi tỷ lệ thành công thật đều clip về 0. Khuyến nghị khi đó rất có thể "không đổi" — nhưng không đổi **vì metric đã chết**, không phải vì lựa chọn bền. Báo cáo độ nhạy **phải liệt kê** những metric rơi vào trạng thái này; đó là khác biệt giữa một báo cáo độ ổn định và một báo cáo trấn an.
+**Phép quét anchor: xem HĐ-8.3 luật 3.** Bề rộng thang, từng metric một. Cả hai điều kiện đó đều là kết quả của việc hiện thực phát hiện ra hai cách viết ngây thơ đều hỏng — một cách giết metric bị chặn trên, một cách không bao giờ lật được gì. `changed_at` ghi **tên metric kèm chiều** (`p99_latency_ms-10%`), không ghi mỗi chiều.
 
 ---
 
@@ -717,7 +725,7 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
 
 ```json
 {
-  "contracts_version": "4.2.0",
+  "contracts_version": "5.0.0",
   "recommendation_scope": "MISSION_LEVEL | DEPLOYMENT_LEVEL | ROBUST_DEPLOYMENT_LEVEL",
   "experiment_scope": "full_stack_selection",
   "decision_mode": "technical | business_adjusted",
@@ -780,7 +788,7 @@ Mọi lần ra quyết định ghi một `manifest.json`:
 
 ```json
 {
-  "contracts_version": "4.2.0",
+  "contracts_version": "5.0.0",
   "git_sha": "...",
   "docker_image_digest": "sha256:...",
   "task_profile_id": "warehouse_a_v1",
@@ -789,7 +797,14 @@ Mọi lần ra quyết định ghi một `manifest.json`:
   "decision_mode": "technical",
   "travel_time_accounting": "efficiency",
   "candidates": ["...", "..."],
-  "episode_context_ids": {"evaluation": ["..."], "neighborhood": ["..."]},
+  "episode_contexts": {
+    "evaluation": [
+      {"task_profile_id": "warehouse_a_v1", "mission_id": "m1", "seed": 0,
+       "environment_variant": "nominal", "sample_set": "evaluation",
+       "episode_context_id": "..."}
+    ],
+    "neighborhood": []
+  },
   "bootstrap": {"seed": 0, "n_resamples": 1000},
   "benchmark_host": {"cpu": "...", "cores_allocated": 4, "threads": 1},
   "created_at": "..."
@@ -935,8 +950,26 @@ Hai định danh frozen của contract (`candidate_id`, `episode_context_id`) d�
 
 `clearance_m` của HĐ-5 đo từ **mặt** robot; anchor `v1.0` viết theo thang **tâm**. Hai thang lệch đúng một bán kính. Trên kho tham chiếu, sai lệch này không làm điểm số hơi lệch mà làm nó chết hẳn: robot 0,52 m trong khe kệ 0,68 m đo được 0,04 m khoảng hở mặt, mọi episode nằm dưới `bad = 0,273` ⇒ `u = 0` ⇒ `U_S = 0` cho **mọi** candidate. Objective an toàn mang trọng số 0,10 và không phân biệt được gì.
 
+| 5.0.0 | 2026-08-10 | **MAJOR** | Hai đổi ngữ nghĩa, cùng một lượt. ① **HĐ-13 lưu bản ghi context đầy đủ** (`episode_contexts`) thay cho danh sách id (`episode_context_ids`) — bỏ một trường ⇒ MAJOR. ② **HĐ-8.3 luật 3 đổi cách quét anchor**: xê dịch bề rộng thang, từng metric một, thay cho nhân cả hai đầu của mọi anchor. Chi tiết dưới đây. |
 | 4.2.0 | 2026-08-10 | MINOR | HĐ-10.2 viết đủ: **sàn `n < 10` không ra phán quyết** (bootstrap phân vị trên 1 điểm cho CI rộng 0 và kết luận lấn át với độ tin cậy tối đa — phát hiện khi chạy chính bài kiểm tra "không dữ liệu thì làm gì" của mục này), điều kiện **không-thể-lấn-át** đọc từ cận trên để tách `PARETO_FRONTIER` khỏi `UNCERTAIN_DOMINANCE`, và candidate đơn độc luôn `UNCERTAIN_DOMINANCE`. Hiện thực ở `decision/pareto.py` (Phase 5.2). `alternative` và `pareto_label` của HĐ-12 lần đầu có giá trị thật; cả hai trường đã tồn tại từ 1.0.0. |
 | 4.1.0 | 2026-08-10 | MINOR | HĐ-11.5 viết đủ: cách quét trọng số (hai cực, ba cái còn lại giữ tỷ lệ, margin = lệch nhỏ nhất trong tám hướng, 1.0 khi không lật), tiêu chí lật là candidate chứ không phải nhãn, quét lưới trước chia đôi sau, kết quả quét phải tự khai, và cảnh báo thang chết. Hiện thực ở `decision/sensitivity.py` (Phase 5.3). Không đổi trường nào của HĐ-12 — ba trường `evidence` đã tồn tại từ 1.0.0 và tới bản này mới được điền. |
+
+**Chi tiết 5.0.0 ① — HĐ-13 không tái lập được, suốt từ 1.0.0.**
+
+Tiêu chí nghiệm thu của mục này là *"đưa manifest cho người khác, họ dựng lại đúng tấm card"*. Nó không đúng, và không đúng ngay từ bản đầu. Manifest lưu `episode_context_ids`, mà `episode_context_id` là **hash** của điều kiện (HĐ-3.1) và hash không đảo ngược được. Người cầm manifest biết *những episode nào* đã chạy nhưng không có `mission_id` cũng không có `seed` để tính lại metric — mà HĐ-6 cần cả hai.
+
+Vì sao không ai thấy: mọi lần chạy của dự án đều dựng manifest và tính metric **trong cùng một tiến trình**, nơi object `EpisodeContext` vẫn còn trong bộ nhớ. Lỗ hổng chỉ lộ khi có người thật sự cầm file đi tính lại — tức đúng lúc Phase 6.2 đẩy run qua worker, và khi đó mọi manifest đã ghi đều mồ côi. Docstring của `compute_metrics` đã ghi lại điều này từ Phase 2.3 như một việc phải quyết ở 6.1; đây là lúc quyết.
+
+Sửa: `episode_contexts` mang nguyên bản ghi. `episode_context_id` là computed field nên danh sách id vẫn còn — được **dẫn xuất**, không lưu hai lần. Nghĩa vụ giờ **được chạy chứ không được khẳng định**: `tests/test_vertical_slice.py` đọc `manifest.json` và trace từ đĩa rồi tính lại metric, vứt bỏ mọi object trong bộ nhớ, đúng như một người lạ sẽ làm.
+
+**Chi tiết 5.0.0 ② — phép quét anchor hỏng theo hai cách ngược nhau.**
+
+Bản viết ngây thơ của luật 3 ("xê dịch mọi anchor ±10%") hỏng theo cách thứ nhất: nhân cả hai đầu vừa giãn vừa **tịnh tiến** thang, nên `success_rate` từ `{1.00, 0.95}` thành `{1.10, 1.045}`, mọi tỷ lệ thành công thật clip về 0, `U_R` chết cho cả trường — và phép quét báo "khuyến nghị không đổi" vì metric đã ngừng tồn tại. Phát hiện bởi chính Phase 5.3 khi nó liệt kê metric thang chết.
+
+Sửa sang "giữ `good`, dời `bad` để bề rộng thành `f` lần" thì lộ ra cách hỏng thứ hai, tệ hơn vì nó im lặng hoàn toàn: khi mọi thang cùng giãn một hệ số, mọi `u` đi qua **đúng một** phép affine `u ↦ 1 − (1−u)/f`, `decision_utility` là tổ hợp lồi nên biến đổi y hệt, và một phép tăng nghiêm ngặt áp cho mọi candidate như nhau **không đổi được thứ hạng**. Phép kiểm trả "không đổi" trên *mọi* đầu vào — số học, không phải bằng chứng.
+
+Nên luật 3 giờ đòi **quét từng metric một**, cùng hình dạng với phép quét trọng số của HĐ-11.5 và cùng lý do: mỗi lần một giả định dịch chuyển thì một lần lật quy được trách nhiệm. `changed_at` ghi tên metric kèm chiều.
+
 
 **Chi tiết 4.0.0 ② — chế độ `business_adjusted` tính được.** Trước bản này nó validate đủ nhưng từ chối tính, vì chi phí kỹ thuật quy tiền có đơn vị tiền/nhiệm vụ mà file anchor không có thang nào cho đơn vị đó. Bản này thêm thang — và chỗ đặt nó mới là phần đáng bàn.
 

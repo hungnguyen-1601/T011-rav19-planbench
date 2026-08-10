@@ -139,3 +139,68 @@ def test_indexes_cover_the_hot_lookups(database):
     assert ("benchmark_id", "episode_index") in indexed["episodes"]
     # The leaderboard groups by conditions_checksum.
     assert ("conditions_checksum",) in indexed["benchmarks"]
+
+
+class TestDecisionLayerTables:
+    """Revision 0005 — HĐ-2, HĐ-1 and HĐ-12/13 given somewhere to live.
+
+    ``test_migration_matches_the_models`` above already compares every
+    table column by column, so these check the decisions that comparison
+    cannot see: which key was chosen, what a delete is allowed to do, and
+    what stays out of the database entirely.
+    """
+
+    def test_the_three_tables_exist(self, database):
+        command.upgrade(alembic_config(database), "head")
+        tables = set(inspect(create_engine(database)).get_table_names())
+        assert {"task_profiles", "candidates", "decision_cards"} <= tables
+
+    def test_a_candidate_is_keyed_by_its_own_hash(self, database):
+        """HĐ-1.3: ``candidate_id`` identifies the configuration.
+
+        A surrogate key would let the same planner, controller,
+        parameters and code version be registered twice under two rows,
+        which is exactly the split identity the contract's hash exists to
+        make impossible.
+        """
+        command.upgrade(alembic_config(database), "head")
+        inspector = inspect(create_engine(database))
+        assert inspector.get_pk_constraint("candidates")["constrained_columns"] == ["candidate_id"]
+
+    def test_a_card_cannot_outlive_its_deployment(self, database):
+        """RESTRICT, not CASCADE. A Decision Card is a statement about one
+        deployment profile; deleting the profile out from under it would
+        leave a recommendation nobody can interpret, and silently
+        deleting the card instead would destroy the audit trail. Both are
+        worse than refusing the delete.
+        """
+        command.upgrade(alembic_config(database), "head")
+        keys = inspect(create_engine(database)).get_foreign_keys("decision_cards")
+        assert keys, "decision_cards has no foreign key to task_profiles"
+        assert keys[0]["referred_table"] == "task_profiles"
+        assert keys[0]["options"].get("ondelete") == "RESTRICT"
+
+    def test_traces_are_referenced_not_stored(self, database):
+        """D15. The card and manifest are kilobytes and belong in the
+        row; the Parquet traces are megabytes per episode and stay in the
+        artifact store. The checksum is what makes the reference
+        trustworthy — a URI alone cannot say the files it points at are
+        the ones this card was computed from.
+        """
+        command.upgrade(alembic_config(database), "head")
+        columns = {
+            column["name"]
+            for column in inspect(create_engine(database)).get_columns("decision_cards")
+        }
+        assert {"card", "manifest", "run_uri", "run_checksum"} <= columns
+        assert not {name for name in columns if "trace" in name or "parquet" in name}
+
+    def test_the_lookups_the_api_will_issue_are_indexed(self, database):
+        command.upgrade(alembic_config(database), "head")
+        inspector = inspect(create_engine(database))
+        indexed = {
+            tuple(index["column_names"]) for index in inspector.get_indexes("decision_cards")
+        }
+        assert ("task_profile_id",) in indexed
+        assert ("recommended_candidate_id",) in indexed
+        assert ("status",) in indexed

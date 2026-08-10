@@ -486,6 +486,7 @@ def run_slice(
             benchmark_host=BenchmarkHost(cpu=_cpu_name(), cores_allocated=1, threads=1),
             created_at=created_at,
         ),
+        contexts,
     )
 
     winner = next(e for e in evidence if e.candidate_id == recommendation.recommended_id)
@@ -520,8 +521,6 @@ def run_slice(
     if weights_sweep.nearest_flip is not None:
         say(f"  {weights_sweep.nearest_flip.sentence}")
     say(f"anchor ±10%:    {anchors_sweep.verdict}")
-    if anchors_sweep.degenerate_metrics:
-        say(f"  scale left the domain under the shift: {list(anchors_sweep.degenerate_metrics)}")
     say(f"pareto:         {card.pareto_label}")
     for candidate_id, label in sorted(pareto.labels.items()):
         if candidate_id != card.recommended.candidate_id:
