@@ -129,6 +129,33 @@ ResourceProfile = Annotated[
 ]
 
 
+class TuningDeclaration(BaseModel):
+    """What this configuration cost to find (HĐ-1.6).
+
+    These three numbers are the only inputs to the system that are
+    *self-reported* and go straight into a score: ``tuning_wall_clock_h``
+    is ``engineering_cost`` in O4's technical mode, and
+    ``n_tunable_params`` is the third tie-break of HĐ-11.3. That is why
+    ``evidence_log`` is required rather than optional — a candidate
+    claiming zero tuning hours is claiming an advantage, and a claim with
+    no log behind it is a claim nobody can check.
+
+    Nothing here enters ``candidate_id``: the hours spent searching for a
+    parameter set do not change how the robot drives. The parameter set
+    found does, and it is already hashed through ``params``.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    tuning_trials_used: int = Field(ge=0)
+    tuning_wall_clock_h: float = Field(ge=0)
+    n_tunable_params: int = Field(ge=0)
+    evidence_log: str = Field(
+        min_length=1,
+        description="Path or URI of the log that backs these figures.",
+    )
+
+
 class PolicyComponent(BaseModel):
     """The single layer of a monolithic candidate (RL end-to-end)."""
 
@@ -163,6 +190,12 @@ class Candidate(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     observation_requirements: tuple[ObservationToken, ...] = ()
     resource_profile: ResourceProfile
+    #: HĐ-1.6. Defaults to undeclared: a candidate without it still runs
+    #: episodes and still passes gates. It cannot be *scored* on O4, and
+    #: the objective layer refuses rather than substituting zero —
+    #: treating "not declared" as "cost nothing" would let the candidate
+    #: that skipped the paperwork win the cheapest-to-own objective.
+    tuning: TuningDeclaration | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -264,12 +297,13 @@ class Candidate(BaseModel):
 
         Included: type, stack (names and versions), parameters,
         observation requirements. Excluded: the author-supplied ``id``
-        itself, which would make the hash self-referential, and
-        ``resource_profile`` — restating ``bytes_per_search_node`` for a
-        different target implementation changes no robot behaviour, and
-        hashing it would split one candidate that already ran 300
-        episodes into two orphans over a memory-accounting edit
-        (HĐ-1.5).
+        itself, which would make the hash self-referential, and the two
+        accounting blocks ``resource_profile`` (HĐ-1.5) and ``tuning``
+        (HĐ-1.6) — restating ``bytes_per_search_node`` for a different
+        target implementation, or attaching the tuning log afterwards,
+        changes no robot behaviour, and hashing either would split one
+        candidate that already ran 300 episodes into two orphans over a
+        bookkeeping edit.
         """
         return sha256_short(
             canonical_json(
