@@ -198,6 +198,7 @@ class Run:
         )
 
     def manifest(self, **kwargs: object):  # type: ignore[no-untyped-def]
+        kwargs.setdefault("evaluation_contexts", self.contexts)
         return build_manifest(
             self.recommendation,
             self.evidence,
@@ -488,13 +489,41 @@ class TestManifest:
         cannot be rebuilt."""
         assert two_candidates.manifest().anchor_config_version == "v1.2"
 
-    def test_it_lists_the_context_ids_not_just_the_count(self, two_candidates: Run) -> None:
-        """HĐ-3.2 requires every candidate to have run the same set, and
-        only the ids can prove it after the fact."""
-        ids = two_candidates.manifest().episode_context_ids
-        assert len(ids["evaluation"]) == 30
-        assert ids["evaluation"] == two_candidates.evidence[0].contexts
-        assert ids["neighborhood"] == ()
+    def test_it_records_the_conditions_not_just_their_ids(self, two_candidates: Run) -> None:
+        """HĐ-13's acceptance test: hand somebody the manifest and they
+        rebuild the card.
+
+        Ids alone cannot do that. ``episode_context_id`` is a hash of the
+        conditions (HĐ-3.1) and hashes do not invert, so a manifest of
+        ids proves *which* episodes ran but leaves a rebuild with no
+        mission and no seed to recompute metrics from. That gap was
+        invisible while the ``EpisodeContext`` objects were still in
+        memory, which is every run the slice does in one process.
+        """
+        manifest = two_candidates.manifest()
+        contexts = manifest.episode_contexts["evaluation"]
+        assert len(contexts) == 30
+        assert manifest.episode_contexts["neighborhood"] == ()
+        # The ids are still there, derived rather than stored twice.
+        assert manifest.context_ids("evaluation") == two_candidates.evidence[0].contexts
+        # ...and each record carries what a rebuild actually needs.
+        assert {context.mission_id for context in contexts} == {"m1"}
+        assert sorted(context.seed for context in contexts) == list(range(30))
+
+    def test_a_manifest_without_the_records_is_refused(self, two_candidates: Run) -> None:
+        """Passing the scored ids but not their conditions used to be the
+        normal case; it is now the failure the builder names."""
+        with pytest.raises(CardError, match="no context record"):
+            two_candidates.manifest(evaluation_contexts=two_candidates.contexts[:5])
+
+    def test_the_record_order_is_stable(self, two_candidates: Run) -> None:
+        """HĐ-13: a rebuild has to produce the same file byte for byte,
+        which the caller's iteration order would not guarantee."""
+        shuffled = list(reversed(two_candidates.contexts))
+        assert (
+            two_candidates.manifest(evaluation_contexts=shuffled).to_json_dict()
+            == two_candidates.manifest().to_json_dict()
+        )
 
     def test_it_lists_eliminated_candidates_too(self) -> None:
         """A rebuild has to reproduce the gate table, and a candidate

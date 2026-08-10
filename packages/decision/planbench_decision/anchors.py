@@ -295,25 +295,67 @@ class ResolvedAnchors(BaseModel):
         good, bad = pair
         return u(value, good, bad)
 
-    def scaled(self, factor: float) -> ResolvedAnchors:
-        """Every anchor multiplied by ``factor`` — the ±10% sweep.
+    def scaled(self, factor: float, *, only: str | None = None) -> ResolvedAnchors:
+        """The ±10% sweep of HĐ-8.3 law 3: the scale's *width* moves.
 
-        HĐ-8.3 law 3 requires every decision to report whether shifting
-        the anchors ±10% changes the recommendation, because the anchors
-        are an assumption like any other. Both ends move together: the
-        question is whether the *scale* was chosen well, not whether one
-        end of it was.
+        ``only`` restricts the shift to one metric, which is how the
+        sweep has to be run to mean anything — see
+        :func:`~planbench_decision.sensitivity.anchor_stability`.
+        Widening **every** scale by the same factor is provably unable to
+        change a recommendation: with ``bad' = good + (bad - good)·f``,
+        each ``u`` maps by the single affine function ``u ↦ 1 - (1-u)/f``,
+        the decision utility is a convex combination of ``u`` values so it
+        maps the same way, and a strictly increasing map applied to every
+        candidate alike preserves the order. A uniform sweep can only
+        report "unchanged", which is not evidence of anything.
 
-        The version string records the shift so a card produced under a
+        The law asks whether the scale was chosen well, and what "the
+        scale" is, precisely, is the distance between the value that
+        scores 1 and the value that scores 0. So ``good`` — the reference
+        point, "what we are aiming at" — holds still, and ``bad`` moves
+        to make the span ``factor`` times wider or narrower. Widening by
+        10% asks *what if we were 10% more lenient than we wrote down*.
+
+        **Scaling both ends instead is wrong, and wrong invisibly.**
+        Multiplying both by 1.1 translates the whole scale as well as
+        stretching it, which for a metric bounded at 1.0 by definition
+        pushes it clean off the domain: ``success_rate`` at
+        ``{good: 1.00, bad: 0.95}`` becomes ``{1.10, 1.045}``, no real
+        success rate can reach either end, every candidate clips to 0,
+        and ``U_R`` goes dead. A sweep then reports "recommendation
+        unchanged" — unchanged because the metric stopped existing, not
+        because the choice was robust. Found by the phase 5.3 sweep on
+        the reference warehouse.
+
+        Holding ``good`` fixed also does the right thing at the other
+        end. ``min_clearance`` anchors ``bad`` at 0.0, the collision
+        boundary, and one radius of room at ``good``; the sweep moves the
+        floor rather than the geometry, because the floor is where the
+        judgement is. Metrics whose ``good`` is already 0 — near misses,
+        tuning hours, cost — keep their zero and stretch the far end, for
+        the same reason in mirror image.
+
+        The version string records the shift, so a card produced under a
         perturbed scale can never be mistaken for one produced under the
         declared anchors.
         """
         if factor <= 0:
             raise AnchorError(f"anchor scale factor must be positive, got {factor}")
+        if only is not None and only not in self.anchors:
+            raise AnchorError(
+                f"cannot sweep {only!r}: it has no resolved anchor in config {self.version}. "
+                f"Anchored metrics: {sorted(self.anchors)}"
+            )
+        stamp = f"±{(factor - 1.0) * 100:+.0f}%" + (f"({only})" if only else "")
         return ResolvedAnchors(
-            version=f"{self.version}±{(factor - 1.0) * 100:+.0f}%",
+            version=f"{self.version}{stamp}",
             anchors={
-                name: (good * factor, bad * factor) for name, (good, bad) in self.anchors.items()
+                name: (
+                    (good, good + (bad - good) * factor)
+                    if only is None or name == only
+                    else (good, bad)
+                )
+                for name, (good, bad) in self.anchors.items()
             },
             unresolved=dict(self.unresolved),
         )

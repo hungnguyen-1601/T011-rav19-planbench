@@ -440,8 +440,104 @@ class EpisodeRow(Base):
     )
 
 
+class TaskProfileRow(Base):
+    """One deployment as declared (HĐ-2).
+
+    The whole profile is stored as JSON rather than as columns. It is a
+    frozen Pydantic model that the decision layer validates on the way
+    in, and shredding it into columns would create a second definition of
+    HĐ-2 that drifts from the first — the failure §16 exists to prevent.
+    What *is* promoted to columns is what queries need: the id, the
+    environment, and who owns it.
+    """
+
+    __tablename__ = "task_profiles"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    environment: Mapped[str] = mapped_column(String(200), nullable=False)
+    owner_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+    profile: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
+
+    __table_args__ = (Index("ix_task_profiles_owner", "owner_user_id"),)
+
+
+class CandidateRow(Base):
+    """One registered candidate, keyed by its own content hash (HĐ-1.3).
+
+    ``candidate_id`` is the primary key, not a surrogate: it is a hash of
+    the planner, the controller, the parameters, the code version and the
+    observation requirements, so two rows with the same id are the same
+    configuration by construction and an autoincrement key would let the
+    same stack be registered twice under two names.
+
+    ``tuning`` is nullable because HĐ-1.6 lets a candidate decline to
+    declare its tuning cost — and the objectives layer charges it for
+    that (a profile weighting engineering cost refuses to score it),
+    which is the honest handling and not something the schema should
+    pre-empt.
+    """
+
+    __tablename__ = "candidates"
+
+    candidate_id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    type: Mapped[str] = mapped_column(String(20), nullable=False)
+    stack_label: Mapped[str] = mapped_column(String(200), nullable=False)
+    registered_by: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+    spec: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
+    #: HĐ-1.6's declaration, with its evidence log. NULL means undeclared.
+    tuning: Mapped[dict | None] = mapped_column(JsonColumn, nullable=True)
+
+    __table_args__ = (Index("ix_candidates_stack_label", "stack_label"),)
+
+
+class DecisionCardRow(Base):
+    """One Decision Card, with the manifest that rebuilds it (HĐ-12/13).
+
+    **The card body is stored; the traces are not** (D15). A card and its
+    manifest are a few kilobytes and are the deliverable; the Parquet
+    traces behind them are megabytes per episode and stay in the artifact
+    store, reachable through ``run_uri``. ``run_checksum`` is what makes
+    that reference trustworthy rather than decorative — a URI alone
+    cannot tell you the files it points at are the ones this card was
+    computed from.
+
+    ``approval_id`` is deliberately absent. HĐ-14's approvals are an
+    append-only trail keyed the other way round, and giving the card a
+    single "approved by" column would quietly reduce that trail to its
+    last row.
+    """
+
+    __tablename__ = "decision_cards"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    task_profile_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("task_profiles.id", ondelete="RESTRICT"), nullable=False
+    )
+    recommended_candidate_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    contracts_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+    created_by: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    card: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
+    manifest: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
+    #: Where the traces of this run live, and a checksum over them.
+    run_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
+    run_checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    __table_args__ = (
+        Index("ix_decision_cards_task_profile", "task_profile_id"),
+        Index("ix_decision_cards_recommended", "recommended_candidate_id"),
+        Index("ix_decision_cards_status", "status"),
+    )
+
+
 __all__ = [
     "ApprovalRow",
+    "CandidateRow",
+    "DecisionCardRow",
+    "TaskProfileRow",
     "ConversationMessageRow",
     "ConversationRow",
     "ModelDocumentRow",

@@ -313,13 +313,20 @@ class TestFileValidation:
 
 
 class TestSensitivitySweep:
-    def test_scaling_moves_both_ends(self) -> None:
-        """HĐ-8.3 law 3: the question is whether the scale was chosen
-        well, not whether one end of it was."""
+    def test_the_span_scales_and_the_reference_point_holds(self) -> None:
+        """HĐ-8.3 law 3 asks whether the *scale* was chosen well, and the
+        scale is the distance between what scores 1 and what scores 0.
+
+        So ``good`` — what we are aiming at — stays put, and ``bad``
+        moves to make the span 10% wider or narrower. "10% more lenient
+        than we wrote down" is the question; translating the whole scale
+        would be a different one.
+        """
         resolved = load_anchors().resolve(make_profile())
-        shifted = resolved.scaled(1.10)
         good, bad = resolved.anchors["p99_latency_ms"]
-        assert shifted.anchors["p99_latency_ms"] == pytest.approx((good * 1.1, bad * 1.1))
+        assert (good, bad) == (10.0, 50.0)
+        assert resolved.scaled(1.10).anchors["p99_latency_ms"] == pytest.approx((10.0, 54.0))
+        assert resolved.scaled(0.90).anchors["p99_latency_ms"] == pytest.approx((10.0, 46.0))
 
     def test_version_records_the_shift(self) -> None:
         """A card produced under perturbed anchors must never be
@@ -328,19 +335,38 @@ class TestSensitivitySweep:
         assert resolved.scaled(1.10).version == "v1.2±+10%"
         assert resolved.scaled(0.90).version == "v1.2±-10%"
 
-    def test_a_physical_floor_does_not_move_under_the_sweep(self) -> None:
-        """``min_clearance.bad`` is 0.0 — the collision boundary — so
-        scaling leaves it alone and only ``good`` moves.
+    def test_a_metric_bounded_at_one_survives_the_sweep(self) -> None:
+        """The bug this rule was rewritten to fix.
 
-        That is the intended reading of HĐ-8.3 law 3 rather than a gap in
-        it: the sweep asks whether the *chosen* end of a scale was chosen
-        well, and on this metric only ``good`` was chosen. Perturbing the
-        floor would be perturbing geometry.
+        Scaling both ends put ``success_rate`` at ``{1.10, 1.045}`` —
+        past the maximum a rate can take — so every real success rate
+        clipped to 0 and ``U_R`` went dead for the whole field. The sweep
+        reported "unchanged" because the metric had stopped existing.
+
+        With the reference point held, ``good`` stays at 1.0 and only the
+        floor moves, so the metric still scores.
+        """
+        resolved = load_anchors().resolve(make_profile())
+        for factor, expected_bad in ((1.10, 0.945), (0.90, 0.955)):
+            good, bad = resolved.scaled(factor).anchors["success_rate"]
+            assert (good, bad) == pytest.approx((1.0, expected_bad))
+            assert resolved.scaled(factor).u("success_rate", 0.967) > 0.0
+
+    def test_a_floor_at_zero_moves_because_that_is_where_the_choice_is(self) -> None:
+        """``min_clearance`` reads ``{good: one radius, bad: 0.0}``. The
+        floor is the collision boundary, but *treating the collision
+        boundary as score zero* is the judgement being tested, so it is
+        the end that moves. A 10% more lenient scale puts zero slightly
+        inside the obstacle — a hypothetical, never a score anybody
+        ships.
         """
         resolved = load_anchors().resolve(make_profile())
         good, bad = resolved.scaled(1.10).anchors["min_clearance"]
-        assert bad == 0.0
-        assert good == pytest.approx(resolved.anchors["min_clearance"][0] * 1.10)
+        assert good == pytest.approx(0.26)
+        assert bad == pytest.approx(-0.026)
+        # Still monotone, still on the same side: more room scores more.
+        shifted = resolved.scaled(1.10)
+        assert shifted.u("min_clearance", 0.20) > shifted.u("min_clearance", 0.04)
 
     def test_non_positive_factor_is_refused(self) -> None:
         with pytest.raises(AnchorError, match="must be positive"):

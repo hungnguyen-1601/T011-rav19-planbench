@@ -15,81 +15,208 @@
     "decision_mode",
     "travel_time_accounting",
     "candidates",
-    "episode_context_ids",
+    "episode_contexts",
     "bootstrap",
     "benchmark_host",
     "created_at"
   ],
   "properties": {
-    "contracts_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "contracts_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
     "git_sha": {
       "type": "string",
       "pattern": "^[0-9a-f]{7,40}$",
       "description": "The code that produced the card. Lower-case hex so a rebuilt manifest cannot differ by letter case alone."
     },
     "docker_image_digest": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Null when the run was not containerised. HĐ-7.4 requires the same image for every candidate in one comparison; recording it is how that is checkable afterwards."
     },
-    "task_profile_id": { "type": "string", "minLength": 1 },
+    "task_profile_id": {
+      "type": "string",
+      "minLength": 1
+    },
     "anchor_config_version": {
       "type": "string",
       "minLength": 1,
       "description": "Mandatory (HĐ-8.3 law 3): a recommendation computed under unknown anchors cannot be rebuilt."
     },
-    "preference_profile": { "type": "string", "minLength": 1 },
-    "decision_mode": { "enum": ["technical", "business_adjusted"] },
-    "travel_time_accounting": { "enum": ["efficiency", "monetized_cost"] },
+    "preference_profile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision_mode": {
+      "enum": [
+        "technical",
+        "business_adjusted"
+      ]
+    },
+    "travel_time_accounting": {
+      "enum": [
+        "efficiency",
+        "monetized_cost"
+      ]
+    },
     "candidates": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": { "type": "string", "minLength": 1 }
-    },
-    "episode_context_ids": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["evaluation", "neighborhood"],
-      "description": "The exact conditions, not just how many. HĐ-3.2 requires every candidate to have run the same set, and only the ids prove it.",
-      "properties": {
-        "evaluation": {
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1 }
-        },
-        "neighborhood": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1 }
-        }
+      "items": {
+        "type": "string",
+        "minLength": 1
       }
     },
     "bootstrap": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["seed", "n_resamples"],
+      "required": [
+        "seed",
+        "n_resamples"
+      ],
       "description": "Added at 2.2.0. The CI on the card comes from a random resample; without the seed two people running this manifest get two intervals, and that difference is not wall-clock time.",
       "properties": {
-        "seed": { "type": "integer" },
-        "n_resamples": { "type": "integer", "minimum": 1 }
+        "seed": {
+          "type": "integer"
+        },
+        "n_resamples": {
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "benchmark_host": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["cpu", "cores_allocated", "threads"],
+      "required": [
+        "cpu",
+        "cores_allocated",
+        "threads"
+      ],
       "description": "HĐ-7.4: same machine, same allocation, same thread count for every candidate — otherwise even the relative comparison is meaningless.",
       "properties": {
-        "cpu": { "type": "string", "minLength": 1 },
-        "cores_allocated": { "type": "integer", "minimum": 1 },
-        "threads": { "type": "integer", "minimum": 1 }
+        "cpu": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cores_allocated": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "threads": {
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "created_at": {
       "type": "string",
       "minLength": 1,
       "description": "ISO-8601. The one field a rebuild is allowed to differ on."
+    },
+    "episode_contexts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evaluation",
+        "neighborhood"
+      ],
+      "description": "The conditions themselves, not just their ids. episode_context_id is a hash (HĐ-3.1) and does not invert, so a manifest carrying only ids proves which episodes ran but leaves a rebuild unable to recompute their metrics — which is the acceptance test of this section.",
+      "properties": {
+        "evaluation": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "task_profile_id",
+              "mission_id",
+              "seed",
+              "environment_variant",
+              "sample_set",
+              "episode_context_id"
+            ],
+            "properties": {
+              "task_profile_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "mission_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "seed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "environment_variant": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sample_set": {
+                "type": "string",
+                "enum": [
+                  "evaluation",
+                  "neighborhood"
+                ]
+              },
+              "episode_context_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "neighborhood": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "task_profile_id",
+              "mission_id",
+              "seed",
+              "environment_variant",
+              "sample_set",
+              "episode_context_id"
+            ],
+            "properties": {
+              "task_profile_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "mission_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "seed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "environment_variant": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sample_set": {
+                "type": "string",
+                "enum": [
+                  "evaluation",
+                  "neighborhood"
+                ]
+              },
+              "episode_context_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
     }
   }
 }
