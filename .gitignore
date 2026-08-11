@@ -99,6 +99,13 @@ artifacts/runs/*/*/*
 !artifacts/runs/*/*/decision_card.json
 !artifacts/runs/*/*/manifest.json
 !artifacts/runs/*/*/measurement_report.json
+# And the Comparison Report, for the same reason once more. It is the
+# artifact of a run that compared a candidate set, and it is the *only*
+# artifact when fewer than two candidates clear the gates — a gate table
+# saying who was eliminated where is a result, so an ignored one is a
+# result nobody can read. Widened here rather than at the next artifact
+# because this exception has now been forgotten twice.
+!artifacts/runs/*/*/comparison_report.json
 # And a fourth: SUPERSEDED.md, the marker saying a stored run must not be
 # read as a current result. A run cannot be un-run, so a card that turned
 # out to rest on a broken assumption can only be marked, never corrected

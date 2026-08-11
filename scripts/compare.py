@@ -31,6 +31,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from collections.abc import Sequence
@@ -249,6 +250,15 @@ def run_comparison(
         "identity": {
             "task_profile_id": profile.id,
             "experiment_scope": scope,
+            # Carried here as well as on the manifest, because a run that
+            # produces no card produces no manifest either — and that is
+            # precisely the run where the question "which world was this
+            # measured in?" has nowhere else to be answered.
+            # `episode_context_id` does not hash the amplitudes (HĐ-3.1),
+            # so two reports at the same seeds under different sigma
+            # would otherwise be indistinguishable down to the context
+            # ids while being two different experiments.
+            "sensor_noise": profile.environment.sensor_noise.model_dump(),
             "git_sha": git_sha or resolve_git_sha(REPO_ROOT),
             "anchor_config_version": load_anchors().version,
             "created_at": created_at.isoformat(),
@@ -281,7 +291,9 @@ def run_comparison(
         },
     }
 
-    destination = run_root / created_at.strftime("%Y-%m-%d") / f"{profile.id}_compare"
+    destination = run_root / created_at.strftime("%Y-%m-%d") / _run_dir_name(
+        profile.id, scope, candidates
+    )
     destination.mkdir(parents=True, exist_ok=True)
 
     if len(evidence) < 2:
@@ -373,6 +385,26 @@ def _say_summary(say, report: dict[str, object], destination: Path) -> None:  # 
         card = report["decision_card"]
         say(f"recommended:    {card['recommended']['candidate_id']} ({card['status']})")
     say(f"written to:     {destination}")
+
+
+def _run_dir_name(profile_id: str, scope: str, candidates: Sequence[Candidate]) -> str:
+    """One directory per (deployment, scope, candidate set).
+
+    The first draft used ``{profile}_compare`` for every run, and the
+    second comparison of the day silently overwrote the first — two
+    different questions, one directory, and the earlier answer simply
+    gone. Nothing warned, because from the filesystem's point of view a
+    run had merely been repeated.
+
+    The hash is over the *candidate ids*, which already cover the stack
+    and every parameter (HĐ-1.3). So re-running the same comparison
+    overwrites itself, which is right, and changing any candidate lands
+    somewhere else, which is also right.
+    """
+    fingerprint = hashlib.sha256(
+        "|".join(sorted(c.candidate_id for c in candidates)).encode("utf-8")
+    ).hexdigest()[:8]
+    return f"{profile_id}_{scope}_{fingerprint}"
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:

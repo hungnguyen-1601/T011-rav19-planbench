@@ -591,6 +591,7 @@ Nên:
 - **Ghim hết máy không phải là ghim.** Máy không đủ nhân để chừa lại phần cho hệ điều hành thì **từ chối ghim** và chạy không ghim kèm cảnh báo — một manifest ghi mask phủ toàn máy trông như đã được bảo vệ trong khi không có gì bảo vệ nó.
 - Manifest ghi **mask thật sau khi đặt** (đọc lại từ OS, không phải mask định đặt) và ghi `affinity_source`: `script` khi run tự ghim, `inherited` khi nó nhận cái được cấp lúc khởi chạy. Một mask trần không phân biệt được hai chuyện đó, mà chúng trả lời hai câu khác nhau — run tự ghim thì tái lập được chính sự bảo vệ của nó.
 - Chọn nhân nào **không cần khôn**: lấy `count` nhân đầu. Cách đánh số hyper-threading và bố cục P/E-core khác nhau ở mọi nền tảng nên mọi lựa chọn đều là đoán — nhưng lập luận công bằng không dựa vào đó: mọi candidate chạy trong **cùng một tiến trình dưới cùng một mask**, nên đặt sai chỗ là nhiễu **chung** và triệt tiêu trong hiệu số ghép cặp. Ghim mua sự cách ly khỏi tải khác, không mua vị trí tối ưu.
+- **Hai run đánh giá không được chạy đồng thời trên cùng một máy** *(ghi ở 6.3.0, phát hiện khi chạy M4)*. Việc lấy `count` nhân đầu là tất định, nên hai tiến trình cùng ghim sẽ ghim vào **đúng cùng một mask** và giành nhau chính hai nhân đó — mỗi run trở thành tải nền của run kia, và G4 của cả hai đo một cái máy không tồn tại. Đây là hệ quả trực tiếp của việc ghim trở thành mặc định: trước đó hai run song song chỉ đơn giản là chậm hơn, giờ chúng làm hỏng số liệu của nhau. Chạy tuần tự, hoặc cấp mask rời nhau bằng `--no-pin` cộng `taskset` bên ngoài.
 
 ---
 
