@@ -90,7 +90,13 @@ from planbench_schemas.map import MapData  # noqa: E402
 from planbench_schemas.task_profile import TaskProfile  # noqa: E402
 from planbench_simulator.trace import read_trace, trace_path  # noqa: E402
 
-DEFAULT_PROFILE = REPO_ROOT / "profiles" / "open_hall_v1.yaml"
+#: ``v2``, not ``v1``. The quiet hall is a measuring instrument for the
+#: fairness suite — deterministic on purpose, so those tests can compare
+#: two runs step by step. Measuring a candidate there gives one episode
+#: replayed once per seed, which is a real answer to the wrong question.
+#: The deployment to measure on is the one that declares the vehicle's
+#: noise (HĐ-2.5).
+DEFAULT_PROFILE = REPO_ROOT / "profiles" / "open_hall_v2.yaml"
 DEFAULT_CANDIDATE = "rrtstar+dwa"
 DEFAULT_LOCAL = "dwa_coarse"
 
