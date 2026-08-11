@@ -7,9 +7,9 @@
       "lidar_range_sigma_m": 0.02,
       "wheel_slip_fraction": 0.02
     },
-    "git_sha": "012b2b15120130bd0a2e69e51cdf57ae9d18b172",
+    "git_sha": "42db6d8af73360d65c32abaf196a9de1dcc691d8",
     "anchor_config_version": "v1.2",
-    "created_at": "2026-08-11T13:53:04.085681+00:00"
+    "created_at": "2026-08-11T14:58:13.236582+00:00"
   },
   "sample": {
     "n_episodes": 30,
