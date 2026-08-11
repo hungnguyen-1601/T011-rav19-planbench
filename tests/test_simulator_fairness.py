@@ -61,6 +61,7 @@ from planbench_simulator.noise import NoiseModel
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 HALL = REPO_ROOT / "profiles" / "open_hall_v1.yaml"
+NOISY_HALL = REPO_ROOT / "profiles" / "open_hall_v2.yaml"
 WAREHOUSE = REPO_ROOT / "profiles" / "warehouse_a_v2.yaml"
 
 #: The slice's local-controller configuration, shared by both candidates.
@@ -525,6 +526,58 @@ class TestGatesAreNotWidenedToFitTheImplementation:
         contract rather than in a comment inside one profile."""
         for path in (HALL, WAREHOUSE):
             assert load(path).constraints.goal_tolerance_rad >= 3.14159, path.name
+
+
+class TestTheTwoHallsStayInStep:
+    """``open_hall_v1`` and ``open_hall_v2`` are one hall doing two jobs.
+
+    v1 is a measuring instrument: fully deterministic, which is what lets
+    the symmetry tests compare two runs step by step instead of comparing
+    distributions. v2 is a deployment to measure on, with the vehicle's
+    real noise declared so a deterministic stack stops replaying one
+    episode per seed.
+
+    They must therefore differ in exactly two things and never in a
+    third. A mission or a map that drifted between them would make every
+    fairness property asserted on v1 a statement about a hall that is not
+    the one being measured — and nothing would say so.
+    """
+
+    def test_they_differ_only_in_id_and_noise(self) -> None:
+        quiet = load(HALL).model_dump()
+        noisy = load(NOISY_HALL).model_dump()
+        quiet_env = quiet.pop("environment")
+        noisy_env = noisy.pop("environment")
+        assert quiet.pop("id") == "open_hall_v1"
+        assert noisy.pop("id") == "open_hall_v2"
+        assert quiet == noisy
+        assert quiet_env.pop("sensor_noise") != noisy_env.pop("sensor_noise")
+        assert quiet_env == noisy_env
+
+    def test_the_instrument_stays_silent(self) -> None:
+        """v1's determinism is load-bearing for the symmetry suite, so it
+        is asserted rather than assumed."""
+        assert load(HALL).environment.sensor_noise.active is False
+
+    def test_the_deployment_declares_the_noise_axes_of_the_topic_document(self) -> None:
+        noise = load(NOISY_HALL).environment.sensor_noise
+        assert noise.lidar_range_sigma_m == 0.02
+        assert noise.wheel_slip_fraction == 0.02
+
+    def test_a_new_world_gets_a_new_id_so_traces_cannot_be_reused(self) -> None:
+        """The trap this split exists to avoid. ``episode_context_id``
+        hashes (task_profile_id, mission_id, environment_variant, seed)
+        and HĐ-3.1 freezes that payload — the noise amplitude is not in
+        it. Editing sigma in place would leave every context id
+        unchanged, and ``--reuse-traces`` would serve episodes recorded
+        in a world that no longer exists, with nothing to warn anyone.
+        """
+        quiet = build_evaluation_contexts(load(HALL), seed_count=4)
+        noisy = build_evaluation_contexts(load(NOISY_HALL), seed_count=4)
+        assert [c.seed for c in quiet] == [c.seed for c in noisy]
+        assert not (
+            {c.episode_context_id for c in quiet} & {c.episode_context_id for c in noisy}
+        )
 
 
 class TestTheReplanGridIsAKnownInformationAsymmetry:
