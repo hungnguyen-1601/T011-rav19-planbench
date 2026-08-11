@@ -109,6 +109,18 @@ class EnvironmentSpec(BaseModel):
 
         ``random_walk`` draws its heading from the episode seed already,
         so it needs no offset.
+
+        **A partial-cycle offset is the same failure, quieter.** Shifting
+        a 24-second patrol by 6 seconds lets the seeds explore a quarter
+        of the cycle, and if the robot crosses that lane in a two-second
+        window it can still meet the obstacle at essentially one phase —
+        or, as the reference warehouse did, at none. Its hundred episodes
+        collapsed to one distinct episode and G2 printed a 3% bound built
+        on it. So periodic motion must shift by at least a full period.
+        The scenario library had this convention in its comments from the
+        start ("one full cycle: seeds meet the pedestrian anywhere"); it
+        simply was not enforced, and the profile written later did not
+        follow it.
         """
         names = [obstacle.name for obstacle in self.dynamic_obstacles]
         duplicates = sorted({name for name in names if names.count(name) > 1})
@@ -130,7 +142,24 @@ class EnvironmentSpec(BaseModel):
                 "seed_time_offset = 0, so every seed replays the identical episode. "
                 "An evaluation set built from them has an effective sample size of 1, "
                 "which would make G2's collision upper bound far too optimistic. Set "
-                "seed_time_offset > 0 (a few seconds) so traffic timing varies per seed"
+                "seed_time_offset to at least one full cycle of the motion so traffic "
+                "timing varies per seed"
+            )
+        partial_cycle = sorted(
+            f"{obstacle.name} (offset {obstacle.seed_time_offset}s < period "
+            f"{obstacle.motion.period}s)"
+            for obstacle in self.dynamic_obstacles
+            if obstacle.motion.kind == "periodic"
+            and obstacle.seed_time_offset < obstacle.motion.period
+        )
+        if partial_cycle:
+            raise ValueError(
+                f"periodic obstacle(s) {partial_cycle} shift by less than one period, so the "
+                "seeds only ever explore that fraction of the cycle. This is the same failure "
+                "as seed_time_offset = 0, just quieter: the reference warehouse shifted a "
+                "24-second patrol by 6 seconds, the robot crossed its lane in a two-second "
+                "window, and no seed ever met it — 100 episodes collapsed to one distinct "
+                "episode while looking entirely normal. Set seed_time_offset >= period"
             )
         return self
 
@@ -200,6 +229,40 @@ class TaskConstraints(BaseModel):
     #: anchor does not resolve and business mode refuses rather than
     #: guesses (HĐ-8.3 law 4, HĐ-9.3).
     cost_per_mission_max: float | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _heading_must_be_unconstrained(self) -> TaskConstraints:
+        """Refuse a heading requirement the platform cannot evaluate.
+
+        HĐ-6 judges arrival on position *and* heading, and the simulator
+        has no final-orientation controller: it stops the moment the
+        position tolerance is met, whatever way the robot is pointing. A
+        profile asking for a heading therefore scores every candidate as
+        failing, for a property of the platform rather than of any
+        planner — the shape of wrong answer this whole layer exists to
+        prevent.
+
+        This is refused at load rather than noted, because the note was
+        already tried. Both reference profiles carry a paragraph
+        explaining why they write π here; that paragraph protects only
+        the profiles whose author read it. The lesson is written into
+        the contract in as many words after Phase 5.1 lost a hundred
+        episodes to it: *a note saying "remember this later" is not a
+        safeguard, only code is.*
+
+        The reservation and its removal condition live in CONTRACTS
+        HĐ-6; when an orientation controller exists, drop this validator
+        and bump ``contracts_version`` MINOR.
+        """
+        if self.goal_tolerance_rad < math.pi:
+            raise ValueError(
+                f"goal_tolerance_rad = {self.goal_tolerance_rad} constrains the arrival "
+                "heading, and this platform cannot evaluate that: the simulator has no "
+                "final-orientation controller, so every candidate would fail for a "
+                "property of the simulator. Declare goal_tolerance_rad >= pi (heading "
+                "unconstrained). See the reservation in CONTRACTS HĐ-6"
+            )
+        return self
 
     @property
     def n_min_evaluation_episodes(self) -> int:

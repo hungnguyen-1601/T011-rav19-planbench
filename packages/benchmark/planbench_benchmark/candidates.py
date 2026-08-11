@@ -23,6 +23,7 @@ would need the ``MonolithicPolicy`` adapter of HĐ-4 to run one.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from planbench_benchmark.observation import ObservationClass
@@ -38,6 +39,7 @@ from planbench_decision.candidate import Candidate, StackComponent, StructuralRe
 from planbench_planning.common.base import GlobalPlanner
 from planbench_planning.common.local_base import LocalPlanner
 from planbench_schemas.observations import ObservationToken
+from planbench_schemas.task_profile import TaskProfile
 
 #: Which runtime perception each P02 observation class implies for G6.
 #:
@@ -189,6 +191,104 @@ def stack_id_for(candidate: Candidate) -> str:
             "MonolithicPolicy adapter (HĐ-4), which does not exist yet"
         )
     return candidate.stack_label
+
+
+#: Named local-controller configurations, so a sampling choice is a
+#: *candidate* rather than a constant inside whichever script ran.
+#:
+#: ``dwa_coarse`` samples 7×15 instead of the library's 20×40. It exists
+#: because a full evaluation set at the default is hours of wall clock —
+#: which is a fact about the benchmark machine, not about the warehouse.
+#: Left as a bare constant in a script, that turns into a tuned candidate
+#: nobody declared: the DWA *is* half of what is being compared (HĐ-1),
+#: so configuring it for the clock is configuring the thing under test.
+#:
+#: Naming both and letting the platform score both is the only way the
+#: obvious question gets an answer instead of an assumption — the first
+#: easy-map run had ``astar+dwa`` stall at a convex corner with 0.30 m of
+#: clearance while ``rrtstar+dwa`` slipped through 0.11 m, and whether
+#: that is a property of the stack or of the coarse sampling is not
+#: something anyone can reason out from the code.
+#:
+#: ``control_period`` is the deployment's, not a taste setting: a
+#: controller slower than T_cycle misses deadlines that G4 cannot see
+#: (:func:`validate_control_rate`).
+LOCAL_CONTROLLER_CONFIGS: dict[str, dict[str, Any]] = {
+    "dwa_coarse": {
+        "control_period": 0.05,
+        "velocity_samples": 7,
+        "omega_samples": 15,
+        "horizon_seconds": 1.0,
+    },
+    "dwa_default": {
+        "control_period": 0.05,
+        "velocity_samples": 20,
+        "omega_samples": 40,
+        "horizon_seconds": 1.0,
+    },
+}
+
+
+class ControlRateViolation(ValueError):
+    """A candidate's controller runs slower than the deployment demands."""
+
+
+#: Float slack for comparing two declared periods. Both sides are numbers
+#: a human typed into a config, so this only has to absorb the difference
+#: between ``0.05`` and ``0.05000000000000001``.
+_PERIOD_EPS = 1e-9
+
+
+def validate_control_rate(profile: TaskProfile, candidates: Sequence[Candidate]) -> None:
+    """Refuse a candidate whose controller is slower than T_cycle.
+
+    Two different things are both called ``control_period`` and they were
+    quietly allowed to disagree:
+
+    * ``profile.robot.control_period`` is the deployment's **requirement**
+      — how fast the loop must close on the target board. G4's threshold
+      is exactly this number (:attr:`RobotConfig.t_cycle_ms`).
+    * a local controller's ``control_period`` is the rate the candidate
+      **actually runs at**. ``nav_stack`` holds the last command between
+      ticks, exactly as a real ``/cmd_vel`` stream behaves.
+
+    Nothing compared them. G4 measures the cost of *one* controller call,
+    so a candidate that closes its loop at 10 Hz on a deployment
+    demanding 20 Hz passes the real-time gate while missing every second
+    deadline — the gate sees a cheap call, not a late one. That is the
+    loophole underneath the ``control_period: 0.1`` concession in both
+    reference profiles: the deployment was relaxed to 10 Hz so the DWA
+    would fit, and the gate had no way to say the robot was being asked
+    for less than the warehouse needs.
+
+    A controller reporting ``None`` runs on every simulation step, which
+    is at least as fast as any period the deployment can declare, so it
+    always satisfies this.
+
+    Raises :class:`ControlRateViolation`; callers must not downgrade this
+    to a warning (HĐ-1.4's "fail at startup" shape — a slow controller
+    discovered after 300 episodes is 300 episodes of a run that never
+    answered the question asked).
+    """
+    required = profile.robot.control_period
+    for candidate in candidates:
+        if candidate.local_controller is None:
+            continue
+        period = build_local_planner(
+            stack_id_for(candidate),
+            candidate.layer_params(candidate.local_controller.name),
+        ).control_period
+        if period is None or period <= required + _PERIOD_EPS:
+            continue
+        raise ControlRateViolation(
+            f"candidate {candidate.candidate_id} ({candidate.stack_label}) closes its "
+            f"control loop every {period} s, but deployment {profile.id} declares "
+            f"control_period = {required} s. The stack would hold each command for "
+            f"{period / required:.3g} deployment cycles, so G4 — which times a single "
+            "controller call — cannot see the missed deadlines. Either run the "
+            "controller at the deployment's rate or declare a deployment that only "
+            "needs this one"
+        )
 
 
 def build_planners(

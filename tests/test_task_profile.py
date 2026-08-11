@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 from pydantic import ValidationError
 from task_profile_fakes import (
@@ -107,6 +109,47 @@ class TestEnvironmentTraffic:
         obstacle["seed_time_offset"] = 5.0
         assert make_profile(environment=environment(dynamic_obstacles=[obstacle]))
 
+    def test_periodic_motion_must_shift_by_a_whole_period(self) -> None:
+        """The quiet version of the zero-offset bug, and the one that
+        actually shipped.
+
+        The reference warehouse shifted a 24-second patrol by 6 seconds.
+        The seeds explored a quarter of the cycle, the robot crossed that
+        lane in a two-second window, and across 100 seeds it never came
+        within 2 m of the forklift — closest approach 2.53 m against a
+        0.66 m contact distance. A deterministic stack therefore drove
+        one identical episode a hundred times while G2 reported a 3%
+        collision bound.
+        """
+        partial = [{**dict(TRAFFIC[0]), "seed_time_offset": 6.0}]
+        with pytest.raises(ValidationError, match="less than one period"):
+            make_profile(environment=environment(dynamic_obstacles=partial))
+
+    def test_a_full_period_offset_is_accepted(self) -> None:
+        exact = [{**dict(TRAFFIC[0]), "seed_time_offset": 24.0}]
+        assert make_profile(environment=environment(dynamic_obstacles=exact))
+
+    def test_a_longer_offset_is_accepted(self) -> None:
+        """More than a cycle is redundant, not wrong — the phase simply
+        wraps, which is still the whole phase space."""
+        generous = [{**dict(TRAFFIC[0]), "seed_time_offset": 48.0}]
+        assert make_profile(environment=environment(dynamic_obstacles=generous))
+
+    def test_the_rule_only_applies_to_periodic_motion(self) -> None:
+        """Waypoint and sudden-stop motions have no period to compare
+        against; any positive offset varies them."""
+        obstacle: dict[str, object] = {
+            "name": "walker",
+            "radius": 0.3,
+            "motion": {
+                "kind": "waypoint",
+                "waypoints": [{"x": 1.0, "y": 1.0}, {"x": 5.0, "y": 1.0}],
+                "speed": 0.9,
+            },
+            "seed_time_offset": 0.5,
+        }
+        assert make_profile(environment=environment(dynamic_obstacles=[obstacle]))
+
     def test_random_walk_needs_no_offset(self) -> None:
         """It draws its heading from the episode seed already."""
         obstacle = {
@@ -200,6 +243,32 @@ class TestDerivedThresholds:
     def test_no_path_rate_default_matches_contract(self) -> None:
         # HĐ-7 G1 default: no_path_rate <= 0.02.
         assert make_profile().constraints.no_path_rate_max == 0.02
+
+
+class TestHeadingReservation:
+    """CONTRACTS HĐ-6: this platform has no final-orientation controller,
+    so it cannot evaluate a heading requirement — and says so at load.
+
+    Both reference profiles used to carry a paragraph explaining why they
+    write π here. A paragraph protects the profiles whose author read it;
+    the next profile is written by someone who did not.
+    """
+
+    def test_a_heading_requirement_is_refused(self) -> None:
+        with pytest.raises(ValidationError, match="constrains the arrival heading"):
+            make_profile(constraints=constraints(goal_tolerance_rad=0.35))
+
+    def test_the_message_points_at_the_reservation(self) -> None:
+        """A refusal that does not say where the rule lives sends the
+        reader to guess at the schema."""
+        with pytest.raises(ValidationError) as excinfo:
+            make_profile(constraints=constraints(goal_tolerance_rad=1.0))
+        assert "HĐ-6" in str(excinfo.value)
+        assert "final-orientation controller" in str(excinfo.value)
+
+    @pytest.mark.parametrize("tolerance", [math.pi, 3.1416, 4.0])
+    def test_unconstrained_headings_are_accepted(self, tolerance: float) -> None:
+        make_profile(constraints=constraints(goal_tolerance_rad=tolerance))
 
 
 class TestScenarioChecksumUntouched:
