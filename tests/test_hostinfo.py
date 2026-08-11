@@ -16,13 +16,40 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 from planbench_benchmark.hostinfo import (
+    PinningRefused,
+    apply_pinning,
     cpu_affinity,
     cpu_name,
     detect_benchmark_host,
+    pin_to_cores,
     unpinned_warning,
 )
 from planbench_decision.card import BenchmarkHost
+
+
+@pytest.fixture
+def restore_affinity():
+    """Put the mask back, whatever the test did to it.
+
+    Pinning is process-wide. Without this, one test that pins to two
+    cores leaves every later test in the session running on two cores —
+    slower, and quietly changing the conditions of any timing assertion
+    that follows.
+    """
+    before = cpu_affinity()
+    yield
+    if before is None:  # pragma: no cover - platform without affinity
+        return
+    setaffinity = getattr(os, "sched_setaffinity", None)
+    if setaffinity is not None:
+        setaffinity(0, set(before))
+        return
+    import psutil
+
+    psutil.Process().cpu_affinity(list(before))
 
 
 class TestDetection:
@@ -76,3 +103,67 @@ class TestPinnedVerdict:
         host = BenchmarkHost(cpu="x86", cores_allocated=1, threads=1)
         assert host.is_pinned is None
         assert unpinned_warning(host) is None
+
+
+class TestPinning:
+    """The run protects its own measurement (HĐ-7.4, contract 6.2.0).
+
+    A procedure that depends on someone remembering ``taskset`` protects
+    the runs where they remembered. G4 reads wall-clock latency, and the
+    same stack measured 59.30 ms unpinned against 16.10 ms on two cores.
+    """
+
+    def test_it_pins_and_reports_the_mask_the_os_granted(self, restore_affinity) -> None:
+        total = os.cpu_count() or 1
+        if total < 3:
+            pytest.skip("needs a machine with cores to spare")
+        mask = pin_to_cores(2)
+        assert mask is not None
+        # Re-read, not the mask we asked for: the OS is free to grant
+        # something else and a manifest must record what the run got.
+        assert mask == cpu_affinity()
+        assert len(mask) == 2
+
+    def test_taking_the_whole_machine_is_refused(self) -> None:
+        """Not clamped — refused. Pinning to every core protects nothing
+        while making the manifest look protected, which is worse than an
+        honest unpinned run."""
+        total = os.cpu_count() or 1
+        with pytest.raises(PinningRefused, match="ghim hết máy"):
+            pin_to_cores(total)
+
+    def test_zero_cores_is_a_programming_error(self) -> None:
+        with pytest.raises(ValueError):
+            pin_to_cores(0)
+
+    def test_the_host_record_says_who_pinned_it(self, restore_affinity) -> None:
+        """A mask alone cannot tell a self-pinned run from one that
+        inherited whatever it was launched with, and only the first
+        reproduces its own protection."""
+        total = os.cpu_count() or 1
+        if total < 3:
+            pytest.skip("needs a machine with cores to spare")
+        source, message = apply_pinning(2)
+        assert source == "script"
+        assert message is not None
+        host = detect_benchmark_host(affinity_source=source)
+        assert host.affinity_source == "script"
+        assert host.cores_allocated == 2
+        assert host.is_pinned is True
+
+    def test_no_pin_is_recorded_as_inherited_and_says_nothing(self) -> None:
+        """``--no-pin`` is a legitimate choice — someone may have pinned
+        externally — so it is not a warning, but it must not be recorded
+        as if the run had pinned itself."""
+        source, message = apply_pinning(None)
+        assert source == "inherited"
+        assert message is None
+
+    def test_a_refusal_is_reported_not_swallowed(self) -> None:
+        """Silently carrying on unpinned is the failure this whole path
+        exists to stop."""
+        total = os.cpu_count() or 1
+        source, message = apply_pinning(total + 8)
+        assert source == "inherited"
+        assert message is not None
+        assert "KHÔNG ghim" in message

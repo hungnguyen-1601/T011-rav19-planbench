@@ -129,6 +129,18 @@
           ],
           "minimum": 1,
           "description": "Cores the machine has, so cores_allocated reads as a share."
+        },
+        "affinity_source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "script",
+            "inherited",
+            null
+          ],
+          "description": "Where the mask came from. `script` means the run pinned itself, so re-running it reproduces the same protection; `inherited` means it took whatever it was launched with. A mask alone cannot tell the two apart."
         }
       }
     },

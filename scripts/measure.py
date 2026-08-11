@@ -68,7 +68,11 @@ from planbench_benchmark.candidates import (  # noqa: E402
 )
 from planbench_benchmark.contexts import build_evaluation_contexts  # noqa: E402
 from planbench_benchmark.episode import run_contract_episode  # noqa: E402
-from planbench_benchmark.hostinfo import detect_benchmark_host, unpinned_warning  # noqa: E402
+from planbench_benchmark.hostinfo import (  # noqa: E402
+    apply_pinning,
+    detect_benchmark_host,
+    unpinned_warning,
+)
 from planbench_benchmark.task_map import load_task_map, validate_missions_on_map  # noqa: E402
 from planbench_decision.anchors import load_anchors  # noqa: E402
 from planbench_decision.candidate import Candidate, TuningDeclaration  # noqa: E402
@@ -335,6 +339,7 @@ def run_measurement(
     reuse: bool,
     quiet: bool = False,
     map_base_dir: Path | None = None,
+    affinity_source: str | None = None,
 ) -> dict[str, object]:
     def say(message: str) -> None:
         if not quiet:
@@ -355,7 +360,7 @@ def run_measurement(
     )
     say(f"candidate: {candidate.stack_label} · {local} · {candidate.candidate_id}")
 
-    host = detect_benchmark_host()
+    host = detect_benchmark_host(affinity_source=affinity_source)  # type: ignore[arg-type]
     say(
         f"host: {host.cpu} · {host.cores_allocated}/{host.logical_cores} cores"
         + (f" (affinity {list(host.cpu_affinity)})" if host.cpu_affinity else "")
@@ -460,8 +465,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--trace-root", type=Path, default=REPO_ROOT / "artifacts" / "traces")
     parser.add_argument("--run-root", type=Path, default=REPO_ROOT / "artifacts" / "runs")
     parser.add_argument("--reuse-traces", action="store_true")
+    # Pinning defaults to on: G4 reads wall-clock latency, and the same
+    # stack measured 59.30 ms unpinned against 16.10 ms on two cores. A
+    # protection that depends on remembering a flag protects the runs
+    # where it was remembered.
+    parser.add_argument("--pin-cores", type=int, default=2, dest="pin_cores")
+    parser.add_argument(
+        "--no-pin",
+        action="store_const",
+        const=None,
+        dest="pin_cores",
+        help="run unpinned, or pin externally with taskset and say so here",
+    )
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
+
+    affinity_source, pin_message = apply_pinning(args.pin_cores)
+    if pin_message and not args.quiet:
+        print(pin_message, flush=True)
 
     try:
         run_measurement(
@@ -473,6 +494,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_root=args.run_root,
             reuse=args.reuse_traces,
             quiet=args.quiet,
+            affinity_source=affinity_source,
         )
     except MeasurementFailure as failure:
         print(f"\nF1 acceptance criterion failed: {failure}", file=sys.stderr)

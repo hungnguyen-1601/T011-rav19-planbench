@@ -1,6 +1,6 @@
 # CONTRACTS.md — Planner Selector
 
-> **Phiên bản hợp đồng:** `contracts_version: 6.1.0`
+> **Phiên bản hợp đồng:** `contracts_version: 6.2.0`
 > **Trạng thái:** cần cả nhóm đọc và ký ở mục 16. Phase 1 (schema gốc) đã hiện thực theo bản 1.1.0; bản 2.0.0 sửa G5 — xem lịch sử phiên bản ở mục 18.
 > **Vị trí:** `contracts/CONTRACTS.md` ở gốc repo (trước đây là `docs/antongduy/CONTRACTS_1.md`).
 > **Tài liệu mẹ:** `docs/antongduy/de-tai-moi-planner-selector.md`. Khi hai tài liệu mâu thuẫn, **CONTRACTS.md thắng** — plan là lý do, contract là luật.
@@ -529,6 +529,17 @@ Ví dụ kiểm tra bằng tay, bản đồ 40×25 m ở 0,05 m = 400.000 ô, `b
 
 Mọi candidate chạy trên **cùng máy, cùng Docker image (ghi digest), cùng số CPU được cấp, cùng số luồng**. Thiếu điều kiện này thì cả phép so tương đối cũng vô nghĩa.
 
+**Ghim nhân là việc của chương trình chạy, không của người vận hành** *(ghi ở 6.2.0)*. Đây là trục duy nhất trong hợp đồng này mà **không schema nào cưỡng chế được**: nó là tính chất của quy trình, không của mô hình dữ liệu. Và nó đã bị vi phạm một lần thật — contract 3.0.0 ghi lại việc A\* bị loại ở G4 vì tải của máy chứ không vì chi phí của chính nó.
+
+Số đo được: cùng `rrtstar+dwa`, **59,30 ms** p99 gộp khi không ghim và **16,10 ms** khi ghim 2 nhân. Chênh 3,7 lần, lớn hơn khoảng cách giữa hai candidate.
+
+Nên:
+
+- Script chạy đánh giá **tự đặt affinity**, mặc định bật. Một biện pháp bảo vệ phụ thuộc vào việc ai đó nhớ gõ `taskset` chỉ bảo vệ những lần chạy mà người ta đã nhớ.
+- **Ghim hết máy không phải là ghim.** Máy không đủ nhân để chừa lại phần cho hệ điều hành thì **từ chối ghim** và chạy không ghim kèm cảnh báo — một manifest ghi mask phủ toàn máy trông như đã được bảo vệ trong khi không có gì bảo vệ nó.
+- Manifest ghi **mask thật sau khi đặt** (đọc lại từ OS, không phải mask định đặt) và ghi `affinity_source`: `script` khi run tự ghim, `inherited` khi nó nhận cái được cấp lúc khởi chạy. Một mask trần không phân biệt được hai chuyện đó, mà chúng trả lời hai câu khác nhau — run tự ghim thì tái lập được chính sự bảo vệ của nó.
+- Chọn nhân nào **không cần khôn**: lấy `count` nhân đầu. Cách đánh số hyper-threading và bố cục P/E-core khác nhau ở mọi nền tảng nên mọi lựa chọn đều là đoán — nhưng lập luận công bằng không dựa vào đó: mọi candidate chạy trong **cùng một tiến trình dưới cùng một mask**, nên đặt sai chỗ là nhiễu **chung** và triệt tiêu trong hiệu số ghép cặp. Ghim mua sự cách ly khỏi tải khác, không mua vị trí tối ưu.
+
 ---
 
 ## HĐ-8 — Anchor và chuẩn hóa
@@ -768,7 +779,7 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
 
 ```json
 {
-  "contracts_version": "6.1.0",
+  "contracts_version": "6.2.0",
   "recommendation_scope": "MISSION_LEVEL | DEPLOYMENT_LEVEL | ROBUST_DEPLOYMENT_LEVEL",
   "experiment_scope": "full_stack_selection",
   "decision_mode": "technical | business_adjusted",
@@ -831,7 +842,7 @@ Mọi lần ra quyết định ghi một `manifest.json`:
 
 ```json
 {
-  "contracts_version": "6.1.0",
+  "contracts_version": "6.2.0",
   "git_sha": "...",
   "docker_image_digest": "sha256:...",
   "task_profile_id": "warehouse_a_v1",
@@ -1009,6 +1020,8 @@ Hai định danh frozen của contract (`candidate_id`, `episode_context_id`) d�
 | 4.1.0 | 2026-08-10 | MINOR | HĐ-11.5 viết đủ: cách quét trọng số (hai cực, ba cái còn lại giữ tỷ lệ, margin = lệch nhỏ nhất trong tám hướng, 1.0 khi không lật), tiêu chí lật là candidate chứ không phải nhãn, quét lưới trước chia đôi sau, kết quả quét phải tự khai, và cảnh báo thang chết. Hiện thực ở `decision/sensitivity.py` (Phase 5.3). Không đổi trường nào của HĐ-12 — ba trường `evidence` đã tồn tại từ 1.0.0 và tới bản này mới được điền. |
 
 | 6.1.0 | 2026-08-11 | MINOR | Sáu điều khoản, tất cả cùng một loại lỗi: **ngưỡng bị nới cho vừa thứ code làm nổi, chứ không lấy từ hiện trường**. ① HĐ-7.2: ngưỡng G4 là yêu cầu hiện trường; nhịp local controller phải ≤ `robot.control_period`, kiểm lúc khởi động (`validate_control_rate`) — cả hai profile tham chiếu về 20 Hz. ② HĐ-7.1: `collision_probability_max` không phải núm vặn thời lượng; kho tham chiếu về 1%. ③ HĐ-6: bảo lưu không có bộ điều khiển hướng cuối, `goal_tolerance_rad < π` bị từ chối lúc nạp. ④ HĐ-4.1: lưới replan là đặc quyền thông tin đã biết, phải gỡ trước khi chấm candidate `monolithic`. ⑤ HĐ-15.1 tiêu chí **7**: bộ kiểm công bằng xanh là điều kiện cần để công bố bất kỳ phép so nào. ⑥ HĐ-15.3: câu hỏi bắt buộc *"con số này đến từ hiện trường, hay từ thứ máy tôi chạy nổi?"*. Không trường nào bị xoá, không ngữ nghĩa metric hay cổng nào đổi ⇒ MINOR. Chi tiết dưới đây. |
+
+| 6.2.0 | 2026-08-11 | MINOR | HĐ-7.4: **ghim nhân là việc của chương trình chạy, không của người vận hành**. Script tự đặt affinity (mặc định 2 nhân, `--no-pin` để tắt); máy không đủ nhân thì **từ chối ghim** chứ không ghim hết máy — một mask phủ toàn máy trông như đã được bảo vệ. Manifest thêm `benchmark_host.affinity_source` (`script` | `inherited`), vì một mask trần không phân biệt được run tự ghim với run nhận mask lúc khởi chạy, mà chỉ cái đầu mới tái lập được chính sự bảo vệ của nó. Thêm trường có mặc định, không xoá gì ⇒ MINOR. |
 
 **Chi tiết 6.1.0 — bốn chỗ nới đều cho cả hai bên, nên không phép kiểm đối xứng nào bắt được.**
 

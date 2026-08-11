@@ -178,6 +178,14 @@ class ApprovalBlock(BaseModel):
     comment: str | None = None
 
 
+#: Where a run's CPU affinity came from. ``script`` means the run pinned
+#: itself, so re-running it reproduces the same protection; ``inherited``
+#: means it took whatever it was launched with, so the mask is a fact
+#: about that launch and nothing more. ``None`` is an older manifest that
+#: does not say.
+AffinitySource = Literal["script", "inherited"]
+
+
 class BenchmarkHost(BaseModel):
     """The machine every candidate ran on (HĐ-7.4).
 
@@ -207,6 +215,11 @@ class BenchmarkHost(BaseModel):
     #: How many the machine has, so ``cores_allocated`` can be read as a
     #: share rather than as a number with no scale.
     logical_cores: int | None = Field(default=None, ge=1)
+    #: Whether the run pinned itself or inherited its mask. A mask alone
+    #: cannot tell the two apart, and they answer different questions: a
+    #: self-pinned run reproduces its own protection, an inherited one
+    #: only describes the launch it happened to get.
+    affinity_source: AffinitySource | None = None
 
     @property
     def is_pinned(self) -> bool | None:
