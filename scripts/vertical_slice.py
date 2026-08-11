@@ -30,9 +30,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
-import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -57,14 +55,28 @@ from planbench_benchmark.candidates import (  # noqa: E402
 )
 from planbench_benchmark.contexts import (  # noqa: E402
     build_evaluation_contexts,
-    episode_total,
-    iter_run_plan,
+    # Re-exported, not used here: the chain moved to
+    # ``planbench_benchmark.pipeline`` but ``iter_run_plan`` is the rule
+    # this script is judged on (HĐ-3.2's context-outer order), and
+    # ``tests/test_vertical_slice.py`` reaches for it through this module.
+    iter_run_plan,  # noqa: F401
 )
-from planbench_benchmark.episode import run_contract_episode  # noqa: E402
 from planbench_benchmark.hostinfo import (  # noqa: E402
     apply_pinning,
     detect_benchmark_host,
     unpinned_warning,
+)
+from planbench_benchmark.pipeline import (  # noqa: E402
+    AcceptanceFailure,
+    check_delta_u,
+    check_gate_table,
+    check_l_ref,
+    check_node_counts,
+    check_reproducible,
+    check_shared_contexts,
+    decide,
+    score,
+    simulate,
 )
 from planbench_benchmark.task_map import load_task_map, validate_missions_on_map  # noqa: E402
 from planbench_decision.anchors import load_anchors  # noqa: E402
@@ -79,7 +91,6 @@ from planbench_decision.card import (  # noqa: E402
     build_manifest,
     resolve_git_sha,
 )
-from planbench_decision.gates import GateReport, evaluate_gates  # noqa: E402
 from planbench_decision.objectives import DecisionSettings  # noqa: E402
 from planbench_decision.pareto import label_field  # noqa: E402
 from planbench_decision.sensitivity import (  # noqa: E402
@@ -87,16 +98,7 @@ from planbench_decision.sensitivity import (  # noqa: E402
     anchor_stability,
     weight_stability,
 )
-from planbench_decision.stats import Recommendation, build_evidence, recommend  # noqa: E402
-from planbench_metrics.definitions import (  # noqa: E402
-    EpisodeMetricSet,
-    compute_metrics,
-    pooled_p99_latency_ms,
-)
-from planbench_schemas.episode_context import EpisodeContext  # noqa: E402
-from planbench_schemas.map import MapData  # noqa: E402
 from planbench_schemas.task_profile import TaskProfile  # noqa: E402
-from planbench_simulator.trace import read_trace, trace_path  # noqa: E402
 
 PROFILE_PATH = REPO_ROOT / "profiles" / "warehouse_a_v2.yaml"
 DEFAULT_RUN_ROOT = REPO_ROOT / "artifacts" / "runs"
@@ -130,8 +132,12 @@ UNTUNED = TuningDeclaration(
 )
 
 
-class SliceFailure(AssertionError):
-    """An HĐ-15.1 acceptance criterion did not hold."""
+#: HĐ-15.1's name for the failure. The chain raises
+#: :class:`~planbench_benchmark.pipeline.AcceptanceFailure`; this is the
+#: same class under the name this script's criteria are numbered by, so
+#: ``except SliceFailure`` keeps working and nobody has to catch two
+#: types for one event.
+SliceFailure = AcceptanceFailure
 
 
 def load_profile(path: Path = PROFILE_PATH) -> TaskProfile:
@@ -155,258 +161,6 @@ def build_candidates(profile: TaskProfile | None = None) -> tuple[Candidate, ...
     if profile is not None:
         validate_control_rate(profile, candidates)
     return candidates
-
-
-def simulate(
-    candidates: Sequence[Candidate],
-    profile: TaskProfile,
-    contexts: Sequence[EpisodeContext],
-    map_data: MapData,
-    trace_root: Path,
-    *,
-    reuse: bool,
-) -> None:
-    """Run every (candidate, context) pair that has no trace yet.
-
-    **Context outermost, candidate innermost** — HĐ-3.2's order, via
-    :func:`iter_run_plan`, which exists to provide exactly this. Two
-    reasons, and the second only became visible at 300 episodes:
-
-    Interruption. Stop a candidate-outer sweep halfway and the first
-    candidate has every episode while the last has none: nothing is
-    comparable and the partial data is worthless. Stop a context-outer
-    sweep halfway and both candidates have the same episodes, so the
-    comparison is still valid, just smaller. Over a three-hour run that
-    stops being a hypothetical.
-
-    Machine drift. Candidate-outer puts one candidate in the first half
-    of the wall clock and the other in the second, so any thermal
-    throttling, background process or change of machine state lands
-    entirely on one of them. HĐ-7.4 requires every candidate to run under
-    the same conditions, and over ten minutes the difference was
-    invisible; over three hours it is the mechanism that already
-    eliminated A\\* at G4 once (contract 3.0.0). Interleaving makes both
-    candidates share whatever the machine was doing, minute by minute.
-
-    Reuse is keyed on the file existing, which is safe because the path
-    is derived from the candidate id and the context id — both hashes of
-    everything that could change the episode. A stale file is therefore
-    a file for a configuration that no longer exists, and it simply never
-    gets looked up.
-    """
-    total = episode_total(contexts, candidates)
-    for index, (context, candidate) in enumerate(iter_run_plan(contexts, candidates), start=1):
-        path = trace_path(candidate.candidate_id, context.episode_context_id, root=trace_root)
-        if reuse and path.is_file():
-            continue
-        started = time.time()
-        _, run = run_contract_episode(candidate, profile, context, map_data, root=trace_root)
-        print(
-            f"  {index:>4}/{total}  {candidate.stack_label:<14} "
-            f"seed {context.seed:<4} {run.result.status.value:<16} "
-            f"{time.time() - started:5.1f}s",
-            flush=True,
-        )
-
-
-def score(
-    candidate: Candidate,
-    profile: TaskProfile,
-    contexts: Sequence[EpisodeContext],
-    map_data: MapData,
-    trace_root: Path,
-) -> tuple[list[EpisodeMetricSet], float]:
-    """Recompute every HĐ-6 metric for one candidate, from the files only.
-
-    Reading the traces back rather than keeping what the simulation had
-    in memory is the point of HĐ-5, not ceremony: it is what proves a
-    stored run can still be re-analysed after the process that produced
-    it is gone.
-
-    Returns the per-episode metrics and G4's pooled latency percentile.
-    The second value cannot be recovered from the first — pooling needs
-    every control step, and an ``EpisodeMetricSet`` carries one
-    percentile per episode — so it is computed here, where the traces are
-    open, rather than by re-reading them later.
-    """
-    traces = [
-        read_trace(trace_path(candidate.candidate_id, context.episode_context_id, root=trace_root))
-        for context in contexts
-    ]
-    metrics = [
-        compute_metrics(
-            trace,
-            profile,
-            context,
-            map_data,
-            resource_profile=candidate.resource_profile,
-        )
-        for trace, context in zip(traces, contexts, strict=True)
-    ]
-    return metrics, pooled_p99_latency_ms(traces)
-
-
-def decide(
-    candidates: Sequence[Candidate],
-    metrics_by_candidate: dict[str, list[EpisodeMetricSet]],
-    pooled_latency_by_candidate: dict[str, float],
-    profile: TaskProfile,
-    contexts: Sequence[EpisodeContext],
-    settings: DecisionSettings,
-    seed: int,
-) -> tuple[dict[str, GateReport], list, Recommendation]:
-    """Gates, then objectives, then the paired comparison — in that order.
-
-    The order is the contract's (HĐ-7: gates run before any scoring) and
-    it is load-bearing here: a candidate that fails a gate is never
-    scored, so it can never appear in the ranking, so the fastest
-    candidate on the board cannot win by being fast.
-    """
-    anchors = load_anchors().resolve(profile)
-    gate_reports = {
-        candidate.candidate_id: evaluate_gates(
-            candidate,
-            profile,
-            metrics_by_candidate[candidate.candidate_id],
-            contexts,
-            pooled_p99_latency_ms=pooled_latency_by_candidate[candidate.candidate_id],
-        )
-        for candidate in candidates
-    }
-    evidence = [
-        build_evidence(
-            candidate,
-            metrics_by_candidate[candidate.candidate_id],
-            contexts,
-            anchors,
-            settings,
-        )
-        for candidate in candidates
-        if gate_reports[candidate.candidate_id].passed
-    ]
-    if len(evidence) < 2:
-        raise SliceFailure(
-            "fewer than two candidates cleared the gates, so there is no comparison to "
-            "make. Gate verdicts: "
-            + ", ".join(
-                f"{cid}: {list(report.blocking_gates) or 'pass'}"
-                for cid, report in gate_reports.items()
-            )
-        )
-    return gate_reports, evidence, recommend(evidence, seed=seed)
-
-
-# --- HĐ-15.1 acceptance ------------------------------------------------
-
-
-def check_shared_contexts(metrics_by_candidate: dict[str, list[EpisodeMetricSet]]) -> str:
-    """Criterion 1: the same ``episode_context_id`` set, by assert.
-
-    "By assert, not by eye" is in the contract because this is the
-    failure that leaves no trace in the output: two candidates evaluated
-    on overlapping-but-different conditions produce a perfectly
-    well-formed ΔU that answers a question nobody asked.
-    """
-    sets = {cid: {m.episode_context_id for m in rows} for cid, rows in metrics_by_candidate.items()}
-    reference = next(iter(sets.values()))
-    for candidate_id, ids in sets.items():
-        if ids != reference:
-            raise SliceFailure(
-                f"candidate {candidate_id} ran a different context set: "
-                f"{len(reference - ids)} missing, {len(ids - reference)} extra"
-            )
-    return f"both candidates ran the same {len(reference)} episode contexts"
-
-
-def check_reproducible(first: float, second: float) -> str:
-    """Criterion 2: the same inputs give the same utility to six places."""
-    if round(first, 6) != round(second, 6):
-        raise SliceFailure(
-            f"decision_utility is not reproducible: {first!r} then {second!r}. A card "
-            "rebuilt from its manifest must come back identical (HĐ-13)"
-        )
-    return f"decision_utility reproduced to 6 dp: {first:.6f}"
-
-
-def check_gate_table(gate_reports: dict[str, GateReport]) -> str:
-    """Criterion 3: six gates, with the run count, for every candidate."""
-    for candidate_id, report in gate_reports.items():
-        card = report.to_card()
-        missing = [gate for gate in ("G1", "G2", "G3", "G4", "G5", "G6") if gate not in card]
-        if missing:
-            raise SliceFailure(f"candidate {candidate_id} card is missing {missing}")
-        if card["G2"]["n_runs"] < 1:
-            raise SliceFailure(f"candidate {candidate_id} reports no runs behind its gates")
-    return f"all six gates reported for {len(gate_reports)} candidates, with N"
-
-
-def check_delta_u(recommendation: Recommendation) -> str:
-    """Criterion 4: ΔU and its paired CI exist and are not NaN."""
-    comparison = recommendation.comparison
-    values = (comparison.delta_median, comparison.delta_mean, *comparison.ci95)
-    if not all(math.isfinite(value) for value in values):
-        raise SliceFailure(f"ΔU or its CI is not finite: {values}")
-    low, high = comparison.ci95
-    if low > high:
-        raise SliceFailure(f"CI is inverted: [{low}, {high}]")
-    return (
-        f"ΔU median {comparison.delta_median:+.6f}, "
-        f"CI95 [{low:+.6f}, {high:+.6f}] over {comparison.n_episodes} paired episodes"
-    )
-
-
-def check_l_ref(
-    metrics_by_candidate: dict[str, list[EpisodeMetricSet]], goal_tolerance_m: float
-) -> str:
-    """Criterion 5: ``L_ref`` ≤ ``path_length_m + goal_tolerance_m``.
-
-    A shortest path longer than the route actually driven means one of
-    the two is wrong, and both feed ``path_efficiency``.
-
-    The slack is exactly the goal tolerance, and it is not a fudge factor
-    (HĐ-15.1(5), tightened to this form at 2.2.1 by the first run of this
-    script). ``L_ref`` is measured to the goal *point*; an episode
-    succeeds on entering the tolerance *ball* around it and stops there.
-    So a legitimate drive is shorter than the reference by up to the
-    ball's radius — the first slice reported 4.205 m against 4.024 m with
-    a 0.20 m tolerance, which is that effect and nothing else. Anything
-    past the tolerance is still a genuine error, which is what this
-    check is for.
-
-    Successes only: a failed episode stopped wherever it failed, and its
-    path is legitimately shorter than any route to the goal.
-    """
-    checked = 0
-    for candidate_id, rows in metrics_by_candidate.items():
-        for row in rows:
-            if not row.success:
-                continue
-            checked += 1
-            if row.l_ref_m > row.path_length_m + goal_tolerance_m + 1e-9:
-                raise SliceFailure(
-                    f"candidate {candidate_id}, episode {row.episode_context_id}: "
-                    f"L_ref {row.l_ref_m:.3f} m exceeds the driven path "
-                    f"{row.path_length_m:.3f} m by more than the goal tolerance "
-                    f"{goal_tolerance_m:.3f} m"
-                )
-    return f"L_ref ≤ path_length + goal tolerance on all {checked} successful episodes"
-
-
-def check_node_counts(metrics_by_candidate: dict[str, list[EpisodeMetricSet]]) -> str:
-    """Criterion 6: ``peak_search_nodes`` ≤ ``costmap_cells``.
-
-    A graph search cannot hold more nodes than the grid has cells unless
-    it is counting the same cell twice — and ``memory_estimate_mb``, and
-    therefore gate G5, is that count multiplied by a byte size.
-    """
-    for candidate_id, rows in metrics_by_candidate.items():
-        for row in rows:
-            if row.peak_search_nodes > row.costmap_cells:
-                raise SliceFailure(
-                    f"candidate {candidate_id}, episode {row.episode_context_id}: "
-                    f"{row.peak_search_nodes} search nodes over {row.costmap_cells} cells"
-                )
-    return "peak_search_nodes ≤ costmap_cells on every episode"
 
 
 def run_slice(
