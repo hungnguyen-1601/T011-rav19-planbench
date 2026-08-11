@@ -99,6 +99,12 @@ artifacts/runs/*/*/*
 !artifacts/runs/*/*/decision_card.json
 !artifacts/runs/*/*/manifest.json
 !artifacts/runs/*/*/measurement_report.json
+# And a fourth: SUPERSEDED.md, the marker saying a stored run must not be
+# read as a current result. A run cannot be un-run, so a card that turned
+# out to rest on a broken assumption can only be marked, never corrected
+# — and a marker that does not travel with the file it marks protects
+# nobody.
+!artifacts/runs/*/*/SUPERSEDED.md
 # MLflow local tracking store and its SQLite backend
 mlruns/
 mlflow.db
