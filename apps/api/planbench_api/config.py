@@ -125,12 +125,30 @@ class Settings(BaseSettings):
     # Ceiling on episodes the agent may propose in one benchmark.
     agent_max_episodes: int = 60
 
+    # -- decision layer (Phase 6.2) ------------------------------------
+    #
+    # Where a task profile's relative paths resolve. Every profile names
+    # its map as `maps/<name>.pgm` relative to the repository root, and
+    # storing the profile in a database did not move the `.pgm` — so the
+    # API needs to be told where those files are, not guess.
+    map_root: str = "."
+    # Trace and run roots for selections started through the API. Empty
+    # means "<artifact_dir>/traces" and "<artifact_dir>/runs", so a
+    # deployment that moved the artifact root moves these with it — the
+    # same reasoning as `model_dir`.
+    decision_trace_dir: str = ""
+    decision_run_dir: str = ""
+
     @model_validator(mode="after")
     def _default_model_dir_under_artifacts(self) -> Settings:
         if not self.model_dir:
             # object.__setattr__ is not needed (Settings is mutable), but
             # assigning through the field keeps validation in play.
             self.model_dir = str(Path(self.artifact_dir) / "models")
+        if not self.decision_trace_dir:
+            self.decision_trace_dir = str(Path(self.artifact_dir) / "traces")
+        if not self.decision_run_dir:
+            self.decision_run_dir = str(Path(self.artifact_dir) / "runs")
         return self
 
 

@@ -492,51 +492,79 @@ class CandidateRow(Base):
     __table_args__ = (Index("ix_candidates_stack_label", "stack_label"),)
 
 
-class DecisionCardRow(Base):
-    """One Decision Card, with the manifest that rebuilds it (HĐ-12/13).
+class DecisionRunRow(Base):
+    """One evaluation run — and the card is something a run *sometimes*
+    produces (HĐ-12/13).
 
-    **The card body is stored; the traces are not** (D15). A card and its
-    manifest are a few kilobytes and are the deliverable; the Parquet
-    traces behind them are megabytes per episode and stay in the artifact
-    store, reachable through ``run_uri``. ``run_checksum`` is what makes
-    that reference trustworthy rather than decorative — a URI alone
-    cannot tell you the files it points at are the ones this card was
-    computed from.
+    ``0005`` modelled this the other way round: a ``decision_cards`` table
+    whose ``card`` and ``recommended_candidate_id`` were NOT NULL. That
+    encodes the assumption the decision layer exists to refuse — that
+    every evaluation ends in a ranking — and the first MVP run disproved
+    it within a day: three comparisons out of three produced no card,
+    because a card needs *two* candidates through all six gates and only
+    one of four got there.
+
+    Those runs are results, not failures. Each carries a full gate table
+    answering "who was eliminated where, after how many runs", which is
+    the question HĐ-12 puts on a card in the first place. So:
+
+    * ``report`` is NOT NULL — a run always produces evidence;
+    * ``card``, ``manifest``, ``recommended_candidate_id`` and ``status``
+      are nullable — a run sometimes produces a recommendation.
+
+    Reading it the other way is what puts pressure on every run to be
+    rankable, and that pressure is what produced a card bounding a
+    collision probability off a single episode.
+
+    **The bodies stay JSON** for the same reason as ``TaskProfileRow``:
+    they are frozen Pydantic models the decision layer already validates,
+    and a second definition in DDL would drift from the first. Only what
+    a query needs is promoted — including ``artifact_kind``, because
+    "show me the runs that could not be ranked" is a question asked on
+    day one and it should not be a JSON scan.
 
     ``approval_id`` is deliberately absent. HĐ-14's approvals are an
-    append-only trail keyed the other way round, and giving the card a
-    single "approved by" column would quietly reduce that trail to its
-    last row.
+    append-only trail keyed the other way round, and a single "approved
+    by" column would quietly reduce that trail to its last row.
     """
 
-    __tablename__ = "decision_cards"
+    __tablename__ = "decision_runs"
 
     id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
     task_profile_id: Mapped[str] = mapped_column(
         String(ID_LENGTH), ForeignKey("task_profiles.id", ondelete="RESTRICT"), nullable=False
     )
-    recommended_candidate_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
-    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    #: ``decision_card`` | ``comparison`` | ``measurement``.
+    artifact_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    #: HĐ-1.4. NULL for a measurement: one candidate licenses no
+    #: layer-scoped claim, so there is no scope to declare.
+    experiment_scope: Mapped[str | None] = mapped_column(String(40), nullable=True)
     contracts_version: Mapped[str] = mapped_column(String(20), nullable=False)
     created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
     created_by: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
-    card: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
-    manifest: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
-    #: Where the traces of this run live, and a checksum over them.
+    #: The evidence, whatever the verdict.
+    report: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
+    #: The recommendation, when the run supported one.
+    card: Mapped[dict | None] = mapped_column(JsonColumn, nullable=True)
+    manifest: Mapped[dict | None] = mapped_column(JsonColumn, nullable=True)
+    recommended_candidate_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    #: Where the traces of this run live, and a checksum over them (D15).
     run_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
     run_checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     __table_args__ = (
-        Index("ix_decision_cards_task_profile", "task_profile_id"),
-        Index("ix_decision_cards_recommended", "recommended_candidate_id"),
-        Index("ix_decision_cards_status", "status"),
+        Index("ix_decision_runs_task_profile", "task_profile_id"),
+        Index("ix_decision_runs_kind", "artifact_kind"),
+        Index("ix_decision_runs_recommended", "recommended_candidate_id"),
+        Index("ix_decision_runs_status", "status"),
     )
 
 
 __all__ = [
     "ApprovalRow",
     "CandidateRow",
-    "DecisionCardRow",
+    "DecisionRunRow",
     "TaskProfileRow",
     "ConversationMessageRow",
     "ConversationRow",

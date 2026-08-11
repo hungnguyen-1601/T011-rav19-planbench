@@ -11,6 +11,11 @@ from planbench_agent.tools import ToolPolicy
 from planbench_api.agent_gateway import ApiAgentGateway
 from planbench_api.auth import CurrentUser
 from planbench_api.chat_service import ChatService
+from planbench_api.decision_service import (
+    CandidateService,
+    DecisionRunService,
+    TaskProfileService,
+)
 from planbench_api.registry_service import ModelRegistryService, RobotProfileService
 from planbench_api.repositories import RepositoryHub
 from planbench_api.review_service import ReviewService
@@ -112,3 +117,28 @@ def get_agent_service(request: Request, user: CurrentUser) -> AgentService:
 
 
 AgentDependency = Annotated[AgentService, Depends(get_agent_service)]
+
+
+def get_task_profile_service(request: Request) -> TaskProfileService:
+    return TaskProfileService(request.app.state.repos.task_profiles)
+
+
+def get_candidate_service(request: Request) -> CandidateService:
+    return CandidateService(request.app.state.repos.candidates)
+
+
+def get_decision_run_service(request: Request) -> DecisionRunService:
+    """The selection runner, pointed at this instance's directories.
+
+    ``repo_root`` is where maps live: every path inside a task profile is
+    relative to it, and storing the profile in a database did not move
+    its ``.pgm``.
+    """
+    state = request.app.state
+    return DecisionRunService(
+        state.repos.decision_runs,
+        get_task_profile_service(request),
+        repo_root=state.decision_map_root,
+        trace_root=state.decision_trace_dir,
+        run_root=state.decision_run_dir,
+    )
