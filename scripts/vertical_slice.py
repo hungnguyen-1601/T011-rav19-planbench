@@ -61,7 +61,11 @@ from planbench_benchmark.contexts import (  # noqa: E402
     iter_run_plan,
 )
 from planbench_benchmark.episode import run_contract_episode  # noqa: E402
-from planbench_benchmark.hostinfo import detect_benchmark_host, unpinned_warning  # noqa: E402
+from planbench_benchmark.hostinfo import (  # noqa: E402
+    apply_pinning,
+    detect_benchmark_host,
+    unpinned_warning,
+)
 from planbench_benchmark.task_map import load_task_map, validate_missions_on_map  # noqa: E402
 from planbench_decision.anchors import load_anchors  # noqa: E402
 from planbench_decision.candidate import (  # noqa: E402
@@ -417,6 +421,7 @@ def run_slice(
     profile_path: Path = PROFILE_PATH,
     map_base_dir: Path | None = None,
     quiet: bool = False,
+    affinity_source: str | None = None,
 ) -> dict[str, object]:
     """The whole chain, plus the six checks. Returns the card as a dict."""
 
@@ -445,7 +450,7 @@ def run_slice(
 
     # Measured before the run, not asserted after it: what the manifest
     # records has to be what the episodes actually got (HĐ-7.4).
-    host = detect_benchmark_host()
+    host = detect_benchmark_host(affinity_source=affinity_source)  # type: ignore[arg-type]
     say(
         f"host: {host.cpu} · {host.cores_allocated}/{host.logical_cores} cores"
         + (f" (affinity {list(host.cpu_affinity)})" if host.cpu_affinity else "")
@@ -612,7 +617,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--bootstrap-seed", type=int, default=0)
     parser.add_argument("--profile", type=Path, default=PROFILE_PATH)
+    # On by default. HĐ-7.4 asks every candidate to run under the same
+    # CPU allocation, and contract 3.0.0 records A* being eliminated at
+    # G4 for the machine's behaviour rather than its own.
+    parser.add_argument("--pin-cores", type=int, default=2, dest="pin_cores")
+    parser.add_argument(
+        "--no-pin",
+        action="store_const",
+        const=None,
+        dest="pin_cores",
+        help="run unpinned, or pin externally with taskset and say so here",
+    )
     args = parser.parse_args(argv)
+
+    affinity_source, pin_message = apply_pinning(args.pin_cores)
+    if pin_message:
+        print(pin_message, flush=True)
 
     try:
         run_slice(
@@ -624,6 +644,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             git_sha=resolve_git_sha(REPO_ROOT),
             created_at=datetime.now(UTC),
             profile_path=args.profile,
+            affinity_source=affinity_source,
         )
     except SliceFailure as failure:
         print(f"\nHĐ-15.1 acceptance FAILED: {failure}", file=sys.stderr)
