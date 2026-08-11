@@ -191,6 +191,99 @@ class TestReferencePath:
         assert first == second
 
 
+class TestReferenceIsTautAgainstAKnownOptimum:
+    """The reference has to be the shortest path, not nearly it.
+
+    Every other test here checks the reference against a bound — longer
+    than the straight line, shorter than the driven route. Those all pass
+    while the number is systematically a few percent too long, and a few
+    percent is enough to matter: ``path_efficiency = L_ref / path_length``
+    then exceeds 1 on a good run and is clipped, so O3 reports the run as
+    perfect and stops distinguishing anything near the top.
+
+    It happened. Rounding one rectangular block, greedy shortcutting over
+    cell centres returned 20.7679 m where the optimum is 20.2788 m —
+    **+2.41%**, past the 0.20 m goal tolerance, failing HĐ-15.1(5) on a
+    route the robot drove correctly. So the check here is against an
+    optimum computed by hand rather than against another bound.
+    """
+
+    @staticmethod
+    def blocked_room() -> MapData:
+        """A 10 × 10 m room, 0.05 m cells, one 2 × 1 m block in the middle.
+
+        The block spans x ∈ [4, 6], y ∈ [4.5, 5.5]; the mission runs from
+        (1, 5) to (9, 5), straight through it. Fine cells on purpose: at
+        0.25 m the discretisation error is large enough to hide behind,
+        and this test exists to measure that error.
+        """
+        width = height = 200
+        resolution = 0.05
+        cells = [CellState.FREE.value] * (width * height)
+        for row in range(int(4.5 / resolution), int(5.5 / resolution)):
+            for col in range(int(4.0 / resolution), int(6.0 / resolution)):
+                cells[row * width + col] = CellState.OCCUPIED.value
+        return MapData(
+            name="room_with_block",
+            width=width,
+            height=height,
+            resolution=resolution,
+            origin=Pose2D(x=0.0, y=0.0, theta=0.0),
+            cells=tuple(cells),
+        )
+
+    @staticmethod
+    def optimum() -> float:
+        """Taut string round the block: (1,5) → (4,4.5) → (6,4.5) → (9,5).
+
+        Symmetric above and below, so either way round is this length.
+        """
+        return 2 * math.hypot(3.0, 0.5) + 2.0
+
+    def test_it_reaches_the_analytic_optimum(self) -> None:
+        clear_reference_cache()
+        length = reference_path_length(
+            self.blocked_room(), Point2D(x=1.0, y=5.0), Point2D(x=9.0, y=5.0)
+        )
+        assert length is not None
+        # 1 cm on an 8 m mission. The failure this guards against was
+        # 49 cm, so the bound does not need to be tight to be useful.
+        assert length == pytest.approx(self.optimum(), abs=0.01)
+
+    def test_it_never_undercuts_the_optimum(self) -> None:
+        """A reference shorter than the true shortest path would be a
+        target no candidate can reach, and ``path_efficiency`` would be
+        capped below 1 for a perfect run. Relaxation cannot cause this —
+        every reported segment is line-of-sight checked — and this test
+        is what says so out loud."""
+        clear_reference_cache()
+        length = reference_path_length(
+            self.blocked_room(), Point2D(x=1.0, y=5.0), Point2D(x=9.0, y=5.0)
+        )
+        assert length is not None
+        assert length >= self.optimum() - 1e-9
+
+    def test_it_is_reproducible_to_six_decimals(self) -> None:
+        """HĐ-15.1(2). The relaxation is iterative, so this is not free:
+        a convergence test on floating point would make the sixth decimal
+        depend on how the loop happened to exit."""
+        clear_reference_cache()
+        first = reference_path_length(
+            self.blocked_room(), Point2D(x=1.0, y=5.0), Point2D(x=9.0, y=5.0)
+        )
+        clear_reference_cache()
+        second = reference_path_length(
+            self.blocked_room(), Point2D(x=1.0, y=5.0), Point2D(x=9.0, y=5.0)
+        )
+        assert first == second
+
+    def test_an_open_room_is_still_the_straight_line(self) -> None:
+        """The relaxation must not perturb the easy case it is not for."""
+        clear_reference_cache()
+        length = reference_path_length(empty_map(), Point2D(x=1.0, y=1.0), Point2D(x=8.0, y=5.0))
+        assert length == pytest.approx(math.dist((1.0, 1.0), (8.0, 5.0)), abs=0.01)
+
+
 class TestEfficiency:
     def test_perfect_run_scores_one(self, tmp_path: Path) -> None:
         """The robot drove the reference path: efficiency 1.0, and the
@@ -291,16 +384,32 @@ class TestSuccessAndFailure:
     def test_heading_outside_tolerance_is_not_the_goal(self, tmp_path: Path) -> None:
         """``goal_tolerance_rad`` is part of the definition too, so a
         robot parked at the right place facing backwards has not
-        arrived — and claiming it is refused."""
+        arrived — and claiming it is refused.
+
+        No loadable profile can reach this branch today: the platform has
+        no final-orientation controller, so ``TaskConstraints`` refuses a
+        heading requirement at load (CONTRACTS HĐ-6 reservation, checked
+        in ``test_task_profile.py``). The check stays and is tested
+        through a hand-built constraints object, because the reservation
+        is temporary and HĐ-6's definition of arrival is not — the day an
+        orientation controller lands, this branch is the thing that has
+        to already be right.
+        """
+        profile = profile_with_mission((1.0, 1.0), (5.0, 1.0))
+        constrained = profile.model_copy(
+            update={
+                "constraints": profile.constraints.model_construct(
+                    **{**profile.constraints.model_dump(), "goal_tolerance_rad": 0.35}
+                )
+            }
+        )
         samples = [
             (0.0, 1.0, 1.0, 0.0, 0.0, None),
             (1.0, 5.0, 1.0, math.pi, 0.0, "goal_reached"),
         ]
         trace = write_trace(tmp_path, samples)
         with pytest.raises(MetricError, match="outside the profile's tolerance"):
-            compute_metrics(
-                trace, profile_with_mission((1.0, 1.0), (5.0, 1.0)), context(), empty_map()
-            )
+            compute_metrics(trace, constrained, context(), empty_map())
 
     def test_standing_near_the_goal_at_timeout_is_not_arrival(self, tmp_path: Path) -> None:
         """The run's verdict stands: drifting within tolerance of the
