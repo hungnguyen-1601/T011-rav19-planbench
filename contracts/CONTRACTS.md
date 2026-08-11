@@ -1,6 +1,6 @@
 # CONTRACTS.md — Planner Selector
 
-> **Phiên bản hợp đồng:** `contracts_version: 6.2.0`
+> **Phiên bản hợp đồng:** `contracts_version: 6.3.0`
 > **Trạng thái:** cần cả nhóm đọc và ký ở mục 16. Phase 1 (schema gốc) đã hiện thực theo bản 1.1.0; bản 2.0.0 sửa G5 — xem lịch sử phiên bản ở mục 18.
 > **Vị trí:** `contracts/CONTRACTS.md` ở gốc repo (trước đây là `docs/antongduy/CONTRACTS_1.md`).
 > **Tài liệu mẹ:** `docs/antongduy/de-tai-moi-planner-selector.md`. Khi hai tài liệu mâu thuẫn, **CONTRACTS.md thắng** — plan là lý do, contract là luật.
@@ -232,6 +232,47 @@ Tên obstacle phải **duy nhất** trong một environment: tên được trộ
 
 ---
 
+### 2.5. Nhiễu cảm biến và trượt bánh — cũng thuộc environment *(thêm ở 6.2.0)*
+
+`environment.sensor_noise` khai **robot ở hiện trường này đo tệ và chấp hành lệch tới đâu**:
+
+```yaml
+sensor_noise:
+  lidar_range_sigma_m: 0.02    # N5: sigma 2 cm
+  wheel_slip_fraction: 0.02    # N5: trượt bánh 2%
+```
+
+Mặc định **cả hai bằng 0**, nên mọi profile viết trước bản này giữ nguyên hành vi tới chữ số float cuối. Bật lên là một thay đổi có chủ ý, nhìn thấy được ở profile và trên manifest.
+
+**Vì sao nó ở environment:** biên độ nhiễu là tính chất của **hiện trường và của chiếc robot được triển khai ở đó**, không phải của thuật toán đang bị chấm. Một candidate được phép khai biên độ nhiễu riêng thì nó đang tự chọn đề thi — cùng lý lẽ với vật cản động ở 2.3.
+
+**Vì sao phải có:** simulator không nhiễu **lạc quan hơn thực tế**, và cái giá của sự lạc quan đó đã đo được. Nguồn ngẫu nhiên duy nhất phụ thuộc seed từng là pha vật cản động, nên một stack **tất định** trên nhiệm vụ mà traffic không cắt tuyến sinh ra **cùng một episode cho mọi seed**: 100 episode mang lượng thông tin của một, và G2 in ra cận trên 3,0% dựng trên đúng một mẫu. Bật nhiễu là **sửa độ trung thực**, không phải cải thiện — và nó nhiều khả năng làm mọi con số **xấu đi**. Bán nó như cách để có bộ mẫu dùng được là lặp lại đúng loại lệch mà HĐ-15.3 đặt câu hỏi để chặn.
+
+**Hai nguồn, hai bản chất — không được nhập một:**
+
+| | Nhiễu LiDAR | Trượt bánh |
+|---|---|---|
+| Bản chất | sai số **đo** | sai số **chấp hành** |
+| Chạm vào | chỉ `Observation` | chuyển động **thật** |
+| Va chạm phán quyết trên | pose **thật** (không nhiễu) | pose thật **sau khi trượt** |
+| Vì sao đúng | robot đo kém, thế giới không đổi | robot trượt thật, thế giới ghi đúng điều đã xảy ra |
+
+Cụ thể: **nhiễu LiDAR không bao giờ được tới tầng va chạm.** Phán quyết chạm trên một pose đã nhiễu là mô phỏng một thế giới khác, chứ không phải một robot đo kém.
+
+**Luật cứng — chỉ số hoá theo bước, không tiêu thụ tuần tự:**
+
+```
+draw = f(seed, stream, step)      # KHÔNG phải "giá trị tiếp theo của một generator"
+```
+
+Hai candidate chạy khác số bước và replan khác thời điểm. Nếu nhiễu được **rút tuần tự** từ một dòng chảy thì thứ tự tiêu thụ phụ thuộc hành vi candidate, và hai candidate sẽ gặp **nhiễu khác nhau** trong hai episode đội chung một `episode_context_id` — tức bất biến 3 bị phá bởi chính bản sửa sinh ra để giữ nó. Chỉ số hoá còn khiến việc hỏi lại cùng một bước trả về cùng đáp án, điều cần thiết vì `get_observation` có thể được gọi nhiều lần trong một bước.
+
+Quỹ đạo hai candidate vẫn khác nhau — dĩ nhiên, vì lệnh điều khiển khác nhau. Đó là thế giới **phản ứng** với robot, không phải thế giới **thiên vị** robot.
+
+**Vi phạm trông như thế nào:** một `NoiseModel` giữ generator làm trạng thái và gọi `.normal()` mỗi lần cần số; hoặc tầng va chạm đọc `lidar_ranges` thay vì pose thật.
+
+---
+
 ## HĐ-3 — Episode context và đánh giá ghép cặp
 
 ### 3.1. Định danh ngữ cảnh
@@ -269,8 +310,19 @@ Cùng một `episode_context_id` phải cho cùng một chuỗi ngẫu nhiên: v
 
 | Bộ mẫu | Cách sinh | Dùng để |
 |---|---|---|
-| `evaluation` | lấy mẫu độc lập: mission × lần hiện thực vật cản × seed | success rate, bằng chứng va chạm, mọi phân phối hiệu năng, `ΔU` |
+| `evaluation` | lấy mẫu độc lập: mission × lần hiện thực **hiện trường** × seed | success rate, bằng chứng va chạm, mọi phân phối hiệu năng, `ΔU` |
 | `neighborhood` | nhiễu có cấu trúc quanh profile gốc | **chỉ** đo độ ổn định của khuyến nghị |
+
+*"Lần hiện thực hiện trường" gồm cả pha vật cản động lẫn hiện thực nhiễu cảm biến/chấp hành (6.2.0).* Cả hai đều là **cùng một hiện trường tự nó khác đi giữa hai lần chạy**, và đó chính là thứ bộ `evaluation` lấy mẫu.
+
+**Câu chữ này được nới có kiểm soát, và đây là chỗ dễ hỏng nhất của cả HĐ-3.** Nới quá tay thì "biến thiên trong một deployment" và "bất định về chính deployment" bắt đầu trông giống nhau, và bộ `neighborhood` sẽ trôi vào bộ `evaluation`. Ranh giới:
+
+| | Trả lời câu gì | Thuộc bộ nào |
+|---|---|---|
+| Nhiễu cảm biến, trượt bánh, pha vật cản | *"cùng hiện trường này, lần chạy này khác lần kia thế nào"* | `evaluation` |
+| Task Neighborhood (bản đồ lệch, mission đổi) | *"nếu hiện trường tôi khai bị sai chút thì khuyến nghị có đổi không"* | `neighborhood` |
+
+Cái đầu là biến thiên **trong** một deployment và **được** dùng cho cận trên va chạm. Cái sau là bất định **về chính** deployment, các lần chạy trong một variant tương quan với nhau, và HĐ-11.4 **cấm** đưa vào cận trên.
 
 **Cấm gộp hai bộ này khi tính cận trên va chạm** (xem HĐ-11.4).
 
@@ -779,7 +831,7 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
 
 ```json
 {
-  "contracts_version": "6.2.0",
+  "contracts_version": "6.3.0",
   "recommendation_scope": "MISSION_LEVEL | DEPLOYMENT_LEVEL | ROBUST_DEPLOYMENT_LEVEL",
   "experiment_scope": "full_stack_selection",
   "decision_mode": "technical | business_adjusted",
@@ -842,7 +894,7 @@ Mọi lần ra quyết định ghi một `manifest.json`:
 
 ```json
 {
-  "contracts_version": "6.2.0",
+  "contracts_version": "6.3.0",
   "git_sha": "...",
   "docker_image_digest": "sha256:...",
   "task_profile_id": "warehouse_a_v1",
@@ -850,6 +902,7 @@ Mọi lần ra quyết định ghi một `manifest.json`:
   "preference_profile": "kho_ban_dem",
   "decision_mode": "technical",
   "travel_time_accounting": "efficiency",
+  "sensor_noise": {"lidar_range_sigma_m": 0.02, "wheel_slip_fraction": 0.02},
   "candidates": ["...", "..."],
   "episode_contexts": {
     "evaluation": [
@@ -860,7 +913,9 @@ Mọi lần ra quyết định ghi một `manifest.json`:
     "neighborhood": []
   },
   "bootstrap": {"seed": 0, "n_resamples": 1000},
-  "benchmark_host": {"cpu": "...", "cores_allocated": 4, "threads": 1},
+  "benchmark_host": {"cpu": "...", "cores_allocated": 2, "threads": 1,
+                     "cpu_affinity": [0, 1], "logical_cores": 20,
+                     "affinity_source": "script"},
   "created_at": "..."
 }
 ```
@@ -869,7 +924,13 @@ Mọi lần ra quyết định ghi một `manifest.json`:
 
 *(Thêm ở 2.2.0.)* **Khối `bootstrap` là điều kiện cần của chính tiêu chí nghiệm thu ở trên.** `evidence.ci95` trên card đến từ một phép lấy mẫu lại ngẫu nhiên (HĐ-11.2); hai người chạy cùng manifest với hai seed khác nhau sẽ ra hai khoảng tin cậy khác nhau, và khác biệt đó **không phải** "thời gian tường". Bản 2.1.x thiếu trường này, nên tiêu chí nghiệm thu của HĐ-13 không thể đạt được bằng chính dữ liệu mà HĐ-13 yêu cầu ghi. `n_resamples` đi kèm vì đổi số lần lấy mẫu cũng đổi khoảng.
 
-**Vi phạm trông như thế nào:** hai lần chạy cùng một manifest cho ra `ci95` khác nhau, và không có gì trong manifest giải thích được vì sao.
+*(Thêm ở 6.2.0.)* **Khối `benchmark_host` ghi mask thật và ai đặt nó.** G4 đọc độ trễ theo đồng hồ tường, nên mức cấp CPU là một phần của phép đo chứ không phải chuyện bên lề — xem HĐ-7.4.
+
+*(Thêm ở 6.3.0.)* **`sensor_noise` phải có mặt trên manifest.** `episode_context_id` băm đúng bốn thứ (HĐ-3.1) và **biên độ nhiễu không nằm trong đó**. Nên hai run cùng seed khác `sigma` sinh ra **đúng cùng một tập context id** trong khi là **hai thí nghiệm khác nhau**. Không ghi biên độ thì manifest không phân biệt được chúng, và người dựng lại card sẽ dựng lại một card khác mà không có gì báo.
+
+Hệ quả vận hành phải nói thẳng, vì nó là một cái bẫy im lặng: **sửa `sensor_noise` tại chỗ trong một profile mà giữ nguyên `id` sẽ khiến `--reuse-traces` phục vụ những episode ghi dưới biên độ cũ** — id khớp, không cảnh báo nào. Đổi biên độ ⇒ **đổi `task_profile_id`**, đúng như luật đã áp cho việc sửa traffic.
+
+**Vi phạm trông như thế nào:** hai lần chạy cùng một manifest cho ra `ci95` khác nhau, và không có gì trong manifest giải thích được vì sao. Hoặc: hai thư mục run có cùng tập `episode_context_id` nhưng khác `sensor_noise`, và không ai nhận ra chúng là hai thí nghiệm.
 
 ---
 
@@ -1022,6 +1083,8 @@ Hai định danh frozen của contract (`candidate_id`, `episode_context_id`) d�
 | 6.1.0 | 2026-08-11 | MINOR | Sáu điều khoản, tất cả cùng một loại lỗi: **ngưỡng bị nới cho vừa thứ code làm nổi, chứ không lấy từ hiện trường**. ① HĐ-7.2: ngưỡng G4 là yêu cầu hiện trường; nhịp local controller phải ≤ `robot.control_period`, kiểm lúc khởi động (`validate_control_rate`) — cả hai profile tham chiếu về 20 Hz. ② HĐ-7.1: `collision_probability_max` không phải núm vặn thời lượng; kho tham chiếu về 1%. ③ HĐ-6: bảo lưu không có bộ điều khiển hướng cuối, `goal_tolerance_rad < π` bị từ chối lúc nạp. ④ HĐ-4.1: lưới replan là đặc quyền thông tin đã biết, phải gỡ trước khi chấm candidate `monolithic`. ⑤ HĐ-15.1 tiêu chí **7**: bộ kiểm công bằng xanh là điều kiện cần để công bố bất kỳ phép so nào. ⑥ HĐ-15.3: câu hỏi bắt buộc *"con số này đến từ hiện trường, hay từ thứ máy tôi chạy nổi?"*. Không trường nào bị xoá, không ngữ nghĩa metric hay cổng nào đổi ⇒ MINOR. Chi tiết dưới đây. |
 
 | 6.2.0 | 2026-08-11 | MINOR | HĐ-7.4: **ghim nhân là việc của chương trình chạy, không của người vận hành**. Script tự đặt affinity (mặc định 2 nhân, `--no-pin` để tắt); máy không đủ nhân thì **từ chối ghim** chứ không ghim hết máy — một mask phủ toàn máy trông như đã được bảo vệ. Manifest thêm `benchmark_host.affinity_source` (`script` | `inherited`), vì một mask trần không phân biệt được run tự ghim với run nhận mask lúc khởi chạy, mà chỉ cái đầu mới tái lập được chính sự bảo vệ của nó. Thêm trường có mặc định, không xoá gì ⇒ MINOR. |
+
+| 6.3.0 | 2026-08-11 | MINOR | **Nhiễu cảm biến và trượt bánh theo seed** (plan M1). ① HĐ-2.5: `environment.sensor_noise` — thuộc hiện trường, mặc định 0, hai nguồn khác bản chất (LiDAR là sai số **đo** và không được chạm ground truth; trượt bánh là sai số **chấp hành** và phải chạm). Luật cứng: mọi draw là `f(seed, stream, step)`, **không** tiêu thụ tuần tự — rút tuần tự thì thứ tự phụ thuộc hành vi candidate và hai candidate gặp nhiễu khác nhau dưới cùng một `episode_context_id`. ② HĐ-3.3 nới "lần hiện thực vật cản" thành "lần hiện thực hiện trường", kèm bảng ranh giới với `neighborhood` để câu nới không mở đường gộp hai bộ mẫu. ③ HĐ-13: manifest phải ghi `sensor_noise`, vì biên độ **không** nằm trong payload băm của `episode_context_id` — hai run cùng seed khác sigma cho cùng tập id mà là hai thí nghiệm. Thêm trường có mặc định, không xoá gì ⇒ MINOR. |
 
 **Chi tiết 6.1.0 — bốn chỗ nới đều cho cả hai bên, nên không phép kiểm đối xứng nào bắt được.**
 

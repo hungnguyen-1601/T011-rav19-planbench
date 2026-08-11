@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from planbench_schemas.dynamic import DynamicObstacle
 from planbench_schemas.geometry import EPS, Point2D, Pose2D, euclidean_distance
 from planbench_schemas.robot import RobotConfig
-from planbench_schemas.sensor import LidarConfig
+from planbench_schemas.sensor import LidarConfig, SensorNoise
 
 
 class CircleObstacle(BaseModel):
@@ -76,6 +76,20 @@ class Scenario(BaseModel):
     static_obstacles: tuple[StaticObstacle, ...] = ()
     dynamic_obstacles: tuple[DynamicObstacle, ...] = ()
     lidar: LidarConfig = Field(default_factory=lambda: LidarConfig(num_rays=72, max_range=5.0))
+    #: Measurement and actuation error, both zero by default.
+    #:
+    #: On ``Scenario`` rather than beside it, unlike ``ReplanningConfig``,
+    #: and the difference is real: replanning is a *rule the benchmark
+    #: applies to* a scenario, while noise is the scenario's physics. Two
+    #: runs at the same seed under different sigma are two different
+    #: worlds, so ``_scenario_checksum`` **should** separate them —
+    #: excluding it would be the bug, not the cost.
+    #:
+    #: Known cost, accepted: adding the field changes the checksum of
+    #: every stored scenario, which stales the P03 difficulty cache. That
+    #: cache is already keyed to the old scenario library and holds no
+    #: entry for any contract-era profile, so nothing in use is lost.
+    sensor_noise: SensorNoise = Field(default_factory=SensorNoise)
     random_seed: int = 0
     stuck_time_window: float = Field(default=5.0, gt=0)
     stuck_min_displacement: float = Field(default=0.05, gt=0)
