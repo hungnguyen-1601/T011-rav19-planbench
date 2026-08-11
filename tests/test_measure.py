@@ -177,7 +177,7 @@ class TestAcceptanceChecksAreReal:
             path_length_m = 5.0
 
         with pytest.raises(measure.MeasurementFailure, match="exceeds the driven path"):
-            measure.check_l_ref([Row()], 0.2)
+            measure.check_l_ref({"cand": [Row()]}, 0.2)
 
     def test_l_ref_check_allows_the_tolerance_ball(self) -> None:
         """``L_ref`` measures to the goal point; an episode succeeds on
@@ -190,7 +190,7 @@ class TestAcceptanceChecksAreReal:
             l_ref_m = 5.15
             path_length_m = 5.0
 
-        measure.check_l_ref([Row()], 0.2)
+        measure.check_l_ref({"cand": [Row()]}, 0.2)
 
     def test_reproducibility_check_is_to_six_decimals(self) -> None:
         measure.check_reproducible(0.8453971, 0.8453969)

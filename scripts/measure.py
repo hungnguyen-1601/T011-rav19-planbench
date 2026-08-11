@@ -42,7 +42,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -67,11 +66,19 @@ from planbench_benchmark.candidates import (  # noqa: E402
     validate_control_rate,
 )
 from planbench_benchmark.contexts import build_evaluation_contexts  # noqa: E402
-from planbench_benchmark.episode import run_contract_episode  # noqa: E402
 from planbench_benchmark.hostinfo import (  # noqa: E402
     apply_pinning,
     detect_benchmark_host,
     unpinned_warning,
+)
+from planbench_benchmark.pipeline import (  # noqa: E402
+    AcceptanceFailure,
+    check_gate_table,
+    check_l_ref,
+    check_node_counts,
+    check_reproducible,
+    score,
+    simulate,
 )
 from planbench_benchmark.task_map import load_task_map, validate_missions_on_map  # noqa: E402
 from planbench_decision.anchors import load_anchors  # noqa: E402
@@ -82,13 +89,9 @@ from planbench_decision.objectives import DecisionSettings  # noqa: E402
 from planbench_decision.stats import build_evidence  # noqa: E402
 from planbench_metrics.definitions import (  # noqa: E402
     EpisodeMetricSet,
-    compute_metrics,
-    pooled_p99_latency_ms,
 )
 from planbench_schemas.episode_context import EpisodeContext  # noqa: E402
-from planbench_schemas.map import MapData  # noqa: E402
 from planbench_schemas.task_profile import TaskProfile  # noqa: E402
-from planbench_simulator.trace import read_trace, trace_path  # noqa: E402
 
 #: ``v2``, not ``v1``. The quiet hall is a measuring instrument for the
 #: fairness suite — deterministic on purpose, so those tests can compare
@@ -121,8 +124,10 @@ UNTUNED = TuningDeclaration(
 )
 
 
-class MeasurementFailure(AssertionError):
-    """An F1 acceptance criterion did not hold."""
+#: Plan F1's name for the failure. Same class the chain raises, under
+#: the name this script's criteria are numbered by — see
+#: :class:`~planbench_benchmark.pipeline.AcceptanceFailure`.
+MeasurementFailure = AcceptanceFailure
 
 
 def load_profile(path: Path) -> TaskProfile:
@@ -145,102 +150,6 @@ def build_candidate(profile: TaskProfile, stack: str, local: str) -> Candidate:
     ).model_copy(update={"tuning": UNTUNED})
     validate_control_rate(profile, [candidate])
     return candidate
-
-
-def simulate(
-    candidate: Candidate,
-    profile: TaskProfile,
-    contexts: Sequence[EpisodeContext],
-    map_data: MapData,
-    trace_root: Path,
-    *,
-    reuse: bool,
-    say,  # type: ignore[no-untyped-def]
-) -> None:
-    for index, context in enumerate(contexts, start=1):
-        path = trace_path(candidate.candidate_id, context.episode_context_id, root=trace_root)
-        if reuse and path.is_file():
-            continue
-        started = time.time()
-        _, run = run_contract_episode(candidate, profile, context, map_data, root=trace_root)
-        say(
-            f"  {index:>4}/{len(contexts)}  seed {context.seed:<4} "
-            f"{run.result.status.value:<16} {time.time() - started:5.1f}s"
-        )
-
-
-def score(
-    candidate: Candidate,
-    profile: TaskProfile,
-    contexts: Sequence[EpisodeContext],
-    map_data: MapData,
-    trace_root: Path,
-) -> tuple[list[EpisodeMetricSet], float]:
-    """Recompute every HĐ-6 metric from the files, never from memory.
-
-    Same shape as the slice's ``score``, and for the same reason: HĐ-5
-    makes the trace the single source of truth, and the only way to know
-    that holds is to throw away what the simulation had in hand.
-    """
-    traces = [
-        read_trace(trace_path(candidate.candidate_id, context.episode_context_id, root=trace_root))
-        for context in contexts
-    ]
-    metrics = [
-        compute_metrics(
-            trace, profile, context, map_data, resource_profile=candidate.resource_profile
-        )
-        for trace, context in zip(traces, contexts, strict=True)
-    ]
-    return metrics, pooled_p99_latency_ms(traces)
-
-
-def check_l_ref(metrics: Sequence[EpisodeMetricSet], goal_tolerance_m: float) -> str:
-    """``L_ref`` ≤ driven path + goal tolerance, on successful episodes.
-
-    The slack is the tolerance ball's radius and nothing more: ``L_ref``
-    measures to the goal *point*, an episode succeeds on entering the
-    ball around it (HĐ-15.1(5), as tightened at contract 2.2.1).
-    """
-    checked = 0
-    for row in metrics:
-        if not row.success:
-            continue
-        checked += 1
-        if row.l_ref_m > row.path_length_m + goal_tolerance_m + 1e-9:
-            raise MeasurementFailure(
-                f"episode {row.episode_context_id}: L_ref {row.l_ref_m:.3f} m exceeds the "
-                f"driven path {row.path_length_m:.3f} m by more than the goal tolerance "
-                f"{goal_tolerance_m:.3f} m"
-            )
-    return f"L_ref ≤ path_length + tolerance on all {checked} successful episodes"
-
-
-def check_reproducible(first: float, second: float) -> str:
-    """Scoring the same traces twice gives the same number to 6 places."""
-    if round(first, 6) != round(second, 6):
-        raise MeasurementFailure(f"re-scoring the same traces gave {second:.6f}, not {first:.6f}")
-    return f"decision_utility reproducible to 6 dp ({first:.6f})"
-
-
-def check_gate_table(report) -> str:  # type: ignore[no-untyped-def]
-    """All six gates present with their run counts (HĐ-15.1(3))."""
-    payload = report.to_card()
-    missing = [gate for gate in ("G1", "G2", "G3", "G4", "G5", "G6") if gate not in payload]
-    if missing:
-        raise MeasurementFailure(f"gate report is missing {missing}")
-    return "gate table carries all six gates"
-
-
-def check_node_counts(metrics: Sequence[EpisodeMetricSet]) -> str:
-    """``peak_search_nodes`` ≤ ``costmap_cells`` (HĐ-15.1(6))."""
-    for row in metrics:
-        if row.peak_search_nodes > row.costmap_cells:
-            raise MeasurementFailure(
-                f"episode {row.episode_context_id}: {row.peak_search_nodes} search nodes "
-                f"on a {row.costmap_cells}-cell costmap"
-            )
-    return "peak_search_nodes ≤ costmap_cells on every episode"
 
 
 def build_report(
@@ -376,7 +285,7 @@ def run_measurement(
         say(f"⚠ {warning}")
 
     say("simulating…")
-    simulate(candidate, profile, contexts, map_data, trace_root, reuse=reuse, say=say)
+    simulate([candidate], profile, contexts, map_data, trace_root, reuse=reuse, say=say)
 
     say("scoring from traces…")
     metrics, pooled_latency_ms = score(candidate, profile, contexts, map_data, trace_root)
@@ -392,13 +301,18 @@ def run_measurement(
     again_metrics, _ = score(candidate, profile, contexts, map_data, trace_root)
     again = build_evidence(candidate, again_metrics, contexts, resolved, settings)
 
+    # The shared checks are keyed by candidate id because they normally
+    # run over a field. One candidate is the degenerate case, not a
+    # different check — writing a single-candidate variant is how the two
+    # would drift into disagreeing about what passes.
+    by_candidate = {candidate.candidate_id: metrics}
     checks = [
-        check_l_ref(metrics, profile.constraints.goal_tolerance_m),
+        check_l_ref(by_candidate, profile.constraints.goal_tolerance_m),
         check_reproducible(
             evidence.set_objectives.decision_utility, again.set_objectives.decision_utility
         ),
-        check_gate_table(gate_report),
-        check_node_counts(metrics),
+        check_gate_table({candidate.candidate_id: gate_report}),
+        check_node_counts(by_candidate),
     ]
 
     created_at = datetime.now(UTC)

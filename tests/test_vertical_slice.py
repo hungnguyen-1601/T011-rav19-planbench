@@ -29,6 +29,7 @@ import pytest
 import yaml
 from jsonschema import Draft202012Validator
 
+from planbench_benchmark import pipeline as pipeline_module
 from planbench_benchmark.task_map import load_task_map
 from planbench_decision.card import CARD_SCHEMA_PATH, MANIFEST_SCHEMA_PATH
 from planbench_metrics.definitions import compute_metrics
@@ -468,7 +469,7 @@ class TestTheRunPlanInterleaves:
             dispatched.append((candidate.candidate_id, context.seed))
             return None, _FakeRun()
 
-        monkeypatch.setattr(slice_module, "run_contract_episode", record)
+        monkeypatch.setattr(pipeline_module, "run_contract_episode", record)
         slice_module.simulate(candidates, profile, contexts, map_data, tmp_path / "t", reuse=False)
 
         assert len(dispatched) == 6, "every (context, candidate) pair should be dispatched"
@@ -499,7 +500,7 @@ class TestTheRunPlanInterleaves:
             done.append(candidate.candidate_id)
             return None, _FakeRun()
 
-        monkeypatch.setattr(slice_module, "run_contract_episode", die_after_seven)
+        monkeypatch.setattr(pipeline_module, "run_contract_episode", die_after_seven)
         with pytest.raises(KeyboardInterrupt):
             slice_module.simulate(
                 candidates, profile, contexts, map_data, tmp_path / "t", reuse=False
