@@ -97,7 +97,7 @@
         "cores_allocated",
         "threads"
       ],
-      "description": "HĐ-7.4: same machine, same allocation, same thread count for every candidate — otherwise even the relative comparison is meaningless.",
+      "description": "HĐ-7.4: same machine, same allocation, same thread count for every candidate — otherwise even the relative comparison is meaningless. `cpu_affinity` and `logical_cores` record what the run actually got: G4 reads wall-clock latency, and the same candidate measured 59.30 ms pooled p99 unpinned against 16.10 ms pinned to two cores. Both are optional so manifests written before anyone looked stay valid — absent means not recorded, which is the honest reading.",
       "properties": {
         "cpu": {
           "type": "string",
@@ -110,6 +110,25 @@
         "threads": {
           "type": "integer",
           "minimum": 1
+        },
+        "cpu_affinity": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "Cores the process was confined to, as the OS reported during the run."
+        },
+        "logical_cores": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "description": "Cores the machine has, so cores_allocated reads as a share."
         }
       }
     },

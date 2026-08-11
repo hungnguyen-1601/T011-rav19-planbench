@@ -30,7 +30,11 @@
       "description": "Rules this card was produced under (HĐ-13)."
     },
     "recommendation_scope": {
-      "enum": ["MISSION_LEVEL", "DEPLOYMENT_LEVEL", "ROBUST_DEPLOYMENT_LEVEL"],
+      "enum": [
+        "MISSION_LEVEL",
+        "DEPLOYMENT_LEVEL",
+        "ROBUST_DEPLOYMENT_LEVEL"
+      ],
       "description": "Computed from the data actually provided (HĐ-2.2), never taken from the author's wish."
     },
     "experiment_scope": {
@@ -41,134 +45,297 @@
       ],
       "description": "What the run is allowed to conclude (HĐ-1.4)."
     },
-    "decision_mode": { "enum": ["technical", "business_adjusted"] },
+    "decision_mode": {
+      "enum": [
+        "technical",
+        "business_adjusted"
+      ]
+    },
     "decision_mode_label": {
       "type": "string",
       "minLength": 1,
       "description": "The sentence HĐ-9.3 requires for this mode, verbatim."
     },
-    "status": { "enum": ["CLEAR_RECOMMENDATION", "NEAR_EQUIVALENT"] },
-
+    "status": {
+      "enum": [
+        "CLEAR_RECOMMENDATION",
+        "NEAR_EQUIVALENT"
+      ]
+    },
     "recommended": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["candidate_id", "stack", "params_ref"],
+      "required": [
+        "candidate_id",
+        "stack",
+        "params_ref"
+      ],
       "properties": {
-        "candidate_id": { "type": "string", "minLength": 1 },
-        "stack": { "type": "string", "minLength": 1 },
-        "params_ref": { "type": ["string", "null"] }
+        "candidate_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stack": {
+          "type": "string",
+          "minLength": 1
+        },
+        "params_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "alternative": {
       "description": "Only ever a candidate labelled PARETO_FRONTIER (HĐ-12). Null until that analysis has run — the statistical runner-up is not an alternative.",
       "oneOf": [
-        { "type": "null" },
+        {
+          "type": "null"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["candidate_id", "reason"],
+          "required": [
+            "candidate_id",
+            "reason"
+          ],
           "properties": {
-            "candidate_id": { "type": "string", "minLength": 1 },
-            "reason": { "type": "string", "minLength": 1 }
+            "candidate_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       ]
     },
-
     "gates": {
       "type": "array",
       "minItems": 1,
       "description": "Every candidate that was evaluated, passing or not (HĐ-10.1: nobody disappears from the report).",
-      "items": { "$ref": "#/$defs/gateRow" }
+      "items": {
+        "$ref": "#/$defs/gateRow"
+      }
     },
-
     "objectives": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["U_R", "U_S", "U_E", "U_C"],
+      "required": [
+        "U_R",
+        "U_S",
+        "U_E",
+        "U_C"
+      ],
       "description": "Set-level objectives (HĐ-9.1): U_R scores the success rate against the deployment's declared floor, not the per-episode average.",
       "properties": {
-        "U_R": { "$ref": "#/$defs/unitInterval" },
-        "U_S": { "$ref": "#/$defs/unitInterval" },
-        "U_E": { "$ref": "#/$defs/unitInterval" },
-        "U_C": { "$ref": "#/$defs/unitInterval" }
+        "U_R": {
+          "$ref": "#/$defs/unitInterval"
+        },
+        "U_S": {
+          "$ref": "#/$defs/unitInterval"
+        },
+        "U_E": {
+          "$ref": "#/$defs/unitInterval"
+        },
+        "U_C": {
+          "$ref": "#/$defs/unitInterval"
+        }
       }
     },
-    "decision_utility": { "$ref": "#/$defs/unitInterval" },
-    "pareto_label": {
-      "enum": ["PARETO_FRONTIER", "LIKELY_DOMINATED", "UNCERTAIN_DOMINANCE"]
+    "decision_utility": {
+      "$ref": "#/$defs/unitInterval"
     },
-
+    "pareto_label": {
+      "enum": [
+        "PARETO_FRONTIER",
+        "LIKELY_DOMINATED",
+        "UNCERTAIN_DOMINANCE"
+      ]
+    },
     "evidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["delta_u_vs_second", "ci95", "n_episodes", "effect_size"],
+      "required": [
+        "delta_u_vs_second",
+        "delta_u_mean",
+        "ci95",
+        "n_episodes",
+        "effect_size"
+      ],
       "properties": {
         "delta_u_vs_second": {
           "type": "number",
           "description": "Median paired ΔU against the runner-up (HĐ-11.2)."
         },
+        "delta_u_mean": {
+          "type": "number",
+          "description": "Mean paired delta-U. The statistic ci95 is the interval of (HĐ-11.2 bootstraps the mean); delta_u_vs_second is the median. Both are printed so a reader cannot mistake the interval for the median's."
+        },
         "ci95": {
           "type": "array",
           "minItems": 2,
           "maxItems": 2,
-          "items": { "type": "number" },
+          "items": {
+            "type": "number"
+          },
           "description": "Paired bootstrap interval of the difference. Never two candidates' overlapping intervals (§17 ban 5)."
         },
-        "n_episodes": { "type": "integer", "minimum": 1 },
+        "n_episodes": {
+          "type": "integer",
+          "minimum": 1
+        },
         "effect_size": {
-          "type": ["number", "null"],
+          "type": [
+            "number",
+            "null"
+          ],
           "description": "Paired Cohen's d_z. Null when every episode gave the identical difference, where the standardised effect is undefined."
         },
         "weight_stability_margin": {
-          "type": ["number", "null"],
+          "type": [
+            "number",
+            "null"
+          ],
           "description": "Phase 5.3. Null means not measured — never a default that reads as 'measured and stable'."
         },
-        "anchor_stability": { "type": ["string", "null"] },
-        "robustness_margin": { "type": ["number", "null"] }
+        "anchor_stability": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "robustness_margin": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
       }
     },
-
     "declared_assumptions": {
       "description": "Null in technical mode. In business_adjusted, every assumption the figures were adjusted by (HĐ-9.3).",
-      "type": ["object", "null"]
+      "type": [
+        "object",
+        "null"
+      ]
     },
-    "manifest_ref": { "type": "string", "minLength": 1 },
+    "manifest_ref": {
+      "type": "string",
+      "minLength": 1
+    },
     "approval": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "by", "at", "comment"],
+      "required": [
+        "status",
+        "by",
+        "at",
+        "comment"
+      ],
       "properties": {
-        "status": { "enum": ["PENDING", "APPROVED", "REJECTED"] },
-        "by": { "type": ["string", "null"] },
-        "at": { "type": ["string", "null"] },
-        "comment": { "type": ["string", "null"] }
+        "status": {
+          "enum": [
+            "PENDING",
+            "APPROVED",
+            "REJECTED"
+          ]
+        },
+        "by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "comment": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     }
   },
-
   "$defs": {
-    "unitInterval": { "type": "number", "minimum": 0, "maximum": 1 },
-    "verdict": { "enum": ["pass", "fail"] },
+    "unitInterval": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "verdict": {
+      "enum": [
+        "pass",
+        "fail"
+      ]
+    },
     "gateRow": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["candidate_id", "G1", "G2", "G3", "G4", "G5", "G6"],
+      "required": [
+        "candidate_id",
+        "G1",
+        "G2",
+        "G3",
+        "G4",
+        "G5",
+        "G6"
+      ],
       "description": "All six gates, always, with the run count behind them (HĐ-15.1 criterion 3).",
       "properties": {
-        "candidate_id": { "type": "string", "minLength": 1 },
-        "G1": { "$ref": "#/$defs/verdict" },
+        "candidate_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "G1": {
+          "$ref": "#/$defs/verdict"
+        },
         "G2": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["result", "observed", "n_runs", "upper_bound_95", "n_min", "statement"],
+          "required": [
+            "result",
+            "observed",
+            "n_runs",
+            "n_distinct_episodes",
+            "upper_bound_95",
+            "n_min",
+            "statement"
+          ],
           "properties": {
-            "result": { "$ref": "#/$defs/verdict" },
-            "observed": { "type": "integer", "minimum": 0 },
-            "n_runs": { "type": "integer", "minimum": 1 },
-            "n_min": { "type": "integer", "minimum": 1 },
+            "result": {
+              "$ref": "#/$defs/verdict"
+            },
+            "observed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "n_runs": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "n_distinct_episodes": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Episodes that actually differ from one another, and the denominator the rule-of-three bound is computed on. The rule assumes independent draws; a deterministic stack whose traffic never crosses its route replays one episode per seed, and n_runs would then report evidence that does not exist (HĐ-7.1)."
+            },
+            "n_min": {
+              "type": "integer",
+              "minimum": 1
+            },
             "upper_bound_95": {
-              "type": ["number", "null"],
+              "type": [
+                "number",
+                "null"
+              ],
               "description": "The rule of three applies to zero-event data only; null once a collision has been observed."
             },
             "statement": {
@@ -176,23 +343,47 @@
               "minLength": 1,
               "description": "The sentence HĐ-7.1 mandates, so the bound travels with the claim."
             },
-            "note": { "type": ["string", "null"] }
+            "note": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         },
-        "G3": { "$ref": "#/$defs/verdict" },
+        "G3": {
+          "$ref": "#/$defs/verdict"
+        },
         "G4": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["result", "status", "p99_ms", "threshold_ms", "caveat"],
+          "required": [
+            "result",
+            "status",
+            "p99_ms",
+            "threshold_ms",
+            "caveat"
+          ],
           "properties": {
-            "result": { "$ref": "#/$defs/verdict" },
+            "result": {
+              "$ref": "#/$defs/verdict"
+            },
             "status": {
               "const": "screened_on_host",
               "description": "verified_on_target is absent by the sim-only reservation (HĐ-7.2, §17 ban 12)."
             },
-            "p99_ms": { "type": "number", "minimum": 0 },
-            "threshold_ms": { "type": "number", "exclusiveMinimum": 0 },
-            "caveat": { "type": "string", "minLength": 1 }
+            "p99_ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "threshold_ms": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "caveat": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         },
         "G5": {
@@ -207,22 +398,55 @@
             "note"
           ],
           "properties": {
-            "result": { "$ref": "#/$defs/verdict" },
-            "status": { "enum": ["estimated_from_structure", "declared_by_author"] },
-            "memory_estimate_mb": { "type": "number", "minimum": 0 },
-            "available_ram_mb": { "type": "number", "exclusiveMinimum": 0 },
+            "result": {
+              "$ref": "#/$defs/verdict"
+            },
+            "status": {
+              "enum": [
+                "estimated_from_structure",
+                "declared_by_author"
+              ]
+            },
+            "memory_estimate_mb": {
+              "type": "number",
+              "minimum": 0
+            },
+            "available_ram_mb": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
             "peak_rss_mb_diagnostic": {
               "type": "number",
               "minimum": 0,
               "description": "Diagnostic only. Never compared with available_ram_mb (§17 ban 13) — hence the name."
             },
-            "target_implementation": { "type": ["string", "null"] },
-            "bytes_per_search_node": { "type": ["integer", "null"] },
-            "peak_search_nodes": { "type": ["integer", "null"] },
-            "note": { "type": "string", "minLength": 1 }
+            "target_implementation": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "bytes_per_search_node": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "peak_search_nodes": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         },
-        "G6": { "$ref": "#/$defs/verdict" }
+        "G6": {
+          "$ref": "#/$defs/verdict"
+        }
       }
     }
   }

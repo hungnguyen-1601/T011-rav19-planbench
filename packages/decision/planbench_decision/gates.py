@@ -202,6 +202,12 @@ class G2Result(_GateResult):
 
     observed_collisions: int = Field(ge=0)
     n_min: int = Field(ge=1)
+    #: Episodes that actually differ from one another. The rule of three
+    #: assumes independent draws, and a replayed episode is not one, so
+    #: this — never ``n_runs`` — is what the bound is computed on. Equal
+    #: to ``n_runs`` on a well-formed evaluation set; below it means some
+    #: seeds produced the identical episode.
+    n_distinct_episodes: int = Field(ge=1)
     upper_bound_95: float | None = None
     statement: str
     note: str | None = None
@@ -344,6 +350,11 @@ class GateReport(BaseModel):
                 "result": self.g2.result,
                 "observed": self.g2.observed_collisions,
                 "n_runs": self.g2.n_runs,
+                # Both counts, always. Printing only the bound's own
+                # denominator would hide a replayed set; printing only
+                # the row count is what produced a card claiming 3.0%
+                # from one episode driven a hundred times.
+                "n_distinct_episodes": self.g2.n_distinct_episodes,
                 "upper_bound_95": self.g2.upper_bound_95,
                 "n_min": self.g2.n_min,
                 "statement": self.g2.statement,
@@ -496,25 +507,71 @@ def _gate_1(profile: TaskProfile, metrics: Sequence[EpisodeMetricSet]) -> G1Resu
     )
 
 
+def _distinct_episode_count(metrics: Sequence[EpisodeMetricSet]) -> int:
+    """How many of these episodes are actually different from each other.
+
+    The rule of three assumes independent draws. Rows in a table are not
+    evidence of that: a deterministic stack on a mission whose traffic
+    never crosses its route produces the *same* episode once per seed, and
+    a hundred copies of one episode bound a collision probability exactly
+    as well as one episode does.
+
+    Identity is judged on what was measured, not on the context id — the
+    id is a hash of the *conditions*, so it is unique by construction even
+    when every condition turns out to make no difference. Two episodes
+    agreeing to the last float on path length, travel time, clearance,
+    near misses and collisions did not merely land near each other; they
+    are the same run.
+
+    Coincidence is possible in principle and harmless in practice: it can
+    only ever *lower* the effective count, which weakens a claim rather
+    than inventing one.
+    """
+    return len(
+        {
+            (
+                m.path_length_m,
+                m.travel_time_s,
+                m.min_clearance,
+                m.near_miss_rate,
+                m.collision_count,
+                m.success,
+            )
+            for m in metrics
+        }
+    )
+
+
 def _gate_2(profile: TaskProfile, metrics: Sequence[EpisodeMetricSet]) -> G2Result:
-    """Zero collisions and enough runs, with the mandated sentence.
+    """Zero collisions and enough *distinct* runs, with the mandated sentence.
 
     The sentence is a contract artefact, not a log line: it is what stops
-    "0 collisions" from being read as "no collisions happen". It names
-    the run count and the bound, and it names the distribution the bound
-    is conditional on.
+    "0 collisions" from being read as "no collisions happen". It names the
+    run count and the bound, and it names the distribution the bound is
+    conditional on.
+
+    **The bound is computed on distinct episodes, not on rows.** Phase 1.4
+    predicted this failure exactly — "a deterministic planner with no
+    traffic means every seed gives the same episode", and it noted that
+    the gate table is where that has to be said out loud. The note was
+    written and the check was not, so the first hundred-episode run
+    printed "0 collisions in 100 runs, 95% upper bound 3.0%" for a
+    candidate that had driven one episode a hundred times. Nothing about
+    that card looked wrong.
     """
     n_runs = len(metrics)
+    n_distinct = _distinct_episode_count(metrics)
     n_min = profile.constraints.n_min_evaluation_episodes
     observed = sum(m.collision_count for m in metrics)
-    enough_runs = n_runs >= n_min
+    enough_runs = n_distinct >= n_min
     clean = observed == 0
+    replayed = n_distinct < n_runs
 
     if clean:
-        bound = RULE_OF_THREE_NUMERATOR / n_runs
+        bound = RULE_OF_THREE_NUMERATOR / n_distinct
         statement = (
-            f"0 va chạm quan sát trong {n_runs} lần chạy; cận trên 95% dưới phân phối "
-            f"kịch bản đã mô phỏng: {bound:.1%}"
+            f"0 va chạm quan sát trong {n_distinct} lần chạy phân biệt; cận trên 95% dưới "
+            f"phân phối kịch bản đã mô phỏng: {bound:.1%}"
         )
     else:
         bound = None
@@ -524,14 +581,23 @@ def _gate_2(profile: TaskProfile, metrics: Sequence[EpisodeMetricSet]) -> G2Resu
         )
 
     note: str | None = "dưới phân phối kịch bản đã mô phỏng" if clean else None
+    if clean and replayed:
+        note = (
+            f"{n_runs} episode nhưng chỉ {n_distinct} khác nhau — các seed còn lại phát lại "
+            "cùng một episode, nên chúng không phải mẫu độc lập và không được tính vào cận "
+            f"trên. Cận trên nêu ở đây là 3/{n_distinct}, không phải 3/{n_runs}"
+        )
     if clean and not enough_runs:
         note = (
-            f"chỉ {n_runs} lần chạy, dưới N_min = {n_min} = ceil(3 / "
+            f"chỉ {n_distinct} lần chạy phân biệt"
+            + (f" trên {n_runs} episode" if replayed else "")
+            + f", dưới N_min = {n_min} = ceil(3 / "
             f"{profile.constraints.collision_probability_max}); cận trên "
-            f"{RULE_OF_THREE_NUMERATOR / n_runs:.1%} còn lỏng hơn mức rủi ro đã khai"
+            f"{RULE_OF_THREE_NUMERATOR / n_distinct:.1%} còn lỏng hơn mức rủi ro đã khai"
         )
 
     return G2Result(
+        n_distinct_episodes=n_distinct,
         result="pass" if clean and enough_runs else "fail",
         n_runs=n_runs,
         observed_collisions=observed,

@@ -143,7 +143,17 @@ class EvidenceBlock(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
+    #: HĐ-11.3's headline: the *median* paired difference.
     delta_u_vs_second: float
+    #: The *mean* paired difference — and the statistic ``ci95`` is the
+    #: interval of (HĐ-11.2 bootstraps the mean). Printed because leaving
+    #: it out puts a median next to an interval that is not the median's,
+    #: which reads as one number and its error bar. On a skewed set they
+    #: separate visibly: the first hundred-episode warehouse run reported
+    #: a median of +0.0131 beside a CI of [+0.0028, +0.0111] — the point
+    #: estimate outside its own apparent interval, which looks like a
+    #: bug and is really two different statistics sharing a line.
+    delta_u_mean: float
     ci95: tuple[float, float]
     n_episodes: int = Field(ge=1)
     effect_size: float | None
@@ -174,6 +184,16 @@ class BenchmarkHost(BaseModel):
     Recorded because the comparison assumes one machine, one allocation,
     one thread count. Without it, even the relative ordering is a claim
     about two different computers.
+
+    ``cpu_affinity`` and ``logical_cores`` are recorded because G4 reads
+    wall-clock latency and CPU contention moves it by more than the
+    candidates differ from each other: the same ``rrtstar+dwa`` measured
+    59.30 ms pooled p99 unpinned and 16.10 ms pinned to two cores — a
+    factor of 3.7, and that difference has already been read once as a
+    property of a candidate (contract 3.0.0 eliminated A\\* at G4 for the
+    machine's behaviour). Both fields default to ``None`` so older
+    manifests stay valid; absent, the run simply does not say, which is
+    the honest reading of a card written before anyone looked.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -181,6 +201,24 @@ class BenchmarkHost(BaseModel):
     cpu: str = Field(min_length=1)
     cores_allocated: int = Field(ge=1)
     threads: int = Field(ge=1)
+    #: The cores the run was actually pinned to, as the OS reported them
+    #: *during* the run — not the intent typed into a launch script.
+    cpu_affinity: tuple[int, ...] | None = None
+    #: How many the machine has, so ``cores_allocated`` can be read as a
+    #: share rather than as a number with no scale.
+    logical_cores: int | None = Field(default=None, ge=1)
+
+    @property
+    def is_pinned(self) -> bool | None:
+        """Was the run confined to a subset of the machine?
+
+        ``None`` when the manifest does not say. A run holding every core
+        is not pinned: whatever else the machine was doing landed on the
+        same cores as the measurement.
+        """
+        if self.logical_cores is None or self.cpu_affinity is None:
+            return None
+        return len(self.cpu_affinity) < self.logical_cores
 
 
 class Provenance(BaseModel):
@@ -256,6 +294,7 @@ class DecisionCard(BaseModel):
             "pareto_label": self.pareto_label,
             "evidence": {
                 "delta_u_vs_second": self.evidence.delta_u_vs_second,
+                "delta_u_mean": self.evidence.delta_u_mean,
                 "ci95": list(self.evidence.ci95),
                 "n_episodes": self.evidence.n_episodes,
                 "effect_size": self.evidence.effect_size,
@@ -407,6 +446,7 @@ def build_decision_card(
         ),
         evidence=EvidenceBlock(
             delta_u_vs_second=comparison.delta_median,
+            delta_u_mean=comparison.delta_mean,
             ci95=comparison.ci95,
             n_episodes=comparison.n_episodes,
             effect_size=comparison.effect_size,
