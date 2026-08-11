@@ -220,6 +220,12 @@ LOCAL_CONTROLLER_CONFIGS: dict[str, dict[str, Any]] = {
         "omega_samples": 15,
         "horizon_seconds": 1.0,
     },
+    "dwa_balanced": {
+        "control_period": 0.05,
+        "velocity_samples": 12,
+        "omega_samples": 24,
+        "horizon_seconds": 1.0,
+    },
     "dwa_default": {
         "control_period": 0.05,
         "velocity_samples": 20,
@@ -227,6 +233,25 @@ LOCAL_CONTROLLER_CONFIGS: dict[str, dict[str, Any]] = {
         "horizon_seconds": 1.0,
     },
 }
+
+#: ``dwa_balanced`` is a third point on a real design axis, not a knob
+#: turned until something passed. The two ends were measured first and
+#: they bracket the deployment's real-time budget: on ``open_hall_v2``,
+#: ``dwa_coarse`` (105 samples) gave a pooled p99 of 5.26 ms for
+#: ``astar+dwa`` and 6.06 ms for ``rrtstar+dwa``, while ``dwa_default``
+#: (800 samples) gave 29.40 ms and **50.28 ms** — the latter failing G4
+#: by 0.28 ms against a 50 ms threshold.
+#:
+#: So the open question is not "can we make something pass" but "where on
+#: this axis does the budget actually run out", and 288 samples is the
+#: midpoint by count. Predicted by linear interpolation *before* running
+#: it, recorded here so the record shows which came first: **11.6 ms**
+#: for ``astar+dwa`` and **17.7 ms** for ``rrtstar+dwa``.
+#:
+#: If it comes out over budget, that is the answer and the candidate
+#: stays registered saying so. Re-picking the sampling density until a
+#: number clears a gate is the move HĐ-15.3 asks about, and the four
+#: reverted changes of 2026-08-11 are what it looks like.
 
 
 class ControlRateViolation(ValueError):

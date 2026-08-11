@@ -25,7 +25,7 @@ import pytest
 import yaml
 from test_vertical_slice import slice_module, write_profile
 
-from planbench_benchmark import pipeline
+from planbench_benchmark import pipeline, selection
 from planbench_schemas.task_profile import TaskProfile
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -97,17 +97,17 @@ class TestScopeIsDeclaredNotInferred:
     def test_two_controllers_cannot_be_called_a_global_planner_claim(self, tmp_path: Path) -> None:
         """HĐ-1.4. Inferring the scope from the set would turn this
         refusal into a rename."""
-        profile = compare.load_profile(write_profile(tmp_path))
+        profile = selection.load_profile(write_profile(tmp_path))
         with pytest.raises(Exception, match="identical local layer"):
-            compare.build_candidates(
+            selection.build_candidates(
                 profile,
                 (("astar+dwa", "dwa_coarse"), ("astar+dwa", "dwa_default")),
                 "global_planner_selection",
             )
 
     def test_the_same_pair_is_fine_as_a_local_selection(self, tmp_path: Path) -> None:
-        profile = compare.load_profile(write_profile(tmp_path))
-        candidates = compare.build_candidates(
+        profile = selection.load_profile(write_profile(tmp_path))
+        candidates = selection.build_candidates(
             profile,
             (("astar+dwa", "dwa_coarse"), ("astar+dwa", "dwa_default")),
             "local_controller_selection",
@@ -127,12 +127,12 @@ class TestOneDirectoryPerQuestion:
 
     @staticmethod
     def _named(profile: TaskProfile, specs: tuple[tuple[str, str], ...], scope: str) -> str:
-        return compare._run_dir_name(
-            profile.id, scope, compare.build_candidates(profile, specs, scope)
+        return selection.run_dir_name(
+            profile.id, scope, selection.build_candidates(profile, specs, scope)
         )
 
     def test_two_candidate_sets_land_in_different_directories(self, tmp_path: Path) -> None:
-        profile = compare.load_profile(write_profile(tmp_path))
+        profile = selection.load_profile(write_profile(tmp_path))
         first = self._named(
             profile,
             (("astar+dwa", "dwa_coarse"), ("rrtstar+dwa", "dwa_coarse")),
@@ -149,7 +149,7 @@ class TestOneDirectoryPerQuestion:
         """Re-running one comparison should replace its own answer, not
         accumulate copies — the name is derived, never stamped with a
         clock."""
-        profile = compare.load_profile(write_profile(tmp_path))
+        profile = selection.load_profile(write_profile(tmp_path))
         specs = (("astar+dwa", "dwa_coarse"), ("rrtstar+dwa", "dwa_coarse"))
         assert self._named(profile, specs, "global_planner_selection") == self._named(
             profile, specs, "global_planner_selection"
@@ -159,7 +159,7 @@ class TestOneDirectoryPerQuestion:
         """The hash is over ``candidate_id``, which already covers the
         stack and every parameter (HĐ-1.3). So a swapped controller is a
         different question and lands somewhere else."""
-        profile = compare.load_profile(write_profile(tmp_path))
+        profile = selection.load_profile(write_profile(tmp_path))
         coarse = self._named(
             profile,
             (("astar+dwa", "dwa_coarse"), ("rrtstar+dwa", "dwa_coarse")),
@@ -176,7 +176,7 @@ class TestOneDirectoryPerQuestion:
         """Same question asked twice, one with the arguments swapped. A
         directory that depended on argument order would answer it twice
         and let the two disagree."""
-        profile = compare.load_profile(write_profile(tmp_path))
+        profile = selection.load_profile(write_profile(tmp_path))
         forwards = self._named(
             profile,
             (("astar+dwa", "dwa_coarse"), ("rrtstar+dwa", "dwa_coarse")),
@@ -194,7 +194,7 @@ class TestOneDirectoryPerQuestion:
 def ranked(tmp_path_factory: pytest.TempPathFactory) -> dict[str, object]:
     """A field that can be ranked: both candidates clear every gate."""
     workspace = tmp_path_factory.mktemp("compare_ranked")
-    return compare.run_comparison(
+    return selection.run_comparison(
         profile_path=write_profile(workspace),
         candidate_specs=(("astar+dwa", "dwa_coarse"), ("rrtstar+dwa", "dwa_coarse")),
         scope="global_planner_selection",
@@ -224,7 +224,7 @@ def unrankable(tmp_path_factory: pytest.TempPathFactory) -> dict[str, object]:
     payload["id"] = "slice_fixture_strict"
     payload["constraints"]["collision_probability_max"] = 0.01  # N_min = 300
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
-    return compare.run_comparison(
+    return selection.run_comparison(
         profile_path=path,
         candidate_specs=(("astar+dwa", "dwa_coarse"), ("rrtstar+dwa", "dwa_coarse")),
         scope="global_planner_selection",
