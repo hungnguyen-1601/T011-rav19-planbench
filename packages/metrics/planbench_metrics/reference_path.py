@@ -44,11 +44,16 @@ from __future__ import annotations
 
 import heapq
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
 
-from planbench_planning.common.path_utils import path_length, simplify_path
+from planbench_planning.common.path_utils import (
+    has_line_of_sight,
+    path_length,
+    simplify_path,
+)
 from planbench_schemas.geometry import Point2D
 from planbench_schemas.map import CellState, MapData
 from planbench_simulator.grid import OccupancyGrid
@@ -144,9 +149,160 @@ def reference_path_length(
     # otherwise sit in every efficiency ratio on this context.
     polyline[0] = Point2D(x=start.x, y=start.y)
     polyline[-1] = Point2D(x=goal.x, y=goal.y)
-    length = path_length(simplify_path(grid, polyline))
+    # Every segment of what ``_taut`` returns has been line-of-sight
+    # checked, so this length is that of a path the map genuinely allows.
+    length = path_length(_taut(grid, polyline))
     _CACHE[key] = length
     return length
+
+
+#: Sweeps over the whole ladder of scales. Two is enough on both
+#: reference maps — a third changed nothing to five decimals — and the
+#: loop exits early anyway once a sweep stops moving anything.
+_TAUT_SWEEPS = 2
+
+#: Bisection steps per vertex. Each halves the interval, so 16 resolves a
+#: 24 m hall to ~0.4 mm, three orders below anything the metric reports.
+#: A fixed count rather than a tolerance loop: HĐ-15.1(2) wants the same
+#: six decimals on every re-run, and "iterate until it stops changing" on
+#: floating point is where that quietly stops holding.
+_TAUT_BISECTIONS = 16
+
+#: A move worth making. Also the early-exit test, which is why it is
+#: 0.1 mm rather than machine epsilon: a path that is already taut still
+#: jitters in the last bits forever, and without a floor the sweep never
+#: reports itself finished.
+_TAUT_EPS_M = 1e-4
+
+
+def _taut(grid: OccupancyGrid, polyline: Sequence[Point2D]) -> tuple[Point2D, ...]:
+    """Pull a grid path taut, the way a string round the obstacles would.
+
+    **Why greedy shortcutting alone is not enough** — this function
+    exists to fix a measured error, not a theoretical one.
+    :func:`simplify_path` can only pick from the vertices it is given,
+    and those are *cell centres*. Rounding a convex corner, the taut
+    route touches the corner itself; the nearest cell centre sits up to
+    half a cell outside it. Worse, the greedy rule keeps the *farthest*
+    visible vertex, which on the far side of an obstacle can skip past
+    the corner the string actually needs to bend at.
+
+    Measured on the reference hall, where the optimum is known
+    analytically (two legs round one rectangular block): true optimum
+    20.2788 m, shortcutting alone 20.7679 m — **+2.41%**. That is larger
+    than the 0.20 m goal tolerance, so it failed HĐ-15.1(5) on a route
+    the robot drove perfectly well, and it is the dangerous kind of
+    failure: ``path_efficiency = L_ref / path_length`` would exceed 1 and
+    be clipped, reporting a good run as a perfect one, with the error
+    reading as a property of the candidate.
+
+    **Multi-scale, because purely local relaxation does not converge in
+    useful time.** Pulling each vertex toward the chord of its immediate
+    neighbours is a diffusion: information crawls one vertex per sweep,
+    and on the hall's 401-vertex path 150 sweeps still left +1.35%. So
+    the pull runs at every scale — neighbours at distance n/2, n/4, …, 1.
+    The coarse scales move whole arcs at once and place the path against
+    the corners; the fine scales clean up. Two sweeps of the full ladder
+    land at **+0.00055 m (+0.0027%)** on the hall, and leave the
+    warehouse route unchanged to five decimals, that one having been
+    taut already.
+
+    **Correctness does not rest on this converging.** The caller measures
+    ``simplify_path`` of the result, and every segment that comes out of
+    it is line-of-sight checked against the grid. Relaxation can only
+    *guide* where the vertices sit; it cannot produce a length shorter
+    than a real free path, however badly it behaves.
+
+    The reference stays **un-inflated** (see the module docstring): the
+    shortest path for a point, which is what makes it a property of the
+    problem rather than of somebody's safety margin. A taut path touching
+    a corner is therefore correct, not a violation.
+    """
+    points = [(point.x, point.y) for point in polyline]
+    for _ in range(_TAUT_SWEEPS):
+        moved = False
+        for stride in _strides(len(points)):
+            for index in range(stride, len(points) - stride):
+                pulled = _pull_vertex(
+                    grid, points[index - stride], points[index], points[index + stride]
+                )
+                if pulled is not None:
+                    points[index] = pulled
+                    moved = True
+        if not moved:
+            break
+    return simplify_path(grid, [Point2D(x=x, y=y) for x, y in points])
+
+
+def _strides(count: int) -> list[int]:
+    """Neighbour distances to pull against: ``n/2, n/4, … 1``."""
+    strides: list[int] = []
+    stride = max(1, count // 2)
+    while stride >= 1:
+        strides.append(stride)
+        stride //= 2
+    return strides
+
+
+def _pull_vertex(
+    grid: OccupancyGrid,
+    before: tuple[float, float],
+    vertex: tuple[float, float],
+    after: tuple[float, float],
+) -> tuple[float, float] | None:
+    """Slide one vertex toward the line through its two neighbours.
+
+    Returns the new position, or ``None`` when it cannot usefully move.
+    The target is the foot of the perpendicular — the direction that
+    shortens both legs fastest — and the distance travelled is found by
+    bisection, because the far end is typically inside an obstacle while
+    the near end is free. The boundary between them is where the string
+    comes to rest against the corner.
+    """
+    target = _foot_of_perpendicular(before, vertex, after)
+    if math.dist(vertex, target) < _TAUT_EPS_M:
+        return None
+
+    low, high = 0.0, 1.0
+    best: tuple[float, float] | None = None
+    for _ in range(_TAUT_BISECTIONS):
+        middle = (low + high) / 2.0
+        candidate = (
+            vertex[0] + (target[0] - vertex[0]) * middle,
+            vertex[1] + (target[1] - vertex[1]) * middle,
+        )
+        if _visible(grid, before, candidate) and _visible(grid, candidate, after):
+            best = candidate
+            low = middle
+        else:
+            high = middle
+
+    if best is None or math.dist(vertex, best) < _TAUT_EPS_M:
+        return None
+    return best
+
+
+def _visible(grid: OccupancyGrid, a: tuple[float, float], b: tuple[float, float]) -> bool:
+    return has_line_of_sight(grid, Point2D(x=a[0], y=a[1]), Point2D(x=b[0], y=b[1]))
+
+
+def _foot_of_perpendicular(
+    before: tuple[float, float], vertex: tuple[float, float], after: tuple[float, float]
+) -> tuple[float, float]:
+    """Closest point to ``vertex`` on the segment ``before``–``after``.
+
+    Clamped to the segment: past its ends the perpendicular foot is no
+    longer between the neighbours, and pulling there would lengthen the
+    path rather than shorten it.
+    """
+    dx = after[0] - before[0]
+    dy = after[1] - before[1]
+    span = dx * dx + dy * dy
+    if span == 0.0:
+        return before
+    t = ((vertex[0] - before[0]) * dx + (vertex[1] - before[1]) * dy) / span
+    t = min(1.0, max(0.0, t))
+    return (before[0] + dx * t, before[1] + dy * t)
 
 
 def _world_to_cell(map_data: MapData, point: Point2D) -> tuple[int, int] | None:
