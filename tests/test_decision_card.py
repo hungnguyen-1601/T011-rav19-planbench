@@ -159,7 +159,15 @@ class Run:
         #: sweeps need the metrics, not the scores.
         self.metrics_by_candidate: dict[str, list[EpisodeMetricSet]] = {}
         for owner, common in field:
-            metrics = [episode(owner, ctx, **common) for ctx in self.contexts]
+            # Episodes differ from one another, because real ones do.
+            # Built from identical values these were one episode repeated
+            # thirty times, and G2 counts a replayed set as a single
+            # independent sample (HĐ-7.1) — so the whole field would fail
+            # the gate and there would be nothing to card.
+            metrics = [
+                episode(owner, ctx, **{"path_length_m": 44.0 + index * 0.01, **common})
+                for index, ctx in enumerate(self.contexts)
+            ]
             self.metrics_by_candidate[owner.candidate_id] = metrics
             report = evaluate_gates(
                 owner,

@@ -141,7 +141,20 @@ def run(
         else {"sample_set": sample_set, "environment_variant": "v1"}
     )
     contexts = [context(seed, **variant) for seed in range(n)]
-    metrics = [episode(candidate, ctx, **failures.get(i, {})) for i, ctx in enumerate(contexts)]
+    # Each episode differs slightly, because real ones do. Built from
+    # identical values these fixtures were one episode repeated ``n``
+    # times, which G2 now counts as a single independent sample — the
+    # same flaw that let a warehouse run claim a 3% collision bound from
+    # a candidate that had driven one episode a hundred times. The wobble
+    # is far too small to move any gate threshold.
+    metrics = [
+        episode(
+            candidate,
+            ctx,
+            **{"path_length_m": 44.0 + index * 0.01, **failures.get(index, {})},
+        )
+        for index, ctx in enumerate(contexts)
+    ]
     if pooled_p99_ms is None:
         pooled_p99_ms = max(m.p99_latency_ms for m in metrics)
     return evaluate_gates(
@@ -288,7 +301,7 @@ class TestG2Collisions:
         being read as "no collisions happen"."""
         report = run(modular(), profile(), n=30)
         assert report.g2.statement == (
-            "0 va chạm quan sát trong 30 lần chạy; cận trên 95% dưới phân phối "
+            "0 va chạm quan sát trong 30 lần chạy phân biệt; cận trên 95% dưới phân phối "
             "kịch bản đã mô phỏng: 10.0%"
         )
         assert report.g2.upper_bound_95 == pytest.approx(0.1)
@@ -321,6 +334,79 @@ class TestG2Collisions:
         """Pooling the sets makes 3/N optimistic (HĐ-11.4, §17 ban 7)."""
         with pytest.raises(ValueError, match="evaluation"):
             run(modular(), profile(), n=30, sample_set="neighborhood")
+
+
+class TestG2CountsDistinctEpisodes:
+    """The bound's denominator is independent draws, not table rows.
+
+    Phase 1.4 predicted this exact failure when it read
+    ``DynamicObstacle`` — a deterministic stack on a mission whose
+    traffic never crosses its route replays one episode per seed — and
+    said the gate table was where it had to be stated. The note was
+    written; the check was not. The first hundred-episode warehouse run
+    printed "0 collisions in 100 runs, 95% upper bound 3.0%" for a
+    candidate whose hundred episodes were one episode, and nothing on
+    that card looked wrong.
+    """
+
+    def _replayed(self, n: int = 30, **profile_overrides: object):  # type: ignore[no-untyped-def]
+        """``n`` byte-identical episodes: one run, recorded ``n`` times."""
+        candidate = modular()
+        contexts = [context(seed) for seed in range(n)]
+        metrics = [episode(candidate, ctx) for ctx in contexts]
+        return evaluate_gates(
+            candidate,
+            profile(**profile_overrides),
+            metrics,
+            contexts,
+            pooled_p99_latency_ms=23.0,
+        )
+
+    def test_replayed_episodes_count_once(self) -> None:
+        report = self._replayed(n=30)
+        assert report.g2.n_runs == 30
+        assert report.g2.n_distinct_episodes == 1
+
+    def test_the_bound_uses_the_distinct_count(self) -> None:
+        """3/1, not 3/30. The second number is the dangerous one: it
+        looks like evidence and bounds nothing."""
+        report = self._replayed(n=30)
+        assert report.g2.upper_bound_95 == pytest.approx(3.0)
+        assert "1 lần chạy phân biệt" in report.g2.statement
+
+    def test_a_replayed_set_cannot_pass(self) -> None:
+        """N_min is 30 here and one distinct episode is not 30 of them,
+        so the gate fails — which is the honest verdict, not a warning
+        printed beside a pass."""
+        assert self._replayed(n=30).g2.result == "fail"
+
+    def test_the_note_says_what_happened(self) -> None:
+        note = self._replayed(n=30).g2.note or ""
+        assert "phân biệt" in note
+        assert "30" in note and "1" in note
+
+    def test_a_varied_set_is_unaffected(self) -> None:
+        """The check must not tax a well-formed evaluation set: 30 real
+        episodes still count as 30."""
+        report = run(modular(), profile(), n=30)
+        assert report.g2.n_distinct_episodes == 30
+        assert report.g2.upper_bound_95 == pytest.approx(0.1)
+        assert report.g2.result == "pass"
+
+    def test_identity_is_judged_on_measurements_not_on_context_ids(self) -> None:
+        """``episode_context_id`` hashes the *conditions*, so it is unique
+        by construction even when the conditions made no difference.
+        Counting ids would have found 100 distinct episodes in the very
+        run that had one."""
+        report = self._replayed(n=8)
+        ids = {context(seed).episode_context_id for seed in range(8)}
+        assert len(ids) == 8, "the ids really are all different"
+        assert report.g2.n_distinct_episodes == 1
+
+    def test_both_counts_reach_the_card(self) -> None:
+        card = self._replayed(n=30).to_card()
+        assert card["G2"]["n_runs"] == 30
+        assert card["G2"]["n_distinct_episodes"] == 1
 
 
 class TestG4Realtime:
