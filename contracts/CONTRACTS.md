@@ -1,6 +1,6 @@
 # CONTRACTS.md — Planner Selector
 
-> **Phiên bản hợp đồng:** `contracts_version: 5.0.0`
+> **Phiên bản hợp đồng:** `contracts_version: 6.1.0`
 > **Trạng thái:** cần cả nhóm đọc và ký ở mục 16. Phase 1 (schema gốc) đã hiện thực theo bản 1.1.0; bản 2.0.0 sửa G5 — xem lịch sử phiên bản ở mục 18.
 > **Vị trí:** `contracts/CONTRACTS.md` ở gốc repo (trước đây là `docs/antongduy/CONTRACTS_1.md`).
 > **Tài liệu mẹ:** `docs/antongduy/de-tai-moi-planner-selector.md`. Khi hai tài liệu mâu thuẫn, **CONTRACTS.md thắng** — plan là lý do, contract là luật.
@@ -315,6 +315,16 @@ class TraceRecorder(Protocol):
 
 **Vi phạm trông như thế nào:** một planner gọi thẳng vào nội tại của `SimBackend` để lấy vị trí vật cản, thay vì qua `Observation`. Đây vừa là vi phạm kiến trúc, vừa là gian lận về lớp quan sát (HĐ-7, G6).
 
+### 4.1. Lưới replan là một đặc quyền thông tin đã biết *(ghi ở 6.1.0)*
+
+Khi robot bị chặn, `nav_stack._replan` dựng lưới quy hoạch tạm với **vị trí thật** của vật cản động nung vào (`_planning_grid(map_data, scenario, engine.dynamic_obstacles_now())`). Lý do hợp lý và phải giữ: một planner chỉ nhận bản đồ tĩnh sẽ replan ra đúng lộ trình vừa bị chặn, vì không đầu vào nào của nó thay đổi.
+
+**Hôm nay điều này công bằng** vì mọi candidate chạy được đều là `modular` và nhận cùng một lưới. **Ngày adapter `MonolithicPolicy` tồn tại thì nó hết công bằng:** một policy end-to-end chỉ thấy `Observation`, còn global planner của stack modular thấy vật cản **thật sự ở đâu**. Đó đúng là đặc quyền thông tin mà G6 sinh ra để định giá, và nó sẽ ưu ái stack modular vì một lý do không liên quan tới chất lượng điều hướng.
+
+**Luật:** trước khi bất kỳ candidate `monolithic` nào được chấm, đặc quyền này phải được gỡ, và lời giải hợp lệ là **replan từ `Observation`** — không phải cấp ground truth cho cả hai bên. Cấp cho cả hai chỉ đổi một phép so lệch thành hai phép đo sai.
+
+Chốt chặn đang cài: `test_only_modular_stacks_can_run_today` sẽ đỏ đúng ngày adapter được thêm. Điều khoản này tồn tại vì một chốt chặn nói *"có gì đó đổi"*, còn một điều khoản nói *"phải giải quyết cái gì trước khi đi tiếp"*.
+
 ---
 
 ## HĐ-5 — Trace schema
@@ -371,6 +381,14 @@ Mỗi metric có **đúng một** định nghĩa, viết ở **đúng một** ch
 - `travel_time_s` **không bao giờ** xuất hiện trong O4 ở chế độ `technical` (xem HĐ-9.3).
 - `collision_count` chỉ ở Gate G2, **không** vào O2.
 - `smoothness`, `jerk`, `stop_and_go` là Diagnostic ở MVP; muốn đưa vào Score phải sửa hợp đồng này (MAJOR).
+**Bảo lưu của nhóm (6.1.0): nền tảng không có bộ điều khiển ổn định hướng cuối.** `success` xét **cả** vị trí lẫn hướng theo `goal_tolerance_*`, nhưng simulator dừng episode ngay khi dung sai vị trí được đáp ứng, robot đang quay mặt đi đâu thì kệ. Một deployment đòi hướng vì thế chấm **mọi** candidate là trượt, vì một tính chất của nền tảng chứ không của planner nào.
+
+Nên: `constraints.goal_tolerance_rad < π` bị **từ chối lúc nạp profile**, kèm thông điệp trỏ vào bảo lưu này. Nhiệm vụ có ràng buộc hướng nằm ngoài năng lực đánh giá của dự án — cùng hình dạng bảo lưu với việc thiếu bo mạch đích ở HĐ-7.2, và ghi lại vì cùng một lý do. Khi có bộ điều khiển hướng thì gỡ validator và tăng `contracts_version` MINOR.
+
+Định nghĩa `success` **không đổi** — nhánh kiểm hướng trong `definitions.py` giữ nguyên và vẫn có test. Bảo lưu nói rằng hôm nay không profile hợp lệ nào chạm tới nhánh đó, không nói rằng nhánh đó sai.
+
+**Vì sao là từ chối lúc nạp chứ không phải một ghi chú.** Cả hai profile tham chiếu đều từng mang một đoạn văn giải thích vì sao chúng viết π. Một đoạn văn chỉ bảo vệ được profile mà tác giả của nó đã đọc; profile tiếp theo do người chưa đọc viết. Đây là đúng bài học đã ghi ở 6.0.0, áp cho một chỗ khác.
+
 - **`peak_rss_mb` không bao giờ được đem so với `available_ram_mb`.** RSS của tiến trình Python gồm interpreter, numpy, bản thân simulator và TraceRecorder; Python cũng không trả bộ nhớ đã giải phóng về OS. Ngoài ra một object Python nặng gấp 5–20 lần struct C++ tương đương (node A\*: ~200 byte so với ~40 byte). Con số sai cả một bậc và sai theo chiều không đoán trước được. `peak_rss_mb` chỉ dùng để phát hiện rò rỉ bộ nhớ và so **tương đối** giữa các candidate chạy cùng môi trường.
 
 ---
@@ -400,7 +418,19 @@ Từ vựng chỉ gồm **perception runtime mà deployment phải sở hữu**:
 N_min = ceil(3 / constraints.collision_probability_max)  # 0.01 ⇒ 300
 ```
 
-Báo cáo bắt buộc kèm: `"0 va chạm quan sát trong {N} lần chạy; cận trên 95% dưới phân phối kịch bản đã mô phỏng: {3/N:.1%}"`. Chuỗi "an toàn" **bị cấm** xuất hiện cạnh kết quả G2 (có test kiểm tra chuỗi này trong CI).
+Báo cáo bắt buộc kèm: `"0 va chạm quan sát trong {N_distinct} lần chạy phân biệt; cận trên 95% dưới phân phối kịch bản đã mô phỏng: {3/N_distinct:.1%}"`. Chuỗi "an toàn" **bị cấm** xuất hiện cạnh kết quả G2 (có test kiểm tra chuỗi này trong CI).
+
+**`N` ở đây là số episode PHÂN BIỆT, không phải số dòng.** Quy tắc số 3 giả định các lần chạy độc lập, và **số hàng trong bảng không phải bằng chứng của điều đó**: một stack tất định chạy trên nhiệm vụ mà traffic không bao giờ cắt ngang tuyến đường sẽ sinh ra **cùng một episode, một lần cho mỗi seed** — và một trăm bản sao của một episode chặn xác suất va chạm đúng bằng những gì một episode chặn được.
+
+Phân biệt được xét trên **cái đã đo**, không trên `episode_context_id`: id là hash của **điều kiện**, nên nó duy nhất theo cấu tạo kể cả khi mọi điều kiện hoá ra không tạo khác biệt nào. Hai episode trùng nhau tới chữ số float cuối ở quãng đường, thời gian, khoảng hở, near-miss và va chạm thì không phải "gần nhau" — chúng là **cùng một lần chạy**.
+
+`n_distinct_episodes` và `n_runs` **cả hai** đều phải in trên bảng cổng. In mỗi mẫu số của cận trên thì che mất một bộ bị phát lại; in mỗi số hàng thì đúng là cái đã tạo ra một tấm card tuyên bố cận trên 3,0% từ một candidate lái đúng một episode một trăm lần.
+
+> **Vì sao điều khoản này được viết muộn.** Phase 1.4 đã dự đoán chính xác lỗi này khi đọc `DynamicObstacle` — *"planner tất định + không traffic ⇒ mọi seed cho cùng một episode... ghi vào contract rằng bảng cổng là nơi phải nói thẳng điều đó. **Đây là việc phải làm khi hiện thực G2, đã ghi lại để không rơi**"*. Ghi chú được viết, phép kiểm thì không, và G2 hiện thực ở Phase 3.2 mà không có nó. Lần chạy 100 episode đầu tiên (Phase 5.1) in ra cận trên 3,0% cho một bộ có số mẫu hiệu dụng bằng 1. **Không có gì trên tấm card đó trông sai cả** — đó là lý do luật này phải là code, không phải ghi chú.
+
+**`collision_probability_max` là yêu cầu an toàn của hiện trường, không phải một núm vặn thời lượng chạy** *(ghi ở 6.1.0)*. Mũi tên chạy đúng một chiều: `rủi ro khai báo ⇒ N_min ⇒ số giờ`. Đọc ngược lại — chọn rủi ro cho vừa số giờ máy rảnh — là hạ tiêu chuẩn an toàn của khách hàng cho vừa lịch chạy của mình, và nó đã xảy ra một lần: kho tham chiếu có lúc khai 3% với lý do viết thẳng trong profile là *"vì run phải chia sẻ máy"*. Máy bận không phải một tính chất của nhà kho.
+
+Chạy ít hơn `N_min` vẫn được phép và **không** cần sửa deployment: truyền số episode ở CLI, còn G2 báo `fail` kèm chuỗi *"chỉ {N} lần chạy phân biệt, dưới N_min = …; cận trên {3/N} còn lỏng hơn mức rủi ro đã khai"*. Phép đo giống hệt nhau ở cả hai cách. Khác biệt là hệ **tự khai chưa đạt** thay vì hạ chuẩn xuống cho khớp chính mình.
 
 ### 7.2. G4 — hai pha, và giới hạn của mỗi pha
 
@@ -425,6 +455,19 @@ Robust không phải mù: khi candidate chậm thật, đa số bước đều t
 |---|---|---|---|
 | P1 sàng lọc | máy benchmark (nhanh hơn bo mạch đích) | **điều kiện cần**: trượt ở đây ⇒ chắc chắn trượt ở đích | `screened_on_host` |
 | P2 xác nhận | chạy thẳng trên bo mạch đích, chỉ 2–3 candidate chung kết, ~20 episode | **điều kiện đủ** | `verified_on_target` |
+
+**Ngưỡng G4 là yêu cầu của hiện trường, và candidate phải chạy được ở nhịp đó** *(ghi ở 6.1.0)*. Hai chỗ khác nhau cùng tên `control_period` và chúng đã được phép mâu thuẫn với nhau:
+
+- `profile.robot.control_period` — **yêu cầu**: vòng điều khiển phải đóng nhanh cỡ nào. Đây chính là ngưỡng của G4.
+- `control_period` của local controller — nhịp candidate **thực sự chạy**. `nav_stack` giữ nguyên lệnh cũ giữa hai tick, đúng như một luồng `/cmd_vel` thật.
+
+Không có gì so hai cái đó. G4 đo chi phí của **một** lần gọi controller, nên một candidate đóng vòng ở 10 Hz trên deployment đòi 20 Hz **qua cổng** trong khi trượt mọi hạn chót thứ hai — cổng thấy một lần gọi rẻ, không thấy một lần gọi trễ.
+
+**Luật:** nhịp của local controller phải **≤** `profile.robot.control_period`, kiểm **lúc khởi động** (`validate_control_rate`), cùng hình dạng "fail at startup" của HĐ-1.4. Controller không khai nhịp riêng thì chạy mỗi bước mô phỏng, luôn thoả.
+
+**Hệ quả đã phải sửa:** cả hai profile tham chiếu từng khai `control_period: 0.1` (10 Hz) thay vì 20 Hz, lý do ghi trong file là *"DWA Python không tính nổi một bước điều khiển trong 50 ms"*. Tức **ngưỡng cổng bị nới gấp đôi vì candidate không qua nổi nó**. Lý do đó đã hết đúng mà không ai để ý: sau khi 3.0.0 đổi G4 sang p99 gộp và Phase 5.1 ghim nhân, p99 đo được là **10,81 ms** (`astar+dwa`) và **16,10 ms** (`rrtstar+dwa`) — thừa sức dưới 50 ms. Nhượng bộ đó là hoá thạch của hai lỗi đã được sửa từ trước.
+
+Và nới nó **không** mua được gì về thời gian chạy: `simulation_dt = min(MAX_SIMULATION_DT, control_period)` với `MAX = 0,05`, nên 10 Hz và 20 Hz tích phân thế giới y hệt nhau. Không có động lực nào để nới lại, và có test khẳng định điều đó.
 
 **Cấm dùng hệ số quy đổi giữa hai máy.** A\* (nặng truy cập bộ nhớ) và DWA (nặng tính toán) co giãn khác nhau giữa x86 và ARM; một hệ số dùng chung là con số bịa. Nếu chưa chạy P2 thì trạng thái là `screened_on_host` và **không được phát biểu candidate đạt thời gian thực trên bo mạch đích**.
 
@@ -725,7 +768,7 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
 
 ```json
 {
-  "contracts_version": "5.0.0",
+  "contracts_version": "6.1.0",
   "recommendation_scope": "MISSION_LEVEL | DEPLOYMENT_LEVEL | ROBUST_DEPLOYMENT_LEVEL",
   "experiment_scope": "full_stack_selection",
   "decision_mode": "technical | business_adjusted",
@@ -788,7 +831,7 @@ Mọi lần ra quyết định ghi một `manifest.json`:
 
 ```json
 {
-  "contracts_version": "5.0.0",
+  "contracts_version": "6.1.0",
   "git_sha": "...",
   "docker_image_digest": "sha256:...",
   "task_profile_id": "warehouse_a_v1",
@@ -857,6 +900,9 @@ Chưa cần: web UI, RBAC, MLflow, neighborhood, Pareto, độ nhạy.
 
    **Hệ quả phải biết:** với episode dừng bên trong quả cầu, `path_efficiency = L_ref / path_length_m` vượt 1 và bị clip về 1,0 (HĐ-6). Sai lệch bị chặn bởi `goal_tolerance_m / L_ref` — 5% trên một nhiệm vụ 4 m, 0,5% trên nhiệm vụ 40 m của kho tham chiếu. Nghĩa là O3 **bão hòa** với những lộ trình gần tối ưu trên nhiệm vụ ngắn, và không còn phân biệt được ở đoạn đó. Chấp nhận có ý thức ở MVP; sửa đúng là đo `L_ref` tới quả cầu dung sai chứ không tới tâm, và đó là một thay đổi ngữ nghĩa của HĐ-6 (MAJOR) nên không làm trong bản này.
 6. `peak_search_nodes` ≤ `costmap_cells` ở mọi episode. Vi phạm nghĩa là bộ đếm node đang đếm trùng, và `memory_estimate_mb` sai theo.
+7. **Bộ kiểm công bằng xanh** *(thêm ở 6.1.0)* — `tests/test_fairness.py` (tầng chấm điểm mù với danh tính) và `tests/test_simulator_fairness.py` (hai candidate chạy trong cùng một thế giới). Đây là **điều kiện cần để công bố bất kỳ phép so nào**, không riêng lát cắt dọc.
+
+   **Vì sao tiêu chí này được thêm muộn, và vì sao nó không thừa.** Sáu tiêu chí trên hỏi *"pipeline có chạy thông và tái lập được không"*. Không tiêu chí nào hỏi *"phép so này có công bằng không"*. Một định nghĩa "xong" như thế thưởng cho **một tấm card render được**: khi card không ra, đường ít kháng cự nhất là chỉnh đầu vào, và mọi lần chỉnh vẫn qua đủ sáu tiêu chí vì không tiêu chí nào nhìn vào đầu vào. Điều đó đã xảy ra thật — bốn thay đổi do kết quả dẫn dắt (tham số DWA của chính candidate đang đo, đổi mission, đổi traffic) lọt qua toàn bộ vòng nghiệm thu và chỉ bị bắt khi dev chặn lại hỏi.
 
 ### 15.2. Không quay lại sửa phương pháp luận
 
@@ -867,7 +913,14 @@ Sau khi hợp đồng được ký, **chỉ sửa plan khi lát cắt dọc phá
 - có test cho phần logic mới;
 - không thêm metric nào ngoài `metrics/definitions.py`;
 - không hardcode ngưỡng nào vốn thuộc `task_profile`;
-- nếu đụng vào một hợp đồng ⇒ đã tăng `contracts_version` trong cùng PR.
+- nếu đụng vào một hợp đồng ⇒ đã tăng `contracts_version` trong cùng PR;
+- **mọi hằng số mới hoặc đổi giá trị trong một profile phải trả lời được một câu** *(thêm ở 6.1.0)*:
+
+  > **Con số này đến từ hiện trường, hay đến từ thứ máy/code của tôi chạy nổi?**
+
+  Vế sau thì nó **không** thuộc file profile. Nó thuộc mục bảo lưu của hợp đồng này, ở đó nó thu hẹp phạm vi tuyên bố một cách nhìn thấy được, thay vì nới một ngưỡng ở chỗ không ai đọc.
+
+  Câu hỏi này bổ sung cho câu đã có — *"nếu kết quả ra ngược lại, tôi có làm thay đổi này không?"* — và bắt một loại lệch khác mà câu kia bỏ sót. Bốn chỗ lệch tìm được ngày 2026-08-11 (`control_period` nới ngưỡng G4, DWA `7×15` chọn theo đồng hồ, `goal_tolerance_rad` tắt điều kiện hướng, rủi ro 3% suy từ giờ máy) **không cái nào thiên vị candidate nào** — cả bốn nới đều cho mọi bên, nên mọi phép kiểm đối xứng đều xanh. Chúng không phá tính công bằng; chúng phá tính đúng đắn.
 
 ---
 
@@ -950,9 +1003,40 @@ Hai định danh frozen của contract (`candidate_id`, `episode_context_id`) d�
 
 `clearance_m` của HĐ-5 đo từ **mặt** robot; anchor `v1.0` viết theo thang **tâm**. Hai thang lệch đúng một bán kính. Trên kho tham chiếu, sai lệch này không làm điểm số hơi lệch mà làm nó chết hẳn: robot 0,52 m trong khe kệ 0,68 m đo được 0,04 m khoảng hở mặt, mọi episode nằm dưới `bad = 0,273` ⇒ `u = 0` ⇒ `U_S = 0` cho **mọi** candidate. Objective an toàn mang trọng số 0,10 và không phân biệt được gì.
 
+| 6.0.0 | 2026-08-11 | **MAJOR** | Phát hiện bởi lần chạy 100 episode đầu tiên (Phase 5.1). ① **G2 tính cận trên trên số episode PHÂN BIỆT**, không phải số dòng; câu bắt buộc HĐ-7.1 đổi theo (`{N} lần chạy phân biệt`) và `n_distinct_episodes` là trường bắt buộc trên bảng cổng ⇒ MAJOR. ② HĐ-2: obstacle `periodic` phải có `seed_time_offset >= period` — offset một phần chu kỳ là cùng lỗi ở dạng im lặng hơn. ③ HĐ-12 thêm `delta_u_mean` để CI có chủ sở hữu nhìn thấy được. Chi tiết dưới đây. |
 | 5.0.0 | 2026-08-10 | **MAJOR** | Hai đổi ngữ nghĩa, cùng một lượt. ① **HĐ-13 lưu bản ghi context đầy đủ** (`episode_contexts`) thay cho danh sách id (`episode_context_ids`) — bỏ một trường ⇒ MAJOR. ② **HĐ-8.3 luật 3 đổi cách quét anchor**: xê dịch bề rộng thang, từng metric một, thay cho nhân cả hai đầu của mọi anchor. Chi tiết dưới đây. |
 | 4.2.0 | 2026-08-10 | MINOR | HĐ-10.2 viết đủ: **sàn `n < 10` không ra phán quyết** (bootstrap phân vị trên 1 điểm cho CI rộng 0 và kết luận lấn át với độ tin cậy tối đa — phát hiện khi chạy chính bài kiểm tra "không dữ liệu thì làm gì" của mục này), điều kiện **không-thể-lấn-át** đọc từ cận trên để tách `PARETO_FRONTIER` khỏi `UNCERTAIN_DOMINANCE`, và candidate đơn độc luôn `UNCERTAIN_DOMINANCE`. Hiện thực ở `decision/pareto.py` (Phase 5.2). `alternative` và `pareto_label` của HĐ-12 lần đầu có giá trị thật; cả hai trường đã tồn tại từ 1.0.0. |
 | 4.1.0 | 2026-08-10 | MINOR | HĐ-11.5 viết đủ: cách quét trọng số (hai cực, ba cái còn lại giữ tỷ lệ, margin = lệch nhỏ nhất trong tám hướng, 1.0 khi không lật), tiêu chí lật là candidate chứ không phải nhãn, quét lưới trước chia đôi sau, kết quả quét phải tự khai, và cảnh báo thang chết. Hiện thực ở `decision/sensitivity.py` (Phase 5.3). Không đổi trường nào của HĐ-12 — ba trường `evidence` đã tồn tại từ 1.0.0 và tới bản này mới được điền. |
+
+| 6.1.0 | 2026-08-11 | MINOR | Sáu điều khoản, tất cả cùng một loại lỗi: **ngưỡng bị nới cho vừa thứ code làm nổi, chứ không lấy từ hiện trường**. ① HĐ-7.2: ngưỡng G4 là yêu cầu hiện trường; nhịp local controller phải ≤ `robot.control_period`, kiểm lúc khởi động (`validate_control_rate`) — cả hai profile tham chiếu về 20 Hz. ② HĐ-7.1: `collision_probability_max` không phải núm vặn thời lượng; kho tham chiếu về 1%. ③ HĐ-6: bảo lưu không có bộ điều khiển hướng cuối, `goal_tolerance_rad < π` bị từ chối lúc nạp. ④ HĐ-4.1: lưới replan là đặc quyền thông tin đã biết, phải gỡ trước khi chấm candidate `monolithic`. ⑤ HĐ-15.1 tiêu chí **7**: bộ kiểm công bằng xanh là điều kiện cần để công bố bất kỳ phép so nào. ⑥ HĐ-15.3: câu hỏi bắt buộc *"con số này đến từ hiện trường, hay từ thứ máy tôi chạy nổi?"*. Không trường nào bị xoá, không ngữ nghĩa metric hay cổng nào đổi ⇒ MINOR. Chi tiết dưới đây. |
+
+**Chi tiết 6.1.0 — bốn chỗ nới đều cho cả hai bên, nên không phép kiểm đối xứng nào bắt được.**
+
+Lượt kiểm ngày 2026-08-11 (`docs/antongduy/notes/2026-08-11/tongduyan_xac-minh-lech-huong-muc-tieu.md`) tìm được bốn chỗ mà một hằng số mô tả thế giới đã được đặt theo thứ công cụ chịu nổi. Điểm chung của cả bốn: **không cái nào thiên vị candidate nào**. 53 test công bằng vẫn xanh với tất cả, vì chúng kiểm đối xứng, còn bốn chỗ này nới **đều cho cả hai bên**. Chúng không phá tính công bằng của phép so; chúng phá tính đúng đắn của thế giới mà phép so diễn ra trong đó.
+
+Nặng nhất là `control_period`, vì nó vừa là ngưỡng G4 vừa là thứ có một **vòng lặp tự thưởng**: code chậm ⇒ khai chu kỳ dài ⇒ ngưỡng cổng rộng hơn. Kiểm lại thì vòng lặp đó không đóng — `simulation_dt` bị chặn ở 0,05 nên nới chu kỳ không mua được thời gian chạy — và nhượng bộ 10 Hz đã lỗi thời từ lúc 3.0.0 đổi sang p99 gộp và Phase 5.1 ghim nhân. Có test khẳng định cả hai điều đó, để động lực nới lại không bao giờ xuất hiện.
+
+Bên dưới nó là một lỗ hổng chưa ai gọi tên: **G4 đo chi phí một lần gọi controller, không đo tần suất gọi.** Một candidate khai nhịp 10 Hz trên deployment đòi 20 Hz qua cổng như thường, giữ mỗi lệnh suốt hai chu kỳ của deployment. Đó là thứ khiến việc hạ deployment xuống 10 Hz "hoạt động" ngay từ đầu. `validate_control_rate` đóng nó lại.
+
+**Đính chính một dòng của 6.0.0.** Mục ③ trong "ba sửa chữa" của 6.0.0 ghi rằng deployment tham chiếu được thêm `pallet_truck` trên hành lang chính. **Thay đổi đó đã bị hoàn nguyên và không còn trong repo**: rà lại bằng câu hỏi *"nếu kết quả ra ngược lại, tôi có làm thay đổi này không?"* cho thấy nó do kết quả dẫn dắt — thêm traffic vào cho tới khi bộ mẫu trông dùng được. Hai sửa chữa còn lại của 6.0.0 (đếm episode phân biệt ở G2, `seed_time_offset ≥ period`) đứng nguyên, và chúng mới là hai cái làm kết luận của hệ **yếu đi**. Lời giải đúng cho số mẫu hiệu dụng là nguồn ngẫu nhiên theo seed ở tầng simulator (nhiễu cảm biến), không phải bày traffic cho vừa tuyến đường.
+
+**Chi tiết 6.0.0 — một tấm card tuyên bố cận trên va chạm 3,0% từ một mẫu duy nhất.**
+
+Lần chạy 100 episode đầu tiên trên kho in ra, cho `astar+dwa`: *"0 va chạm quan sát trong 100 lần chạy; cận trên 95%: 3,0%"*. Sáu tiêu chí HĐ-15.1 xanh. Không có gì trên tấm card trông sai.
+
+Đo lại thì cả 100 episode của A\* **giống hệt nhau tới chữ số float cuối** — utility per-episode có đúng 1 giá trị khác nhau trên 100. Số mẫu hiệu dụng là 1; quy tắc số 3 cho `3/1`, tức run đó không chặn được gì.
+
+Truy nguyên nhân theo ba bước, mỗi bước loại một giả thuyết: seed **có** tới được vật cản (`_seed_time_shift` được áp trong `position_at`); xe nâng **có** đổi pha theo seed (y = 12,3…17,7 m tại t = 30 s); robot **có** đi xuyên hành lang của nó. Cái sai là **biên độ**: `seed_time_offset = 6 s` trên chu kỳ `24 s` chỉ quét một phần tư pha, robot cắt qua lane đó trong cửa sổ ~2 giây, và **0/100 seed đưa hai bên vào trong 2 m** — gần nhất 2,53 m, trong khi chạm nhau là 0,66 m.
+
+Ba sửa chữa, ở ba tầng khác nhau, vì lỗi này lọt qua cả ba:
+
+1. **Cổng (HĐ-7.1).** Mẫu số của cận trên là số episode **phân biệt**, xét trên cái đã đo chứ không trên `episode_context_id` — id là hash của *điều kiện*, nên nó duy nhất theo cấu tạo kể cả khi mọi điều kiện hoá ra không tạo khác biệt nào. Đếm id sẽ tìm thấy đúng 100 episode phân biệt trong chính lần chạy chỉ có một.
+2. **Schema (HĐ-2).** Obstacle `periodic` phải dịch trọn ít nhất một chu kỳ. Thư viện scenario đã theo quy ước này trong comment từ đầu (*"one full cycle: seeds meet the pedestrian anywhere"*); nó chưa bao giờ được cưỡng chế, và profile viết sau không theo.
+3. **Deployment tham chiếu.** Thêm traffic trên chính hành lang robot đi (`pallet_truck` tại x = 22, nơi tuyến đo được đi qua ở t ≈ 33 s), vì xe nâng nằm ở một đầu tuyến và giỏi lắm cũng chỉ gặp được thiểu số seed.
+
+> **Vì sao điều này lọt được tới tận đây.** Phase 1.4 đã đọc `DynamicObstacle`, dự đoán chính xác lỗi này, viết validator cho `offset = 0`, và ghi lại: *"cùng vấn đề số mẫu hiệu dụng tồn tại ở đó... **Đây là việc phải làm khi hiện thực G2, đã ghi lại để không rơi**"*. Ghi chú được viết. Validator bắt `offset = 0` — và chính lời khuyên của nó, *"đặt seed_time_offset > 0 (a few seconds)"*, là cái profile đã làm theo. Phép kiểm ở G2 thì không bao giờ được viết.
+>
+> Bài học ghi vào đây vì nó lặp lại: **một ghi chú "nhớ làm ở phase sau" không phải một biện pháp bảo vệ.** Chỉ code mới là.
 
 **Chi tiết 5.0.0 ① — HĐ-13 không tái lập được, suốt từ 1.0.0.**
 
