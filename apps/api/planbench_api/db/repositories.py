@@ -34,6 +34,11 @@ from planbench_api.accounts import (
 )
 from planbench_api.approval import ApprovalRecord, BenchmarkState
 from planbench_api.artifacts import ArtifactStore
+from planbench_api.db.decision_repositories import (
+    SqlCandidateRepository,
+    SqlDecisionRunRepository,
+    SqlTaskProfileRepository,
+)
 from planbench_api.db.models import (
     ApprovalRow,
     BenchmarkRow,
@@ -601,6 +606,9 @@ class SqlRepositoryHub:
         self.robot_profiles = SqlRobotProfileRepository(sessions)
         self.models = SqlModelRepository(sessions)
         self.conversations = SqlConversationRepository(sessions)
+        self.task_profiles = SqlTaskProfileRepository(sessions)
+        self.candidates = SqlCandidateRepository(sessions)
+        self.decision_runs = SqlDecisionRunRepository(sessions)
 
 
 # -- row <-> domain ----------------------------------------------------

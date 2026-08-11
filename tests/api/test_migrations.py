@@ -142,18 +142,24 @@ def test_indexes_cover_the_hot_lookups(database):
 
 
 class TestDecisionLayerTables:
-    """Revision 0005 — HĐ-2, HĐ-1 and HĐ-12/13 given somewhere to live.
+    """Revisions 0005 and 0006 — HĐ-2, HĐ-1 and HĐ-12/13 given somewhere
+    to live, and then given the *right shape*.
 
     ``test_migration_matches_the_models`` above already compares every
     table column by column, so these check the decisions that comparison
-    cannot see: which key was chosen, what a delete is allowed to do, and
-    what stays out of the database entirely.
+    cannot see: which key was chosen, what a delete is allowed to do,
+    what stays out of the database entirely — and which columns are
+    allowed to be absent.
     """
 
     def test_the_three_tables_exist(self, database):
         command.upgrade(alembic_config(database), "head")
         tables = set(inspect(create_engine(database)).get_table_names())
-        assert {"task_profiles", "candidates", "decision_cards"} <= tables
+        assert {"task_profiles", "candidates", "decision_runs"} <= tables
+        assert "decision_cards" not in tables, (
+            "0006 replaced decision_cards with decision_runs; a leftover table under the "
+            "old name describes the wrong shape and invites writes nobody reads"
+        )
 
     def test_a_candidate_is_keyed_by_its_own_hash(self, database):
         """HĐ-1.3: ``candidate_id`` identifies the configuration.
@@ -167,40 +173,85 @@ class TestDecisionLayerTables:
         inspector = inspect(create_engine(database))
         assert inspector.get_pk_constraint("candidates")["constrained_columns"] == ["candidate_id"]
 
-    def test_a_card_cannot_outlive_its_deployment(self, database):
-        """RESTRICT, not CASCADE. A Decision Card is a statement about one
-        deployment profile; deleting the profile out from under it would
-        leave a recommendation nobody can interpret, and silently
-        deleting the card instead would destroy the audit trail. Both are
-        worse than refusing the delete.
+    def test_a_run_always_has_evidence_and_sometimes_has_a_card(self, database):
+        """The point of 0006, asserted on nullability.
+
+        ``0005`` made ``card`` and ``recommended_candidate_id`` NOT NULL,
+        which says every evaluation ends in a ranking. The first MVP run
+        disproved that in a day: three comparisons out of three produced
+        no card, because a card needs *two* candidates through all six
+        gates and only one of four got there. Each of those runs still
+        carried a full gate table — the very thing HĐ-12 puts on a card.
+
+        So the nullability is the contract here, not decoration: evidence
+        is mandatory, a recommendation is not.
         """
         command.upgrade(alembic_config(database), "head")
-        keys = inspect(create_engine(database)).get_foreign_keys("decision_cards")
-        assert keys, "decision_cards has no foreign key to task_profiles"
+        nullable = {
+            column["name"]: column["nullable"]
+            for column in inspect(create_engine(database)).get_columns("decision_runs")
+        }
+        assert nullable["report"] is False, "a run without evidence is not a run"
+        for optional in ("card", "manifest", "recommended_candidate_id", "status"):
+            assert nullable[optional] is True, (
+                f"{optional} must be nullable — a run that could not be ranked is a result, "
+                "and a schema that refuses to store it puts pressure on every run to be "
+                "rankable"
+            )
+
+    def test_the_kind_of_artifact_is_a_column_not_a_json_field(self, database):
+        """"Show me the runs that could not be ranked" is a day-one
+        question. Buried in the JSON body it would be a table scan, and
+        the answer people cannot query is the answer they stop asking."""
+        command.upgrade(alembic_config(database), "head")
+        inspector = inspect(create_engine(database))
+        columns = {c["name"] for c in inspector.get_columns("decision_runs")}
+        assert "artifact_kind" in columns
+        indexed = {tuple(index["column_names"]) for index in inspector.get_indexes("decision_runs")}
+        assert ("artifact_kind",) in indexed
+
+    def test_a_run_cannot_outlive_its_deployment(self, database):
+        """RESTRICT, not CASCADE. A run is a statement about one
+        deployment profile; deleting the profile out from under it would
+        leave a result nobody can interpret, and silently deleting the
+        run instead would destroy the audit trail. Both are worse than
+        refusing the delete.
+        """
+        command.upgrade(alembic_config(database), "head")
+        keys = inspect(create_engine(database)).get_foreign_keys("decision_runs")
+        assert keys, "decision_runs has no foreign key to task_profiles"
         assert keys[0]["referred_table"] == "task_profiles"
         assert keys[0]["options"].get("ondelete") == "RESTRICT"
 
     def test_traces_are_referenced_not_stored(self, database):
-        """D15. The card and manifest are kilobytes and belong in the
-        row; the Parquet traces are megabytes per episode and stay in the
-        artifact store. The checksum is what makes the reference
+        """D15. The report, card and manifest are kilobytes and belong in
+        the row; the Parquet traces are megabytes per episode and stay in
+        the artifact store. The checksum is what makes the reference
         trustworthy — a URI alone cannot say the files it points at are
-        the ones this card was computed from.
+        the ones this run was computed from.
         """
         command.upgrade(alembic_config(database), "head")
         columns = {
             column["name"]
-            for column in inspect(create_engine(database)).get_columns("decision_cards")
+            for column in inspect(create_engine(database)).get_columns("decision_runs")
         }
-        assert {"card", "manifest", "run_uri", "run_checksum"} <= columns
+        assert {"report", "card", "manifest", "run_uri", "run_checksum"} <= columns
         assert not {name for name in columns if "trace" in name or "parquet" in name}
 
     def test_the_lookups_the_api_will_issue_are_indexed(self, database):
         command.upgrade(alembic_config(database), "head")
         inspector = inspect(create_engine(database))
-        indexed = {
-            tuple(index["column_names"]) for index in inspector.get_indexes("decision_cards")
-        }
+        indexed = {tuple(index["column_names"]) for index in inspector.get_indexes("decision_runs")}
         assert ("task_profile_id",) in indexed
         assert ("recommended_candidate_id",) in indexed
         assert ("status",) in indexed
+
+    def test_downgrade_puts_the_old_table_back(self, database):
+        """0006 drops a table, so its downgrade has to recreate it — a
+        migration that cannot be undone is one nobody dares apply."""
+        config = alembic_config(database)
+        command.upgrade(config, "head")
+        command.downgrade(config, "0005")
+        tables = set(inspect(create_engine(database)).get_table_names())
+        assert "decision_cards" in tables
+        assert "decision_runs" not in tables
