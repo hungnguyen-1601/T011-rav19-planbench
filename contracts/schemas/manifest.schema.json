@@ -248,6 +248,22 @@
           }
         }
       }
+    },
+    "sensor_noise": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "HĐ-2.5 amplitudes for this run. Required on the manifest because episode_context_id does not hash them: two runs at the same seeds under different sigma share every context id while being two experiments.",
+      "properties": {
+        "lidar_range_sigma_m": {
+          "type": "number",
+          "minimum": 0
+        },
+        "wheel_slip_fraction": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1
+        }
+      }
     }
   }
 }

@@ -55,7 +55,9 @@ from planbench_benchmark.episode import scenario_for
 from planbench_benchmark.task_map import load_task_map
 from planbench_schemas.dynamic import position_at
 from planbench_schemas.episode_context import EpisodeContext
+from planbench_schemas.sensor import SensorNoise
 from planbench_schemas.task_profile import TaskProfile
+from planbench_simulator.noise import NoiseModel
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 HALL = REPO_ROOT / "profiles" / "open_hall_v1.yaml"
@@ -197,15 +199,70 @@ class TestSameRobotEmbodiment:
 
 
 class TestSameExternalRandomness:
-    """Invariant 3 — the one that will matter most when noise arrives.
+    """Invariant 3 — and the noise it was written in advance of.
 
-    Today the world draws no random numbers at all: obstacle motion is a
-    closed-form function of time and the episode seed. That makes this
-    invariant hold trivially *now*, which is exactly why the guard is
-    worth having *now* — the sensor-noise work will add the project's
-    first per-step world randomness, and if it reaches for a shared
-    generator these tests are what says so.
+    It used to hold trivially: the world drew no random numbers at all,
+    obstacle motion being a closed-form function of time and the episode
+    seed. The guard was written then anyway, against the day per-step
+    randomness arrived. It has now arrived
+    (:mod:`planbench_simulator.noise`), and the invariant survives for a
+    specific reason: every draw is a pure function of ``(seed, stream,
+    step)`` rather than the next value off a shared stream, so a
+    candidate that steps or replans differently cannot shift anybody
+    else's noise.
     """
+
+    def test_noise_is_the_episodes_not_the_candidates(
+        self, warehouse: TaskProfile, contexts: tuple[EpisodeContext, ...]
+    ) -> None:
+        """The amplitudes come from the deployment. A candidate able to
+        declare its own would be choosing its own exam."""
+        for context in contexts:
+            built = scenario_for(warehouse, context)
+            assert built.sensor_noise == warehouse.environment.sensor_noise
+
+    def test_two_candidates_meet_the_same_noise_at_every_step(self) -> None:
+        """The property the whole indexed-not-consumed design exists for.
+
+        Two candidates in one episode context run different numbers of
+        steps and replan at different moments. Drawing sequentially would
+        make the noise a function of that behaviour, so the two would
+        face different worlds under one ``episode_context_id`` — this
+        invariant broken by the very fix meant to preserve it.
+        """
+        spec = SensorNoise(lidar_range_sigma_m=0.02, wheel_slip_fraction=0.02)
+        one = NoiseModel(spec=spec, seed=11)
+        other = NoiseModel(spec=spec, seed=11)
+        # "Other candidate" = the same episode queried in a different
+        # order, after a different number of prior draws.
+        _ = [one.slip_factors(step) for step in range(50)]
+        for step in (0, 7, 40):
+            assert one.slip_factors(step) == other.slip_factors(step)
+
+    def test_planning_draws_cannot_move_the_noise_either(self, warehouse: TaskProfile) -> None:
+        """The same guard as for obstacle motion, one layer over: a
+        planner exhausting a global generator must not shift the world's
+        draws."""
+        spec = SensorNoise(lidar_range_sigma_m=0.05, wheel_slip_fraction=0.05)
+        before = NoiseModel(spec=spec, seed=3).slip_factors(9)
+
+        rng = np.random.default_rng(999)
+        rng.random(2048)
+        np.random.random(64)
+        random.random()
+
+        assert NoiseModel(spec=spec, seed=3).slip_factors(9) == before
+
+    def test_a_deployment_that_declares_nothing_stays_deterministic(
+        self, warehouse: TaskProfile
+    ) -> None:
+        """Default off, and off is exact. Every result stored before the
+        noise model existed was produced under a world that drew nothing,
+        so a profile that says nothing must still draw nothing."""
+        assert warehouse.environment.sensor_noise.active is False
+        model = NoiseModel(spec=warehouse.environment.sensor_noise, seed=1)
+        assert model.slip_factors(5) == (1.0, 1.0)
+        assert model.lidar_offsets(5, 16) is None
 
     def test_the_world_seed_is_the_episodes_not_the_candidates(
         self, warehouse: TaskProfile, contexts: tuple[EpisodeContext, ...]
@@ -509,12 +566,32 @@ class TestTheReplanGridIsAKnownInformationAsymmetry:
         """``dynamic_obstacles_now`` is the engine's ground truth. It may
         be read *between* control steps to rebuild a planning grid; it
         must never be reachable through ``get_observation``, which is
-        what every candidate type sees."""
+        what every candidate type sees.
+
+        Asserted over the whole observation path rather than one method:
+        adding the noise model put a helper between the two, and a check
+        that only read ``get_observation`` would have gone quiet at
+        exactly the moment a new layer appeared.
+        """
         from planbench_simulator import engine as engine_module
 
-        observation_source = inspect.getsource(engine_module.SimulationEngine.get_observation)
-        assert "dynamic_obstacles_now" not in observation_source
-        assert "_sensor_grid_now" in observation_source
+        path = "".join(
+            inspect.getsource(getattr(engine_module.SimulationEngine, name))
+            for name in ("get_observation", "_measured_ranges")
+        )
+        assert "dynamic_obstacles_now" not in path
+        assert "_sensor_grid_now" in path
+
+    def test_measurement_noise_does_not_reach_the_collision_test(self) -> None:
+        """LiDAR noise is an error in what the robot *reads*. A collision
+        judged on a noisy pose would be a different world, not a robot
+        that measures poorly — so the termination check must not consult
+        the noise model at all."""
+        from planbench_simulator import engine as engine_module
+
+        source = inspect.getsource(engine_module.SimulationEngine._check_termination)
+        assert "_noise" not in source
+        assert "lidar" not in source.lower()
 
 
 class TestTheSimulatorIsDeterministic:

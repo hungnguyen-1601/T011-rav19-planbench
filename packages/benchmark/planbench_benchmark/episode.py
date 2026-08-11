@@ -104,6 +104,10 @@ def scenario_for(profile: TaskProfile, context: EpisodeContext) -> Scenario:
         timeout_seconds=profile.constraints.episode_timeout_s,
         simulation_dt=min(MAX_SIMULATION_DT, profile.robot.control_period),
         dynamic_obstacles=profile.environment.dynamic_obstacles,
+        # From the deployment, like everything else here. A candidate
+        # that could declare its own noise amplitude would be choosing
+        # its own exam.
+        sensor_noise=profile.environment.sensor_noise,
         random_seed=context.seed,
         stuck_time_window=profile.constraints.stuck_threshold_s,
     )

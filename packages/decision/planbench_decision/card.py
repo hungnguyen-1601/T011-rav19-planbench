@@ -63,6 +63,7 @@ from planbench_decision.sensitivity import AnchorStability, WeightStability
 from planbench_decision.stats import CandidateEvidence, Recommendation, RecommendationStatus
 from planbench_schemas.contracts import CONTRACTS_VERSION
 from planbench_schemas.episode_context import EpisodeContext
+from planbench_schemas.sensor import SensorNoise
 from planbench_schemas.task_profile import ClaimLevel, TaskProfile
 
 __all__ = [
@@ -350,6 +351,15 @@ class Manifest(BaseModel):
     preference_profile: str
     decision_mode: str
     travel_time_accounting: str
+    #: The deployment's declared measurement and actuation error.
+    #:
+    #: Recorded because ``episode_context_id`` hashes exactly four things
+    #: (HĐ-3.1) and the noise amplitude is not one of them. Two runs at
+    #: the same seeds under different sigma therefore produce the *same*
+    #: set of context ids while being two different experiments — without
+    #: this field a manifest cannot tell them apart, and whoever rebuilds
+    #: the card rebuilds a different one with nothing to warn them.
+    sensor_noise: SensorNoise = Field(default_factory=SensorNoise)
     candidates: tuple[str, ...]
     #: ``"evaluation"`` / ``"neighborhood"`` → the conditions themselves.
     episode_contexts: dict[str, tuple[EpisodeContext, ...]]
@@ -373,6 +383,7 @@ class Manifest(BaseModel):
             "preference_profile": self.preference_profile,
             "decision_mode": self.decision_mode,
             "travel_time_accounting": self.travel_time_accounting,
+            "sensor_noise": self.sensor_noise.model_dump(),
             "candidates": list(self.candidates),
             "episode_contexts": {
                 key: [context.model_dump(mode="json") for context in value]
@@ -518,6 +529,7 @@ def build_manifest(
         preference_profile=settings.profile_label,
         decision_mode=settings.decision_mode,
         travel_time_accounting=settings.travel_time_accounting,
+        sensor_noise=profile.environment.sensor_noise,
         candidates=tuple(sorted(gate_reports)),
         # Sorted by id so a rebuild produces the same file byte for byte
         # (HĐ-13), which the caller's iteration order would not.

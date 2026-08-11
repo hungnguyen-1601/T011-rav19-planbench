@@ -39,7 +39,7 @@ from planbench_schemas.episode import (
     ObstacleSnapshot,
     TrajectoryPoint,
 )
-from planbench_schemas.geometry import EPS, Point2D, euclidean_distance, normalize_angle
+from planbench_schemas.geometry import EPS, Point2D, Pose2D, euclidean_distance, normalize_angle
 from planbench_schemas.map import MapData
 from planbench_schemas.robot import RobotState, SimAction
 from planbench_schemas.scenario import CircleObstacle, Scenario
@@ -47,6 +47,7 @@ from planbench_simulator.collision import collides_with_grid, collides_with_obst
 from planbench_simulator.grid import OccupancyGrid, rasterize_obstacles
 from planbench_simulator.kinematics import step as kinematics_step
 from planbench_simulator.lidar import scan
+from planbench_simulator.noise import NoiseModel
 
 
 class EngineState(StrEnum):
@@ -66,6 +67,7 @@ class SimulationEngine:
         self._grid: OccupancyGrid | None = None
         self._sensor_grid: OccupancyGrid | None = None
         self._scenario: Scenario | None = None
+        self._noise: NoiseModel | None = None
         self._state = EngineState.IDLE
         self._status = EpisodeStatus.RUNNING
         self._reason = ""
@@ -114,6 +116,9 @@ class SimulationEngine:
         )
         self._sensor_grid = OccupancyGrid(sensor_map, self._grid.unknown_as_occupied)
         self._scenario = scenario
+        # Fixed by the episode's own seed, so the draws are reproducible
+        # from the context id alone and never from the clock (HĐ-3.2).
+        self._noise = NoiseModel(spec=scenario.sensor_noise, seed=scenario.random_seed)
         self._state = EngineState.IDLE
 
     def reset(self) -> None:
@@ -143,7 +148,13 @@ class SimulationEngine:
         scenario = self._scenario
         dt = scenario.simulation_dt
 
-        self._robot = kinematics_step(self._robot, action, scenario.robot, dt)
+        # Wheel slip perturbs the command *before* the kinematics, so the
+        # acceleration and velocity limits still bound what the robot can
+        # physically do — a slipping wheel does not lend the robot a
+        # larger envelope. The resulting pose is the true one, and the
+        # collision test below judges on it, because the robot really did
+        # end up there.
+        self._robot = kinematics_step(self._robot, self._slipped(action), scenario.robot, dt)
         self._time += dt
         self._steps += 1
         self._trajectory.append(self._trajectory_point())
@@ -259,7 +270,7 @@ class SimulationEngine:
             angular_velocity=self._robot.angular_velocity,
             goal_distance=self._goal_distance(),
             goal_bearing=bearing,
-            lidar_ranges=scan(self._sensor_grid_now(), pose, self._scenario.lidar),
+            lidar_ranges=self._measured_ranges(pose),
         )
 
     def is_done(self) -> bool:
@@ -403,6 +414,48 @@ class SimulationEngine:
         """Dynamic obstacles as circles at the current simulation time."""
         assert self._scenario is not None
         return _dynamic_circles(self._scenario, self._time)
+
+    def _slipped(self, action: SimAction) -> SimAction:
+        """The command as the wheels actually deliver it.
+
+        Actuation error, not measurement error: this one is allowed to
+        change the world, because the robot really did move differently
+        from what it was told. Indexed by step number rather than drawn
+        from a running stream, so two candidates sharing an episode
+        context meet the same slip sequence however differently they
+        drive (see :mod:`planbench_simulator.noise`).
+        """
+        assert self._noise is not None
+        if not self._noise.active:
+            return action
+        linear, angular = self._noise.slip_factors(self._steps)
+        return SimAction(
+            linear_velocity=action.linear_velocity * linear,
+            angular_velocity=action.angular_velocity * angular,
+        )
+
+    def _measured_ranges(self, pose: Pose2D) -> tuple[float, ...]:
+        """LiDAR as the robot reads it, errors and all.
+
+        Measurement error only. The geometry is untouched and the
+        collision test never sees this — a noisy range that makes the
+        robot *think* a wall is 2 cm further away must not move the wall.
+
+        Clamped to a non-negative distance no greater than ``max_range``:
+        a range finder reports what it can report, and a negative
+        distance is not a reading any consumer should have to defend
+        against.
+        """
+        assert self._scenario is not None and self._noise is not None
+        ranges = scan(self._sensor_grid_now(), pose, self._scenario.lidar)
+        offsets = self._noise.lidar_offsets(self._steps, len(ranges))
+        if offsets is None:
+            return ranges
+        ceiling = self._scenario.lidar.max_range
+        return tuple(
+            min(ceiling, max(0.0, value + float(offset)))
+            for value, offset in zip(ranges, offsets, strict=True)
+        )
 
     def _sensor_grid_now(self) -> OccupancyGrid:
         """Sensor grid with the current dynamic obstacles burned in.

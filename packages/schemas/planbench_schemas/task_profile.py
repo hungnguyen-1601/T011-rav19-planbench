@@ -19,10 +19,19 @@ Two rules from the contract are enforced in code rather than prose:
   runs only bounds the true probability by ~3/N at 95% confidence, so
   the constraint fixes the minimum N — not the other way round.
 
-This schema deliberately does not touch ``Scenario``/``RobotConfig``:
-adding fields to those would change ``_scenario_checksum`` and orphan
-every stored benchmark report. ``TaskRobotSpec`` extends ``RobotConfig``
-with the deployment's control period instead.
+This schema mostly does not touch ``Scenario``/``RobotConfig``: adding
+fields to those changes ``_scenario_checksum`` and orphans every stored
+benchmark report. ``TaskRobotSpec`` extends ``RobotConfig`` with the
+deployment's control period instead of pushing it down.
+
+**One deliberate exception, added with ``sensor_noise``.** That rule is
+about not letting *bookkeeping* leak into the fairness identity; noise is
+not bookkeeping, it is the episode's physics. Two runs at the same seed
+under different sigma really are two different worlds, so the checksum
+*should* separate them — excluding it would be the bug. The accepted cost
+is that every stored scenario's checksum moved, which stales the P03
+difficulty cache; that cache is keyed to the old scenario library and
+holds no entry for any contract-era profile, so nothing in use was lost.
 """
 
 from __future__ import annotations
@@ -36,6 +45,7 @@ from planbench_schemas.dynamic import DynamicObstacle
 from planbench_schemas.geometry import Pose2D
 from planbench_schemas.observations import ObservationToken, canonical_observations
 from planbench_schemas.robot import RobotConfig
+from planbench_schemas.sensor import SensorNoise
 
 ClaimLevel = Literal["mission", "deployment", "robust_deployment"]
 
@@ -92,6 +102,19 @@ class EnvironmentSpec(BaseModel):
         default=(),
         description="Moving traffic the deployment expects (people, carts, other AMRs).",
     )
+    #: How badly the robot measures and executes at this site.
+    #:
+    #: Zero by default, so every profile written before this existed
+    #: keeps its behaviour to the last float. Switching it on is a
+    #: deliberate change, visible here and on the manifest, and it is a
+    #: *fidelity correction* rather than an improvement: a simulator with
+    #: no noise is more optimistic than reality, and the price of that
+    #: optimism was a collision bound resting on a single episode driven
+    #: once per seed.
+    #:
+    #: It belongs to ``environment`` because it describes the site and
+    #: the vehicle deployed there, not the algorithm being judged.
+    sensor_noise: SensorNoise = Field(default_factory=SensorNoise)
 
     @model_validator(mode="after")
     def _validate_obstacles(self) -> EnvironmentSpec:
