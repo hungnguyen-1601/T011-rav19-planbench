@@ -80,12 +80,16 @@ credentials.json
 # Trajectories, benchmark reports and episode JSON (decision D15:
 # artifacts live in storage, the repo keeps only code).
 artifacts/*
-# Two exceptions, both a few kB of JSON: the Decision Card and the
-# manifest of a run. HĐ-15.1 makes the vertical slice an acceptance
+# Three exceptions, each a few kB of JSON. The Decision Card and the
+# manifest of a run: HĐ-15.1 makes the vertical slice an acceptance
 # record and HĐ-13 makes the manifest the thing somebody else rebuilds
-# the card from — an acceptance record nobody can open is not one. The
-# Parquet traces they were computed from stay out, which is what D15 was
-# actually about (they are megabytes per episode).
+# the card from — an acceptance record nobody can open is not one. And
+# the Measurement Report, which is the same argument for the other
+# artifact: a run with one candidate produces no card (ΔU, its interval
+# and its label do not exist for one), so its acceptance record is this
+# file, and it was ignored here until the exception was widened.
+# The Parquet traces they were computed from stay out, which is what D15
+# was actually about (they are megabytes per episode).
 !artifacts/runs/
 artifacts/runs/*
 !artifacts/runs/*/
@@ -94,6 +98,7 @@ artifacts/runs/*/*
 artifacts/runs/*/*/*
 !artifacts/runs/*/*/decision_card.json
 !artifacts/runs/*/*/manifest.json
+!artifacts/runs/*/*/measurement_report.json
 # MLflow local tracking store and its SQLite backend
 mlruns/
 mlflow.db

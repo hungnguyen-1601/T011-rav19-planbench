@@ -21,8 +21,8 @@ produced looks exactly like a valid one.
 
 Usage::
 
-    python scripts/vertical_slice.py                 # 30 episodes per candidate
-    python scripts/vertical_slice.py --episodes 50
+    python scripts/vertical_slice.py                 # N_min episodes, from the profile
+    python scripts/vertical_slice.py --episodes 30   # smoke run; G2 will say it is one
     python scripts/vertical_slice.py --reuse-traces  # re-decide, do not re-simulate
 """
 
@@ -50,9 +50,18 @@ for _package in (
 
 import yaml  # noqa: E402
 
-from planbench_benchmark.candidates import candidate_from_stack  # noqa: E402
-from planbench_benchmark.contexts import build_evaluation_contexts  # noqa: E402
+from planbench_benchmark.candidates import (  # noqa: E402
+    LOCAL_CONTROLLER_CONFIGS,
+    candidate_from_stack,
+    validate_control_rate,
+)
+from planbench_benchmark.contexts import (  # noqa: E402
+    build_evaluation_contexts,
+    episode_total,
+    iter_run_plan,
+)
 from planbench_benchmark.episode import run_contract_episode  # noqa: E402
+from planbench_benchmark.hostinfo import detect_benchmark_host, unpinned_warning  # noqa: E402
 from planbench_benchmark.task_map import load_task_map, validate_missions_on_map  # noqa: E402
 from planbench_decision.anchors import load_anchors  # noqa: E402
 from planbench_decision.candidate import (  # noqa: E402
@@ -61,7 +70,6 @@ from planbench_decision.candidate import (  # noqa: E402
     validate_experiment_scope,
 )
 from planbench_decision.card import (  # noqa: E402
-    BenchmarkHost,
     Provenance,
     build_decision_card,
     build_manifest,
@@ -86,7 +94,7 @@ from planbench_schemas.map import MapData  # noqa: E402
 from planbench_schemas.task_profile import TaskProfile  # noqa: E402
 from planbench_simulator.trace import read_trace, trace_path  # noqa: E402
 
-PROFILE_PATH = REPO_ROOT / "profiles" / "warehouse_a_v1.yaml"
+PROFILE_PATH = REPO_ROOT / "profiles" / "warehouse_a_v2.yaml"
 DEFAULT_RUN_ROOT = REPO_ROOT / "artifacts" / "runs"
 
 #: The one thing the slice is allowed to conclude (HĐ-1.4). Both
@@ -97,18 +105,14 @@ DEFAULT_RUN_ROOT = REPO_ROOT / "artifacts" / "runs"
 #: stops being true.
 EXPERIMENT_SCOPE = "global_planner_selection"
 
-#: Shared local-controller configuration. Sampling is coarser than the
-#: DWA default (7×15 instead of 20×40) because 50 episodes of the default
-#: is hours of wall clock. It is identical for both candidates, so it
-#: cannot favour either — but it is a declared property of the run, which
-#: is why it lives here in one named constant rather than being typed
-#: twice.
-LOCAL_CONTROLLER_PARAMS: dict[str, object] = {
-    "control_period": 0.1,
-    "velocity_samples": 7,
-    "omega_samples": 15,
-    "horizon_seconds": 1.0,
-}
+#: Which named local controller this slice runs (see
+#: :data:`~planbench_benchmark.candidates.LOCAL_CONTROLLER_CONFIGS`). It
+#: is identical for both candidates, so it cannot favour either — and it
+#: is a *named* configuration rather than a constant typed here, because
+#: the coarse sampling was chosen for the wall clock and that makes it a
+#: declared property of the candidates rather than of the script.
+LOCAL_CONTROLLER = "dwa_coarse"
+LOCAL_CONTROLLER_PARAMS: dict[str, object] = dict(LOCAL_CONTROLLER_CONFIGS[LOCAL_CONTROLLER])
 
 #: Declared engineering cost (HĐ-1.6). Both stacks ship with the library
 #: defaults and nobody tuned either, so both declare zero hours against
@@ -130,8 +134,13 @@ def load_profile(path: Path = PROFILE_PATH) -> TaskProfile:
     return TaskProfile.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
 
 
-def build_candidates() -> tuple[Candidate, ...]:
-    """The two stacks under comparison, differing only in their planner."""
+def build_candidates(profile: TaskProfile | None = None) -> tuple[Candidate, ...]:
+    """The two stacks under comparison, differing only in their planner.
+
+    ``profile`` is optional only so the tests that care about candidate
+    identity alone need not load one; when it is given, the controller is
+    checked against the deployment's T_cycle before a single episode runs.
+    """
     candidates = tuple(
         candidate_from_stack(stack, params=dict(LOCAL_CONTROLLER_PARAMS)).model_copy(
             update={"tuning": UNTUNED}
@@ -139,6 +148,8 @@ def build_candidates() -> tuple[Candidate, ...]:
         for stack in ("astar+dwa", "rrtstar+dwa")
     )
     validate_experiment_scope(EXPERIMENT_SCOPE, candidates)
+    if profile is not None:
+        validate_control_rate(profile, candidates)
     return candidates
 
 
@@ -153,25 +164,45 @@ def simulate(
 ) -> None:
     """Run every (candidate, context) pair that has no trace yet.
 
+    **Context outermost, candidate innermost** — HĐ-3.2's order, via
+    :func:`iter_run_plan`, which exists to provide exactly this. Two
+    reasons, and the second only became visible at 300 episodes:
+
+    Interruption. Stop a candidate-outer sweep halfway and the first
+    candidate has every episode while the last has none: nothing is
+    comparable and the partial data is worthless. Stop a context-outer
+    sweep halfway and both candidates have the same episodes, so the
+    comparison is still valid, just smaller. Over a three-hour run that
+    stops being a hypothetical.
+
+    Machine drift. Candidate-outer puts one candidate in the first half
+    of the wall clock and the other in the second, so any thermal
+    throttling, background process or change of machine state lands
+    entirely on one of them. HĐ-7.4 requires every candidate to run under
+    the same conditions, and over ten minutes the difference was
+    invisible; over three hours it is the mechanism that already
+    eliminated A\\* at G4 once (contract 3.0.0). Interleaving makes both
+    candidates share whatever the machine was doing, minute by minute.
+
     Reuse is keyed on the file existing, which is safe because the path
     is derived from the candidate id and the context id — both hashes of
     everything that could change the episode. A stale file is therefore
     a file for a configuration that no longer exists, and it simply never
     gets looked up.
     """
-    for candidate in candidates:
-        for index, context in enumerate(contexts, start=1):
-            path = trace_path(candidate.candidate_id, context.episode_context_id, root=trace_root)
-            if reuse and path.is_file():
-                continue
-            started = time.time()
-            _, run = run_contract_episode(candidate, profile, context, map_data, root=trace_root)
-            print(
-                f"  {candidate.stack_label:<14} {index:>3}/{len(contexts)}  "
-                f"seed {context.seed:<3} {run.result.status.value:<16} "
-                f"{time.time() - started:5.1f}s",
-                flush=True,
-            )
+    total = episode_total(contexts, candidates)
+    for index, (context, candidate) in enumerate(iter_run_plan(contexts, candidates), start=1):
+        path = trace_path(candidate.candidate_id, context.episode_context_id, root=trace_root)
+        if reuse and path.is_file():
+            continue
+        started = time.time()
+        _, run = run_contract_episode(candidate, profile, context, map_data, root=trace_root)
+        print(
+            f"  {index:>4}/{total}  {candidate.stack_label:<14} "
+            f"seed {context.seed:<4} {run.result.status.value:<16} "
+            f"{time.time() - started:5.1f}s",
+            flush=True,
+        )
 
 
 def score(
@@ -376,7 +407,7 @@ def check_node_counts(metrics_by_candidate: dict[str, list[EpisodeMetricSet]]) -
 
 def run_slice(
     *,
-    episodes: int,
+    episodes: int | None,
     trace_root: Path,
     run_root: Path,
     reuse: bool,
@@ -400,12 +431,28 @@ def run_slice(
     # says where its files are rather than having the root guessed.
     map_data = load_task_map(profile, base_dir=map_base_dir or REPO_ROOT)
     validate_missions_on_map(profile, map_data)
-    candidates = build_candidates()
+    candidates = build_candidates(profile)
     contexts = build_evaluation_contexts(profile, seed_count=episodes)
     settings = DecisionSettings()
 
-    say(f"profile {profile.id}: {map_data.width}×{map_data.height} cells, {len(contexts)} contexts")
+    say(
+        f"profile {profile.id}: {map_data.width}×{map_data.height} cells, "
+        f"{len(contexts)} contexts "
+        f"(N_min = {profile.constraints.n_min_evaluation_episodes} at "
+        f"{profile.constraints.collision_probability_max:.0%} accepted collision risk)"
+    )
     say(f"candidates: {', '.join(c.stack_label + ' ' + c.candidate_id for c in candidates)}")
+
+    # Measured before the run, not asserted after it: what the manifest
+    # records has to be what the episodes actually got (HĐ-7.4).
+    host = detect_benchmark_host()
+    say(
+        f"host: {host.cpu} · {host.cores_allocated}/{host.logical_cores} cores"
+        + (f" (affinity {list(host.cpu_affinity)})" if host.cpu_affinity else "")
+    )
+    warning = unpinned_warning(host)
+    if warning:
+        say(f"⚠ {warning}")
 
     say("simulating…")
     simulate(candidates, profile, contexts, map_data, trace_root, reuse=reuse)
@@ -483,7 +530,7 @@ def run_slice(
         load_anchors().resolve(profile),
         Provenance(
             git_sha=git_sha,
-            benchmark_host=BenchmarkHost(cpu=_cpu_name(), cores_allocated=1, threads=1),
+            benchmark_host=host,
             created_at=created_at,
         ),
         contexts,
@@ -536,12 +583,6 @@ def _sensitivity_note(sweep) -> str:  # type: ignore[no-untyped-def]
     return f"  [{sweep.label}]" if sweep.label else ""
 
 
-def _cpu_name() -> str:
-    import platform
-
-    return platform.processor() or platform.machine() or "unknown"
-
-
 def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.write_text(
         json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
@@ -554,8 +595,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--episodes",
         type=int,
-        default=30,
-        help="paired episodes per candidate (HĐ-15.1 asks for 30–100)",
+        default=None,
+        help=(
+            "paired episodes per candidate. Defaults to N_min = ceil(3 / "
+            "collision_probability_max) from the profile (HĐ-7.1) — the count is a "
+            "consequence of the declared risk, not a taste setting. Pass a smaller "
+            "number for a smoke run and G2 will say so."
+        ),
     )
     parser.add_argument("--trace-root", type=Path, default=REPO_ROOT / "artifacts" / "traces")
     parser.add_argument("--run-root", type=Path, default=DEFAULT_RUN_ROOT)

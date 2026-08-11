@@ -97,7 +97,42 @@ def write_profile(directory: Path) -> Path:
     payload = {
         "id": "slice_fixture_v1",
         "claim_level": "mission",
-        "environment": {"map": "room.pgm", "map_yaml": "room.yaml"},
+        "environment": {
+            "map": "room.pgm",
+            "map_yaml": "room.yaml",
+            # Traffic the robot actually meets. Without it a deterministic
+            # stack drives the identical episode on every seed, G2 counts
+            # the set as one independent sample (HĐ-7.1) and refuses to
+            # bound anything — the correct verdict, and one that leaves
+            # the slice with nothing to card.
+            #
+            # Placement is deliberate and was measured, not guessed. The
+            # straight run from (1.0, 1.0) to (4.8, 2.8) crosses x = 3.0
+            # at y ~ 1.95, so a trolley patrolling *through* that point
+            # blocks the only corridor and A* fails G3 outright — the
+            # first two attempts here did exactly that. Patrolling from
+            # y = 2.35 upward keeps it just outside the pair of radii
+            # (0.15 + 0.15), so it perturbs clearance and near misses
+            # without ever making the mission impossible. That is the
+            # distinction the fixture needs: traffic that varies the
+            # episode, not traffic that ends it.
+            #
+            # `seed_time_offset` covers a full period, so seeds meet it
+            # at different points of its sweep.
+            "dynamic_obstacles": [
+                {
+                    "name": "trolley",
+                    "radius": 0.15,
+                    "seed_time_offset": 9.0,
+                    "motion": {
+                        "kind": "periodic",
+                        "start": {"x": 3.0, "y": 2.35},
+                        "end": {"x": 3.0, "y": 3.4},
+                        "period": 9.0,
+                    },
+                }
+            ],
+        },
         "missions": [
             {"id": "m1", "start": [1.0, 1.0, 0.0], "goal": [4.8, 2.8, 0.0], "probability": 1.0}
         ],
@@ -150,9 +185,24 @@ def write_profile(directory: Path) -> Path:
 
 
 @pytest.fixture(scope="module")
-def slice_result(tmp_path_factory: pytest.TempPathFactory) -> dict[str, object]:
+def slice_workspace(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Where this module's run put its files.
+
+    Named separately from ``slice_result`` because the tests that read
+    artefacts off disk need the directory, not the return value — and
+    because they used to find it by globbing pytest's shared base temp,
+    which quietly meant "the first ``traces`` directory any test module
+    happened to create". That held until a second module wrote one, and
+    then a rebuild test looked for the slice's episodes inside another
+    module's trace root and found nothing.
+    """
+    return tmp_path_factory.mktemp("slice")
+
+
+@pytest.fixture(scope="module")
+def slice_result(slice_workspace: Path) -> dict[str, object]:
     """Run the whole slice once; every test below reads the same output."""
-    workspace = tmp_path_factory.mktemp("slice")
+    workspace = slice_workspace
     profile_path = write_profile(workspace)
     return slice_module.run_slice(
         episodes=6,
@@ -182,10 +232,10 @@ class TestItRunsAtAll:
         assert sorted(validator.iter_errors(slice_result), key=str) == []
 
     def test_both_artefacts_land_on_disk(
-        self, tmp_path_factory: pytest.TempPathFactory, slice_result: dict[str, object]
+        self, slice_workspace: Path, slice_result: dict[str, object]
     ) -> None:
         """HĐ-13's manifest is half the deliverable, not a log line."""
-        runs = list(Path(tmp_path_factory.getbasetemp()).rglob("manifest.json"))
+        runs = list(slice_workspace.rglob("manifest.json"))
         assert runs, "no manifest was written"
         manifest = json.loads(runs[0].read_text(encoding="utf-8"))
         validator = Draft202012Validator(
@@ -213,9 +263,9 @@ class TestTheManifestCanActuallyRebuild:
     """
 
     def test_metrics_recompute_from_the_manifest_and_traces_alone(
-        self, tmp_path_factory: pytest.TempPathFactory, slice_result: dict[str, object]
+        self, slice_workspace: Path, slice_result: dict[str, object]
     ) -> None:
-        base = Path(tmp_path_factory.getbasetemp())
+        base = slice_workspace
         manifest = json.loads(next(base.rglob("manifest.json")).read_text(encoding="utf-8"))
         profile_path = next(base.rglob("profile.yaml"))
         profile = slice_module.load_profile(profile_path)
@@ -241,11 +291,11 @@ class TestTheManifestCanActuallyRebuild:
         assert rebuilt == len(contexts), "not every recorded episode could be recomputed"
 
     def test_the_records_carry_what_a_rebuild_needs(
-        self, tmp_path_factory: pytest.TempPathFactory, slice_result: dict[str, object]
+        self, slice_workspace: Path, slice_result: dict[str, object]
     ) -> None:
         """Named separately from the rebuild so a regression says which
         half broke: the fields, or the recomputation."""
-        base = Path(tmp_path_factory.getbasetemp())
+        base = slice_workspace
         manifest = json.loads(next(base.rglob("manifest.json")).read_text(encoding="utf-8"))
         for record in manifest["episode_contexts"]["evaluation"]:
             assert record["mission_id"]
@@ -379,3 +429,105 @@ class TestExperimentScope:
         assert {c.global_planner.name for c in candidates} == {"astar", "rrtstar"}
         assert len({c.local_controller.name for c in candidates}) == 1
         assert len({json.dumps(c.layer_params("dwa"), sort_keys=True) for c in candidates}) == 1
+
+
+class TestTheRunPlanInterleaves:
+    """HĐ-3.2's loop order, asserted on the script rather than the helper.
+
+    ``iter_run_plan`` has had this right since Phase 1.3, and ``simulate``
+    quietly did not use it — it looped candidate-outer. At 30 episodes
+    over ten minutes that was invisible. At 300 episodes over three hours
+    it puts one candidate in the first half of the wall clock and the
+    other in the second, so any thermal throttling or background process
+    lands entirely on one of them. That is the exact mechanism that
+    eliminated A* at G4 in the first Phase 4 run (contract 3.0.0), and
+    HĐ-7.4 exists to forbid it.
+
+    The second reason is interruption: stopped halfway, candidate-outer
+    leaves one candidate with everything and the other with nothing.
+    """
+
+    def test_simulate_runs_context_outer_candidate_inner(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Asserted on ``simulate`` itself, over a full sweep.
+
+        The simulator is stubbed out — what is under test is the order
+        episodes are dispatched in, and running them for real would take
+        a minute to observe something that is pure control flow.
+        """
+        profile_path = write_profile(tmp_path)
+        profile = slice_module.load_profile(profile_path)
+        map_data = load_task_map(profile, base_dir=tmp_path)
+        candidates = slice_module.build_candidates()
+        contexts = slice_module.build_evaluation_contexts(profile, seed_count=3)
+
+        dispatched: list[tuple[str, int]] = []
+
+        def record(candidate, _profile, context, _map_data, root):  # type: ignore[no-untyped-def]
+            dispatched.append((candidate.candidate_id, context.seed))
+            return None, _FakeRun()
+
+        monkeypatch.setattr(slice_module, "run_contract_episode", record)
+        slice_module.simulate(candidates, profile, contexts, map_data, tmp_path / "t", reuse=False)
+
+        assert len(dispatched) == 6, "every (context, candidate) pair should be dispatched"
+        # Seeds advance only after both candidates have run that seed.
+        assert [seed for _, seed in dispatched] == [0, 0, 1, 1, 2, 2]
+        # Consecutive episodes alternate candidates, which is what makes
+        # them share the machine's condition minute by minute.
+        first, second = candidates[0].candidate_id, candidates[1].candidate_id
+        assert [cid for cid, _ in dispatched] == [first, second] * 3
+
+    def test_a_run_that_dies_partway_still_paired(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A three-hour run can be killed. Under the old order that left
+        one candidate with everything and the other with nothing; under
+        this one both stop within an episode of each other."""
+        profile_path = write_profile(tmp_path)
+        profile = slice_module.load_profile(profile_path)
+        map_data = load_task_map(profile, base_dir=tmp_path)
+        candidates = slice_module.build_candidates()
+        contexts = slice_module.build_evaluation_contexts(profile, seed_count=5)
+
+        done: list[str] = []
+
+        def die_after_seven(candidate, _profile, context, _map_data, root):  # type: ignore[no-untyped-def]
+            if len(done) == 7:
+                raise KeyboardInterrupt
+            done.append(candidate.candidate_id)
+            return None, _FakeRun()
+
+        monkeypatch.setattr(slice_module, "run_contract_episode", die_after_seven)
+        with pytest.raises(KeyboardInterrupt):
+            slice_module.simulate(
+                candidates, profile, contexts, map_data, tmp_path / "t", reuse=False
+            )
+
+        counts = {cid: done.count(cid) for cid in {c.candidate_id for c in candidates}}
+        assert max(counts.values()) - min(counts.values()) <= 1, counts
+
+    def test_an_interrupted_run_leaves_both_candidates_equal(self) -> None:
+        """The property the order buys: stop anywhere and the two
+        candidates differ by at most one episode, so what was collected
+        is still a valid paired comparison."""
+        profile = slice_module.load_profile(slice_module.PROFILE_PATH)
+        candidates = slice_module.build_candidates()
+        contexts = slice_module.build_evaluation_contexts(profile, seed_count=10)
+        plan = list(slice_module.iter_run_plan(contexts, candidates))
+        for cut in range(1, len(plan)):
+            counts: dict[str, int] = {}
+            for _, candidate in plan[:cut]:
+                counts[candidate.candidate_id] = counts.get(candidate.candidate_id, 0) + 1
+            assert max(counts.values()) - min(counts.values(), default=0) <= 1, (
+                f"after {cut} episodes the candidates are unbalanced: {counts}"
+            )
+
+
+class _FakeRun:
+    """Just enough of an episode result for ``simulate`` to print a line."""
+
+    class result:  # noqa: N801 - mimics the real attribute path
+        class status:  # noqa: N801
+            value = "success"
