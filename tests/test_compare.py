@@ -26,6 +26,7 @@ import yaml
 from test_vertical_slice import slice_module, write_profile
 
 from planbench_benchmark import pipeline
+from planbench_schemas.task_profile import TaskProfile
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -112,6 +113,81 @@ class TestScopeIsDeclaredNotInferred:
             "local_controller_selection",
         )
         assert len({c.candidate_id for c in candidates}) == 2
+
+
+class TestOneDirectoryPerQuestion:
+    """Two comparisons on one deployment are two results, not one.
+
+    The first draft wrote every run to ``{profile}_compare``, so the
+    second comparison of the day overwrote the first — two different
+    questions, one directory, and the earlier answer simply gone with no
+    warning, because from the filesystem's point of view a run had merely
+    been repeated. Found by losing a real result.
+    """
+
+    @staticmethod
+    def _named(profile: TaskProfile, specs: tuple[tuple[str, str], ...], scope: str) -> str:
+        return compare._run_dir_name(
+            profile.id, scope, compare.build_candidates(profile, specs, scope)
+        )
+
+    def test_two_candidate_sets_land_in_different_directories(self, tmp_path: Path) -> None:
+        profile = compare.load_profile(write_profile(tmp_path))
+        first = self._named(
+            profile,
+            (("astar+dwa", "dwa_coarse"), ("rrtstar+dwa", "dwa_coarse")),
+            "global_planner_selection",
+        )
+        second = self._named(
+            profile,
+            (("astar+dwa", "dwa_coarse"), ("astar+dwa", "dwa_default")),
+            "local_controller_selection",
+        )
+        assert first != second
+
+    def test_the_same_question_overwrites_itself(self, tmp_path: Path) -> None:
+        """Re-running one comparison should replace its own answer, not
+        accumulate copies — the name is derived, never stamped with a
+        clock."""
+        profile = compare.load_profile(write_profile(tmp_path))
+        specs = (("astar+dwa", "dwa_coarse"), ("rrtstar+dwa", "dwa_coarse"))
+        assert self._named(profile, specs, "global_planner_selection") == self._named(
+            profile, specs, "global_planner_selection"
+        )
+
+    def test_changing_any_candidate_changes_the_directory(self, tmp_path: Path) -> None:
+        """The hash is over ``candidate_id``, which already covers the
+        stack and every parameter (HĐ-1.3). So a swapped controller is a
+        different question and lands somewhere else."""
+        profile = compare.load_profile(write_profile(tmp_path))
+        coarse = self._named(
+            profile,
+            (("astar+dwa", "dwa_coarse"), ("rrtstar+dwa", "dwa_coarse")),
+            "global_planner_selection",
+        )
+        mixed = self._named(
+            profile,
+            (("astar+dwa", "dwa_default"), ("rrtstar+dwa", "dwa_default")),
+            "global_planner_selection",
+        )
+        assert coarse != mixed
+
+    def test_the_order_candidates_were_typed_in_does_not_matter(self, tmp_path: Path) -> None:
+        """Same question asked twice, one with the arguments swapped. A
+        directory that depended on argument order would answer it twice
+        and let the two disagree."""
+        profile = compare.load_profile(write_profile(tmp_path))
+        forwards = self._named(
+            profile,
+            (("astar+dwa", "dwa_coarse"), ("rrtstar+dwa", "dwa_coarse")),
+            "global_planner_selection",
+        )
+        backwards = self._named(
+            profile,
+            (("rrtstar+dwa", "dwa_coarse"), ("astar+dwa", "dwa_coarse")),
+            "global_planner_selection",
+        )
+        assert forwards == backwards
 
 
 @pytest.fixture(scope="module")
