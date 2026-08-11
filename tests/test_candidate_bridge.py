@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import pytest
+from task_profile_fakes import make_profile
 
 from planbench_benchmark.candidates import (
+    LOCAL_CONTROLLER_CONFIGS,
+    ControlRateViolation,
     NotBenchmarkableError,
     UnknownParameterError,
     build_planners,
     candidate_from_stack,
     observation_requirements_for,
     stack_id_for,
+    validate_control_rate,
 )
 from planbench_benchmark.registry import (
     AlgorithmConfigError,
@@ -137,3 +141,92 @@ class TestScopeWithRealStacks:
                     candidate_from_stack("rrtstar+dwa", params={"horizon_seconds": 2.5}),
                 ],
             )
+
+
+class TestNamedLocalConfigurations:
+    """A sampling choice made for the wall clock is a candidate, not a
+    constant in whichever script happened to run it."""
+
+    def test_both_configurations_run_at_the_reference_control_period(self) -> None:
+        """Neither named config may quietly ask for a slower loop than
+        the reference deployments declare."""
+        for name, params in LOCAL_CONTROLLER_CONFIGS.items():
+            assert params["control_period"] == 0.05, name
+
+    def test_coarse_and_default_are_different_candidates(self) -> None:
+        """Same stack, two sampling densities, two ids — which is what
+        makes "is the convex-corner stall a property of the stack or of
+        the coarse sampling?" a question the platform can answer."""
+        coarse = candidate_from_stack(
+            "astar+dwa", params=dict(LOCAL_CONTROLLER_CONFIGS["dwa_coarse"])
+        )
+        default = candidate_from_stack(
+            "astar+dwa", params=dict(LOCAL_CONTROLLER_CONFIGS["dwa_default"])
+        )
+        assert coarse.candidate_id != default.candidate_id
+
+    def test_comparing_the_two_is_not_a_global_planner_claim(self) -> None:
+        """Holding the global planner fixed and changing the controller
+        is a *local* selection; declaring it as a global one is refused
+        rather than mislabelled."""
+        with pytest.raises(Exception, match="identical local layer"):
+            validate_experiment_scope(
+                "global_planner_selection",
+                [
+                    candidate_from_stack(
+                        "astar+dwa", params=dict(LOCAL_CONTROLLER_CONFIGS["dwa_coarse"])
+                    ),
+                    candidate_from_stack(
+                        "astar+dwa", params=dict(LOCAL_CONTROLLER_CONFIGS["dwa_default"])
+                    ),
+                ],
+            )
+
+
+class TestControlRateAgainstTheDeployment:
+    """G4 times one controller call and never asks how often the call
+    happens. Without this check a candidate closing its loop at half the
+    declared rate passes the real-time gate while missing every second
+    deadline — the loophole under the old ``control_period: 0.1``
+    profiles.
+    """
+
+    def test_a_controller_at_the_declared_rate_is_accepted(self) -> None:
+        profile = make_profile()
+        assert profile.robot.control_period == 0.05
+        validate_control_rate(
+            profile,
+            [
+                candidate_from_stack(stack, params=dict(LOCAL_CONTROLLER_CONFIGS["dwa_coarse"]))
+                for stack in ("astar+dwa", "rrtstar+dwa")
+            ],
+        )
+
+    def test_a_slower_controller_is_refused_before_any_episode_runs(self) -> None:
+        slow = candidate_from_stack(
+            "astar+dwa",
+            params={**LOCAL_CONTROLLER_CONFIGS["dwa_coarse"], "control_period": 0.1},
+        )
+        with pytest.raises(ControlRateViolation, match="closes its control loop"):
+            validate_control_rate(make_profile(), [slow])
+
+    def test_the_message_names_both_numbers(self) -> None:
+        """Whoever hits this needs to know which two declarations
+        disagree; "invalid configuration" would send them reading code."""
+        slow = candidate_from_stack(
+            "astar+dwa",
+            params={**LOCAL_CONTROLLER_CONFIGS["dwa_coarse"], "control_period": 0.2},
+        )
+        with pytest.raises(ControlRateViolation) as excinfo:
+            validate_control_rate(make_profile(), [slow])
+        assert "0.2" in str(excinfo.value)
+        assert "0.05" in str(excinfo.value)
+
+    def test_a_faster_controller_is_fine(self) -> None:
+        """The deployment states a *minimum* rate. Running the loop more
+        often than required is a candidate spending its own budget."""
+        fast = candidate_from_stack(
+            "astar+dwa",
+            params={**LOCAL_CONTROLLER_CONFIGS["dwa_coarse"], "control_period": 0.02},
+        )
+        validate_control_rate(make_profile(), [fast])

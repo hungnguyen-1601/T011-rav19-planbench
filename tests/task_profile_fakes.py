@@ -12,6 +12,8 @@ keeps the numbers in tests recognisable: 1% accepted collision risk means
 
 from __future__ import annotations
 
+import math
+
 from planbench_schemas.task_profile import TaskProfile
 
 #: One moving obstacle with a seed-derived clock offset, so episodes at
@@ -21,7 +23,9 @@ TRAFFIC: list[dict[str, object]] = [
     {
         "name": "forklift",
         "radius": 0.4,
-        "seed_time_offset": 6.0,
+        # One full period. At 6.0 s the seeds explored a quarter of a
+        # 24 s cycle — the flaw the reference warehouse shipped with.
+        "seed_time_offset": 24.0,
         "motion": {
             "kind": "periodic",
             "start": {"x": 12.0, "y": 4.0},
@@ -51,7 +55,10 @@ CONSTRAINTS: dict[str, object] = {
     "success_rate_min": 0.95,
     "collision_probability_max": 0.01,
     "goal_tolerance_m": 0.20,
-    "goal_tolerance_rad": 0.35,
+    # Heading unconstrained. The platform has no final-orientation
+    # controller, so a tighter value is refused at load — see the
+    # reservation in CONTRACTS HĐ-6 and ``_heading_must_be_unconstrained``.
+    "goal_tolerance_rad": math.pi,
     "episode_timeout_s": 180,
     "stuck_threshold_s": 10,
     "clearance_warning_m": 0.35,
