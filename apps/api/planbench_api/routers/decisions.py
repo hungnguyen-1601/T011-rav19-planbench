@@ -16,9 +16,10 @@ show.
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from planbench_api.auth import CurrentUser
@@ -107,6 +108,39 @@ class DecisionRunResource(BaseModel):
     status: str | None
     report: dict[str, Any]
     card: dict[str, Any] | None
+    # The two human acts, kept apart (HĐ-14). `review_state` applies to
+    # every run; `config_state` is `not_applicable` wherever there is no
+    # card, which is what makes "approve a run that recommends nobody"
+    # unreachable rather than merely refused.
+    review_state: str
+    reviewed_by: str | None
+    reviewed_at: str | None
+    config_state: str
+    config_decided_by: str | None
+    config_decided_at: str | None
+
+
+class ReviewRequest(BaseModel):
+    #: Optional, because "I read it and it says what it says" is a
+    #: complete review. Required text would be answered with a full stop.
+    comment: str = ""
+
+
+class ConfigDecisionRequest(BaseModel):
+    decision: Literal["approve", "reject"]
+    comment: str = ""
+
+
+class ReviewEventResource(BaseModel):
+    sequence: int
+    action: str
+    actor_user_id: str | None
+    username: str
+    #: Both ends, because "approved" alone does not say what it replaced.
+    previous_state: str
+    new_state: str
+    comment: str
+    created_at: str
 
 
 def _profile(stored: StoredTaskProfile) -> TaskProfileResource:
@@ -145,6 +179,12 @@ def _run(stored: StoredDecisionRun) -> DecisionRunResource:
         status=stored.status,
         report=stored.report,
         card=stored.card,
+        review_state=stored.review_state,
+        reviewed_by=stored.reviewed_by,
+        reviewed_at=stored.reviewed_at,
+        config_state=stored.config_state,
+        config_decided_by=stored.config_decided_by,
+        config_decided_at=stored.config_decided_at,
     )
 
 
@@ -243,3 +283,83 @@ def list_decisions(
 @router.get("/decisions/{run_id}", response_model=DecisionRunResource)
 def get_decision(run_id: str, service: Runs) -> DecisionRunResource:
     return _run(service.get(run_id))
+
+
+@router.post("/decisions/{run_id}/review", response_model=DecisionRunResource)
+def review_decision(
+    run_id: str, request: ReviewRequest, service: Runs, user: CurrentUser
+) -> DecisionRunResource:
+    """Record that somebody read this run's evidence.
+
+    **Every run, including the ones that could not be ranked.** Four of
+    the first five comparisons produced no card, and each still answered
+    "who was eliminated where, after how many runs". A platform that only
+    lets you sign off the runs that ranked is a platform where the other
+    four quietly become artifacts nobody ever looked at — which is the
+    outcome that made this a separate act from approval below.
+    """
+    return _run(
+        service.review(
+            run_id, actor_user_id=user.id, username=user.nickname, comment=request.comment
+        )
+    )
+
+
+@router.post("/decisions/{run_id}/config-approval", response_model=DecisionRunResource)
+def decide_config(
+    run_id: str, request: ConfigDecisionRequest, service: Runs, user: CurrentUser
+) -> DecisionRunResource:
+    """Approve or reject this run's recommendation as a configuration.
+
+    409 when the run has no card. That is not a technicality: approving a
+    run that recommends nobody would turn "this was measured" into "this
+    was endorsed", and the resulting ``approved_config.yaml`` would name
+    no candidate at all.
+
+    409 too when the caller started the run — separation of duties
+    (HĐ-14). The person who chose the candidates, the deployment and the
+    episode count is not an independent check on the answer.
+    """
+    return _run(
+        service.decide_config(
+            run_id,
+            approve=request.decision == "approve",
+            actor_user_id=user.id,
+            username=user.nickname,
+            comment=request.comment,
+        )
+    )
+
+
+@router.get("/decisions/{run_id}/audit", response_model=list[ReviewEventResource])
+def decision_audit(run_id: str, service: Runs) -> list[ReviewEventResource]:
+    """The append-only trail, oldest first (HĐ-14).
+
+    Ordered by ``sequence`` rather than by timestamp because two acts can
+    share a clock reading, and "who decided first" is exactly the
+    question an audit trail is asked.
+    """
+    return [
+        ReviewEventResource(
+            sequence=event.sequence,
+            action=event.action,
+            actor_user_id=event.actor_user_id,
+            username=event.username,
+            previous_state=event.previous_state,
+            new_state=event.new_state,
+            comment=event.comment,
+            created_at=event.created_at,
+        )
+        for event in service.events(run_id)
+    ]
+
+
+@router.get("/decisions/{run_id}/approved_config.yaml", response_class=PlainTextResponse)
+def approved_config(run_id: str, service: Runs) -> str:
+    """The deployable configuration — approved runs only (HĐ-14).
+
+    Served as text rather than JSON because it is a file somebody saves,
+    and because the sim-only notice inside it should be the first thing
+    read rather than a field in a viewer.
+    """
+    return service.approved_config(run_id)

@@ -447,3 +447,118 @@ class TestARankedRunCarriesItsManifest:
         }
         assert ranked_run["id"] in ranked
         assert ranked_run["id"] not in unranked
+
+
+class TestTheTwoHumanActsOverHttp:
+    """Phase 6.3 wiring. The rules live in
+    ``tests/test_decision_review.py``; these check that the endpoints
+    reach them, and that the split survives the HTTP surface.
+    """
+
+    def test_an_unranked_run_can_be_reviewed(self, client, alice_headers, bob_headers, profile_id):
+        """The point of the split. This run recommends nobody, and
+        somebody still has to be able to say they read it."""
+        run = client.post(
+            f"{API}/decisions",
+            json={
+                "task_profile_id": profile_id,
+                "candidates": [
+                    {"stack": "astar+dwa", "local_config": "dwa_coarse"},
+                    {"stack": "rrtstar+dwa", "local_config": "dwa_coarse"},
+                ],
+                "episodes": 2,
+            },
+            headers=alice_headers,
+        ).json()
+        assert run["ranked"] is False
+        assert run["review_state"] == "unreviewed"
+        assert run["config_state"] == "not_applicable"
+
+        reviewed = client.post(
+            f"{API}/decisions/{run['id']}/review",
+            json={"comment": "cả hai trượt G3, đã đọc bảng cổng"},
+            headers=bob_headers,
+        )
+        assert reviewed.status_code == 200, reviewed.text
+        body = reviewed.json()
+        assert body["review_state"] == "reviewed"
+        assert body["reviewed_by"]
+        # Reading it did not deploy it.
+        assert body["config_state"] == "not_applicable"
+
+    def test_an_unranked_run_cannot_be_approved_as_a_configuration(
+        self, client, alice_headers, bob_headers, profile_id
+    ):
+        """409, and the message has to say what the caller *can* do —
+        a refusal nobody can act on is one people work around."""
+        run = client.post(
+            f"{API}/decisions",
+            json={
+                "task_profile_id": profile_id,
+                "candidates": [
+                    {"stack": "astar+dwa", "local_config": "dwa_coarse"},
+                    {"stack": "rrtstar+dwa", "local_config": "dwa_coarse"},
+                ],
+                "episodes": 2,
+            },
+            headers=alice_headers,
+        ).json()
+
+        refused = client.post(
+            f"{API}/decisions/{run['id']}/config-approval",
+            json={"decision": "approve"},
+            headers=bob_headers,
+        )
+        assert refused.status_code == 409, refused.text
+        message = refused.json()["error"]["message"]
+        assert "no Decision Card" in message
+        assert "review" in message
+
+    def test_the_audit_trail_is_served_in_order(
+        self, client, alice_headers, bob_headers, profile_id
+    ):
+        run = client.post(
+            f"{API}/decisions",
+            json={
+                "task_profile_id": profile_id,
+                "candidates": [
+                    {"stack": "astar+dwa", "local_config": "dwa_coarse"},
+                    {"stack": "rrtstar+dwa", "local_config": "dwa_coarse"},
+                ],
+                "episodes": 2,
+            },
+            headers=alice_headers,
+        ).json()
+        client.post(
+            f"{API}/decisions/{run['id']}/review",
+            json={"comment": "đọc"},
+            headers=bob_headers,
+        )
+
+        trail = client.get(f"{API}/decisions/{run['id']}/audit")
+        assert trail.status_code == 200, trail.text
+        events = trail.json()
+        assert [event["action"] for event in events] == ["review"]
+        assert events[0]["previous_state"] == "unreviewed"
+        assert events[0]["new_state"] == "reviewed"
+
+    def test_a_run_with_no_approval_exports_no_configuration(
+        self, client, alice_headers, profile_id
+    ):
+        """HĐ-14: only an approved recommendation exports a config."""
+        run = client.post(
+            f"{API}/decisions",
+            json={
+                "task_profile_id": profile_id,
+                "candidates": [
+                    {"stack": "astar+dwa", "local_config": "dwa_coarse"},
+                    {"stack": "rrtstar+dwa", "local_config": "dwa_coarse"},
+                ],
+                "episodes": 2,
+            },
+            headers=alice_headers,
+        ).json()
+
+        exported = client.get(f"{API}/decisions/{run['id']}/approved_config.yaml")
+        assert exported.status_code == 409, exported.text
+        assert "not approved" in exported.json()["error"]["message"]

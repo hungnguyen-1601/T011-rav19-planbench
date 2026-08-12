@@ -35,6 +35,28 @@ from planbench_api.repositories import new_id, now_iso
 #: distinction, and ``decision_card`` names the case where one exists.
 ArtifactKind = Literal["decision_card", "comparison", "measurement"]
 
+#: Has a human looked at this run? Applies to **every** run, ranked or
+#: not, and that is the whole point of it being separate from config
+#: approval below. A comparison that eliminated four candidates is a real
+#: result somebody has to read; leaving it with nowhere to record that
+#: reading is how it becomes the forgotten artifact.
+ReviewState = Literal["unreviewed", "reviewed"]
+
+#: Is this run's recommendation the configuration we deploy?
+#:
+#: ``not_applicable`` is the value that does the work. A run with no card
+#: recommends nothing, so there is nothing to approve — and expressing
+#: that as a *state* rather than as a check inside the endpoint means the
+#: refusal cannot be forgotten by a second caller. Approving an unranked
+#: run would turn "this was measured" into "this was endorsed", which is
+#: precisely the slide from evidence to recommendation the gates exist to
+#: prevent (HĐ-7, HĐ-12).
+ConfigState = Literal["not_applicable", "pending", "approved", "rejected"]
+
+#: What a human did. Append-only vocabulary: nothing here undoes anything,
+#: because an audit trail that can be rewound is not one (HĐ-14).
+ReviewAction = Literal["review", "approve_config", "reject_config"]
+
 
 @dataclass
 class StoredTaskProfile:
@@ -81,6 +103,19 @@ class StoredDecisionRun:
     status: str | None = None
     run_uri: str | None = None
     run_checksum: str | None = None
+    review_state: ReviewState = "unreviewed"
+    reviewed_by: str | None = None
+    reviewed_at: str | None = None
+    #: Defaulted here rather than passed in, so a caller that forgets it
+    #: gets the safe value. :meth:`__post_init__` corrects it upward for
+    #: ranked runs; there is no path that makes an unranked run approvable.
+    config_state: ConfigState = "not_applicable"
+    config_decided_by: str | None = None
+    config_decided_at: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.card is not None and self.config_state == "not_applicable":
+            self.config_state = "pending"
 
     @property
     def ranked(self) -> bool:
@@ -204,11 +239,32 @@ class CandidateRepository:
             return list(self._items.values())
 
 
+@dataclass
+class ReviewEvent:
+    """One human act on one run. Append-only (HĐ-14).
+
+    Carries both states rather than just the new one, because "approved"
+    on its own does not say what it replaced, and a trail that cannot say
+    what changed is a list of timestamps.
+    """
+
+    run_id: str
+    sequence: int
+    action: ReviewAction
+    actor_user_id: str | None
+    username: str
+    previous_state: str
+    new_state: str
+    comment: str
+    created_at: str
+
+
 class DecisionRunRepository:
     """Runs. Every one has evidence; some also have a recommendation."""
 
     def __init__(self) -> None:
         self._items: dict[str, StoredDecisionRun] = {}
+        self._events: dict[str, list[ReviewEvent]] = {}
         self._lock = threading.Lock()
 
     def create(self, run: StoredDecisionRun) -> StoredDecisionRun:
@@ -236,6 +292,144 @@ class DecisionRunRepository:
         if ranked is not None:
             rows = [row for row in rows if row.ranked is ranked]
         return rows
+
+    # --- the two human acts (HĐ-14, phase 6.3) -------------------------
+
+    def review(
+        self, run_id: str, *, actor_user_id: str | None, username: str, comment: str
+    ) -> StoredDecisionRun:
+        """Record that somebody read this run's evidence.
+
+        Allowed on **every** run, including one that could not be ranked
+        and one whose config was already rejected. Reviewing is a claim
+        about having looked, not about endorsing anything, so nothing
+        about the run's outcome can disqualify it.
+
+        Reviewing twice is refused rather than silently re-stamped: the
+        second reviewer would overwrite the first one's name, and the
+        audit trail would then disagree with the row it describes.
+        """
+        with self._lock:
+            run = self._require(run_id)
+            if run.review_state == "reviewed":
+                raise InvalidStateError(
+                    f"decision run {run_id} was already reviewed by {run.reviewed_by} at "
+                    f"{run.reviewed_at}. Re-reviewing would overwrite that name; the audit "
+                    "trail is append-only (HĐ-14)"
+                )
+            previous = run.review_state
+            run.review_state = "reviewed"
+            run.reviewed_by = actor_user_id
+            run.reviewed_at = now_iso()
+            self._append(run_id, "review", actor_user_id, username, previous, "reviewed", comment)
+            return run
+
+    def decide_config(
+        self,
+        run_id: str,
+        *,
+        approve: bool,
+        actor_user_id: str | None,
+        username: str,
+        comment: str,
+    ) -> StoredDecisionRun:
+        """Approve or reject this run's recommendation as a configuration.
+
+        Three refusals, and each closes a different hole:
+
+        **No card, nothing to approve.** ``config_state`` is
+        ``not_applicable`` on an unranked run, and this reads that state
+        rather than re-deriving it — the check and the stored value cannot
+        drift apart if there is only one of them. Without this, approving
+        a run that eliminated every candidate would produce an
+        ``approved_config.yaml`` naming nobody.
+
+        **Nobody approves their own run.** Separation of duties (HĐ-14).
+        The person who launched the comparison chose its candidates, its
+        deployment and its episode count; letting them also sign off the
+        result removes the only independent step in the chain.
+
+        **Decided is decided.** ``approved`` and ``rejected`` are both
+        terminal. Re-deciding would let a rejection be quietly flipped
+        after the fact, and the legitimate answer to "we were wrong" is a
+        new run — which is cheap, dated, and leaves both records standing.
+        """
+        with self._lock:
+            run = self._require(run_id)
+            if run.config_state == "not_applicable":
+                raise InvalidStateError(
+                    f"decision run {run_id} produced no Decision Card, so it recommends no "
+                    "configuration and there is nothing to approve. Its gate table is still a "
+                    "result and can be reviewed — POST /decisions/{id}/review"
+                )
+            if run.config_state != "pending":
+                raise InvalidStateError(
+                    f"decision run {run_id} is already {run.config_state} (by "
+                    f"{run.config_decided_by} at {run.config_decided_at}). That decision "
+                    "stands; the way to change a recommendation is a new run, which leaves "
+                    "both records in place"
+                )
+            if actor_user_id is not None and actor_user_id == run.created_by:
+                raise InvalidStateError(
+                    f"account {actor_user_id} started decision run {run_id} and cannot approve "
+                    "its own recommendation (HĐ-14, separation of duties). Whoever chose the "
+                    "candidates and the deployment is not an independent check on the result"
+                )
+            previous = run.config_state
+            run.config_state = "approved" if approve else "rejected"
+            run.config_decided_by = actor_user_id
+            run.config_decided_at = now_iso()
+            self._append(
+                run_id,
+                "approve_config" if approve else "reject_config",
+                actor_user_id,
+                username,
+                previous,
+                run.config_state,
+                comment,
+            )
+            return run
+
+    def events(self, run_id: str) -> list[ReviewEvent]:
+        with self._lock:
+            self._require(run_id)
+            return list(self._events.get(run_id, []))
+
+    def _require(self, run_id: str) -> StoredDecisionRun:
+        """Caller already holds the lock."""
+        stored = self._items.get(run_id)
+        if stored is None:
+            raise NotFoundError("decision run", run_id)
+        return stored
+
+    def _append(  # noqa: PLR0913 - one audit row, one argument each
+        self,
+        run_id: str,
+        action: ReviewAction,
+        actor_user_id: str | None,
+        username: str,
+        previous_state: str,
+        new_state: str,
+        comment: str,
+    ) -> None:
+        """Caller already holds the lock."""
+        trail = self._events.setdefault(run_id, [])
+        trail.append(
+            ReviewEvent(
+                run_id=run_id,
+                # Explicit, because two events can share a timestamp at
+                # whatever resolution the clock happens to have — the same
+                # reason `approvals.sequence` exists for benchmarks.
+                sequence=len(trail) + 1,
+                action=action,
+                actor_user_id=actor_user_id,
+                username=username,
+                previous_state=previous_state,
+                new_state=new_state,
+                comment=comment,
+                created_at=now_iso(),
+            )
+        )
 
 
 @dataclass
