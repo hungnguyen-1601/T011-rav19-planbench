@@ -27,6 +27,7 @@ from planbench_api.services import (
     ScenarioService,
     SimulationService,
 )
+from planbench_api.worker import JobQueue
 
 
 def get_repos(request: Request) -> RepositoryHub:
@@ -142,3 +143,16 @@ def get_decision_run_service(request: Request) -> DecisionRunService:
         trace_root=state.decision_trace_dir,
         run_root=state.decision_run_dir,
     )
+
+
+def get_decision_jobs(request: Request) -> JobQueue:
+    """The single-slot queue selection sweeps run in.
+
+    Separate from ``app.state.jobs``, which benchmark runs share and
+    which is sized for throughput. This one holds **one** job because
+    HĐ-7.4 forbids two evaluation runs on a machine at once: they pin the
+    same cores, each becomes the other's background load, and G4 — which
+    reads wall-clock latency — then measures a machine that does not
+    exist. The bound is a correctness property, not a capacity choice.
+    """
+    return request.app.state.decision_jobs

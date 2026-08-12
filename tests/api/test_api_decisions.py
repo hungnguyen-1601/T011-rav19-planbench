@@ -20,7 +20,9 @@ API can quietly get wrong:
 
 from __future__ import annotations
 
+import base64
 import math
+import time
 from pathlib import Path
 
 import pytest
@@ -592,3 +594,183 @@ class TestTheTwoHumanActsOverHttp:
         exported = client.get(f"{API}/decisions/{run['id']}/approved_config.yaml")
         assert exported.status_code == 409, exported.text
         assert "not approved" in exported.json()["error"]["message"]
+
+
+class TestQueueingASweepInsteadOfWaitingForIt:
+    """A three-hour sweep cannot happen inside an HTTP request.
+
+    The synchronous path stays for small runs — a six-episode fixture
+    finishes before a progress bar would appear. What the queue adds is
+    the only honest answer for a 300-episode warehouse sweep: hand back
+    something to watch, and let the browser go.
+    """
+
+    @staticmethod
+    def _await(client, job_id: str, tries: int = 400):
+        """Poll until the job leaves the running states.
+
+        Polling rather than a callback because that is what the HTTP
+        client actually has, and because the test should exercise the
+        same endpoint a browser would.
+        """
+        for _ in range(tries):
+            job = client.get(f"{API}/decisions/jobs/{job_id}").json()
+            if job["state"] in {"succeeded", "failed", "cancelled"}:
+                return job
+            time.sleep(0.25)
+        raise AssertionError(f"job {job_id} never finished: {job}")
+
+    def _queue(self, client, headers, profile_id, episodes=2):
+        response = client.post(
+            f"{API}/decisions/jobs",
+            json={
+                "task_profile_id": profile_id,
+                "candidates": [
+                    {"stack": "astar+dwa", "local_config": "dwa_coarse"},
+                    {"stack": "rrtstar+dwa", "local_config": "dwa_coarse"},
+                ],
+                "episodes": episodes,
+            },
+            headers=headers,
+        )
+        assert response.status_code == 202, response.text
+        return response.json()
+
+    def test_queueing_answers_202_and_names_nothing_that_exists_yet(
+        self, client, alice_headers, profile_id
+    ):
+        """202, not 201. Nothing has been created — the run appears when
+        the sweep finishes, and a 201 carrying a job id would name a
+        resource that does not exist."""
+        job = self._queue(client, alice_headers, profile_id)
+        assert job["state"] in {"queued", "running"}
+        assert job["run_id"] is None
+
+    def test_the_run_shows_up_when_the_sweep_finishes(self, client, alice_headers, profile_id):
+        queued = self._queue(client, alice_headers, profile_id)
+        job = self._await(client, queued["id"])
+        assert job["state"] == "succeeded", job
+
+        # The job names the run, so a client never has to guess which of
+        # the stored runs is "the recent one".
+        assert job["run_id"]
+        stored = client.get(f"{API}/decisions/{job['run_id']}")
+        assert stored.status_code == 200, stored.text
+        assert stored.json()["task_profile_id"] == profile_id
+
+    def test_progress_counts_episodes_rather_than_guessing(self, client, alice_headers, profile_id):
+        """The numbers come from the sweep itself — the same ones it
+        writes to the run journal — not from a timer pretending."""
+        queued = self._queue(client, alice_headers, profile_id)
+        job = self._await(client, queued["id"])
+        assert job["total"] > 0
+        assert job["progress"] == job["total"]
+
+    def test_a_queued_sweep_can_be_cancelled(self, client, alice_headers, profile_id):
+        queued = self._queue(client, alice_headers, profile_id, episodes=6)
+        cancelled = client.delete(f"{API}/decisions/jobs/{queued['id']}", headers=alice_headers)
+        assert cancelled.status_code == 200, cancelled.text
+        assert cancelled.json()["state"] in {"cancelled", "running", "succeeded"}
+
+    def test_an_unknown_job_is_a_404(self, client):
+        assert client.get(f"{API}/decisions/jobs/nope").status_code == 404
+
+    def test_the_same_candidate_twice_is_refused_before_anything_is_queued(
+        self, client, alice_headers, profile_id
+    ):
+        """The refusal that costs hours if it arrives late. Same rule as
+        the synchronous path, checked before a slot is taken."""
+        response = client.post(
+            f"{API}/decisions/jobs",
+            json={
+                "task_profile_id": profile_id,
+                "candidates": [
+                    {"stack": "astar+dwa", "local_config": "dwa_coarse"},
+                    {"stack": "astar+dwa", "local_config": "dwa_coarse"},
+                ],
+                "episodes": 2,
+            },
+            headers=alice_headers,
+        )
+        assert response.status_code == 422, response.text
+        assert "distinct" in response.json()["error"]["message"]
+
+
+class TestReadingBackTheEvidence:
+    """A gate verdict computed from files nobody can open.
+
+    One Parquet trace per (candidate, episode) is the sole input the
+    Metrics Engine has (HĐ-5), and every number on a Decision Card comes
+    out of one. Until this endpoint existed the platform could compute
+    "G3: fail, 70% success" and offer no way to look at a single episode
+    behind it.
+    """
+
+    @pytest.fixture
+    def a_run(self, client, alice_headers, profile_id) -> dict:
+        response = client.post(
+            f"{API}/decisions",
+            json={
+                "task_profile_id": profile_id,
+                "candidates": [
+                    {"stack": "astar+dwa", "local_config": "dwa_coarse"},
+                    {"stack": "rrtstar+dwa", "local_config": "dwa_coarse"},
+                ],
+                "episodes": 2,
+            },
+            headers=alice_headers,
+        )
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    def _fetch(self, client, run, candidate=None, episode=None):
+        candidate = candidate or run["report"]["candidates"][0]["candidate_id"]
+        episode = episode or run["report"]["sample"]["episode_context_ids"][0]
+        return client.get(f"{API}/decisions/{run['id']}/traces/{candidate}/{episode}")
+
+    def test_it_serves_the_poses_the_file_holds(self, client, a_run):
+        response = self._fetch(client, a_run)
+        assert response.status_code == 200, response.text
+        trace = response.json()
+        assert len(trace["x"]) == len(trace["y"]) == len(trace["t"]) > 0
+        assert len(trace["clearance_m"]) == len(trace["x"])
+
+    def test_the_map_travels_with_the_trajectory(self, client, a_run):
+        """A trajectory without its map is a squiggle. The grid comes
+        packed one bit per cell — the reference hall is 480x320, which is
+        300 kB as a JSON array and 19 kB packed."""
+        trace = self._fetch(client, a_run).json()
+        grid = trace["map"]
+        assert grid["width"] > 0 and grid["height"] > 0
+        assert grid["resolution"] > 0
+        packed = base64.b64decode(grid["occupied_bits"])
+        assert len(packed) == (grid["width"] * grid["height"] + 7) // 8
+
+    def test_events_are_sparse_and_carry_their_index(self, client, a_run):
+        """A collision and an arrival draw the same curve; the event is
+        the only thing that tells them apart, and its index is where on
+        the path it happened."""
+        trace = self._fetch(client, a_run).json()
+        for event in trace["events"]:
+            assert 0 <= event["index"] < len(trace["x"])
+            assert event["event"]
+
+    def test_it_carries_what_the_drawing_needs_to_be_to_scale(self, client, a_run):
+        """The robot is drawn to its declared radius, not as a dot: a
+        path that looks clear at one pixel per cell may not be."""
+        trace = self._fetch(client, a_run).json()
+        assert trace["robot_radius_m"] > 0
+        assert trace["missions"]
+        first = trace["missions"][0]
+        assert set(first["start"]) == {"x", "y"}
+
+    def test_a_candidate_from_another_run_is_refused(self, client, a_run):
+        """Ids are content hashes, so a mismatch is not a typo — it is a
+        request for a different experiment's evidence under this run's
+        name."""
+        response = self._fetch(client, a_run, candidate="deadbeefdead")
+        assert response.status_code == 404, response.text
+
+    def test_an_episode_this_run_never_measured_is_refused(self, client, a_run):
+        response = self._fetch(client, a_run, episode="0000deadbeef")
+        assert response.status_code == 404, response.text

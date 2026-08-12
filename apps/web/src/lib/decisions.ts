@@ -225,10 +225,6 @@ export function listTaskProfiles(): Promise<TaskProfileSummary[]> {
   return authFetch<TaskProfileSummary[]>("/task-profiles");
 }
 
-export function getTaskProfile(profileId: string): Promise<TaskProfileSummary> {
-  return authFetch<TaskProfileSummary>(`/task-profiles/${profileId}`);
-}
-
 /** File a deployment. The server validates it against HĐ-2 and refuses
  *  to redefine an existing id with different content — so this can 409,
  *  and that 409 is the guard that keeps stored runs describing the world
@@ -276,6 +272,111 @@ export function decideConfig(
  * returns text/plain, and letting the browser do the download keeps the
  * filename the server chose.
  */
+/** One episode's trajectory and the map it was driven on.
+ *
+ * Column-oriented, matching the Parquet file it came from: rewriting a
+ * few hundred rows into a few hundred objects would triple the payload
+ * to say the same thing.
+ */
+export interface TracePayload {
+  candidate_id: string;
+  episode_context_id: string;
+  task_profile_id: string;
+  metadata: Record<string, unknown>;
+  map: {
+    name: string;
+    width: number;
+    height: number;
+    resolution: number;
+    origin: { x: number; y: number };
+    /** One bit per cell, base64. Row-major, row 0 at the map origin. */
+    occupied_bits: string;
+  };
+  robot_radius_m: number;
+  missions: { id: string; start: { x: number; y: number }; goal: { x: number; y: number } }[];
+  t: number[];
+  x: number[];
+  y: number[];
+  theta: number[];
+  /** From the robot's *surface* (HĐ-8.2), so 0 is the collision
+   *  boundary rather than a distance with a radius still to subtract. */
+  clearance_m: number[];
+  planner_latency_ms: number[];
+  /** Sparse — only the steps that carry one. A collision and an arrival
+   *  are the same shape of curve; the event is what tells them apart. */
+  events: { index: number; event: string }[];
+}
+
+export function getTrace(
+  runId: string,
+  candidateId: string,
+  episodeContextId: string,
+): Promise<TracePayload> {
+  return authFetch<TracePayload>(
+    `/decisions/${runId}/traces/${candidateId}/${episodeContextId}`,
+  );
+}
+
+export type JobState = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+
+export interface DecisionJob {
+  id: string;
+  state: JobState;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  /** Episode *runs*, one per (candidate, episode) pair — thirty
+   *  episodes across two candidates is sixty. `total` is 0 until the
+   *  sweep reports its first pair. */
+  progress: number;
+  total: number;
+  /** While running, the stack being simulated. On success, the run id. */
+  message: string;
+  error: string | null;
+  /** Only once the sweep finished — before that there is no run. */
+  run_id: string | null;
+}
+
+export interface CandidateChoice {
+  stack: string;
+  local_config: string;
+}
+
+/** Queue a sweep instead of holding the request open for hours.
+ *
+ * 202: nothing exists yet. The run appears in `/decisions` when the
+ * sweep finishes, and the job carries its id at that point.
+ *
+ * The queue holds one job — HĐ-7.4 forbids two evaluation runs on one
+ * machine at once, because they pin the same cores and each becomes the
+ * other's background load. A second request waits.
+ */
+export function queueDecision(request: {
+  task_profile_id: string;
+  candidates: CandidateChoice[];
+  scope?: string;
+  episodes?: number | null;
+  reuse_traces?: boolean;
+}): Promise<DecisionJob> {
+  return authFetch<DecisionJob>("/decisions/jobs", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export function listDecisionJobs(): Promise<DecisionJob[]> {
+  return authFetch<DecisionJob[]>("/decisions/jobs");
+}
+
+export function cancelDecisionJob(jobId: string): Promise<DecisionJob> {
+  return authFetch<DecisionJob>(`/decisions/jobs/${jobId}`, { method: "DELETE" });
+}
+
+/** Is this job still going? Used to decide whether to keep polling. */
+export function jobIsLive(job: DecisionJob): boolean {
+  return job.state === "queued" || job.state === "running";
+}
+
 export function approvedConfigUrl(runId: string): string {
   return `${API_BASE}/api/v1/decisions/${runId}/approved_config.yaml`;
 }
@@ -316,11 +417,4 @@ export function coverage(run: DecisionRun): number | undefined {
   const measured = run.report?.sample?.n_episodes;
   if (!requested || measured === undefined) return undefined;
   return measured / requested;
-}
-
-/** Did this candidate clear every gate? Reads the stored verdict rather
- *  than re-deriving it from `blocking_gates`, so the badge and the table
- *  cannot disagree. */
-export function cleared(candidate: RunCandidate): boolean {
-  return candidate.cleared_gates;
 }

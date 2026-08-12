@@ -266,3 +266,54 @@ describe("the two human acts sit below the evidence", () => {
     );
   });
 });
+
+describe("starting a sweep from the page", () => {
+  it("queues rather than running inside the request", () => {
+    /* The episode count comes from the deployment's declared collision
+       risk (HĐ-7.1) — a warehouse at 1% is 300 episodes and hours of
+       simulation. A button that held the browser open for that is not a
+       design, it is an omission. */
+    expect(LIST).toContain("queueDecision(");
+    expect(LIST).not.toContain("runDecision(");
+  });
+
+  it("omits the episode count rather than inventing one", () => {
+    /* Blank means "use N_min from the declared risk". Sending a number
+       the user did not choose would quietly override the contract's own
+       arithmetic. */
+    expect(LIST).toContain("Number.isFinite(parsed) && parsed > 0 ? { episodes: parsed } : {}");
+  });
+
+  it("allows only one sweep at a time, and says why", () => {
+    /* Not a capacity choice: two evaluation runs pin the same cores and
+       each becomes the other's background load, so G4 would measure a
+       machine that does not exist (HĐ-7.4). */
+    expect(LIST).toContain("live.length > 0");
+    const note = (en as Record<string, string>)["decisions.launch.oneAtATime"];
+    expect(note).toContain("HĐ-7.4");
+  });
+
+  it("reports progress in episodes and never fakes a percentage", () => {
+    /* `total` is 0 until the sweep reports its first episode, and "0/0"
+       is honest where "0%" would be a claim about a denominator nobody
+       has yet. */
+    expect(LIST).toContain("job.total > 0 ?");
+  });
+
+  it("stops polling once nothing is live", () => {
+    expect(LIST).toContain("if (!jobs.some(jobIsLive)) return;");
+    expect(LIST).toContain("clearInterval(timer)");
+  });
+
+  it("links straight to the finished run instead of making the reader search", () => {
+    /* The job carries the stored run's id. "The one that appeared
+       recently" is not an identity. */
+    expect(LIST).toContain("job.run_id");
+    expect(LIST).toContain("decisions.job.open");
+  });
+
+  it("offers cancel only while a job is live", () => {
+    expect(LIST).toContain("jobIsLive(job) ? (");
+    expect(LIST).toContain("cancelDecisionJob");
+  });
+});

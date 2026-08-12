@@ -31,10 +31,12 @@ from planbench_api.decision_service import (
 from planbench_api.decisions import StoredCandidate, StoredDecisionRun, StoredTaskProfile
 from planbench_api.dependencies import (
     get_candidate_service,
+    get_decision_jobs,
     get_decision_run_service,
     get_task_profile_service,
 )
-from planbench_api.errors import DomainValidationError
+from planbench_api.errors import DomainValidationError, NotFoundError
+from planbench_api.worker import Job, JobQueue
 from planbench_benchmark.selection import DEFAULT_SCOPE
 
 router = APIRouter(tags=["decisions"])
@@ -42,6 +44,7 @@ router = APIRouter(tags=["decisions"])
 Profiles = Annotated[TaskProfileService, Depends(get_task_profile_service)]
 Candidates = Annotated[CandidateService, Depends(get_candidate_service)]
 Runs = Annotated[DecisionRunService, Depends(get_decision_run_service)]
+DecisionJobs = Annotated[JobQueue, Depends(get_decision_jobs)]
 
 
 class TaskProfileResource(BaseModel):
@@ -131,6 +134,36 @@ class ConfigDecisionRequest(BaseModel):
     comment: str = ""
 
 
+class DecisionJobResource(BaseModel):
+    """A queued sweep, and how far it has got.
+
+    ``run_id`` is filled in only when the job succeeded — before that
+    there is no run, and a field that carried a plausible id early would
+    be pointing at nothing.
+    """
+
+    id: str
+    state: str
+    created_at: str
+    started_at: str | None
+    finished_at: str | None
+    #: Episode *runs* done and planned — one per (candidate, episode)
+    #: pair, so thirty episodes across two candidates is sixty. Not the
+    #: episode count: reporting that would make a two-candidate sweep
+    #: look twice as far along as it is.
+    #:
+    #: ``total`` is 0 until the sweep reports its first pair. A
+    #: denominator that arrives a second late is better than one that
+    #: changes under the reader.
+    progress: int
+    total: int
+    #: While running, the stack currently being simulated. On success,
+    #: the stored run's id.
+    message: str
+    error: str | None
+    run_id: str | None
+
+
 class ReviewEventResource(BaseModel):
     sequence: int
     action: str
@@ -162,6 +195,25 @@ def _candidate(stored: StoredCandidate) -> CandidateResource:
         created_at=stored.created_at,
         spec=stored.spec,
         tuning=stored.tuning,
+    )
+
+
+def _job(job: Job) -> DecisionJobResource:
+    # `message` carries the stored run's id once the work finished, so a
+    # client watching the job knows where to look without hunting the
+    # list for something that appeared recently — "recent" is not an
+    # identity, especially with a queue that runs one job at a time.
+    return DecisionJobResource(
+        id=job.id,
+        state=str(job.state),
+        created_at=job.created_at,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
+        progress=job.progress,
+        total=job.total,
+        message=job.message,
+        error=job.error,
+        run_id=job.message if job.state == "succeeded" else None,
     )
 
 
@@ -263,6 +315,74 @@ def run_decision(request: DecisionRequest, service: Runs, user: CurrentUser) -> 
     )
 
 
+@router.post(
+    "/decisions/jobs", response_model=DecisionJobResource, status_code=status.HTTP_202_ACCEPTED
+)
+def queue_decision(
+    request: DecisionRequest, service: Runs, jobs: DecisionJobs, user: CurrentUser
+) -> DecisionJobResource:
+    """Queue a selection and hand back a job to watch. 202, not 201.
+
+    202 because nothing has been created yet — the run appears in
+    ``/decisions`` when the sweep finishes, and answering 201 with a job
+    id would name a resource that does not exist.
+
+    **The queue holds one job.** HĐ-7.4 forbids two evaluation runs on
+    one machine at once: they pin the same cores and each becomes the
+    other's background load, so G4 measures a machine that does not
+    exist. A second request while one is running is queued, not run.
+
+    ``POST /decisions`` still exists and still runs inside the request. A
+    six-episode fixture finishes before a progress bar would appear, and
+    making that caller poll would be ceremony.
+    """
+    if len({(spec.stack, spec.local_config) for spec in request.candidates}) < 2:
+        raise DomainValidationError(
+            "a selection needs at least two *distinct* candidates. The same configuration "
+            "twice is the same candidate_id (HĐ-1.3), and a candidate cannot be its own rival"
+        )
+    return _job(
+        service.submit(
+            jobs=jobs,
+            task_profile_id=request.task_profile_id,
+            candidate_specs=[(spec.stack, spec.local_config) for spec in request.candidates],
+            scope=request.scope,
+            episodes=request.episodes,
+            created_by=user.id,
+            reuse_traces=request.reuse_traces,
+        )
+    )
+
+
+@router.get("/decisions/jobs", response_model=list[DecisionJobResource])
+def list_decision_jobs(jobs: DecisionJobs) -> list[DecisionJobResource]:
+    return [_job(job) for job in jobs.list()]
+
+
+@router.get("/decisions/jobs/{job_id}", response_model=DecisionJobResource)
+def get_decision_job(job_id: str, jobs: DecisionJobs) -> DecisionJobResource:
+    job = jobs.get(job_id)
+    if job is None:
+        raise NotFoundError("decision job", job_id)
+    return _job(job)
+
+
+@router.delete("/decisions/jobs/{job_id}", response_model=DecisionJobResource)
+def cancel_decision_job(job_id: str, jobs: DecisionJobs, _: CurrentUser) -> DecisionJobResource:
+    """Cancel a queued or running sweep.
+
+    Episodes already written stay written, and that is the point rather
+    than a leak: traces are keyed by content hash, so a later run of the
+    same candidates on the same deployment reuses every one of them. A
+    cancelled three-hour sweep costs nothing the second time.
+    """
+    jobs.cancel(job_id)
+    job = jobs.get(job_id)
+    if job is None:
+        raise NotFoundError("decision job", job_id)
+    return _job(job)
+
+
 @router.get("/decisions", response_model=list[DecisionRunResource])
 def list_decisions(
     service: Runs,
@@ -346,6 +466,27 @@ def decision_audit(run_id: str, service: Runs) -> list[ReviewEventResource]:
         )
         for event in service.events(run_id)
     ]
+
+
+@router.get("/decisions/{run_id}/traces/{candidate_id}/{episode_context_id}")
+def get_trace(
+    run_id: str, candidate_id: str, episode_context_id: str, service: Runs
+) -> dict[str, Any]:
+    """One episode's trajectory, with the map it was driven on.
+
+    **The trace is the evidence.** One Parquet file per (candidate,
+    episode) is the sole input the Metrics Engine has (HĐ-5), and every
+    number on a Decision Card is derived from it. Until this endpoint
+    existed, nothing could read one back: the platform computed gate
+    verdicts from evidence nobody could look at, and asked to be
+    believed.
+
+    Not a response model, and that is deliberate: the payload is bulk
+    telemetry — six parallel arrays and a packed occupancy grid — and
+    validating 546 floats twice on the way out would buy nothing a
+    schema check does not already give the writer.
+    """
+    return service.trace(run_id, candidate_id, episode_context_id)
 
 
 @router.get("/decisions/{run_id}/approved_config.yaml", response_class=PlainTextResponse)
