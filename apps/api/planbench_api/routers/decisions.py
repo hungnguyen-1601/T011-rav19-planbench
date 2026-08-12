@@ -209,9 +209,7 @@ def get_task_profile(profile_id: str, service: Profiles) -> TaskProfileResource:
     return _profile(service.get(profile_id))
 
 
-@router.post(
-    "/candidates", response_model=CandidateResource, status_code=status.HTTP_201_CREATED
-)
+@router.post("/candidates", response_model=CandidateResource, status_code=status.HTTP_201_CREATED)
 def register_candidate(
     registration: CandidateRegistration, service: Candidates, user: CurrentUser
 ) -> CandidateResource:
@@ -235,12 +233,8 @@ def get_candidate(candidate_id: str, service: Candidates) -> CandidateResource:
     return _candidate(service.get(candidate_id))
 
 
-@router.post(
-    "/decisions", response_model=DecisionRunResource, status_code=status.HTTP_201_CREATED
-)
-def run_decision(
-    request: DecisionRequest, service: Runs, user: CurrentUser
-) -> DecisionRunResource:
+@router.post("/decisions", response_model=DecisionRunResource, status_code=status.HTTP_201_CREATED)
+def run_decision(request: DecisionRequest, service: Runs, user: CurrentUser) -> DecisionRunResource:
     """Run a selection and store the result, ranked or not.
 
     Synchronous on purpose at this size. The episode count comes from the

@@ -43,6 +43,14 @@ pyarrow==25.0.0
 # The API computes them when it aggregates a report, so this is runtime,
 # not a development extra. Ships wheels — no build toolchain needed.
 scipy==1.18.0
+# `psutil` is deliberately absent, and the asymmetry with
+# requirements.txt is the point rather than an oversight. `hostinfo.py`
+# needs it only to read and set CPU affinity where the stdlib cannot:
+# Windows. This image is Linux, `os.sched_getaffinity` and
+# `os.sched_setaffinity` are both present, and the psutil branch is
+# unreachable — so adding it here would ship a package the image never
+# imports. Do not "fix" the difference in either direction: removing it
+# from requirements.txt leaves every Windows run unpinned (HĐ-7.4).
 
 # Persistence. psycopg[binary] ships wheels, so no build toolchain is
 # needed in the image.

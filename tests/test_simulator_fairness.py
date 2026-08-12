@@ -614,9 +614,7 @@ class TestTheTwoHallsStayInStep:
         quiet = build_evaluation_contexts(load(HALL), seed_count=4)
         noisy = build_evaluation_contexts(load(NOISY_HALL), seed_count=4)
         assert [c.seed for c in quiet] == [c.seed for c in noisy]
-        assert not (
-            {c.episode_context_id for c in quiet} & {c.episode_context_id for c in noisy}
-        )
+        assert not ({c.episode_context_id for c in quiet} & {c.episode_context_id for c in noisy})
 
 
 class TestTheReplanGridIsAKnownInformationAsymmetry:
