@@ -59,6 +59,22 @@ class TestOneChainThreeEntryPoints:
     def test_the_measurement_uses_the_shared_chain(self, name: str) -> None:
         assert getattr(measure, name) is getattr(pipeline, name)
 
+    def test_the_card_is_assembled_by_one_step(self) -> None:
+        """A1's guarantee, and the reason it was needed.
+
+        The slice assembled its card with the sensitivity sweeps and the
+        Pareto labels; ``run_comparison`` assembled one without. Two
+        producers of one artifact, and the project's first Decision Card
+        came out of the poorer one — carrying
+        ``weight_stability_margin: null`` and ``anchor_stability: null``
+        while HĐ-12 reads null as *"not measured"*.
+
+        Asserted on identity rather than on output: a behavioural test
+        says "today they agree", this says "there is only one
+        implementation to disagree with".
+        """
+        assert slice_module.assemble_card is selection.assemble_card
+
     def test_the_failure_type_is_shared(self) -> None:
         """Three names for one event. A caller should not have to catch
         two exception types to survive an acceptance failure."""
@@ -241,6 +257,32 @@ class TestARankableField:
     def test_it_produces_a_card(self, ranked: dict[str, object]) -> None:
         assert ranked["decision_card"] is not None
         assert ranked["decision_card"]["recommended"]["candidate_id"]  # type: ignore[index]
+
+    def test_the_card_carries_its_sensitivity(self, ranked: dict[str, object]) -> None:
+        """HĐ-11.5's two caveats, and the bug this test exists for.
+
+        Both sweeps re-score metrics already in memory and never touch
+        the simulator, so they cost seconds on a run that cost hours —
+        there was never a budget reason to omit them. But
+        ``run_comparison`` did omit them, and the omission was invisible
+        because null is a legal value: a card with
+        ``weight_stability_margin: null`` validates against the schema
+        and reads, to anyone not looking for it, like a card whose
+        recommendation simply never flips.
+
+        ``weight_stability_margin`` answers "how far can the weights move
+        before this recommendation changes" — the single question that
+        separates a finding from an artefact of the weighting.
+        """
+        card = ranked["decision_card"]
+        evidence = card["evidence"]  # type: ignore[index]
+        assert evidence["weight_stability_margin"] is not None
+        assert evidence["anchor_stability"] is not None
+
+    def test_the_card_carries_a_pareto_verdict(self, ranked: dict[str, object]) -> None:
+        """HĐ-10.1: label, never delete. A card without a Pareto verdict
+        cannot say whether its winner is only winning on the weights."""
+        assert ranked["decision_card"]["pareto_label"] is not None  # type: ignore[index]
 
     def test_the_delta_u_check_only_runs_when_there_is_a_comparison(
         self, ranked: dict[str, object]

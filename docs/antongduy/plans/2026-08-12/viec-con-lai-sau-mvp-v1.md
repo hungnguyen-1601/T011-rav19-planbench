@@ -10,6 +10,56 @@
 
 ---
 
+## 0bis. Ba câu hỏi mở — **dev đã chốt 2026-08-11 tối**
+
+### Q1 → `success_rate_min` của `open_hall_v2` = **1.00**
+
+Nguyên văn lý do dev đưa: *"sảnh tham chiếu dễ, đối xứng, dùng để kiểm nền tảng và cấu hình.
+**Acceptance deployment**: mọi failure trên nhiệm vụ đối xứng, dễ, dưới noise đã khai đều là tín
+hiệu chẩn đoán; không dùng ngưỡng này làm yêu cầu vận hành kho."*
+
+Đây là câu trả lời đúng loại mà HĐ-15.3 đòi: con số đến từ **vai trò của deployment**, không từ
+kết quả của candidate nào. Và nó khai `open_hall` thành một **loại thứ ba** — không phải khách
+hàng, không phải chỉ dụng cụ đối xứng, mà một **acceptance deployment**: nơi một thất bại là
+triệu chứng chứ không phải thống kê.
+
+**Hệ quả trên số liệu đang có** — kiểm luôn, không đoán:
+
+| candidate | success | G3 ở 0.95 | G3 ở **1.00** |
+|---|---:|---|---|
+| `rrtstar+dwa` `dwa_coarse` | 30/30 = 100% | pass | **pass** |
+| `rrtstar+dwa` `dwa_balanced` | 30/30 = 100% | pass | **pass** |
+| `astar+dwa` cả ba cấu hình | 70–73% | fail | fail |
+
+Tấm Decision Card đầu tiên **sống sót** qua thay đổi này. Nhưng phải nói rõ nó trở nên **chặt
+hơn nhiều**: ở 300 episode, **một** lần stuck cũng làm trượt G3. Đó đúng là ý định — "mọi
+failure đều là tín hiệu chẩn đoán" — và nó cần được nói ra để lần sau không ai đọc một G3 đỏ
+trên sảnh như một thất bại của candidate.
+
+### Q2 → kho chạy ở **1%** (300 episode)
+
+Rủi ro đến từ hiện trường, không từ ngân sách máy. Chi phí đã tính ở B1: ~2,2 giờ, chạy tuần tự.
+
+### Q3 → run không-card **được duyệt**, nhưng tách làm hai trạng thái
+
+Nguyên văn: *"có thể run không card, tuy nhiên không biến nó thành artifact bị bỏ quên. Cần tách
+thành `reviewed` và `approved_config`."*
+
+Đây là một thiết kế tốt hơn đề xuất của tôi (tôi đề xuất cấm duyệt run không-card). Lý do nó tốt
+hơn: cấm duyệt sẽ khiến bốn trên năm phép so đã chạy trở thành artifact **không ai từng nhìn**
+— đúng cái "bị bỏ quên" mà dev nêu. Hai trạng thái tách bạch được hai việc khác nhau:
+
+| Trạng thái | Nghĩa | Áp cho | Sinh ra gì |
+|---|---|---|---|
+| `reviewed` | *"đã có người đọc bảng cổng này và ghi nhận"* | **mọi** run | dấu vết audit + ghi chú |
+| `approved_config` | *"khuyến nghị này được chấp thuận để xuất cấu hình"* | **chỉ** run có card | `approved_config.yaml` |
+
+Ràng buộc phải giữ: `approved_config` **không** truy cập được từ một run không-card, và
+`reviewed` **không** sinh ra file cấu hình nào. Trộn hai cái là biến *"đã đo"* thành *"đã chấp
+thuận"* — đúng thứ dev cảnh báo.
+
+---
+
 ## 0. Đứng ở đâu
 
 | | |
@@ -61,6 +111,39 @@ tính từ đó.
 
 **Việc:** `run_uri` trỏ đúng thư mục của run (`selection.run_dir_name` đã sinh tên), và
 `run_checksum` băm tập trace đã dùng. **Ước lượng:** 1 giờ.
+
+### A4. Manifest không ghi `constraints` — lộ ra khi chốt Q1 *(cùng họ với lỗ hổng đã sửa)*
+
+Kiểm tấm card đầu tiên: manifest ghi `sensor_noise` (thêm ở 6.3.0) nhưng **không ghi
+`constraints`**. Nên hai lần chạy cùng profile id dưới **hai ngưỡng `success_rate_min` khác
+nhau** sinh ra **manifest giống hệt nhau** trong khi cho **phán quyết cổng khác nhau**.
+
+Đúng họ với lỗ hổng `sensor_noise` vừa vá, và đúng họ với `manifest=None` vừa vá: một trường
+quyết định kết quả mà không nằm trong hồ sơ tái lập.
+
+**Nhưng cách sửa thì khác, và phân biệt này quan trọng:**
+
+| Đổi cái gì | Ảnh hưởng | Trace cũ | Cách xử lý |
+|---|---|---|---|
+| `sensor_noise` | đổi **thế giới** | vô hiệu | **đổi `task_profile_id`** (đã là luật HĐ-13) |
+| `constraints` | đổi **phán quyết** | vẫn đúng | **ghi vào manifest** |
+
+`episode_context_id` không băm cả hai, nhưng lý do đổi id chỉ áp cho cái thứ nhất: episode ghi
+dưới σ = 0 là episode của một thế giới khác, còn episode ghi dưới `success_rate_min = 0.95` là
+**đúng episode đó**, chỉ được chấm bằng một thước khác.
+
+**Nên khuyến nghị:** `open_hall_v2` **giữ nguyên id**, chỉ sửa `success_rate_min` tại chỗ, và
+manifest thêm khối `constraints`. Trace được dùng lại — tiết kiệm ~1 giờ chạy lại 6 candidate —
+và hai tấm card dưới hai ngưỡng phân biệt được nhau bằng hồ sơ chứ không bằng trí nhớ.
+
+Nguyên tắc rút ra, đáng ghi vào contract: **`task_profile_id` định danh cái *thế giới*; manifest
+phải ghi cái đã biến phép đo thành phán quyết.**
+
+**Việc:** thêm `constraints` vào `Manifest` + schema JSON + `build_manifest`; bump contract
+MINOR; sửa `open_hall_v2.yaml` lên 1.00 kèm comment nêu lý do "acceptance deployment"; chạy lại
+ba phép so từ trace có sẵn (`--reuse-traces`, vài giây) để artifact khớp ngưỡng mới.
+
+**Ước lượng:** 1,5 giờ. **Làm cùng lượt A1** vì cả hai đụng `build_manifest`.
 
 ### A3. `uv.lock` rỗng vẫn nằm trong cây làm việc
 
@@ -138,14 +221,14 @@ tuyên bố đó chưa chạy.
 **Ước lượng:** nửa ngày (đã có `scripts/make_fairness_map.py` làm mẫu, và bài học "sinh ra được
 + test khẳng định đối xứng" thay vì vẽ tay rồi tin).
 
-### C3. `success_rate_min` của sảnh chưa bao giờ được khai riêng
+### C3. ~~`success_rate_min` của sảnh chưa bao giờ được khai riêng~~ — **đã chốt, gộp vào A4**
 
-Mọi hằng số khác trong `open_hall_v2.yaml` đều có comment giải thích; riêng `0.95` được chép từ
-kho. Nên *"A\* trượt G3 trên sảnh"* phải đọc là **A\* đạt 70% trên sảnh**, và việc đó có phải
-thất bại hay không còn phụ thuộc một ngưỡng chưa ai chủ động chọn.
+Dev đã quyết: **1.00**, vì `open_hall` là một **acceptance deployment** (xem 0bis/Q1). Việc gõ
+gộp vào A4 vì cùng đụng manifest và cùng cần chạy lại ba phép so từ trace có sẵn.
 
-**Việc:** khai có chủ ý kèm lý do viết ra — dù là 0.95 hay khác. Nếu khác thì phải vì **sảnh này
-cần thế**, không phải vì A\* trượt (HĐ-15.3). **Ước lượng:** 30 phút suy nghĩ, 5 phút gõ.
+Điều còn lại của mục này: viết comment vào profile nêu đúng lý do dev đưa, để lần sau không ai
+đọc `1.00` như một yêu cầu vận hành. Mọi hằng số khác trong file đều có comment; con số này
+từng là ngoại lệ duy nhất, và nó là ngoại lệ đã sinh ra cả câu hỏi.
 
 ---
 
@@ -186,31 +269,43 @@ phải tab phụ.
 ## Thứ tự đề xuất cho ngày 12-08
 
 ```
-A1 độ nhạy vào card    (2–3 h)  ─┐  hai việc này làm tấm card đang có
-A2 run_uri + checksum  (1 h)    ─┘  trở nên đầy đủ, rẻ, và không cần máy rảnh
+B1 kho ở mức 1%  (~2,2 h máy)  ── bật CHẠY NỀN TỪ SÁNG, trước mọi thứ khác
+        │                          (nó chỉ chiếm 2 nhân; phần còn lại làm song song được
+        │                           MIỄN LÀ không chạy run đánh giá thứ hai — HĐ-7.4)
         │
-        ├── C3 khai success_rate_min của sảnh   (35 ph, thuần suy nghĩ)
+A1 độ nhạy vào card    (2–3 h) ─┬─ cùng đụng build_manifest, làm một lượt
+A4 constraints + 1.00  (1,5 h) ─┘
         │
-        └── B1 kho ở mức 1%   (~2,2 h máy, chạy nền)
+A2 run_uri + checksum  (1 h)
+        │
+        └── chạy lại ba phép so từ trace có sẵn (vài giây) => artifact khớp ngưỡng mới
                    │
-                   └── báo cáo: deployment thật đầu tiên
+                   └── báo cáo: deployment thật đầu tiên + card đầy đủ
 ```
 
-**Nếu chỉ có nửa ngày:** A1 + A2 + C3. Chúng làm tấm card hiện có đầy đủ và không tốn giờ máy.
+**Nếu chỉ có nửa ngày:** A1 + A4 + A2. Chúng làm tấm card hiện có **đầy đủ** và không tốn giờ
+máy — sau ba việc này, card mới có đủ độ nhạy, đủ hồ sơ tái lập, và đúng ngưỡng đã chốt.
 
-**Nếu có máy rảnh cả ngày:** thêm B1, và bật nó chạy nền từ sáng.
+**Nếu có máy rảnh cả ngày:** bật B1 chạy nền **trước tiên** lúc bắt đầu, rồi làm A trong lúc
+chờ. B1 là thứ duy nhất trong danh sách phụ thuộc vào đồng hồ.
 
 **Cố ý không xếp vào ngày mai:** C1 (adapter monolithic, 1–2 ngày), B2 (`astar+ppo`, phụ thuộc
 checkpoint), D1/D2 (bề mặt sản phẩm). Cả bốn đều đúng việc, không cái nào gấp hơn A và B.
 
 ---
 
-## Ba câu hỏi mở cần dev quyết
+## Câu hỏi mở
 
-1. **`success_rate_min` của `open_hall_v2` là bao nhiêu, và vì sao?** (C3) — không quyết thì mọi
-   kết luận trên sảnh đều treo một ngưỡng chưa ai chọn.
-2. **Kho chạy ở mức 1% (300 ep) hay 3% (100 ep) cho lượt đầu?** Contract nói rủi ro đến từ hiện
-   trường chứ không từ ngân sách máy — nên nếu chọn 3% thì phải vì kho chấp nhận 3%, không phải
-   vì 300 episode lâu.
-3. **6.3 có cho duyệt run không-card không?** Đề xuất: không. Nhưng đó là quyết định về quy
-   trình phê duyệt, không phải về code.
+Ba câu của bản nháp đã được dev trả lời — xem mục **0bis**. Còn lại đúng một, và nó nảy ra *từ*
+câu trả lời thứ nhất:
+
+**Giữ `open_hall_v2` hay lên `v3` khi đổi `success_rate_min`?**
+
+Khuyến nghị ở A4: **giữ `v2`**, vì đổi ngưỡng chấm không làm episode cũ sai — nó chỉ chấm chúng
+bằng thước khác. `task_profile_id` định danh cái *thế giới*; cái đã biến phép đo thành phán
+quyết thì thuộc về manifest. Giữ id còn tiết kiệm ~1 giờ chạy lại 6 candidate.
+
+Phản biện đáng cân nhắc: một người ngoài nhìn `open_hall_v2` ở hai thời điểm sẽ thấy hai
+deployment khác nhau mang cùng một tên. Nếu dev thấy điều đó nặng hơn 1 giờ chạy lại thì lên
+`v3` — nhưng khi đó vẫn **phải** thêm `constraints` vào manifest, vì lần sau ai đó sửa ngưỡng mà
+quên đổi id thì không có gì bắt được.

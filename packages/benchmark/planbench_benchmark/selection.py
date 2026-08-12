@@ -30,6 +30,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -62,13 +63,24 @@ from planbench_decision.candidate import (
     validate_experiment_scope,
 )
 from planbench_decision.card import (
+    DecisionCard,
+    Manifest,
     Provenance,
     build_decision_card,
     build_manifest,
     resolve_git_sha,
 )
+from planbench_decision.gates import GateReport
 from planbench_decision.objectives import DecisionSettings
-from planbench_decision.stats import recommend
+from planbench_decision.pareto import ParetoReport, label_field
+from planbench_decision.sensitivity import (
+    AnchorStability,
+    ScoredField,
+    WeightStability,
+    anchor_stability,
+    weight_stability,
+)
+from planbench_decision.stats import CandidateEvidence, Recommendation, recommend
 from planbench_schemas.task_profile import TaskProfile
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -84,6 +96,8 @@ UNTUNED_EVIDENCE = "planbench_benchmark.selection (library defaults, no tuning r
 
 __all__ = [
     "DEFAULT_SCOPE",
+    "CardBundle",
+    "assemble_card",
     "build_candidates",
     "load_profile",
     "parse_candidates",
@@ -155,6 +169,100 @@ def build_candidates(
     validate_experiment_scope(scope, candidates)  # type: ignore[arg-type]
     validate_control_rate(profile, candidates)
     return candidates
+
+
+@dataclass(frozen=True)
+class CardBundle:
+    """A Decision Card and everything that had to be computed to earn it."""
+
+    card: DecisionCard
+    manifest: Manifest
+    weight_stability: WeightStability
+    anchor_stability: AnchorStability
+    pareto: ParetoReport
+
+
+def assemble_card(
+    *,
+    candidates: Sequence[Candidate],
+    metrics_by_candidate: dict[str, list],
+    gate_reports: dict[str, GateReport],
+    evidence: Sequence[CandidateEvidence],
+    recommendation: Recommendation,
+    profile: TaskProfile,
+    contexts: Sequence[object],
+    settings: DecisionSettings,
+    scope: str,
+    manifest_ref: str,
+    provenance: Provenance,
+    bootstrap_seed: int,
+) -> CardBundle:
+    """Turn a finished comparison into a card, with every caveat measured.
+
+    **Why this is shared rather than written twice.** The slice built a
+    card with sensitivity and Pareto; ``run_comparison`` built one
+    without, so the project's first Decision Card carried
+    ``weight_stability_margin: null`` and ``anchor_stability: null``.
+    HĐ-12 reads null as *"not measured"*, so that card was honest and
+    incomplete — and HĐ-11.5 calls the sensitivity sweep the single most
+    useful thing on a card, because a ``CLEAR_RECOMMENDATION`` nobody
+    knows the flipping point of is half an answer.
+
+    Two producers of one artifact is the same failure M3 removed between
+    the slice, the measurement and the comparison — caught one layer
+    later, at the step that assembles the card rather than the step that
+    measures.
+
+    **The sweeps are cheap and that is the point.** Both re-score metrics
+    already in memory and never touch the simulator, so they cost seconds
+    on a run that cost hours. There was never a budget reason to leave
+    them out.
+
+    **Pareto runs after the recommendation, not before.** It does not
+    choose the winner; it decides which of the others may be offered
+    beside it, and whether the winner is only winning on the weights
+    (HĐ-10.1: label, never delete).
+    """
+    anchors = load_anchors().resolve(profile)
+    field = ScoredField.from_survivors(
+        candidates,
+        metrics_by_candidate,
+        contexts,
+        {cid: report.passed for cid, report in gate_reports.items()},
+    )
+    weights_sweep = weight_stability(field, anchors, settings, seed=bootstrap_seed)
+    anchors_sweep = anchor_stability(field, anchors, settings, seed=bootstrap_seed)
+    pareto = label_field(evidence, seed=bootstrap_seed)
+
+    card = build_decision_card(
+        recommendation,
+        evidence,
+        gate_reports,
+        profile,
+        settings,
+        scope,  # type: ignore[arg-type]
+        manifest_ref,
+        weight_stability=weights_sweep,
+        anchor_stability=anchors_sweep,
+        pareto=pareto,
+    )
+    manifest = build_manifest(
+        recommendation,
+        evidence,
+        gate_reports,
+        profile,
+        settings,
+        anchors,
+        provenance,
+        contexts,
+    )
+    return CardBundle(
+        card=card,
+        manifest=manifest,
+        weight_stability=weights_sweep,
+        anchor_stability=anchors_sweep,
+        pareto=pareto,
+    )
 
 
 def run_comparison(
@@ -317,29 +425,25 @@ def run_comparison(
         )
     )
 
-    manifest = build_manifest(
-        recommendation,
-        evidence,
-        gate_reports,
-        profile,
-        settings,
-        load_anchors().resolve(profile),
-        Provenance(
+    bundle = assemble_card(
+        candidates=candidates,
+        metrics_by_candidate=metrics_by_candidate,
+        gate_reports=gate_reports,
+        evidence=evidence,
+        recommendation=recommendation,
+        profile=profile,
+        contexts=contexts,
+        settings=settings,
+        scope=scope,
+        manifest_ref="manifest.json",
+        provenance=Provenance(
             git_sha=git_sha or resolve_git_sha(REPO_ROOT),
             benchmark_host=host,
             created_at=created_at,
         ),
-        contexts,
+        bootstrap_seed=bootstrap_seed,
     )
-    card = build_decision_card(
-        recommendation,
-        evidence,
-        gate_reports,
-        profile,
-        settings,
-        scope,  # type: ignore[arg-type]
-        manifest_ref="manifest.json",
-    )
+    card, manifest = bundle.card, bundle.manifest
     report["decision_card"] = card.to_json_dict()
     # Returned, not merely written beside the card. HĐ-13's acceptance
     # criterion is that somebody else rebuilds the same card *from the
