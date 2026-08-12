@@ -38,6 +38,25 @@
 id: open_hall_v2
 claim_level: mission
 
+# What this deployment is *for*, as a field rather than as a paragraph.
+# The finding is not new — answering the `success_rate_min` question
+# needed the deployment's role, and the answer was that this hall is
+# neither a customer site nor merely a symmetric instrument but an
+# **acceptance deployment**: a place where one failure is a diagnostic
+# symptom, not a statistic. Until now that lived only in the comment
+# below, where no code could read it.
+#
+# What it changes: early stopping is refused here. Retiring a candidate
+# the moment it cannot pass a gate would be throwing away exactly the
+# episodes this deployment exists to produce, and the hall is the cheap
+# one, so the hours saved would be small anyway.
+#
+# Declared, not inferred. Deriving the role from `success_rate_min == 1.0`
+# is the shape of reasoning HĐ-1.4 already refused for `experiment_scope`:
+# the day somebody declares a real warehouse at 1.00, it would silently
+# acquire a role nobody chose.
+deployment_role: acceptance
+
 environment:
   map: maps/open_hall.pgm
   map_yaml: maps/open_hall.yaml
@@ -81,30 +100,40 @@ robot:
 available_observations: [lidar_2d]
 
 constraints:
-  # 100%, and this is the one number in the file that says what kind of
-  # deployment this is.
+  # 95%, **and this number is known to be the wrong one.** It is here as
+  # a deliberate short-term measure, not as an answer, and the reason it
+  # is written down rather than quietly left alone is that the honest
+  # value has already been worked out.
   #
   # The hall is an **acceptance deployment**: easy, mirror-symmetric, and
   # run under the noise this profile declares. Nothing here defeats a
   # stack by geometry. So a failure is not a statistic to be averaged —
   # it is a **diagnostic signal**, and one of them is enough to say the
-  # stack or the configuration has something wrong with it.
+  # stack or the configuration has something wrong with it. That reading
+  # gives 1.00, and on 2026-08-11 this file said 1.00 for exactly that
+  # reason.
   #
-  # **This is not an operating requirement for the warehouse.** No real
-  # site is asked to deliver 100%; `warehouse_a_v2` declares what it
-  # declares. Reading a red G3 here as "this candidate is unfit to ship"
-  # is reading an instrument as a customer.
+  # **Why it is 0.95 again.** HĐ-8.3 law 2 makes this metric's anchor
+  # `bad` point at this very threshold, so 1.00 collapses the scale onto
+  # `good` and the deployment stops being able to rank anything (HĐ-8.4).
+  # That consequence is real and was not anticipated when the threshold
+  # was chosen; taking the hall out of the ranking business is a bigger
+  # decision than this file should make on its own. So the threshold goes
+  # back to the value that keeps the hall working while the question is
+  # settled properly.
   #
-  # Until 2026-08-11 this said 0.95, copied from the warehouse and never
-  # declared for the hall — the only constant in this file without a
-  # reason beside it, and the one that prompted the question. Answering
-  # it needed the deployment's *role*, not any candidate's result
-  # (HĐ-15.3).
+  # **What is still open, and must not be forgotten:** an acceptance
+  # deployment whose declared threshold is 0.95 is saying that one
+  # failure in twenty on an easy symmetric mission is acceptable, and
+  # that is not what this hall means. Tracked in
+  # `docs/KNOWN_LIMITATIONS.md` (L6). The platform now *handles* 1.00
+  # legibly rather than crashing on it, so the remaining work is the
+  # decision, not the mechanism.
   #
-  # Nothing was re-simulated to change it: a constraint changes the
-  # verdict, not the world, so the recorded episodes stay exactly as
-  # valid (HĐ-13, `manifest.constraints`).
-  success_rate_min: 1.00
+  # Changing this re-simulates nothing: a constraint changes the verdict,
+  # not the world, so recorded episodes stay exactly as valid (HĐ-13,
+  # `manifest.constraints`).
+  success_rate_min: 0.95
   # 10% accepted risk => N_min = 30. Not a claim anyone would ship; this
   # deployment is a test instrument for the platform, and it says so
   # rather than declaring a number it cannot back.

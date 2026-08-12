@@ -228,6 +228,13 @@ class DecisionRunService:
                 manifest=manifest,
                 recommended_candidate_id=recommended,
                 status=card["status"] if card is not None else None,
-                run_uri=str(self._run_root),
+                # The run's own directory and a fingerprint of the traces
+                # it was computed from — not the root every run shares.
+                # ``run_uri`` pointing at the parent said nothing a reader
+                # could act on, and ``run_checksum`` was always null, which
+                # left D15's reference decorative: a URI cannot say the
+                # files behind it are still the ones this result came from.
+                run_uri=report.get("run_uri") or f"file://{self._run_root}",
+                run_checksum=report.get("run_checksum"),
             )
         )

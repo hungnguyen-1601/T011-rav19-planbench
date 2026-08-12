@@ -31,6 +31,20 @@
 id: open_hall_v1
 claim_level: mission
 
+# Same role as `open_hall_v2`, and for the same reason: this is the hall,
+# and the hall is an acceptance instrument — a place where one failure is
+# a diagnostic symptom rather than a statistic. What the field changes is
+# that early stopping is refused here: retiring a candidate the moment it
+# cannot pass a gate would throw away exactly the episodes this
+# deployment exists to produce.
+#
+# Declaring it here rather than leaving the `customer` default also keeps
+# the two halls identical outside their ids and their noise, which
+# `tests/test_simulator_fairness.py` asserts field by field: a v1 that
+# quietly allowed early stopping while v2 refused it would be two
+# different instruments wearing the same map.
+deployment_role: acceptance
+
 environment:
   map: maps/open_hall.pgm
   map_yaml: maps/open_hall.yaml
@@ -60,12 +74,15 @@ robot:
 available_observations: [lidar_2d]
 
 constraints:
-  # 100%, matching `open_hall_v2` — see the long note there. The hall is
-  # one place and its acceptance standard is a property of the place, not
-  # of whether the noise model is switched on. Keeping the two in step is
-  # also what lets `test_they_differ_only_in_id_and_noise` stay a strong
-  # guard rather than a list of tolerated differences.
-  success_rate_min: 1.00
+  # 95%, matching `open_hall_v2` — see the long note there, including why
+  # this number is known to be the wrong one and what is still open. The
+  # hall is one place and its acceptance standard is a property of the
+  # place, not of whether the noise model is switched on, so the two move
+  # together in both directions: they went to 1.00 together on 08-11 and
+  # came back together on 08-12. Keeping them in step is also what lets
+  # `test_they_differ_only_in_id_and_noise` stay a strong guard rather
+  # than a list of tolerated differences.
+  success_rate_min: 0.95
   # 10% accepted risk => N_min = 30. Not a claim anyone would ship; this
   # deployment is a test instrument, and G2 will refuse it anyway for
   # want of distinct episodes (see the note on traffic above).

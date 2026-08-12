@@ -44,6 +44,9 @@ from planbench_benchmark.candidates import (
 from planbench_benchmark.contexts import build_evaluation_contexts
 from planbench_benchmark.hostinfo import detect_benchmark_host, unpinned_warning
 from planbench_benchmark.pipeline import (
+    AcceptanceFailure,
+    GateOnlyDeployment,
+    SweepResult,
     check_delta_u,
     check_gate_table,
     check_l_ref,
@@ -51,8 +54,11 @@ from planbench_benchmark.pipeline import (
     check_reproducible,
     check_shared_contexts,
     gate_all,
+    paired_prefix,
     score,
+    score_episode,
     score_survivors,
+    trace_checksum,
 )
 from planbench_benchmark.pipeline import simulate as run_episodes
 from planbench_benchmark.task_map import load_task_map, validate_missions_on_map
@@ -70,6 +76,11 @@ from planbench_decision.card import (
     build_manifest,
     resolve_git_sha,
 )
+from planbench_decision.early_stop import (
+    GATES_WITHOUT_A_RULE,
+    StopVerdict,
+    check_early_stop,
+)
 from planbench_decision.gates import GateReport
 from planbench_decision.objectives import DecisionSettings
 from planbench_decision.pareto import ParetoReport, label_field
@@ -81,7 +92,7 @@ from planbench_decision.sensitivity import (
     weight_stability,
 )
 from planbench_decision.stats import CandidateEvidence, Recommendation, recommend
-from planbench_schemas.task_profile import TaskProfile
+from planbench_schemas.task_profile import DEFAULT_MIN_EPISODES_BEFORE_STOP, TaskProfile
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -101,6 +112,8 @@ __all__ = [
     "build_candidates",
     "load_profile",
     "parse_candidates",
+    "refuse_early_stop",
+    "resolve_stop_floor",
     "run_comparison",
     "run_dir_name",
 ]
@@ -265,6 +278,129 @@ def assemble_card(
     )
 
 
+def resolve_stop_floor(profile: TaskProfile, override: int | None) -> int:
+    """Flag › profile › default 30, and the winner is put on the report.
+
+    Three sources rather than a constant because the floor buys a
+    *distribution*, and how much distribution is worth buying is a
+    property of the question being asked, not of the code. It is written
+    into the report for the same reason ``constraints`` had to go into
+    the manifest (A4): two runs of one profile under two floors are two
+    different measurements, and nothing else would tell them apart.
+    """
+    if override is not None:
+        return override
+    if profile.min_episodes_before_stop is not None:
+        return profile.min_episodes_before_stop
+    return DEFAULT_MIN_EPISODES_BEFORE_STOP
+
+
+def refuse_early_stop(profile: TaskProfile) -> str | None:
+    """Why this deployment may not stop early, or ``None``.
+
+    An acceptance deployment is refused (Q3 of the 12-08 plan) because
+    the trade is bad at both ends: every failure there is a *diagnostic
+    symptom* rather than a statistic — HĐ's reason for
+    ``success_rate_min = 1.00`` on the hall — so the episodes are the
+    product, and the hall is also the cheap deployment, so the hours
+    saved are small.
+
+    Refused rather than silently ignored. A flag that gets swallowed
+    leaves the user believing they are saving time when they are not,
+    which is worse than either honest outcome.
+    """
+    if profile.deployment_role != "acceptance":
+        return None
+    return (
+        f"profile {profile.id!r} khai deployment_role='acceptance', nên không được dừng "
+        "sớm: ở đó mọi failure là một tín hiệu chẩn đoán chứ không phải một thống kê, và "
+        "chính các episode là sản phẩm. Bỏ cờ --stop-early, hoặc đổi vai trò của "
+        "deployment nếu nó thật sự không còn là acceptance"
+    )
+
+
+def _refuse_a_retired_survivor(
+    retired: dict[str, object], gate_reports: dict[str, GateReport]
+) -> None:
+    """The premise the whole feature rests on, checked instead of assumed.
+
+    Early stopping is only sound because a retired candidate has failed
+    a gate, and therefore never reaches ΔU — which is what lets the
+    paired-context invariant be narrowed to survivors. If a candidate
+    were ever retired *and* passed its gates, that reasoning would be
+    gone and a truncated candidate could be ranked against a full one.
+
+    It cannot happen: every rule in :mod:`planbench_decision.early_stop`
+    holds at any sample size the run can end at. So this raises rather
+    than warns — a violation means a rule is wrong, not that a run is
+    unusual.
+    """
+    contradictions = sorted(cid for cid in retired if gate_reports[cid].passed)
+    if contradictions:
+        raise AcceptanceFailure(
+            f"candidate(s) {contradictions} bị dừng sớm nhưng vẫn qua đủ cổng — luật dừng "
+            "đã tuyên bố một điều không đúng. Một candidate bị dừng phải là một candidate "
+            "trượt cổng, nếu không phép so ghép cặp đang so một tập episode với một tập khác"
+        )
+
+
+class _EarlyStopWatch:
+    """Accumulates one candidate's metrics from traces and asks the rule.
+
+    Metrics are read back **from the trace files** one episode at a time
+    (HĐ-5), not taken from the simulator's memory: a gate verdict that
+    came from process memory could not be re-derived later. Accumulating
+    rather than re-reading the whole run each time keeps that honest and
+    linear instead of quadratic — the difference between seconds and
+    hours on a 300-episode sweep.
+    """
+
+    def __init__(
+        self,
+        profile: TaskProfile,
+        map_data: object,
+        trace_root: Path,
+        *,
+        planned: int,
+        floor: int,
+    ) -> None:
+        self._profile = profile
+        self._map_data = map_data
+        self._trace_root = trace_root
+        self._planned = planned
+        self._floor = floor
+        self._metrics: dict[str, list] = {}
+        #: Where the rule *first* fired, even if the floor held the
+        #: candidate in the run for longer. The report carries it so
+        #: "it knew at episode 7, why did it run to 30?" has an answer.
+        self._would_have_stopped_at: dict[str, int] = {}
+
+    def retire(self, candidate: Candidate, context: object) -> StopVerdict | None:
+        rows = self._metrics.setdefault(candidate.candidate_id, [])
+        rows.append(
+            score_episode(
+                candidate,
+                self._profile,
+                context,  # type: ignore[arg-type]
+                self._map_data,  # type: ignore[arg-type]
+                self._trace_root,
+            )
+        )
+        verdict = check_early_stop(rows, self._profile, planned_episodes=self._planned)
+        if verdict is None:
+            return None
+        self._would_have_stopped_at.setdefault(candidate.candidate_id, len(rows))
+        if len(rows) < self._floor:
+            return None
+        return verdict
+
+    def floor_report(self, candidate_id: str) -> dict[str, object]:
+        return {
+            "min_episodes_before_stop": self._floor,
+            "would_have_stopped_at": self._would_have_stopped_at.get(candidate_id),
+        }
+
+
 def run_comparison(
     *,
     profile_path: Path,
@@ -280,6 +416,9 @@ def run_comparison(
     quiet: bool = False,
     map_base_dir: Path | None = None,
     affinity_source: str | None = None,
+    score_only: bool = False,
+    stop_early: bool = False,
+    min_episodes_before_stop: int | None = None,
 ) -> dict[str, object]:
     def say(message: str) -> None:
         if not quiet:
@@ -306,29 +445,140 @@ def run_comparison(
     if warning:
         say(f"⚠ {warning}")
 
-    say("simulating…")
-    run_episodes(candidates, profile, contexts, map_data, trace_root, reuse=reuse, say=say)
+    # The destination is known before the first episode — its name is
+    # built from the profile, the scope and the candidate set, none of
+    # which the run can change. Creating it here rather than at the end
+    # is what lets the journal exist while the run is still going, and a
+    # run that dies in its first minute now leaves a directory saying it
+    # was attempted instead of nothing at all.
+    destination = (
+        run_root / created_at.strftime("%Y-%m-%d") / run_dir_name(profile.id, scope, candidates)
+    )
+    destination.mkdir(parents=True, exist_ok=True)
+
+    requested = len(contexts)
+    interrupted = False
+    floor = resolve_stop_floor(profile, min_episodes_before_stop)
+    if stop_early:
+        refusal = refuse_early_stop(profile)
+        if refusal:
+            raise AcceptanceFailure(refusal)
+        say(
+            f"dừng sớm: BẬT, sàn {floor} episode "
+            f"(cổng không có luật dừng: {', '.join(sorted(GATES_WITHOUT_A_RULE))})"
+        )
+    watch = (
+        _EarlyStopWatch(profile, map_data, trace_root, planned=requested, floor=floor)
+        if stop_early and not score_only
+        else None
+    )
+    sweep: SweepResult | None = None
+    if score_only:
+        # Recovering a run whose process is already gone. A hard kill
+        # never reaches the KeyboardInterrupt path below, so the episodes
+        # it left on disk need a way back into a report that does not
+        # involve re-simulating them or hand-editing JSON. Same prefix
+        # rule, same honesty about the sample it ended up with.
+        contexts = paired_prefix(candidates, contexts, trace_root)
+        interrupted = len(contexts) < requested
+        if not contexts:
+            raise AcceptanceFailure(
+                "score-only: không có episode nào ghép cặp đủ cả hai candidate dưới "
+                f"{trace_root} — không có gì để chấm"
+            )
+        say(
+            f"chỉ chấm, không mô phỏng: {len(contexts)}/{requested} episode có trace đủ cả "
+            f"{len(candidates)} candidate"
+        )
+        contexts_by_candidate = {c.candidate_id: tuple(contexts) for c in candidates}
+    else:
+        say("simulating…")
+        contexts_by_candidate = {c.candidate_id: tuple(contexts) for c in candidates}
+        try:
+            sweep = run_episodes(
+                candidates,
+                profile,
+                contexts,
+                map_data,
+                trace_root,
+                reuse=reuse,
+                say=say,
+                journal=destination / "run_journal.jsonl",
+                retire=watch.retire if watch is not None else None,
+            )
+            contexts_by_candidate = sweep.contexts_by_candidate
+        except KeyboardInterrupt:
+            # An interrupted sweep is a smaller run, not a failed one —
+            # the context-outer ordering in `simulate` exists to make
+            # that true. Re-raising would throw away every episode
+            # already on disk, which is exactly the outcome that made a
+            # three-hour run unreadable once.
+            interrupted = True
+            contexts = paired_prefix(candidates, contexts, trace_root)
+            contexts_by_candidate = {c.candidate_id: tuple(contexts) for c in candidates}
+            say(
+                f"\n⚠ NGẮT GIỮA CHỪNG — chấm trên {len(contexts)}/{requested} episode đã ghép "
+                "cặp đủ cả hai bên; phần dở dang bị bỏ để mọi candidate vẫn chạy cùng một tập"
+            )
+            if not contexts:
+                report = _interrupted_before_any_episode(
+                    profile, scope, requested, created_at, git_sha, host, warning
+                )
+                _write_json(destination / "comparison_report.json", report)
+                say(f"written to:     {destination}")
+                return report
 
     say("scoring from traces…")
     scored = {
-        candidate.candidate_id: score(candidate, profile, contexts, map_data, trace_root)
+        candidate.candidate_id: score(
+            candidate,
+            profile,
+            contexts_by_candidate[candidate.candidate_id],
+            map_data,
+            trace_root,
+        )
         for candidate in candidates
     }
     metrics_by_candidate = {cid: rows for cid, (rows, _) in scored.items()}
     latency_by_candidate = {cid: latency for cid, (_, latency) in scored.items()}
 
     gate_reports = gate_all(
-        candidates, metrics_by_candidate, latency_by_candidate, profile, contexts
+        candidates,
+        metrics_by_candidate,
+        latency_by_candidate,
+        profile,
+        contexts,
+        contexts_by_candidate,
     )
-    evidence = score_survivors(
-        candidates, gate_reports, metrics_by_candidate, profile, contexts, settings
-    )
+    retired: dict[str, object] = dict(sweep.retired) if sweep is not None else {}
+    _refuse_a_retired_survivor(retired, gate_reports)
+    # A gate-only deployment (HĐ-8.4) reaches exactly the same place as a
+    # field where nobody survived: a gate table and no card. Caught here
+    # rather than checked before simulating, because the measurement is
+    # still worth having — the hall's whole job is to say who fails on an
+    # easy symmetric mission, and that answer needs the episodes run.
+    gate_only: str | None = None
+    try:
+        evidence = score_survivors(
+            candidates, gate_reports, metrics_by_candidate, profile, contexts, settings
+        )
+    except GateOnlyDeployment as refusal:
+        gate_only = str(refusal)
+        evidence = []
 
     # Checks that hold whether or not a card comes out. They are the
     # ones about the *measurement*; the ΔU check needs a comparison and
     # only runs when there is one.
     checks = [
-        check_shared_contexts(metrics_by_candidate),
+        # Narrowed to the candidates still in the run: early stopping
+        # gives a retired candidate genuinely fewer episodes, and that is
+        # sound only because a retired candidate has failed a gate and so
+        # never enters ΔU. `_refuse_a_retired_survivor` above is what
+        # keeps that premise true rather than assumed.
+        check_shared_contexts(
+            metrics_by_candidate,
+            among=[cid for cid in metrics_by_candidate if cid not in retired],
+        ),
         check_gate_table(gate_reports),
         check_l_ref(metrics_by_candidate, profile.constraints.goal_tolerance_m),
         check_node_counts(metrics_by_candidate),
@@ -354,14 +604,56 @@ def run_comparison(
         },
         "sample": {
             "n_episodes": len(contexts),
+            # What was asked for, beside what was measured. Without it an
+            # interrupted run reads as a deliberate 245-episode run, and
+            # "we chose to stop at 245" is a different claim from "the
+            # machine was taken back at 245".
+            "n_episodes_requested": requested,
+            "interrupted": interrupted,
             "n_min_required": profile.constraints.n_min_evaluation_episodes,
             "episode_context_ids": [c.episode_context_id for c in contexts],
+        },
+        "early_stop": {
+            "enabled": stop_early,
+            "min_episodes_before_stop": floor,
+            "deployment_role": profile.deployment_role,
+            "gates_without_a_rule": dict(GATES_WITHOUT_A_RULE),
+            "stopped": [
+                {
+                    "candidate_id": cid,
+                    "episodes_run": len(contexts_by_candidate[cid]),
+                    "episodes_planned": requested,
+                    **verdict.to_json_dict(),  # type: ignore[union-attr]
+                }
+                for cid, verdict in retired.items()
+            ],
+            # The saving, stated rather than assumed. A feature that
+            # trades data for hours has to make both sides visible or it
+            # will be judged only on the half that is easy to see.
+            "episodes_saved": sum(requested - len(contexts_by_candidate[cid]) for cid in retired),
         },
         "candidates": [
             {
                 "candidate_id": candidate.candidate_id,
                 "stack_label": candidate.stack_label,
                 "local_controller_config": local,
+                # Per candidate, because early stopping makes the counts
+                # differ. Two success rates over different denominators
+                # are not a ranking, and a reader needs the denominator
+                # beside the rate to see that.
+                "n_episodes": len(contexts_by_candidate[candidate.candidate_id]),
+                "stopped_early": (
+                    {
+                        "episodes_run": len(contexts_by_candidate[candidate.candidate_id]),
+                        "episodes_planned": requested,
+                        **retired[candidate.candidate_id].to_json_dict(),  # type: ignore[union-attr]
+                        "floor_applied": watch.floor_report(candidate.candidate_id)
+                        if watch is not None
+                        else None,
+                    }
+                    if candidate.candidate_id in retired
+                    else None
+                ),
                 "gates": gate_reports[candidate.candidate_id].to_card(),
                 "cleared_gates": gate_reports[candidate.candidate_id].passed,
                 "blocking_gates": list(gate_reports[candidate.candidate_id].blocking_gates),
@@ -380,10 +672,14 @@ def run_comparison(
         },
     }
 
-    destination = run_root / created_at.strftime("%Y-%m-%d") / run_dir_name(
-        profile.id, scope, candidates
-    )
-    destination.mkdir(parents=True, exist_ok=True)
+    # D15: the row keeps the card and the manifest; the Parquet traces
+    # stay in the artifact store behind a URI. The checksum is what makes
+    # that reference trustworthy rather than decorative — a URI alone
+    # cannot say the files it points at are the ones this run was
+    # computed from. Carried in the report because the API stores what
+    # this function returns, not what it writes to disk.
+    report["run_uri"] = f"file://{destination}"
+    report["run_checksum"] = trace_checksum(candidates, contexts, trace_root)
 
     if len(evidence) < 2:
         # Not an error. "Who was eliminated where, after how many runs"
@@ -394,11 +690,26 @@ def run_comparison(
         # Present and null, not absent. A caller checking `report["manifest"]`
         # should not have to know which branch produced the report.
         report["manifest"] = None
+        # Two ways to arrive here, and they call for different actions —
+        # so they must not share a sentence. "Nobody survived" is fixed
+        # by registering a better candidate. "This deployment cannot
+        # rank" is not a thing about the candidates at all, and no new
+        # candidate will ever change it.
+        report["gate_only_deployment"] = gate_only
         report["why_no_card"] = (
-            f"chỉ {len(evidence)}/{len(candidates)} candidate qua đủ sáu cổng, nên không có "
-            "ΔU để tính và không có Decision Card để viết. Đây là một KẾT QUẢ, không phải "
-            "lỗi: bảng cổng đã trả lời ai bị loại ở đâu sau bao nhiêu lần chạy. Lối ra hợp "
-            "lệ là ĐĂNG KÝ MỘT CANDIDATE MỚI, không phải nới deployment"
+            (
+                f"{gate_only}. Deployment này là DỤNG CỤ CỔNG (HĐ-8.4): nó trả lời được ai "
+                "qua/không qua, nhưng không có thang để xếp hạng, nên vĩnh viễn không có "
+                "Decision Card ở đây. Bảng cổng bên dưới là toàn bộ kết quả. Muốn xếp hạng "
+                "thì chạy trên deployment có ngưỡng chừa khoảng trống phía trên nó"
+            )
+            if gate_only is not None
+            else (
+                f"chỉ {len(evidence)}/{len(candidates)} candidate qua đủ sáu cổng, nên không có "
+                "ΔU để tính và không có Decision Card để viết. Đây là một KẾT QUẢ, không phải "
+                "lỗi: bảng cổng đã trả lời ai bị loại ở đâu sau bao nhiêu lần chạy. Lối ra hợp "
+                "lệ là ĐĂNG KÝ MỘT CANDIDATE MỚI, không phải nới deployment"
+            )
         )
         report["checks"] = checks
         _write_json(destination / "comparison_report.json", report)
@@ -453,12 +764,66 @@ def run_comparison(
     # it was silently storing a card with no manifest — a latent hole,
     # because until now no run through the API had ever been ranked.
     report["manifest"] = manifest.to_json_dict()
+    report["gate_only_deployment"] = None
     report["checks"] = checks
     _write_json(destination / "comparison_report.json", report)
     _write_json(destination / "decision_card.json", card.to_json_dict())
     _write_json(destination / "manifest.json", manifest.to_json_dict())
     _say_summary(say, report, destination)
     return report
+
+
+def _interrupted_before_any_episode(
+    profile: TaskProfile,
+    scope: str,
+    requested: int,
+    created_at: datetime,
+    git_sha: str | None,
+    host: object,
+    warning: str | None,
+) -> dict[str, object]:
+    """The report of a run that was stopped before one paired episode.
+
+    There is nothing to gate and nothing to score, and it is still an
+    artifact: it names the deployment, the scope and the machine, and it
+    says the run was interrupted at zero. The alternative — writing
+    nothing — is the behaviour that made three hours of episodes
+    unreadable, applied to the case where the loss is smallest but the
+    silence is exactly as total.
+    """
+    return {
+        "artifact": "comparison_report",
+        "identity": {
+            "task_profile_id": profile.id,
+            "experiment_scope": scope,
+            "sensor_noise": profile.environment.sensor_noise.model_dump(),
+            "git_sha": git_sha or resolve_git_sha(REPO_ROOT),
+            "anchor_config_version": load_anchors().version,
+            "created_at": created_at.isoformat(),
+        },
+        "sample": {
+            "n_episodes": 0,
+            "n_episodes_requested": requested,
+            "interrupted": True,
+            "n_min_required": profile.constraints.n_min_evaluation_episodes,
+            "episode_context_ids": [],
+        },
+        "candidates": [],
+        "measurement_environment": {
+            "benchmark_host": host.model_dump(),  # type: ignore[attr-defined]
+            "warning": warning,
+        },
+        "run_uri": None,
+        "run_checksum": None,
+        "decision_card": None,
+        "manifest": None,
+        "gate_only_deployment": None,
+        "why_no_card": (
+            f"run bị ngắt trước khi có episode nào ghép cặp đủ hai bên (xin {requested}); "
+            "không có gì để chấm cổng. Bản ghi này tồn tại để lần chạy đó không biến mất"
+        ),
+        "checks": [],
+    }
 
 
 def _say_summary(say, report: dict[str, object], destination: Path) -> None:  # type: ignore[no-untyped-def]
@@ -475,6 +840,23 @@ def _say_summary(say, report: dict[str, object], destination: Path) -> None:  # 
             f"p99 {entry['pooled_p99_latency_ms']:>6.2f} ms  {verdict}"
         )
     say("")
+    stopped = report.get("early_stop", {}).get("stopped", [])  # type: ignore[union-attr]
+    for entry in stopped:
+        say(
+            f"⏹ DỪNG SỚM  {entry['candidate_id']}  {entry['gate']} sau "
+            f"{entry['episodes_run']}/{entry['episodes_planned']} episode — {entry['rule']}"
+        )
+    if stopped:
+        say(f"   episode tiết kiệm: {report['early_stop']['episodes_saved']}")  # type: ignore[index]
+        say("")
+    sample = report["sample"]  # type: ignore[index]
+    if sample.get("interrupted"):  # type: ignore[union-attr]
+        say(
+            f"⚠ RUN BỊ NGẮT — chấm trên {sample['n_episodes']}/"  # type: ignore[index]
+            f"{sample['n_episodes_requested']} episode đã xin. "  # type: ignore[index]
+            "Đây là một phép đo nhỏ hơn, không phải một lựa chọn về cỡ mẫu"
+        )
+        say("")
     if report["decision_card"] is None:
         say(f"KHÔNG CÓ DECISION CARD — {report['why_no_card']}")
     else:
@@ -505,5 +887,3 @@ def run_dir_name(profile_id: str, scope: str, candidates: Sequence[Candidate]) -
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-

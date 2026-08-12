@@ -309,3 +309,37 @@ Phản biện đáng cân nhắc: một người ngoài nhìn `open_hall_v2` ở
 deployment khác nhau mang cùng một tên. Nếu dev thấy điều đó nặng hơn 1 giờ chạy lại thì lên
 `v3` — nhưng khi đó vẫn **phải** thêm `constraints` vào manifest, vì lần sau ai đó sửa ngưỡng mà
 quên đổi id thì không có gì bắt được.
+
+---
+
+## Kết cục của câu hỏi `success_rate_min` — ghi ngày 2026-08-12
+
+Câu hỏi trên đã được trả lời (**giữ `v2`, thêm `constraints` vào manifest** — A4 làm cả hai), nhưng
+bản thân **con số** thì chưa xong, và nó rẽ ra một việc mới phải nhớ.
+
+**Diễn biến trong ngày:**
+
+1. `success_rate_min` lên `1.00` trên cả hai sảnh (A4), đúng theo lập luận vai trò nghiệm thu.
+2. Full suite đỏ 3 test. Nguyên nhân: HĐ-8.3 luật 2 buộc `bad` của anchor `success_rate` trỏ vào
+   chính ngưỡng ấy, nên `1.00` làm `good == bad` và **`U_R` mất thang**.
+3. Chốt lần một: giữ `1.00`, sảnh thành dụng cụ chỉ gác cổng (HĐ-8.4 ra đời từ đây).
+4. **Đảo lại cùng ngày:** giữ *cơ chế*, lùi *ngưỡng* về `0.95` trên cả hai sảnh. Lý do: mất khả
+   năng xếp hạng trên sảnh kéo theo `measure.py` không ra `decision_utility`, tấm card duy nhất
+   không tái lập được, và UI phải dựng thêm một loại artifact — quá nhiều cho lúc MVP còn dở.
+
+**Việc còn lại (F1), làm sau MVP:**
+
+> Tìm cách để sảnh vừa giữ chuẩn nghiệm thu `1.00` vừa còn thang cho `U_R`.
+
+Ba hướng chưa xét kỹ, ghi để lần sau khỏi nghĩ lại từ đầu:
+
+- **Tách cổng khỏi thang.** `success_rate_min` là ngưỡng G3; `bad` của anchor là mốc thang. Luật 2
+  gộp chúng để file anchor không trôi khỏi deployment — nhưng có thể cho khai `anchor_floor` riêng
+  *kèm ràng buộc* `anchor_floor <= success_rate_min`, thì thang sống mà vẫn không tự đặt bar hộ ai.
+- **Cho anchor khai `bad` dự phòng khi ngưỡng chạm trần.** Hẹp hơn, ít đụng luật 2 hơn.
+- **Chấp nhận sảnh chỉ gác cổng**, chuyển hẳn việc xếp hạng sang C2 (map vừa khó vừa đối xứng,
+  chưa có). Đây chính là chốt lần một; nó khả thi, chỉ là **chưa tới lúc**.
+
+**Không được quên:** cơ chế xử lý `1.00` đã có sẵn và có test (`TestAGateOnlyDeploymentIsMeasuredButNotScored`
+chạy trên fixture tổng hợp). Việc còn lại là **quyết định**, không phải hiện thực. Theo dõi ở
+`docs/KNOWN_LIMITATIONS.md` L6.

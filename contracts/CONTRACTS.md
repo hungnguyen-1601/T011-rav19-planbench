@@ -1,6 +1,6 @@
 # CONTRACTS.md — Planner Selector
 
-> **Phiên bản hợp đồng:** `contracts_version: 6.4.0`
+> **Phiên bản hợp đồng:** `contracts_version: 6.5.0`
 > **Trạng thái:** cần cả nhóm đọc và ký ở mục 16. Phase 1 (schema gốc) đã hiện thực theo bản 1.1.0; bản 2.0.0 sửa G5 — xem lịch sử phiên bản ở mục 18.
 > **Vị trí:** `contracts/CONTRACTS.md` ở gốc repo (trước đây là `docs/antongduy/CONTRACTS_1.md`).
 > **Tài liệu mẹ:** `docs/antongduy/de-tai-moi-planner-selector.md`. Khi hai tài liệu mâu thuẫn, **CONTRACTS.md thắng** — plan là lý do, contract là luật.
@@ -642,6 +642,20 @@ Nên mỗi metric có anchor được quét riêng, cùng hình dạng với ph�
 
 **Anchor trỏ vào một trường tùy chọn mà deployment không khai thì không giải được, và không làm hỏng cả file.** Một file anchor phục vụ mọi deployment; một site chạy chế độ `technical` không có lý do gì phải khai ngân sách. Anchor đó được ghi lại là *unresolved* kèm lý do, và chỉ khi có ai chấm chính metric ấy thì hệ mới từ chối — **kèm tên trường còn thiếu**, không phải một câu "thiếu anchor" chung chung. Phân biệt bắt buộc: trường **có mà để trống** thì unresolved; trường **không tồn tại** là lỗi chính tả và vẫn fatal.
 
+### 8.4. Deployment chỉ gác cổng
+
+Luật 2 buộc `bad` của metric có cổng phải trỏ vào chính ngưỡng của deployment. Hệ quả tất yếu: **deployment nào đặt ngưỡng ngay tại điểm lý tưởng thì `good == bad`, và metric ấy mất thang.** `success_rate: {good: 1.00, bad: "${constraints.success_rate_min}"}` gặp `success_rate_min: 1.00` là ví dụ đã có thật.
+
+**Đó không phải lỗi cấu hình.** Deployment đang phát biểu một điều rất rõ ràng — mọi failure ở đây là tín hiệu chẩn đoán chứ không phải mức chấp nhận được — và nền tảng không được sửa lời phát biểu đó. Nhưng nó cũng không xếp hạng được: mọi candidate qua được G3 đều nằm đúng một điểm trên thang này, nên metric không mang thông tin thứ hạng nào.
+
+Điều khoản này chỉ nói **hệ phải làm gì khi gặp tình huống ấy**. Nó không nói deployment nào nên đặt ngưỡng ở đâu; đó là quyết định của người khai deployment, và HĐ-15.3 đã bắt phải trả lời trước khi chạy. Ba ràng buộc:
+
+1. **Không được bỏ metric chết rồi chấm tiếp.** Bỏ nó đi và tính `decision_utility` trên phần còn lại sẽ cho ra một con số đủ sáu chữ số thập phân, tính trên một tập objective **khác** tập hợp đồng khai, mà không có gì trong con số đó nói rằng một chiều đã biến mất. Đây đúng dạng lệch hướng nền tảng này sinh ra để chặn. Từ chối **toàn bộ** phép xếp hạng, không từ chối một metric.
+2. **Từ chối phải có tên và phải đọc được.** Không phải một exception thô về "thang rỗng", mà một câu nói rõ deployment nào, metric nào, ngưỡng nào. Report ghi trường riêng (`gate_only_deployment`, present-and-null ở mọi nhánh) bên cạnh `why_no_card`, vì "không ai qua cổng" và "chỗ này không xếp hạng được" đòi hai hành động ngược nhau: cái đầu mời đăng ký candidate tốt hơn, cái sau nói **không candidate nào** đổi được kết quả.
+3. **Phép đo vẫn còn giá trị, nên vẫn phải chạy.** Bảng cổng chính là sản phẩm của deployment ấy: nó vẫn mô phỏng, vẫn tính đủ metric HĐ-6, vẫn ra sáu phán quyết cổng. Tiêu chí tái lập của HĐ-15.1 vẫn áp dụng, chỉ đổi đối tượng: không có `decision_utility` để tái lập thì **chấm lại trace phải ra đúng bảng cổng cũ**.
+
+**Ngưỡng là lời khai, không phải nút vặn.** Điều khoản này tồn tại để `success_rate_min: 1.00` là một lựa chọn *dùng được* — hệ xử lý nó tử tế thay vì gãy — chứ **không** để biến "hạ ngưỡng" thành lối thoát khi một lần chạy không ra card. Hạ ngưỡng để lấy được card là chính lỗi HĐ-15.3 chặn; hạ ngưỡng vì đã kết luận rằng con số cũ khai sai thì hợp lệ, và phải ghi lại lý do đó ở đâu người sau đọc được.
+
 ---
 
 ## HĐ-9 — Objective và Decision Utility
@@ -832,7 +846,7 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
 
 ```json
 {
-  "contracts_version": "6.4.0",
+  "contracts_version": "6.5.0",
   "recommendation_scope": "MISSION_LEVEL | DEPLOYMENT_LEVEL | ROBUST_DEPLOYMENT_LEVEL",
   "experiment_scope": "full_stack_selection",
   "decision_mode": "technical | business_adjusted",
@@ -895,7 +909,7 @@ Mọi lần ra quyết định ghi một `manifest.json`:
 
 ```json
 {
-  "contracts_version": "6.4.0",
+  "contracts_version": "6.5.0",
   "git_sha": "...",
   "docker_image_digest": "sha256:...",
   "task_profile_id": "warehouse_a_v1",
@@ -1101,6 +1115,7 @@ Hai định danh frozen của contract (`candidate_id`, `episode_context_id`) d�
 | 6.3.0 | 2026-08-11 | MINOR | **Nhiễu cảm biến và trượt bánh theo seed** (plan M1). ① HĐ-2.5: `environment.sensor_noise` — thuộc hiện trường, mặc định 0, hai nguồn khác bản chất (LiDAR là sai số **đo** và không được chạm ground truth; trượt bánh là sai số **chấp hành** và phải chạm). Luật cứng: mọi draw là `f(seed, stream, step)`, **không** tiêu thụ tuần tự — rút tuần tự thì thứ tự phụ thuộc hành vi candidate và hai candidate gặp nhiễu khác nhau dưới cùng một `episode_context_id`. ② HĐ-3.3 nới "lần hiện thực vật cản" thành "lần hiện thực hiện trường", kèm bảng ranh giới với `neighborhood` để câu nới không mở đường gộp hai bộ mẫu. ③ HĐ-13: manifest phải ghi `sensor_noise`, vì biên độ **không** nằm trong payload băm của `episode_context_id` — hai run cùng seed khác sigma cho cùng tập id mà là hai thí nghiệm. Thêm trường có mặc định, không xoá gì ⇒ MINOR. |
 
 | 6.4.0 | 2026-08-11 | MINOR | **HĐ-13: manifest phải ghi `constraints`.** Cùng gốc với `sensor_noise` ở 6.3.0 — `episode_context_id` không băm ngưỡng nào — nhưng hệ quả ngược nhau: đổi nhiễu đổi **thế giới** nên phải đổi `task_profile_id`; đổi ràng buộc đổi **phán quyết** nên episode cũ vẫn đúng và chỉ cần ghi vào hồ sơ. Không có trường này thì cùng một profile id dưới hai ngưỡng `success_rate_min` cho manifest giống nhau từng byte mà bảng cổng khác nhau. Phát hiện khi chốt `success_rate_min` cho `open_hall_v2`. Thêm một trường, không xoá gì, không đổi ngữ nghĩa metric hay cổng nào ⇒ MINOR. |
+| 6.5.0 | 2026-08-12 | MINOR | **HĐ-8.4: thang của metric có cổng sập về một điểm thì từ chối cả phép xếp hạng, có tên, thay vì ném `AnchorError` thô.** Hệ quả trực tiếp của luật 2 mà 6.4.0 chưa nhìn ra: `success_rate_min: 1.00` làm `good == bad`, và cách cũ báo "thang rỗng" — đọc như lỗi cấu hình, trong khi deployment đang phát biểu một điều mạch lạc. Nay: sập thang trên metric **có cổng** và `bad` trỏ vào profile ⇒ ghi nhận, deployment vẫn đo và vẫn ra bảng cổng nhưng không xếp hạng; sập thang ở mọi chỗ khác vẫn fatal như cũ. Từ chối **toàn bộ** phép xếp hạng chứ không bỏ metric chết rồi chấm tiếp — bỏ đi sẽ ra `decision_utility` đủ sáu chữ số trên một tập objective khác tập đã khai. Thêm trường `gate_only_deployment` (present-and-null) vào comparison report và measurement report; tiêu chí tái lập HĐ-15.1 đổi đối tượng sang bảng cổng khi không có utility. **Điều khoản chỉ nói hệ phải làm gì, không nói deployment nào nên đặt ngưỡng ở đâu** — hai sảnh về lại `success_rate_min: 0.95` cùng ngày, và câu hỏi ngưỡng đúng cho một deployment nghiệm thu còn để ngỏ (`KNOWN_LIMITATIONS` L6). Không xoá trường, không đổi ngữ nghĩa metric hay cổng nào, nới một trường hợp trước đây fatal ⇒ MINOR. |
 
 **Chi tiết 6.1.0 — bốn chỗ nới đều cho cả hai bên, nên không phép kiểm đối xứng nào bắt được.**
 

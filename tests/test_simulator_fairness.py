@@ -560,25 +560,43 @@ class TestTheTwoHallsStayInStep:
         assert load(HALL).environment.sensor_noise.active is False
 
     def test_the_hall_declares_itself_an_acceptance_deployment(self) -> None:
-        """``success_rate_min = 1.00``, and the number is the claim.
+        """The role is a field, so it is asserted as one.
 
         The hall is easy, mirror-symmetric and run under declared noise:
         nothing here defeats a stack by geometry. So a failure is not a
         statistic to average — it is a **diagnostic signal**, and one is
         enough to say something is wrong with the stack or its
-        configuration.
+        configuration. What the field changes is that early stopping is
+        refused here.
 
         This is emphatically **not** an operating requirement for a real
         site; ``warehouse_a_v2`` declares its own. Reading a red G3 here
         as "unfit to ship" is reading an instrument as a customer.
-
-        Until 2026-08-11 both halls said 0.95, copied from the warehouse
-        and never declared for the hall — the only constant in either
-        file without a reason beside it. Answering it needed the
-        deployment's *role*, not any candidate's result (HĐ-15.3).
         """
         for path in (HALL, NOISY_HALL):
-            assert load(path).constraints.success_rate_min == 1.00, path.name
+            assert load(path).deployment_role == "acceptance", path.name
+
+    def test_both_halls_declare_the_same_success_threshold(self) -> None:
+        """The two halls are one place, so this number moves together or
+        not at all — that is the invariant, and it held in both
+        directions: 0.95 → 1.00 on 2026-08-11, back on 08-12.
+
+        **The pinned value is a placeholder, and that is the point of
+        pinning it.** The role above argues for 1.00, and both files said
+        1.00 for a day. It came back to 0.95 because HĐ-8.3 law 2 aims
+        this metric's anchor ``bad`` at this very threshold, so 1.00
+        collapses the scale and the deployment stops being able to rank
+        anything (HĐ-8.4) — a consequence worth deciding on deliberately
+        rather than inheriting. Tracked as L6 in
+        ``docs/KNOWN_LIMITATIONS.md``.
+
+        So changing this line is allowed and expected; changing it
+        *silently*, or changing one hall without the other, is not.
+        """
+        quiet = load(HALL).constraints.success_rate_min
+        noisy = load(NOISY_HALL).constraints.success_rate_min
+        assert quiet == noisy
+        assert quiet == 0.95
 
     def test_the_deployment_declares_the_noise_axes_of_the_topic_document(self) -> None:
         noise = load(NOISY_HALL).environment.sensor_noise

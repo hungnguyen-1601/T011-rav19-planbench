@@ -304,12 +304,64 @@ class TestFileValidation:
             anchor_set(path_efficiency={"good": 1.0, "bad": 0.65, "weight": 0.3})
 
     def test_resolution_collapsing_the_scale_is_refused(self) -> None:
-        """A reference that happens to equal the other end leaves the
-        metric with no scale, and every candidate scores the same."""
+        """A collapse with no deployment behind it is still a typo.
+
+        ``path_efficiency`` has no feasibility gate, so nothing the
+        deployment declares can have put ``good`` on top of ``bad`` —
+        somebody wrote the same number twice, and the metric would score
+        every candidate identically. Fatal, as before.
+        """
         with pytest.raises(AnchorError, match="no scale"):
-            anchor_set(
-                success_rate={"good": 0.95, "bad": "${constraints.success_rate_min}"}
-            ).resolve(make_profile())
+            anchor_set(path_efficiency={"good": 0.65, "bad": 0.65}).resolve(make_profile())
+
+    def test_a_gated_metric_collapsing_makes_the_deployment_gate_only(self) -> None:
+        """The deployment set its own gate at the ideal (HĐ-8.4).
+
+        ``success_rate_min: 1.00`` is not a typo: the site is saying
+        every failure on an easy symmetric mission is a diagnostic
+        signal. The reference hall declared exactly this for a day. The
+        anchor file stays valid, the metric loses its scale, and the
+        deployment becomes an instrument that gates rather than ranks —
+        which is a very different thing from a malformed anchor, so it
+        must not raise the same error.
+        """
+        resolved = anchor_set(
+            success_rate={"good": 1.0, "bad": "${constraints.success_rate_min}"}
+        ).resolve(make_profile(constraints=constraints(success_rate_min=1.0)))
+
+        assert "success_rate" not in resolved.anchors
+        assert resolved.gate_only_reason is not None
+        assert "cannot rank anything" in resolved.gate_only_reason
+
+    def test_a_gate_only_deployment_refuses_the_metric_by_name(self) -> None:
+        """``u`` must not quietly return a number for the dead metric."""
+        resolved = anchor_set(
+            success_rate={"good": 1.0, "bad": "${constraints.success_rate_min}"}
+        ).resolve(make_profile(constraints=constraints(success_rate_min=1.0)))
+
+        with pytest.raises(AnchorError, match="gate-only deployment"):
+            resolved.u("success_rate", 1.0)
+
+    def test_an_ordinary_deployment_is_not_gate_only(self) -> None:
+        """The property is silent when every scale is live — otherwise
+        the warehouse would inherit the hall's refusal."""
+        resolved = anchor_set(
+            success_rate={"good": 1.0, "bad": "${constraints.success_rate_min}"}
+        ).resolve(make_profile(constraints=constraints(success_rate_min=0.95)))
+
+        assert resolved.gate_only_reason is None
+        assert resolved.anchors["success_rate"] == (1.0, 0.95)
+
+    def test_a_collapse_survives_the_sensitivity_sweep(self) -> None:
+        """Widening the other scales cannot revive a dead one — and a
+        swept copy that looked rankable would let the sensitivity pass
+        run where the real pass refuses."""
+        resolved = anchor_set(
+            success_rate={"good": 1.0, "bad": "${constraints.success_rate_min}"},
+            path_efficiency={"good": 1.0, "bad": 0.65},
+        ).resolve(make_profile(constraints=constraints(success_rate_min=1.0)))
+
+        assert resolved.scaled(1.1).gate_only_reason is not None
 
 
 class TestSensitivitySweep:

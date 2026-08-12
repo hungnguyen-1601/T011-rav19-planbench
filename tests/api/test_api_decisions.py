@@ -248,6 +248,14 @@ class TestRunningASelection:
 
         # The evidence is all there, which is the point.
         assert body["report"]["why_no_card"]
+        # And *why* there is no card, because two different situations
+        # end here and they ask for opposite responses. This one is
+        # "nobody survived", which invites a better candidate. The other
+        # is a deployment that cannot rank at all (HĐ-8.4), where no
+        # candidate would ever change the outcome — the hall is not one
+        # while it declares `success_rate_min: 0.95`, and this asserts
+        # that the two never get confused for each other.
+        assert body["report"]["gate_only_deployment"] is None
         for entry in body["report"]["candidates"]:
             assert entry["gates"]["G1"] is not None
             assert entry["n_distinct_episodes"] >= 1
@@ -383,6 +391,18 @@ class TestARankedRunCarriesItsManifest:
         assert manifest["benchmark_host"]["cpu"]
         assert "sensor_noise" in manifest
         assert manifest["contracts_version"] == ranked_run["contracts_version"]
+
+    def test_the_run_points_at_its_own_directory_and_its_traces(self, client, ranked_run):
+        """D15. ``run_uri`` used to be the root every run shares, and
+        ``run_checksum`` was always null — which left the reference
+        decorative: a URI alone cannot say the files behind it are still
+        the ones this result came from.
+        """
+        fetched = client.get(f"{API}/decisions/{ranked_run['id']}").json()
+        assert fetched["report"]["run_uri"].startswith("file://")
+        assert fetched["report"]["run_checksum"]
+        # The directory is this run's, not the shared parent.
+        assert fetched["report"]["identity"]["experiment_scope"] in fetched["report"]["run_uri"]
 
     def test_the_manifest_describes_the_run_that_was_scored(self, ranked_run):
         """A manifest naming a different context set would rebuild a

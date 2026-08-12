@@ -242,6 +242,7 @@ class AnchorSet(BaseModel):
         """
         resolved: dict[str, tuple[float, float]] = {}
         unresolved: dict[str, str] = {}
+        collapsed: dict[str, str] = {}
         for name, anchor in self.anchors.items():
             try:
                 good = _resolve_value(anchor.good, profile, name, "good")
@@ -253,12 +254,35 @@ class AnchorSet(BaseModel):
                 )
                 continue
             if good == bad:
+                if name in GATED_METRICS and anchor.references("bad"):
+                    # The deployment set its own gate at the ideal:
+                    # ``success_rate_min: 1.00`` on a reference hall says
+                    # every failure is a diagnostic signal, not a
+                    # tolerable outcome. That is a legible statement, not
+                    # a typo — so it does not break the anchor file. What
+                    # it does break is *ranking*: with the gate at the
+                    # ideal, everything that clears G3 sits on the same
+                    # point of this scale and the metric carries no
+                    # information to rank by. Recorded, and
+                    # :attr:`ResolvedAnchors.gate_only_reason` turns the
+                    # whole deployment into a gate instrument (HĐ-8.4).
+                    collapsed[name] = (
+                        f"task profile {profile.id!r} sets this metric's own gate threshold at "
+                        f"{good}, the ideal, so every candidate that clears the gate scores "
+                        "identically and the metric cannot rank anything"
+                    )
+                    continue
                 raise AnchorError(
                     f"anchor {name!r} resolves to good == bad == {good} for task profile "
                     f"{profile.id!r}; the metric would have no scale"
                 )
             resolved[name] = (good, bad)
-        return ResolvedAnchors(version=self.version, anchors=resolved, unresolved=unresolved)
+        return ResolvedAnchors(
+            version=self.version,
+            anchors=resolved,
+            unresolved=unresolved,
+            collapsed=collapsed,
+        )
 
 
 class ResolvedAnchors(BaseModel):
@@ -272,6 +296,32 @@ class ResolvedAnchors(BaseModel):
     #: Kept rather than dropped so the refusal can name the missing
     #: declaration instead of reporting a generic "no anchor".
     unresolved: dict[str, str] = Field(default_factory=dict)
+    #: Metric -> why its scale collapsed to a point on this deployment.
+    #: Only ever a *gated* metric whose threshold the deployment set at
+    #: the ideal. Distinct from ``unresolved``: there the deployment said
+    #: nothing, here it said something very definite.
+    collapsed: dict[str, str] = Field(default_factory=dict)
+
+    @property
+    def gate_only_reason(self) -> str | None:
+        """Why this deployment can gate but cannot rank (HĐ-8.4).
+
+        ``None`` when every anchor has a live scale — the ordinary case,
+        where the deployment both gates and ranks.
+
+        When a gated metric's scale has collapsed, the honest response is
+        to refuse the *whole* ranking rather than to score the remaining
+        metrics. Dropping the collapsed one and carrying on would produce
+        a ``decision_utility`` computed over a different objective set
+        than the one the contract names, at full precision, with nothing
+        in the number to say a dimension went missing. That is the exact
+        shape of drift this platform exists to catch, so it is refused
+        loudly instead — a deployment that demands perfection on a metric
+        has told you it wants a gate, not a ranking.
+        """
+        if not self.collapsed:
+            return None
+        return "; ".join(f"{metric}: {reason}" for metric, reason in sorted(self.collapsed.items()))
 
     def u(self, metric: str, value: float) -> float:
         """Normalise one measurement (HĐ-8.1).
@@ -282,6 +332,13 @@ class ResolvedAnchors(BaseModel):
         """
         pair = self.anchors.get(metric)
         if pair is None:
+            collapse = self.collapsed.get(metric)
+            if collapse is not None:
+                raise AnchorError(
+                    f"anchor for {metric!r} has no scale on this deployment: {collapse}. This "
+                    "is a gate-only deployment (HĐ-8.4) — read its gate table, or rank on a "
+                    "deployment whose threshold leaves room above it"
+                )
             reason = self.unresolved.get(metric)
             if reason is not None:
                 raise AnchorError(
@@ -358,6 +415,11 @@ class ResolvedAnchors(BaseModel):
                 for name, (good, bad) in self.anchors.items()
             },
             unresolved=dict(self.unresolved),
+            # A collapse survives the sweep: widening the *other* scales
+            # cannot give a metric back a scale it never had here, and a
+            # swept copy that silently looked rankable would let the
+            # sensitivity pass run on a deployment the real pass refuses.
+            collapsed=dict(self.collapsed),
         )
 
 
