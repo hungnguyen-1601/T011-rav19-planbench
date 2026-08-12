@@ -203,11 +203,66 @@ describe("the page is reachable and translated", () => {
 
   it("has every key it asks for, in both locales", () => {
     const keys = new Set(
-      [...LIST.matchAll(/t\(\s*"([^"`]+)"/g)].map((match) => match[1]),
+      [...LIST.matchAll(/\bt\(\s*"([^"`]+)"/g)].map((match) => match[1]),
     );
     for (const key of keys) {
       expect(en, `en is missing ${key}`).toHaveProperty(key);
       expect(vi, `vi is missing ${key}`).toHaveProperty(key);
     }
+  });
+});
+
+describe("the two human acts sit below the evidence", () => {
+  it("renders the action panel after the gate table and the outcome", () => {
+    /* Both acts are claims about evidence the reader is supposed to have
+       read. Buttons above the gate table invite the click before the
+       reading. */
+    expect(DETAIL.indexOf("<HumanActs")).toBeGreaterThan(DETAIL.indexOf("<GateTable"));
+    expect(DETAIL.indexOf("<HumanActs")).toBeGreaterThan(DETAIL.indexOf("<Outcome"));
+  });
+
+  it("lets a cardless run be read but not approved", () => {
+    /* The whole reason the two are separate columns: a run that
+       eliminated everybody is still something somebody has to read. */
+    expect(DETAIL).toContain('run.config_state !== "not_applicable"');
+    expect(DETAIL).toContain("decisions.acts.whyNoConfig");
+  });
+
+  it("says why a disabled button is disabled", () => {
+    /* A greyed-out control with no explanation reads as a broken page,
+       and each of these three reasons asks for a different response. */
+    for (const key of ["whyNoConfig", "whyDecided", "whyOwnRun"]) {
+      expect(DETAIL).toContain(`decisions.acts.${key}`);
+      expect(en).toHaveProperty(`decisions.acts.${key}`);
+      expect(vi).toHaveProperty(`decisions.acts.${key}`);
+    }
+  });
+
+  it("never re-implements a server rule as a client-side verdict", () => {
+    /* The page disables the obvious cases so it is not lying about what
+       will happen, but every refusal is the server's. A second copy of
+       "who may approve" here would be free to drift from the enforced
+       one — so the failure path shows the server's message verbatim. */
+    expect(DETAIL).toContain("setFailed(caught instanceof Error ? caught.message : String(caught))");
+  });
+
+  it("treats a null creator as nobody, not as the current user", () => {
+    /* Runs filed by the importer have `created_by: null`. A loose
+       equality would make every reader look like the owner and hide the
+       approve button from all of them. */
+    expect(DETAIL).toContain("session?.user.id != null && session.user.id === run.created_by");
+  });
+
+  it("offers the config download only once it is approved", () => {
+    expect(DETAIL).toContain('run.config_state === "approved"');
+    expect(DETAIL).toContain("approvedConfigUrl(run.id)");
+  });
+
+  it("says the export is a file and not a deployment", () => {
+    /* HĐ-14: the system is simulation-only and "deploying" is emitting
+       a file. The button must not imply otherwise. */
+    expect((en as Record<string, string>)["decisions.acts.configNote"]).toContain(
+      "simulation-only",
+    );
   });
 });

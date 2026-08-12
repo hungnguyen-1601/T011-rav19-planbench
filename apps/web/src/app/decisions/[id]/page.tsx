@@ -16,13 +16,17 @@
 
 import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import {
   GATES,
+  approvedConfigUrl,
   coverage,
+  decideConfig,
   getDecision,
   listDecisionEvents,
   noCardReason,
+  reviewRun,
   gateEvidence,
   gateResult,
   type DecisionRun,
@@ -69,10 +73,138 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
       <SampleBanner run={run} />
       <GateTable run={run} />
       <Outcome run={run} />
+      <HumanActs run={run} onDone={refresh} />
       <Conditions run={run} />
       <Provenance run={run} />
       <AuditTrail events={events} />
     </section>
+  );
+}
+
+/** The two things a person can do to a run, kept apart (HĐ-14).
+ *
+ * Below the evidence, not above it. Both acts are claims about evidence
+ * the reader is supposed to have read, and putting the buttons first
+ * invites the click before the reading.
+ *
+ * **Nothing here re-implements a rule.** The server refuses a second
+ * review, a second decision, an approval by the person who started the
+ * run, and any approval of a run with no card. This component disables
+ * the obvious cases so the page is not lying about what will happen, but
+ * it never decides — it shows what came back. A copy of the rule here
+ * would be free to drift from the one that is enforced.
+ */
+function HumanActs({ run, onDone }: { run: DecisionRun; onDone: () => Promise<void> }) {
+  const { t } = useTranslation();
+  const session = useSession();
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const act = async (perform: () => Promise<unknown>) => {
+    setBusy(true);
+    setFailed(null);
+    try {
+      await perform();
+      setComment("");
+      await onDone();
+    } catch (caught) {
+      setFailed(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reviewed = run.review_state === "reviewed";
+  const decided = run.config_state === "approved" || run.config_state === "rejected";
+  const rankable = run.config_state !== "not_applicable";
+  // Shown as a hint, never relied on: the server owns this rule and its
+  // answer is the one that counts. `created_by` is null on runs filed by
+  // the importer, and null is not "you".
+  const ownRun = session?.user.id != null && session.user.id === run.created_by;
+
+  if (!session) {
+    return (
+      <div className="panel">
+        <div className="panel-head">
+          <h3>{t("decisions.acts.title")}</h3>
+        </div>
+        <p className="muted">{t("decisions.acts.signedOut")}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <h3>{t("decisions.acts.title")}</h3>
+      </div>
+
+      {failed ? <div className="error-box">{failed}</div> : null}
+
+      <label className="field">
+        <span>{t("decisions.acts.comment")}</span>
+        <input
+          value={comment}
+          onChange={(event) => setComment(event.target.value)}
+          placeholder={t("decisions.acts.commentHint")}
+          disabled={busy}
+        />
+      </label>
+
+      <div className="row" style={{ marginTop: 12, alignItems: "center", gap: 12 }}>
+        <button
+          type="button"
+          disabled={busy || reviewed}
+          onClick={() => act(() => reviewRun(run.id, comment))}
+        >
+          {reviewed
+            ? t("decisions.acts.alreadyRead", { who: run.reviewed_by ?? "?" })
+            : t("decisions.acts.markRead")}
+        </button>
+        <span className="muted">{t("decisions.acts.reviewNote")}</span>
+      </div>
+
+      <div className="row" style={{ marginTop: 12, alignItems: "center", gap: 12 }}>
+        <button
+          type="button"
+          className="primary"
+          disabled={busy || !rankable || decided || ownRun}
+          onClick={() => act(() => decideConfig(run.id, "approve", comment))}
+        >
+          {t("decisions.acts.approve")}
+        </button>
+        <button
+          type="button"
+          disabled={busy || !rankable || decided || ownRun}
+          onClick={() => act(() => decideConfig(run.id, "reject", comment))}
+        >
+          {t("decisions.acts.reject")}
+        </button>
+        {run.config_state === "approved" ? (
+          // A plain link, not a fetch: the endpoint returns text/plain
+          // and the browser keeps the filename the server chose.
+          <a href={approvedConfigUrl(run.id)} download>
+            {t("decisions.acts.download")}
+          </a>
+        ) : null}
+      </div>
+
+      {/* Why a button is off, in words. A disabled control with no
+          explanation is read as a broken page. */}
+      <p className="muted" style={{ marginTop: 12 }}>
+        {!rankable
+          ? t("decisions.acts.whyNoConfig")
+          : decided
+            ? t("decisions.acts.whyDecided", {
+                state: t(`decisions.config.${run.config_state}`),
+                who: run.config_decided_by ?? "?",
+              })
+            : ownRun
+              ? t("decisions.acts.whyOwnRun")
+              : t("decisions.acts.configNote")}
+      </p>
+    </div>
   );
 }
 
