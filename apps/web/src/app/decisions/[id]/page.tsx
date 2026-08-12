@@ -16,6 +16,7 @@
 
 import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { TraceViewer } from "@/components/TraceViewer";
 import { useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import {
@@ -24,6 +25,7 @@ import {
   coverage,
   decideConfig,
   getDecision,
+  getTrace,
   listDecisionEvents,
   noCardReason,
   reviewRun,
@@ -33,6 +35,7 @@ import {
   type GateVerdict,
   type ReviewEvent,
   type RunCandidate,
+  type TracePayload,
 } from "@/lib/decisions";
 
 export default function DecisionDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -72,12 +75,92 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
 
       <SampleBanner run={run} />
       <GateTable run={run} />
+      <TracePanel run={run} />
       <Outcome run={run} />
       <HumanActs run={run} onDone={refresh} />
       <Conditions run={run} />
       <Provenance run={run} />
       <AuditTrail events={events} />
     </section>
+  );
+}
+
+/** Look at the evidence the gate table was computed from.
+ *
+ * **Directly under the gate table, and that placement is the argument.**
+ * A row saying "G3: fail, 70% success" is a claim about episodes; the
+ * next thing a reader should be able to do is open one of them. Putting
+ * the viewer below the recommendation instead would make the trajectory
+ * an illustration of a conclusion rather than the thing the conclusion
+ * came from.
+ *
+ * Loaded on demand. A run holds thirty to three hundred episodes per
+ * candidate and each is a map plus a few hundred poses, so fetching them
+ * all to show one would be paying for a hundred pictures nobody asked to
+ * see.
+ */
+function TracePanel({ run }: { run: DecisionRun }) {
+  const { t } = useTranslation();
+  const candidates = run.report?.candidates ?? [];
+  const episodes = run.report?.sample?.episode_context_ids ?? [];
+  const [candidateId, setCandidateId] = useState(candidates[0]?.candidate_id ?? "");
+  const [episodeId, setEpisodeId] = useState(episodes[0] ?? "");
+  const [trace, setTrace] = useState<TracePayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  if (candidates.length === 0 || episodes.length === 0) return null;
+
+  const load = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setTrace(await getTrace(run.id, candidateId, episodeId));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+      setTrace(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <h3>{t("trace.title")}</h3>
+      </div>
+      <p className="muted">{t("trace.note")}</p>
+
+      {error ? <div className="error-box">{error}</div> : null}
+
+      <div className="row" style={{ alignItems: "flex-end" }}>
+        <label className="field">
+          <span>{t("trace.candidate")}</span>
+          <select value={candidateId} onChange={(event) => setCandidateId(event.target.value)}>
+            {candidates.map((candidate) => (
+              <option key={candidate.candidate_id} value={candidate.candidate_id}>
+                {candidate.stack_label} · {candidate.local_controller_config}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>{t("trace.episode")}</span>
+          <select value={episodeId} onChange={(event) => setEpisodeId(event.target.value)}>
+            {episodes.map((episode, index) => (
+              <option key={episode} value={episode}>
+                #{index + 1} · {episode.slice(0, 8)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="button" disabled={busy} onClick={() => void load()}>
+          {busy ? t("common.loading") : t("trace.load")}
+        </button>
+      </div>
+
+      {trace ? <TraceViewer trace={trace} /> : null}
+    </div>
   );
 }
 

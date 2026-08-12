@@ -46,6 +46,7 @@ from planbench_benchmark.hostinfo import detect_benchmark_host, unpinned_warning
 from planbench_benchmark.pipeline import (
     AcceptanceFailure,
     GateOnlyDeployment,
+    Progress,
     SweepResult,
     check_delta_u,
     check_gate_table,
@@ -419,6 +420,7 @@ def run_comparison(
     score_only: bool = False,
     stop_early: bool = False,
     min_episodes_before_stop: int | None = None,
+    progress: Progress | None = None,
 ) -> dict[str, object]:
     def say(message: str) -> None:
         if not quiet:
@@ -505,6 +507,7 @@ def run_comparison(
                 say=say,
                 journal=destination / "run_journal.jsonl",
                 retire=watch.retire if watch is not None else None,
+                progress=progress,
             )
             contexts_by_candidate = sweep.contexts_by_candidate
         except KeyboardInterrupt:

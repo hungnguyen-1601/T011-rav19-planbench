@@ -91,6 +91,18 @@ Say = Callable[[str], None]
 #: not have to import the decision layer to run episodes.
 Retire = Callable[[Candidate, EpisodeContext], object | None]
 
+#: ``(done, total, what)`` — where a long sweep has got to.
+#:
+#: Structured rather than a second ``say`` the caller has to parse. The
+#: numbers are already computed here for the journal, and a caller that
+#: had to read them back out of a formatted line would break the first
+#: time somebody widened a column.
+#:
+#: Called on reused traces as well as simulated ones: a run served
+#: entirely from disk still moves from 0 to N, and a progress bar that
+#: sat at zero through it would be reporting the wrong thing.
+Progress = Callable[[int, int, str], None]
+
 
 def _silent(_message: str) -> None:
     return None
@@ -153,6 +165,7 @@ def simulate(
     say: Say | None = None,
     journal: Path | None = None,
     retire: Retire | None = None,
+    progress: Progress | None = None,
 ) -> SweepResult:
     """Run every (candidate, context) pair that has no trace yet.
 
@@ -210,6 +223,8 @@ def simulate(
         covered[candidate.candidate_id].append(context)
         path = trace_path(candidate.candidate_id, context.episode_context_id, root=trace_root)
         if reuse and path.is_file():
+            if progress is not None:
+                progress(index, total, candidate.stack_label)
             _consult_retire(retire, retired, candidate, context, journal, emit)
             continue
         started = time.time()
@@ -220,6 +235,8 @@ def simulate(
             f"seed {context.seed:<4} {run.result.status.value:<16} "
             f"{elapsed:5.1f}s"
         )
+        if progress is not None:
+            progress(index, total, candidate.stack_label)
         if journal is not None:
             _append_journal(
                 journal,

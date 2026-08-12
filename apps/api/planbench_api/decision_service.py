@@ -21,6 +21,8 @@ they asked.
 
 from __future__ import annotations
 
+import base64
+import json
 from pathlib import Path
 from typing import Any
 
@@ -35,8 +37,9 @@ from planbench_api.decisions import (
     TaskProfileRepository,
     new_run_id,
 )
-from planbench_api.errors import DomainValidationError, InvalidStateError
+from planbench_api.errors import DomainValidationError, InvalidStateError, NotFoundError
 from planbench_api.repositories import now_iso
+from planbench_api.worker import Job, JobQueue
 from planbench_benchmark.candidates import LOCAL_CONTROLLER_CONFIGS, candidate_from_stack
 from planbench_benchmark.selection import DEFAULT_SCOPE, run_comparison
 from planbench_schemas.contracts import CONTRACTS_VERSION
@@ -179,6 +182,73 @@ class DecisionRunService:
         )
         return self._store(report, stored_profile, scope=scope, created_by=created_by)
 
+    def submit(
+        self,
+        *,
+        jobs: JobQueue,
+        task_profile_id: str,
+        candidate_specs: list[tuple[str, str]],
+        scope: str = DEFAULT_SCOPE,
+        episodes: int | None = None,
+        created_by: str | None = None,
+        reuse_traces: bool = True,
+    ) -> Job:
+        """Queue the selection instead of running it inside the request.
+
+        **The queue this goes into holds one job at a time, and that is a
+        contract requirement rather than a resource choice.** HĐ-7.4
+        forbids two evaluation runs on one machine at once: both pin the
+        same cores, so each becomes the other's background load and G4
+        measures a machine that does not exist. A second slot would let
+        the API produce exactly the corruption the pinning exists to
+        prevent.
+
+        Nothing about the run changes — same chain, same storage, same
+        refusals. What changes is who waits: a 300-episode warehouse
+        sweep is hours of simulation, and an HTTP request that holds a
+        browser open for hours is not a design, it is an omission.
+
+        The synchronous path stays for small runs. A six-episode fixture
+        finishes before a progress bar would finish appearing, and making
+        every caller poll for that would be ceremony.
+        """
+        stored_profile = self._profiles.get(task_profile_id)
+        profile_path = self._materialise(stored_profile)
+        job_id = new_run_id()
+
+        def work(job: Job) -> None:
+            def progress(done: int, total: int, what: str) -> None:
+                job.progress = done
+                job.total = total
+                job.message = what
+
+            report = run_comparison(
+                profile_path=profile_path,
+                candidate_specs=candidate_specs,
+                scope=scope,
+                episodes=episodes,
+                trace_root=self._trace_root,
+                run_root=self._run_root,
+                reuse=reuse_traces,
+                quiet=True,
+                map_base_dir=self._repo_root,
+                progress=progress,
+            )
+            stored = self._store(report, stored_profile, scope=scope, created_by=created_by)
+            # The finished run's id, so a client watching the job knows
+            # where to look without searching the list for something that
+            # appeared recently — "recent" is not an identity.
+            job.message = stored.id
+
+        # `total=0` rather than the episode count the caller asked for.
+        # A sweep runs one pair per (candidate, episode) — 30 episodes
+        # across two candidates is 60 units of work — and seeding the
+        # counter with 30 made the job read "0/30" and then jump to
+        # "60/60". A denominator that changes under the reader is worse
+        # than one that arrives a second late, so the sweep reports both
+        # numbers itself when it has them.
+        return jobs.submit(job_id, "decision_run", work, total=0)
+
     def get(self, run_id: str) -> StoredDecisionRun:
         return self._runs.get(run_id)
 
@@ -215,6 +285,93 @@ class DecisionRunService:
 
     def events(self, run_id: str) -> list[ReviewEvent]:
         return self._runs.events(run_id)
+
+    def trace(self, run_id: str, candidate_id: str, episode_context_id: str) -> dict[str, Any]:
+        """One episode, as something a canvas can draw.
+
+        **The trace is the only record of what happened**, and until now
+        nothing could read one back out. ``compare.py`` writes one Parquet
+        file per (candidate, episode) — that file is the sole input the
+        Metrics Engine has (HĐ-5) — and every number on a Decision Card
+        is derived from it. A platform that computes a gate verdict from
+        evidence nobody can look at is asking to be believed.
+
+        Three things travel together because none of them means anything
+        alone: the poses, the map they were driven on, and the metadata
+        that says which episode this is. A trajectory without its map is
+        a squiggle; a map without the episode ids is a picture of
+        somewhere.
+
+        Refuses a trace that does not belong to this run rather than
+        serving whatever the path spells. The ids are content hashes, so
+        a mismatch is not a typo — it is a request for a different
+        experiment's evidence under this run's name.
+        """
+        import pyarrow.parquet as pq
+
+        from planbench_benchmark.task_map import load_task_map
+        from planbench_simulator.trace import trace_path
+
+        run = self._runs.get(run_id)
+        report = run.report or {}
+        candidates = {
+            str(entry.get("candidate_id"))
+            for entry in report.get("candidates", [])  # type: ignore[union-attr]
+        }
+        if candidate_id not in candidates:
+            raise NotFoundError("candidate in this run", candidate_id)
+        episodes = set(report.get("sample", {}).get("episode_context_ids", []))  # type: ignore[union-attr]
+        if episodes and episode_context_id not in episodes:
+            raise NotFoundError("episode in this run", episode_context_id)
+
+        path = trace_path(candidate_id, episode_context_id, root=self._trace_root)
+        if not path.is_file():
+            raise NotFoundError("trace file", f"{candidate_id}/{episode_context_id}")
+
+        table = pq.read_table(path)
+        columns = {name: table.column(name).to_pylist() for name in table.column_names}
+        raw = (table.schema.metadata or {}).get(b"planbench_trace")
+        metadata = json.loads(raw) if raw else {}
+
+        profile = self._profiles.load(run.task_profile_id)
+        map_data = load_task_map(profile, base_dir=self._repo_root, validate=False)
+
+        return {
+            "candidate_id": candidate_id,
+            "episode_context_id": episode_context_id,
+            "task_profile_id": run.task_profile_id,
+            "metadata": metadata,
+            "map": _packed_map(map_data),
+            "robot_radius_m": profile.robot.radius,
+            # Explicit fields rather than `list(pose)`: iterating a
+            # pydantic model yields (name, value) pairs, which serialised
+            # the start pose as [["x", 2.0], ["y", 8.0], ["theta", 0.0]]
+            # — readable by nothing and drawable by less.
+            "missions": [
+                {
+                    "id": mission.id,
+                    "start": {"x": mission.start.x, "y": mission.start.y},
+                    "goal": {"x": mission.goal.x, "y": mission.goal.y},
+                }
+                for mission in profile.missions
+            ],
+            # Column-oriented, matching the file. Rewriting 546 rows into
+            # 546 objects would triple the payload to say the same thing.
+            "t": columns.get("t", []),
+            "x": columns.get("x", []),
+            "y": columns.get("y", []),
+            "theta": columns.get("theta", []),
+            "clearance_m": columns.get("clearance_m", []),
+            "planner_latency_ms": columns.get("planner_latency_ms", []),
+            # Sparse: only the steps that carry one. HĐ-5 events are what
+            # turn a path into an outcome, and dropping them would leave a
+            # collision indistinguishable from an arrival.
+            "events": [
+                {"index": index, "event": value}
+                for index, value in enumerate(columns.get("event", []))
+                if value
+            ],
+        }
 
     def approved_config(self, run_id: str) -> str:
         """The deployable configuration, as YAML — approved runs only.
@@ -333,3 +490,30 @@ class DecisionRunService:
                 run_checksum=report.get("run_checksum"),
             )
         )
+
+
+def _packed_map(map_data: Any) -> dict[str, Any]:
+    """The occupancy grid as base64 bits, not 153,600 JSON numbers.
+
+    The reference hall is 480x320. As a JSON array of zeroes and ones
+    that is roughly 300 kB of text to say one bit per cell; packed eight
+    to a byte it is 19 kB, and the browser unpacks it in a loop it was
+    going to write anyway to walk the grid.
+
+    Row-major with row 0 at the map origin, matching ``MapData`` — the
+    canvas flips it, because screen y grows downward and world y does
+    not, and getting that wrong draws a mirror of the run.
+    """
+    cells = map_data.cells
+    packed = bytearray((len(cells) + 7) // 8)
+    for index, value in enumerate(cells):
+        if value:
+            packed[index >> 3] |= 1 << (index & 7)
+    return {
+        "name": map_data.name,
+        "width": map_data.width,
+        "height": map_data.height,
+        "resolution": map_data.resolution,
+        "origin": {"x": map_data.origin.x, "y": map_data.origin.y},
+        "occupied_bits": base64.b64encode(bytes(packed)).decode("ascii"),
+    }

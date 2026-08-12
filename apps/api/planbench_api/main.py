@@ -145,6 +145,21 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     app.state.oauth_codes = ExchangeCodes()
     app.state.oauth_client = OAuthClient()
     app.state.jobs = JobQueue(settings.worker_concurrency)
+    # A separate queue for selection runs, and it holds exactly one job.
+    #
+    # **One, because the contract says so.** HĐ-7.4 forbids two
+    # evaluation runs on one machine at once: both pin the same cores, so
+    # each becomes the other's background load and G4 — which reads
+    # wall-clock latency — measures a machine that does not exist. The
+    # same stack has been measured at 59.30 ms unpinned and 16.10 ms
+    # pinned to two cores. A second slot here would let the API produce
+    # exactly the corruption the pinning exists to prevent.
+    #
+    # Separate from `jobs`, because that queue is shared with benchmark
+    # runs and sized for throughput. Parking a three-hour selection in it
+    # would starve them, and shrinking it to one would starve everything
+    # else. Two queues, two different jobs, two different bounds.
+    app.state.decision_jobs = JobQueue(1)
     app.state.tracker = build_tracker(settings.mlflow_tracking_uri, settings.mlflow_experiment)
     app.state.agent_provider = build_provider(
         settings.agent_provider,
