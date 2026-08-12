@@ -18,7 +18,8 @@
     "episode_contexts",
     "bootstrap",
     "benchmark_host",
-    "created_at"
+    "created_at",
+    "constraints"
   ],
   "properties": {
     "contracts_version": {
@@ -262,6 +263,42 @@
           "type": "number",
           "minimum": 0,
           "exclusiveMaximum": 1
+        }
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "description": "HĐ-7 thresholds that turned measurements into verdicts. Required from 6.4.0. episode_context_id hashes neither these nor sensor_noise, but what follows differs: changing sensor_noise changes the WORLD and needs a new task_profile_id, while changing a constraint changes the VERDICT and leaves the episodes exactly as valid. So constraints may be edited in place, and this field is then the only thing between two cards that disagree and nobody able to say why.",
+      "properties": {
+        "success_rate_min": {
+          "type": "number"
+        },
+        "collision_probability_max": {
+          "type": "number"
+        },
+        "no_path_rate_max": {
+          "type": "number"
+        },
+        "goal_tolerance_m": {
+          "type": "number"
+        },
+        "goal_tolerance_rad": {
+          "type": "number"
+        },
+        "episode_timeout_s": {
+          "type": "number"
+        },
+        "stuck_threshold_s": {
+          "type": "number"
+        },
+        "clearance_warning_m": {
+          "type": "number"
+        },
+        "cost_per_mission_max": {
+          "type": [
+            "number",
+            "null"
+          ]
         }
       }
     }
