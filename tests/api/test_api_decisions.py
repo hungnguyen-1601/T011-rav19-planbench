@@ -58,6 +58,38 @@ def tiny_profile() -> dict:
     return profile
 
 
+@pytest.fixture(scope="module", autouse=True)
+def shared_traces(tmp_path_factory: pytest.TempPathFactory):
+    """One trace directory for the whole module, not one per test.
+
+    **This is the single reason this file took seven of the suite's
+    twenty-one minutes.** Every test here drives a real selection through
+    the API, and the ``app`` fixture rooted artifacts at a per-test
+    ``tmp_path`` — so each test re-simulated episodes another test had
+    already run. Thirteen of the suite's fifteen slowest entries came
+    from this one module.
+
+    Sharing the traces is safe by construction rather than by luck: a
+    trace path is ``<candidate_id>/<episode_context_id>.parquet``, and
+    both halves are content hashes (HĐ-1.3, HĐ-3.1). Two tests reach the
+    same file only when they asked for the same candidate on the same
+    episode of the same deployment — in which case the file *is* the
+    answer, and recomputing it would be recomputing a pure function. Two
+    deployments cannot collide: their ids differ, so their context ids do.
+
+    This is also what ``--reuse-traces`` does in production, so the tests
+    now exercise the reuse path they always claimed was safe.
+
+    ``decision_run_dir`` is deliberately left per-test. Run directories
+    are named from the profile, the scope and the candidate set, so
+    sharing them would let one test's report be overwritten by another's
+    while both assert on directory contents.
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("PLANBENCH_DECISION_TRACE_DIR", str(tmp_path_factory.mktemp("traces")))
+        yield
+
+
 @pytest.fixture
 def profile_id(client: TestClient, alice_headers: dict[str, str]) -> str:
     response = client.post(f"{API}/task-profiles", json=tiny_profile(), headers=alice_headers)

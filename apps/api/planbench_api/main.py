@@ -111,13 +111,32 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     # Uploaded checkpoints. Separate from the artifact store because the
     # lifecycles differ: artifacts belong to a run, models outlive many.
     app.state.model_storage = LocalModelStorage(settings.model_dir)
-    # Decision layer (Phase 6.2). The roots follow `artifact_dir` when
-    # a caller overrides it — a test passing its own artifact root must
-    # not have selection runs land in the developer's checkout.
+    # Decision layer (Phase 6.2). The roots follow `artifact_dir` when a
+    # caller overrides it — a test passing its own artifact root must not
+    # have selection runs land in the developer's checkout — but an
+    # explicit PLANBENCH_DECISION_TRACE_DIR wins over both.
+    #
+    # That last clause was missing until 2026-08-12, and the setting was
+    # dead: `config.py` declares both fields and documents their default,
+    # and this line then overwrote whatever they said, on every call. A
+    # configuration knob that silently does nothing is worse than one
+    # that does not exist, because somebody sets it and believes it.
+    #
+    # It also has a cost the tests pay. Trace paths are content hashes
+    # (HĐ-1.3, HĐ-3.1), so a shared trace root is exactly what makes
+    # `--reuse-traces` safe — but with the root pinned to a per-test
+    # temporary directory, every test re-simulated episodes another test
+    # had already run.
     decision_root = Path(artifact_dir) if artifact_dir else Path(settings.artifact_dir)
     app.state.decision_map_root = Path(settings.map_root)
-    app.state.decision_trace_dir = decision_root / "traces"
-    app.state.decision_run_dir = decision_root / "runs"
+    app.state.decision_trace_dir = (
+        Path(settings.decision_trace_dir)
+        if settings.decision_trace_dir
+        else decision_root / "traces"
+    )
+    app.state.decision_run_dir = (
+        Path(settings.decision_run_dir) if settings.decision_run_dir else decision_root / "runs"
+    )
     app.state.repos = _build_repositories(settings, artifacts, app)
     app.state.auth = AuthService(settings, app.state.repos.users)
     # One-time codes and the provider HTTP client are app-scoped: the

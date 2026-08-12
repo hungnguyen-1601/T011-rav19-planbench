@@ -16,6 +16,7 @@
  * bounding a collision probability off a single episode.
  */
 
+import { API_BASE } from "./api";
 import { authFetch } from "./auth";
 
 /** Which artifact a run produced. `comparison` covers both a comparison
@@ -222,6 +223,61 @@ export function listDecisionEvents(runId: string): Promise<ReviewEvent[]> {
 
 export function listTaskProfiles(): Promise<TaskProfileSummary[]> {
   return authFetch<TaskProfileSummary[]>("/task-profiles");
+}
+
+export function getTaskProfile(profileId: string): Promise<TaskProfileSummary> {
+  return authFetch<TaskProfileSummary>(`/task-profiles/${profileId}`);
+}
+
+/** File a deployment. The server validates it against HĐ-2 and refuses
+ *  to redefine an existing id with different content — so this can 409,
+ *  and that 409 is the guard that keeps stored runs describing the world
+ *  they were actually measured in. */
+export function createTaskProfile(profile: unknown): Promise<TaskProfileSummary> {
+  return authFetch<TaskProfileSummary>("/task-profiles", {
+    method: "POST",
+    body: JSON.stringify(profile),
+  });
+}
+
+/** Record that somebody read this run's evidence.
+ *
+ * Allowed on every run, including the ones that recommend nobody — which
+ * is the whole reason it is a separate act from approving a config.
+ */
+export function reviewRun(runId: string, comment: string): Promise<DecisionRun> {
+  return authFetch<DecisionRun>(`/decisions/${runId}/review`, {
+    method: "POST",
+    body: JSON.stringify({ comment }),
+  });
+}
+
+/** Approve or reject this run's recommendation as the deployed config.
+ *
+ * 409 when the run has no card, when it was already decided, or when the
+ * caller started it (HĐ-14, separation of duties). The UI does not
+ * pre-empt any of those: the server owns the rule, and a second copy
+ * here would be free to disagree with it.
+ */
+export function decideConfig(
+  runId: string,
+  decision: "approve" | "reject",
+  comment: string,
+): Promise<DecisionRun> {
+  return authFetch<DecisionRun>(`/decisions/${runId}/config-approval`, {
+    method: "POST",
+    body: JSON.stringify({ decision, comment }),
+  });
+}
+
+/** Where the approved configuration is served from.
+ *
+ * A URL rather than a fetch: it is a file somebody saves, the endpoint
+ * returns text/plain, and letting the browser do the download keeps the
+ * filename the server chose.
+ */
+export function approvedConfigUrl(runId: string): string {
+  return `${API_BASE}/api/v1/decisions/${runId}/approved_config.yaml`;
 }
 
 /** The six gates, in contract order. Rendered in this order always, so

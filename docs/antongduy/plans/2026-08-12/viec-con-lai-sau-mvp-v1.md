@@ -370,3 +370,60 @@ buộc mọi run phải rank được — áp lực đã sinh ra tấm card tuy�
 
 Nay có thêm một trạng thái thứ ba phải dựng được: **run bị ngắt giữa chừng** (B1 dừng ở 245/300),
 và một trục thứ tư: `review_state` × `config_state`.
+
+---
+
+## Quan hệ giữa hai stack — **dev chốt 2026-08-12 tối**
+
+Câu hỏi: luồng cũ (`map → simulate → benchmark → accept`) và luồng mới
+(`deployment → candidate → sáu cổng → Decision Card → duyệt`) là hai sản phẩm
+trong một repo. Cái nào thay cái nào?
+
+**Chốt: xây SONG SONG cho tới hết MVP, rồi mới quay lại tinh gọn.**
+
+Lý do chốt như vậy, sau khi khảo sát: thay ngay là việc nhiều ngày và có một
+khoảng trống không chấp nhận được ở giữa.
+
+### Quy mô thật của việc thay thế
+
+80 endpoint cũ, 10 endpoint mới. Nhưng không phải 80 cái đều bị thay:
+
+| nhóm | số | số phận nếu thay |
+|---|---|---|
+| `benchmarks` `leaderboard` `algorithms` `generalization` `scenario-protocol` `difficulty-calibration` `tuning` | ~24 | **bị thay** |
+| `auth` `users` `reviews` | 16 | **giữ** — cắt ngang cả hai luồng |
+| `maps` `scenarios` `scenario-library` `robot-profiles` | 12 | **giữ, đổi vai** — thành nguồn dựng task profile |
+| `simulations` `episodes` | 9 | **khoảng trống lớn nhất** |
+| `models` `agent` `ai` | 18 | giữ |
+
+### Ba việc bắt buộc trước khi luồng cũ nghỉ được
+
+1. **UI tạo task profile** — nơi khai nhiễu. Hiện chỉ sửa được bằng file YAML.
+2. **UI khởi chạy phép so** — nhưng `POST /decisions` chạy **đồng bộ** theo
+   thiết kế. Một nút bấm có thể treo trình duyệt hàng giờ, nên phải đưa vào
+   worker nền trước.
+3. **Trình xem trace Parquet.** Luồng cũ có `MapCanvas`, `Scene25D`,
+   `useTrajectoryPlayback` — xem được robot chạy. Luồng mới ghi Parquet vào
+   `artifacts/traces/<candidate>/<episode>.parquet` và **không có gì đọc
+   chúng ra màn hình**; endpoint `episodes` phục vụ mô hình dữ liệu cũ.
+
+**Điểm ba là lý do chốt "song song".** Bỏ luồng cũ trước khi có trình xem
+trace = mất khả năng nhìn thấy robot chạy, thứ trực quan nhất của sản phẩm.
+Chạy song song thì luồng cũ vẫn gánh việc đó trong lúc luồng mới lớn dần.
+
+### Đã làm được gì cho luồng mới (12-08)
+
+- `/decisions` danh sách + chi tiết, chỉ đọc, bảng cổng đứng trước khuyến nghị.
+- `scripts/import_runs.py` nạp 6 run có sẵn trên đĩa vào store — trang có dữ
+  liệu thật, đủ **cả bốn trạng thái** phải dựng (có card · không card · ngắt
+  giữa chừng 245/300 · report cũ không ghi số episode đã xin).
+- `scripts/serve.py` chạy API trên mọi nền tảng, kể cả Windows thuần.
+
+### Khi quay lại tinh gọn, nhớ hỏi
+
+- Dữ liệu benchmark cũ: migrate sang `decision_runs`, hay lưu trữ đóng băng?
+- `leaderboard` dựng lại trên Decision Card thì nghĩa là gì? Xếp hạng xuyên
+  deployment mâu thuẫn với HĐ-1.4 (khuyến nghị chỉ có nghĩa trên một
+  deployment).
+- `robot-profiles` trùng phần `robot` trong task profile — một trong hai phải
+  thành nguồn sự thật.

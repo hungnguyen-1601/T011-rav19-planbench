@@ -132,10 +132,24 @@ class Settings(BaseSettings):
     # storing the profile in a database did not move the `.pgm` — so the
     # API needs to be told where those files are, not guess.
     map_root: str = "."
-    # Trace and run roots for selections started through the API. Empty
-    # means "<artifact_dir>/traces" and "<artifact_dir>/runs", so a
-    # deployment that moved the artifact root moves these with it — the
-    # same reasoning as `model_dir`.
+    # Trace and run roots for selections started through the API.
+    #
+    # **Empty means "follow the artifact root", and it is left empty on
+    # purpose.** `model_dir` above is defaulted in the validator below;
+    # these two are not, and the difference is load-bearing:
+    # `create_app(artifact_dir=...)` overrides the artifact root for a
+    # single application — a test giving itself a temporary root, most
+    # often — and it can only tell "the operator chose a trace directory"
+    # from "nobody chose one" if the unset case is still visibly unset by
+    # the time it looks.
+    #
+    # Filling them in here made the setting dead: `main.py` computed its
+    # own path from `artifact_dir` and never consulted these, because
+    # consulting them would have overridden every test's isolation. So
+    # `PLANBENCH_DECISION_TRACE_DIR` could be set and had no effect at
+    # all, which is worse than not existing — somebody sets it and
+    # believes it. Resolved in `main.py`, which is the only place that
+    # knows both this and the per-application override.
     decision_trace_dir: str = ""
     decision_run_dir: str = ""
 
@@ -145,10 +159,8 @@ class Settings(BaseSettings):
             # object.__setattr__ is not needed (Settings is mutable), but
             # assigning through the field keeps validation in play.
             self.model_dir = str(Path(self.artifact_dir) / "models")
-        if not self.decision_trace_dir:
-            self.decision_trace_dir = str(Path(self.artifact_dir) / "traces")
-        if not self.decision_run_dir:
-            self.decision_run_dir = str(Path(self.artifact_dir) / "runs")
+        # decision_trace_dir / decision_run_dir are deliberately NOT
+        # defaulted here — see the comment on their declaration.
         return self
 
 
