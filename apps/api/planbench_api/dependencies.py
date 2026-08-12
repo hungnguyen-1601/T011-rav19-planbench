@@ -121,7 +121,19 @@ AgentDependency = Annotated[AgentService, Depends(get_agent_service)]
 
 
 def get_task_profile_service(request: Request) -> TaskProfileService:
-    return TaskProfileService(request.app.state.repos.task_profiles)
+    """Deployments, plus the one place a drawn map becomes one.
+
+    It gets the map repository and the map root because deriving a
+    deployment from a custom map writes that map to disk: profiles name
+    their map by path (HĐ-2) and the editor stores grids in the database,
+    so something has to cross between them.
+    """
+    state = request.app.state
+    return TaskProfileService(
+        state.repos.task_profiles,
+        maps=state.repos.maps,
+        map_root=state.decision_map_root,
+    )
 
 
 def get_candidate_service(request: Request) -> CandidateService:

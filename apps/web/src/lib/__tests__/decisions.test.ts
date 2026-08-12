@@ -18,8 +18,13 @@ import {
   coverage,
   gateEvidence,
   gateResult,
+  hasEpisodeOutcomes,
   noCardReason,
+  outcomesByEpisode,
+  runOutcome,
   type DecisionRun,
+  type EpisodeOutcome,
+  type RunCandidate,
 } from "../decisions";
 
 function run(overrides: Partial<DecisionRun> = {}): DecisionRun {
@@ -167,5 +172,104 @@ describe("a gate verdict, whichever shape it arrived in", () => {
   it("drops nulls rather than printing 'null' at the reader", () => {
     const evidence = gateEvidence({ result: "fail", upper_bound_95: null, note: null, n_min: 300 });
     expect(evidence.map(([key]) => key)).toEqual(["n_min"]);
+  });
+});
+
+function candidate(overrides: Partial<RunCandidate> = {}): RunCandidate {
+  return {
+    candidate_id: "c1",
+    stack_label: "rrtstar+dwa",
+    local_controller_config: "dwa_coarse",
+    gates: {},
+    cleared_gates: true,
+    blocking_gates: [],
+    n_distinct_episodes: 3,
+    success_rate: 1,
+    pooled_p99_latency_ms: 12,
+    ...overrides,
+  };
+}
+
+function outcome(id: string, failure: EpisodeOutcome["failure_reason"] = null): EpisodeOutcome {
+  return {
+    episode_context_id: id,
+    success: failure === null,
+    failure_reason: failure,
+    collision_count: failure === "collision" ? 1 : 0,
+    min_clearance: 0.2,
+    travel_time_s: 12.5,
+    p99_latency_ms: 11,
+  };
+}
+
+describe("which episodes a candidate passed", () => {
+  it("keys by episode id, not by position", () => {
+    /* Early stopping retires a candidate mid-sweep, so row seven of one
+       candidate's array and row seven of another's can be different
+       episodes. Only the id lines a pair up. */
+    const entry = candidate({
+      episodes: [outcome("ep_b", "collision"), outcome("ep_a")],
+    });
+    const found = outcomesByEpisode(entry);
+    expect(found.get("ep_a")?.success).toBe(true);
+    expect(found.get("ep_b")?.failure_reason).toBe("collision");
+  });
+
+  it("is empty for a candidate whose rows were never recorded", () => {
+    expect(outcomesByEpisode(candidate()).size).toBe(0);
+  });
+
+  it("tells 'not recorded' from 'all passed'", () => {
+    /* Both look like a table with no red in it, and only one of them is
+       a measurement. Reports stored before this field existed must not
+       render as clean runs. */
+    const old = run();
+    old.report.candidates = [candidate()];
+    expect(hasEpisodeOutcomes(old)).toBe(false);
+
+    const measured = run();
+    measured.report.candidates = [candidate({ episodes: [outcome("ep_a")] })];
+    expect(hasEpisodeOutcomes(measured)).toBe(true);
+  });
+
+  it("counts a run where every episode passed as recorded", () => {
+    const clean = run();
+    clean.report.candidates = [candidate({ episodes: [] })];
+    expect(hasEpisodeOutcomes(clean)).toBe(true);
+  });
+});
+
+describe("what a run concluded, in a list row", () => {
+  it("names the winner by stack and controller rather than by hash", () => {
+    /* `recommended_candidate_id` is the right identity for a trace path
+       and the wrong thing in front of somebody scanning ten rows. */
+    const ranked = run({ ranked: true, recommended_candidate_id: "c2" });
+    ranked.report.candidates = [
+      candidate({ candidate_id: "c1", cleared_gates: false }),
+      candidate({ candidate_id: "c2", stack_label: "astar+dwa" }),
+    ];
+    expect(runOutcome(ranked)).toEqual({
+      winner: "astar+dwa · dwa_coarse",
+      cleared: 1,
+      total: 2,
+    });
+  });
+
+  it("falls back to the id when the report cannot name the winner", () => {
+    /* Better than an em dash on a run that did recommend somebody. */
+    const odd = run({ ranked: true, recommended_candidate_id: "c9" });
+    odd.report.candidates = [candidate({ candidate_id: "c1" })];
+    expect(runOutcome(odd).winner).toBe("c9");
+  });
+
+  it("has no winner and still counts the gates on an unranked run", () => {
+    /* Nobody through the gates is a result (HĐ-7), and the count is what
+       says so — a blank row would read as a run that broke. */
+    const unranked = run();
+    unranked.report.candidates = [
+      candidate({ candidate_id: "c1", cleared_gates: false }),
+      candidate({ candidate_id: "c2", cleared_gates: false }),
+    ];
+    expect(runOutcome(unranked)).toEqual({ winner: null, cleared: 0, total: 2 });
   });
 });

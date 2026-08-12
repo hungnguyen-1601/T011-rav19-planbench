@@ -115,6 +115,79 @@ def load_map_server(image_bytes: bytes, yaml_text: str, name: str) -> MapData:
     )
 
 
+#: The three pixel values map_server itself writes, and the reason each
+#: one is that number rather than a rounder neighbour. With the default
+#: thresholds and ``negate: 0``, occupancy is ``(255 - pixel) / 255``:
+#:
+#:   0   -> 1.000  > 0.65   occupied
+#:   205 -> 0.1961 in the middle band   unknown
+#:   254 -> 0.0039 < 0.196  free
+#:
+#: 205 is the tight one: 50/255 = 0.19608 clears ``free_thresh`` of 0.196
+#: by four ten-thousandths. That is the value ROS ships and the value
+#: every tool downstream expects, so it is kept rather than rounded to a
+#: safer 200 — a map this project writes has to read back the same in
+#: `map_server` itself, not only in this loader.
+_CELL_PIXEL = {
+    CellState.OCCUPIED.value: 0,
+    CellState.UNKNOWN.value: 205,
+    CellState.FREE.value: 254,
+}
+
+_PGM_MAXVAL = 255
+
+
+def dump_map_server(map_data: MapData, *, image_name: str) -> tuple[bytes, str]:
+    """The inverse of :func:`load_map_server`: a MapData as a PGM + YAML pair.
+
+    **This exists so a map somebody drew can become a deployment.** The
+    decision layer reads its map from the two paths a task profile names
+    (HĐ-2), and the map editor stores grids in the database — with no way
+    across, a custom map could be painted and never evaluated on. Writing
+    the pair out is the crossing, and it needs no contract change: what
+    lands on disk is an ordinary map_server map, indistinguishable from
+    one `nav2_map_server` produced.
+
+    Written at the default thresholds and ``negate: 0``, never at
+    whatever the source map was loaded with. The round trip is the
+    property that matters (``load_map_server(*dump_map_server(m))`` is
+    ``m``), and it holds because the three pixel values sit well inside
+    the three bands the defaults cut — reproducing an exotic threshold
+    pair would add ways for that to stop being true without adding a map
+    anyone can express.
+
+    ``image_name`` goes into the YAML's ``image:`` field, which the map
+    loader cross-checks against the file it actually read: a sidecar
+    naming a different image loads happily, taking pixels from one map
+    and resolution and origin from another, and nothing in the results
+    looks wrong.
+    """
+    height, width = map_data.height, map_data.width
+    cells = np.asarray(map_data.cells, dtype=np.int16).reshape(height, width)
+    pixels = np.full((height, width), _CELL_PIXEL[CellState.UNKNOWN.value], dtype=np.uint8)
+    for cell_value, pixel_value in _CELL_PIXEL.items():
+        pixels[cells == cell_value] = pixel_value
+    # MapData row 0 is at the map origin (bottom); PGM row 0 is the image
+    # top. Skipping this flip writes a map that is a mirror of the one
+    # measured on, and a mirrored warehouse still looks like a warehouse.
+    body = np.flipud(pixels).tobytes()
+    image = f"P5\n{width} {height}\n{_PGM_MAXVAL}\n".encode("ascii") + body
+
+    sidecar = yaml.safe_dump(
+        {
+            "image": image_name,
+            "resolution": map_data.resolution,
+            "origin": [map_data.origin.x, map_data.origin.y, 0.0],
+            "negate": 0,
+            "occupied_thresh": 0.65,
+            "free_thresh": 0.196,
+            "mode": "trinary",
+        },
+        sort_keys=False,
+    )
+    return image, sidecar
+
+
 def _pixel_to_cell(
     pixel: int, maxval: int, negate: bool, occupied_thresh: float, free_thresh: float
 ) -> CellState:
@@ -228,4 +301,10 @@ def _read_pgm_header_tokens(data: bytes, count: int) -> tuple[list[str], int]:
     return tokens, i + 1  # skip the single separator byte before pixel data
 
 
-__all__ = ["KNOWN_MODES", "SUPPORTED_MODES", "MapServerFormatError", "load_map_server"]
+__all__ = [
+    "KNOWN_MODES",
+    "SUPPORTED_MODES",
+    "MapServerFormatError",
+    "dump_map_server",
+    "load_map_server",
+]

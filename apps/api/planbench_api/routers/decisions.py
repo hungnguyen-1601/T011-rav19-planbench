@@ -55,6 +55,30 @@ class TaskProfileResource(BaseModel):
     profile: dict[str, Any]
 
 
+class DerivedProfileRequest(BaseModel):
+    """A deployment identical to another except for its map (and missions).
+
+    ``new_id`` is required rather than generated, and the server refuses
+    it if it equals the base. Changing the map changes the world and
+    ``episode_context_id`` does not hash the map (HĐ-3.1), so an
+    in-place edit would let two worlds' episodes collide on one hash.
+    Making the caller name the new world is how that stays visible.
+
+    ``missions`` is optional and usually necessary: a start and goal that
+    fit the old map are rarely on free floor in the new one, and the
+    server checks before storing rather than letting every candidate
+    return no_path.
+    """
+
+    base_task_profile_id: str = Field(min_length=1)
+    new_id: str = Field(min_length=1)
+    #: A map from the map store (`GET /maps`) — drawn in the editor,
+    #: generated, or uploaded. It is written out as a map_server pair
+    #: under `maps/custom/` so the engine can read it the usual way.
+    map_id: str = Field(min_length=1)
+    missions: list[dict[str, Any]] | None = None
+
+
 class CandidateRegistration(BaseModel):
     """What a caller may choose. The **id is not on this list**.
 
@@ -217,7 +241,28 @@ def _job(job: Job) -> DecisionJobResource:
     )
 
 
-def _run(stored: StoredDecisionRun) -> DecisionRunResource:
+def _without_episode_tables(report: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The same report, minus each candidate's per-episode rows.
+
+    Copied shallowly down to the candidate entries rather than mutated:
+    the argument is the stored row's own dictionary, and dropping a key
+    from it would delete the evidence from the repository to make a list
+    page smaller.
+    """
+    if not report or "candidates" not in report:
+        return report
+    return {
+        **report,
+        "candidates": [
+            {key: value for key, value in candidate.items() if key != "episodes"}
+            if isinstance(candidate, dict)
+            else candidate
+            for candidate in report["candidates"]
+        ],
+    }
+
+
+def _run(stored: StoredDecisionRun, *, with_episodes: bool = True) -> DecisionRunResource:
     return DecisionRunResource(
         id=stored.id,
         task_profile_id=stored.task_profile_id,
@@ -229,7 +274,7 @@ def _run(stored: StoredDecisionRun) -> DecisionRunResource:
         ranked=stored.ranked,
         recommended_candidate_id=stored.recommended_candidate_id,
         status=stored.status,
-        report=stored.report,
+        report=stored.report if with_episodes else _without_episode_tables(stored.report),
         card=stored.card,
         review_state=stored.review_state,
         reviewed_by=stored.reviewed_by,
@@ -249,6 +294,37 @@ def create_task_profile(
     payload: dict[str, Any], service: Profiles, user: CurrentUser
 ) -> TaskProfileResource:
     return _profile(service.create(payload, owner_user_id=user.id))
+
+
+@router.post(
+    "/task-profiles/derive",
+    response_model=TaskProfileResource,
+    status_code=status.HTTP_201_CREATED,
+)
+def derive_task_profile(
+    request: DerivedProfileRequest, service: Profiles, user: CurrentUser
+) -> TaskProfileResource:
+    """Take an existing deployment and put a different map under it.
+
+    **The only way a custom map reaches a comparison.** A profile names
+    its map by path and the editor keeps grids in the database; this
+    writes the chosen map out as a map_server pair and points the new
+    profile at it.
+
+    Refuses before storing anything when the missions do not fit the new
+    map — a goal inside a shelf makes every candidate return no_path, and
+    the comparison then reports a tie on a question none of them was
+    asked, with every column reading a plausible 0.00.
+    """
+    return _profile(
+        service.derive(
+            base_task_profile_id=request.base_task_profile_id,
+            new_id=request.new_id,
+            map_id=request.map_id,
+            missions=request.missions,
+            owner_user_id=user.id,
+        )
+    )
 
 
 @router.get("/task-profiles", response_model=list[TaskProfileResource])
@@ -390,8 +466,20 @@ def list_decisions(
     ranked: Annotated[bool | None, Query()] = None,
 ) -> list[DecisionRunResource]:
     """``?ranked=false`` is the day-one question: which runs could not be
-    ranked, and at which gate did everybody fall out."""
-    return [_run(stored) for stored in service.list(task_profile_id=task_profile_id, ranked=ranked)]
+    ranked, and at which gate did everybody fall out.
+
+    The rows come back without their per-episode outcome tables. A
+    warehouse run is 300 episodes across two candidates, and ten of them
+    on one page is close to a megabyte of rows this page draws none of —
+    the list shows who cleared the gates, and the detail page is where an
+    episode is picked. Stripped rather than never stored: the report is
+    written once by the engine and stays whole behind ``GET
+    /decisions/{id}``.
+    """
+    return [
+        _run(stored, with_episodes=False)
+        for stored in service.list(task_profile_id=task_profile_id, ranked=ranked)
+    ]
 
 
 @router.get("/decisions/{run_id}", response_model=DecisionRunResource)

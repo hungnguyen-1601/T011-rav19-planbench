@@ -93,6 +93,7 @@ from planbench_decision.sensitivity import (
     weight_stability,
 )
 from planbench_decision.stats import CandidateEvidence, Recommendation, recommend
+from planbench_metrics.definitions import EpisodeMetricSet
 from planbench_schemas.task_profile import DEFAULT_MIN_EPISODES_BEFORE_STOP, TaskProfile
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -666,6 +667,7 @@ def run_comparison(
                 )
                 / len(metrics_by_candidate[candidate.candidate_id]),
                 "pooled_p99_latency_ms": latency_by_candidate[candidate.candidate_id],
+                "episodes": _episode_outcomes(metrics_by_candidate[candidate.candidate_id]),
             }
             for candidate, (_stack, local) in zip(candidates, candidate_specs, strict=True)
         ],
@@ -886,6 +888,45 @@ def run_dir_name(profile_id: str, scope: str, candidates: Sequence[Candidate]) -
         "|".join(sorted(c.candidate_id for c in candidates)).encode("utf-8")
     ).hexdigest()[:8]
     return f"{profile_id}_{scope}_{fingerprint}"
+
+
+def _episode_outcomes(metrics: Sequence[EpisodeMetricSet]) -> list[dict[str, object]]:
+    """Which episodes this candidate passed, and how the rest failed.
+
+    **The aggregate was never the whole answer.** ``success_rate: 0.70``
+    says seventy per cent of something happened; it does not say *which*
+    thirty per cent did not, nor whether they were thirty collisions or
+    thirty timeouts — and those two call for different work. The numbers
+    existed all along: every ``EpisodeMetricSet`` carries ``success`` and
+    ``failure_reason``, and until now the report pooled them and dropped
+    the rows.
+
+    Per candidate rather than one shared table, because early stopping
+    retires candidates at different episodes (HĐ-7.3 keeps the *prefix*
+    paired, not the length). A shared table would have to invent blanks
+    for the difference, and a blank in a results table reads as a
+    measurement that came back empty rather than one never taken.
+
+    Deliberately narrow. This is the row a reader scans to find the
+    episode worth opening, not a second copy of the metric set — the
+    trace endpoint serves the episode itself, and duplicating twenty
+    fields per episode here would put a megabyte of restatement in front
+    of them.
+    """
+    return [
+        {
+            "episode_context_id": m.episode_context_id,
+            "success": m.success,
+            # Null when it succeeded — not "none of the four reasons",
+            # which is what an empty string here would come to mean.
+            "failure_reason": m.failure_reason,
+            "collision_count": m.collision_count,
+            "min_clearance": m.min_clearance,
+            "travel_time_s": m.travel_time_s,
+            "p99_latency_ms": m.p99_latency_ms,
+        }
+        for m in metrics
+    ]
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:

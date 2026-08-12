@@ -38,7 +38,8 @@ from planbench_api.decisions import (
     new_run_id,
 )
 from planbench_api.errors import DomainValidationError, InvalidStateError, NotFoundError
-from planbench_api.repositories import now_iso
+from planbench_api.repositories import StoredMap, now_iso
+from planbench_api.repository_ports import MapRepositoryPort
 from planbench_api.worker import Job, JobQueue
 from planbench_benchmark.candidates import LOCAL_CONTROLLER_CONFIGS, candidate_from_stack
 from planbench_benchmark.selection import DEFAULT_SCOPE, run_comparison
@@ -47,8 +48,16 @@ from planbench_schemas.task_profile import TaskProfile
 
 
 class TaskProfileService:
-    def __init__(self, repository: TaskProfileRepository) -> None:
+    def __init__(
+        self,
+        repository: TaskProfileRepository,
+        *,
+        maps: MapRepositoryPort,
+        map_root: Path,
+    ) -> None:
         self._repository = repository
+        self._maps = maps
+        self._map_root = map_root
 
     def create(self, payload: dict[str, Any], *, owner_user_id: str | None) -> StoredTaskProfile:
         """Validate against HĐ-2, then store.
@@ -75,6 +84,126 @@ class TaskProfileService:
     def load(self, profile_id: str) -> TaskProfile:
         """The stored profile as the contract object the engine needs."""
         return TaskProfile.model_validate(self._repository.get(profile_id).profile)
+
+    def derive(
+        self,
+        *,
+        base_task_profile_id: str,
+        new_id: str,
+        map_id: str,
+        missions: list[dict[str, Any]] | None = None,
+        owner_user_id: str | None = None,
+    ) -> StoredTaskProfile:
+        """A deployment identical to another except for its map.
+
+        **Why this is a new deployment and never an edit.** A map is the
+        world, and ``episode_context_id`` hashes ``(task_profile_id,
+        mission_id, environment_variant, seed)`` with HĐ-3.1 freezing
+        that payload — the map is not in it. Repointing an existing
+        profile at different walls would produce contexts hashing
+        identically to the old world's, and ``--reuse-traces`` would then
+        serve episodes recorded somewhere that no longer exists. Nothing
+        warns; the ids match. Same trap ``sensor_noise`` sprang, and the
+        same answer: new world, new id.
+
+        **Why the map is written to disk.** The map editor stores grids
+        in the database; the decision layer reads its map from the two
+        paths a profile names (HĐ-2). Materialising the pair is the
+        crossing, and it costs no contract change — what lands on disk is
+        an ordinary map_server map. The filename carries the map's
+        *version*, so editing a map afterwards writes a new file and
+        leaves this deployment pointing at the walls it was measured on.
+
+        **Why the missions are checked here.** A goal inside a shelf
+        gives 0% success for every candidate, and the comparison then
+        reports a tie between stacks on a question none of them was
+        asked — every column a plausible 0.00, nothing in the numbers
+        wrong. ``validate_missions_on_map`` already catches the five ways
+        a profile and a map disagree; calling it now is the difference
+        between a refusal and two hours of machine time spent measuring
+        the map instead of the candidates.
+        """
+        from planbench_benchmark.task_map import MapProfileMismatch, load_task_map
+
+        if new_id == base_task_profile_id:
+            raise DomainValidationError(
+                f"a derived deployment needs its own id, not {new_id!r} again. Changing the "
+                "map changes the world, and episode_context_id does not hash the map "
+                "(HĐ-3.1) — reusing the id would make episodes from two different worlds "
+                "collide on one hash, and --reuse-traces would serve the wrong ones"
+            )
+
+        base = self._repository.get(base_task_profile_id)
+        stored_map = self._maps.get(map_id)
+
+        # Written before the missions are checked, because the check
+        # reads the map back off disk — that round trip is the point, not
+        # an accident of ordering: it is what proves the engine will see
+        # the same walls the validator did.
+        #
+        # A refusal below therefore leaves the pair behind, and that is
+        # not litter to sweep up. The filename is (map id, version), so a
+        # failed attempt and a later successful one write identical
+        # bytes to the same path — and deleting it would be deleting the
+        # map some other deployment already points at.
+        image_rel, yaml_rel = self._materialise_map(stored_map)
+
+        payload: dict[str, Any] = json.loads(json.dumps(base.profile))
+        payload["id"] = new_id
+        environment = payload.setdefault("environment", {})
+        environment["map"] = image_rel
+        environment["map_yaml"] = yaml_rel
+        if missions is not None:
+            if not missions:
+                raise DomainValidationError(
+                    "a deployment with no missions measures nothing; give at least one "
+                    "start/goal pair that fits the map"
+                )
+            payload["missions"] = missions
+
+        try:
+            profile = TaskProfile.model_validate(payload)
+        except Exception as error:
+            raise DomainValidationError(
+                f"derived task profile is not valid under HĐ-2: {error}"
+            ) from error
+
+        try:
+            load_task_map(profile, base_dir=self._map_root, validate=True)
+        except MapProfileMismatch as error:
+            raise DomainValidationError(str(error)) from error
+        except Exception as error:
+            raise DomainValidationError(
+                f"the derived deployment's map could not be read back: {error}"
+            ) from error
+
+        return self._repository.create(profile.model_dump(mode="json"), owner_user_id=owner_user_id)
+
+    def _materialise_map(self, stored: StoredMap) -> tuple[str, str]:
+        """Write a stored grid out as a map_server pair, relative paths back.
+
+        Relative to the map root, never absolute. A profile carrying an
+        absolute path is a profile that is only true on one machine, and
+        HĐ-13's acceptance criterion is that somebody else rebuilds the
+        run from what the profile says.
+
+        The name is ``<id>__v<version>``, so a map edited after a
+        deployment was derived from it lands in a different file. The
+        deployment keeps pointing at the walls its episodes were driven
+        on — which is the only reading under which its stored traces are
+        still evidence.
+        """
+        from planbench_schemas.map_io import dump_map_server
+
+        safe_id = "".join(char if char.isalnum() or char in "-_" else "_" for char in stored.id)
+        stem = f"{safe_id}__v{stored.version}"
+        directory = self._map_root / "maps" / "custom"
+        directory.mkdir(parents=True, exist_ok=True)
+
+        image_bytes, sidecar = dump_map_server(stored.map_data, image_name=f"{stem}.pgm")
+        (directory / f"{stem}.pgm").write_bytes(image_bytes)
+        (directory / f"{stem}.yaml").write_text(sidecar, encoding="utf-8")
+        return f"maps/custom/{stem}.pgm", f"maps/custom/{stem}.yaml"
 
 
 class CandidateService:
