@@ -89,6 +89,22 @@ scipy==1.18.0
 # thiếu nó thì không episode nào ghi được bằng chứng, và mọi con số trên
 # Decision Card mất nguồn gốc.
 pyarrow==25.0.0
+# Ghim nhân CPU trên Windows (CONTRACTS HĐ-7.4). Linux có
+# `os.sched_setaffinity` sẵn trong stdlib; Windows KHÔNG, và `hostinfo.py`
+# rơi về psutil ở đó. Thiếu nó thì `pin_to_cores` trả None và mọi run trên
+# Windows chạy KHÔNG GHIM — G4 đọc độ trễ theo đồng hồ tường, nên cùng một
+# stack đo được 59,30 ms không ghim và 16,10 ms khi ghim 2 nhân.
+#
+# Hệ thống có báo (`affinity_source: inherited` + cảnh báo trên report),
+# nên nó suy giảm có tiếng chứ không âm thầm. Nhưng biện pháp bảo vệ thì
+# vắng mặt, và đó là điều duy nhất đáng kể.
+#
+# Chưa từng được khai cho tới 2026-08-12, dù `hostinfo.py` có hẳn một
+# comment gọi nó là "a pinned dependency". Nó chạy được suốt vì môi trường
+# conda trên máy dev tình cờ có sẵn — một `.venv` dựng đúng theo README
+# thì không. Khai vô điều kiện chứ không dùng marker `sys_platform`: một
+# marker sẽ để người dùng Windows tự phát hiện ra thiếu gì.
+psutil==7.2.2
 
 # ---------- Lưu trữ ----------
 # SQLite có sẵn trong Python, không cần driver. PostgreSQL cần psycopg —

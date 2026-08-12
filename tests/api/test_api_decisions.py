@@ -259,9 +259,7 @@ class TestRunningASelection:
         for entry in body["report"]["candidates"]:
             assert entry["gates"]["G1"] is not None
             assert entry["n_distinct_episodes"] >= 1
-        assert math.isclose(
-            body["report"]["identity"]["sensor_noise"]["lidar_range_sigma_m"], 0.02
-        )
+        assert math.isclose(body["report"]["identity"]["sensor_noise"]["lidar_range_sigma_m"], 0.02)
 
     def test_a_stored_run_can_be_fetched_and_filtered(self, client, alice_headers, profile_id):
         created = client.post(

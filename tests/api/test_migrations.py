@@ -200,7 +200,7 @@ class TestDecisionLayerTables:
             )
 
     def test_the_kind_of_artifact_is_a_column_not_a_json_field(self, database):
-        """"Show me the runs that could not be ranked" is a day-one
+        """ "Show me the runs that could not be ranked" is a day-one
         question. Buried in the JSON body it would be a table scan, and
         the answer people cannot query is the answer they stop asking."""
         command.upgrade(alembic_config(database), "head")
@@ -292,7 +292,7 @@ class TestRevision0007SplitsTheTwoHumanActs:
         assert inspector.get_foreign_keys("decision_run_reviews")
 
     def test_both_states_are_indexed(self, database):
-        """"What is nobody watching?" and "what is cleared to deploy?"
+        """ "What is nobody watching?" and "what is cleared to deploy?"
         are both list screens; neither should be a scan."""
         command.upgrade(alembic_config(database), "head")
         indexed = {

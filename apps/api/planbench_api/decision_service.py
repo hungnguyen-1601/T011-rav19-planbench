@@ -61,9 +61,7 @@ class TaskProfileService:
             profile = TaskProfile.model_validate(payload)
         except Exception as error:  # pydantic ValidationError and friends
             raise DomainValidationError(f"task profile is not valid under HĐ-2: {error}") from error
-        return self._repository.create(
-            profile.model_dump(mode="json"), owner_user_id=owner_user_id
-        )
+        return self._repository.create(profile.model_dump(mode="json"), owner_user_id=owner_user_id)
 
     def get(self, profile_id: str) -> StoredTaskProfile:
         return self._repository.get(profile_id)
