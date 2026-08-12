@@ -78,8 +78,8 @@ from planbench_benchmark.pipeline import (  # noqa: E402
     score,
     simulate,
 )
+from planbench_benchmark.selection import assemble_card  # noqa: E402
 from planbench_benchmark.task_map import load_task_map, validate_missions_on_map  # noqa: E402
-from planbench_decision.anchors import load_anchors  # noqa: E402
 from planbench_decision.candidate import (  # noqa: E402
     Candidate,
     TuningDeclaration,
@@ -87,17 +87,9 @@ from planbench_decision.candidate import (  # noqa: E402
 )
 from planbench_decision.card import (  # noqa: E402
     Provenance,
-    build_decision_card,
-    build_manifest,
     resolve_git_sha,
 )
 from planbench_decision.objectives import DecisionSettings  # noqa: E402
-from planbench_decision.pareto import label_field  # noqa: E402
-from planbench_decision.sensitivity import (  # noqa: E402
-    ScoredField,
-    anchor_stability,
-    weight_stability,
-)
 from planbench_schemas.task_profile import TaskProfile  # noqa: E402
 
 PROFILE_PATH = REPO_ROOT / "profiles" / "warehouse_a_v2.yaml"
@@ -251,48 +243,35 @@ def run_slice(
     # never touch the simulator, so this costs seconds on a run that cost
     # minutes — which is the whole reason the two most useful caveats on
     # the card are affordable at all.
+    #
+    # Assembled by the shared step rather than here: this script and
+    # ``run_comparison`` used to build the card separately, and the one
+    # that did it without these sweeps produced the project's first
+    # Decision Card with both stability fields null.
     say("sweeping assumptions…")
-    field = ScoredField.from_survivors(
-        candidates,
-        metrics_by_candidate,
-        contexts,
-        {cid: report.passed for cid, report in gate_reports.items()},
-    )
-    anchors_resolved = load_anchors().resolve(profile)
-    weights_sweep = weight_stability(field, anchors_resolved, settings, seed=bootstrap_seed)
-    anchors_sweep = anchor_stability(field, anchors_resolved, settings, seed=bootstrap_seed)
-    # HĐ-10: labels, never deletions. Runs after the recommendation
-    # because it does not choose the winner — it decides which of the
-    # others may be offered beside it, and whether the winner itself is
-    # only winning on the weights.
-    pareto = label_field(evidence, seed=bootstrap_seed)
-
-    manifest_ref = f"runs/{created_at:%Y-%m-%d}/{git_sha[:12]}/manifest.json"
-    card = build_decision_card(
-        recommendation,
-        evidence,
-        gate_reports,
-        profile,
-        settings,
-        EXPERIMENT_SCOPE,
-        manifest_ref,
-        weight_stability=weights_sweep,
-        anchor_stability=anchors_sweep,
-        pareto=pareto,
-    )
-    manifest = build_manifest(
-        recommendation,
-        evidence,
-        gate_reports,
-        profile,
-        settings,
-        load_anchors().resolve(profile),
-        Provenance(
+    bundle = assemble_card(
+        candidates=candidates,
+        metrics_by_candidate=metrics_by_candidate,
+        gate_reports=gate_reports,
+        evidence=evidence,
+        recommendation=recommendation,
+        profile=profile,
+        contexts=contexts,
+        settings=settings,
+        scope=EXPERIMENT_SCOPE,
+        manifest_ref=f"runs/{created_at:%Y-%m-%d}/{git_sha[:12]}/manifest.json",
+        provenance=Provenance(
             git_sha=git_sha,
             benchmark_host=host,
             created_at=created_at,
         ),
-        contexts,
+        bootstrap_seed=bootstrap_seed,
+    )
+    card, manifest = bundle.card, bundle.manifest
+    weights_sweep, anchors_sweep, pareto = (
+        bundle.weight_stability,
+        bundle.anchor_stability,
+        bundle.pareto,
     )
 
     winner = next(e for e in evidence if e.candidate_id == recommendation.recommended_id)
