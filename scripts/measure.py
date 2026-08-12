@@ -74,6 +74,7 @@ from planbench_benchmark.hostinfo import (  # noqa: E402
 from planbench_benchmark.pipeline import (  # noqa: E402
     AcceptanceFailure,
     check_gate_table,
+    check_gates_reproducible,
     check_l_ref,
     check_node_counts,
     check_reproducible,
@@ -162,6 +163,8 @@ def build_report(
     pooled_latency_ms: float,
     gate_report,  # type: ignore[no-untyped-def]
     evidence,  # type: ignore[no-untyped-def]
+    gate_only: str | None,
+    checks: Sequence[str],
     host,  # type: ignore[no-untyped-def]
     git_sha: str,
     anchor_version: str,
@@ -199,13 +202,28 @@ def build_report(
             "per_episode": [_metric_row(m) for m in metrics],
         },
         "gates": gate_report.to_card(),
-        "objectives": {
+        # Present and null on a gate-only deployment (HĐ-8.4), never
+        # absent — a reader who finds no `objectives` key cannot tell an
+        # old report from a deployment that refuses to score, and
+        # `gate_only_deployment` beside it says which this is and why.
+        "gate_only_deployment": gate_only,
+        "objectives": None
+        if evidence is None
+        else {
             "set_level": evidence.set_objectives.model_dump(),
             "per_episode": {
                 context_id: breakdown.model_dump()
                 for context_id, breakdown in evidence.episode_objectives.items()
             },
         },
+        # Which criteria this run actually passed, not merely which ones
+        # scrolled past on stdout. The comparison report has carried its
+        # `checks` since M3; this one printed them and dropped them, so
+        # the only record that criterion 2 ran at all was a terminal
+        # nobody kept — and on a gate-only deployment (HĐ-8.4), where the
+        # criterion changes object from the utility to the gate table,
+        # that is precisely the line a reader needs to see.
+        "checks": list(checks),
         "measurement_environment": {
             "benchmark_host": host.model_dump(),
             "warning": unpinned_warning(host),
@@ -294,12 +312,30 @@ def run_measurement(
     gate_report = evaluate_gates(
         candidate, profile, metrics, contexts, pooled_p99_latency_ms=pooled_latency_ms
     )
-    evidence = build_evidence(candidate, metrics, contexts, resolved, settings)
+
+    # HĐ-8.4. A deployment that sets a gated metric's threshold at the
+    # ideal collapses that anchor's scale to a point: it gates, it cannot
+    # rank. Measuring is still worth doing there — the gate table is the
+    # deliverable — so the report is written without objectives rather
+    # than not written at all. No shipped profile is in that state today;
+    # the hall was for a day (see KNOWN_LIMITATIONS L6), which is how
+    # this path came to exist and why it is kept under test.
+    gate_only = resolved.gate_only_reason
+    evidence = (
+        None if gate_only else build_evidence(candidate, metrics, contexts, resolved, settings)
+    )
+    if gate_only:
+        say(f"⚠ DEPLOYMENT CHỈ GÁC CỔNG — {gate_only}")
+        say("  báo cáo sẽ có bảng cổng, không có objectives và không có decision_utility")
 
     # Criterion 4 wants reproducibility of the *scoring*, so the second
     # pass re-reads the traces rather than reusing the objects above.
     again_metrics, _ = score(candidate, profile, contexts, map_data, trace_root)
-    again = build_evidence(candidate, again_metrics, contexts, resolved, settings)
+    again = (
+        None
+        if gate_only
+        else build_evidence(candidate, again_metrics, contexts, resolved, settings)
+    )
 
     # The shared checks are keyed by candidate id because they normally
     # run over a field. One candidate is the degenerate case, not a
@@ -308,7 +344,22 @@ def run_measurement(
     by_candidate = {candidate.candidate_id: metrics}
     checks = [
         check_l_ref(by_candidate, profile.constraints.goal_tolerance_m),
-        check_reproducible(
+        # Criterion 2 keeps applying on a gate-only deployment; what it
+        # applies *to* changes, because there is no utility there. The
+        # gate table is what that run produces, so the gate table is what
+        # has to come back identical.
+        check_gates_reproducible(
+            gate_report,
+            evaluate_gates(
+                candidate,
+                profile,
+                again_metrics,
+                contexts,
+                pooled_p99_latency_ms=pooled_latency_ms,
+            ),
+        )
+        if gate_only
+        else check_reproducible(
             evidence.set_objectives.decision_utility, again.set_objectives.decision_utility
         ),
         check_gate_table({candidate.candidate_id: gate_report}),
@@ -325,6 +376,8 @@ def run_measurement(
         pooled_latency_ms=pooled_latency_ms,
         gate_report=gate_report,
         evidence=evidence,
+        gate_only=gate_only,
+        checks=checks,
         host=host,
         git_sha=resolve_git_sha(REPO_ROOT),
         anchor_version=anchors.version,
@@ -347,7 +400,11 @@ def run_measurement(
     say(f"pooled p99:     {pooled_latency_ms:.2f} ms (G4 threshold {profile.robot.t_cycle_ms})")
     for gate in ("G1", "G2", "G3", "G4", "G5", "G6"):
         say(f"  {gate}: {_gate_line(gate_report.to_card()[gate])}")
-    say(f"utility:        {evidence.set_objectives.decision_utility:.6f}")
+    say(
+        f"utility:        {evidence.set_objectives.decision_utility:.6f}"
+        if evidence is not None
+        else "utility:        — (deployment chỉ gác cổng, HĐ-8.4)"
+    )
     say(f"written to:     {path}")
     say("")
     say(NOT_A_RECOMMENDATION)

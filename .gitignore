@@ -112,6 +112,13 @@ artifacts/runs/*/*/*
 # — and a marker that does not travel with the file it marks protects
 # nobody.
 !artifacts/runs/*/*/SUPERSEDED.md
+# And a fifth: run_journal.jsonl, one line per episode as it finishes.
+# It is the only artifact a run that never reached its own ending has —
+# a 245-of-600 sweep killed for the machine leaves three hours of
+# episodes on disk and, before this file existed, nothing at all saying
+# what had been measured. A few dozen kB of JSON lines; the Parquet
+# traces it indexes still stay out.
+!artifacts/runs/*/*/run_journal.jsonl
 # MLflow local tracking store and its SQLite backend
 mlruns/
 mlflow.db

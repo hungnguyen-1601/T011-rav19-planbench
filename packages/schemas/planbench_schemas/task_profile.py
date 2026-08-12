@@ -49,8 +49,32 @@ from planbench_schemas.sensor import SensorNoise
 
 ClaimLevel = Literal["mission", "deployment", "robust_deployment"]
 
+#: What a deployment *is for*, declared rather than inferred.
+#:
+#: Q1 of plan 08-12 found a third kind: ``open_hall`` is neither a
+#: customer site nor merely a symmetric instrument, but an **acceptance
+#: deployment** — a place where one failure is a diagnostic symptom, not
+#: a statistic, which is why its ``success_rate_min`` is 1.00. Until now
+#: that finding lived only in a comment.
+#:
+#: It is declared because the alternative is inferring the role from
+#: ``success_rate_min == 1.0``, and HĐ-1.4 already refused that shape of
+#: reasoning for ``experiment_scope``: the day somebody declares a real
+#: warehouse at 1.00, it would silently acquire a role nobody chose.
+DeploymentRole = Literal["acceptance", "customer", "instrument"]
+
 #: Ordering used to cap the effective claim at the desired one.
 _CLAIM_ORDER: dict[str, int] = {"mission": 0, "deployment": 1, "robust_deployment": 2}
+
+#: Episodes every candidate runs before early stopping may retire it.
+#:
+#: The floor buys a *distribution*, not a gate verdict. B1 is the worked
+#: example: both stacks were doomed at episode 12 of 600, and stopping
+#: there would have cost the three findings that actually mattered —
+#: ``n_distinct = 85/245``, the 78% paired disagreement, and the ~15%
+#: collision rate. Thirty episodes is enough to see the shape of a
+#: failure and cheap against 300.
+DEFAULT_MIN_EPISODES_BEFORE_STOP = 30
 
 #: Tolerance for the mission-probability sum. Probabilities are user
 #: input, often written as decimals that do not sum to exactly 1.0 in
@@ -375,6 +399,16 @@ class TaskProfile(BaseModel):
 
     id: str = Field(min_length=1)
     claim_level: ClaimLevel = "mission"
+    #: Declared, never inferred — see :data:`DeploymentRole`. Defaults to
+    #: ``customer`` because that is the case the platform exists for; a
+    #: profile that is something else has to say so.
+    deployment_role: DeploymentRole = "customer"
+    #: Episodes before early stopping may retire a candidate. ``None``
+    #: means "take the default"; the value actually used is recorded on
+    #: the report, because two runs of one profile under two floors are
+    #: two different measurements — the same hole ``constraints`` had in
+    #: the manifest until A4.
+    min_episodes_before_stop: int | None = Field(default=None, ge=0)
     environment: EnvironmentSpec
     missions: tuple[Mission, ...] = Field(min_length=1)
     robot: TaskRobotSpec

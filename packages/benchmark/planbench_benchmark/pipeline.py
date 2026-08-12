@@ -28,9 +28,13 @@ second physically cannot see a candidate the first rejected.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import time
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from planbench_benchmark.contexts import episode_total, iter_run_plan
@@ -57,15 +61,21 @@ from planbench_simulator.trace import read_trace, trace_path
 
 __all__ = [
     "AcceptanceFailure",
+    "SweepResult",
+    "GateOnlyDeployment",
+    "trace_checksum",
     "check_delta_u",
     "check_gate_table",
+    "check_gates_reproducible",
     "check_l_ref",
     "check_node_counts",
     "check_reproducible",
     "check_shared_contexts",
     "decide",
     "gate_all",
+    "paired_prefix",
     "score",
+    "score_episode",
     "score_survivors",
     "simulate",
 ]
@@ -74,9 +84,32 @@ __all__ = [
 #: the caller so this module stays usable from a test or a worker.
 Say = Callable[[str], None]
 
+#: The early-stop hook. Given a candidate and the episode it just
+#: finished, return a verdict to retire it or ``None`` to keep going.
+#: Typed loosely on purpose: the verdict type lives in
+#: :mod:`planbench_decision.early_stop`, and the measuring chain should
+#: not have to import the decision layer to run episodes.
+Retire = Callable[[Candidate, EpisodeContext], object | None]
+
 
 def _silent(_message: str) -> None:
     return None
+
+
+@dataclass(frozen=True)
+class SweepResult:
+    """What a sweep did, as opposed to what it was asked to do.
+
+    ``contexts_by_candidate`` is per-candidate because early stopping
+    makes it so: a retired candidate genuinely covered fewer episodes
+    than the ones still running. Everything downstream — scoring, gates,
+    the checksum — has to be told which episodes belong to whom, and
+    deriving that from the filesystem afterwards would get it wrong on a
+    rerun where an older, longer set of traces is still lying around.
+    """
+
+    retired: dict[str, object]
+    contexts_by_candidate: dict[str, tuple[EpisodeContext, ...]]
 
 
 class AcceptanceFailure(AssertionError):
@@ -90,6 +123,25 @@ class AcceptanceFailure(AssertionError):
     """
 
 
+class GateOnlyDeployment(Exception):
+    """This deployment gates, it does not rank (HĐ-8.4).
+
+    Raised before any objective is computed, not after — there is no
+    partially-scored state to inspect and no half-built utility to
+    mistake for a real one.
+
+    Deliberately *not* an :class:`AcceptanceFailure`. Nothing failed: the
+    deployment set a gate threshold at the ideal, which is a legal and
+    meaningful thing for an acceptance site to do, and the measurement
+    that follows is valid — it is the *ranking* that has no basis. A
+    caller that catches this should write its gate table and say why
+    there is no card, exactly as it does when fewer than two candidates
+    survive. A caller that lets it propagate stops, which is also
+    correct: better a named refusal than a ``decision_utility`` computed
+    over a quietly smaller objective set.
+    """
+
+
 def simulate(
     candidates: Sequence[Candidate],
     profile: TaskProfile,
@@ -99,7 +151,9 @@ def simulate(
     *,
     reuse: bool,
     say: Say | None = None,
-) -> None:
+    journal: Path | None = None,
+    retire: Retire | None = None,
+) -> SweepResult:
     """Run every (candidate, context) pair that has no trace yet.
 
     **Context outermost, candidate innermost** — HĐ-3.2's order, via
@@ -127,20 +181,140 @@ def simulate(
     everything that could change the episode. A stale file is therefore
     a file for a configuration that no longer exists, and it simply never
     gets looked up.
+
+    ``journal`` turns the progress lines into an artifact. The ordering
+    above already makes an interrupted sweep a valid smaller comparison,
+    but that guarantee was only ever cashed in by a human reading stdout:
+    the report is written after the last episode, so a run killed at 82%
+    left three hours of episodes on disk and *no file saying what had
+    been measured*. One JSON line per episode, flushed as it happens,
+    means a run that never reaches its own ending is still readable —
+    including by the process that finds it afterwards.
+
+    ``retire`` is the early-stop hook. It is consulted after every
+    episode a candidate completes — including episodes served from
+    existing traces, so ``--reuse-traces`` reaches the same verdict as a
+    fresh run rather than a different one. Once it returns a verdict for
+    a candidate, that candidate's remaining pairs are skipped and the
+    verdict is recorded.
     """
     emit = say or print
     total = episode_total(contexts, candidates)
+    if journal is not None:
+        journal.parent.mkdir(parents=True, exist_ok=True)
+    retired: dict[str, object] = {}
+    covered: dict[str, list[EpisodeContext]] = {c.candidate_id: [] for c in candidates}
     for index, (context, candidate) in enumerate(iter_run_plan(contexts, candidates), start=1):
+        if candidate.candidate_id in retired:
+            continue
+        covered[candidate.candidate_id].append(context)
         path = trace_path(candidate.candidate_id, context.episode_context_id, root=trace_root)
         if reuse and path.is_file():
+            _consult_retire(retire, retired, candidate, context, journal, emit)
             continue
         started = time.time()
         _, run = run_contract_episode(candidate, profile, context, map_data, root=trace_root)
+        elapsed = time.time() - started
         emit(
             f"  {index:>4}/{total}  {candidate.stack_label:<14} "
             f"seed {context.seed:<4} {run.result.status.value:<16} "
-            f"{time.time() - started:5.1f}s"
+            f"{elapsed:5.1f}s"
         )
+        if journal is not None:
+            _append_journal(
+                journal,
+                {
+                    "index": index,
+                    "total": total,
+                    "candidate_id": candidate.candidate_id,
+                    "stack_label": candidate.stack_label,
+                    "seed": context.seed,
+                    "episode_context_id": context.episode_context_id,
+                    "status": run.result.status.value,
+                    "wall_clock_s": round(elapsed, 3),
+                    "finished_at": datetime.now(UTC).isoformat(),
+                },
+            )
+        _consult_retire(retire, retired, candidate, context, journal, emit)
+    return SweepResult(
+        retired=retired,
+        contexts_by_candidate={cid: tuple(rows) for cid, rows in covered.items()},
+    )
+
+
+def _consult_retire(
+    retire: Retire | None,
+    retired: dict[str, object],
+    candidate: Candidate,
+    context: EpisodeContext,
+    journal: Path | None,
+    emit: Say,
+) -> None:
+    """Ask the early-stop rule, and make the answer loud if it fires.
+
+    A candidate leaving the run mid-sweep is the kind of event that must
+    never be inferred from a gap in the episode numbering. It goes on
+    stdout and into the journal as its own record, with the gate named.
+    """
+    if retire is None:
+        return
+    verdict = retire(candidate, context)
+    if verdict is None:
+        return
+    retired[candidate.candidate_id] = verdict
+    gate = getattr(verdict, "gate", "?")
+    rule = getattr(verdict, "rule", "")
+    emit(f"  ⏹ DỪNG SỚM  {candidate.stack_label:<14} {gate} — {rule}")
+    if journal is not None:
+        _append_journal(
+            journal,
+            {
+                "event": "stopped_early",
+                "candidate_id": candidate.candidate_id,
+                "stack_label": candidate.stack_label,
+                "gate": gate,
+                "rule": rule,
+                "last_episode_context_id": context.episode_context_id,
+                "at": datetime.now(UTC).isoformat(),
+            },
+        )
+
+
+def _append_journal(path: Path, entry: dict[str, object]) -> None:
+    """Append one line and flush it, because the reader may be a kill.
+
+    Buffered writes would defeat the whole point: the entries that
+    matter most are the ones written seconds before the process stopped.
+    """
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        handle.flush()
+
+
+def paired_prefix(
+    candidates: Sequence[Candidate],
+    contexts: Sequence[EpisodeContext],
+    trace_root: Path,
+) -> list[EpisodeContext]:
+    """The longest leading run of contexts every candidate has a trace for.
+
+    The prefix, not the set. :func:`iter_run_plan` fills contexts in
+    order, so an interrupted sweep leaves a prefix plus at most one
+    half-finished context — and taking the prefix is what keeps "every
+    candidate ran the same episodes" true (HĐ-7.3) instead of comparing
+    one candidate's 245 episodes against another's 244.
+    """
+    kept: list[EpisodeContext] = []
+    for context in contexts:
+        if not all(
+            trace_path(
+                candidate.candidate_id, context.episode_context_id, root=trace_root
+            ).is_file()
+            for candidate in candidates
+        ):
+            break
+        kept.append(context)
+    return kept
 
 
 def score(
@@ -180,20 +354,104 @@ def score(
     return metrics, pooled_p99_latency_ms(traces)
 
 
+def score_episode(
+    candidate: Candidate,
+    profile: TaskProfile,
+    context: EpisodeContext,
+    map_data: MapData,
+    trace_root: Path,
+) -> EpisodeMetricSet:
+    """One episode's metrics, read back from its trace.
+
+    The single-episode form of :func:`score`, extracted so an early-stop
+    watch can accumulate metrics one at a time instead of re-reading the
+    whole run after every episode — which would be quadratic on a
+    three-hour sweep.
+
+    Deliberately still a **file** read. Taking the numbers the simulator
+    already had in memory would be faster still and would break HĐ-5:
+    a gate verdict that came from process memory cannot be re-derived
+    later, and two runs could disagree with nothing on disk to explain
+    which was right.
+    """
+    trace = read_trace(
+        trace_path(candidate.candidate_id, context.episode_context_id, root=trace_root)
+    )
+    return compute_metrics(
+        trace,
+        profile,
+        context,
+        map_data,
+        resource_profile=candidate.resource_profile,
+    )
+
+
+def trace_checksum(
+    candidates: Sequence[Candidate],
+    contexts: Sequence[EpisodeContext],
+    trace_root: Path,
+) -> str:
+    """One hash over every trace this run was computed from (D15).
+
+    A card and its manifest stay in the row; the Parquet traces behind
+    them are megabytes per episode and stay in the artifact store,
+    reachable through ``run_uri``. **The checksum is what makes that
+    reference trustworthy rather than decorative** — a URI on its own
+    cannot say the files it points at are the ones the card was computed
+    from, and "the traces moved on" is exactly the failure a stored
+    result cannot detect on its own.
+
+    Hashed over *content*, not over size and mtime. A stale file with the
+    right length is precisely the case worth catching, and mtime is a
+    fact about the filesystem rather than about the episode.
+
+    The path is included alongside each digest, so two episodes that
+    happen to produce byte-identical traces still hash to different
+    entries — otherwise a run that lost a file could match one that never
+    had it.
+
+    Missing files are hashed as absent rather than raising: this is a
+    fingerprint of what the run actually had, and a run whose traces are
+    incomplete should be *recognisable*, not unhashable.
+    """
+    digest = hashlib.sha256()
+    entries: list[str] = []
+    for candidate in candidates:
+        for context in contexts:
+            path = trace_path(candidate.candidate_id, context.episode_context_id, root=trace_root)
+            key = f"{candidate.candidate_id}/{context.episode_context_id}"
+            if not path.is_file():
+                entries.append(f"{key}:absent")
+                continue
+            entries.append(f"{key}:{hashlib.sha256(path.read_bytes()).hexdigest()}")
+    for entry in sorted(entries):
+        digest.update(entry.encode("utf-8"))
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
 def gate_all(
     candidates: Sequence[Candidate],
     metrics_by_candidate: dict[str, list[EpisodeMetricSet]],
     pooled_latency_by_candidate: dict[str, float],
     profile: TaskProfile,
     contexts: Sequence[EpisodeContext],
+    contexts_by_candidate: dict[str, Sequence[EpisodeContext]] | None = None,
 ) -> dict[str, GateReport]:
-    """G1–G6 for every candidate, before anything is scored."""
+    """G1–G6 for every candidate, before anything is scored.
+
+    ``contexts_by_candidate`` overrides ``contexts`` per candidate, and
+    is needed only when early stopping has retired somebody: gates
+    report *what was measured*, so a candidate retired at episode 30 has
+    to be gated on its thirty episodes rather than on a set it never
+    ran. Every gate threshold still comes from the deployment.
+    """
     return {
         candidate.candidate_id: evaluate_gates(
             candidate,
             profile,
             metrics_by_candidate[candidate.candidate_id],
-            contexts,
+            (contexts_by_candidate or {}).get(candidate.candidate_id, contexts),
             pooled_p99_latency_ms=pooled_latency_by_candidate[candidate.candidate_id],
         )
         for candidate in candidates
@@ -216,6 +474,11 @@ def score_survivors(
     collide" (HĐ-7).
     """
     anchors = load_anchors().resolve(profile)
+    gate_only = anchors.gate_only_reason
+    if gate_only is not None:
+        raise GateOnlyDeployment(
+            f"task profile {profile.id!r} cannot be ranked, only gated — {gate_only}"
+        )
     return [
         build_evidence(
             candidate,
@@ -267,15 +530,45 @@ def decide(
 # --- acceptance criteria (HĐ-15.1) -------------------------------------
 
 
-def check_shared_contexts(metrics_by_candidate: dict[str, list[EpisodeMetricSet]]) -> str:
+def check_shared_contexts(
+    metrics_by_candidate: dict[str, list[EpisodeMetricSet]],
+    *,
+    among: Sequence[str] | None = None,
+) -> str:
     """Criterion 1: the same ``episode_context_id`` set, by assert.
 
     "By assert, not by eye" is in the contract because this is the
     failure that leaves no trace in the output: two candidates evaluated
     on overlapping-but-different conditions produce a perfectly
     well-formed ΔU that answers a question nobody asked.
+
+    ``among`` narrows the claim to a subset of candidates, and exists for
+    exactly one situation: early stopping retires a candidate mid-sweep,
+    so it genuinely has fewer episodes than the rest. That is sound only
+    because a retired candidate has **failed a gate**, and the two-tier
+    architecture (N4) means a gate failure is never scored, never ranked
+    and never enters ΔU — the pairing invariant is needed among
+    *survivors*, not among everyone who was tried.
+
+    The returned sentence says which set it is talking about, because a
+    check that quietly changed what it guarantees would be worse than no
+    check.
     """
-    sets = {cid: {m.episode_context_id for m in rows} for cid, rows in metrics_by_candidate.items()}
+    selected = (
+        metrics_by_candidate
+        if among is None
+        else {cid: rows for cid, rows in metrics_by_candidate.items() if cid in set(among)}
+    )
+    if not selected:
+        # Not "nobody ran anything" — everybody ran, and everybody was
+        # retired. There is no surviving pair left to compare, so there
+        # is nothing for the paired invariant to be about. Saying it the
+        # other way round would report an empty run.
+        return (
+            f"every one of the {len(metrics_by_candidate)} candidates was retired early, "
+            "so no ΔU is paired and there is no surviving context set to compare"
+        )
+    sets = {cid: {m.episode_context_id for m in rows} for cid, rows in selected.items()}
     reference = next(iter(sets.values()))
     for candidate_id, ids in sets.items():
         if ids != reference:
@@ -283,7 +576,8 @@ def check_shared_contexts(metrics_by_candidate: dict[str, list[EpisodeMetricSet]
                 f"candidate {candidate_id} ran a different context set: "
                 f"{len(reference - ids)} missing, {len(ids - reference)} extra"
             )
-    return f"all candidates ran the same {len(reference)} episode contexts"
+    who = "all candidates" if among is None else f"all {len(selected)} candidates still in the run"
+    return f"{who} ran the same {len(reference)} episode contexts"
 
 
 def check_reproducible(first: float, second: float) -> str:
@@ -294,6 +588,24 @@ def check_reproducible(first: float, second: float) -> str:
             "rebuilt from its manifest must come back identical (HĐ-13)"
         )
     return f"decision_utility reproduced to 6 dp: {first:.6f}"
+
+
+def check_gates_reproducible(first: GateReport, second: GateReport) -> str:
+    """Criterion 2 on a gate-only deployment (HĐ-8.4).
+
+    There is no ``decision_utility`` to reproduce there, and dropping the
+    criterion instead would leave the hall — the deployment whose entire
+    job is to gate — as the one place the gate verdict is never checked
+    twice. So the same demand is made of the artifact that deployment
+    actually produces: score the traces again, get the same verdicts.
+    """
+    if first.to_card() != second.to_card():
+        raise AcceptanceFailure(
+            "the gate table is not reproducible: scoring the same traces twice gave "
+            f"{first.to_card()} then {second.to_card()}"
+        )
+    blocking = list(first.blocking_gates) or ["none"]
+    return f"gate table reproduced exactly; blocking: {blocking}"
 
 
 def check_gate_table(gate_reports: dict[str, GateReport]) -> str:

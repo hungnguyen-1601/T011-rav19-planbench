@@ -19,6 +19,17 @@ produced. A tool that only succeeded when it could rank things would put
 pressure on every run to be rankable, which is the pressure that
 produced a card claiming a collision bound off a single episode.
 
+**There is a second way to get no card, and it is not the same one.** A
+deployment that sets a gated metric's threshold at the ideal collapses
+that anchor's scale onto ``good`` and cannot rank at all — it measures,
+it gates, and no candidate would ever change that (HĐ-8.4). The report
+says which situation it is in ``gate_only_deployment``, separately from
+``why_no_card``, because the two ask for opposite responses: "nobody
+survived" invites a better candidate, "this deployment cannot rank" says
+no candidate ever will. No shipped profile is in that state today — both
+halls declare ``success_rate_min: 0.95`` — but the hall was there for a
+day, and ``docs/KNOWN_LIMITATIONS.md`` L6 says why it may be again.
+
 Usage::
 
     python scripts/compare.py                                   # the hall, two stacks
@@ -90,6 +101,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--trace-root", type=Path, default=REPO_ROOT / "artifacts" / "traces")
     parser.add_argument("--run-root", type=Path, default=DEFAULT_RUN_ROOT)
     parser.add_argument("--reuse-traces", action="store_true")
+    parser.add_argument(
+        "--score-only",
+        action="store_true",
+        help=(
+            "do not simulate: score whatever paired episodes are already on disk. This is "
+            "how a run killed mid-sweep gets its gate table — the report says how many of "
+            "the requested episodes it actually covers"
+        ),
+    )
     parser.add_argument("--bootstrap-seed", type=int, default=0)
     parser.add_argument("--pin-cores", type=int, default=2, dest="pin_cores")
     parser.add_argument(
@@ -98,6 +118,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         const=None,
         dest="pin_cores",
         help="run unpinned, or pin externally with taskset and say so here",
+    )
+    parser.add_argument(
+        "--stop-early",
+        action="store_true",
+        help=(
+            "retire a candidate as soon as arithmetic proves it cannot pass a gate. OFF by "
+            "default: a saving has to be asked for. Turning it on trades distribution for "
+            "hours — on the first warehouse run both stacks were doomed by episode 12 of "
+            "600, and stopping there would have cost the findings that mattered. Refused "
+            "on an acceptance deployment"
+        ),
+    )
+    parser.add_argument(
+        "--min-episodes-before-stop",
+        type=int,
+        default=None,
+        help=(
+            "episodes every candidate runs before --stop-early may retire it. Flag beats "
+            "profile beats the default of 30; the value used is written to the report"
+        ),
     )
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
@@ -119,6 +159,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             bootstrap_seed=args.bootstrap_seed,
             quiet=args.quiet,
             affinity_source=affinity_source,
+            score_only=args.score_only,
+            stop_early=args.stop_early,
+            min_episodes_before_stop=args.min_episodes_before_stop,
         )
     except CompareFailure as failure:
         print(f"\nacceptance criterion failed: {failure}", file=sys.stderr)

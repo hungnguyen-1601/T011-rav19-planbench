@@ -991,7 +991,7 @@ và không phải lỗi báo cáo. Bằng chứng và số liệu đầy đủ:
 ## MVP v1 — Planner Selector (chốt 2026-08-11)
 
 Bản MVP đầu tiên của tầng quyết định. Nền tảng đo được, so được, và từ
-chối kết luận khi dữ liệu không đỡ. Bốn giới hạn dưới đây **không phải
+chối kết luận khi dữ liệu không đỡ. Các giới hạn dưới đây **không phải
 lỗi cần vá** — chúng là phạm vi mà mọi kết luận của bản này bị chặn
 trong, và mỗi cái có điều kiện gỡ rõ ràng.
 
@@ -1075,11 +1075,12 @@ trả lời "ai bị loại ở đâu sau bao nhiêu lần chạy", và
 `comparison_report.json` ghi lại đầy đủ.
 
 Một ràng buộc đọc kết quả: `open_hall_v2` khai `success_rate_min: 0.95`,
-và **con số đó được chép từ profile kho, chưa bao giờ được khai riêng cho
-sảnh**. Mọi hằng số khác trong file đó đều có comment giải thích; riêng
-nó thì không. Nên *"A\* trượt G3 trên sảnh"* phải đọc là **A\* đạt 70%
-trên sảnh này**, và việc đó có phải thất bại hay không còn phụ thuộc một
-ngưỡng chưa ai chủ động chọn cho deployment này.
+và **con số đó vẫn chưa mang lập luận nào của riêng sảnh**. Nó được chép
+từ profile kho; ngày 08-11 đã đổi sang 1.00 kèm lý do, ngày 08-12 lùi lại
+vì hệ quả lên thang anchor — xem **L6**, việc còn để ngỏ. Nên *"A\* trượt
+G3 trên sảnh"* phải đọc là **A\* đạt 70% trên sảnh này**, và việc đó có
+phải thất bại hay không còn phụ thuộc một ngưỡng chưa được chốt cho
+deployment này.
 
 ### L4. Bốn con số **không** được nới để có kết quả đẹp hơn
 
@@ -1115,3 +1116,41 @@ thì nó thuộc mục bảo lưu của hợp đồng, không thuộc file profi
   theo `scenario_name` của thư viện cũ và không có entry cho profile nào
   thời contract. **`robustness_margin` vẫn null** — cần Task Neighborhood
   (pha 2).
+
+### L6. `success_rate_min` của sảnh: **nợ kỹ thuật, chưa giải quyết** (2026-08-12)
+
+`open_hall_v1` và `open_hall_v2` khai `success_rate_min: 0.95`. **Con số
+đó được biết là sai**, và nó ở đó như một biện pháp tạm.
+
+**Giá trị đúng theo lập luận là 1.00.** Sảnh là deployment nghiệm thu:
+dễ, đối xứng, chạy dưới nhiễu đã khai, không có gì đánh bại một stack
+bằng hình học. Nên một failure ở đây là **tín hiệu chẩn đoán**, không
+phải một thống kê để lấy trung bình — và 0.95 đang phát biểu rằng một
+lần hỏng trên hai mươi lần trên nhiệm vụ đối xứng dễ là chấp nhận được,
+điều không ai thực sự muốn nói. Ngày 2026-08-11 hai file đã chuyển sang
+1.00 đúng vì lý do này.
+
+**Vì sao lùi lại 0.95 (2026-08-12).** Luật 2 của HĐ-8.3 buộc `bad` của
+`success_rate` trỏ vào chính ngưỡng ấy, nên 1.00 làm `good == bad`, thang
+sập, và deployment mất khả năng xếp hạng (HĐ-8.4). Hệ quả kéo theo:
+`U_R` chết trên sảnh, `measure.py` không ra `decision_utility`, và tấm
+Decision Card duy nhất của dự án — dựng trên `open_hall_v2` — không tái
+lập được. Đưa sảnh ra khỏi vai xếp hạng là một quyết định lớn hơn cái
+đáng quyết trong lúc MVP còn dở, nên ngưỡng lùi về giá trị giữ cho mọi
+thứ chạy, và câu hỏi để lại đây.
+
+**Trạng thái hiện tại, nói rõ để không ai tưởng đã xong:**
+
+- Cơ chế **đã có**: HĐ-8.4 xử lý 1.00 tử tế — vẫn mô phỏng, vẫn ra sáu
+  phán quyết cổng, từ chối xếp hạng kèm lý do đọc được thay vì ném
+  `AnchorError`. Việc còn lại là **quyết định**, không phải hiện thực.
+- Cái chưa có: một lối để sảnh vừa giữ chuẩn nghiệm thu 1.00 vừa còn
+  thang cho `U_R`. Vài hướng chưa xét kỹ: tách `success_rate_min` (cổng)
+  khỏi neo `bad` của anchor (thang); cho anchor khai `bad` riêng khi
+  ngưỡng chạm trần; hoặc chấp nhận sảnh chỉ gác cổng và chuyển hẳn việc
+  xếp hạng sang một deployment khó-mà-đối-xứng (C2, chưa có).
+- **Không được coi 0.95 là câu trả lời.** Đọc *"A\* trượt G3 trên sảnh"*
+  vẫn phải đọc là **A\* đạt 70% trên sảnh này**; con số 0.95 hiện không
+  mang lập luận nào của riêng nó.
+
+Hẹn xử lý: sau khi MVP hoàn tất.

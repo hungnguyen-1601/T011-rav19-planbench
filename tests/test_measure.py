@@ -256,3 +256,97 @@ class TestProvenance:
         assert identity["local_controller_config"] == "dwa_coarse"  # type: ignore[index]
         assert datetime.fromisoformat(identity["created_at"]).tzinfo is not None  # type: ignore[index,arg-type]
         assert datetime.fromisoformat(identity["created_at"]) <= datetime.now(UTC)  # type: ignore[index,arg-type]
+
+
+class TestAGateOnlyDeploymentIsMeasuredButNotScored:
+    """HĐ-8.4, and the reason it exists at all.
+
+    A deployment that declares ``success_rate_min: 1.00`` meets law 2,
+    which makes that anchor's ``bad`` point at the deployment's own
+    threshold: the scale collapses onto ``good`` and every candidate
+    clearing G3 scores identically. Before this clause the platform
+    raised a raw ``AnchorError`` about an empty scale — a message that
+    reads as a malformed anchor file, when in fact the deployment said
+    something perfectly coherent and the *ranking* is what has no basis.
+
+    So: measure, gate, refuse to score, and say which of those happened.
+
+    Run against a synthetic fixture rather than a shipped profile. The
+    reference hall was in this state for a day (2026-08-11 to 08-12) and
+    may be again — ``docs/KNOWN_LIMITATIONS.md`` L6 — but none of the
+    profiles that ship declare 1.00 right now, so without a fixture this
+    whole path would go untested until the question is settled.
+    """
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def gate_only_run(tmp_path_factory: pytest.TempPathFactory) -> dict[str, object]:
+        import yaml
+
+        workspace = tmp_path_factory.mktemp("gate_only")
+        profile_path = write_profile(workspace)
+        payload = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
+        payload["id"] = "gate_only_fixture_v1"
+        payload["constraints"]["success_rate_min"] = 1.0
+        profile_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+        return measure.run_measurement(
+            profile_path=profile_path,
+            stack="rrtstar+dwa",
+            local="dwa_coarse",
+            episodes=6,
+            trace_root=workspace / "traces",
+            run_root=workspace / "runs",
+            reuse=False,
+            quiet=True,
+            map_base_dir=workspace,
+        )
+
+    def test_the_report_is_still_written(self, gate_only_run: dict[str, object]) -> None:
+        """The gate table is this deployment's whole deliverable, so a
+        run that produced one must not end in an exception."""
+        assert gate_only_run["artifact"] == "measurement_report"
+        assert gate_only_run["sample"]["n_episodes"] == 6  # type: ignore[index]
+
+    def test_every_gate_still_has_its_verdict(self, gate_only_run: dict[str, object]) -> None:
+        for gate in ("G1", "G2", "G3", "G4", "G5", "G6"):
+            assert gate in gate_only_run["gates"], gate  # type: ignore[operator]
+        assert gate_only_run["gates"]["G3"]  # type: ignore[index]
+
+    def test_there_are_no_objectives(self, gate_only_run: dict[str, object]) -> None:
+        """Present and null, never absent, and never a number.
+
+        Scoring the surviving metrics and dropping the dead one would
+        give a ``decision_utility`` to six decimal places computed over a
+        smaller objective set than the contract names — correct-looking
+        and unfalsifiable. Refusing the whole ranking is the point.
+        """
+        assert "objectives" in gate_only_run
+        assert gate_only_run["objectives"] is None
+
+    def test_it_names_the_deployment_the_metric_and_the_threshold(
+        self, gate_only_run: dict[str, object]
+    ) -> None:
+        """A refusal a reader cannot act on is the failure this replaced."""
+        reason = gate_only_run["gate_only_deployment"]
+        assert reason is not None
+        assert "gate_only_fixture_v1" in reason  # type: ignore[operator]
+        assert "success_rate" in reason  # type: ignore[operator]
+        assert "cannot rank anything" in reason  # type: ignore[operator]
+
+    def test_reproducibility_moved_to_the_gate_table(
+        self, gate_only_run: dict[str, object]
+    ) -> None:
+        """Criterion 2 does not lapse here; it changes object.
+
+        Dropping it would leave the deployment whose entire job is to
+        gate as the one place the gate verdict is never checked twice.
+        """
+        checks = gate_only_run["checks"]
+        assert any("gate table reproduced" in line for line in checks)  # type: ignore[union-attr]
+        assert not any("decision_utility reproduced" in line for line in checks)  # type: ignore[union-attr]
+
+    def test_an_ordinary_deployment_still_scores(self, measurement: dict[str, object]) -> None:
+        """The other half of the property: the clause must not have
+        turned scoring off everywhere."""
+        assert measurement["gate_only_deployment"] is None
+        assert measurement["objectives"] is not None
