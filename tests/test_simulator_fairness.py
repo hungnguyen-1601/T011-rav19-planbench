@@ -559,6 +559,27 @@ class TestTheTwoHallsStayInStep:
         is asserted rather than assumed."""
         assert load(HALL).environment.sensor_noise.active is False
 
+    def test_the_hall_declares_itself_an_acceptance_deployment(self) -> None:
+        """``success_rate_min = 1.00``, and the number is the claim.
+
+        The hall is easy, mirror-symmetric and run under declared noise:
+        nothing here defeats a stack by geometry. So a failure is not a
+        statistic to average — it is a **diagnostic signal**, and one is
+        enough to say something is wrong with the stack or its
+        configuration.
+
+        This is emphatically **not** an operating requirement for a real
+        site; ``warehouse_a_v2`` declares its own. Reading a red G3 here
+        as "unfit to ship" is reading an instrument as a customer.
+
+        Until 2026-08-11 both halls said 0.95, copied from the warehouse
+        and never declared for the hall — the only constant in either
+        file without a reason beside it. Answering it needed the
+        deployment's *role*, not any candidate's result (HĐ-15.3).
+        """
+        for path in (HALL, NOISY_HALL):
+            assert load(path).constraints.success_rate_min == 1.00, path.name
+
     def test_the_deployment_declares_the_noise_axes_of_the_topic_document(self) -> None:
         noise = load(NOISY_HALL).environment.sensor_noise
         assert noise.lidar_range_sigma_m == 0.02

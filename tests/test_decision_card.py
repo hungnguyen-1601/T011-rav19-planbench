@@ -492,6 +492,43 @@ class TestManifest:
         manifest = two_candidates.manifest()
         assert manifest.bootstrap == {"seed": 11, "n_resamples": 1000}
 
+    def test_it_records_the_thresholds_that_produced_the_verdicts(
+        self, two_candidates: Run
+    ) -> None:
+        """Added at 6.4.0, and the reason is the mirror image of
+        ``sensor_noise``'s.
+
+        ``episode_context_id`` hashes neither the noise nor the
+        constraints (HĐ-3.1), but what follows from that differs.
+        Changing the noise changes the **world**, so the episodes
+        recorded before it belong to a different world and the deployment
+        needs a new id. Changing a constraint changes the **verdict**,
+        and the episodes stay exactly as valid — they are simply judged
+        by another ruler.
+
+        So a constraint may be edited in place, and the manifest is then
+        the only thing standing between two cards that disagree and
+        nobody able to say why: the same profile id under
+        ``success_rate_min`` 0.95 and 1.00 would otherwise produce
+        byte-identical manifests beside different gate tables.
+        """
+        manifest = two_candidates.manifest()
+        assert manifest.constraints is not None
+        assert manifest.constraints.success_rate_min > 0
+        assert manifest.constraints.collision_probability_max > 0
+        # And it survives serialisation, which is the form a rebuild
+        # actually receives.
+        assert "success_rate_min" in manifest.to_json_dict()["constraints"]
+
+    def test_the_manifest_cannot_be_built_without_them(self) -> None:
+        """Required, not optional-with-a-default. An optional field that
+        is always null for the wrong reason is exactly how ``manifest``
+        itself came to be stored as null on every ranked API run — the
+        column existed, its nullability was tested, and it was empty."""
+        from planbench_decision.card import Manifest
+
+        assert Manifest.model_fields["constraints"].is_required()
+
     def test_it_records_the_anchor_version(self, two_candidates: Run) -> None:
         """HĐ-8.3 law 3: a recommendation computed under unknown anchors
         cannot be rebuilt."""

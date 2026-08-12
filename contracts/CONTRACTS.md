@@ -1,6 +1,6 @@
 # CONTRACTS.md — Planner Selector
 
-> **Phiên bản hợp đồng:** `contracts_version: 6.3.0`
+> **Phiên bản hợp đồng:** `contracts_version: 6.4.0`
 > **Trạng thái:** cần cả nhóm đọc và ký ở mục 16. Phase 1 (schema gốc) đã hiện thực theo bản 1.1.0; bản 2.0.0 sửa G5 — xem lịch sử phiên bản ở mục 18.
 > **Vị trí:** `contracts/CONTRACTS.md` ở gốc repo (trước đây là `docs/antongduy/CONTRACTS_1.md`).
 > **Tài liệu mẹ:** `docs/antongduy/de-tai-moi-planner-selector.md`. Khi hai tài liệu mâu thuẫn, **CONTRACTS.md thắng** — plan là lý do, contract là luật.
@@ -832,7 +832,7 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
 
 ```json
 {
-  "contracts_version": "6.3.0",
+  "contracts_version": "6.4.0",
   "recommendation_scope": "MISSION_LEVEL | DEPLOYMENT_LEVEL | ROBUST_DEPLOYMENT_LEVEL",
   "experiment_scope": "full_stack_selection",
   "decision_mode": "technical | business_adjusted",
@@ -895,7 +895,7 @@ Mọi lần ra quyết định ghi một `manifest.json`:
 
 ```json
 {
-  "contracts_version": "6.3.0",
+  "contracts_version": "6.4.0",
   "git_sha": "...",
   "docker_image_digest": "sha256:...",
   "task_profile_id": "warehouse_a_v1",
@@ -926,6 +926,19 @@ Mọi lần ra quyết định ghi một `manifest.json`:
 *(Thêm ở 2.2.0.)* **Khối `bootstrap` là điều kiện cần của chính tiêu chí nghiệm thu ở trên.** `evidence.ci95` trên card đến từ một phép lấy mẫu lại ngẫu nhiên (HĐ-11.2); hai người chạy cùng manifest với hai seed khác nhau sẽ ra hai khoảng tin cậy khác nhau, và khác biệt đó **không phải** "thời gian tường". Bản 2.1.x thiếu trường này, nên tiêu chí nghiệm thu của HĐ-13 không thể đạt được bằng chính dữ liệu mà HĐ-13 yêu cầu ghi. `n_resamples` đi kèm vì đổi số lần lấy mẫu cũng đổi khoảng.
 
 *(Thêm ở 6.2.0.)* **Khối `benchmark_host` ghi mask thật và ai đặt nó.** G4 đọc độ trễ theo đồng hồ tường, nên mức cấp CPU là một phần của phép đo chứ không phải chuyện bên lề — xem HĐ-7.4.
+
+*(Thêm ở 6.4.0.)* **`constraints` phải có mặt trên manifest**, và lý do gần giống `sensor_noise` nhưng **hệ quả thì khác hẳn** — phân biệt này là nội dung chính của bản 6.4.0.
+
+`episode_context_id` không băm **cả hai**. Nhưng:
+
+| Đổi cái gì | Đổi cái gì trong thực tế | Episode đã ghi | Việc phải làm |
+|---|---|---|---|
+| `sensor_noise` | **thế giới** | thành episode của một thế giới khác ⇒ **vô hiệu** | **đổi `task_profile_id`** |
+| `constraints` | **phán quyết** | vẫn **đúng nguyên** — chỉ được chấm bằng thước khác | **ghi vào manifest** |
+
+Nên một ràng buộc **được phép sửa tại chỗ**, và khi đó manifest là thứ **duy nhất** đứng giữa hai tấm card bất đồng với nhau và không ai nói được vì sao. Không có trường này, cùng một profile id dưới `success_rate_min` 0,95 và 1,00 sinh ra **manifest giống nhau từng byte** trong khi bảng cổng khác nhau.
+
+Một câu để nhớ: **`task_profile_id` định danh cái *thế giới*; manifest ghi cái đã biến phép đo thành phán quyết.**
 
 *(Thêm ở 6.3.0.)* **`sensor_noise` phải có mặt trên manifest.** `episode_context_id` băm đúng bốn thứ (HĐ-3.1) và **biên độ nhiễu không nằm trong đó**. Nên hai run cùng seed khác `sigma` sinh ra **đúng cùng một tập context id** trong khi là **hai thí nghiệm khác nhau**. Không ghi biên độ thì manifest không phân biệt được chúng, và người dựng lại card sẽ dựng lại một card khác mà không có gì báo.
 
@@ -1086,6 +1099,8 @@ Hai định danh frozen của contract (`candidate_id`, `episode_context_id`) d�
 | 6.2.0 | 2026-08-11 | MINOR | HĐ-7.4: **ghim nhân là việc của chương trình chạy, không của người vận hành**. Script tự đặt affinity (mặc định 2 nhân, `--no-pin` để tắt); máy không đủ nhân thì **từ chối ghim** chứ không ghim hết máy — một mask phủ toàn máy trông như đã được bảo vệ. Manifest thêm `benchmark_host.affinity_source` (`script` | `inherited`), vì một mask trần không phân biệt được run tự ghim với run nhận mask lúc khởi chạy, mà chỉ cái đầu mới tái lập được chính sự bảo vệ của nó. Thêm trường có mặc định, không xoá gì ⇒ MINOR. |
 
 | 6.3.0 | 2026-08-11 | MINOR | **Nhiễu cảm biến và trượt bánh theo seed** (plan M1). ① HĐ-2.5: `environment.sensor_noise` — thuộc hiện trường, mặc định 0, hai nguồn khác bản chất (LiDAR là sai số **đo** và không được chạm ground truth; trượt bánh là sai số **chấp hành** và phải chạm). Luật cứng: mọi draw là `f(seed, stream, step)`, **không** tiêu thụ tuần tự — rút tuần tự thì thứ tự phụ thuộc hành vi candidate và hai candidate gặp nhiễu khác nhau dưới cùng một `episode_context_id`. ② HĐ-3.3 nới "lần hiện thực vật cản" thành "lần hiện thực hiện trường", kèm bảng ranh giới với `neighborhood` để câu nới không mở đường gộp hai bộ mẫu. ③ HĐ-13: manifest phải ghi `sensor_noise`, vì biên độ **không** nằm trong payload băm của `episode_context_id` — hai run cùng seed khác sigma cho cùng tập id mà là hai thí nghiệm. Thêm trường có mặc định, không xoá gì ⇒ MINOR. |
+
+| 6.4.0 | 2026-08-11 | MINOR | **HĐ-13: manifest phải ghi `constraints`.** Cùng gốc với `sensor_noise` ở 6.3.0 — `episode_context_id` không băm ngưỡng nào — nhưng hệ quả ngược nhau: đổi nhiễu đổi **thế giới** nên phải đổi `task_profile_id`; đổi ràng buộc đổi **phán quyết** nên episode cũ vẫn đúng và chỉ cần ghi vào hồ sơ. Không có trường này thì cùng một profile id dưới hai ngưỡng `success_rate_min` cho manifest giống nhau từng byte mà bảng cổng khác nhau. Phát hiện khi chốt `success_rate_min` cho `open_hall_v2`. Thêm một trường, không xoá gì, không đổi ngữ nghĩa metric hay cổng nào ⇒ MINOR. |
 
 **Chi tiết 6.1.0 — bốn chỗ nới đều cho cả hai bên, nên không phép kiểm đối xứng nào bắt được.**
 

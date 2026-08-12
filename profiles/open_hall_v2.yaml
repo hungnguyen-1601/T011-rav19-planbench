@@ -81,7 +81,30 @@ robot:
 available_observations: [lidar_2d]
 
 constraints:
-  success_rate_min: 0.95
+  # 100%, and this is the one number in the file that says what kind of
+  # deployment this is.
+  #
+  # The hall is an **acceptance deployment**: easy, mirror-symmetric, and
+  # run under the noise this profile declares. Nothing here defeats a
+  # stack by geometry. So a failure is not a statistic to be averaged —
+  # it is a **diagnostic signal**, and one of them is enough to say the
+  # stack or the configuration has something wrong with it.
+  #
+  # **This is not an operating requirement for the warehouse.** No real
+  # site is asked to deliver 100%; `warehouse_a_v2` declares what it
+  # declares. Reading a red G3 here as "this candidate is unfit to ship"
+  # is reading an instrument as a customer.
+  #
+  # Until 2026-08-11 this said 0.95, copied from the warehouse and never
+  # declared for the hall — the only constant in this file without a
+  # reason beside it, and the one that prompted the question. Answering
+  # it needed the deployment's *role*, not any candidate's result
+  # (HĐ-15.3).
+  #
+  # Nothing was re-simulated to change it: a constraint changes the
+  # verdict, not the world, so the recorded episodes stay exactly as
+  # valid (HĐ-13, `manifest.constraints`).
+  success_rate_min: 1.00
   # 10% accepted risk => N_min = 30. Not a claim anyone would ship; this
   # deployment is a test instrument for the platform, and it says so
   # rather than declaring a number it cannot back.

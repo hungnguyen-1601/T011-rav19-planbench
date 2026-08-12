@@ -64,7 +64,7 @@ from planbench_decision.stats import CandidateEvidence, Recommendation, Recommen
 from planbench_schemas.contracts import CONTRACTS_VERSION
 from planbench_schemas.episode_context import EpisodeContext
 from planbench_schemas.sensor import SensorNoise
-from planbench_schemas.task_profile import ClaimLevel, TaskProfile
+from planbench_schemas.task_profile import ClaimLevel, TaskConstraints, TaskProfile
 
 __all__ = [
     "CARD_SCHEMA_PATH",
@@ -360,6 +360,28 @@ class Manifest(BaseModel):
     #: this field a manifest cannot tell them apart, and whoever rebuilds
     #: the card rebuilds a different one with nothing to warn them.
     sensor_noise: SensorNoise = Field(default_factory=SensorNoise)
+    #: The thresholds that turned measurements into verdicts (HĐ-7).
+    #:
+    #: Required, and required for the same reason ``sensor_noise`` is
+    #: carried: ``episode_context_id`` hashes neither (HĐ-3.1). But the
+    #: two differ in what follows from that, and the difference is the
+    #: rule:
+    #:
+    #: * changing ``sensor_noise`` changes the **world**, so the episodes
+    #:   recorded before it are episodes of a different world and the
+    #:   deployment needs a new ``task_profile_id``;
+    #: * changing a constraint changes the **verdict**, and the episodes
+    #:   stay exactly as valid — they are simply judged by another ruler.
+    #:
+    #: So a constraint may be edited in place, and the manifest is then
+    #: the only thing standing between two cards that disagree and nobody
+    #: able to say why. Without this field, the same profile id under
+    #: ``success_rate_min`` 0.95 and 1.00 produces byte-identical
+    #: manifests and different gate tables.
+    #:
+    #: In one line: **``task_profile_id`` identifies the world; the
+    #: manifest records what turned measurement into verdict.**
+    constraints: TaskConstraints
     candidates: tuple[str, ...]
     #: ``"evaluation"`` / ``"neighborhood"`` → the conditions themselves.
     episode_contexts: dict[str, tuple[EpisodeContext, ...]]
@@ -384,6 +406,7 @@ class Manifest(BaseModel):
             "decision_mode": self.decision_mode,
             "travel_time_accounting": self.travel_time_accounting,
             "sensor_noise": self.sensor_noise.model_dump(),
+            "constraints": self.constraints.model_dump(),
             "candidates": list(self.candidates),
             "episode_contexts": {
                 key: [context.model_dump(mode="json") for context in value]
@@ -530,6 +553,7 @@ def build_manifest(
         decision_mode=settings.decision_mode,
         travel_time_accounting=settings.travel_time_accounting,
         sensor_noise=profile.environment.sensor_noise,
+        constraints=profile.constraints,
         candidates=tuple(sorted(gate_reports)),
         # Sorted by id so a rebuild produces the same file byte for byte
         # (HĐ-13), which the caller's iteration order would not.
