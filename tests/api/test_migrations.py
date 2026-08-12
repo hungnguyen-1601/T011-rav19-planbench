@@ -255,3 +255,60 @@ class TestDecisionLayerTables:
         tables = set(inspect(create_engine(database)).get_table_names())
         assert "decision_cards" in tables
         assert "decision_runs" not in tables
+
+
+class TestRevision0007SplitsTheTwoHumanActs:
+    """One ``approved`` flag would have been shorter and would have meant
+    two different things — see the revision's own docstring."""
+
+    def test_both_states_land_on_the_run(self, database):
+        command.upgrade(alembic_config(database), "head")
+        columns = {c["name"] for c in inspect(create_engine(database)).get_columns("decision_runs")}
+        assert {"review_state", "reviewed_by", "reviewed_at"} <= columns
+        assert {"config_state", "config_decided_by", "config_decided_at"} <= columns
+
+    def test_both_default_to_the_conservative_value(self, database):
+        """NOT NULL with the safe default, so a row written by a path
+        that has not heard of these columns lands unreviewed and
+        unapprovable rather than the reverse."""
+        command.upgrade(alembic_config(database), "head")
+        columns = {
+            c["name"]: c for c in inspect(create_engine(database)).get_columns("decision_runs")
+        }
+        for name, expected in (("review_state", "unreviewed"), ("config_state", "not_applicable")):
+            assert columns[name]["nullable"] is False, name
+            assert expected in str(columns[name]["default"]), name
+
+    def test_the_audit_trail_is_its_own_table(self, database):
+        """Not a widened ``approvals``: that table's ``benchmark_id`` is
+        a NOT NULL foreign key into ``benchmarks``, and relaxing it to
+        fit both kinds would leave every historical row unable to say
+        which kind it described."""
+        command.upgrade(alembic_config(database), "head")
+        inspector = inspect(create_engine(database))
+        assert "decision_run_reviews" in set(inspector.get_table_names())
+        columns = {c["name"] for c in inspector.get_columns("decision_run_reviews")}
+        assert {"run_id", "sequence", "action", "previous_state", "new_state"} <= columns
+        assert inspector.get_foreign_keys("decision_run_reviews")
+
+    def test_both_states_are_indexed(self, database):
+        """"What is nobody watching?" and "what is cleared to deploy?"
+        are both list screens; neither should be a scan."""
+        command.upgrade(alembic_config(database), "head")
+        indexed = {
+            tuple(index["column_names"])
+            for index in inspect(create_engine(database)).get_indexes("decision_runs")
+        }
+        assert ("review_state",) in indexed
+        assert ("config_state",) in indexed
+
+    def test_downgrade_removes_only_what_it_added(self, database):
+        config = alembic_config(database)
+        command.upgrade(config, "head")
+        command.downgrade(config, "0006")
+        inspector = inspect(create_engine(database))
+        assert "decision_run_reviews" not in set(inspector.get_table_names())
+        columns = {c["name"] for c in inspector.get_columns("decision_runs")}
+        assert "review_state" not in columns
+        # And the table it was added to is still there.
+        assert "report" in columns

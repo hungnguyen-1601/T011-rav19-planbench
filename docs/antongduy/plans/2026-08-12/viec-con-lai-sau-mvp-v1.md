@@ -343,3 +343,30 @@ Ba hướng chưa xét kỹ, ghi để lần sau khỏi nghĩ lại từ đầu:
 **Không được quên:** cơ chế xử lý `1.00` đã có sẵn và có test (`TestAGateOnlyDeploymentIsMeasuredButNotScored`
 chạy trên fixture tổng hợp). Việc còn lại là **quyết định**, không phải hiện thực. Theo dõi ở
 `docs/KNOWN_LIMITATIONS.md` L6.
+
+---
+
+## Cập nhật cuối ngày 2026-08-12
+
+| mục | trạng thái |
+|---|---|
+| A1 độ nhạy vào card | ✅ xác minh sống trên card dựng lại: `weight_stability_margin: 1.0`, `anchor_stability: unchanged_at_±10%`, `pareto_label: PARETO_FRONTIER` |
+| A2 `run_uri` + checksum | ✅ xác minh sống: URI trỏ đúng thư mục run, checksum `947e4b5742156caf…` |
+| A3 `uv.lock` rỗng | ✅ **gỡ khỏi repo + gitignore** kèm lý do. `requirements.txt` là nguồn sự thật duy nhất về dependency |
+| A4 `constraints` vào manifest | ✅ đủ 9 trường |
+| B1 kho ở mức 1% | ⚠️ 245/300, dev chủ động dừng; cả hai trượt G2+G3 |
+| C3 ngưỡng sảnh | ✅ có comment; **con số** thành nợ L6, hẹn sau MVP |
+| D1 approval 6.3 | ✅ tách `review_state` / `config_state`, lược đồ `0007`, 52 test |
+| Dừng sớm (ngoài kế hoạch) | ✅ G1/G2/G3/G5, cả hai pha |
+
+**Còn nợ, không mục nào chặn D2:** B2 (`astar+ppo`) · C1 (adapter monolithic + bất cân xứng lưới
+replan) · C2 (map khó + đối xứng) · L6 (ngưỡng sảnh) · kho chưa khai `sensor_noise` ⇒ cần
+`warehouse_a_v3` · mục E.
+
+**Tiếp theo: D2 — trang `/decisions`.** Ràng buộc từ plan 08-11 vẫn nguyên và nay có thêm bằng
+chứng: trang phải render **cả hai** loại artifact, và bảng cổng phải là màn hình hạng nhất. Bốn
+trên năm phép so đã chạy không ra card. Một UI chỉ dựng được Decision Card sẽ tạo lại đúng áp lực
+buộc mọi run phải rank được — áp lực đã sinh ra tấm card tuyên bố cận trên va chạm từ một episode.
+
+Nay có thêm một trạng thái thứ ba phải dựng được: **run bị ngắt giữa chừng** (B1 dừng ở 245/300),
+và một trục thứ tư: `review_state` × `config_state`.

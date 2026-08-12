@@ -553,17 +553,80 @@ class DecisionRunRow(Base):
     run_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
     run_checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
+    # --- the two human acts, kept apart on purpose (HĐ-14) -------------
+    #
+    # One column would have been shorter and wrong. "Somebody read this"
+    # applies to every run; "this recommendation is the config we deploy"
+    # only exists where there *is* a recommendation. Collapsing them
+    # forces one of two bad answers: either an unranked run can be
+    # approved — turning "measured" into "endorsed" — or it cannot be
+    # marked read at all, which is how a run that eliminated four
+    # candidates becomes an artifact nobody ever looked at again.
+    #
+    # ``unreviewed`` | ``reviewed``.
+    review_state: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="unreviewed"
+    )
+    reviewed_by: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    reviewed_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+    #: ``not_applicable`` | ``pending`` | ``approved`` | ``rejected``.
+    #: NOT NULL with the safe default, so a row written by a path that
+    #: does not know about this column cannot land in an approvable state.
+    config_state: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="not_applicable"
+    )
+    config_decided_by: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    config_decided_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+
     __table_args__ = (
         Index("ix_decision_runs_task_profile", "task_profile_id"),
         Index("ix_decision_runs_kind", "artifact_kind"),
         Index("ix_decision_runs_recommended", "recommended_candidate_id"),
         Index("ix_decision_runs_status", "status"),
+        # "Which runs is nobody watching?" and "what is cleared to
+        # deploy?" are both list screens, so neither should be a scan.
+        Index("ix_decision_runs_review_state", "review_state"),
+        Index("ix_decision_runs_config_state", "config_state"),
     )
+
+
+class DecisionRunReviewRow(Base):
+    """One human act on one decision run. Append-only (HĐ-14).
+
+    A separate table from ``approvals`` rather than a widened one:
+    ``approvals.benchmark_id`` is a NOT NULL foreign key into
+    ``benchmarks``, and a decision run is not a benchmark. Making that
+    column nullable to fit both would leave every existing audit row
+    unable to say which of the two kinds it described.
+    """
+
+    __tablename__ = "decision_run_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("decision_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    #: Explicit order: two events can share a timestamp at whatever
+    #: resolution the clock has.
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: ``review`` | ``approve_config`` | ``reject_config``.
+    action: Mapped[str] = mapped_column(String(30), nullable=False)
+    actor_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    #: Nickname at the time of the act — readable after a rename.
+    username: Mapped[str] = mapped_column(String(100), nullable=False)
+    #: Both ends, because "approved" alone does not say what it replaced.
+    previous_state: Mapped[str] = mapped_column(String(20), nullable=False)
+    new_state: Mapped[str] = mapped_column(String(20), nullable=False)
+    comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+
+    __table_args__ = (Index("ix_decision_run_reviews_run", "run_id", "sequence"),)
 
 
 __all__ = [
     "ApprovalRow",
     "CandidateRow",
+    "DecisionRunReviewRow",
     "DecisionRunRow",
     "TaskProfileRow",
     "ConversationMessageRow",

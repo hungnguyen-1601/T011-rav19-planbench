@@ -172,3 +172,14 @@ CLAUDE.md
 # Agent tooling state (oh-my-claudecode, oh-my-codex). Operational scratch, not code.
 .omc/
 .omx/
+
+# ---------- uv lockfile ----------
+# Removed from the repo 2026-08-12, not merely ignored. It was eight lines
+# declaring the virtual root package and ZERO dependencies, while
+# docker/requirements-api.txt pins twenty. A tracked lockfile that resolves
+# to nothing is worse than none: `uv sync` succeeds, installs nothing, and
+# the failure surfaces later as an ImportError nobody connects to it.
+# requirements.txt is this project's single source of truth for deps. If uv
+# is ever adopted properly, generate the lockfile from those pins and drop
+# this rule in the same commit.
+uv.lock

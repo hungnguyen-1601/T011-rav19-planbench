@@ -28,13 +28,14 @@ from planbench_api.decisions import (
     ArtifactKind,
     CandidateRepository,
     DecisionRunRepository,
+    ReviewEvent,
     StoredCandidate,
     StoredDecisionRun,
     StoredTaskProfile,
     TaskProfileRepository,
     new_run_id,
 )
-from planbench_api.errors import DomainValidationError
+from planbench_api.errors import DomainValidationError, InvalidStateError
 from planbench_api.repositories import now_iso
 from planbench_benchmark.candidates import LOCAL_CONTROLLER_CONFIGS, candidate_from_stack
 from planbench_benchmark.selection import DEFAULT_SCOPE, run_comparison
@@ -187,6 +188,102 @@ class DecisionRunService:
         self, *, task_profile_id: str | None = None, ranked: bool | None = None
     ) -> list[StoredDecisionRun]:
         return self._runs.list(task_profile_id=task_profile_id, ranked=ranked)
+
+    # -- the two human acts (HĐ-14, phase 6.3) -------------------------
+
+    def review(
+        self, run_id: str, *, actor_user_id: str | None, username: str, comment: str = ""
+    ) -> StoredDecisionRun:
+        return self._runs.review(
+            run_id, actor_user_id=actor_user_id, username=username, comment=comment
+        )
+
+    def decide_config(
+        self,
+        run_id: str,
+        *,
+        approve: bool,
+        actor_user_id: str | None,
+        username: str,
+        comment: str = "",
+    ) -> StoredDecisionRun:
+        return self._runs.decide_config(
+            run_id,
+            approve=approve,
+            actor_user_id=actor_user_id,
+            username=username,
+            comment=comment,
+        )
+
+    def events(self, run_id: str) -> list[ReviewEvent]:
+        return self._runs.events(run_id)
+
+    def approved_config(self, run_id: str) -> str:
+        """The deployable configuration, as YAML — approved runs only.
+
+        HĐ-14: *"only a Decision Card in the APPROVED state can export
+        `approved_config.yaml`"*, and the same clause says the system is
+        **sim-only** — there is no technical path from here to a robot.
+        "Deploying" is emitting this file, and the file says so about
+        itself, in it, where somebody reading it later will see it.
+
+        Everything needed to argue with the choice travels with it: the
+        deployment it was chosen for, the evidence behind the margin, the
+        manifest reference, and the trace checksum. A config naming a
+        winner and nothing else invites being applied somewhere it was
+        never measured — the recommendation is scoped to *one* deployment
+        (HĐ-1.4), and dropping that scope is how it stops being true.
+        """
+        import yaml
+
+        run = self._runs.get(run_id)
+        if run.config_state != "approved":
+            raise InvalidStateError(
+                f"decision run {run_id} is {run.config_state}, not approved. "
+                "Only an approved recommendation exports a configuration (HĐ-14)"
+            )
+        card = run.card or {}
+        recommended = card.get("recommended", {})
+        evidence = card.get("evidence", {})
+        payload = {
+            "artifact": "approved_config",
+            "sim_only_notice": (
+                "Đây là một FILE CẤU HÌNH, không phải một lệnh triển khai. Hệ thống ở chế độ "
+                "sim-only: không tồn tại đường dẫn kỹ thuật nào từ đây tới robot thật (HĐ-14). "
+                "Mọi con số dưới đây được đo trong mô phỏng, trên đúng deployment ghi ở "
+                "task_profile_id — và chỉ có nghĩa ở đó."
+            ),
+            "task_profile_id": run.task_profile_id,
+            "experiment_scope": run.experiment_scope,
+            "candidate": {
+                "candidate_id": recommended.get("candidate_id"),
+                "stack": recommended.get("stack"),
+                "params_ref": recommended.get("params_ref"),
+            },
+            "decision": {
+                "status": run.status,
+                "decision_utility": card.get("decision_utility"),
+                "delta_u_vs_second": evidence.get("delta_u_vs_second"),
+                "ci95": evidence.get("ci95"),
+                "n_episodes": evidence.get("n_episodes"),
+                "pareto_label": card.get("pareto_label"),
+            },
+            "provenance": {
+                "decision_run_id": run.id,
+                "contracts_version": run.contracts_version,
+                "manifest_ref": card.get("manifest_ref"),
+                "run_uri": run.run_uri,
+                "run_checksum": run.run_checksum,
+                "created_at": run.created_at,
+            },
+            "approval": {
+                "approved_by": run.config_decided_by,
+                "approved_at": run.config_decided_at,
+                "reviewed_by": run.reviewed_by,
+                "reviewed_at": run.reviewed_at,
+            },
+        }
+        return yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
 
     # -- internals -----------------------------------------------------
 
