@@ -8,9 +8,11 @@ right next to the assertion.
 from __future__ import annotations
 
 import pytest
+import yaml
 
-from planbench_schemas.map import CellState
-from planbench_schemas.map_io import MapServerFormatError, load_map_server
+from planbench_schemas.geometry import Pose2D
+from planbench_schemas.map import CellState, MapData
+from planbench_schemas.map_io import MapServerFormatError, dump_map_server, load_map_server
 
 
 def make_pgm(rows: list[list[int]], *, maxval: int = 255, ascii_format: bool = False) -> bytes:
@@ -193,3 +195,94 @@ class TestModeAndThresholdSanity:
         yaml_text = make_yaml(occupied_thresh=0.2, free_thresh=0.7)
         with pytest.raises(MapServerFormatError, match="must be below occupied_thresh"):
             load_map_server(pgm, yaml_text, name="reversed")
+
+
+def grid(cells: list[list[int]], *, resolution: float = 0.05, origin=(0.0, 0.0)) -> MapData:
+    """A MapData from rows given **origin-first** — row 0 at the bottom.
+
+    Deliberately the opposite convention from :func:`make_pgm`, which
+    takes image rows top-first. The two disagreeing is the whole point of
+    the flip test below.
+    """
+    height = len(cells)
+    width = len(cells[0])
+    return MapData(
+        name="drawn",
+        width=width,
+        height=height,
+        resolution=resolution,
+        origin=Pose2D(x=origin[0], y=origin[1], theta=0.0),
+        cells=tuple(value for row in cells for value in row),
+    )
+
+
+class TestWritingAMapBackOut:
+    """A map somebody drew has to become a deployment.
+
+    The decision layer reads its map from the two paths a task profile
+    names (HĐ-2); the editor stores grids in a database. Writing the pair
+    out is the crossing, and it is only a crossing if what comes back is
+    the same map.
+    """
+
+    def test_round_trip_returns_the_same_map(self) -> None:
+        """The property everything else here rests on.
+
+        All three cell states, so a writer that silently collapsed
+        UNKNOWN into FREE would be caught — that collapse turns an
+        unsurveyed corner into open floor the planner drives through.
+        """
+        free, wall, unknown = (
+            CellState.FREE.value,
+            CellState.OCCUPIED.value,
+            CellState.UNKNOWN.value,
+        )
+        original = grid(
+            [[free, wall, unknown], [unknown, free, wall]], resolution=0.05, origin=(1.5, -2.0)
+        )
+        image, sidecar = dump_map_server(original, image_name="drawn.pgm")
+        assert load_map_server(image, sidecar, name="drawn") == original
+
+    def test_it_flips_rows_rather_than_writing_a_mirror(self) -> None:
+        """MapData row 0 sits at the map origin; PGM row 0 is the image
+        top. Without the flip the file is a vertical mirror of the map —
+        and a mirrored warehouse still looks like a warehouse, so this is
+        asserted rather than eyeballed."""
+        free, wall = CellState.FREE.value, CellState.OCCUPIED.value
+        # Occupied along the bottom row (row 0 = at the origin).
+        original = grid([[wall, wall], [free, free]])
+        image, _ = dump_map_server(original, image_name="drawn.pgm")
+        body = image.split(b"\n", 3)[3]
+        # The PGM's *last* row is the one at the origin, so the black
+        # pixels belong at the end of the body, not the start.
+        assert body == bytes([254, 254, 0, 0])
+
+    def test_the_sidecar_names_the_image_it_belongs_to(self) -> None:
+        """A sidecar naming a different image loads happily: the pixels
+        come from one map and the resolution and origin from another, and
+        nothing in the results looks wrong. The map loader cross-checks
+        this field, so it has to be written."""
+        meta = yaml.safe_load(dump_map_server(grid([[0]]), image_name="warehouse_b.pgm")[1])
+        assert meta["image"] == "warehouse_b.pgm"
+
+    def test_it_keeps_the_resolution_and_the_origin(self) -> None:
+        """Every coordinate in a run is read through these two. A default
+        origin written over a shifted one moves the whole map, and the
+        missions land somewhere else without a single error."""
+        meta = yaml.safe_load(
+            dump_map_server(grid([[0]], resolution=0.02, origin=(3.25, -1.75)), image_name="m.pgm")[
+                1
+            ]
+        )
+        assert meta["resolution"] == pytest.approx(0.02)
+        assert meta["origin"] == [3.25, -1.75, 0.0]
+
+    def test_a_large_map_survives_the_trip(self) -> None:
+        """The reference hall is 480x320. A writer that worked on a 2x3
+        fixture and broke on a real map would be found by whoever ran a
+        two-hour sweep on it."""
+        free, wall = CellState.FREE.value, CellState.OCCUPIED.value
+        rows = [[wall if (x + y) % 7 == 0 else free for x in range(200)] for y in range(120)]
+        original = grid(rows)
+        image, sidecar = dump_map_server(original, image_name="big.pgm")
+        assert load_map_server(image, sidecar, name="drawn").cells == original.cells

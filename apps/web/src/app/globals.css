@@ -639,6 +639,16 @@ button.primary {
   font-weight: 600;
 }
 
+/* A toggle that is currently on — the placement modes in the scenario
+   editor and in the launch panel's map picker. Both already set this
+   class; until now nothing styled it, so "what will my next click do"
+   was answerable only from the caption. */
+button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
 select,
 input {
   background: var(--panel-2);
@@ -712,6 +722,24 @@ th {
 .badge.warn {
   background: var(--warn-soft);
   color: var(--warn);
+}
+
+/* A badge that is also a control — one (candidate, episode) verdict in
+   the outcome table, which opens that episode in the trace viewer.
+   Stripped of the button chrome so a grid of six hundred of them reads
+   as a table of results rather than a wall of buttons; the pressed
+   state is what says which one the viewer is showing. */
+button.badge-button {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 0;
+  cursor: pointer;
+}
+
+button.badge-button:hover:not(:disabled),
+button.badge-button[aria-pressed="true"] {
+  border-color: var(--accent);
 }
 
 .error-box {

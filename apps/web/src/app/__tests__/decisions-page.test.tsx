@@ -317,3 +317,248 @@ describe("starting a sweep from the page", () => {
     expect(LIST).toContain("cancelDecisionJob");
   });
 });
+
+describe("the list says what a run concluded, not which hash it picked", () => {
+  it("names the winner by stack and controller", () => {
+    /* `recommended_candidate_id` is the right identity for a trace path
+       and the wrong thing in front of somebody scanning ten rows for the
+       run that chose something. */
+    expect(LIST).toContain("runOutcome(run)");
+    expect(LIST).toContain("outcome.winner");
+    expect(LIST).not.toContain("{run.recommended_candidate_id}");
+  });
+
+  it("shows how many candidates cleared the gates, ranked or not", () => {
+    /* A recommendation out of two survivors and one out of five are
+       different claims, and a run where nobody cleared is a result
+       rather than a failure (HĐ-7). */
+    expect(LIST).toContain("decisions.outcome.cleared");
+    expect(en).toHaveProperty("decisions.outcome.cleared");
+    expect(vi).toHaveProperty("decisions.outcome.cleared");
+  });
+
+  it("still keeps the three no-card reasons apart", () => {
+    /* Adding a gate count must not collapse them: each asks for a
+       different next action. */
+    expect(LIST).toContain("decisions.reason.${reason}");
+  });
+});
+
+describe("choosing a map for the sweep", () => {
+  it("defaults to the deployment's own map", () => {
+    /* Every existing flow has to keep working without a click, and a
+       map picker that started empty would make "same as before" a
+       decision somebody has to make each time. */
+    expect(LIST).toContain("NO_CUSTOM_MAP");
+    expect(LIST).toContain("decisions.map.sameAsDeployment");
+  });
+
+  it("files a NEW deployment rather than editing the chosen one", () => {
+    /* A map is the world, and `episode_context_id` does not hash it
+       (HĐ-3.1). Repointing an existing id would give two worlds'
+       episodes identical context ids, and trace reuse would then serve
+       episodes driven on walls that are gone. */
+    expect(LIST).toContain("deriveTaskProfile(");
+    expect(LIST).toContain("base_task_profile_id: profileId");
+    expect(LIST).toContain("new_id: custom.newProfileId.trim()");
+  });
+
+  it("runs the sweep on the derived id, not on the base", () => {
+    /* Deriving and then queueing on the original would measure the old
+       map while the reader believes they chose another one. */
+    expect(LIST).toContain("task_profile_id: target");
+  });
+
+  it("refuses to launch a half-filled custom map", () => {
+    /* Silently falling back to the deployment's own map is the failure
+       mode: the run would be valid and answer a different question. */
+    expect(LIST).toContain('custom.mapId !== "" && !customReady');
+  });
+
+  it("requires a start and a goal before it will launch", () => {
+    /* A start and goal that fit the reference hall are rarely on free
+       floor in a map somebody drew. The server refuses the pair it
+       cannot place, but a disabled button says so before the round
+       trip. */
+    expect(LIST).toContain("custom.start !== null");
+    expect(LIST).toContain("custom.goal !== null");
+  });
+
+  it("draws the map at the deployment's robot radius", () => {
+    /* A start that looks clear at one pixel per cell can be one the
+       robot does not fit in, and that is invisible without the circle. */
+    expect(LIST).toContain("readRobotRadius(base)");
+    expect(LIST).toContain("robotRadius={robotRadius}");
+  });
+
+  it("clears the poses when the map changes", () => {
+    /* A start kept from the previous map is a coordinate that means
+       something else here — and it might still land on free floor, so
+       nothing would catch it. */
+    expect(LIST).toContain("...NO_CUSTOM_MAP, newProfileId: value.newProfileId");
+  });
+
+  it("sends the reader to the existing editor instead of growing a second one", () => {
+    /* `/maps` already versions and checksums what it stores. Two
+       editors would be two definitions of the same thing. */
+    expect(LIST).toContain('href="/maps"');
+    expect(LIST).toContain("decisions.map.drawOne");
+  });
+
+  it("says in words why a different map means a different deployment", () => {
+    expect((en as Record<string, string>)["decisions.map.note"]).toContain("HĐ-3.1");
+    expect((vi as Record<string, string>)["decisions.map.note"]).toContain("HĐ-3.1");
+  });
+});
+
+describe("placing the start and the goal", () => {
+  it("makes the placement mode explicit, with a caption", () => {
+    /* The scenario editor's shape, and for its reason: the author has to
+       see what the next click does. A hidden alternation makes nudging a
+       start two pixels drop a goal instead. */
+    expect(LIST).toContain("decisions.map.place.${which}");
+    expect(LIST).toContain("decisions.map.mode.${value.placing}");
+    /* Both branches of each templated key, since the coverage check
+       above only sees literal ones. */
+    for (const which of ["start", "goal"]) {
+      expect(en).toHaveProperty(`decisions.map.place.${which}`);
+      expect(vi).toHaveProperty(`decisions.map.place.${which}`);
+    }
+    for (const mode of ["none", "start", "goal"]) {
+      expect(en).toHaveProperty(`decisions.map.mode.${mode}`);
+      expect(vi).toHaveProperty(`decisions.map.mode.${mode}`);
+    }
+  });
+
+  it("advances to the goal only while the goal is unset", () => {
+    /* Convenience on the first pass, and no surprise afterwards:
+       correcting a start must not drop a goal on top of it. */
+    expect(LIST).toContain('placing: value.goal === null ? "goal" : "start"');
+  });
+
+  it("moves a pose by dragging as well as by clicking", () => {
+    expect(LIST).toContain("onWorldDrag={(x, y) => place(x, y)}");
+  });
+
+  it("lets a pose be typed as well as clicked", () => {
+    /* A canvas cannot land on 2.00 exactly, and a deployment written to
+       two decimals is the one somebody can repeat from the report. */
+    expect(LIST).toContain("<PoseFields");
+    expect(LIST).toContain('type="number"');
+  });
+
+  it("keeps the heading when the position moves", () => {
+    /* Dragging a start must not silently spin the robot back to facing
+       east — the heading is a separate choice the author already made. */
+    expect(LIST).toContain("theta: value.start?.theta ?? 0");
+    expect(LIST).toContain("theta: value.goal?.theta ?? 0");
+  });
+
+  it("edits the heading in degrees and stores radians", () => {
+    /* The contract stores radians; nobody types 1.5708 for a quarter
+       turn. */
+    expect(LIST).toContain("DEGREES(value.theta)");
+    expect(LIST).toContain("RADIANS(Number(event.target.value))");
+  });
+
+  it("sends the heading in the mission rather than zeroing it", () => {
+    /* The simulator seeds `RobotState(pose=start_pose)`, so a robot
+       pointed away from its goal spends its first second turning. A
+       hardcoded 0 here would quietly discard the author's choice. */
+    expect(LIST).toContain("custom.start!.theta");
+    expect(LIST).toContain("custom.goal!.theta");
+  });
+
+  it("says the start heading is real and the goal heading is not", () => {
+    /* This platform has no final-orientation controller, so every
+       deployment must declare goal_tolerance_rad >= pi and arrival is
+       decided on position alone (HĐ-6). An unlabelled dial that changes
+       no verdict is the thing to avoid. */
+    expect((en as Record<string, string>)["decisions.map.goalHeadingNote"]).toContain("HĐ-6");
+    expect((vi as Record<string, string>)["decisions.map.goalHeadingNote"]).toContain("HĐ-6");
+    expect((en as Record<string, string>)["decisions.map.startHeadingNote"]).toContain("t = 0");
+  });
+
+  it("draws the goal circle at the deployment's own tolerance", () => {
+    /* An episode ends the moment the robot is inside it, so a goal
+       placed a tolerance-width from a shelf is a different mission from
+       one placed a metre out. */
+    expect(LIST).toContain("readGoalTolerance(base)");
+    expect(LIST).toContain("goalTolerance={goalTolerance}");
+  });
+});
+
+describe("which episodes failed, and how", () => {
+  it("puts the outcome table above the trace viewer it feeds", () => {
+    /* The gate table says how much went wrong, this says which part,
+       and the viewer draws one of them. Below the viewer instead, the
+       table would be a caption for a picture already chosen. */
+    expect(DETAIL.indexOf("<EpisodeOutcomes")).toBeGreaterThan(-1);
+    expect(DETAIL.indexOf("<EpisodeOutcomes")).toBeLessThan(DETAIL.indexOf("<TraceViewer"));
+  });
+
+  it("distinguishes all four failure reasons", () => {
+    /* Thirty collisions and thirty timeouts give the same success rate
+       and ask for completely different work (HĐ-6). */
+    for (const reason of ["collision", "timeout", "stuck", "no_path"]) {
+      expect(en).toHaveProperty(`decisions.episodes.reason.${reason}`);
+      expect(vi).toHaveProperty(`decisions.episodes.reason.${reason}`);
+    }
+  });
+
+  it("reads a missing table as 'not recorded', never as 'all passed'", () => {
+    /* Runs stored before the field existed carry no episode rows, and a
+       clean table for them would report a measurement nobody made. */
+    expect(DETAIL).toContain("hasEpisodeOutcomes(run)");
+    expect(DETAIL).toContain("decisions.episodes.notRecorded");
+  });
+
+  it("pairs candidates by episode id, not by array position", () => {
+    /* Early stopping retires one candidate mid-sweep, so row seven of
+       one array and row seven of the other can be different episodes. */
+    expect(DETAIL).toContain("outcomesByEpisode(");
+  });
+
+  it("marks episodes a retired candidate never ran", () => {
+    /* Not the same claim as driven and passed, and it is what explains
+       the smaller denominator on that candidate's row. */
+    expect(DETAIL).toContain("decisions.episodes.notRun");
+    expect(en).toHaveProperty("decisions.episodes.notRunNote");
+  });
+
+  it("opens an episode from its cell instead of asking for its hash", () => {
+    /* Finding the episode that collided and then copying its id into a
+       dropdown is most of the work of looking at it. */
+    expect(DETAIL).toContain("onPick(candidate.candidate_id, episode)");
+    expect(DETAIL).toContain("void load(candidate, episode)");
+  });
+
+  it("labels the episode dropdown with the outcome as well as the id", () => {
+    expect(DETAIL).toContain("decisions.episodes.pass");
+    expect(DETAIL).toContain("outcomes.get(episode)");
+  });
+
+  it("can narrow to the failures, and says how many it is hiding", () => {
+    /* A warehouse sweep is three hundred rows and most of them are two
+       greens. Filtering is the point; a silent cap would not be — a
+       table showing the first fifty rows reads as a complete one. */
+    expect(DETAIL).toContain("decisions.episodes.failuresOnly");
+    expect(DETAIL).toContain("decisions.episodes.showing");
+    expect(en).toHaveProperty("decisions.episodes.showing");
+    expect(vi).toHaveProperty("decisions.episodes.showing");
+  });
+
+  it("numbers episodes by their place in the run, not in the filtered table", () => {
+    /* Otherwise "#7 collided" means a different episode with the filter
+       on than off, and the number stops being a reference. */
+    expect(DETAIL).toContain("episodes.indexOf(episode) + 1");
+  });
+
+  it("has every key the detail page asks for, in both locales", () => {
+    const keys = new Set([...DETAIL.matchAll(/\bt\(\s*"([^"`]+)"/g)].map((match) => match[1]));
+    for (const key of keys) {
+      expect(en, `en is missing ${key}`).toHaveProperty(key);
+      expect(vi, `vi is missing ${key}`).toHaveProperty(key);
+    }
+  });
+});

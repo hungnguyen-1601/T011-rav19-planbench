@@ -774,3 +774,291 @@ class TestReadingBackTheEvidence:
     def test_an_episode_this_run_never_measured_is_refused(self, client, a_run):
         response = self._fetch(client, a_run, episode="0000deadbeef")
         assert response.status_code == 404, response.text
+
+
+class TestWhichEpisodesFailedAndHow:
+    """The aggregate was never the whole answer.
+
+    ``success_rate: 0.70`` says seventy per cent of something happened.
+    It does not say which thirty per cent did not, nor whether they were
+    collisions or timeouts — and those two ask for different work. Every
+    ``EpisodeMetricSet`` carried ``success`` and ``failure_reason`` all
+    along; the report pooled them and dropped the rows.
+    """
+
+    @pytest.fixture
+    def a_run(self, client, alice_headers, profile_id):
+        response = client.post(
+            f"{API}/decisions",
+            json={
+                "task_profile_id": profile_id,
+                "candidates": [
+                    {"stack": "astar+dwa", "local_config": "dwa_coarse"},
+                    {"stack": "rrtstar+dwa", "local_config": "dwa_coarse"},
+                ],
+                "episodes": 2,
+            },
+            headers=alice_headers,
+        )
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    def test_every_candidate_carries_one_row_per_episode_it_ran(self, client, a_run):
+        """Per candidate, not one shared table: early stopping retires
+        candidates at different episodes, and a shared table would have
+        to invent blanks for the difference."""
+        for entry in a_run["report"]["candidates"]:
+            episodes = entry["episodes"]
+            assert len(episodes) == entry["n_episodes"]
+            assert [row["episode_context_id"] for row in episodes] == [
+                row["episode_context_id"] for row in episodes
+            ]
+
+    def test_a_failed_episode_says_which_of_the_four_ways(self, client, a_run):
+        """HĐ-6's four buckets. Thirty collisions and thirty timeouts
+        produce the same success rate and the same gate verdict."""
+        rows = [row for entry in a_run["report"]["candidates"] for row in entry["episodes"]]
+        assert rows
+        for row in rows:
+            if row["success"]:
+                # Null on success, never "none of the four" — an empty
+                # string here would come to mean a fifth bucket.
+                assert row["failure_reason"] is None
+            else:
+                assert row["failure_reason"] in {"no_path", "collision", "timeout", "stuck"}
+
+    def test_the_rows_add_up_to_the_success_rate_they_replaced(self, client, a_run):
+        """The table and the aggregate must not be able to disagree —
+        two numbers for one fact is how a page ends up arguing with
+        itself."""
+        for entry in a_run["report"]["candidates"]:
+            episodes = entry["episodes"]
+            passed = sum(1 for row in episodes if row["success"])
+            assert math.isclose(entry["success_rate"], passed / len(episodes))
+
+    def test_the_episode_ids_are_ones_this_run_measured(self, client, a_run):
+        """The ids are what pair a row with a trace file, so a row naming
+        an episode outside the sample is a row nothing can open."""
+        sample = set(a_run["report"]["sample"]["episode_context_ids"])
+        for entry in a_run["report"]["candidates"]:
+            assert {row["episode_context_id"] for row in entry["episodes"]} <= sample
+
+    def test_the_list_endpoint_leaves_the_rows_behind(self, client, a_run):
+        """A warehouse run is 300 episodes across two candidates, and ten
+        of them on one page is close to a megabyte of rows the list draws
+        none of. Stripped in the response, not dropped from storage."""
+        listed = client.get(f"{API}/decisions").json()
+        row = next(entry for entry in listed if entry["id"] == a_run["id"])
+        for candidate in row["report"]["candidates"]:
+            assert "episodes" not in candidate
+            # Everything the list *does* draw is still there.
+            assert candidate["cleared_gates"] is not None
+            assert candidate["stack_label"]
+
+        detail = client.get(f"{API}/decisions/{a_run['id']}").json()
+        assert all("episodes" in c for c in detail["report"]["candidates"])
+
+
+class TestPuttingADifferentMapUnderADeployment:
+    """The only way a drawn map reaches a comparison.
+
+    A profile names its map by path (HĐ-2) and the editor stores grids in
+    the database. Deriving writes the chosen grid out as a map_server
+    pair and files a *new* deployment pointing at it — new, because a map
+    is the world and ``episode_context_id`` does not hash it (HĐ-3.1).
+    """
+
+    @pytest.fixture
+    def a_map(self, client, alice_headers) -> str:
+        """A 12x8 m room with a wall down the middle and a doorway.
+
+        Not an empty box: a map with no obstacle would let a broken
+        mission validator pass everything, and the doorway is what makes
+        "start and goal in the same region" a claim with content.
+        """
+        width, height = 60, 40  # 0.2 m cells -> 12 x 8 m
+        cells = []
+        for row in range(height):
+            for col in range(width):
+                on_border = row in (0, height - 1) or col in (0, width - 1)
+                # Wall at x = 6 m with a gap in the middle rows.
+                in_wall = col == width // 2 and not (16 <= row <= 23)
+                cells.append(100 if (on_border or in_wall) else 0)
+        response = client.post(
+            f"{API}/maps",
+            json={
+                "name": "derived_room",
+                "width": width,
+                "height": height,
+                "resolution": 0.2,
+                "origin": {"x": 0.0, "y": 0.0, "theta": 0.0},
+                "cells": cells,
+            },
+            headers=alice_headers,
+        )
+        assert response.status_code == 201, response.text
+        return response.json()["id"]
+
+    @pytest.fixture
+    def base_id(self, client, alice_headers) -> str:
+        client.post(f"{API}/task-profiles", json=tiny_profile(), headers=alice_headers)
+        return "api_hall_tiny"
+
+    def _derive(self, client, headers, base_id, map_id, **overrides):
+        body = {
+            "base_task_profile_id": base_id,
+            "new_id": "derived_room_v1",
+            "map_id": map_id,
+            "missions": [
+                {"id": "custom_route", "start": [2.0, 4.0, 0.0], "goal": [10.0, 4.0, 0.0]},
+            ],
+        }
+        body.update(overrides)
+        return client.post(f"{API}/task-profiles/derive", json=body, headers=headers)
+
+    def test_it_files_a_new_deployment_pointing_at_the_written_map(
+        self, client, alice_headers, base_id, a_map
+    ):
+        response = self._derive(client, alice_headers, base_id, a_map)
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["id"] == "derived_room_v1"
+        assert body["environment"].startswith("maps/custom/")
+        # Relative, never absolute: a profile carrying an absolute path
+        # is a profile that is only true on one machine, and HĐ-13 asks
+        # somebody else to rebuild the run from what it says.
+        assert not Path(body["environment"]).is_absolute()
+        assert (REPO_ROOT / body["environment"]).is_file()
+
+    def test_the_new_deployment_keeps_everything_else(self, client, alice_headers, base_id, a_map):
+        """A derived deployment differs in the map and the missions and
+        in nothing else. Silently resetting the noise or a threshold
+        would make the comparison answer a question nobody asked."""
+        base = client.get(f"{API}/task-profiles/{base_id}").json()["profile"]
+        derived = self._derive(client, alice_headers, base_id, a_map).json()["profile"]
+        assert derived["environment"]["sensor_noise"] == base["environment"]["sensor_noise"]
+        assert derived["constraints"] == base["constraints"]
+        assert derived["robot"] == base["robot"]
+
+    def test_reusing_the_base_id_is_refused(self, client, alice_headers, base_id, a_map):
+        """The trap: two worlds under one id give contexts hashing
+        identically, and ``--reuse-traces`` would serve episodes recorded
+        on walls that are gone. Nothing warns; the ids match."""
+        response = self._derive(client, alice_headers, base_id, a_map, new_id=base_id)
+        assert response.status_code == 422, response.text
+        assert "HĐ-3.1" in response.json()["error"]["message"]
+
+    def test_a_goal_the_robot_cannot_reach_is_refused_before_storing(
+        self, client, alice_headers, base_id, a_map
+    ):
+        """A goal inside a wall gives 0% success for *every* candidate,
+        and the comparison then reports a tie between stacks on a
+        question none of them was asked — every column a plausible 0.00,
+        nothing in the numbers wrong."""
+        response = self._derive(
+            client,
+            alice_headers,
+            base_id,
+            a_map,
+            new_id="derived_bad_goal",
+            missions=[
+                {"id": "into_the_wall", "start": [2.0, 4.0, 0.0], "goal": [6.0, 1.0, 0.0]},
+            ],
+        )
+        assert response.status_code == 422, response.text
+        assert client.get(f"{API}/task-profiles/derived_bad_goal").status_code == 404
+
+    def test_a_start_outside_the_map_is_refused(self, client, alice_headers, base_id, a_map):
+        response = self._derive(
+            client,
+            alice_headers,
+            base_id,
+            a_map,
+            new_id="derived_offmap",
+            missions=[
+                {"id": "nowhere", "start": [99.0, 99.0, 0.0], "goal": [10.0, 4.0, 0.0]},
+            ],
+        )
+        assert response.status_code == 422, response.text
+
+    def test_a_start_heading_survives_into_the_simulated_scenario(
+        self, client, alice_headers, base_id, a_map
+    ):
+        """The heading is part of the mission, not a drawing detail.
+
+        The engine seeds ``RobotState(pose=scenario.start_pose)``, so a
+        robot placed facing away from its goal spends its first second
+        turning around. Dropping theta on the way through would silently
+        replace the author's mission with a different one.
+        """
+        derived = self._derive(
+            client,
+            alice_headers,
+            base_id,
+            a_map,
+            new_id="derived_facing_away",
+            missions=[
+                {
+                    "id": "facing_away",
+                    "start": [2.0, 4.0, math.pi],
+                    "goal": [10.0, 4.0, math.pi / 2],
+                }
+            ],
+        )
+        assert derived.status_code == 201, derived.text
+        mission = derived.json()["profile"]["missions"][0]
+        assert mission["start"]["theta"] == pytest.approx(math.pi)
+        assert mission["goal"]["theta"] == pytest.approx(math.pi / 2)
+
+        # And that it is still the heading by the time an episode is built.
+        from planbench_benchmark.contexts import build_evaluation_contexts
+        from planbench_benchmark.episode import scenario_for
+        from planbench_schemas.task_profile import TaskProfile
+
+        profile = TaskProfile.model_validate(derived.json()["profile"])
+        context = build_evaluation_contexts(profile, seed_count=1)[0]
+        assert scenario_for(profile, context).start_pose.theta == pytest.approx(math.pi)
+
+        # The other half of the same story: the *arrival* heading is
+        # stored and never judged, because HĐ-6 forces every deployment
+        # to leave it unconstrained. The UI says so beside its field; if
+        # this ever stops being true, that note becomes a lie.
+        assert profile.constraints.goal_tolerance_rad >= math.pi
+
+    def test_an_unknown_map_is_a_404(self, client, alice_headers, base_id):
+        response = self._derive(client, alice_headers, base_id, "no_such_map")
+        assert response.status_code == 404, response.text
+
+    def test_deriving_needs_a_login(self, client, base_id, a_map):
+        response = self._derive(client, {}, base_id, a_map)
+        assert response.status_code == 401
+
+    def test_the_derived_deployment_can_actually_be_swept(
+        self, client, alice_headers, base_id, a_map
+    ):
+        """The whole point, end to end: a map somebody drew, measured on.
+
+        Two episodes rather than N_min — this asserts the chain runs on a
+        custom map, and the sample size is a separate contract (HĐ-7.1)
+        with its own tests.
+        """
+        derived = self._derive(
+            client, alice_headers, base_id, a_map, new_id="derived_room_swept"
+        ).json()["id"]
+        response = client.post(
+            f"{API}/decisions",
+            json={
+                "task_profile_id": derived,
+                "candidates": [
+                    {"stack": "astar+dwa", "local_config": "dwa_coarse"},
+                    {"stack": "rrtstar+dwa", "local_config": "dwa_coarse"},
+                ],
+                "episodes": 2,
+            },
+            headers=alice_headers,
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["task_profile_id"] == "derived_room_swept"
+        assert body["report"]["sample"]["n_episodes"] == 2
+        assert len(body["report"]["candidates"]) == 2

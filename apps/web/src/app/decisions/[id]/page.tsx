@@ -31,7 +31,10 @@ import {
   reviewRun,
   gateEvidence,
   gateResult,
+  hasEpisodeOutcomes,
+  outcomesByEpisode,
   type DecisionRun,
+  type EpisodeOutcome,
   type GateVerdict,
   type ReviewEvent,
   type RunCandidate,
@@ -111,11 +114,11 @@ function TracePanel({ run }: { run: DecisionRun }) {
 
   if (candidates.length === 0 || episodes.length === 0) return null;
 
-  const load = async () => {
+  const load = async (candidate = candidateId, episode = episodeId) => {
     setBusy(true);
     setError(null);
     try {
-      setTrace(await getTrace(run.id, candidateId, episodeId));
+      setTrace(await getTrace(run.id, candidate, episode));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
       setTrace(null);
@@ -124,12 +127,32 @@ function TracePanel({ run }: { run: DecisionRun }) {
     }
   };
 
+  // The outcomes of whichever candidate the dropdown is on, so an
+  // episode option can say how it went. Two candidates disagree about
+  // the same episode all the time — that disagreement is the entire
+  // subject — so the labels have to follow the selected one.
+  const selected = candidates.find((candidate) => candidate.candidate_id === candidateId);
+  const outcomes: Map<string, EpisodeOutcome> = selected
+    ? outcomesByEpisode(selected)
+    : new Map();
+
   return (
     <div className="panel">
       <div className="panel-head">
         <h3>{t("trace.title")}</h3>
       </div>
       <p className="muted">{t("trace.note")}</p>
+
+      <EpisodeOutcomes
+        run={run}
+        selectedCandidate={candidateId}
+        selectedEpisode={episodeId}
+        onPick={(candidate, episode) => {
+          setCandidateId(candidate);
+          setEpisodeId(episode);
+          void load(candidate, episode);
+        }}
+      />
 
       {error ? <div className="error-box">{error}</div> : null}
 
@@ -147,11 +170,24 @@ function TracePanel({ run }: { run: DecisionRun }) {
         <label className="field">
           <span>{t("trace.episode")}</span>
           <select value={episodeId} onChange={(event) => setEpisodeId(event.target.value)}>
-            {episodes.map((episode, index) => (
-              <option key={episode} value={episode}>
-                #{index + 1} · {episode.slice(0, 8)}
-              </option>
-            ))}
+            {episodes.map((episode, index) => {
+              // The outcome in the label, not only the id. Picking an
+              // episode to look at is picking one that went wrong, and
+              // a list of hashes makes that a guessing game.
+              const outcome = outcomes.get(episode);
+              const suffix =
+                outcome === undefined
+                  ? ""
+                  : outcome.success
+                    ? ` · ${t("decisions.episodes.pass")}`
+                    : ` · ${t(`decisions.episodes.reason.${outcome.failure_reason}`)}`;
+              return (
+                <option key={episode} value={episode}>
+                  #{index + 1} · {episode.slice(0, 8)}
+                  {suffix}
+                </option>
+              );
+            })}
           </select>
         </label>
         <button type="button" disabled={busy} onClick={() => void load()}>
@@ -161,6 +197,188 @@ function TracePanel({ run }: { run: DecisionRun }) {
 
       {trace ? <TraceViewer trace={trace} /> : null}
     </div>
+  );
+}
+
+/** Which episodes each candidate passed, one row per episode.
+ *
+ * **The gate table says how much went wrong; this says which part.** A
+ * row reading "G3: fail, 70% success" is a claim about thirty episodes
+ * nobody could name, and thirty collisions and thirty timeouts produce
+ * that identical row while asking for completely different work. The
+ * numbers were always computed — every `EpisodeMetricSet` carries
+ * `success` and `failure_reason` — and the report simply pooled them.
+ *
+ * Episodes down and candidates across, because the comparison is
+ * *paired*: the same episode ran for every candidate (HĐ-7.3), and the
+ * interesting cell is the one where they disagree. Candidates down would
+ * put those two verdicts in different rows.
+ *
+ * A cell is a button. Finding the episode that collided and then having
+ * to copy its hash into a dropdown is most of the work of looking at it.
+ */
+function EpisodeOutcomes({
+  run,
+  selectedCandidate,
+  selectedEpisode,
+  onPick,
+}: {
+  run: DecisionRun;
+  selectedCandidate: string;
+  selectedEpisode: string;
+  onPick: (candidateId: string, episodeContextId: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [failuresOnly, setFailuresOnly] = useState(false);
+  const candidates = run.report?.candidates ?? [];
+  const episodes = run.report?.sample?.episode_context_ids ?? [];
+
+  // Absent is "not recorded", never "all passed". Runs stored before the
+  // field existed have no rows, and drawing them as a clean table would
+  // report a measurement nobody made.
+  if (!hasEpisodeOutcomes(run)) {
+    return <p className="muted">{t("decisions.episodes.notRecorded")}</p>;
+  }
+
+  const byCandidate = new Map(
+    candidates.map((candidate) => [candidate.candidate_id, outcomesByEpisode(candidate)]),
+  );
+
+  // An episode nobody passed, or one somebody failed — the disagreements
+  // and the losses, which is what a reader opens this table for. A
+  // warehouse sweep is three hundred rows and most of them are two
+  // greens.
+  const interesting = episodes.filter((episode) =>
+    candidates.some(
+      (candidate) => byCandidate.get(candidate.candidate_id)?.get(episode)?.success === false,
+    ),
+  );
+  const shown = failuresOnly ? interesting : episodes;
+
+  return (
+    <>
+      <div className="row" style={{ alignItems: "center", gap: 12, marginBottom: 8 }}>
+        <label className="field" style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <input
+            type="checkbox"
+            checked={failuresOnly}
+            onChange={(event) => setFailuresOnly(event.target.checked)}
+          />
+          <span>{t("decisions.episodes.failuresOnly")}</span>
+        </label>
+        {/* The count of what is hidden, always. A table that quietly
+            dropped rows would read as a complete one. */}
+        <span className="muted">
+          {t("decisions.episodes.showing", {
+            shown: String(shown.length),
+            total: String(episodes.length),
+          })}
+        </span>
+      </div>
+
+      {shown.length === 0 ? (
+        <p className="muted">{t("decisions.episodes.noFailures")}</p>
+      ) : (
+        <div className="table-scroll wide" style={{ marginBottom: 12 }}>
+          <table>
+            <thead>
+              <tr>
+                <th>{t("decisions.episodes.episode")}</th>
+                {candidates.map((candidate) => {
+                  const outcomes = byCandidate.get(candidate.candidate_id);
+                  const failed = [...(outcomes?.values() ?? [])].filter(
+                    (one) => !one.success,
+                  ).length;
+                  return (
+                    <th key={candidate.candidate_id}>
+                      {candidate.stack_label} · {candidate.local_controller_config}
+                      <br />
+                      <span className="muted">
+                        {t("decisions.episodes.failedOf", {
+                          failed: String(failed),
+                          total: String(outcomes?.size ?? 0),
+                        })}
+                      </span>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((episode) => (
+                <tr key={episode}>
+                  {/* The number is the episode's place in the run, not
+                      its place in this table — filtering must not
+                      renumber them, or "#7 collided" would mean a
+                      different episode with the checkbox on than off. */}
+                  <td title={episode}>
+                    #{episodes.indexOf(episode) + 1} ·{" "}
+                    <code className="muted">{episode.slice(0, 8)}</code>
+                  </td>
+                  {candidates.map((candidate) => (
+                    <td key={candidate.candidate_id}>
+                      <EpisodeCell
+                        outcome={byCandidate.get(candidate.candidate_id)?.get(episode)}
+                        selected={
+                          candidate.candidate_id === selectedCandidate &&
+                          episode === selectedEpisode
+                        }
+                        onPick={() => onPick(candidate.candidate_id, episode)}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** One (candidate, episode) verdict, clickable into the viewer.
+ *
+ * A missing outcome is drawn as "not run", not as a blank: early
+ * stopping retires a candidate mid-sweep, so its later episodes were
+ * never driven — a different statement from one that was driven and
+ * passed, and the one that explains why this row's denominator is
+ * smaller than the table's.
+ */
+function EpisodeCell({
+  outcome,
+  selected,
+  onPick,
+}: {
+  outcome: EpisodeOutcome | undefined;
+  selected: boolean;
+  onPick: () => void;
+}) {
+  const { t } = useTranslation();
+  if (outcome === undefined) {
+    return (
+      <span className="badge muted-badge" title={t("decisions.episodes.notRunNote")}>
+        {t("decisions.episodes.notRun")}
+      </span>
+    );
+  }
+  const label = outcome.success
+    ? t("decisions.episodes.pass")
+    : t(`decisions.episodes.reason.${outcome.failure_reason}`);
+  return (
+    <button
+      type="button"
+      className="badge-button"
+      aria-pressed={selected}
+      onClick={onPick}
+      title={t("decisions.episodes.cellNote", {
+        clearance: outcome.min_clearance.toFixed(3),
+        time: outcome.travel_time_s.toFixed(1),
+        latency: outcome.p99_latency_ms.toFixed(2),
+      })}
+    >
+      <span className={`badge ${outcome.success ? "ok" : "err"}`}>{label}</span>
+    </button>
   );
 }
 

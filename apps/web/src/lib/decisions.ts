@@ -76,6 +76,25 @@ export interface StoppedEarly {
   evidence?: Record<string, unknown>;
 }
 
+/** How one episode ended, for one candidate.
+ *
+ * The four failure reasons are HĐ-6's buckets and they are not
+ * interchangeable: thirty collisions and thirty timeouts give the same
+ * `success_rate` and ask for completely different work. `success_rate`
+ * alone was the whole story until now, and it says how much went wrong
+ * without saying which part or how.
+ */
+export interface EpisodeOutcome {
+  episode_context_id: string;
+  success: boolean;
+  /** Null on success — never "no reason recorded". */
+  failure_reason: "no_path" | "collision" | "timeout" | "stuck" | null;
+  collision_count: number;
+  min_clearance: number;
+  travel_time_s: number;
+  p99_latency_ms: number;
+}
+
 export interface RunCandidate {
   candidate_id: string;
   stack_label: string;
@@ -89,6 +108,17 @@ export interface RunCandidate {
   stopped_early?: StoppedEarly | null;
   success_rate: number;
   pooled_p99_latency_ms: number;
+  /** Per-episode outcomes, in the order the sweep ran them.
+   *
+   * **Absent is "not recorded", never "all passed".** Runs stored before
+   * this field existed carry no episode rows, and rendering their
+   * absence as a clean table would turn a report that measured nothing
+   * per-episode into one that measured everything. The list endpoint
+   * also strips this — ten warehouse runs of 600 rows each is close to a
+   * megabyte on a page that draws none of them — so a component holding
+   * a run from `listDecisions` must expect it missing.
+   */
+  episodes?: EpisodeOutcome[];
 }
 
 export interface RunSample {
@@ -233,6 +263,32 @@ export function createTaskProfile(profile: unknown): Promise<TaskProfileSummary>
   return authFetch<TaskProfileSummary>("/task-profiles", {
     method: "POST",
     body: JSON.stringify(profile),
+  });
+}
+
+/** File a deployment that is another one with a different map.
+ *
+ * **Not an edit, and the server enforces that.** A map is the world, and
+ * `episode_context_id` does not hash it (HĐ-3.1) — repointing an
+ * existing deployment would give two worlds' episodes identical context
+ * ids, and trace reuse would then serve episodes recorded on walls that
+ * no longer exist. So this takes a `new_id` and refuses the base's.
+ *
+ * `missions` is optional and usually needed: a start and goal that fit
+ * the old map are rarely on free floor in a new one. The server checks
+ * before storing, so an unreachable goal is a refusal here rather than a
+ * comparison in which every candidate returns no_path and the columns
+ * all read a plausible 0.00.
+ */
+export function deriveTaskProfile(request: {
+  base_task_profile_id: string;
+  new_id: string;
+  map_id: string;
+  missions?: { id: string; start: number[]; goal: number[]; probability?: number }[];
+}): Promise<TaskProfileSummary> {
+  return authFetch<TaskProfileSummary>("/task-profiles/derive", {
+    method: "POST",
+    body: JSON.stringify(request),
   });
 }
 
@@ -405,6 +461,59 @@ export function noCardReason(run: DecisionRun): NoCardReason {
   if (run.report?.sample?.interrupted) return "interrupted";
   if (run.report?.gate_only_deployment) return "gate_only";
   return "no_survivors";
+}
+
+/** One candidate's episode outcomes, keyed by episode.
+ *
+ * A map rather than the array because the two candidates in a run do not
+ * share an index: early stopping retires one of them mid-sweep, so row
+ * seven of one array and row seven of the other can be different
+ * episodes. Only the episode id lines them up.
+ */
+export function outcomesByEpisode(candidate: RunCandidate): Map<string, EpisodeOutcome> {
+  return new Map((candidate.episodes ?? []).map((episode) => [episode.episode_context_id, episode]));
+}
+
+/** Did any candidate in this run report per-episode outcomes?
+ *
+ * Used to tell "this run passed every episode" from "this run predates
+ * the field", which look identical if you only count failures.
+ */
+export function hasEpisodeOutcomes(run: DecisionRun): boolean {
+  return (run.report?.candidates ?? []).some((candidate) => candidate.episodes !== undefined);
+}
+
+/** What a run concluded, as something a person reads at a glance.
+ *
+ * The list used to print `recommended_candidate_id` — a hex hash. It is
+ * the right identity for a trace path and the wrong thing to show
+ * somebody scanning ten rows for the run that chose something.
+ *
+ * `cleared`/`total` travels with the winner because a recommendation out
+ * of two survivors and one out of five are different claims, and the
+ * gates are what separate them (HĐ-7): a candidate that failed a gate
+ * was never ranked at all.
+ */
+export interface RunOutcome {
+  winner: string | null;
+  cleared: number;
+  total: number;
+}
+
+export function runOutcome(run: DecisionRun): RunOutcome {
+  const candidates = run.report?.candidates ?? [];
+  const recommended = candidates.find(
+    (candidate) => candidate.candidate_id === run.recommended_candidate_id,
+  );
+  return {
+    winner: recommended
+      ? `${recommended.stack_label} · ${recommended.local_controller_config}`
+      : // The hash, only when the report cannot name the winner — better
+        // than an em dash on a run that did recommend somebody.
+        run.recommended_candidate_id,
+    cleared: candidates.filter((candidate) => candidate.cleared_gates).length,
+    total: candidates.length,
+  };
 }
 
 /** How many of the requested episodes a run actually covers.

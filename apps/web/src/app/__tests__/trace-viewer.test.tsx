@@ -35,7 +35,7 @@ describe("the viewer sits with the evidence it explains", () => {
   it("loads one episode on demand rather than all of them", () => {
     /* A run holds thirty to three hundred episodes per candidate, each a
        map plus a few hundred poses. */
-    expect(DETAIL).toContain("getTrace(run.id, candidateId, episodeId)");
+    expect(DETAIL).toContain("getTrace(run.id, candidate, episode)");
     expect(DETAIL).toContain("trace.load");
   });
 
