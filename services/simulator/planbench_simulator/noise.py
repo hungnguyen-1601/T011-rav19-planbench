@@ -67,6 +67,22 @@ from planbench_schemas.sensor import SensorNoise
 #: contract change rather than a tidy-up.
 _LIDAR_STREAM = 1
 _SLIP_STREAM = 2
+_DRIFT_STREAM = 3
+_JUMP_STREAM = 4
+_DROPOUT_STREAM = 5
+_BIAS_STREAM = 6
+
+#: Control steps a localisation estimate keeps a jump before the next
+#: relocalisation window. A jump that lasted one step would be a spike a
+#: controller never notices; the danger of a bad fix is that it *stays*.
+_JUMP_WINDOW_STEPS = 40
+
+#: How many sine components make up the drift. Three is enough to stop
+#: the error looking periodic over an episode and few enough to stay
+#: O(1) per query — which is what keeps every draw a pure function of
+#: (seed, stream, step) rather than of how far this candidate happened
+#: to drive.
+_DRIFT_COMPONENTS = 3
 
 
 @dataclass(frozen=True)
@@ -112,6 +128,107 @@ class NoiseModel:
         if fraction <= 0.0:
             return (1.0, 1.0)
         draws = self._rng(_SLIP_STREAM, step).normal(0.0, fraction, 2)
+        return (1.0 + float(draws[0]), 1.0 + float(draws[1]))
+
+    def dropout_mask(self, step: int, count: int) -> np.ndarray | None:
+        """Which rays return nothing at ``step``, or ``None`` when disabled.
+
+        Bernoulli, not Gaussian — a return either comes back or it does
+        not. Glass, mirrors and dark surfaces are the physical cause, and
+        the consequence is the one that matters: a dropped return reads
+        to a costmap as **free space**, which is how a real robot drives
+        into a glass door.
+
+        The caller reports a dropped ray as **maximum range**, never as
+        zero. Zero is "an obstacle touching the sensor", the opposite
+        reading, and it would make dropout the safest thing that can
+        happen to a planner instead of the most dangerous.
+        """
+        probability = self.spec.lidar_dropout_probability
+        if probability <= 0.0 or count <= 0:
+            return None
+        return self._rng(_DROPOUT_STREAM, step).random(count) < probability
+
+    def pose_error(self, step: int) -> tuple[float, float, float]:
+        """How wrong the robot's idea of its own pose is at ``step``.
+
+        ``(dx, dy, dtheta)``, all zero when disabled. **Measurement
+        only** — it reaches ``Observation.pose`` and never the collision
+        test, exactly like LiDAR range error. A collision judged on a
+        believed pose would simulate a different world rather than a
+        robot that does not know where it is.
+
+        Two components, because they fail differently:
+
+        **Drift** is slow and correlated: a sum of a few low-frequency
+        sinusoids whose amplitudes and phases come from the seed. A
+        zero-mean per-step jitter would be the wrong model and a
+        comfortable one — a controller averages jitter away and cannot
+        average away an estimate that is wrong in the same direction for
+        twenty seconds.
+
+        **Jumps** are a step change that *stays*, held for a
+        relocalisation window. A controller can ride out a slow error and
+        cannot ride out a discontinuity, so modelling only drift would
+        miss the failure that actually strands robots.
+
+        Indexed like everything else here: the value at a step is a pure
+        function of ``(seed, step)`` and not of how far this candidate
+        drove to get there. Accumulating along the travelled path would
+        be more physical and would make the noise depend on candidate
+        behaviour, which is the one thing this module exists to prevent.
+        """
+        drift = self.spec.localization_drift_m
+        jump_probability = self.spec.localization_jump_probability
+        if drift <= 0.0 and jump_probability <= 0.0:
+            return (0.0, 0.0, 0.0)
+
+        dx = dy = dtheta = 0.0
+        if drift > 0.0:
+            shape = self._rng(_DRIFT_STREAM, 0)
+            phases = shape.uniform(0.0, 2.0 * np.pi, (3, _DRIFT_COMPONENTS))
+            # Periods spread over tens to hundreds of steps: fast enough
+            # to move within an episode, slow enough that the estimate is
+            # wrong in one direction for a while.
+            periods = shape.uniform(60.0, 400.0, (3, _DRIFT_COMPONENTS))
+            weights = shape.dirichlet(np.ones(_DRIFT_COMPONENTS), size=3)
+            waves = np.sin(2.0 * np.pi * step / periods + phases)
+            dx, dy, dtheta = (weights * waves).sum(axis=1) * drift
+            # Heading error scales with the position error rather than
+            # carrying its own amplitude: they come from one bad fix.
+            dtheta = float(dtheta) * 0.5
+
+        if jump_probability > 0.0:
+            window = step // _JUMP_WINDOW_STEPS
+            draw = self._rng(_JUMP_STREAM, window)
+            if float(draw.random()) < jump_probability:
+                # Sized against the drift so one profile field governs
+                # "how wrong can this estimate be", with the jump landing
+                # at the upper end of it.
+                magnitude = max(drift, 0.25)
+                angle = float(draw.uniform(0.0, 2.0 * np.pi))
+                dx += magnitude * float(np.cos(angle))
+                dy += magnitude * float(np.sin(angle))
+
+        return (float(dx), float(dy), float(dtheta))
+
+    def odometry_bias(self) -> tuple[float, float]:
+        """Per-episode systematic error in delivered velocity.
+
+        ``(1.0, 1.0)`` when disabled. Drawn **once for the episode** and
+        held, which is the whole difference from wheel slip: slip is
+        zero-mean per step so its error averages out, while a wheel worn
+        smaller than its partner is wrong in one direction every step and
+        the error **accumulates**. Two failure modes, and until now only
+        the forgiving one was simulated.
+
+        Changes the real motion, like slip — the robot really did travel
+        further than it was told to.
+        """
+        fraction = self.spec.odometry_bias_fraction
+        if fraction <= 0.0:
+            return (1.0, 1.0)
+        draws = self._rng(_BIAS_STREAM, 0).normal(0.0, fraction, 2)
         return (1.0 + float(draws[0]), 1.0 + float(draws[1]))
 
     def _rng(self, stream: int, step: int) -> np.random.Generator:

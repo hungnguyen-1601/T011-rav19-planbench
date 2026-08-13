@@ -48,6 +48,66 @@ import type { MapData, MapSummary, Pose2D } from "@/lib/types";
 /** Where the map under this deployment comes from. */
 type MapSource = "library" | "stored" | "drawn";
 
+/** What a new deployment declares about its robot's imperfections.
+ *
+ * **On by default, at amplitudes a real AMR actually has.** A simulator
+ * with no noise is more optimistic than reality, and this project has
+ * already paid for that optimism once: a Decision Card bounded a
+ * collision probability from a single episode replayed a hundred times,
+ * because nothing in the world varied between seeds. Starting a new
+ * deployment at zero makes that the easy path again.
+ *
+ * **This is a form default and deliberately not a schema default.**
+ * ``SensorNoise`` still defaults every field to zero, and it has to: the
+ * shipped profiles do not declare these fields, so a non-zero schema
+ * default would change the world underneath `open_hall_v2` and
+ * `warehouse_a_v2` *without changing their `task_profile_id`* — and
+ * every stored trace, gate verdict and Decision Card would silently
+ * describe a world that no longer exists (HĐ-3.1, HĐ-13). Defaulting
+ * here touches only deployments nobody has measured yet.
+ */
+const NOISE_DEFAULTS: Record<string, { value: number; step: number }> = {
+  //: Keyed by the **full dotted path**, not the leaf name. The schema
+  //: drift guard reads this file for every contract field it expects a
+  //: control for, and a path assembled from a template variable is a
+  //: path it cannot see — so the names stay literal here.
+  //
+  //: A 2 cm range error is what the topic document's noise table names.
+  "environment.sensor_noise.lidar_range_sigma_m": { value: 0.02, step: 0.005 },
+  "environment.sensor_noise.wheel_slip_fraction": { value: 0.02, step: 0.005 },
+  //: 10 cm between where an AMR is and where it thinks it is — ordinary
+  //: for a mapped indoor site, and enough to matter beside a 0.26 m robot.
+  "environment.sensor_noise.localization_drift_m": { value: 0.1, step: 0.01 },
+  //: Two per cent of relocalisation windows produce a fix that stays
+  //: wrong: uncommon enough to be a bad day, common enough to appear in
+  //: a 300-episode set.
+  "environment.sensor_noise.localization_jump_probability": { value: 0.02, step: 0.005 },
+  //: Two rays in a hundred come back with nothing. Real scanners do far
+  //: worse against glass; this is the quiet-warehouse figure.
+  "environment.sensor_noise.lidar_dropout_probability": { value: 0.02, step: 0.005 },
+  //: One per cent of systematic error — a wheel a little smaller than
+  //: its partner. Small, and it accumulates, which is the point.
+  "environment.sensor_noise.odometry_bias_fraction": { value: 0.01, step: 0.005 },
+  //: Two control steps. At a 20 Hz loop that is 100 ms between deciding
+  //: and moving, which is an ordinary ROS pipeline.
+  "environment.sensor_noise.command_latency_steps": { value: 2, step: 1 },
+};
+
+/** Fill in the noise a fresh template leaves at zero.
+ *
+ * Only zeroes are replaced. A template that already declares an
+ * amplitude has one for a reason — the shipped hall's 2 cm sigma is the
+ * measured figure — and overwriting it would be this form deciding what
+ * a deployment measured.
+ */
+function withNoiseDefaults(template: ProfileDraft): ProfileDraft {
+  let filled = template;
+  for (const [path, { value }] of Object.entries(NOISE_DEFAULTS)) {
+    if (!Number(at(filled, path) ?? 0)) filled = withValue(filled, path, value);
+  }
+  return filled;
+}
+
 export interface DeploymentFormProps {
   /** Called with the finished profile; the page owns the request so the
    *  YAML tab and this one submit through one code path. */
@@ -77,6 +137,11 @@ export function DeploymentForm({
   const [libraryName, setLibraryName] = useState(DEFAULT_LIBRARY_SCENARIO);
   const [storedMapId, setStoredMapId] = useState("");
   const [mapData, setMapData] = useState<MapData | null>(null);
+  /** The last non-zero amplitude of each noise source, so unticking and
+   *  re-ticking returns what was typed rather than the shipped default.
+   *  Losing an edited amplitude to a stray click is the kind of small
+   *  thing that costs a re-measurement to notice. */
+  const [remembered, setRemembered] = useState<Partial<Record<string, number>>>({});
   const [start, setStart] = useState<Pose2D | null>(null);
   const [goal, setGoal] = useState<Pose2D | null>(null);
   const [showHardware, setShowHardware] = useState(false);
@@ -100,7 +165,7 @@ export function DeploymentForm({
           api.listMaps().catch(() => [] as MapSummary[]),
         ]);
         if (cancelled) return;
-        onDraftChange(template);
+        onDraftChange(withNoiseDefaults(template));
         setLibrary(entries);
         setMaps(stored);
       } catch (caught) {
@@ -202,6 +267,53 @@ export function DeploymentForm({
     />
   );
 
+  /** A noise amplitude with a switch beside it.
+   *
+   * **The switch adds no field.** It writes zero to turn the source off
+   * and the shipped amplitude to turn it back on, so the *data* still
+   * has exactly one way to say "off" — a stored `enabled: false` beside
+   * a declared sigma would be a deployment nobody could classify at a
+   * glance, and the two halves would be free to disagree.
+   *
+   * The last non-zero value is remembered in component state so
+   * unticking and re-ticking gives back what was typed rather than the
+   * shipped default. Losing an edited amplitude to a stray click is a
+   * small thing that costs a re-measurement to notice.
+   */
+  const noiseField = (path: string, label: string, note?: string) => {
+    const current = Number(at(draft, path) ?? 0);
+    const on = current > 0;
+    return (
+      <div key={path} className="field">
+        <label className="row" style={{ alignItems: "center", gap: 6, marginBottom: 4 }}>
+          <input
+            type="checkbox"
+            checked={on}
+            disabled={busy}
+            onChange={(event) => {
+              if (event.target.checked) {
+                set(path, remembered[path] ?? NOISE_DEFAULTS[path].value);
+              } else {
+                if (current > 0) setRemembered((was) => ({ ...was, [path]: current }));
+                set(path, 0);
+              }
+            }}
+          />
+          <span>{label}</span>
+        </label>
+        <Field
+          label=""
+          note={note}
+          error={errorFor(path)}
+          value={at(draft, path)}
+          step={NOISE_DEFAULTS[path].step}
+          disabled={busy || !on}
+          onChange={(value) => set(path, value)}
+        />
+      </div>
+    );
+  };
+
   const risk = at(draft, "constraints.collision_probability_max");
   const nMin = nMinFor(risk);
   const leftOver = ramLeftOver(draft);
@@ -274,9 +386,31 @@ export function DeploymentForm({
       </div>
 
       <h4>{t("deployments.form.noise")}</h4>
+      {/* Every source has a switch, and the switch writes an amplitude
+          rather than a flag — see `noiseField`. Unticking one is how a
+          deployment says "this site does not have that problem". */}
       <div className="row" style={{ alignItems: "flex-end", gap: 12 }}>
-        {field("environment.sensor_noise.lidar_range_sigma_m", t("deployments.form.lidarSigma"), 0.005)}
-        {field("environment.sensor_noise.wheel_slip_fraction", t("deployments.form.wheelSlip"), 0.005)}
+        {noiseField("environment.sensor_noise.lidar_range_sigma_m", t("deployments.form.lidarSigma"))}
+        {noiseField("environment.sensor_noise.wheel_slip_fraction", t("deployments.form.wheelSlip"))}
+        {noiseField(
+          "localization_drift_m",
+          t("deployments.form.localizationDrift"),
+          t("deployments.form.localizationDriftNote"),
+        )}
+      </div>
+      <div className="row" style={{ alignItems: "flex-end", gap: 12 }}>
+        {noiseField("environment.sensor_noise.localization_jump_probability", t("deployments.form.localizationJump"))}
+        {noiseField(
+          "lidar_dropout_probability",
+          t("deployments.form.lidarDropout"),
+          t("deployments.form.lidarDropoutNote"),
+        )}
+        {noiseField(
+          "odometry_bias_fraction",
+          t("deployments.form.odometryBias"),
+          t("deployments.form.odometryBiasNote"),
+        )}
+        {noiseField("environment.sensor_noise.command_latency_steps", t("deployments.form.commandLatency"))}
       </div>
       {/* The consequence of the one block this form cannot write. With no
           traffic *and* no noise, a deterministic planner replays one
