@@ -16,7 +16,7 @@ import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
 import { MissionPlacer } from "@/components/MissionPlacer";
 import { api } from "@/lib/api";
-import { useSession } from "@/lib/auth";
+import { authFetch, useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import {
   cancelDecisionJob,
@@ -24,6 +24,7 @@ import {
   deriveTaskProfile,
   jobIsLive,
   listDecisionJobs,
+  listLocalControllers,
   listDecisions,
   listTaskProfiles,
   noCardReason,
@@ -32,9 +33,11 @@ import {
   type CandidateChoice,
   type DecisionJob,
   type DecisionRun,
+  type LocalControllerConfig,
   type NoCardReason,
   type TaskProfileSummary,
 } from "@/lib/decisions";
+import type { AlgorithmInfo } from "@/lib/benchmarkTypes";
 import type { MapData, MapSummary, Pose2D } from "@/lib/types";
 
 type RankedFilter = "all" | "ranked" | "unranked";
@@ -197,6 +200,8 @@ function LaunchPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [custom, setCustom] = useState<CustomMap>(NO_CUSTOM_MAP);
+  const [stacks, setStacks] = useState<AlgorithmInfo[]>([]);
+  const [configs, setConfigs] = useState<LocalControllerConfig[]>([]);
 
   const live = jobs.filter(jobIsLive);
   const base = profiles.find((profile) => profile.id === profileId);
@@ -205,6 +210,30 @@ function LaunchPanel({
     custom.newProfileId.trim() !== "" &&
     custom.start !== null &&
     custom.goal !== null;
+
+  // What there is to choose between. Fetched once; a failure here is
+  // deliberately silent because `CandidateFields` falls back to free
+  // text — a convenience list that did not arrive must not take the
+  // ability to start a sweep with it.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [registry, named] = await Promise.all([
+          authFetch<AlgorithmInfo[]>("/algorithms"),
+          listLocalControllers(),
+        ]);
+        if (cancelled) return;
+        setStacks(registry);
+        setConfigs(named);
+      } catch {
+        // Free-text inputs remain; nothing to say.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Poll only while something is live. A page that keeps asking after
   // everything finished is a page that keeps a laptop awake.
@@ -305,11 +334,15 @@ function LaunchPanel({
           label={t("decisions.launch.candidateA")}
           value={first}
           onChange={setFirst}
+          stacks={stacks}
+          configs={configs}
         />
         <CandidateFields
           label={t("decisions.launch.candidateB")}
           value={second}
           onChange={setSecond}
+          stacks={stacks}
+          configs={configs}
         />
         <label className="field">
           <span>{t("decisions.launch.episodes")}</span>
@@ -578,28 +611,84 @@ function readGoalTolerance(profile: TaskProfileSummary | undefined): number | un
     : undefined;
 }
 
+/** Pick a candidate from what exists, rather than typing its name.
+ *
+ * These were two free-text boxes: no list of what there was to choose
+ * from, no sign that one of the stacks is a reference implementation
+ * nobody should compare against, and no sign of a typo until the server
+ * refused it after the click.
+ *
+ * **Both lists are served, never hardcoded.** The registry and the named
+ * configurations already exist on the server and registration already
+ * refuses anything outside them, so a copy here would be a second
+ * statement of what the platform accepts — free to drift, and drifting
+ * silently until a dropdown offers something the server rejects.
+ *
+ * Falls back to free text while the lists are still loading or if the
+ * request failed. Losing the ability to start a sweep because a
+ * convenience list did not arrive would be a worse page than the one
+ * this replaced.
+ */
 function CandidateFields({
   label,
   value,
   onChange,
+  stacks,
+  configs,
 }: {
   label: string;
   value: CandidateChoice;
   onChange: (next: CandidateChoice) => void;
+  stacks: AlgorithmInfo[];
+  configs: LocalControllerConfig[];
 }) {
+  const { t } = useTranslation();
+  // Only what a comparison may actually use. A reference stack exists to
+  // validate the pipeline, and offering one here would put it one click
+  // from a conclusion it must never support.
+  const offered = stacks.filter((entry) => entry.benchmarkable);
   return (
     <label className="field">
       <span>{label}</span>
-      <input
-        value={value.stack}
-        onChange={(event) => onChange({ ...value, stack: event.target.value })}
-        placeholder="astar+dwa"
-      />
-      <input
-        value={value.local_config}
-        onChange={(event) => onChange({ ...value, local_config: event.target.value })}
-        placeholder="dwa_coarse"
-      />
+      {offered.length > 0 ? (
+        <select
+          value={value.stack}
+          onChange={(event) => onChange({ ...value, stack: event.target.value })}
+        >
+          {offered.map((entry) => (
+            <option key={entry.id} value={entry.id}>
+              {entry.id}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          value={value.stack}
+          onChange={(event) => onChange({ ...value, stack: event.target.value })}
+          placeholder="astar+dwa"
+        />
+      )}
+      {configs.length > 0 ? (
+        <select
+          value={value.local_config}
+          onChange={(event) => onChange({ ...value, local_config: event.target.value })}
+        >
+          {configs.map((entry) => (
+            <option key={entry.name} value={entry.name}>
+              {entry.name}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          value={value.local_config}
+          onChange={(event) => onChange({ ...value, local_config: event.target.value })}
+          placeholder="dwa_coarse"
+        />
+      )}
+      <Link href="/candidates" className="muted">
+        {t("decisions.launch.whatAreThese")}
+      </Link>
     </label>
   );
 }

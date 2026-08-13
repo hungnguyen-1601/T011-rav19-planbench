@@ -1189,3 +1189,47 @@ class TestPuttingADifferentMapUnderADeployment:
         assert body["task_profile_id"] == "derived_room_swept"
         assert body["report"]["sample"]["n_episodes"] == 2
         assert len(body["report"]["candidates"]) == 2
+
+
+class TestWhatACandidateCanBeBuiltFrom:
+    """The registry, served rather than copied into the client.
+
+    Registration already refuses a local-controller name outside this
+    table, so a hand-maintained list in the browser would be a second
+    statement of what the platform accepts — free to drift, and drifting
+    silently until somebody's dropdown offers a configuration the server
+    rejects.
+    """
+
+    def test_it_lists_every_named_configuration(self, client):
+        response = client.get(f"{API}/local-controllers")
+        assert response.status_code == 200, response.text
+        names = {entry["name"] for entry in response.json()}
+        assert {"dwa_coarse", "dwa_balanced", "dwa_default"} <= names
+
+    def test_the_parameters_travel_with_the_name(self, client):
+        """The name alone says nothing. `dwa_coarse` and `dwa_default`
+        differ by 7x15 samples against 20x40, and that difference is the
+        entire reason a sampling choice is a *candidate* rather than a
+        constant inside whichever script ran (HĐ-1.3)."""
+        entries = {e["name"]: e["params"] for e in client.get(f"{API}/local-controllers").json()}
+        assert entries["dwa_coarse"]["velocity_samples"] == 7
+        assert entries["dwa_default"]["velocity_samples"] == 20
+        assert entries["dwa_coarse"] != entries["dwa_default"]
+
+    def test_every_offered_name_is_one_registration_accepts(self, client, alice_headers):
+        """The point of serving the list: what it offers must be exactly
+        what the server takes. A name here that registration refused
+        would be a dropdown that produces an error."""
+        for entry in client.get(f"{API}/local-controllers").json():
+            response = client.post(
+                f"{API}/candidates",
+                json={"stack": "astar+dwa", "local_config": entry["name"]},
+                headers=alice_headers,
+            )
+            assert response.status_code == 201, f"{entry['name']}: {response.text}"
+
+    def test_reading_it_does_not_need_a_login(self, client):
+        """It is a catalogue of what the platform can do, not anybody's
+        data."""
+        assert client.get(f"{API}/local-controllers").status_code == 200

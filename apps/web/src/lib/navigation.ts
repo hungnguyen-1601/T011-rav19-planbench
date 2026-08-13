@@ -91,10 +91,10 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         descriptionKey: "nav.desc.library",
       },
       {
-        href: "/algorithms",
-        labelKey: "nav.algorithms",
+        href: "/candidates",
+        labelKey: "nav.candidates",
         icon: "cpu",
-        descriptionKey: "nav.desc.algorithms",
+        descriptionKey: "nav.desc.candidates",
       },
       {
         href: "/models",
@@ -119,6 +119,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         labelKey: "nav.leaderboard",
         icon: "trophy",
         descriptionKey: "nav.desc.leaderboard",
+      },
+      {
+        href: "/algorithms",
+        labelKey: "nav.algorithms",
+        icon: "cpu",
+        descriptionKey: "nav.desc.algorithms",
       },
       {
         href: "/scenarios",
