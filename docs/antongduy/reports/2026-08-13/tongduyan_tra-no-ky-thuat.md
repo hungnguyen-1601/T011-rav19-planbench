@@ -616,3 +616,66 @@ Ba test mới: mọi mục có mô tả · sidebar nói ra trang nào đang đư
 mang cả mô tả.
 
 **Web: 620 passed, 31/31 file.** `tsc` sạch.
+
+---
+
+## P3 — trang Candidates *(pha hai của refactor UI)*
+
+Trước lượt này, cách duy nhất gọi tên một candidate là **gõ tay** `astar+dwa` và `dwa_coarse`
+vào hai ô text trong panel khởi chạy: không danh sách để biết có gì chọn, không dấu hiệu nào
+nói một trong các stack trong registry là bản **tham chiếu không được đỡ kết luận**, và gõ sai
+thì tới lúc server từ chối mới biết.
+
+### Một khoảng trống phía backend lộ ra trước
+
+`LOCAL_CONTROLLER_CONFIGS` **chưa có endpoint nào**. Chép sang web sẽ là **tuyên bố thứ hai** về
+thứ nền tảng chấp nhận — tự do trôi, và trôi âm thầm cho tới hôm một dropdown mời một cấu hình
+server từ chối. Nên phơi ra: `GET /local-controllers`.
+
+**Tham số đi kèm tên**, không chỉ tên: `dwa_coarse` lấy mẫu 7×15 còn `dwa_default` lấy 20×40, và
+chênh lệch đó là **toàn bộ lý do** một lựa chọn lấy mẫu là một *candidate* chứ không phải một
+hằng số nằm trong script nào đó (HĐ-1.3).
+
+Có test khẳng định **mọi tên endpoint mời đều là tên đăng ký chấp nhận** — đó chính là điểm của
+việc phục vụ danh sách: cái nó mời phải đúng bằng cái server nhận.
+
+### Ba bảng, vì một candidate làm từ hai thứ và không phải thứ nào trong hai
+
+| bảng | nói gì |
+|---|---|
+| **Candidate đã đăng ký** | `candidate_id` (hash), stack, cấu hình, và **tinh chỉnh đã khai hay chưa** |
+| **Stack trong registry** | global planner nào, có lấy mẫu ngẫu nhiên không, **dùng làm candidate được không** |
+| **Cấu hình controller** | các con số, không chỉ tên |
+
+Chỉ hiện bảng đầu sẽ giấu mất có gì để chọn; chỉ hiện hai bảng sau sẽ giấu mất rằng lựa chọn đó
+**có một danh tính mọi trace khoá theo**.
+
+### Bốn chỗ giữ đúng hợp đồng
+
+- **Không có ô id lúc đăng ký.** HĐ-1.3: `candidate_id` là hash trên stack, tham số và phiên bản
+  mã, server tự tính. Cho người gọi tự đặt id sẽ khiến hai cấu hình khác nhau **dùng chung một
+  danh tính** mà mọi trace, phép ghép cặp và ΔU đều khoá theo.
+- **Stack tham chiếu bị lọc khỏi cả hai bộ chọn**, nhưng **vẫn được liệt kê** kèm lý do. Giấu
+  hẳn sẽ để người đọc thắc mắc vì sao registry và bộ chọn bất đồng.
+- **Planner lấy mẫu ngẫu nhiên có nhãn riêng.** Nó cần nhiều seed hơn mới nói được điều gì; một
+  bảng giấu chuyện đó là mời người đọc **so một cái cây may mắn với A***.
+- **Tinh chỉnh chưa khai hiện thành câu trả lời riêng**, không phải ô trống. HĐ-1.6: tầng mục
+  tiêu **tính phí sự im lặng** thay vì thay bằng không, nên phân biệt đó phải sống tới màn hình.
+
+### Panel khởi chạy: hai ô text thành dropdown, có đường lui
+
+Cả hai danh sách **được phục vụ**, không hardcode. Nhưng nếu request hỏng hoặc chưa về, ô text
+tự do **vẫn còn**: mất khả năng chạy một phép so chỉ vì một danh sách tiện nghi không tới là một
+trang **tệ hơn** cái vừa được thay.
+
+### Điều hướng
+
+`Candidates` vào nhóm **Nguyên liệu** — nó là thứ một phép so chọn *giữa*, cùng loại với một bản
+đồ. `/algorithms` chuyển sang nhóm **Đang được thay**, mô tả nói thẳng *"Registry stack.
+Candidate đang thay nó"*.
+
+### Xác minh
+
+Backend **+4 test** (`GET /local-controllers`) · Web **+13 test**.
+Web: **633 passed, 32/32 file**. `ruff` sạch, `tsc` sạch. Chưa chạy full suite backend — chờ
+lệnh dev.

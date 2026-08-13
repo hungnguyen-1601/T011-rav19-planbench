@@ -39,6 +39,7 @@ from planbench_api.dependencies import (
 )
 from planbench_api.errors import DomainValidationError, NotFoundError
 from planbench_api.worker import Job, JobQueue
+from planbench_benchmark.candidates import LOCAL_CONTROLLER_CONFIGS
 from planbench_benchmark.selection import DEFAULT_SCOPE
 
 router = APIRouter(tags=["decisions"])
@@ -386,6 +387,35 @@ def register_candidate(
             tuning=registration.tuning,
         )
     )
+
+
+class LocalControllerConfig(BaseModel):
+    """One named local-controller configuration and what it sets."""
+
+    name: str
+    params: dict[str, Any]
+
+
+@router.get("/local-controllers", response_model=list[LocalControllerConfig])
+def list_local_controllers() -> list[LocalControllerConfig]:
+    """The named configurations a candidate may be registered with.
+
+    **Served rather than copied into the client.** Registration already
+    refuses a name that is not in this table, so a hand-maintained list
+    in the browser would be a second statement of what the platform
+    accepts — free to drift, and drifting silently until somebody's
+    dropdown offers a configuration the server rejects.
+
+    The parameters travel with the name because the name alone says
+    nothing: `dwa_coarse` and `dwa_default` differ by 7x15 samples
+    against 20x40, which is the entire reason a sampling choice is a
+    *candidate* rather than a constant inside whichever script ran
+    (HĐ-1.3).
+    """
+    return [
+        LocalControllerConfig(name=name, params=dict(params))
+        for name, params in sorted(LOCAL_CONTROLLER_CONFIGS.items())
+    ]
 
 
 @router.get("/candidates", response_model=list[CandidateResource])

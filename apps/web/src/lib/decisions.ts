@@ -527,3 +527,73 @@ export function coverage(run: DecisionRun): number | undefined {
   if (!requested || measured === undefined) return undefined;
   return measured / requested;
 }
+
+/** A named local-controller configuration, served rather than copied.
+ *
+ * The parameters travel with the name because the name alone says
+ * nothing: `dwa_coarse` and `dwa_default` differ by 7×15 samples against
+ * 20×40, which is the entire reason a sampling choice is a *candidate*
+ * rather than a constant inside whichever script ran (HĐ-1.3).
+ */
+export interface LocalControllerConfig {
+  name: string;
+  params: Record<string, number>;
+}
+
+export function listLocalControllers(): Promise<LocalControllerConfig[]> {
+  return authFetch<LocalControllerConfig[]>("/local-controllers");
+}
+
+/** A configuration under test, identified by the hash of what it is.
+ *
+ * `candidate_id` is **computed by the server** (HĐ-1.3): a hash over the
+ * stack, its parameters and its code version. Letting a caller name one
+ * would allow two different configurations to share an identity that
+ * every trace, pairing and ΔU keys on.
+ */
+export interface RegisteredCandidate {
+  candidate_id: string;
+  type: string;
+  stack_label: string;
+  registered_by: string | null;
+  created_at: string;
+  spec: Record<string, unknown>;
+  /** HĐ-1.6's declaration. **Null is not zero** — the objectives layer
+   *  charges an undeclared candidate for the silence rather than
+   *  substituting nothing, so the distinction has to survive to the
+   *  screen. */
+  tuning: Record<string, unknown> | null;
+}
+
+export function listCandidates(): Promise<RegisteredCandidate[]> {
+  return authFetch<RegisteredCandidate[]>("/candidates");
+}
+
+export function registerCandidate(request: {
+  stack: string;
+  local_config: string;
+}): Promise<RegisteredCandidate> {
+  return authFetch<RegisteredCandidate>("/candidates", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+/** The local-controller config a registered candidate was built with.
+ *
+ * Read back out of `spec.params`, which is keyed by controller name —
+ * the registration request is not stored, so this is where the choice
+ * survives.
+ */
+export function localConfigOf(
+  candidate: RegisteredCandidate,
+  configs: LocalControllerConfig[],
+): string | null {
+  const params = (candidate.spec?.params ?? {}) as Record<string, Record<string, unknown>>;
+  const declared = Object.values(params)[0];
+  if (!declared) return null;
+  const match = configs.find((config) =>
+    Object.entries(config.params).every(([key, value]) => declared[key] === value),
+  );
+  return match?.name ?? null;
+}
