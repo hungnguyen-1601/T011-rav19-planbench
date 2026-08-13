@@ -116,18 +116,12 @@ describe("no page asks for a model path", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("the benchmark form sends a model id instead", () => {
-    const form = readFileSync(join(APP, "benchmarks", "page.tsx"), "utf8");
-    expect(form).toContain("model_id");
-    expect(form).not.toContain("model_path");
-  });
-
-  it("the benchmark form has an empty state instead of a validation error", () => {
-    const form = readFileSync(join(APP, "benchmarks", "page.tsx"), "utf8");
-    expect(form).toContain("benchmarks.noModels.title");
-    expect(form).toContain("benchmarks.uploadModel");
-    expect(form).toContain("benchmarks.useDwaInstead");
-  });
+  /* Two assertions stood here about `/benchmarks`: that its form sent a
+     model id rather than a path, and that it showed an empty state
+     instead of a validation error when no model was uploaded. The page
+     retired in P6. The claim that outlived it is the sweep above — *no*
+     page asks for a filesystem path — which covers every page there is
+     rather than the one that used to be the offender. */
 });
 
 /* A `describe("the model registry page")` block used to sit here. It

@@ -641,6 +641,19 @@ def run_comparison(
                 "candidate_id": candidate.candidate_id,
                 "stack_label": candidate.stack_label,
                 "local_controller_config": local,
+                # What this candidate was allowed to see. Recorded per
+                # candidate because a comparison between stacks shown
+                # different things is not a comparison between the
+                # stacks: a controller reading the static map and one
+                # reading only its LiDAR are answering different
+                # questions, and the difference in their numbers is
+                # mostly the difference in their inputs. Every registry
+                # entry is `full_static_map` + `lidar_only` today, so
+                # nothing here mixes — which is exactly why it has to be
+                # written down now, before the first entry that does not
+                # match makes it a silent problem.
+                "global_observation_class": _observation_classes(_stack)[0],
+                "local_observation_class": _observation_classes(_stack)[1],
                 # Per candidate, because early stopping makes the counts
                 # differ. Two success rates over different denominators
                 # are not a ranking, and a reader needs the denominator
@@ -888,6 +901,22 @@ def run_dir_name(profile_id: str, scope: str, candidates: Sequence[Candidate]) -
         "|".join(sorted(c.candidate_id for c in candidates)).encode("utf-8")
     ).hexdigest()[:8]
     return f"{profile_id}_{scope}_{fingerprint}"
+
+
+def _observation_classes(stack_id: str) -> tuple[str | None, str | None]:
+    """What a registry stack is shown, or ``(None, None)`` if unknown.
+
+    Unknown rather than an assumed default: a stack the registry has
+    never heard of is one whose inputs nobody has declared, and printing
+    a plausible class for it would be the report inventing the one fact
+    the reader is checking. The UI renders ``None`` as "not declared".
+    """
+    from planbench_benchmark.registry import list_algorithms
+
+    for info in list_algorithms():
+        if info.id == stack_id:
+            return info.global_observation_class, info.local_observation_class
+    return None, None
 
 
 def _episode_outcomes(metrics: Sequence[EpisodeMetricSet]) -> list[dict[str, object]]:

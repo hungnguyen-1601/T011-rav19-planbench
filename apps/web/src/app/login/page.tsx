@@ -69,7 +69,7 @@ function SignIn() {
     setError(null);
     try {
       const session = await login(username, password);
-      router.push(session.user.needs_nickname ? "/welcome" : "/benchmarks");
+      router.push(session.user.needs_nickname ? "/welcome" : "/decisions");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

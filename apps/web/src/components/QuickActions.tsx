@@ -23,7 +23,7 @@ interface Action {
 
 const ACTIONS: readonly Action[] = [
   {
-    href: "/benchmarks",
+    href: "/decisions",
     labelKey: "dashboard.action.createBenchmark",
     icon: "plus",
     primary: true,

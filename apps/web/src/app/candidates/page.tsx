@@ -255,6 +255,7 @@ function StackTable({ stacks }: { stacks: AlgorithmInfo[] }) {
             <tr>
               <th>{t("candidates.stacks.id")}</th>
               <th>{t("candidates.stacks.globalPlanner")}</th>
+              <th>{t("candidates.stacks.observation")}</th>
               <th>{t("candidates.stacks.usable")}</th>
               <th>{t("candidates.stacks.description")}</th>
             </tr>
@@ -278,6 +279,15 @@ function StackTable({ stacks }: { stacks: AlgorithmInfo[] }) {
                       </span>
                     </>
                   ) : null}
+                </td>
+                {/* What the stack is shown, stated before anybody runs
+                    it. Two stacks reading different inputs are answering
+                    different questions, and the difference in their
+                    numbers would be mostly the difference in what they
+                    were given — so the declaration belongs where the
+                    choice is made, not in the report afterwards. */}
+                <td className="muted">
+                  {stack.global_observation_class} / {stack.local_observation_class}
                 </td>
                 <td>
                   {stack.benchmarkable ? (

@@ -39,7 +39,9 @@ import {
   type ReviewEvent,
   type RunCandidate,
   type TracePayload,
+  observationClasses,
 } from "@/lib/decisions";
+import { downloadDecisionReport } from "@/lib/reports";
 
 export default function DecisionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -74,6 +76,7 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
           {run.experiment_scope ?? "—"} · {run.created_at.slice(0, 16).replace("T", " ")} ·{" "}
           <Link href="/decisions">{t("decisions.backToList")}</Link>
         </p>
+        <ExportReport runId={run.id} />
       </div>
 
       <SampleBanner run={run} />
@@ -575,11 +578,13 @@ function GateTable({ run }: { run: DecisionRun }) {
         <h3>{t("decisions.gates.title")}</h3>
       </div>
       <p className="muted">{t("decisions.gates.note")}</p>
+      <ObservationNotice candidates={candidates} />
       <div className="table-scroll wide">
         <table>
           <thead>
             <tr>
               <th>{t("decisions.gates.candidate")}</th>
+              <th>{t("decisions.gates.observation")}</th>
               <th>{t("decisions.gates.runs")}</th>
               <th>{t("decisions.gates.successRate")}</th>
               <th>{t("decisions.gates.p99")}</th>
@@ -600,6 +605,72 @@ function GateTable({ run }: { run: DecisionRun }) {
   );
 }
 
+/** Say so when a comparison put unlike inputs side by side.
+ *
+ * **This is a fairness finding, not a formatting detail.** A controller
+ * reading the static map and one reading only its LiDAR are answering
+ * different questions, so the gap between their numbers is mostly the
+ * gap between what they were given — ΔU would be measuring the
+ * privilege rather than the planner, and the card would name a winner on
+ * that basis.
+ *
+ * Every registry entry declares `lidar_only` today, so this renders
+ * nothing. That is the point of adding it now: the first entry that does
+ * not match would otherwise make an unlike comparison look like a like
+ * one, with nothing on screen to catch it.
+ *
+ * It states the fact and stops. Refusing to show the run would be this
+ * component overruling a comparison the platform agreed to perform, and
+ * the reader is the one who knows whether the difference was deliberate.
+ */
+/** Hand the whole run to somebody who will not open this page.
+ *
+ * **Offered for every run, not only ranked ones.** Most produce no card
+ * — fewer than two candidates through the gates means no ΔU (HĐ-7) — and
+ * an export button that appeared only on the ranked ones would make the
+ * ordinary outcome the one nobody can put in a ticket.
+ *
+ * Separate from `approved_config.yaml`, which is gated on approval. This
+ * describes what was measured; reading it is the act approval follows
+ * (HĐ-14), so gating it would invert the order.
+ */
+function ExportReport({ runId }: { runId: string }) {
+  const { t } = useTranslation();
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+  return (
+    <div>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          setFailed(null);
+          void downloadDecisionReport(runId)
+            .catch((caught) => setFailed(caught instanceof Error ? caught.message : String(caught)))
+            .finally(() => setBusy(false));
+        }}
+      >
+        {busy ? t("decisions.export.busy") : t("decisions.export.markdown")}
+      </button>
+      {failed ? <span className="error-text">{failed}</span> : null}
+    </div>
+  );
+}
+
+function ObservationNotice({ candidates }: { candidates: RunCandidate[] }) {
+  const { t } = useTranslation();
+  const classes = observationClasses(candidates);
+  if (classes.length < 2) return null;
+  return (
+    <div className="notice warn">
+      {t("decisions.gates.mixedObservation", {
+        classes: classes.map((name) => name ?? t("decisions.gates.observationUnknown")).join(", "),
+      })}
+    </div>
+  );
+}
+
 function CandidateRow({ candidate }: { candidate: RunCandidate }) {
   const { t } = useTranslation();
   return (
@@ -610,6 +681,17 @@ function CandidateRow({ candidate }: { candidate: RunCandidate }) {
         <span className="muted">{candidate.local_controller_config}</span>
         <br />
         <code className="muted">{candidate.candidate_id}</code>
+      </td>
+      {/* What this candidate was shown. Named rather than blank when
+          undeclared: a stack whose inputs nobody wrote down cannot be
+          shown to match the others, and a blank cell reads as "same as
+          the rest". */}
+      <td className="muted">
+        {candidate.local_observation_class ?? (
+          <span className="badge warn" title={t("decisions.gates.observationUnknownNote")}>
+            {t("decisions.gates.observationUnknown")}
+          </span>
+        )}
       </td>
       <td title={t("decisions.gates.distinctNote")}>
         {candidate.n_distinct_episodes}

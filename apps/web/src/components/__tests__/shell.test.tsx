@@ -60,7 +60,7 @@ describe("Sidebar — expanded", () => {
     const html = sidebar();
     expect(html).toContain("PlanBench");
     expect(html).toContain("simulation only");
-    for (const label of ["Dashboard", "Maps", "Benchmarks", "Leaderboard", "Agent", "Reviews"]) {
+    for (const label of ["Dashboard", "Maps", "Candidates", "Decisions", "Agent", "Reviews"]) {
       expect(html).toContain(label);
     }
   });
@@ -87,12 +87,15 @@ describe("Sidebar — expanded", () => {
   });
 
   it("says out loud which pages are being replaced", () => {
-    /* They still work and are still the only way to do some things.
-       Saying so is more use than a sidebar that lists the replacement
-       silently beside the thing it replaces. */
-    const html = sidebar();
-    expect(html).toContain("Decisions replaces it");
-    expect(html).toContain("HĐ-1.4");
+    /* One entry is left in that group. `/benchmarks`, `/leaderboard` and
+       `/algorithms` were removed in P6, each only after the thing that
+       replaced it existed; `/scenarios` stays because the deployment
+       form still cannot draw obstacles, so removing it would take away a
+       capability rather than move one — and the sidebar says that rather
+       than leaving a reader to wonder why one old page survived. */
+    const html = sidebar({ user: ALICE });
+    expect(html).toContain("Being replaced");
+    expect(html).toContain("Kept until the deployment form can draw obstacles");
   });
 
   it("offers a collapse control", () => {
@@ -130,14 +133,14 @@ describe("Sidebar — collapsed", () => {
 
 describe("Sidebar — the active page", () => {
   it("marks the current section with aria-current, not colour alone", () => {
-    const html = sidebar({ pathname: "/benchmarks" });
+    const html = sidebar({ pathname: "/decisions" });
     expect(html).toContain('aria-current="page"');
     // Exactly one page is current.
     expect(html.match(/aria-current="page"/g)).toHaveLength(1);
   });
 
   it("keeps the section marked on a detail page", () => {
-    expect(sidebar({ pathname: "/benchmarks/ab12" })).toContain('aria-current="page"');
+    expect(sidebar({ pathname: "/decisions/ab12" })).toContain('aria-current="page"');
   });
 
   it("marks the dashboard only on the dashboard", () => {
@@ -190,7 +193,7 @@ describe("Sidebar — Vietnamese", () => {
     const html = sidebar({}, "vi");
     expect(html).toContain("Tổng quan");
     expect(html).toContain("Bản đồ");
-    expect(html).toContain("Bảng xếp hạng");
+    expect(html).toContain("Quyết định");
     expect(html).not.toContain(">Dashboard<");
   });
 
