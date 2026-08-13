@@ -76,6 +76,10 @@ class SimulationEngine:
         self._steps = 0
         self._trajectory: list[TrajectoryPoint] = []
         self._events: list[EpisodeEvent] = []
+        #: Commands issued but not yet in effect, when the deployment
+        #: declares a control latency. Per episode, so a re-run starts
+        #: with an empty pipe rather than the tail of the last one.
+        self._pending_actions: list[SimAction] = []
         # (time, x, y, goal_distance) samples for stuck / progress windows.
         self._window: deque[tuple[float, float, float, float]] = deque()
 
@@ -133,6 +137,7 @@ class SimulationEngine:
         self._reason = ""
         self._trajectory = [self._trajectory_point()]
         self._events = []
+        self._pending_actions = []
         self._window = deque(
             [(0.0, scenario.start_pose.x, scenario.start_pose.y, self._goal_distance())]
         )
@@ -154,7 +159,9 @@ class SimulationEngine:
         # larger envelope. The resulting pose is the true one, and the
         # collision test below judges on it, because the robot really did
         # end up there.
-        self._robot = kinematics_step(self._robot, self._slipped(action), scenario.robot, dt)
+        self._robot = kinematics_step(
+            self._robot, self._slipped(self._delayed(action)), scenario.robot, dt
+        )
         self._time += dt
         self._steps += 1
         self._trajectory.append(self._trajectory_point())
@@ -260,17 +267,55 @@ class SimulationEngine:
         """Local-planner view: LiDAR + goal geometry + own velocities."""
         if self._robot is None or self._scenario is None or self._sensor_grid is None:
             raise RuntimeError("reset() must be called before get_observation()")
-        pose = self._robot.pose
+        # Where the robot *believes* it is. Until 2026-08-13 this was the
+        # true pose, so every candidate navigated with perfect
+        # localisation — a whole family of real failures (drift, a bad
+        # fix that stays bad, driving confidently into a wall) simply did
+        # not exist here.
+        #
+        # The scan is taken from the **true** pose and the ranges are then
+        # reported against the believed one, which is what a real robot
+        # has: the beams really did bounce off the walls that are there,
+        # and only the robot's idea of where it was standing is wrong.
+        believed = self._believed_pose()
         goal = self._scenario.goal_pose
-        bearing = normalize_angle(math.atan2(goal.y - pose.y, goal.x - pose.x) - pose.theta)
+        bearing = normalize_angle(
+            math.atan2(goal.y - believed.y, goal.x - believed.x) - believed.theta
+        )
         return Observation(
             time=self._time,
-            pose=pose,
+            pose=believed,
             linear_velocity=self._robot.linear_velocity,
             angular_velocity=self._robot.angular_velocity,
-            goal_distance=self._goal_distance(),
+            # Distance to the goal as the robot can work it out: from
+            # where it thinks it is. Reporting the true distance beside a
+            # believed pose would hand back a cross-check no robot has,
+            # and a controller could recover the true pose from it.
+            goal_distance=math.hypot(goal.x - believed.x, goal.y - believed.y),
             goal_bearing=bearing,
-            lidar_ranges=self._measured_ranges(pose),
+            lidar_ranges=self._measured_ranges(self._robot.pose),
+        )
+
+    def _believed_pose(self) -> Pose2D:
+        """The true pose plus this step's localisation error.
+
+        Measurement error, so it must never reach the collision test —
+        the same rule LiDAR range noise follows. A collision judged on a
+        believed pose would simulate a different world instead of a robot
+        that does not know where it is, and it would let a badly
+        localised robot pass through walls it truly hit.
+        """
+        assert self._robot is not None
+        if self._noise is None or not self._noise.active:
+            return self._robot.pose
+        dx, dy, dtheta = self._noise.pose_error(self._steps)
+        if dx == 0.0 and dy == 0.0 and dtheta == 0.0:
+            return self._robot.pose
+        pose = self._robot.pose
+        return Pose2D(
+            x=pose.x + dx,
+            y=pose.y + dy,
+            theta=normalize_angle(pose.theta + dtheta),
         )
 
     def is_done(self) -> bool:
@@ -415,6 +460,32 @@ class SimulationEngine:
         assert self._scenario is not None
         return _dynamic_circles(self._scenario, self._time)
 
+    def _delayed(self, action: SimAction) -> SimAction:
+        """The command that actually takes effect this step.
+
+        A real ``/cmd_vel`` arrives late: the controller decides, the
+        message travels, the driver applies it. A stack tuned against an
+        instant response is measured more kindly than it deserves, and
+        the gap widens exactly where it hurts — close to an obstacle,
+        where the command that matters is the one issued a moment ago.
+
+        Held in a queue rather than by re-reading history, because the
+        commands are the caller's and the engine has no record of what it
+        was told before. Until the queue fills, the robot holds still:
+        that is what a drive does before the first command reaches it,
+        and inventing a zero-latency first command would give away
+        exactly the head start being modelled.
+        """
+        if self._noise is None:
+            return action
+        depth = self._noise.spec.command_latency_steps
+        if depth <= 0:
+            return action
+        self._pending_actions.append(action)
+        if len(self._pending_actions) <= depth:
+            return SimAction(linear_velocity=0.0, angular_velocity=0.0)
+        return self._pending_actions.pop(0)
+
     def _slipped(self, action: SimAction) -> SimAction:
         """The command as the wheels actually deliver it.
 
@@ -429,9 +500,15 @@ class SimulationEngine:
         if not self._noise.active:
             return action
         linear, angular = self._noise.slip_factors(self._steps)
+        # Systematic bias multiplies on top of the zero-mean slip rather
+        # than replacing it, because they are two different faults and a
+        # real drive has both: a wet patch this step, and a wheel that has
+        # been worn small since last month. Slip averages out over an
+        # episode; the bias does not, which is the point of having it.
+        bias_linear, bias_angular = self._noise.odometry_bias()
         return SimAction(
-            linear_velocity=action.linear_velocity * linear,
-            angular_velocity=action.angular_velocity * angular,
+            linear_velocity=action.linear_velocity * linear * bias_linear,
+            angular_velocity=action.angular_velocity * angular * bias_angular,
         )
 
     def _measured_ranges(self, pose: Pose2D) -> tuple[float, ...]:
@@ -448,14 +525,26 @@ class SimulationEngine:
         """
         assert self._scenario is not None and self._noise is not None
         ranges = scan(self._sensor_grid_now(), pose, self._scenario.lidar)
-        offsets = self._noise.lidar_offsets(self._steps, len(ranges))
-        if offsets is None:
-            return ranges
         ceiling = self._scenario.lidar.max_range
-        return tuple(
-            min(ceiling, max(0.0, value + float(offset)))
-            for value, offset in zip(ranges, offsets, strict=True)
-        )
+        offsets = self._noise.lidar_offsets(self._steps, len(ranges))
+        if offsets is not None:
+            ranges = tuple(
+                min(ceiling, max(0.0, value + float(offset)))
+                for value, offset in zip(ranges, offsets, strict=True)
+            )
+        # Dropout last, so a ray that returned nothing reports nothing
+        # rather than nothing-plus-a-range-error. A dropped return is
+        # **maximum range**, never zero: zero reads as an obstacle
+        # touching the sensor, which is the opposite of what happened and
+        # would make dropout the safest event a planner can meet instead
+        # of the one that drives robots into glass.
+        dropped = self._noise.dropout_mask(self._steps, len(ranges))
+        if dropped is not None:
+            ranges = tuple(
+                ceiling if is_dropped else value
+                for value, is_dropped in zip(ranges, dropped, strict=True)
+            )
+        return ranges
 
     def _sensor_grid_now(self) -> OccupancyGrid:
         """Sensor grid with the current dynamic obstacles burned in.

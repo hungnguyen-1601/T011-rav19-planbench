@@ -1022,5 +1022,13 @@
   "decisions.map.mode.goal": "Click or drag on the map to move the goal.",
   "decisions.map.startHeadingNote": "Where the robot faces at t = 0. The simulator starts it in this pose, so a robot pointed away from its goal spends its first second turning — this is part of the mission, not a drawing detail.",
   "decisions.map.goalHeadingNote": "Stored and drawn, but never judged: this platform has no final-orientation controller, so every deployment must declare goal_tolerance_rad ≥ π and arrival is decided on position alone (HĐ-6). Changing this changes no verdict.",
-  "decisions.map.note": "A different map is a different world, so this files a NEW deployment rather than editing the chosen one: episode_context_id does not hash the map (HĐ-3.1), and reusing the id would let episodes from two worlds collide on one hash. Start and goal are required, and the server checks them against the map before storing — a goal inside a shelf gives every candidate 0% success, and the comparison would then report a tie on a question none of them was asked."
+  "decisions.map.note": "A different map is a different world, so this files a NEW deployment rather than editing the chosen one: episode_context_id does not hash the map (HĐ-3.1), and reusing the id would let episodes from two worlds collide on one hash. Start and goal are required, and the server checks them against the map before storing — a goal inside a shelf gives every candidate 0% success, and the comparison would then report a tie on a question none of them was asked.",
+  "deployments.form.localizationDrift": "Localisation drift (m)",
+  "deployments.form.localizationDriftNote": "How wrong the robot's idea of its own pose gets. Reaches Observation, never the collision test.",
+  "deployments.form.localizationJump": "Relocalisation jump (p)",
+  "deployments.form.lidarDropout": "Ray dropout (p)",
+  "deployments.form.lidarDropoutNote": "A dropped return reads to a costmap as free space — this is how a robot drives into glass.",
+  "deployments.form.odometryBias": "Odometry bias",
+  "deployments.form.odometryBiasNote": "Drawn once per episode and held, so it accumulates instead of averaging out like wheel slip.",
+  "deployments.form.commandLatency": "Command latency (steps)"
 }

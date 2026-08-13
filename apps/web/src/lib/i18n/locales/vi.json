@@ -1022,5 +1022,13 @@
   "decisions.map.mode.goal": "Bấm hoặc kéo trên bản đồ để dời đích.",
   "decisions.map.startHeadingNote": "Hướng robot quay lúc t = 0. Simulator khởi tạo robot đúng pose này, nên một robot quay lưng vào đích mất giây đầu để xoay — đây là một phần của nhiệm vụ, không phải chi tiết vẽ.",
   "decisions.map.goalHeadingNote": "Có lưu và có vẽ, nhưng không bao giờ được chấm: nền tảng không có bộ điều khiển hướng cuối, nên mọi deployment phải khai goal_tolerance_rad ≥ π và việc tới đích chỉ xét theo vị trí (HĐ-6). Đổi số này không đổi phán quyết nào.",
-  "decisions.map.note": "Bản đồ khác là một thế giới khác, nên chỗ này khai một deployment MỚI chứ không sửa cái đang chọn: episode_context_id không băm bản đồ (HĐ-3.1), dùng lại id sẽ khiến episode của hai thế giới đụng nhau trên cùng một hash. Bắt buộc có xuất phát và đích, và server kiểm chúng với bản đồ trước khi lưu — một đích nằm trong kệ cho mọi candidate 0% thành công, và phép so khi đó báo hoà trên một câu hỏi không candidate nào được hỏi."
+  "decisions.map.note": "Bản đồ khác là một thế giới khác, nên chỗ này khai một deployment MỚI chứ không sửa cái đang chọn: episode_context_id không băm bản đồ (HĐ-3.1), dùng lại id sẽ khiến episode của hai thế giới đụng nhau trên cùng một hash. Bắt buộc có xuất phát và đích, và server kiểm chúng với bản đồ trước khi lưu — một đích nằm trong kệ cho mọi candidate 0% thành công, và phép so khi đó báo hoà trên một câu hỏi không candidate nào được hỏi.",
+  "deployments.form.localizationDrift": "Lệch định vị (m)",
+  "deployments.form.localizationDriftNote": "Robot tưởng mình ở đâu sai bao nhiêu. Tới được Observation, không bao giờ tới phép kiểm va chạm.",
+  "deployments.form.localizationJump": "Xác suất nhảy định vị",
+  "deployments.form.lidarDropout": "Xác suất mất tia",
+  "deployments.form.lidarDropoutNote": "Tia mất đọc ra thành khoảng trống với costmap — đây là cách robot lái vào cửa kính.",
+  "deployments.form.odometryBias": "Lệch odometry",
+  "deployments.form.odometryBiasNote": "Rút một lần cho cả episode rồi giữ, nên nó tích luỹ chứ không triệt tiêu như trượt bánh.",
+  "deployments.form.commandLatency": "Trễ lệnh (số bước)"
 }

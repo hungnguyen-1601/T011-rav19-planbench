@@ -382,3 +382,140 @@ là một đoạn mã, và tôi không tự chốt.
 Scaffolding cho phần đó **đã có sẵn từ trước**: `sample_set="neighborhood"`, `neighborhood_contexts`
 trong manifest, `pairing` đã biết episode trong cùng một biến thể là tương quan, và `gates` đã
 loại chúng khỏi cận trên va chạm của G2.
+
+---
+
+## A3 — bốn nhiễu mới
+
+Dev chốt làm **N1 định vị · N2 mất tia LiDAR · N3 lệch odometry · N5 trễ lệnh**; bỏ N4 (sai số
+góc LiDAR).
+
+### Ràng buộc dev đặt, và chỗ nó đụng hợp đồng
+
+Yêu cầu: *"config trước mỗi run, bật tắt tuỳ ý, chỉ config đầu run chứ không được chọn trong
+các episode."*
+
+Vế thứ hai — cố định suốt run — thoả mãn ngay: mọi nhiễu đọc từ `scenario.sensor_noise`, tức từ
+deployment, và không có đường nào đổi giữa chừng.
+
+**Vế thứ nhất đụng một ràng buộc phải nói ra.** `episode_context_id` băm
+`(task_profile_id, mission_id, environment_variant, seed)` và HĐ-3.1 đóng băng payload đó —
+**nhiễu không nằm trong đó**. Nên "đổi nhiễu rồi chạy lại dưới cùng một `task_profile_id`" sẽ
+sinh ra context hash **trùng nhau cho hai thế giới khác nhau**, và `--reuse-traces` phục vụ
+episode của thế giới cũ. Không gì cảnh báo; id khớp.
+
+Nên chỗ config đúng là **form khai deployment**: chỉnh nhiễu rồi khai thành một deployment mới.
+Đó vẫn là "config trước mỗi run" theo đúng nghĩa dev cần, và id đổi chính là cơ chế giữ cho nó
+trung thực.
+
+### Bốn nhiễu, và chỗ mỗi cái phải đứng
+
+| | mô hình | nhịp | chạm vào |
+|---|---|---|---|
+| **N1 định vị** | tổng vài sin tần số thấp (lệch) **+** nhảy giữ nguyên trong một cửa sổ tái định vị | mỗi bước | **phép đo** — `Observation.pose` |
+| **N2 mất tia** | Bernoulli mỗi tia | mỗi bước | **phép đo** — báo về **tầm xa nhất** |
+| **N3 lệch odometry** | Gauss, **rút một lần cho cả episode** | hằng số | **thế giới thật** |
+| **N5 trễ lệnh** | hàng đợi số nguyên bước | mỗi bước | **thế giới thật** |
+
+**N1 không phải jitter, và đó là điểm quan trọng nhất của nó.** Nhiễu zero-mean mỗi bước thì bộ
+điều khiển san phẳng được; một ước lượng **sai cùng một hướng trong hai mươi giây** thì không.
+Nên lệch được mô hình bằng vài sin tần số thấp — vẫn là hàm thuần của `(seed, step)`, không phụ
+thuộc candidate đã lái bao xa. Tích luỹ theo quãng đường thật sẽ **vật lý hơn** và sẽ làm nhiễu
+phụ thuộc hành vi candidate, đúng thứ `noise.py` sinh ra để chặn.
+
+Nhảy tách riêng vì nó hỏng kiểu khác: bộ điều khiển chịu được sai số chậm, không chịu được một
+bước nhảy. Nhảy **giữ nguyên** trong một cửa sổ — cái nguy hiểm của một fix sai là nó *ở lại*.
+
+**N2 báo về tầm xa nhất, không bao giờ báo 0.** Số 0 đọc ra là *"có vật cản dính vào cảm biến"*
+— ngược hẳn thực tế, và sẽ biến mất tia thành biến cố **an toàn nhất** planner có thể gặp thay
+vì biến cố lái robot vào cửa kính.
+
+**N3 nhân chồng lên trượt bánh chứ không thay thế.** Hai lỗi khác nhau và một xe thật có cả hai:
+vũng nước hôm nay, và một bánh đã mòn nhỏ từ tháng trước. Trượt triệt tiêu qua một episode; lệch
+thì không — đó là toàn bộ lý do có nó.
+
+**N5 giữ robot đứng yên tới khi ống đầy.** Đó là cái một bộ truyền động làm trước khi lệnh đầu
+tiên tới nơi; bịa ra một lệnh không-trễ ở bước đầu là cho không đúng cái lợi thế đang được mô
+phỏng.
+
+### Ranh giới đo / thế giới thật — chỗ dễ hỏng nhất
+
+`_believed_pose` chỉ vào `Observation`. Ba chỗ **không** được chạm, mỗi chỗ một test:
+
+- **Phép kiểm va chạm** — chấm trên pose tin tưởng sẽ mô phỏng một thế giới khác, và cho một
+  robot định vị tệ **đi xuyên qua bức tường nó thật sự đâm vào**.
+- **Trace HĐ-5** — ghi pose tin tưởng sẽ biến `path_length` và mọi khoảng hở thành phép đo *ý
+  kiến* của robot.
+- **`goal_distance`** — trả khoảng cách thật bên cạnh một pose tin tưởng là đưa cho robot một
+  phép đối chiếu **không robot nào có**: bộ điều khiển sẽ suy ngược ra pose thật từ cặp đó.
+
+Chi tiết cuối là chỗ tôi suýt bỏ sót; nó chỉ lộ ra khi viết test cho `Observation`.
+
+### Chốt chặn D1 nổ đúng ca nó được dựng ra để bắt
+
+Thêm 5 trường vào `SensorNoise` ⇒ `test_form_covers_the_contract` **đỏ ngay**: form khai
+deployment không có ô cho chúng.
+
+Đó chính là kiểu hỏng D1 tồn tại để chặn — *"thêm một trường vào hợp đồng mà form lặng lẽ bỏ
+sót; suite vẫn xanh, form vẫn khai được, deployment sinh ra thiếu đúng thứ vừa thêm"*. Lần này
+suite **không** xanh, và nó chỉ thẳng vào việc còn phải làm: thêm ô config. Một test tự nó trả
+tiền vốn trong vòng một ngày.
+
+Năm ô đã thêm.
+
+**Dev bác đề xuất ban đầu của tôi, và tôi làm theo — nhưng giữ được cả hai điều.** Tôi đề xuất
+"0 là tắt, không checkbox"; dev muốn **checkbox cho tiện** và **mặc định bật ở mức vừa phải**.
+Hai yêu cầu đó không mâu thuẫn với lo ngại của tôi, chỉ cần đặt công tắc đúng chỗ:
+
+- **Checkbox không thêm trường nào.** Nó **ghi 0** để tắt và ghi lại biên độ để bật. Nên trong
+  *dữ liệu* vẫn chỉ có đúng một cách nói "tắt", và không tồn tại cặp `enabled: false` cạnh một
+  sigma đã khai để hai nửa bất đồng. Công tắc nằm ở UI, sự thật nằm ở một con số.
+- **Nhớ giá trị đã gõ.** Bỏ tick rồi tick lại trả về đúng số người dùng đã nhập, không phải mặc
+  định. Mất một biên độ đã sửa vì một cú bấm nhầm là thứ nhỏ mà phải đo lại mới phát hiện.
+
+**Mặc định bật — và đây là chỗ tôi KHÔNG làm theo nghĩa rộng nhất, có lý do.**
+
+Mặc định nằm ở **form**, không ở **lược đồ**. `SensorNoise` vẫn để mọi trường mặc định 0, và
+**bắt buộc phải thế**: hai profile đã ship không khai bốn nhiễu này, nên một mặc định khác 0 ở
+lược đồ sẽ **đổi thế giới dưới chân `open_hall_v2` và `warehouse_a_v2` mà không đổi
+`task_profile_id` của chúng** — mọi trace, mọi phán quyết cổng, mọi Decision Card đã lưu sẽ âm
+thầm mô tả một thế giới không còn tồn tại (HĐ-3.1, HĐ-13).
+
+Đặt mặc định ở form chỉ chạm tới **deployment chưa ai đo**, và đó đúng là thứ dev cần: khai mới
+thì nhiễu bật sẵn ở mức thật.
+
+| ô | mặc định | căn cứ |
+|---|---:|---|
+| LiDAR σ | 0,02 m | bảng nhiễu của tài liệu đề tài |
+| trượt bánh | 0,02 | như trên |
+| lệch định vị | 0,10 m | sai số định vị thường của AMR trong nhà đã có bản đồ; đáng kể cạnh robot bán kính 0,26 m |
+| nhảy định vị | 0,02 | hiếm đủ để là một ngày xấu, thường đủ để xuất hiện trong 300 episode |
+| mất tia | 0,02 | 2 tia trên 100; scanner thật gặp kính còn tệ hơn nhiều |
+| lệch odometry | 0,01 | 1% hệ thống — một bánh nhỏ hơn bánh kia một chút. Nhỏ, và nó tích luỹ |
+| trễ lệnh | 2 bước | 100 ms ở vòng 20 Hz, đúng một pipeline ROS bình thường |
+
+### Chốt chặn D1 nổ **lần thứ hai**, và lần này bắt lỗi của chính bản sửa
+
+Đổi form sang `noiseField("lidar_range_sigma_m", …)` làm **đường dẫn chấm hết hiện nguyên văn**
+trong file — mà đó chính là **tiền đề** chốt chặn dựa vào (*"form gán mọi trường bằng đường dẫn
+chấm, nên đường dẫn hoặc có trong file hoặc trường đó không được gán"*).
+
+Sửa **form**, không sửa gác: `NOISE_DEFAULTS` khoá bằng **đường dẫn đầy đủ**, và `noiseField`
+nhận đường dẫn đầy đủ. Tiền đề của gác đúng trở lại, và nó vẫn nhìn thấy mọi trường.
+
+### Xác minh
+
+**24 test mới.** Backend: `test_noise_extra` · `test_noise` · `test_engine` · `test_nav_stack` ·
+`test_simulator_fairness` · `test_fairness` · `test_replanning` · `test_monolithic_policy` ·
+`test_form_covers_the_contract` · `test_neighborhood` — **211 passed, 1 skipped**.
+Web: **613 passed, 31/31 file**. `ruff` sạch, `tsc` sạch.
+
+Bốn test tôi viết sai lúc đầu, và một trong số đó lộ ra hành vi **đúng** mà tôi không lường:
+bias dương bị **trần vận tốc chặn** khi lệnh đã ở mức tối đa — một bánh mòn không cho robot một
+bao hoạt động lớn hơn. Test sửa lại để ra lệnh dưới trần; hành vi giữ nguyên.
+
+### Còn lại
+
+- **Chưa profile nào bật bốn nhiễu này.** Mặc định 0 khắp nơi, nên chưa lượt đo nào đổi. Bật lên
+  là **đổi thế giới** ⇒ phải khai `task_profile_id` mới (HĐ-13).
+- **N4 (sai số góc / lệch lắp LiDAR)** — dev bỏ khỏi phạm vi đợt này.

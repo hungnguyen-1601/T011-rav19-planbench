@@ -226,3 +226,46 @@ describe("the page is reachable and translated", () => {
     }
   });
 });
+
+describe("the noise a new deployment starts with", () => {
+  it("arrives switched on rather than at zero", () => {
+    /* A simulator with no noise is more optimistic than reality, and
+       this project has already paid for that once: a Decision Card
+       bounded a collision probability off a single episode replayed a
+       hundred times, because nothing varied between seeds. Starting a
+       new deployment at zero makes that the easy path again. */
+    expect(FORM).toContain("NOISE_DEFAULTS");
+    expect(FORM).toContain("withNoiseDefaults(template)");
+  });
+
+  it("is a form default and NOT a schema default", () => {
+    /* The shipped profiles do not declare these fields, so a non-zero
+       schema default would change the world underneath open_hall_v2 and
+       warehouse_a_v2 *without changing their task_profile_id* — every
+       stored trace, gate verdict and card would silently describe a
+       world that no longer exists (HĐ-3.1, HĐ-13). The Python suite
+       pins the schema side; this pins that the form knows why. */
+    expect(FORM).toContain("deliberately not a schema default");
+  });
+
+  it("never overwrites an amplitude the template already declared", () => {
+    /* The hall's 2 cm sigma is a measured figure. Overwriting it would
+       be this form deciding what a deployment measured. */
+    expect(FORM).toContain("if (!Number(at(filled, path) ?? 0))");
+  });
+
+  it("switches a source off by writing zero, not by adding a flag", () => {
+    /* One representation of "off" in the data. A stored `enabled: false`
+       beside a declared sigma is a deployment nobody can classify at a
+       glance, and the two halves would be free to disagree. */
+    expect(FORM).toContain("noiseField");
+    expect(FORM).not.toContain("sensor_noise.enabled");
+    expect(FORM).not.toContain('"enabled"');
+  });
+
+  it("gives back what was typed when a source is switched on again", () => {
+    /* Losing an edited amplitude to a stray click is the kind of small
+       thing that costs a re-measurement to notice. */
+    expect(FORM).toContain("remembered[path] ?? NOISE_DEFAULTS[path].value");
+  });
+});
