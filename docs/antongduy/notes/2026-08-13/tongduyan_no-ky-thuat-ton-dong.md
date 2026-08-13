@@ -151,14 +151,25 @@ duyệt `TaskProfile.model_fields` (kể cả model lồng) và bắt mọi trư
 
 </details>
 
-### D2. Hai test web đỏ, tôi đã gọi là "có sẵn từ trước" ba lần liên tiếp
+### ~~D2. Hai test web đỏ~~ — **đã trả 2026-08-13**, và nó lòi ra một bug sản phẩm
 
-- `dashboard-page.test.tsx` — so `'\system\page.tsx'` với `'/system/page.tsx'`. Lỗi **dấu phân
-  cách Windows**, test viết giả định POSIX.
-- `assistant-page.test.tsx` — không collect được.
+Chi tiết ở [report trả nợ](../../reports/2026-08-13/tongduyan_tra-no-ky-thuat.md). Tóm tắt:
 
-Không phải nợ của loạt việc này, nhưng **báo cáo mãi mà không sửa thì thành nợ**: một suite có
-hai vệt đỏ thường trực là suite người ta thôi đọc. Cái thứ nhất sửa trong mười phút.
+- `dashboard-page` — đúng là dấu phân cách Windows. Sửa bằng một hàm chuẩn hoá `sep`.
+- `assistant-page` — **không phải lỗi Windows**. Nó đọc `models/page.tsx` ở mức module; file
+  không có nên đọc ném lúc collect và **kéo theo 27 test khác trong cùng file**. Chúng chưa
+  bao giờ chạy.
+- **`/models` chưa từng tồn tại trong lịch sử git**, trong khi `navigation.ts` link tới nó từ
+  đầu và backend đã xong. Người dùng bấm vào mục đó nhận **404**. Quét 17 href: đúng một link
+  chết.
+
+Suite web: **613 passed, 31/31 file — xanh hoàn toàn lần đầu.** +26 test, **không cái nào là
+test mới** — chúng có từ lâu, giờ mới thôi bị che.
+
+**`/models`: dev chốt để nguyên**, là phần việc của người khác. Không thêm test nào giám sát
+khu vực đó (bản nháp đầu của tôi có một test nav quét link chết — bỏ, vì nó đỏ vào mặt người
+không gây ra nó). Ba yêu cầu của trang giữ trong report cho người sẽ xây. Ghi lại một điều để
+không rơi: **sidebar vẫn dẫn tới một trang không tồn tại.**
 
 ### D3. Không có gì **chặn** hai run đánh giá chạy song song
 
@@ -184,7 +195,7 @@ Xếp theo **rẻ × chặn nhiều**, không theo mức độ hấp dẫn:
 
 ```
 D1 test chống trôi lược đồ   ✅ TRẢ 13-08
-D2 sửa test đường dẫn Windows (~10 phút) ← xoá vệt đỏ thường trực
+D2 hai vệt đỏ thường trực    ✅ TRẢ 13-08 — lòi ra /models là link chết
 A4 sinh lại map công bằng    (~vài phút) ← test công bằng đang bị SKIP, không phải xanh
         │
 B1 quyết định ngưỡng sảnh    (quyết định, không phải code)
