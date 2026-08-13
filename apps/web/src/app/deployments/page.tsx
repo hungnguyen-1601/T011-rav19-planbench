@@ -21,14 +21,16 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { DeploymentForm } from "@/components/DeploymentForm";
 import { EmptyState } from "@/components/EmptyState";
-import { useSession } from "@/lib/auth";
-import { useTranslation } from "@/lib/i18n";
+import { fieldErrorsOf, useSession } from "@/lib/auth";
 import {
   createTaskProfile,
   listTaskProfiles,
   type TaskProfileSummary,
 } from "@/lib/decisions";
+import type { ProfileDraft } from "@/lib/deployments";
+import { useTranslation } from "@/lib/i18n";
 
 interface Constraints {
   success_rate_min?: number;
@@ -51,11 +53,17 @@ function environmentOf(profile: TaskProfileSummary): Environment {
   return (profile.profile?.environment ?? {}) as Environment;
 }
 
+/** Fill in fields, or paste the document. Both build one profile. */
+type Mode = "form" | "yaml";
+
 export default function DeploymentsPage() {
   const { t } = useTranslation();
   const session = useSession();
   const [profiles, setProfiles] = useState<TaskProfileSummary[]>([]);
+  const [mode, setMode] = useState<Mode>("form");
   const [draft, setDraft] = useState("");
+  const [formDraft, setFormDraft] = useState<ProfileDraft | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ path: string; message: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [filed, setFiled] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -77,25 +85,65 @@ export default function DeploymentsPage() {
     void refresh();
   }, [refresh]);
 
-  const file = async () => {
+  /** File a profile. **One path for both tabs**, because a profile filed
+   *  from the form and one pasted as YAML have to be the same act — the
+   *  moment they are two, they are free to send two different shapes.
+   *
+   *  Refusals come back whole: the sentence for the reader and, since
+   *  the server started addressing them, one entry per offending field
+   *  for the form to outline. Nothing here decides anything. */
+  const file = async (profile: ProfileDraft) => {
     setBusy(true);
     setError(null);
     setFiled(null);
+    setFieldErrors([]);
     try {
-      // Parsed here only to turn YAML into the JSON body the API takes.
-      // Validation is the server's — `TaskProfile` is the single
-      // definition of HĐ-2, and a second opinion in the browser would be
-      // free to disagree with the one that decides.
-      const { parse } = await import("yaml");
-      const created = await createTaskProfile(parse(draft));
+      const created = await createTaskProfile(profile);
       setFiled(created.id);
       setDraft("");
+      setFormDraft(null);
       await refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
+      setFieldErrors(fieldErrorsOf(caught));
     } finally {
       setBusy(false);
     }
+  };
+
+  const fileYaml = async () => {
+    // Parsed here only to turn YAML into the JSON body the API takes.
+    // Validation is the server's — `TaskProfile` is the single
+    // definition of HĐ-2, and a second opinion in the browser would be
+    // free to disagree with the one that decides.
+    try {
+      const { parse } = await import("yaml");
+      await file(parse(draft) as ProfileDraft);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    }
+  };
+
+  /** Move between the two tabs without losing what is already typed.
+   *
+   * Form → YAML **carries the draft over**, so the reader can see exactly
+   * what the form built and hand-edit a block the form does not cover.
+   *
+   * YAML → form **does not carry anything back**, and says so. Loading a
+   * pasted document into a form that cannot express `dynamic_obstacles`
+   * would silently swallow that block, and the author would file a
+   * deployment missing the traffic they had just written.
+   */
+  const switchTo = (next: Mode) => {
+    if (next === "yaml" && formDraft) {
+      void (async () => {
+        const { stringify } = await import("yaml");
+        setDraft(stringify(formDraft));
+        setMode("yaml");
+      })();
+      return;
+    }
+    setMode(next);
   };
 
   return (
@@ -153,27 +201,61 @@ export default function DeploymentsPage() {
           <p className="muted">{t("deployments.file.signedOut")}</p>
         ) : (
           <>
-            <p className="muted">{t("deployments.file.note")}</p>
-            <textarea
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              placeholder={t("deployments.file.placeholder")}
-              rows={14}
-              spellCheck={false}
-              disabled={busy}
-              style={{ width: "100%", fontFamily: "monospace" }}
-            />
-            <div className="row" style={{ marginTop: 12, alignItems: "center", gap: 12 }}>
-              <button
-                type="button"
-                className="primary"
-                disabled={busy || !draft.trim()}
-                onClick={() => void file()}
-              >
-                {t("deployments.file.submit")}
-              </button>
-              <span className="muted">{t("deployments.file.idRule")}</span>
+            {/* Two ways in, one way out: both tabs build the same
+                document and both POST it to the same endpoint. The form
+                is the default because thirty labelled boxes are easier
+                to start from than a blank textarea; the YAML tab stays
+                because it is the only way to write the blocks the form
+                does not cover yet — traffic, most of all. */}
+            <div className="toolbar">
+              {(["form", "yaml"] as Mode[]).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  disabled={busy}
+                  className={mode === option ? "active" : undefined}
+                  aria-pressed={mode === option}
+                  onClick={() => switchTo(option)}
+                >
+                  {t(`deployments.mode.${option}`)}
+                </button>
+              ))}
+              <span className="muted">{t("deployments.mode.note")}</span>
             </div>
+
+            {mode === "form" ? (
+              <DeploymentForm
+                draft={formDraft}
+                onDraftChange={setFormDraft}
+                onSubmit={file}
+                busy={busy}
+                fieldErrors={fieldErrors}
+              />
+            ) : (
+              <>
+                <p className="muted">{t("deployments.file.note")}</p>
+                <textarea
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  placeholder={t("deployments.file.placeholder")}
+                  rows={18}
+                  spellCheck={false}
+                  disabled={busy}
+                  style={{ width: "100%", fontFamily: "monospace" }}
+                />
+                <div className="row" style={{ marginTop: 12, alignItems: "center", gap: 12 }}>
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={busy || !draft.trim()}
+                    onClick={() => void fileYaml()}
+                  >
+                    {t("deployments.file.submit")}
+                  </button>
+                  <span className="muted">{t("deployments.file.idRule")}</span>
+                </div>
+              </>
+            )}
           </>
         )}
       </div>

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, Request
@@ -120,6 +121,17 @@ def get_agent_service(request: Request, user: CurrentUser) -> AgentService:
 AgentDependency = Annotated[AgentService, Depends(get_agent_service)]
 
 
+def get_map_root(request: Request) -> Path:
+    """Where a task profile's relative paths resolve.
+
+    Every profile names its map as ``maps/<name>.pgm`` relative to the
+    repository root, and storing the profile in a database did not move
+    the ``.pgm`` — so anything writing a map for a profile to name has to
+    be told where those files live rather than guess.
+    """
+    return request.app.state.decision_map_root
+
+
 def get_task_profile_service(request: Request) -> TaskProfileService:
     """Deployments, plus the one place a drawn map becomes one.
 
@@ -132,7 +144,7 @@ def get_task_profile_service(request: Request) -> TaskProfileService:
     return TaskProfileService(
         state.repos.task_profiles,
         maps=state.repos.maps,
-        map_root=state.decision_map_root,
+        map_root=get_map_root(request),
     )
 
 

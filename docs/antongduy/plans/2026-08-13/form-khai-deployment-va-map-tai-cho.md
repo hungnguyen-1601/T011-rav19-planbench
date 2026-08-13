@@ -88,6 +88,28 @@ ai đó viết một thông điệp lỗi có dấu hai chấm.
 
 **Ước lượng:** 1–1,5 giờ.
 
+#### ✅ Đã làm 2026-08-13
+
+Chọn **`list[dict]`** như khuyến nghị. `errors.py` thêm `field_errors(error)`; `create` và
+`derive` cùng gọi. **Thông điệp cục giữ nguyên** — ô dán không có ô nào để tô đỏ nên nó vẫn
+đọc câu văn đó; hai đối tượng đọc, một response.
+
+Ba chi tiết chốt lúc gõ:
+
+- **Địa chỉ nối bằng dấu chấm, đúng hình dạng YAML lồng nhau** — `missions.0.probability`. Một
+  địa chỉ dùng được cho cả form lẫn file.
+- **Lỗi ở mức cả khối thì trỏ vào khối.** `goal_tolerance_rad` bị từ chối bởi validator gắn
+  trên cả model `constraints`, nên `path` là `"constraints"` chứ không phải tên trường. Đoán ra
+  tên trường sẽ là API tự suy diễn về một luật nó không sở hữu — và câu thông điệp đã nêu đúng
+  tên trường rồi.
+- **Duck-typing thay vì import pydantic.** Chỗ gọi cố ý bắt `Exception` ("ValidationError and
+  friends"), nên một lỗi không mang địa chỉ phải **thoái về danh sách rỗng**, không được ném
+  ra trong lúc đang báo lỗi. Có test cho cả ca `errors()` tự ném.
+
+Chạy thật: gửi profile sai hai chỗ cùng lúc, nhận `robot.radius` và `constraints` tách bạch.
+
+**Backend +6 test.**
+
 ### B2. `POST /maps/{map_id}/materialise` — biến map trong kho thành hai đường dẫn
 
 Profile khai map bằng **đường dẫn file** (HĐ-2); editor lưu lưới trong DB. Hàm bắc cầu
@@ -104,6 +126,27 @@ cái profile mà ô dán cũng sẽ nhận, và **ô xem trước YAML hiện đ
 Idempotent theo (map id, version) như `derive`. Cần đăng nhập.
 
 **Ước lượng:** 1 giờ (phần khó đã xong).
+
+#### ✅ Đã làm 2026-08-13
+
+`map_files.py` — `materialise_map(stored, map_root)` ở mức module, không còn là method riêng
+của `TaskProfileService`. Hai chỗ gọi: `derive` và endpoint mới `POST /maps/{id}/materialise`.
+**Một định nghĩa** của "map vẽ ra rơi xuống đâu trên đĩa"; hai bản sao sẽ cho hai deployment
+trỏ vào hai file khác nhau của cùng một map.
+
+Endpoint đặt ở `routers/maps.py` (nó nói về map), lấy map root qua dependency mới
+`get_map_root` — `get_task_profile_service` cũng chuyển sang dùng nó, nên chỉ còn một chỗ biết
+`app.state.decision_map_root`.
+
+**Là POST chứ không phải GET**, và không phải vì đọc cho thuận tai: nó **ghi hai file**.
+
+Chạy thật, đủ vòng: 200 với hai đường dẫn tương đối · gọi lần hai ra kết quả y hệt · file tồn
+tại trên đĩa · chưa đăng nhập 401 · map lạ 404 · và **hai đường dẫn đó khai được thành một
+deployment thật** (201). Chỗ cuối là chỗ đáng tiền: nó chứng minh đường của form và đường của ô
+dán gặp nhau ở cùng một artifact.
+
+**Backend +6 test**, gồm một test khẳng định sửa map thì file đổi tên còn file cũ vẫn còn — để
+deployment khai từ v1 tiếp tục trỏ vào tường của v1.
 
 ---
 
