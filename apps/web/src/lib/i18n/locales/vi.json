@@ -1054,9 +1054,6 @@
   "candidates.subtitle": "Một candidate là một stack cộng một cấu hình controller, định danh bằng hash của chính cặp đó (HĐ-1.3).",
   "candidates.register.title": "Đăng ký một candidate",
   "candidates.register.signedOut": "Đăng nhập để đăng ký candidate.",
-  "candidates.register.stack": "Stack",
-  "candidates.register.config": "Cấu hình controller",
-  "candidates.register.pick": "Chọn một…",
   "candidates.register.submit": "Đăng ký",
   "candidates.register.done": "Đã đăng ký với id",
   "candidates.register.note": "Không có ô id: server tự tính candidate_id bằng hash trên stack, tham số và phiên bản mã. Cho phép người gọi tự đặt id sẽ khiến hai cấu hình khác nhau dùng chung một danh tính mà mọi trace, mọi phép ghép cặp và mọi ΔU đều khoá theo.",
@@ -1084,5 +1081,10 @@
   "candidates.configs.title": "Cấu hình controller",
   "candidates.configs.name": "Tên",
   "candidates.configs.note": "Các con số, không chỉ cái tên: dwa_coarse lấy mẫu 7×15 còn dwa_default lấy 20×40. Chênh lệch đó là toàn bộ lý do một lựa chọn lấy mẫu là một candidate chứ không phải một hằng số nằm trong script nào đó.",
-  "decisions.launch.whatAreThese": "Chúng là gì?"
+  "decisions.launch.whatAreThese": "Chúng là gì?",
+  "candidates.pick.global": "Global planner",
+  "candidates.pick.local": "Local controller",
+  "candidates.pick.config": "Cấu hình",
+  "candidates.pick.noConfigs": "Controller này chưa có cấu hình đặt tên nào.",
+  "candidates.register.candidate": "Candidate"
 }

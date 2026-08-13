@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { CandidatePicker, usableStacks, type CandidateSelection } from "@/components/CandidatePicker";
 import { EmptyState } from "@/components/EmptyState";
 import { authFetch, useSession } from "@/lib/auth";
 import {
@@ -106,24 +107,17 @@ function RegisterPanel({
   onDone: () => Promise<void>;
 }) {
   const { t } = useTranslation();
-  const [stack, setStack] = useState("");
-  const [config, setConfig] = useState("");
+  const [choice, setChoice] = useState<CandidateSelection>({ stack: "", local_config: "" });
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const [registered, setRegistered] = useState<string | null>(null);
-
-  // Only stacks a comparison may actually use. A reference
-  // implementation exists to validate the pipeline, and offering one
-  // here would put it a click away from a conclusion it must never
-  // support.
-  const offered = stacks.filter((entry) => entry.benchmarkable);
 
   const submit = async () => {
     setBusy(true);
     setFailed(null);
     setRegistered(null);
     try {
-      const made = await registerCandidate({ stack, local_config: config });
+      const made = await registerCandidate(choice);
       setRegistered(made.candidate_id);
       await onDone();
     } catch (caught) {
@@ -158,36 +152,18 @@ function RegisterPanel({
       ) : null}
 
       <div className="row" style={{ alignItems: "flex-end", gap: 12 }}>
-        <label className="field">
-          <span>{t("candidates.register.stack")}</span>
-          <select value={stack} disabled={busy} onChange={(event) => setStack(event.target.value)}>
-            <option value="">{t("candidates.register.pick")}</option>
-            {offered.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.id}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span>{t("candidates.register.config")}</span>
-          <select
-            value={config}
-            disabled={busy}
-            onChange={(event) => setConfig(event.target.value)}
-          >
-            <option value="">{t("candidates.register.pick")}</option>
-            {configs.map((entry) => (
-              <option key={entry.name} value={entry.name}>
-                {entry.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <CandidatePicker
+          label={t("candidates.register.candidate")}
+          value={choice}
+          onChange={setChoice}
+          stacks={stacks}
+          configs={configs}
+          disabled={busy}
+        />
         <button
           type="button"
           className="primary"
-          disabled={busy || !stack || !config}
+          disabled={busy || !choice.stack || !choice.local_config}
           onClick={() => void submit()}
         >
           {t("candidates.register.submit")}
@@ -290,7 +266,7 @@ function StackTable({ stacks }: { stacks: AlgorithmInfo[] }) {
                   <strong>{stack.id}</strong>
                 </td>
                 <td className="muted">
-                  {stack.global_planner}
+                  {stack.global_planner} + {stack.local_controller}
                   {/* A sampling planner needs more seeds to say anything,
                       and a table that hid this would invite comparing one
                       lucky tree against A*. */}

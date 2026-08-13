@@ -679,3 +679,60 @@ Candidate đang thay nó"*.
 Backend **+4 test** (`GET /local-controllers`) · Web **+13 test**.
 Web: **633 passed, 32/32 file**. `ruff` sạch, `tsc` sạch. Chưa chạy full suite backend — chờ
 lệnh dev.
+
+### P3 sửa lại theo yêu cầu dev: tách chọn global và local
+
+Dev nêu hai vấn đề với bản đầu, cả hai đúng và cả hai nhìn về phía trước:
+
+1. **Một dropdown cho cả stack sẽ rối khi số global/local tăng.** Danh sách lớn theo **tích** của
+   hai tầng trong khi thứ đang chọn là **một món từ mỗi tầng**. Một bộ chọn lớn bậc hai để diễn
+   đạt một lựa chọn tuyến tính là sai hình dạng — và nó sai **trước khi** ai đó nhận ra nó dài.
+2. **Cấu hình controller đang là của riêng DWA.** `velocity_samples` là ý niệm của DWA; một
+   checkpoint PPO không liên quan gì tới nó.
+
+#### Registry lộ ra một ràng buộc trước khi gõ
+
+Năm entry, và chúng **không phải tích Descartes đầy đủ**:
+
+```
+astar   + dwa           benchmarkable
+astar   + ppo           benchmarkable
+astar   + pure_pursuit  reference
+rrtstar + dwa           benchmarkable
+rrtstar + pure_pursuit  reference
+```
+
+**`rrtstar+ppo` không tồn tại.** Hai dropdown độc lập sẽ dựng được nó và người dùng biết điều đó
+từ một lời từ chối của server. Nên danh sách **xếp tầng**: controller được mời là những cái
+registry thật sự ghép với global planner đang chọn.
+
+#### Ba thay đổi backend, mỗi cái theo một tiền lệ đã có
+
+| | |
+|---|---|
+| `AlgorithmInfo.local_controller` | **Khai ra, không phân tích từ `id`** — đúng lý lẽ `global_planner` đã dùng: id là quy ước hiển thị, trường mới là **sự thật**. Không có nó, một bộ chọn phải cắt chuỗi id, tức đặt một parser giữa cái picker và cái nó đang chọn |
+| `CONTROLLER_CONFIGS` nhóm theo controller | Thêm một controller giờ là thêm **một khoá**. Không gì khác phải dời |
+| `LOCAL_CONTROLLER_CONFIGS` **suy ra** từ nó | Tám module và một script tra cứu theo tên, và một report đã lưu **trích dẫn** tên đó. Bảng phẳng phải còn; suy ra nó nghĩa là nhóm không thể trôi khỏi nó. **Không một chỗ gọi nào phải sửa** |
+
+#### `CandidatePicker` — dùng chung, ba tầng
+
+Một component cho cả trang Candidates lẫn panel khởi chạy. Ba quyết định trong đó:
+
+- **Id được TRA CỨU, không lắp ráp.** Mọi entry hôm nay viết là `<global>+<local>` nên ghép hai
+  nửa sẽ chạy — **cho tới khi có một entry không thế**. Cặp (global, local) chọn ra entry, và
+  entry tự cấp id của nó.
+- **Đổi controller thì bỏ cấu hình; đổi global thì giữ.** `dwa_coarse` trên một policy PPO là
+  một cái tên thuộc từ vựng khác. Nhưng *"cùng controller dưới một planner khác"* đúng là phép
+  so nền tảng này sinh ra để làm, nên ca đó giữ cả hai.
+- **Controller chưa có cấu hình nào thì nói ra**, không để dropdown rỗng. Đó không phải lỗi — đó
+  là một controller chưa ai viết cấu hình cho.
+
+Đường lui giữ nguyên: danh sách chưa về thì ô text tự do vẫn còn.
+
+#### Xác minh
+
+Ba assertion cũ trỏ vào mã đã dời sang picker — chuyển đích, giữ nguyên khẳng định. Sáu test mới
+cho hành vi xếp tầng.
+
+Web **639 passed**. Backend: `test_candidate_bridge` · `test_measure` · `test_simulator_fairness`
+· `test_api_decisions` · `test_vertical_slice` — **186 passed**. `ruff` sạch, `tsc` sạch.

@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
+import { CandidatePicker } from "@/components/CandidatePicker";
 import { MissionPlacer } from "@/components/MissionPlacer";
 import { api } from "@/lib/api";
 import { authFetch, useSession } from "@/lib/auth";
@@ -330,14 +331,14 @@ function LaunchPanel({
             ))}
           </select>
         </label>
-        <CandidateFields
+        <CandidatePicker
           label={t("decisions.launch.candidateA")}
           value={first}
           onChange={setFirst}
           stacks={stacks}
           configs={configs}
         />
-        <CandidateFields
+        <CandidatePicker
           label={t("decisions.launch.candidateB")}
           value={second}
           onChange={setSecond}
@@ -379,7 +380,8 @@ function LaunchPanel({
       />
 
       <p className="muted" style={{ marginTop: 8 }}>
-        {live.length > 0 ? t("decisions.launch.oneAtATime") : t("decisions.launch.note")}
+        {live.length > 0 ? t("decisions.launch.oneAtATime") : t("decisions.launch.note")}{" "}
+        <Link href="/candidates">{t("decisions.launch.whatAreThese")}</Link>
       </p>
 
       {jobs.length > 0 ? (
@@ -609,88 +611,6 @@ function readGoalTolerance(profile: TaskProfileSummary | undefined): number | un
   return typeof constraints?.goal_tolerance_m === "number"
     ? constraints.goal_tolerance_m
     : undefined;
-}
-
-/** Pick a candidate from what exists, rather than typing its name.
- *
- * These were two free-text boxes: no list of what there was to choose
- * from, no sign that one of the stacks is a reference implementation
- * nobody should compare against, and no sign of a typo until the server
- * refused it after the click.
- *
- * **Both lists are served, never hardcoded.** The registry and the named
- * configurations already exist on the server and registration already
- * refuses anything outside them, so a copy here would be a second
- * statement of what the platform accepts — free to drift, and drifting
- * silently until a dropdown offers something the server rejects.
- *
- * Falls back to free text while the lists are still loading or if the
- * request failed. Losing the ability to start a sweep because a
- * convenience list did not arrive would be a worse page than the one
- * this replaced.
- */
-function CandidateFields({
-  label,
-  value,
-  onChange,
-  stacks,
-  configs,
-}: {
-  label: string;
-  value: CandidateChoice;
-  onChange: (next: CandidateChoice) => void;
-  stacks: AlgorithmInfo[];
-  configs: LocalControllerConfig[];
-}) {
-  const { t } = useTranslation();
-  // Only what a comparison may actually use. A reference stack exists to
-  // validate the pipeline, and offering one here would put it one click
-  // from a conclusion it must never support.
-  const offered = stacks.filter((entry) => entry.benchmarkable);
-  return (
-    <label className="field">
-      <span>{label}</span>
-      {offered.length > 0 ? (
-        <select
-          value={value.stack}
-          onChange={(event) => onChange({ ...value, stack: event.target.value })}
-        >
-          {offered.map((entry) => (
-            <option key={entry.id} value={entry.id}>
-              {entry.id}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <input
-          value={value.stack}
-          onChange={(event) => onChange({ ...value, stack: event.target.value })}
-          placeholder="astar+dwa"
-        />
-      )}
-      {configs.length > 0 ? (
-        <select
-          value={value.local_config}
-          onChange={(event) => onChange({ ...value, local_config: event.target.value })}
-        >
-          {configs.map((entry) => (
-            <option key={entry.name} value={entry.name}>
-              {entry.name}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <input
-          value={value.local_config}
-          onChange={(event) => onChange({ ...value, local_config: event.target.value })}
-          placeholder="dwa_coarse"
-        />
-      )}
-      <Link href="/candidates" className="muted">
-        {t("decisions.launch.whatAreThese")}
-      </Link>
-    </label>
-  );
 }
 
 function JobList({

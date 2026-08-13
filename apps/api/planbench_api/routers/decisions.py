@@ -39,7 +39,7 @@ from planbench_api.dependencies import (
 )
 from planbench_api.errors import DomainValidationError, NotFoundError
 from planbench_api.worker import Job, JobQueue
-from planbench_benchmark.candidates import LOCAL_CONTROLLER_CONFIGS
+from planbench_benchmark.candidates import CONTROLLER_CONFIGS
 from planbench_benchmark.selection import DEFAULT_SCOPE
 
 router = APIRouter(tags=["decisions"])
@@ -390,8 +390,14 @@ def register_candidate(
 
 
 class LocalControllerConfig(BaseModel):
-    """One named local-controller configuration and what it sets."""
+    """One named configuration, and the controller it configures."""
 
+    #: Which local controller this belongs to. Sent because a
+    #: configuration only means anything for its own controller —
+    #: ``velocity_samples`` is a DWA idea, and offering it while a PPO
+    #: policy is selected would be offering a knob with nothing behind
+    #: it.
+    controller: str
     name: str
     params: dict[str, Any]
 
@@ -413,8 +419,9 @@ def list_local_controllers() -> list[LocalControllerConfig]:
     (HĐ-1.3).
     """
     return [
-        LocalControllerConfig(name=name, params=dict(params))
-        for name, params in sorted(LOCAL_CONTROLLER_CONFIGS.items())
+        LocalControllerConfig(controller=controller, name=name, params=dict(params))
+        for controller, configs in sorted(CONTROLLER_CONFIGS.items())
+        for name, params in sorted(configs.items())
     ]
 
 

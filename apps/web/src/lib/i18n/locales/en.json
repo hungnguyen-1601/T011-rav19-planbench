@@ -1054,9 +1054,6 @@
   "candidates.subtitle": "A candidate is one stack plus one controller configuration, identified by the hash of that pair (HĐ-1.3).",
   "candidates.register.title": "Register a candidate",
   "candidates.register.signedOut": "Sign in to register a candidate.",
-  "candidates.register.stack": "Stack",
-  "candidates.register.config": "Controller configuration",
-  "candidates.register.pick": "Choose one…",
   "candidates.register.submit": "Register it",
   "candidates.register.done": "Registered as",
   "candidates.register.note": "There is no id field: HĐ-1.3 makes candidate_id a hash over the stack, its parameters and its code version, so the server computes it. A caller-supplied id would let two different configurations share an identity that every trace, pairing and ΔU keys on.",
@@ -1084,5 +1081,10 @@
   "candidates.configs.title": "Controller configurations",
   "candidates.configs.name": "Name",
   "candidates.configs.note": "The numbers, not just the names: dwa_coarse samples 7×15 where dwa_default samples 20×40. That difference is the whole reason a sampling choice is a candidate rather than a constant inside whichever script ran.",
-  "decisions.launch.whatAreThese": "What are these?"
+  "decisions.launch.whatAreThese": "What are these?",
+  "candidates.pick.global": "Global planner",
+  "candidates.pick.local": "Local controller",
+  "candidates.pick.config": "Configuration",
+  "candidates.pick.noConfigs": "No named configuration for this controller yet.",
+  "candidates.register.candidate": "Candidate"
 }

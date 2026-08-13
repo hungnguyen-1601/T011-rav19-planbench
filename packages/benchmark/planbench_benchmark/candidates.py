@@ -228,25 +228,56 @@ def stack_id_for(candidate: Candidate) -> str:
 #: ``control_period`` is the deployment's, not a taste setting: a
 #: controller slower than T_cycle misses deadlines that G4 cannot see
 #: (:func:`validate_control_rate`).
+#: Grouped **by controller**, because a configuration only means
+#: anything for the controller it configures: ``velocity_samples`` is a
+#: DWA idea and a PPO checkpoint has nothing to do with it.
+#:
+#: The flat table below is derived from this one rather than maintained
+#: beside it. Every name here is globally unique and carries its
+#: controller, which is what lets both views exist without a second
+#: place to keep in sync — and what lets a stored report keep quoting
+#: ``local_controller_config: dwa_coarse`` unchanged.
+#:
+#: Adding a controller is adding a key here. Nothing else has to move.
+CONTROLLER_CONFIGS: dict[str, dict[str, dict[str, Any]]] = {
+    "dwa": {
+        "dwa_coarse": {
+            "control_period": 0.05,
+            "velocity_samples": 7,
+            "omega_samples": 15,
+            "horizon_seconds": 1.0,
+        },
+        "dwa_balanced": {
+            "control_period": 0.05,
+            "velocity_samples": 12,
+            "omega_samples": 24,
+            "horizon_seconds": 1.0,
+        },
+        "dwa_default": {
+            "control_period": 0.05,
+            "velocity_samples": 20,
+            "omega_samples": 40,
+            "horizon_seconds": 1.0,
+        },
+    },
+}
+
+#: Every named configuration, flat, keyed by name.
+#:
+#: Derived — never edited. Eight modules and a script look configs up by
+#: name and a stored report quotes that name, so the flat view has to
+#: keep existing; deriving it means the grouping cannot drift from it.
 LOCAL_CONTROLLER_CONFIGS: dict[str, dict[str, Any]] = {
-    "dwa_coarse": {
-        "control_period": 0.05,
-        "velocity_samples": 7,
-        "omega_samples": 15,
-        "horizon_seconds": 1.0,
-    },
-    "dwa_balanced": {
-        "control_period": 0.05,
-        "velocity_samples": 12,
-        "omega_samples": 24,
-        "horizon_seconds": 1.0,
-    },
-    "dwa_default": {
-        "control_period": 0.05,
-        "velocity_samples": 20,
-        "omega_samples": 40,
-        "horizon_seconds": 1.0,
-    },
+    name: params
+    for controller_configs in CONTROLLER_CONFIGS.values()
+    for name, params in controller_configs.items()
+}
+
+#: Which controller each named configuration belongs to. Derived too.
+CONTROLLER_OF_CONFIG: dict[str, str] = {
+    name: controller
+    for controller, controller_configs in CONTROLLER_CONFIGS.items()
+    for name in controller_configs
 }
 
 #: ``dwa_balanced`` is a third point on a real design axis, not a knob

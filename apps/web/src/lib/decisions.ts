@@ -536,6 +536,11 @@ export function coverage(run: DecisionRun): number | undefined {
  * rather than a constant inside whichever script ran (HĐ-1.3).
  */
 export interface LocalControllerConfig {
+  /** Which controller this configures. A configuration only means
+   *  something for its own controller — `velocity_samples` is a DWA
+   *  idea, and offering it beside a PPO policy would be a knob with
+   *  nothing behind it. */
+  controller: string;
   name: string;
   params: Record<string, number>;
 }
