@@ -602,3 +602,40 @@ export function localConfigOf(
   );
   return match?.name ?? null;
 }
+
+/** One episode of a deployment, assembled so it can be watched.
+ *
+ * `episode_context_id` is the real HĐ-3.1 hash of the conditions, not a
+ * preview-only label — which is the honest answer to "is this the same
+ * episode the comparison will run". It is.
+ */
+export interface StagedEpisode {
+  simulation_id: string;
+  scenario_id: string;
+  map_id: string;
+  episode_context_id: string;
+  scenario: Record<string, unknown>;
+}
+
+/** Stage one episode of a deployment for the test bench.
+ *
+ * **What comes back is a simulation, not a measurement.** The conditions
+ * are the deployment's own — same `scenario_for` the contract runner
+ * calls, same registry entry, same episode seed — so what you watch is
+ * what a comparison will run. What is *not* produced is an HĐ-5 trace:
+ * nothing here reaches the Metrics Engine, no gate sees it, no card
+ * counts it. That is what lets it run beside a live evaluation.
+ *
+ * The seed is named rather than drawn, because "watch that one again,
+ * slower" is the whole point and a server-picked seed would make the one
+ * episode worth re-watching the one you cannot get back.
+ */
+export function stageTestBenchEpisode(
+  taskProfileId: string,
+  request: { mission_id: string; seed: number; stack: string; local_config: string },
+): Promise<StagedEpisode> {
+  return authFetch<StagedEpisode>(
+    `/task-profiles/${encodeURIComponent(taskProfileId)}/test-bench`,
+    { method: "POST", body: JSON.stringify(request) },
+  );
+}

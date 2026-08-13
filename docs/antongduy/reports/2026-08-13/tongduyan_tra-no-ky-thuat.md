@@ -736,3 +736,165 @@ cho hành vi xếp tầng.
 
 Web **639 passed**. Backend: `test_candidate_bridge` · `test_measure` · `test_simulator_fairness`
 · `test_api_decisions` · `test_vertical_slice` — **186 passed**. `ruff` sạch, `tsc` sạch.
+
+## P2 — `/decisions` thành danh mục Decision Card *(pha ba của refactor UI)*
+
+Kế hoạch duyệt: *"`/leaderboard` đổi vai thành danh mục Decision Card"*,
+cách làm anh để tôi tự chọn: **mở rộng `/decisions` rồi bỏ hẳn
+`/leaderboard`**. Vế đầu xong. **Vế sau tôi dừng lại, và đây là phần
+quan trọng nhất của mục này.**
+
+### Cái `/decisions` nhận thêm
+
+Ba thứ `/leaderboard` làm được mà danh sách run không làm được, dựng
+lại trên nền chỉ xếp hạng trong một deployment:
+
+1. **Dải đếm** (`summarise`): bao nhiêu run, bao nhiêu deployment, bao
+   nhiêu run ra thẻ, bao nhiêu đã đọc, bao nhiêu đã duyệt. "Bảy so sánh
+   trên ba deployment" là *sự kiện về công việc*. Xếp hạng ứng viên
+   xuyên deployment là *khẳng định HĐ-1.4 cấm*. Dải đếm nói cái thứ
+   nhất và không đụng cái thứ hai.
+2. **Lọc theo trạng thái người**: chưa đọc / đã đọc / đã duyệt. Người
+   mở trang này thường đang tìm việc tiếp theo của chính mình, không
+   phải tìm quán quân.
+3. **Cột `decision_utility` — chỉ hiện khi danh sách đã lọc về một
+   deployment.** `const oneDeployment = profileId !== ""`. Đây là chỗ
+   duy nhất trang này có thể tự phản bội: một cột điểm sắp xếp được
+   trên danh sách trộn deployment **chính là bảng xếp hạng xuyên
+   scenario, chỉ đổi tên**. Có thêm test khẳng định trang không tự
+   `.sort(` dòng nào — vì sắp xếp phía client theo cột điểm là cách một
+   danh mục biến thành bảng xếp hạng mà không ai kịp quyết định.
+
+Bốn test mới trong `decisions-page.test.tsx`.
+
+### Vì sao chưa xoá `/leaderboard`
+
+Tôi đã xoá thật: xoá thư mục trang, gỡ mục sidebar, trỏ lại StatCard ở
+dashboard. `tsc` sạch. Rồi suite web đỏ **7 chỗ**, và khi đọc kỹ chúng
+đỏ vì lý do khác hẳn cái tôi đoán:
+
+- `charts-and-export.test.tsx` — **đường cong độ khó** (`DifficultyCurveChart`,
+  `buildDifficultyCurve`, cảnh báo `charts.uncalibratedScenarios` /
+  `charts.staleScenarios`) và **biểu đồ khoảng cách tổng quát hoá**
+  (`GeneralizationGapChart`, `buildGapSeries`, `charts.incompleteGap`).
+- `leaderboard-observation.test.tsx` — mỗi stack **được cho nhìn thấy
+  gì**; trộn lớp quan sát phải là hành động cố ý, không bao giờ im lặng.
+- `scenario-split.test.tsx` — huy hiệu split, cảnh báo held-out,
+  `entry.warnings`.
+
+Ba nhóm này **không phải bảng xếp hạng**. Chúng là ba bề mặt phân tích
+tình cờ *trú* trên trang xếp hạng, và cả ba đều là rào chắn chống đọc
+sai số liệu. `/decisions` hiện **chưa có chỗ nào chứa chúng**.
+
+Nếu tôi cứ xoá, tôi sẽ phải hoặc xoá luôn ba nhóm test đó — tức là gỡ
+rào chắn mà không ai quyết định gỡ — hoặc để chúng đỏ. Đúng cái tình
+huống anh đã chặn tôi ở `/models`: **"đỏ vào mặt người không gây ra
+nó"**. Nên tôi hoàn nguyên: `git checkout` ba file, suite về **643
+passed**, `/leaderboard` còn nguyên trong nhóm *"Đang được thay"* của
+sidebar — nhãn đó vẫn đúng, nó *đang* được thay chứ chưa bị thay xong.
+
+### Cái này đẩy sang đâu
+
+Xoá `/leaderboard` chuyển sang **P6** (nghỉ hưu luồng cũ), và P6 giờ có
+thêm một điều kiện tiên quyết mà bản kế hoạch chưa lường:
+
+> Trước khi bỏ `/leaderboard`, phải tìm chỗ ở mới cho đường cong độ khó,
+> biểu đồ khoảng cách tổng quát hoá, và cảnh báo lớp quan sát. Nơi tự
+> nhiên nhất là trang chi tiết `/decisions/[id]` — cả ba đều là tính
+> chất của **một** deployment, nên chuyển sang đó còn *đúng hơn* chỗ cũ.
+
+Đây là công việc thật, không phải thủ tục — ước lượng nửa ngày đến một
+ngày, và nó phải có kế hoạch riêng chứ không nhét vào lần dọn cuối.
+
+**Nhận sai của tôi:** khi lên kế hoạch P2 tôi mô tả `/leaderboard` như
+"một bảng danh sách xếp hạng" và chỉ soi phần xếp hạng. Tôi đã không
+đọc hết trang trước khi hẹn ngày xoá nó. Chi phí thực tế chỉ là một lần
+hoàn nguyên vì test bắt được, nhưng cái bắt được là **thiếu sót lúc
+khảo sát**, không phải lỗi lúc gõ.
+
+## P4 — `/simulate` thành **sân thử** *(pha bốn của refactor UI)*
+
+Chỗ luồng mới thật sự thiếu: chạy được ba trăm episode và phát lại
+trace đã ghi, nhưng **không xem trực tiếp được một episode**. Hai câu
+hỏi khác nhau — *"chuyện gì đã xảy ra"* với *"thử cấu hình này xem
+sao"*.
+
+### Cầu nối phía backend
+
+`POST /task-profiles/{id}/test-bench` — nhận `mission_id`, `seed`,
+`stack`, `local_config`; trả về `simulation_id` để chạy và stream bằng
+đúng WebSocket cũ, không viết mới dòng nào ở tầng xem.
+
+Điểm cốt lõi là **fidelity**: scenario dựng bằng chính `scenario_for` mà
+`run_contract_episode` gọi, planner dựng từ chính registry entry đó với
+chính `episode_seed` đó, và replanning để nguyên mặc định tắt — vì
+`run_contract_episode` cũng chạy tắt. Thứ bạn xem đúng là thứ phép so sẽ
+chạy. Nếu không thế thì nó là một thí nghiệm khác, và một thí nghiệm
+khác cho cảm giác yên tâm là thứ tệ hơn không có gì.
+
+Staging **bất biến ở phần lưu**: map khớp theo chính lưới ô, scenario
+khớp theo tên — mà tên scenario chính là `episode_context_id`. Xem lại
+hai mươi lần vẫn một dòng map, một dòng scenario.
+
+### Vì sao nó không phải phép đo — và đây là toàn bộ luận cứ an toàn
+
+HĐ-5 đặt trace Parquet là **đầu vào duy nhất** của Metrics Engine. Một
+episode sân thử mà ghi trace sẽ **tiêm một mẫu vào tập evaluation** với
+một `episode_context_id` **thật** — không gì ở hạ nguồn phân biệt được
+nó với một episode đã đo — và tiêm ngoài thứ tự context-outer (HĐ-3.2),
+ngoài lệnh cấm hai run evaluation song song (HĐ-7.4).
+
+Nên nó **không ghi trace**. Lần chạy rơi vào kho `simulations`, nơi
+không cổng, chỉ số hay Decision Card nào đọc tới. **Id thì thật, lần
+chạy thì không phải bằng chứng.** Test khẳng định thẳng điều đó: chạy
+xong, thư mục trace vẫn rỗng, và danh mục `/decisions` không thêm dòng
+nào.
+
+### Phía UI
+
+- Đầu vào đổi từ *map + hai điểm click* sang **deployment + mission**.
+- **Bỏ hẳn thao tác click đặt start/goal.** Một cái đích kéo được sẽ
+  biến thứ đang xem thành một episode khác với episode sắp được đo. Bảng
+  `MapCanvas` giờ không nhận `onWorldClick` — không phải "không khuyến
+  khích" mà là **không tới được**.
+- **Bỏ công tắc replanning.** Mọi episode được đo đều chạy tắt; để công
+  tắc ở đây là cho người ta xem một stack sẽ không bao giờ bị phán xét.
+- Bảng *"Những gì deployment đã chốt"* — timeout, dung sai, bán kính,
+  vật cản động, **tên các luồng nhiễu đang bật** — chỉ hiển thị, không
+  sửa. Chỉnh một cái "cho riêng bản xem thử" là biến đây thành thí
+  nghiệm khác.
+- Seed là ô **gõ tay**, kèm câu giải thích cùng seed là cùng một episode
+  tới từng quỹ đạo vật cản và từng lần bốc nhiễu. Server bốc seed hộ thì
+  đúng cái episode đáng xem lại lại là cái không lấy lại được.
+- Banner *"không có gì ở đây là phép đo"* đặt **trước** nút chạy, không
+  phải sau. Người xem một episode sạch rồi mới biết nó không tính là
+  người được báo quá muộn để còn dùng nó mà quyết.
+- `MetricsPanel` giữ nguyên nhưng có dòng nói rõ số đọc từ chính lần
+  chạy chứ không từ trace — đúng cho *"nhìn có hợp lý không"*, sai cho
+  mọi khẳng định.
+- Sidebar đổi tên **Live Simulation → Sân thử / Test Bench**. Tên cũ mô
+  tả cỗ máy; trang giờ là bước rẻ trước một bước đắt.
+
+### Một guard đã dời chỗ, không bị xoá
+
+`replanning-controls.test.tsx` có bốn khẳng định về `/simulate`. Chúng
+**không còn đúng** vì công tắc bị bỏ có chủ ý. Tôi không xoá chúng cho
+xanh: nửa nói về form benchmark (vẫn sống) giữ nguyên, còn nửa nói về
+`/simulate` **lật ngược** và chuyển sang `test-bench.test.tsx` —
+khẳng định công tắc **vắng mặt**, kèm lý do. Docstring file cũ ghi rõ
+claim đi đâu.
+
+### Test
+
+- **Backend** `tests/api/test_test_bench.py` — 16 test: điều kiện lấy
+  đúng từ deployment (timeout / dung sai / nhiễu / traffic / bước vật
+  lý), `episode_context_id` khớp đúng hash HĐ-3.1 tính độc lập, seed
+  khác là episode khác, **không ghi trace**, không sinh decision run,
+  replanning tắt, staging bất biến, bốn kiểu từ chối, và episode thật sự
+  chạy ra quỹ đạo.
+- **Web** `test-bench.test.tsx` — 17 test.
+- Suite web: **660 passed**, `tsc` sạch.
+- Hai module backend đã động vào — `test_api_decisions.py` và
+  `test_api_simulations.py`: **82 passed**. Endpoint mới nằm chung
+  router với decisions nên đây là chỗ hồi quy dễ xảy ra nhất.
+- `ruff check .` sạch. **Chưa** chạy full suite backend.

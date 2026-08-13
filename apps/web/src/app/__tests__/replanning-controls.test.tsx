@@ -2,7 +2,15 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-/** Phase B — the replanning switch on `/simulate` and the benchmark form.
+/** Phase B — the replanning switch on the benchmark form.
+ *
+ * It used to be on `/simulate` too. That page became the test bench,
+ * whose whole value is that what you watch is what a comparison will
+ * run — and `run_contract_episode` runs with replanning off, so a switch
+ * there would offer a stack no measured episode uses. The claim did not
+ * disappear with the switch: it moved, inverted, to
+ * `test-bench.test.tsx`, which asserts the control is **absent** and
+ * says why.
  *
  * Node without jsdom, so these are source-level assertions like the other
  * page tests. They pin the three things a refactor is most likely to
@@ -23,7 +31,6 @@ const CONTROLS = readFileSync(
   join(APP, "..", "components", "ReplanningControls.tsx"),
   "utf8",
 );
-const SIMULATE = readFileSync(join(APP, "simulate", "page.tsx"), "utf8");
 const BENCHMARKS = readFileSync(join(APP, "benchmarks", "page.tsx"), "utf8");
 const API = readFileSync(join(APP, "..", "lib", "api.ts"), "utf8");
 const EN = JSON.parse(
@@ -44,21 +51,22 @@ const KEYS = [
 ];
 
 describe("both pages use one control, not two copies", () => {
-  it("is rendered by /simulate and by the benchmark form", () => {
-    expect(SIMULATE).toContain("<ReplanningControls");
+  it("is rendered by the benchmark form", () => {
     expect(BENCHMARKS).toContain("<ReplanningControls");
   });
 
   it("tells the benchmark form it is a sweep-wide rule", () => {
+    /* The component still distinguishes the two scopes — a per-run
+       simulation and a sweep-wide rule are different promises and the
+       copy differs accordingly. One caller uses it today; that is a
+       caller count, not a reason to collapse the distinction. */
     expect(BENCHMARKS).toContain('scope="benchmark"');
-    expect(SIMULATE).toContain('scope="simulation"');
     expect(CONTROLS).toContain("replanning.benchmarkScope");
   });
 });
 
 describe("the switch is off unless somebody turns it on", () => {
-  it("both pages initialise to NO_REPLANNING", () => {
-    expect(SIMULATE).toContain("useState<ReplanningConfig>(NO_REPLANNING)");
+  it("the benchmark form initialises to NO_REPLANNING", () => {
     expect(BENCHMARKS).toContain("useState<ReplanningConfig>(NO_REPLANNING)");
   });
 
@@ -68,10 +76,9 @@ describe("the switch is off unless somebody turns it on", () => {
     );
   });
 
-  it("neither page persists the choice across loads", () => {
+  it("the form does not persist the choice across loads", () => {
     // `persisted.ts` is how this app remembers a setting. Replanning
     // must not be remembered — see the P02 reasoning above.
-    expect(SIMULATE).not.toMatch(/persisted[\s\S]{0,200}replanning/i);
     expect(BENCHMARKS).not.toMatch(/persisted[\s\S]{0,200}replanning/i);
   });
 
@@ -89,10 +96,12 @@ describe("the rule reaches the server", () => {
     expect(API).toMatch(/createSimulation:.*replanning\?: ReplanningConfig/s);
   });
 
-  it("the simulate page passes its state, not a literal", () => {
-    expect(SIMULATE).toContain(
-      "api.createSimulation(mapId, scenarioResource.id, replanning)",
-    );
+  it("createSimulation still accepts one, because the old flow sends it", () => {
+    /* `/benchmarks` is still live and still the only page with the
+       switch. The client keeping the parameter is what lets that page
+       work unchanged while the test bench deliberately never sends
+       one. */
+    expect(API).toContain("...(replanning?.enabled ? { replanning } : {})");
   });
 });
 

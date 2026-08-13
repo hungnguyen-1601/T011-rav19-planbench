@@ -633,3 +633,41 @@ describe("which episodes failed, and how", () => {
     }
   });
 });
+
+describe("the list is a catalogue, not a leaderboard", () => {
+  it("counts what has been measured without ranking it", () => {
+    /* The overview `/leaderboard` provided, rebuilt on the one thing it
+       may rest on. "Seven comparisons across three deployments" is a
+       fact about the work; a ranking of candidates across deployments is
+       a claim HĐ-1.4 forbids. */
+    expect(LIST).toContain("function summarise(");
+    expect(LIST).toContain("decisions.tally.deployments");
+    expect((en as Record<string, string>)["decisions.tally.note"]).toContain("not a ranking");
+  });
+
+  it("shows decision utility only once the list is one deployment", () => {
+    /* `decision_utility` is comparable **within** a deployment and
+       meaningless across them. A sortable column of it over a mixed list
+       would rebuild the cross-scenario ranking under a different name —
+       the single trap this page has to avoid. */
+    expect(LIST).toContain('const oneDeployment = profileId !== ""');
+    expect(LIST).toContain("{oneDeployment ? <th>");
+    expect((en as Record<string, string>)["decisions.tally.note"]).toContain("HĐ-1.4");
+  });
+
+  it("never sorts the rows itself", () => {
+    /* The server returns them in one order. A client-side sort by any
+       score column is how a catalogue becomes a ranking by accident. */
+    expect(LIST).not.toContain(".sort(");
+  });
+
+  it("filters by what a human has done with a run", () => {
+    /* Read, not read, approved — the three states somebody scanning for
+       their own next action actually wants. */
+    for (const key of ["unreviewed", "reviewed", "approved"]) {
+      expect(en).toHaveProperty(`decisions.filter.${key}`);
+      expect(vi).toHaveProperty(`decisions.filter.${key}`);
+    }
+    expect(LIST).toContain("reviewFilter");
+  });
+});

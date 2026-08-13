@@ -42,6 +42,26 @@ import type { AlgorithmInfo } from "@/lib/benchmarkTypes";
 import type { MapData, MapSummary, Pose2D } from "@/lib/types";
 
 type RankedFilter = "all" | "ranked" | "unranked";
+type ReviewFilter = "all" | "unreviewed" | "reviewed" | "approved";
+
+/** What has been measured, in four numbers.
+ *
+ * This is the overview `/leaderboard` used to provide, rebuilt on the
+ * one thing it may rest on. The old page ranked **across scenarios**,
+ * which HĐ-1.4 forbids: a recommendation is scoped to one deployment and
+ * says nothing about any other map, mission or robot. Counting runs
+ * carries none of that claim — "seven comparisons across three
+ * deployments" is a fact about the work, not a ranking of candidates.
+ */
+function summarise(runs: DecisionRun[]) {
+  return {
+    runs: runs.length,
+    ranked: runs.filter((run) => run.ranked).length,
+    reviewed: runs.filter((run) => run.review_state === "reviewed").length,
+    approved: runs.filter((run) => run.config_state === "approved").length,
+    deployments: new Set(runs.map((run) => run.task_profile_id)).size,
+  };
+}
 
 /** The tone of a "no card" chip. Never `err`: none of these is a
  *  failure, and colouring them red is how a gate table starts reading
@@ -58,6 +78,7 @@ export default function DecisionsPage() {
   const [profiles, setProfiles] = useState<TaskProfileSummary[]>([]);
   const [profileId, setProfileId] = useState("");
   const [rankedFilter, setRankedFilter] = useState<RankedFilter>("all");
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>("all");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -85,6 +106,21 @@ export default function DecisionsPage() {
     void refresh();
   }, [refresh]);
 
+  const shown = runs.filter((run) =>
+    reviewFilter === "all"
+      ? true
+      : reviewFilter === "approved"
+        ? run.config_state === "approved"
+        : run.review_state === reviewFilter,
+  );
+  const totals = summarise(shown);
+  // The utility column appears only once the list is one deployment.
+  // `decision_utility` is comparable **within** a deployment and
+  // meaningless across them (HĐ-1.4), and a sortable column of it over a
+  // mixed list would rebuild the cross-scenario ranking this page exists
+  // to replace — under a different name.
+  const oneDeployment = profileId !== "";
+
   return (
     <section>
       <div className="page-head">
@@ -95,6 +131,21 @@ export default function DecisionsPage() {
       {error ? <div className="error-box">{error}</div> : null}
 
       <LaunchPanel profiles={profiles} onFinished={refresh} />
+
+      <div className="panel">
+        <div className="stat-grid">
+          <Tally label={t("decisions.tally.runs")} value={totals.runs} />
+          <Tally label={t("decisions.tally.deployments")} value={totals.deployments} />
+          <Tally label={t("decisions.tally.ranked")} value={totals.ranked} />
+          <Tally label={t("decisions.tally.reviewed")} value={totals.reviewed} />
+          <Tally label={t("decisions.tally.approved")} value={totals.approved} />
+        </div>
+        {/* Counting is not ranking, and the distinction is the reason
+            this replaced a leaderboard rather than moving one. */}
+        <p className="muted" style={{ marginTop: 8 }}>
+          {t("decisions.tally.note")}
+        </p>
+      </div>
 
       <div className="panel">
         <div className="row" style={{ alignItems: "flex-end" }}>
@@ -120,6 +171,21 @@ export default function DecisionsPage() {
               <option value="unranked">{t("decisions.filter.unranked")}</option>
             </select>
           </label>
+          <label className="field">
+            <span>{t("decisions.filter.humanState")}</span>
+            {/* Filtered here rather than on the server: both states are
+                already on every row, and an endpoint parameter for them
+                would be a second way to ask one question. */}
+            <select
+              value={reviewFilter}
+              onChange={(event) => setReviewFilter(event.target.value as ReviewFilter)}
+            >
+              <option value="all">{t("decisions.filter.all")}</option>
+              <option value="unreviewed">{t("decisions.filter.unreviewed")}</option>
+              <option value="reviewed">{t("decisions.filter.reviewed")}</option>
+              <option value="approved">{t("decisions.filter.approved")}</option>
+            </select>
+          </label>
         </div>
         {/* Said out loud rather than left to be inferred from the row
             count: a reader who filters to "ranked" and sees one row
@@ -131,7 +197,7 @@ export default function DecisionsPage() {
 
       {loading ? (
         <p className="muted">{t("common.loading")}</p>
-      ) : runs.length === 0 ? (
+      ) : shown.length === 0 ? (
         <EmptyState
           icon="benchmark"
           title={t("decisions.empty.title")}
@@ -147,13 +213,14 @@ export default function DecisionsPage() {
                 <th>{t("decisions.column.scope")}</th>
                 <th>{t("decisions.column.episodes")}</th>
                 <th>{t("decisions.column.outcome")}</th>
+                {oneDeployment ? <th>{t("decisions.column.utility")}</th> : null}
                 <th>{t("decisions.column.review")}</th>
                 <th>{t("decisions.column.created")}</th>
               </tr>
             </thead>
             <tbody>
-              {runs.map((run) => (
-                <DecisionRow key={run.id} run={run} />
+              {shown.map((run) => (
+                <DecisionRow key={run.id} run={run} withUtility={oneDeployment} />
               ))}
             </tbody>
             </table>
@@ -687,7 +754,7 @@ function JobList({
   );
 }
 
-function DecisionRow({ run }: { run: DecisionRun }) {
+function DecisionRow({ run, withUtility }: { run: DecisionRun; withUtility: boolean }) {
   const { t } = useTranslation();
   const reason = noCardReason(run);
   const outcome = runOutcome(run);
@@ -755,6 +822,14 @@ function DecisionRow({ run }: { run: DecisionRun }) {
           </>
         )}
       </td>
+      {withUtility ? (
+        <td>
+          {/* Six significant figures, because ΔU between two candidates
+              is routinely in the fourth. Rounding it for tidiness would
+              show two different recommendations as the same number. */}
+          {run.card ? run.card.decision_utility.toFixed(6) : "—"}
+        </td>
+      ) : null}
       <td>
         <span className={`badge ${run.review_state === "reviewed" ? "ok" : "warn"}`}>
           {t(`decisions.review.${run.review_state}`)}
@@ -767,5 +842,15 @@ function DecisionRow({ run }: { run: DecisionRun }) {
       </td>
       <td className="muted">{run.created_at.slice(0, 16).replace("T", " ")}</td>
     </tr>
+  );
+}
+
+/** One number with a label, for the tally strip. */
+function Tally({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="stat-card">
+      <span className="stat-card-head">{label}</span>
+      <span className="stat-card-value">{value}</span>
+    </div>
   );
 }

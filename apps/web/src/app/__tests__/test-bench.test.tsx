@@ -1,0 +1,186 @@
+/** The test bench — `/simulate` after it stopped being free play.
+ *
+ * The page it replaces took a map, a start and a goal placed by clicking,
+ * and a scenario invented on the spot. Watching that told you the
+ * simulator worked; it told you nothing about the deployment you were
+ * about to spend two hours measuring.
+ *
+ * Two claims carry the redesign, and both are the kind that fail
+ * silently:
+ *
+ * 1. **What you watch is what the comparison will run.** Every condition
+ *    comes from the deployment, and none of them is editable here. A
+ *    single field that let somebody nudge the timeout "just for the
+ *    preview" would turn confidence into a claim about a different
+ *    experiment.
+ * 2. **Nothing it produces is evidence, and the page says so first.** No
+ *    trace is written, so no gate or card can see the run (HĐ-5). A
+ *    reader who learns that after watching a clean episode has been told
+ *    too late to have made a decision with it.
+ *
+ * Source-level like the other page tests: the page sits behind an effect
+ * and three fetches, so a first paint would only show a loading state.
+ */
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+import en from "../../lib/i18n/locales/en.json";
+import vi from "../../lib/i18n/locales/vi.json";
+import { NAV_SECTIONS } from "../../lib/navigation";
+
+const APP = join(process.cwd(), "src", "app");
+const PAGE = readFileSync(join(APP, "simulate", "page.tsx"), "utf8");
+const CLIENT = readFileSync(join(process.cwd(), "src", "lib", "decisions.ts"), "utf8");
+const EN = en as Record<string, string>;
+
+describe("the episode comes from a deployment, not from a form", () => {
+  it("takes a deployment and one of its missions", () => {
+    /* The input change is the whole feature. A map plus two clicked
+       poses is a scenario nobody is going to measure. */
+    expect(PAGE).toContain("listTaskProfiles()");
+    expect(PAGE).toContain("stageTestBenchEpisode(");
+    expect(PAGE).toContain("mission_id: mission.id");
+  });
+
+  it("no longer lets anybody place the start or the goal", () => {
+    /* A draggable goal would make what you are watching a different
+       episode from the one about to be measured — precisely the false
+       comfort a test bench must not offer. The canvas is passed no click
+       handler at all, which is what makes that unreachable rather than
+       merely discouraged. */
+    expect(PAGE).not.toContain("onWorldClick");
+    expect(PAGE).not.toContain("placeMode");
+    expect(PAGE).not.toContain("api.createScenario");
+  });
+
+  it("offers no replanning switch, because a measured episode has none", () => {
+    /* `run_contract_episode` calls `run_stack` without a replanning
+       config, so every episode a comparison measures runs with it off. A
+       switch here would let somebody watch a navigation stack that will
+       never be judged. This is the inverted half of the claim that used
+       to live in `replanning-controls.test.tsx`. */
+    expect(PAGE).not.toContain("ReplanningControls");
+    expect(PAGE).not.toContain("NO_REPLANNING");
+  });
+
+  it("shows the deployment's conditions as text, never as inputs", () => {
+    /* Timeout, tolerance, noise and traffic are read out of the stored
+       profile and rendered into a table. Each one is a condition the
+       comparison runs under; an editable copy would be a second
+       statement of the deployment, free to disagree with it. */
+    expect(PAGE).toContain("bench.conditions");
+    expect(PAGE).toContain("deployment.constraints?.episode_timeout_s");
+    expect(PAGE).toContain("deployment.environment?.sensor_noise");
+    expect(EN["bench.conditionsNote"]).toContain("different experiment");
+  });
+
+  it("names which noise streams are switched on", () => {
+    /* A count would say nothing and the full table would drown the row
+       that matters. Naming the active streams is what tells somebody at
+       a glance that the episode runs under a drift they forgot they
+       declared. */
+    expect(PAGE).toContain("function describeNoise(");
+    expect(en).toHaveProperty("bench.noiseNone");
+    expect(vi).toHaveProperty("bench.noiseNone");
+  });
+});
+
+describe("the seed is typed, and saying so is the point", () => {
+  it("is a field rather than something the server draws", () => {
+    /* Two runs with the same seed are the same episode down to the
+       obstacle trajectories and the noise draws. A server-picked seed
+       would make the one episode worth re-watching the one you cannot
+       get back. */
+    expect(PAGE).toContain('t("bench.seed")');
+    expect(PAGE).toContain("seed,");
+    expect(CLIENT).toContain("seed: number");
+  });
+
+  it("explains what the number buys", () => {
+    expect(PAGE).toContain("bench.seedNote");
+    expect(EN["bench.seedNote"]).toContain("same episode");
+  });
+
+  it("cannot be made negative or fractional", () => {
+    /* The contract's seed is a non-negative integer, and a form that
+       could produce 0.5 would fail at the server for a reason nobody
+       chose. */
+    expect(PAGE).toContain("Math.max(0, Math.trunc(Number(event.target.value)))");
+  });
+});
+
+describe("nothing it produces is evidence, and the page leads with that", () => {
+  it("says so before the run, not after", () => {
+    const banner = PAGE.indexOf("bench.notEvidence");
+    expect(banner).toBeGreaterThan(-1);
+    expect(banner).toBeLessThan(PAGE.indexOf("bench.run"));
+  });
+
+  it("names the reason rather than only the fact", () => {
+    /* "This is only a preview" invites the question "why does that
+       matter". The trace is the answer: HĐ-5 makes it the sole input of
+       the Metrics Engine, so no trace means nothing downstream can see
+       the run. */
+    expect(EN["bench.notEvidence"]).toContain("HĐ-5");
+    expect(EN["bench.notEvidence"]).toContain("no trace");
+    expect((vi as Record<string, string>)["bench.notEvidence"]).toContain("HĐ-5");
+  });
+
+  it("qualifies the metrics panel instead of leaving the numbers bare", () => {
+    /* They are read off the run rather than off a trace, which makes
+       them right for "did that look sane" and wrong for any claim. Bare,
+       they look like the numbers a gate would use. */
+    expect(PAGE).toContain("bench.metricsNote");
+    expect(EN["bench.metricsNote"]).toContain("not off a trace");
+  });
+
+  it("shows the real context id rather than a preview-only label", () => {
+    /* Reported honestly because it is the answer to "is this the same
+       episode the comparison will run": it is, and the HĐ-3.1 hash is
+       what says so. */
+    expect(PAGE).toContain("staged.episode_context_id");
+    expect(EN["bench.contextIdNote"]).toContain("HĐ-3.1");
+  });
+});
+
+describe("switching deployment clears what the last one drew", () => {
+  it("drops the mission, the staged episode, the map and the stream", () => {
+    /* An old trajectory left drawn under a new deployment's map is the
+       most confusing screen this page could produce: every pixel of it
+       is real, and none of it is about what the header now says. */
+    const effect = PAGE.slice(PAGE.indexOf("setMissionId(missions[0]"), PAGE.indexOf("const runOne"));
+    expect(effect).toContain("setStaged(null)");
+    expect(effect).toContain("setMap(null)");
+    expect(effect).toContain("stream.reset()");
+  });
+});
+
+describe("the page is reachable and translated", () => {
+  it("sits with the things a reader is doing, not with the retiring flow", () => {
+    const doing = NAV_SECTIONS.find((section) => section.titleKey === "nav.section.doing");
+    expect(doing?.items.map((item) => item.href)).toContain("/simulate");
+  });
+
+  it("is named for what it now is", () => {
+    /* "Live Simulation" described the machinery; the page is now the
+       cheap step before an expensive one, and the sidebar should say
+       which of those a reader is looking at. */
+    expect(EN["nav.simulate"]).toBe("Test Bench");
+    expect((vi as Record<string, string>)["nav.simulate"]).toBe("Sân thử");
+  });
+
+  it("has every key it asks for, in both locales", () => {
+    const keys = new Set([...PAGE.matchAll(/\bt\(\s*"([^"`]+)"/g)].map((match) => match[1]));
+    for (const key of keys) {
+      expect(en, `en is missing ${key}`).toHaveProperty(key);
+      expect(vi, `vi is missing ${key}`).toHaveProperty(key);
+    }
+  });
+
+  it("sends the reader on to the comparison the episode was checking for", () => {
+    expect(PAGE).toContain('href="/decisions"');
+    expect(en).toHaveProperty("bench.toComparison");
+  });
+});
