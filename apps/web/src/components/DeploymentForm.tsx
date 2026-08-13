@@ -288,6 +288,22 @@ export function DeploymentForm({
    * small thing that costs a re-measurement to notice.
    */
   const noiseField = (path: string, label: string, note?: string) => {
+    /* A missing entry means the caller passed a leaf name where a full
+       dotted path belongs — which is not only a crash but a control
+       wired to nowhere: `at` would read undefined and `set` would write
+       a top-level key the server does not accept. Named here because
+       "Cannot read properties of undefined (reading 'step')" sent the
+       last reader to the wrong line entirely. The condition itself is
+       caught before it ships by the call-site scan in
+       `deployments-page.test.tsx`. */
+    const defaults = NOISE_DEFAULTS[path];
+    if (!defaults) {
+      throw new Error(
+        `noise control path "${path}" has no NOISE_DEFAULTS entry. Pass the full dotted ` +
+          `path (environment.sensor_noise.<field>), not the leaf name — the control writes ` +
+          `to that path, so a leaf name would edit a field the deployment does not have.`,
+      );
+    }
     const current = Number(at(draft, path) ?? 0);
     const on = current > 0;
     return (
@@ -299,7 +315,7 @@ export function DeploymentForm({
             disabled={busy}
             onChange={(event) => {
               if (event.target.checked) {
-                set(path, remembered[path] ?? NOISE_DEFAULTS[path].value);
+                set(path, remembered[path] ?? defaults.value);
               } else {
                 if (current > 0) setRemembered((was) => ({ ...was, [path]: current }));
                 set(path, 0);
@@ -313,7 +329,7 @@ export function DeploymentForm({
           note={note}
           error={errorFor(path)}
           value={at(draft, path)}
-          step={NOISE_DEFAULTS[path].step}
+          step={defaults.step}
           disabled={busy || !on}
           onChange={(value) => set(path, value)}
         />
@@ -469,7 +485,7 @@ export function DeploymentForm({
         {noiseField("environment.sensor_noise.lidar_range_sigma_m", t("deployments.form.lidarSigma"))}
         {noiseField("environment.sensor_noise.wheel_slip_fraction", t("deployments.form.wheelSlip"))}
         {noiseField(
-          "localization_drift_m",
+          "environment.sensor_noise.localization_drift_m",
           t("deployments.form.localizationDrift"),
           t("deployments.form.localizationDriftNote"),
         )}
@@ -477,12 +493,12 @@ export function DeploymentForm({
       <div className="row" style={{ alignItems: "flex-end", gap: 12 }}>
         {noiseField("environment.sensor_noise.localization_jump_probability", t("deployments.form.localizationJump"))}
         {noiseField(
-          "lidar_dropout_probability",
+          "environment.sensor_noise.lidar_dropout_probability",
           t("deployments.form.lidarDropout"),
           t("deployments.form.lidarDropoutNote"),
         )}
         {noiseField(
-          "odometry_bias_fraction",
+          "environment.sensor_noise.odometry_bias_fraction",
           t("deployments.form.odometryBias"),
           t("deployments.form.odometryBiasNote"),
         )}

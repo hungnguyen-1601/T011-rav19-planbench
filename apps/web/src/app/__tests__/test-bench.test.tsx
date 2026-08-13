@@ -29,6 +29,7 @@ import { describe, expect, it } from "vitest";
 import en from "../../lib/i18n/locales/en.json";
 import vi from "../../lib/i18n/locales/vi.json";
 import { NAV_SECTIONS } from "../../lib/navigation";
+import { poseOf } from "../../lib/deployments";
 
 const APP = join(process.cwd(), "src", "app");
 const PAGE = readFileSync(join(APP, "simulate", "page.tsx"), "utf8");
@@ -182,5 +183,57 @@ describe("the page is reachable and translated", () => {
   it("sends the reader on to the comparison the episode was checking for", () => {
     expect(PAGE).toContain('href="/decisions"');
     expect(en).toHaveProperty("bench.toComparison");
+  });
+});
+
+describe("a stored mission is read in either shape the contract allows", () => {
+  /** The bug: `/simulate` crashed on first paint.
+   *
+   * It defaults to the first deployment, which is a shipped one, and the
+   * shipped ones hold `start: [x, y, theta]` — HĐ-2's YAML form, which
+   * `Mission` accepts through a before-validator so a contract document
+   * can be pasted verbatim. Deployments filed from the form hold
+   * `{x, y, theta}` instead. **Both are legal and both are in the
+   * store**, so the page was reading half the contract.
+   *
+   * Not a defensive-coding fix: nothing here is untrusted. The two
+   * shapes are what HĐ-2 defines, and one boundary function resolving
+   * them is the honest reading.
+   */
+  it("accepts the YAML triplet the shipped deployments use", () => {
+    expect(poseOf([2, 8, 0])).toEqual({ x: 2, y: 8, theta: 0 });
+  });
+
+  it("accepts the dumped object the form produces", () => {
+    expect(poseOf({ x: 1.5, y: 4, theta: 1.57 })).toEqual({ x: 1.5, y: 4, theta: 1.57 });
+  });
+
+  it("defaults a missing heading to zero, which the contract also does", () => {
+    expect(poseOf([2, 8])).toEqual({ x: 2, y: 8, theta: 0 });
+    expect(poseOf({ x: 2, y: 8 })).toEqual({ x: 2, y: 8, theta: 0 });
+  });
+
+  it("returns null rather than the origin for anything else", () => {
+    /* (0, 0) is a real place on every map — usually a corner, often
+       inside a wall. Substituting it would draw the robot somewhere it
+       is not, which is worse than an em dash. */
+    for (const value of [null, undefined, "2,8", {}, [], { x: "2", y: 8 }]) {
+      expect(poseOf(value)).toBeNull();
+    }
+  });
+
+  it("the page resolves the pose once instead of reaching into the mission", () => {
+    /* Two readers of the same wire shape is how one of them ends up
+       handling only one form again. */
+    expect(PAGE).toContain("const start = poseOf(mission?.start)");
+    expect(PAGE).not.toContain("mission.start.x");
+    expect(PAGE).not.toContain("mission?.start ??");
+  });
+
+  it("types the wire fields as unknown rather than claiming a shape", () => {
+    /* A `Pose` type here would be a claim the data does not honour, and
+       TypeScript would then vouch for the crash. */
+    expect(PAGE).toContain("start: unknown;");
+    expect(PAGE).toContain("goal: unknown;");
   });
 });

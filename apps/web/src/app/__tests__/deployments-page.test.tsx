@@ -108,9 +108,17 @@ describe("the form is an input method, not a second definition", () => {
     /* `TaskProfile` decides. The two computations here are displays of a
        consequence — the episode count a risk implies, and what the RAM
        breakdown leaves — and neither is sent anywhere. */
-    for (const forbidden of ["throw new Error(", "if (radius <", "Math.PI)"]) {
+    for (const forbidden of ["if (radius <", "Math.PI)"]) {
       expect(FORM).not.toContain(forbidden);
     }
+    /* One throw exists, and it is not about a deployment: it fires when a
+       *caller of this file* passes a leaf name where a dotted path
+       belongs, which is a mistake in the code rather than in what
+       somebody typed. Counted rather than banned, so a second throw —
+       which would more likely be a rule about a deployment — fails
+       here. */
+    expect(FORM.match(/throw new Error\(/g) ?? []).toHaveLength(1);
+    expect(FORM).toContain("has no NOISE_DEFAULTS entry");
     expect(LIB).toContain("never travels");
   });
 
@@ -266,7 +274,7 @@ describe("the noise a new deployment starts with", () => {
   it("gives back what was typed when a source is switched on again", () => {
     /* Losing an edited amplitude to a stray click is the kind of small
        thing that costs a re-measurement to notice. */
-    expect(FORM).toContain("remembered[path] ?? NOISE_DEFAULTS[path].value");
+    expect(FORM).toContain("remembered[path] ?? defaults.value");
   });
 });
 
@@ -329,5 +337,67 @@ describe("the vehicle register fills the form, it does not own it", () => {
        form than the one before the picker existed. */
     expect(FORM).toContain("listRobotProfiles().catch(() => [] as RobotProfile[])");
     expect(en).toHaveProperty("deployments.form.vehicleNone");
+  });
+});
+
+describe("every noise control is wired to a field the contract has", () => {
+  /** The guard for a bug that shipped and crashed the page.
+   *
+   * Three `noiseField` calls passed a leaf name — `"localization_drift_m"`
+   * — where the full dotted path belongs. `NOISE_DEFAULTS` is keyed by
+   * path, so the lookup returned undefined and reading `.step` threw:
+   * `/deployments` was dead from the commit that turned the four noises
+   * on by default until this test existed.
+   *
+   * **The schema drift guard could not catch it**, and that is the
+   * lesson. `tests/test_form_covers_the_contract.py` asks whether each
+   * contract field's path *appears in the file*; all seven did, in
+   * `NOISE_DEFAULTS` itself. Presence is not wiring. This checks the
+   * argument at each call site instead.
+   *
+   * A crash was the lucky outcome. Had a fallback step existed, the three
+   * controls would have rendered fine while reading and writing a
+   * top-level key no deployment has — three of the four noises the form
+   * claims to switch on would have been decorative, and nothing on screen
+   * would have said so.
+   */
+  const CALLS = [...FORM.matchAll(/noiseField\(\s*"([^"]+)"/g)].map((match) => match[1]);
+  const KEYS = [...FORM.matchAll(/^\s{2}"(environment\.sensor_noise\.[^"]+)":/gm)].map(
+    (match) => match[1],
+  );
+
+  it("finds every call and every default, so the comparison means something", () => {
+    /* Both regexes can silently match nothing; an empty set would make
+       every assertion below vacuously true. */
+    expect(CALLS.length).toBeGreaterThanOrEqual(7);
+    expect(KEYS.length).toBeGreaterThanOrEqual(7);
+  });
+
+  it("passes a full dotted path, never a leaf name", () => {
+    for (const path of CALLS) {
+      expect(path, `noise control path ${path} is not dotted`).toMatch(
+        /^environment\.sensor_noise\./,
+      );
+    }
+  });
+
+  it("names a path that has an amplitude and a step", () => {
+    for (const path of CALLS) {
+      expect(KEYS, `NOISE_DEFAULTS has no entry for ${path}`).toContain(path);
+    }
+  });
+
+  it("leaves no default without a control", () => {
+    /* The other direction: an amplitude the form fills into the draft but
+       offers no way to see or switch off would be a condition applied
+       silently. */
+    for (const key of KEYS) {
+      expect(CALLS, `${key} has a default but no control`).toContain(key);
+    }
+  });
+
+  it("fails by name rather than by TypeError if it ever happens again", () => {
+    expect(FORM).toContain("has no NOISE_DEFAULTS entry");
+    expect(FORM).not.toContain("NOISE_DEFAULTS[path].step");
   });
 });

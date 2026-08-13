@@ -52,21 +52,24 @@ import {
   type StagedEpisode,
   type TaskProfileSummary,
 } from "@/lib/decisions";
+import { poseOf } from "@/lib/deployments";
 import { useTranslation } from "@/lib/i18n";
 import { useEpisodeStream } from "@/lib/useEpisodeStream";
 import type { MapData, PlanResult, Point2D } from "@/lib/types";
 import type { AlgorithmInfo } from "@/lib/benchmarkTypes";
 
-interface Pose {
-  x: number;
-  y: number;
-  theta: number;
-}
-
+/** A mission as it comes off the wire.
+ *
+ * `start` and `goal` are `unknown` on purpose. HĐ-2's YAML form is
+ * `[x, y, theta]` and the dumped form is `{x, y, theta}`; both are legal
+ * and both are in the store, so a type claiming one of them would be a
+ * claim the data does not honour. `poseOf` is the one place that
+ * resolves it.
+ */
 interface Mission {
   id: string;
-  start: Pose;
-  goal: Pose;
+  start: unknown;
+  goal: unknown;
   probability?: number;
 }
 
@@ -126,6 +129,8 @@ export default function TestBenchPage() {
 
   const missions = deployment?.missions ?? [];
   const mission = missions.find((entry) => entry.id === missionId) ?? missions[0] ?? null;
+  const start = poseOf(mission?.start);
+  const goal = poseOf(mission?.goal);
 
   /* Switching deployment invalidates the mission, the staged episode and
      everything on the canvas: they described a different world. Leaving
@@ -192,7 +197,7 @@ export default function TestBenchPage() {
 
   const robotPose = stream.currentFrame
     ? { x: stream.currentFrame.x, y: stream.currentFrame.y, theta: stream.currentFrame.theta }
-    : (mission?.start ?? null);
+    : start;
 
   const ready = Boolean(profileId && mission && choice.stack && choice.local_config);
 
@@ -310,11 +315,11 @@ export default function TestBenchPage() {
                 <tr>
                   <td className="muted">{t("simulate.start")}</td>
                   <td>
-                    {mission ? `${mission.start.x.toFixed(2)}, ${mission.start.y.toFixed(2)} m` : "—"}
+                    {start ? `${start.x.toFixed(2)}, ${start.y.toFixed(2)} m` : "—"}
                   </td>
                   <td className="muted">{t("simulate.goal")}</td>
                   <td>
-                    {mission ? `${mission.goal.x.toFixed(2)}, ${mission.goal.y.toFixed(2)} m` : "—"}
+                    {goal ? `${goal.x.toFixed(2)}, ${goal.y.toFixed(2)} m` : "—"}
                   </td>
                 </tr>
                 <tr>
@@ -415,8 +420,8 @@ export default function TestBenchPage() {
           {map ? (
             <MapCanvas
               map={map}
-              startPose={mission?.start}
-              goalPose={mission?.goal}
+              startPose={start ?? undefined}
+              goalPose={goal ?? undefined}
               goalTolerance={deployment?.constraints?.goal_tolerance_m}
               robotRadius={deployment?.robot?.radius}
               plannedPath={stream.planPath.length > 0 ? stream.planPath : plan?.path}
