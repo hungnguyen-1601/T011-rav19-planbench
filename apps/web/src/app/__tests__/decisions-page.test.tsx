@@ -29,6 +29,13 @@ const DETAIL = readFileSync(join(APP, "decisions", "[id]", "page.tsx"), "utf8");
    people go looking for the start and the goal, and it has to send them
    to the page that actually has them. */
 const MAP_EDITOR = readFileSync(join(APP, "maps", "[id]", "page.tsx"), "utf8");
+/* Placing a start and a goal, and painting cells, are shared components:
+   the launch panel and the deployment form both need them, and two
+   copies would be two answers to the same question. The assertions below
+   follow the code into them — same claims, different file. */
+const COMPONENTS = join(process.cwd(), "src", "components");
+const PLACER = readFileSync(join(COMPONENTS, "MissionPlacer.tsx"), "utf8");
+const PAINTER = readFileSync(join(COMPONENTS, "MapPainter.tsx"), "utf8");
 
 describe("the list shows every run, not only the ones that ranked", () => {
   it("defaults to no outcome filter at all", () => {
@@ -434,8 +441,8 @@ describe("placing the start and the goal", () => {
     /* The scenario editor's shape, and for its reason: the author has to
        see what the next click does. A hidden alternation makes nudging a
        start two pixels drop a goal instead. */
-    expect(LIST).toContain("decisions.map.place.${which}");
-    expect(LIST).toContain("decisions.map.mode.${value.placing}");
+    expect(PLACER).toContain("decisions.map.place.${which}");
+    expect(PLACER).toContain("decisions.map.mode.${placing}");
     /* Both branches of each templated key, since the coverage check
        above only sees literal ones. */
     for (const which of ["start", "goal"]) {
@@ -451,32 +458,32 @@ describe("placing the start and the goal", () => {
   it("advances to the goal only while the goal is unset", () => {
     /* Convenience on the first pass, and no surprise afterwards:
        correcting a start must not drop a goal on top of it. */
-    expect(LIST).toContain('placing: value.goal === null ? "goal" : "start"');
+    expect(PLACER).toContain('if (goal === null) setPlacing("goal")');
   });
 
   it("moves a pose by dragging as well as by clicking", () => {
-    expect(LIST).toContain("onWorldDrag={(x, y) => place(x, y)}");
+    expect(PLACER).toContain("onWorldDrag={(x, y) => place(x, y)}");
   });
 
   it("lets a pose be typed as well as clicked", () => {
     /* A canvas cannot land on 2.00 exactly, and a deployment written to
        two decimals is the one somebody can repeat from the report. */
-    expect(LIST).toContain("<PoseFields");
-    expect(LIST).toContain('type="number"');
+    expect(PLACER).toContain("<PoseFields");
+    expect(PLACER).toContain('type="number"');
   });
 
   it("keeps the heading when the position moves", () => {
     /* Dragging a start must not silently spin the robot back to facing
        east — the heading is a separate choice the author already made. */
-    expect(LIST).toContain("theta: value.start?.theta ?? 0");
-    expect(LIST).toContain("theta: value.goal?.theta ?? 0");
+    expect(PLACER).toContain("theta: start?.theta ?? 0");
+    expect(PLACER).toContain("theta: goal?.theta ?? 0");
   });
 
   it("edits the heading in degrees and stores radians", () => {
     /* The contract stores radians; nobody types 1.5708 for a quarter
        turn. */
-    expect(LIST).toContain("DEGREES(value.theta)");
-    expect(LIST).toContain("RADIANS(Number(event.target.value))");
+    expect(PLACER).toContain("DEGREES(value.theta)");
+    expect(PLACER).toContain("RADIANS(Number(event.target.value))");
   });
 
   it("sends the heading in the mission rather than zeroing it", () => {
@@ -497,6 +504,26 @@ describe("placing the start and the goal", () => {
     expect((en as Record<string, string>)["decisions.map.startHeadingNote"]).toContain("t = 0");
   });
 
+  it("paints cells through one component, not two", () => {
+    /* The map editor has painted cells since Phase 1 and the deployment
+       form needs the same thing inline. Two editors would be two
+       definitions of what painting a map means, free to drift — the
+       argument that already kept the launch panel from growing its own.
+       So the editor page owns loading and saving, and nothing else. */
+    expect(MAP_EDITOR).toContain("<MapPainter");
+    expect(MAP_EDITOR).not.toContain("worldToCell");
+    expect(MAP_EDITOR).not.toContain("BRUSH_VALUE");
+    expect(PAINTER).toContain("worldToCell(map, x, y)");
+  });
+
+  it("leaves saving to whoever owns the map", () => {
+    /* `/maps/[id]` PUTs a new version by id; the deployment form holds
+       an unsaved grid until the profile is filed. A painter that knew
+       about `api.updateMap` could only ever serve the first. */
+    expect(PAINTER).not.toContain('from "@/lib/api"');
+    expect(MAP_EDITOR).toContain("api.updateMap");
+  });
+
   it("tells the map editor where the poses actually live", () => {
     /* A map is walls, and `MapData` has no pose fields — the same
        warehouse serves many missions, so the pair belongs to the
@@ -507,6 +534,20 @@ describe("placing the start and the goal", () => {
     expect(MAP_EDITOR).toContain('href="/decisions"');
     expect(en).toHaveProperty("maps.whereArePoses");
     expect(vi).toHaveProperty("maps.whereArePoses");
+  });
+
+  it("keeps the pose in one place, which is what makes it two-way", () => {
+    /* Dragging updates the numbers and typing moves the marker because
+       there is exactly one `Pose2D` and both halves read and write it.
+       A local `useState` here "so the input feels snappier" would give
+       the canvas and the fields their own copies, and one of them would
+       start winning silently.
+
+       The placer may hold the *mode* — that is a tool selection, not
+       data — and nothing else. */
+    const states = [...PLACER.matchAll(/useState<([^>]*)>/g)].map((match) => match[1]);
+    expect(states).toEqual(["PlacementMode"]);
+    expect(PLACER).not.toContain("useState<Pose2D");
   });
 
   it("draws the goal circle at the deployment's own tolerance", () => {
