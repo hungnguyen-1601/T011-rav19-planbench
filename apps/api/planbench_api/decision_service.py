@@ -644,3 +644,158 @@ def _packed_map(map_data: Any) -> dict[str, Any]:
         "origin": {"x": map_data.origin.x, "y": map_data.origin.y},
         "occupied_bits": base64.b64encode(bytes(packed)).decode("ascii"),
     }
+
+
+class TestBenchStaging:
+    """What staging one test-bench episode produced.
+
+    Three ids rather than one because each answers a different question
+    the caller has: which simulation to run and stream, which conditions
+    were actually assembled, and which stored map the canvas should draw.
+    """
+
+    __slots__ = ("simulation_id", "scenario_id", "map_id", "episode_context_id", "scenario")
+
+    def __init__(
+        self,
+        *,
+        simulation_id: str,
+        scenario_id: str,
+        map_id: str,
+        episode_context_id: str,
+        scenario: dict[str, Any],
+    ) -> None:
+        self.simulation_id = simulation_id
+        self.scenario_id = scenario_id
+        self.map_id = map_id
+        self.episode_context_id = episode_context_id
+        self.scenario = scenario
+
+
+class TestBenchService:
+    """One episode of a deployment, watched live. Never a measurement.
+
+    **The gap this fills.** Before a comparison spends hours on three
+    hundred episodes there is no way to see *one* of them. A mission whose
+    goal sits behind a shelf, a noise amplitude entered a decimal place
+    out, a robot radius that will not fit the doorway — each of those
+    costs the whole run and shows up at the end as a uniform wall of
+    ``no_path`` that looks like a platform fault. Watching one episode
+    costs seconds and answers the question directly.
+
+    **Why it assembles the episode from the contract rather than a form.**
+    The point is fidelity: what you watch has to be what the comparison
+    will run, or it is a different experiment offering false comfort.
+    So the scenario comes from :func:`scenario_for` — the same function
+    :func:`run_contract_episode` calls — and the planners come from the
+    same registry entry with the same episode seed. Nothing here is
+    allowed to invent a condition.
+
+    **Why it writes no trace, and why that is the whole safety argument.**
+    HĐ-5 makes the Parquet trace the sole input of the Metrics Engine. A
+    test-bench episode that wrote one would inject an episode into the
+    evaluation set outside the context-outer run order (HĐ-3.2) and
+    outside the ban on two concurrent evaluation runs (HĐ-7.4) — and it
+    would do so with a *real* ``episode_context_id``, so nothing
+    downstream could tell it apart from a measured episode. Instead the
+    run lands in the simulations store, which no gate, metric or card
+    ever reads. The id is real; the run is not evidence.
+    """
+
+    def __init__(self, repos: Any, *, map_root: Path) -> None:
+        self._repos = repos
+        self._maps: MapRepositoryPort = repos.maps
+        self._scenarios = repos.scenarios
+        self._profiles: TaskProfileRepository = repos.task_profiles
+        self._map_root = map_root
+
+    def stage(
+        self,
+        *,
+        task_profile_id: str,
+        mission_id: str,
+        seed: int,
+        stack: str,
+        local_config: str,
+    ) -> TestBenchStaging:
+        """Build the episode and hand back a simulation ready to run."""
+        from planbench_api.services import SimulationService
+        from planbench_benchmark.episode import EpisodeSetupError, scenario_for
+        from planbench_benchmark.task_map import MapProfileMismatch, load_task_map
+        from planbench_schemas.episode_context import EpisodeContext
+
+        profile = TaskProfile.model_validate(self._profiles.get(task_profile_id).profile)
+
+        params = LOCAL_CONTROLLER_CONFIGS.get(local_config)
+        if params is None:
+            raise DomainValidationError(
+                f"no local-controller configuration named {local_config!r}; "
+                f"known: {', '.join(sorted(LOCAL_CONTROLLER_CONFIGS))}"
+            )
+
+        context = EpisodeContext(
+            task_profile_id=task_profile_id, mission_id=mission_id, seed=seed
+        )
+        try:
+            scenario = scenario_for(profile, context)
+        except EpisodeSetupError as error:
+            raise DomainValidationError(str(error)) from error
+
+        try:
+            map_data = load_task_map(profile, base_dir=self._map_root, validate=True)
+        except MapProfileMismatch as error:
+            raise DomainValidationError(str(error)) from error
+        except FileNotFoundError as error:
+            raise DomainValidationError(
+                f"deployment {task_profile_id!r} names a map that is not on disk: {error}"
+            ) from error
+
+        stored_map = self._existing_map(map_data) or self._maps.create(map_data)
+        stored_scenario = self._existing_scenario(
+            stored_map.id, scenario.name
+        ) or self._scenarios.create(stored_map.id, scenario)
+
+        # Through the service rather than the repository, so the same
+        # refusals a hand-built simulation gets apply here: an unknown
+        # stack, a config the controller will not accept, a scenario the
+        # map cannot support. Replanning is left at its default off, which
+        # is also what `run_contract_episode` runs with — a test bench
+        # that quietly enabled it would be showing a different stack from
+        # the one the comparison will measure.
+        stored_simulation = SimulationService(self._repos).create(
+            stored_map.id, stored_scenario.id, stack, params
+        )
+
+        return TestBenchStaging(
+            simulation_id=stored_simulation.id,
+            scenario_id=stored_scenario.id,
+            map_id=stored_map.id,
+            episode_context_id=context.episode_context_id,
+            scenario=scenario.model_dump(mode="json"),
+        )
+
+    def _existing_map(self, map_data: Any) -> StoredMap | None:
+        """A stored map with these exact walls, if one is already there.
+
+        Staging is idempotent in the thing that matters: watching the same
+        deployment twenty times leaves one map row, not twenty. Equality is
+        on the grid itself because that is what identity means here — two
+        rows holding the same occupancy are the same world however they
+        got there.
+        """
+        for stored in self._maps.list():
+            if stored.map_data == map_data:
+                return stored
+        return None
+
+    def _existing_scenario(self, map_id: str, name: str) -> Any | None:
+        """The scenario for this context, if it has been staged before.
+
+        Matched on the name, which :func:`scenario_for` sets to the
+        ``episode_context_id`` — so the lookup key is the hash of the
+        conditions rather than a label somebody typed.
+        """
+        for stored in self._scenarios.list():
+            if stored.map_id == map_id and stored.scenario.name == name:
+                return stored
+        return None

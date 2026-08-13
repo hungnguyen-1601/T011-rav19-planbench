@@ -16,6 +16,7 @@ from planbench_api.decision_service import (
     CandidateService,
     DecisionRunService,
     TaskProfileService,
+    TestBenchService,
 )
 from planbench_api.registry_service import ModelRegistryService, RobotProfileService
 from planbench_api.repositories import RepositoryHub
@@ -146,6 +147,16 @@ def get_task_profile_service(request: Request) -> TaskProfileService:
         maps=state.repos.maps,
         map_root=get_map_root(request),
     )
+
+
+def get_test_bench_service(request: Request) -> TestBenchService:
+    """One episode of a deployment, watched live.
+
+    It gets the whole repository hub because staging crosses three
+    stores — the deployment it reads, the map and scenario it
+    materialises, and the simulation the WebSocket then streams.
+    """
+    return TestBenchService(request.app.state.repos, map_root=get_map_root(request))
 
 
 def get_candidate_service(request: Request) -> CandidateService:

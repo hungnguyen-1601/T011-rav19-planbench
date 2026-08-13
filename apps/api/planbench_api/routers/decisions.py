@@ -28,6 +28,7 @@ from planbench_api.decision_service import (
     CandidateService,
     DecisionRunService,
     TaskProfileService,
+    TestBenchService,
 )
 from planbench_api.decisions import StoredCandidate, StoredDecisionRun, StoredTaskProfile
 from planbench_api.dependencies import (
@@ -36,6 +37,7 @@ from planbench_api.dependencies import (
     get_decision_run_service,
     get_map_root,
     get_task_profile_service,
+    get_test_bench_service,
 )
 from planbench_api.errors import DomainValidationError, NotFoundError
 from planbench_api.worker import Job, JobQueue
@@ -49,6 +51,7 @@ Candidates = Annotated[CandidateService, Depends(get_candidate_service)]
 Runs = Annotated[DecisionRunService, Depends(get_decision_run_service)]
 DecisionJobs = Annotated[JobQueue, Depends(get_decision_jobs)]
 MapRoot = Annotated[Path, Depends(get_map_root)]
+TestBench = Annotated[TestBenchService, Depends(get_test_bench_service)]
 
 
 class TaskProfileResource(BaseModel):
@@ -373,6 +376,74 @@ def task_profile_template(map_root: MapRoot) -> dict[str, Any]:
 @router.get("/task-profiles/{profile_id}", response_model=TaskProfileResource)
 def get_task_profile(profile_id: str, service: Profiles) -> TaskProfileResource:
     return _profile(service.get(profile_id))
+
+
+class TestBenchRequest(BaseModel):
+    """One episode of a deployment, to watch rather than to measure.
+
+    ``seed`` is named rather than drawn. Two runs of the test bench with
+    the same seed are the same episode down to the obstacle trajectories
+    and the noise draws, which is what makes "watch it again, slower"
+    mean anything — and a seed picked by the server would make the one
+    thing worth re-watching irreproducible.
+    """
+
+    mission_id: str = Field(min_length=1)
+    seed: int = Field(default=0, ge=0)
+    stack: str = Field(min_length=1, description="Registry stack id, e.g. 'astar+dwa'.")
+    local_config: str = Field(default="dwa_coarse")
+
+
+class TestBenchResource(BaseModel):
+    #: What to run and stream. The old `/simulations` endpoints and the
+    #: existing WebSocket take it from here unchanged.
+    simulation_id: str
+    scenario_id: str
+    map_id: str
+    #: The real HĐ-3.1 id of the conditions assembled. Shown because it
+    #: is the honest answer to "is this the same episode the comparison
+    #: will run" — it is, and this is the identity that says so.
+    episode_context_id: str
+    scenario: dict[str, Any]
+
+
+@router.post(
+    "/task-profiles/{profile_id}/test-bench",
+    response_model=TestBenchResource,
+    status_code=status.HTTP_201_CREATED,
+)
+def stage_test_bench_episode(
+    profile_id: str, request: TestBenchRequest, service: TestBench
+) -> TestBenchResource:
+    """Assemble one episode of this deployment and hand back a simulation.
+
+    **Not a measurement, and the response says which parts are real.**
+    The conditions are genuine — same ``scenario_for``, same registry
+    entry, same episode seed as :func:`run_contract_episode` — so what
+    you watch is what the comparison will run. What is *not* produced is
+    an HĐ-5 trace: nothing here reaches the Metrics Engine, no gate sees
+    it, no card counts it. That distinction is the whole reason this is
+    allowed to run outside the context-outer order (HĐ-3.2) and beside a
+    live evaluation (HĐ-7.4).
+
+    Staging is idempotent in what it stores: the same deployment and seed
+    reuse the map row and the scenario row rather than filing new ones,
+    because the scenario's name *is* the episode context id.
+    """
+    staged = service.stage(
+        task_profile_id=profile_id,
+        mission_id=request.mission_id,
+        seed=request.seed,
+        stack=request.stack,
+        local_config=request.local_config,
+    )
+    return TestBenchResource(
+        simulation_id=staged.simulation_id,
+        scenario_id=staged.scenario_id,
+        map_id=staged.map_id,
+        episode_context_id=staged.episode_context_id,
+        scenario=staged.scenario,
+    )
 
 
 @router.post("/candidates", response_model=CandidateResource, status_code=status.HTTP_201_CREATED)
