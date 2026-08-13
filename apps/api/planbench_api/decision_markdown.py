@@ -112,8 +112,9 @@ def _gates(report: dict[str, Any]) -> list[str]:
         "Six feasibility gates run before anything is scored (HĐ-7). A candidate that",
         "failed one was never ranked, which is a result rather than an error.",
         "",
-        "| Candidate | Config | Shown | Distinct episodes | Success | p99 latency | Verdict |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| Candidate | Config | Shown | Distinct episodes | Success | p99 latency | "
+        "Replans | Verdict |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for candidate in candidates:
         blocking = candidate.get("blocking_gates") or []
@@ -125,6 +126,11 @@ def _gates(report: dict[str, Any]) -> list[str]:
             _text(candidate.get("n_distinct_episodes")),
             _ratio(candidate.get("success_rate")),
             _number(candidate.get("pooled_p99_latency_ms"), "ms"),
+            # Evidence, not a score — see `EpisodeMetricSet.replan_count`.
+            # On paper it matters more than on screen: "timeout" alone
+            # leaves a reader unable to tell a planner that never
+            # recovered from one that recovered forty times too slowly.
+            _text(candidate.get("replan_count")),
             verdict,
         ]
         lines.append("| " + " | ".join(cells) + " |")

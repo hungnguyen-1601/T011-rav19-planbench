@@ -63,6 +63,7 @@ from planbench_decision.sensitivity import AnchorStability, WeightStability
 from planbench_decision.stats import CandidateEvidence, Recommendation, RecommendationStatus
 from planbench_schemas.contracts import CONTRACTS_VERSION
 from planbench_schemas.episode_context import EpisodeContext
+from planbench_schemas.replanning import ReplanningConfig
 from planbench_schemas.sensor import SensorNoise
 from planbench_schemas.task_profile import ClaimLevel, TaskConstraints, TaskProfile
 
@@ -360,6 +361,21 @@ class Manifest(BaseModel):
     #: this field a manifest cannot tell them apart, and whoever rebuilds
     #: the card rebuilds a different one with nothing to warn them.
     sensor_noise: SensorNoise = Field(default_factory=SensorNoise)
+    #: Whether the candidates were allowed to replan, and under what
+    #: budget.
+    #:
+    #: Carried for the third time for the same reason: it is not in
+    #: ``episode_context_id``'s payload either. Two runs of one
+    #: deployment at the same seeds, one replanning and one not, share
+    #: every context id and are not the same experiment — and the
+    #: difference is large, since a stack that may replan gets a second
+    #: chance at exactly the episodes the other one gave up on.
+    #:
+    #: It sits on the ``sensor_noise`` side of the rule above rather than
+    #: the ``constraints`` side: replanning changes what the robot *did*,
+    #: not how the result was judged, so the episodes recorded without it
+    #: are episodes of a different run and the deployment needs a new id.
+    replanning: ReplanningConfig = Field(default_factory=ReplanningConfig)
     #: The thresholds that turned measurements into verdicts (HĐ-7).
     #:
     #: Required, and required for the same reason ``sensor_noise`` is
@@ -553,6 +569,7 @@ def build_manifest(
         decision_mode=settings.decision_mode,
         travel_time_accounting=settings.travel_time_accounting,
         sensor_noise=profile.environment.sensor_noise,
+        replanning=profile.replanning,
         constraints=profile.constraints,
         candidates=tuple(sorted(gate_reports)),
         # Sorted by id so a rebuild produces the same file byte for byte

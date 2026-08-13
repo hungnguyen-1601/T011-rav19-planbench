@@ -329,6 +329,23 @@
           ]
         }
       }
+    },
+    "replanning": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Whether candidates could replan, and under what budget. Required for the same reason sensor_noise is: episode_context_id does not hash it, so two runs at the same seeds — one replanning, one not — share every context id while being two experiments. It sits on the sensor_noise side of that rule rather than the constraints side: replanning changes what the robot did, not how the result was judged, so switching it on needs a new task_profile_id. max_replans null means unlimited; the budget is the episode timeout and the latency each replan is charged.",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "max_replans": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
     }
   }
 }

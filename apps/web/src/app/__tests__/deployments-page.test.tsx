@@ -560,3 +560,80 @@ describe("an approval can be taken back, and taking it back is itself recorded",
     expect(vi).toHaveProperty("decisions.audit.withdraw_config");
   });
 });
+
+describe("replanning is declared by the deployment, and has no budget", () => {
+  /** The half that was missing until now.
+   *
+   * Replanning existed in the simulator and no profile could declare it,
+   * so every measured episode ran with it off and nothing on screen said
+   * so. It is a *deployment* condition — applied on the path every
+   * candidate goes through, one trigger for all of them — which is what
+   * stops it being a capability one stack has and another does not.
+   */
+  const EN_REPLAN = en as Record<string, string>;
+
+  it("offers the switch", () => {
+    expect(FORM).toContain('at(draft, "replanning.enabled")');
+    expect(FORM).toContain('set("replanning.enabled", event.target.checked)');
+  });
+
+  it("sits under the map picker, not up with the other conditions", () => {
+    /* Where it belongs by category is beside the constraints; where it
+       belongs by use is next to the map. Deciding whether the robot may
+       replan is a thought you have *while looking at the traffic you
+       just picked*, and up with the constraints it was a scroll away
+       from the moment it occurs to anybody. */
+    expect(FORM.indexOf('set("replanning.enabled"')).toBeGreaterThan(
+      FORM.indexOf('t("deployments.form.map")'),
+    );
+    expect(FORM.indexOf('set("replanning.enabled"')).toBeLessThan(FORM.indexOf("<MissionPlacer"));
+  });
+
+  it("stands out when the chosen scenario has traffic", () => {
+    expect(FORM).toContain('traffic > 0 ? "notice warn" : ""');
+    expect(EN_REPLAN["deployments.form.replanningTraffic"]).toContain("local controller");
+    expect(vi).toHaveProperty("deployments.form.replanningTraffic");
+  });
+
+  it("highlights without ticking", () => {
+    /* Ticking would be the form deciding an evaluation condition for the
+       author, and the reason this field lives on the deployment at all
+       is that such decisions are declared rather than inferred.
+       Highlighting says "this is the choice you are about to skip";
+       ticking would say "we made it for you". */
+    const block = FORM.slice(FORM.indexOf('traffic > 0 ? "notice warn"'), FORM.indexOf("<MissionPlacer"));
+    expect(block).not.toContain('set("replanning.enabled", true)');
+    expect(block).toContain("event.target.checked");
+  });
+
+  it("counts the traffic off the draft, not off the library entry", () => {
+    /* The draft is what will be measured, and it is the only source that
+       also covers a stored or drawn map — where there is no library
+       entry to ask. */
+    expect(FORM).toContain('at(draft, "environment.dynamic_obstacles")');
+  });
+
+  it("offers no budget field, and that is the point", () => {
+    /* A cap is a number somebody chose. Under a budget of three, a stack
+       that would have escaped on its fourth try is scored as a failure
+       of the cap rather than of the planner — the same class of artifact
+       as the replan information privilege (HĐ-4.1). */
+    expect(FORM).not.toContain("max_replans");
+  });
+
+  it("says what pays for it instead", () => {
+    /* Unlimited is only defensible because each replan is charged to the
+       control step it delayed. Without that sentence the switch reads as
+       a free capability. */
+    expect(EN_REPLAN["deployments.form.replanningNote"]).toContain("charged");
+    expect(EN_REPLAN["deployments.form.replanningNote"]).toContain("p99");
+    expect(vi).toHaveProperty("deployments.form.replanningNote");
+  });
+
+  it("warns that switching it on is a different deployment", () => {
+    /* `episode_context_id` does not hash it, so the same seeds under two
+       settings produce identical context ids for two experiments — the
+       trap `sensor_noise` sprang. */
+    expect(EN_REPLAN["deployments.form.replanningNote"]).toContain("HĐ-3.1");
+  });
+});

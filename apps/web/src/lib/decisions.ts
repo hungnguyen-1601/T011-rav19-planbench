@@ -93,6 +93,13 @@ export interface EpisodeOutcome {
   min_clearance: number;
   travel_time_s: number;
   p99_latency_ms: number;
+  /** How many times the stack replanned in this episode.
+   *
+   * Evidence, never a score: the cost of replanning is time and latency,
+   * and both are already charged. Absent on runs recorded before
+   * replanning was priced — and 0 would be the true answer for them, but
+   * `undefined` says "not recorded" instead of asserting it. */
+  replan_count?: number;
 }
 
 export interface RunCandidate {
@@ -117,6 +124,9 @@ export interface RunCandidate {
   stopped_early?: StoppedEarly | null;
   success_rate: number;
   pooled_p99_latency_ms: number;
+  /** Replans across every episode this candidate ran. See
+   *  `EpisodeOutcome.replan_count` — evidence, not a score. */
+  replan_count?: number;
   /** Per-episode outcomes, in the order the sweep ran them.
    *
    * **Absent is "not recorded", never "all passed".** Runs stored before

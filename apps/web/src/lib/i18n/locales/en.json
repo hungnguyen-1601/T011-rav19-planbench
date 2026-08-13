@@ -1168,5 +1168,19 @@
   "decisions.withdraw.action": "Withdraw approval",
   "decisions.withdraw.busy": "Withdrawing…",
   "decisions.withdraw.note": "Returns this run to undecided. The approval is not erased — it stays in the journal below, with the withdrawal beside it (HĐ-14).",
-  "decisions.audit.withdraw_config": "withdrew the approval"
+  "decisions.audit.withdraw_config": "withdrew the approval",
+  "decisions.gates.replans": "Replans",
+  "decisions.gates.replanNote": "How many times this candidate replanned across every episode. Evidence, not a score — replanning already costs time and latency, and both are charged. There is no replan budget: the price is that every replan records its own control step, so habitual replanning walks into G4 on its own.",
+  "deployments.form.replanning": "Replanning",
+  "deployments.form.replanningEnabled": "Let candidates replan when the robot gets stuck",
+  "deployments.form.replanningNote": "Same trigger and no budget, for every candidate alike: replan as often as it takes, bounded by the episode timeout. Each replan is charged to the control step it delayed, so p99 latency and travel time already price it — a stack that needs more replans pays more without a penalty term. Switching this on is a different experiment from the same deployment with it off, so it needs its own deployment id (HĐ-3.1 does not hash it).",
+  "bench.replanning": "Replanning",
+  "bench.replanningOn": "on — unlimited, each replan charged to the step it delays",
+  "bench.replanningOff": "off — the robot must get through with the local controller alone",
+  "deployments.column.replanning": "Replan",
+  "deployments.replanningOn": "on",
+  "deployments.replanningOff": "off",
+  "deployments.form.replanningTraffic": "This scenario has {n} moving obstacle(s). With replanning off, a candidate blocked by one has only its local controller to get around it — which is a legitimate experiment, but decide it rather than inherit it.",
+  "metrics.replanOff": "off for this deployment",
+  "metrics.replanUnknown": "not recorded"
 }

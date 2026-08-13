@@ -393,6 +393,15 @@ export function DeploymentForm({
     (chosenVehicle.max_linear_acceleration === null ||
       chosenVehicle.max_angular_acceleration === null);
 
+  /** How much moving traffic this deployment now declares.
+   *
+   * Read off the draft rather than off the picked library entry, because
+   * the draft is what will be measured — and it is also the only source
+   * that covers a stored or drawn map, where there is no library entry
+   * to ask.
+   */
+  const traffic = (at(draft, "environment.dynamic_obstacles") as unknown[] | undefined)?.length ?? 0;
+
   const risk = at(draft, "constraints.collision_probability_max");
   const nMin = nMinFor(risk);
   const leftOver = ramLeftOver(draft);
@@ -631,6 +640,38 @@ export function DeploymentForm({
           onError={setError}
         />
       ) : null}
+
+      {/* **Directly under whichever map picker was used, not up with the
+          other conditions.** It began beside the constraints, which is
+          where it belongs by category and the wrong place by use: the map
+          is chosen at the bottom of the form, and deciding whether the
+          robot may replan is a thought you have *while looking at the
+          traffic you just picked* — so the control was a scroll away from
+          the moment it occurs to anybody.
+
+          It is highlighted rather than ticked when the chosen scenario
+          has moving obstacles. Ticking it would be the form deciding an
+          evaluation condition on the author's behalf, and the whole
+          reason this field exists on the deployment is that such
+          decisions are declared rather than inferred. Highlighting says
+          "this is the choice you are about to skip"; ticking would say
+          "we made it for you". */}
+      <div className={traffic > 0 ? "notice warn" : ""} style={{ marginTop: 8 }}>
+        <label className="row" style={{ alignItems: "center", gap: 6 }}>
+          <input
+            type="checkbox"
+            checked={Boolean(at(draft, "replanning.enabled"))}
+            disabled={busy}
+            onChange={(event) => set("replanning.enabled", event.target.checked)}
+          />
+          <strong>{t("deployments.form.replanningEnabled")}</strong>
+        </label>
+        {traffic > 0 && !at(draft, "replanning.enabled") ? (
+          <p className="muted">{t("deployments.form.replanningTraffic", { n: String(traffic) })}</p>
+        ) : (
+          <p className="muted">{t("deployments.form.replanningNote")}</p>
+        )}
+      </div>
 
       {mapData ? (
         <MissionPlacer

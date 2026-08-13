@@ -304,3 +304,80 @@ describe("two views of one scene, and neither replaces the other", () => {
     expect(PAGE).toContain("obstacleSnapshots={stream.currentFrame?.obstacles ?? []}");
   });
 });
+
+describe("the conditions table says whether replanning is on", () => {
+  /** The gap An hit: the switch existed and nothing on this page said
+   *  which way it was set.
+   *
+   * Whether a candidate may replan changes what happens the moment the
+   * robot is blocked — which is the moment this page exists to show. A
+   * table of "what the deployment fixed" that omitted it was omitting
+   * the condition most likely to explain what you are watching, and left
+   * "the robot just sat there" looking like a broken planner rather than
+   * a deployment that never allowed a second plan.
+   */
+  it("lists it beside the other fixed conditions", () => {
+    expect(PAGE).toContain("bench.replanning");
+    expect(PAGE).toContain("deployment.replanning?.enabled");
+  });
+
+  it("says what each state means rather than printing on or off", () => {
+    /* "off" alone leaves a reader to guess whether that is a setting or
+       a missing feature. */
+    expect(EN["bench.replanningOff"]).toContain("local controller alone");
+    expect(EN["bench.replanningOn"]).toContain("charged");
+    for (const key of ["bench.replanningOn", "bench.replanningOff"]) {
+      expect(vi, `vi is missing ${key}`).toHaveProperty(key);
+    }
+  });
+
+  it("offers no control for it, because the deployment owns it", () => {
+    /* Every condition on this page is read, not set — a switch here
+       would make what you watch a different episode from the one about
+       to be measured. */
+    expect(PAGE).not.toContain('set("replanning');
+    expect(PAGE).not.toContain("setReplanning");
+  });
+});
+
+describe("the metrics panel answers whether it replanned", () => {
+  /** An switched replanning on, watched a robot sit still, and had no
+   *  way to tell whether it never tried or the setting never arrived.
+   *
+   * The row existed and rendered only when the count was truthy, on the
+   * reasoning that a column of zeros on every non-replanning run buries
+   * the metrics that matter. The reasoning was fine; the effect was that
+   * **"replanned 0 times" and "this platform does not report replans"
+   * became the same blank** — and that blank is exactly the question
+   * somebody debugging a stuck robot is asking.
+   */
+  const PANEL = readFileSync(
+    join(process.cwd(), "src", "components", "MetricsPanel.tsx"),
+    "utf8",
+  );
+
+  it("always renders the row rather than hiding a zero", () => {
+    expect(PANEL).not.toContain("{metrics.replan_count ? (");
+    expect(PANEL).toContain('label={t("metrics.replanCount")}');
+  });
+
+  it("distinguishes off, zero, and not recorded", () => {
+    /* Three answers, because there are three states: off is not a count,
+       and 0 is not silence. */
+    expect(PANEL).toContain("replanning === undefined");
+    expect(PANEL).toContain("replanning.enabled");
+    expect(PANEL).toContain("metrics.replan_count ?? 0");
+    for (const key of ["metrics.replanOff", "metrics.replanUnknown"]) {
+      expect(en, `en is missing ${key}`).toHaveProperty(key);
+      expect(vi, `vi is missing ${key}`).toHaveProperty(key);
+    }
+  });
+
+  it("takes the rule from the deployment, not from the run", () => {
+    /* It is the value the episode was staged with, and it is the one
+       that answers "did the setting arrive at all" — which a count read
+       off the run cannot. */
+    expect(PAGE).toContain("deployment.replanning?.enabled");
+    expect(PAGE).toContain("replanning={deployment ?");
+  });
+});

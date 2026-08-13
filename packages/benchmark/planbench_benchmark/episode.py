@@ -146,6 +146,14 @@ def run_contract_episode(
             scenario,
             local_planner,
             global_planner,
+            # From the deployment, like every other condition here. It
+            # took a while to arrive: replanning existed in the simulator
+            # but no profile could declare it, so every measured episode
+            # ran with it off and nothing said so. It is applied on the
+            # path every candidate goes through — one trigger, one budget
+            # for all of them — which is what stops it being a capability
+            # one stack has and another does not.
+            profile.replanning,
             recorder=recorder,
             legacy_metrics=False,
         )

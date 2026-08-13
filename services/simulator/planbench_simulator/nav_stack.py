@@ -445,13 +445,21 @@ def run_stack(
     control_period = local_planner.control_period
     held_action = None
     next_control_time = 0.0
+    #: Global-planner time owed by the next recorded control step. See the
+    #: replan branch below for why it is carried rather than recorded on
+    #: the spot.
+    pending_replan_ms = 0.0
+    #: Every attempt, not only the ones that produced a path. The two
+    #: differ exactly when a reader most needs them to.
+    replan_attempts = 0
     while not engine.is_done():
         recompute = (
             held_action is None or control_period is None or engine.time >= next_control_time - EPS
         )
         if recompute:
             decision = local_planner.compute(engine.get_state(), engine.get_observation())
-            latencies.append(decision.latency_seconds)
+            step_latency_ms = decision.latency_seconds * 1000.0 + pending_replan_ms
+            latencies.append(step_latency_ms / 1000.0)
             if recorder is not None:
                 # Recorded before the step, so the row says "at time t the
                 # robot was here and deciding cost this much" — pairing the
@@ -460,7 +468,10 @@ def run_stack(
                 recorder.record(
                     engine.time,
                     engine.get_state(),
-                    planner_latency_ms=decision.latency_seconds * 1000.0,
+                    # `replan` marks the step that paid for one, which is
+                    # what `replan_count` counts.
+                    event="replan" if pending_replan_ms > 0.0 else None,
+                    planner_latency_ms=step_latency_ms,
                 )
             if decision.failure_reason:
                 failures.append(
@@ -470,6 +481,7 @@ def run_stack(
                         message=decision.failure_reason,
                     )
                 )
+            pending_replan_ms = 0.0
             held_action = decision.action
             if control_period is not None:
                 next_control_time = engine.time + control_period
@@ -477,17 +489,91 @@ def run_stack(
 
         if (
             engine.is_done()
-            and replanning.enabled
-            and len(plans) <= replanning.max_replans
+            and replanning.allows(len(plans))
             and engine.episode_status in _REPLANNABLE
         ):
             blocked_as = engine.episode_status.value
             new_plan = _replan(map_data, scenario, global_planner, engine)
+            # **A replan is compute the next control step had to wait
+            # for**, and until it was charged it cost nothing the platform
+            # could see: `recorder.record` runs only in the `recompute`
+            # branch above, which times the *local* controller, so G4
+            # pooled its p99 over a set containing no replan at all. A
+            # stack could plan the whole map fifty times and still pass a
+            # latency gate measuring 12 ms DWA steps.
+            #
+            # It is charged onto the **next** step rather than as a row of
+            # its own, and the first attempt at a row of its own is what
+            # showed why: a replan happens at the same *simulation*
+            # instant as the step before it — it costs compute, not
+            # sim-time — so the row arrived with a duplicate timestamp and
+            # the recorder refused it, exactly as it should ("out-of-order
+            # samples silently corrupt every rate and percentile computed
+            # from this file"). Delaying the next decision is also the
+            # true story: the robot's next command was late by however
+            # long the global planner took.
+            #
+            # This is the whole cost model for unlimited replanning. There
+            # is no `max_replans` any more, deliberately: a shared budget
+            # is a number somebody chose, and it scores a stack that would
+            # have escaped on its fourth try as a failure of the budget
+            # rather than of the planner. p99 cuts at the 99th percentile,
+            # so one or two replans in four hundred steps sit above the
+            # cut and cost nothing, while habitual replanning walks into
+            # G4 on its own — the ceiling grows out of the physics instead
+            # of being declared.
+            pending_replan_ms += new_plan.planning_time_seconds * 1000.0
+            replan_attempts += 1
+            if not new_plan.success:
+                # **A replan that found nothing used to be invisible**, and
+                # that is how a robot could sit in front of a cart with
+                # replanning switched on, `Replans: 0` on screen, and no
+                # way to tell "it never tried" from "it tried and the
+                # planner refused". They are opposite diagnoses: the first
+                # points at the setting, the second at the world.
+                #
+                # It happens for an ordinary reason. `_replan` plans from
+                # the robot's *believed* pose over a grid built from its
+                # own LiDAR returns, so localisation drift and dropout can
+                # put the start inside the marked cells or close the only
+                # gap — in a 2 m corridor with a 0.4 m cart and a 0.26 m
+                # robot there is not much width to lose.
+                failures.append(
+                    EpisodeEvent(
+                        time=engine.time,
+                        type="replan_failed",
+                        message=(
+                            f"replan {replan_attempts} found no path from where the robot "
+                            f"believes it is: {new_plan.failure_reason}"
+                        ),
+                    )
+                )
+                # **And it no longer ends the episode.** The budget is the
+                # timeout, not the first refusal: "no route right now" is
+                # not "no route", and traffic moves. Resuming lets the
+                # stuck detector fire again later and the stack try again
+                # — bounded, because each attempt costs its own A* time and
+                # the detector needs another full stuck window before it
+                # re-triggers, so the retries are seconds apart in
+                # simulation time rather than a tight loop.
+                engine.resume_after_replan(
+                    f"replan {replan_attempts} found no path ({new_plan.failure_reason}); "
+                    "carrying on until the timeout"
+                )
+                held_action = None
+                continue
             if new_plan.success:
                 plans.append(new_plan)
                 local_planner.reset(new_plan.path, scenario.robot)
+                # Numbered by *attempt*, the same counter the failures
+                # use. Numbering successes separately produced an event
+                # stream reading "replan 6 found no path" then "replan 1
+                # after stuck", which is two clocks in one log and no way
+                # to order them.
                 engine.resume_after_replan(
-                    f"replan {len(plans) - 1}/{replanning.max_replans} after {blocked_as}: "
+                    f"replan {replan_attempts}"
+                    f"{'' if replanning.max_replans is None else f'/{replanning.max_replans}'}"
+                    f" after {blocked_as}: "
                     f"new path of {len(new_plan.path)} waypoints, "
                     f"{new_plan.path_length:.2f} m"
                 )
@@ -505,7 +591,11 @@ def run_stack(
             engine.time,
             engine.get_state(),
             event=event_for_status(engine.episode_status),
-            planner_latency_ms=0.0,
+            # A replan that the episode ended before anybody could act on
+            # still cost the time it cost. Dropping it here would make the
+            # last replan of every failed recovery free — which is the one
+            # a reader most wants priced.
+            planner_latency_ms=pending_replan_ms,
         )
 
     result = engine.get_result()
@@ -522,7 +612,15 @@ def run_stack(
             obstacles=scenario.static_obstacles,
             robot_radius=scenario.robot.radius,
             local_planner_latencies=latencies,
-            replan_count=len(plans) - 1,
+            # **Attempts, not successes.** `len(plans) - 1` counted only
+            # the replans that produced a path, so an episode that tried
+            # eleven times and found a route three times reported 3 — and
+            # the eight refusals, which are the expensive half and the
+            # interesting half, vanished. Attempts is also what a reader
+            # comparing two stacks wants: the one that asked the global
+            # planner eleven times did more work than the one that asked
+            # three times, whatever came back.
+            replan_count=replan_attempts,
         )
         if legacy_metrics
         else None

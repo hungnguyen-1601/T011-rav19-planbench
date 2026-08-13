@@ -180,6 +180,7 @@ export default function DeploymentsPage() {
                   <th>{t("deployments.column.noise")}</th>
                   <th>{t("deployments.column.successMin")}</th>
                   <th>{t("deployments.column.risk")}</th>
+                  <th>{t("deployments.column.replanning")}</th>
                   <th>{t("deployments.column.nMin")}</th>
                   <th />
                 </tr>
@@ -310,6 +311,18 @@ function DeploymentRow({
         {constraints.collision_probability_max !== undefined
           ? `${(constraints.collision_probability_max * 100).toFixed(0)}%`
           : "—"}
+      </td>
+      {/* A deployment filed before this field existed stores no
+          `replanning` block, so it reads off — which is true, and is
+          why an old row cannot be made to replan by editing anything.
+          A new deployment is the only way, because switching it on is a
+          different experiment (HĐ-3.1 does not hash it). */}
+      <td>
+        {(profile.profile as { replanning?: { enabled?: boolean } })?.replanning?.enabled ? (
+          <span className="badge ok">{t("deployments.replanningOn")}</span>
+        ) : (
+          <span className="muted">{t("deployments.replanningOff")}</span>
+        )}
       </td>
       <td title={t("deployments.nMinNote")}>
         {constraints.n_min_evaluation_episodes ?? "—"}

@@ -680,6 +680,19 @@ def run_comparison(
                 )
                 / len(metrics_by_candidate[candidate.candidate_id]),
                 "pooled_p99_latency_ms": latency_by_candidate[candidate.candidate_id],
+                # Evidence, never a score. There is no replan budget any
+                # more: the cost of replanning is time and latency, and
+                # both are already charged — every replan records a
+                # control-step row carrying the global planner's latency,
+                # so G4 pools it. A separate penalty would price the same
+                # thing twice with a weight somebody chose.
+                #
+                # Reported because a reader needs to tell "recovered on
+                # the first try" from "replanned forty times and timed
+                # out", and a bare `timeout` cannot say which.
+                "replan_count": sum(
+                    m.replan_count for m in metrics_by_candidate[candidate.candidate_id]
+                ),
                 "episodes": _episode_outcomes(metrics_by_candidate[candidate.candidate_id]),
             }
             for candidate, (_stack, local) in zip(candidates, candidate_specs, strict=True)
@@ -953,6 +966,10 @@ def _episode_outcomes(metrics: Sequence[EpisodeMetricSet]) -> list[dict[str, obj
             "min_clearance": m.min_clearance,
             "travel_time_s": m.travel_time_s,
             "p99_latency_ms": m.p99_latency_ms,
+            # Per episode as well as per candidate: a total of forty
+            # replans reads very differently when it is one runaway
+            # episode than when it is one replan in each of forty.
+            "replan_count": m.replan_count,
         }
         for m in metrics
     ]

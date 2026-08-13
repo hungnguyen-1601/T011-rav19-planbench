@@ -37,6 +37,17 @@ FORM_PATH = REPO_ROOT / "apps" / "web" / "src" / "components" / "DeploymentForm.
 #: field belongs here when offering it would be wrong or useless — never
 #: because wiring it up was inconvenient.
 NOT_IN_THE_FORM: dict[str, str] = {
+    "replanning.max_replans": (
+        "There is no budget any more and offering the field would put back exactly what "
+        "removing it fixed. A shared cap is a number somebody chose; it binds differently for "
+        "different stacks, and under a budget of three a stack that would have escaped on its "
+        "fourth try is scored as a failure of the cap rather than of the planner. The switch "
+        "beside this one turns replanning on and leaves it unlimited; the cost is that every "
+        "replan is charged to the control step it delayed, so p99 latency and travel time "
+        "price it and the ceiling grows out of the physics instead of being declared. The "
+        "field survives in the schema only because the retiring benchmark flow stores specs "
+        "that name one, and a stored run must keep describing the conditions it ran under."
+    ),
     "robot.type": (
         "Literal['differential_drive'] — the only value the schema allows. A dropdown "
         "with one option is a control that cannot be used, and it would suggest there "
