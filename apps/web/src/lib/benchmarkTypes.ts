@@ -41,6 +41,13 @@ export interface AlgorithmInfo {
   config_schema: Record<string, unknown>;
   /** Which global planner runs, stated by the registry rather than parsed out of `id`. */
   global_planner: string;
+  /** Which local controller runs, stated for the same reason.
+   *
+   *  Needed once a picker chose the two layers separately: the registry
+   *  is not a full cross product (`rrtstar+ppo` does not exist), so
+   *  knowing which pairs are real means reading the facts rather than
+   *  splitting the id. */
+  local_controller: string;
   /** True when that planner samples randomly, so results need many seeds to mean anything. */
   stochastic_global_planner: boolean;
   /** What the global planner is given — normally the whole static map. */
