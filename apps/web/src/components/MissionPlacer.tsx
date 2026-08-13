@@ -21,7 +21,7 @@
 
 import { useState } from "react";
 
-import { MapCanvas } from "@/components/MapCanvas";
+import { MapView } from "@/components/MapView";
 import { useTranslation } from "@/lib/i18n";
 import type { MapData, Pose2D } from "@/lib/types";
 
@@ -109,7 +109,7 @@ export function MissionPlacer({
       </div>
 
       <div style={{ marginTop: 8 }}>
-        <MapCanvas
+        <MapView
           map={map}
           startPose={start ?? undefined}
           goalPose={goal ?? undefined}

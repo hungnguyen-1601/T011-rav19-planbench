@@ -21,7 +21,7 @@
 import type { ReactNode } from "react";
 import { useCallback, useState } from "react";
 
-import { MapCanvas } from "@/components/MapCanvas";
+import { MapView } from "@/components/MapView";
 import { FREE, OCCUPIED, UNKNOWN } from "@/lib/demoMap";
 import { useTranslation } from "@/lib/i18n";
 import { worldToCell } from "@/lib/transform";
@@ -95,7 +95,7 @@ export function MapPainter({
         {actions}
       </div>
 
-      <MapCanvas
+      <MapView
         map={map}
         width={width}
         height={height}

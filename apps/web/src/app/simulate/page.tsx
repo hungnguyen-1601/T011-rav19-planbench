@@ -40,7 +40,7 @@ import Link from "next/link";
 
 import { CandidatePicker, type CandidateSelection } from "@/components/CandidatePicker";
 import { EmptyState } from "@/components/EmptyState";
-import { MapCanvas } from "@/components/MapCanvas";
+import { MapView } from "@/components/MapView";
 import { MetricsPanel } from "@/components/MetricsPanel";
 import { api } from "@/lib/api";
 import { authFetch, useSession } from "@/lib/auth";
@@ -186,6 +186,24 @@ export default function TestBenchPage() {
     const upto = stream.frames.filter((frame) => frame.time <= stream.playhead + 1e-9);
     return upto.length > 0 ? upto : stream.frames.slice(0, 1);
   }, [stream.frames, stream.playhead, showTrajectory]);
+
+  /** The traffic at the instant on screen, not at t=0.
+   *
+   * Ground truth recorded by the engine and shown for replay only — no
+   * planner ever sees it (HĐ-4). Absent when the server predates the
+   * field, and an absent list is drawn as nothing rather than as an
+   * empty aisle: "we did not record it" and "it was clear" are different
+   * claims, and only the second is reassuring.
+   */
+  const traffic = useMemo(
+    () =>
+      (stream.currentFrame?.obstacles ?? []).map((entry) => ({
+        name: entry.name,
+        radius: entry.radius,
+        position: { x: entry.x, y: entry.y },
+      })),
+    [stream.currentFrame],
+  );
 
   const collisionPoint: Point2D | null =
     stream.status === "collision" && stream.frames.length > 0
@@ -418,7 +436,7 @@ export default function TestBenchPage() {
       <div className="row">
         <div className="panel" style={{ flex: "1 1 auto" }}>
           {map ? (
-            <MapCanvas
+            <MapView
               map={map}
               startPose={start ?? undefined}
               goalPose={goal ?? undefined}
@@ -428,6 +446,9 @@ export default function TestBenchPage() {
               trajectory={visibleTrajectory}
               robotPose={robotPose}
               collisionPoint={collisionPoint}
+              dynamicObstacles={traffic}
+              obstacleSnapshots={stream.currentFrame?.obstacles ?? []}
+              previewTime={stream.playhead}
               showGrid={showGrid}
               showPlan={showPlan}
               showTrajectory={showTrajectory}

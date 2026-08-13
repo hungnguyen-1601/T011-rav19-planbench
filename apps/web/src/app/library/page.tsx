@@ -12,7 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { DifficultyBadge } from "@/components/DifficultyBadge";
 import { EmptyState } from "@/components/EmptyState";
-import { Scene25D } from "@/components/Scene25D";
+import { MapView } from "@/components/MapView";
 import { SplitBadge } from "@/components/SplitBadge";
 import { authFetch, useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
@@ -216,7 +216,13 @@ export default function LibraryPage() {
           <h3>
             {preview.name} <span className="muted">{t("library.preview")}</span>
           </h3>
-          <Scene25D
+          {/* This preview was the one place in the app with a raised
+              view and no flat one — the mirror image of the gap
+              everywhere else. It opens raised because seeing the shape of
+              a scenario is why somebody previews it, but the top-down
+              view is now a click away, which is where its start and goal
+              coordinates are legible. */}
+          <MapView
             map={preview.map.map_data}
             width={720}
             height={460}
@@ -224,6 +230,8 @@ export default function LibraryPage() {
             goalPose={preview.scenario.scenario.goal_pose}
             robotPose={preview.scenario.scenario.start_pose}
             robotRadius={preview.scenario.scenario.robot.radius}
+            goalTolerance={preview.scenario.scenario.goal_tolerance}
+            initialMode="raised"
           />
           <p className="muted">
             {t("library.importedAs", { map: preview.map.id, scenario: preview.scenario.id })}{" "}

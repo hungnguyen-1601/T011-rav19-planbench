@@ -23,6 +23,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { Scene25D } from "@/components/Scene25D";
 import { useTranslation } from "@/lib/i18n";
 import type { TracePayload } from "@/lib/decisions";
 
@@ -66,6 +67,7 @@ export function TraceViewer({ trace }: { trace: TracePayload }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [step, setStep] = useState(trace.x.length - 1);
   const [playing, setPlaying] = useState(false);
+  const [mode, setMode] = useState<"flat" | "raised">("flat");
 
   const cells = useMemo(
     () => unpack(trace.map.occupied_bits, trace.map.width * trace.map.height),
@@ -184,9 +186,69 @@ export function TraceViewer({ trace }: { trace: TracePayload }) {
   const clearance = trace.clearance_m[step];
   const latency = trace.planner_latency_ms[step];
 
+  /** The trace's grid as the raised view takes it.
+   *
+   * The packed form is one bit per cell; `MapData` wants the three-state
+   * cell values. Unknown does not survive the round trip — HĐ-5 records
+   * blocked-or-not, which is what a collision test reads — so every
+   * un-blocked cell renders as free. That is what the flat canvas above
+   * already draws, so the two views agree.
+   */
+  const mapData = useMemo(
+    () => ({
+      name: trace.map.name,
+      width: trace.map.width,
+      height: trace.map.height,
+      resolution: trace.map.resolution,
+      origin: { x: trace.map.origin.x, y: trace.map.origin.y, theta: 0 },
+      cells: Array.from(cells, (cell) => (cell ? 100 : 0)),
+    }),
+    [trace.map, cells],
+  );
+
   return (
     <div>
-      <canvas ref={canvasRef} style={{ maxWidth: "100%", border: "1px solid var(--border)" }} />
+      <div className="toolbar" style={{ marginBottom: 8 }}>
+        {(["flat", "raised"] as const).map((option) => (
+          <button
+            key={option}
+            type="button"
+            className={mode === option ? "primary" : ""}
+            aria-pressed={mode === option}
+            onClick={() => setMode(option)}
+          >
+            {t(`mapView.${option}`)}
+          </button>
+        ))}
+        {/* Said rather than left to be noticed. The flat canvas colours
+            the path by clearance, which is the reason this viewer has its
+            own drawing code instead of using the shared one; the raised
+            view draws a single-colour path. Switching trades the reading
+            for the shape. */}
+        {mode === "raised" ? <span className="muted">{t("trace.flatHasClearance")}</span> : null}
+      </div>
+
+      {mode === "raised" ? (
+        <Scene25D
+          map={mapData}
+          width={760}
+          height={480}
+          robotRadius={trace.robot_radius_m}
+          startPose={trace.missions[0] ? { ...trace.missions[0].start, theta: 0 } : undefined}
+          goalPose={trace.missions[0] ? { ...trace.missions[0].goal, theta: 0 } : undefined}
+          robotPose={{ x: trace.x[step], y: trace.y[step], theta: trace.theta[step] }}
+          trajectory={trace.x.slice(0, step + 1).map((x, index) => ({
+            time: trace.t[index] ?? 0,
+            x,
+            y: trace.y[index],
+            theta: trace.theta[index],
+            linear_velocity: 0,
+            angular_velocity: 0,
+          }))}
+        />
+      ) : (
+        <canvas ref={canvasRef} style={{ maxWidth: "100%", border: "1px solid var(--border)" }} />
+      )}
 
       <div className="row" style={{ alignItems: "center", gap: 12, marginTop: 8 }}>
         <button type="button" onClick={() => setPlaying((current) => !current)}>

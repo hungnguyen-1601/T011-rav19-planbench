@@ -191,6 +191,22 @@ export function DeploymentForm({
    * would catch it. Where the replacement pair comes from is the whole
    * subject of `posesFor`: a library scenario brings its own, and
    * anything else gets the map's corners.
+   *
+   * **The traffic moves with the map, and used to be dropped.** The
+   * picker advertises `sudden_stop · 1 traffic`, so somebody chooses it
+   * *because* of the cart; the form then wrote only the map paths, and
+   * the deployment ran on an empty lane. The robot drove straight
+   * through, which looks like a planner that ignores obstacles rather
+   * than a form that forgot them. `Scenario.dynamic_obstacles` and
+   * `TaskEnvironment.dynamic_obstacles` are the same type, so carrying
+   * them is a copy — and the server still validates them (unique names,
+   * a periodic obstacle that shifts by at least one period), so a
+   * scenario that cannot be a deployment is refused rather than filed.
+   *
+   * A map with no scenario behind it — drawn here, or picked out of the
+   * store — clears the traffic instead of keeping it. A cart at
+   * `sudden_stop`'s coordinates means nothing on somebody else's walls,
+   * and leaving it would put an obstacle in a place nobody chose.
    */
   const adopt = useCallback(
     async (data: MapData, mapId: string, scenario: Parameters<typeof posesFor>[1]) => {
@@ -200,9 +216,10 @@ export function DeploymentForm({
       setGoal(poses.goal);
       const paths = await materialiseMap(mapId);
       if (!draft) return;
-      onDraftChange(
-        withValue(withValue(draft, "environment.map", paths.map), "environment.map_yaml", paths.map_yaml),
-      );
+      let next = withValue(draft, "environment.map", paths.map);
+      next = withValue(next, "environment.map_yaml", paths.map_yaml);
+      next = withValue(next, "environment.dynamic_obstacles", scenario?.dynamic_obstacles ?? []);
+      onDraftChange(next);
     },
     [draft, onDraftChange],
   );
