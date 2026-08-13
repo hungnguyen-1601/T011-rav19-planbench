@@ -121,6 +121,37 @@ sửa assertion nghĩa là việc rút đã đổi hành vi.
 
 **Ước lượng:** 2 giờ.
 
+#### ✅ Đã làm 2026-08-13 — kèm một chỗ hàng rào phải sửa lại cho đúng
+
+`components/MapPainter.tsx` và `components/MissionPlacer.tsx`. Trang gọi ngắn đi 220 dòng,
+thêm 99.
+
+**Hàng rào viết ở trên là bất khả thi đúng như chữ, và đây là chỗ sửa lại nó.** Test của repo
+này đọc *mã nguồn theo chuỗi*; dời code sang file khác thì **nhất định** làm sáu assertion đỏ,
+dù hành vi không đổi một ly. Điều kiện đúng phải là:
+
+> **Cùng assertion, đổi file nó đọc.** Không assertion nào bị nới, bị bỏ, hay đổi nội dung.
+
+Đã làm đúng thế: sáu assertion chuyển từ đọc `decisions/page.tsx` sang đọc `MissionPlacer.tsx`,
+chữ khẳng định giữ nguyên từng từ.
+
+**Ba test mới, mỗi cái ghim một tính chất việc rút vừa tạo ra:**
+
+- **Pose chỉ nằm ở một chỗ** — quét `useState<...>` trong `MissionPlacer`, chỉ được phép có
+  đúng `PlacementMode`. Đây là test giữ tính hai chiều dev yêu cầu: chuột ⇄ form đồng bộ *vì*
+  không có bản sao thứ hai, nên một `useState<Pose2D>` thêm vào "cho input mượt" sẽ phá nó mà
+  không gì khác bắt được.
+- **Vẽ ô đi qua đúng một component** — trang editor không còn `worldToCell` hay `BRUSH_VALUE`.
+- **Painter không biết gì về lưu trữ** — không import `@/lib/api`. `/maps/[id]` PUT theo id,
+  form khai deployment giữ lưới chưa lưu; một painter biết `api.updateMap` chỉ phục vụ được
+  cái thứ nhất.
+
+**Một thay đổi nhìn thấy được, nói ra chứ không giấu:** thanh công cụ ở `/maps/[id]` trước nằm
+**ngoài** khung panel, giờ nằm **trong** — hệ quả của việc gom công cụ và canvas vào một
+component. Chỉ là bố cục, và gọn hơn; không có test nào phủ chỗ đó.
+
+Web: **576 passed** (trước 573, +3). tsc sạch.
+
 ### W2. Form khai deployment
 
 Bố cục theo đúng thứ tự đọc, map xuống cuối như dev yêu cầu:

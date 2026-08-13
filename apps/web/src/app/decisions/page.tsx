@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
-import { MapCanvas } from "@/components/MapCanvas";
+import { MissionPlacer } from "@/components/MissionPlacer";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
@@ -367,15 +367,6 @@ function LaunchPanel({
  * **Empty `mapId` means "leave the deployment alone", and that is the
  * default.** Every existing flow keeps working without a click.
  */
-/** What the next click on the map does.
- *
- * An explicit mode with a button and a caption, the way the scenario
- * editor has always done it, rather than a hidden alternation: the
- * author has to be able to *see* what the next click will do, or nudging
- * a start two pixels lands a goal instead.
- */
-type PlacementMode = "none" | "start" | "goal";
-
 interface CustomMap {
   mapId: string;
   newProfileId: string;
@@ -385,7 +376,6 @@ interface CustomMap {
    *  away from its goal spends the first second turning around. */
   start: Pose2D | null;
   goal: Pose2D | null;
-  placing: PlacementMode;
 }
 
 const NO_CUSTOM_MAP: CustomMap = {
@@ -393,7 +383,6 @@ const NO_CUSTOM_MAP: CustomMap = {
   newProfileId: "",
   start: null,
   goal: null,
-  placing: "start",
 };
 
 /** Pick a different map, and say where the robot drives on it.
@@ -481,26 +470,6 @@ function MapChoice({
   const robotRadius = readRobotRadius(base);
   const goalTolerance = readGoalTolerance(base);
 
-  /** Move whichever pose the mode names, keeping its heading.
-   *
-   * Advances to `goal` only while the goal is still unset — the first
-   * pass places two poses without a trip to the toolbar, and after that
-   * the mode stays where the author put it. Otherwise correcting a start
-   * would drop a goal on top of it.
-   */
-  const place = (x: number, y: number) => {
-    if (disabled || value.placing === "none") return;
-    if (value.placing === "start") {
-      onChange({
-        ...value,
-        start: { x, y, theta: value.start?.theta ?? 0 },
-        placing: value.goal === null ? "goal" : "start",
-      });
-    } else {
-      onChange({ ...value, goal: { x, y, theta: value.goal?.theta ?? 0 } });
-    }
-  };
-
   return (
     <div style={{ marginTop: 12 }}>
       {error ? <div className="error-box">{error}</div> : null}
@@ -564,132 +533,23 @@ function MapChoice({
             {t("decisions.map.note")}
           </p>
 
-          {/* Explicit modes, and a caption saying what the next click
-              does. The same shape the scenario editor uses, and for the
-              same reason: a hidden alternation makes nudging a start
-              land a goal. */}
-          <div className="toolbar" style={{ marginTop: 12 }}>
-            {(["start", "goal"] as const).map((which) => (
-              <button
-                key={which}
-                type="button"
-                disabled={disabled}
-                className={value.placing === which ? "active" : undefined}
-                aria-pressed={value.placing === which}
-                onClick={() =>
-                  onChange({ ...value, placing: value.placing === which ? "none" : which })
-                }
-              >
-                {t(`decisions.map.place.${which}`)}
-              </button>
-            ))}
-            <span className="muted">{t(`decisions.map.mode.${value.placing}`)}</span>
-          </div>
-
           {mapData ? (
-            <div style={{ marginTop: 8 }}>
-              <MapCanvas
-                map={mapData}
-                startPose={value.start ?? undefined}
-                goalPose={value.goal ?? undefined}
-                robotRadius={robotRadius}
-                goalTolerance={goalTolerance}
-                onWorldClick={(x, y) => place(x, y)}
-                onWorldDrag={(x, y) => place(x, y)}
-              />
-            </div>
+            <MissionPlacer
+              map={mapData}
+              start={value.start}
+              goal={value.goal}
+              onChange={(poses) => onChange({ ...value, ...poses })}
+              robotRadius={robotRadius}
+              goalTolerance={goalTolerance}
+              disabled={disabled}
+              startNote={t("decisions.map.startHeadingNote")}
+              goalNote={t("decisions.map.goalHeadingNote")}
+            />
           ) : (
             <p className="muted">{t("common.loading")}</p>
           )}
-
-          {/* Typed as well as clicked. A canvas cannot land on 2.00
-              exactly, and a deployment written down to two decimals is
-              the one somebody can repeat from the report. */}
-          <PoseFields
-            label={t("decisions.map.start")}
-            value={value.start}
-            disabled={disabled}
-            onChange={(pose) => onChange({ ...value, start: pose })}
-            note={t("decisions.map.startHeadingNote")}
-          />
-          <PoseFields
-            label={t("decisions.map.goal")}
-            value={value.goal}
-            disabled={disabled}
-            onChange={(pose) => onChange({ ...value, goal: pose })}
-            note={t("decisions.map.goalHeadingNote")}
-          />
         </>
       ) : null}
-    </div>
-  );
-}
-
-const DEGREES = (radians: number) => (radians * 180) / Math.PI;
-const RADIANS = (degrees: number) => (degrees * Math.PI) / 180;
-
-/** One pose as three numbers, beside the canvas that draws it.
- *
- * Heading in **degrees**, like the scenario editor: the contract stores
- * radians and nobody types 1.5708 for a quarter turn.
- *
- * Both fields exist for both poses, and the difference between them is
- * in the note rather than in the controls — see the two note strings.
- * Hiding the goal's heading would leave the arrow the canvas draws
- * unexplained, which is a worse silence than an inert dial with a label.
- */
-function PoseFields({
-  label,
-  value,
-  disabled,
-  onChange,
-  note,
-}: {
-  label: string;
-  value: Pose2D | null;
-  disabled: boolean;
-  onChange: (pose: Pose2D) => void;
-  note: string;
-}) {
-  const { t } = useTranslation();
-  if (value === null) {
-    return (
-      <p className="muted" style={{ marginTop: 8 }}>
-        {label}: {t("decisions.map.unset")}
-      </p>
-    );
-  }
-  const number = (key: "x" | "y", step: number) => (
-    <label className="field" key={key}>
-      <span>{key}</span>
-      <input
-        type="number"
-        step={step}
-        disabled={disabled}
-        value={value[key]}
-        onChange={(event) => onChange({ ...value, [key]: Number(event.target.value) })}
-      />
-    </label>
-  );
-
-  return (
-    <div style={{ marginTop: 8 }}>
-      <div className="row" style={{ alignItems: "flex-end", gap: 12 }}>
-        <strong style={{ minWidth: 90 }}>{label}</strong>
-        {number("x", 0.1)}
-        {number("y", 0.1)}
-        <label className="field">
-          <span>{t("decisions.map.heading")}</span>
-          <input
-            type="number"
-            step={5}
-            disabled={disabled}
-            value={Math.round(DEGREES(value.theta))}
-            onChange={(event) => onChange({ ...value, theta: RADIANS(Number(event.target.value)) })}
-          />
-        </label>
-      </div>
-      <p className="muted">{note}</p>
     </div>
   );
 }
