@@ -519,3 +519,49 @@ bao hoạt động lớn hơn. Test sửa lại để ra lệnh dưới trần; 
 - **Chưa profile nào bật bốn nhiễu này.** Mặc định 0 khắp nơi, nên chưa lượt đo nào đổi. Bật lên
   là **đổi thế giới** ⇒ phải khai `task_profile_id` mới (HĐ-13).
 - **N4 (sai số góc / lệch lắp LiDAR)** — dev bỏ khỏi phạm vi đợt này.
+
+---
+
+## Full suite bắt ba lỗi — và cả ba là **một lỗi của tôi**
+
+Lần chạy đầu sau A3: **3 failed, 2397 passed**. Ba test khác nhau, một gốc:
+
+```
+tests/api/test_api_decisions.py::TestDeployments::test_the_noise_amplitudes_survive_storage
+tests/test_decision_card.py::TestCardValidatesAgainstTheContract::test_a_real_manifest_passes_the_shipped_schema
+tests/test_vertical_slice.py::TestItRunsAtAll::test_both_artefacts_land_on_disk
+```
+
+**Tôi thêm năm trường vào `SensorNoise` mà không cập nhật `contracts/schemas/manifest.schema.json`.**
+Schema đó khai `additionalProperties: false`, nên mọi manifest sinh ra sau A3 đều **không hợp lệ
+so với chính lược đồ dự án công bố**. Hai trong ba test đỏ vì đúng chuyện đó.
+
+Đây là kiểu trôi mà chốt chặn D1 bắt được **ở phía form** nhưng không ai bắt **ở phía schema
+JSON**. Khác biệt: form là một bản sao *tuỳ chọn* của hợp đồng, còn `manifest.schema.json` là
+**chính hợp đồng ở dạng máy đọc được** — nên nó phải đi cùng lược đồ trong cùng một lượt sửa.
+
+### Kèm theo: A3 lẽ ra phải bump hợp đồng, và tôi đã không
+
+Thêm trường vào một lược đồ mà manifest công bố **là một thay đổi hợp đồng**. Đã sửa:
+**6.6.0 → 6.7.0**, kèm dòng lịch sử nêu bốn trục, ranh giới đo/thế-giới của từng cái, và ghi rõ
+**mọi trường mặc định 0** nên chưa lượt đo nào bị ảnh hưởng.
+
+### Test thứ ba: khẳng định thừa hơn điều nó nói
+
+`test_the_noise_amplitudes_survive_storage` so **cả khối** `sensor_noise` bằng dấu bằng:
+
+```python
+assert stored["environment"]["sensor_noise"] == {
+    "lidar_range_sigma_m": 0.02,
+    "wheel_slip_fraction": 0.02,
+}
+```
+
+Docstring nói *"nếu biên độ bị rơi mất trên đường vào lưu trữ thì không gì downstream biết"* —
+nhưng phép so bằng còn khẳng định thêm rằng **`SensorNoise` có đúng hai trường**, điều nó chưa
+bao giờ tuyên bố. Nên thêm một trục nhiễu làm một test *lưu trữ* đỏ vì một lý do **không liên
+quan gì tới lưu trữ**.
+
+Sửa thành khẳng định theo tên trường. Đây là bài học chung đáng ghi: **so bằng cả một cấu trúc
+là khẳng định luôn cả những gì cấu trúc đó KHÔNG chứa** — hiếm khi là điều test muốn nói, và nó
+biến mỗi lần mở rộng lược đồ thành một lượt đỏ giả.

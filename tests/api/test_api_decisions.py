@@ -118,10 +118,19 @@ class TestDeployments:
         nothing downstream could."""
         client.post(f"{API}/task-profiles", json=tiny_profile(), headers=alice_headers)
         stored = client.get(f"{API}/task-profiles/api_hall_tiny").json()["profile"]
-        assert stored["environment"]["sensor_noise"] == {
-            "lidar_range_sigma_m": 0.02,
-            "wheel_slip_fraction": 0.02,
-        }
+        noise = stored["environment"]["sensor_noise"]
+        # The declared amplitudes, by name. Comparing the whole block for
+        # equality asserted something the docstring never claimed — that
+        # `SensorNoise` has exactly two fields — so adding a noise axis
+        # turned a storage test red for a reason with nothing to do with
+        # storage.
+        assert noise["lidar_range_sigma_m"] == 0.02
+        assert noise["wheel_slip_fraction"] == 0.02
+        # The rest still travel, at whatever the profile left them, because
+        # a manifest missing an amplitude is a manifest that cannot tell
+        # two experiments apart.
+        assert noise["localization_drift_m"] == 0.0
+        assert noise["command_latency_steps"] == 0
 
     def test_refiling_the_same_content_is_idempotent(self, client, alice_headers):
         first = client.post(f"{API}/task-profiles", json=tiny_profile(), headers=alice_headers)
