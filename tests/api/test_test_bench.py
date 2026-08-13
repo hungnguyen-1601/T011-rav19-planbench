@@ -283,3 +283,292 @@ class TestTheEpisodeActuallyRuns:
         body = result.json()
         assert body["plan"]["success"] is True
         assert len(body["result"]["trajectory"]) > 1
+
+
+class TestDeletingADeployment:
+    """Two paths, and the difference is whether anything was measured.
+
+    A deployment nobody ran is a description: deleting it destroys a
+    description. A deployment with runs is the **subject** of every one of
+    them — `decision_runs.task_profile_id` is `ON DELETE RESTRICT`, not a
+    cascade, precisely because a statement whose subject vanished is not a
+    smaller record but an unreadable one.
+
+    So the second case is refused until the caller says so, and the
+    refusal carries the counts rather than a bare "no": a dialog that can
+    ask *"delete seven runs, two of them approved?"* is answerable, and
+    *"are you sure?"* is not.
+    """
+
+    def test_a_deployment_nobody_ran_deletes_straight_away(
+        self, client: TestClient, deployment: dict, alice_headers: dict[str, str]
+    ) -> None:
+        response = client.delete(
+            f"{API}/task-profiles/{deployment['id']}", headers=alice_headers
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["deleted_runs"] == 0
+        assert client.get(f"{API}/task-profiles/{deployment['id']}").status_code == 404
+
+    def test_it_is_gone_from_the_list_too(
+        self, client: TestClient, deployment: dict, alice_headers: dict[str, str]
+    ) -> None:
+        client.delete(f"{API}/task-profiles/{deployment['id']}", headers=alice_headers)
+        listed = [entry["id"] for entry in client.get(f"{API}/task-profiles").json()]
+        assert deployment["id"] not in listed
+
+    def test_an_unknown_deployment_is_a_404_not_a_silent_success(
+        self, client: TestClient, alice_headers: dict[str, str]
+    ) -> None:
+        """A delete that quietly succeeds on nothing tells the caller their
+        id was right when it was not."""
+        response = client.delete(f"{API}/task-profiles/no_such_thing", headers=alice_headers)
+        assert response.status_code == 404
+
+    def test_signing_out_does_not_get_to_delete(
+        self, client: TestClient, deployment: dict
+    ) -> None:
+        response = client.delete(f"{API}/task-profiles/{deployment['id']}")
+        assert response.status_code in (401, 403)
+        assert client.get(f"{API}/task-profiles/{deployment['id']}").status_code == 200
+
+    def test_a_deployment_with_runs_is_refused_and_says_what_it_holds(
+        self, client: TestClient, deployment: dict, alice_headers: dict[str, str], app
+    ) -> None:
+        """The refusal is the dialog's source of numbers.
+
+        Filed straight into the store rather than by driving a real
+        selection: this is a test about the delete rule, and a sweep would
+        spend minutes of simulation to produce the same one row.
+        """
+        from planbench_api.decisions import StoredDecisionRun
+
+        app.state.repos.decision_runs.create(
+            StoredDecisionRun(
+                id="run_for_delete",
+                task_profile_id=deployment["id"],
+                artifact_kind="decision_card",
+                experiment_scope="global_planner_selection",
+                contracts_version="6.7.0",
+                created_at="2026-08-13T10:00:00Z",
+                created_by=None,
+                report={},
+                card={"status": "recommended"},
+                manifest=None,
+                recommended_candidate_id="c1",
+                status="recommended",
+            )
+        )
+        response = client.delete(
+            f"{API}/task-profiles/{deployment['id']}", headers=alice_headers
+        )
+        assert response.status_code == 409
+        body = response.json()["error"]
+        assert body["details"][0]["runs"] == 1
+        assert body["details"][0]["ranked"] == 1
+        # Refused means refused: nothing was destroyed on the way to the
+        # question.
+        assert client.get(f"{API}/task-profiles/{deployment['id']}").status_code == 200
+
+    def test_confirming_deletes_the_runs_with_it(
+        self, client: TestClient, deployment: dict, alice_headers: dict[str, str], app
+    ) -> None:
+        from planbench_api.decisions import StoredDecisionRun
+
+        app.state.repos.decision_runs.create(
+            StoredDecisionRun(
+                id="run_for_delete_2",
+                task_profile_id=deployment["id"],
+                artifact_kind="comparison",
+                experiment_scope="global_planner_selection",
+                contracts_version="6.7.0",
+                created_at="2026-08-13T10:00:00Z",
+                created_by=None,
+                report={},
+                card=None,
+                manifest=None,
+                recommended_candidate_id=None,
+                status=None,
+            )
+        )
+        response = client.delete(
+            f"{API}/task-profiles/{deployment['id']}?delete_runs=true", headers=alice_headers
+        )
+        assert response.status_code == 200, response.text
+        # Reported, not inferred: somebody who confirmed "delete 1 run"
+        # is owed confirmation that one run went.
+        assert response.json()["deleted_runs"] == 1
+        assert client.get(f"{API}/decisions/run_for_delete_2").status_code == 404
+
+    def test_the_flag_alone_does_not_delete_a_deployment_that_has_none(
+        self, client: TestClient, deployment: dict, alice_headers: dict[str, str]
+    ) -> None:
+        """`delete_runs` answers a question; it does not change the answer.
+
+        Passing it on a deployment with nothing measured must behave
+        exactly like not passing it, or the flag would read as a
+        force-delete with a misleading name.
+        """
+        response = client.delete(
+            f"{API}/task-profiles/{deployment['id']}?delete_runs=true", headers=alice_headers
+        )
+        assert response.status_code == 200
+        assert response.json()["deleted_runs"] == 0
+
+
+class TestAnApprovalIsNotDeletableUntilItIsWithdrawn:
+    """An approved run blocks the delete, and there is a door.
+
+    A confirmation dialog answers a question. "Delete the record that
+    somebody signed this configuration off, and the record of who signed
+    it" is not a question a checkbox should be allowed to answer — HĐ-14
+    keeps those two acts apart *and* keeps them. So the refusal is
+    absolute here, and the way through is to withdraw the approval on the
+    run, which is itself a named act in the journal rather than an
+    erasure.
+
+    Withdrawing had to be built: `decide_config` refuses every state but
+    `pending`, so before this the message would have told somebody to do
+    something they could not do.
+    """
+
+    def _approved_run(self, app, client, deployment, headers, run_id="run_approved"):
+        from planbench_api.decisions import StoredDecisionRun
+
+        app.state.repos.decision_runs.create(
+            StoredDecisionRun(
+                id=run_id,
+                task_profile_id=deployment["id"],
+                artifact_kind="decision_card",
+                experiment_scope="global_planner_selection",
+                contracts_version="6.7.0",
+                created_at="2026-08-13T10:00:00Z",
+                # Not alice: she approves it below, and nobody approves
+                # their own run (HĐ-14).
+                created_by="somebody_else",
+                report={},
+                card={"status": "recommended"},
+                manifest=None,
+                recommended_candidate_id="c1",
+                status="recommended",
+            )
+        )
+        decided = client.post(
+            f"{API}/decisions/{run_id}/config-approval",
+            json={"decision": "approve"},
+            headers=headers,
+        )
+        assert decided.status_code == 200, decided.text
+        return run_id
+
+    def test_confirming_does_not_get_past_an_approval(
+        self, client: TestClient, deployment: dict, alice_headers: dict[str, str], app
+    ) -> None:
+        """Even the flag that deletes runs stops here.
+
+        If `delete_runs=true` worked, the confirmation would be the whole
+        guard — and a guard one click wide is a speed bump.
+        """
+        self._approved_run(app, client, deployment, alice_headers)
+        response = client.delete(
+            f"{API}/task-profiles/{deployment['id']}?delete_runs=true", headers=alice_headers
+        )
+        assert response.status_code == 409
+        assert client.get(f"{API}/task-profiles/{deployment['id']}").status_code == 200
+
+    def test_the_refusal_names_the_runs_holding_it(
+        self, client: TestClient, deployment: dict, alice_headers: dict[str, str], app
+    ) -> None:
+        """"Something is approved" leaves somebody hunting. The ids do not."""
+        run_id = self._approved_run(app, client, deployment, alice_headers)
+        body = client.delete(
+            f"{API}/task-profiles/{deployment['id']}", headers=alice_headers
+        ).json()["error"]
+        assert body["details"][0]["approved_ids"] == [run_id]
+        assert "Withdraw the approval first" in body["message"]
+
+    def test_withdrawing_then_confirming_deletes(
+        self, client: TestClient, deployment: dict, alice_headers: dict[str, str], app
+    ) -> None:
+        """The door the message points at actually opens."""
+        run_id = self._approved_run(app, client, deployment, alice_headers)
+        withdrawn = client.post(
+            f"{API}/decisions/{run_id}/config-approval/withdraw",
+            json={"comment": "filed against the wrong deployment"},
+            headers=alice_headers,
+        )
+        assert withdrawn.status_code == 200, withdrawn.text
+        assert withdrawn.json()["config_state"] == "pending"
+        assert withdrawn.json()["config_decided_by"] is None
+
+        response = client.delete(
+            f"{API}/task-profiles/{deployment['id']}?delete_runs=true", headers=alice_headers
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["deleted_runs"] == 1
+
+    def test_withdrawing_adds_to_the_journal_rather_than_erasing(
+        self, client: TestClient, deployment: dict, alice_headers: dict[str, str], app
+    ) -> None:
+        """The approval stays. That is the whole difference between this
+        and an undo: an approval that could vanish silently would be an
+        approval nobody could rely on."""
+        run_id = self._approved_run(app, client, deployment, alice_headers)
+        client.post(
+            f"{API}/decisions/{run_id}/config-approval/withdraw",
+            json={"comment": "wrong deployment"},
+            headers=alice_headers,
+        )
+        events = client.get(f"{API}/decisions/{run_id}/audit").json()
+        actions = [event["action"] for event in events]
+        assert "approve_config" in actions
+        assert "withdraw_config" in actions
+        assert actions.index("approve_config") < actions.index("withdraw_config")
+
+    def test_it_records_who_withdrew_and_why(
+        self, client: TestClient, deployment: dict, alice_headers: dict[str, str], app
+    ) -> None:
+        run_id = self._approved_run(app, client, deployment, alice_headers)
+        client.post(
+            f"{API}/decisions/{run_id}/config-approval/withdraw",
+            json={"comment": "measured on the wrong map"},
+            headers=alice_headers,
+        )
+        event = next(
+            entry
+            for entry in client.get(f"{API}/decisions/{run_id}/audit").json()
+            if entry["action"] == "withdraw_config"
+        )
+        assert event["username"] == "alice"
+        assert event["comment"] == "measured on the wrong map"
+        assert (event["previous_state"], event["new_state"]) == ("approved", "pending")
+
+    def test_withdrawing_what_was_never_approved_is_refused(
+        self, client: TestClient, deployment: dict, alice_headers: dict[str, str], app
+    ) -> None:
+        """Otherwise it would read as a way to clear a rejection."""
+        from planbench_api.decisions import StoredDecisionRun
+
+        app.state.repos.decision_runs.create(
+            StoredDecisionRun(
+                id="run_pending",
+                task_profile_id=deployment["id"],
+                artifact_kind="decision_card",
+                experiment_scope="global_planner_selection",
+                contracts_version="6.7.0",
+                created_at="2026-08-13T10:00:00Z",
+                created_by="somebody_else",
+                report={},
+                card={"status": "recommended"},
+                manifest=None,
+                recommended_candidate_id="c1",
+                status="recommended",
+            )
+        )
+        response = client.post(
+            f"{API}/decisions/run_pending/config-approval/withdraw",
+            json={"comment": ""},
+            headers=alice_headers,
+        )
+        assert response.status_code == 409
+        assert "not approved" in response.json()["error"]["message"]

@@ -208,6 +208,17 @@ export class FieldError extends Error {
   constructor(
     message: string,
     public details: { path: string; message: string }[],
+    /** Everything in `error.details` that was not field-shaped.
+     *
+     * The server's `details` is a list of *whatever the refusal needs a
+     * caller to act on* — sentences and field addresses for a form, and
+     * counts for a confirmation dialog ("delete 7 runs, 2 approved?").
+     * Filtering to the field shape and dropping the rest silently is
+     * what made the first version of the delete dialog have nothing to
+     * count with. Kept separate so `fieldErrorsOf` stays exactly as
+     * narrow as a form needs.
+     */
+    public raw: unknown[] = [],
   ) {
     super(message);
     this.name = "FieldError";
@@ -222,22 +233,24 @@ export function fieldErrorsOf(caught: unknown): { path: string; message: string 
 async function errorBody(
   response: Response,
   fallback: string,
-): Promise<{ message: string; details: { path: string; message: string }[] }> {
+): Promise<{
+  message: string;
+  details: { path: string; message: string }[];
+  raw: unknown[];
+}> {
   try {
     const body = await response.json();
-    const raw = body?.error?.details;
-    const details = Array.isArray(raw)
-      ? raw.filter(
-          (entry): entry is { path: string; message: string } =>
-            entry !== null &&
-            typeof entry === "object" &&
-            typeof entry.path === "string" &&
-            typeof entry.message === "string",
-        )
-      : [];
-    return { message: body?.error?.message ?? fallback, details };
+    const raw: unknown[] = Array.isArray(body?.error?.details) ? body.error.details : [];
+    const details = raw.filter(
+      (entry): entry is { path: string; message: string } =>
+        entry !== null &&
+        typeof entry === "object" &&
+        typeof (entry as { path?: unknown }).path === "string" &&
+        typeof (entry as { message?: unknown }).message === "string",
+    );
+    return { message: body?.error?.message ?? fallback, details, raw };
   } catch {
-    return { message: fallback, details: [] };
+    return { message: fallback, details: [], raw: [] };
   }
 }
 
@@ -301,12 +314,12 @@ export async function authFetch<T>(path: string, init?: RequestInit): Promise<T>
     cache: "no-store",
   });
   if (!response.ok) {
-    const { message, details } = await errorBody(response, response.statusText);
+    const { message, details, raw } = await errorBody(response, response.statusText);
     if (response.status === 401) clearSession();
     // Always a `FieldError`, even with no details: one type of refusal
     // is easier to reason about than two, and `details` being empty is
     // the honest answer for an error nobody addressed.
-    throw new FieldError(message, details);
+    throw new FieldError(message, details, raw);
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;

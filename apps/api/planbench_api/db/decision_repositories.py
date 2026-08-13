@@ -78,6 +78,20 @@ class SqlTaskProfileRepository:
             session.flush()
             return _to_profile(row)
 
+    def delete(self, profile_id: str) -> None:
+        """Remove the row. The foreign key is the backstop, not the rule.
+
+        ``decision_runs.task_profile_id`` is ``ON DELETE RESTRICT``, so a
+        deployment with runs cannot be deleted here even by mistake — the
+        database refuses. That is deliberate: a run is a statement *about*
+        a deployment, and a statement whose subject vanished is not a
+        smaller record, it is an unreadable one. The service deletes the
+        runs first when a caller has said to.
+        """
+        with self._sessions.begin() as session:
+            row = _require(session, TaskProfileRow, profile_id, "task profile")
+            session.delete(row)
+
     def get(self, profile_id: str) -> StoredTaskProfile:
         with self._sessions.begin() as session:
             return _to_profile(_require(session, TaskProfileRow, profile_id, "task profile"))
@@ -137,6 +151,27 @@ class SqlCandidateRepository:
 class SqlDecisionRunRepository:
     def __init__(self, sessions: SessionFactory) -> None:
         self._sessions = sessions
+
+    def delete_for_profile(self, task_profile_id: str) -> int:
+        """Delete every run filed against one deployment; return how many.
+
+        Only ever called after a human has been shown the count and said
+        to go ahead — see ``TaskProfileService.delete``. Cascading from
+        the foreign key instead would make "delete this deployment" and
+        "destroy its measurements" one click with one name, and the second
+        is the consequential half.
+
+        Review events go with them (``ON DELETE CASCADE`` on
+        ``decision_run_reviews``), which is the honest behaviour: an audit
+        trail for a run nobody can read is not a record of anything.
+        """
+        with self._sessions.begin() as session:
+            rows = session.scalars(
+                select(DecisionRunRow).where(DecisionRunRow.task_profile_id == task_profile_id)
+            ).all()
+            for row in rows:
+                session.delete(row)
+            return len(rows)
 
     def create(self, run: StoredDecisionRun) -> StoredDecisionRun:
         row = DecisionRunRow(
@@ -264,6 +299,53 @@ class SqlDecisionRunRepository:
                 previous,
                 row.config_state,
                 comment,
+            )
+            session.flush()
+            return _to_run(row)
+
+    def withdraw_config(
+        self,
+        run_id: str,
+        *,
+        actor_user_id: str | None,
+        username: str,
+        comment: str,
+    ) -> StoredDecisionRun:
+        """Take an approval back, so the run can be re-decided or deleted.
+
+        **This does not erase the approval; it adds to it.** The journal
+        keeps the approve event and gains a withdraw event beside it, with
+        the name of whoever took it back and their reason. That is what
+        keeps HĐ-14 intact: the record of a signed decision survives, and
+        so does the record of it being unsigned. An approval that could be
+        silently unwound would be an approval nobody could rely on.
+
+        **Why this exists at all**, given that "decided is decided" is
+        deliberate. Two things needed a door: deleting a deployment
+        refuses while any of its runs is approved — and a message telling
+        somebody to withdraw an approval they cannot withdraw is a wall
+        with a sign on it — and a configuration signed off in error had no
+        exit that was not a new run measuring nothing new.
+
+        The state returns to ``pending`` rather than to ``rejected``:
+        withdrawing says *"this is undecided again"*, not *"we decided
+        against it"*, and writing the second when somebody meant the first
+        would put a verdict in the record nobody reached.
+        """
+        with self._sessions.begin() as session:
+            row = _require(session, DecisionRunRow, run_id, "decision run")
+            if row.config_state != "approved":
+                raise InvalidStateError(
+                    f"decision run {run_id} is {row.config_state}, not approved, so there is "
+                    "no approval to withdraw"
+                )
+            previous = row.config_state
+            row.config_state = "pending"
+            row.config_decided_by = None
+            row.config_decided_at = None
+            _append_event(
+                session, run_id, "withdraw_config", actor_user_id, username, previous,
+                "pending", comment,
             )
             session.flush()
             return _to_run(row)

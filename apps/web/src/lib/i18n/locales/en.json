@@ -1157,5 +1157,16 @@
   "mapView.flat": "Top-down",
   "mapView.raised": "2.5D",
   "mapView.editInFlat": "Switch to top-down to place or paint — the raised view has no inverse projection, so a click cannot name a cell.",
-  "trace.flatHasClearance": "The top-down view colours the path by clearance; this one does not."
+  "trace.flatHasClearance": "The top-down view colours the path by clearance; this one does not.",
+  "deployments.delete.action": "Delete",
+  "deployments.delete.busy": "Deleting…",
+  "deployments.delete.blocked": "This deployment has {runs} stored run(s), {approved} of them approved. Every run is a statement about this deployment — without it they describe nothing.",
+  "deployments.delete.approvedWarning": "An approved run is a configuration somebody signed off. Deleting it removes that record and its review trail (HĐ-14).",
+  "deployments.delete.confirm": "Delete it and its {runs} run(s)",
+  "deployments.delete.approvedBlocked": "This deployment has {approved} approved run(s). An approved run is a configuration somebody signed off, together with the record of who signed it (HĐ-14), so no confirmation here can delete it. Withdraw the approval on the run first — it stays in the journal beside the withdrawal.",
+  "deployments.delete.openRuns": "Open its comparisons",
+  "decisions.withdraw.action": "Withdraw approval",
+  "decisions.withdraw.busy": "Withdrawing…",
+  "decisions.withdraw.note": "Returns this run to undecided. The approval is not erased — it stays in the journal below, with the withdrawal beside it (HĐ-14).",
+  "decisions.audit.withdraw_config": "withdrew the approval"
 }

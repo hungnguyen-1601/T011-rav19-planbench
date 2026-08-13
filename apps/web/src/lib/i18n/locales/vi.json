@@ -1157,5 +1157,16 @@
   "mapView.flat": "Nhìn từ trên",
   "mapView.raised": "2.5D",
   "mapView.editInFlat": "Chuyển về nhìn từ trên để đặt điểm hoặc vẽ — bản 2.5D không có phép chiếu ngược nên một cú click không chỉ được đúng ô nào.",
-  "trace.flatHasClearance": "Bản nhìn từ trên tô màu đường đi theo khoảng hở; bản này thì không."
+  "trace.flatHasClearance": "Bản nhìn từ trên tô màu đường đi theo khoảng hở; bản này thì không.",
+  "deployments.delete.action": "Xoá",
+  "deployments.delete.busy": "Đang xoá…",
+  "deployments.delete.blocked": "Deployment này có {runs} lượt chạy đã lưu, trong đó {approved} đã được duyệt. Mỗi lượt chạy là một khẳng định **về** deployment này — mất nó thì chúng không còn mô tả gì cả.",
+  "deployments.delete.approvedWarning": "Một lượt chạy đã duyệt là một cấu hình có người ký nhận. Xoá nó là xoá luôn bản ghi đó và toàn bộ dấu vết duyệt (HĐ-14).",
+  "deployments.delete.confirm": "Xoá cả deployment và {runs} lượt chạy",
+  "deployments.delete.approvedBlocked": "Deployment này có {approved} lượt chạy đã duyệt. Một lượt chạy đã duyệt là cấu hình có người ký nhận, kèm bản ghi ai đã ký (HĐ-14), nên không xác nhận nào ở đây xoá được nó. Hãy thu hồi phê duyệt ở lượt chạy đó trước — phê duyệt vẫn nằm lại trong nhật ký, cạnh lần thu hồi.",
+  "deployments.delete.openRuns": "Mở các phép so của nó",
+  "decisions.withdraw.action": "Thu hồi phê duyệt",
+  "decisions.withdraw.busy": "Đang thu hồi…",
+  "decisions.withdraw.note": "Đưa lượt chạy này về trạng thái chưa quyết. Phê duyệt không bị xoá — nó vẫn nằm trong nhật ký bên dưới, cạnh lần thu hồi (HĐ-14).",
+  "decisions.audit.withdraw_config": "đã thu hồi phê duyệt"
 }

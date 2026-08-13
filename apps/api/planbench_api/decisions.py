@@ -55,7 +55,7 @@ ConfigState = Literal["not_applicable", "pending", "approved", "rejected"]
 
 #: What a human did. Append-only vocabulary: nothing here undoes anything,
 #: because an audit trail that can be rewound is not one (HĐ-14).
-ReviewAction = Literal["review", "approve_config", "reject_config"]
+ReviewAction = Literal["review", "approve_config", "reject_config", "withdraw_config"]
 
 
 
@@ -206,6 +206,18 @@ class TaskProfileRepository:
             self._items[profile_id] = stored
             return stored
 
+    def delete(self, profile_id: str) -> None:
+        """Remove a deployment. Whether that is allowed is decided above.
+
+        The repository does not consult the runs: the rule is "a run is a
+        statement about a deployment", which is a fact about the two
+        stores together and belongs to the service that can see both. A
+        repository enforcing it would put the same rule in two places, and
+        the SQL one already has it as a foreign key.
+        """
+        with self._lock:
+            self._items.pop(profile_id, None)
+
     def get(self, profile_id: str) -> StoredTaskProfile:
         with self._lock:
             stored = self._items.get(profile_id)
@@ -295,6 +307,18 @@ class DecisionRunRepository:
         self._items: dict[str, StoredDecisionRun] = {}
         self._events: dict[str, list[ReviewEvent]] = {}
         self._lock = threading.Lock()
+
+    def delete_for_profile(self, task_profile_id: str) -> int:
+        """Delete every run filed against one deployment; return how many."""
+        with self._lock:
+            doomed = [
+                run_id
+                for run_id, run in self._items.items()
+                if run.task_profile_id == task_profile_id
+            ]
+            for run_id in doomed:
+                del self._items[run_id]
+            return len(doomed)
 
     def create(self, run: StoredDecisionRun) -> StoredDecisionRun:
         with self._lock:
@@ -416,6 +440,51 @@ class DecisionRunRepository:
                 previous,
                 run.config_state,
                 comment,
+            )
+            return run
+
+    def withdraw_config(
+        self,
+        run_id: str,
+        *,
+        actor_user_id: str | None,
+        username: str,
+        comment: str,
+    ) -> StoredDecisionRun:
+        """Take an approval back, so the run can be re-decided or deleted.
+
+        **This does not erase the approval; it adds to it.** The journal
+        keeps the approve event and gains a withdraw event beside it, with
+        the name of whoever took it back and their reason. That is what
+        keeps HĐ-14 intact: the record of a signed decision survives, and
+        so does the record of it being unsigned. An approval that could be
+        silently unwound would be an approval nobody could rely on.
+
+        **Why this exists at all**, given that "decided is decided" is
+        deliberate. Two things needed a door: deleting a deployment
+        refuses while any of its runs is approved — and a message telling
+        somebody to withdraw an approval they cannot withdraw is a wall
+        with a sign on it — and a configuration signed off in error had no
+        exit that was not a new run measuring nothing new.
+
+        The state returns to ``pending`` rather than to ``rejected``:
+        withdrawing says *"this is undecided again"*, not *"we decided
+        against it"*, and writing the second when somebody meant the first
+        would put a verdict in the record nobody reached.
+        """
+        with self._lock:
+            run = self._require(run_id)
+            if run.config_state != "approved":
+                raise InvalidStateError(
+                    f"decision run {run_id} is {run.config_state}, not approved, so there is "
+                    "no approval to withdraw"
+                )
+            previous = run.config_state
+            run.config_state = "pending"
+            run.config_decided_by = None
+            run.config_decided_at = None
+            self._append(
+                run_id, "withdraw_config", actor_user_id, username, previous, "pending", comment
             )
             return run
 

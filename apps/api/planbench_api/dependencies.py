@@ -146,6 +146,7 @@ def get_task_profile_service(request: Request) -> TaskProfileService:
         state.repos.task_profiles,
         maps=state.repos.maps,
         map_root=get_map_root(request),
+        runs=state.repos.decision_runs,
     )
 
 

@@ -37,13 +37,6 @@ FORM_PATH = REPO_ROOT / "apps" / "web" / "src" / "components" / "DeploymentForm.
 #: field belongs here when offering it would be wrong or useless — never
 #: because wiring it up was inconvenient.
 NOT_IN_THE_FORM: dict[str, str] = {
-    "environment.dynamic_obstacles": (
-        "Deferred by the dev on 2026-08-13 to get the simulator running first. It is a "
-        "nested list with four motion kinds, each with different fields, plus the rule "
-        "that seed_time_offset must clear a full period — roughly the size of the rest "
-        "of the form. The YAML tab writes it, and the noise field says out loud what a "
-        "deployment with neither traffic nor noise costs: every seed replays one episode."
-    ),
     "robot.type": (
         "Literal['differential_drive'] — the only value the schema allows. A dropdown "
         "with one option is a control that cannot be used, and it would suggest there "
@@ -166,3 +159,47 @@ class TestTheCheckItselfWorks:
         # Not expanded: bound as a whole by the mission placer.
         assert "missions" in paths
         assert not any(path.startswith("missions.") for path in paths)
+
+
+class TestTrafficIsCarriedButNotYetAuthored:
+    """`environment.dynamic_obstacles` is bound — and only halfway.
+
+    It used to sit in `NOT_IN_THE_FORM`, excused as deferred. That excuse
+    expired the day the form started writing the field: choosing a
+    library scenario now carries its traffic into the deployment, which
+    is what makes `sudden_stop` produce a deployment with the cart in it
+    rather than an empty lane.
+
+    **The guard is binary and the truth is not**, so the nuance lives
+    here instead of in a sentence nothing checks: the form *carries*
+    traffic, it does not let anybody *author* it. A reader who saw the
+    field disappear from the excuse list could otherwise conclude the
+    form can draw a cart. It cannot — that is still the YAML tab, and
+    still the reason `/scenarios` is kept alive.
+    """
+
+    def test_the_form_writes_the_field(self, form_source) -> None:
+        assert 'withValue(next, "environment.dynamic_obstacles"' in form_source
+
+    def test_it_carries_what_a_scenario_declares(self, form_source) -> None:
+        assert "scenario?.dynamic_obstacles ?? []" in form_source
+
+    def test_it_offers_no_way_to_author_one(self, form_source) -> None:
+        """The half that is still missing, pinned so it cannot be forgotten.
+
+        A motion kind picker, a speed, a period, a `seed_time_offset`
+        that must clear a full period — none of it is here. If any of
+        those ever appear, this test fails and whoever added them gets to
+        delete it, which is the point.
+        """
+        for authoring in ("SuddenStopMotion", "PeriodicMotion", "seed_time_offset", "motion:"):
+            assert authoring not in form_source, (
+                f"the form now authors traffic ({authoring}); update this test"
+            )
+
+    def test_the_scenario_editor_is_still_the_place_that_can(self) -> None:
+        """Why `/scenarios` survived P6, stated as a test rather than a note."""
+        editor = (
+            REPO_ROOT / "apps" / "web" / "src" / "app" / "scenarios" / "[id]" / "page.tsx"
+        ).read_text(encoding="utf-8")
+        assert "dynamic_obstacles" in editor
