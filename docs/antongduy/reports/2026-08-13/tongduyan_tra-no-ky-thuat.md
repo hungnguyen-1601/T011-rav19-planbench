@@ -104,10 +104,195 @@ số test" đáng giá nhất: không viết thêm gì, chỉ thôi che.
 
 ## Còn lại trong hàng đợi
 
-- **A4** — sinh lại map công bằng; `tests/test_fairness.py:310` đang **skip** vì thiếu file, nên
-  bộ test công bằng không bảo vệ gì cả.
+- **A4 — chẩn đoán ban đầu của tôi SAI, đã sửa trong bản kiểm kê.** Tôi viết rằng
+  `tests/test_fairness.py` đang skip vì thiếu map. Chạy thử: **22 passed, 0 skipped**;
+  `maps/open_hall.pgm` có trong repo và dòng `pytest.skip` đó chưa từng nổ. Tôi `grep` ra dòng
+  skip rồi **suy ra** nó đang nổ thay vì chạy file — đúng kiểu suy luận cả dự án này tồn tại để
+  chặn. Nợ thật còn lại là *"chưa có map vừa khó vừa đối xứng"*, và đó là **thêm một dụng cụ
+  đo** chứ không phải vá lỗ hổng, nên **hạ mức gấp**.
 - **`/models` — đóng, không phải việc của đợt này.** Dev chốt 13-08: phần việc của người khác,
   để nguyên. Ba yêu cầu của trang ghi ở mục D2c trên cho người sẽ xây. Ghi lại ở đây một điều
   duy nhất, không phải để đòi ai làm gì mà để nó không rơi: **sidebar hiện vẫn dẫn tới một
   trang không tồn tại**, và người dùng bấm vào sẽ nhận 404.
 - Phần còn lại theo thứ tự trong bản kiểm kê.
+
+---
+
+## A1a — gỡ đặc quyền thông tin của lưới replan
+
+### Phát hiện chia đôi món nợ
+
+Bản kiểm kê ghi A1 là *"adapter monolithic + bất cân xứng lưới replan, **phải làm cùng lượt**,
+1–2 ngày"*. Kiểm trước khi gõ thì hai nửa **tách được**, và nửa đầu rẻ hơn nhiều:
+
+`run_contract_episode` gọi `run_stack` **không truyền `replanning`**, và
+`ReplanningConfig.enabled` mặc định **False**. Nghĩa là **replanning tắt trong mọi lượt chạy
+của tầng quyết định** — `_replan` chưa từng nổ ở đó. Mọi trace, mọi phán quyết cổng, mọi Decision
+Card đã có đều sinh ra mà không có một lần replan nào.
+
+Hệ quả: **sửa `_replan` không đổi một con số nào đã lưu.** Không phải đo lại gì. Đặc quyền chỉ
+cắn khi có người bật replanning **và** so một monolithic với một modular — mà cái thứ hai chưa
+tồn tại.
+
+Nên A1 tách thành **A1a** (gỡ đặc quyền, tự chứa) và **A1b** (adapter, còn nợ). HĐ-4.1 nói phải
+gỡ đặc quyền **trước** khi chấm monolithic, nên đúng thứ tự.
+
+### Lời giải hợp đồng chỉ định sẵn
+
+> **Luật:** trước khi bất kỳ candidate `monolithic` nào được chấm, đặc quyền này phải được gỡ,
+> và lời giải hợp lệ là **replan từ `Observation`** — không phải cấp ground truth cho cả hai
+> bên. Cấp cho cả hai chỉ đổi một phép so lệch thành hai phép đo sai.
+
+Đã làm đúng thế. `_replan` trước đọc `engine.dynamic_obstacles_now()` (vật cản **thật sự** ở
+đâu); giờ đọc `engine.get_observation()` và dựng bản đồ từ chính tia LiDAR robot nhận được.
+
+Ba tính chất đi kèm, mỗi cái một lý do:
+
+- **Tia chạm ngưỡng tầm xa bị bỏ.** Tia tới hạn nghĩa là *"trong tầm không có gì"*. Nung nó vào
+  sẽ dựng một bức tường bằng sàn trống đúng ở khoảng cách cảm biến hết nhìn thấy, quây robot
+  trong một cái vòng.
+- **Nhiễu LiDAR giờ tới được planner** — đúng, và có chủ ý: robot đo tệ thì lập kế hoạch trên số
+  đo tệ, đó chính là *đo tệ nghĩa là gì*. Nó vẫn **không** tới được phép kiểm va chạm, chỗ đó
+  vẫn dùng hình học thật.
+- **Mỗi tia đánh dấu đúng một ô.**
+
+### Chỗ sai của bản đầu, và cách tìm ra
+
+Bản đầu vẽ mỗi tia thành một **vòng tròn bán kính nửa đường chéo ô**. Bốn test replanning đỏ
+ngay: `replan_count=0` — replan không ra được đường nào.
+
+Không đoán. Chạy A* — **thuật toán đầy đủ** — trên đúng cái lưới ấy:
+
+```
+blockers      : 41  (radius 0.354 m)
+cells blocked : 486  (chỉ tĩnh, đã inflate: 428)
+A* trên CÙNG lưới : False   ← đầy đủ, nên đây không phải sampler xui
+```
+
+Đường **thật sự** bị chặn. Ở độ phân giải 0,5 m, vòng tròn 0,354 m **rộng hơn một ô**, nên bảy
+mươi hai tia sơn thành từng khối 2×2; tường dày thêm một phần ba mét **trước** khi planner
+inflate tiếp, hai cửa đóng lại, và A* báo không có đường qua một mét rưỡi sàn trống.
+
+**Một phép đo được vẽ rộng hơn chính phép đo là một vật cản robot tự bịa ra.** Sửa: đánh dấu
+đúng ô chứa điểm chạm. 24/24 test replanning xanh, tiền đề vẫn đứng — robot vẫn thoát bằng cửa
+trên, chỉ bằng thứ nó nhìn thấy.
+
+### Chốt chặn: viết lại cho khớp thực tế mới
+
+`TestTheReplanGridIsAKnownInformationAsymmetry` mô tả một khiếm khuyết **chưa sửa**. Giờ nó giữ
+cho khiếm khuyết đó **ở trạng thái đã sửa** — một lần "replan không nhìn qua góc được, thôi đọc
+tạm vật cản" sau này là sửa một dòng và không có triệu chứng nào khác.
+
+Ba test mới: replan không chạm ground truth · một tia đánh dấu một ô chứ không phải một mảng ·
+tia tới hạn không đánh dấu gì.
+
+**Test đầu tôi viết sai và chính nó bắt được.** Nó `grep` mã nguồn tìm `dynamic_obstacles_now`,
+và đỏ vì chuỗi đó nằm trong **docstring** — chỗ kể lại lịch sử nên bắt buộc phải nhắc tên nó.
+Sửa sang đọc `_replan.__code__.co_names`: danh sách thứ hàm **thật sự với tới**, nên một cái
+comment không trip được nó mà cũng không giấu được gì khỏi nó.
+
+### Xác minh
+
+`test_simulator_fairness` · `test_replanning` · `test_fairness` · `test_nav_stack`: **109 passed,
+1 skipped**.
+`test_api_simulations` · `test_difficulty` · `test_benchmark_engine` · `test_engine` ·
+`test_partial_runs`: **120 passed**.
+`ruff` sạch, format sạch. Chưa chạy full suite — dev chốt để sau.
+
+### Còn lại, và một câu hỏi cho dev
+
+- **A1b — adapter `MonolithicPolicy`** vẫn là nợ. Sau lượt này nó là **thứ duy nhất** chắn giữa
+  nền tảng và một candidate monolithic; đặc quyền replan từng đứng cạnh nó thì đã hết.
+- **`contracts/CONTRACTS.md` HĐ-4.1 giờ mô tả một trạng thái đã qua.** Câu *"Hôm nay điều này
+  công bằng vì mọi candidate chạy được đều là modular và nhận cùng một lưới"* không còn đúng —
+  giờ nó công bằng vì **không ai được ground truth cả**. Luật thì vẫn nguyên và đã được thoả
+  mãn. Tôi **không tự sửa** file hợp đồng: sửa nó đi kèm bump version và đó là quyết định của
+  dev, không phải hệ quả của một lần sửa mã.
+
+---
+
+## Hợp đồng lên 6.6.0 — ghi lại chính việc A1a vừa làm
+
+HĐ-4.1 viết ở 6.1.0 nêu **một luật** và **một việc phải làm** trước khi chấm candidate
+`monolithic`. A1a làm việc đó, nên điều khoản được viết lại cho khớp: luật giữ nguyên từng chữ,
+phần mô tả chuyển sang trạng thái *đã thoả mãn*, và đoạn lịch sử — vì sao nó từng sai — gập vào
+`<details>` thay vì xoá. Một điều khoản kể được vì sao nó tồn tại thì lần sau không ai gỡ nhầm.
+
+Câu cũ *"Hôm nay điều này công bằng vì mọi candidate chạy được đều là modular"* nay là:
+**công bằng vì không ai được ground truth cả.**
+
+MINOR, không MAJOR: không trường nào bị xoá, không ngữ nghĩa metric hay cổng nào đổi. Và **không
+số liệu nào đã lưu bị ảnh hưởng** — `ReplanningConfig.enabled` mặc định False, tầng quyết định
+không bật, nên `_replan` chưa từng chạy trong một lượt đánh giá nào.
+
+Bump ở ba chỗ, vì test đòi cả ba: header văn bản, `CONTRACTS_VERSION`, và **hai ví dụ JSON trong
+chính tài liệu** — `test_json_examples_quote_the_current_version` tồn tại để người copy ví dụ
+không dán một version cũ vào mã mới.
+
+---
+
+## A1b — adapter `MonolithicPolicy`
+
+### Chọn đường ít rủi ro, và nói rõ vì sao
+
+Một policy end-to-end **không có global plan**, mà `run_stack` bắt buộc phải có một cái: không
+có thì nó ghi `NO_GLOBAL_PATH` và dừng. Hai đường:
+
+1. **Mổ vòng lặp** ra thành hàm dùng chung nhận `plan | None`. Đúng về mặt cấu trúc, nhưng là
+   dịch 110 dòng của **lõi công bằng** — chỗ có hơn 100 test đứng canh.
+2. **Một global planner không quy hoạch gì**, đặt vào đúng ô mà vòng lặp đòi.
+
+Chọn (2). `_NoGlobalPlanning` báo cáo đúng sự thật: `success=True`, path rỗng, 0 giây, 0 node.
+
+Ba chi tiết trong đó không phải tuỳ tiện:
+
+| | |
+|---|---|
+| `success=True`, không phải `False` | `success=False` là cách vòng lặp ghi *"không tồn tại đường nào"*, và **G1 đếm đúng cái đó**. Một candidate chưa từng được yêu cầu tìm đường không được rơi vào ô đếm ấy |
+| 0 giây, 0 node | Không phải chỗ điền tạm: candidate không chạy tìm kiếm toàn cục thì **không tiêu gì** cho nó, và tính cho nó một con số là định giá việc nó không làm |
+| Tên là `policy`, không phải `none+policy` | Một lớp, một tên. `none+policy` đọc ra thành một stack **lỡ thiếu** global planner — khác hẳn một candidate **không có** global planner theo cấu tạo (HĐ-1.2) |
+
+### `reset` **vứt** đường đi, và đó là điều khoản chứ không phải sơ ý
+
+`MonolithicPolicy.reset(global_path, robot)` giữ tham số vì vòng lặp là chung — mà **chung vòng
+lặp mới làm phép so thành phép so**: cùng đồng hồ, cùng `Observation`, cùng luật kết thúc.
+Nhưng nó `del global_path` trước khi gọi `prepare(robot)`.
+
+Nếu nhận, một policy lén nhìn global path sẽ **không phân biệt được** với một policy không nhìn
+— và cái thứ nhất là một stack modular đeo nhãn policy. Có test đọc thẳng chuỗi `del
+global_path` trong mã.
+
+**Replanning không được cấp cho policy**, và không thể: replan thay một global path, policy thì
+không có. Một budget ở đó là cái núm không có gì phía sau.
+
+### Một policy tham chiếu, để có thứ chạy thật
+
+`GreedyReferencePolicy` — lái về phía đích, chậm lại khi tia quét thấy vật cản gần. Chín dòng
+lượng giác, **không bao giờ là candidate**, cùng luật `PurePursuitLocalPlanner` mang từ D12. Có
+test đọc docstring để chắc cái nhãn đó còn ở đấy.
+
+Nó tồn tại để đường end-to-end có thứ để lái. Chạy thật: **tới đích**, `plan.path == ()`,
+`planning_time == 0`, `algorithm == "greedy_reference_policy"`.
+
+### Còn thiếu gì — nói rõ, A1b **chưa xong hết**
+
+Adapter phía **simulator** xong. Cái chưa có là bước trước đó: biến
+`Candidate(type="monolithic")` thành một policy chạy được, cần **một registry policy** khoá theo
+`PolicyComponent.name` và cách phân giải `PolicyComponent.checkpoint` ra trọng số.
+
+Nên hôm nay một monolithic candidate **khai được mà chưa dựng được**, và `stack_id_for` là chỗ
+lời khai dừng lại. Đã sửa thông điệp từ chối ở đó cho đúng sự thật mới — nó vẫn nói "chưa tồn
+tại", nhưng giờ nói đúng **cái gì** chưa tồn tại.
+
+Chốt chặn `test_only_modular_stacks_can_run_today` đổi tên thành
+`test_a_monolithic_candidate_still_cannot_be_built` và thu hẹp về đúng phần còn lại. Thông điệp
+khi nó đỏ giờ trỏ vào **định giá quan sát của G6**: mọi candidate từ trước tới nay đều khai cùng
+một bộ `observation_requirements`, nên điều khoản đó **chưa từng phải định giá một chênh lệch
+thật nào**. Đó là việc đọc trước khi so policy với stack modular.
+
+### Xác minh
+
+`test_monolithic_policy` (12 mới) · `test_simulator_fairness` · `test_replanning` ·
+`test_nav_stack` · `test_candidate` · `test_contract_version`: **146 passed, 1 skipped**.
+Thêm `test_candidate_bridge` · `test_compare`: **160 passed**.
+`ruff` sạch, format sạch. Chưa chạy full suite — dev chốt để sau.

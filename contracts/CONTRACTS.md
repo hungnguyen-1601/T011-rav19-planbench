@@ -1,6 +1,6 @@
 # CONTRACTS.md — Planner Selector
 
-> **Phiên bản hợp đồng:** `contracts_version: 6.5.0`
+> **Phiên bản hợp đồng:** `contracts_version: 6.6.0`
 > **Trạng thái:** cần cả nhóm đọc và ký ở mục 16. Phase 1 (schema gốc) đã hiện thực theo bản 1.1.0; bản 2.0.0 sửa G5 — xem lịch sử phiên bản ở mục 18.
 > **Vị trí:** `contracts/CONTRACTS.md` ở gốc repo (trước đây là `docs/antongduy/CONTRACTS_1.md`).
 > **Tài liệu mẹ:** `docs/antongduy/de-tai-moi-planner-selector.md`. Khi hai tài liệu mâu thuẫn, **CONTRACTS.md thắng** — plan là lý do, contract là luật.
@@ -367,15 +367,29 @@ class TraceRecorder(Protocol):
 
 **Vi phạm trông như thế nào:** một planner gọi thẳng vào nội tại của `SimBackend` để lấy vị trí vật cản, thay vì qua `Observation`. Đây vừa là vi phạm kiến trúc, vừa là gian lận về lớp quan sát (HĐ-7, G6).
 
-### 4.1. Lưới replan là một đặc quyền thông tin đã biết *(ghi ở 6.1.0)*
+### 4.1. Lưới replan: đặc quyền thông tin đã biết *(ghi ở 6.1.0)* — **đã gỡ ở 6.6.0**
 
-Khi robot bị chặn, `nav_stack._replan` dựng lưới quy hoạch tạm với **vị trí thật** của vật cản động nung vào (`_planning_grid(map_data, scenario, engine.dynamic_obstacles_now())`). Lý do hợp lý và phải giữ: một planner chỉ nhận bản đồ tĩnh sẽ replan ra đúng lộ trình vừa bị chặn, vì không đầu vào nào của nó thay đổi.
+**Luật, không đổi:** không candidate nào được nhận vị trí thật của vật cản động qua bất cứ đường nào khác `Observation`. Lời giải hợp lệ duy nhất là **replan từ `Observation`** — **không** phải cấp ground truth cho cả hai bên. Cấp cho cả hai chỉ đổi một phép so lệch thành hai phép đo sai.
 
-**Hôm nay điều này công bằng** vì mọi candidate chạy được đều là `modular` và nhận cùng một lưới. **Ngày adapter `MonolithicPolicy` tồn tại thì nó hết công bằng:** một policy end-to-end chỉ thấy `Observation`, còn global planner của stack modular thấy vật cản **thật sự ở đâu**. Đó đúng là đặc quyền thông tin mà G6 sinh ra để định giá, và nó sẽ ưu ái stack modular vì một lý do không liên quan tới chất lượng điều hướng.
+**Trạng thái: đã thoả mãn.** `nav_stack._replan` dựng lưới quy hoạch tạm từ chính tia LiDAR robot nhận được (`_map_as_the_robot_sees_it`), không từ `engine.dynamic_obstacles_now()`.
 
-**Luật:** trước khi bất kỳ candidate `monolithic` nào được chấm, đặc quyền này phải được gỡ, và lời giải hợp lệ là **replan từ `Observation`** — không phải cấp ground truth cho cả hai bên. Cấp cho cả hai chỉ đổi một phép so lệch thành hai phép đo sai.
+<details><summary>Vì sao điều khoản này tồn tại, và nó từng sai ở đâu</summary>
 
-Chốt chặn đang cài: `test_only_modular_stacks_can_run_today` sẽ đỏ đúng ngày adapter được thêm. Điều khoản này tồn tại vì một chốt chặn nói *"có gì đó đổi"*, còn một điều khoản nói *"phải giải quyết cái gì trước khi đi tiếp"*.
+Tới 6.5.0, `_replan` nung **vị trí thật** của vật cản động vào lưới. Lý do khi đó hợp lý và vẫn hợp lý: một planner chỉ nhận bản đồ tĩnh sẽ replan ra đúng lộ trình vừa bị chặn, vì không đầu vào nào của nó thay đổi.
+
+Điều đó **công bằng chừng nào mọi candidate chạy được đều là `modular`** và nhận cùng một lưới. Nó hết công bằng ngay khi một `monolithic` chạy được: policy end-to-end chỉ thấy `Observation`, còn global planner của stack modular thấy vật cản **thật sự ở đâu**. Đó đúng là đặc quyền thông tin G6 sinh ra để định giá, và nó ưu ái stack modular vì một lý do không liên quan tới chất lượng điều hướng.
+
+Điều khoản được viết ra ở 6.1.0 **trước khi** có candidate nào bị ảnh hưởng, vì một chốt chặn chỉ nói *"có gì đó đổi"*, còn một điều khoản nói *"phải giải quyết cái gì trước khi đi tiếp"*.
+
+</details>
+
+**Ba tính chất của lời giải, mỗi cái có test riêng** (`TestTheReplanGridIsAKnownInformationAsymmetry`):
+
+- Tia chạm ngưỡng tầm xa **không** đánh dấu gì. Tia tới hạn nghĩa là *"trong tầm không có gì"*; nung nó vào sẽ dựng một bức tường bằng sàn trống đúng ở khoảng cách cảm biến hết nhìn thấy.
+- Mỗi tia đánh dấu **đúng một ô** — ô chứa điểm chạm. Một phép đo vẽ rộng hơn chính phép đo là một vật cản robot tự bịa ra.
+- Nhiễu LiDAR **tới được** planner (robot đo tệ thì lập kế hoạch trên số đo tệ) và **không** tới được phép kiểm va chạm.
+
+**Cái còn chắn candidate `monolithic`** sau bản này là adapter `MonolithicPolicy`, không phải đặc quyền này nữa. `test_only_modular_stacks_can_run_today` vẫn đỏ ngày adapter được thêm, nhưng thông điệp của nó giờ trỏ vào định giá quan sát của G6.
 
 ---
 
@@ -846,7 +860,7 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
 
 ```json
 {
-  "contracts_version": "6.5.0",
+  "contracts_version": "6.6.0",
   "recommendation_scope": "MISSION_LEVEL | DEPLOYMENT_LEVEL | ROBUST_DEPLOYMENT_LEVEL",
   "experiment_scope": "full_stack_selection",
   "decision_mode": "technical | business_adjusted",
@@ -909,7 +923,7 @@ Mọi lần ra quyết định ghi một `manifest.json`:
 
 ```json
 {
-  "contracts_version": "6.5.0",
+  "contracts_version": "6.6.0",
   "git_sha": "...",
   "docker_image_digest": "sha256:...",
   "task_profile_id": "warehouse_a_v1",
@@ -1116,6 +1130,7 @@ Hai định danh frozen của contract (`candidate_id`, `episode_context_id`) d�
 
 | 6.4.0 | 2026-08-11 | MINOR | **HĐ-13: manifest phải ghi `constraints`.** Cùng gốc với `sensor_noise` ở 6.3.0 — `episode_context_id` không băm ngưỡng nào — nhưng hệ quả ngược nhau: đổi nhiễu đổi **thế giới** nên phải đổi `task_profile_id`; đổi ràng buộc đổi **phán quyết** nên episode cũ vẫn đúng và chỉ cần ghi vào hồ sơ. Không có trường này thì cùng một profile id dưới hai ngưỡng `success_rate_min` cho manifest giống nhau từng byte mà bảng cổng khác nhau. Phát hiện khi chốt `success_rate_min` cho `open_hall_v2`. Thêm một trường, không xoá gì, không đổi ngữ nghĩa metric hay cổng nào ⇒ MINOR. |
 | 6.5.0 | 2026-08-12 | MINOR | **HĐ-8.4: thang của metric có cổng sập về một điểm thì từ chối cả phép xếp hạng, có tên, thay vì ném `AnchorError` thô.** Hệ quả trực tiếp của luật 2 mà 6.4.0 chưa nhìn ra: `success_rate_min: 1.00` làm `good == bad`, và cách cũ báo "thang rỗng" — đọc như lỗi cấu hình, trong khi deployment đang phát biểu một điều mạch lạc. Nay: sập thang trên metric **có cổng** và `bad` trỏ vào profile ⇒ ghi nhận, deployment vẫn đo và vẫn ra bảng cổng nhưng không xếp hạng; sập thang ở mọi chỗ khác vẫn fatal như cũ. Từ chối **toàn bộ** phép xếp hạng chứ không bỏ metric chết rồi chấm tiếp — bỏ đi sẽ ra `decision_utility` đủ sáu chữ số trên một tập objective khác tập đã khai. Thêm trường `gate_only_deployment` (present-and-null) vào comparison report và measurement report; tiêu chí tái lập HĐ-15.1 đổi đối tượng sang bảng cổng khi không có utility. **Điều khoản chỉ nói hệ phải làm gì, không nói deployment nào nên đặt ngưỡng ở đâu** — hai sảnh về lại `success_rate_min: 0.95` cùng ngày, và câu hỏi ngưỡng đúng cho một deployment nghiệm thu còn để ngỏ (`KNOWN_LIMITATIONS` L6). Không xoá trường, không đổi ngữ nghĩa metric hay cổng nào, nới một trường hợp trước đây fatal ⇒ MINOR. |
+| 6.6.0 | 2026-08-13 | MINOR | **HĐ-4.1: đặc quyền lưới replan đã được gỡ.** Điều khoản viết ở 6.1.0 nêu một luật và một việc phải làm trước khi chấm candidate `monolithic`; bản này làm việc đó. `nav_stack._replan` dựng lưới từ chính tia LiDAR robot nhận được (`_map_as_the_robot_sees_it`) thay vì `engine.dynamic_obstacles_now()`, đúng lời giải điều khoản chỉ định và loại trừ phương án cấp ground truth cho cả hai bên. Ba tính chất có test: tia tới hạn tầm xa không đánh dấu gì · một tia một ô · nhiễu tới được planner nhưng không tới được phép kiểm va chạm. **Không đổi số liệu nào đã lưu**: `ReplanningConfig.enabled` mặc định False và tầng quyết định không bật nó, nên `_replan` chưa từng chạy trong một lượt chạy đánh giá nào. Không trường nào bị xoá, không ngữ nghĩa metric hay cổng nào đổi ⇒ MINOR. |
 
 **Chi tiết 6.1.0 — bốn chỗ nới đều cho cả hai bên, nên không phép kiểm đối xứng nào bắt được.**
 

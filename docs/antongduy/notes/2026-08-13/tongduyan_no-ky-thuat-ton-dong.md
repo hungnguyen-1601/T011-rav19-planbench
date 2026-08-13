@@ -34,6 +34,49 @@ lượng điều hướng. HĐ-4.1 đã ghi luật: gỡ đặc quyền **trư�
 | Ai gây | có từ trước |
 | Ước lượng | 1–2 ngày |
 
+> **Cập nhật 13-08 — tách đôi và trả gần hết.** Kiểm ra hai nửa **không** phải làm cùng lượt như
+> bản kiểm kê này viết:
+>
+> - **A1a — đặc quyền lưới replan: ✅ đã gỡ**, hợp đồng lên **6.6.0**. Replan giờ dựng lưới từ
+>   chính tia LiDAR robot nhận được. Không đổi số liệu nào đã lưu (replanning tắt trong mọi lượt
+>   chạy của tầng quyết định).
+> - **A1b — adapter: ✅ phía simulator**, `MonolithicPolicy` + `run_policy` + một policy tham
+>   chiếu, 12 test. Một policy chạy được qua **cùng vòng lặp**, không cầm path, không bị tính
+>   tiền tìm kiếm toàn cục.
+> - **Còn nợ: registry policy.** Biến `Candidate(type="monolithic")` thành policy chạy được cần
+>   một registry khoá theo `PolicyComponent.name` và cách phân giải `checkpoint` ra trọng số.
+>   Monolithic candidate hôm nay **khai được mà chưa dựng được**.
+> - **Việc phải đọc trước khi so policy với modular:** G6 định giá `observation_requirements`,
+>   mà mọi candidate từ trước tới nay đều khai **cùng một bộ** — nên điều khoản đó **chưa từng
+>   định giá một chênh lệch thật nào**.
+
+### A5. Registry policy — nửa còn lại của A1b *(mới, 13-08)*
+
+Adapter phía simulator xong (`MonolithicPolicy`, `run_policy`). Cái chưa có là bước **trước** đó:
+biến `Candidate(type="monolithic")` thành một policy chạy được.
+
+Cần hai thứ, và chúng là một cặp:
+
+1. **Registry policy** khoá theo `PolicyComponent.name`, song song với registry stack đang có.
+2. **Phân giải `PolicyComponent.checkpoint`** ra trọng số — đường dẫn, hash, hay tham chiếu tới
+   model registry đã có ở `apps/api` (`model_registry.py` đã lưu và băm được file model, nên
+   nhiều khả năng nối vào đó chứ không dựng cái thứ hai).
+
+Hôm nay một monolithic candidate **khai được mà chưa dựng được**, và `stack_id_for` là chỗ lời
+khai dừng lại — thông điệp từ chối ở đó đã nói đúng cái gì còn thiếu.
+
+**Việc phải làm cùng lượt, không phải sau:** G6 định giá `observation_requirements`, mà **mọi
+candidate từ trước tới nay đều khai cùng một bộ** (`[lidar_2d]`). Nghĩa là điều khoản định giá
+quan sát **chưa từng phải định giá một chênh lệch thật nào** — nó xanh vì chưa bị thử, không vì
+đã đúng. Policy đầu tiên khai khác đi sẽ là phép thử thật đầu tiên của nó, và phát hiện một lỗi
+định giá **sau khi** đã công bố một phép so là quá muộn.
+
+| | |
+|---|---|
+| Nguồn | A1b, 13-08 |
+| Ai gây | có từ trước (A1b chỉ làm lộ ra ranh giới) |
+| Chặn | candidate `monolithic` thật; và cùng với nó là tuyên bố "công bằng cho mọi thuật toán" |
+
 ### A2. `robustness_margin` null trên **mọi** Decision Card
 
 Kiểm tám card trong `artifacts/runs/`: `robustness_margin: None` ở tất cả. Theo HĐ-12 null nghĩa
@@ -73,21 +116,36 @@ Và: trượt bánh hiện **zero-mean mỗi bước** nên sai số **triệt t
 | Ai gây | có từ trước, chưa ai ghi ra |
 | Ghi chú | dev chốt 13-08: đưa vào plan dài hạn, làm sau nợ kỹ thuật |
 
-### A4. Chưa có map **vừa khó vừa đối xứng** — và map đối xứng hiện có **không nằm trong repo**
+### A4. Chưa có map **vừa khó vừa đối xứng**
 
 `open_hall` đối xứng nhưng dễ; kho khó nhưng **chưa có kiểm đối xứng nào**. Một map vừa khó vừa
 đối xứng là phép kiểm mạnh hơn cả hai.
 
-Nặng hơn thế, và chưa ai ghi ra: `tests/test_fairness.py:310` **skip** với thông điệp
-*"run scripts/make_fairness_map.py to generate the fairness map"*, và `maps/` không có file đó.
-Nghĩa là **bộ test công bằng đang không chạy** ở checkout sạch — nó xanh vì bị bỏ qua, không vì
-đã kiểm.
+> **SỬA 13-08 — câu dưới đây trong bản đầu là SAI, tôi viết ra mà không chạy thử.**
+>
+> Bản đầu viết: *"`tests/test_fairness.py:310` **skip** vì `maps/` không có file đó, nghĩa là bộ
+> test công bằng đang không chạy"*, và tôi xếp nó thành việc đáng làm sớm nhất trong ba việc.
+>
+> **Chạy thử thì: `tests/test_fairness.py` — 22 passed, 0 skipped.** `maps/open_hall.pgm` **có
+> trong repo**. Dòng `pytest.skip` ở đó là một cái chốt phòng khi map bị thiếu, và nó **chưa
+> từng nổ**. Chạy thêm `test_difficulty.py` và `test_hostinfo.py` — hai file còn lại tôi liệt kê
+> là "skip có điều kiện" — cũng **84 passed, 0 skipped**.
+>
+> Sai ở đâu: tôi `grep` ra dòng `pytest.skip` rồi **suy ra** nó đang nổ, thay vì chạy file đó.
+> Đúng cái kiểu suy luận mà cả dự án này tồn tại để chặn. Sáu `skipped` trong full suite đến từ
+> `importorskip` cho dependency tuỳ chọn (`langgraph`, `optuna`, `gymnasium`), không liên quan.
+
+**Nợ thật sự còn lại của mục này**, sau khi bỏ phần sai: `open_hall` đối xứng nhưng **dễ**, kho
+khó nhưng **chưa có kiểm đối xứng nào**. Một map vừa khó vừa đối xứng vẫn chưa có, và nó vẫn là
+phép kiểm mạnh hơn cả hai — nhưng đây là việc **thêm một dụng cụ đo**, không phải vá một lỗ
+hổng đang chảy.
 
 | | |
 |---|---|
-| Nguồn | plan 12-08 mục C2 · quét test 13-08 |
+| Nguồn | plan 12-08 mục C2 |
 | Ai gây | có từ trước |
-| Ước lượng | nửa ngày cho map; sinh lại map công bằng thì vài phút |
+| Ước lượng | nửa ngày |
+| Mức độ gấp | **hạ xuống** — không có gì đang bị bỏ qua như tôi tưởng |
 
 ---
 
@@ -196,7 +254,12 @@ Xếp theo **rẻ × chặn nhiều**, không theo mức độ hấp dẫn:
 ```
 D1 test chống trôi lược đồ   ✅ TRẢ 13-08
 D2 hai vệt đỏ thường trực    ✅ TRẢ 13-08 — lòi ra /models là link chết
-A4 sinh lại map công bằng    (~vài phút) ← test công bằng đang bị SKIP, không phải xanh
+A4 map vừa khó vừa đối xứng  (nửa ngày) ← THÊM dụng cụ đo, không phải vá lỗ hổng
+                                          (bản đầu tôi xếp nó gấp vì một chẩn đoán SAI)
+
+A1a đặc quyền lưới replan    ✅ TRẢ 13-08 — hợp đồng lên 6.6.0
+A1b adapter (phía simulator) ✅ TRẢ 13-08
+A5  registry policy + G6     ← nửa còn lại, phải làm cùng lượt với định giá quan sát
         │
 B1 quyết định ngưỡng sảnh    (quyết định, không phải code)
 B2 warehouse_a_v3 khai nhiễu (~1 h + giờ máy)
@@ -208,6 +271,11 @@ A2 Task Neighborhood ⇒ robustness_margin
 A3 định vị + mất tia + lệch odometry  ← dev chốt: plan dài hạn
 ```
 
-Ba dòng đầu cộng lại **dưới hai giờ** và mỗi dòng đóng một lỗ hổng mà suite hiện không nhìn
-thấy. A4 đặc biệt đáng làm sớm: một bộ test công bằng đang **skip** thì nó không bảo vệ gì cả,
-mà cả dự án dựa trên tuyên bố công bằng.
+D1 và D2 đã trả, và **D2 là dòng đáng tiền nhất**: nó không thêm test nào mà làm 26 test có sẵn
+thôi bị che.
+
+**A4 đã bị hạ mức gấp** sau khi chẩn đoán lại — xem khối SỬA ở mục A4. Bài học rút cho chính bản
+kiểm kê này: **`grep` ra một dòng `pytest.skip` không có nghĩa là nó đang nổ.** Mọi mục còn lại
+trong bản này nêu một hành vi lúc chạy thì phải chạy thử trước khi xếp mức gấp; những mục nêu
+một thứ **vắng mặt** (adapter monolithic, `robustness_margin` null, kho chưa khai nhiễu) thì đã
+kiểm bằng cách đọc mã và đọc artifact, không suy diễn.

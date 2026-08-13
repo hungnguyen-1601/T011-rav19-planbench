@@ -21,12 +21,13 @@ from pydantic import BaseModel, ConfigDict
 from planbench_metrics import EpisodeMetrics, compute_episode_metrics
 from planbench_planning import AStarPlanner, GlobalPlanner, PlanResult
 from planbench_planning.common.local_base import LocalPlanner, LocalPlanResult
-from planbench_schemas.episode import EpisodeEvent, EpisodeResult, EpisodeStatus
+from planbench_schemas.episode import EpisodeEvent, EpisodeResult, EpisodeStatus, Observation
 from planbench_schemas.geometry import EPS, Point2D
 from planbench_schemas.map import CellState, MapData
 from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
 from planbench_schemas.robot import RobotConfig, RobotState
 from planbench_schemas.scenario import CircleObstacle, Scenario
+from planbench_schemas.sensor import LidarConfig
 from planbench_simulator.engine import SimulationEngine
 from planbench_simulator.grid import OccupancyGrid, rasterize_obstacles
 from planbench_simulator.path_follower import PurePursuitConfig, PurePursuitFollower
@@ -149,21 +150,87 @@ def _with_free_start_cell(grid: OccupancyGrid, position: Point2D) -> OccupancyGr
     )
 
 
+def _map_as_the_robot_sees_it(
+    map_data: MapData, observation: Observation, lidar: LidarConfig
+) -> MapData:
+    """The static map plus **one occupied cell per LiDAR return**.
+
+    A range reading says *something is at this bearing and this distance*
+    and nothing more. So each return marks exactly the cell that contains
+    the point it stopped at — no circle around it, no assumed extent.
+
+    **The first draft did use a circle, of half a cell diagonal, and it
+    broke the premise the replanning tests exist for.** At a half-metre
+    resolution that circle is wider than a cell, so every one of the
+    seventy-two returns painted a two-by-two block; the walls thickened
+    by a third of a metre before the planner's own inflation, both
+    doorways closed, and A* — which is complete, so this was not sampler
+    luck — reported no path where a metre and a half of clearance was
+    actually free. A measurement rendered wider than the measurement is
+    an obstacle the robot invented.
+
+    **Returns at maximum range are dropped, and that line is load
+    bearing.** A ray reaching its limit means "nothing within range";
+    burning it in would build a wall out of empty floor at exactly the
+    distance the sensor stops seeing, ringing the robot in.
+
+    Noise reaches the planner here, on purpose. A robot that measures
+    badly plans on bad measurements — that is what measuring badly *is*.
+    It still never reaches the collision test, which stays on the true
+    geometry (see :mod:`planbench_simulator.noise`).
+    """
+    increment = lidar.angle_span / lidar.num_rays
+    start = observation.pose.theta - lidar.angle_span / 2.0
+    cells = list(map_data.cells)
+    for index, distance in enumerate(observation.lidar_ranges):
+        if distance >= lidar.max_range - EPS:
+            continue
+        angle = start + index * increment
+        column = math.floor(
+            (observation.pose.x + distance * math.cos(angle) - map_data.origin.x)
+            / map_data.resolution
+        )
+        row = math.floor(
+            (observation.pose.y + distance * math.sin(angle) - map_data.origin.y)
+            / map_data.resolution
+        )
+        if 0 <= row < map_data.height and 0 <= column < map_data.width:
+            cells[row * map_data.width + column] = CellState.OCCUPIED.value
+    return map_data.model_copy(update={"cells": tuple(cells)})
+
+
 def _replan(
     map_data: MapData,
     scenario: Scenario,
     global_planner: GlobalPlanner,
     engine: SimulationEngine,
 ) -> PlanResult:
-    """Plan again from where the robot is, around where the obstacles are.
+    """Plan again from where the robot is, around what the robot can see.
 
     Both halves matter. Replanning from the original start would hand
     back a path the robot has already half-driven; replanning on the
     static-only grid would hand back the identical path, because none of
     the planner's inputs would have changed since it was blocked.
+
+    **The obstacles come from ``get_observation`` and not from the
+    engine's ground truth, and that is a fairness requirement rather than
+    a style choice** (HĐ-4.1). This used to read
+    ``engine.dynamic_obstacles_now()`` — where the obstacles *actually*
+    were. Among modular stacks that was symmetric, so no comparison was
+    distorted; it stops being symmetric the moment a ``monolithic``
+    candidate runs, because an end-to-end policy sees only
+    ``Observation`` while a modular stack's global planner would be
+    seeing through walls. That is the information privilege G6 exists to
+    price, and it would favour modular stacks for a reason with nothing
+    to do with navigation quality.
+
+    The contract names the fix and rules out the alternative: replan from
+    ``Observation``, **not** ground truth for both. Handing it to both
+    sides would turn one skewed comparison into two wrong measurements.
     """
     position = engine.get_state().pose.position
-    grid = _planning_grid(map_data, scenario, engine.dynamic_obstacles_now())
+    believed = _map_as_the_robot_sees_it(map_data, engine.get_observation(), scenario.lidar)
+    grid = _planning_grid(believed, scenario)
     return global_planner.plan(
         _with_free_start_cell(grid, position),
         position,
@@ -175,6 +242,68 @@ def _replan(
 #: this robot is following has stopped working", which is the one thing
 #: a new path can fix. A collision or a timeout is not on the list.
 _REPLANNABLE = (EpisodeStatus.STUCK, EpisodeStatus.NO_PROGRESS)
+
+
+class _NoGlobalPlanning(GlobalPlanner):
+    """The global planner of a candidate that has none (HĐ-1.2).
+
+    A monolithic policy is one layer. It still goes through the shared
+    driving loop — same clock, same ``Observation``, same termination
+    rules — because a comparison between two harnesses is not a
+    comparison between two navigators. This stands in the one slot the
+    loop insists on and reports the truth: **nothing was planned, and
+    that is not a failure.**
+
+    ``success=True`` with an empty path, deliberately. ``success=False``
+    is how the loop records *no route exists*, which G1 counts; a policy
+    that was never asked to find a route must not be counted there.
+
+    Zero planning time and zero expanded nodes are facts, not
+    placeholders: a candidate that runs no global search spends nothing
+    on one, and charging it a number would price work it did not do.
+    """
+
+    @property
+    def name(self) -> str:
+        return "none"
+
+    def plan(self, grid: OccupancyGrid, start: Point2D, goal: Point2D) -> PlanResult:  # noqa: ARG002
+        return PlanResult(success=True, path=(), path_length=0.0, cost=0.0)
+
+
+#: Passed as ``global_planner`` to run a candidate that plans nothing.
+NO_GLOBAL_PLANNING = _NoGlobalPlanning()
+
+
+def run_policy(
+    map_data: MapData,
+    scenario: Scenario,
+    policy: LocalPlanner,
+    recorder: EpisodeTraceRecorder | None = None,
+    legacy_metrics: bool = True,
+) -> StackRun:
+    """Run one episode of a monolithic candidate (HĐ-4's second shape).
+
+    The same engine, the same loop and the same recorder as
+    :func:`run_stack` — which is the point. What differs is that no
+    global planner runs, so the policy is handed no path and is charged
+    for no search.
+
+    **Replanning is not offered and cannot be.** Replanning replaces a
+    global path; a policy has none, so a budget here would be a control
+    with nothing behind it. A monolithic candidate that drives into a
+    dead end recovers with its own next command or it does not, and that
+    is the thing being measured.
+    """
+    return run_stack(
+        map_data,
+        scenario,
+        policy,
+        global_planner=NO_GLOBAL_PLANNING,
+        replanning=NO_REPLANNING,
+        recorder=recorder,
+        legacy_metrics=legacy_metrics,
+    )
 
 
 def run_stack(
@@ -233,7 +362,15 @@ def run_stack(
     """
     global_planner = global_planner or AStarPlanner()
     replanning = replanning or NO_REPLANNING
-    algorithm = f"{global_planner.name}+{local_planner.name}"
+    # A monolithic candidate is one layer, so it is named by one name.
+    # "none+policy" would read as a stack whose global planner happened
+    # to be missing, which is a different candidate from one that has no
+    # global planner by construction (HĐ-1.2).
+    algorithm = (
+        local_planner.name
+        if isinstance(global_planner, _NoGlobalPlanning)
+        else f"{global_planner.name}+{local_planner.name}"
+    )
     plan, raw_grid = plan_global_path(map_data, scenario, global_planner)
 
     if not plan.success:
