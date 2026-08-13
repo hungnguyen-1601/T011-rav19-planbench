@@ -37,6 +37,7 @@ observation layer."*
 from __future__ import annotations
 
 import inspect
+import math
 import random
 from pathlib import Path
 
@@ -54,8 +55,11 @@ from planbench_benchmark.contexts import build_evaluation_contexts, iter_run_pla
 from planbench_benchmark.episode import scenario_for
 from planbench_benchmark.task_map import load_task_map
 from planbench_schemas.dynamic import position_at
+from planbench_schemas.episode import Observation
 from planbench_schemas.episode_context import EpisodeContext
-from planbench_schemas.sensor import SensorNoise
+from planbench_schemas.geometry import Pose2D
+from planbench_schemas.map import CellState, MapData
+from planbench_schemas.sensor import LidarConfig, SensorNoise
 from planbench_schemas.task_profile import TaskProfile
 from planbench_simulator.noise import NoiseModel
 
@@ -618,38 +622,142 @@ class TestTheTwoHallsStayInStep:
 
 
 class TestTheReplanGridIsAKnownInformationAsymmetry:
-    """A fairness defect that is latent today and must not go live quietly.
+    """The privilege HĐ-4.1 named, and the tests that keep it removed.
 
-    On a replan the *global planner* is handed a grid with the dynamic
-    obstacles' **ground-truth** positions burned into it
-    (``nav_stack._replan``). The reasoning is sound and written down: a
-    planner given only the static map would replan the identical route it
-    was just blocked on, because none of its inputs changed.
+    **History, because the fix only makes sense against it.** A replan
+    used to hand the *global planner* a grid with the dynamic obstacles'
+    **ground-truth** positions burned in
+    (``engine.dynamic_obstacles_now()``). The reasoning was sound and
+    written down: a planner given only the static map replans the
+    identical route it was just blocked on, because none of its inputs
+    changed.
 
-    Among the candidates that can run today this is symmetric — every
-    modular stack gets the same grid, so no comparison is distorted.
+    Among the candidates that could run it was symmetric — every modular
+    stack got the same grid — so no comparison was distorted. It would
+    have stopped being symmetric the moment a ``monolithic`` candidate
+    ran: HĐ-4's ``MonolithicPolicy`` sees only ``Observation`` while a
+    modular stack's global planner would be seeing through walls. That is
+    the information privilege P02 and G6 exist to price, and it would
+    favour modular stacks for a reason with nothing to do with navigation
+    quality.
 
-    It stops being symmetric the moment a ``monolithic`` candidate can
-    run. HĐ-4's ``MonolithicPolicy`` sees only ``Observation``; a modular
-    stack's global planner sees where the obstacles actually are. That is
-    the information-privilege P02 and G6 exist to price, and it would
-    favour modular stacks for a reason that has nothing to do with
-    navigation quality.
+    **Removed 2026-08-13**, by the one route HĐ-4.1 allows: replan from
+    ``Observation``. The clause rules out the alternative explicitly —
+    ground truth for *both* sides would turn one skewed comparison into
+    two wrong measurements.
 
-    The test below fails the day the adapter lands. That is deliberate:
-    it is the cheapest way to make whoever adds it read this.
+    What is left to guard is that it stays removed. A future "the replan
+    can't see round the corner, let's just read the obstacles" would be a
+    one-line change with no other symptom.
     """
 
-    def test_only_modular_stacks_can_run_today(self) -> None:
+    def test_the_replan_plans_on_what_the_robot_can_see(self) -> None:
+        """The privilege, asserted gone at its one call site.
+
+        Read from the compiled function's names rather than its text.
+        The first version of this test grepped the source and failed on
+        the *docstring*, which explains the history and therefore has to
+        say ``dynamic_obstacles_now`` out loud. ``co_names`` lists what
+        the function actually reaches for, so a comment can neither trip
+        it nor hide anything from it.
+        """
+        from planbench_simulator.nav_stack import _replan
+
+        reaches_for = set(_replan.__code__.co_names)
+        assert "dynamic_obstacles_now" not in reaches_for, (
+            "The replan is reading the engine's ground truth again. HĐ-4.1 forbids it: a "
+            "modular stack's global planner would see where obstacles actually are while a "
+            "monolithic policy sees only Observation, and G6 would be pricing a privilege "
+            "the platform handed out rather than one the candidate chose."
+        )
+        assert "get_observation" in reaches_for
+
+    def test_a_range_return_marks_one_cell_and_not_a_blob(self) -> None:
+        """A reading says *something is at this bearing and distance* —
+        nothing about how big it is.
+
+        The first draft rendered each return as a circle of half a cell
+        diagonal, which at a half-metre resolution is wider than a cell:
+        seventy-two returns painted two-by-two blocks, both doorways
+        closed, and A* — complete, so this was not sampler luck —
+        reported no path across a metre and a half of free floor.
+        """
+        from planbench_simulator.nav_stack import _map_as_the_robot_sees_it
+
+        empty = MapData(
+            name="blank",
+            width=8,
+            height=8,
+            resolution=0.5,
+            origin=Pose2D(x=0.0, y=0.0, theta=0.0),
+            cells=tuple([CellState.FREE.value] * 64),
+        )
+        lidar = LidarConfig(num_rays=4, max_range=5.0)
+        # One return dead ahead at 1.0 m from (1.0, 1.0) — ray 0 points at
+        # theta - span/2, so a facing of +pi aims ray 0 along +x.
+        observation = Observation(
+            time=0.0,
+            pose=Pose2D(x=1.0, y=1.0, theta=math.pi),
+            linear_velocity=0.0,
+            angular_velocity=0.0,
+            goal_distance=1.0,
+            goal_bearing=0.0,
+            lidar_ranges=(1.0, 5.0, 5.0, 5.0),
+        )
+        seen = _map_as_the_robot_sees_it(empty, observation, lidar)
+        occupied = [i for i, value in enumerate(seen.cells) if value != CellState.FREE.value]
+        assert len(occupied) == 1, "a single return must not paint more than the cell it lands in"
+
+    def test_returns_at_maximum_range_mark_nothing(self) -> None:
+        """A ray that reaches its limit means "nothing within range".
+        Burning those in would build a wall out of empty floor at exactly
+        the distance the sensor stops seeing, ringing the robot in."""
+        from planbench_simulator.nav_stack import _map_as_the_robot_sees_it
+
+        empty = MapData(
+            name="blank",
+            width=8,
+            height=8,
+            resolution=0.5,
+            origin=Pose2D(x=0.0, y=0.0, theta=0.0),
+            cells=tuple([CellState.FREE.value] * 64),
+        )
+        lidar = LidarConfig(num_rays=4, max_range=2.0)
+        observation = Observation(
+            time=0.0,
+            pose=Pose2D(x=2.0, y=2.0, theta=0.0),
+            linear_velocity=0.0,
+            angular_velocity=0.0,
+            goal_distance=1.0,
+            goal_bearing=0.0,
+            lidar_ranges=(2.0, 2.0, 2.0, 2.0),
+        )
+        seen = _map_as_the_robot_sees_it(empty, observation, lidar)
+        assert seen.cells == empty.cells
+
+    def test_a_monolithic_candidate_still_cannot_be_built(self) -> None:
+        """The tripwire, narrowed to what is actually still missing.
+
+        Two things stood between this platform and a monolithic
+        candidate. The replan privilege went on 2026-08-13 (6.6.0), and
+        the simulator-side adapter with it: ``MonolithicPolicy`` exists
+        and ``run_policy`` drives one. What is left is the *policy
+        registry* — resolving a candidate's policy name and checkpoint to
+        something loadable.
+
+        The day that lands, read this class before comparing a policy
+        against a modular stack: G6 prices observation requirements, and
+        a policy declaring different ones is the first candidate that
+        clause has ever had to price for real.
+        """
         from planbench_benchmark import candidates as candidates_module
 
         source = inspect.getsource(candidates_module)
-        assert "MonolithicPolicy" in source
         assert "does not exist yet" in source, (
-            "A monolithic candidate can now be run. Before comparing one against a modular "
-            "stack, settle the replan asymmetry documented on this test: the modular stack's "
-            "global planner sees ground-truth obstacle positions on a replan and the policy "
-            "does not (HĐ-4, P02, G6)."
+            "A monolithic candidate can now be built. Before comparing one against a "
+            "modular stack, check G6's observation pricing: every candidate so far has "
+            "declared the same requirements, so that clause has never actually priced a "
+            "difference."
         )
 
     def test_the_ground_truth_hatch_is_used_by_the_stack_not_by_a_planner(self) -> None:
