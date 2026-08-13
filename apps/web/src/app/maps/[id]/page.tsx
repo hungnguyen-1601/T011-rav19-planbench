@@ -118,6 +118,14 @@ export default function MapEditorPage({ params }: { params: Promise<{ id: string
             worldHeight: (map.height * map.resolution).toFixed(1),
           })}
         </p>
+        {/* Where the start and the goal are, since this is where people
+            look for them. They are not on a map and cannot be: `MapData`
+            is walls, and the same warehouse serves many missions. The
+            pair belongs to the deployment that runs on this map, so it
+            is chosen where that deployment is filed. */}
+        <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+          {t("maps.whereArePoses")} <Link href="/decisions">{t("maps.posesLink")}</Link>
+        </p>
       </div>
     </>
   );

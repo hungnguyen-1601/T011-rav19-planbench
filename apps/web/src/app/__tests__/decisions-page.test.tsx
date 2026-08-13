@@ -25,6 +25,10 @@ import { NAV_SECTIONS } from "../../lib/navigation";
 const APP = join(process.cwd(), "src", "app");
 const LIST = readFileSync(join(APP, "decisions", "page.tsx"), "utf8");
 const DETAIL = readFileSync(join(APP, "decisions", "[id]", "page.tsx"), "utf8");
+/* Read here because of one assertion below: the map editor is where
+   people go looking for the start and the goal, and it has to send them
+   to the page that actually has them. */
+const MAP_EDITOR = readFileSync(join(APP, "maps", "[id]", "page.tsx"), "utf8");
 
 describe("the list shows every run, not only the ones that ranked", () => {
   it("defaults to no outcome filter at all", () => {
@@ -398,6 +402,20 @@ describe("choosing a map for the sweep", () => {
     expect(LIST).toContain("...NO_CUSTOM_MAP, newProfileId: value.newProfileId");
   });
 
+  it("says why the map picker is off rather than leaving it greyed", () => {
+    /* Both reasons are one click from fixed — choose a deployment, or
+       draw a map — so which one it is *is* the useful part. A disabled
+       control with no explanation reads as a broken page, and this one
+       sent a reader hunting for start/goal in the map editor, where they
+       are not and cannot be. */
+    expect(LIST).toContain("decisions.map.pickDeploymentFirst");
+    expect(LIST).toContain("decisions.map.noMapsYet");
+    for (const key of ["pickDeploymentFirst", "noMapsYet"]) {
+      expect(en).toHaveProperty(`decisions.map.${key}`);
+      expect(vi).toHaveProperty(`decisions.map.${key}`);
+    }
+  });
+
   it("sends the reader to the existing editor instead of growing a second one", () => {
     /* `/maps` already versions and checksums what it stores. Two
        editors would be two definitions of the same thing. */
@@ -477,6 +495,18 @@ describe("placing the start and the goal", () => {
     expect((en as Record<string, string>)["decisions.map.goalHeadingNote"]).toContain("HĐ-6");
     expect((vi as Record<string, string>)["decisions.map.goalHeadingNote"]).toContain("HĐ-6");
     expect((en as Record<string, string>)["decisions.map.startHeadingNote"]).toContain("t = 0");
+  });
+
+  it("tells the map editor where the poses actually live", () => {
+    /* A map is walls, and `MapData` has no pose fields — the same
+       warehouse serves many missions, so the pair belongs to the
+       deployment rather than to the map. That is a good reason and a
+       poor excuse for silence: the editor is the first place somebody
+       looks, so it has to point at the page that has them. */
+    expect(MAP_EDITOR).toContain("maps.whereArePoses");
+    expect(MAP_EDITOR).toContain('href="/decisions"');
+    expect(en).toHaveProperty("maps.whereArePoses");
+    expect(vi).toHaveProperty("maps.whereArePoses");
   });
 
   it("draws the goal circle at the deployment's own tolerance", () => {

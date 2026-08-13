@@ -532,6 +532,20 @@ function MapChoice({
         </span>
       </div>
 
+      {/* Why the control is off, in words. A greyed-out select with no
+          explanation reads as a broken page — and both reasons here are
+          fixable by the reader in one click, so saying which one it is
+          is the whole difference between stuck and not. */}
+      {!base ? (
+        <p className="muted" style={{ marginTop: 4 }}>
+          {t("decisions.map.pickDeploymentFirst")}
+        </p>
+      ) : maps.length === 0 ? (
+        <p className="muted" style={{ marginTop: 4 }}>
+          {t("decisions.map.noMapsYet")}
+        </p>
+      ) : null}
+
       {value.mapId ? (
         <>
           <div className="row" style={{ alignItems: "flex-end", marginTop: 12 }}>
