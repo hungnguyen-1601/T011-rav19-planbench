@@ -66,9 +66,33 @@ describe("Sidebar — expanded", () => {
   });
 
   it("groups the menu into labelled sections", () => {
+    /* Grouped by what the reader is *doing*, not by which system
+       produced the screen. The previous split put the two flows inside
+       one heading, so a replacement sat beside the thing it replaced
+       with nothing saying which was which. */
     const html = sidebar();
-    expect(html).toContain("Workspace");
-    expect(html).toContain("Results");
+    expect(html).toContain("What you are doing");
+    expect(html).toContain("Materials");
+    expect(html).toContain("Being replaced");
+  });
+
+  it("says what every entry is for, not just its name", () => {
+    /* Twelve names and nothing else left a reader unable to tell that
+       Benchmarks and Decisions answer different questions. That was the
+       largest cost of running two flows at once, and none of it was in
+       the code. */
+    const html = sidebar();
+    expect(html).toContain("Declare a world to measure on");
+    expect(html).toContain("sidebar-desc");
+  });
+
+  it("says out loud which pages are being replaced", () => {
+    /* They still work and are still the only way to do some things.
+       Saying so is more use than a sidebar that lists the replacement
+       silently beside the thing it replaces. */
+    const html = sidebar();
+    expect(html).toContain("Decisions replaces it");
+    expect(html).toContain("HĐ-1.4");
   });
 
   it("offers a collapse control", () => {
@@ -84,8 +108,11 @@ describe("Sidebar — expanded", () => {
 
 describe("Sidebar — collapsed", () => {
   it("gives every icon a tooltip and an accessible name", () => {
+    /* Collapsed, the tooltip is the only surface left, so it carries the
+       description too — a rail of icons with nothing but names is what
+       the descriptions were added to fix. */
     const html = sidebar({ collapsed: true });
-    expect(html).toContain('data-tooltip="Maps"');
+    expect(html).toContain('data-tooltip="Maps — Draw the walls a deployment runs in"');
     expect(html).toContain('aria-label="Maps"');
   });
 

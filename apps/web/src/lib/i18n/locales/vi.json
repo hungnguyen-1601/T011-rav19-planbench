@@ -1030,5 +1030,22 @@
   "deployments.form.lidarDropoutNote": "Tia mất đọc ra thành khoảng trống với costmap — đây là cách robot lái vào cửa kính.",
   "deployments.form.odometryBias": "Lệch odometry",
   "deployments.form.odometryBiasNote": "Rút một lần cho cả episode rồi giữ, nên nó tích luỹ chứ không triệt tiêu như trượt bánh.",
-  "deployments.form.commandLatency": "Trễ lệnh (số bước)"
+  "deployments.form.commandLatency": "Trễ lệnh (số bước)",
+  "nav.section.doing": "Bạn đang làm gì",
+  "nav.section.materials": "Nguyên liệu",
+  "nav.section.retiring": "Đang được thay",
+  "nav.desc.dashboard": "Mọi thứ đang ở đâu",
+  "nav.desc.deployments": "Khai một thế giới để đo",
+  "nav.desc.simulate": "Thử một episode trước khi tốn hàng giờ",
+  "nav.desc.decisions": "Chạy phép so, đọc kết quả, duyệt",
+  "nav.desc.maps": "Vẽ những bức tường deployment chạy trong đó",
+  "nav.desc.library": "Scenario dựng sẵn, từ dễ tới khó",
+  "nav.desc.algorithms": "Các stack một phép so chọn được",
+  "nav.desc.models": "Policy đã huấn luyện và con robot chúng được huấn luyện cho",
+  "nav.desc.benchmarks": "Phép so cũ. Decisions đang thay nó",
+  "nav.desc.leaderboard": "Xếp hạng xuyên scenario — điều một khuyến nghị không làm được (HĐ-1.4)",
+  "nav.desc.scenarios": "Giữ tới khi form deployment vẽ được vật cản",
+  "nav.desc.agent": "Hỏi về nền tảng bằng lời",
+  "nav.desc.system": "Phiên bản, sức khoẻ, kết nối",
+  "nav.desc.reviews": "Những gì đang chờ bạn"
 }

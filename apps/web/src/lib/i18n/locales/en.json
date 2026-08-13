@@ -1030,5 +1030,22 @@
   "deployments.form.lidarDropoutNote": "A dropped return reads to a costmap as free space — this is how a robot drives into glass.",
   "deployments.form.odometryBias": "Odometry bias",
   "deployments.form.odometryBiasNote": "Drawn once per episode and held, so it accumulates instead of averaging out like wheel slip.",
-  "deployments.form.commandLatency": "Command latency (steps)"
+  "deployments.form.commandLatency": "Command latency (steps)",
+  "nav.section.doing": "What you are doing",
+  "nav.section.materials": "Materials",
+  "nav.section.retiring": "Being replaced",
+  "nav.desc.dashboard": "Where things stand",
+  "nav.desc.deployments": "Declare a world to measure on",
+  "nav.desc.simulate": "Try one episode before spending hours",
+  "nav.desc.decisions": "Run a comparison, read it, approve it",
+  "nav.desc.maps": "Draw the walls a deployment runs in",
+  "nav.desc.library": "Built-in scenarios, easiest to hardest",
+  "nav.desc.algorithms": "The stacks a comparison can choose between",
+  "nav.desc.models": "Trained policies and the robots they were trained for",
+  "nav.desc.benchmarks": "The old comparison. Decisions replaces it",
+  "nav.desc.leaderboard": "Ranks across scenarios, which a recommendation cannot do (HĐ-1.4)",
+  "nav.desc.scenarios": "Kept until the deployment form can draw obstacles",
+  "nav.desc.agent": "Ask about the platform in words",
+  "nav.desc.reviews": "What is waiting on you",
+  "nav.desc.system": "Versions, health, connection"
 }

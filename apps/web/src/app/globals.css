@@ -257,6 +257,28 @@ a:hover {
   text-overflow: ellipsis;
 }
 
+/* The one line saying what a page is for. Stacked under the name rather
+   than beside it: a rail is narrow, and a description that competes with
+   the label for one line ends up truncating the label. */
+.sidebar-desc {
+  display: block;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--muted);
+  white-space: normal;
+  margin-top: 1px;
+}
+
+/* Nothing here works less than the rest — these pages are still the only
+   way to do some things. The muted title says "a replacement exists",
+   which is more use to a reader than a sidebar that lists the
+   replacement silently beside the thing it replaces. */
+.sidebar-section:has(> .sidebar-section-title) a[href="/benchmarks"] .sidebar-label,
+.sidebar-section:has(> .sidebar-section-title) a[href="/leaderboard"] .sidebar-label,
+.sidebar-section:has(> .sidebar-section-title) a[href="/scenarios"] .sidebar-label {
+  opacity: 0.85;
+}
+
 .sidebar-footer {
   margin-top: auto;
   padding-top: 10px;
