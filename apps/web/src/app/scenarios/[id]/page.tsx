@@ -629,7 +629,7 @@ export default function ScenarioEditorPage() {
         {savedId ? (
           <p className="muted">
             {t("scenarios.savedAs", { id: savedId })}{" "}
-            <Link href="/benchmarks">{t("library.openBenchmarks")}</Link>
+            <Link href="/decisions">{t("library.openDecisions")}</Link>
           </p>
         ) : null}
       </div>

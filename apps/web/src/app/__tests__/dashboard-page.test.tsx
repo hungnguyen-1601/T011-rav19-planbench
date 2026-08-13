@@ -76,13 +76,13 @@ describe("the API base URL appears on exactly one page", () => {
 });
 
 describe("the dashboard shows something worth looking at", () => {
-  it("has the six stat cards", () => {
+  it("has a stat card for each thing worth counting", () => {
     for (const key of [
-      "dashboard.stats.benchmarks",
+      "dashboard.stats.decisions",
       "dashboard.stats.accepted",
       "dashboard.stats.pendingReviews",
       "dashboard.stats.scenarios",
-      "dashboard.stats.algorithms",
+      "dashboard.stats.candidates",
       "dashboard.stats.simulations",
     ]) {
       expect(DASHBOARD).toContain(key);
@@ -94,13 +94,13 @@ describe("the dashboard shows something worth looking at", () => {
   });
 
   it("has recent activity and pending reviews", () => {
-    expect(DASHBOARD).toContain("dashboard.recentBenchmarks");
+    expect(DASHBOARD).toContain("dashboard.recentDecisions");
     expect(DASHBOARD).toContain("dashboard.recentSimulations");
     expect(DASHBOARD).toContain("dashboard.pendingRequests");
   });
 
   it("has an empty state for each of them", () => {
-    expect(DASHBOARD).toContain("dashboard.empty.benchmarks.title");
+    expect(DASHBOARD).toContain("dashboard.empty.decisions.title");
     expect(DASHBOARD).toContain("dashboard.empty.simulations.title");
     expect(DASHBOARD).toContain("dashboard.empty.reviews.title");
   });

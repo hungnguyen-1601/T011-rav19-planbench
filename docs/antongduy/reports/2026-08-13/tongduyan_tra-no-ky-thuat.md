@@ -983,3 +983,132 @@ phần models.
 - `tests/api/test_robot_profile_boundary.py` — 16 test.
 - `deployments-page.test.tsx` — thêm 5 test cho picker xe.
 - Suite web: **665 passed**, `tsc` sạch. `ruff check .` sạch.
+
+## P6 — luồng cũ nghỉ *(pha cuối)*
+
+Kế hoạch ước lượng nửa ngày. Ước lượng đó **sai**, và lý do sai đáng ghi
+lại: nó đếm bốn trang, không đếm những gì đang **trú** trên bốn trang đó.
+Khảo sát trước khi xoá cho ra bảy nhóm khẳng định nằm rải trong bảy file
+test. An chốt hướng **phân loại**: giữ cái theo-deployment, bỏ cái
+xuyên-scenario.
+
+### Cái giữ lại — vì nó vẫn có nghĩa trong hợp đồng mới
+
+**1. Lớp quan sát — công bằng khi so ứng viên.** Đây là thứ đáng giá
+nhất trong cả đợt. Một stack đọc bản đồ tĩnh và một stack chỉ đọc LiDAR
+đang trả lời **hai câu hỏi khác nhau**; phần lớn khoảng cách giữa các con
+số của chúng là khoảng cách giữa **đầu vào**, nên ΔU khi ấy đo đặc quyền
+không kém gì đo bộ lập kế hoạch — và Decision Card sẽ gọi tên người thắng
+trên cơ sở đó.
+
+- `selection.py` ghi `global/local_observation_class` **vào từng ứng viên
+  lúc chạy**, không tra lúc render: registry đổi được, còn một lượt chạy
+  đã lưu phải tiếp tục mô tả đúng phép so đã thật sự xảy ra (HĐ-13).
+- `/candidates` in cả hai lớp — **trước** khi ai chạy gì. Đây là chỗ chọn
+  stack, nên là chỗ phải trả lời được "cái này được nhìn thấy gì".
+- `/decisions/[id]` có cột *Được nhìn* và một cảnh báo khi phép so trộn
+  lớp. Chưa khai thì hiện **"chưa khai"** chứ không để trống — ô trống
+  đọc thành "giống mấy cái kia", mà đó đúng là điều một stack không ai
+  khai không thể chứng minh.
+- Bản xuất Markdown mang theo cả cột lẫn cảnh báo. **Trên giấy điều này
+  quan trọng hơn trên màn hình**: người đọc một file không hỏi lại được.
+
+Hôm nay mọi mục registry đều khai cùng một cặp, nên cảnh báo **không bao
+giờ hiện**. Đó chính là lý do phải viết bây giờ: mục đầu tiên không khớp
+sẽ biến một phép so không đồng dạng thành một phép so trông có vẻ đồng
+dạng, mà không gì trên màn hình hay trong file bắt được.
+
+**2. Xuất Markdown.** Endpoint mới `GET /decisions/{id}/report.md` +
+`decision_markdown.py`. Cơ chế tải (fetch có xác thực, Blob, thẻ neo tổng
+hợp, thu hồi object URL) chuyển nguyên vẹn — nó chưa bao giờ là tính chất
+của luồng cũ; chỉ tài liệu nó tải là mới.
+
+Ba tính chất **cấu trúc**, không phải trang trí:
+- **Lượt chạy không ra thẻ vẫn xuất được.** Phần lớn lượt chạy không ra
+  thẻ (HĐ-7). Nút chỉ hiện với lượt chạy có thẻ sẽ biến kết quả thường
+  gặp thành thứ duy nhất không ai bỏ vào ticket được.
+- **Null in ra "not measured", không để trống.** HĐ-12 định nghĩa vậy, và
+  một ô trống trong bảng Markdown đọc thành sự trấn an.
+- **Phạm vi đi cùng khuyến nghị.** HĐ-1.4. Một tài liệu tới nơi mà thiếu
+  dòng đó là một tài liệu sẽ bị đem áp dụng chỗ khác.
+
+Không khoá sau phê duyệt: đọc là hành vi **đi trước** phê duyệt (HĐ-14),
+khoá lại là đảo ngược thứ tự.
+
+**3. Phát lại quỹ đạo** — đã có sẵn: `TraceViewer` trên `/decisions/[id]`
+(có test riêng) và sân thử ở `/simulate`. Hook `useTrajectoryPlayback`
+không còn ai gọi, xoá.
+
+**4. Huy hiệu split** — `SplitBadge` vẫn sống ở `/library` và
+`/scenarios`. Đó là **tính chất của scenario**, không phải của người chạy.
+
+### Cái bỏ hẳn — và vì sao đó là đọc đúng hợp đồng
+
+Đường cong độ khó, biểu đồ khoảng cách tổng quát hoá, đếm lượt dùng
+held-out, cảnh báo held-out trước khi chạy: cả bốn là **khẳng định xuyên
+scenario** — *"stack này tổng quát từ tập dev sang tập held-out"*. HĐ-1.4
+buộc một khuyến nghị chỉ có phạm vi **một deployment**. Chúng nghỉ hưu
+**cùng** luồng đưa ra khẳng định đó, chứ không phải bị dời sang một luồng
+không đưa ra khẳng định đó.
+
+Component bị xoá cùng, **không để lại code chết sau một test xanh**:
+`DifficultyCurveChart`, `GeneralizationGapChart`, `MetricIntervalChart`,
+`ReplanningControls`, `useTrajectoryPlayback`.
+
+Mỗi chỗ xoá đều để lại **đoạn ghi lý do ngay trong file test còn lại** —
+`scenario-split.test.tsx` và `charts-and-export.test.tsx` mở đầu bằng
+đúng đoạn nói cái gì đi đâu và vì sao. Xoá im lặng là thứ tôi tránh cả
+đợt này.
+
+### Trang xoá, trang giữ
+
+Xoá: `/benchmarks`, `/benchmarks/[id]`, `/algorithms`, `/leaderboard`.
+Giữ: **`/scenarios`** — form deployment vẫn chưa vẽ được vật cản, nên bỏ
+nó là **lấy đi một năng lực**, không phải dời một năng lực. Sidebar nói
+thẳng điều đó thay vì để người đọc tự hỏi sao một trang cũ sống sót.
+
+### Cái vỡ ra khi xoá — và cách xử lý
+
+Xoá bốn trang làm **hỏng dây** ở nhiều chỗ ngoài danh sách của kế hoạch:
+
+- **Dashboard** đếm benchmark, liệt kê benchmark gần đây, trỏ thẻ
+  "accepted" vào `/leaderboard`. Dựng lại trên luồng mới: đếm **phép so**,
+  **ra được thẻ**, **đã duyệt**; danh sách gần đây thành phép so gần đây.
+  *Ra được thẻ* đứng **cạnh** tổng chứ không thay tổng — chỉ có một con
+  số sẽ khiến bốn trên năm lượt chạy đọc thành tỉ lệ hỏng, đúng áp lực
+  từng đẻ ra một tấm thẻ chặn xác suất va chạm từ một episode.
+- **Chuyển hướng sau đăng nhập** (`/login`, `/welcome`, `/auth/callback`)
+  đều trỏ `/benchmarks` — người dùng mới sẽ hạ cánh vào 404. Đổi sang
+  `/decisions`.
+- **`/reviews`** và ô "yêu cầu đang chờ" trên dashboard link tới
+  `/benchmarks/[id]`. Đổi thành **chỉ hiện tên, không link** — hộp thư
+  vẫn trả lời đúng câu hỏi của nó (*cái gì đang chờ ai*), còn một link
+  404 thì đúng là thứ tôi đã chê ở `/models`.
+- **Locale vi** hoá ra để `nav.candidates` là chuỗi tiếng Anh
+  *"Candidate"*. Không phải lỗi của P6 — nhưng nó lộ ra vì test tiêu đề
+  chỉ soi đúng một trang. Sửa cả chuỗi lẫn test.
+
+### Endpoint backend: **đánh dấu deprecated, chưa gỡ**
+
+18 route trong `routers/benchmarks.py` nay mang `deprecated=True`, kèm
+đoạn ghi ở đầu module nói rõ vì sao còn đó. Gỡ endpoint cùng lượt với UI
+là **hai thay đổi lớn trong một lượt**, hỏng thì không biết vì cái nào.
+Bảng `benchmarks` giữ nguyên dữ liệu — xoá dữ liệu không hoàn tác được
+bằng cách deploy lại.
+
+### Một lỗi của tôi, lặp lại
+
+Test `TestOverHttp` tôi viết khẳng định endpoint **không** khoá theo phê
+duyệt bằng cách tìm chuỗi `"approved"` trong source — và nó **vấp đúng
+docstring của chính hàm đó**, nơi tôi giải thích quy tắc. Đúng cái bẫy
+test công bằng replan đã dính. Sửa bằng cách soi `__code__.co_names` thay
+vì văn bản.
+
+### Test
+
+- Suite web: **598 passed**, `tsc` sạch. (Số nhỏ hơn 665 vì bốn suite của
+  trang đã nghỉ hưu bị xoá; `observation-class.test.tsx` mới mang các
+  khẳng định còn sống.)
+- `tests/api/test_decision_markdown.py` — 19 test, gồm cả nội dung độc
+  (dấu `|` và xuống dòng làm vỡ bảng Markdown).
+- `ruff check .` sạch.

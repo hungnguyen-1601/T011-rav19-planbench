@@ -19,7 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
@@ -720,6 +720,34 @@ def get_trace(
     schema check does not already give the writer.
     """
     return service.trace(run_id, candidate_id, episode_context_id)
+
+
+@router.get("/decisions/{run_id}/report.md", response_class=PlainTextResponse)
+def decision_report_markdown(run_id: str, service: Runs) -> Response:
+    """The whole run as one Markdown document, card or no card.
+
+    **Exported for every run, not only ranked ones.** Fewer than two
+    candidates through the gates means no ΔU and no card, and the gate
+    table is then the deliverable — refusing to export it would make the
+    ordinary outcome the one nobody can hand to a reviewer.
+
+    Unlike `approved_config.yaml` this is not gated on approval: it is a
+    description of what was measured, and reading it is the act that
+    approval follows.
+    """
+    from planbench_api.decision_markdown import (
+        decision_report_filename,
+        render_decision_markdown,
+    )
+
+    stored = service.get(run_id)
+    return Response(
+        content=render_decision_markdown(stored),
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{decision_report_filename(run_id)}"'
+        },
+    )
 
 
 @router.get("/decisions/{run_id}/approved_config.yaml", response_class=PlainTextResponse)

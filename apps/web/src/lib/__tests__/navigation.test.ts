@@ -48,19 +48,19 @@ describe("the model itself", () => {
 
 describe("isActive", () => {
   it("matches the exact page", () => {
-    expect(isActive("/benchmarks", "/benchmarks")).toBe(true);
+    expect(isActive("/decisions", "/decisions")).toBe(true);
   });
 
   it("matches a child page", () => {
-    expect(isActive("/benchmarks/ab12", "/benchmarks")).toBe(true);
+    expect(isActive("/decisions/ab12", "/decisions")).toBe(true);
   });
 
   it("does not match a different section", () => {
-    expect(isActive("/leaderboard", "/benchmarks")).toBe(false);
+    expect(isActive("/leaderboard", "/decisions")).toBe(false);
   });
 
   it("does not match a section that merely shares a prefix", () => {
-    expect(isActive("/benchmarks-archive", "/benchmarks")).toBe(false);
+    expect(isActive("/benchmarks-archive", "/decisions")).toBe(false);
   });
 
   it("treats the dashboard as exact-only", () => {
@@ -73,13 +73,13 @@ describe("isActive", () => {
 
 describe("the page title", () => {
   it("names the current section", () => {
-    expect(pageTitleKey("/benchmarks")).toBe("nav.benchmarks");
+    expect(pageTitleKey("/decisions")).toBe("nav.decisions");
     expect(pageTitleKey("/reviews")).toBe("nav.reviews");
     expect(pageTitleKey("/")).toBe("nav.dashboard");
   });
 
   it("keeps the section's name on a detail page", () => {
-    expect(pageTitleKey("/benchmarks/ab12")).toBe("nav.benchmarks");
+    expect(pageTitleKey("/decisions/ab12")).toBe("nav.decisions");
   });
 
   it("names routes that have no sidebar entry", () => {
@@ -103,16 +103,16 @@ describe("breadcrumbs", () => {
   });
 
   it("is a single crumb on a section page", () => {
-    expect(breadcrumbs("/benchmarks")).toEqual([
-      { labelKey: "nav.benchmarks", href: "/benchmarks" },
+    expect(breadcrumbs("/decisions")).toEqual([
+      { labelKey: "nav.decisions", href: "/decisions" },
     ]);
   });
 
   it("shows a record id verbatim, never translated", () => {
     // Ids, checksums and user-supplied names must never be run through
     // a dictionary.
-    expect(breadcrumbs("/benchmarks/ab12cd34")).toEqual([
-      { labelKey: "nav.benchmarks", href: "/benchmarks" },
+    expect(breadcrumbs("/decisions/ab12cd34")).toEqual([
+      { labelKey: "nav.decisions", href: "/decisions" },
       { label: "ab12cd34" },
     ]);
   });

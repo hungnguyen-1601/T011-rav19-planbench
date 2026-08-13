@@ -227,7 +227,7 @@ export default function LibraryPage() {
           />
           <p className="muted">
             {t("library.importedAs", { map: preview.map.id, scenario: preview.scenario.id })}{" "}
-            <Link href="/benchmarks">{t("library.openBenchmarks")}</Link>
+            <Link href="/decisions">{t("library.openDecisions")}</Link>
           </p>
         </div>
       ) : null}

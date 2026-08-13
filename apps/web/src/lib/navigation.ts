@@ -108,24 +108,19 @@ export const NAV_SECTIONS: readonly NavSection[] = [
   {
     titleKey: "nav.section.retiring",
     items: [
-      {
-        href: "/benchmarks",
-        labelKey: "nav.benchmarks",
-        icon: "benchmark",
-        descriptionKey: "nav.desc.benchmarks",
-      },
-      {
-        href: "/leaderboard",
-        labelKey: "nav.leaderboard",
-        icon: "trophy",
-        descriptionKey: "nav.desc.leaderboard",
-      },
-      {
-        href: "/algorithms",
-        labelKey: "nav.algorithms",
-        icon: "cpu",
-        descriptionKey: "nav.desc.algorithms",
-      },
+      // `/benchmarks`, `/leaderboard` and `/algorithms` were removed in
+      // P6, each after the thing that replaced it existed: candidates and
+      // the registry moved to `/candidates`, the catalogue of results to
+      // `/decisions`, and watching one episode to `/simulate`. What did
+      // *not* move — the difficulty curve, the generalization gap over
+      // scenario splits, the split badges — was retired with them on
+      // purpose: they are claims across scenarios, and HĐ-1.4 scopes a
+      // recommendation to one deployment. See the P6 report.
+      //
+      // `/scenarios` stays. The deployment form still cannot draw
+      // obstacles, so this is the only place to build a scenario with
+      // them, and removing it would take away a capability rather than
+      // move one.
       {
         href: "/scenarios",
         labelKey: "nav.scenarios",

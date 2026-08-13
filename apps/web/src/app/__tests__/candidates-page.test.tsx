@@ -130,11 +130,16 @@ describe("the page is reachable and translated", () => {
     expect(materials?.items.map((item) => item.href)).toContain("/candidates");
   });
 
-  it("moved /algorithms into the group being replaced", () => {
-    /* It was the only way to see the registry; now this page shows it
-       with the configurations and the registered candidates beside it. */
-    const retiring = NAV_SECTIONS.find((section) => section.titleKey === "nav.section.retiring");
-    expect(retiring?.items.map((item) => item.href)).toContain("/algorithms");
+  it("is the only page left that shows the registry", () => {
+    /* `/algorithms` was the other one. It moved here in P3 and was
+       removed in P6 — regrouped first, deleted only once this page
+       carried everything it did, including the observation classes it
+       was the sole place to read. */
+    expect(NAV_SECTIONS.flatMap((section) => section.items).map((item) => item.href)).not.toContain(
+      "/algorithms",
+    );
+    expect(PAGE).toContain("StackTable");
+    expect(PAGE).toContain("stack.global_observation_class");
   });
 
   it("has every key it asks for, in both locales", () => {

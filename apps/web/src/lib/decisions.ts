@@ -99,6 +99,15 @@ export interface RunCandidate {
   candidate_id: string;
   stack_label: string;
   local_controller_config: string;
+  /** What this candidate was allowed to see.
+   *
+   * Null means the registry has never heard of the stack, so nobody
+   * declared its inputs — rendered as "not declared" rather than as a
+   * plausible class, because inventing one would fabricate the single
+   * fact a reader checking fairness came for.
+   */
+  global_observation_class?: string | null;
+  local_observation_class?: string | null;
   gates: Record<string, GateVerdict>;
   cleared_gates: boolean;
   blocking_gates: string[];
@@ -638,4 +647,27 @@ export function stageTestBenchEpisode(
     `/task-profiles/${encodeURIComponent(taskProfileId)}/test-bench`,
     { method: "POST", body: JSON.stringify(request) },
   );
+}
+
+/** The distinct observation classes a comparison put side by side.
+ *
+ * **More than one is a finding, not a formatting problem.** A controller
+ * reading the static map and one reading only its LiDAR are answering
+ * different questions; the gap between their numbers is then mostly the
+ * gap between their inputs, and ΔU would be measuring the privilege
+ * rather than the planner. Every registry entry declares the same pair
+ * today, so this returns one class — which is exactly why it is worth
+ * computing now, before the first entry that does not match makes an
+ * unlike comparison look like a like one.
+ *
+ * Undeclared is its own entry rather than being dropped: a stack whose
+ * inputs nobody wrote down cannot be shown to match the others.
+ */
+export function observationClasses(candidates: RunCandidate[]): (string | null)[] {
+  const seen: (string | null)[] = [];
+  for (const candidate of candidates) {
+    const declared = candidate.local_observation_class ?? null;
+    if (!seen.includes(declared)) seen.push(declared);
+  }
+  return seen;
 }
