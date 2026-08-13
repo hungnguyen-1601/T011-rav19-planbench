@@ -237,3 +237,70 @@ describe("a stored mission is read in either shape the contract allows", () => {
     expect(PAGE).toContain("goal: unknown;");
   });
 });
+
+describe("the traffic is on screen, at the instant on screen", () => {
+  /** Two gaps An found by using the page, and they had one root.
+   *
+   * The engine records where every dynamic obstacle was at each sample
+   * — `TrajectoryPoint.obstacles`, ground truth kept for replay and
+   * never handed to a planner (HĐ-4). The schema carried it, the canvas
+   * could draw it, and the WebSocket dropped it. So a watched episode
+   * showed a robot swerving around nothing, on the one screen whose
+   * entire purpose is seeing what it was avoiding.
+   */
+  it("the socket sends the snapshot it already has", () => {
+    const ws = readFileSync(
+      join(process.cwd(), "..", "api", "planbench_api", "routers", "ws.py"),
+      "utf8",
+    );
+    expect(ws).toContain('"obstacles"');
+    expect(ws).toContain("for o in point.obstacles");
+  });
+
+  it("the frame keeps it rather than dropping it on the way in", () => {
+    const stream = readFileSync(join(process.cwd(), "src", "lib", "useEpisodeStream.ts"), "utf8");
+    expect(stream).toContain("obstacles: message.obstacles");
+  });
+
+  it("draws where the traffic was at the playhead, not at t=0", () => {
+    /* An obstacle frozen at its starting position would be worse than
+       none: it would look like a fact about the episode. */
+    expect(PAGE).toContain("stream.currentFrame?.obstacles");
+    expect(PAGE).toContain("previewTime={stream.playhead}");
+  });
+
+  it("treats an unrecorded list as nothing, never as an empty aisle", () => {
+    /* `?? []` rather than a default that claims the way was clear.
+       "We did not record it" and "it was clear" are different claims and
+       only the second is reassuring. */
+    expect(PAGE).toContain("stream.currentFrame?.obstacles ?? []");
+  });
+});
+
+describe("two views of one scene, and neither replaces the other", () => {
+  /** The swap itself moved out of this page.
+   *
+   * It started here — a pair of buttons in the test bench's own toolbar —
+   * and that was the wrong shape: the app draws maps on six surfaces and
+   * a toggle per page is six chances to forget one, which is exactly how
+   * the raised view came to exist on a single screen for months. It now
+   * lives in `MapView`, and `map-view.test.tsx` sweeps the whole app for
+   * a screen that bypasses it.
+   *
+   * What stays this page's business is *feeding* the view: the traffic at
+   * the playhead, the mission poses, the layer checkboxes.
+   */
+  it("draws its map through the shared view rather than a renderer", () => {
+    expect(PAGE).toContain("<MapView");
+    expect(PAGE).not.toContain("<Scene25D");
+    expect(PAGE).not.toContain("<MapCanvas");
+  });
+
+  it("hands the raised view the traffic in the shape it takes", () => {
+    /* `MapCanvas` wants markers with a nested position, `Scene25D` wants
+       flat snapshots. Both are fed from the same frame, because two
+       views showing different worlds would be worse than one view. */
+    expect(PAGE).toContain("dynamicObstacles={traffic}");
+    expect(PAGE).toContain("obstacleSnapshots={stream.currentFrame?.obstacles ?? []}");
+  });
+});

@@ -1153,5 +1153,9 @@
   "dashboard.action.startComparison": "Start a comparison",
   "library.openDecisions": "Open comparisons",
   "decisions.export.markdown": "Export Markdown",
-  "decisions.export.busy": "Exporting…"
+  "decisions.export.busy": "Exporting…",
+  "mapView.flat": "Top-down",
+  "mapView.raised": "2.5D",
+  "mapView.editInFlat": "Switch to top-down to place or paint — the raised view has no inverse projection, so a click cannot name a cell.",
+  "trace.flatHasClearance": "The top-down view colours the path by clearance; this one does not."
 }

@@ -401,3 +401,48 @@ describe("every noise control is wired to a field the contract has", () => {
     expect(FORM).not.toContain("NOISE_DEFAULTS[path].step");
   });
 });
+
+describe("the traffic comes with the map it belongs to", () => {
+  /** The bug An hit: a deployment built from `sudden_stop` had no cart.
+   *
+   * The library picker advertises `sudden_stop · 1 traffic`, so somebody
+   * chooses that scenario *because* of the cart. The form then wrote only
+   * `environment.map` and `environment.map_yaml`, and the deployment ran
+   * on an empty lane — the robot drove straight through, which reads as a
+   * planner that ignores obstacles rather than a form that forgot them.
+   *
+   * `Scenario.dynamic_obstacles` and `TaskEnvironment.dynamic_obstacles`
+   * are the same type (`tuple[DynamicObstacle, ...]`), so carrying them
+   * is a copy, not a translation.
+   */
+  const EN_FORM = en as Record<string, string>;
+
+  it("writes the scenario's obstacles into the deployment", () => {
+    expect(FORM).toContain('withValue(next, "environment.dynamic_obstacles"');
+    expect(FORM).toContain("scenario?.dynamic_obstacles ?? []");
+  });
+
+  it("clears them for a map with no scenario behind it", () => {
+    /* A cart at `sudden_stop`'s coordinates means nothing on somebody
+       else's walls. `?? []` is what makes a drawn or stored map arrive
+       empty rather than inheriting the last scenario's traffic. */
+    expect(FORM).toContain("?? []");
+    const adopt = FORM.slice(FORM.indexOf("const adopt = useCallback"), FORM.indexOf("// Open on the default"));
+    expect(adopt).toContain("environment.dynamic_obstacles");
+  });
+
+  it("does not validate the obstacles itself", () => {
+    /* `TaskProfile` refuses duplicate names and a periodic obstacle that
+       shifts by less than one period. A second opinion here would be
+       free to disagree with the one that decides. */
+    expect(FORM).not.toContain("seed_time_offset");
+    expect(EN_FORM["deployments.form.note"] ?? "").not.toContain("obstacle");
+  });
+
+  it("still advertises the count it is now honouring", () => {
+    /* The picker's `· N traffic` was true about the scenario and false
+       about the deployment it produced. Keeping the label and fixing the
+       write is what makes the two agree. */
+    expect(FORM).toContain("entry.dynamic_obstacles > 0");
+  });
+});

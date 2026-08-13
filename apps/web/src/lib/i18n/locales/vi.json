@@ -1153,5 +1153,9 @@
   "dashboard.action.startComparison": "Bắt đầu một phép so",
   "library.openDecisions": "Mở phép so",
   "decisions.export.markdown": "Xuất Markdown",
-  "decisions.export.busy": "Đang xuất…"
+  "decisions.export.busy": "Đang xuất…",
+  "mapView.flat": "Nhìn từ trên",
+  "mapView.raised": "2.5D",
+  "mapView.editInFlat": "Chuyển về nhìn từ trên để đặt điểm hoặc vẽ — bản 2.5D không có phép chiếu ngược nên một cú click không chỉ được đúng ô nào.",
+  "trace.flatHasClearance": "Bản nhìn từ trên tô màu đường đi theo khoảng hở; bản này thì không."
 }

@@ -1392,3 +1392,91 @@ nói ra chính xác cái gì đổi và cái gì không.
 **Lưu ý về quy trình**: lượt full suite đầu tiên tôi phải **dừng giữa
 chừng** vì nó bắt đầu trước khi tôi sửa `collision.py` — kết quả của nó
 mô tả một cây code không còn tồn tại, báo cáo bằng nó là báo cáo sai.
+
+## Hai khoảng trống An phát hiện khi dùng sân thử
+
+Cả hai đều là **năng lực đã có sẵn trong repo nhưng không nối tới luồng
+mới** — không phải thứ phải xây từ đầu.
+
+### 1. Vật cản không hiện — dây đứt ở đúng một chỗ
+
+Chuỗi này đã hoàn chỉnh từ trước, **trừ một mắt xích**:
+
+| tầng | có sẵn? |
+|---|---|
+| Engine ghi vị trí vật cản tại mỗi mẫu | ✅ `TrajectoryPoint.obstacles` |
+| Schema mang trường đó | ✅ |
+| `MapCanvas` vẽ được | ✅ `dynamicObstacles` |
+| **WebSocket gửi đi** | ❌ **bỏ rơi** |
+| Trang sân thử truyền vào | ❌ |
+
+Nên một episode được xem trực tiếp cho thấy con robot **né một khoảng
+không** — trên đúng cái màn hình mà toàn bộ mục đích là nhìn xem nó đang
+né cái gì.
+
+Sửa: WS gửi thêm `obstacles` cho mỗi mẫu; `useEpisodeStream` giữ lại;
+trang vẽ vật cản **tại đúng thời điểm playhead đang hiện**, không phải
+tại t=0 — một vật cản đóng băng ở vị trí xuất phát còn tệ hơn không vẽ,
+vì nó trông giống một sự thật về episode.
+
+Đây là **ground truth, chỉ để phát lại** — không planner nào được đưa
+cho nó (HĐ-4). Và danh sách vắng mặt được vẽ thành **không có gì**, chứ
+không phải thành "lối đi trống": *"chúng tôi không ghi lại"* và *"lúc đó
+trống"* là hai khẳng định khác nhau, và chỉ cái thứ hai làm người ta yên
+tâm.
+
+### 2. Không có 2.5D — component đã có, chỉ chưa ai gọi
+
+`Scene25D` tồn tại sẵn, nhận đúng những props sân thử đã có
+(`startPose`, `goalPose`, `robotPose`, `plannedPath`, `trajectory`,
+`obstacles`), có sẵn thanh chỉnh góc nhìn và chiều cao tường. Nhưng
+**chỉ `/library` dùng** — luồng quyết định không có chỗ nào gọi nó.
+
+Lần sửa đầu tôi gắn nút chuyển **chỉ vào sân thử**. An báo lại là vẫn
+không thấy 2.5D ở deployment — và An đúng ở điểm lớn hơn cái tôi sửa:
+**gắn nút vào từng trang chính là cơ chế đã đẻ ra sự không nhất quán
+này.** Sáu bề mặt vẽ map là sáu lần có thể quên.
+
+Sửa lại cho đúng: một component `MapView` **sở hữu việc chuyển chế độ**,
+và mọi bề mặt vẽ map đi qua nó.
+
+**Vì sao là nút chuyển chứ không phải thay thế.** Hai chế độ trả lời hai
+câu hỏi khác nhau: bản 2D từ trên là nơi **đọc một toạ độ**; bản 2.5D là
+nơi **cảm nhận được "nó có lọt qua đó không"**. Không cái nào thay được
+cái kia, nên không cái nào được là lựa chọn duy nhất. Mặc định mở ở 2D —
+đúng thứ trang này vẫn làm, và đúng thứ người đang soi số liệu cần.
+
+| bề mặt | trước | sau |
+|---|---|---|
+| sân thử `/simulate` | chỉ 2D | 2D ⇄ 2.5D |
+| `MissionPlacer` (form deployment, panel chạy so) | chỉ 2D | 2D ⇄ 2.5D |
+| `MapPainter` (`/maps/[id]`, form deployment) | chỉ 2D | 2D ⇄ 2.5D |
+| `/scenarios/[id]` | chỉ 2D | 2D ⇄ 2.5D |
+| `TraceViewer` (`/decisions/[id]`) | chỉ 2D | 2D ⇄ 2.5D |
+| `/library` | **chỉ 2.5D** | 2.5D ⇄ 2D |
+
+`/library` là khoảng trống **ngược lại**: nơi duy nhất có 2.5D mà không
+có 2D, tức không đọc được toạ độ. Giờ mở ở 2.5D (vì người ta xem trước
+scenario là để thấy hình dạng) nhưng bản phẳng chỉ cách một cú click.
+
+**Vì sao là nút chuyển chứ không phải thay thế.** Hai chế độ trả lời hai
+câu hỏi khác nhau: bản 2D từ trên là nơi **đọc một toạ độ**, đo vòng dung
+sai, và **click vào một ô**; bản 2.5D là nơi **cảm nhận được "nó có lọt
+qua đó không"**. Mặc định mở ở 2D — đúng thứ mọi trang vẫn làm.
+
+**Sửa được thì không sửa im lặng.** Phép chiếu 2.5D **không có nghịch
+đảo**: một điểm ảnh trên màn hình ứng với cả một tia xuyên qua cảnh, chứ
+không ứng với một ô. Nên ở chế độ 2.5D, `MapView` **nói ra** rằng việc
+đặt điểm/vẽ nằm ở bản phẳng, thay vì nhận click rồi lặng lẽ bỏ đi — nhận
+rồi bỏ thì đọc thành một cái canvas hỏng.
+
+`TraceViewer` cũng có nút chuyển, kèm câu nói rõ **cái nó đánh đổi**: bản
+phẳng tô màu đường đi theo khoảng hở (đó là lý do viewer này có code vẽ
+riêng), bản 2.5D thì không.
+
+**Test quan trọng nhất là test quét cả app**: nó duyệt mọi `.tsx` trong
+`src` và đỏ nếu có màn hình nào gọi thẳng `MapCanvas` hoặc `Scene25D` mà
+không qua `MapView`. Kèm một test chống rỗng — một lần quét không tìm
+thấy gì sẽ làm khẳng định trên thành đúng-vô-nghĩa.
+
+Suite web: **624 passed**.
