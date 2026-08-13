@@ -296,3 +296,89 @@ thật nào**. Đó là việc đọc trước khi so policy với stack modular
 `test_nav_stack` · `test_candidate` · `test_contract_version`: **146 passed, 1 skipped**.
 Thêm `test_candidate_bridge` · `test_compare`: **160 passed**.
 `ruff` sạch, format sạch. Chưa chạy full suite — dev chốt để sau.
+
+---
+
+## A2 — Task Neighborhood: bộ sinh biến thể
+
+`robustness_margin` **null trên cả tám** Decision Card đã kiểm. HĐ-12 đọc null là *"chưa đo"* —
+trung thực, nhưng rỗng. Đây là nửa đo được mà **không** tốn hàng giờ máy: bộ sinh. Nửa còn lại —
+chạy 20 sweep rồi đếm bao nhiêu lần khuyến nghị giữ nguyên — đắt theo cấu tạo.
+
+### Hỏi một câu khác hẳn tập đánh giá, và hai cái này hay bị nhầm
+
+| | Hỏi gì | Bất định về |
+|---|---|---|
+| Tập đánh giá | *"candidate này chạy thế nào trên nhiệm vụ tôi sẽ thật sự chạy?"* | **khối lượng công việc** |
+| Neighborhood | *"nếu bản đồ và mô hình cảm biến tôi đưa bị lệch chút thì lời khuyên còn đúng không?"* | **chính dữ liệu đầu vào** |
+
+Có mission distribution hoàn hảo vẫn cần cái thứ hai: bản đồ là một phép đo có sai số, và pallet
+không nằm đúng chỗ trên bản vẽ.
+
+### Bốn quyết định, mỗi cái chặn một kiểu hỏng
+
+| quyết định | kiểu hỏng nó chặn |
+|---|---|
+| **`variant_id` là hash nội dung của perturbation**, không phải vị trí trong danh sách | *"biến thể 3"* của hai phiên bản bộ sinh sẽ là hai thế giới khác nhau dưới một cái tên — vô hình, vì cả hai lượt chạy đều trông như đã xong. Cùng họ với lý do `episode_context_id` tồn tại |
+| **Tất định từ (profile, seed)** | Hai người hỏi vùng lân cận của cùng một deployment phải nhận cùng một vùng, nếu không `robustness_margin` không phải con số ai kiểm được |
+| **`task_profile_id` giữ nguyên** | Biến thể là *cùng một deployment được hỏi một câu what-if*, không phải deployment mới. Cấp id mới là khai một deployment không ai triển khai, và lượt chạy của nó sẽ đọc ra như bằng chứng về một hiện trường thật. Episode phân biệt bằng `environment_variant` trong hash ngữ cảnh (HĐ-3.1) |
+| **Phân bố đều, không Gauss** | Các trục mô tả một **khoảng** người ta chấp nhận sai — *"pallet nằm trong vòng một foot của bản vẽ"* — không phải phân bố sai số đo quanh một giá trị đúng. Gauss sẽ dồn phần lớn biến thể sát nominal và trả lời một câu hỏi nhẹ hơn câu được hỏi |
+
+### Nhiễu được **nhân**, không được **tạo ra**
+
+Kho khai `sensor_noise` = 0 (nợ B2). Bộ sinh nhân biên độ đã khai, nên với kho nó vẫn ra 0.
+Deployment không khai nhiễu là deployment **chưa ai đo nhiễu**; bịa một biên độ cho nó ở đây là
+trả lời về một thế giới tác giả không mô tả.
+
+### Chỗ probe của tôi sai lại lộ ra một khoảng trống thật
+
+Probe đầu đọc `motion.speed` của forklift và nổ: `PeriodicMotion` **không có** `speed`, nó có
+`period`. Probe sai — nhưng nó chỉ đúng vào chỗ **bộ sinh cũng sai**: chuyển động `periodic`
+diễn đạt tốc độ bằng chu kỳ, nên một bộ sinh chỉ chạm `speed` sẽ để **forklift của kho tham
+chiếu hoàn toàn không bị nhiễu** trong khi report tuyên bố trục traffic đã được phủ.
+
+Sửa: `periodic` nhân nghịch đảo vào `period`. Và kéo theo một ràng buộc phải giữ — HĐ-2 buộc
+`seed_time_offset` của vật cản tuần hoàn phải **vượt trọn một chu kỳ**, nếu không mọi seed gặp
+nó ở cùng một pha và một trăm episode co lại còn một. Chu kỳ dài ra mà offset đứng yên thì biến
+thể **bị từ chối lúc nạp**, biến *"deployment này mong manh"* thành *"bộ sinh này hỏng"*. Nên
+offset đi theo chu kỳ. Có test riêng cho cả hai.
+
+### Biến thể không xếp hạng được thì **tính là trượt**
+
+`recommendation_robustness` đếm biến thể nào giữ nguyên khuyến nghị. Biến thể ra `None` —
+không xếp hạng nổi — **tính vào mẫu số và không tính vào tử số**. Cố ý: *"dưới mức sai số đầu
+vào này thì cả trường ứng viên hết xếp hạng được"* đúng là kiểu mong manh con số này được hỏi.
+Bỏ chúng ra sẽ báo cáo độ ổn định của những biến thể tình cờ còn dễ.
+
+Không có gì để so thì trả `None`, **không** trả `1.0`: báo độ bền hoàn hảo từ không bằng chứng
+nào là làm tròn đúng hướng một tuyên bố an toàn không bao giờ được làm tròn.
+
+### Xác minh
+
+Chạy thật trên **cả hai** profile đã ship — chúng khác nhau đúng ở chỗ quan trọng (sảnh khai
+nhiễu và không có traffic; kho có traffic và không khai nhiễu):
+
+```
+== warehouse_a_v2 ==            == open_hall_v2 ==
+  20 biến thể, 20 id khác nhau    20 biến thể, 20 id khác nhau
+  tất định: True                  tất định: True
+  đổi seed thì khác: True         đổi seed thì khác: True
+  mọi biến thể hợp lệ: True       mọi biến thể hợp lệ: True
+  id giữ nguyên: True             id giữ nguyên: True
+  lidar σ 0.0 -> 0.0              lidar σ 0.02 -> 0.0236
+  forklift periodic 24.0 -> 21.4  (không có traffic)
+```
+
+**23 test mới.** `test_neighborhood` · `test_episode_context` · `test_decision_card`:
+**100 passed**. `ruff` sạch, format sạch.
+
+### Còn lại của A2, nói rõ
+
+Bộ sinh xong. **Chưa nối vào tầng quyết định**: cần chạy K sweep trên K biến thể, thu khuyến
+nghị của từng cái, rồi điền `robustness_margin` vào card. Đó là **20× giờ máy của một phép so**
+— trên kho ở mức 1% là 20 × 2,2 giờ — nên nó là một quyết định về ngân sách máy chứ không chỉ
+là một đoạn mã, và tôi không tự chốt.
+
+Scaffolding cho phần đó **đã có sẵn từ trước**: `sample_set="neighborhood"`, `neighborhood_contexts`
+trong manifest, `pairing` đã biết episode trong cùng một biến thể là tương quan, và `gates` đã
+loại chúng khỏi cận trên va chạm của G2.
