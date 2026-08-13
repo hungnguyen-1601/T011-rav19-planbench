@@ -77,7 +77,17 @@ quan sát **chưa từng phải định giá một chênh lệch thật nào** �
 | Ai gây | có từ trước (A1b chỉ làm lộ ra ranh giới) |
 | Chặn | candidate `monolithic` thật; và cùng với nó là tuyên bố "công bằng cho mọi thuật toán" |
 
-### A2. `robustness_margin` null trên **mọi** Decision Card
+### ~~A2. `robustness_margin` null~~ — **không phải nợ**, chuyển sang tính năng *(dev chốt 13-08)*
+
+Bộ sinh biến thể đã xong 13-08. Phần chạy K sweep để điền `robustness_margin` chuyển sang
+[danh sách tính năng có thể thêm](tongduyan_tinh-nang-co-the-them.md) mục **F1**.
+
+Lý do phân loại lại, và nó đúng: HĐ-12 khai `robustness_margin` là `float | None` và null **đã
+có nghĩa được định nghĩa** — *"chưa đo"*. Card hiện tại vì thế **trung thực**, không tuyên bố
+một độ bền nó chưa đo. Không có gì đang sai; có một câu hỏi chưa được hỏi. Nợ là thứ **đang
+sai so với điều đã tuyên bố**, và đây không phải.
+
+<details><summary>Nguyên văn mục ban đầu</summary>
 
 Kiểm tám card trong `artifacts/runs/`: `robustness_margin: None` ở tất cả. Theo HĐ-12 null nghĩa
 là *"chưa đo"*, nên các card **trung thực nhưng thiếu**.
@@ -95,15 +105,7 @@ Bốn trục nhiễu còn thiếu của bảng N5: dịch start/goal ±1 m ±15�
 | Nguồn | N5 · plan 12-08 mục E |
 | Ai gây | có từ trước |
 
-> **Cập nhật 13-08 — bộ sinh xong, phần chạy còn nợ.**
->
-> `planbench_benchmark.neighborhood` sinh K biến thể tất định, `variant_id` là hash nội dung của
-> perturbation, `task_profile_id` giữ nguyên (biến thể **không** phải deployment mới). Nhiễu được
-> **nhân** chứ không **tạo ra**. Biến thể không xếp hạng được **tính là trượt** khi tính R. 23 test.
->
-> **Còn nợ: nối vào tầng quyết định.** Chạy K sweep, thu khuyến nghị từng biến thể, điền
-> `robustness_margin`. Đó là **20× giờ máy của một phép so** (kho ở mức 1%: 20 × 2,2 giờ), nên nó
-> là quyết định về ngân sách máy chứ không chỉ là một đoạn mã.
+</details>
 
 ### A3. Robot đang định vị **hoàn hảo** *(phát hiện 13-08)*
 
