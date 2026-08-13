@@ -63,6 +63,7 @@ from planbench_api.db.decision_repositories import (  # noqa: E402
 from planbench_api.db.session import SessionFactory  # noqa: E402
 from planbench_api.decisions import StoredDecisionRun  # noqa: E402
 from planbench_api.errors import NotFoundError  # noqa: E402
+from planbench_schemas.task_profile import TaskProfile  # noqa: E402
 
 DEFAULT_RUN_ROOT = REPO_ROOT / "artifacts" / "runs"
 DEFAULT_PROFILE_DIR = REPO_ROOT / "profiles"
@@ -87,11 +88,24 @@ def load_profile(profile_id: str, profile_dir: Path) -> dict | None:
     that is deliberate (a run is a statement *about* a deployment). So a
     run whose profile is not on disk cannot be filed, and saying so is
     better than filing it against a stub nobody declared.
+
+    **Validated and dumped, not passed through.** This used to return the
+    parsed YAML unchanged, which made the sentence above false: HĐ-2's
+    document form writes a pose as ``[x, y, theta]`` while
+    ``POST /task-profiles`` stores what ``model_dump`` produces,
+    ``{x, y, theta}``. Two importers of one contract therefore filed two
+    shapes, and a reader written against either one broke on rows from
+    the other — which is exactly how `/simulate` came to crash on first
+    paint against the shipped deployments.
+
+    Validating here also means an unparseable profile is refused at
+    import rather than filed as a row nothing downstream can read.
     """
     path = profile_dir / f"{profile_id}.yaml"
     if not path.is_file():
         return None
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return TaskProfile.model_validate(loaded).model_dump(mode="json")
 
 
 def stored_run(directory: Path, report: dict) -> StoredDecisionRun:

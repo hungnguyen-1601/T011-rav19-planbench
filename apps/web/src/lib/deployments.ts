@@ -166,3 +166,38 @@ export function ramLeftOver(draft: ProfileDraft): number | null {
   }
   return total - spent;
 }
+
+/** A pose from a stored deployment, whichever shape it was filed in.
+ *
+ * **Both shapes are legal and both are in the store.** HĐ-2's YAML form
+ * is `start: [x, y, theta]`, and `Mission` accepts it through a
+ * before-validator so a contract document can be pasted verbatim; a
+ * profile that went through `model_dump` comes back as
+ * `{x, y, theta}`. Today `open_hall_v2` and `warehouse_a_v2` hold
+ * triplets while the two deployments filed from the form hold objects.
+ *
+ * So a reader of a stored profile has to accept both. This is not
+ * defensiveness about untrusted data — it is the shape the contract
+ * defines, and a page that handled only one of them was reading half the
+ * contract. `/simulate` crashed on first paint for exactly that reason:
+ * it defaulted to the first deployment, which is a shipped one.
+ *
+ * Returns `null` rather than a zero pose when the value is neither.
+ * (0, 0) is a real place on every map — usually a corner, often inside a
+ * wall — so substituting it would draw a robot somewhere it is not.
+ */
+export function poseOf(value: unknown): { x: number; y: number; theta: number } | null {
+  if (Array.isArray(value)) {
+    const [x, y, theta] = value;
+    return typeof x === "number" && typeof y === "number"
+      ? { x, y, theta: typeof theta === "number" ? theta : 0 }
+      : null;
+  }
+  if (value && typeof value === "object") {
+    const pose = value as Record<string, unknown>;
+    return typeof pose.x === "number" && typeof pose.y === "number"
+      ? { x: pose.x, y: pose.y, theta: typeof pose.theta === "number" ? pose.theta : 0 }
+      : null;
+  }
+  return null;
+}

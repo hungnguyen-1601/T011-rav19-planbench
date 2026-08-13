@@ -58,6 +58,35 @@ ConfigState = Literal["not_applicable", "pending", "approved", "rejected"]
 ReviewAction = Literal["review", "approve_config", "reject_config"]
 
 
+
+def same_deployment(stored: dict, incoming: dict) -> bool:
+    """Do these two documents describe the same world?
+
+    **Compared as deployments, not as dictionaries.** HĐ-2 has two legal
+    encodings of a pose — the document form ``[x, y, theta]`` and the
+    dumped form ``{"x": .., "y": .., "theta": ..}`` — and the store holds
+    both, because the API dumps a validated model while
+    ``scripts/import_runs.py`` used to file the YAML as written. Comparing
+    the raw dicts therefore called one deployment two, and re-filing an
+    unchanged profile was refused with "already exists with different
+    content" while nothing about the world had changed.
+
+    Validating both sides also makes the comparison indifferent to key
+    order, to ``1`` against ``1.0``, and to an omitted field that equals
+    its default — none of which is a different world either.
+
+    A document that will not validate falls back to dict equality, which
+    refuses unless the bytes match. That is the safe direction: the guard
+    exists to stop one id meaning two worlds, so an unanswerable question
+    must not resolve to "same".
+    """
+    from planbench_schemas.task_profile import TaskProfile
+
+    try:
+        return TaskProfile.model_validate(stored) == TaskProfile.model_validate(incoming)
+    except Exception:
+        return stored == incoming
+
 @dataclass
 class StoredTaskProfile:
     """One deployment as declared (HĐ-2), plus who filed it."""
@@ -158,7 +187,7 @@ class TaskProfileRepository:
         with self._lock:
             existing = self._items.get(profile_id)
             if existing is not None:
-                if existing.profile != profile:
+                if not same_deployment(existing.profile, profile):
                     raise InvalidStateError(
                         f"task profile {profile_id!r} already exists with different content. "
                         "episode_context_id does not hash the environment (HĐ-3.1), so "

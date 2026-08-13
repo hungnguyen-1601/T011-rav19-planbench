@@ -27,14 +27,27 @@ same answer HĐ-1.6 gives for an undeclared tuning: silence is a state.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 from planbench_api.model_registry import RobotProfile
 from planbench_schemas.robot import RobotConfig
-from planbench_schemas.task_profile import TaskRobotSpec
+from planbench_schemas.task_profile import TaskProfile, TaskRobotSpec
 
 API = "/api/v1"
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def tiny_profile() -> dict:
+    """The shipped hall, as its YAML document says it."""
+    return yaml.safe_load(
+        (REPO_ROOT / "profiles" / "open_hall_v2.yaml").read_text(encoding="utf-8")
+    )
+
 
 VEHICLE = {
     "name": "Boundary AMR",
@@ -204,3 +217,86 @@ def test_every_simulator_robot_field_has_a_home_on_the_profile(field: str) -> No
     profile cannot supply.
     """
     assert field in RobotProfile.model_fields
+
+
+class TestOneDeploymentIsNotTwoBecauseOfHowItWasWritten:
+    """The redefinition guard compares worlds, not dictionaries.
+
+    HĐ-2 has two legal encodings of a pose — the document form
+    ``[x, y, theta]`` and the dumped form ``{"x": .., "y": ..}`` — and
+    the store holds both: the API dumps a validated model, while
+    ``scripts/import_runs.py`` used to file the YAML as written. A guard
+    comparing raw dicts therefore called one deployment two, and re-filing
+    an unchanged profile was refused with *"already exists with different
+    content"* while nothing about the world had changed.
+
+    Found by scanning for the same fault that crashed `/simulate`, not by
+    hitting it: same root cause, different symptom.
+    """
+
+    def test_the_two_encodings_of_one_pose_are_one_deployment(self) -> None:
+        from planbench_api.decisions import same_deployment
+
+        document = tiny_profile()
+        document["missions"] = [{"id": "m", "start": [2.0, 8.0, 0.0], "goal": [22.0, 8.0, 0.0]}]
+        dumped = TaskProfile.model_validate(document).model_dump(mode="json")
+        assert document["missions"][0]["start"] != dumped["missions"][0]["start"]
+        assert same_deployment(document, dumped)
+
+    def test_a_moved_goal_is_still_a_different_deployment(self) -> None:
+        """The guard must not have been loosened into uselessness."""
+        from planbench_api.decisions import same_deployment
+
+        one = tiny_profile()
+        other = tiny_profile()
+        other["missions"] = [{"id": "m", "start": [2.0, 8.0, 0.0], "goal": [21.0, 8.0, 0.0]}]
+        assert not same_deployment(one, other)
+
+    def test_a_changed_noise_amplitude_is_a_different_world(self) -> None:
+        """`episode_context_id` does not hash sensor noise (HĐ-3.1).
+
+        Re-filing this under the same id is the exact trap the guard
+        exists for, so validating both sides must not let it through.
+        """
+        from planbench_api.decisions import same_deployment
+
+        one = tiny_profile()
+        other = tiny_profile()
+        other["environment"]["sensor_noise"] = {
+            **other["environment"].get("sensor_noise", {}),
+            "lidar_range_sigma_m": 0.5,
+        }
+        assert not same_deployment(one, other)
+
+    def test_an_unvalidatable_document_falls_back_to_bytes(self) -> None:
+        """An unanswerable question must not resolve to "same".
+
+        The guard stops one id meaning two worlds; when neither side can
+        be read as a world, refusing unless the bytes match is the safe
+        direction.
+        """
+        from planbench_api.decisions import same_deployment
+
+        broken = {"id": "x", "missions": "not a list"}
+        assert same_deployment(broken, dict(broken))
+        assert not same_deployment(broken, {"id": "x", "missions": "something else"})
+
+    def test_refiling_an_imported_deployment_is_accepted_over_http(
+        self, client: TestClient, alice_headers: dict[str, str]
+    ) -> None:
+        """End to end: file the document form, then the dumped form.
+
+        This is what a user does after `scripts/import_runs.py` has
+        already filed the shipped profiles — and before the fix it was a
+        409 telling them their unchanged deployment had changed.
+        """
+        document = tiny_profile()
+        document["id"] = "encoding_check"
+        document["missions"] = [{"id": "m", "start": [2.0, 8.0, 0.0], "goal": [22.0, 8.0, 0.0]}]
+        first = client.post(f"{API}/task-profiles", json=document, headers=alice_headers)
+        assert first.status_code == 201, first.text
+
+        dumped = TaskProfile.model_validate(document).model_dump(mode="json")
+        second = client.post(f"{API}/task-profiles", json=dumped, headers=alice_headers)
+        assert second.status_code == 201, second.text
+        assert second.json()["id"] == "encoding_check"

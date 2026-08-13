@@ -1112,3 +1112,164 @@ vì văn bản.
 - `tests/api/test_decision_markdown.py` — 19 test, gồm cả nội dung độc
   (dấu `|` và xuống dòng làm vỡ bảng Markdown).
 - `ruff check .` sạch.
+
+## Hai lỗi runtime sau P6 — và cả hai đều là **cùng một loại lỗi**
+
+Cả hai đều là *"code đọc một hình dạng, dữ liệu có hình dạng khác, và
+không test nào chạm tới đường dẫn thật vì mọi test đều ở mức source"*.
+
+### Lỗi 1 — form deployment sập: `NOISE_DEFAULTS[path]` là `undefined`
+
+Ba lời gọi `noiseField` truyền **tên lá** thay vì đường dẫn đầy đủ
+(`"localization_drift_m"` thay vì
+`"environment.sensor_noise.localization_drift_m"`). `NOISE_DEFAULTS`
+khoá theo đường dẫn đầy đủ nên tra ra `undefined`, đọc `.step` thì ném.
+
+Lỗi của tôi trong A3: khi đổi `NOISE_DEFAULTS` sang khoá dotted path để
+thoả hàng rào D1, tôi sửa bốn call site **một dòng** và bỏ sót đúng ba
+call site **nhiều dòng**. Vỡ từ commit `4202648` — `/deployments` sập từ
+đúng lúc bật sẵn bốn nhiễu.
+
+**Vì sao hàng rào D1 không bắt được, và đây mới là phần đáng học.** Nó
+hỏi *"đường dẫn này có xuất hiện trong file không"*. Cả bảy đều có —
+trong chính `NOISE_DEFAULTS`. **Có mặt không phải là có nối dây.**
+
+Sập lại là kết cục **may mắn**. Nếu có `step` dự phòng, ba ô đó sẽ hiện
+bình thường trong khi đọc/ghi vào một khoá cấp cao nhất mà deployment
+không có — ba trong bốn nhiễu form tuyên bố bật sẵn sẽ chỉ là trang trí,
+và không gì trên màn hình nói ra.
+
+Sửa: ba đường dẫn; `noiseField` ném lỗi **có tên** thay vì `TypeError`;
+5 test quét **đối số tại từng call site**, hai chiều — mọi lời gọi phải
+có mục, và mọi mục phải có ô điều khiển (một biên độ điền vào draft mà
+không có cách xem hay tắt là một điều kiện áp dụng lặng lẽ). Kèm một
+test chống rỗng vì cả hai regex có thể khớp không gì.
+
+### Lỗi 2 — sân thử sập: `mission.start.x` là `undefined`
+
+**Tôi kiểm tra dữ liệu thật thay vì đoán.** Trong `planbench.db`:
+
+| deployment | dạng `start` |
+|---|---|
+| `open_hall_v2`, `warehouse_a_v2` | `[2.0, 8.0, 0.0]` — bộ ba |
+| `open_hall_2`, `test_corridor` | `{x, y, theta}` — đối tượng |
+
+**Cả hai đều hợp lệ.** Dạng tài liệu của HĐ-2 viết pose là
+`[x, y, theta]`, và `Mission` nhận nó qua một before-validator để dán
+nguyên văn một tài liệu hợp đồng vào được; profile đi qua `model_dump`
+thì ra `{x, y, theta}`.
+
+Trang sân thử mặc định chọn deployment đầu tiên — là một trong hai cái
+shipped — nên sập ngay lần vẽ đầu. Nó **đọc một nửa hợp đồng**.
+
+Sửa: một hàm `poseOf` ở ranh giới, nhận cả hai dạng. Trả `null` chứ
+không trả pose gốc toạ độ khi giá trị không phải pose — **(0, 0) là một
+chỗ có thật trên mọi bản đồ**, thường là góc, thường nằm trong tường, nên
+thay thế bằng nó là vẽ robot ở nơi nó không có. Kiểu của `start`/`goal`
+trên wire đổi thành `unknown`: khai một `Pose` ở đó là một khẳng định dữ
+liệu không tôn trọng, và TypeScript sẽ đứng ra bảo lãnh cho cú sập.
+
+### Gốc rễ của lỗi 2 — và nó không nằm ở frontend
+
+`scripts/import_runs.py` lưu **YAML thô** (`yaml.safe_load`) làm profile,
+trong khi docstring của chính nó nói *"as the API stores it"* — câu đó
+**sai**. Hai đường nạp cùng một hợp đồng nên đã ghi hai hình dạng vào
+cùng một bảng.
+
+Sửa: importer nay validate qua `TaskProfile` rồi `model_dump(mode="json")`
+— câu docstring thành đúng, và một profile YAML hỏng bị **từ chối lúc
+import** thay vì được ghi thành một dòng không gì đọc nổi.
+
+**Bốn dòng đang có trong DB của anh tôi không đụng vào.** Hai dòng shipped
+vẫn ở dạng bộ ba; frontend đọc được cả hai nên chúng chạy bình thường.
+Muốn chuẩn hoá thì chạy lại `python scripts/import_runs.py` — nhưng đó là
+ghi đè dữ liệu, nên tôi để anh quyết.
+
+### Test
+
+- Web: **609 passed**, `tsc` sạch, `ruff check .` sạch.
+- Không test nào trong hai nhóm này là test source-grep thuần: nhóm nhiễu
+  soi **đối số tại call site**, nhóm pose gọi **hàm thật** với cả hai
+  dạng dữ liệu có thật trong kho.
+
+## Quét toàn hệ thống tìm lỗi cùng loại
+
+Hai lỗi vừa sửa thuộc hai lớp. Tôi quét cả hai lớp thay vì chỉ vá hai
+chỗ đã lộ.
+
+### Lớp A — tra bảng rồi lấy thuộc tính (`TABLE[key].prop`)
+
+Quét mọi bảng tra cứu trong web và Python. Sáu chỗ còn lại, **tất cả đều
+an toàn** và an toàn vì lý do khác nhau — nên tôi kiểm từng cái chứ không
+đếm:
+
+| chỗ | vì sao không vỡ được |
+|---|---|
+| `SCENARIO_LIBRARY[name]` | bọc `try/except KeyError` |
+| `_OBJECTIVE_FIELDS[objective]` | có kiểm tra `not in` ngay trên |
+| `EXTENSIONS[kind]` | khoá là `DocumentKind` (Literal) |
+| `PROVIDERS[provider]` ×2 | khoá là enum |
+| `SEARCH_SPACES[algorithm_id]` | caller duy nhất lặp `list(SEARCH_SPACES)` |
+
+Không chỗ nào khác lặp lại lỗi `NOISE_DEFAULTS`.
+
+### Lớp B — dữ liệu có hơn một hình dạng hợp lệ
+
+Trước hết tìm **nguồn sinh**: validator `mode="before"` nào nới rộng
+hình dạng đầu vào. Có đúng ba, và chỉ **một** cái tạo ra hai hình dạng
+*được lưu*:
+
+- `_pose_from_triplet` — nhận `[x, y, theta]` **và** `{x, y, theta}`. ✅
+  đây là thủ phạm.
+- `_drop_declared_identity` — bỏ một trường, không tạo hình dạng mới.
+- `_canonical_observations` — luôn ra tuple chuỗi, một hình dạng.
+
+Vậy `Mission.start/goal` là trường **duy nhất** của hợp đồng có hai mã
+hoá. Rà mọi chỗ đọc nó:
+
+- **Web**: chỉ `/simulate` đọc thô — đã sửa. `/deployments` chỉ đọc
+  `constraints`/`environment` có `?? {}`. `/decisions` chỉ đọc `base.id`.
+  `TraceViewer` nhận `{x, y}` do endpoint dựng qua model đã validate.
+- **Backend**: `derive` deep-copy rồi `model_validate` — an toàn. Ghi
+  YAML ra đĩa — round-trip, an toàn.
+- **Chữ ký crash `.toFixed`**: rà 45 call site. Vật cản động phân biệt
+  bằng `obstacle.type` trước khi đọc `center` hay `min_x` — đúng. Các
+  trường trên report tôi **đối chiếu với 8 artifact thật trên đĩa**, tất
+  cả đều có đủ trường trang chi tiết đọc.
+
+### Một chỗ nữa cùng gốc — tìm ra bằng quét, không phải bằng vấp
+
+Guard chống định nghĩa lại `task_profile_id` so sánh **dict thô**:
+
+```python
+if existing.profile != profile:   # hai bản mã hoá = "nội dung khác"
+```
+
+Hai mã hoá của **cùng một** deployment đọc thành "nội dung khác", nên
+nộp lại một profile **không đổi gì** bị từ chối bằng thông báo *"already
+exists with different content"*. Cùng gốc rễ, triệu chứng khác — và có
+thật với dữ liệu hiện tại của anh, vì `import_runs.py` đã nạp
+`open_hall_v2` ở dạng bộ ba.
+
+Sửa: hàm `same_deployment` so sánh **hai thế giới**, không so hai từ
+điển — validate cả hai qua `TaskProfile` rồi so. Nhân tiện nó cũng miễn
+nhiễm với thứ tự khoá, `1` với `1.0`, và một trường bỏ trống bằng đúng
+giá trị mặc định — không cái nào là một thế giới khác.
+
+Tài liệu không validate được thì **quay về so byte**, tức từ chối trừ
+khi trùng khít. Đó là hướng an toàn: guard tồn tại để chặn một id mang
+hai thế giới, nên một câu hỏi không trả lời được **không được** phép
+thành "giống nhau".
+
+Dùng chung ở cả hai kho (in-memory và SQL) — trước đó là hai bản sao của
+cùng một dòng so sánh.
+
+5 test mới, gồm cả **chiều ngược**: đích dịch 1 m vẫn phải là deployment
+khác, biên độ nhiễu đổi vẫn phải là thế giới khác (HĐ-3.1 không băm
+nhiễu — đúng cái bẫy guard này sinh ra để chặn). Nới guard thành vô dụng
+là cách sửa sai duy nhất đáng sợ ở đây.
+
+### Kết luận quét
+
+Không còn chỗ nào cùng loại. Hai lớp đều đã rà hết, và chỗ thứ ba tìm
+được đã sửa kèm test.

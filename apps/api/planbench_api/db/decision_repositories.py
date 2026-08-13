@@ -29,6 +29,7 @@ from planbench_api.decisions import (
     StoredCandidate,
     StoredDecisionRun,
     StoredTaskProfile,
+    same_deployment,
 )
 from planbench_api.errors import InvalidStateError, NotFoundError
 from planbench_api.repositories import now_iso
@@ -57,7 +58,7 @@ class SqlTaskProfileRepository:
         with self._sessions.begin() as session:
             existing = session.get(TaskProfileRow, profile_id)
             if existing is not None:
-                if existing.profile != profile:
+                if not same_deployment(existing.profile, profile):
                     raise InvalidStateError(
                         f"task profile {profile_id!r} already exists with different content. "
                         "episode_context_id does not hash the environment (HĐ-3.1), so "
