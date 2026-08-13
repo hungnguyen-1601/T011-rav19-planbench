@@ -95,6 +95,16 @@ Bốn trục nhiễu còn thiếu của bảng N5: dịch start/goal ±1 m ±15�
 | Nguồn | N5 · plan 12-08 mục E |
 | Ai gây | có từ trước |
 
+> **Cập nhật 13-08 — bộ sinh xong, phần chạy còn nợ.**
+>
+> `planbench_benchmark.neighborhood` sinh K biến thể tất định, `variant_id` là hash nội dung của
+> perturbation, `task_profile_id` giữ nguyên (biến thể **không** phải deployment mới). Nhiễu được
+> **nhân** chứ không **tạo ra**. Biến thể không xếp hạng được **tính là trượt** khi tính R. 23 test.
+>
+> **Còn nợ: nối vào tầng quyết định.** Chạy K sweep, thu khuyến nghị từng biến thể, điền
+> `robustness_margin`. Đó là **20× giờ máy của một phép so** (kho ở mức 1%: 20 × 2,2 giờ), nên nó
+> là quyết định về ngân sách máy chứ không chỉ là một đoạn mã.
+
 ### A3. Robot đang định vị **hoàn hảo** *(phát hiện 13-08)*
 
 `engine.py:262-268` — `Observation(pose=self._robot.pose)`. Stack nhận **pose thật**. LiDAR đọc
