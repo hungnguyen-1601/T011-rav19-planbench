@@ -565,3 +565,54 @@ quan gì tới lưu trữ**.
 Sửa thành khẳng định theo tên trường. Đây là bài học chung đáng ghi: **so bằng cả một cấu trúc
 là khẳng định luôn cả những gì cấu trúc đó KHÔNG chứa** — hiếm khi là điều test muốn nói, và nó
 biến mỗi lần mở rộng lược đồ thành một lượt đỏ giả.
+
+---
+
+## P1 — sidebar nói đúng việc *(pha đầu của refactor UI)*
+
+Chi phí lớn nhất của việc chạy hai luồng song song **không nằm ở mã**: mười hai mục trong sidebar,
+hai luồng trộn trong cùng một nhóm, và không gì nói cho người đọc biết `Benchmarks` với
+`Decisions` trả lời **hai câu hỏi khác nhau**.
+
+### Nhóm theo **việc**, không theo hệ thống sinh ra màn hình
+
+Nhóm cũ (Workspace / Results / Account) chia theo **nơi màn hình đến từ**, nên hai luồng nằm lẫn
+trong một tiêu đề — `Deployments` và `Decisions` kẹp giữa `Benchmarks` và `Leaderboard`.
+
+```
+BẠN ĐANG LÀM GÌ   Dashboard · Deployments · Simulate · Decisions
+NGUYÊN LIỆU       Maps · Library · Algorithms · Models
+ĐANG ĐƯỢC THAY    Benchmarks · Leaderboard · Scenarios
+TÀI KHOẢN         Agent · Reviews · System
+```
+
+### Mỗi mục một dòng nói nó **để làm gì**
+
+Trường mới `descriptionKey`, tuỳ chọn trong kiểu và **bắt buộc bằng test** cho mục có trong
+sidebar (route không có mục — `/login`, `/welcome` — thì không có gì để mô tả).
+
+Lúc thu gọn, **tooltip mang luôn mô tả**: đó là bề mặt duy nhất còn lại, và một dãy icon chỉ có
+tên là đúng thứ mấy dòng mô tả này sinh ra để sửa.
+
+### Nhóm "Đang được thay" — dev chốt hiện ra, không giấu
+
+Ba trang đó **vẫn chạy** và vẫn là cách duy nhất làm vài việc. Nói thẳng điều đó có ích cho
+người đọc hơn một sidebar lặng lẽ xếp bản thay thế cạnh thứ nó thay.
+
+Mô tả của chúng nói **vì sao**, không chỉ nói "cũ":
+
+- `Benchmarks` → *"Phép so cũ. Decisions đang thay nó"*
+- `Leaderboard` → *"Xếp hạng xuyên scenario — điều một khuyến nghị không làm được (**HĐ-1.4**)"*
+- `Scenarios` → *"Giữ tới khi form deployment vẽ được vật cản"* — đúng quyết định của dev, và
+  dòng này là chỗ duy nhất người dùng đọc được lý do nó còn ở đây
+
+### Hai test cũ đỏ, và cả hai là **mô tả cấu trúc cũ**
+
+`groups the menu into labelled sections` tìm chữ `Workspace`; `gives every icon a tooltip` tìm
+`data-tooltip="Maps"`. **Khẳng định của chúng vẫn đúng** — mục vẫn có nhãn, icon vẫn có tooltip —
+chỉ chuỗi đổi. Sửa để chúng khẳng định *điều chúng nói*, không phải chuỗi cũ.
+
+Ba test mới: mọi mục có mô tả · sidebar nói ra trang nào đang được thay · tooltip lúc thu gọn
+mang cả mô tả.
+
+**Web: 620 passed, 31/31 file.** `tsc` sạch.
