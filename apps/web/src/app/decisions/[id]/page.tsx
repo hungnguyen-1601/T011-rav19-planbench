@@ -601,6 +601,7 @@ function GateTable({ run }: { run: DecisionRun }) {
               <th>{t("decisions.gates.runs")}</th>
               <th>{t("decisions.gates.successRate")}</th>
               <th>{t("decisions.gates.p99")}</th>
+              <th title={t("decisions.gates.replanNote")}>{t("decisions.gates.replans")}</th>
               {GATES.map((gate) => (
                 <th key={gate}>{gate}</th>
               ))}
@@ -706,6 +707,12 @@ function CandidateRow({ candidate }: { candidate: RunCandidate }) {
           </span>
         )}
       </td>
+      {/* Evidence, not a score. "Recovered on the first try" and
+          "replanned forty times and timed out" are different results and
+          a bare `timeout` says neither. Undeclared renders as an em dash
+          rather than 0: a run recorded before replanning was priced did
+          not measure this, and 0 would assert it did. */}
+      <td className="muted">{candidate.replan_count ?? "—"}</td>
       <td title={t("decisions.gates.distinctNote")}>
         {candidate.n_distinct_episodes}
         {/* A retired candidate genuinely covered fewer episodes than the

@@ -1168,5 +1168,19 @@
   "decisions.withdraw.action": "Thu hồi phê duyệt",
   "decisions.withdraw.busy": "Đang thu hồi…",
   "decisions.withdraw.note": "Đưa lượt chạy này về trạng thái chưa quyết. Phê duyệt không bị xoá — nó vẫn nằm trong nhật ký bên dưới, cạnh lần thu hồi (HĐ-14).",
-  "decisions.audit.withdraw_config": "đã thu hồi phê duyệt"
+  "decisions.audit.withdraw_config": "đã thu hồi phê duyệt",
+  "decisions.gates.replans": "Số lần replan",
+  "decisions.gates.replanNote": "Ứng viên này replan bao nhiêu lần trên toàn bộ episode. Là bằng chứng, không phải điểm — replan vốn đã tốn thời gian và độ trễ, và cả hai đều đã bị tính. Không có trần replan: cái giá là mỗi lần replan tự ghi một bước điều khiển của nó, nên replan thành thói quen sẽ tự đâm vào G4.",
+  "deployments.form.replanning": "Replanning",
+  "deployments.form.replanningEnabled": "Cho ứng viên replan khi robot bị kẹt",
+  "deployments.form.replanningNote": "Cùng điều kiện kích hoạt và không có trần, như nhau cho mọi ứng viên: replan bao nhiêu lần cũng được, chặn bởi timeout của episode. Mỗi lần replan bị tính vào bước điều khiển mà nó làm trễ, nên độ trễ p99 và thời gian di chuyển đã tính giá — stack cần nhiều replan hơn trả nhiều hơn mà không cần số hạng phạt nào. Bật cái này lên là một thí nghiệm khác với chính deployment đó khi tắt, nên cần một id deployment riêng (HĐ-3.1 không băm trường này).",
+  "bench.replanning": "Replanning",
+  "bench.replanningOn": "bật — không giới hạn, mỗi lần replan bị tính vào bước nó làm trễ",
+  "bench.replanningOff": "tắt — robot phải tự thoát bằng bộ điều khiển cục bộ",
+  "deployments.column.replanning": "Replan",
+  "deployments.replanningOn": "bật",
+  "deployments.replanningOff": "tắt",
+  "deployments.form.replanningTraffic": "Scenario này có {n} vật cản động. Nếu tắt replanning, ứng viên bị chặn chỉ còn bộ điều khiển cục bộ để lách — đó là một thí nghiệm hợp lệ, nhưng hãy quyết định nó chứ đừng để nó mặc nhiên.",
+  "metrics.replanOff": "deployment này tắt",
+  "metrics.replanUnknown": "không ghi lại"
 }

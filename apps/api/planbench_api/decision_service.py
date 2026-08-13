@@ -839,12 +839,17 @@ class TestBenchService:
         # Through the service rather than the repository, so the same
         # refusals a hand-built simulation gets apply here: an unknown
         # stack, a config the controller will not accept, a scenario the
-        # map cannot support. Replanning is left at its default off, which
-        # is also what `run_contract_episode` runs with — a test bench
-        # that quietly enabled it would be showing a different stack from
-        # the one the comparison will measure.
+        # map cannot support.
+        #
+        # **Replanning comes from the deployment**, exactly as
+        # `run_contract_episode` takes it. This used to be hardcoded off
+        # with a comment saying that matched the contract runner — true
+        # then, because no profile could declare it, and false the moment
+        # one could. A test bench running a stack that cannot replan while
+        # the comparison runs one that can would break the single claim
+        # this page makes: what you watch is what will be measured.
         stored_simulation = SimulationService(self._repos).create(
-            stored_map.id, stored_scenario.id, stack, params
+            stored_map.id, stored_scenario.id, stack, params, profile.replanning
         )
 
         return TestBenchStaging(

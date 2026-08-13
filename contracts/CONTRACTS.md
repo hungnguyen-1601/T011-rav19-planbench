@@ -1,6 +1,6 @@
 # CONTRACTS.md — Planner Selector
 
-> **Phiên bản hợp đồng:** `contracts_version: 6.7.0`
+> **Phiên bản hợp đồng:** `contracts_version: 6.8.0`
 > **Trạng thái:** cần cả nhóm đọc và ký ở mục 16. Phase 1 (schema gốc) đã hiện thực theo bản 1.1.0; bản 2.0.0 sửa G5 — xem lịch sử phiên bản ở mục 18.
 > **Vị trí:** `contracts/CONTRACTS.md` ở gốc repo (trước đây là `docs/antongduy/CONTRACTS_1.md`).
 > **Tài liệu mẹ:** `docs/antongduy/de-tai-moi-planner-selector.md`. Khi hai tài liệu mâu thuẫn, **CONTRACTS.md thắng** — plan là lý do, contract là luật.
@@ -432,6 +432,7 @@ Mỗi metric có **đúng một** định nghĩa, viết ở **đúng một** ch
 | `time_efficiency` | `T_ideal / travel_time_s` | Score O3 |
 | `smoothness` | `Σ (Δθ_i)²` | Diagnostic |
 | `stop_and_go_count` | số lần `v` chạm 0 rồi > 0 trở lại | Diagnostic |
+| `replan_count` | số sự kiện `replan` trong trace | **Diagnostic — xem 6.8.0** |
 | `p99_latency_ms` | phân vị 99 của `planner_latency_ms` | Gate G4 + Score O4 |
 | `peak_search_nodes` | đỉnh số node trong open+closed của global planner | trung gian (G5) |
 | `peak_tree_nodes` | đỉnh số node của cây RRT/RRT\* | trung gian (G5) |
@@ -860,7 +861,7 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
 
 ```json
 {
-  "contracts_version": "6.7.0",
+  "contracts_version": "6.8.0",
   "recommendation_scope": "MISSION_LEVEL | DEPLOYMENT_LEVEL | ROBUST_DEPLOYMENT_LEVEL",
   "experiment_scope": "full_stack_selection",
   "decision_mode": "technical | business_adjusted",
@@ -923,7 +924,7 @@ Mọi lần ra quyết định ghi một `manifest.json`:
 
 ```json
 {
-  "contracts_version": "6.7.0",
+  "contracts_version": "6.8.0",
   "git_sha": "...",
   "docker_image_digest": "sha256:...",
   "task_profile_id": "warehouse_a_v1",
@@ -1130,6 +1131,7 @@ Hai định danh frozen của contract (`candidate_id`, `episode_context_id`) d�
 
 | 6.4.0 | 2026-08-11 | MINOR | **HĐ-13: manifest phải ghi `constraints`.** Cùng gốc với `sensor_noise` ở 6.3.0 — `episode_context_id` không băm ngưỡng nào — nhưng hệ quả ngược nhau: đổi nhiễu đổi **thế giới** nên phải đổi `task_profile_id`; đổi ràng buộc đổi **phán quyết** nên episode cũ vẫn đúng và chỉ cần ghi vào hồ sơ. Không có trường này thì cùng một profile id dưới hai ngưỡng `success_rate_min` cho manifest giống nhau từng byte mà bảng cổng khác nhau. Phát hiện khi chốt `success_rate_min` cho `open_hall_v2`. Thêm một trường, không xoá gì, không đổi ngữ nghĩa metric hay cổng nào ⇒ MINOR. |
 | 6.5.0 | 2026-08-12 | MINOR | **HĐ-8.4: thang của metric có cổng sập về một điểm thì từ chối cả phép xếp hạng, có tên, thay vì ném `AnchorError` thô.** Hệ quả trực tiếp của luật 2 mà 6.4.0 chưa nhìn ra: `success_rate_min: 1.00` làm `good == bad`, và cách cũ báo "thang rỗng" — đọc như lỗi cấu hình, trong khi deployment đang phát biểu một điều mạch lạc. Nay: sập thang trên metric **có cổng** và `bad` trỏ vào profile ⇒ ghi nhận, deployment vẫn đo và vẫn ra bảng cổng nhưng không xếp hạng; sập thang ở mọi chỗ khác vẫn fatal như cũ. Từ chối **toàn bộ** phép xếp hạng chứ không bỏ metric chết rồi chấm tiếp — bỏ đi sẽ ra `decision_utility` đủ sáu chữ số trên một tập objective khác tập đã khai. Thêm trường `gate_only_deployment` (present-and-null) vào comparison report và measurement report; tiêu chí tái lập HĐ-15.1 đổi đối tượng sang bảng cổng khi không có utility. **Điều khoản chỉ nói hệ phải làm gì, không nói deployment nào nên đặt ngưỡng ở đâu** — hai sảnh về lại `success_rate_min: 0.95` cùng ngày, và câu hỏi ngưỡng đúng cho một deployment nghiệm thu còn để ngỏ (`KNOWN_LIMITATIONS` L6). Không xoá trường, không đổi ngữ nghĩa metric hay cổng nào, nới một trường hợp trước đây fatal ⇒ MINOR. |
+| 6.8.0 | 2026-08-13 | MINOR | **Replan bỏ trần, và bắt đầu bị tính tiền.** ① `ReplanningConfig.max_replans` nhận `None` = **không giới hạn**, và đó là mặc định khi bật. Trần dùng chung là một con số *do người chọn*, nó ràng buộc mỗi stack một kiểu, và dưới trần 3 thì một stack lẽ ra thoát ở lần thứ 4 bị chấm là hỏng — **hỏng vì cái trần, không phải vì bộ lập kế hoạch**. Đó đúng loại tạo tác mà đặc quyền lưới replan (HĐ-4.1) từng là: một điều kiện đánh giá lặng lẽ quyết định kết quả. ② Thay cho trần là **cái giá**: mỗi lần replan nay ghi **một dòng bước điều khiển của riêng nó** mang latency của global planner, nên G4 gộp nó vào cùng p99. Trước bản này lời gọi `_replan` nằm **ngoài** nhánh ghi — G4 gộp p99 trên một tập **không chứa** chi phí replan, nên một stack có thể quy hoạch lại toàn bản đồ năm mươi lần mà vẫn qua một cổng độ trễ đang đo các bước DWA 12 ms. Vì p99 cắt ở phân vị 99, một hai lần replan trong bốn trăm bước nằm trên lát cắt và không tốn gì, còn replan thành thói quen thì tự đâm vào G4: **trần mọc ra từ vật lý thay vì được khai**. ③ `EpisodeMetricSet.replan_count` — **bằng chứng, không phải điểm**. Cố ý **không** vào hàm mục tiêu: replan tốn thời gian và độ trễ, mà `travel_time_s` và `p99_latency_ms` đã tính cả hai; thêm một số hạng phạt là **tính tiền hai lần** cùng một thứ, và trọng số của nó lại là một con số do người chọn — đúng cái núm vặn mà bỏ `max_replans` là để tránh. Nó có mặt để người đọc phân biệt *"thoát ngay lần đầu"* với *"replan bốn mươi lần rồi timeout"*, điều một chữ `timeout` trơ trọi không nói được. Đếm từ chính sự kiện `replan` của trace, nên vẫn đi qua đầu vào duy nhất của HĐ-5. **Không đổi số liệu nào đã lưu**: trace ghi trước bản này không có sự kiện `replan` nào, và 0 là câu trả lời đúng cho chúng. Thêm trường có mặc định, nới một ràng buộc, không xoá gì, không đổi ngữ nghĩa cổng ⇒ MINOR. ④ **HĐ-2: `task_profile.replanning`** — trước bản này replanning tồn tại trong simulator nhưng **không profile nào khai được**, nên mọi episode từng đo đều chạy với nó tắt và không gì nói ra điều đó. Đặt ở top level cạnh `min_episodes_before_stop` vì cùng loại: điều kiện đánh giá, không phải thế giới, không phải xe, không phải ngưỡng cổng. Đặt trên candidate mới là thứ cho phép một stack replan trong khi stack kia đứng đợi. ⑤ **HĐ-13: manifest ghi `replanning`** — lý do y hệt `sensor_noise` và `constraints`: `episode_context_id` không băm nó, nên hai lượt chạy cùng seed, một bên replan một bên không, **dùng chung mọi context id** mà là hai thí nghiệm — và chênh lệch lớn, vì bên được replan có cơ hội thứ hai ở đúng những episode bên kia bỏ cuộc. Nó thuộc phía `sensor_noise` của quy tắc chứ không phải phía `constraints`: replanning đổi **thứ robot đã làm**, không đổi cách phán xét, nên bật nó lên cần một `task_profile_id` mới. |
 | 6.6.0 | 2026-08-13 | MINOR | **HĐ-4.1: đặc quyền lưới replan đã được gỡ.** Điều khoản viết ở 6.1.0 nêu một luật và một việc phải làm trước khi chấm candidate `monolithic`; bản này làm việc đó. `nav_stack._replan` dựng lưới từ chính tia LiDAR robot nhận được (`_map_as_the_robot_sees_it`) thay vì `engine.dynamic_obstacles_now()`, đúng lời giải điều khoản chỉ định và loại trừ phương án cấp ground truth cho cả hai bên. Ba tính chất có test: tia tới hạn tầm xa không đánh dấu gì · một tia một ô · nhiễu tới được planner nhưng không tới được phép kiểm va chạm. **Không đổi số liệu nào đã lưu**: `ReplanningConfig.enabled` mặc định False và tầng quyết định không bật nó, nên `_replan` chưa từng chạy trong một lượt chạy đánh giá nào. Không trường nào bị xoá, không ngữ nghĩa metric hay cổng nào đổi ⇒ MINOR. |
 | 6.7.0 | 2026-08-13 | MINOR | **HĐ-2.5: bốn trục nhiễu mới, mặc định tắt.** `SensorNoise` thêm `localization_drift_m`, `localization_jump_probability` (sai số định vị — **chỉ phép đo**, tới `Observation.pose` và không bao giờ tới phép kiểm va chạm), `lidar_dropout_probability` (tia mất, báo về **tầm xa nhất** chứ không phải 0 — tia mất đọc ra thành khoảng trống với costmap), `odometry_bias_fraction` (lệch hệ thống, rút một lần cho cả episode nên nó **tích luỹ** thay vì triệt tiêu như trượt bánh) và `command_latency_steps` (**đổi thế giới thật**). `manifest.schema.json` thêm cả năm trường. **Mọi trường mặc định 0**, nên profile viết trước bản này giữ nguyên hành vi tới từng float và chưa lượt đo nào bị ảnh hưởng; bật một trục lên là **đổi thế giới** ⇒ phải khai `task_profile_id` mới (HĐ-13). Không trường nào bị xoá, không ngữ nghĩa metric hay cổng nào đổi ⇒ MINOR. |
 

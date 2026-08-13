@@ -111,6 +111,32 @@ class EpisodeMetricSet(BaseModel):
     smoothness: float
     stop_and_go_count: int
 
+    #: How many times the stack replanned. **Evidence, never a score.**
+    #:
+    #: Deliberately absent from the objective function. What replanning
+    #: costs is time and latency, and ``travel_time_s`` and
+    #: ``p99_latency_ms`` already charge for both — every replan records
+    #: its own control-step row carrying the global planner's latency, so
+    #: G4 pools it with the rest. A separate penalty term would price the
+    #: same thing twice, and its weight would be one more number somebody
+    #: chose: exactly the kind of knob removing ``max_replans`` was meant
+    #: to be rid of.
+    #:
+    #: It is here so a reader can tell "recovered on the first try" from
+    #: "replanned forty times and timed out", which a bare ``timeout``
+    #: cannot say. Counted from the trace's own ``replan`` events, so it
+    #: comes from HĐ-5's single input like everything else. A trace
+    #: recorded before replanning was priced has none, and 0 is the true
+    #: answer for it.
+    #:
+    #: **Attempts, including the ones that found nothing.** A replan that
+    #: comes back empty still cost a full global plan and still says the
+    #: stack could not get itself out; counting only the successful ones
+    #: reported 3 for an episode that asked eleven times, and hid the
+    #: eight refusals — the expensive half, and the half that explains
+    #: why the robot is still standing there.
+    replan_count: int = 0
+
     p99_latency_ms: float
     peak_search_nodes: int
     peak_tree_nodes: int
@@ -192,6 +218,7 @@ def compute_metrics(
         time_efficiency=_ratio(t_ideal_s, travel_time_s),
         smoothness=_smoothness(thetas),
         stop_and_go_count=_stop_and_go_count(speeds),
+        replan_count=sum(1 for event in events if event == "replan"),
         p99_latency_ms=float(np.percentile(np.asarray(latencies, dtype=float), 99)),
         peak_search_nodes=trace.metadata.peak_search_nodes,
         peak_tree_nodes=trace.metadata.peak_tree_nodes,

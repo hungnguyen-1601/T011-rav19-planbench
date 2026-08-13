@@ -44,6 +44,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from planbench_schemas.dynamic import DynamicObstacle
 from planbench_schemas.geometry import Pose2D
 from planbench_schemas.observations import ObservationToken, canonical_observations
+from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
 from planbench_schemas.robot import RobotConfig
 from planbench_schemas.sensor import SensorNoise
 
@@ -393,9 +394,26 @@ class TaskProfile(BaseModel):
     ``claim_level`` is the level the author *wants* to claim; what may
     actually be printed on a Decision Card comes from
     :meth:`effective_claim_level`.
+
+    **Unknown fields are refused, and that is a change made for a
+    reason.** Pydantic's default is to ignore them, so until now a
+    profile could declare something this model had never heard of and be
+    accepted with the declaration quietly discarded — the document said
+    one thing and the measurement did another, with nothing anywhere
+    saying so. Two ways that bites, both real:
+
+    * a typo. ``replaning: {enabled: true}`` parsed, stored and measured
+      with replanning off, and the author had no way to find out.
+    * a server behind the document. A profile naming a field the running
+      code does not have yet is exactly what a half-deployed upgrade
+      looks like, and silently dropping it turns "my new setting does
+      nothing" into an unfindable bug rather than a 422 naming the field.
+
+    HĐ-2 makes this model the single statement of a deployment. A single
+    statement that discards half of what it was told is not one.
     """
 
-    model_config = ConfigDict(frozen=True, allow_inf_nan=False)
+    model_config = ConfigDict(frozen=True, allow_inf_nan=False, extra="forbid")
 
     id: str = Field(min_length=1)
     claim_level: ClaimLevel = "mission"
@@ -409,6 +427,28 @@ class TaskProfile(BaseModel):
     #: two different measurements — the same hole ``constraints`` had in
     #: the manifest until A4.
     min_episodes_before_stop: int | None = Field(default=None, ge=0)
+    #: Whether a candidate may replan when the engine gives up, and — if
+    #: anybody insists — how often. Defaults to off, which is what every
+    #: stored run was measured under.
+    #:
+    #: **Top level, beside the early-stop floor, because it is the same
+    #: kind of thing**: not the world (that is ``environment``), not the
+    #: vehicle, not a threshold a gate reads — a condition of how the
+    #: evaluation runs. `run_stack` says it outright: *"replanning is a
+    #: property of the evaluation conditions, not of the stack: applied
+    #: on the path every stack goes through, with one trigger and one
+    #: budget for all of them."* Putting it on the candidate is what
+    #: would let one stack replan while another waited.
+    #:
+    #: **It is not in ``episode_context_id``'s payload** (HĐ-3.1 freezes
+    #: that at task profile, mission, variant, seed), so two runs of one
+    #: deployment under two replanning settings produce the *same*
+    #: context ids for two different experiments — the same trap
+    #: ``sensor_noise`` sprang. Two defences, both already standing: the
+    #: manifest records it (HĐ-13), and re-filing a changed profile under
+    #: an existing id is refused, so switching it on is a new deployment
+    #: with a new id rather than an edit.
+    replanning: ReplanningConfig = NO_REPLANNING
     environment: EnvironmentSpec
     missions: tuple[Mission, ...] = Field(min_length=1)
     robot: TaskRobotSpec

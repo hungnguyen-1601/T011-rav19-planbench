@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import pathlib
 
 import pytest
 from pydantic import ValidationError
@@ -19,6 +20,7 @@ from planbench_schemas.task_profile import (
     HardwareSpec,
     Mission,
     TaskConstraints,
+    TaskProfile,
     TaskRobotSpec,
 )
 
@@ -345,3 +347,64 @@ class TestRamBudget:
         breakdown["perceptionstack_mb"] = breakdown.pop("perception_stack_mb")
         with pytest.raises(ValidationError):
             HardwareSpec.model_validate(hardware(ram_budget_breakdown=breakdown))
+
+
+class TestADeclarationIsNeverSilentlyDiscarded:
+    """A profile that says something the model does not know is refused.
+
+    Pydantic ignores unknown fields by default, and until this was closed
+    a deployment could declare one and be accepted with the declaration
+    dropped — the document said one thing and the measurement did
+    another, with nothing anywhere saying so.
+
+    Two ways it bites, and both are real rather than theoretical:
+
+    * **a typo.** ``replaning: {enabled: true}`` parsed, stored, and ran
+      with replanning off. The author had no way to find out short of
+      reading the stored JSON.
+    * **a server behind the document.** A profile naming a field the
+      running code does not have yet is what a half-deployed upgrade
+      looks like from the outside. Dropping it turns "my new setting does
+      nothing" into an unfindable bug instead of a 422 naming the field.
+
+    HĐ-2 makes this model the single statement of a deployment. One that
+    discards part of what it was told is not a single statement.
+    """
+
+    @staticmethod
+    def _hall() -> dict:
+        import yaml
+
+        path = pathlib.Path(__file__).resolve().parents[1] / "profiles" / "open_hall_v2.yaml"
+        return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    def test_a_mistyped_field_is_refused_by_name(self) -> None:
+        profile = self._hall()
+        profile["replaning"] = {"enabled": True}
+        with pytest.raises(ValidationError, match="replaning"):
+            TaskProfile.model_validate(profile)
+
+    def test_an_unknown_field_is_refused(self) -> None:
+        profile = self._hall()
+        profile["measured_on_a_tuesday"] = True
+        with pytest.raises(ValidationError, match="measured_on_a_tuesday"):
+            TaskProfile.model_validate(profile)
+
+    def test_the_shipped_profiles_still_load(self) -> None:
+        """The refusal must not have been bought by breaking the two
+        deployments this project measures itself with."""
+        import yaml
+
+        root = pathlib.Path(__file__).resolve().parents[1] / "profiles"
+        for name in ("open_hall_v2", "warehouse_a_v2"):
+            path = root / f"{name}.yaml"
+            TaskProfile.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+    def test_the_correctly_spelled_field_is_kept(self) -> None:
+        """The other half: refusing the unknown is only useful if the
+        known survives."""
+        profile = self._hall()
+        profile["replanning"] = {"enabled": True}
+        parsed = TaskProfile.model_validate(profile)
+        assert parsed.replanning.enabled
+        assert parsed.replanning.max_replans is None

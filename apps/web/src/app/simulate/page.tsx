@@ -76,6 +76,7 @@ interface Mission {
 /** The parts of a stored deployment this page reads. */
 interface Deployment {
   missions?: Mission[];
+  replanning?: { enabled?: boolean };
   constraints?: { goal_tolerance_m?: number; episode_timeout_s?: number };
   robot?: { radius?: number; max_linear_velocity?: number; control_period?: number };
   environment?: { sensor_noise?: Record<string, number | boolean>; dynamic_obstacles?: unknown[] };
@@ -355,6 +356,19 @@ export default function TestBenchPage() {
                 <tr>
                   <td className="muted">{t("bench.traffic")}</td>
                   <td>{deployment.environment?.dynamic_obstacles?.length ?? 0}</td>
+                  {/* Left off this table until somebody went looking for
+                      it here. Whether a candidate may replan changes what
+                      happens the moment the robot is blocked — which is
+                      the moment the whole page exists to show — so a
+                      table of "what the deployment fixed" that omitted it
+                      was omitting the condition most likely to explain
+                      what you are watching. */}
+                  <td className="muted">{t("bench.replanning")}</td>
+                  <td>
+                    {deployment.replanning?.enabled
+                      ? t("bench.replanningOn")
+                      : t("bench.replanningOff")}
+                  </td>
                   <td className="muted">{t("bench.noise")}</td>
                   <td>{describeNoise(deployment.environment?.sensor_noise, t)}</td>
                 </tr>
@@ -504,7 +518,14 @@ export default function TestBenchPage() {
           numbers for "did that look sane" and the wrong ones for any
           claim, which is what HĐ-5 means by the trace being the sole
           input of the Metrics Engine. */}
-      <MetricsPanel metrics={stream.metrics} plan={plan} />
+      <MetricsPanel
+        metrics={stream.metrics}
+        plan={plan}
+        // Straight from the deployment rather than from the run: it is
+        // the same value the episode was staged with, and it is the one
+        // that answers "did the setting arrive at all".
+        replanning={deployment ? { enabled: Boolean(deployment.replanning?.enabled) } : undefined}
+      />
       <p className="muted">{t("bench.metricsNote")}</p>
     </>
   );

@@ -14,8 +14,10 @@ from __future__ import annotations
 import pytest
 from blocked_route import blocked_robot, two_doorway_map
 from blocked_route import blocked_scenario as build_blocked_scenario
+from pydantic import ValidationError
 
 from planbench_benchmark.spec import AlgorithmSpec, BenchmarkSpec, FairnessRecord
+from planbench_metrics.definitions import EpisodeMetricSet
 from planbench_planning import DWAPlanner, RRTStarConfig, RRTStarPlanner
 from planbench_planning.common.base import GlobalPlanner, PlanResult
 from planbench_schemas.episode import EpisodeStatus
@@ -392,3 +394,281 @@ class TestControllerResetMidEpisode:
         PPOLocalPlanner.reset(planner, second, robot)
         assert planner._path == second  # noqa: SLF001
         assert planner._robot is robot  # noqa: SLF001
+
+
+class TestReplanningIsPricedRatherThanCapped:
+    """No budget, and a bill instead.
+
+    ``max_replans`` used to be a required cap. The reasoning behind it was
+    sound — an unbounded budget turns *"did the planner recover?"* into
+    *"did the timeout arrive first?"* — and the cure was worse: a shared
+    cap is a number **somebody chose**, it binds differently for
+    different stacks, and under a budget of three a stack that would have
+    escaped on its fourth try is scored as a failure of the budget rather
+    than of the planner. Same class of artifact as the replan information
+    privilege (HĐ-4.1): an evaluation condition quietly deciding a result.
+
+    What replaces it is the price. Every replan records its own
+    control-step row carrying the global planner's latency, so G4 pools
+    it with the rest. p99 cuts at the 99th percentile, so a couple of
+    replans in four hundred steps sit above the cut and cost nothing,
+    while habitual replanning walks into the latency gate on its own —
+    **the ceiling grows out of the physics instead of being declared**.
+    """
+
+    def test_the_budget_defaults_to_unlimited_when_enabled(self) -> None:
+        config = ReplanningConfig(enabled=True)
+        assert config.max_replans is None
+        assert config.allows(1_000_000)
+
+    def test_an_explicit_cap_still_caps(self) -> None:
+        """The retiring benchmark flow stores specs naming one, and a
+        stored run must keep describing the conditions it ran under."""
+        config = ReplanningConfig(enabled=True, max_replans=2)
+        assert config.allows(2)
+        assert not config.allows(3)
+
+    def test_disabled_allows_nothing_however_the_budget_reads(self) -> None:
+        assert not ReplanningConfig(enabled=False).allows(0)
+        assert not ReplanningConfig(enabled=False, max_replans=0).allows(0)
+
+    def test_enabling_with_a_budget_of_zero_is_still_refused(self) -> None:
+        """It would do nothing while reading as if it did something."""
+        with pytest.raises(ValidationError, match="does nothing"):
+            ReplanningConfig(enabled=True, max_replans=0)
+
+    def test_the_historical_default_is_unchanged(self) -> None:
+        """`is_default` keeps pre-replanning checksums byte-identical."""
+        assert NO_REPLANNING.is_default
+        assert not ReplanningConfig(enabled=True).is_default
+
+
+class TestAReplanIsChargedForAsAControlStep:
+    """The bill, measured rather than asserted.
+
+    Before this, `_replan` ran outside the recording branch: G4 pooled
+    its p99 over a set of local-controller steps that contained no replan
+    at all, so replanning was free by construction. This drives a real
+    episode on the scenario that needs one and reads the trace back.
+    """
+
+    def _run(self, tmp_path, config):
+        from planbench_benchmark.candidates import LOCAL_CONTROLLER_CONFIGS
+        from planbench_benchmark.registry import build_global_planner, build_local_planner
+        from planbench_benchmark.scenarios import build_scenario
+        from planbench_schemas.episode_context import EpisodeContext
+        from planbench_simulator.trace import EpisodeTraceRecorder
+
+        map_data, scenario = build_scenario("sudden_stop")
+        context = EpisodeContext(task_profile_id="p", mission_id="m", seed=0)
+        with EpisodeTraceRecorder(
+            context, "cand", root=tmp_path, costmap_cells=map_data.width * map_data.height
+        ) as recorder:
+            run = run_stack(
+                map_data,
+                scenario,
+                build_local_planner("astar+dwa", dict(LOCAL_CONTROLLER_CONFIGS["dwa_coarse"])),
+                build_global_planner("astar+dwa", episode_seed=0),
+                config,
+                recorder=recorder,
+                legacy_metrics=False,
+            )
+            recorder.close(
+                peak_search_nodes=run.plan.expanded_nodes,
+                peak_tree_nodes=0,
+                global_plan_length_m=run.plan.path_length if run.plan.success else None,
+                global_plan_time_ms=run.plan.planning_time_seconds * 1000.0,
+            )
+        return recorder.path, run
+
+    def test_the_trace_carries_a_replan_row_with_the_planner_time_on_it(self, tmp_path) -> None:
+        """Without this row the cost model does not exist."""
+        import pandas as pd
+
+        path, _ = self._run(tmp_path, ReplanningConfig(enabled=True))
+        frame = pd.read_parquet(path)
+        replans = frame[frame["event"] == "replan"]
+        assert len(replans) >= 1, "the episode that needs a replan recorded none"
+        # Stated against the 99th percentile of ordinary steps, because
+        # that is the number G4 reads — "a replan lands above the cut" is
+        # exactly the claim the cost model rests on.
+        #
+        # Not against a fixed millisecond figure. The first version
+        # asserted `> 50 ms`, calibrated on the 480x320 hall where A*
+        # takes ~740 ms, and failed here: `sudden_stop` is 14x9 m and the
+        # same planner takes ~5 ms, about twice a control step rather than
+        # sixty times. **The price of a replan scales with the map**, so
+        # on a small scenario replanning is nearly free and on a real
+        # deployment map it is not. The absolute figure is a property of
+        # the map; landing above the ordinary distribution is the property
+        # of replanning, and it is the one worth pinning.
+        ordinary = frame[frame["event"].isna() | (frame["event"] == "")]
+        cut = ordinary["planner_latency_ms"].quantile(0.99)
+        assert replans["planner_latency_ms"].max() > cut
+
+    def test_without_replanning_the_trace_has_no_such_row(self, tmp_path) -> None:
+        import pandas as pd
+
+        path, _ = self._run(tmp_path, NO_REPLANNING)
+        frame = pd.read_parquet(path)
+        assert (frame["event"] == "replan").sum() == 0
+
+    def test_unlimited_replanning_gets_the_robot_there(self, tmp_path) -> None:
+        """The point of the change, end to end.
+
+        `sudden_stop` puts a cart in the lane and stops it dead. With no
+        replanning the robot gives up; with replanning it goes around.
+        """
+        _, without = self._run(tmp_path / "off", NO_REPLANNING)
+        _, with_replans = self._run(tmp_path / "on", ReplanningConfig(enabled=True))
+        assert without.result.status is EpisodeStatus.STUCK
+        assert with_replans.result.status is EpisodeStatus.SUCCESS
+
+
+class TestTheReplanCountIsEvidenceAndNotAScore:
+    """Deliberately outside the objective function.
+
+    Replanning costs time and latency; ``travel_time_s`` and
+    ``p99_latency_ms`` already charge for both. A penalty term would
+    price the same thing twice, and its weight would be one more number
+    somebody chose — the exact knob that removing ``max_replans`` was
+    meant to be rid of.
+    """
+
+    def test_it_is_a_metric(self) -> None:
+        assert "replan_count" in EpisodeMetricSet.model_fields
+
+    def test_the_objective_layer_never_reads_it(self) -> None:
+        """The promise, as a fact about the source rather than a comment.
+
+        If somebody later scores it, this fails and they get to argue for
+        it on purpose instead of by accident.
+        """
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1] / "packages" / "decision"
+        for module in ("objectives.py", "stats.py", "pareto.py"):
+            text = (root / "planbench_decision" / module).read_text(encoding="utf-8")
+            assert "replan" not in text, f"{module} now reads replan_count; that is a score"
+
+    def test_no_gate_reads_it_either(self) -> None:
+        from pathlib import Path
+
+        gates = (
+            Path(__file__).resolve().parents[1]
+            / "packages"
+            / "decision"
+            / "planbench_decision"
+            / "gates.py"
+        )
+        assert "replan" not in gates.read_text(encoding="utf-8")
+
+
+class TestAReplanThatFindsNothingIsNotSilent:
+    """The bug An hit: replanning on, robot parked in front of a cart,
+    ``Replans: 0`` on screen, and no way to tell which of two opposite
+    things had happened.
+
+    ``_replan`` *did* fire and *did* fail — "no path exists between start
+    and goal" — and nothing recorded it. "It never tried" points at the
+    setting; "it tried and the planner refused" points at the world, and
+    they were the same blank.
+
+    The failure is ordinary rather than exotic. ``_replan`` plans from the
+    robot's *believed* pose over a grid built from its own LiDAR returns
+    (HĐ-4.1), so localisation drift and dropout can put the start inside
+    the marked cells or close the only gap — in a 2 m corridor holding a
+    0.4 m cart and a 0.26 m robot there is not much width to lose. It
+    reproduced only with the deployment form's seven noise streams on;
+    the two the shipped profile declares were not enough to tip it, which
+    is why it survived every test until somebody ran the real thing.
+    """
+
+    NOISE = {
+        "lidar_range_sigma_m": 0.02,
+        "wheel_slip_fraction": 0.02,
+        "localization_drift_m": 0.1,
+        "localization_jump_probability": 0.02,
+        "lidar_dropout_probability": 0.02,
+        "odometry_bias_fraction": 0.01,
+        "command_latency_steps": 2,
+    }
+
+    def _run(self):
+        import copy
+        from pathlib import Path
+
+        import yaml
+
+        from planbench_benchmark.candidates import LOCAL_CONTROLLER_CONFIGS
+        from planbench_benchmark.episode import scenario_for
+        from planbench_benchmark.registry import build_global_planner, build_local_planner
+        from planbench_benchmark.scenarios import build_scenario
+        from planbench_schemas.episode_context import EpisodeContext
+        from planbench_schemas.task_profile import TaskProfile
+
+        root = Path(__file__).resolve().parents[1]
+        map_data, lib = build_scenario("sudden_stop")
+        raw = copy.deepcopy(
+            yaml.safe_load((root / "profiles" / "open_hall_v2.yaml").read_text(encoding="utf-8"))
+        )
+        raw["id"] = "replan_probe"
+        raw["replanning"] = {"enabled": True}
+        raw["missions"] = [
+            {
+                "id": "m",
+                "start": [lib.start_pose.x, lib.start_pose.y, 0.0],
+                "goal": [lib.goal_pose.x, lib.goal_pose.y, 0.0],
+                "probability": 1.0,
+            }
+        ]
+        raw["environment"]["dynamic_obstacles"] = [
+            o.model_dump(mode="json") for o in lib.dynamic_obstacles
+        ]
+        raw["environment"]["sensor_noise"] = self.NOISE
+        profile = TaskProfile.model_validate(raw)
+        scenario = scenario_for(
+            profile, EpisodeContext(task_profile_id=profile.id, mission_id="m", seed=0)
+        )
+        return run_stack(
+            map_data,
+            scenario,
+            build_local_planner("astar+dwa", dict(LOCAL_CONTROLLER_CONFIGS["dwa_balanced"])),
+            build_global_planner("astar+dwa", episode_seed=0),
+            profile.replanning,
+        )
+
+    def test_a_failed_replan_is_recorded_as_its_own_event(self) -> None:
+        run = self._run()
+        failed = [event for event in run.result.events if event.type == "replan_failed"]
+        assert failed, "the replan that found no path left no trace of having been tried"
+        assert "believes it is" in failed[0].message
+
+    def test_the_first_refusal_no_longer_ends_the_episode(self) -> None:
+        """The budget is the timeout, not the first "no".
+
+        "No route right now" is not "no route", and traffic moves. Before
+        this, one empty replan ended everything — which contradicted the
+        unlimited budget on the same config.
+        """
+        run = self._run()
+        assert run.result.status is EpisodeStatus.TIMEOUT
+        attempts = [event for event in run.result.events if event.type == "replan"]
+        assert len(attempts) > 1, "it gave up after the first refusal"
+
+    def test_retries_are_seconds_apart_rather_than_a_tight_loop(self) -> None:
+        """Bounded by construction: the stuck detector needs another full
+        window before it re-triggers, so resuming cannot spin."""
+        run = self._run()
+        times = [event.time for event in run.result.events if event.type == "replan_failed"]
+        gaps = [b - a for a, b in zip(times, times[1:], strict=False)]
+        assert gaps and min(gaps) >= 9.0, f"replans came {min(gaps):.2f}s apart"
+
+    def test_the_count_is_attempts_and_not_successes(self) -> None:
+        """Counting only the ones that worked reported 3 for an episode
+        that asked eleven times, and hid the eight refusals — the
+        expensive half, and the half that explains the standstill."""
+        run = self._run()
+        attempts = sum(1 for event in run.result.events if event.type == "replan")
+        assert run.metrics.replan_count == attempts
+        assert sum(1 for e in run.result.events if e.type == "replan_failed") > 0
