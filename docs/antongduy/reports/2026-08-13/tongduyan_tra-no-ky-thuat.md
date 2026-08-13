@@ -898,3 +898,88 @@ claim đi đâu.
   `test_api_simulations.py`: **82 passed**. Endpoint mới nằm chung
   router với decisions nên đây là chỗ hồi quy dễ xảy ra nhất.
 - `ruff check .` sạch. **Chưa** chạy full suite backend.
+
+## P5 — `robot-profiles` thành nguồn sự thật cho **chiếc xe** *(pha năm)*
+
+Ba nhóm trường, ba số phận đúng như kế hoạch — và cách nối là phần
+quan trọng hơn cả ba.
+
+### Cách nối: **điền lúc khai**, không phải tham chiếu
+
+Chọn một xe trong form deployment sẽ **điền số vào** các ô; deployment
+lưu chính con số, không lưu `robot_profile_id`.
+
+Lý do không phải "rẻ hơn". HĐ-13 đòi người khác dựng lại được lượt chạy
+**từ chính profile**. Một profile trỏ tới một dòng DB **sửa được** sẽ
+đổi nghĩa vào ngày ai đó sửa dòng đó — và mọi trace đã lưu lặng lẽ mô tả
+một con robot khác, **dưới cùng một `task_profile_id`**, nên không gì
+cảnh báo. Cách này đặt nguồn sự thật đúng chỗ nó cần đứng — **lúc tác
+giả chọn** — mà vẫn giữ profile tự chứa. Không đổi hợp đồng, không lượt
+chạy nào mất hiệu lực.
+
+### Gia tốc: thêm vào xe, và **vắng không phải là không**
+
+`RobotConfig` đòi cả hai gia tốc, `RobotProfile` không có ô nào — nên ai
+điền form cũng phải gõ hai số đó từ trí nhớ. Đó chính là cách một hiện
+trường bị đo trên một con robot tăng tốc gấp đôi bản sao của nó ở hiện
+trường kia.
+
+Migration **0008** thêm hai cột **nullable**. NULL là **câu trả lời**,
+không phải chỗ trống chờ điền: một profile viết trước khi có cột thì
+chưa từng khai gì cả, và ghi một số mặc định vào đó là đặt một khẳng
+định vật lý về xe của người khác vào DB mà không mang tên ai — rồi
+deployment dựng từ nó sẽ được đo như thể khẳng định ấy đã được kiểm.
+Cùng hình dạng câu trả lời HĐ-1.6 dành cho tuning chưa khai: **im lặng
+là một trạng thái**.
+
+Form vì thế **để nguyên** hai ô gia tốc khi xe không khai, kèm câu nói
+rõ, thay vì ghi 0 — 0 nghĩa là robot không tăng tốc được.
+
+Riêng `DEFAULT_PROFILE` (bản seed) **có** khai 1.0 / 3.0: đó là phát
+minh của chính nền tảng và là đúng những con số con robot mặc định của
+simulator vẫn luôn chạy. Để trống thì profile duy nhất không ai viết
+lại thành profile duy nhất không điền nổi một form.
+
+### `control_period` **ở lại deployment** — và đây là hàng rào
+
+Nó là T_cycle: ngân sách wall-clock cho một bước điều khiển **trên bo
+mạch đích**, tức ngưỡng cổng G4 và nguồn của các mốc latency. Cùng một
+con robot ở sảnh và ở lối kho có thể bị đòi hai chu kỳ khác nhau — đó là
+**hai yêu cầu trên một robot**, không phải hai robot.
+
+Nếu nó nằm trên profile xe, sửa một dòng sẽ **nới một cổng cho mọi
+deployment dùng xe đó**, mà `episode_context_id` không băm robot nên
+lượt chạy cũ giữ nguyên id trong khi mô tả một chuẩn không ai đồng ý.
+Không gì cảnh báo; các lượt chạy chỉ đơn giản bắt đầu pass.
+
+Hàng rào ba lớp:
+
+1. `RobotProfile` không có trường đó — test khẳng định bằng
+   `model_fields`.
+2. `POST /robot-profiles` **từ chối** body có `control_period`, kèm câu
+   giải thích nó thuộc về đâu. Từ chối chứ không lặng lẽ bỏ qua: người
+   gửi nó là người đang tin mình vừa đặt chu kỳ. Chặn **đích danh** một
+   trường chứ không cấm mọi khoá lạ — cấm hết là một quyết định khác về
+   một endpoint đợt này không đụng tới.
+3. Form không điền nó từ xe — test cắt đúng thân hàm `adoptVehicle` và
+   khẳng định chuỗi `control_period` không xuất hiện trong đó.
+
+Thêm một test tham số hoá quét **mọi** trường của `RobotConfig` và đòi
+mỗi trường có chỗ ở trên `RobotProfile` — thêm trường mới vào
+`RobotConfig` sẽ đỏ **đích danh trường đó**, thay vì lộ ra muộn dưới
+dạng một form hỏi thứ mà kho xe không cấp được.
+
+### Một chỗ tôi tự giới hạn
+
+`robot-profiles` nằm trong `routers/models.py` — vùng An đã dặn *"phần
+việc của người khác, không can thiệp"*. P5 buộc phải chạm vào đó vì
+chính An chốt *"robot-profiles là nguồn sự thật"*. Tôi giữ can thiệp ở
+mức tối thiểu: hai trường **optional** (không phá caller nào), một
+validator **chặn đúng một tên**. Không đổi `extra="forbid"`, không đụng
+phần models.
+
+### Test
+
+- `tests/api/test_robot_profile_boundary.py` — 16 test.
+- `deployments-page.test.tsx` — thêm 5 test cho picker xe.
+- Suite web: **665 passed**, `tsc` sạch. `ruff check .` sạch.

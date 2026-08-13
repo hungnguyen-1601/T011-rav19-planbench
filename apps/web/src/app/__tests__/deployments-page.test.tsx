@@ -269,3 +269,65 @@ describe("the noise a new deployment starts with", () => {
     expect(FORM).toContain("remembered[path] ?? NOISE_DEFAULTS[path].value");
   });
 });
+
+describe("the vehicle register fills the form, it does not own it", () => {
+  /** P5 — `robot-profiles` becomes the source of truth for the *vehicle*.
+   *
+   * Before this, every deployment's robot was typed from memory into a
+   * form, which is how one site ends up measured on a robot 4 cm wider
+   * than another site's copy of the same machine. The register already
+   * existed for the PPO adapter; it just had no way into a deployment.
+   */
+  const EN = en as Record<string, string>;
+
+  it("offers the stored vehicles and copies their limits in", () => {
+    expect(FORM).toContain("listRobotProfiles()");
+    expect(FORM).toContain("const adoptVehicle = (id: string)");
+    expect(FORM).toContain('withValue(next, "robot.radius", vehicle.radius)');
+  });
+
+  it("copies the numbers rather than storing a reference", () => {
+    /* HĐ-13 asks somebody else to rebuild a run from the profile alone.
+       A profile pointing at an editable database row would change
+       meaning the day that row is edited, and every stored trace would
+       quietly describe a different robot — under the same
+       `task_profile_id`, so nothing would warn. That is the whole reason
+       this is a fill and not a foreign key. */
+    expect(FORM).not.toContain("robot_profile_id");
+    expect(EN["deployments.form.vehicleNote"]).toContain("HĐ-13");
+    expect(vi).toHaveProperty("deployments.form.vehicleNote");
+  });
+
+  it("never fills the control period from a vehicle", () => {
+    /* T_cycle is gate G4's threshold — the budget one control step has
+       on the target board. The same robot in a hall and in a warehouse
+       aisle can be held to two different cycles, so filling it from the
+       vehicle would let one setting move a gate at every site using that
+       robot. The server keeps the field off `RobotProfile` entirely
+       (`tests/api/test_robot_profile_boundary.py`); this is the same
+       fence on the near side. */
+    const adopt = FORM.slice(
+      FORM.indexOf("const adoptVehicle"),
+      FORM.indexOf("const chosenVehicle"),
+    );
+    expect(adopt).not.toContain("control_period");
+    expect(EN["deployments.form.vehicleNote"]).toContain("Control period is not filled");
+  });
+
+  it("leaves an undeclared acceleration alone instead of writing a zero", () => {
+    /* Null on a vehicle means nobody said. A zero here would say the
+       robot cannot change speed, and the form would submit that as
+       though somebody had claimed it. */
+    expect(FORM).toContain("vehicle.max_linear_acceleration !== null");
+    expect(FORM).toContain("undeclaredAccelerations");
+    expect(EN["deployments.form.vehicleUndeclared"]).toContain("not zero");
+  });
+
+  it("still works with no vehicles stored", () => {
+    /* A fresh install has an empty register. Losing the ability to file
+       a deployment because a convenience list was empty would be a worse
+       form than the one before the picker existed. */
+    expect(FORM).toContain("listRobotProfiles().catch(() => [] as RobotProfile[])");
+    expect(en).toHaveProperty("deployments.form.vehicleNone");
+  });
+});

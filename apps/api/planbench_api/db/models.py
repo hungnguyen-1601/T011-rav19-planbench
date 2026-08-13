@@ -150,6 +150,13 @@ class RobotProfileRow(Base):
     footprint: Mapped[str] = mapped_column(String(40), nullable=False, default="circle")
     max_linear_velocity: Mapped[float] = mapped_column(Float, nullable=False)
     max_angular_velocity: Mapped[float] = mapped_column(Float, nullable=False)
+    # Nullable because a profile written before these existed never
+    # declared them, and NULL is the recorded truth rather than a value
+    # waiting to be backfilled — the same reasoning as 0004's replanning
+    # column. Substituting a number would put a physical claim about
+    # somebody's vehicle into the database with nobody's name on it.
+    max_linear_acceleration: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_angular_acceleration: Mapped[float | None] = mapped_column(Float, nullable=True)
     lidar_beams: Mapped[int] = mapped_column(Integer, nullable=False, default=24)
     lidar_range: Mapped[float] = mapped_column(Float, nullable=False, default=6.0)
     observation_type: Mapped[str] = mapped_column(String(60), nullable=False)
