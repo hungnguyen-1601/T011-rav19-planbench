@@ -276,6 +276,17 @@ class RobotProfile(BaseModel):
 
     Exists so changing robots is a form, not a code edit. The PPO
     adapter reads its limits from here rather than from constants.
+
+    **``control_period`` is deliberately not here, and never should be.**
+    It is the deployment's T_cycle — the wall-clock budget one control
+    step has on the target board — which makes it gate G4's threshold
+    and the source of the latency anchors. The same vehicle at two sites
+    can be held to two different cycles: a hall that tolerates 20 Hz and
+    a warehouse aisle that does not are different *requirements* on one
+    robot, not two robots. Moving it here would let a profile edit widen
+    a gate for every deployment using that vehicle, silently and without
+    a new ``task_profile_id`` to mark it. `TaskRobotSpec` owns it, and
+    `tests/api/test_robot_profile_boundary.py` keeps it there.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -288,6 +299,15 @@ class RobotProfile(BaseModel):
     footprint: str = "circle"
     max_linear_velocity: float = Field(gt=0)
     max_angular_velocity: float = Field(gt=0)
+    #: How hard the vehicle can change speed. Optional, and **absent is
+    #: not zero** — a profile written before this field existed never
+    #: said, and inventing a number would be the platform declaring a
+    #: physical property of somebody's robot. A deployment needs both
+    #: (``RobotConfig`` requires them), so the form asks the author to
+    #: fill what the profile does not know rather than silently
+    #: substituting a default that would then be measured as fact.
+    max_linear_acceleration: float | None = Field(default=None, gt=0)
+    max_angular_acceleration: float | None = Field(default=None, gt=0)
     lidar_beams: int = Field(default=24, ge=4)
     lidar_range: float = Field(default=6.0, gt=0)
     observation_type: str = "lidar_goal_velocity"

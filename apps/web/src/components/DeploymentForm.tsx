@@ -42,6 +42,7 @@ import {
 } from "@/lib/deployments";
 import { emptyBorderedMap } from "@/lib/demoMap";
 import { useTranslation } from "@/lib/i18n";
+import { listRobotProfiles, type RobotProfile } from "@/lib/models";
 import type { LibraryEntry } from "@/lib/platformTypes";
 import type { MapData, MapSummary, Pose2D } from "@/lib/types";
 
@@ -145,6 +146,10 @@ export function DeploymentForm({
   const [start, setStart] = useState<Pose2D | null>(null);
   const [goal, setGoal] = useState<Pose2D | null>(null);
   const [showHardware, setShowHardware] = useState(false);
+  /** The vehicle register. Empty is not an error — it is a fresh
+   *  install, and typing the limits by hand still works. */
+  const [vehicles, setVehicles] = useState<RobotProfile[]>([]);
+  const [vehicleId, setVehicleId] = useState("");
 
   const set = useCallback(
     (path: string, value: unknown) => {
@@ -159,15 +164,17 @@ export function DeploymentForm({
     let cancelled = false;
     void (async () => {
       try {
-        const [template, entries, stored] = await Promise.all([
+        const [template, entries, stored, fleet] = await Promise.all([
           getProfileTemplate(),
           listScenarioLibrary().catch(() => [] as LibraryEntry[]),
           api.listMaps().catch(() => [] as MapSummary[]),
+          listRobotProfiles().catch(() => [] as RobotProfile[]),
         ]);
         if (cancelled) return;
         onDraftChange(withNoiseDefaults(template));
         setLibrary(entries);
         setMaps(stored);
+        setVehicles(fleet);
       } catch (caught) {
         if (!cancelled) setError(caught instanceof Error ? caught.message : String(caught));
       }
@@ -314,6 +321,45 @@ export function DeploymentForm({
     );
   };
 
+  /** Copy a vehicle's limits into the draft. Fills, never locks.
+   *
+   * **`control_period` is deliberately not among them**, and this is the
+   * one line of the whole picker worth reading twice. It is T_cycle —
+   * the wall-clock budget one control step has on the target board, and
+   * therefore gate G4's threshold. The same robot in a hall and in a
+   * warehouse aisle can be held to two different cycles, so it is a
+   * property of *this deployment*, not of the vehicle. A picker that
+   * filled it would let one vehicle's setting move a gate at every site
+   * using that robot.
+   *
+   * An undeclared acceleration leaves the field alone rather than
+   * writing a zero. Null on a profile means "nobody said", and a zero
+   * here would say the robot cannot change speed — a claim the form
+   * would then submit as though somebody had made it.
+   */
+  const adoptVehicle = (id: string) => {
+    setVehicleId(id);
+    const vehicle = vehicles.find((entry) => entry.id === id);
+    if (!draft || !vehicle) return;
+    let next = draft;
+    next = withValue(next, "robot.radius", vehicle.radius);
+    next = withValue(next, "robot.max_linear_velocity", vehicle.max_linear_velocity);
+    next = withValue(next, "robot.max_angular_velocity", vehicle.max_angular_velocity);
+    if (vehicle.max_linear_acceleration !== null) {
+      next = withValue(next, "robot.max_linear_acceleration", vehicle.max_linear_acceleration);
+    }
+    if (vehicle.max_angular_acceleration !== null) {
+      next = withValue(next, "robot.max_angular_acceleration", vehicle.max_angular_acceleration);
+    }
+    onDraftChange(next);
+  };
+
+  const chosenVehicle = vehicles.find((entry) => entry.id === vehicleId);
+  const undeclaredAccelerations =
+    chosenVehicle !== undefined &&
+    (chosenVehicle.max_linear_acceleration === null ||
+      chosenVehicle.max_angular_acceleration === null);
+
   const risk = at(draft, "constraints.collision_probability_max");
   const nMin = nMinFor(risk);
   const leftOver = ramLeftOver(draft);
@@ -344,6 +390,36 @@ export function DeploymentForm({
       </div>
 
       <h4>{t("deployments.form.robot")}</h4>
+      {/* The vehicle register is the source of truth for what the robot
+          *is* — but it fills the form rather than being referenced from
+          it. HĐ-13 asks somebody else to rebuild a run from the profile
+          alone; a profile pointing at an editable database row would
+          change meaning the day somebody edits that row, and every trace
+          already stored would quietly describe a different robot. So the
+          numbers are copied in, at the moment an author chooses them,
+          and the deployment stays self-contained. */}
+      <div className="row" style={{ alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
+        <label className="field">
+          <span>{t("deployments.form.vehicle")}</span>
+          <select
+            value={vehicleId}
+            disabled={busy || vehicles.length === 0}
+            onChange={(event) => adoptVehicle(event.target.value)}
+          >
+            <option value="">{t("deployments.form.vehicleNone")}</option>
+            {vehicles.map((vehicle) => (
+              <option key={vehicle.id} value={vehicle.id}>
+                {vehicle.name} v{vehicle.version}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="muted" style={{ flex: "1 1 260px", margin: 0 }}>
+          {undeclaredAccelerations
+            ? t("deployments.form.vehicleUndeclared")
+            : t("deployments.form.vehicleNote")}
+        </p>
+      </div>
       <div className="row" style={{ alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
         {field("robot.radius", t("deployments.form.radius"), 0.01)}
         {field("robot.max_linear_velocity", t("deployments.form.vMax"), 0.1)}

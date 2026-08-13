@@ -68,6 +68,8 @@ class SqlRobotProfileRepository:
             footprint=profile.footprint,
             max_linear_velocity=profile.max_linear_velocity,
             max_angular_velocity=profile.max_angular_velocity,
+            max_linear_acceleration=profile.max_linear_acceleration,
+            max_angular_acceleration=profile.max_angular_acceleration,
             lidar_beams=profile.lidar_beams,
             lidar_range=profile.lidar_range,
             observation_type=profile.observation_type,
@@ -95,6 +97,8 @@ class SqlRobotProfileRepository:
             row.footprint = profile.footprint
             row.max_linear_velocity = profile.max_linear_velocity
             row.max_angular_velocity = profile.max_angular_velocity
+            row.max_linear_acceleration = profile.max_linear_acceleration
+            row.max_angular_acceleration = profile.max_angular_acceleration
             row.lidar_beams = profile.lidar_beams
             row.lidar_range = profile.lidar_range
             row.observation_type = profile.observation_type
@@ -365,6 +369,8 @@ def _to_profile(row: RobotProfileRow) -> RobotProfile:
         footprint=row.footprint,
         max_linear_velocity=row.max_linear_velocity,
         max_angular_velocity=row.max_angular_velocity,
+        max_linear_acceleration=row.max_linear_acceleration,
+        max_angular_acceleration=row.max_angular_acceleration,
         lidar_beams=row.lidar_beams,
         lidar_range=row.lidar_range,
         observation_type=row.observation_type,

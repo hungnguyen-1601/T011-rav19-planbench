@@ -1128,5 +1128,9 @@
   "bench.toComparison": "Bắt đầu một phép so",
   "bench.empty.title": "Chưa có deployment nào",
   "bench.empty.body": "Sân thử chạy một episode của một deployment, nên phải có một cái trước đã.",
-  "bench.empty.action": "Tạo deployment"
+  "bench.empty.action": "Tạo deployment",
+  "deployments.form.vehicle": "Xe",
+  "deployments.form.vehicleNone": "Tự điền các giới hạn",
+  "deployments.form.vehicleNote": "Chọn một xe sẽ điền các giới hạn bên dưới; vẫn sửa được, và deployment lưu chính con số chứ không lưu tham chiếu — nên sửa xe về sau không đổi được thứ mà một lượt chạy đã đo mô tả (HĐ-13). Chu kỳ điều khiển không được điền: đó là yêu cầu của hiện trường này, không phải tính chất của robot.",
+  "deployments.form.vehicleUndeclared": "Xe này chưa từng khai gia tốc, nên hai ô đó giữ nguyên. Vắng không phải là không — điền từ datasheet, đừng để một con số sót lại bị đo như sự thật."
 }

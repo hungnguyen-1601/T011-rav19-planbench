@@ -1128,5 +1128,9 @@
   "bench.toComparison": "Start a comparison",
   "bench.empty.title": "No deployments yet",
   "bench.empty.body": "The test bench runs an episode of a deployment, so there has to be one first.",
-  "bench.empty.action": "Create a deployment"
+  "bench.empty.action": "Create a deployment",
+  "deployments.form.vehicle": "Vehicle",
+  "deployments.form.vehicleNone": "Type the limits by hand",
+  "deployments.form.vehicleNote": "Choosing a vehicle fills the limits below; they stay editable, and the deployment stores the numbers rather than a reference — so a later edit to the vehicle cannot change what an already-measured run described (HĐ-13). Control period is not filled: it is this site's requirement, not the robot's property.",
+  "deployments.form.vehicleUndeclared": "This vehicle never declared its accelerations, so those two fields were left as they were. Absent is not zero — fill them from the datasheet rather than letting a leftover number be measured as fact."
 }
