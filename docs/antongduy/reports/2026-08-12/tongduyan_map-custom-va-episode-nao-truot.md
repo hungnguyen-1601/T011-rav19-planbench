@@ -113,6 +113,27 @@ nào"*. Một cái núm không nhãn mà xoay không ăn thua gì là thứ ph�
 Tiện thể: `button.active` **chưa từng có style** — editor cũ đã gán class đó cho nút chế độ từ
 đầu và không có gì tô nó. Thêm vào `globals.css`, cả hai trang cùng được.
 
+### Đợt sửa thứ ba: dev không tìm ra chỗ chỉnh pose
+
+Dev báo *"trong giao diện map editor, tôi vẫn chưa thể thao tác chọn và chỉnh start/goal"*.
+Không phải thao tác sai — chỗ đó **không có** trong `/maps/[id]`, và **không thể có**:
+
+> `MapData` chỉ có `name, width, height, resolution, origin, cells`. Bản đồ là **thế giới**;
+> start/goal là **nhiệm vụ**, và nhiệm vụ thuộc về deployment. Cùng một cái kho phục vụ nhiều
+> nhiệm vụ khác nhau — nhét một cặp pose vào bản đồ là khai rằng nó chỉ có một.
+
+Lý do đúng, nhưng là **cái cớ tồi cho sự im lặng**. Hai chỗ im lặng, cả hai đều là lỗi thiết kế
+chứ không phải lỗi người dùng:
+
+| chỗ | trước | sau |
+|---|---|---|
+| Dropdown bản đồ ở `/decisions` | khoá cứng khi chưa chọn deployment, **không nói vì sao** — nhìn như hỏng | nói rõ *"chọn deployment trước đã"*, và nói riêng *"kho bản đồ đang trống"* khi đó là lý do |
+| `/maps/[id]` | không một dòng nào chỉ sang chỗ đặt pose | một dòng nói pose không nằm trên bản đồ và **vì sao**, kèm link sang `/decisions` |
+
+Hai lý do khoá dropdown đều **sửa được trong một cú bấm** (chọn deployment, hoặc vẽ một bản đồ),
+nên *lý do nào* mới là phần có ích. Một control bị khoá không kèm giải thích đọc như một trang
+hỏng — và lần này nó đẩy người đọc đi tìm start/goal ở nơi chúng không thể tồn tại.
+
 Nút Chạy tắt khi map custom **khai dở** (có map nhưng thiếu id hoặc thiếu pose). Im lặng lùi
 về bản đồ của deployment là kiểu hỏng tệ nhất ở đây: lượt chạy vẫn hợp lệ và trả lời một câu
 hỏi khác.
@@ -232,18 +253,18 @@ giờ ba lần, bên kia quá giờ cả sáu — hai chẩn đoán khác nhau �
 
 | | trước | sau |
 |---|---:|---:|
-| Backend | 2293 passed, 6 skipped | **2312 passed, 6 skipped** (+19) |
-| Web | 533 passed | **571 passed** (+38) |
+| Backend | 2293 passed, 6 skipped | **2312 passed, 6 skipped** (+19) · 23 phút |
+| Web | 533 passed | **573 passed** (+40) |
 
 `ruff check` sạch, `ruff format` sạch, `tsc --noEmit` sạch.
 
 Backend +19: round-trip map (5) · kết quả từng episode (5) · dẫn xuất deployment (9, gồm một
 sweep thật trên map tự vẽ và một phép ghim hướng xuất phát tới tận `scenario_for`).
-Web +38: helper thuần (7) · cột kết quả danh sách (3) · chọn map (9) · bảng episode (10) ·
-chỉnh pose (9).
+Web +40: helper thuần (7) · cột kết quả danh sách (3) · chọn map (9) · bảng episode (10) ·
+chỉnh pose (9) · chỉ đường khi control bị khoá (2).
 
-Con số backend 2311 là của lần chạy full suite trước khi thêm test ghim hướng; test đó chạy
-riêng và xanh, nên 2312 là con số suy ra, chưa chạy lại full suite sau nó.
+Cả hai con số từ full suite chạy thật (backend 23 phút). Hai đợt sửa UI cuối chỉ đụng
+`apps/web/**`, không có mã backend nào đổi sau lần chạy đó.
 
 Hai lỗi web còn lại **có sẵn trước lượt này**, không liên quan: `dashboard-page.test.tsx` so
 đường dẫn `\system\page.tsx` với `/system/page.tsx` (dấu phân cách Windows), và
