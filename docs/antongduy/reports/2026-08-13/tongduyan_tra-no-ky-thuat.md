@@ -1273,3 +1273,122 @@ là cách sửa sai duy nhất đáng sợ ở đây.
 
 Không còn chỗ nào cùng loại. Hai lớp đều đã rà hết, và chỗ thứ ba tìm
 được đã sửa kèm test.
+
+## Vì sao sân thử chạy một episode lại lâu — và cách sửa (b)
+
+Câu hỏi của An: một episode trên sân thử rất lâu, trong khi trước đây
+chạy deployment 120 episode lại rất nhanh. **Hai nguyên nhân**, và cái
+thứ hai là lỗi của tôi ở P4.
+
+### 1. Lần chạy 120 episode kia **không mô phỏng gì cả**
+
+Trên đĩa có **1164 file trace Parquet**. `reuse_traces` mặc định `True`
+ở server và UI không bao giờ gửi cờ này. `pipeline.simulate` ghi thẳng
+trong docstring: *"Run every (candidate, context) pair that **has no
+trace yet**"*.
+
+Nên "120 episode rất nhanh" nghĩa là **đọc file**, không phải chạy nhanh.
+Hai bên chưa bao giờ so được với nhau. Sân thử thì luôn mô phỏng mới —
+bắt buộc phải thế, vì nó tồn tại để cho xem **chính cấu hình này**.
+
+### 2. Và 90% thời gian đó **không phải mô phỏng**
+
+Đo trên đúng `open_hall_v2` + `astar+dwa` + `dwa_coarse`, seed 0:
+
+```
+legacy_metrics=True  :  50.14s   416 steps
+legacy_metrics=False :   5.10s   416 steps
+chi phí tính metrics :  45.04s   (90% wall clock)
+quỹ đạo giống hệt    :  True
+```
+
+cProfile chỉ đúng thủ phạm: `clearance_to_grid` gọi `get_cell`
+**17 triệu lần** — nó quét **toàn bộ 480×320 = 153.600 ô cho mỗi điểm
+quỹ đạo**. Docstring của chính hàm đó nói *"intended for metrics and
+tests, **not per-step hot loops**"*, và docstring của `run_stack` nói
+`legacy_metrics=False` tồn tại một phần vì **chi phí**.
+
+`run_contract_episode` — đường đánh giá thật — truyền
+`legacy_metrics=False`. **Sân thử của tôi thì không**: tôi dựng nó trên
+`SimulationService.run`, vốn để mặc định `True`.
+
+**Fidelity vẫn đúng** — quỹ đạo giống hệt từng chữ số, cùng engine cùng
+seed, nên câu "thứ bạn xem đúng là thứ phép so sẽ chạy" không sai. Cái
+tôi bỏ sót là nó trả tiền cho một phép tính mà lần chạy đánh giá không
+bao giờ trả, và phép tính ấy đắt gấp **chín lần** chính episode.
+
+### Sửa theo (b): đường legacy dùng bản quét có cửa sổ
+
+`clearance_to_obstacles` — caller sản phẩm **duy nhất** của bản quét
+toàn bản đồ — nay gọi `clearance_to_grid_within` (cửa sổ 2 m).
+
+```
+trước:  50.14s
+sau  :   7.09s      cùng 416 bước, cùng trạng thái
+```
+
+**Vì sao cửa sổ không làm mất gì bị phán xét.** HĐ-5 cho cột
+`clearance_m` **đã dùng bản có cửa sổ từ trước** — nên đây là làm hai
+đường **thống nhất**, chứ không phải hạ chuẩn một đường. Cả hai mốc an
+toàn đều bão hoà thấp hơn cửa sổ rất nhiều: `min_clearance` neo ở hai
+bán kính robot (~0.52 m), nên một robot cách mọi thứ 2 m chấm điểm giống
+hệt dù khoảng cách thật là 2 m hay 20 m. Trong lần đo trên,
+`min_clearance` = 0.344 m — nằm gọn trong cửa sổ, tức **chính xác tuyệt
+đối**.
+
+**Cái thật sự đổi**: `mean_clearance` trên bản đồ trống, nơi giá trị quá
+2 m nay đọc thành 2 m. Đó là một **sàn**, và là hướng an toàn — báo ít
+chỗ trống hơn thực tế chỉ có thể làm một ứng viên trông tệ hơn, không
+bao giờ cho lọt.
+
+`clearance_to_grid` **giữ nguyên** làm bản tham chiếu chính xác để test
+bản có cửa sổ đối chiếu. Xoá nó đi là làm một phép xấp xỉ mất chỗ dựa để
+chứng minh nó chính xác ở nơi cần chính xác.
+
+6 test mới trong `tests/test_collision.py`, gồm **chiều ngược**: gần vật
+cản thì con số phải **không đổi**, và một vật cản hình học gần hơn vẫn
+phải thắng lưới — cửa sổ hoá không được làm mất nửa còn lại của câu trả
+lời.
+
+**Một lỗi nhỏ khi viết test**: lần đầu tôi chọn điểm (2.5, 2.5), đúng tâm
+ô bị chặn, nên hai vế đều ra `-0.2` và phép so `<` sai. Nếu tôi viết
+`<=` thì test sẽ xanh **vì lý do sai**. Đổi sang một điểm có chỗ trống
+thật và khẳng định hai giá trị cụ thể (0.8 và 0.25).
+
+### Một quan sát ngoài lề
+
+Episode đo ở trên kết thúc **`stuck`** ở bước 416, không tới đích. Đó là
+seed 0 trên hall thật với nhiễu thật — không phải lỗi do tôi gây ra,
+nhưng nghĩa là người mở sân thử lần đầu sẽ xem một con robot bị kẹt.
+Đáng ghi vào danh sách xem xét, không phải nợ kỹ thuật.
+
+### Full suite backend — và một test đỏ **đúng như đã báo trước**
+
+Lượt đầy đủ đầu tiên kể từ A3: **2464 passed, 1 failed, 6 skipped**
+(21 phút).
+
+Test đỏ duy nhất là `test_clearance_in_empty_grid`, và nó đỏ **chính vì
+cái đánh đổi tôi đã nêu trước khi An duyệt (b)**: robot đứng giữa một bản
+đồ 5×5 m trống, khoảng cách thật tới biên là 2.0 m, bản có cửa sổ báo
+1.5 m (sàn cửa sổ 2 m trừ bán kính 0.5 m).
+
+Đây **không phải hồi quy** — nó là hành vi mới đã được quyết định. Nên
+tôi sửa test bằng cách **nói ra sự thật mới kèm lý do**, không phải bằng
+cách đổi con số cho xanh, và tách nó thành **hai** test để ghi lại đúng
+*ranh giới*:
+
+- xa mọi thứ thì bị **sàn** (1.5) — kèm lý do vì sao vô hại: mốc
+  `min_clearance` neo ở ~0.52 m nên 1.5 và 2.0 đều chấm 1.0 phẳng, và
+  sàn là hướng an toàn;
+- gần tường thì **vẫn chính xác** (0.3) — nếu thiếu vế này thì cặp test
+  chỉ ghi lại một phép tính rẻ hơn mà không chứng minh nó còn đúng ở nơi
+  giá trị có thể đổi một chỉ số.
+
+Một test chỉ đổi `2.0` thành `1.5` sẽ xanh mà không nói gì; hai test này
+nói ra chính xác cái gì đổi và cái gì không.
+
+Đang chạy lại full suite trên cây đã sửa.
+
+**Lưu ý về quy trình**: lượt full suite đầu tiên tôi phải **dừng giữa
+chừng** vì nó bắt đầu trước khi tôi sửa `collision.py` — kết quả của nó
+mô tả một cây code không còn tồn tại, báo cáo bằng nó là báo cáo sai.

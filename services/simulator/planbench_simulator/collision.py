@@ -221,11 +221,34 @@ def clearance_to_obstacles(
     """Minimum clearance over shape obstacles and, optionally, a grid.
 
     Returns ``math.inf`` for an empty obstacle list with no grid.
+
+    **The grid is scanned within a window, not exhaustively**, and that
+    choice is measured rather than assumed. This function's one
+    grid-carrying caller is the legacy ``EpisodeMetrics``, which asks it
+    once per trajectory point; with :func:`clearance_to_grid` that was
+    153 600 cell visits per point, and on the shipped hall it made a
+    45-second metric out of a 5-second episode — 90% of the wall clock,
+    for a number the Metrics Engine does not read. The trajectory is
+    identical either way; only the bill changed.
+
+    **Windowing it costs nothing that is judged.** HĐ-5's ``clearance_m``
+    already uses :func:`clearance_to_grid_within`, so this makes the two
+    paths agree instead of quietly differing. Both safety anchors
+    saturate far below the window — ``min_clearance`` is anchored at two
+    robot radii, about 0.52 m — so a robot two metres from anything
+    scores the same whether the true distance is 2 m or 20 m. What does
+    change is ``mean_clearance`` on an open map, where values past the
+    window read as the window: a floor, and the safe direction, since
+    reporting less room than there is can only make a candidate look
+    worse.
+
+    :func:`clearance_to_grid` stays as the exact reference the windowed
+    version is tested against.
     """
     _validate_radius(radius)
     best = math.inf
     for obstacle in obstacles:
         best = min(best, clearance_to_obstacle(center, radius, obstacle))
     if grid is not None:
-        best = min(best, clearance_to_grid(center, radius, grid))
+        best = min(best, clearance_to_grid_within(center, radius, grid))
     return best
