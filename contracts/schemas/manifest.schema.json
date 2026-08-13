@@ -263,6 +263,34 @@
           "type": "number",
           "minimum": 0,
           "exclusiveMaximum": 1
+        },
+        "localization_drift_m": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Added 6.7.0. Peak gap between where the robot is and where it believes it is. Measurement only: it reaches Observation.pose and never the collision test."
+        },
+        "localization_jump_probability": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Added 6.7.0. Chance per relocalisation window that the estimate jumps and stays wrong. A controller rides out a slow error and cannot ride out a step change, so this is a separate axis from drift."
+        },
+        "lidar_dropout_probability": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1,
+          "description": "Added 6.7.0. Chance a ray returns nothing. Reported as maximum range, never zero: a dropped return reads to a costmap as free space, which is how a robot drives into glass."
+        },
+        "odometry_bias_fraction": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1,
+          "description": "Added 6.7.0. Systematic error in delivered velocity, drawn once per episode and held. Unlike wheel slip it accumulates instead of averaging out."
+        },
+        "command_latency_steps": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Added 6.7.0. Control steps between issuing a command and it taking effect. A stack tuned on an instant response is measured optimistically without it."
         }
       }
     },
