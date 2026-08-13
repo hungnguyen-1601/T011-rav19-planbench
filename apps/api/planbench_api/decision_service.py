@@ -60,10 +60,17 @@ class TaskProfileService:
         *,
         maps: MapRepositoryPort,
         map_root: Path,
+        runs: DecisionRunRepository | None = None,
     ) -> None:
         self._repository = repository
         self._maps = maps
         self._map_root = map_root
+        #: Needed only by `delete`, which has to know whether anything was
+        #: measured on this deployment before it destroys it. Optional so
+        #: the callers that only file and read profiles keep working
+        #: unchanged; `delete` treats a missing store as "no runs", which
+        #: is true for every one of them.
+        self._runs = runs
 
     def create(self, payload: dict[str, Any], *, owner_user_id: str | None) -> StoredTaskProfile:
         """Validate against HĐ-2, then store.
@@ -92,6 +99,73 @@ class TaskProfileService:
 
     def list(self) -> list[StoredTaskProfile]:
         return self._repository.list()
+
+    def delete(self, profile_id: str, *, delete_runs: bool = False) -> int:
+        """Remove a deployment; return how many runs went with it.
+
+        **Two cases, and the difference is whether anything was
+        measured.** A deployment nobody ever ran is a draft: deleting it
+        destroys a description and nothing else, so it goes straight
+        away. A deployment with runs is the subject of every one of them
+        — a run is a statement *about* a deployment, which is why the
+        foreign key is ``ON DELETE RESTRICT`` rather than a cascade — so
+        deleting it destroys measurements, and possibly a configuration
+        somebody approved.
+
+        That second case is refused unless the caller says
+        ``delete_runs``. The refusal is not a wall: it carries the counts
+        so the dialog can ask *"delete seven runs, two of them
+        approved?"* rather than *"are you sure?"*. Counting them again in
+        the browser would be a second answer, free to disagree with the
+        one the server refused on.
+
+        The service owns this rather than the repository because the rule
+        spans two stores, and only something that can see both can state
+        it once.
+        """
+        self._repository.get(profile_id)  # 404 before anything else
+        runs = self._runs.list(task_profile_id=profile_id) if self._runs is not None else []
+
+        # An approved run is not more data. Somebody signed a
+        # configuration off, and `decision_run_reviews` cascades, so
+        # deleting it erases both the decision and the record of who made
+        # it — the two things HĐ-14 exists to keep apart and keep. No
+        # confirmation reaches past this: a dialog that let one click
+        # destroy an audit trail is not a safeguard, it is a speed bump.
+        approved_ids = [run.id for run in runs if run.config_state == "approved"]
+        if approved_ids:
+            raise InvalidStateError(
+                f"deployment {profile_id!r} has {len(approved_ids)} approved run(s) "
+                f"({', '.join(sorted(approved_ids))}). An approved run is a configuration "
+                "somebody signed off, together with the record of who signed it (HĐ-14). "
+                "Withdraw the approval first (POST /decisions/{id}/config-approval/withdraw) — it "
+                "stays in the journal beside the withdrawal.",
+                [{"runs": len(runs), "approved": len(approved_ids), "approved_ids": approved_ids}],
+            )
+
+        if runs and not delete_runs:
+            approved = sum(1 for run in runs if run.config_state == "approved")
+            reviewed = sum(1 for run in runs if run.review_state == "reviewed")
+            raise InvalidStateError(
+                f"deployment {profile_id!r} has {len(runs)} stored run(s), so deleting it would "
+                "delete measurements. A run is a statement about a deployment: without its "
+                "subject it is unreadable, not merely smaller. Confirm to delete both.",
+                [
+                    {
+                        "runs": len(runs),
+                        "ranked": sum(1 for run in runs if run.recommended_candidate_id),
+                        "reviewed": reviewed,
+                        "approved": approved,
+                    }
+                ],
+            )
+        removed = (
+            self._runs.delete_for_profile(profile_id)
+            if runs and self._runs is not None
+            else 0
+        )
+        self._repository.delete(profile_id)
+        return removed
 
     def load(self, profile_id: str) -> TaskProfile:
         """The stored profile as the contract object the engine needs."""
@@ -408,6 +482,13 @@ class DecisionRunService:
             actor_user_id=actor_user_id,
             username=username,
             comment=comment,
+        )
+
+    def withdraw_config(
+        self, run_id: str, *, actor_user_id: str | None, username: str, comment: str = ""
+    ) -> StoredDecisionRun:
+        return self._runs.withdraw_config(
+            run_id, actor_user_id=actor_user_id, username=username, comment=comment
         )
 
     def events(self, run_id: str) -> list[ReviewEvent]:

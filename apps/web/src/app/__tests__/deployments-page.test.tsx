@@ -446,3 +446,117 @@ describe("the traffic comes with the map it belongs to", () => {
     expect(FORM).toContain("entry.dynamic_obstacles > 0");
   });
 });
+
+describe("deleting a deployment asks only when there is something to lose", () => {
+  /** One click for a draft, two when something was measured.
+   *
+   * A deployment nobody ran is a description. One with stored runs is the
+   * *subject* of each of them, which is why the foreign key is
+   * `ON DELETE RESTRICT` rather than a cascade: a statement whose subject
+   * vanished is unreadable, not merely smaller.
+   */
+  it("always asks the server first, even for a row that looks untouched", () => {
+    /* Whether anything was measured is a fact about the run store. A
+       page deciding it from what it had already loaded would be a second
+       answer — wrong in the window between the list arriving and the
+       button being pressed. */
+    expect(PAGE).toContain("const attempt = async (deleteRuns: boolean)");
+    expect(PAGE).toContain("deleteTaskProfile(id, { deleteRuns })");
+    expect(PAGE).not.toContain("runs.length > 0 ?");
+  });
+
+  it("shows the server's counts rather than a bare confirmation", () => {
+    /* "Delete 7 runs, 2 of them approved?" is answerable. "Are you
+       sure?" is not. */
+    expect(PAGE).toContain("blocked.runs");
+    expect(PAGE).toContain("blocked.approved");
+    expect((en as Record<string, string>)["deployments.delete.blocked"]).toContain("{runs}");
+    expect(vi).toHaveProperty("deployments.delete.blocked");
+  });
+
+  it("offers no confirm button at all when a run is approved", () => {
+    /* Two refusals that look alike and are not. Runs pose a question a
+       confirmation answers; an approved run does not. A dialog whose
+       confirm button destroys an audit trail is a speed bump, not a
+       safeguard — so that button is not rendered, rather than rendered
+       and refused by the server. */
+    expect(PAGE).toContain("const permanent = (blocked.approved_ids?.length ?? 0) > 0");
+    const dialog = PAGE.slice(PAGE.indexOf("if (blocked) {"), PAGE.indexOf("deployments.delete.action"));
+    expect(dialog).toContain("permanent ? (");
+    expect((en as Record<string, string>)["deployments.delete.approvedBlocked"]).toContain("HĐ-14");
+  });
+
+  it("points at the runs holding it instead of leaving somebody hunting", () => {
+    expect(PAGE).toContain("deployments.delete.openRuns");
+    expect(vi).toHaveProperty("deployments.delete.openRuns");
+  });
+
+  it("keeps a non-refusal error out of the confirmation path", () => {
+    /* A network fault must not open a dialog offering to delete
+       measurements that are still there. */
+    const client = readFileSync(join(process.cwd(), "src", "lib", "decisions.ts"), "utf8");
+    expect(client).toContain("if (blocked) return blocked;");
+    expect(client).toContain("throw caught;");
+  });
+
+  it("reads the counts off the raw refusal, not the field-shaped list", () => {
+    /* `errorBody` filters `details` to `{path, message}` for forms; the
+       counts are a different shape and were being dropped by that filter
+       until `raw` existed. */
+    const auth = readFileSync(join(process.cwd(), "src", "lib", "auth.ts"), "utf8");
+    expect(auth).toContain("public raw: unknown[]");
+    const client = readFileSync(join(process.cwd(), "src", "lib", "decisions.ts"), "utf8");
+    expect(client).toContain("error instanceof FieldError ? error.raw[0]");
+  });
+
+  it("refreshes the list rather than trusting its own copy", () => {
+    expect(PAGE).toContain("onDeleted={refresh}");
+  });
+});
+
+describe("an approval can be taken back, and taking it back is itself recorded", () => {
+  /** The door the delete refusal points at.
+   *
+   * `decide_config` treats every state but `pending` as terminal — "that
+   * decision stands" — so before this the refusal would have told
+   * somebody to withdraw an approval they could not withdraw: a wall
+   * with a sign on it.
+   *
+   * Withdrawing is not an undo. The approve event stays in the journal
+   * and a withdraw event lands beside it with a name and a reason, which
+   * is what keeps HĐ-14 whole: an approval that could vanish silently
+   * would be an approval nobody could rely on.
+   */
+  const DETAIL_PAGE = readFileSync(
+    join(process.cwd(), "src", "app", "decisions", "[id]", "page.tsx"),
+    "utf8",
+  );
+
+  it("offers the control only on an approved run", () => {
+    const branch = DETAIL_PAGE.slice(
+      DETAIL_PAGE.indexOf('run.config_state === "approved" ? ('),
+      DETAIL_PAGE.indexOf("decisions.acts.whyNoConfig"),
+    );
+    expect(branch).toContain("withdrawConfig(run.id, comment)");
+  });
+
+  it("returns the run to undecided rather than to rejected", () => {
+    /* "Undecided again" and "decided against" are different claims, and
+       writing the second would record a verdict nobody reached. */
+    const client = readFileSync(join(process.cwd(), "src", "lib", "decisions.ts"), "utf8");
+    expect(client).toContain("export function withdrawConfig(");
+    expect(client).toContain('"undecided again" rather than');
+  });
+
+  it("says the approval is kept, not erased", () => {
+    expect((en as Record<string, string>)["decisions.withdraw.note"]).toContain("not erased");
+    expect(vi).toHaveProperty("decisions.withdraw.note");
+  });
+
+  it("has a name for the new journal entry", () => {
+    /* An audit row rendering as a raw enum is an audit row nobody
+       reads. */
+    expect(en).toHaveProperty("decisions.audit.withdraw_config");
+    expect(vi).toHaveProperty("decisions.audit.withdraw_config");
+  });
+});

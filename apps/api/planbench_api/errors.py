@@ -79,7 +79,19 @@ def field_errors(error: Exception) -> list[dict[str, str]]:
 
 
 class InvalidStateError(Exception):
-    """Operation not allowed in the resource's current state."""
+    """Operation not allowed in the resource's current state.
+
+    ``details`` exists for the refusals a caller is expected to answer
+    rather than merely read. Deleting a deployment that has runs is the
+    case that introduced it: the dialog asking "delete seven runs, two of
+    them approved?" needs those numbers, and counting them again in the
+    browser would be a second answer free to disagree with the one the
+    server refused on.
+    """
+
+    def __init__(self, message: str, details: list[Any] | None = None) -> None:
+        self.details = details or []
+        super().__init__(message)
 
 
 def _safe_details(errors: Any) -> Any:
@@ -219,7 +231,10 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(InvalidStateError)
     async def invalid_state(_: Request, exc: InvalidStateError) -> JSONResponse:
-        return JSONResponse(status_code=409, content=_error_body("invalid_state", str(exc)))
+        return JSONResponse(
+            status_code=409,
+            content=_error_body("invalid_state", str(exc), getattr(exc, "details", None)),
+        )
 
     @app.exception_handler(RequestValidationError)
     async def request_invalid(_: Request, exc: RequestValidationError) -> JSONResponse:

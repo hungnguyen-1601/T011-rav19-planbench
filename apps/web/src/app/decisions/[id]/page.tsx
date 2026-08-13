@@ -24,6 +24,7 @@ import {
   approvedConfigUrl,
   coverage,
   decideConfig,
+  withdrawConfig,
   getDecision,
   getTrace,
   listDecisionEvents,
@@ -486,11 +487,23 @@ function HumanActs({ run, onDone }: { run: DecisionRun; onDone: () => Promise<vo
           {t("decisions.acts.reject")}
         </button>
         {run.config_state === "approved" ? (
-          // A plain link, not a fetch: the endpoint returns text/plain
-          // and the browser keeps the filename the server chose.
-          <a href={approvedConfigUrl(run.id)} download>
-            {t("decisions.acts.download")}
-          </a>
+          <>
+            {/* A plain link, not a fetch: the endpoint returns text/plain
+                and the browser keeps the filename the server chose. */}
+            <a href={approvedConfigUrl(run.id)} download>
+              {t("decisions.acts.download")}
+            </a>
+            {/* The only way out of an approval, and it exists because the
+                alternative was a wall: deleting a deployment refuses
+                while any of its runs is approved, and telling somebody to
+                withdraw an approval they cannot withdraw is a sign on a
+                locked door. Not restricted to another account the way
+                approving is — undoing your own signature is not the
+                conflict of interest HĐ-14 guards against. */}
+            <button type="button" disabled={busy} onClick={() => act(() => withdrawConfig(run.id, comment))}>
+              {busy ? t("decisions.withdraw.busy") : t("decisions.withdraw.action")}
+            </button>
+          </>
         ) : null}
       </div>
 
@@ -500,10 +513,10 @@ function HumanActs({ run, onDone }: { run: DecisionRun; onDone: () => Promise<vo
         {!rankable
           ? t("decisions.acts.whyNoConfig")
           : decided
-            ? t("decisions.acts.whyDecided", {
+            ? `${t("decisions.acts.whyDecided", {
                 state: t(`decisions.config.${run.config_state}`),
                 who: run.config_decided_by ?? "?",
-              })
+              })} ${run.config_state === "approved" ? t("decisions.withdraw.note") : ""}`
             : ownRun
               ? t("decisions.acts.whyOwnRun")
               : t("decisions.acts.configNote")}

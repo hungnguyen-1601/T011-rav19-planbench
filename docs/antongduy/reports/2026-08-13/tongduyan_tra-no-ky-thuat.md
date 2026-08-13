@@ -1480,3 +1480,78 @@ không qua `MapView`. Kèm một test chống rỗng — một lần quét khôn
 thấy gì sẽ làm khẳng định trên thành đúng-vô-nghĩa.
 
 Suite web: **624 passed**.
+
+## Xoá deployment — và một quy tắc cũ phải mở cửa
+
+### Khảo sát trước: khoá ngoại đã nói sẵn câu trả lời
+
+`decision_runs.task_profile_id` là `ON DELETE **RESTRICT**`, không phải
+cascade. Có chủ ý: một lượt chạy là **khẳng định *về*** một deployment,
+nên mất chủ thể thì nó không phải bản ghi nhỏ hơn mà là bản ghi **không
+đọc được**.
+
+Nên đúng như An mô tả, và lý do nằm sẵn trong lược đồ:
+
+| trạng thái | hành vi |
+|---|---|
+| chưa chạy bao giờ | xoá thẳng — là một bản mô tả, xoá không phá gì đã đo |
+| có lượt chạy thường | 409 kèm **số đếm**, xác nhận thì xoá cả hai |
+| **có lượt chạy đã duyệt** | **409 tuyệt đối** — không xác nhận nào đi qua |
+
+### Lời từ chối mang theo số đếm, không phải "bạn chắc chứ?"
+
+Hộp thoại hỏi được *"xoá 7 lượt chạy, 2 trong đó đã duyệt?"* thì trả lời
+được; *"bạn chắc chứ?"* thì không.
+
+Và số đếm đến **từ server**, không phải trang tự đếm: một con số trình
+duyệt tự tính là **câu trả lời thứ hai**, tự do lệch với câu server đã từ
+chối dựa trên — kể cả trong khoảng giữa lúc tải danh sách và lúc bấm nút.
+Nên trang **luôn thử trước**, kể cả với dòng trông sạch.
+
+**Một bẫy phải sửa dọc đường**: client **lọc bỏ** mọi `details` không có
+dạng `{path, message}` — số đếm của tôi bị vứt trước khi tới nơi. Sửa ở
+đúng đó: `FieldError` giữ thêm `raw`, còn `fieldErrorsOf` vẫn hẹp đúng
+như form cần.
+
+### Đã duyệt: chặn tuyệt đối, và cờ xác nhận **không** đi qua
+
+`delete_runs=true` cũng dừng ở đây. Nếu cờ vượt được thì xác nhận **chính
+là** toàn bộ hàng rào — mà hàng rào rộng đúng một cú click là gờ giảm
+tốc. Hộp thoại vì thế **không render nút xác nhận nào cả** trong trường
+hợp này, chỉ có link mở các lượt chạy đang giữ; lời từ chối nêu đúng id
+của chúng thay vì để người ta đi tìm.
+
+### Phải xây "thu hồi phê duyệt", nếu không thông báo là cái tường có biển chỉ đường
+
+An chốt *"phải bỏ duyệt trước mới cho xoá"*. Nhưng `decide_config` từ
+chối mọi trạng thái khác `pending`, kèm câu **cố ý**: *"That decision
+stands; the way to change a recommendation is a new run."* Nên nếu chỉ
+chặn, thông báo sẽ bảo người dùng làm một việc **không tồn tại** — đúng
+loại lỗi tôi đã chê suốt phiên này. Tôi hỏi An và An chốt thêm thao tác
+thu hồi.
+
+`POST /decisions/{id}/config-approval/withdraw` — tên đặt khớp endpoint
+hàng xóm.
+
+Ba quyết định thiết kế, mỗi cái có lý do:
+
+- **`approved` → `pending`, không phải `rejected`.** Thu hồi nói *"chưa
+  quyết lại"*, không phải *"quyết là không"*. Ghi cái sau là đặt vào hồ
+  sơ một phán quyết **không ai đưa ra**.
+- **Ghi thêm, không phải xoá.** Sự kiện duyệt ở lại; sự kiện thu hồi nằm
+  cạnh, kèm tên người và lý do. Một phê duyệt có thể lặng lẽ biến mất là
+  một phê duyệt **không ai dựa vào được** — HĐ-14 vì thế vẫn nguyên vẹn.
+- **Không giới hạn tài khoản khác** như lúc duyệt. Tự rút chữ ký của
+  chính mình không phải xung đột lợi ích mà HĐ-14 canh.
+
+**Đây là đổi một quy tắc cũ có chủ ý.** Tôi ghi rõ lý do trong docstring
+của cả hai kho và của endpoint, chứ không lặng lẽ nới.
+
+### Test
+
+- Backend `test_test_bench.py`: **29 passed** — hai nhánh xoá, 404, chưa
+  đăng nhập, cờ `delete_runs` **không** biến thành force-delete, cờ
+  **không vượt** được phê duyệt, lời từ chối nêu đúng id, thu-hồi-rồi-xoá
+  đi được, nhật ký giữ **cả hai** sự kiện đúng thứ tự, ghi đúng ai và vì
+  sao, và thu hồi cái chưa từng duyệt bị từ chối.
+- Web: **639 passed**.

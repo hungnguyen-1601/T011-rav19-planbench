@@ -20,13 +20,16 @@
  * server rejects field by field.
  */
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { DeploymentForm } from "@/components/DeploymentForm";
 import { EmptyState } from "@/components/EmptyState";
 import { fieldErrorsOf, useSession } from "@/lib/auth";
 import {
   createTaskProfile,
+  deleteTaskProfile,
   listTaskProfiles,
+  type DeletionBlocked,
   type TaskProfileSummary,
 } from "@/lib/decisions";
 import type { ProfileDraft } from "@/lib/deployments";
@@ -178,11 +181,12 @@ export default function DeploymentsPage() {
                   <th>{t("deployments.column.successMin")}</th>
                   <th>{t("deployments.column.risk")}</th>
                   <th>{t("deployments.column.nMin")}</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
                 {profiles.map((profile) => (
-                  <DeploymentRow key={profile.id} profile={profile} />
+                  <DeploymentRow key={profile.id} profile={profile} onDeleted={refresh} />
                 ))}
               </tbody>
             </table>
@@ -263,7 +267,13 @@ export default function DeploymentsPage() {
   );
 }
 
-function DeploymentRow({ profile }: { profile: TaskProfileSummary }) {
+function DeploymentRow({
+  profile,
+  onDeleted,
+}: {
+  profile: TaskProfileSummary;
+  onDeleted: () => void;
+}) {
   const { t } = useTranslation();
   const constraints = constraintsOf(profile);
   const noise = environmentOf(profile).sensor_noise;
@@ -304,6 +314,93 @@ function DeploymentRow({ profile }: { profile: TaskProfileSummary }) {
       <td title={t("deployments.nMinNote")}>
         {constraints.n_min_evaluation_episodes ?? "—"}
       </td>
+      <td>
+        <DeleteDeployment id={profile.id} onDeleted={onDeleted} />
+      </td>
     </tr>
+  );
+}
+
+/** Delete a deployment — one click, or two when something was measured.
+ *
+ * **The first attempt always asks the server**, even for a deployment
+ * that looks untouched on screen. Whether anything was measured is a
+ * fact about the run store, and a page that decided it from what it had
+ * loaded would be a second answer free to disagree with the one that
+ * actually governs the delete — including in the window between the list
+ * being fetched and the button being pressed.
+ *
+ * So: try; if the server refuses, it hands back the counts, and those
+ * counts are what the dialog says. "Delete 7 runs, 2 of them approved?"
+ * is a question somebody can answer. "Are you sure?" is not.
+ */
+function DeleteDeployment({ id, onDeleted }: { id: string; onDeleted: () => void }) {
+  const { t } = useTranslation();
+  const [busy, setBusy] = useState(false);
+  const [blocked, setBlocked] = useState<DeletionBlocked | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const attempt = async (deleteRuns: boolean) => {
+    setBusy(true);
+    setFailed(null);
+    try {
+      const refusal = await deleteTaskProfile(id, { deleteRuns });
+      if (refusal) {
+        setBlocked(refusal);
+        return;
+      }
+      setBlocked(null);
+      onDeleted();
+    } catch (caught) {
+      setFailed(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (blocked) {
+    /* Two refusals that look alike and are not. Runs pose a question a
+       confirmation answers. An approved run does not: the approval and
+       the record of who made it are what HĐ-14 exists to keep, so the way
+       through is to withdraw it on the run — pressing harder here must
+       not be offered at all, because a dialog whose confirm button
+       destroys an audit trail is a speed bump, not a safeguard. */
+    const permanent = (blocked.approved_ids?.length ?? 0) > 0;
+    return (
+      <div className="notice warn">
+        <p>
+          {permanent
+            ? t("deployments.delete.approvedBlocked", { approved: String(blocked.approved) })
+            : t("deployments.delete.blocked", {
+                runs: String(blocked.runs),
+                approved: String(blocked.approved),
+              })}
+        </p>
+        <div className="row" style={{ gap: 8 }}>
+          {permanent ? (
+            <Link href={`/decisions?profile=${encodeURIComponent(id)}`}>
+              {t("deployments.delete.openRuns")}
+            </Link>
+          ) : (
+            <button type="button" disabled={busy} onClick={() => void attempt(true)}>
+              {t("deployments.delete.confirm", { runs: String(blocked.runs) })}
+            </button>
+          )}
+          <button type="button" className="primary" onClick={() => setBlocked(null)}>
+            {t("common.cancel")}
+          </button>
+        </div>
+        {failed ? <div className="error-box">{failed}</div> : null}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <button type="button" disabled={busy} onClick={() => void attempt(false)}>
+        {busy ? t("deployments.delete.busy") : t("deployments.delete.action")}
+      </button>
+      {failed ? <span className="error-text">{failed}</span> : null}
+    </>
   );
 }

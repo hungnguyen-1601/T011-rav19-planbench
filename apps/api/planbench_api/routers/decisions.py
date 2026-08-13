@@ -378,6 +378,44 @@ def get_task_profile(profile_id: str, service: Profiles) -> TaskProfileResource:
     return _profile(service.get(profile_id))
 
 
+class ProfileDeleted(BaseModel):
+    id: str
+    #: How many stored runs went with it. Reported rather than assumed —
+    #: a caller who confirmed "delete 7 runs" deserves to be told 7 were
+    #: deleted, not to infer it from a 200.
+    deleted_runs: int
+
+
+@router.delete("/task-profiles/{profile_id}", response_model=ProfileDeleted)
+def delete_task_profile(
+    profile_id: str,
+    service: Profiles,
+    _: CurrentUser,
+    delete_runs: bool = Query(
+        default=False,
+        description="Also delete every stored run filed against this deployment.",
+    ),
+) -> ProfileDeleted:
+    """Delete a deployment, and say what went with it.
+
+    **A deployment nobody ran deletes straight away**: it is a
+    description, and deleting it destroys nothing that was measured.
+
+    **A deployment with runs is refused** until the caller passes
+    ``delete_runs``. Every run is a statement *about* this deployment —
+    which is why the foreign key is ``ON DELETE RESTRICT`` and not a
+    cascade — so removing it turns measurements into records of nothing,
+    possibly including a configuration somebody approved.
+
+    The refusal is a 409 carrying the counts, so the dialog can ask
+    "delete seven runs, two of them approved?" instead of "are you
+    sure?". Two clicks, and the second one names its own consequence.
+    """
+    return ProfileDeleted(
+        id=profile_id, deleted_runs=service.delete(profile_id, delete_runs=delete_runs)
+    )
+
+
 class TestBenchRequest(BaseModel):
     """One episode of a deployment, to watch rather than to measure.
 
@@ -720,6 +758,37 @@ def get_trace(
     schema check does not already give the writer.
     """
     return service.trace(run_id, candidate_id, episode_context_id)
+
+
+@router.post("/decisions/{run_id}/config-approval/withdraw", response_model=DecisionRunResource)
+def withdraw_config(
+    run_id: str, request: ReviewRequest, service: Runs, user: CurrentUser
+) -> DecisionRunResource:
+    """Take an approval back, leaving both acts in the journal.
+
+    **Not an erasure.** The approve event stays and a withdraw event
+    lands beside it, naming who took it back and why — which is what
+    keeps HĐ-14 whole: an approval nobody could rely on would be no
+    approval, and one that could vanish silently is exactly that.
+
+    It exists because two doors were shut. Deleting a deployment refuses
+    while any of its runs is approved, and a message telling somebody to
+    withdraw an approval they cannot withdraw is a wall with a sign on
+    it. And a configuration signed off in error had no way out but a new
+    run measuring nothing new.
+
+    The state returns to `pending`, not to `rejected`: withdrawing says
+    "undecided again", not "decided against", and writing the second
+    would record a verdict nobody reached.
+    """
+    return _run(
+        service.withdraw_config(
+            run_id,
+            actor_user_id=user.id,
+            username=user.nickname,
+            comment=request.comment,
+        )
+    )
 
 
 @router.get("/decisions/{run_id}/report.md", response_class=PlainTextResponse)

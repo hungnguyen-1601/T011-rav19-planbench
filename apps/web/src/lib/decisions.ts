@@ -17,7 +17,7 @@
  */
 
 import { API_BASE } from "./api";
-import { authFetch } from "./auth";
+import { FieldError, authFetch } from "./auth";
 
 /** Which artifact a run produced. `comparison` covers both a comparison
  *  that could be ranked and one that could not — the card's presence is
@@ -670,4 +670,81 @@ export function observationClasses(candidates: RunCandidate[]): (string | null)[
     if (!seen.includes(declared)) seen.push(declared);
   }
   return seen;
+}
+
+/** What deleting a deployment would destroy, as the server counted it. */
+export interface DeletionBlocked {
+  runs: number;
+  ranked?: number;
+  reviewed?: number;
+  approved: number;
+  /** Present only on the refusal no confirmation can answer.
+   *
+   * A deployment with plain runs asks a question ("delete 7 runs?"). One
+   * with an approved run does not: the approval and its review trail are
+   * what HĐ-14 exists to keep, so the way through is to withdraw the
+   * approval, not to press harder. The ids are here so the dialog can
+   * link to the runs instead of leaving somebody to find them. */
+  approved_ids?: string[];
+}
+
+/** Delete a deployment.
+ *
+ * **Two outcomes, and the difference is whether anything was measured.**
+ * A deployment nobody ran deletes straight away. One with stored runs is
+ * refused with a 409 whose body carries the counts — because every run
+ * is a statement *about* this deployment, and removing it turns
+ * measurements into records of nothing.
+ *
+ * Resolves to `null` when it deleted, or to the counts when it was
+ * refused. The counts are the server's, not a second tally made here:
+ * a number the browser worked out for itself would be free to disagree
+ * with the one the refusal was based on.
+ */
+export async function deleteTaskProfile(
+  profileId: string,
+  options: { deleteRuns?: boolean } = {},
+): Promise<DeletionBlocked | null> {
+  const query = options.deleteRuns ? "?delete_runs=true" : "";
+  try {
+    await authFetch<{ id: string; deleted_runs: number }>(
+      `/task-profiles/${encodeURIComponent(profileId)}${query}`,
+      { method: "DELETE" },
+    );
+    return null;
+  } catch (caught) {
+    const blocked = blockedBy(caught);
+    if (blocked) return blocked;
+    throw caught;
+  }
+}
+
+/** The counts inside a 409, or null if this was some other failure.
+ *
+ * Narrow on purpose: an error that is not the "it has runs" refusal must
+ * keep travelling, or a network fault would open a confirmation dialog
+ * offering to delete measurements that are still there.
+ */
+function blockedBy(error: unknown): DeletionBlocked | null {
+  const first = error instanceof FieldError ? error.raw[0] : undefined;
+  if (first && typeof first === "object" && typeof (first as DeletionBlocked).runs === "number") {
+    return first as DeletionBlocked;
+  }
+  return null;
+}
+
+/** Take an approval back. The approval stays in the journal.
+ *
+ * Not an erasure: the approve event remains and a withdraw event lands
+ * beside it with the name of whoever took it back. An approval that
+ * could vanish silently would be an approval nobody could rely on.
+ *
+ * Returns to `pending`, not `rejected` — "undecided again" rather than
+ * "decided against".
+ */
+export function withdrawConfig(runId: string, comment: string): Promise<DecisionRun> {
+  return authFetch<DecisionRun>(`/decisions/${encodeURIComponent(runId)}/config-approval/withdraw`, {
+    method: "POST",
+    body: JSON.stringify({ comment }),
+  });
 }
