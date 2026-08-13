@@ -154,6 +154,124 @@ class TestDeployments:
         assert "HĐ-6" in response.json()["error"]["message"]
 
 
+class TestTheValuesABlankFormOpensWith:
+    """Served, not duplicated in the browser.
+
+    A hand-copied set of defaults in TypeScript would be a second
+    statement of what a working deployment looks like, and the day
+    somebody tunes ``open_hall_v2`` the form would quietly keep handing
+    out the old numbers.
+    """
+
+    def test_it_is_the_shipped_profile(self, client):
+        response = client.get(f"{API}/task-profiles/template")
+        assert response.status_code == 200, response.text
+        body = response.json()
+        shipped = hall_profile()
+        for block in ("robot", "constraints", "hardware", "environment"):
+            assert body[block] == shipped[block]
+
+    def test_it_hands_over_no_id(self, client):
+        """Re-filing an existing id with different content is refused
+        (HĐ-3.1). A template carrying ``open_hall_v2`` would make the
+        first submit fail for a reason the author did not choose."""
+        assert client.get(f"{API}/task-profiles/template").json()["id"] == ""
+
+    def test_what_it_returns_files_as_a_real_deployment(self, client, alice_headers):
+        """The strong version of the claim: the defaults are not merely
+        plausible, they are a profile the contract accepts. Give it an id
+        and it goes in."""
+        template = client.get(f"{API}/task-profiles/template").json()
+        template["id"] = "from_the_template"
+        created = client.post(f"{API}/task-profiles", json=template, headers=alice_headers)
+        assert created.status_code == 201, created.text
+        assert created.json()["id"] == "from_the_template"
+
+    def test_it_does_not_shadow_a_real_profile_named_template(self, client, alice_headers):
+        """Both routes are GET and the parametrised one would answer for
+        the literal word "template" if it came first. Registration order
+        is what keeps them apart, so it is asserted rather than assumed."""
+        profile = tiny_profile()
+        profile["id"] = "template_lookalike"
+        client.post(f"{API}/task-profiles", json=profile, headers=alice_headers)
+        assert client.get(f"{API}/task-profiles/template_lookalike").json()["id"] == (
+            "template_lookalike"
+        )
+        assert client.get(f"{API}/task-profiles/template").json()["id"] == ""
+
+
+class TestARefusalThatSaysWhichFieldItIsAbout:
+    """One blob is enough to paste-and-fix a YAML file; it is not enough
+    to put a red outline on one row of a thirty-field form.
+
+    Nothing here is a second copy of a rule. The server still decides
+    what is valid — this only keeps the *address* pydantic already
+    computed instead of flattening it into prose.
+    """
+
+    def test_a_bad_field_is_reported_with_its_path(self, client, alice_headers):
+        invalid = tiny_profile()
+        invalid["id"] = "field_errors_radius"
+        invalid["robot"]["radius"] = -1.0
+        response = client.post(f"{API}/task-profiles", json=invalid, headers=alice_headers)
+        assert response.status_code == 422, response.text
+        details = response.json()["error"]["details"]
+        assert {"robot.radius"} <= {entry["path"] for entry in details}
+        assert all(entry["message"] for entry in details)
+
+    def test_the_path_uses_the_same_shape_as_the_profile(self, client, alice_headers):
+        """Dotted and indexed the way the YAML nests, so one address
+        works for the form and for the file."""
+        invalid = tiny_profile()
+        invalid["id"] = "field_errors_mission"
+        invalid["missions"][0]["probability"] = 5.0
+        response = client.post(f"{API}/task-profiles", json=invalid, headers=alice_headers)
+        assert response.status_code == 422, response.text
+        paths = {entry["path"] for entry in response.json()["error"]["details"]}
+        assert "missions.0.probability" in paths
+
+    def test_a_whole_block_failing_points_at_the_block(self, client, alice_headers):
+        """``goal_tolerance_rad`` is refused by a validator on the whole
+        ``constraints`` model, so that is what the address says. Naming
+        one field would be the API guessing at a rule it does not own."""
+        invalid = tiny_profile()
+        invalid["id"] = "field_errors_heading"
+        invalid["constraints"]["goal_tolerance_rad"] = 0.35
+        response = client.post(f"{API}/task-profiles", json=invalid, headers=alice_headers)
+        assert response.status_code == 422, response.text
+        details = response.json()["error"]["details"]
+        assert [entry["path"] for entry in details] == ["constraints"]
+        assert "goal_tolerance_rad" in details[0]["message"]
+
+    def test_the_blob_message_is_still_there(self, client, alice_headers):
+        """The paste box has no fields to outline, so it keeps reading
+        the sentence. Both audiences, one response."""
+        invalid = tiny_profile()
+        invalid["id"] = "field_errors_blob"
+        invalid["constraints"]["goal_tolerance_rad"] = 0.35
+        body = client.post(f"{API}/task-profiles", json=invalid, headers=alice_headers).json()
+        assert "HĐ-2" in body["error"]["message"]
+
+    def test_a_valid_profile_carries_no_details(self, client, alice_headers):
+        response = client.post(f"{API}/task-profiles", json=tiny_profile(), headers=alice_headers)
+        assert response.status_code == 201
+        assert "details" not in response.json()
+
+    def test_it_survives_an_error_that_carries_no_locations(self):
+        """The callers catch ``Exception`` on purpose. An error that is
+        not a pydantic one must degrade to no details rather than raise
+        while reporting a failure."""
+        from planbench_api.errors import field_errors
+
+        assert field_errors(ValueError("plain")) == []
+
+        class Awkward(Exception):
+            def errors(self):
+                raise RuntimeError("not today")
+
+        assert field_errors(Awkward()) == []
+
+
 class TestCandidates:
     def test_the_server_computes_the_id(self, client, alice_headers):
         """HĐ-1.3. A caller-supplied id would let two configurations

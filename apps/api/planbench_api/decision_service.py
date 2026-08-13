@@ -37,7 +37,13 @@ from planbench_api.decisions import (
     TaskProfileRepository,
     new_run_id,
 )
-from planbench_api.errors import DomainValidationError, InvalidStateError, NotFoundError
+from planbench_api.errors import (
+    DomainValidationError,
+    InvalidStateError,
+    NotFoundError,
+    field_errors,
+)
+from planbench_api.map_files import materialise_map
 from planbench_api.repositories import StoredMap, now_iso
 from planbench_api.repository_ports import MapRepositoryPort
 from planbench_api.worker import Job, JobQueue
@@ -72,7 +78,13 @@ class TaskProfileService:
         try:
             profile = TaskProfile.model_validate(payload)
         except Exception as error:  # pydantic ValidationError and friends
-            raise DomainValidationError(f"task profile is not valid under HĐ-2: {error}") from error
+            # The blob message stays — it is what somebody pasting YAML
+            # reads — and the per-field addresses travel beside it, which
+            # is what a form with thirty inputs needs to turn a refusal
+            # into a red outline on the right row.
+            raise DomainValidationError(
+                f"task profile is not valid under HĐ-2: {error}", field_errors(error)
+            ) from error
         return self._repository.create(profile.model_dump(mode="json"), owner_user_id=owner_user_id)
 
     def get(self, profile_id: str) -> StoredTaskProfile:
@@ -165,7 +177,7 @@ class TaskProfileService:
             profile = TaskProfile.model_validate(payload)
         except Exception as error:
             raise DomainValidationError(
-                f"derived task profile is not valid under HĐ-2: {error}"
+                f"derived task profile is not valid under HĐ-2: {error}", field_errors(error)
             ) from error
 
         try:
@@ -180,30 +192,16 @@ class TaskProfileService:
         return self._repository.create(profile.model_dump(mode="json"), owner_user_id=owner_user_id)
 
     def _materialise_map(self, stored: StoredMap) -> tuple[str, str]:
-        """Write a stored grid out as a map_server pair, relative paths back.
+        """The stored grid as the two paths a profile names.
 
-        Relative to the map root, never absolute. A profile carrying an
-        absolute path is a profile that is only true on one machine, and
-        HĐ-13's acceptance criterion is that somebody else rebuilds the
-        run from what the profile says.
-
-        The name is ``<id>__v<version>``, so a map edited after a
-        deployment was derived from it lands in a different file. The
-        deployment keeps pointing at the walls its episodes were driven
-        on — which is the only reading under which its stored traces are
-        still evidence.
+        A method only so this class need not carry the map root into
+        every call site; the writing itself is
+        :func:`planbench_api.map_files.materialise_map`, shared with the
+        endpoint a form uses to file a deployment from scratch. Two
+        copies of "where does a drawn map land on disk" would put two
+        deployments on two different files for one map.
         """
-        from planbench_schemas.map_io import dump_map_server
-
-        safe_id = "".join(char if char.isalnum() or char in "-_" else "_" for char in stored.id)
-        stem = f"{safe_id}__v{stored.version}"
-        directory = self._map_root / "maps" / "custom"
-        directory.mkdir(parents=True, exist_ok=True)
-
-        image_bytes, sidecar = dump_map_server(stored.map_data, image_name=f"{stem}.pgm")
-        (directory / f"{stem}.pgm").write_bytes(image_bytes)
-        (directory / f"{stem}.yaml").write_text(sidecar, encoding="utf-8")
-        return f"maps/custom/{stem}.pgm", f"maps/custom/{stem}.yaml"
+        return materialise_map(stored, self._map_root)
 
 
 class CandidateService:

@@ -197,13 +197,52 @@ function sessionFrom(data: TokenResponse): Session {
   return session;
 }
 
-async function errorMessage(response: Response, fallback: string): Promise<string> {
+/** A refusal that says which fields it is about.
+ *
+ * The sentence is still the message, so every existing catcher keeps
+ * working unchanged. `details` is what a form needs on top of it: one
+ * blob saying "2 validation errors for TaskProfile" leaves the reader to
+ * find which two among thirty inputs.
+ */
+export class FieldError extends Error {
+  constructor(
+    message: string,
+    public details: { path: string; message: string }[],
+  ) {
+    super(message);
+    this.name = "FieldError";
+  }
+}
+
+/** The addressed complaints on a thrown error, or none. */
+export function fieldErrorsOf(caught: unknown): { path: string; message: string }[] {
+  return caught instanceof FieldError ? caught.details : [];
+}
+
+async function errorBody(
+  response: Response,
+  fallback: string,
+): Promise<{ message: string; details: { path: string; message: string }[] }> {
   try {
     const body = await response.json();
-    return body?.error?.message ?? fallback;
+    const raw = body?.error?.details;
+    const details = Array.isArray(raw)
+      ? raw.filter(
+          (entry): entry is { path: string; message: string } =>
+            entry !== null &&
+            typeof entry === "object" &&
+            typeof entry.path === "string" &&
+            typeof entry.message === "string",
+        )
+      : [];
+    return { message: body?.error?.message ?? fallback, details };
   } catch {
-    return fallback;
+    return { message: fallback, details: [] };
   }
+}
+
+async function errorMessage(response: Response, fallback: string): Promise<string> {
+  return (await errorBody(response, fallback)).message;
 }
 
 /** Which sign-in methods the backend actually offers. */
@@ -262,9 +301,12 @@ export async function authFetch<T>(path: string, init?: RequestInit): Promise<T>
     cache: "no-store",
   });
   if (!response.ok) {
-    const message = await errorMessage(response, response.statusText);
+    const { message, details } = await errorBody(response, response.statusText);
     if (response.status === 401) clearSession();
-    throw new Error(message);
+    // Always a `FieldError`, even with no details: one type of refusal
+    // is easier to reason about than two, and `details` being empty is
+    // the honest answer for an error nobody addressed.
+    throw new FieldError(message, details);
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;

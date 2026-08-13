@@ -16,6 +16,7 @@ show.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query, status
@@ -33,6 +34,7 @@ from planbench_api.dependencies import (
     get_candidate_service,
     get_decision_jobs,
     get_decision_run_service,
+    get_map_root,
     get_task_profile_service,
 )
 from planbench_api.errors import DomainValidationError, NotFoundError
@@ -45,6 +47,7 @@ Profiles = Annotated[TaskProfileService, Depends(get_task_profile_service)]
 Candidates = Annotated[CandidateService, Depends(get_candidate_service)]
 Runs = Annotated[DecisionRunService, Depends(get_decision_run_service)]
 DecisionJobs = Annotated[JobQueue, Depends(get_decision_jobs)]
+MapRoot = Annotated[Path, Depends(get_map_root)]
 
 
 class TaskProfileResource(BaseModel):
@@ -330,6 +333,40 @@ def derive_task_profile(
 @router.get("/task-profiles", response_model=list[TaskProfileResource])
 def list_task_profiles(service: Profiles) -> list[TaskProfileResource]:
     return [_profile(stored) for stored in service.list()]
+
+
+#: The deployment a form starts from. Registered **before**
+#: ``/task-profiles/{profile_id}``: both are GET, so the first route
+#: whose path matches wins, and the parametrised one would swallow
+#: "template" and answer 404.
+@router.get("/task-profiles/template", response_model=dict[str, Any])
+def task_profile_template(map_root: MapRoot) -> dict[str, Any]:
+    """The values a blank form opens with — read from the shipped profile.
+
+    **Served rather than duplicated in the browser.** A hand-copied set
+    of defaults in TypeScript would be a second statement of what a
+    working deployment looks like, and the day somebody tunes
+    ``open_hall_v2`` the form would quietly keep handing out the old
+    numbers. This has one source and cannot drift from it.
+
+    The hall rather than the warehouse because it is the small, symmetric
+    instrument this project measures itself with: a form that opened on a
+    300-episode warehouse would suggest that as the normal first run.
+    """
+    import yaml
+
+    path = map_root / "profiles" / "open_hall_v2.yaml"
+    if not path.is_file():
+        raise NotFoundError("profile template", str(path))
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(loaded, dict):
+        raise NotFoundError("profile template", str(path))
+    # The id is the one thing a template must not hand over: re-filing an
+    # existing id with different content is refused (HĐ-3.1), so shipping
+    # `open_hall_v2` here would make the first submit fail for a reason
+    # the author did not choose.
+    loaded["id"] = ""
+    return loaded
 
 
 @router.get("/task-profiles/{profile_id}", response_model=TaskProfileResource)

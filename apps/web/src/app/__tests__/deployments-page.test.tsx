@@ -25,6 +25,8 @@ import { NAV_SECTIONS } from "../../lib/navigation";
 const APP = join(process.cwd(), "src", "app");
 const PAGE = readFileSync(join(APP, "deployments", "page.tsx"), "utf8");
 const DECISIONS = readFileSync(join(APP, "decisions", "page.tsx"), "utf8");
+const FORM = readFileSync(join(process.cwd(), "src", "components", "DeploymentForm.tsx"), "utf8");
+const LIB = readFileSync(join(process.cwd(), "src", "lib", "deployments.ts"), "utf8");
 
 describe("noise is a property of the deployment", () => {
   it("says so on the page rather than leaving it to be discovered", () => {
@@ -54,13 +56,20 @@ describe("noise is a property of the deployment", () => {
 });
 
 describe("filing a deployment", () => {
-  it("takes the YAML whole instead of rebuilding it as a form", () => {
-    /* The profile is a contract document with a validator that already
-       refuses the interesting mistakes. A form would either duplicate
-       that validation or let somebody assemble a profile the server
-       rejects one field at a time. */
+  it("offers a form and a paste box, and files both the same way", () => {
+    /* This page used to argue that a form was the wrong shape, because
+       a form would either duplicate the contract's validator or let
+       somebody assemble a profile the server rejects one field at a
+       time. The argument was right about *those* forms. The one here
+       answers both halves: it validates nothing, and it builds the same
+       document the paste box does — so there is still one definition of
+       a deployment and one endpoint that files it.
+       The paste box stays, and not only for old habits: it is the only
+       way to write a block the form cannot express. */
     expect(PAGE).toContain("createTaskProfile");
     expect(PAGE).toContain("textarea");
+    expect(PAGE).toContain("<DeploymentForm");
+    expect(PAGE).toContain("const file = async (profile: ProfileDraft)");
   });
 
   it("parses only to build the request body, and validates nowhere", () => {
@@ -81,6 +90,109 @@ describe("filing a deployment", () => {
 
   it("shows the server's own refusal instead of a generic message", () => {
     expect(PAGE).toContain("caught instanceof Error ? caught.message : String(caught)");
+  });
+});
+
+describe("the form is an input method, not a second definition", () => {
+  it("takes its defaults from the shipped profile rather than a copy", () => {
+    /* A hand-copied set of numbers in TypeScript would be a second
+       statement of what a working deployment looks like, and the day
+       somebody tunes open_hall_v2 the form would keep handing out the
+       old ones. */
+    expect(FORM).toContain("getProfileTemplate()");
+    expect(LIB).toContain('authFetch<ProfileDraft>("/task-profiles/template")');
+    expect(FORM).not.toContain("success_rate_min: 0.95");
+  });
+
+  it("writes no contract rule of its own", () => {
+    /* `TaskProfile` decides. The two computations here are displays of a
+       consequence — the episode count a risk implies, and what the RAM
+       breakdown leaves — and neither is sent anywhere. */
+    for (const forbidden of ["throw new Error(", "if (radius <", "Math.PI)"]) {
+      expect(FORM).not.toContain(forbidden);
+    }
+    expect(LIB).toContain("never travels");
+  });
+
+  it("puts the consequence beside the number that causes it", () => {
+    /* The risk decides the episode count (HĐ-7.1) and the success
+       threshold decides whether the deployment can rank at all
+       (HĐ-8.4). Both live in YAML comments today, read after the choice
+       rather than during it. */
+    expect(FORM).toContain("nMinFor(risk)");
+    expect(FORM).toContain("ramLeftOver(draft)");
+    expect((en as Record<string, string>)["deployments.form.riskNote"]).toContain("{n}");
+    expect((en as Record<string, string>)["deployments.form.successMinNote"]).toContain("HĐ-8.4");
+  });
+
+  it("addresses a refusal to the field it is about", () => {
+    /* One blob saying "2 validation errors for TaskProfile" leaves the
+       reader to find which two among thirty inputs. */
+    expect(PAGE).toContain("fieldErrorsOf(caught)");
+    expect(FORM).toContain("errorFor(path)");
+  });
+
+  it("says out loud that it writes no moving traffic", () => {
+    /* With no traffic *and* no noise a deterministic planner replays one
+       episode per seed, and G2's bound would rest on a sample of one.
+       Legal, and the profile schema does not forbid it — so the form
+       says it rather than refusing. */
+    const note = (en as Record<string, string>)["deployments.form.noiseNote"];
+    expect(note).toContain("traffic");
+    expect(note).toContain("one episode per seed");
+    expect((vi as Record<string, string>)["deployments.form.noiseNote"]).toContain("traffic");
+  });
+
+  it("carries the form's draft into the YAML tab but not back", () => {
+    /* Forward, so the reader can see what the form built and hand-edit
+       a block it does not cover. Not back, because loading a pasted
+       document into a form that cannot express `dynamic_obstacles`
+       would swallow that block silently. */
+    expect(PAGE).toContain('if (next === "yaml" && formDraft)');
+    expect(PAGE).toContain("stringify(formDraft)");
+    expect((en as Record<string, string>)["deployments.mode.note"]).toContain("not carry it home");
+  });
+
+  it("opens on a map with a mission somebody already drove", () => {
+    /* `static_obstacles` brings its own start and goal — a pair the
+       author of the scenario chose and knows is drivable. Inventing one
+       from the map's size would be guessing at a question that was
+       already answered. */
+    expect(LIB).toContain('DEFAULT_LIBRARY_SCENARIO = "static_obstacles"');
+    expect(FORM).toContain("importLibraryScenario(libraryName)");
+    expect(LIB).toContain("if (!scenario) return fallbackPoses(map)");
+  });
+
+  it("resets the poses whenever the map changes", () => {
+    /* A coordinate means something else on another map — and it might
+       still land on free floor, so nothing downstream would catch it. */
+    expect(FORM).toContain("const poses = posesFor(data, scenario)");
+    expect(FORM).toContain("setStart(poses.start)");
+  });
+
+  it("turns the chosen map into the two paths a profile names", () => {
+    /* The same pair somebody would have typed, so the form's document
+       and a pasted one are the same document. */
+    expect(FORM).toContain("materialiseMap(mapId)");
+    expect(FORM).toContain('"environment.map"');
+    expect(FORM).toContain('"environment.map_yaml"');
+  });
+
+  it("draws and places through the shared components", () => {
+    expect(FORM).toContain("<MapPainter");
+    expect(FORM).toContain("<MissionPlacer");
+  });
+
+  it("has every key it asks for, in both locales", () => {
+    const keys = new Set([...FORM.matchAll(/\bt\(\s*"([^"`]+)"/g)].map((match) => match[1]));
+    for (const key of keys) {
+      expect(en, `en is missing ${key}`).toHaveProperty(key);
+      expect(vi, `vi is missing ${key}`).toHaveProperty(key);
+    }
+    for (const source of ["library", "stored", "drawn"]) {
+      expect(en).toHaveProperty(`deployments.form.source.${source}`);
+      expect(vi).toHaveProperty(`deployments.form.source.${source}`);
+    }
   });
 });
 
