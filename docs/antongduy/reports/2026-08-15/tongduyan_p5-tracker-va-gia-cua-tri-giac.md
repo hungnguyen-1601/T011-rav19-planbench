@@ -100,7 +100,7 @@ tốn thời gian phản ứng.
 Sàn mới giúp `narrow_corridor` (95 → 31 track có vận tốc) nhưng **không
 đóng được** `doorway` và `static_obstacles`.
 
-### Test 7.2 của plan **không thể đạt** với thiết kế này
+### Test 7.2 của plan: **CHƯA ĐẠT** — trạng thái công việc, không phải diễn giải
 
 Plan đòi *"cảnh tĩnh ⇒ quỹ đạo giống `dwa`"*. Với vận tốc ma 1.0 m/s thì
 không. Tôi **không** chỉnh ngưỡng cho tới khi test xanh — đó đúng là
@@ -111,10 +111,36 @@ nước đi mà plan này đã bắt được năm lần. Thay vào đó:
 - **đặc tả hoá** hiệu ứng ma thành một phép đo có ghi số, không phải một
   số 0 được chỉnh tới.
 
+**Và phải ghi rõ điều này ở mức quản lý công việc, không giấu trong một
+đoạn giải thích:**
+
+| | |
+|---|---|
+| Test 7.2 theo plan gốc | **CHƯA ĐẠT** |
+| Yêu cầu đã bị đổi | **có, có chủ ý, bởi tôi** |
+| P5 so với plan gốc | **chưa hoàn tất** |
+
+Bản thay thế **yếu hơn hẳn**: provider rỗng thì dĩ nhiên không có dự đoán
+nào đi vào — nó không kiểm được điều 7.2 thật sự hỏi, là *tracker có phân
+biệt nổi vật tĩnh hay không*. Câu trả lời đo được cho câu hỏi đó là
+**không**.
+
 Thứ vẫn đứng vững: **ràng buộc cứng không bị chạm**. Ma đi vào **chi
 phí**, không bao giờ vào phép từ chối hay giới hạn phanh — đã kiểm bằng
-mutation từ P3. Nên tệ nhất một ước lượng hỏng làm robot **đi kém**, không
-làm nó **đâm**.
+mutation từ P3.
+
+**Nhưng câu "nên tệ nhất nó chỉ làm robot đi kém, không làm nó đâm" là
+SAI, và tôi đã viết nó ở bản trước.** Việc dự đoán không đụng miền cứng
+chỉ chứng minh nó không **trực tiếp** nới một vận tốc đang bị cấm. Nó
+**không** chứng minh một ước lượng sai không thể dẫn tới va chạm: chi phí
+mềm vẫn chọn một lệnh khác, và lệnh khác đó có thể đưa robot vào một thế
+xấu hơn ở bước sau, nơi miền cứng — vẫn đúng đắn — chỉ còn cách dừng lại.
+
+Phát biểu đúng:
+
+> Ước lượng sai **không nới ràng buộc cứng**, nhưng vẫn có thể làm hành
+> vi và `collision_rate` xấu đi. Điều đó phải được **đo bằng benchmark**,
+> không suy ra từ tầng lớp.
 
 ---
 
@@ -133,11 +159,58 @@ tracker   vs dwa: better 0, worse 0
 oracle và tracker đồng ý ở 37/40 seed
 ```
 
-**Tracker thu lại 0% lợi ích của oracle.** Nó không tệ hơn `dwa` ở seed
-nào — luật thoái lui hoạt động — nhưng cũng không tốt hơn ở seed nào.
+Tracker không tốt hơn `dwa` ở seed nào, và cũng không tệ hơn ở seed nào.
 
-Và 37/40 đồng ý nghĩa là hai bên chỉ khác nhau ở **đúng 3 seed** mà oracle
-giúp được. Tracker im lặng chính xác ở chỗ dự đoán có ích.
+**Nhưng "0%" là một tỉ lệ trên mẫu số 3, và không được đọc như một kết
+luận.** Oracle chỉ tạo ra khác biệt ở **3/40** seed; tracker lấy 0 trong
+3 cơ hội đó. Với 0/3, khoảng bất định còn rất rộng — nó **không** chứng
+minh tracker luôn thu lại 0%. Đọc nó như một **đếm**, không phải một phần
+trăm:
+
+> 3 cơ hội, tracker lấy 0.
+
+Cần chạy trên toàn bộ 120 seed của cổng P4 — và tốt hơn là một miền seed
+khác — trước khi phát biểu bất cứ điều gì mạnh hơn. Đang chạy;
+`scripts/diagnose_tracker.py` đã commit nên phép so này **tái lập được**,
+khác với bản trước chỉ tồn tại dưới dạng output dán vào report.
+
+**Kèm một điều kiện phải nói:** lần chạy 40 seed ở trên diễn ra **trước**
+khi sửa lỗi vận tốc stale (mục 4b). Nó đo một tracker phát vận tốc cũ
+trong lúc mất dấu. Con số sau khi sửa có thể khác, theo chiều nào cũng
+được — và đó là lý do lần chạy 120 seed mới là con số được ghi.
+
+### 4b. Một lỗi hành vi An bắt được: tracker **không** thoái lui về `dwa`
+
+Module khai *"mọi bất định trả vận tốc 0"*. Code thì không. Khi mất ghép
+cặp hoặc ghép mơ hồ, `_associate` chỉ tăng `track.misses`; `_velocity_of`
+vẫn khớp bình phương tối thiểu trên lịch sử cũ và **trả vận tốc đó**, chỉ
+hạ một trường `confidence` mà **không ai đọc** — chính comment trong code
+thừa nhận *"does not gate anything yet"*, và planner quả thật không dùng
+nó.
+
+Hệ quả: một vật cản robot đã **thôi nhìn thấy** vẫn lái chi phí dự đoán ở
+**toàn bộ cường độ**, tới tận `track_timeout` = 0.5 s. Đó là đúng thứ mà
+cả module viết ra để không xảy ra.
+
+**Vì sao test không bắt:** các test chỉ kiểm **bộ đếm** `ambiguous_drops`
+và `tracks_timed_out`, không bao giờ kiểm **vận tốc trả ra** sau một lần
+mất dấu. Lần thứ bảy trong plan này một phép đo xanh mà không đo thứ nó
+khai.
+
+**Đã sửa theo đúng đề xuất của An:**
+
+- giữ `history` qua lần mất dấu ⇒ vật quay lại **không** phải warm-up lại;
+- nhưng `misses > 0` ⇒ vận tốc trả ra **bằng 0**, `confidence` = 0.
+
+Hai test hồi quy mới: một cho vận tốc stale không thoát ra, một cho việc
+lịch sử vẫn sống để tái bắt không mất warm-up.
+
+**Và điều này sửa lại mô tả phương án (a2) ở mục 6.** Bản trước tôi viết
+"giữ track sống qua lúc mất dấu" như thể chưa có coasting. Thực ra đã có:
+track sống 0.5 s, `history` được giữ, cổng ghép cặp nới theo thời gian
+mất dấu. Vấn đề đúng là **hai** thứ khác: gap dài hơn 0.5 s giết track,
+và trong gap ngắn vận tốc stale được dùng. Nửa sau vừa sửa. Nửa trước —
+tái bắt sau gap dài — vẫn còn.
 
 ### Nguyên nhân — và **bản đầu của mục này tôi chẩn đoán sai**
 
