@@ -45,6 +45,7 @@ import { useTranslation } from "@/lib/i18n";
 import { listRobotProfiles, type RobotProfile } from "@/lib/models";
 import type { LibraryEntry } from "@/lib/platformTypes";
 import type { MapData, MapSummary, Pose2D } from "@/lib/types";
+import { safetyEnvelope } from "@/lib/keepOut";
 
 /** Where the map under this deployment comes from. */
 type MapSource = "library" | "stored" | "drawn";
@@ -683,6 +684,13 @@ export function DeploymentForm({
             setGoal(poses.goal);
           }}
           robotRadius={numberAt(draft, "robot.radius")}
+          positionUncertainty={safetyEnvelope({
+            localization_drift_m: numberAt(draft, "environment.sensor_noise.localization_drift_m"),
+            localization_jump_probability: numberAt(
+              draft,
+              "environment.sensor_noise.localization_jump_probability",
+            ),
+          })}
           goalTolerance={numberAt(draft, "constraints.goal_tolerance_m")}
           disabled={busy}
           startNote={t("decisions.map.startHeadingNote")}

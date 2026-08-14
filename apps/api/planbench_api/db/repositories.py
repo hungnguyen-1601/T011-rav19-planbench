@@ -757,16 +757,25 @@ def _dump_run(run: StackRun) -> dict:
         "plan": run.plan.model_dump(mode="json"),
         "result": run.result.model_dump(mode="json"),
         "metrics": run.metrics.model_dump(mode="json"),
+        "plans": [plan.model_dump(mode="json") for plan in run.plans],
     }
 
 
 def _load_run(payload: dict) -> StackRun:
-    """Rebuild a StackRun from the shape ``write_episode`` stores."""
+    """Rebuild a StackRun from the shape ``write_episode`` stores.
+
+    ``plans`` is absent from rows written before the field existed, and
+    those come back empty rather than as ``[plan]``. Filling it in would
+    claim an episode replanned once when the truth is that nobody
+    recorded it — the same distinction HĐ-12 draws between a null and a
+    zero.
+    """
     return StackRun(
         algorithm=payload["algorithm"],
         plan=PlanResult.model_validate(payload["plan"]),
         result=EpisodeResult.model_validate(payload["result"]),
         metrics=EpisodeMetrics.model_validate(payload["metrics"]),
+        plans=tuple(PlanResult.model_validate(item) for item in payload.get("plans", ())),
     )
 
 

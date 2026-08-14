@@ -49,6 +49,8 @@ export interface MissionPlacerProps {
    *  not fit in, and an episode ends the moment the robot is inside the
    *  goal circle. */
   robotRadius?: number;
+  /** Safety envelope in metres; see `lib/keepOut`. */
+  positionUncertainty?: number;
   goalTolerance?: number;
   disabled?: boolean;
   startNote: string;
@@ -61,6 +63,7 @@ export function MissionPlacer({
   goal,
   onChange,
   robotRadius,
+  positionUncertainty,
   goalTolerance,
   disabled = false,
   startNote,
@@ -114,6 +117,7 @@ export function MissionPlacer({
           startPose={start ?? undefined}
           goalPose={goal ?? undefined}
           robotRadius={robotRadius}
+          positionUncertainty={positionUncertainty}
           goalTolerance={goalTolerance}
           onWorldClick={(x, y) => place(x, y)}
           onWorldDrag={(x, y) => place(x, y)}

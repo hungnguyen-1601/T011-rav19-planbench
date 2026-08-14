@@ -3,13 +3,19 @@
 Algorithm per step:
 
 1. Build the dynamic window: velocities reachable within one control
-   period given the robot's velocity and acceleration limits.
+   period given the robot's velocity and acceleration limits, further
+   bounded by the speed the robot could still stop from before the
+   nearest obstacle. The window and that bound are **different
+   constraints** — the first is about the actuators, the second about
+   the world — and the name "Dynamic Window" covers only the first.
 2. Sample the window on a fixed grid (``velocity_samples`` ×
    ``omega_samples``) — deterministic, no randomness.
 3. Forward-simulate each candidate for ``horizon_seconds`` using the
    *same* explicit-Euler kinematics as the simulator, holding (v, w).
-4. Reject candidates whose predicted trajectory collides (obstacle
-   distance from the LiDAR-derived point cloud ``<= robot radius``).
+4. Reject candidates whose predicted trajectory enters the hard feasible
+   set's boundary — obstacle distance from the LiDAR-derived point cloud
+   below ``hard_clearance(robot, envelope)``. That threshold is
+   deployment-owned; no candidate parameter may narrow it (contract L2).
 5. Score the survivors with a weighted cost and pick the minimum.
 
 Cost components (all normalized to roughly [0, 1] before weighting, so
@@ -25,6 +31,12 @@ weights are comparable):
   divided by ``path_distance_scale``.
 - ``clearance``: 1 - min(clearance, clearance_cap) / clearance_cap
   along the trajectory (larger clearance is cheaper).
+- ``comfort``: how far inside ``safety_margin`` of the hard boundary the
+  trajectory reaches, squared. This is where ``safety_margin`` lives now
+  that it no longer rejects anything: wanting more room than safety
+  requires is a legitimate preference and still separates two
+  candidates, but a preference may not shrink the set the global planner
+  planned against.
 - ``velocity``: 1 - v / max_linear_velocity (prefers moving forward).
 - ``smoothness``: |v - v_prev| / max_linear_velocity +
   |w - w_prev| / max_angular_velocity. Normalizing by the robot limits
@@ -53,6 +65,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from planbench_planning.common.local_base import LocalPlanner, LocalPlanResult
 from planbench_schemas.episode import Observation
+from planbench_schemas.feasibility import SafetyEnvelope, hard_clearance
 from planbench_schemas.geometry import EPS, Point2D, normalize_angle
 from planbench_schemas.robot import RobotConfig, RobotState, SimAction
 
@@ -90,7 +103,14 @@ class DWAConfig(BaseModel):
     path_distance_scale: float = Field(default=1.5, gt=0)
     oscillation_omega_threshold: float = Field(default=0.2, ge=0)
     safety_margin: float = Field(
-        default=0.05, ge=0, description="Extra metres required beyond the robot radius."
+        default=0.05,
+        ge=0,
+        description=(
+            "Metres of room beyond the hard boundary this candidate would like. "
+            "A preference, priced by the `comfort` cost — not a refusal. It used "
+            "to be the hard threshold, which let a candidate silently narrow the "
+            "feasible set the global planner had planned against."
+        ),
     )
 
 
@@ -100,6 +120,7 @@ class DWAPlanner(LocalPlanner):
     def __init__(self, config: DWAConfig | None = None) -> None:
         self._config = config or DWAConfig()
         self._robot: RobotConfig | None = None
+        self._envelope = SafetyEnvelope()
         self._path: tuple[Point2D, ...] = ()
         self._path_index = 0
         self._previous: SimAction | None = None
@@ -116,11 +137,30 @@ class DWAPlanner(LocalPlanner):
     def config(self) -> DWAConfig:
         return self._config
 
-    def reset(self, global_path: Sequence[Point2D], robot: RobotConfig) -> None:
+    def reset(
+        self,
+        global_path: Sequence[Point2D],
+        robot: RobotConfig,
+        envelope: SafetyEnvelope | None = None,
+    ) -> None:
+        """Adopt a path, and be told the hard feasible set to respect.
+
+        ``envelope`` is **deployment-owned** and arrives as its own
+        argument for a reason that is the whole point of the layering:
+        the hard feasible set must not be reachable from this
+        controller's configuration. A candidate that wanted to narrow it
+        has no field to do it with (contract L2).
+
+        Optional only so a caller that declares no sensing noise — the
+        shipped profiles, every unit test written before this existed —
+        gets the footprint alone, which is the correct envelope for a
+        robot whose pose estimate is exact.
+        """
         if not global_path:
             raise ValueError("DWA requires a non-empty global path")
         self._path = tuple(global_path)
         self._robot = robot
+        self._envelope = envelope or SafetyEnvelope()
         self._path_index = 0
         self._previous = None
 
@@ -128,15 +168,25 @@ class DWAPlanner(LocalPlanner):
         if self._robot is None:
             raise RuntimeError("reset() must be called before compute()")
         started_at = time.perf_counter()
-        config = self._config
         robot = self._robot
 
         local_goal = self._advance_local_goal(state)
         obstacles = self._obstacle_points(observation)
-        candidates = self._dynamic_window(state)
+        candidates = self._dynamic_window(state, obstacles)
         rollouts, clearances = self._rollout_batch(state, candidates, obstacles)
 
-        keep_out = robot.radius + config.safety_margin
+        # **The hard feasible set, not a preference.** This used to be
+        # `robot.radius + config.safety_margin` — a candidate parameter
+        # acting as a hard refusal, which let a stack silently narrow the
+        # set the global planner had planned against (contract L2). It is
+        # now the shared clearance: footprint plus the deployment's
+        # safety envelope, both deployment-owned.
+        #
+        # `safety_margin` survives as a *soft* term in `_score`. Wanting
+        # five more centimetres is a legitimate thing for a candidate to
+        # want, and it still distinguishes two candidates — by cost,
+        # rather than by moving a boundary the planner cannot see.
+        keep_out = hard_clearance(robot, self._envelope)
         best_cost = math.inf
         best: tuple[SimAction, tuple[Point2D, ...], dict[str, float]] | None = None
         blocked = 0
@@ -182,7 +232,9 @@ class DWAPlanner(LocalPlanner):
 
     # -- internals -----------------------------------------------------
 
-    def _dynamic_window(self, state: RobotState) -> list[tuple[float, float]]:
+    def _dynamic_window(
+        self, state: RobotState, obstacles: np.ndarray
+    ) -> list[tuple[float, float]]:
         """Reachable (v, w) pairs on a deterministic sample grid."""
         assert self._robot is not None
         robot, config = self._robot, self._config
@@ -196,12 +248,32 @@ class DWAPlanner(LocalPlanner):
         w_min = max(-robot.max_angular_velocity, state.angular_velocity - dw)
         w_max = min(robot.max_angular_velocity, state.angular_velocity + dw)
 
-        # Admissible-velocity criterion: never travel faster than the
-        # robot can brake before the end of the path. Without this the
-        # controller charges the goal at full speed and orbits it,
-        # because nothing else rewards arriving.
-        remaining = math.hypot(self._path[-1].x - state.pose.x, self._path[-1].y - state.pose.y)
-        stopping_limit = math.sqrt(2.0 * robot.max_linear_acceleration * max(remaining, 0.0))
+        # **Admissible-velocity criterion, against the nearer of two
+        # things.** The classic form (Fox, Burgard and Thrun 1997) bounds
+        # speed by what the robot can brake before the *obstacle* on that
+        # curvature; this used to bound it only by the distance to the
+        # end of the path, which made it a goal-arrival device wearing a
+        # safety name. The two coincide only when the goal is the nearest
+        # thing, and on `sudden_stop` the goal is 12.5 m away while the
+        # cart is at 7.0 m.
+        #
+        # What that cost, measured: with `weight_clearance` turned down
+        # and a short horizon — both ordinary candidate settings — the
+        # robot ran 23 consecutive steps at a speed it could not stop
+        # from and hit the cart. Safety was resting on a soft weight the
+        # candidate owns, which is the same defect as a hard keep-out
+        # owned by the candidate, in the opposite direction.
+        #
+        # The dynamic window alone does not cover this. It bounds
+        # `(v, ω)` by the acceleration reachable in one step; it never
+        # asks "once I am there, can I still stop". Nor does the rollout:
+        # a trajectory can clear everything inside a one-second horizon
+        # and be travelling too fast to stop before what lies just past
+        # it.
+        to_goal = math.hypot(self._path[-1].x - state.pose.x, self._path[-1].y - state.pose.y)
+        to_obstacle = self._nearest_obstacle_distance(obstacles, state)
+        headroom = max(0.0, min(to_goal, to_obstacle))
+        stopping_limit = self._speed_that_stops_within(headroom, robot)
         v_max = min(v_max, stopping_limit)
         v_min = min(v_min, v_max)
 
@@ -268,6 +340,15 @@ class DWAPlanner(LocalPlanner):
         )
 
         path_distance = _distance_to_polyline(end, self._path) / config.path_distance_scale
+
+        # `safety_margin` as a preference: room this candidate wants
+        # beyond the shared hard clearance. Quadratic in how far inside
+        # the wanted margin the trajectory sits, so it bites hard close
+        # in and vanishes outside — a linear term would still be nudging
+        # the robot at ten metres.
+        wanted = hard_clearance(robot, self._envelope) + config.safety_margin
+        shortfall = max(0.0, wanted - clearance) / max(config.safety_margin, EPS)
+        comfort = min(1.0, shortfall) ** 2
         usable = min(max(clearance - robot.radius, 0.0), config.clearance_cap)
         clearance_cost = 1.0 - usable / config.clearance_cap
         velocity_cost = 1.0 - abs(velocity) / robot.max_linear_velocity
@@ -292,6 +373,10 @@ class DWAPlanner(LocalPlanner):
             "heading": config.weight_heading * heading,
             "path": config.weight_path * min(path_distance, 5.0),
             "clearance": config.weight_clearance * clearance_cost,
+            # Weighted with the clearance term because it is the same
+            # kind of wish; keeping it separate is what lets a reader see
+            # that the hard boundary and the preference are two things.
+            "comfort": config.weight_clearance * comfort,
             "velocity": config.weight_velocity * velocity_cost,
             "smoothness": config.weight_smoothness * min(smoothness, 5.0),
             "oscillation": config.weight_oscillation * oscillation,
@@ -310,6 +395,42 @@ class DWAPlanner(LocalPlanner):
                 break
             self._path_index += 1
         return self._path[self._path_index]
+
+    def _nearest_obstacle_distance(self, obstacles: np.ndarray, state: RobotState) -> float:
+        """Room between the robot's surface and the closest return.
+
+        Infinite when nothing is in range, so the goal is then the only
+        thing bounding the speed — which is what the criterion did all
+        along, and remains correct in an empty room.
+        """
+        assert self._robot is not None
+        if obstacles.size == 0:
+            return math.inf
+        deltas = obstacles - np.array([state.pose.x, state.pose.y])
+        nearest = float(np.hypot(deltas[:, 0], deltas[:, 1]).min())
+        return max(0.0, nearest - hard_clearance(self._robot, self._envelope))
+
+    def _speed_that_stops_within(self, headroom: float, robot: RobotConfig) -> float:
+        """Fastest speed from which the robot still stops inside ``headroom``.
+
+        Solves ``v·t_react + v²/(2a) ≤ headroom`` for ``v``, where the
+        reaction time is one control period plus any actuation latency:
+        braking from the instant of the decision would assume a robot
+        that reacts instantly, which is the assumption
+        ``command_latency_steps`` exists to remove.
+
+        The quadratic in ``v`` gives
+        ``v = a·(√(t² + 2·headroom/a) − t)``.
+        """
+        if headroom <= 0.0:
+            return 0.0
+        if not math.isfinite(headroom):
+            return robot.max_linear_velocity
+        acceleration = robot.max_linear_acceleration
+        reaction = self._config.control_period
+        return acceleration * (
+            math.sqrt(reaction * reaction + 2.0 * headroom / acceleration) - reaction
+        )
 
     def _obstacle_points(self, observation: Observation) -> np.ndarray:
         """Convert the LiDAR scan into world-frame points (skip max-range rays).

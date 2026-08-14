@@ -5,14 +5,20 @@ A benchmark always compares *stacks* — ``astar+dwa`` versus
 (decision D13).
 
 Planning-safety margin: the planning grid is inflated by
-``robot.radius + sqrt(2) * resolution`` so a line-of-sight-sampled path
-cannot graze obstacle corners (see the proof in the docstring of
-``episode_runner``). The engine still checks collisions with the exact
+``hard_clearance(robot, envelope) + sqrt(2) * resolution``. The first
+term is the hard feasible set, shared with the local controller so the
+two layers cannot disagree about where the robot may be; the second is
+the half-diagonal of a cell, so a line-of-sight-sampled path cannot
+graze obstacle corners (see the proof in the docstring of
+``episode_runner``). They are different kinds of quantity and
+``_inflation_radius`` keeps them separable — only the first belongs in a
+feasibility judgement. The engine still checks collisions with the exact
 robot radius.
 """
 
 from __future__ import annotations
 
+import inspect
 import math
 from collections.abc import Sequence
 
@@ -22,6 +28,7 @@ from planbench_metrics import EpisodeMetrics, compute_episode_metrics
 from planbench_planning import AStarPlanner, GlobalPlanner, PlanResult
 from planbench_planning.common.local_base import LocalPlanner, LocalPlanResult
 from planbench_schemas.episode import EpisodeEvent, EpisodeResult, EpisodeStatus, Observation
+from planbench_schemas.feasibility import SafetyEnvelope, hard_clearance
 from planbench_schemas.geometry import EPS, Point2D
 from planbench_schemas.map import CellState, MapData
 from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
@@ -78,6 +85,23 @@ class StackRun(BaseModel):
     plan: PlanResult
     result: EpisodeResult
     metrics: EpisodeMetrics | None
+    plans: tuple[PlanResult, ...] = ()
+    """Every path the global planner returned, first plan included.
+
+    ``plan`` is ``plans[0]`` and stays because most callers want the
+    route the episode set out on. This carries the rest so contract L1 —
+    *global may only return paths inside the hard set local can drive* —
+    is checkable at all: the replans are where a path outside that set
+    would come from, since they are planned from a **believed** pose over
+    a grid whose inflation was relaxed around the robot.
+
+    Refused replans are not here. A plan that found nothing has no path
+    to check, and its refusal is already an episode event.
+
+    Empty means **not recorded**, not "no plans" — episodes stored before
+    this field existed come back that way, and reconstructing ``(plan,)``
+    for them would claim they never replanned.
+    """
 
 
 def _planning_grid(
@@ -99,17 +123,30 @@ def _planning_grid(
 
 
 def _inflation_radius(map_data: MapData, scenario: Scenario) -> float:
-    """How far the planner keeps off, and where each half comes from.
+    """How far the planner keeps off, and where each part comes from.
 
-    ``robot.radius`` is geometry: a path whose centre line passes closer
-    than that puts the body through the wall. The ``√2 × resolution``
-    term is not — it is the half-diagonal of a cell, there so a diagonal
-    step between two free cells cannot clip the corner of an occupied
-    one. That half is a property of the **map's resolution**, and naming
-    it in one place is what lets the replan relaxation and the drawing
-    code quote the same number instead of two that drift.
+    Two parts, and they are **different kinds of quantity**:
+
+    * :func:`~planbench_schemas.feasibility.hard_clearance` — the hard
+      feasible set, shared with the local controller. Footprint plus the
+      deployment's safety envelope, both deployment-owned. This is the
+      part neither layer may go inside.
+    * ``√2 × resolution`` — the half-diagonal of a cell, so a diagonal
+      step between two free cells cannot clip the corner of an occupied
+      one. **Not a safety property at all**: it is an artifact of drawing
+      a continuous set on a grid, and it shrinks when somebody halves the
+      cell size with nothing about the world having changed.
+
+    Keeping them separable matters because only the first belongs in a
+    feasibility judgement. Anything validating L1 or L4 must ask
+    ``hard_clearance`` directly rather than this, or it will call a
+    coarsely rasterised path infeasible. The quantisation term moves out
+    of prohibition and into cost in the graded-inflation phase; until
+    then it stays here and `_with_room_to_leave` is what stops it
+    trapping the robot.
     """
-    return scenario.robot.radius + math.sqrt(2.0) * map_data.resolution
+    envelope = SafetyEnvelope.for_noise(scenario.sensor_noise)
+    return hard_clearance(scenario.robot, envelope) + math.sqrt(2.0) * map_data.resolution
 
 
 def plan_global_path(
@@ -137,12 +174,20 @@ def _with_room_to_leave(
     **Why this exists, measured rather than assumed.** A robot that has
     just been blocked is standing closer to the thing blocking it than
     the planner's inflation margin, because the two layers do not use the
-    same margin: the local controller rejects a trajectory at
-    ``robot.radius + safety_margin`` measured against obstacle geometry,
-    while the planner inflates by ``robot.radius + √2 × resolution`` on
-    cells. On the shipped `sudden_stop` those are 0.31 m and 0.61 m — the
-    0.30 m difference is entirely the grid-quantisation term, a property
-    of the *map's resolution* rather than of the world.
+    same margin. When this was written they disagreed twice over: the
+    controller rejected a trajectory at ``robot.radius + safety_margin``
+    — a *candidate* parameter — while the planner inflated by
+    ``robot.radius + √2 × resolution`` on cells, giving 0.31 m against
+    0.61 m on the shipped `sudden_stop`.
+
+    Half of that is now gone: both layers share
+    :func:`~planbench_schemas.feasibility.hard_clearance`, and
+    ``safety_margin`` is a soft cost. What remains is the grid term, and
+    it remains **on purpose** — a diagonal step between two free cells
+    must not clip an occupied corner. But it is a property of the *map's
+    resolution* rather than of the world, so it must not decide whether a
+    robot may stand somewhere, and this is what stops it doing so until
+    the graded-inflation phase moves it into cost.
 
     So the robot parks at a spot that is legal by its own test and 0.30 m
     inside the planner's no-go ring. Freeing only the cell it stands in —
@@ -242,6 +287,27 @@ def _map_as_the_robot_sees_it(
         if 0 <= row < map_data.height and 0 <= column < map_data.width:
             cells[row * map_data.width + column] = CellState.OCCUPIED.value
     return map_data.model_copy(update={"cells": tuple(cells)})
+
+
+def _reset_local(
+    local_planner: LocalPlanner,
+    path: Sequence[Point2D],
+    robot: RobotConfig,
+    envelope: SafetyEnvelope,
+) -> None:
+    """Hand a path to the controller, with the envelope if it takes one.
+
+    Not every local planner has been taught about the envelope — a
+    monolithic policy has no notion of a keep-out to respect — so this
+    passes it only where it is accepted rather than forcing the argument
+    into an interface some implementations cannot use. Detected once per
+    reset, from the signature, so a controller that gains the parameter
+    later starts receiving it without anything here changing.
+    """
+    if "envelope" in inspect.signature(local_planner.reset).parameters:
+        local_planner.reset(path, robot, envelope)  # type: ignore[call-arg]
+    else:
+        local_planner.reset(path, robot)
 
 
 def _replan(
@@ -463,13 +529,19 @@ def run_stack(
             if legacy_metrics
             else None
         )
-        return StackRun(algorithm=algorithm, plan=plan, result=result, metrics=metrics)
+        return StackRun(
+            algorithm=algorithm, plan=plan, result=result, metrics=metrics, plans=(plan,)
+        )
 
     engine = SimulationEngine()
     engine.load_map(map_data)
     engine.load_scenario(scenario)
     engine.reset()
-    local_planner.reset(plan.path, scenario.robot)
+    # The hard feasible set travels with the path. It comes from the
+    # deployment, not from the controller's own configuration, which is
+    # what stops a candidate narrowing the set the planner used (L2).
+    envelope = SafetyEnvelope.for_noise(scenario.sensor_noise)
+    _reset_local(local_planner, plan.path, scenario.robot, envelope)
     if recorder is not None:
         recorder.bind_clearance(
             clearance_probe(
@@ -612,7 +684,7 @@ def run_stack(
                 continue
             if new_plan.success:
                 plans.append(new_plan)
-                local_planner.reset(new_plan.path, scenario.robot)
+                _reset_local(local_planner, new_plan.path, scenario.robot, envelope)
                 # Numbered by *attempt*, the same counter the failures
                 # use. Numbering successes separately produced an event
                 # stream reading "replan 6 found no path" then "replan 1
@@ -673,4 +745,6 @@ def run_stack(
         if legacy_metrics
         else None
     )
-    return StackRun(algorithm=algorithm, plan=plan, result=result, metrics=metrics)
+    return StackRun(
+        algorithm=algorithm, plan=plan, result=result, metrics=metrics, plans=tuple(plans)
+    )

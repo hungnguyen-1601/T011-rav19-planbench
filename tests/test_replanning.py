@@ -483,16 +483,20 @@ class TestAReplanIsChargedForAsAControlStep:
 
     def test_the_trace_carries_a_replan_row_with_the_planner_time_on_it(self, tmp_path) -> None:
         """Without this row the cost model does not exist."""
-        import pandas as pd
+        # pyarrow rather than pandas: the recorder writes with pyarrow, so
+        # reading with it keeps the test on the same dependency the code
+        # under test already has.
+        import pyarrow.parquet as pq
 
         path, _ = self._run(tmp_path, ReplanningConfig(enabled=True))
-        frame = pd.read_parquet(path)
-        replans = frame[frame["event"] == "replan"]
-        assert len(replans) >= 1, "the episode that needs a replan recorded none"
-        # Stated against the 99th percentile of ordinary steps, because
-        # that is the number G4 reads — "a replan lands above the cut" is
-        # exactly the claim the cost model rests on.
-        #
+        frame = pq.read_table(path).to_pydict()
+        latencies = frame["planner_latency_ms"]
+        replans = [
+            latency
+            for event, latency in zip(frame["event"], latencies, strict=True)
+            if event == "replan"
+        ]
+        assert replans, "the episode that needs a replan recorded none"
         # Not against a fixed millisecond figure. The first version
         # asserted `> 50 ms`, calibrated on the 480x320 hall where A*
         # takes ~740 ms, and failed here: `sudden_stop` is 14x9 m and the
@@ -500,18 +504,36 @@ class TestAReplanIsChargedForAsAControlStep:
         # sixty times. **The price of a replan scales with the map**, so
         # on a small scenario replanning is nearly free and on a real
         # deployment map it is not. The absolute figure is a property of
-        # the map; landing above the ordinary distribution is the property
-        # of replanning, and it is the one worth pinning.
-        ordinary = frame[frame["event"].isna() | (frame["event"] == "")]
-        cut = ordinary["planner_latency_ms"].quantile(0.99)
-        assert replans["planner_latency_ms"].max() > cut
+        # the map; costing more than an ordinary step is the property of
+        # replanning, and it is the one worth pinning.
+        #
+        # Against the **median** ordinary step, not the 99th percentile.
+        # The second version used p99 because that is the statistic G4
+        # reads, and it was wrong for this test: p99 of one episode is a
+        # single extreme sample — the slowest scheduling hiccup of ~460
+        # steps — so comparing one measurement against it is a race
+        # between two noise draws rather than a claim about cost. Run
+        # alone it read 12.8 ms against a p99 of 6.2; run inside the full
+        # suite it read 15.8 against 16.0 and failed, with the *median*
+        # unmoved at ~4 ms either way. G4's number stays p99; what this
+        # test proves is that the planner's time is charged at all.
+        ordinary = sorted(
+            latency
+            for event, latency in zip(frame["event"], latencies, strict=True)
+            if not event
+        )
+        typical = ordinary[len(ordinary) // 2]
+        assert max(replans) > 2 * typical, (
+            f"replan {max(replans):.1f} ms is not clearly above an ordinary "
+            f"step's {typical:.1f} ms, so the planner's time is not being charged"
+        )
 
     def test_without_replanning_the_trace_has_no_such_row(self, tmp_path) -> None:
-        import pandas as pd
+        import pyarrow.parquet as pq
 
         path, _ = self._run(tmp_path, NO_REPLANNING)
-        frame = pd.read_parquet(path)
-        assert (frame["event"] == "replan").sum() == 0
+        frame = pq.read_table(path).to_pydict()
+        assert sum(1 for event in frame["event"] if event == "replan") == 0
 
     def test_unlimited_replanning_gets_the_robot_there(self, tmp_path) -> None:
         """The point of the change, end to end.

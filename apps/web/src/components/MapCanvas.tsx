@@ -34,6 +34,11 @@ export interface MapCanvasProps {
   goalPose?: Pose2D;
   goalTolerance?: number;
   robotRadius?: number;
+  /** Safety envelope in metres, from `safetyEnvelope(sensor_noise)`.
+   *
+   * Zero is the truthful default: a view with no deployment behind it
+   * shows a scenario, and a scenario declares no localisation error. */
+  positionUncertainty?: number;
   plannedPath?: Point2D[];
   trajectory?: TrajectoryPoint[];
   robotPose?: Pose2D | null;
@@ -79,6 +84,7 @@ export function MapCanvas({
   goalPose,
   goalTolerance = 0.3,
   robotRadius = 0.3,
+  positionUncertainty = 0,
   plannedPath,
   trajectory,
   robotPose,
@@ -170,7 +176,8 @@ export function MapCanvas({
     // like it is standing in open space, and the reason it cannot replan
     // from there is this ring — which is two and a half times the circle
     // the canvas was drawing.
-    const ringFor = (radius: number) => keepOutRadius(radius, map.resolution, robotRadius);
+    const ringFor = (radius: number) =>
+      keepOutRadius(radius, map.resolution, robotRadius, positionUncertainty);
     const drawRing = (worldX: number, worldY: number, radius: number | null) => {
       if (radius === null) return;
       const [x, y] = toCanvas(worldX, worldY);
@@ -355,6 +362,7 @@ export function MapCanvas({
     goalPose,
     goalTolerance,
     robotRadius,
+    positionUncertainty,
     plannedPath,
     trajectory,
     robotPose,

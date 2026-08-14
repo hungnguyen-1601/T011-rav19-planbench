@@ -25,7 +25,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { KEEP_OUT_FILL, KEEP_OUT_STROKE, inflationRadius, keepOutRadius } from "../../lib/keepOut";
+import {
+  KEEP_OUT_FILL,
+  KEEP_OUT_STROKE,
+  MIN_JUMP_MAGNITUDE_M,
+  inflationRadius,
+  keepOutRadius,
+  safetyEnvelope,
+} from "../../lib/keepOut";
 
 const SRC = join(process.cwd(), "src");
 const CANVAS = readFileSync(join(SRC, "components", "MapCanvas.tsx"), "utf8");
@@ -35,27 +42,70 @@ const NAV_STACK = readFileSync(
   join(process.cwd(), "..", "..", "services", "simulator", "planbench_simulator", "nav_stack.py"),
   "utf8",
 );
+const FEASIBILITY = readFileSync(
+  join(process.cwd(), "..", "..", "packages", "schemas", "planbench_schemas", "feasibility.py"),
+  "utf8",
+);
+const SENSOR = readFileSync(
+  join(process.cwd(), "..", "..", "packages", "schemas", "planbench_schemas", "sensor.py"),
+  "utf8",
+);
 
 describe("the number matches the one the planner actually uses", () => {
-  it("is robot radius plus the cell half-diagonal", () => {
-    /* The two halves are different kinds of quantity, and that is why
-       the ring surprises people: `robot.radius` is geometry, while
+  it("is robot radius, plus the safety envelope, plus the cell half-diagonal", () => {
+    /* The three parts are different kinds of quantity, and that is why
+       the ring surprises people: `robot.radius` is geometry, the safety
+       envelope is how wrong the robot's idea of its position may be, and
        `√2 × resolution` is a property of the *map's resolution* — halve
        the cell size and the ring shrinks with nothing about the world
        having changed. */
     expect(inflationRadius(0.25, 0.26)).toBeCloseTo(0.26 + Math.SQRT2 * 0.25, 9);
+    expect(inflationRadius(0.25, 0.26, 0.391)).toBeCloseTo(0.26 + 0.391 + Math.SQRT2 * 0.25, 9);
     expect(keepOutRadius(0.4, 0.25, 0.26)).toBeCloseTo(0.4 + 0.26 + Math.SQRT2 * 0.25, 9);
   });
 
+  it("derives the envelope from the declared noise, worst case", () => {
+    /* Worst case rather than a percentile: a hard bound exceeded five
+       per cent of the time is not hard, and a percentile would need
+       somebody to choose which one. */
+    expect(safetyEnvelope(undefined)).toBe(0);
+    expect(safetyEnvelope({ lidar_range_sigma_m: 0.02, wheel_slip_fraction: 0.02 })).toBe(0);
+    expect(safetyEnvelope({ localization_drift_m: 0.1 })).toBeCloseTo(0.1 * Math.SQRT2, 9);
+    /* A jump that *may* happen is counted as one that does: over an
+       episode of many relocalisation windows, "unlikely per window" is
+       "it happens". This is the 0.25 m that makes the form's ring so
+       much larger than the shipped profile's. */
+    expect(
+      safetyEnvelope({ localization_drift_m: 0.1, localization_jump_probability: 0.02 }),
+    ).toBeCloseTo(0.1 * Math.SQRT2 + 0.25, 9);
+  });
+
   it("agrees with the simulator's definition, read from the source", () => {
-    /* This is a copy of a Python function and there is no way around
-       that, so the copy is pinned rather than trusted. Two hand-typed
-       copies of an inflation radius drifting apart is exactly how the
-       controller's keep-out and the planner's came to differ by 0.30 m
-       in the first place. */
+    /* This is a copy of two Python definitions and there is no way
+       around that, so the copies are pinned rather than trusted. Two
+       hand-typed copies of an inflation radius drifting apart is exactly
+       how the controller's keep-out and the planner's came to differ by
+       0.30 m in the first place. */
     expect(NAV_STACK).toContain("def _inflation_radius(");
-    expect(NAV_STACK).toContain("scenario.robot.radius + math.sqrt(2.0) * map_data.resolution");
+    expect(NAV_STACK).toContain(
+      "hard_clearance(scenario.robot, envelope) + math.sqrt(2.0) * map_data.resolution",
+    );
     expect(NAV_STACK.match(/math\.sqrt\(2\.0\) \* map_data\.resolution/g) ?? []).toHaveLength(1);
+
+    /* And the envelope half, which is the part that changed the ring. */
+    expect(FEASIBILITY).toContain("bound = drift * math.sqrt(2.0)");
+    expect(FEASIBILITY).toContain("bound += max(drift, MIN_JUMP_MAGNITUDE_M)");
+    expect(FEASIBILITY).toContain("return robot.radius + envelope.position_uncertainty_m");
+    expect(SENSOR).toContain(`MIN_JUMP_MAGNITUDE_M = ${MIN_JUMP_MAGNITUDE_M}`);
+  });
+
+  it("reaches both views of the same map", () => {
+    /* The ring is the same number in flat and raised, so a value that
+       reached one and not the other would draw two answers to one
+       question — the exact failure this ring exists to make visible. */
+    const view = readFileSync(join(SRC, "components", "MapView.tsx"), "utf8");
+    expect(view).toContain("positionUncertainty={canvas.positionUncertainty}");
+    expect(SCENE_LIB).toContain("options.positionUncertainty");
   });
 
   it("draws nothing rather than guessing when an input is missing", () => {
@@ -159,8 +209,15 @@ describe("both views draw it, from one definition", () => {
   });
 
   it("neither view computes the radius itself", () => {
-    expect(CANVAS).toContain("keepOutRadius(radius, map.resolution, robotRadius)");
-    expect(SCENE_LIB).toContain("keepOutRadius(o.radius, map.resolution, options.robotRadius)");
+    /* Whitespace-insensitive: the call is long enough that a formatter
+       wraps it, and a test that broke on line breaks would be pinning
+       Prettier rather than the code. */
+    const flat = CANVAS.replace(/\s+/g, "");
+    const raised = SCENE_LIB.replace(/\s+/g, "");
+    expect(flat).toContain("keepOutRadius(radius,map.resolution,robotRadius,positionUncertainty)");
+    expect(raised).toContain(
+      "keepOutRadius(o.radius,map.resolution,options.robotRadius,options.positionUncertainty",
+    );
     for (const source of [CANVAS, SCENE, SCENE_LIB]) {
       expect(source).not.toContain("Math.SQRT2 *");
     }

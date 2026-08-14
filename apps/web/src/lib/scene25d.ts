@@ -181,6 +181,8 @@ export interface SceneOptions {
   goalPose?: Pose2D;
   robotPose?: Pose2D | null;
   robotRadius?: number;
+  /** Safety envelope in metres, from `safetyEnvelope(sensor_noise)`. */
+  positionUncertainty?: number;
   plannedPath?: Point2D[];
   trajectory?: TrajectoryPoint[];
   obstacles?: ObstacleSnapshot[];
@@ -250,7 +252,12 @@ export function buildScene(
     // hand-typed copies of an inflation radius is how the controller's
     // keep-out and the planner's came to differ by 0.30 m to begin with.
     keepOut: (options.obstacles ?? []).flatMap((o) => {
-      const radius = keepOutRadius(o.radius, map.resolution, options.robotRadius);
+      const radius = keepOutRadius(
+        o.radius,
+        map.resolution,
+        options.robotRadius,
+        options.positionUncertainty,
+      );
       return radius === null ? [] : [obstacleMarker(projection, o.x, o.y, radius, 0)];
     }),
     bounds: sceneBounds(facets),

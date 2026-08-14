@@ -57,6 +57,7 @@ import { useTranslation } from "@/lib/i18n";
 import { useEpisodeStream } from "@/lib/useEpisodeStream";
 import type { MapData, PlanResult, Point2D } from "@/lib/types";
 import type { AlgorithmInfo } from "@/lib/benchmarkTypes";
+import { safetyEnvelope } from "@/lib/keepOut";
 
 /** A mission as it comes off the wire.
  *
@@ -456,6 +457,7 @@ export default function TestBenchPage() {
               goalPose={goal ?? undefined}
               goalTolerance={deployment?.constraints?.goal_tolerance_m}
               robotRadius={deployment?.robot?.radius}
+              positionUncertainty={safetyEnvelope(deployment?.environment?.sensor_noise)}
               plannedPath={stream.planPath.length > 0 ? stream.planPath : plan?.path}
               trajectory={visibleTrajectory}
               robotPose={robotPose}
