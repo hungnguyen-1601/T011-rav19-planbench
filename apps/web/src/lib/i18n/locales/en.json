@@ -989,6 +989,8 @@
   "deployments.form.timeout": "Episode timeout (s)",
   "deployments.form.stuck": "Stuck threshold (s)",
   "deployments.form.clearanceWarning": "Near-miss clearance (m)",
+  "deployments.form.clearancePreference": "Clearance preference (λ)",
+  "deployments.form.clearancePreferenceNote": "How much a metre hugging the hard boundary costs against a metre in the open, minus one. At 2.0 a planner takes any detour up to three times as long rather than shave an obstacle. 0 switches the gradient off and plans on distance alone. The only number here nobody can derive — so it is declared once, for every candidate alike.",
   "deployments.form.noise": "Declared noise",
   "deployments.form.lidarSigma": "LiDAR range σ (m)",
   "deployments.form.wheelSlip": "Wheel slip",

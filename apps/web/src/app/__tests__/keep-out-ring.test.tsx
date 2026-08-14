@@ -26,9 +26,13 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  CAUTION_FILL,
+  CAUTION_STROKE,
   KEEP_OUT_FILL,
   KEEP_OUT_STROKE,
   MIN_JUMP_MAGNITUDE_M,
+  cautionRadius,
+  cautionRamp,
   inflationRadius,
   keepOutRadius,
   safetyEnvelope,
@@ -52,16 +56,28 @@ const SENSOR = readFileSync(
 );
 
 describe("the number matches the one the planner actually uses", () => {
-  it("is robot radius, plus the safety envelope, plus the cell half-diagonal", () => {
-    /* The three parts are different kinds of quantity, and that is why
-       the ring surprises people: `robot.radius` is geometry, the safety
-       envelope is how wrong the robot's idea of its position may be, and
-       `√2 × resolution` is a property of the *map's resolution* — halve
-       the cell size and the ring shrinks with nothing about the world
-       having changed. */
-    expect(inflationRadius(0.25, 0.26)).toBeCloseTo(0.26 + Math.SQRT2 * 0.25, 9);
-    expect(inflationRadius(0.25, 0.26, 0.391)).toBeCloseTo(0.26 + 0.391 + Math.SQRT2 * 0.25, 9);
-    expect(keepOutRadius(0.4, 0.25, 0.26)).toBeCloseTo(0.4 + 0.26 + Math.SQRT2 * 0.25, 9);
+  it("forbids the robot radius plus the safety envelope, and nothing else", () => {
+    /* Both parts are hard and both are geometry: the body, and how wrong
+       the robot's idea of its position may be. Nothing about the map
+       file is in it — that is the whole content of the graded phase. */
+    expect(inflationRadius(0.26)).toBeCloseTo(0.26, 9);
+    expect(inflationRadius(0.26, 0.391)).toBeCloseTo(0.651, 9);
+    expect(keepOutRadius(0.4, 0.26)).toBeCloseTo(0.66, 9);
+    expect(keepOutRadius(0.4, 0.26, 0.391)).toBeCloseTo(1.051, 9);
+  });
+
+  it("prices a band beyond it, a cell diagonal wide plus a taper", () => {
+    /* `√2 × resolution` is not geometry at all: it is the band a
+       coarsely drawn grid cannot be sure about, and halving the cell
+       size halves it with nothing about the world having changed. It
+       used to be forbidden outright, which is what stranded a robot in
+       ground its own collision test called fine. */
+    expect(cautionRamp(0.25, 0.26)).toBeCloseTo(Math.SQRT2 * 0.25 + 0.26, 9);
+    expect(cautionRadius(0.4, 0.25, 0.26)).toBeCloseTo(0.4 + Math.SQRT2 * 0.25 + 0.26, 9);
+    /* Strictly outside the forbidden ring, or the two would be one. */
+    expect(cautionRadius(0.4, 0.25, 0.26)!).toBeGreaterThan(keepOutRadius(0.4, 0.26)!);
+    /* And it shrinks with the cell size, because that is what it is. */
+    expect(cautionRamp(0.125, 0.26)).toBeLessThan(cautionRamp(0.25, 0.26));
   });
 
   it("derives the envelope from the declared noise, worst case", () => {
@@ -86,9 +102,13 @@ describe("the number matches the one the planner actually uses", () => {
        hand-typed copies of an inflation radius drifting apart is exactly
        how the controller's keep-out and the planner's came to differ by
        0.30 m in the first place. */
-    expect(NAV_STACK).toContain("def _inflation_radius(");
+    expect(NAV_STACK).toContain("def _hard_radius(");
+    expect(NAV_STACK).toContain("def _caution_ramp(");
     expect(NAV_STACK).toContain(
-      "hard_clearance(scenario.robot, envelope) + math.sqrt(2.0) * map_data.resolution",
+      "hard_clearance(scenario.robot, SafetyEnvelope.for_noise(scenario.sensor_noise))",
+    );
+    expect(NAV_STACK).toContain(
+      "math.sqrt(2.0) * map_data.resolution + _hard_radius(scenario)",
     );
     expect(NAV_STACK.match(/math\.sqrt\(2\.0\) \* map_data\.resolution/g) ?? []).toHaveLength(1);
 
@@ -112,9 +132,10 @@ describe("the number matches the one the planner actually uses", () => {
     /* A ring computed from an assumed robot radius would be a picture of
        a keep-out nobody has — worse than no ring, because it looks
        authoritative. */
-    expect(keepOutRadius(0.4, undefined, 0.26)).toBeNull();
-    expect(keepOutRadius(0.4, 0.25, undefined)).toBeNull();
-    expect(keepOutRadius(0.4, 0, 0.26)).toBeNull();
+    expect(keepOutRadius(0.4, undefined)).toBeNull();
+    expect(cautionRadius(0.4, undefined, 0.26)).toBeNull();
+    expect(cautionRadius(0.4, 0.25, undefined)).toBeNull();
+    expect(cautionRadius(0.4, 0, 0.26)).toBeNull();
   });
 });
 
@@ -123,6 +144,13 @@ describe("it is faint, and it sits under the obstacle", () => {
     const alphaOf = (colour: string) => Number(colour.match(/,\s*([\d.]+)\)$/)?.[1]);
     expect(alphaOf(KEEP_OUT_FILL)).toBeLessThan(0.15);
     expect(alphaOf(KEEP_OUT_STROKE)).toBeLessThan(0.5);
+    /* The priced band is fainter still, and that ordering is the whole
+       signal: the reader has to be able to tell at a glance which of the
+       two the robot may legally enter. */
+    expect(alphaOf(CAUTION_FILL)).toBeLessThan(alphaOf(KEEP_OUT_FILL));
+    expect(alphaOf(CAUTION_STROKE)).toBeLessThan(alphaOf(KEEP_OUT_STROKE));
+    expect(CAUTION_FILL).toContain("240, 180, 41");
+    expect(CAUTION_STROKE).toContain("240, 180, 41");
     /* Same hue as the obstacle it belongs to: a different colour would
        read as a second thing in the scene rather than as that cart's
        margin. */
@@ -131,12 +159,17 @@ describe("it is faint, and it sits under the obstacle", () => {
   });
 
   it("is dashed, because a solid ring reads as a wall", () => {
-    expect(CANVAS).toContain("ctx.setLineDash([4, 4])");
-    expect(SCENE).toContain("ctx.setLineDash([4, 4])");
-    /* And the dash is cleared again — leaving it set would dash whatever
-       the next drawing call happens to be. */
-    expect(CANVAS).toContain("ctx.setLineDash([])");
-    expect(SCENE).toContain("ctx.setLineDash([])");
+    /* Dashed for the forbidden ring, dotted for the priced band — the
+       two must not look alike, and neither may look solid. The pattern
+       is a parameter now, so the call sites are what carry it. */
+    for (const source of [CANVAS, SCENE]) {
+      expect(source).toContain("[4, 4]");
+      expect(source).toContain("[2, 3]");
+      expect(source).toContain("ctx.setLineDash(dash)");
+      /* And the dash is cleared again — leaving it set would dash
+         whatever the next drawing call happens to be. */
+      expect(source).toContain("ctx.setLineDash([])");
+    }
   });
 
   it("is painted before the obstacles in the flat view", () => {
@@ -156,13 +189,25 @@ describe("it is faint, and it sits under the obstacle", () => {
     );
   });
 
+  it("paints the priced band under the forbidden ring, in both views", () => {
+    /* Otherwise the fainter, wider disc lands on top of the thing it is
+       supposed to sit behind. */
+    expect(SCENE.indexOf("for (const ring of scene.caution)")).toBeLessThan(
+      SCENE.indexOf("for (const ring of scene.keepOut)"),
+    );
+    expect(CANVAS.indexOf("cautionFor(radius)")).toBeLessThan(CANVAS.indexOf("hardFor(radius)"));
+  });
+
   it("stays flat on the ground in the raised view", () => {
     /* Extruding it would draw a cylinder, and a cylinder reads as a
        second object standing there rather than as a margin on the
        floor. */
-    expect(SCENE_LIB).toContain("obstacleMarker(projection, o.x, o.y, radius, 0)");
+    /* Height zero for both rings, in the scene builder. */
+    expect(
+      SCENE_LIB.match(/obstacleMarker\(projection, o\.x, o\.y, radius, 0\)/g) ?? [],
+    ).toHaveLength(2);
     const ring = SCENE.slice(
-      SCENE.indexOf("for (const ring of scene.keepOut)"),
+      SCENE.indexOf("const ellipse = ("),
       SCENE.indexOf("for (const obstacle of scene.obstacles)"),
     );
     expect(ring).not.toContain("COLOR.obstacleSide");
@@ -214,9 +259,11 @@ describe("both views draw it, from one definition", () => {
        Prettier rather than the code. */
     const flat = CANVAS.replace(/\s+/g, "");
     const raised = SCENE_LIB.replace(/\s+/g, "");
-    expect(flat).toContain("keepOutRadius(radius,map.resolution,robotRadius,positionUncertainty)");
+    expect(flat).toContain("keepOutRadius(radius,robotRadius,positionUncertainty)");
+    expect(flat).toContain("cautionRadius(radius,map.resolution,robotRadius,positionUncertainty)");
+    expect(raised).toContain("keepOutRadius(o.radius,options.robotRadius,options.positionUncertainty");
     expect(raised).toContain(
-      "keepOutRadius(o.radius,map.resolution,options.robotRadius,options.positionUncertainty",
+      "cautionRadius(o.radius,map.resolution,options.robotRadius,options.positionUncertainty",
     );
     for (const source of [CANVAS, SCENE, SCENE_LIB]) {
       expect(source).not.toContain("Math.SQRT2 *");

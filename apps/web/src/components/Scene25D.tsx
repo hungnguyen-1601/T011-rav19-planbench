@@ -23,7 +23,7 @@ import {
   type FacetKind,
   type SceneOptions,
 } from "@/lib/scene25d";
-import { KEEP_OUT_FILL, KEEP_OUT_STROKE } from "@/lib/keepOut";
+import { CAUTION_FILL, CAUTION_STROKE, KEEP_OUT_FILL, KEEP_OUT_STROKE } from "@/lib/keepOut";
 import type { MapData } from "@/lib/types";
 
 export interface Scene25DProps extends SceneOptions {
@@ -183,12 +183,21 @@ export function Scene25D({
       ctx.stroke();
     }
 
-    // The planner's margin, on the floor and under everything else. It
-    // is context rather than an object, so it never gets a side wall:
-    // extruding it would draw a cylinder, and a cylinder reads as a
+    // The planner's margins, on the floor and under everything else.
+    // They are context rather than objects, so neither gets a side wall:
+    // extruding one would draw a cylinder, and a cylinder reads as a
     // second thing standing in the room. Faint enough that the obstacle
-    // it belongs to stays the subject of the picture.
-    for (const ring of scene.keepOut) {
+    // they belong to stays the subject of the picture.
+    //
+    // Two of them, and the difference matters: the inner ring is
+    // forbidden, the outer band is merely expensive. Priced band first,
+    // so the forbidden ring lands on top of it.
+    const ellipse = (
+      ring: (typeof scene.keepOut)[number],
+      fill: string,
+      stroke: string,
+      dash: number[],
+    ) => {
       ctx.beginPath();
       ctx.ellipse(
         ring.base.sx,
@@ -199,13 +208,19 @@ export function Scene25D({
         0,
         Math.PI * 2,
       );
-      ctx.fillStyle = KEEP_OUT_FILL;
+      ctx.fillStyle = fill;
       ctx.fill();
-      ctx.setLineDash([4, 4]);
+      ctx.setLineDash(dash);
       ctx.lineWidth = 1;
-      ctx.strokeStyle = KEEP_OUT_STROKE;
+      ctx.strokeStyle = stroke;
       ctx.stroke();
       ctx.setLineDash([]);
+    };
+    for (const ring of scene.caution) {
+      ellipse(ring, CAUTION_FILL, CAUTION_STROKE, [2, 3]);
+    }
+    for (const ring of scene.keepOut) {
+      ellipse(ring, KEEP_OUT_FILL, KEEP_OUT_STROKE, [4, 4]);
     }
 
     for (const obstacle of scene.obstacles) {

@@ -2,7 +2,14 @@
 
 **Ngày:** 2026-08-14
 **Plan:** `docs/antongduy/plans/2026-08-14/mot-su-that-va-cham-va-recovery.md`, phase 1
-**Trạng thái:** xong, chưa commit (chờ lệnh)
+**Trạng thái:** xong
+
+> **Đã bị phase 2 sửa một phần — đọc kèm.** Ba con số về *inflation* ở
+> mục 3.5 và mục 4 (0.614 m / 1.005 m) là của mô hình nhị phân, và phase
+> 2 đã tách lệnh cấm khỏi phần tính tiền, nên chúng không còn là vành
+> planner đang dùng. Phần L1–L4, safety envelope, `safety_margin` xuống
+> làm cost và admissible stopping thì **không đổi**. Xem
+> `tongduyan_inflation-theo-bac-phase-2.md`.
 
 ---
 
@@ -266,7 +273,7 @@ là, sai số đó vẫn không biến mất, chỉ chuyển chỗ.
 | Web suite (`vitest run`) | 668 passed, 32 files |
 | `tsc --noEmit` | sạch |
 | `ruff check .` | sạch |
-| Full backend suite | *(điền khi chạy xong)* |
+| Full backend suite | **2549 passed, 7 skipped** (chạy sau phase 2) |
 
 ---
 

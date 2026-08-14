@@ -1154,3 +1154,94 @@ thứ chạy, và câu hỏi để lại đây.
   mang lập luận nào của riêng nó.
 
 Hẹn xử lý: sau khi MVP hoàn tất.
+
+---
+
+## Inflation theo bậc — RRT* trở thành biến thể cost-aware (2026-08-14)
+
+Lưới nhị phân được thay bằng **trường chi phí**: chỉ miền khả thi cứng
+(`hard_clearance` = footprint + safety envelope) là **cấm tuyệt đối**;
+dải quanh nó — vốn bị cấm hẳn — nay chỉ **đắt**. Cả hai global planner
+phải đọc trường đó, nếu không thì trường không có nghĩa.
+
+### Hạn chế 1 — bảo đảm tiệm cận tối ưu của RRT* **chưa được xác minh**
+
+Chi phí cạnh của RRT* giờ là **tích phân trường chi phí dọc cạnh**, thay
+vì độ dài Euclid. Bảo đảm tiệm cận tối ưu của RRT* (Karaman & Frazzoli)
+được chứng minh cho các phiếm hàm chi phí có tính chất liên tục và bị
+chặn nhất định; trường ở đây **hằng từng ô**, tức gián đoạn ở mọi cạnh ô.
+
+**Dev đã chốt (14-08): chấp nhận triển khai mà chưa xác minh.** Ghi ở
+đây và trong mô tả stack trên `/candidates`, không giấu trong comment.
+
+Từ nay, **"RRT\*" trong dự án này là một biến thể cost-aware**. Mọi so
+sánh — nhất là so với số liệu trong bài báo — phải đọc nó như thế.
+
+Cái **vẫn còn** và là thứ cơ chế rewire thực sự cần: chi phí cộng tính
+dọc đường, và đơn điệu theo khoảng cách (hệ số ≥ 1, nên khoảng cách
+đường thẳng là **chặn dưới** của mọi cạnh). Mọi bước cắt tỉa trong vòng
+lặp chỉ dựa vào đúng hai tính chất đó.
+
+### Hạn chế 2 — `clearance_preference` (λ) là số **do người chọn**
+
+Không suy ra được, khác với safety envelope hay `N_min`. Nên xử lý như
+mọi con số cùng loại: khai trên **deployment**, giống nhau cho mọi ứng
+viên, ghi vào manifest (HĐ-13). Mặc định `2.0` — một mét sát biên cứng
+đắt bằng ba mét chỗ trống, tức planner chịu đi vòng tới gấp ba quãng
+đường để khỏi cạo sát vật.
+
+Con số 2.0 **chưa được hiệu chuẩn theo dữ liệu**; nó là một lựa chọn hợp
+lý, không phải kết quả đo. Đổi nó **đổi mọi đường đi**, nên đổi nó là
+tạo deployment mới chứ không phải sửa cấu hình.
+
+### Hạn chế 3 — tích phân chi phí là **xấp xỉ lấy mẫu**
+
+`segment_cost` lấy mẫu mỗi 1/4 ô và cộng lại, không đi chính xác chuỗi ô
+mà đoạn thẳng cắt qua (Amanatides–Woo). Sai số bị chặn bởi 1/4 ô nhân
+một hệ số — dưới xa mức bất kỳ quyết định định tuyến nào phụ thuộc vào,
+và đúng bằng xấp xỉ mà `has_line_of_sight` vốn đã dùng.
+### Hạn chế 4 — vẫn phải nới lưới quanh robot, và bán kính cấm vẫn mang **nửa** đường chéo ô
+
+Lượng tử hoá là **hai phía**: vật cản nằm đâu đó trong ô của nó, robot
+nằm đâu đó trong ô của nó, nên khoảng cách tâm–tâm chỉ chặn khoảng cách
+thật trong phạm vi một đường chéo ô về **cả hai** hướng. Hệ quả: **không
+có bán kính inflation nào** khiến "controller nói tư thế này hợp lệ" kéo
+theo "lưới của planner đồng ý".
+
+Hai nửa được xử khác nhau:
+
+- **Nửa phía vật cản** (`√2/2 × resolution`) nằm trong `_hard_radius`.
+  Đây là **số học, không phải thận trọng**: ô OCCUPIED nghĩa là vật cản
+  chạm ô đó, không nói chạm ở đâu, nên bỏ nửa này ra thì lưới thành xấp
+  xỉ **lạc quan** của miền cứng — điều duy nhất nó không được phép là
+  thế. Đo trên phòng hai cửa ở ô 0.5 m, robot 0.3 m: inflate 0.30 m
+  **không đánh dấu thêm một ô nào**, vì tâm hai ô kề nhau cách 0.5 m; A*
+  trả về đường cạo sát tường, controller không lái được, và 40/43 lần
+  replan không tìm ra gì — đúng lỗi cũ, vào bằng cửa khác.
+- **Nửa phía robot** nằm trong `_caution_ramp` — chỉ tính tiền. Đường đi
+  là vật thể liên tục và được kiểm như thế: hàng rào L4 đo mọi đường
+  global theo **mét**, trên cả hai stack.
+
+`_with_standing_room` nới quanh robot **đúng phần thận trọng của lưới**:
+ô nào bị chặn trên lưới `_hard_radius` mà **tự do** trên lưới
+`_feasible_clearance` thì được mở, trong bán kính một `_caution_ramp`. Ô
+nằm trong miền cứng thật **không bao giờ** được mở.
+
+Riêng ô robot đang đứng thì mở **vô điều kiện**. Ô rộng 0.5 m: robot giữ
+khoảng cách 0.3 m với tường sẽ đặt LiDAR return gần nhất vào **chính ô
+chứa tâm nó**, nên luật có điều kiện từ chối đúng lúc cần nới nhất — đo
+được: "start is inside an obstacle" 43/44 lần replan. Nhưng robot **đang
+ở đó**, và engine kết thúc episode ngay khi robot chồng lên vật cản, nên
+sự hiện diện của nó chính là bằng chứng.
+
+**Vì sao đây không phải bong bóng B1 quay lại.** B1 mở mọi thứ mà
+*inflation* đã đánh dấu, tức trả lại **không gian trống thật**, và không
+gian trống có giá trị khác nhau với từng họ planner (đo trên
+`sudden_stop`: A* lấy hành lang rộng 0.59 m bằng 3 waypoint, RRT* cắt
+còn 0.13 m bằng 10 waypoint, có khúc quay 170° và 187° mà robot
+chỉ-tiến-không-lùi không lái nổi).
+
+Hai điểm khác: nới **dừng ở miền cứng** chứ không dừng ở vật cản thô,
+nên không bao giờ trả lại thứ bất hợp lệ; và mọi ô được mở **giữ nguyên
+hệ số chi phí cực đại**, nên cắt qua khe đó là **đắt** với bất kỳ ai làm
+thế — đó chính là câu trả lời của gradient cho thiên vị của B1.

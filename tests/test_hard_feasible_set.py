@@ -65,7 +65,7 @@ from planbench_schemas.sensor import MIN_JUMP_MAGNITUDE_M, SensorNoise
 from planbench_schemas.task_profile import TaskProfile
 from planbench_simulator.drivable import path_is_drivable
 from planbench_simulator.grid import OccupancyGrid
-from planbench_simulator.nav_stack import _inflation_radius, run_stack
+from planbench_simulator.nav_stack import _caution_ramp, _feasible_clearance, run_stack
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -229,13 +229,24 @@ class TestL2IsEnforcedByTheSignature:
         )
 
     def test_every_layer_quotes_the_same_clearance(self) -> None:
-        """L3. The planner's inflation is the shared clearance plus a
-        quantisation term — and that term appears exactly once in the
-        codebase, because it is a property of the map's resolution rather
-        than of the world."""
-        assert _uses(NAV_STACK_SOURCE, "hard_clearance(scenario.robot, envelope)")
+        """L3. What the planner **forbids** is the shared clearance and
+        nothing else — no term proportional to cell size, which is the
+        whole content of the fix. The quantisation term still exists, in
+        the graded ramp, and appears exactly once in the codebase because
+        it is a property of the map's resolution rather than of the
+        world."""
+        assert _uses(
+            NAV_STACK_SOURCE,
+            "hard_clearance(scenario.robot, SafetyEnvelope.for_noise(scenario.sensor_noise))",
+        )
+        # The resolution appears twice and only twice — once in the grid's
+        # allowance for its own coarseness, once in the priced ramp — and
+        # never in `_feasible_clearance`, which is the number L1 and L4
+        # are stated in.
         code = "".join(_executable_source(NAV_STACK_SOURCE).split())
-        assert code.count("math.sqrt(2.0)*map_data.resolution") == 1
+        assert code.count("math.sqrt(2.0)*map_data.resolution/2.0") == 2
+        feasible = code[code.index("def_feasible_clearance") : code.index("def_hard_radius")]
+        assert "resolution" not in feasible
 
 
 def _scene(noise: dict | None = None):
@@ -425,10 +436,15 @@ class TestL4EveryGlobalPathIsOneTheControllerCouldDrive:
         envelope = SafetyEnvelope.for_noise(scenario.sensor_noise)
         report = path_is_drivable([Point2D(x=1.5, y=4.5)], scenario.robot, envelope)
         assert report.required_clearance == pytest.approx(envelope.position_uncertainty_m)
-        assert _inflation_radius(map_data, scenario) == pytest.approx(
-            hard_clearance(scenario.robot, envelope) + math.sqrt(2.0) * map_data.resolution
+        # The hard feasible set carries no resolution term at all.
+        assert _feasible_clearance(scenario) == pytest.approx(
+            hard_clearance(scenario.robot, envelope)
         )
-        assert _inflation_radius(map_data, scenario) > hard_clearance(scenario.robot, envelope)
+        # The resolution term is alive, split between the grid's own
+        # allowance for its coarseness and the band that is merely priced.
+        assert _caution_ramp(map_data, scenario) == pytest.approx(
+            math.sqrt(2.0) * map_data.resolution / 2.0 + _feasible_clearance(scenario)
+        )
 
 
 def _stopping_violations(scenario, run) -> list[tuple[float, float]]:

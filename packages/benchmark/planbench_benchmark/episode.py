@@ -108,6 +108,10 @@ def scenario_for(profile: TaskProfile, context: EpisodeContext) -> Scenario:
         # that could declare its own noise amplitude would be choosing
         # its own exam.
         sensor_noise=profile.environment.sensor_noise,
+        # Same reasoning, and the same trap avoided: a candidate that
+        # could set its own clearance preference would buy a shorter
+        # route by caring less than its rivals were made to.
+        clearance_preference=profile.clearance_preference,
         random_seed=context.seed,
         stuck_time_window=profile.constraints.stuck_threshold_s,
     )

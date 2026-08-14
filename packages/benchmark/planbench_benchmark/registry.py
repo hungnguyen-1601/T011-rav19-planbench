@@ -211,11 +211,20 @@ def _rrtstar(episode_seed: int) -> GlobalPlanner:
     return RRTStarPlanner(RRTStarConfig(), episode_seed=episode_seed)
 
 
+#: Read on `/candidates` rather than left in a comment, on purpose: the
+#: cost-aware variant is a real departure from the published algorithm,
+#: and anybody comparing this against a paper's RRT* numbers has to know
+#: before they draw the conclusion, not after.
 _RRT_STAR_DESCRIPTION = (
     "RRT* global planner: samples the free space, rewires the tree towards "
-    "shorter paths, and keeps improving for its whole iteration budget. "
+    "cheaper paths, and keeps improving for its whole iteration budget. "
     "Randomised — the tree is seeded from the episode seed, so results "
-    "must be read across many seeds, not from one run."
+    "must be read across many seeds, not from one run. "
+    "Cost-aware variant: edge cost integrates the deployment's clearance "
+    "field rather than being pure length, so hugging an obstacle is "
+    "expensive rather than free. RRT*'s asymptotic-optimality guarantee "
+    "is proved for cost functionals this field may not satisfy, and "
+    "whether it survives has not been verified — see KNOWN_LIMITATIONS."
 )
 
 

@@ -27,7 +27,7 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
 from planbench_planning.common.base import GlobalPlanner, PlanResult
-from planbench_planning.common.path_utils import has_line_of_sight, path_length
+from planbench_planning.common.path_utils import has_line_of_sight, path_length, segment_cost
 from planbench_schemas.geometry import Point2D, euclidean_distance
 from planbench_simulator.grid import OccupancyGrid
 
@@ -164,9 +164,17 @@ class RRTStarPlanner(GlobalPlanner):
             near = [int(index) for index in np.flatnonzero(near_distances <= config.rewire_radius)]
 
             # Cheapest reachable parent. Candidates are tried in
-            # ascending total cost, so the first one with line of sight
-            # is the best one — usually a single collision check. The
-            # index is part of the sort key to keep ties deterministic.
+            # ascending *lower bound* — straight-line distance, which no
+            # edge can beat because traversal multipliers are at least
+            # one — and the search stops as soon as the next bound
+            # cannot beat the best real edge found. The index is part of
+            # the sort key to keep ties deterministic.
+            #
+            # On a binary grid the bound *is* the cost, so the first
+            # candidate with line of sight wins and this is the single
+            # collision check it always was. On a graded grid the bound
+            # is only a bound, and taking the first visible candidate
+            # would pick a cheap-looking edge that runs along a wall.
             candidates = sorted(
                 (costs[index] + float(near_distances[index]), index) for index in near
             )
@@ -174,10 +182,15 @@ class RRTStarPlanner(GlobalPlanner):
                 candidates = [(costs[nearest] + nearest_distance, nearest)]
             parent = -1
             parent_cost = math.inf
-            for candidate_cost, index in candidates:
-                if has_line_of_sight(grid, Point2D(x=xs[index], y=ys[index]), new_point):
-                    parent, parent_cost = index, candidate_cost
+            for bound, index in candidates:
+                if bound >= parent_cost:
                     break
+                from_point = Point2D(x=float(xs[index]), y=float(ys[index]))
+                if not has_line_of_sight(grid, from_point, new_point):
+                    continue
+                candidate_cost = costs[index] + _edge_cost(grid, from_point, new_point)
+                if candidate_cost < parent_cost:
+                    parent, parent_cost = index, candidate_cost
             if parent < 0:
                 continue
 
@@ -190,24 +203,37 @@ class RRTStarPlanner(GlobalPlanner):
             node_count += 1
 
             # Rewire: only nodes that would actually get cheaper are
-            # worth a collision check.
+            # worth a collision check. The straight-line distance is a
+            # lower bound on the edge, so a node it cannot help is one
+            # the real edge cannot help either — the cheap test still
+            # prunes, and the expensive one only runs on survivors.
             for index in near:
                 if index == parent:
                     continue
-                rewired_cost = parent_cost + float(near_distances[index])
-                if rewired_cost >= costs[index]:
+                if parent_cost + float(near_distances[index]) >= costs[index]:
                     continue
-                if not has_line_of_sight(grid, new_point, Point2D(x=xs[index], y=ys[index])):
+                to_point = Point2D(x=float(xs[index]), y=float(ys[index]))
+                if not has_line_of_sight(grid, new_point, to_point):
+                    continue
+                rewired_cost = parent_cost + _edge_cost(grid, new_point, to_point)
+                if rewired_cost >= costs[index]:
                     continue
                 children[parents[index]].remove(index)
                 parents[index] = new_index
                 children[new_index].append(index)
                 _propagate_cost(children, costs, index, rewired_cost)
 
+            # Distance first: it bounds the edge from below and costs
+            # nothing, so a branch that cannot win is rejected before
+            # either the collision check or the integration.
             goal_distance = euclidean_distance(new_point, goal)
-            if goal_distance <= config.goal_tolerance:
-                goal_cost = parent_cost + goal_distance
-                if goal_cost < best_goal_cost and has_line_of_sight(grid, new_point, goal):
+            if (
+                goal_distance <= config.goal_tolerance
+                and parent_cost + goal_distance < best_goal_cost
+                and has_line_of_sight(grid, new_point, goal)
+            ):
+                goal_cost = parent_cost + _edge_cost(grid, new_point, goal)
+                if goal_cost < best_goal_cost:
                     best_goal_cost = goal_cost
                     best_goal_parent = new_index
 
@@ -225,7 +251,7 @@ class RRTStarPlanner(GlobalPlanner):
         path = tuple(waypoints)
         # Rewiring can have made the goal branch cheaper after it was
         # recorded, so read the cost back off the tree.
-        cost = costs[best_goal_parent] + euclidean_distance(path[-2], goal)
+        cost = costs[best_goal_parent] + _edge_cost(grid, path[-2], goal)
         return PlanResult(
             success=True,
             path=path,
@@ -234,6 +260,35 @@ class RRTStarPlanner(GlobalPlanner):
             expanded_nodes=node_count,
             planning_time_seconds=time.perf_counter() - started_at,
         )
+
+
+def _edge_cost(grid: OccupancyGrid, a: Point2D, b: Point2D) -> float:
+    r"""What this edge costs the tree: its length, priced by the grid.
+
+    On a binary grid that is exactly the straight-line distance, and the
+    short-circuit is not only an optimisation — it keeps every stored
+    run reproducible to the float, because integrating a constant
+    multiplier of one still costs a rounding error that a recorded
+    ``cost`` would show.
+
+    **This is the change that makes "RRT\*" in this project a
+    cost-aware variant.** The asymptotic-optimality guarantee of RRT* is
+    proved for a cost functional with particular continuity and
+    boundedness properties; the traversal field here is piecewise
+    constant per cell, so it is discontinuous at every cell edge, and
+    whether the guarantee survives has **not** been verified. Recorded
+    as a known limitation rather than left to be discovered — see
+    ``docs/KNOWN_LIMITATIONS.md``.
+
+    What does survive, and is what the rewiring machinery actually
+    needs, is that the cost is additive along a path and monotone in
+    distance: multipliers are at least one, so straight-line distance is
+    a lower bound on every edge. Every pruning step in the loop above
+    rests on exactly that and nothing stronger.
+    """
+    if not grid.is_graded:
+        return euclidean_distance(a, b)
+    return segment_cost(grid, a, b)
 
 
 def _propagate_cost(

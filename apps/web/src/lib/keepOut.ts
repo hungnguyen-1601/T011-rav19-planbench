@@ -1,43 +1,46 @@
 /** How far the global planner keeps off an obstacle, for drawing only.
  *
- * **Why this is worth a module.** The canvas draws a cart at its own
- * radius — 0.40 m on `sudden_stop` — while the planner refuses to route
- * within `robot.radius + √2 × resolution` of it, which on the same map
- * is another 0.61 m. The ring is two and a half times the circle, and it
- * was invisible: a robot parked half a metre clear of the cart looked
- * like it was standing in open space, and the reason it could not
- * replan was not on screen anywhere.
+ * **Why this is worth a module.** The canvas drew a cart at its own
+ * radius — 0.40 m on `sudden_stop` — while the planner refused to route
+ * within another 0.61 m of it. The ring was two and a half times the
+ * circle, and it was invisible: a robot parked half a metre clear of the
+ * cart looked like it was standing in open space, and the reason it
+ * could not replan was not on screen anywhere.
  *
  * That cost a full session to diagnose from first principles. Drawing it
  * is what makes the next instance of the same class of problem readable
  * instead of mysterious.
  *
- * **The three parts are not the same kind of number**, and the
- * difference is the whole reason the ring surprises people:
+ * **There are two rings now, and they say different things.**
  *
- * - `robot.radius` is geometry. A path whose centre line runs closer
- *   than that puts the body through the obstacle.
- * - the **safety envelope** is how wrong the robot's idea of its own
- *   position may be, derived from the localisation noise the deployment
- *   declares. Also hard, also geometry in effect — the body may be
- *   anywhere inside it.
- * - `√2 × resolution` is not geometry at all. It is the half-diagonal of
- *   a grid cell, there so a diagonal step between two free cells cannot
- *   clip the corner of an occupied one. It is a property of the **map's
- *   resolution** — halve the cell size and the ring shrinks, with
+ * - The **forbidden** ring is `robot.radius + safety envelope`. Both are
+ *   hard and both are geometry: the first is the body, the second is how
+ *   wrong the robot's idea of its own position may be, derived from the
+ *   localisation noise the deployment declares. A path inside it is one
+ *   the local controller would refuse to drive.
+ * - The **priced** band reaches a cell diagonal further, plus a taper.
+ *   It is *passable*. `√2 × resolution` is not geometry at all — it is
+ *   the band a coarsely drawn grid cannot be sure about, a property of
+ *   the **map's resolution**, and halving the cell size halves it with
  *   nothing about the world having changed.
  *
- * A deployment that declares no localisation error has no envelope, so
- * its ring is what it always was. One that declares drift and a chance
- * of a jump grows by 0.39 m — and *that* is the number a reader needs
- * on screen, because it is invisible everywhere else.
+ * Drawing them as one disc is what the single ring used to do, and it
+ * made a region the robot may legally cross look like a wall. That
+ * reading is precisely what made a stuck robot inexplicable: it stood in
+ * space the picture called forbidden and its own collision test called
+ * fine.
  *
- * **This is a copy of a Python definition and there is no way around
- * that**, so the copy is named, kept in one place, and pinned by a test
- * that reads `nav_stack._inflation_radius` and `feasibility.py` and
- * checks they agree. Two hand-typed copies drifting apart is exactly how
- * the controller's keep-out and the planner's came to differ by 0.30 m
- * in the first place.
+ * A deployment that declares no localisation error has no envelope, so
+ * its forbidden ring is the robot's own circle. One that declares drift
+ * and a chance of a jump grows by 0.39 m — and *that* is the number a
+ * reader needs on screen, because it is invisible everywhere else.
+ *
+ * **These are copies of Python definitions and there is no way around
+ * that**, so the copies are named, kept in one place, and pinned by a
+ * test that reads `nav_stack._hard_radius`, `nav_stack._caution_ramp`
+ * and `feasibility.py` and checks they agree. Two hand-typed copies
+ * drifting apart is exactly how the controller's keep-out and the
+ * planner's came to differ by 0.30 m in the first place.
  */
 
 /** Smallest jump a bad relocalisation produces, metres.
@@ -80,21 +83,37 @@ export function safetyEnvelope(noise: NoiseForEnvelope): number {
   return bound;
 }
 
-/** The planner's keep-out margin, in metres, around any obstacle. */
-export function inflationRadius(
+/** How far the planner **forbids**, in metres: `hard_clearance`.
+ *
+ * Mirrors `nav_stack._hard_radius`. Nothing about the map file is in
+ * it — that is the whole point of the graded phase. A path inside this
+ * ring is one the local controller would refuse to drive, so no planner
+ * may return one.
+ */
+export function inflationRadius(robotRadius: number, positionUncertainty = 0): number {
+  return robotRadius + positionUncertainty;
+}
+
+/** How far the graded penalty reaches past the hard boundary.
+ *
+ * Mirrors `nav_stack._caution_ramp`: a cell diagonal — the band a
+ * coarsely drawn grid cannot be sure about — plus one hard clearance of
+ * taper, so the cost reaches zero smoothly instead of stepping off a
+ * cliff where paths are decided.
+ */
+export function cautionRamp(
   resolution: number,
   robotRadius: number,
   positionUncertainty = 0,
 ): number {
-  return robotRadius + positionUncertainty + Math.SQRT2 * resolution;
+  return Math.SQRT2 * resolution + inflationRadius(robotRadius, positionUncertainty);
 }
 
-/** Radius of the ring to draw around an obstacle of this radius.
+/** Radius of the **forbidden** ring around an obstacle of this radius.
  *
- * Returns `null` when the resolution or the robot radius is missing. A
- * ring drawn from a guessed robot radius would be a picture of a
- * keep-out nobody has — worse than no ring, because it looks
- * authoritative.
+ * Returns `null` when the robot radius is missing. A ring drawn from a
+ * guessed radius would be a picture of a keep-out nobody has — worse
+ * than no ring, because it looks authoritative.
  *
  * `positionUncertainty` defaults to zero, which is the truthful reading
  * for a view with no deployment behind it: a scenario on its own
@@ -103,12 +122,31 @@ export function inflationRadius(
  */
 export function keepOutRadius(
   obstacleRadius: number,
+  robotRadius: number | undefined,
+  positionUncertainty = 0,
+): number | null {
+  if (!robotRadius) return null;
+  return obstacleRadius + inflationRadius(robotRadius, positionUncertainty);
+}
+
+/** Radius of the **priced** band: passable, and charged for.
+ *
+ * Drawn fainter still than the hard ring, and drawn *separately*,
+ * because the two say different things. Merging them into one disc —
+ * which is what the single ring did before the gradient existed — makes
+ * a region the robot may legally cross look like a wall, and that
+ * reading is exactly what made a stuck robot inexplicable: it was
+ * standing in space the picture called forbidden and its own collision
+ * test called fine.
+ */
+export function cautionRadius(
+  obstacleRadius: number,
   resolution: number | undefined,
   robotRadius: number | undefined,
   positionUncertainty = 0,
 ): number | null {
   if (!resolution || !robotRadius) return null;
-  return obstacleRadius + inflationRadius(resolution, robotRadius, positionUncertainty);
+  return obstacleRadius + cautionRamp(resolution, robotRadius, positionUncertainty);
 }
 
 /** Fill for the ring: faint enough that the obstacle stays the subject.
@@ -127,3 +165,15 @@ export const KEEP_OUT_FILL = "rgba(240, 180, 41, 0.07)";
  * thing in the scene.
  */
 export const KEEP_OUT_STROKE = "rgba(240, 180, 41, 0.35)";
+
+/** Fill for the priced band, fainter than the forbidden ring.
+ *
+ * Fainter on purpose and not by accident of taste: the reader has to be
+ * able to tell at a glance which of the two the robot may enter. Same
+ * hue, because both belong to that obstacle.
+ */
+export const CAUTION_FILL = "rgba(240, 180, 41, 0.03)";
+
+/** Outline for the priced band: dotted, to read as "soft" beside the
+ *  dashed hard ring rather than as a second wall. */
+export const CAUTION_STROKE = "rgba(240, 180, 41, 0.16)";

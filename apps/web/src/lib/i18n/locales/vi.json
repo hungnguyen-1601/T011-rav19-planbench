@@ -989,6 +989,8 @@
   "deployments.form.timeout": "Giới hạn thời gian episode (s)",
   "deployments.form.stuck": "Ngưỡng kẹt (s)",
   "deployments.form.clearanceWarning": "Khoảng hở cảnh báo (m)",
+  "deployments.form.clearancePreference": "Ưu tiên khoảng hở (λ)",
+  "deployments.form.clearancePreferenceNote": "Một mét đi sát biên cứng đắt gấp mấy lần một mét chỗ trống, trừ đi một. Ở 2.0, planner chịu đi vòng tới gấp ba quãng đường để khỏi cạo sát vật. 0 là tắt gradient, chỉ tính khoảng cách. Đây là con số duy nhất ở đây không suy ra được — nên khai một lần, dùng chung cho mọi ứng viên.",
   "deployments.form.noise": "Nhiễu đã khai",
   "deployments.form.lidarSigma": "σ tầm LiDAR (m)",
   "deployments.form.wheelSlip": "Trượt bánh",

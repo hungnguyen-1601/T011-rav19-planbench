@@ -502,6 +502,19 @@ export function DeploymentForm({
         {field("constraints.episode_timeout_s", t("deployments.form.timeout"), 5)}
         {field("constraints.stuck_threshold_s", t("deployments.form.stuck"), 1)}
         {field("constraints.clearance_warning_m", t("deployments.form.clearanceWarning"), 0.05)}
+        {/* The one number in the clearance model that nobody can derive.
+            The safety envelope comes from the declared noise and the hard
+            boundary comes from the robot; this says how much a metre
+            spent hugging that boundary is *worth*, and only a person can
+            answer that. Declared here so it is one number for every
+            candidate in the comparison — a candidate-owned version would
+            let one stack buy a shorter route by caring less. */}
+        {field(
+          "clearance_preference",
+          t("deployments.form.clearancePreference"),
+          0.5,
+          t("deployments.form.clearancePreferenceNote"),
+        )}
       </div>
 
       <h4>{t("deployments.form.noise")}</h4>

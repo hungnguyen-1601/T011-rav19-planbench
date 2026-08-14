@@ -4,16 +4,21 @@ A benchmark always compares *stacks* — ``astar+dwa`` versus
 ``astar+ppo`` versus Nav2 — never a global planner against a local one
 (decision D13).
 
-Planning-safety margin: the planning grid is inflated by
-``hard_clearance(robot, envelope) + sqrt(2) * resolution``. The first
-term is the hard feasible set, shared with the local controller so the
-two layers cannot disagree about where the robot may be; the second is
-the half-diagonal of a cell, so a line-of-sight-sampled path cannot
-graze obstacle corners (see the proof in the docstring of
-``episode_runner``). They are different kinds of quantity and
-``_inflation_radius`` keeps them separable — only the first belongs in a
-feasibility judgement. The engine still checks collisions with the exact
-robot radius.
+Planning-safety margin, and it is **two different kinds of thing**:
+
+* ``hard_clearance(robot, envelope)`` — the hard feasible set, shared
+  with the local controller so the two layers cannot disagree about
+  where the robot may be. This is the only distance the planner
+  *forbids* (``_hard_radius``).
+* ``sqrt(2) * resolution``, plus a robot's own scale of taper past it —
+  the band where a coarsely drawn grid cannot be sure, priced as
+  **cost** rather than prohibition (``_caution_ramp``). It is a fact
+  about the map file: halve the cell size and it halves, with nothing
+  about the world having changed.
+
+The second used to be a prohibition too, and that is what stranded a
+robot for 55 replans in a spot its own collision test called legal. The
+engine still checks collisions with the exact robot radius.
 """
 
 from __future__ import annotations
@@ -119,34 +124,77 @@ def _planning_grid(
     planning_map = rasterize_obstacles(map_data, scenario.static_obstacles)
     if extra_obstacles:
         planning_map = rasterize_obstacles(planning_map, extra_obstacles)
-    return OccupancyGrid(planning_map).inflate(_inflation_radius(map_data, scenario))
+    return OccupancyGrid(planning_map).inflate_graded(
+        _hard_radius(map_data, scenario),
+        _caution_ramp(map_data, scenario),
+        scenario.clearance_preference,
+    )
 
 
-def _inflation_radius(map_data: MapData, scenario: Scenario) -> float:
-    """How far the planner keeps off, and where each part comes from.
+def _feasible_clearance(scenario: Scenario) -> float:
+    """The hard feasible set in **metres of world**, no grid in it.
 
-    Two parts, and they are **different kinds of quantity**:
-
-    * :func:`~planbench_schemas.feasibility.hard_clearance` — the hard
-      feasible set, shared with the local controller. Footprint plus the
-      deployment's safety envelope, both deployment-owned. This is the
-      part neither layer may go inside.
-    * ``√2 × resolution`` — the half-diagonal of a cell, so a diagonal
-      step between two free cells cannot clip the corner of an occupied
-      one. **Not a safety property at all**: it is an artifact of drawing
-      a continuous set on a grid, and it shrinks when somebody halves the
-      cell size with nothing about the world having changed.
-
-    Keeping them separable matters because only the first belongs in a
-    feasibility judgement. Anything validating L1 or L4 must ask
-    ``hard_clearance`` directly rather than this, or it will call a
-    coarsely rasterised path infeasible. The quantisation term moves out
-    of prohibition and into cost in the graded-inflation phase; until
-    then it stays here and `_with_room_to_leave` is what stops it
-    trapping the robot.
+    Footprint plus the deployment's safety envelope, both
+    deployment-owned, and identical to the number the local controller
+    refuses to enter. This is the quantity L1 and L4 are stated in, and
+    the one a continuous validator must ask for.
     """
-    envelope = SafetyEnvelope.for_noise(scenario.sensor_noise)
-    return hard_clearance(scenario.robot, envelope) + math.sqrt(2.0) * map_data.resolution
+    return hard_clearance(scenario.robot, SafetyEnvelope.for_noise(scenario.sensor_noise))
+
+
+def _hard_radius(map_data: MapData, scenario: Scenario) -> float:
+    r"""What the planner **forbids on the grid**, and why it is not quite
+    :func:`_feasible_clearance`.
+
+    Inflation measures **centre to centre**. An occupied cell means "the
+    obstacle overlaps this cell" and says nothing about where inside it,
+    so the surface may sit up to half a cell diagonal from that centre.
+    A free cell whose centre is exactly ``_feasible_clearance`` away can
+    therefore be in **actual contact** — the grid would be an *optimistic*
+    approximation of the hard set, which is the one thing it may never
+    be.
+
+    So ``√2/2 × resolution`` is added, and it is the obstacle-side slop
+    alone. That much is arithmetic rather than caution: without it there
+    is no radius at all on a coarse map. Measured on the two-doorway
+    room at 0.5 m cells, a 0.3 m robot: inflating by 0.30 m marks **not
+    one extra cell**, because adjacent centres are 0.5 m apart. A* then
+    returned routes grazing the walls, the controller could not drive
+    them, and 40 of 43 replans found nothing — the original failure,
+    back by a different door.
+
+    The **robot**-side slop is *not* here. A path point may also be half
+    a diagonal from its cell's centre, but a path is a continuous object
+    and is checked as one: L4's validator measures every global path
+    against :func:`_feasible_clearance` in metres, on both stacks. Making
+    the grid carry that half as well is what produced a 0.61 m ring out
+    of a 0.26 m requirement.
+    """
+    return _feasible_clearance(scenario) + math.sqrt(2.0) * map_data.resolution / 2.0
+
+
+def _caution_ramp(map_data: MapData, scenario: Scenario) -> float:
+    r"""How far out the graded penalty reaches beyond the hard boundary.
+
+    Two parts, both already declared, so this adds no knob:
+
+    * ``√2/2 × resolution`` — the **robot-side** half of the quantisation
+      slop, the half that stayed out of the prohibition. It is a fact
+      about the **map file**: halve the cell size and it halves, with
+      nothing about the world having changed. Pricing it is right;
+      forbidding it is what stranded a robot for 55 replans in ground
+      its own collision test called fine.
+    * one :func:`_feasible_clearance` — a robot's own scale of taper past
+      that, so the cost reaches zero smoothly instead of stepping off a
+      cliff at the old boundary. A cliff would put a discontinuity
+      exactly where paths are decided and make two nearly identical
+      routes cost very differently.
+
+    Derived rather than chosen, like the safety envelope and ``N_min``.
+    The one number a person does choose is *how much* the penalty is
+    worth, and that is ``clearance_preference`` on the deployment.
+    """
+    return math.sqrt(2.0) * map_data.resolution / 2.0 + _feasible_clearance(scenario)
 
 
 def plan_global_path(
@@ -166,77 +214,92 @@ def plan_global_path(
     return plan, OccupancyGrid(map_data)
 
 
-def _with_room_to_leave(
-    inflated: OccupancyGrid, solid: OccupancyGrid, position: Point2D, radius: float
+def _with_standing_room(
+    graded: OccupancyGrid, feasible: OccupancyGrid, position: Point2D, reach: float
 ) -> OccupancyGrid:
-    r"""Undo the *inflation* around the robot — never the obstacles.
+    r"""Near the robot, relax the grid's *caution* back to the physics.
 
-    **Why this exists, measured rather than assumed.** A robot that has
-    just been blocked is standing closer to the thing blocking it than
-    the planner's inflation margin, because the two layers do not use the
-    same margin. When this was written they disagreed twice over: the
-    controller rejected a trajectory at ``robot.radius + safety_margin``
-    — a *candidate* parameter — while the planner inflated by
-    ``robot.radius + √2 × resolution`` on cells, giving 0.31 m against
-    0.61 m on the shipped `sudden_stop`.
+    **What is relaxed, exactly.** ``graded`` blocks at
+    :func:`_hard_radius`, which is the hard feasible set **plus half a
+    cell diagonal** — an allowance for the obstacle being anywhere inside
+    its cell rather than at its centre. ``feasible`` blocks at
+    :func:`_feasible_clearance` alone: the physics, with no grid in it.
+    This frees the cells that are blocked on the first and free on the
+    second, within ``reach`` of the robot.
 
-    Half of that is now gone: both layers share
-    :func:`~planbench_schemas.feasibility.hard_clearance`, and
-    ``safety_margin`` is a soft cost. What remains is the grid term, and
-    it remains **on purpose** — a diagonal step between two free cells
-    must not clip an occupied corner. But it is a property of the *map's
-    resolution* rather than of the world, so it must not decide whether a
-    robot may stand somewhere, and this is what stops it doing so until
-    the graded-inflation phase moves it into cost.
+    So the relaxation gives back **grid conservatism and nothing else**.
+    A cell inside the true hard clearance of a real obstacle stays
+    blocked here exactly as everywhere else, and a route out therefore
+    still satisfies L1 — which L4 then measures in metres, on both
+    stacks.
 
-    So the robot parks at a spot that is legal by its own test and 0.30 m
-    inside the planner's no-go ring. Freeing only the cell it stands in —
-    which is what this did before — left it with **0 of 8 free
-    neighbours**: A\* entered the start cell and could not take a single
-    step, reporting "no path exists between start and goal" while a
-    point-robot flood fill of the same scene reached the goal easily. The
-    robot never moved, so all 55 replans of a 120-second episode met the
-    identical grid and returned the identical refusal.
+    **Why one cell is not enough, measured.** Freeing only the cell the
+    robot occupies is defensible and useless. On the two-doorway room at
+    0.5 m cells the robot ended in the pocket beside the wall with **2 of
+    8** free neighbours, both diagonal, and diagonal steps need their two
+    cardinals free — so A\* reported "no path exists between start and
+    goal" on **43 of 44** replans while the robot sat still. That is the
+    original failure at a coarser resolution: at 0.5 m, a 0.65 m hard
+    radius blocks the entire adjacent ring on its own.
 
-    **What is safe to assert here.** The engine ends an episode the
-    instant the robot overlaps an obstacle, so a robot that is still
-    driving is provably not inside one — and neither is the ground it
-    could reach before the inflation was applied. This frees exactly the
-    cells that are blocked on ``inflated`` but free on ``solid``: the
-    ones blocked *because of the buffer*, never one holding a real
-    return. A path out may therefore pass closer to the cart than the
-    planner would normally allow, and the local controller still refuses
-    to drive into it — the continuous collision test runs every control
-    step and is not relaxed by anything here.
+    **Why this is not the room-to-leave bubble coming back.** That bubble
+    freed everything the *inflation* had marked, which handed back
+    genuinely open space — and open space is worth more to some planners
+    than others: measured on `sudden_stop`, A\* took a 0.59 m-clear
+    corridor in 3 waypoints while RRT\* cut the same gap to 0.13 m in 10,
+    with turns of 170° and 187° a forward-only robot cannot drive.
 
-    Bounded to ``radius`` around the robot so the relaxation is local:
-    beyond the bubble the map is inflated exactly as before, and any
-    route that leaves has to cross genuinely clear space to get anywhere.
+    Two things are different now. The relaxation stops at the hard set
+    instead of at the raw obstacles, so nothing illegal is ever handed
+    back. And every freed cell keeps its **maximum traversal cost**, so
+    cutting through the gap is expensive for whoever does it — which is
+    the gradient's answer to that bias, and the reason this can be a
+    region rather than a single cell.
+
+    **The robot's own cell is freed unconditionally, and the rest are
+    not.** A cell is 0.5 m across on this map: a robot holding station
+    0.3 m off a wall puts the nearest LiDAR return in the *same cell* as
+    its own centre, so that cell reads as occupied even on ``feasible``
+    and the conditional rule refuses it — measured, "start is inside an
+    obstacle" on 43 of 44 replans. But the robot **is** there, and the
+    engine ends the episode the instant it overlaps anything, so its
+    presence is the proof. Every other cell has to earn it.
+
+    **What is safe to assert.** The engine ends the episode the instant
+    the robot overlaps an obstacle, so a robot still driving is provably
+    outside the footprint, and the ground it could reach before the
+    grid's caution was applied is ground it could legally stand on.
     """
-    centre = inflated.world_to_grid(position.x, position.y)
+    centre = graded.world_to_grid(position.x, position.y)
     if centre is None:
-        return inflated
-    resolution = inflated.resolution
-    reach = max(1, int(math.ceil(radius / resolution)))
+        return graded
+    resolution = graded.resolution
+    span = max(1, int(math.ceil(reach / resolution)))
     row0, col0 = centre
-    cells = list(inflated.map_data.cells)
-    solid_cells = solid.map_data.cells
+    cells = list(graded.map_data.cells)
+    legal = feasible.map_data.cells
     changed = False
-    for row in range(max(0, row0 - reach), min(inflated.height, row0 + reach + 1)):
-        for col in range(max(0, col0 - reach), min(inflated.width, col0 + reach + 1)):
-            index = row * inflated.width + col
+    # Where the robot is standing, by demonstration rather than by rule.
+    here = row0 * graded.width + col0
+    if cells[here] != CellState.FREE.value:
+        cells[here] = CellState.FREE.value
+        changed = True
+    for row in range(max(0, row0 - span), min(graded.height, row0 + span + 1)):
+        for col in range(max(0, col0 - span), min(graded.width, col0 + span + 1)):
+            index = row * graded.width + col
             if cells[index] == CellState.FREE.value:
                 continue
-            # The whole rule, in one line: blocked by the buffer, not by
-            # anything the robot can see.
-            if solid_cells[index] != CellState.OCCUPIED.value:
+            # The whole rule in one line: blocked by the grid's allowance
+            # for its own coarseness, not by the hard feasible set.
+            if legal[index] != CellState.OCCUPIED.value:
                 cells[index] = CellState.FREE.value
                 changed = True
     if not changed:
-        return inflated
+        return graded
     return OccupancyGrid(
-        inflated.map_data.model_copy(update={"cells": tuple(cells)}),
-        inflated.unknown_as_occupied,
+        graded.map_data.model_copy(update={"cells": tuple(cells)}),
+        graded.unknown_as_occupied,
+        graded.traversal_layer,
     )
 
 
@@ -342,11 +405,14 @@ def _replan(
     position = engine.get_state().pose.position
     believed = _map_as_the_robot_sees_it(map_data, engine.get_observation(), scenario.lidar)
     grid = _planning_grid(believed, scenario)
-    # The un-inflated view, so the relaxation below can tell a cell held
-    # by the safety buffer from a cell holding an actual LiDAR return.
-    solid = OccupancyGrid(rasterize_obstacles(believed, scenario.static_obstacles))
+    # The same world blocked at the physics alone, so the relaxation
+    # below can tell a cell held by the grid's own coarseness from one
+    # held by the hard feasible set.
+    feasible = OccupancyGrid(
+        rasterize_obstacles(believed, scenario.static_obstacles)
+    ).inflate(_feasible_clearance(scenario))
     return global_planner.plan(
-        _with_room_to_leave(grid, solid, position, _inflation_radius(believed, scenario)),
+        _with_standing_room(grid, feasible, position, _caution_ramp(believed, scenario)),
         position,
         scenario.goal_pose.position,
     )

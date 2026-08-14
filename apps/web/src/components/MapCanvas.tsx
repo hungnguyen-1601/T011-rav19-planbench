@@ -8,7 +8,14 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { OCCUPIED, UNKNOWN } from "@/lib/demoMap";
-import { KEEP_OUT_FILL, KEEP_OUT_STROKE, keepOutRadius } from "@/lib/keepOut";
+import {
+  CAUTION_FILL,
+  CAUTION_STROKE,
+  KEEP_OUT_FILL,
+  KEEP_OUT_STROKE,
+  cautionRadius,
+  keepOutRadius,
+} from "@/lib/keepOut";
 import { canvasToWorld, fitViewport, type Viewport } from "@/lib/transform";
 import type { MapData, Point2D, Pose2D, StaticObstacle, TrajectoryPoint } from "@/lib/types";
 
@@ -173,30 +180,50 @@ export function MapCanvas({
     //
     // Worth drawing at all because it was invisible and cost a session
     // to diagnose: a robot parked half a metre clear of a cart looks
-    // like it is standing in open space, and the reason it cannot replan
-    // from there is this ring — which is two and a half times the circle
-    // the canvas was drawing.
-    const ringFor = (radius: number) =>
-      keepOutRadius(radius, map.resolution, robotRadius, positionUncertainty);
-    const drawRing = (worldX: number, worldY: number, radius: number | null) => {
+    // like it is standing in open space, and the reason it could not
+    // replan from there was not on screen anywhere.
+    //
+    // **Two rings, because there are two different claims.** The inner
+    // one is forbidden — inside it the controller refuses to drive. The
+    // outer one is merely *expensive*: a planner will pay to avoid it
+    // and will cross it when the alternative costs more. Drawing them
+    // as one disc, which is what this did before the gradient existed,
+    // makes ground the robot may legally stand on look like a wall.
+    const hardFor = (radius: number) =>
+      keepOutRadius(radius, robotRadius, positionUncertainty);
+    const cautionFor = (radius: number) =>
+      cautionRadius(radius, map.resolution, robotRadius, positionUncertainty);
+    const disc = (
+      worldX: number,
+      worldY: number,
+      radius: number | null,
+      fill: string,
+      stroke: string,
+      dash: number[],
+    ) => {
       if (radius === null) return;
       const [x, y] = toCanvas(worldX, worldY);
       ctx.beginPath();
       ctx.arc(x, y, Math.max(2, radius * viewport.scale), 0, Math.PI * 2);
-      ctx.fillStyle = KEEP_OUT_FILL;
+      ctx.fillStyle = fill;
       ctx.fill();
-      // Dashed and thin: a solid ring reads as a wall, which is the one
-      // thing this is not — the controller will drive through it, the
-      // planner just will not route through it.
-      ctx.setLineDash([4, 4]);
+      // Never solid: a solid ring reads as a wall, and neither of these
+      // is one. Dashed for the hard boundary, dotted for the priced
+      // band, so which is which survives a screenshot.
+      ctx.setLineDash(dash);
       ctx.lineWidth = 1;
-      ctx.strokeStyle = KEEP_OUT_STROKE;
+      ctx.strokeStyle = stroke;
       ctx.stroke();
       ctx.setLineDash([]);
     };
+    const drawRing = (worldX: number, worldY: number, radius: number) => {
+      // Priced band first, so the forbidden ring sits on top of it.
+      disc(worldX, worldY, cautionFor(radius), CAUTION_FILL, CAUTION_STROKE, [2, 3]);
+      disc(worldX, worldY, hardFor(radius), KEEP_OUT_FILL, KEEP_OUT_STROKE, [4, 4]);
+    };
     for (const obstacle of staticObstacles ?? []) {
       if (obstacle.type === "circle") {
-        drawRing(obstacle.center.x, obstacle.center.y, ringFor(obstacle.radius));
+        drawRing(obstacle.center.x, obstacle.center.y, obstacle.radius);
       } else {
         // A rectangle's ring is drawn from its centre at the radius of
         // its circumscribing circle: an exact rounded-rectangle offset
@@ -206,11 +233,11 @@ export function MapCanvas({
         const cx = (obstacle.min_x + obstacle.max_x) / 2;
         const cy = (obstacle.min_y + obstacle.max_y) / 2;
         const half = Math.hypot(obstacle.max_x - obstacle.min_x, obstacle.max_y - obstacle.min_y) / 2;
-        drawRing(cx, cy, ringFor(half));
+        drawRing(cx, cy, half);
       }
     }
     for (const obstacle of dynamicObstacles ?? []) {
-      drawRing(obstacle.position.x, obstacle.position.y, ringFor(obstacle.radius));
+      drawRing(obstacle.position.x, obstacle.position.y, obstacle.radius);
     }
 
     // Obstacles go under the plan and trajectory: the question the

@@ -449,6 +449,41 @@ class TaskProfile(BaseModel):
     #: an existing id is refused, so switching it on is a new deployment
     #: with a new id rather than an edit.
     replanning: ReplanningConfig = NO_REPLANNING
+    #: How much a metre hugging the hard boundary costs a global planner
+    #: compared with a metre in the open, minus one. At ``4.0`` a metre
+    #: against the boundary costs five, so a planner takes any detour up
+    #: to five times as long rather than shave the obstacle.
+    #:
+    #: **This is a number a person chooses and there is no deriving it**,
+    #: unlike the safety envelope or ``N_min``. So it is treated the way
+    #: every other such number here is: declared on the **deployment**,
+    #: identical for every candidate in the comparison, and written into
+    #: the manifest (HĐ-13). A candidate-owned version would let one
+    #: stack buy a shorter route by caring less, which is the same defect
+    #: ``safety_margin`` had while it was a hard refusal.
+    #:
+    #: **The default is measured rather than picked, and its effect is
+    #: not monotone** — which is why it took measuring. Across the two
+    #: scenarios the suite pins, only ``4.0`` gets every case home:
+    #:
+    #: ===  =================  ==============  ================
+    #: λ    two-doorway room   sudden_stop A*   sudden_stop RRT*
+    #: ===  =================  ==============  ================
+    #: 2.0  timeout, 42 replans  success        success
+    #: 4.0  **success, 1**       **success**    **success**
+    #: 6.0  success, 1           success        timeout
+    #: ===  =================  ==============  ================
+    #:
+    #: Below it the planner still shaves a blocked doorway the controller
+    #: cannot drive through; far above it the sampling planner wanders,
+    #: because a strong enough gradient makes almost every edge expensive
+    #: and the tree stops converging on anything. So this is a working
+    #: value, not an optimum, and it has not been calibrated against real
+    #: deployment data — see ``docs/KNOWN_LIMITATIONS.md``.
+    #:
+    #: Zero switches the gradient off: every planner reverts to pure
+    #: distance.
+    clearance_preference: float = Field(default=4.0, ge=0)
     environment: EnvironmentSpec
     missions: tuple[Mission, ...] = Field(min_length=1)
     robot: TaskRobotSpec
