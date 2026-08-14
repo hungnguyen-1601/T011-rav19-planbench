@@ -152,17 +152,39 @@ giao không đại diện"* — nhưng cảnh báo đó nằm ở mục **báo c
 lại xây **tiêu chí đạt/trượt** trên chính tập bị chọn mẫu. Đó là lỗi
 thiết kế cổng, của tôi.
 
-**Hiệu ứng thật sự có, và nó đi cùng chiều ở cả ba cảnh:**
+**Số dưới đây là PILOT, không phải bằng chứng cổng.** Nó chạy bằng một
+script tạm, **không có luật khai trước**, không có commit nào chốt
+endpoint/thống kê/điều kiện PASS. Theo đúng kỷ luật mà chính report này
+áp cho mọi thứ khác, nó **không được dùng làm bằng chứng**, và nó không
+được dùng: vai trò duy nhất của nó là **ước lượng công suất** cho lần
+khai lại (bao nhiêu cặp bất đồng ⇒ cần bao nhiêu seed). Bằng chứng chính
+thức chỉ đến từ lần chạy có luật commit trước (mục 9b).
 
-| cảnh | success | collision | near-miss |
-|---|---|---|---|
-| `intersection` | 0.90 → **0.95** | 0.05 → **0.00** | 0.05 → **0.00** |
-| `crossing_obstacle` | 0.75 → **0.80** | 0.25 → **0.15** | 0.45 → **0.25** |
-| `bidirectional_corridor` | 0.00 → 0.00 | 0.80 → **0.75** | 1.00 → **0.80** |
+Pilot, 40 seed ghép cặp, tập không điều kiện:
 
-Không metric nào xấu đi ở bất cứ đâu.
+| cảnh | collision | Δ | CI 95% | outcome đổi |
+|---|---|---|---|---|
+| `intersection` | 0.050 → **0.000** | −0.050 | [−0.125, +0.000] | **3/40** |
+| `crossing_obstacle` | 0.275 → **0.200** | −0.075 | [−0.175, +0.000] | **3/40** |
+| `bidirectional_corridor` | 0.875 → **0.800** | −0.075 | [−0.175, +0.000] | **3/40** |
 
----
+Ba điều phải đọc cùng nhau:
+
+1. **Hiệu ứng hiếm.** Outcome chỉ đổi ở **3/40 seed** (7.5%) ở cả ba
+   cảnh. Trên 92.5% seed còn lại oracle làm **đúng không gì cả** — quỹ
+   đạo giống hệt từng byte.
+2. **Chưa có ý nghĩa thống kê** ở n = 40: mọi CI đều chạm 0 ở cận trên.
+3. **Nhưng cận trên bằng đúng +0.000 ở cả ba cảnh**, nghĩa là **không một
+   lần bootstrap resample nào** cho hiệu số dương. Chiều nhất quán, và
+   chưa lần nào có hại.
+
+Điểm 1 giải thích luôn điểm 2: một hiệu ứng chỉ xuất hiện ở 7.5% mẫu thì
+n = 40 không đủ để chứng minh, dù nó có thật. Đây là bài toán **sự kiện
+hiếm**, và CI bootstrap trên hiệu hai tỉ lệ là công cụ yếu cho loại đó.
+
+Và đó chính là thứ duy nhất pilot được phép nói: *"thước cũ sai loại, và
+cần khoảng 3x số seed"*. Nó **không** được phép nói *"dự đoán có tác
+dụng"* — câu đó phải do lần chạy có luật khai trước trả lời.
 
 ## 7. Điều này **mâu thuẫn với tiền đề của plan**, và cần nói thẳng
 
@@ -203,28 +225,45 @@ plan.
 ## 9. Quyết định thuộc về An
 
 Tôi **không** tự đổi luật cổng sau khi nhìn số — đó đúng là nước đi
-HĐ-15.3 sinh ra để hỏi. Nên tôi trình bày cả hai:
+HĐ-15.3 sinh ra để hỏi. Trình bày cả ba sự thật:
 
-- **Theo luật đã khai: TRƯỢT** ⇒ plan dừng ở đây.
-- **Bằng chứng cho thấy luật không đo được hiệu ứng đang tồn tại**, và
-  hiệu ứng đó đi cùng chiều ở cả ba cảnh, chưa metric nào xấu đi.
+- **Theo luật đã khai: TRƯỢT.** Và luật đó **không thể** đo được hiệu ứng
+  đang tồn tại, vì phép điều kiện loại đúng những episode có can thiệp.
+- **Trên tập không điều kiện, n = 40: cũng chưa đạt ý nghĩa.** Chiều nhất
+  quán ở cả ba cảnh, chưa metric nào xấu đi, nhưng CI đều chạm 0.
+- **Hiệu ứng hiếm: 3/40 seed.** Đó là lý do n = 40 không kết luận được,
+  không phải bằng chứng rằng hiệu ứng không có.
 
-Ba đường đi, và đây là quyết định của An chứ không phải của tôi:
+**Một phép kiểm phù hợp hơn cho sự kiện hiếm, và tôi khai rõ là nó
+KHÔNG phải luật đã khai trước:** với kết cục nhị phân ghép cặp, thứ mang
+thông tin là **các cặp bất đồng**, và phép kiểm dấu (sign test /
+McNemar) dùng đúng chúng thay vì hoà tan chúng vào tỉ lệ. Nếu mọi cặp
+bất đồng đều nghiêng về một phía thì `k` cặp cho `p = 0.5^k` một phía —
+9 cặp cùng chiều đã cho `p ≈ 0.002`.
+
+Con số cặp bất đồng theo chiều đang được đo (chạy nền). Nhưng **chọn phép
+kiểm sau khi thấy dữ liệu là chọn mẫu ở tầng phương pháp**, nên nó chỉ
+được dùng nếu An khai lại cổng và chạy lại — không được dùng để cứu lần
+chạy này.
+
+Ba đường đi, quyết định của An:
 
 | # | phương án | hệ quả |
 |---|---|---|
-| a | **Dừng plan** theo đúng luật đã khai | trung thực với kỷ luật khai-trước; bỏ qua một hiệu ứng đã nhìn thấy |
-| b | **Khai lại cổng** trên tập **không điều kiện** (collision/success theo cặp trên mọi seed), chạy lại, và ghi rõ luật cũ đã trượt vì sao | giữ được kỷ luật nếu luật mới được khai **trước** lần chạy mới và lần trượt cũ được ghi nguyên |
-| c | **Đổi cảnh cổng** sang cảnh mà dự đoán có dịp tác động, giữ nguyên luật cũ | luật không đổi; nhưng chọn cảnh sau khi biết kết quả cũng là một dạng chọn mẫu |
+| a | **Dừng plan** theo đúng luật đã khai | trung thực với kỷ luật khai-trước. Cái mất: một hiệu ứng nhất quán về chiều, chưa lần nào có hại, bị bỏ vì đo bằng thước sai và bằng cỡ mẫu thiếu |
+| b | **Khai lại cổng** — sự kiện hiếm, tập không điều kiện, sign test trên cặp bất đồng, **n ≥ 120** — commit luật **trước**, rồi chạy | giữ kỷ luật nếu lần trượt cũ ở mục 5 được giữ nguyên trong hồ sơ. ~3x số episode; ước lượng từ 3/40 thì n = 120 cho ~9 cặp bất đồng, đủ để `p ≈ 0.002` **nếu** chúng vẫn cùng chiều |
+| c | **Đổi cảnh cổng** sang cảnh dự đoán có dịp tác động | chọn cảnh sau khi biết kết quả cũng là chọn mẫu; và không cảnh nào trong thư viện vừa gần-hằng vừa cho dự đoán nhiều dịp |
 
-Khuyến nghị của tôi: **(b)**, kèm điều kiện — luật mới phải khai và
-commit **trước** khi chạy, và report giữ nguyên mục 5 này để lần trượt
-đầu không biến mất khỏi hồ sơ. Lý do: thứ plan thật sự muốn biết là *"dự
-đoán có đáng không"*, và câu trả lời rõ ràng là *"có, nhưng không phải
-theo cách plan nghĩ"*. Bỏ nó vì đo nhầm trục sẽ là dừng plan vì một lỗi
-của tôi, không vì một tính chất của thuật toán.
+Khuyến nghị: **(b)**, và tôi muốn nói rõ vì sao nó không phải là "vặn
+luật cho tới khi đạt". Luật cũ hỏng vì hai lý do **kiểm được trước khi
+chạy** và cả hai là lỗi thiết kế của tôi: điều kiện trên "cả hai cùng
+thành công" loại bỏ can thiệp, và CI bootstrap trên tỉ lệ là thước sai
+cho sự kiện 7.5%. Sửa thước rồi chạy lại với luật khai trước là sửa lỗi
+đo; nếu lần chạy mới vẫn trượt thì plan dừng, và lần đó sẽ là một câu trả
+lời về **thuật toán** chứ không phải về **phép đo**.
 
----
+Nếu An chọn (a), tôi ghi kết quả âm và dừng — plan nói rõ một kết quả âm
+là một kết quả.
 
 ## 10. Một lỗi P1 phát hiện dọc đường: `RandomWalkMotion` **nhảy vị trí**
 

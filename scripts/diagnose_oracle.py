@@ -236,13 +236,19 @@ def _paired_median_ci(differences: list[float]) -> tuple[float, float, float]:
     )
 
 
-def _report_scene(scene: str, seeds: int, gate: bool) -> dict[str, tuple[float, float, float]]:
+def _report_scene(scene: str, seeds: int, gate: bool) -> tuple[dict, bool]:
+    """``(improvement CIs, guards_held)`` for one scene.
+
+    The guard flag is **returned**, not merely printed — see the verdict
+    below for why that matters.
+    """
     plain = [_run(scene, seed, oracle=False) for seed in range(seeds)]
     oracle = [_run(scene, seed, oracle=True) for seed in range(seeds)]
 
     label = "GATE " if gate else "limit"
     print(f"\n=== {label} {scene}  ({seeds} paired seeds) ===")
 
+    guards_held = True
     for name, pick in (
         ("success_rate", lambda e: float(e.success)),
         ("collision_rate", lambda e: float(e.collision)),
@@ -250,7 +256,9 @@ def _report_scene(scene: str, seeds: int, gate: bool) -> dict[str, tuple[float, 
     ):
         theirs = statistics.fmean(pick(e) for e in plain)
         ours = statistics.fmean(pick(e) for e in oracle)
-        flag = "  <-- WORSE" if _worse(name, theirs, ours) else ""
+        breached = _worse(name, theirs, ours)
+        guards_held = guards_held and not breached
+        flag = "  <-- WORSE" if breached else ""
         print(f"  {name:<16} dwa {theirs:>6.3f}   oracle {ours:>6.3f}{flag}")
 
     outcome = {}
@@ -260,7 +268,7 @@ def _report_scene(scene: str, seeds: int, gate: bool) -> dict[str, tuple[float, 
     print(f"  paired on {len(both)} of {seeds} contexts where both reached the goal")
     if len(both) < 2:
         print("  too few paired successes to bootstrap")
-        return outcome
+        return outcome, guards_held
     for name, pick in (
         ("travel_time", lambda e: e.travel_time),
         ("stop_and_go", lambda e: float(e.stop_and_go)),
@@ -273,7 +281,7 @@ def _report_scene(scene: str, seeds: int, gate: bool) -> dict[str, tuple[float, 
             f"   {verdict}"
         )
         outcome[name] = (median, low, high)
-    return outcome
+    return outcome, guards_held
 
 
 def _worse(metric: str, plain: float, oracle: float) -> bool:
@@ -374,12 +382,23 @@ def main() -> None:
         _report_scene(scene, seeds, gate=False)
 
     print("\n=== VERDICT (gate scenes only) ===")
-    passed = False
-    for scene, outcome in results.items():
+    improved = False
+    guards_held = True
+    for scene, (outcome, scene_guards) in results.items():
+        guards_held = guards_held and scene_guards
+        if not scene_guards:
+            print(f"  {scene}: a guarded metric got worse")
         for metric, (_, _, high) in outcome.items():
             if metric in IMPROVEMENT_METRICS and high < 0.0:
                 print(f"  {scene}: {metric} improves with the whole CI below zero")
-                passed = True
+                improved = True
+    # **Both halves of the declared rule, not just the first.** This line
+    # used to read `passed = improved`: `_worse` decorated a printed line
+    # and never reached the verdict, so a run where the oracle collided
+    # more could still have printed PASS. The recorded run was a FAIL on
+    # the improvement half anyway, so no verdict was mis-stated — the bug
+    # was waiting for the next run.
+    passed = improved and guards_held
     print("  PASS — continue to P5" if passed else "  FAIL — the plan stops here")
 
 
