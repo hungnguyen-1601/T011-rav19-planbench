@@ -209,6 +209,50 @@ class TestEveryUncertaintyAnswersZero:
         tracker.update(_observation(DT, [(3.0, -0.5, 0.3), (3.0, 0.5, 0.3)]))
         assert tracker.diagnostics.ambiguous_drops > 0
 
+    def test_a_missed_frame_reports_no_velocity_at_all(self) -> None:
+        """**Regression, and the tests above did not catch it.**
+
+        A track that was not matched this frame used to keep emitting its
+        last fitted velocity, decayed only into a ``confidence`` field
+        that nothing read. So an object the robot had **stopped seeing**
+        went on driving the predictive cost at full strength for up to
+        ``track_timeout`` — flatly against this module's rule that
+        uncertainty answers zero.
+
+        The old tests checked the ambiguity and timeout *counters* and
+        never the velocity that came out, which is how it survived.
+        """
+        tracker = _tracker()
+        moving = 0.6
+        for step in range(20):
+            time = step * DT
+            tracker.update(_observation(time, [(4.0 - moving * time, 0.0, 0.35)]))
+        established = tracker.update(_observation(20 * DT, [(4.0 - moving * 20 * DT, 0.0, 0.35)]))
+        assert established
+        assert abs(established[0].velocity.x) > 0.1, "the estimate never got going"
+
+        # The object disappears for one frame: nothing to match.
+        silent = tracker.update(_observation(21 * DT, []))
+        assert silent, "the track should survive a single miss"
+        assert silent[0].velocity.x == 0.0, "a stale velocity escaped while unobserved"
+        assert silent[0].velocity.y == 0.0
+        assert silent[0].confidence == 0.0
+
+    def test_history_survives_the_gap_so_reacquisition_skips_warm_up(self) -> None:
+        """The other half of the same design: silent while unseen, but not
+        amnesiac. Losing the samples would restart warm-up on every
+        flicker, which is what makes an intermittently-seen object
+        permanently silent."""
+        tracker = _tracker()
+        moving = 0.6
+        for step in range(20):
+            time = step * DT
+            tracker.update(_observation(time, [(4.0 - moving * time, 0.0, 0.35)]))
+        tracker.update(_observation(20 * DT, []))
+        back = tracker.update(_observation(21 * DT, [(4.0 - moving * 21 * DT, 0.0, 0.35)]))
+        assert back
+        assert abs(back[0].velocity.x) > 0.1, "reacquisition restarted from warm-up"
+
     def test_a_track_nothing_matches_is_eventually_dropped(self) -> None:
         tracker = _tracker(track_timeout=0.1)
         for step in range(5):
@@ -319,7 +363,12 @@ class TestPhantomVelocityIsCharacterisedNotHidden:
 
             def compute(self, state, observation):  # noqa: ANN001
                 result = super().compute(state, observation)
-                for track in self._tracker.update(observation):
+                # **Read what the step believed; do not ask again.** An
+                # earlier version called ``self._tracker.update`` here,
+                # which fed the same frame in a second time, moved the
+                # history along, and measured a tracker the controller
+                # never ran. The measurement invalidated itself.
+                for track in self.last_tracks:
                     self._sink.append(math.hypot(track.velocity.x, track.velocity.y))
                 return result
 

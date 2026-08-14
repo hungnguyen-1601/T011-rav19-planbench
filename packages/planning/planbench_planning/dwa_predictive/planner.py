@@ -213,6 +213,7 @@ class DWAPredictivePlanner(LocalPlanner):
         #: estimates them from its own LiDAR.
         self._provider = provider
         self._tracker = LidarTracker(self._config)
+        self._last_tracks: tuple[ObstacleTrack, ...] = ()
         self._robot: RobotConfig | None = None
         self._envelope = SafetyEnvelope()
         self._obstacle_speed = 0.0
@@ -231,6 +232,26 @@ class DWAPredictivePlanner(LocalPlanner):
     @property
     def config(self) -> DWAPredictiveConfig:
         return self._config
+
+    @property
+    def last_tracks(self) -> tuple[ObstacleTrack, ...]:
+        """What the controller believed about moving obstacles last step.
+
+        Read-only, and the only supported way to observe it: asking the
+        tracker again would re-consume the frame.
+        """
+        return self._last_tracks
+
+    @property
+    def diagnostics(self) -> dict[str, int]:
+        """Tracker counters for the episode so far.
+
+        **Diagnostic, never a metric.** The Metrics Engine reads the trace
+        and the gates read the metrics; a number from here competing with
+        that would be the parallel source HĐ-5 exists to forbid. These
+        answer "did the tracker work at all", which no ranked metric does.
+        """
+        return self._tracker.diagnostics.as_dict()
 
     def reset(
         self,
@@ -272,6 +293,7 @@ class DWAPredictivePlanner(LocalPlanner):
         # scanner: ray count comes from the scan itself, and the declared
         # range noise sets both the cluster split and the velocity floor.
         self._tracker = LidarTracker(self._config, self._envelope, sensor_noise)
+        self._last_tracks = ()
 
     def compute(self, state: RobotState, observation: Observation) -> LocalPlanResult:
         if self._robot is None:
@@ -293,6 +315,11 @@ class DWAPredictivePlanner(LocalPlanner):
             tracks = tuple(self._provider(observation.time))
         else:
             tracks = self._tracker.update(observation)
+        # Kept so a caller can read what this step actually believed.
+        # Calling ``update`` a second time to find out would feed the same
+        # frame in twice and change the history being measured — which a
+        # diagnostic test did, and it invalidated its own measurement.
+        self._last_tracks = tracks
         predicted_clearances, time_to_collision = self._predict(rollouts, tracks)
 
         # **Unchanged from `dwa`, and the reason is contract L2.** This

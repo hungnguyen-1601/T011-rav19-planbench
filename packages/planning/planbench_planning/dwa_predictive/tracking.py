@@ -94,6 +94,8 @@ class TrackerDiagnostics:
     tracks_started: int = 0
     tracks_timed_out: int = 0
     floored: int = 0
+    #: Frames a track was alive but unobserved, and therefore silent.
+    coasting: int = 0
 
     def as_dict(self) -> dict[str, int]:
         return {
@@ -105,6 +107,7 @@ class TrackerDiagnostics:
             "tracks_started": self.tracks_started,
             "tracks_timed_out": self.tracks_timed_out,
             "floored": self.floored,
+            "coasting": self.coasting,
         }
 
 
@@ -434,6 +437,25 @@ class LidarTracker:
         derivative is the quantity the whole prediction rests on.
         """
         samples = track.history
+        if track.misses > 0:
+            # **Not seen this frame, so no velocity is reported.** The
+            # history stays — that is what lets a reacquired object skip
+            # warm-up — but nothing derived from it reaches the
+            # controller while the object is unobserved.
+            #
+            # This used to emit the last fitted velocity, decayed only in
+            # a ``confidence`` field that nothing read. A track coasting
+            # through a gap therefore drove the predictive cost at full
+            # strength off an estimate whose subject had not been seen,
+            # for up to ``track_timeout``. That contradicted the rule this
+            # whole module is built on: uncertainty answers **zero**, and
+            # zero is what makes the candidate fall back to ``dwa``.
+            #
+            # Extrapolating through a gap is a real technique, but it is
+            # not free and it is not this MVP's: it needs a confidence the
+            # cost function actually prices, and that is a separate phase.
+            self.diagnostics.coasting += 1
+            return Point2D(x=0.0, y=0.0), 0.0
         if len(samples) < self._config.velocity_min_samples:
             # **Warm-up: no history, no guess.** Behaving exactly like
             # ``dwa`` for the first few frames of a track is the correct
@@ -453,8 +475,4 @@ class LidarTracker:
             self.diagnostics.floored += 1
             return Point2D(x=0.0, y=0.0), 1.0
 
-        # Confidence falls while a track is coasting through a gap in the
-        # scan. It does not gate anything yet — it is carried so P6 and
-        # any later cost term can price a stale estimate.
-        confidence = 1.0 / (1.0 + track.misses)
-        return Point2D(x=vx, y=vy), confidence
+        return Point2D(x=vx, y=vy), 1.0
