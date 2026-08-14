@@ -184,6 +184,87 @@ khi sửa lỗi vận tốc stale (mục 4b). Nó đo một tracker phát vận 
 trong lúc mất dấu. Con số sau khi sửa có thể khác, theo chiều nào cũng
 được — và đó là lý do lần chạy 120 seed mới là con số được ghi.
 
+### 4a. Phép so 120 seed — **con số chính thức của pha này**
+
+Chạy bằng `scripts/diagnose_tracker.py` (đã commit ⇒ tái lập được), tại
+commit **`63c5d7d`** — tức **sau** bản sửa vận tốc stale ở 4b, nên nó đo
+đúng hành vi điều khiển hiện tại. Commit `3b750bc` sau đó chỉ thêm event
+log, không đụng điều khiển.
+
+```
+=== intersection, 120 paired seeds ===
+  dwa       collisions    9/120   successes  107/120
+  oracle    collisions    2/120   successes  112/120
+  tracker   collisions    9/120   successes  107/120
+
+=== discordant pairs against dwa ===
+  oracle    better  11   worse   0
+  tracker   better   0   worse   0
+
+  seeds where prediction could help (oracle beat dwa) : 11
+  ...of which the tracker also took                   : 0
+```
+
+| | dwa | oracle | tracker |
+|---|---|---|---|
+| collision | 9/120 | **2/120** | 9/120 |
+| success | 107/120 | **112/120** | 107/120 |
+| better vs dwa | — | **11** | **0** |
+| worse vs dwa | — | 0 | 0 |
+
+**11 cơ hội, tracker lấy 0.** Ở n = 40 con số là 3 cơ hội / 0 — quá mỏng
+để kết luận. Ở **11/0** thì kết luận đứng được: tracker **không** giành
+lại được lợi ích của oracle trên cảnh này, ở cấu hình cảm biến này.
+
+Nó cũng **không tệ hơn** `dwa` ở seed nào — luật thoái lui hoạt động
+đúng như thiết kế.
+
+### 4a-2. Bộ đếm tracker, cộng dồn 120 episode
+
+```
+frames             29807
+clusters_seen     129095
+clusters_tracked    6631      <- 5.1% số cụm được coi là đáng theo dõi
+associations        6027
+coasting            9409      <- NHIỀU HƠN số lần ghép được
+floored             3429
+tracks_started       604
+tracks_timed_out     584      <- 97% số track sinh ra rồi chết
+ambiguous_drops        0
+```
+
+**Hai dòng nói hết câu chuyện.** `coasting` (9409) **lớn hơn**
+`associations` (6027): track dành nhiều khung **không nhìn thấy** hơn là
+nhìn thấy. Và 584/604 track sinh ra rồi hết hạn — gần như không track nào
+sống đủ lâu để có ích.
+
+### 4a-3. Điều bất ngờ: khi tracker **có** nói, nó nói khá đúng
+
+Đo dọc theo một episode (seed 0):
+
+```
+số bước vật cản trong tầm LiDAR : 182
+  ...có track nằm lên nó        :  37   (20%)
+  ...báo vận tốc KHÁC 0         :   3   (1.6% của 182)
+  trung vị |ước lượng − thật|   : 0.119 m/s   (tốc độ thật 0.800)
+```
+
+**Sai số 0.119 m/s trên 0.800 là ước lượng tốt** — 15%. Vấn đề **không
+phải độ chính xác mà là tần suất**: tracker chỉ mở miệng ở **1.6%** số
+bước mà vật cản nằm trong tầm.
+
+Đây là chẩn đoán chính xác nhất của cả pha, và nó khác với cả hai lần
+trước tôi đoán:
+
+- **không** phải "không thấy vật cản" (thấy 20%);
+- **không** phải "ước lượng sai" (khi nói thì sai 15%);
+- mà là **phát hiện chập chờn ⇒ track chết trước khi kịp có ích**.
+
+Nói cách khác: nếu sửa được tính liên tục của phát hiện, chất lượng ước
+lượng **đã đủ tốt rồi**. Đó là thông tin đáng giá cho bất cứ ai làm tiếp
+— và nó chỉ ra rằng nút thắt nằm ở **phân giải/phân cụm**, không ở khâu
+ước lượng vận tốc.
+
 ### 4b. Một lỗi hành vi An bắt được: tracker **không** thoái lui về `dwa`
 
 Module khai *"mọi bất định trả vận tốc 0"*. Code thì không. Khi mất ghép

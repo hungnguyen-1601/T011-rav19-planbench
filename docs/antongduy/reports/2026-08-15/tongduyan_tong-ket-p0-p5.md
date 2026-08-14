@@ -3,7 +3,7 @@
 **Ngày:** 2026-08-14 → 2026-08-15
 **Plan:** `docs/antongduy/plans/2026-08-14/du-doan-chuyen-dong-vat-can.md`
 **Phạm vi:** commit plan, rồi P0 → P5. **P6, P7 chưa làm.**
-**Trạng thái:** **chưa chạy full suite** · một phép so 120 seed **đang chạy**
+**Trạng thái:** **chưa chạy full suite** · phép so 120 seed **đã xong**
 
 Báo cáo này phủ toàn bộ phiên. Chi tiết từng pha nằm ở sáu report riêng
 (liệt kê ở mục 8); đây là chỗ đọc để biết **đã làm gì, kết luận gì, và
@@ -18,7 +18,7 @@ còn treo gì**.
 | Bảo đảm phanh có thủng trước vật cản đang lại gần không? | **Có** | P0: va chạm ở tốc độ vật cản từ **0.15 m/s** |
 | Vá được không, cho **cả hai** ứng viên? | **Được** | P1: tốc độ lúc chạm 0.35–0.64 m/s → **0** |
 | Mô hình vận tốc hằng có đáng giá không? | **Có** | P4: 11/11 cặp bất đồng nghiêng oracle, `p = 0.00049` |
-| Tự ước lượng từ LiDAR có giành lại được không? | **Chưa** | P5: 3 cơ hội, tracker lấy **0** |
+| Tự ước lượng từ LiDAR có giành lại được không? | **Không** | P5: **11 cơ hội, tracker lấy 0** (120 seed) |
 
 Nói gọn: **ý tưởng đúng, tri giác chưa đủ.** P4 trả lời câu hỏi khoa học,
 P5 trả lời câu hỏi kỹ thuật, và hai câu trả lời ngược chiều nhau.
@@ -57,7 +57,12 @@ vì thước sai; khai lại, commit trước, chạy 120 seed: **11/11, `p =
 
 **P5 — tracker LiDAR** *(ĐÓNG bằng kết quả âm, An chốt 15-08)*
 `tracking.py`: phân cụm → phân loại → ghép cặp → bình phương tối thiểu →
-sàn nhiễu → vòng đời. Đối chiếu với oracle: **3 cơ hội, lấy 0**.
+sàn nhiễu → vòng đời. Đối chiếu với oracle trên 120 seed: **11 cơ hội,
+lấy 0**; va chạm `dwa` 9 / oracle 2 / tracker 9.
+
+Nút thắt đo được: khi tracker **có** báo vận tốc thì sai số chỉ **0.119
+m/s** trên 0.800 (15%) — vấn đề là **tần suất**, chỉ 1.6% số bước vật cản
+nằm trong tầm. Ước lượng đủ tốt; **phát hiện** thì chập chờn.
 
 ---
 
@@ -142,9 +147,9 @@ chứng.
 | Web (`vitest`) · `tsc` | 670 passed · sạch |
 | `ruff check .` | sạch |
 | **Full backend suite** | **CHƯA CHẠY** |
-| Phép so tracker–oracle 120 seed | **đang chạy** |
+| Phép so tracker–oracle 120 seed | **xong** — 11 cơ hội, 0 giành lại (commit `63c5d7d`) |
 
-17 commit, tất cả tiền tố `TongDuyAn - `.
+20 commit, tất cả tiền tố `TongDuyAn - `.
 
 ---
 
