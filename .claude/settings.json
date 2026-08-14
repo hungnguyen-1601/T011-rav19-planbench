@@ -1,11 +1,4 @@
 {
-  "permissions": {
-    "allow": [
-      "Bash(rm -f tests/golden/dwa_trajectories.json)",
-      "Bash(PLANBENCH_REGEN_GOLDEN=1 python -m pytest tests/test_dwa_core_refactor.py -q)",
-      "Bash(python -m pytest tests/test_dwa_core_refactor.py -q)"
-    ]
-  },
   "hooks": {
     "UserPromptSubmit": [
       {
