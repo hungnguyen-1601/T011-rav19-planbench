@@ -1,6 +1,6 @@
 # Kế hoạch — một sự thật va chạm, inflation theo bậc, và recovery
 
-**Trạng thái:** chờ dev duyệt · **pha riêng**, không nhét vào kế hoạch
+**Trạng thái:** **đã duyệt 14-08** (bốn quyết định ở mục 8) · **pha riêng**, không nhét vào kế hoạch
 14-08 (`vung-cam-va-kha-nang-phuc-hoi.md`) — đó là phiên lập kế hoạch
 khác, phạm vi khác, và pha này **thay thế một phần việc pha kia vừa làm**
 
@@ -61,12 +61,61 @@ Cụ thể:
 - `_inflation_radius` đã là một bước đúng hướng (làm ở B4). Mở rộng
   nguyên tắc đó cho footprint và cho phép kiểm va chạm.
 
-**Test:** một test tham số hoá quét mọi tầng, khẳng định không tầng nào
-tự khai lại bán kính/footprint; và một test tính chất — với **cùng một
-tư thế**, engine, DWA và lưới phải cho **cùng một phán quyết va chạm**
-(cho phép sai khác đúng bằng lượng tử hoá ô, và **nêu rõ** dung sai đó).
+### 1.1. Hợp đồng khả thi giữa hai tầng *(dev chốt 14-08)*
 
-**Ước lượng:** 1 ngày.
+Bốn luật, và chúng **không** nói "hai vùng cấm bằng nhau" — chúng nói một
+**quan hệ có hướng**:
+
+| | luật |
+|---|---|
+| L1 | Global **không được** trả về đường mà local **chắc chắn** không lái được |
+| L2 | Local **được phép** thận trọng hơn global |
+| L3 | Vùng global coi là **va chạm thật** thì local **cũng phải** coi là va chạm |
+| L4 | Một đường có clearance **thấp hơn keep-out của DWA** phải bị đánh dấu **"không lái được"** trong test tích hợp |
+
+**L1 chính là luật mà B1 vi phạm**, và **L4 chính là hàng rào lẽ ra đã bắt
+được nó**: B1 nới lớp đệm cục bộ quanh robot, RRT* khai thác chỗ nới đó và
+trả về đường cách xe đẩy 0.13 m — dưới keep-out 0.31 m của DWA. Global trả
+một con đường local **bị cấm đi**. Không test nào bắt, vì chưa có L4.
+
+### 1.2. Hệ quả suy ra từ L1 + L2 — **cần dev xác nhận lại**
+
+Hai luật này **kéo nhau** nếu sự thận trọng của local là một **từ chối
+cứng**:
+
+- L1 đòi: mọi đường global trả về phải lái được ⇒ `keepout_global ≥
+  keepout_local`.
+- L2 cho phép: `keepout_local ≥ keepout_global`.
+
+Cả hai chỉ cùng đúng khi `keepout_local = keepout_global`, tức quay về
+đúng ràng buộc thừa đã loại ở đầu mục 1.
+
+**Lối ra duy nhất — và nó chính là hướng đi của mục 2:** phần thận trọng
+**vượt trên** biên va chạm chung phải là **mềm** (chi phí), không phải
+**cứng** (từ chối). Chỉ **va chạm** mới cứng.
+
+Hiện DWA đang làm ngược:
+
+```python
+keep_out = robot.radius + config.safety_margin
+if clearances[index] <= keep_out:     # <- TỪ CHỐI CỨNG ở 0.31 m
+    continue
+```
+
+Suy ra thay đổi: ngưỡng **từ chối cứng** của DWA hạ xuống **`robot.radius`
+(va chạm)**, còn `safety_margin` thành một số hạng **chi phí dốc**. Robot
+vẫn tránh xa như cũ trong đại đa số tình huống, nhưng khi lựa chọn duy
+nhất là đi sát thì nó **đi được** thay vì đứng im.
+
+Đây là **hệ quả tôi suy ra**, không phải điều dev nói. Nó **đổi hành vi
+mọi ứng viên**, nên cần xác nhận trước khi code.
+
+**Test:** test tham số hoá quét mọi tầng, khẳng định không tầng nào tự
+khai lại bán kính/footprint; test tính chất — cùng tư thế cho cùng phán
+quyết va chạm ở mọi tầng (dung sai đúng bằng lượng tử hoá ô, **nêu rõ**);
+và **hàng rào L4**, xem mục 7.
+
+**Ước lượng:** 1 ngày, +0.5 nếu làm cả thay đổi ngưỡng DWA ở 1.2.
 
 ---
 
@@ -95,11 +144,24 @@ sửa lớp lưới — nó là **sửa hàm mục tiêu của cả hai planner*
   nhỏ về mã, nhưng đổi đường đi ⇒ đổi mọi số đo.
 - **RRT\***: chi phí cạnh và điều kiện rewire phải tích phân trường chi
   phí dọc cạnh, không chỉ lấy độ dài. Đây là phần **khó nhất** của cả
-  pha: rewire dựa trên một chi phí không phải metric làm mất tính chất
-  tiệm cận tối ưu của RRT*, và cần nói rõ ta chấp nhận điều đó.
-- **DWA**: đã có `weight_clearance` đọc khoảng hở liên tục. Cân nhắc cho
-  nó đọc **cùng trường chi phí** để ba tầng nói cùng một ngôn ngữ — hoặc
-  cố ý không, và **ghi lý do**.
+  pha.
+
+  *(dev chốt 14-08)* **Chấp nhận triển khai với objective mới mà chưa xác
+  minh các điều kiện bảo đảm tiệm cận tối ưu còn giữ được.** Ghi lại
+  thành một hạn chế đã biết, không phải một thứ bị bỏ quên: rewire trên
+  một chi phí không phải metric làm mất chứng minh tiệm cận tối ưu của
+  RRT*, nên từ đây **"RRT\*" trong dự án này là một biến thể cost-aware**,
+  và mọi so sánh phải đọc nó như thế. Ghi vào `docs/KNOWN_LIMITATIONS.md`
+  và vào mô tả stack trong registry, để nó lên tới màn hình `/candidates`
+  chứ không nằm trong một comment.
+- **DWA**: *(dev chốt)* **được phép đọc riêng** khoảng hở liên tục của
+  nó — không bắt dùng chung trường chi phí. Nhưng phải **không mâu thuẫn
+  về tính khả thi**: bốn luật L1–L4 ở mục 1.1 là hợp đồng, và mục 1.2 là
+  thứ phải sửa để L1 và L2 cùng đúng được.
+
+  Đọc riêng là lựa chọn tốt ở đây vì bộ điều khiển phản ứng với **thứ cảm
+  biến thấy ngay lúc đó**, còn trường chi phí là ảnh chụp lúc lập kế
+  hoạch. Ép chung sẽ làm local chậm một nhịp so với thế giới.
 
 **λ (hệ số quy đổi chi phí ↔ khoảng cách) là một con số do người chọn.**
 Không tránh được. Nên: khai trên **deployment**, giống nhau cho mọi ứng
@@ -135,7 +197,7 @@ phỏng (timeout), R2/R3 tiêu thời gian **và** quãng đường (`travel_tim
 `path_length_m`). Không cần số hạng phạt riêng — cùng lập luận đã dùng
 cho `replan_count`.
 
-### Câu hỏi thiết kế khó nhất — và **không nên chốt cứng**
+### Recovery thuộc về ai — **đã chốt: theo scope**
 
 Recovery là **điều kiện hiện trường** hay **năng lực ứng viên**?
 
@@ -151,8 +213,7 @@ recovery tốt hơn *là* stack tốt hơn. Nhưng nếu một ứng viên đư�
 - Muốn so recovery với nhau → **một scope mới** (`recovery_selection`),
   và khi đó recovery chuyển sang candidate.
 
-Chọn theo scope, không chọn một luật phẳng. Đây là điểm tôi đề nghị dev
-duyệt riêng.
+**Dev chốt 14-08: theo scope.** Không luật phẳng.
 
 **Ước lượng:** 2 ngày (R1–R3), +0.5 ngày R4 kèm giới hạn.
 
@@ -214,10 +275,15 @@ mọi ứng viên**, và **ghi vào manifest**.
 2. **Bất biến theo độ phân giải**: cùng cảnh ở 0.05 / 0.125 / 0.25 m phải
    cho cùng *kết luận* (không nhất thiết cùng đường). Con bug gốc sinh ra
    từ một đại lượng của lưới, nên hàng rào phải bắt đúng chuyện đó.
-3. **Không thiên vị họ planner**: `sudden_stop` với **cả** `astar+dwa`
-   **và** `rrtstar+dwa` — cả hai phải trả về đường **lái được**, tức
-   khoảng hở tối thiểu ≥ keep-out của bộ điều khiển. Đây là hàng rào cho
-   đúng thứ B1 làm hỏng.
+3. **Hàng rào L4 — cái quan trọng nhất trong danh sách này.** Một test
+   tích hợp lấy **mọi** đường mà global trả về (kế hoạch đầu **và** mọi
+   lần replan), đo khoảng hở tối thiểu tới vật cản, và **đánh dấu
+   "không lái được"** nếu nó thấp hơn ngưỡng từ chối cứng của DWA.
+
+   Chạy cho **cả** `astar+dwa` **và** `rrtstar+dwa`, vì đây đúng là chỗ
+   B1 hỏng và chỉ lộ ra ở họ planner lấy mẫu: A* đi vòng 0.59 m và qua
+   được, RRT* cắt sát 0.13 m và không. Một hàng rào chỉ chạy A* sẽ xanh
+   trong khi hệ đang hỏng.
 4. **Recovery đổi trạng thái, không đổi kết quả**: sau R1–R3 episode phải
    ở một trạng thái **khác** (vị trí, hướng, hoặc thời gian) — một recovery
    không đổi gì là một recovery vô nghĩa và phải đỏ.
@@ -227,18 +293,34 @@ mọi ứng viên**, và **ghi vào manifest**.
 
 ---
 
-## 8. Câu hỏi cần dev quyết trước khi code
+## 8. Quyết định của dev — chốt 14-08
 
-1. **Recovery theo scope hay phẳng?** (mục 3). Tôi đề nghị theo scope.
-2. **DWA có đọc chung trường chi phí không**, hay giữ khoảng hở liên tục
-   riêng? Đọc chung thì ba tầng cùng ngôn ngữ; giữ riêng thì bộ điều
-   khiển vẫn phản ứng đúng với thứ cảm biến thấy ngay lúc đó. Tôi nghiêng
-   **giữ riêng, và ghi rõ lý do** — nhưng đây là quyết định của dev.
-3. **Chấp nhận RRT\* mất tiệm cận tối ưu** khi rewire trên chi phí không
-   phải metric?
-4. **Footprint đa giác** làm luôn ở pha này hay để sau? Nav2 hỗ trợ đổi
-   footprint khi robot mang hàng; nếu định làm thì (1) nên khái quát ngay
-   từ đầu thay vì khái quát lần hai.
+| # | câu hỏi | quyết định |
+|---|---|---|
+| 1 | Recovery theo scope hay phẳng? | **Theo scope** (mục 3) |
+| 2 | DWA đọc chung trường chi phí? | **Đọc riêng được**, nhưng phải thoả hợp đồng khả thi L1–L4 (mục 1.1) |
+| 3 | RRT* mất tiệm cận tối ưu? | **Chấp nhận**, ghi thành hạn chế đã biết và đưa lên UI |
+| 4 | Footprint đa giác? | **Không ở MVP** — giữ hình tròn, nâng cấp sau |
+
+### Về (4): giữ hình tròn, nhưng **đừng khoá cứng vào hình tròn**
+
+Quyết định là đúng cho MVP — footprint đa giác kéo theo kiểm va chạm đa
+giác ở **mọi** tầng, và đó là một pha riêng nữa.
+
+Nhưng mục 1 nói *"lưới là biểu diễn **dẫn xuất** từ footprint"*. Nếu viết
+nguyên tắc đó dưới dạng **một hàm nhận footprint** ngay từ đầu — dù MVP
+chỉ có một hiện thực hình tròn — thì lần nâng cấp sau là **thêm một hiện
+thực**, không phải đi khái quát hoá lại bốn tầng.
+
+Chi phí thêm bây giờ gần bằng không; chi phí khái quát hoá lần hai là
+đúng công việc mục 1 đang làm, làm lại lần nữa.
+
+### Còn treo — hệ quả suy ra ở mục 1.2
+
+L1 và L2 chỉ cùng đúng được nếu phần thận trọng vượt trên biên va chạm là
+**mềm**. Suy ra: ngưỡng từ chối cứng của DWA hạ xuống `robot.radius`,
+`safety_margin` thành chi phí. **Đây là suy luận của tôi, không phải điều
+dev nói**, và nó đổi hành vi mọi ứng viên — cần xác nhận trước khi code.
 
 ---
 
@@ -246,7 +328,7 @@ mọi ứng viên**, và **ghi vào manifest**.
 
 | pha | ngày |
 |---|---|
-| (1) một sự thật va chạm | 1 |
+| (1) một sự thật va chạm + hợp đồng L1–L4 | 1–1.5 |
 | (2) inflation theo bậc + xoá B1 | 2–3 |
 | (3) recovery R1–R4 | 2.5 |
 | hợp đồng + manifest + UI + test | 1.5 |
