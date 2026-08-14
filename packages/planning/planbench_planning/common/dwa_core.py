@@ -49,6 +49,7 @@ __all__ = [
     "obstacle_points",
     "reachable_window",
     "rollout_batch",
+    "rollout_times",
     "sample_window",
 ]
 
@@ -172,6 +173,26 @@ def rollout_batch(
     diff = points[:, :, None, :] - obstacles[None, None, :, :]
     clearances = np.sqrt(np.einsum("nkmd,nkmd->nkm", diff, diff)).min(axis=(1, 2))
     return points, clearances
+
+
+def rollout_times(horizon_seconds: float, horizon_dt: float) -> np.ndarray:
+    """When each column of :func:`rollout_batch` happens, in seconds ahead.
+
+    **This function exists because the obvious answer is wrong**, and it
+    is wrong by exactly one step — which is the failure mode the plan
+    named in advance and which no metric would reveal, because a
+    prediction that lags a beat still looks like a prediction.
+
+    ``rollout_batch`` builds its positions with ``cumsum``, so column
+    ``k`` is the pose after ``k + 1`` integration steps, not after ``k``.
+    Column 0 is already ``horizon_dt`` seconds into the future; the robot
+    is never at its starting pose in that array. Anything comparing those
+    positions against a world rolled forward has to use the same clock,
+    so both callers read it from here rather than each writing
+    ``arange(steps) * dt`` and one of them being right.
+    """
+    steps = max(1, int(round(horizon_seconds / horizon_dt)))
+    return (np.arange(steps, dtype=float) + 1.0) * horizon_dt
 
 
 def obstacle_points(observation: Observation) -> np.ndarray:
