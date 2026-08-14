@@ -222,3 +222,65 @@ láng giềng trống : 0 / 8
 ```
 
 Hướng xử lý xem `docs/antongduy/plans/2026-08-14/vung-cam-va-kha-nang-phuc-hoi.md`.
+
+---
+
+## 8. Hậu B1 — cùng lớp vấn đề, lần này do chính bản vá mở rộng ra
+
+*(ghi thêm 14-08, sau khi dev hỏi vì sao RRT\* không thoát được trong khi
+A\* thoát được)*
+
+Với **nhiễu 2 luồng** (`lidar_range_sigma_m`, `wheel_slip_fraction`) trên
+`sudden_stop`, sau B1:
+
+| | A* | RRT* |
+|---|---|---|
+| số lần replan | **1** | **11** |
+| replan **thất bại** | 0 | **0** |
+| waypoint | 3 | 9–10 |
+| độ dài | 7.57 m | **6.86 m** |
+| **khoảng hở tới xe đẩy** | **0.59 m** | **0.29 / 0.34 / 0.13 m** |
+| góc ngoặt gắt nhất | 67° | **170° / 68° / 187°** |
+| kết cục | success | timeout |
+
+**RRT\* không hề replan hỏng.** Chỗ hỏng nằm sau đó: DWA không **lái**
+nổi đường nó trả về.
+
+- Đường của RRT* chạy **vào trong** vùng cấm 0.31 m của DWA (0.13 m ở lần
+  thứ ba). Bộ điều khiển bị giao một con đường nó **bị cấm đi**, nên loại
+  mọi quỹ đạo bám theo → đứng im → stuck → replan → nhận đường sát y hệt.
+- Góc **187°** là một cú **đảo chiều**, mà `allow_reverse = False`. Với
+  `lookahead_distance` 1.2 m, đích cục bộ rơi ra **phía sau** robot: số
+  hạng bám đường kéo lùi, số hạng khoảng hở đẩy ra, robot đứng yên.
+
+### Vì sao là RRT\* chứ không phải A\*
+
+RRT* tối ưu **độ dài** và đặt node ở **bất kỳ đâu trong không gian liên
+tục**. A* đi từng ô với chi phí theo bước. Cho **cùng một lưới đã nới**,
+RRT* khai thác **triệt để** bong bóng B1 giải phóng và cắt sát góc; A*
+rời bong bóng theo đường ô ngắn nhất nên vô tình đi vòng rộng hơn.
+
+Kiểm chứng: **kế hoạch đầu tiên** — chưa có bong bóng — của hai bên gần
+như y hệt (11.00 m và 11.01 m, RRT* thậm chí mượt hơn, ngoặt gắt nhất
+10.6°). **Chênh lệch chỉ xuất hiện ở chỗ có nới lỏng.**
+
+### Điều phải nói thẳng
+
+**B1 không trung lập giữa hai họ planner.** Bong bóng là một nới lỏng
+dành cho *bộ lập kế hoạch*; một planner lấy mẫu tối ưu độ dài khai thác
+nó tối đa, một planner trên lưới thì gần như không.
+
+Nên B1 **giúp A\* và có thể hại RRT\***, và đó lại đúng **cùng lớp vấn
+đề** với cái ở mục 6: hai tầng bất đồng về *"thế nào là đi được"*. Khác
+biệt duy nhất là lần này khoảng bất đồng do **chính bản vá** mở rộng ra.
+
+Đây là chuyện **công bằng giữa ứng viên**, không phải chuyện chất lượng
+thuật toán — cùng loại rủi ro HĐ-4.1 quan tâm.
+
+### Ba hướng, chưa làm
+
+| | | đánh giá |
+|---|---|---|
+| **C1** | Bong bóng chỉ để **thoát ra**; đường sau đó phải tôn trọng lớp đệm đầy đủ | không đụng thứ đang được đo — nghiêng hướng này |
+| **C2** | Hợp nhất hai vùng cấm (= **B3** trong plan 14-08) | xoá tận gốc, nhưng đổi hành vi **mọi** ứng viên |
+| **C3** | Coi là kết quả thật về RRT* | **loại** — con đường đó chỉ tồn tại nhờ một nới lỏng của harness |
