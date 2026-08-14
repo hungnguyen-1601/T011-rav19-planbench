@@ -55,7 +55,7 @@ Oracle biết **hiện tại**, không biết **tương lai** (sai phân lùi). 
 vì thước sai; khai lại, commit trước, chạy 120 seed: **11/11, `p =
 0.00049`**, va chạm 9 → 2.
 
-**P5 — tracker LiDAR** *(chưa hoàn tất theo plan gốc)*
+**P5 — tracker LiDAR** *(ĐÓNG bằng kết quả âm, An chốt 15-08)*
 `tracking.py`: phân cụm → phân loại → ghép cặp → bình phương tối thiểu →
 sàn nhiễu → vòng đời. Đối chiếu với oracle: **3 cơ hội, lấy 0**.
 
@@ -117,12 +117,12 @@ chứng.
 
 | # | việc | vì sao chờ |
 |---|---|---|
-| 1 | **P5 chưa đạt test 7.2** | tracker không phân biệt nổi vật tĩnh; yêu cầu đã bị tôi đổi có chủ ý. P5 **chưa hoàn tất** theo plan gốc |
+| ~~1~~ | ~~P5 chưa đạt test 7.2~~ | **đã chốt 15-08**: sửa plan, P5 đóng bằng kết quả âm. Tiêu chí gốc và số đo nằm cạnh nhau trong plan |
 | 2 | **Tái bắt sau gap > 0.5 s** | nửa còn lại của (a2); nửa vận tốc stale đã sửa |
 | 3 | **72 tia có đủ không** | 0.35 m ở 4 m = **2 tia**. Đổi LiDAR ⇒ `task_profile_id` mới |
 | 4 | **L8** — `kinematics.py` bậc không | sửa là đổi tích phân ⇒ đổi mọi số đã lưu |
 | 5 | **§8 metric mục tiêu** | P4 cho thấy dự đoán mua an toàn; chạy P7 với metric cũ sẽ đo nhầm trục |
-| 6 | **Diagnostics chưa vào trace** | mới lộ qua `planner.diagnostics` + script; việc 7 của P5 đòi event/log |
+| ~~6~~ | ~~Diagnostics chưa vào trace~~ | **đã làm**: `run_stack` phát event `local_planner_diagnostics` cuối episode; controller không có counter thì im lặng |
 | 7 | **`local_version` vẫn `"v1"`** | P6 việc 4; nay đã thành nợ thật vì hai controller dùng chung lõi |
 
 ---

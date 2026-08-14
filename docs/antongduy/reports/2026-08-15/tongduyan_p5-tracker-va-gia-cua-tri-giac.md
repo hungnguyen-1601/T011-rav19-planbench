@@ -2,8 +2,9 @@
 
 **Ngày:** 2026-08-15
 **Plan:** `docs/antongduy/plans/2026-08-14/du-doan-chuyen-dong-vat-can.md`, P5
-**Trạng thái:** tracker xong và có test · **phép đối chiếu cuối pha cho kết
-quả âm: tracker thu lại 0% lợi ích của oracle** — cần An quyết trước P6
+**Trạng thái:** **P5 ĐÓNG bằng KẾT QUẢ ÂM** *(An chốt 15-08)* — tracker
+xong, có test, và **không** giành lại được lợi ích của oracle. Test 7.2 đã
+được **sửa trong plan** kèm số đo, không phải bỏ qua.
 
 ---
 
@@ -116,9 +117,13 @@ nước đi mà plan này đã bắt được năm lần. Thay vào đó:
 
 | | |
 |---|---|
-| Test 7.2 theo plan gốc | **CHƯA ĐẠT** |
-| Yêu cầu đã bị đổi | **có, có chủ ý, bởi tôi** |
-| P5 so với plan gốc | **chưa hoàn tất** |
+| Test 7.2 theo plan gốc | **KHÔNG ĐẠT ĐƯỢC** với thiết kế MVP |
+| Yêu cầu đã bị đổi | **có, có chủ ý** — sửa thẳng vào plan, kèm số đo |
+| P5 | **ĐÓNG bằng kết quả âm** (An chốt 15-08) |
+
+Sửa nằm ở `plans/2026-08-14/du-doan-chuyen-dong-vat-can.md`, ngay dưới
+test 7.2, để tiêu chí gốc và lý do đổi nằm cạnh nhau chứ không phải một
+cái thay thế cái kia.
 
 Bản thay thế **yếu hơn hẳn**: provider rỗng thì dĩ nhiên không có dự đoán
 nào đi vào — nó không kiểm được điều 7.2 thật sự hỏi, là *tracker có phân

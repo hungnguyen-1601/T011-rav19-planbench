@@ -1,6 +1,7 @@
 # Kế hoạch — `dwa_predictive`: bộ điều khiển dự đoán chuyển động vật cản
 
-**Trạng thái:** **chờ duyệt** · **phiên lập kế hoạch riêng**, không gộp
+**Trạng thái:** đã duyệt · **P0–P5 xong** (P5 đóng bằng **kết quả âm**,
+xem sửa plan ở test 7.2) · **P6, P7 chưa làm** · **phiên lập kế hoạch riêng**, không gộp
 vào hai plan cùng ngày (`mot-su-that-va-cham-va-recovery.md`,
 `vung-cam-va-kha-nang-phuc-hoi.md`) — khác phiên, khác phạm vi, và plan
 này **giả định hai plan kia đã xong** (phase 1/1b/2/3 đã hiện thực).
@@ -531,6 +532,47 @@ ta muốn. `--scope` đã có sẵn ở `scripts/compare.py:91`.
    số số học. Đây là test quan trọng nhất của cả bộ: nó ghim rằng phần
    thêm chỉ kích hoạt khi có chuyển động thật. Chạy **có bật nhiễu định
    vị** — đó là lúc sàn nhiễu ở mục [2] bị thử thật.
+
+   > ### ⛔ SỬA PLAN 15-08 — tiêu chí này **KHÔNG ĐẠT ĐƯỢC** với thiết kế MVP
+   >
+   > *(An chốt 15-08. Sửa có chủ ý, không phải bỏ qua.)*
+   >
+   > Đo được ở P5, trên ba cảnh **hoàn toàn tĩnh** và tắt **mọi** luồng
+   > nhiễu — nên không một con số nào dưới đây là nhiễu cảm biến:
+   >
+   > | cảnh | vận tốc ma trung vị | lớn nhất |
+   > |---|---|---|
+   > | `doorway` | 0.28 m/s | **1.01** |
+   > | `static_obstacles` | 0.41 m/s | **1.27** |
+   > | `narrow_corridor` | 0.04 m/s | 0.35 |
+   >
+   > Traffic thật của thư viện chạy 0.6–0.8 m/s. **Vận tốc ma cùng bậc độ
+   > lớn với tín hiệu thật**, nên "quỹ đạo giống `dwa`" là bất khả.
+   >
+   > **Nguyên nhân là hình học, không phải ngưỡng.** Một centroid tracker
+   > 2D không phân biệt được cột tĩnh 0.75 m với người đi bộ bằng hình
+   > dạng; và tâm cụm dịch khi **góc nhìn** của robot đổi, không chỉ khi
+   > vật đổi. Với LiDAR 72 tia (5.00°/tia), một vật 0.35 m ở 4 m rộng
+   > **2 tia** — không đủ điểm để nói nó là gì.
+   >
+   > **Sàn nhiễu của plan (mục [2]) cũng thiếu một số hạng:**
+   > `(2·position_uncertainty + k·σ_range)/window` **bằng đúng 0** trên
+   > deployment không nhiễu. Đã thêm số hạng lượng tử hoá quét
+   > `reach·Δθ/window` — tồn tại với cảm biến hoàn hảo. Nó giúp
+   > `narrow_corridor` (95 → 31 track có vận tốc) và **không đóng được**
+   > hai cảnh kia.
+   >
+   > **Tiêu chí thay thế, yếu hơn và được nói rõ là yếu hơn:** provider
+   > rỗng ⇒ lệnh **giống hệt từng byte** với `dwa`. Nó ghim công tắc
+   > (mọi chế độ hỏng của tracker thoái lui về `dwa`) nhưng **không** ghim
+   > điều 7.2 thật sự hỏi — *tracker có phân biệt nổi vật tĩnh không*.
+   > Câu trả lời đo được: **không**.
+   >
+   > **P5 đóng lại bằng kết quả âm.** Plan đã nói trước rằng một kết quả
+   > âm là một kết quả; đây là một cái. Thứ **vẫn** đứng vững: ràng buộc
+   > cứng không bị chạm, nên ma chỉ vào **chi phí**. Nhưng xem cảnh báo ở
+   > cuối mục 4 — điều đó **không** đồng nghĩa "không thể làm va chạm tệ
+   > hơn".
 
 3. **`sudden_stop` — ca đối kháng, và nó đã có sẵn trong thư viện.**
    `SuddenStopMotion` là **phản ví dụ hoàn hảo** của vận tốc hằng: vật
