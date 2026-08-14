@@ -16,13 +16,23 @@ earlier. Those change the **commands** without breaking any function's
 contract, and every stored measurement on this platform is downstream of
 the commands. So the check is end-to-end and exact.
 
-**Exact means exact.** The comparison is on the repr of every float, not
-``pytest.approx``. A refactor that shifts the last bit of a velocity is
-not a refactor that changed nothing — it is a refactor that changed
-something too small for this scene to show, and the next scene may not be
-so kind. Floats are stored through :mod:`json`, whose default float repr
-is the shortest string that round-trips, so a value written and read back
-is the same object bit for bit.
+**Exact means exact**, and it is checked at two levels because one of
+them is not enough.
+
+The per-case assertions compare values parsed back out of the fixture.
+That catches a shifted float — a refactor moving the last bit of a
+velocity has not "changed nothing", it has changed something too small
+for *this* scene to show, and the next scene may not be so kind — but
+Python's ``==`` is forgiving in two ways a refactor can actually trip:
+``0 == 0.0`` hides a type change, and ``-0.0 == 0.0`` hides a sign flip
+that reordering a subtraction can produce.
+
+So :meth:`TestTheSharedCoreChangedNothing.test_the_serialised_form_is_byte_identical`
+compares the **text**: the fresh result serialised exactly as the fixture
+was written, against the bytes on disk. ``repr`` renders ``0``, ``0.0``
+and ``-0.0`` as three different strings, so neither gap survives it. The
+per-case assertions stay because a byte diff over a quarter-megabyte file
+says only *something moved*, and the case name says where.
 
 **What is stored, and why both.** Each case keeps the controller's
 **command sequence** — the thing the extracted code actually produces —
@@ -226,6 +236,30 @@ def measured() -> dict[str, Any]:
 
 class TestTheSharedCoreChangedNothing:
     """One assertion per case, and the case name is the diagnostic."""
+
+    def test_the_serialised_form_is_byte_identical(self, measured: dict[str, Any]) -> None:
+        """The whole fixture, as text, against the text on disk.
+
+        **This is the assertion the rest of the class only approximates.**
+        Everything below compares values parsed back out of JSON, and
+        Python's ``==`` is deliberately forgiving in two ways that matter
+        to a refactor:
+
+        * ``0 == 0.0`` — an ``int`` where a ``float`` used to be passes,
+          and the next thing to touch that value may not be so relaxed;
+        * ``-0.0 == 0.0`` — a sign flip on zero passes, and a negative
+          zero angular velocity is a real thing to produce by reordering
+          a subtraction.
+
+        Serialising the new result *the same way the fixture was written*
+        and comparing the strings catches both, because ``repr`` writes
+        ``0`` and ``0.0`` and ``-0.0`` as three different things.
+
+        Note what this does **not** do: it does not regenerate anything.
+        It formats the freshly measured result and compares it to bytes
+        that have been on disk since before the extraction.
+        """
+        assert json.dumps(measured, indent=1) == GOLDEN_PATH.read_text(encoding="utf-8")
 
     @pytest.mark.parametrize("name", [case["name"] for case in CASES])
     def test_the_commands_are_identical(

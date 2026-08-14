@@ -72,8 +72,7 @@ lớp sinh ra để chặn.
 refactor. Thứ tự đó có chủ đích: nó làm câu *"fixture sinh trước khi
 tách"* thành thứ đọc được từ lịch sử git, không phải thứ phải tin.
 
-Mỗi ca lưu **lệnh điều khiển** (`v`, `ω` từng bước) **và** quỹ đạo, và
-so **repr từng float**, không phải `pytest.approx`:
+Mỗi ca lưu **lệnh điều khiển** (`v`, `ω` từng bước) **và** quỹ đạo:
 
 > Một refactor làm dịch bit cuối của một vận tốc **không phải** refactor
 > không đổi gì — nó là refactor đổi một thứ quá nhỏ để cảnh này lộ ra, và
@@ -81,6 +80,24 @@ so **repr từng float**, không phải `pytest.approx`:
 
 Lệnh được so **trước** quỹ đạo: nếu lệnh dịch thì quỹ đạo dịch vì một lý
 do gọi tên được, còn báo "robot đi chỗ khác" trước sẽ chôn mất lý do đó.
+
+**So ở hai mức, và một mức là không đủ** *(thêm sau phản biện của An)*.
+Bản đầu khai "so repr từng float" nhưng code parse JSON rồi so `==` trên
+list. `==` bỏ qua đúng hai thứ mà một refactor sinh ra được:
+
+| | `parsed ==` | `json.dumps ==` |
+|---|---|---|
+| `0` thay cho `0.0` (đổi kiểu) | **lọt** | bắt |
+| `-0.0` thay cho `0.0` (đảo dấu số 0) | **lọt** | bắt |
+
+Số 0 âm không phải chuyện lý thuyết: đảo thứ tự một phép trừ là sinh ra
+được. Nên thêm một khẳng định so **chuỗi**: kết quả mới được serialise
+**đúng cách fixture cũ đã được ghi**, rồi so byte-for-byte với file trên
+đĩa — `repr` viết `0`, `0.0` và `-0.0` thành ba chuỗi khác nhau.
+
+Nó **không** regenerate gì; nó chỉ định dạng kết quả vừa đo. Các khẳng
+định theo từng ca vẫn giữ, vì một diff byte trên file 258 KB chỉ nói
+*"có gì đó dịch"*, còn tên ca nói *dịch ở đâu*.
 
 ### 4.1. Bảy ca, và cả bảy đều bị kiểm là **thật sự** làm điều nó khai
 
@@ -144,7 +161,7 @@ duy nhất để biết nó không xảy ra là đo — không phải đọc l�
 
 | Việc | Kết quả |
 |---|---|
-| `tests/test_dwa_core_refactor.py` | **19 passed** — 7 ca × (lệnh, episode) + 5 test về chất lượng fixture |
+| `tests/test_dwa_core_refactor.py` | **20 passed** — 1 so byte-for-byte + 7 ca × (lệnh, episode) + 5 test về chất lượng fixture |
 | `tests/test_dwa.py` · `test_hard_feasible_set.py` · `test_admissible_stopping.py` · `test_nav_stack.py` · `test_recovery.py` · `test_replanning.py` · `test_fairness.py` (gồm cả golden) | **209 passed, 1 skipped** (7m18s) |
 | `ruff check .` | sạch |
 | Full backend suite | **chưa chạy — chờ lệnh** |
