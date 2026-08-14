@@ -156,19 +156,7 @@ def max_speed(motion: Motion) -> float:
     silent zero: an unproven bound must cost a deployment its safety
     claim, not be assumed generous.
     """
-    if isinstance(motion, RandomWalkMotion):
-        raise NotImplementedError(
-            "random_walk cannot carry a speed bound: the implementation does not honour "
-            "its own `speed`. The reflection at `max_radius` is decided from the "
-            "*partial* elapsed time of the interval in progress, so as that time grows "
-            "the branch flips and the position jumps from the outward extrapolation to "
-            "the inward one. Measured on `dynamic_warehouse` (speed 0.5 m/s): a single "
-            "0.05 s step moves the obstacle 1.4075 m, which is 28 m/s — 56x the "
-            "declared figure. A deployment declaring v_obstacle_max beside a random "
-            "walk would size its braking for traffic it does not meet, so the claim is "
-            "refused until the motion is continuous. See KNOWN_LIMITATIONS L12"
-        )
-    if isinstance(motion, WaypointMotion | SuddenStopMotion):
+    if isinstance(motion, WaypointMotion | RandomWalkMotion | SuddenStopMotion):
         return motion.speed
     if isinstance(motion, PeriodicMotion):
         chord = math.hypot(motion.end.x - motion.start.x, motion.end.y - motion.start.y)
@@ -264,14 +252,32 @@ def _random_walk_position(motion: RandomWalkMotion, time: float, seed: int) -> P
         if elapsed <= 0:
             break
         heading = _hashed_angle(seed, motion.seed_offset, index)
-        next_x = x + motion.speed * math.cos(heading) * elapsed
-        next_y = y + motion.speed * math.sin(heading) * elapsed
-        if math.hypot(next_x - motion.origin.x, next_y - motion.origin.y) > motion.max_radius:
+        # **Reflect or not is decided once, from the whole interval, and
+        # only then is the heading applied for the time actually elapsed.**
+        #
+        # Testing the *partial* step instead made the obstacle teleport.
+        # ``elapsed`` grows from 0 to ``change_interval`` as time advances
+        # inside the interval in progress, so a test on the partial
+        # endpoint flips from "outward" to "inward" partway through — and
+        # the position jumps between two extrapolations pointing opposite
+        # ways, by up to ``2 · speed · elapsed``. Measured on
+        # ``dynamic_warehouse`` before this was fixed: a 0.5 m/s obstacle
+        # moved 1.4075 m in a single 0.05 s step, which is 28 m/s and 56x
+        # its own declared speed.
+        #
+        # That also made the closed-form bound in HĐ-2.6 false: the
+        # contract states this law's speed bound is ``speed``, and the
+        # implementation exceeded it wildly. Deciding on the full interval
+        # restores it — within any interval the obstacle travels along one
+        # heading at exactly ``speed``, so position is continuous in time
+        # and the bound is exact.
+        full_x = x + motion.speed * math.cos(heading) * motion.change_interval
+        full_y = y + motion.speed * math.sin(heading) * motion.change_interval
+        if math.hypot(full_x - motion.origin.x, full_y - motion.origin.y) > motion.max_radius:
             # Reflect: head back toward the origin for this interval.
-            toward = math.atan2(motion.origin.y - y, motion.origin.x - x)
-            next_x = x + motion.speed * math.cos(toward) * elapsed
-            next_y = y + motion.speed * math.sin(toward) * elapsed
-        x, y = next_x, next_y
+            heading = math.atan2(motion.origin.y - y, motion.origin.x - x)
+        x = x + motion.speed * math.cos(heading) * elapsed
+        y = y + motion.speed * math.sin(heading) * elapsed
     return Point2D(x=x, y=y)
 
 

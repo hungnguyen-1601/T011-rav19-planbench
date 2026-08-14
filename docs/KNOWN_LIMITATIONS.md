@@ -1385,47 +1385,58 @@ Cả ba chạy với `obstacle_speed = None`, tức **hành vi cũ**. Nếu lu�
 benchmark cũ còn xuất hiện trên UI thì con số nó sinh ra **không** mang
 bảo đảm phanh trước vật cản đang lại gần, kể cả khi deployment có khai.
 
-### L12. `RandomWalkMotion` nhảy vị trí — vật cản 0.5 m/s đi 28 m/s
+### L12. `RandomWalkMotion` từng nhảy vị trí — **đã sửa 2026-08-15**
 
 Phát hiện lúc kiểm sai số mô hình từng cảnh cho cổng P4. Trên
 `dynamic_warehouse`, `wanderer` khai `speed = 0.5` m/s:
 
 ```
-t=13.50  đi 1.4075 m trong MỘT bước 0.05 s  ->  28.15 m/s
+t=13.50  đi 1.4075 m trong MỘT bước 0.05 s  ->  28.15 m/s   (56x)
 t=19.15  đi 1.1025 m                        ->  22.05 m/s
 t= 4.10  đi 1.0750 m                        ->  21.50 m/s
 ```
 
-**Gián đoạn, không phải nhiễu.** Trong `_random_walk_position`, phép phản
-xạ ở `max_radius` được quyết định từ **thời gian đã trôi *một phần*** của
-interval đang chạy:
+**Gián đoạn, không phải nhiễu.** Phép phản xạ ở `max_radius` được quyết
+định từ **thời gian đã trôi *một phần*** của interval đang chạy:
 
 ```python
 next_x = x + speed * cos(heading) * elapsed
 if hypot(next - origin) > max_radius:
-    toward = atan2(origin - current)
     next_x = x + speed * cos(toward) * elapsed   # hướng NGƯỢC LẠI
 ```
 
-`elapsed` lớn dần từ 0 tới `change_interval` khi thời gian trôi trong
-interval. Tới đúng lúc đường ngoại suy hướng ra vượt `max_radius`, nhánh
-**lật**, và vị trí nhảy từ điểm hướng-ra sang điểm hướng-vào — biên độ
-tới `2 · speed · elapsed`.
+`elapsed` lớn dần từ 0 tới `change_interval`. Tới đúng lúc đường ngoại
+suy hướng ra vượt `max_radius`, nhánh **lật**, và vị trí nhảy giữa hai
+đường ngoại suy chỉ ngược chiều nhau — biên độ tới `2 · speed · elapsed`.
 
-Quyết định phản xạ phải được lấy **một lần cho cả interval** (từ bước
-đầy đủ), không phải tính lại theo phần thời gian đã trôi.
+**Đã sửa:** quyết định phản xạ lấy **một lần cho cả interval** (từ bước
+đầy đủ `change_interval`), rồi mới áp heading đã chọn với `elapsed`. Bên
+trong một interval vật cản đi theo **một** hướng với **đúng** `speed`,
+nên vị trí liên tục theo thời gian và cận trên là chính xác.
 
-**Hệ quả đã chặn:** `max_speed(RandomWalkMotion)` từng trả `motion.speed`
-— tốc độ **khai**, trong khi tốc độ **thực hiện** vượt nó 56 lần. Nay nó
-**từ chối tường minh**, và validator dịch thành lời từ chối lúc nạp
-deployment. Profile không khai `v_obstacle_max` không bị ảnh hưởng.
+Đo lại sau khi sửa: tốc độ thực hiện lớn nhất **0.500000 m/s** trên tốc
+độ khai 0.5 (tỉ số 1.0000), và vẫn ở trong `max_radius`.
 
-**Chưa sửa luật chuyển động.** Làm nó liên tục **đổi thế giới** cho mọi
-cảnh có random walk (`dynamic_warehouse`), tức đổi mọi số đã lưu ở đó.
-Cùng loại thay đổi độ trung thực với lần bật `sensor_noise`, và phải được
-cân nhắc như thế chứ không phải như một bản vá.
+**Vì sao sửa motion chứ không bump contract.** HĐ-2.6 khai cận trên của
+luật này là `speed`, và điều đó đúng với **đặc tả** — tốc độ hằng, chỉ
+đổi hướng mỗi interval. Sai là ở **hiện thực**. Một lúc, `max_speed` đã
+được cho từ chối `random_walk` để tránh một tuyên bố an toàn sai; nhưng
+làm thế là **ghi một lỗi hiện thực vào ngữ nghĩa hợp đồng** và sẽ cần
+bump MAJOR. Sửa motion làm code khớp lại contract, **không** bump, không
+phải chạy lại lát cắt dọc. *(An chốt 15-08.)*
 
-**Ảnh hưởng ngoài an toàn:** mọi phép đo trên `dynamic_warehouse` đang
-chứa các cú dịch chuyển tức thời; phơi nhiễm va chạm ở đó một phần là do
-teleport chứ không do điều khiển. Bất kỳ tracker nào (P5) cũng không thể
-theo dõi được vật cản này.
+**Hàng rào hồi quy:** `TestRandomWalkMotion::test_it_never_exceeds_its_own_declared_speed`
+— quét toàn bộ 30 s ở bước 0.01 s trên bốn seed và đòi không khoảng nào
+hàm ý tốc độ vượt `speed`. Cộng một test đối chiếu `max_speed` với
+`motion.speed` để hai con số không thể lệch nhau.
+
+**Đổi thế giới, và nó đổi ở đâu.** Quỹ đạo `wanderer` khác từ **t = 3.05 s**,
+lệch tối đa **1.38 m**. Nhưng golden fixture của P2 **vẫn xanh từng byte**,
+và đó không phải vì nó mù: trong ca `warehouse_three_movers` (cắt còn
+25 s) robot đi dọc `y = 6.0` còn `wanderer` quanh `(12, 2)`, cách **~9 m**
+— ngoài tầm LiDAR 6 m suốt cả episode, nên nó chưa bao giờ chạm vào một
+lệnh nào. Ghi ra vì nó có nghĩa là ca đó thực chất chỉ tập luyện **hai**
+vật cản động chứ không phải ba.
+
+Mọi số đã lưu ở cảnh có random walk mà robot **có** nhìn thấy vật cản đó
+thì phải đo lại. Không cảnh nào trong golden fixture rơi vào diện này.

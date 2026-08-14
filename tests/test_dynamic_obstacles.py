@@ -144,6 +144,49 @@ class TestRandomWalkMotion:
         obstacle = self.obstacle()
         assert position_at(obstacle, 3.0, 9) == position_at(obstacle, 3.0, 9)
 
+    @pytest.mark.parametrize("seed", [0, 1, 7, 42])
+    def test_it_never_exceeds_its_own_declared_speed(self, seed: int) -> None:
+        """**Regression, and it was a safety bug rather than a cosmetic one.**
+
+        The reflection at ``max_radius`` used to be decided from the
+        *partial* elapsed time of the interval in progress. As that time
+        grew the branch flipped, and the position jumped between two
+        extrapolations pointing opposite ways — up to ``2 · speed ·
+        elapsed`` in a single step.
+
+        Measured on ``dynamic_warehouse`` before the fix: an obstacle
+        declared at 0.5 m/s moved **1.4075 m in one 0.05 s step**, which
+        is 28 m/s and 56x its own figure. That made HĐ-2.6's closed-form
+        bound for this law — ``speed`` — simply false, so a deployment
+        declaring ``v_obstacle_max`` beside a random walk would have sized
+        its braking distance for traffic 56x slower than it met.
+
+        The bound is the contract's, so it is checked as the contract
+        states it: no interval of any length may imply a speed above
+        ``speed``.
+        """
+        obstacle = self.obstacle()
+        declared = obstacle.motion.speed
+        step = 0.01
+        time = step
+        while time < 30.0:
+            before = position_at(obstacle, time - step, seed)
+            after = position_at(obstacle, time, seed)
+            travelled = math.hypot(after.x - before.x, after.y - before.y)
+            assert travelled / step <= declared + 1e-9, (
+                f"moved {travelled:.4f} m in {step} s at t={time:.2f} "
+                f"({travelled / step:.2f} m/s against a declared {declared})"
+            )
+            time += step
+
+    def test_the_declared_bound_is_the_one_max_speed_reports(self) -> None:
+        """And the two must be the same number, or the validator is
+        checking something the world does not obey."""
+        from planbench_schemas.dynamic import max_speed
+
+        obstacle = self.obstacle()
+        assert max_speed(obstacle.motion) == obstacle.motion.speed
+
 
 class TestSuddenStopMotion:
     def test_moves_then_parks(self) -> None:
