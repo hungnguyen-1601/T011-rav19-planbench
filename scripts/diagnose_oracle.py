@@ -97,6 +97,71 @@ PREDICTION = (
 NEAR_MISS_M = 0.35
 
 
+# ---------------------------------------------------------------------------
+# THE GATE, SECOND DECLARATION — 2026-08-15, dev-approved.
+#
+# The rule above FAILED, and the post-mortem found the failure was in the
+# rule rather than in the algorithm. Two flaws, both checkable before the
+# run and both mine:
+#
+#   1. It conditioned on "both reached the goal". Prediction only acts
+#      when a collision is imminent, and in those episodes `dwa` fails —
+#      so the conditioning deletes every episode where the treatment did
+#      anything, leaving a subset on which the two arms are **byte
+#      identical**. The measured delta was exactly 0.000 with a
+#      zero-width CI: identical by construction, not by measurement.
+#   2. It priced a rare event with a bootstrap CI on a difference of
+#      proportions. Outcomes differ on ~7.5% of seeds; that instrument
+#      cannot resolve an effect that sparse at n=40.
+#
+# Declared here in full, and committed before being run, so that "the
+# rule came first" is a property of the git history rather than a claim.
+# The first rule's failure is kept above and in the report: this replaces
+# the instrument, not the record.
+# ---------------------------------------------------------------------------
+
+#: A gate scene must satisfy **both**, and the second is what
+#: `bidirectional_corridor` fails: its baseline success rate is 0.000, and
+#: a scene where every episode of both arms fails cannot discriminate
+#: between them whatever the treatment does. This is a precondition on the
+#: scene, not a judgement of a result.
+RARE_EVENT_SCENES = ("intersection",)
+
+#: Three times the first attempt. Estimated from the pilot's discordant
+#: rate of 3/40: n=120 should yield ~9 discordant pairs, and 9 of 9 in one
+#: direction gives p = 0.5^9 ~ 0.002. Fewer than 7 of 9 would fail, so the
+#: rule is genuinely falsifiable rather than sized to pass.
+RARE_EVENT_SEEDS = 120
+
+#: Outcomes, worst to best. A collision is strictly worse than not
+#: arriving; not arriving is strictly worse than arriving. Ties within a
+#: rank (timeout vs stuck) are not discordant — the robot failed to arrive
+#: either way, and calling one better would be inventing a preference.
+OUTCOME_RANK = {
+    "collision": 0,
+    "timeout": 1,
+    "stuck": 1,
+    "no_progress": 1,
+    "stopped": 1,
+    "no_global_path": 1,
+    "success": 2,
+}
+
+#: One-sided: the question is whether prediction *helps*, and a result
+#: where it reliably hurt would fail the guard below regardless.
+SIGN_TEST_ALPHA = 0.05
+
+#: Predicted before this rule was run, recorded so the order is legible.
+#: The pilot saw 3/40 discordant, all favouring the oracle. If that rate
+#: and direction hold, n=120 gives ~9/9 and p ~ 0.002 — a pass. The honest
+#: uncertainty is the direction: three pairs is a thin basis for expecting
+#: nine to agree, and a single reversal costs a great deal of the margin.
+RARE_EVENT_PREDICTION = (
+    "~9 discordant pairs at n=120, most or all favouring the oracle; "
+    "p in the 0.002-0.09 range, so a pass is likely but not assured"
+)
+
+
 @dataclass(frozen=True)
 class Episode:
     success: bool
@@ -191,9 +256,7 @@ def _report_scene(scene: str, seeds: int, gate: bool) -> dict[str, tuple[float, 
     outcome = {}
     # Conditioned on both succeeding: a candidate that gives up early has
     # fewer stops because it went less far, not because it flowed better.
-    both = [
-        (p, o) for p, o in zip(plain, oracle, strict=True) if p.success and o.success
-    ]
+    both = [(p, o) for p, o in zip(plain, oracle, strict=True) if p.success and o.success]
     print(f"  paired on {len(both)} of {seeds} contexts where both reached the goal")
     if len(both) < 2:
         print("  too few paired successes to bootstrap")
@@ -219,10 +282,86 @@ def _worse(metric: str, plain: float, oracle: float) -> bool:
     return oracle > plain
 
 
+def _sign_test(better: int, worse: int) -> float:
+    """One-sided p that ``better`` of the discordant pairs is chance.
+
+    The paired test for binary outcomes, and the right one for a rare
+    effect: only the pairs that **disagree** carry information about which
+    controller is better, and a proportion difference dilutes them in the
+    majority of seeds where nothing happened. Concordant pairs are
+    uninformative by construction — both arms did the same thing.
+    """
+    trials = better + worse
+    if trials == 0:
+        return 1.0
+    return sum(math.comb(trials, k) for k in range(better, trials + 1)) / 2**trials
+
+
+def _rare_event_gate(seeds: int) -> bool:
+    print("\n" + "=" * 70)
+    print("GATE, SECOND DECLARATION — rare-event sign test on discordant pairs")
+    print(f"Predicted before running: {RARE_EVENT_PREDICTION}")
+    print(f"Pass: p < {SIGN_TEST_ALPHA} one-sided, and no guarded metric worse.")
+    print("=" * 70)
+
+    passed = True
+    for scene in RARE_EVENT_SCENES:
+        plain = [_run(scene, seed, oracle=False) for seed in range(seeds)]
+        oracle = [_run(scene, seed, oracle=True) for seed in range(seeds)]
+
+        better = worse = 0
+        for p, o in zip(plain, oracle, strict=True):
+            rank_p = OUTCOME_RANK[_status(p)]
+            rank_o = OUTCOME_RANK[_status(o)]
+            if rank_o > rank_p:
+                better += 1
+            elif rank_o < rank_p:
+                worse += 1
+
+        p_value = _sign_test(better, worse)
+        print(f"\n=== {scene} ({seeds} paired seeds, unconditioned) ===")
+        print(f"  discordant pairs      {better + worse}")
+        print(f"  favouring the oracle  {better}")
+        print(f"  favouring dwa         {worse}")
+        print(f"  one-sided sign test   p = {p_value:.5f}")
+
+        collisions_plain = sum(1 for e in plain if e.collision)
+        collisions_oracle = sum(1 for e in oracle if e.collision)
+        successes_plain = sum(1 for e in plain if e.success)
+        successes_oracle = sum(1 for e in oracle if e.success)
+        print(f"  collisions  dwa {collisions_plain:>3} -> oracle {collisions_oracle:>3}")
+        print(f"  successes   dwa {successes_plain:>3} -> oracle {successes_oracle:>3}")
+
+        guard_ok = collisions_oracle <= collisions_plain and successes_oracle >= successes_plain
+        scene_ok = p_value < SIGN_TEST_ALPHA and guard_ok
+        if not guard_ok:
+            print("  GUARD BREACHED — a metric got worse")
+        print(f"  {scene}: {'PASS' if scene_ok else 'FAIL'}")
+        passed = passed and scene_ok
+
+    print("\n=== VERDICT ===")
+    print("  PASS — continue to P5" if passed else "  FAIL — the plan stops here")
+    return passed
+
+
+def _status(episode: Episode) -> str:
+    if episode.collision:
+        return "collision"
+    return "success" if episode.success else "timeout"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seeds", type=int, default=MIN_SEEDS)
+    parser.add_argument(
+        "--rare-event",
+        action="store_true",
+        help="run the second gate declaration instead of the first",
+    )
     arguments = parser.parse_args()
+    if arguments.rare_event:
+        _rare_event_gate(max(RARE_EVENT_SEEDS, arguments.seeds))
+        return
     seeds = max(MIN_SEEDS, arguments.seeds)
 
     print("Decision gate 2 — oracle (perfect perception) versus dwa")
