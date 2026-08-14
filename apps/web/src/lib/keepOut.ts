@@ -96,17 +96,25 @@ export function inflationRadius(robotRadius: number, positionUncertainty = 0): n
 
 /** How far the graded penalty reaches past the hard boundary.
  *
- * Mirrors `nav_stack._caution_ramp`: a cell diagonal — the band a
- * coarsely drawn grid cannot be sure about — plus one hard clearance of
- * taper, so the cost reaches zero smoothly instead of stepping off a
- * cliff where paths are decided.
+ * Mirrors `nav_stack._caution_ramp`: **half** a cell diagonal — the
+ * robot-side share of the quantisation slop, the share that stayed out
+ * of the prohibition — plus one hard clearance of taper, so the cost
+ * reaches zero smoothly instead of stepping off a cliff where paths are
+ * decided.
+ *
+ * The *other* half sits inside the planner's own prohibition, because
+ * an occupied cell says the obstacle touches it and not where. That
+ * half is not drawn separately: it lands inside this band, which reads
+ * as "priced" rather than "forbidden" for a sliver where the grid is
+ * stricter than the physics. Drawing a third ring for it would cost
+ * more clarity than the sliver is worth.
  */
 export function cautionRamp(
   resolution: number,
   robotRadius: number,
   positionUncertainty = 0,
 ): number {
-  return Math.SQRT2 * resolution + inflationRadius(robotRadius, positionUncertainty);
+  return (Math.SQRT2 * resolution) / 2 + inflationRadius(robotRadius, positionUncertainty);
 }
 
 /** Radius of the **forbidden** ring around an obstacle of this radius.

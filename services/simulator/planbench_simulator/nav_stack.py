@@ -34,10 +34,11 @@ from planbench_planning import AStarPlanner, GlobalPlanner, PlanResult
 from planbench_planning.common.local_base import LocalPlanner, LocalPlanResult
 from planbench_schemas.episode import EpisodeEvent, EpisodeResult, EpisodeStatus, Observation
 from planbench_schemas.feasibility import SafetyEnvelope, hard_clearance
-from planbench_schemas.geometry import EPS, Point2D
+from planbench_schemas.geometry import EPS, Point2D, normalize_angle
 from planbench_schemas.map import CellState, MapData
+from planbench_schemas.recovery import NO_RECOVERY, RecoveryConfig
 from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
-from planbench_schemas.robot import RobotConfig, RobotState
+from planbench_schemas.robot import RobotConfig, RobotState, SimAction
 from planbench_schemas.scenario import CircleObstacle, Scenario
 from planbench_schemas.sensor import LidarConfig
 from planbench_simulator.engine import SimulationEngine
@@ -418,6 +419,276 @@ def _replan(
     )
 
 
+def _drive_for(
+    engine: SimulationEngine,
+    action: SimAction,
+    seconds: float,
+    dt: float,
+    robot: RobotConfig,
+    envelope: SafetyEnvelope,
+    lidar: LidarConfig,
+    recorder=None,
+) -> float:
+    """Hold one command for ``seconds`` of simulation; return metres covered.
+
+    The return value is what the caller writes into the event, and it has
+    to be measured rather than assumed: the first version reported the
+    distance it *intended*, so a reverse that was refused after 5 mm
+    still logged "backed up 0.30 m". An event stream that overstates what
+    the robot did is worse than no event stream, because it is the thing
+    somebody reads when the trajectory looks wrong.
+
+    **Recovery is charged by being simulated, not by being subtracted.**
+    Every step here advances the clock against the episode timeout and,
+    when the command moves the robot, adds to the trajectory the metrics
+    are computed from. So a stack that backs up twice pays for it in
+    ``travel_time_s`` and ``path_length_m`` without a penalty term
+    existing anywhere — the same argument that retired ``max_replans``
+    and left ``replan_count`` as evidence rather than a score.
+
+    **It obeys the hard feasible set, like every other layer.** The first
+    version did not, and it was not a near miss: on the two-doorway room
+    the ladder turned two timeouts into two **collisions**, because
+    ``back_up`` reverses along the one bearing nothing has been checking
+    — the controller looks where it is going, and going backwards is
+    exactly the case it never considered.
+
+    A recovery that drove blind would be a fourth layer with its own
+    answer to "may the robot be here", which is the defect phases 1 and 2
+    exist to have removed. So each step is refused if the pose it would
+    produce comes within :func:`hard_clearance` of anything the robot can
+    see, and the behaviour stops there having done what it safely could.
+    A shorter reverse is a worse recovery; a reverse into a wall is not a
+    recovery at all.
+
+    Stops early the moment the engine finishes, too — a recovery must not
+    keep stepping a robot whose episode has ended.
+    """
+    steps = max(1, int(round(seconds / dt)))
+    start = engine.get_state().pose
+    covered = 0.0
+    for _ in range(steps):
+        if engine.is_done():
+            break
+        if not _step_is_clear(engine, action, dt, robot, envelope, lidar):
+            break
+        engine.step(action)
+        if recorder is not None:
+            recorder.record(engine.time, engine.get_state(), planner_latency_ms=0.0)
+    here = engine.get_state().pose
+    covered = math.hypot(here.x - start.x, here.y - start.y)
+    return covered
+
+
+def _step_is_clear(
+    engine: SimulationEngine,
+    action: SimAction,
+    dt: float,
+    robot: RobotConfig,
+    envelope: SafetyEnvelope,
+    lidar: LidarConfig,
+) -> bool:
+    """Would this command leave the robot outside the hard feasible set?
+
+    Judged on what the robot **can see** — the LiDAR returns in its own
+    observation — for the same reason ``_replan`` reads the observation
+    rather than the engine's ground truth (HĐ-4.1). A recovery allowed to
+    consult the truth would be a privilege one kind of candidate has and
+    another does not.
+
+    **One step of lookahead is given one step of margin**, and that is
+    not belt-and-braces — it is the difference between this working and
+    not. The engine ramps velocity under ``max_linear_acceleration``, so
+    a pose integrated from the *commanded* speed is not the pose the next
+    step produces; and a LiDAR return marks where a ray stopped, which
+    on a flat wall is a set of points sampled every few degrees rather
+    than the nearest point of the wall. Without the margin the reverse
+    passed this check and collided **one step later**, at 43.90 s against
+    a wall the robot had been 0.30 m from at 43.85 s.
+
+    So the bound is ``hard_clearance`` plus the distance the robot could
+    cover in a step. Anything less is a check that measures the pose
+    before the one that matters.
+    """
+    pose = engine.get_state().pose
+    theta = pose.theta + action.angular_velocity * dt
+    reach = abs(action.linear_velocity) * dt
+    next_x = pose.x + action.linear_velocity * math.cos(theta) * dt
+    next_y = pose.y + action.linear_velocity * math.sin(theta) * dt
+    keep_out = hard_clearance(robot, envelope) + reach
+    for point in _sensed_points(engine.get_observation(), lidar):
+        if math.hypot(next_x - point[0], next_y - point[1]) < keep_out:
+            return False
+    return True
+
+
+def _sensed_points(observation: Observation, lidar: LidarConfig) -> list[tuple[float, float]]:
+    """World points behind the LiDAR returns in one observation.
+
+    Same geometry as ``_map_as_the_robot_sees_it`` and as the DWA
+    controller's own obstacle cloud, deliberately: three readings of one
+    scan that disagreed about where a return landed would be three
+    layers with three worlds again.
+
+    Returns at maximum range are dropped. The ray reached the end of the
+    sensor without hitting anything, and treating that as an obstacle at
+    exactly ``max_range`` would put a phantom wall around the robot at
+    the edge of its own sensing — which would stop every recovery in open
+    space, where recovery is safest.
+    """
+    increment = lidar.angle_span / lidar.num_rays
+    start = observation.pose.theta - lidar.angle_span / 2.0
+    pose = observation.pose
+    points: list[tuple[float, float]] = []
+    for index, distance in enumerate(observation.lidar_ranges):
+        if distance >= lidar.max_range - EPS:
+            continue
+        angle = start + index * increment
+        points.append(
+            (pose.x + distance * math.cos(angle), pose.y + distance * math.sin(angle))
+        )
+    return points
+
+
+def _recover(
+    behaviour: str,
+    engine: SimulationEngine,
+    scenario: Scenario,
+    plan_path: Sequence[Point2D],
+    recorder=None,
+) -> str:
+    r"""Run one rung of the recovery ladder; return what it did, for the record.
+
+    Each behaviour is derived from something the deployment already
+    declares, so none of them adds a knob:
+
+    * **wait** — one ``stuck_time_window``. Waiting less than the
+      detector's own window proves nothing: the standstill would be
+      re-derived from samples that never stopped describing a stopped
+      robot, so a shorter wait is a wait that cannot be observed to have
+      worked.
+    * **back_up** — one :func:`_feasible_clearance` of reverse at a
+      quarter of top speed. One clearance is what it takes to stop being
+      adjacent to whatever the robot is pressed against; going further
+      would be undoing progress the episode has already paid for.
+    * **turn** — rotate to face the next waypoint of the current plan.
+      Derived from the plan rather than from a chosen angle, and aimed at
+      the failure that actually happens here: a controller with
+      ``allow_reverse=False`` facing a wall has no admissible command at
+      all, and any heading it can drive is better than the one it has.
+
+      Note what this does **not** claim. The plan justified R3 as
+      "re-scan from a different angle", and with this project's default
+      LiDAR that is false: ``angle_span`` is 2π, so the robot already
+      sees behind itself and turning reveals no new return. It becomes
+      true only for a deployment that declares a narrower span, and the
+      behaviour is worth having either way for the reason above.
+    * **forget** — described where it is used; it changes belief rather
+      than the world and is handled by the caller.
+    """
+    robot = scenario.robot
+    envelope = SafetyEnvelope.for_noise(scenario.sensor_noise)
+    if behaviour == "wait":
+        _drive_for(
+            engine,
+            SimAction(linear_velocity=0.0, angular_velocity=0.0),
+            scenario.stuck_time_window,
+            scenario.simulation_dt,
+            robot,
+            envelope,
+            scenario.lidar,
+            recorder,
+        )
+        return f"waited {scenario.stuck_time_window:.1f}s in place"
+
+    if behaviour == "back_up":
+        # **Reverse only when reverse is the way out.** A differential
+        # drive can move along its heading and nowhere else, so "back up"
+        # is not "move away from the obstacle" — it is "move opposite the
+        # way I am pointing", and those differ exactly when the robot is
+        # stuck facing *away* from what blocks it. Measured on the
+        # two-doorway room: the robot sat beside a wall pointing down the
+        # corridor, the reverse drove it into the wall, and the episode
+        # ended in a **collision** at the very next step.
+        #
+        # So the rung is skipped unless there is more room behind than
+        # ahead. A recovery that cannot help is one that should cost
+        # nothing and let the ladder move on.
+        pose = engine.get_state().pose
+        points = _sensed_points(engine.get_observation(), scenario.lidar)
+        if _clearance_towards(pose, points, pose.theta + math.pi) <= _clearance_towards(
+            pose, points, pose.theta
+        ):
+            return "no more room behind than ahead; did not reverse"
+        speed = robot.max_linear_velocity * 0.25
+        wanted = _feasible_clearance(scenario)
+        moved = _drive_for(
+            engine,
+            SimAction(linear_velocity=-speed, angular_velocity=0.0),
+            wanted / speed,
+            scenario.simulation_dt,
+            robot,
+            envelope,
+            scenario.lidar,
+            recorder,
+        )
+        return f"backed up {moved:.2f} m of {wanted:.2f} m"
+
+    if behaviour == "turn":
+        pose = engine.get_state().pose
+        target = _next_waypoint_bearing(pose, plan_path)
+        if target is None:
+            return "nothing to turn towards"
+        error = normalize_angle(target - pose.theta)
+        rate = math.copysign(robot.max_angular_velocity * 0.5, error or 1.0)
+        turned = _drive_for(
+            engine,
+            SimAction(linear_velocity=0.0, angular_velocity=rate),
+            abs(error) / abs(rate),
+            scenario.simulation_dt,
+            robot,
+            envelope,
+            scenario.lidar,
+            recorder,
+        )
+        del turned  # a turn in place covers no ground; the angle is the story
+        return f"turned {math.degrees(error):+.0f}° towards the path"
+
+    raise ValueError(f"unknown recovery behaviour: {behaviour!r}")
+
+
+def _clearance_towards(
+    pose, points: Sequence[tuple[float, float]], bearing: float
+) -> float:
+    """Nearest sensed return within a quarter-turn of ``bearing``.
+
+    A cone rather than a ray: a robot reversing sweeps a body, not a
+    line, so what matters is the closest thing anywhere behind it.
+    ``math.inf`` when that whole half of the world is clear.
+    """
+    best = math.inf
+    for x, y in points:
+        offset = normalize_angle(math.atan2(y - pose.y, x - pose.x) - bearing)
+        if abs(offset) <= math.pi / 2.0:
+            best = min(best, math.hypot(x - pose.x, y - pose.y))
+    return best
+
+
+def _next_waypoint_bearing(pose, plan_path: Sequence[Point2D]) -> float | None:
+    """Bearing to the first waypoint that is not already underfoot.
+
+    Skipping the ones the robot is standing on matters: a plan whose
+    first waypoint is the robot's own position would give a bearing of
+    whatever the floating-point noise happened to be, and the robot would
+    spin to face a rounding error.
+    """
+    for point in plan_path:
+        dx, dy = point.x - pose.x, point.y - pose.y
+        if math.hypot(dx, dy) > EPS:
+            return math.atan2(dy, dx)
+    return None
+
+
 #: Engine verdicts a replan is allowed to overturn. Both mean "the path
 #: this robot is following has stopped working", which is the one thing
 #: a new path can fix. A collision or a timeout is not on the list.
@@ -494,6 +765,7 @@ def run_stack(
     replanning: ReplanningConfig | None = None,
     recorder: EpisodeTraceRecorder | None = None,
     legacy_metrics: bool = True,
+    recovery: RecoveryConfig | None = None,
 ) -> StackRun:
     """Run one episode of ``<global_planner>+<local_planner>`` on a scenario.
 
@@ -542,6 +814,7 @@ def run_stack(
     """
     global_planner = global_planner or AStarPlanner()
     replanning = replanning or NO_REPLANNING
+    recovery = recovery or NO_RECOVERY
     # A monolithic candidate is one layer, so it is named by one name.
     # "none+policy" would read as a stack whose global planner happened
     # to be missing, which is a different candidate from one that has no
@@ -638,6 +911,13 @@ def run_stack(
     #: Every attempt, not only the ones that produced a path. The two
     #: differ exactly when a reader most needs them to.
     replan_attempts = 0
+    recovery_rung = 0
+    forgets = 0
+    recoveries: list[str] = []
+    # Goal distance at the previous standstill, so the loop can tell
+    # "planning is getting the robot somewhere" from "planning keeps
+    # answering and nothing changes".
+    last_trigger_distance = math.inf
     while not engine.is_done():
         recompute = (
             held_action is None or control_period is None or engine.time >= next_control_time - EPS
@@ -679,6 +959,28 @@ def run_stack(
             and engine.episode_status in _REPLANNABLE
         ):
             blocked_as = engine.episode_status.value
+            # **Escalation measures whether planning is helping, not
+            # whether it answered.** The first version climbed the ladder
+            # on a *refused* replan, and measurement showed that trigger
+            # almost never fires: on the two-doorway room every one of 43
+            # replans succeeded and the robot still timed out, so recovery
+            # ran zero times in the scene it exists for. A plan that comes
+            # back and changes nothing is the common case, not the rare
+            # one.
+            #
+            # So the signal is progress between consecutive standstills,
+            # against the deployment's own ``stuck_min_displacement`` —
+            # the same threshold the detector upstairs uses to decide the
+            # robot has stopped, applied to the goal instead of to the
+            # ground.
+            goal_distance = math.hypot(
+                engine.get_state().pose.x - scenario.goal_pose.x,
+                engine.get_state().pose.y - scenario.goal_pose.y,
+            )
+            progressed = last_trigger_distance - goal_distance > scenario.stuck_min_displacement
+            last_trigger_distance = goal_distance
+            if progressed:
+                recovery_rung = 0
             new_plan = _replan(map_data, scenario, global_planner, engine)
             # **A replan is compute the next control step had to wait
             # for**, and until it was charged it cost nothing the platform
@@ -766,6 +1068,68 @@ def run_stack(
                 # Force a control decision on the next iteration: the
                 # held command was computed for the path that just failed.
                 held_action = None
+
+            # **Recovery runs where planning has stopped working**, which
+            # is not the same as where planning stopped answering. It is
+            # reached whether the replan succeeded or not, gated only on
+            # the robot having failed to get closer to the goal since the
+            # last standstill — because a route that keeps being found and
+            # keeps not being drivable is precisely the situation no
+            # further route can fix.
+            #
+            # One rung per consecutive unproductive standstill, reset by
+            # progress above: a stack that got moving again has not spent
+            # its ladder, and making the next attempt start at `forget`
+            # would punish it for having recovered.
+            if progressed:
+                continue
+            behaviour = recovery.next_behaviour(recovery_rung)
+            if behaviour is None or not recovery.allows(behaviour, forgets):
+                continue
+            recovery_rung += 1
+            if behaviour == "forget":
+                # **The only rung that changes belief instead of the
+                # world.** Here it means replanning on the static map
+                # alone — discarding every LiDAR return the robot has
+                # taken. It is last and capped for that reason: a stack
+                # free to do this is free to forget an obstacle it has
+                # just seen, and nothing downstream would catch it. The
+                # Metrics Engine reads the trace, and a forgotten obstacle
+                # leaves no row saying it was forgotten, which is exactly
+                # why the count is kept here.
+                forgets += 1
+                forgotten = global_planner.plan(
+                    _planning_grid(map_data, scenario),
+                    engine.get_state().pose.position,
+                    scenario.goal_pose.position,
+                )
+                note = (
+                    f"replanned on the static map, discarding what the LiDAR saw "
+                    f"({forgets}/{recovery.max_forgets})"
+                )
+                if forgotten.success:
+                    plans.append(forgotten)
+                    _reset_local(local_planner, forgotten.path, scenario.robot, envelope)
+                    held_action = None
+            else:
+                note = _recover(behaviour, engine, scenario, plans[-1].path, recorder)
+                held_action = None
+            recoveries.append(behaviour)
+            failures.append(
+                EpisodeEvent(
+                    time=engine.time,
+                    type="recovery",
+                    message=f"recovery {len(recoveries)} ({behaviour}): {note}",
+                )
+            )
+            if engine.is_done() and engine.episode_status in _REPLANNABLE:
+                # The behaviour ran and the standstill re-fired. Revive it
+                # under its own event name so the record never reads a
+                # recovery as a replan.
+                engine.resume_after_replan(
+                    f"recovery {len(recoveries)} ({behaviour}): {note}",
+                    event_type="recovery",
+                )
 
     if recorder is not None:
         # The verdict is a row of its own, at the time the episode

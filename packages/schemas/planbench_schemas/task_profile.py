@@ -44,6 +44,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from planbench_schemas.dynamic import DynamicObstacle
 from planbench_schemas.geometry import Pose2D
 from planbench_schemas.observations import ObservationToken, canonical_observations
+from planbench_schemas.recovery import NO_RECOVERY, RecoveryConfig
 from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
 from planbench_schemas.robot import RobotConfig
 from planbench_schemas.sensor import SensorNoise
@@ -449,6 +450,19 @@ class TaskProfile(BaseModel):
     #: an existing id is refused, so switching it on is a new deployment
     #: with a new id rather than an edit.
     replanning: ReplanningConfig = NO_REPLANNING
+    #: What the robot may do when replanning cannot find a way out.
+    #:
+    #: On the **deployment** for the reason HĐ-4.1 gives about replan
+    #: information: recovery applied to one candidate and not another
+    #: measures recovery rather than the layer the run claims to compare.
+    #: A scope where recovery *is* the thing compared
+    #: (``recovery_selection``) would move it to the candidate, and does
+    #: not exist yet — see ``planbench_schemas.recovery``.
+    #:
+    #: Off by default, like ``replanning``: it changes where the robot
+    #: ends up, so it changes every metric downstream, and every stored
+    #: run was measured without it.
+    recovery: RecoveryConfig = NO_RECOVERY
     #: How much a metre hugging the hard boundary costs a global planner
     #: compared with a metre in the open, minus one. At ``4.0`` a metre
     #: against the boundary costs five, so a planner takes any detour up

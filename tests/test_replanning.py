@@ -320,7 +320,7 @@ class TestEngineResume:
         engine.load_map(bordered_map_factory(14, 14))
         engine.load_scenario(simple_scenario(robot))
         engine.reset()
-        with pytest.raises(RuntimeError, match="cannot resume after replan"):
+        with pytest.raises(RuntimeError, match=r"cannot resume \(replan\)"):
             engine.resume_after_replan("nothing to recover from")
 
     def test_resume_is_refused_after_a_collision(
@@ -337,7 +337,7 @@ class TestEngineResume:
         while not engine.is_done():
             engine.step(drive)
         assert engine.episode_status is EpisodeStatus.COLLISION
-        with pytest.raises(RuntimeError, match="cannot resume after replan"):
+        with pytest.raises(RuntimeError, match=r"cannot resume \(replan\)"):
             engine.resume_after_replan("a new path does not undo a crash")
 
     def test_dynamic_obstacle_positions_are_readable_at_the_current_time(

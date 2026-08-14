@@ -72,8 +72,8 @@ describe("the number matches the one the planner actually uses", () => {
        size halves it with nothing about the world having changed. It
        used to be forbidden outright, which is what stranded a robot in
        ground its own collision test called fine. */
-    expect(cautionRamp(0.25, 0.26)).toBeCloseTo(Math.SQRT2 * 0.25 + 0.26, 9);
-    expect(cautionRadius(0.4, 0.25, 0.26)).toBeCloseTo(0.4 + Math.SQRT2 * 0.25 + 0.26, 9);
+    expect(cautionRamp(0.25, 0.26)).toBeCloseTo((Math.SQRT2 * 0.25) / 2 + 0.26, 9);
+    expect(cautionRadius(0.4, 0.25, 0.26)).toBeCloseTo(0.4 + (Math.SQRT2 * 0.25) / 2 + 0.26, 9);
     /* Strictly outside the forbidden ring, or the two would be one. */
     expect(cautionRadius(0.4, 0.25, 0.26)!).toBeGreaterThan(keepOutRadius(0.4, 0.26)!);
     /* And it shrinks with the cell size, because that is what it is. */
@@ -102,15 +102,21 @@ describe("the number matches the one the planner actually uses", () => {
        hand-typed copies of an inflation radius drifting apart is exactly
        how the controller's keep-out and the planner's came to differ by
        0.30 m in the first place. */
+    expect(NAV_STACK).toContain("def _feasible_clearance(");
     expect(NAV_STACK).toContain("def _hard_radius(");
     expect(NAV_STACK).toContain("def _caution_ramp(");
     expect(NAV_STACK).toContain(
       "hard_clearance(scenario.robot, SafetyEnvelope.for_noise(scenario.sensor_noise))",
     );
     expect(NAV_STACK).toContain(
-      "math.sqrt(2.0) * map_data.resolution + _hard_radius(scenario)",
+      "math.sqrt(2.0) * map_data.resolution / 2.0 + _feasible_clearance(scenario)",
     );
-    expect(NAV_STACK.match(/math\.sqrt\(2\.0\) \* map_data\.resolution/g) ?? []).toHaveLength(1);
+    /* Twice and only twice: the grid's own allowance for its coarseness,
+       and the priced ramp. Never in `_feasible_clearance`, which is the
+       number the contract is stated in. */
+    expect(
+      NAV_STACK.match(/math\.sqrt\(2\.0\) \* map_data\.resolution \/ 2\.0/g) ?? [],
+    ).toHaveLength(2);
 
     /* And the envelope half, which is the part that changed the ring. */
     expect(FEASIBILITY).toContain("bound = drift * math.sqrt(2.0)");

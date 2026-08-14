@@ -687,6 +687,45 @@ export function DeploymentForm({
         )}
       </div>
 
+      {/* Recovery sits directly under replanning because it is the same
+          decision one rung further: what the robot may do when replanning
+          finds nothing. Declared on the deployment, not on the candidate
+          — a stack allowed to back up while its rival is not would be
+          compared on its recovery rather than on the layer this run is
+          about. */}
+      <div style={{ marginTop: 8 }}>
+        <label className="row" style={{ alignItems: "center", gap: 6 }}>
+          <input
+            type="checkbox"
+            checked={Boolean(at(draft, "recovery.enabled"))}
+            disabled={busy}
+            onChange={(event) => set("recovery.enabled", event.target.checked)}
+          />
+          <strong>{t("deployments.form.recoveryEnabled")}</strong>
+        </label>
+        <p className="muted">{t("deployments.form.recoveryNote")}</p>
+        {at(draft, "recovery.enabled") ? (
+          <div className="grid">
+            {field(
+              "recovery.max_escalation",
+              t("deployments.form.recoveryEscalation"),
+              1,
+              t("deployments.form.recoveryEscalationNote"),
+            )}
+            {/* Its own budget because it spends something other than
+                time: this rung erases evidence rather than changing the
+                world, and a stack free to repeat it is free to forget an
+                obstacle it just saw. */}
+            {field(
+              "recovery.max_forgets",
+              t("deployments.form.recoveryForgets"),
+              1,
+              t("deployments.form.recoveryForgetsNote"),
+            )}
+          </div>
+        ) : null}
+      </div>
+
       {mapData ? (
         <MissionPlacer
           map={mapData}

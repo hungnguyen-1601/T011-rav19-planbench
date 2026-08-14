@@ -160,6 +160,9 @@ def run_contract_episode(
             profile.replanning,
             recorder=recorder,
             legacy_metrics=False,
+            # Same argument, one rung further: a stack allowed to back up
+            # while its rival is not would be compared on its recovery.
+            recovery=profile.recovery,
         )
         recorder.close(
             peak_search_nodes=_search_nodes(candidate, run.plan),
