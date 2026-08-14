@@ -52,6 +52,22 @@ ground-truth map: the local planner only sees what the robot senses.
 
 Deterministic: fixed sample ordering, ties broken by first-lowest-cost
 in that order; no global state beyond the previous command.
+
+**Steps 1 (the window), 2 (the grid), 3 (the rollout) and the scan-to-
+points conversion live in** :mod:`planbench_planning.common.dwa_core`,
+because ``dwa_predictive`` needs the same four and differs only in
+whether the obstacle set carries a time axis. They are **functions**, not
+a base class this planner inherits: ``StackComponent.version`` is part of
+a candidate's identity, and a shared parent would let one bug fix change
+two candidates while both ids stayed put.
+
+Two things stayed here on purpose. The **admissible-speed bound** is
+applied in :meth:`_dynamic_window` rather than inside the shared window,
+because it is the hard constraint of contract L2 and its reaction time is
+this controller's own control period — see
+:func:`~planbench_schemas.feasibility.admissible_speed`. The **cost
+function** stayed because it is the candidate: two controllers that
+scored trajectories identically would not be two candidates.
 """
 
 from __future__ import annotations
@@ -63,6 +79,14 @@ from collections.abc import Sequence
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
+from planbench_planning.common.dwa_core import (
+    distance_to_polyline,
+    final_heading,
+    obstacle_points,
+    reachable_window,
+    rollout_batch,
+    sample_window,
+)
 from planbench_planning.common.local_base import LocalPlanner, LocalPlanResult
 from planbench_schemas.episode import Observation
 from planbench_schemas.feasibility import SafetyEnvelope, admissible_speed, hard_clearance
@@ -180,9 +204,15 @@ class DWAPlanner(LocalPlanner):
         robot = self._robot
 
         local_goal = self._advance_local_goal(state)
-        obstacles = self._obstacle_points(observation)
+        obstacles = obstacle_points(observation)
         candidates = self._dynamic_window(state, obstacles)
-        rollouts, clearances = self._rollout_batch(state, candidates, obstacles)
+        rollouts, clearances = rollout_batch(
+            state,
+            candidates,
+            obstacles,
+            self._config.horizon_seconds,
+            self._config.horizon_dt,
+        )
 
         # **The hard feasible set, not a preference.** This used to be
         # `robot.radius + config.safety_margin` — a candidate parameter
@@ -247,15 +277,9 @@ class DWAPlanner(LocalPlanner):
         """Reachable (v, w) pairs on a deterministic sample grid."""
         assert self._robot is not None
         robot, config = self._robot, self._config
-        dv = robot.max_linear_acceleration * config.control_period
-        dw = robot.max_angular_acceleration * config.control_period
-        v_min = max(
-            -robot.max_linear_velocity if config.allow_reverse else 0.0,
-            state.linear_velocity - dv,
+        v_min, v_max, w_min, w_max = reachable_window(
+            state, robot, config.control_period, config.allow_reverse
         )
-        v_max = min(robot.max_linear_velocity, state.linear_velocity + dv)
-        w_min = max(-robot.max_angular_velocity, state.angular_velocity - dw)
-        w_max = min(robot.max_angular_velocity, state.angular_velocity + dw)
 
         # **Admissible-velocity criterion, against the nearer of two
         # things.** The classic form (Fox, Burgard and Thrun 1997) bounds
@@ -297,47 +321,9 @@ class DWAPlanner(LocalPlanner):
         v_max = min(v_max, stopping_limit)
         v_min = min(v_min, v_max)
 
-        velocities = _linspace(v_min, v_max, config.velocity_samples)
-        omegas = _linspace(w_min, w_max, config.omega_samples)
-        return [(v, w) for v in velocities for w in omegas]
-
-    def _rollout_batch(
-        self,
-        state: RobotState,
-        candidates: Sequence[tuple[float, float]],
-        obstacles: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Forward-simulate every candidate at once (vectorized).
-
-        Returns ``(points, clearances)`` with shapes ``(N, K, 2)`` and
-        ``(N,)``. Integration matches the simulator exactly: the position
-        step uses the heading *before* that step's rotation.
-        """
-        config = self._config
-        steps = max(1, int(round(config.horizon_seconds / config.horizon_dt)))
-        dt = config.horizon_dt
-
-        velocities = np.array([candidate[0] for candidate in candidates], dtype=float)
-        omegas = np.array([candidate[1] for candidate in candidates], dtype=float)
-        # Heading before step k (k = 0 .. steps-1).
-        step_index = np.arange(steps, dtype=float)
-        headings = state.pose.theta + np.outer(omegas, step_index) * dt  # (N, K)
-        deltas_x = (velocities[:, None] * np.cos(headings)) * dt
-        deltas_y = (velocities[:, None] * np.sin(headings)) * dt
-        points = np.stack(
-            (
-                state.pose.x + np.cumsum(deltas_x, axis=1),
-                state.pose.y + np.cumsum(deltas_y, axis=1),
-            ),
-            axis=2,
-        )  # (N, K, 2)
-
-        if obstacles.size == 0:
-            return points, np.full(len(candidates), math.inf)
-        # (N, K, M) distances -> min over horizon steps and obstacles.
-        diff = points[:, :, None, :] - obstacles[None, None, :, :]
-        clearances = np.sqrt(np.einsum("nkmd,nkmd->nkm", diff, diff)).min(axis=(1, 2))
-        return points, clearances
+        return sample_window(
+            v_min, v_max, w_min, w_max, config.velocity_samples, config.omega_samples
+        )
 
     def _score(
         self,
@@ -353,13 +339,13 @@ class DWAPlanner(LocalPlanner):
 
         # Heading: bearing from the trajectory end to the local goal.
         approach = math.atan2(local_goal.y - end.y, local_goal.x - end.x)
-        end_theta = _final_heading(trajectory)
+        end_theta = final_heading(trajectory)
         heading = abs(normalize_angle(approach - end_theta)) / math.pi
         goal_distance = (
             math.hypot(local_goal.x - end.x, local_goal.y - end.y) / config.lookahead_distance
         )
 
-        path_distance = _distance_to_polyline(end, self._path) / config.path_distance_scale
+        path_distance = distance_to_polyline(end, self._path) / config.path_distance_scale
 
         # `safety_margin` as a preference: room this candidate wants
         # beyond the shared hard clearance. Quadratic in how far inside
@@ -442,64 +428,3 @@ class DWAPlanner(LocalPlanner):
         declared closing speed.
         """
         return admissible_speed(headroom, robot, self._config.control_period, self._obstacle_speed)
-
-    def _obstacle_points(self, observation: Observation) -> np.ndarray:
-        """Convert the LiDAR scan into world-frame points (skip max-range rays).
-
-        Returns an ``(M, 2)`` array; empty when nothing is in range.
-        """
-        ranges = observation.lidar_ranges
-        if not ranges:
-            return np.empty((0, 2))
-        # Ray i angle mirrors planbench_simulator.lidar.scan.
-        span = 2.0 * math.pi
-        increment = span / len(ranges)
-        start = observation.pose.theta - span / 2.0
-        max_range = max(ranges)
-        points: list[tuple[float, float]] = []
-        for index, distance in enumerate(ranges):
-            if distance >= max_range - EPS:
-                continue  # no return along this ray
-            angle = start + index * increment
-            points.append(
-                (
-                    observation.pose.x + distance * math.cos(angle),
-                    observation.pose.y + distance * math.sin(angle),
-                )
-            )
-        return np.array(points, dtype=float) if points else np.empty((0, 2))
-
-
-def _linspace(low: float, high: float, count: int) -> list[float]:
-    if high - low <= EPS:
-        return [low]
-    step = (high - low) / (count - 1)
-    return [low + step * i for i in range(count)]
-
-
-def _final_heading(trajectory: Sequence[Point2D]) -> float:
-    if len(trajectory) < 2:
-        return 0.0
-    a, b = trajectory[-2], trajectory[-1]
-    if math.hypot(b.x - a.x, b.y - a.y) <= EPS:
-        return math.atan2(b.y - a.y, b.x - a.x) if (b.x - a.x or b.y - a.y) else 0.0
-    return math.atan2(b.y - a.y, b.x - a.x)
-
-
-def _distance_to_polyline(point: Point2D, polyline: Sequence[Point2D]) -> float:
-    """Shortest distance from a point to a polyline (segment-wise)."""
-    if not polyline:
-        return 0.0
-    if len(polyline) == 1:
-        return math.hypot(point.x - polyline[0].x, point.y - polyline[0].y)
-    best = math.inf
-    for a, b in zip(polyline, polyline[1:], strict=False):
-        dx, dy = b.x - a.x, b.y - a.y
-        length_squared = dx * dx + dy * dy
-        if length_squared <= EPS:
-            distance = math.hypot(point.x - a.x, point.y - a.y)
-        else:
-            t = max(0.0, min(1.0, ((point.x - a.x) * dx + (point.y - a.y) * dy) / length_squared))
-            distance = math.hypot(point.x - (a.x + t * dx), point.y - (a.y + t * dy))
-        best = min(best, distance)
-    return best
