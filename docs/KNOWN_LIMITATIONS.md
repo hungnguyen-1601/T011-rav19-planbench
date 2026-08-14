@@ -1384,3 +1384,48 @@ mang nó, và cả ba đều đúng chứ không phải sót:
 Cả ba chạy với `obstacle_speed = None`, tức **hành vi cũ**. Nếu luồng
 benchmark cũ còn xuất hiện trên UI thì con số nó sinh ra **không** mang
 bảo đảm phanh trước vật cản đang lại gần, kể cả khi deployment có khai.
+
+### L12. `RandomWalkMotion` nhảy vị trí — vật cản 0.5 m/s đi 28 m/s
+
+Phát hiện lúc kiểm sai số mô hình từng cảnh cho cổng P4. Trên
+`dynamic_warehouse`, `wanderer` khai `speed = 0.5` m/s:
+
+```
+t=13.50  đi 1.4075 m trong MỘT bước 0.05 s  ->  28.15 m/s
+t=19.15  đi 1.1025 m                        ->  22.05 m/s
+t= 4.10  đi 1.0750 m                        ->  21.50 m/s
+```
+
+**Gián đoạn, không phải nhiễu.** Trong `_random_walk_position`, phép phản
+xạ ở `max_radius` được quyết định từ **thời gian đã trôi *một phần*** của
+interval đang chạy:
+
+```python
+next_x = x + speed * cos(heading) * elapsed
+if hypot(next - origin) > max_radius:
+    toward = atan2(origin - current)
+    next_x = x + speed * cos(toward) * elapsed   # hướng NGƯỢC LẠI
+```
+
+`elapsed` lớn dần từ 0 tới `change_interval` khi thời gian trôi trong
+interval. Tới đúng lúc đường ngoại suy hướng ra vượt `max_radius`, nhánh
+**lật**, và vị trí nhảy từ điểm hướng-ra sang điểm hướng-vào — biên độ
+tới `2 · speed · elapsed`.
+
+Quyết định phản xạ phải được lấy **một lần cho cả interval** (từ bước
+đầy đủ), không phải tính lại theo phần thời gian đã trôi.
+
+**Hệ quả đã chặn:** `max_speed(RandomWalkMotion)` từng trả `motion.speed`
+— tốc độ **khai**, trong khi tốc độ **thực hiện** vượt nó 56 lần. Nay nó
+**từ chối tường minh**, và validator dịch thành lời từ chối lúc nạp
+deployment. Profile không khai `v_obstacle_max` không bị ảnh hưởng.
+
+**Chưa sửa luật chuyển động.** Làm nó liên tục **đổi thế giới** cho mọi
+cảnh có random walk (`dynamic_warehouse`), tức đổi mọi số đã lưu ở đó.
+Cùng loại thay đổi độ trung thực với lần bật `sensor_noise`, và phải được
+cân nhắc như thế chứ không phải như một bản vá.
+
+**Ảnh hưởng ngoài an toàn:** mọi phép đo trên `dynamic_warehouse` đang
+chứa các cú dịch chuyển tức thời; phơi nhiễm va chạm ở đó một phần là do
+teleport chứ không do điều khiển. Bất kỳ tracker nào (P5) cũng không thể
+theo dõi được vật cản này.
