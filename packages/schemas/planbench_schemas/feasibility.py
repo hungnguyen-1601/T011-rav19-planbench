@@ -59,6 +59,7 @@ from planbench_schemas.sensor import MIN_JUMP_MAGNITUDE_M, SensorNoise
 
 __all__ = [
     "SafetyEnvelope",
+    "admissible_speed",
     "hard_clearance",
     "reaction_distance",
     "stopping_distance",
@@ -159,6 +160,66 @@ def stopping_distance(speed: float, robot: RobotConfig) -> float:
     if speed <= 0.0:
         return 0.0
     return (speed * speed) / (2.0 * robot.max_linear_acceleration)
+
+
+def admissible_speed(
+    headroom: float,
+    robot: RobotConfig,
+    reaction_seconds: float,
+    obstacle_speed: float = 0.0,
+) -> float:
+    """Fastest speed the robot may hold and still stop before the gap shuts.
+
+    Solves, for ``v``::
+
+        (v + u)·T  +  v²/(2a)  +  u·v/a   =   headroom
+
+    Three terms, and the two carrying ``u`` are the ones the platform was
+    missing. ``(v + u)·T`` is what **both** cover while a new command
+    takes effect; ``v²/(2a)`` is the braking itself; ``u·v/a`` is what the
+    obstacle covers during the ``t_stop = v/a`` seconds the robot spends
+    braking. Measured on 2026-08-14, the last term is the expensive one:
+    at ``v`` = 0.8 m/s and ``a`` = 0.5 m/s² the robot needs 1.6 seconds to
+    stop, in which a cart closing at 1.0 m/s crosses another 1.6 m.
+
+    **With ``u = 0`` this is exactly the previous expression**, term for
+    term and float for float. That is deliberate and load-bearing: a
+    deployment that declares no closing traffic keeps the behaviour it
+    was measured under, so no stored run is invalidated by this function
+    existing.
+
+    Note the signature — ``RobotConfig`` and three floats the deployment
+    owns, and no candidate configuration. That is contract L2 enforced by
+    the type system, the same way :func:`hard_clearance` is: a controller
+    that wanted a more generous bound has no argument to ask for one
+    with. It used to live on the DWA planner as a private method, where
+    a candidate parameter could have reached it.
+
+    ``obstacle_speed`` is the deployment's declared worst case, not an
+    estimate of what any particular obstacle is doing. Estimating it is a
+    different problem with a different failure mode: an estimate used to
+    *relax* a bound turns estimation error into collisions, which is why
+    only a declared, validated bound is allowed to tighten this one.
+
+    Returns zero when nothing is fast enough — including when the gap is
+    already smaller than what the obstacle covers during the reaction
+    step, where even standing still does not save the robot and stopping
+    is simply the best remaining move.
+    """
+    if headroom <= 0.0:
+        return 0.0
+    if not math.isfinite(headroom):
+        return robot.max_linear_velocity
+    acceleration = robot.max_linear_acceleration
+    closing = max(0.0, obstacle_speed)
+    # v²/(2a) + v·(T + u/a) + (u·T − headroom) = 0, solved for the
+    # positive root rather than searched for: a bisection here would put
+    # a tolerance between the constraint and its enforcement.
+    linear = reaction_seconds + closing / acceleration
+    discriminant = linear * linear + 2.0 * (headroom - closing * reaction_seconds) / acceleration
+    if discriminant <= 0.0:
+        return 0.0
+    return max(0.0, acceleration * (math.sqrt(discriminant) - linear))
 
 
 def reaction_distance(speed: float, control_period: float, latency_steps: int = 0) -> float:

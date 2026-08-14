@@ -358,8 +358,9 @@ def _reset_local(
     path: Sequence[Point2D],
     robot: RobotConfig,
     envelope: SafetyEnvelope,
+    obstacle_speed: float | None = None,
 ) -> None:
-    """Hand a path to the controller, with the envelope if it takes one.
+    """Hand a path to the controller, with what the deployment declares.
 
     Not every local planner has been taught about the envelope — a
     monolithic policy has no notion of a keep-out to respect — so this
@@ -367,11 +368,19 @@ def _reset_local(
     into an interface some implementations cannot use. Detected once per
     reset, from the signature, so a controller that gains the parameter
     later starts receiving it without anything here changing.
+
+    ``obstacle_speed`` is probed the same way and separately: a
+    controller may have learned about the envelope in phase 1 and not yet
+    about closing traffic, and forcing both at once would break the
+    former to deliver the latter.
     """
-    if "envelope" in inspect.signature(local_planner.reset).parameters:
-        local_planner.reset(path, robot, envelope)  # type: ignore[call-arg]
-    else:
-        local_planner.reset(path, robot)
+    accepted = inspect.signature(local_planner.reset).parameters
+    extra: dict[str, object] = {}
+    if "envelope" in accepted:
+        extra["envelope"] = envelope
+    if "obstacle_speed" in accepted:
+        extra["obstacle_speed"] = obstacle_speed
+    local_planner.reset(path, robot, **extra)  # type: ignore[arg-type]
 
 
 def _replan(
@@ -766,6 +775,7 @@ def run_stack(
     recorder: EpisodeTraceRecorder | None = None,
     legacy_metrics: bool = True,
     recovery: RecoveryConfig | None = None,
+    obstacle_speed: float | None = None,
 ) -> StackRun:
     """Run one episode of ``<global_planner>+<local_planner>`` on a scenario.
 
@@ -773,6 +783,19 @@ def run_stack(
     sampling planner counts as deterministic once its seed is fixed —
     see ``RRTStarPlanner``). Local-planner failures are recorded as
     episode events, not swallowed.
+
+    ``obstacle_speed`` is the deployment's ``v_obstacle_max``, and it
+    arrives here rather than on ``Scenario`` deliberately: it does not
+    change the world — every obstacle moves exactly as it did — it
+    changes what the robot is *allowed* to do about it. That is the
+    ``replanning`` shape, not the ``sensor_noise`` shape, so
+    ``_scenario_checksum`` must not move and no stored report is
+    orphaned. The consequence is the same as replanning's:
+    ``episode_context_id`` does not hash it either, so two runs of one
+    deployment at the same seeds under different bounds share every
+    context id while being two experiments — which is why declaring it
+    requires a new ``task_profile_id`` and the manifest records it.
+    ``None`` reproduces the previous behaviour exactly.
 
     ``replanning`` is a property of the evaluation conditions, not of the
     stack: it is applied here, on the path every stack goes through, with
@@ -880,7 +903,7 @@ def run_stack(
     # deployment, not from the controller's own configuration, which is
     # what stops a candidate narrowing the set the planner used (L2).
     envelope = SafetyEnvelope.for_noise(scenario.sensor_noise)
-    _reset_local(local_planner, plan.path, scenario.robot, envelope)
+    _reset_local(local_planner, plan.path, scenario.robot, envelope, obstacle_speed)
     if recorder is not None:
         recorder.bind_clearance(
             clearance_probe(
@@ -1052,7 +1075,9 @@ def run_stack(
                 continue
             if new_plan.success:
                 plans.append(new_plan)
-                _reset_local(local_planner, new_plan.path, scenario.robot, envelope)
+                _reset_local(
+                    local_planner, new_plan.path, scenario.robot, envelope, obstacle_speed
+                )
                 # Numbered by *attempt*, the same counter the failures
                 # use. Numbering successes separately produced an event
                 # stream reading "replan 6 found no path" then "replan 1
@@ -1109,7 +1134,9 @@ def run_stack(
                 )
                 if forgotten.success:
                     plans.append(forgotten)
-                    _reset_local(local_planner, forgotten.path, scenario.robot, envelope)
+                    _reset_local(
+                        local_planner, forgotten.path, scenario.robot, envelope, obstacle_speed
+                    )
                     held_action = None
             else:
                 note = _recover(behaviour, engine, scenario, plans[-1].path, recorder)

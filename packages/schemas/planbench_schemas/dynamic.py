@@ -121,6 +121,53 @@ class DynamicObstacle(BaseModel):
     )
 
 
+def max_speed(motion: Motion) -> float:
+    """Fastest this law can ever move the obstacle, metres per second.
+
+    **A declared safety bound that nobody checks is a sentence, not a
+    guarantee.** A deployment stating ``v_obstacle_max = 1.0`` while one
+    of its carts runs a 1.5 m/s ``WaypointMotion`` leaves the braking
+    constraint wrong at precisely the place it is trusted most, and it
+    fails silently: the robot brakes for traffic slower than the traffic
+    it meets. This function is what lets that be refused at load.
+
+    Every law here has a **closed-form** bound, so the check is total and
+    there is no "cannot prove it" branch to reason about:
+
+    ============  ==============================================
+    Motion        Bound
+    ============  ==============================================
+    waypoint      ``speed``
+    random_walk   ``speed`` (heading turns; the rate does not)
+    sudden_stop   ``speed`` (it only ever slows, permanently)
+    periodic      ``π · |end − start| / period``
+    ============  ==============================================
+
+    The periodic case is the only one worth deriving. The path is
+    ``0.5·(1 − cos(2πt/T + φ))`` along the chord, whose derivative peaks
+    at ``π/T`` times the chord length — at the midpoint, where a
+    sinusoidal crossing is moving fastest, which is also where it is most
+    likely to be in front of a robot.
+
+    ``seed_time_offset`` shifts an obstacle's clock and never its rate,
+    so a bound taken here holds for every seed.
+
+    A future motion law reaches the explicit refusal below rather than a
+    silent zero: an unproven bound must cost a deployment its safety
+    claim, not be assumed generous.
+    """
+    if isinstance(motion, WaypointMotion | RandomWalkMotion | SuddenStopMotion):
+        return motion.speed
+    if isinstance(motion, PeriodicMotion):
+        chord = math.hypot(motion.end.x - motion.start.x, motion.end.y - motion.start.y)
+        return math.pi * chord / motion.period
+    raise NotImplementedError(
+        f"no closed-form speed bound for motion kind {type(motion).__name__}; "
+        "a deployment declaring v_obstacle_max cannot be validated against it, so "
+        "either derive the bound here or the deployment must not carry that claim"
+    )
+
+
 def position_at(obstacle: DynamicObstacle, time: float, seed: int) -> Point2D:
     """Where the obstacle is at ``time`` seconds, given the episode seed.
 

@@ -68,6 +68,14 @@ type MapSource = "library" | "stored" | "drawn";
  * describe a world that no longer exists (HĐ-3.1, HĐ-13). Defaulting
  * here touches only deployments nobody has measured yet.
  */
+/** The one contract path this file writes that is not a noise amplitude.
+ *
+ * A constant rather than a literal at each of its four uses, because the
+ * schema drift guard reads this file looking for the dotted path and one
+ * typo among four copies is a control wired to a field the deployment
+ * does not have. */
+const V_OBSTACLE_MAX = "environment.v_obstacle_max";
+
 const NOISE_DEFAULTS: Record<string, { value: number; step: number }> = {
   //: Keyed by the **full dotted path**, not the leaf name. The schema
   //: drift guard reads this file for every contract field it expects a
@@ -403,6 +411,11 @@ export function DeploymentForm({
    */
   const traffic = (at(draft, "environment.dynamic_obstacles") as unknown[] | undefined)?.length ?? 0;
 
+  /** Whether this deployment carries a braking guarantee against moving
+   * traffic at all. Null and absent both mean "no claim"; zero does not,
+   * so the test is for a number rather than for truthiness. */
+  const obstacleSpeedDeclared = numberAt(draft, V_OBSTACLE_MAX) !== undefined;
+
   const risk = at(draft, "constraints.collision_probability_max");
   const nMin = nMinFor(risk);
   const leftOver = ramLeftOver(draft);
@@ -548,6 +561,45 @@ export function DeploymentForm({
           traffic *and* no noise, a deterministic planner replays one
           episode per seed and G2's bound rests on a sample of one. */}
       <p className="muted">{t("deployments.form.noiseNote")}</p>
+
+      <h4>{t("deployments.form.obstacleSpeed")}</h4>
+      {/* Not a `noiseField`, and the difference is the whole point of the
+          control. A noise switch writes 0 for "off"; here 0 is a *claim*
+          — "nothing at this site moves" — which the loader rejects the
+          moment any traffic is declared. "Off" has to be null: not
+          declared, no braking guarantee, and the manifest says so. Two
+          different meanings cannot share one value. */}
+      <div className="row" style={{ alignItems: "flex-end", gap: 12 }}>
+        <div className="field">
+          <label className="row" style={{ alignItems: "center", gap: 6, marginBottom: 4 }}>
+            <input
+              type="checkbox"
+              checked={obstacleSpeedDeclared}
+              disabled={busy}
+              onChange={(event) => {
+                if (event.target.checked) {
+                  set("environment.v_obstacle_max", remembered[V_OBSTACLE_MAX] ?? 1.0);
+                } else {
+                  const current = numberAt(draft, V_OBSTACLE_MAX);
+                  if (current !== undefined) {
+                    setRemembered((was) => ({ ...was, [V_OBSTACLE_MAX]: current }));
+                  }
+                  set(V_OBSTACLE_MAX, null);
+                }
+              }}
+            />
+            <strong>{t("deployments.form.obstacleSpeedEnabled")}</strong>
+          </label>
+        </div>
+        {obstacleSpeedDeclared
+          ? field(V_OBSTACLE_MAX, t("deployments.form.obstacleSpeedValue"), 0.1)
+          : null}
+      </div>
+      <p className="muted">
+        {obstacleSpeedDeclared
+          ? t("deployments.form.obstacleSpeedNote")
+          : t("deployments.form.obstacleSpeedOffNote")}
+      </p>
 
       <h4>
         <button

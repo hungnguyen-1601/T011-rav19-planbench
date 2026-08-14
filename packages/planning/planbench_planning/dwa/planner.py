@@ -65,7 +65,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from planbench_planning.common.local_base import LocalPlanner, LocalPlanResult
 from planbench_schemas.episode import Observation
-from planbench_schemas.feasibility import SafetyEnvelope, hard_clearance
+from planbench_schemas.feasibility import SafetyEnvelope, admissible_speed, hard_clearance
 from planbench_schemas.geometry import EPS, Point2D, normalize_angle
 from planbench_schemas.robot import RobotConfig, RobotState, SimAction
 
@@ -121,6 +121,7 @@ class DWAPlanner(LocalPlanner):
         self._config = config or DWAConfig()
         self._robot: RobotConfig | None = None
         self._envelope = SafetyEnvelope()
+        self._obstacle_speed = 0.0
         self._path: tuple[Point2D, ...] = ()
         self._path_index = 0
         self._previous: SimAction | None = None
@@ -142,6 +143,7 @@ class DWAPlanner(LocalPlanner):
         global_path: Sequence[Point2D],
         robot: RobotConfig,
         envelope: SafetyEnvelope | None = None,
+        obstacle_speed: float | None = None,
     ) -> None:
         """Adopt a path, and be told the hard feasible set to respect.
 
@@ -155,12 +157,19 @@ class DWAPlanner(LocalPlanner):
         shipped profiles, every unit test written before this existed —
         gets the footprint alone, which is the correct envelope for a
         robot whose pose estimate is exact.
+
+        ``obstacle_speed`` is the deployment's ``v_obstacle_max``, and it
+        arrives the same way and for the same reason. ``None`` means the
+        deployment declares no bound, which is treated as zero: the
+        behaviour measured before the field existed, and a deployment
+        that says nothing gets no guarantee rather than a guessed one.
         """
         if not global_path:
             raise ValueError("DWA requires a non-empty global path")
         self._path = tuple(global_path)
         self._robot = robot
         self._envelope = envelope or SafetyEnvelope()
+        self._obstacle_speed = obstacle_speed or 0.0
         self._path_index = 0
         self._previous = None
 
@@ -270,6 +279,17 @@ class DWAPlanner(LocalPlanner):
         # a trajectory can clear everything inside a one-second horizon
         # and be travelling too fast to stop before what lies just past
         # it.
+        #
+        # **And the scan is a photograph.** Measuring the headroom
+        # against the returns available now says "the robot can stop
+        # before the obstacle that is *standing*", which is a different
+        # promise from the one a moving site needs. P0 measured the
+        # difference: a cart closing at 0.2 m/s took the robot through
+        # step after step this criterion called admissible, and it hit.
+        # `obstacle_speed` is the deployment's declared worst case, so
+        # the bound now covers the ground the obstacle takes as well —
+        # equally for every candidate, since the number is not one of
+        # theirs to choose.
         to_goal = math.hypot(self._path[-1].x - state.pose.x, self._path[-1].y - state.pose.y)
         to_obstacle = self._nearest_obstacle_distance(obstacles, state)
         headroom = max(0.0, min(to_goal, to_obstacle))
@@ -413,24 +433,15 @@ class DWAPlanner(LocalPlanner):
     def _speed_that_stops_within(self, headroom: float, robot: RobotConfig) -> float:
         """Fastest speed from which the robot still stops inside ``headroom``.
 
-        Solves ``v·t_react + v²/(2a) ≤ headroom`` for ``v``, where the
-        reaction time is one control period plus any actuation latency:
-        braking from the instant of the decision would assume a robot
-        that reacts instantly, which is the assumption
-        ``command_latency_steps`` exists to remove.
-
-        The quadratic in ``v`` gives
-        ``v = a·(√(t² + 2·headroom/a) − t)``.
+        The arithmetic lives in
+        :func:`~planbench_schemas.feasibility.admissible_speed`, beside
+        the rest of the hard feasible set, so that the one function
+        deciding how fast a robot may go takes deployment-owned
+        arguments and nothing else. This is the controller supplying its
+        reaction time — one control period — and the deployment's
+        declared closing speed.
         """
-        if headroom <= 0.0:
-            return 0.0
-        if not math.isfinite(headroom):
-            return robot.max_linear_velocity
-        acceleration = robot.max_linear_acceleration
-        reaction = self._config.control_period
-        return acceleration * (
-            math.sqrt(reaction * reaction + 2.0 * headroom / acceleration) - reaction
-        )
+        return admissible_speed(headroom, robot, self._config.control_period, self._obstacle_speed)
 
     def _obstacle_points(self, observation: Observation) -> np.ndarray:
         """Convert the LiDAR scan into world-frame points (skip max-range rays).

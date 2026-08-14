@@ -176,6 +176,169 @@ class TestEnvironmentTraffic:
             make_profile(environment=environment(dynamic_obstacles=pair))
 
 
+#: One obstacle per motion law, each with a **known** top speed, so the
+#: validator is exercised against every branch of ``max_speed`` rather
+#: than against the one law the fixture happens to use.
+#:
+#: The periodic entry is the only one where the bound is not the declared
+#: ``speed``: a 14 m chord over 24 s peaks at ``π·14/24`` = 1.833 m/s at
+#: the midpoint, which is both faster than the average and exactly where
+#: a crossing obstacle is most likely to be in front of a robot.
+SPEED_CASES: list[tuple[str, dict[str, object], float]] = [
+    (
+        "waypoint",
+        {
+            "kind": "waypoint",
+            "waypoints": [{"x": 1.0, "y": 1.0}, {"x": 5.0, "y": 1.0}],
+            "speed": 1.2,
+        },
+        1.2,
+    ),
+    (
+        "periodic",
+        {
+            "kind": "periodic",
+            "start": {"x": 12.0, "y": 4.0},
+            "end": {"x": 12.0, "y": 18.0},
+            "period": 24.0,
+        },
+        math.pi * 14.0 / 24.0,
+    ),
+    (
+        "random_walk",
+        {
+            "kind": "random_walk",
+            "origin": {"x": 8.0, "y": 8.0},
+            "speed": 0.6,
+            "change_interval": 2.0,
+            "max_radius": 4.0,
+        },
+        0.6,
+    ),
+    (
+        "sudden_stop",
+        {
+            "kind": "sudden_stop",
+            "start": {"x": 2.0, "y": 2.0},
+            "heading": 0.0,
+            "speed": 0.7,
+            "stop_time": 4.0,
+        },
+        0.7,
+    ),
+]
+
+
+def _traffic(motion: dict[str, object]) -> list[dict[str, object]]:
+    """One obstacle running ``motion``, with the seed offset the other
+    rules demand so this class only ever fails for its own reason."""
+    return [
+        {
+            "name": "mover",
+            "radius": 0.35,
+            "motion": motion,
+            "seed_time_offset": float(motion.get("period", 5.0)),
+        }
+    ]
+
+
+class TestTheDeclaredObstacleSpeedIsVerified:
+    """``v_obstacle_max`` is a safety claim, so it is checked at load.
+
+    A number declared and never checked is a sentence, not a guarantee. A
+    profile stating 1.0 m/s beside a 1.5 m/s cart makes the robot size its
+    braking distance for traffic slower than the traffic it meets, and
+    nothing reports it — the failure is a robot that brakes too late, not
+    an exception. Refusing it while the deployment is still loading is the
+    HĐ-1.4 shape: a wrong profile found after 300 episodes is 300 episodes
+    answering a different question.
+
+    All four motion laws have a closed-form bound, so the check is
+    **total**: there is no "cannot prove it" branch for a reader to worry
+    about.
+    """
+
+    @pytest.mark.parametrize(
+        ("kind", "motion", "bound"), SPEED_CASES, ids=[c[0] for c in SPEED_CASES]
+    )
+    def test_a_bound_below_the_traffic_is_refused(
+        self, kind: str, motion: dict[str, object], bound: float
+    ) -> None:
+        with pytest.raises(ValidationError, match="declares faster traffic"):
+            make_profile(
+                environment=environment(
+                    dynamic_obstacles=_traffic(motion), v_obstacle_max=bound * 0.5
+                )
+            )
+
+    @pytest.mark.parametrize(
+        ("kind", "motion", "bound"), SPEED_CASES, ids=[c[0] for c in SPEED_CASES]
+    )
+    def test_a_bound_at_the_traffic_is_accepted(
+        self, kind: str, motion: dict[str, object], bound: float
+    ) -> None:
+        """Exactly at the bound, not merely above it. A validator with an
+        accidental strict comparison would reject the one declaration that
+        is precisely right."""
+        profile = make_profile(
+            environment=environment(dynamic_obstacles=_traffic(motion), v_obstacle_max=bound)
+        )
+        assert profile.environment.v_obstacle_max == pytest.approx(bound)
+
+    def test_the_message_names_the_obstacle_and_a_number_that_works(self) -> None:
+        """Written for the person choosing, not for a stack trace — the
+        same standard ``PPOStackConfig._require_a_model`` set."""
+        with pytest.raises(ValidationError) as raised:
+            make_profile(environment=environment(v_obstacle_max=0.5))
+        message = str(raised.value)
+        assert "forklift" in message
+        assert "1.83" in message
+
+    def test_undeclared_is_the_default_and_validates_nothing(self) -> None:
+        """The backward-compatibility promise. Every profile written
+        before this field existed declares traffic, so a ``0.0`` default
+        would fail its own validator on load — which is why the default is
+        ``None`` and why ``None`` means *no claim* rather than *no
+        traffic*."""
+        profile = make_profile()
+        assert profile.environment.v_obstacle_max is None
+        assert profile.environment.dynamic_obstacles  # and it still loaded
+
+    def test_zero_is_a_claim_and_a_false_one_is_refused(self) -> None:
+        """The third meaning. ``0.0`` asserts that nothing at this site
+        moves; beside declared traffic that assertion is false, and a
+        false claim is worse than an absent one."""
+        with pytest.raises(ValidationError, match="declares faster traffic"):
+            make_profile(environment=environment(v_obstacle_max=0.0))
+
+    def test_zero_is_accepted_where_it_is_true(self) -> None:
+        """And the same value is correct on a site with no traffic. Note
+        what would happen without ``default=0.0`` on the ``max``: the
+        validator would raise on an empty sequence and the honest
+        declaration would be the one case that crashed."""
+        profile = make_profile(environment=environment(dynamic_obstacles=[], v_obstacle_max=0.0))
+        assert profile.environment.v_obstacle_max == 0.0
+
+    def test_a_negative_bound_is_not_a_direction(self) -> None:
+        with pytest.raises(ValidationError):
+            make_profile(environment=environment(dynamic_obstacles=[], v_obstacle_max=-1.0))
+
+    def test_every_motion_law_has_a_bound(self) -> None:
+        """The refusal branch is for laws added later, not for the four
+        that exist. If a fifth arrives without a bound, a deployment must
+        lose the claim rather than silently receive a generous one."""
+        from planbench_schemas.dynamic import Motion, max_speed
+
+        covered = {case[0] for case in SPEED_CASES}
+        declared = {option.model_fields["kind"].default for option in Motion.__origin__.__args__}
+        assert covered == declared
+        for _, motion, bound in SPEED_CASES:
+            parsed = make_profile(
+                environment=environment(dynamic_obstacles=_traffic(motion), v_obstacle_max=bound)
+            ).environment.dynamic_obstacles[0]
+            assert max_speed(parsed.motion) == pytest.approx(bound)
+
+
 class TestMissions:
     def test_probabilities_must_sum_to_one(self) -> None:
         missions = three_missions()

@@ -1245,3 +1245,142 @@ Hai điểm khác: nới **dừng ở miền cứng** chứ không dừng ở v�
 nên không bao giờ trả lại thứ bất hợp lệ; và mọi ô được mở **giữ nguyên
 hệ số chi phí cực đại**, nên cắt qua khe đó là **đắt** với bất kỳ ai làm
 thế — đó chính là câu trả lời của gradient cho thiên vị của B1.
+
+---
+
+## Bảo đảm phanh trước vật cản đang lại gần (P1, 2026-08-14)
+
+### L7. Deployment không khai `v_obstacle_max` **không có** bảo đảm phanh trước traffic
+
+Tiêu chuẩn vận tốc khả nhận chặn tốc độ theo lần quét **hiện tại**, tức
+nó phát biểu đúng một câu: *robot dừng kịp trước vật cản **đang đứng***.
+Với vật cản đang lại gần ở tốc độ `u`, khe hở co theo `(v + u)` trong khi
+robot chỉ dự trù `v`.
+
+Đo được, `astar+dwa` trên sảnh trống, xe đẩy lao thẳng, tắt hết nhiễu,
+robot mặc định (`v_max` 0.8, `a` 0.5):
+
+Tốc độ lúc chạm đo bằng **phép quét trong bước**, lấy vận tốc theo đúng
+mô hình bậc-không của engine (xem L10):
+
+| tốc độ xe đẩy | không khai | có khai |
+|---|---|---|
+| 0.20 m/s | 16 bước vượt biên, **va lúc còn chạy 0.350 m/s** | 0 bước, **0.000 m/s** |
+| 0.30 m/s | 12 bước, 0.378 m/s | 0 bước, 0.000 m/s |
+| 0.60 m/s | 9 bước, 0.440 m/s | 0 bước, 0.000 m/s |
+| 1.00 m/s | 8 bước, 0.575 m/s | 0 bước, 0.000 m/s |
+| 1.50 m/s | 6 bước, 0.638 m/s | 0 bước, 0.000 m/s |
+
+Với **trọng số đang ship**: cột không khai đọc 0.155–0.575 m/s, cột có
+khai bằng **0** ở mọi hàng.
+
+Lỗ hổng mở ra từ **0.15–0.20 m/s** — chậm hơn người đi bộ — và **trọng
+số đang ship cũng va chạm**, không riêng cấu hình đối kháng.
+
+`v_obstacle_max = null` là **mặc định** và mọi profile đang ship đều để
+trống, nên hôm nay **không deployment nào mang bảo đảm này**. Đó là chủ
+đích: sửa mặc định sẽ đổi hành vi của mọi lượt chạy đã lưu mà không đổi
+`task_profile_id`, đúng cái bẫy HĐ-3.1 sinh ra để chặn. Deployment muốn
+bảo đảm phải khai — và khai là tạo `task_profile_id` mới.
+
+Tái hiện: `tests/test_admissible_stopping.py`.
+
+### L8. `kinematics.py` giữ **một vận tốc cho cả bước** — độ trung thực, không phải lỗi công thức
+
+**Đây là bản viết lại. Bản trước của L8 nói biên phanh tính phí sai vì
+"robot chạy bước đó ở `v_current`". Điều đó *không đúng về engine* và đã
+bị rút.**
+
+`kinematics.step` giải vận tốc mới **trước** — kẹp theo giới hạn tốc độ,
+rồi kẹp theo **một bước gia tốc** — sau đó tích phân **toàn bộ `dt`**
+bằng vận tốc mới đó. Kiểm trên trace chứ không đọc docstring: quãng đi
+giữa hai mẫu bằng đúng `after.speed × dt` tới float cuối, ở mọi bước.
+
+Hệ quả: khi lệnh nằm trong tầm một bước gia tốc — mà cửa sổ động luôn
+bảo đảm, vì nó chỉ lấy mẫu trong `±a·T` quanh vận tốc hiện tại — số hạng
+phản ứng `v_candidate · T` **tính đúng bằng** quãng robot thật sự đi.
+Không có khoản thiếu nào.
+
+Phần còn dư, và nó nhỏ: khi `stopping_limit` tụt xuống dưới sàn ramp
+(`v_k − a·dt`), lệnh phát ra thấp hơn thứ engine với tới được trong một
+bước, nên robot đi bước đó nhanh hơn mức đã tính phí. Đo được: mức vượt
+lớn nhất là **0.0215–0.0248 m/s**, tức tới **99%** của một bước giảm tốc
+(`a·T` = 0.025) và **không bao giờ quá**. Nó **không** gây dừng muộn —
+xem bảng L7, tốc độ lúc chạm bằng 0 ở mọi tốc độ vật cản.
+
+**Hạn chế thật sự nằm ở chỗ khác, và nó thuộc simulator:** robot ngoài
+đời giảm tốc **liên tục trong bước**, engine thì giữ một vận tốc cho cả
+bước. Trong một bước phanh:
+
+```
+liên tục:  v_k·dt − ½·a·dt²
+engine:    (v_k − a·dt)·dt  =  v_k·dt − a·dt²
+```
+
+Engine đi **ít hơn `½·a·dt²`** mỗi bước — 0.625 mm với `a` = 0.5,
+`dt` = 0.05 — cộng dồn **≈ 20 mm** qua 32 bước cần để xả 0.8 m/s. Tức
+simulator **lạc quan** về quãng phanh, đúng chiều mà một phép đo an toàn
+không muốn sai.
+
+Đây là tính chất của `kinematics.py`, **áp cho mọi phép đo của nền tảng**
+— quãng phanh, khoảng hở nhỏ nhất, near-miss — không phải khuyết tật
+riêng của P1. Sửa nó là đổi tích phân của simulator, tức đổi mọi số đã
+lưu; nó là một pha riêng và phải được cân nhắc như một thay đổi độ trung
+thực (giống lần bật `sensor_noise`), không phải một bản vá.
+
+### L9. Bảo đảm này **không** hứa không va chạm
+
+Nó hứa robot luôn còn dừng được trước thứ nó nhìn thấy, và trong bảng L7
+nó làm được: tốc độ lúc chạm bằng **0** ở mọi tốc độ vật cản. Nhưng nó
+**không** hứa episode kết thúc mà không chạm — một xe đẩy lao xuống làn
+và đâm vào robot **đang đứng yên** vẫn là va chạm, và không giới hạn tốc
+độ nào với tới được chuyện đó. Chỉ tránh đường mới được, và đó là việc
+của tầng chi phí mềm.
+
+Trong bảng L7, mọi hàng từ 0.15 m/s trở lên **vẫn va chạm** sau khi khai
+biên; thứ đổi là tốc độ lúc bị chạm rơi từ 0.35–0.64 m/s xuống **0**.
+
+Đọc `collision_count` của một deployment có khai `v_obstacle_max` mà kỳ
+vọng nó về 0 là đang đọc một tuyên bố khác với tuyên bố đã được đo.
+
+### L10. Đo va chạm: quét trong bước, **và** đọc đúng vận tốc của bước
+
+Hai lỗi đọc chồng lên nhau, cả hai đều từng cho ra số sai trong report,
+và **cả hai đều làm test xanh**:
+
+1. **Lấy mẫu ở biên bước.** Bản đầu đọc tốc độ ở mẫu đầu tiên có
+   `gap ≤ 0`. Mẫu đó ở **cuối** bước, còn va chạm xảy ra **bên trong**
+   bước. Kết quả trông như dừng sạch ở mọi tốc độ.
+2. **Nội suy vận tốc qua bước.** Bản sửa thứ nhất tính
+   `before.v + s·(after.v − before.v)`, cho ra 5.8 mm/s và 5.0 mm/s ở
+   `u` = 1.0 và 1.5. Sai, vì engine **không** đổi vận tốc tuyến tính
+   trong bước — nó giữ `after.speed` cho cả bước. Vận tốc đúng tại mọi
+   thời điểm bên trong bước là **`after.speed`**, và ở bước xảy ra tiếp
+   xúc nó bằng **0**: robot không đi được milimét nào trong bước đó, xe
+   đẩy tự đi vào nó.
+
+Phép đo đúng, hai phần: **thời điểm** chạm là nghiệm đầu tiên trong
+`[0, 1]` của tam thức bậc hai `|d₀ + s·Δ|² = R²` giữa hai mẫu; **vận
+tốc** tại thời điểm đó là `after.speed`, hằng số.
+
+Luật rút ra cho mọi phép đo về sau: **quét trong bước để lấy thời điểm,
+và lấy vận tốc theo đúng mô hình tích phân của engine — đừng nội suy một
+đại lượng mà engine giữ bậc không.** Ghim bằng
+`TestTheStepModelIsZeroOrderHold`, đối chiếu thẳng với quãng đi trên
+trace chứ không với docstring: docstring là thứ ai đó *định* làm, mà lỗi
+đọc ở đây cũng là thứ ai đó định.
+
+### L11. P1 chỉ có hiệu lực trên luồng deployment, không trên luồng benchmark cũ
+
+`v_obstacle_max` đi từ `TaskProfile` xuống `run_stack`. Ba đường không
+mang nó, và cả ba đều đúng chứ không phải sót:
+
+| đường | vì sao |
+|---|---|
+| `run_benchmark` / `run_single` (`packages/benchmark/runner.py`) | nhận `Scenario` + `BenchmarkSpec`, **không có `TaskProfile`** — không có gì để truyền. Cùng tình trạng với `recovery`, cũng không đi qua đường này |
+| `/simulate` (`apps/api/services.py`) | chạy từ `StoredSimulation`, cũng không có profile. Sân thử, không phải chỗ đo deployment |
+| `tuning.py`, `calibrate_difficulty.py` | dùng `run_benchmark`, kế thừa như trên |
+
+Cả ba chạy với `obstacle_speed = None`, tức **hành vi cũ**. Nếu luồng
+benchmark cũ còn xuất hiện trên UI thì con số nó sinh ra **không** mang
+bảo đảm phanh trước vật cản đang lại gần, kể cả khi deployment có khai.

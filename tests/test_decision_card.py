@@ -256,6 +256,37 @@ class TestCardValidatesAgainstTheContract:
         errors = sorted(validator.iter_errors(two_candidates.manifest().to_json_dict()), key=str)
         assert errors == []
 
+    @pytest.mark.parametrize(
+        "field", ["sensor_noise", "replanning", "v_obstacle_max", "constraints"]
+    )
+    def test_the_schema_refuses_a_manifest_missing_a_condition(
+        self, two_candidates: Run, field: str
+    ) -> None:
+        """The three conditions ``episode_context_id`` does not hash, plus
+        the thresholds — none of them may go missing quietly.
+
+        **This is the guard for a bug that was live until 6.9.0.**
+        ``replanning`` was declared under ``properties`` and described as
+        required from 6.4.0, but was never in the ``required`` list and
+        was never written by ``to_json_dict``. Every manifest shipped
+        without it and validated cleanly, because
+        ``additionalProperties: false`` constrains properties that are
+        *present* and says nothing about one that is absent. Declaring a
+        field is not requiring it, and only this test tells them apart.
+
+        Why these four and not every field: two runs of one deployment
+        that differ in any of them are two experiments sharing every
+        context id, so a manifest without them cannot tell a rebuilder
+        which experiment they are holding.
+        """
+        validator = Draft202012Validator(
+            json.loads(MANIFEST_SCHEMA_PATH.read_text(encoding="utf-8"))
+        )
+        payload = two_candidates.manifest().to_json_dict()
+        assert field in payload, f"{field} is not being written at all"
+        del payload[field]
+        assert sorted(validator.iter_errors(payload), key=str)
+
     def test_the_card_round_trips_through_json(self, two_candidates: Run) -> None:
         """A card that cannot be written to disk is not an artefact."""
         text = json.dumps(two_candidates.card().to_json_dict(), ensure_ascii=False)

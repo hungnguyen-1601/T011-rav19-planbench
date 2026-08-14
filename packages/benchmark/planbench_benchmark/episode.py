@@ -163,6 +163,12 @@ def run_contract_episode(
             # Same argument, one rung further: a stack allowed to back up
             # while its rival is not would be compared on its recovery.
             recovery=profile.recovery,
+            # And once more, for the braking bound. A candidate that
+            # could pick the traffic speed it braked for would be
+            # choosing its own exam; worse, if only one stack braked
+            # correctly for closing traffic the comparison would be
+            # measuring safety rather than the layer it names.
+            obstacle_speed=profile.environment.v_obstacle_max,
         )
         recorder.close(
             peak_search_nodes=_search_nodes(candidate, run.plan),

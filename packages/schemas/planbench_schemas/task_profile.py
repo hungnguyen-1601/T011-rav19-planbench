@@ -41,7 +41,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from planbench_schemas.dynamic import DynamicObstacle
+from planbench_schemas.dynamic import DynamicObstacle, max_speed
 from planbench_schemas.geometry import Pose2D
 from planbench_schemas.observations import ObservationToken, canonical_observations
 from planbench_schemas.recovery import NO_RECOVERY, RecoveryConfig
@@ -141,6 +141,95 @@ class EnvironmentSpec(BaseModel):
     #: It belongs to ``environment`` because it describes the site and
     #: the vehicle deployed there, not the algorithm being judged.
     sensor_noise: SensorNoise = Field(default_factory=SensorNoise)
+    #: Fastest anything at this site may close on the robot, m/s.
+    #:
+    #: **Layer 2, and it fixes a hole with a reproducible collision.**
+    #: The admissible-velocity criterion bounds speed by what the robot
+    #: can brake before the *scan it has now*, which is the same as
+    #: promising it can stop before an obstacle that is **standing**. P0
+    #: measured what that omits: a cart driving head-on at 0.2 m/s —
+    #: slower than a person strolling — puts the robot through 6 to 25
+    #: consecutive steps its own criterion calls admissible and ends the
+    #: episode in contact, under the shipped weights as readily as under
+    #: adversarial ones. Declaring this number restores the guarantee for
+    #: **every** candidate equally; see
+    #: :func:`~planbench_schemas.feasibility.admissible_speed`.
+    #:
+    #: **Three meanings, and ``None`` is not one of the numbers.**
+    #:
+    #: * ``None`` — not declared. Behaviour is byte-identical to before
+    #:   this field existed, and the deployment carries **no** braking
+    #:   claim against moving traffic; the manifest says so. Nothing is
+    #:   validated, because there is no claim to check.
+    #: * a positive number — declared, and checked against every motion
+    #:   law below at load.
+    #: * ``0.0`` — the assertion that *nothing here moves*. Legal, and
+    #:   refused if the environment declares a moving obstacle. A wrong
+    #:   assertion is worse than an absent one.
+    #:
+    #: ``None`` rather than ``0.0`` as the default, and the difference is
+    #: not cosmetic: every profile written before this field exists
+    #: declares moving traffic, so a ``0.0`` default would fail its own
+    #: validator on load and break every stored deployment. Precedent:
+    #: ``robustness_margin: float | None``, where null has the defined
+    #: meaning "not measured" rather than "measured as zero".
+    #:
+    #: Declared on the deployment and not on the candidate for the same
+    #: reason as ``sensor_noise`` and ``recovery``: a candidate that could
+    #: choose the traffic it braked for would be choosing its own exam,
+    #: and a comparison in which only one stack braked correctly would be
+    #: measuring **safety** rather than the layer it claims to compare.
+    v_obstacle_max: float | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Worst-case speed at which traffic may close on the robot, m/s. Null means "
+            "undeclared: legacy behaviour, and no braking guarantee against moving "
+            "obstacles."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _validate_obstacle_speed_bound(self) -> EnvironmentSpec:
+        """A declared bound must survive the traffic declared beside it.
+
+        **Fail at startup, not after 300 episodes.** A profile whose
+        bound is too small does not crash; it produces a robot that
+        brakes for slower traffic than it meets, and the episodes it
+        yields answer a question nobody asked. Same shape as HĐ-1.4's
+        refusal to infer a scope: the error is only cheap while the
+        deployment is still being loaded.
+
+        Skipped entirely when ``v_obstacle_max`` is ``None`` — there is
+        no claim to falsify, and a profile written before this field
+        existed must load exactly as it did.
+
+        ``default=0.0`` on the ``max`` is not decoration. Without it an
+        environment with no dynamic obstacles raises ``ValueError`` from
+        inside the validator on an empty sequence, and 0.0 is also the
+        right answer: nothing moving means nothing closes.
+        """
+        if self.v_obstacle_max is None:
+            return self
+        fastest = max(
+            (max_speed(obstacle.motion) for obstacle in self.dynamic_obstacles),
+            default=0.0,
+        )
+        if fastest > self.v_obstacle_max:
+            culprits = sorted(
+                f"{obstacle.name} ({max_speed(obstacle.motion):.3g} m/s)"
+                for obstacle in self.dynamic_obstacles
+                if max_speed(obstacle.motion) > self.v_obstacle_max
+            )
+            raise ValueError(
+                f"v_obstacle_max is {self.v_obstacle_max} m/s but this environment "
+                f"declares faster traffic: {', '.join(culprits)}. The robot would size "
+                "its braking distance for traffic slower than the traffic it meets, and "
+                f"nothing would report it. Either raise v_obstacle_max to at least "
+                f"{fastest:.3g}, slow the obstacle(s) down, or remove the field to run "
+                "without a braking guarantee against moving obstacles"
+            )
+        return self
 
     @model_validator(mode="after")
     def _validate_obstacles(self) -> EnvironmentSpec:
