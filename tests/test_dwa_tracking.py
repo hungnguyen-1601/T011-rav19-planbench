@@ -30,7 +30,7 @@ import math
 import pytest
 
 from planbench_benchmark.candidates import LOCAL_CONTROLLER_CONFIGS
-from planbench_benchmark.registry import build_global_planner
+from planbench_benchmark.registry import build_global_planner, build_local_planner
 from planbench_benchmark.scenarios import build_scenario
 from planbench_planning.dwa_predictive import DWAPredictiveConfig, DWAPredictivePlanner
 from planbench_planning.dwa_predictive.tracking import LidarTracker
@@ -325,6 +325,47 @@ class TestDeterminism:
         assert tracker.diagnostics.frames == 0
         tracks = tracker.update(_observation(0.0, [(3.0, 0.0, 0.35)]))
         assert tracks[0].velocity.x == 0.0, "history survived the reset"
+
+
+class TestTheCountersReachTheEpisodeRecord:
+    """Item 7 of P5: the counters must be *readable*, not just present.
+
+    A ``TrackerDiagnostics`` object nobody can reach after an episode is
+    not a diagnostic — it is a private field. Without these numbers a
+    flat comparison between ``dwa`` and ``dwa_predictive`` cannot be
+    read: "prediction is worthless in this deployment" and "the tracker
+    never saw anything" produce the identical table.
+    """
+
+    def test_an_episode_records_what_the_tracker_did(self) -> None:
+        shared = LOCAL_CONTROLLER_CONFIGS["dwa_balanced"]
+        map_data, scenario = build_scenario("intersection")
+        scenario = scenario.model_copy(update={"timeout_seconds": 12.0})
+        run = run_stack(
+            map_data,
+            scenario,
+            DWAPredictivePlanner(DWAPredictiveConfig(**shared)),
+            build_global_planner("astar+dwa", episode_seed=0),
+        )
+        events = [e for e in run.result.events if e.type == "local_planner_diagnostics"]
+        assert len(events) == 1, "the tracker's counters never reached the record"
+        message = events[0].message
+        for counter in ("frames", "clusters_seen", "clusters_tracked", "coasting", "floored"):
+            assert counter in message, f"{counter} missing from the episode record"
+
+    def test_a_controller_with_nothing_to_report_stays_silent(self) -> None:
+        """``dwa`` keeps no counters, and an empty event would be noise in
+        every episode the platform has ever run."""
+        shared = LOCAL_CONTROLLER_CONFIGS["dwa_balanced"]
+        map_data, scenario = build_scenario("intersection")
+        scenario = scenario.model_copy(update={"timeout_seconds": 12.0})
+        run = run_stack(
+            map_data,
+            scenario,
+            build_local_planner("astar+dwa", shared),
+            build_global_planner("astar+dwa", episode_seed=0),
+        )
+        assert not [e for e in run.result.events if e.type == "local_planner_diagnostics"]
 
 
 #: Measured 2026-08-15 with **every noise stream off**, so none of this is

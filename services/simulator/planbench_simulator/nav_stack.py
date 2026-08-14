@@ -383,6 +383,27 @@ def _reset_local(
     local_planner.reset(path, robot, **extra)  # type: ignore[arg-type]
 
 
+def _controller_diagnostics(local_planner: LocalPlanner) -> str:
+    """Whatever counters the controller kept, as one event message.
+
+    **Diagnostic, never a metric.** HĐ-5 makes the trace the single input
+    of the Metrics Engine, so a number computed here that competed with
+    that would be the parallel source the contract forbids. These answer
+    a question no ranked metric does — *did the estimator work at all* —
+    and without them a flat comparison is unreadable: nobody can tell
+    "prediction is worthless here" from "the tracker never saw anything".
+
+    Probed from the object rather than required of the interface, the same
+    way ``_reset_local`` finds out whether a controller understands the
+    safety envelope. A controller with nothing to report says nothing,
+    and no event is emitted.
+    """
+    counters = getattr(local_planner, "diagnostics", None)
+    if not counters:
+        return ""
+    return " ".join(f"{key}={value}" for key, value in sorted(counters.items()))
+
+
 def _replan(
     map_data: MapData,
     scenario: Scenario,
@@ -418,9 +439,9 @@ def _replan(
     # The same world blocked at the physics alone, so the relaxation
     # below can tell a cell held by the grid's own coarseness from one
     # held by the hard feasible set.
-    feasible = OccupancyGrid(
-        rasterize_obstacles(believed, scenario.static_obstacles)
-    ).inflate(_feasible_clearance(scenario))
+    feasible = OccupancyGrid(rasterize_obstacles(believed, scenario.static_obstacles)).inflate(
+        _feasible_clearance(scenario)
+    )
     return global_planner.plan(
         _with_standing_room(grid, feasible, position, _caution_ramp(believed, scenario)),
         position,
@@ -553,9 +574,7 @@ def _sensed_points(observation: Observation, lidar: LidarConfig) -> list[tuple[f
         if distance >= lidar.max_range - EPS:
             continue
         angle = start + index * increment
-        points.append(
-            (pose.x + distance * math.cos(angle), pose.y + distance * math.sin(angle))
-        )
+        points.append((pose.x + distance * math.cos(angle), pose.y + distance * math.sin(angle)))
     return points
 
 
@@ -666,9 +685,7 @@ def _recover(
     raise ValueError(f"unknown recovery behaviour: {behaviour!r}")
 
 
-def _clearance_towards(
-    pose, points: Sequence[tuple[float, float]], bearing: float
-) -> float:
+def _clearance_towards(pose, points: Sequence[tuple[float, float]], bearing: float) -> float:
     """Nearest sensed return within a quarter-turn of ``bearing``.
 
     A cone rather than a ray: a robot reversing sweeps a body, not a
@@ -1075,9 +1092,7 @@ def run_stack(
                 continue
             if new_plan.success:
                 plans.append(new_plan)
-                _reset_local(
-                    local_planner, new_plan.path, scenario.robot, envelope, obstacle_speed
-                )
+                _reset_local(local_planner, new_plan.path, scenario.robot, envelope, obstacle_speed)
                 # Numbered by *attempt*, the same counter the failures
                 # use. Numbering successes separately produced an event
                 # stream reading "replan 6 found no path" then "replan 1
@@ -1176,6 +1191,15 @@ def run_stack(
         )
 
     result = engine.get_result()
+    diagnostics = _controller_diagnostics(local_planner)
+    if diagnostics:
+        failures.append(
+            EpisodeEvent(
+                time=result.elapsed_time,
+                type="local_planner_diagnostics",
+                message=diagnostics,
+            )
+        )
     if failures:
         result = result.model_copy(update={"events": tuple(failures) + result.events})
     final_plan = plans[-1]
