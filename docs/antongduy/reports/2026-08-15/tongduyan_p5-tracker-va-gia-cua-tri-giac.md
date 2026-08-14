@@ -139,29 +139,66 @@ nào — luật thoái lui hoạt động — nhưng cũng không tốt hơn ở
 Và 37/40 đồng ý nghĩa là hai bên chỉ khác nhau ở **đúng 3 seed** mà oracle
 giúp được. Tracker im lặng chính xác ở chỗ dự đoán có ích.
 
-### Nguyên nhân: **tường phân giải cảm biến**, không phải lỗi chỉnh tham số
+### Nguyên nhân — và **bản đầu của mục này tôi chẩn đoán sai**
+
+Bản đầu viết: *"`cluster_min_points = 3` loại vật cản ở 3–5 m, nên tracker
+không bao giờ thấy nó"*. Nghe hợp lý, và **sai** — đo lại với
+`cluster_min_points = 2`:
+
+```
+cluster_min_points=3: collisions 1/25 (dwa 1/25)  better 0  worse 0
+cluster_min_points=2: collisions 1/25 (dwa 1/25)  better 0  worse 0
+```
+
+Không đổi một seed nào. Ngưỡng điểm **không phải** chỗ thắt.
+
+Đo thẳng vào đường đi của một episode — theo dõi vật cản thật suốt cả
+episode và hỏi tracker nói gì về nó:
+
+```
+số bước AMR nằm trong tầm LiDAR        : 182
+  ...trong đó có track nằm lên nó      :  37   (20%)
+  tốc độ thật                          : 0.800 m/s
+  trung vị |ước lượng − thật|          : 0.800 m/s
+  ...trong đó ước lượng KHÁC 0         :   9/37 (24%)
+```
+
+Trung vị sai số **bằng đúng tốc độ thật** — nghĩa là ước lượng điển hình
+là **0** ở chỗ đáng lẽ phải là 0.8.
+
+**Chuỗi nhân quả thật, và nó có ba mắt chứ không phải một:**
+
+```
+phân giải 2 tia ở 4 m
+   -> phát hiện CHẬP CHỜN: chỉ 20% số bước có cụm nằm trên vật cản
+      -> track liên tục chết rồi sinh lại
+         -> không bao giờ tích đủ velocity_min_samples = 3
+            -> vĩnh viễn ở pha warm-up -> vận tốc 0 (76% số lần thấy)
+               -> ~5% số bước có ước lượng dùng được (9/182)
+                  -> không đổi được hành vi ở seed nào
+```
+
+Mắt xích quyết định **không phải** "không thấy vật cản" mà là **"thấy
+không liên tục"**. Luật warm-up — đúng đắn và cố ý — biến sự chập chờn
+thành im lặng hoàn toàn: mỗi lần mất dấu là một lần đếm lại từ đầu.
+
+Phân giải vẫn là nguyên nhân **gốc** (2 tia ở 4 m thì cụm lúc có lúc
+không), nhưng cơ chế khuếch đại là tương tác giữa **mất dấu** và
+**warm-up**, và đó là thứ chỉ nhìn ra được bằng cách đo từng bước.
 
 LiDAR: 72 tia trên 2π ⇒ **5.00°/tia**. `crossing-amr` bán kính 0.35 m:
 
-| tầm | góc chắn | số tia | `cluster_min_points = 3` |
-|---|---|---|---|
-| 1 m | 41.0° | 8.2 | theo dõi |
-| 2 m | 20.2° | 4.0 | theo dõi |
-| **3 m** | 13.4° | **2.7** | **loại** |
-| **4 m** | 10.0° | **2.0** | **loại** |
-| 5 m | 8.0° | 1.6 | loại |
-| 6 m | 6.7° | 1.3 | loại |
+| tầm | góc chắn | số tia |
+|---|---|---|
+| 2 m | 20.2° | 4.0 |
+| 3 m | 13.4° | 2.7 |
+| 4 m | 10.0° | 2.0 |
+| 5 m | 8.0° | 1.6 |
 
-Robot cần phản ứng ở **3–5 m** — đó là nơi biên phanh và dự đoán có ý
-nghĩa. Ở đúng dải đó vật cản rộng **2 tia**. Không tính được tâm, bề
-rộng hay độ thẳng từ 2 điểm, nên mọi phép phân loại theo hình dạng là bất
-khả ở đó.
-
-Đây là giới hạn **vật lý của cấu hình cảm biến**, không phải ngưỡng đặt
-sai. Một vật 0.35 m ở 4 m trên LiDAR 72 tia đơn giản là không đủ điểm để
-nói nó là gì hay nó đi đâu.
-
----
+**Bài học về phương pháp, lần thứ sáu trong plan này:** tôi công bố một
+chẩn đoán rồi mới kiểm nó. Phép kiểm bác bỏ nó. Chẩn đoán đúng cần một
+phép đo *dọc theo đường đi* chứ không phải một bảng hình học — và bảng
+hình học thì trông thuyết phục hơn hẳn.
 
 ## 5. Kiểm chứng
 
@@ -190,12 +227,17 @@ biến.
 
 | # | phương án | hệ quả |
 |---|---|---|
-| a | **Hạ `cluster_min_points` xuống 2** | 2 điểm là tối thiểu để có bất kỳ ước lượng bề rộng nào. Đang đo (chạy nền). Rủi ro: nhận thêm ma, và tâm của 2 điểm ở 4 m có lượng tử ±13 cm |
+| a | ~~Hạ `cluster_min_points` xuống 2~~ | **đã đo, không đổi gì** — 0 better, 0 worse. Không phải chỗ thắt |
+| a2 | **Cho track sống qua lúc mất dấu** — giữ `velocity_min_samples` đã tích được thay vì đếm lại từ đầu | nhắm đúng mắt xích đã đo: 20% phát hiện nhưng chỉ 24% trong số đó có vận tốc. Rẻ, nằm trong `tracking.py`, và không đụng thế giới. Rủi ro: một track coasting lâu mang vận tốc cũ — phải giới hạn bằng `confidence` và `track_timeout` |
 | b | **Khai LiDAR phân giải cao hơn** trong deployment dùng để đo | 0.35 m ở 4 m cần ~2° / tia, tức **180 tia**. Đổi thế giới ⇒ `task_profile_id` mới, và mọi số cũ đo lại. Nhưng nó biến câu hỏi thành *"dự đoán đáng không"* thay vì *"72 tia có đủ không"* |
 | c | **Chạy P7 và công bố kết quả phẳng** | trung thực, rẻ, và plan đã nói trước rằng một card *"đừng dùng predictive ở deployment này"* là một card thành công. Nhưng nó công bố một giới hạn **cảm biến** dưới nhãn một giới hạn **thuật toán** |
 | d | **Dừng plan** | oracle đã trả lời câu hỏi khoa học (dự đoán đáng giá); tracker trả lời câu hỏi kỹ thuật (không giành lại được ở cấu hình này). Cả hai đều là kết quả |
 
-Khuyến nghị: **(b) rồi (c)**. Lý do: kết quả hiện tại **trộn hai câu hỏi**
+Khuyến nghị: **(a2) trước, rồi (b) nếu vẫn không đủ**. Đổi so với bản
+trước của mục này: phép đo từng bước chỉ ra mắt xích là *mất dấu ⇒ đếm
+lại warm-up*, và đó là thứ sửa được trong tracker mà không cần đổi cảm
+biến. Chỉ khi (a2) vẫn không giành lại được gì thì kết luận "72 tia
+không đủ" mới đứng vững. Lý do: kết quả hiện tại **trộn hai câu hỏi**
 — *mô hình vận tốc hằng có đáng không* (P4 đã trả lời: có) và *72 tia có
 đủ để ước lượng nó không* (P5 vừa trả lời: không). Công bố phép so trên
 cấu hình 72 tia sẽ gán giới hạn cảm biến cho thuật toán, và đó là đúng
