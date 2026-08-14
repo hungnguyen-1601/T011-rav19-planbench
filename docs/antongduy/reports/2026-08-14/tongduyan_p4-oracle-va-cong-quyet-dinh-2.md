@@ -2,8 +2,8 @@
 
 **Ngày:** 2026-08-14
 **Plan:** `docs/antongduy/plans/2026-08-14/du-doan-chuyen-dong-vat-can.md`, P4
-**Trạng thái:** oracle xong · **cổng: luật đã khai TRƯỢT, nhưng luật đó
-không đo được thứ đang xảy ra — cần An quyết**
+**Trạng thái:** oracle xong · cổng lần 1 **TRƯỢT** (thước sai) · cổng lần 2
+khai lại và **ĐẠT**, `p = 0.00049` — **đi tiếp P5**
 
 ---
 
@@ -264,6 +264,81 @@ lời về **thuật toán** chứ không phải về **phép đo**.
 
 Nếu An chọn (a), tôi ghi kết quả âm và dừng — plan nói rõ một kết quả âm
 là một kết quả.
+
+## 9b. Cổng lần hai — khai lại, commit trước, rồi chạy
+
+An chốt phương án (b). Luật mới viết thành hằng số trong
+`scripts/diagnose_oracle.py` và **commit ở `b2abb4d` trước khi chạy**:
+
+| | luật lần 2 |
+|---|---|
+| cảnh | `intersection` — và **hai** điều kiện tiên quyết, không phải một |
+| tập | **mọi seed, không điều kiện** |
+| n | **120** |
+| thống kê | sign test một phía trên **cặp bất đồng** |
+| đạt | `p < 0.05` **và** không metric bảo vệ nào xấu đi |
+
+**Điều kiện tiên quyết thứ hai là bài học của lần trượt:** cảnh phải có
+success rate nền **khác 0**. `bidirectional_corridor` trượt điều kiện này
+(0.000 cho cả hai bên) — một cảnh mà mọi episode của cả hai bên đều hỏng
+thì không phân biệt được gì, dù can thiệp làm gì đi nữa. Đây là ràng buộc
+**về cảnh**, không phải phán xét về kết quả.
+
+**Công suất kiểm trước khi chạy**, để luật thật sự có thể trượt:
+
+```
+9 better / 0 worse -> p = 0.00195  PASS
+8 better / 1 worse -> p = 0.01953  PASS
+7 better / 2 worse -> p = 0.08984  fail
+```
+
+Một lần đảo chiều còn sống, hai thì không.
+
+**Dự đoán ghi trước:** *"~9 cặp bất đồng ở n=120, đa số hoặc toàn bộ
+nghiêng về oracle; p trong khoảng 0.002–0.09, nên đạt là khả năng cao
+nhưng không chắc."*
+
+### Kết quả
+
+```
+=== intersection (120 paired seeds, unconditioned) ===
+  discordant pairs      11
+  favouring the oracle  11
+  favouring dwa          0
+  one-sided sign test   p = 0.00049
+  collisions  dwa   9 -> oracle   2
+  successes   dwa 107 -> oracle 112
+  intersection: PASS
+
+VERDICT: PASS — continue to P5
+```
+
+**ĐẠT.** 11 cặp bất đồng, **11/11 nghiêng về oracle, 0 nghiêng về `dwa`**,
+`p = 0.00049`. Va chạm giảm **9 → 2** (−78%), thành công tăng 107 → 112,
+không metric bảo vệ nào xấu đi.
+
+So với dự đoán: nhiều hơn một chút (11 thay vì ~9 cặp), và chiều giữ
+nguyên hoàn toàn. `p` nằm dưới khoảng đã đoán — tốt hơn dự kiến, và ghi
+ra để lần sau biết cái nào có trước.
+
+**Kiểm nhiễm chéo.** Lần chạy này diễn ra trong lúc tôi đang sửa
+`_random_walk_position` và `max_speed` cho L12. Đã kiểm: `intersection`
+chỉ có **một** vật cản, `crossing-amr`, luật `waypoint` — **không có
+random walk**. Hai hàm bị sửa không nằm trên đường chạy của cảnh này. Và
+Python nạp module một lần lúc khởi động, nên tiến trình chạy đúng mã tại
+`b2abb4d`.
+
+**Điều phải đọc kèm, để không ai đọc quá kết quả này:**
+
+1. **Đây là trần, không phải thành tích.** Oracle có tri giác **hoàn
+   hảo**. `dwa_predictive` thật sẽ phải ước lượng, và P5 đo đúng khoảng
+   cách giữa hai bên.
+2. **Hiệu ứng hiếm.** 11/120 seed — trên **91%** seed còn lại oracle làm
+   đúng không gì cả, quỹ đạo giống hệt từng byte.
+3. **Nó mua an toàn, không mua tốc độ.** Đúng như mục 7: trái với tiền đề
+   §10 của plan. Bộ metric mục tiêu ở §8 cần được xem lại trước P7.
+
+---
 
 ## 10. Một lỗi P1 phát hiện dọc đường: `RandomWalkMotion` **nhảy vị trí**
 
