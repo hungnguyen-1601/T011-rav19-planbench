@@ -300,11 +300,34 @@ class DWAPredictivePlanner(LocalPlanner):
 
         config = self._config
         times = rollout_times(config.horizon_seconds, config.horizon_dt)
-        # Prediction may be shorter than the rollout, never longer:
-        # extrapolating past the trajectory being scored would be
-        # describing a robot that is not there. Clamping the *time* rather
-        # than dropping columns keeps the shapes aligned with `rollouts`.
-        times = np.minimum(times, config.prediction_horizon_seconds)
+
+        # **A shorter prediction horizon drops columns; it does not clamp
+        # the clock.** The first version of this clamped the times with
+        # ``np.minimum``, and clamping is not "stop predicting" — it is
+        # "predict, then park the obstacle there". Everything past the
+        # horizon became a phantom *stationary* obstacle at the last
+        # predicted position, and because the clamped array was also what
+        # the time-to-collision read, a breach late in the rollout was
+        # reported as happening at the horizon edge. Measured: a rollout
+        # of 2.0 s with a 0.2 s prediction horizon reported ``ttc = 0.2``
+        # for an intersection at 1.425 s, which ``urgency`` then scored at
+        # 0.9 of maximum. Seven times too soon, in the direction that
+        # makes the robot flinch at nothing.
+        #
+        # Truncating says the honest thing instead: past its horizon this
+        # controller makes **no claim** about where anything will be. The
+        # measured point cloud still covers those columns — that is what
+        # ``clearances`` is — so nothing goes unseen, it just stops being
+        # predicted.
+        #
+        # At least one column always survives. A prediction horizon
+        # shorter than one integration step cannot be expressed by a
+        # rollout sampled at ``horizon_dt``, and rounding it up to one
+        # step matches what ``rollout_batch`` does with its own horizon.
+        within = int(np.count_nonzero(times <= config.prediction_horizon_seconds + EPS))
+        steps = max(1, within)
+        times = times[:steps]
+        rollouts = rollouts[:, :steps]
 
         centers = np.array([[track.center.x, track.center.y] for track in tracks], dtype=float)
         velocities = np.array(
@@ -326,6 +349,9 @@ class DWAPredictivePlanner(LocalPlanner):
         # but the soft price of arriving somewhere at the same moment as
         # something else.
         assert self._robot is not None
+        # `times` here is the truncated array, so a breach can only be
+        # reported at a moment the controller actually predicted. Past the
+        # horizon the answer is infinity — not "at the edge".
         breach = surface.min(axis=2) <= hard_clearance(self._robot, self._envelope)
         first = np.where(breach.any(axis=1), breach.argmax(axis=1), -1)
         ttc = np.where(first >= 0, times[np.clip(first, 0, None)], math.inf)

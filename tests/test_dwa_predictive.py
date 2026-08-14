@@ -378,6 +378,71 @@ class TestPredictionActuallyChangesTheScore:
         assert math.isfinite(float(hitting[0]))
         assert not math.isfinite(float(missing[0]))
 
+    def test_a_breach_after_the_horizon_is_not_reported_at_its_edge(self) -> None:
+        """**Regression.** A shorter prediction horizon must produce *no
+        claim*, never an urgent one.
+
+        The first implementation clamped the time axis with
+        ``np.minimum`` instead of dropping columns, which is not "stop
+        predicting" — it parks the track at its last predicted position
+        and leaves it there for the rest of the rollout. Two things went
+        wrong at once, and the second is the dangerous one: the clamped
+        array was also what the time-to-collision indexed, so an
+        intersection late in the rollout was reported as happening
+        **exactly at the horizon edge**.
+
+        Measured on this scene before the fix: a 2.0 s rollout with a
+        0.2 s prediction horizon returned ``ttc = 0.2`` for a geometric
+        intersection at 1.425 s. ``urgency`` scores that at 0.9 of
+        maximum — near-certain imminent collision, for an event seven
+        times further away, against a phantom obstacle that had stopped
+        only inside the arithmetic.
+        """
+        config = DWAPredictiveConfig(
+            horizon_seconds=2.0, horizon_dt=0.1, prediction_horizon_seconds=0.2
+        )
+        planner = DWAPredictivePlanner(config)
+        planner.reset([Point2D(x=0.0, y=0.0), Point2D(x=10.0, y=0.0)], ROBOT)
+
+        # Robot creeps forward; the track closes from ahead. Nothing they
+        # do together lands inside 0.2 seconds.
+        forward = np.linspace(0.08, 1.6, 20)
+        rollouts = np.stack([np.stack([forward, np.zeros(20)], axis=1)])
+        track = _tracks((2.0, 0.0, -1.0, 0.0, 0.4))
+
+        predicted, ttc = planner._predict(rollouts, track)
+        assert not math.isfinite(float(ttc[0])), "a breach past the horizon was given a time"
+        # And no phantom: the clearance is the honest minimum over the two
+        # columns actually predicted, not a negative number invented by a
+        # parked ghost.
+        assert float(predicted[0]) > 0.0
+
+    def test_a_longer_horizon_only_ever_confirms_the_shorter_one(self) -> None:
+        """Truncation makes the horizons nest: the columns a short horizon
+        evaluates are the *same* columns a long one evaluates first. So a
+        short horizon either agrees with the long one about when the first
+        breach happens, or says nothing at all. Clamping broke this — it
+        reported a different, earlier time."""
+        path = [Point2D(x=0.0, y=0.0), Point2D(x=10.0, y=0.0)]
+        forward = np.linspace(0.08, 1.6, 20)
+        rollouts = np.stack([np.stack([forward, np.zeros(20)], axis=1)])
+        track = _tracks((2.0, 0.0, -1.0, 0.0, 0.4))
+
+        def ttc_for(horizon: float) -> float:
+            planner = DWAPredictivePlanner(
+                DWAPredictiveConfig(
+                    horizon_seconds=2.0, horizon_dt=0.1, prediction_horizon_seconds=horizon
+                )
+            )
+            planner.reset(path, ROBOT)
+            return float(planner._predict(rollouts, track)[1][0])
+
+        full = ttc_for(2.0)
+        assert math.isfinite(full)
+        for shorter in (0.2, 0.5, 0.9, 1.5):
+            answer = ttc_for(shorter)
+            assert not math.isfinite(answer) or answer == pytest.approx(full)
+
     def test_the_prediction_horizon_bounds_how_far_it_looks(self) -> None:
         """A short horizon must not see a collision a long one does —
         otherwise the field is decoration."""

@@ -201,9 +201,78 @@ Kèm một test chiều ngược lại: track khai vật cản **đang rời đi
 
 ---
 
+## 6b. Một lỗi An bắt được sau khi commit: `prediction_horizon` clamp thay vì cắt
+
+Bản đầu viết:
+
+```python
+times = rollout_times(config.horizon_seconds, config.horizon_dt)
+times = np.minimum(times, config.prediction_horizon_seconds)
+```
+
+`np.minimum` **không** phải "thôi dự đoán". Nó là "dự đoán, rồi **đỗ vật
+cản ở đó**": mọi cột sau prediction horizon trở thành một vật cản **đứng
+yên ma** tại vị trí dự đoán cuối cùng. Và vì chính mảng đã clamp cũng là
+mảng mà time-to-collision tra cứu, một giao cắt **muộn** trong rollout bị
+báo là xảy ra **đúng ở mép horizon**.
+
+Tái hiện, rollout 2.0 s / prediction horizon 0.2 s, track khép ở 1 m/s:
+
+| | trước | sau |
+|---|---|---|
+| `predicted_clearance` | **−0.2000** (ma) | **1.2400** |
+| `ttc` | **0.2000** | **inf** |
+| giao cắt hình học thật | 1.425 s | 1.425 s |
+
+**Chiều sai là chiều nguy hiểm.** `urgency = 1 − min(ttc, horizon)/horizon`
+biến `ttc = 0.2` trên horizon 2.0 thành **0.9 của cực đại** — gần như va
+chạm tức thời, cho một sự kiện xa gấp **bảy lần**, đối với một vật cản
+chỉ dừng lại bên trong phép tính.
+
+**Sửa theo đúng đề xuất của An: cắt cột, không kẹp thời gian.**
+
+```python
+within = int(np.count_nonzero(times <= config.prediction_horizon_seconds + EPS))
+steps = max(1, within)
+times = times[:steps]
+rollouts = rollouts[:, :steps]
+```
+
+Cắt nói đúng điều trung thực: **quá horizon của mình, bộ điều khiển này
+không tuyên bố gì cả.** Đám mây điểm **đo được** vẫn phủ những cột đó —
+đó chính là `clearances` — nên không gì bị bỏ sót, nó chỉ thôi được *dự
+đoán*.
+
+Giữ `max(1, ...)`: một prediction horizon ngắn hơn một bước tích phân
+không diễn đạt được bằng rollout lấy mẫu theo `horizon_dt`, và làm tròn
+lên một bước là đúng cách `rollout_batch` xử lý horizon của chính nó.
+
+**Test hồi quy**, và cả hai đều đỏ khi khôi phục lại `np.minimum`:
+
+- `test_a_breach_after_the_horizon_is_not_reported_at_its_edge` — đúng
+  cảnh tái hiện ở trên: TTC phải là **vô hạn**, và clearance phải **dương**
+  (không có ma);
+- `test_a_longer_horizon_only_ever_confirms_the_shorter_one` — cắt làm
+  các horizon **lồng nhau**: cột mà horizon ngắn xét chính là những cột
+  horizon dài xét đầu tiên. Nên horizon ngắn hoặc **đồng ý** với horizon
+  dài về thời điểm vi phạm đầu tiên, hoặc **không nói gì**. Clamp phá bất
+  biến này — nó báo một thời điểm khác, sớm hơn.
+
+```
+mutated back to the clamp -> 2 failed, 25 passed
+restored                  -> 27 passed
+```
+
+**Bài học lặp lại lần thứ năm trong plan này:** test cũ
+(`test_the_prediction_horizon_bounds_how_far_it_looks`) chỉ so *clearance*
+của horizon ngắn với horizon dài, và nó **xanh** cả khi TTC bịa. Một tham
+số được kiểm trên **một** đầu ra trong khi nó chạm vào **hai**.
+
+---
+
 ## 7. Test
 
-`tests/test_dwa_predictive.py` — **25 passed**, tổ chức theo **ba cách
+`tests/test_dwa_predictive.py` — **27 passed**, tổ chức theo **ba cách
 pha này hỏng được**:
 
 | lớp | khẳng định |
@@ -221,11 +290,12 @@ pha này hỏng được**:
 
 | Việc | Kết quả |
 |---|---|
-| `tests/test_dwa_predictive.py` | **25 passed** |
+| `tests/test_dwa_predictive.py` | **27 passed** |
 | `test_dwa_core_refactor.py` (golden P2) | **20 passed** — `dwa` không dịch một byte |
 | `test_dwa.py` · `test_hard_feasible_set.py` · `test_admissible_stopping.py` · `test_nav_stack.py` | gộp chung: **159 passed** (5m15s) |
 | Mutation: đồng hồ lệch bước | **bắt được** (3 đỏ) |
 | Mutation: dự đoán vào phép từ chối cứng | **lọt lúc đầu** ⇒ đã thêm test ⇒ **bắt được** |
+| Mutation: clamp thay vì cắt `prediction_horizon` | **lọt lúc đầu** (An bắt) ⇒ đã sửa + 2 test ⇒ **bắt được** |
 | `ruff check .` | sạch |
 | Full backend suite | **chưa chạy — chờ lệnh** |
 
