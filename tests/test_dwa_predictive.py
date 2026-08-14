@@ -180,10 +180,21 @@ class TestWithoutTracksItIsExactlyDWA:
         return [(p.linear_velocity, p.angular_velocity) for p in run.result.trajectory]
 
     @pytest.mark.parametrize("scenario", ["doorway", "static_obstacles", "narrow_corridor"])
-    def test_the_commands_are_identical_on_a_static_world(self, scenario: str) -> None:
+    def test_the_commands_are_identical_when_no_tracks_arrive(self, scenario: str) -> None:
+        """The switch itself: no tracks, no predictive cost, no difference.
+
+        Stated with an **explicit empty provider** since P5, because the
+        default is no longer "no tracks" — it is the LiDAR tracker, which
+        is the real candidate. This still pins the property everything
+        rests on: each of the tracker's failure modes returns no velocity,
+        and this is what no velocity has to mean.
+        """
         shared = LOCAL_CONTROLLER_CONFIGS["dwa_balanced"]
         plain = self._episode(DWAPlanner(DWAConfig(**shared)), scenario)
-        predictive = self._episode(DWAPredictivePlanner(DWAPredictiveConfig(**shared)), scenario)
+        predictive = self._episode(
+            DWAPredictivePlanner(DWAPredictiveConfig(**shared), provider=lambda _t: ()),
+            scenario,
+        )
         assert predictive == plain
 
     def test_the_predictive_terms_are_exactly_zero(self) -> None:

@@ -48,14 +48,19 @@ identity, so a shared parent would let one bug fix silently change two
 candidates while both recorded ids stayed put. The shared code lives in
 :mod:`planbench_planning.common.dwa_core` as pure functions instead.
 
-**Where the tracks come from, and why not from here.** ``compute`` reads
-them from an injected provider rather than deriving them. At P3 a test
-supplies them; at P4 a ground-truth provider does, which measures what
-prediction is worth with zero estimation error; at P5 a LiDAR tracker
-does. With **no** provider the controller has no tracks, every predictive
-term is exactly zero, and the commands are identical to ``dwa`` — which
-is asserted rather than hoped, because "the new terms switch off
-cleanly" is the property everything else rests on.
+**Where the tracks come from.** With no injected provider the
+controller does the real thing: :class:`~planbench_planning.dwa_predictive.tracking.LidarTracker`
+clusters the scan and estimates velocities from it, so the candidate is
+``lidar_only`` and its estimation error is its own. A provider overrides
+that, and exactly two things use it — P4's ground-truth oracle, which
+measures the ceiling with zero estimation error, and tests that want to
+state the velocities themselves.
+
+Handing it a provider returning nothing makes every predictive term
+exactly zero and the commands identical to ``dwa``. That is asserted
+rather than hoped: "the new terms switch off cleanly" is the property
+every later comparison rests on, and it is also what each of the
+tracker's failure modes falls back to.
 """
 
 from __future__ import annotations
@@ -78,11 +83,13 @@ from planbench_planning.common.dwa_core import (
 )
 from planbench_planning.common.local_base import LocalPlanner, LocalPlanResult
 from planbench_planning.dwa.planner import DWAConfig
+from planbench_planning.dwa_predictive.tracking import LidarTracker
 from planbench_planning.dwa_predictive.tracks import ObstacleTrack
 from planbench_schemas.episode import Observation
 from planbench_schemas.feasibility import SafetyEnvelope, admissible_speed, hard_clearance
 from planbench_schemas.geometry import EPS, Point2D, normalize_angle
 from planbench_schemas.robot import RobotConfig, RobotState, SimAction
+from planbench_schemas.sensor import SensorNoise
 
 #: What ``compute`` calls to learn about moving obstacles, given the
 #: observation's timestamp. Injected, never constructed here: the three
@@ -104,12 +111,71 @@ class DWAPredictiveConfig(DWAConfig):
     term, and a test asserts the refused ``(v, ω)`` set matches ``dwa``'s
     exactly.
 
-    The tracker's own parameters — the association gate, the cluster
-    classification thresholds — are **not** here yet. They arrive in P5
-    with the tracker that reads them. A configuration field with no
-    reader is a knob that appears on ``/candidates`` claiming to change
-    something and does not.
+    **This candidate has more knobs than ``dwa``, and that is a fact
+    about the algorithm rather than something to hide.** A tracker is a
+    model, and models have parameters. They belong here — layer 3, cost
+    only — where every one of them is visible on ``/candidates``, and
+    none of them can reach the hard feasible set.
+
+    Note what is *not* among them: no threshold is derived from the
+    obstacles a scenario declares. Sizing a cluster split from the largest
+    ``DynamicObstacle.radius`` would let a ``lidar_only`` candidate know
+    how big the things in an unseen room are.
     """
+
+    #: How many times the nominal ray spacing at that range a gap must
+    #: exceed before the surface is judged to have ended. Nominal spacing
+    #: is ``r · Δθ``; three times it tolerates a slanted surface without
+    #: merging two objects a hand's breadth apart.
+    cluster_gap_factor: float = Field(default=3.0, gt=0)
+
+    #: Range-noise margin on the same threshold, in sigmas, and reused as
+    #: the sigma multiplier in the velocity floor.
+    cluster_range_margin: float = Field(default=3.0, ge=0)
+
+    #: Fewer returns than this and the centroid is mostly range noise.
+    cluster_min_points: int = Field(default=3, ge=1)
+
+    #: Wider than this and it is scenery. Not a claim about how big
+    #: obstacles are — a claim about how much of the scan one *followable*
+    #: object may span before its centroid stops meaning anything.
+    cluster_max_width: float = Field(default=2.0, gt=0)
+
+    #: A run wider than this whose points sit within
+    #: ``cluster_straightness`` of a straight line is a wall or a shelf
+    #: face. Its centroid slides along it as the robot drives past, which
+    #: is a velocity that does not exist.
+    cluster_wall_width: float = Field(default=0.9, gt=0)
+    cluster_straightness: float = Field(default=0.08, gt=0)
+
+    #: Association gate: how fast a tracked object may be assumed to move
+    #: between frames, plus a fixed margin.
+    #:
+    #: **Deliberately not** ``v_obstacle_max``. That one is
+    #: deployment-owned and layer 2 — wrong, and a braking guarantee
+    #: breaks and the robot collides. This one is candidate-owned and
+    #: layer 3 — wrong, and matching fails, the tracker reports no
+    #: velocity, and the candidate falls back to ``dwa``. Two different
+    #: failure modes may not share a field, and the default here is not
+    #: derived from any scenario's real traffic speed.
+    association_speed_limit: float = Field(default=2.0, gt=0)
+    association_margin: float = Field(default=0.25, ge=0)
+
+    #: Frames of history the least-squares velocity is fitted over, and
+    #: the minimum before any velocity is reported at all.
+    #: Fifteen frames — 0.7 s at the shipped control period — chosen by
+    #: measurement, not by taste. Sweeping 5/9/15/21 against three static
+    #: scenes and one with real 0.8 m/s traffic, the 90th-percentile
+    #: phantom speed fell 0.595 -> 0.447 -> 0.275 and then rose again at
+    #: 21, while the real estimate held. Fifteen is where a shorter window
+    #: stops buying separation and a longer one starts costing response.
+    velocity_window: int = Field(default=15, ge=2)
+    velocity_min_samples: int = Field(default=3, ge=2)
+
+    #: How long a track survives without being matched. Partial occlusion
+    #: is ordinary; deleting on the first miss would restart the estimate
+    #: every time something passed behind a shelf.
+    track_timeout: float = Field(default=0.5, gt=0)
 
     prediction_horizon_seconds: float = Field(
         default=1.5,
@@ -141,7 +207,12 @@ class DWAPredictivePlanner(LocalPlanner):
         provider: TrackProvider | None = None,
     ) -> None:
         self._config = config or DWAPredictiveConfig()
+        #: When set, tracks come from here and the tracker is bypassed —
+        #: the P4 oracle, and any test that wants to state the velocities
+        #: itself. When ``None``, this candidate does the real thing and
+        #: estimates them from its own LiDAR.
         self._provider = provider
+        self._tracker = LidarTracker(self._config)
         self._robot: RobotConfig | None = None
         self._envelope = SafetyEnvelope()
         self._obstacle_speed = 0.0
@@ -167,6 +238,7 @@ class DWAPredictivePlanner(LocalPlanner):
         robot: RobotConfig,
         envelope: SafetyEnvelope | None = None,
         obstacle_speed: float | None = None,
+        sensor_noise: SensorNoise | None = None,
     ) -> None:
         """Adopt a path, and be told what the deployment declares.
 
@@ -177,10 +249,13 @@ class DWAPredictivePlanner(LocalPlanner):
         separate candidate, and a shared implementation is exactly the
         coupling the module docstring refuses.
 
-        Resetting clears the previous command. A tracker will hold more
-        state than that from P5, and its ``reset`` has to clear all of it
-        — running two episodes on one instance must equal running two
-        instances, which is a test there.
+        ``sensor_noise`` is the deployment's declared measurement error,
+        and the tracker reads it for two things: how large a range jump
+        has to be before it counts as the edge of an object, and the
+        speed below which "moving" is indistinguishable from the robot
+        being wrong about where it is. Both are the controller's own
+        sensor specification, which it is entitled to know — unlike the
+        obstacle list, which it is not.
         """
         if not global_path:
             raise ValueError("DWA requires a non-empty global path")
@@ -190,6 +265,13 @@ class DWAPredictivePlanner(LocalPlanner):
         self._obstacle_speed = obstacle_speed or 0.0
         self._path_index = 0
         self._previous = None
+        # **A fresh tracker, not a cleared one.** This is the first thing
+        # in the controller holding state across steps, and the guarantee
+        # is that two episodes on one instance equal two instances. The
+        # sensor specification arrives here because a robot knows its own
+        # scanner: ray count comes from the scan itself, and the declared
+        # range noise sets both the cluster split and the velocity floor.
+        self._tracker = LidarTracker(self._config, self._envelope, sensor_noise)
 
     def compute(self, state: RobotState, observation: Observation) -> LocalPlanResult:
         if self._robot is None:
@@ -207,7 +289,10 @@ class DWAPredictivePlanner(LocalPlanner):
         # The tracks are read once per control step, not once per
         # candidate: they describe the world, and the world does not
         # depend on which velocity the robot is considering.
-        tracks = tuple(self._provider(observation.time)) if self._provider is not None else ()
+        if self._provider is not None:
+            tracks = tuple(self._provider(observation.time))
+        else:
+            tracks = self._tracker.update(observation)
         predicted_clearances, time_to_collision = self._predict(rollouts, tracks)
 
         # **Unchanged from `dwa`, and the reason is contract L2.** This
