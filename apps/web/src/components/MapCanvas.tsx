@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { OCCUPIED, UNKNOWN } from "@/lib/demoMap";
+import { KEEP_OUT_FILL, KEEP_OUT_STROKE, keepOutRadius } from "@/lib/keepOut";
 import { canvasToWorld, fitViewport, type Viewport } from "@/lib/transform";
 import type { MapData, Point2D, Pose2D, StaticObstacle, TrajectoryPoint } from "@/lib/types";
 
@@ -157,6 +158,52 @@ export function MapCanvas({
         ctx.lineTo(x1, y);
       }
       ctx.stroke();
+    }
+
+    // **Keep-out rings first, so every obstacle is drawn on top of its
+    // own ring.** The ring is context; the obstacle is the subject, and
+    // a 1.0 m disc painted over a 0.4 m cart puts the reader's eye on
+    // the wrong thing.
+    //
+    // Worth drawing at all because it was invisible and cost a session
+    // to diagnose: a robot parked half a metre clear of a cart looks
+    // like it is standing in open space, and the reason it cannot replan
+    // from there is this ring — which is two and a half times the circle
+    // the canvas was drawing.
+    const ringFor = (radius: number) => keepOutRadius(radius, map.resolution, robotRadius);
+    const drawRing = (worldX: number, worldY: number, radius: number | null) => {
+      if (radius === null) return;
+      const [x, y] = toCanvas(worldX, worldY);
+      ctx.beginPath();
+      ctx.arc(x, y, Math.max(2, radius * viewport.scale), 0, Math.PI * 2);
+      ctx.fillStyle = KEEP_OUT_FILL;
+      ctx.fill();
+      // Dashed and thin: a solid ring reads as a wall, which is the one
+      // thing this is not — the controller will drive through it, the
+      // planner just will not route through it.
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = KEEP_OUT_STROKE;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    };
+    for (const obstacle of staticObstacles ?? []) {
+      if (obstacle.type === "circle") {
+        drawRing(obstacle.center.x, obstacle.center.y, ringFor(obstacle.radius));
+      } else {
+        // A rectangle's ring is drawn from its centre at the radius of
+        // its circumscribing circle: an exact rounded-rectangle offset
+        // would be more faithful and less legible, and the point here is
+        // "there is a margin, roughly this big", not a boundary anybody
+        // measures off the screen.
+        const cx = (obstacle.min_x + obstacle.max_x) / 2;
+        const cy = (obstacle.min_y + obstacle.max_y) / 2;
+        const half = Math.hypot(obstacle.max_x - obstacle.min_x, obstacle.max_y - obstacle.min_y) / 2;
+        drawRing(cx, cy, ringFor(half));
+      }
+    }
+    for (const obstacle of dynamicObstacles ?? []) {
+      drawRing(obstacle.position.x, obstacle.position.y, ringFor(obstacle.radius));
     }
 
     // Obstacles go under the plan and trajectory: the question the

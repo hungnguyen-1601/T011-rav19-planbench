@@ -1182,5 +1182,6 @@
   "deployments.replanningOff": "off",
   "deployments.form.replanningTraffic": "This scenario has {n} moving obstacle(s). With replanning off, a candidate blocked by one has only its local controller to get around it — which is a legitimate experiment, but decide it rather than inherit it.",
   "metrics.replanOff": "off for this deployment",
-  "metrics.replanUnknown": "not recorded"
+  "metrics.replanUnknown": "not recorded",
+  "mapView.keepOut": "The faint ring is the margin the global planner will not route through — the robot's radius plus one cell diagonal. It is not a collision boundary: the local controller drives inside it whenever it squeezes past something."
 }

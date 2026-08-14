@@ -1182,5 +1182,6 @@
   "deployments.replanningOff": "tắt",
   "deployments.form.replanningTraffic": "Scenario này có {n} vật cản động. Nếu tắt replanning, ứng viên bị chặn chỉ còn bộ điều khiển cục bộ để lách — đó là một thí nghiệm hợp lệ, nhưng hãy quyết định nó chứ đừng để nó mặc nhiên.",
   "metrics.replanOff": "deployment này tắt",
-  "metrics.replanUnknown": "không ghi lại"
+  "metrics.replanUnknown": "không ghi lại",
+  "mapView.keepOut": "Vòng mờ là khoảng đệm mà bộ lập kế hoạch toàn cục không vạch đường xuyên qua — bán kính robot cộng một đường chéo ô lưới. Đó không phải biên va chạm: bộ điều khiển cục bộ vẫn đi vào trong đó mỗi khi lách sát vật."
 }
