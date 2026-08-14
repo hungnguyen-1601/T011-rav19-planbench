@@ -58,6 +58,10 @@ export function MapView({
   const { t } = useTranslation();
   const [mode, setMode] = useState<MapViewMode>(initialMode);
   const editable = canvas.onWorldClick !== undefined;
+  const hasObstacles =
+    (canvas.staticObstacles?.length ?? 0) > 0 ||
+    (canvas.dynamicObstacles?.length ?? 0) > 0 ||
+    (obstacleSnapshots?.length ?? 0) > 0;
 
   return (
     <div>
@@ -101,6 +105,14 @@ export function MapView({
       ) : (
         <MapCanvas {...canvas} />
       )}
+
+      {/* **Drawn without a word is worse than not drawn.** A faint ring
+          round an obstacle reads as "the robot nearly hit that" unless
+          somebody says otherwise, and it is the opposite: the controller
+          drives through it whenever it squeezes past something, and only
+          the global planner refuses to route through it. Shown only when
+          there is an obstacle to explain. */}
+      {hasObstacles ? <p className="muted">{t("mapView.keepOut")}</p> : null}
     </div>
   );
 }

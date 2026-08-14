@@ -20,6 +20,7 @@
  * so +z is up on screen, and a taller wall reaches further up.
  */
 
+import { keepOutRadius } from "./keepOut";
 import type { MapData, ObstacleSnapshot, Point2D, Pose2D, TrajectoryPoint } from "./types";
 
 export const OCCUPIED_VALUE = 100;
@@ -66,6 +67,15 @@ export interface Scene25D {
   /** Dynamic obstacles at this frame — see docs/KNOWN_LIMITATIONS.md:
    * drawn after every facet, so they are never occluded by a wall. */
   obstacles: ObstacleMarker[];
+  /** The planner's keep-out around each of those, as a flat footprint on
+   *  the ground plane.
+   *
+   * Flat rather than extruded on purpose: raising it would draw a
+   * cylinder, and a cylinder reads as a second object standing there.
+   * This is a margin the planner will not route through, not a thing
+   * the robot can hit — the controller drives through it every time it
+   * squeezes past something. */
+  keepOut: ObstacleMarker[];
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
 }
 
@@ -236,6 +246,13 @@ export function buildScene(
     obstacles: (options.obstacles ?? []).map((o) =>
       obstacleMarker(projection, o.x, o.y, o.radius, robotHeight),
     ),
+    // Same number the flat view quotes, from the same function — two
+    // hand-typed copies of an inflation radius is how the controller's
+    // keep-out and the planner's came to differ by 0.30 m to begin with.
+    keepOut: (options.obstacles ?? []).flatMap((o) => {
+      const radius = keepOutRadius(o.radius, map.resolution, options.robotRadius);
+      return radius === null ? [] : [obstacleMarker(projection, o.x, o.y, radius, 0)];
+    }),
     bounds: sceneBounds(facets),
   };
 }

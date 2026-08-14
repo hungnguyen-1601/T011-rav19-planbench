@@ -95,8 +95,21 @@ def _planning_grid(
     planning_map = rasterize_obstacles(map_data, scenario.static_obstacles)
     if extra_obstacles:
         planning_map = rasterize_obstacles(planning_map, extra_obstacles)
-    inflation_radius = scenario.robot.radius + math.sqrt(2.0) * map_data.resolution
-    return OccupancyGrid(planning_map).inflate(inflation_radius)
+    return OccupancyGrid(planning_map).inflate(_inflation_radius(map_data, scenario))
+
+
+def _inflation_radius(map_data: MapData, scenario: Scenario) -> float:
+    """How far the planner keeps off, and where each half comes from.
+
+    ``robot.radius`` is geometry: a path whose centre line passes closer
+    than that puts the body through the wall. The ``√2 × resolution``
+    term is not — it is the half-diagonal of a cell, there so a diagonal
+    step between two free cells cannot clip the corner of an occupied
+    one. That half is a property of the **map's resolution**, and naming
+    it in one place is what lets the replan relaxation and the drawing
+    code quote the same number instead of two that drift.
+    """
+    return scenario.robot.radius + math.sqrt(2.0) * map_data.resolution
 
 
 def plan_global_path(
@@ -116,37 +129,69 @@ def plan_global_path(
     return plan, OccupancyGrid(map_data)
 
 
-def _with_free_start_cell(grid: OccupancyGrid, position: Point2D) -> OccupancyGrid:
-    """Mark the single cell the robot occupies as free, if it is not.
+def _with_room_to_leave(
+    inflated: OccupancyGrid, solid: OccupancyGrid, position: Point2D, radius: float
+) -> OccupancyGrid:
+    r"""Undo the *inflation* around the robot — never the obstacles.
 
-    A robot that has just been blocked is standing close to the thing
-    blocking it — closer than the inflation margin, which is a planning
-    safety buffer rather than geometry. So its own cell is very often
-    occupied on the inflated grid, and a global planner asked to start
-    from an occupied cell reports "no path" and the replan never
-    happens. That would make the feature fail exactly in the situation
-    it exists for.
+    **Why this exists, measured rather than assumed.** A robot that has
+    just been blocked is standing closer to the thing blocking it than
+    the planner's inflation margin, because the two layers do not use the
+    same margin: the local controller rejects a trajectory at
+    ``robot.radius + safety_margin`` measured against obstacle geometry,
+    while the planner inflates by ``robot.radius + √2 × resolution`` on
+    cells. On the shipped `sudden_stop` those are 0.31 m and 0.61 m — the
+    0.30 m difference is entirely the grid-quantisation term, a property
+    of the *map's resolution* rather than of the world.
 
-    Freeing one cell is safe to assert, not merely convenient: the
-    engine terminates an episode the instant the robot overlaps an
-    obstacle, so a robot that is still driving is provably not in one.
-    Only the cell containing the robot is touched. Its neighbours keep
-    their inflation, so the path that comes back still has to leave via
-    genuinely clear space.
+    So the robot parks at a spot that is legal by its own test and 0.30 m
+    inside the planner's no-go ring. Freeing only the cell it stands in —
+    which is what this did before — left it with **0 of 8 free
+    neighbours**: A\* entered the start cell and could not take a single
+    step, reporting "no path exists between start and goal" while a
+    point-robot flood fill of the same scene reached the goal easily. The
+    robot never moved, so all 55 replans of a 120-second episode met the
+    identical grid and returned the identical refusal.
+
+    **What is safe to assert here.** The engine ends an episode the
+    instant the robot overlaps an obstacle, so a robot that is still
+    driving is provably not inside one — and neither is the ground it
+    could reach before the inflation was applied. This frees exactly the
+    cells that are blocked on ``inflated`` but free on ``solid``: the
+    ones blocked *because of the buffer*, never one holding a real
+    return. A path out may therefore pass closer to the cart than the
+    planner would normally allow, and the local controller still refuses
+    to drive into it — the continuous collision test runs every control
+    step and is not relaxed by anything here.
+
+    Bounded to ``radius`` around the robot so the relaxation is local:
+    beyond the bubble the map is inflated exactly as before, and any
+    route that leaves has to cross genuinely clear space to get anywhere.
     """
-    cell = grid.world_to_grid(position.x, position.y)
-    if cell is None:
-        return grid
-    row, col = cell
-    index = row * grid.width + col
-    cells = grid.map_data.cells
-    if cells[index] == CellState.FREE.value:
-        return grid
-    patched = list(cells)
-    patched[index] = CellState.FREE.value
+    centre = inflated.world_to_grid(position.x, position.y)
+    if centre is None:
+        return inflated
+    resolution = inflated.resolution
+    reach = max(1, int(math.ceil(radius / resolution)))
+    row0, col0 = centre
+    cells = list(inflated.map_data.cells)
+    solid_cells = solid.map_data.cells
+    changed = False
+    for row in range(max(0, row0 - reach), min(inflated.height, row0 + reach + 1)):
+        for col in range(max(0, col0 - reach), min(inflated.width, col0 + reach + 1)):
+            index = row * inflated.width + col
+            if cells[index] == CellState.FREE.value:
+                continue
+            # The whole rule, in one line: blocked by the buffer, not by
+            # anything the robot can see.
+            if solid_cells[index] != CellState.OCCUPIED.value:
+                cells[index] = CellState.FREE.value
+                changed = True
+    if not changed:
+        return inflated
     return OccupancyGrid(
-        grid.map_data.model_copy(update={"cells": tuple(patched)}),
-        grid.unknown_as_occupied,
+        inflated.map_data.model_copy(update={"cells": tuple(cells)}),
+        inflated.unknown_as_occupied,
     )
 
 
@@ -231,8 +276,11 @@ def _replan(
     position = engine.get_state().pose.position
     believed = _map_as_the_robot_sees_it(map_data, engine.get_observation(), scenario.lidar)
     grid = _planning_grid(believed, scenario)
+    # The un-inflated view, so the relaxation below can tell a cell held
+    # by the safety buffer from a cell holding an actual LiDAR return.
+    solid = OccupancyGrid(rasterize_obstacles(believed, scenario.static_obstacles))
     return global_planner.plan(
-        _with_free_start_cell(grid, position),
+        _with_room_to_leave(grid, solid, position, _inflation_radius(believed, scenario)),
         position,
         scenario.goal_pose.position,
     )
