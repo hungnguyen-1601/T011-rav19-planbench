@@ -211,10 +211,18 @@ class EnvironmentSpec(BaseModel):
         """
         if self.v_obstacle_max is None:
             return self
-        fastest = max(
-            (max_speed(obstacle.motion) for obstacle in self.dynamic_obstacles),
-            default=0.0,
-        )
+        # A motion whose bound cannot be proven raises rather than
+        # guessing, and that refusal has to reach the person filing the
+        # deployment as a load rejection — not as a NotImplementedError
+        # three frames down inside pydantic, which does not convert it.
+        try:
+            bounds = [max_speed(obstacle.motion) for obstacle in self.dynamic_obstacles]
+        except NotImplementedError as unbounded:
+            raise ValueError(
+                f"v_obstacle_max is declared as {self.v_obstacle_max} m/s, but one of "
+                f"this environment's obstacles has no provable speed bound: {unbounded}"
+            ) from unbounded
+        fastest = max(bounds, default=0.0)
         if fastest > self.v_obstacle_max:
             culprits = sorted(
                 f"{obstacle.name} ({max_speed(obstacle.motion):.3g} m/s)"

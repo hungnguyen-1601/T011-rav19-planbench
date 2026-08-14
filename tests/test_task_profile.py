@@ -205,17 +205,6 @@ SPEED_CASES: list[tuple[str, dict[str, object], float]] = [
         math.pi * 14.0 / 24.0,
     ),
     (
-        "random_walk",
-        {
-            "kind": "random_walk",
-            "origin": {"x": 8.0, "y": 8.0},
-            "speed": 0.6,
-            "change_interval": 2.0,
-            "max_radius": 4.0,
-        },
-        0.6,
-    ),
-    (
         "sudden_stop",
         {
             "kind": "sudden_stop",
@@ -227,6 +216,20 @@ SPEED_CASES: list[tuple[str, dict[str, object], float]] = [
         0.7,
     ),
 ]
+
+
+#: Motion laws whose speed bound cannot be proven, so a deployment
+#: loses its braking claim rather than receiving a guess.
+REFUSED_MOTIONS = {"random_walk"}
+
+#: The one such law today.
+RANDOM_WALK: dict[str, object] = {
+    "kind": "random_walk",
+    "origin": {"x": 8.0, "y": 8.0},
+    "speed": 0.6,
+    "change_interval": 2.0,
+    "max_radius": 4.0,
+}
 
 
 def _traffic(motion: dict[str, object]) -> list[dict[str, object]]:
@@ -323,20 +326,64 @@ class TestTheDeclaredObstacleSpeedIsVerified:
         with pytest.raises(ValidationError):
             make_profile(environment=environment(dynamic_obstacles=[], v_obstacle_max=-1.0))
 
-    def test_every_motion_law_has_a_bound(self) -> None:
-        """The refusal branch is for laws added later, not for the four
-        that exist. If a fifth arrives without a bound, a deployment must
-        lose the claim rather than silently receive a generous one."""
+    def test_every_motion_law_is_classified(self) -> None:
+        """Each law either has a proven bound or an explicit refusal, and
+        none is simply unlisted. A fifth kind added later reaches the
+        ``NotImplementedError`` at the bottom of ``max_speed`` rather than
+        silently receiving a generous number."""
         from planbench_schemas.dynamic import Motion, max_speed
 
-        covered = {case[0] for case in SPEED_CASES}
         declared = {option.model_fields["kind"].default for option in Motion.__origin__.__args__}
-        assert covered == declared
+        bounded = {case[0] for case in SPEED_CASES}
+        assert bounded | REFUSED_MOTIONS == declared
+        assert not bounded & REFUSED_MOTIONS
         for _, motion, bound in SPEED_CASES:
             parsed = make_profile(
                 environment=environment(dynamic_obstacles=_traffic(motion), v_obstacle_max=bound)
             ).environment.dynamic_obstacles[0]
             assert max_speed(parsed.motion) == pytest.approx(bound)
+
+    def test_random_walk_may_not_carry_a_braking_claim(self) -> None:
+        """**A bound the motion itself violates is worse than no bound.**
+
+        ``max_speed`` used to return ``motion.speed`` here. Measured while
+        auditing scenes for P4's gate: on ``dynamic_warehouse`` the
+        wanderer, declared at 0.5 m/s, moves **1.4075 m in a single
+        0.05 s step** — 28 m/s, 56x its own figure.
+
+        The cause is a discontinuity rather than noise. The reflection at
+        ``max_radius`` is decided from the *partial* elapsed time of the
+        interval in progress, so as that time grows the branch flips and
+        the position jumps from the outward extrapolation to the inward
+        one.
+
+        A deployment declaring ``v_obstacle_max`` beside such an obstacle
+        would size its braking for traffic 56x slower than it meets, and
+        nothing would report it — precisely the failure this validator
+        exists to prevent. The claim is therefore refused until the motion
+        is continuous (KNOWN_LIMITATIONS L12).
+        """
+        from planbench_schemas.dynamic import max_speed
+
+        parsed = make_profile(
+            environment=environment(dynamic_obstacles=_traffic(RANDOM_WALK))
+        ).environment.dynamic_obstacles[0]
+        with pytest.raises(NotImplementedError, match="does not honour"):
+            max_speed(parsed.motion)
+
+    def test_a_random_walk_without_a_declared_bound_still_loads(self) -> None:
+        """The refusal is scoped to the *claim*, not to the obstacle.
+        Every shipped profile declares no bound, so none of them moves."""
+        profile = make_profile(environment=environment(dynamic_obstacles=_traffic(RANDOM_WALK)))
+        assert profile.environment.v_obstacle_max is None
+
+    def test_declaring_a_bound_beside_a_random_walk_is_refused_at_load(self) -> None:
+        """And the refusal has to reach the person filing the deployment,
+        not surface as a NotImplementedError three frames down."""
+        with pytest.raises(ValidationError, match="does not honour"):
+            make_profile(
+                environment=environment(dynamic_obstacles=_traffic(RANDOM_WALK), v_obstacle_max=1.0)
+            )
 
 
 class TestMissions:

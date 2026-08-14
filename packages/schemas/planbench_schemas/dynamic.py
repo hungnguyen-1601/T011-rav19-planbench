@@ -156,7 +156,19 @@ def max_speed(motion: Motion) -> float:
     silent zero: an unproven bound must cost a deployment its safety
     claim, not be assumed generous.
     """
-    if isinstance(motion, WaypointMotion | RandomWalkMotion | SuddenStopMotion):
+    if isinstance(motion, RandomWalkMotion):
+        raise NotImplementedError(
+            "random_walk cannot carry a speed bound: the implementation does not honour "
+            "its own `speed`. The reflection at `max_radius` is decided from the "
+            "*partial* elapsed time of the interval in progress, so as that time grows "
+            "the branch flips and the position jumps from the outward extrapolation to "
+            "the inward one. Measured on `dynamic_warehouse` (speed 0.5 m/s): a single "
+            "0.05 s step moves the obstacle 1.4075 m, which is 28 m/s — 56x the "
+            "declared figure. A deployment declaring v_obstacle_max beside a random "
+            "walk would size its braking for traffic it does not meet, so the claim is "
+            "refused until the motion is continuous. See KNOWN_LIMITATIONS L12"
+        )
+    if isinstance(motion, WaypointMotion | SuddenStopMotion):
         return motion.speed
     if isinstance(motion, PeriodicMotion):
         chord = math.hypot(motion.end.x - motion.start.x, motion.end.y - motion.start.y)
