@@ -43,6 +43,7 @@ from planbench_api.errors import DomainValidationError, NotFoundError
 from planbench_api.worker import Job, JobQueue
 from planbench_benchmark.candidates import CONTROLLER_CONFIGS
 from planbench_benchmark.selection import DEFAULT_SCOPE
+from planbench_decision.self_check import RULE_CODES, critique
 
 router = APIRouter(tags=["decisions"])
 
@@ -152,6 +153,38 @@ class DecisionRunResource(BaseModel):
     config_state: str
     config_decided_by: str | None
     config_decided_at: str | None
+
+
+class FindingResource(BaseModel):
+    """One objection, with the field a reader can check it against."""
+
+    code: str
+    severity: str
+    kind: str
+    claim: str
+    ground: str
+    field_path: str
+    suggested_check: str
+
+
+class CritiqueResource(BaseModel):
+    """Every objection the rules raise against one run.
+
+    ``rules_applied`` is here so an empty ``findings`` list reads as "the
+    rules ran and found nothing" rather than "no rules ran". The counts
+    are split by severity, and separately by kind, because an omission
+    that nobody noticed is a different failure from a contradiction
+    nobody resolved — and published work on planted-error detection finds
+    automated reviewers much weaker on the first.
+    """
+
+    run_id: str
+    rules_applied: int
+    findings: list[FindingResource]
+    blocking: int
+    material: int
+    disclosure: int
+    omissions: int
 
 
 class ReviewRequest(BaseModel):
@@ -737,6 +770,32 @@ def decision_audit(run_id: str, service: Runs) -> list[ReviewEventResource]:
         )
         for event in service.events(run_id)
     ]
+
+
+@router.get("/decisions/{run_id}/critique", response_model=CritiqueResource)
+def decision_critique(run_id: str, service: Runs) -> CritiqueResource:
+    """Objections to this run, for a reviewer to weigh before signing.
+
+    Read-only and derived: nothing is stored, so a rule added tomorrow
+    applies to every run already on disk. That is the point — the
+    objections are a function of the report, not a property baked into it
+    when it was written.
+
+    An empty list is a result. It means the rules found nothing, not that
+    the run is beyond question, and the response says how many rules ran
+    so the two cannot be confused.
+    """
+    stored = service.get(run_id)
+    findings = critique(stored.report)
+    return CritiqueResource(
+        run_id=run_id,
+        rules_applied=len(RULE_CODES),
+        findings=[FindingResource(**f.model_dump()) for f in findings],
+        blocking=sum(1 for f in findings if f.severity == "blocking"),
+        material=sum(1 for f in findings if f.severity == "material"),
+        disclosure=sum(1 for f in findings if f.severity == "disclosure"),
+        omissions=sum(1 for f in findings if f.kind == "omission"),
+    )
 
 
 @router.get("/decisions/{run_id}/traces/{candidate_id}/{episode_context_id}")
