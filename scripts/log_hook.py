@@ -23,6 +23,41 @@ def git(cmd):
     return out.strip()
 
 
+def cli_arg(prefix: str) -> str:
+    """Return the value of the first ``--name=value`` argument."""
+    for arg in sys.argv[1:]:
+        if arg.startswith(prefix):
+            return arg.split("=", 1)[1]
+    return ""
+
+
+def canonical_path(path: str) -> str:
+    """Normalize Windows extended paths and casing for safe root matching."""
+    if path.startswith("\\\\?\\"):
+        path = path[4:]
+    return os.path.normcase(os.path.abspath(path))
+
+
+def select_repo_root() -> bool:
+    """Restrict a user-level hook to the explicitly configured repository.
+
+    Without ``--repo-root`` the historical project-local behavior is kept.
+    When it is provided, events from every other Codex workspace are ignored.
+    The process also changes to the git root so relative ``.ai-log`` paths are
+    stable when a session starts from a repository subdirectory.
+    """
+    expected = cli_arg("--repo-root=")
+    if not expected:
+        return True
+
+    actual = git("git rev-parse --show-toplevel")
+    if not actual or canonical_path(actual) != canonical_path(expected):
+        return False
+
+    os.chdir(actual)
+    return True
+
+
 def detect_tool(data: dict) -> str:
     """Detect which AI tool sent this hook event.
 
@@ -205,7 +240,15 @@ def normalize(data: dict, tool: str) -> dict | None:
         "tool_args",
         "files_context",
     )
-    lifecycle_events = ("Stop", "stop", "SessionEnd", "sessionEnd", "AfterModel")
+    lifecycle_events = (
+        "SessionStart",
+        "sessionStart",
+        "Stop",
+        "stop",
+        "SessionEnd",
+        "sessionEnd",
+        "AfterModel",
+    )
     has_payload = any(base.get(k) for k in payload_keys)
     if not has_payload and event not in lifecycle_events:
         return None
@@ -214,6 +257,12 @@ def normalize(data: dict, tool: str) -> dict | None:
 
 
 def main():
+    if not select_repo_root():
+        # A user-level hook is active for all local Codex sessions. Return a
+        # valid no-op response outside the one repository it is allowed to log.
+        print("{}")
+        return
+
     # Read stdin as UTF-8 explicitly. On Windows, sys.stdin defaults to the
     # system code page (e.g. cp1252), which corrupts non-Latin1 prompts
     # (Vietnamese, CJK, emoji) into mojibake. The hook payload is always UTF-8.
