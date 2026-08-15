@@ -77,8 +77,8 @@ class TaskProfileService:
         #: is true for every one of them.
         self._runs = runs
 
-    def create(self, payload: dict[str, Any], *, owner_user_id: str | None) -> StoredTaskProfile:
-        """Validate against HĐ-2, then store.
+    def validate(self, payload: dict[str, Any]) -> TaskProfile:
+        """The contract check on its own, with nothing stored.
 
         Validation happens through ``TaskProfile`` rather than here: it
         is the single definition of the contract, and it is what refuses
@@ -86,9 +86,23 @@ class TaskProfileService:
         obstacle that shifts by less than one period, and a RAM budget
         that does not add up. Re-checking any of that at this layer would
         be a second opinion nobody asked for.
+
+        **Split out so a caller can ask without filing.** The form needs
+        the verdict while somebody is still typing, and the only honest
+        way to give it is to run the check that will actually decide —
+        anything else is a preview free to disagree with the refusal.
+        ``create`` goes through here for the same reason: two entry
+        points wrapping ``model_validate`` themselves would be two
+        definitions of what a refusal looks like.
+
+        **What this does not see.** It reads the document and nothing
+        else — no repository, no ids in use. So an id already filed with
+        different content still passes here and is refused by ``create``
+        (HĐ-3.1); the endpoint says so rather than letting a caller read
+        a pass as "this will file".
         """
         try:
-            profile = TaskProfile.model_validate(payload)
+            return TaskProfile.model_validate(payload)
         except Exception as error:  # pydantic ValidationError and friends
             # The blob message stays — it is what somebody pasting YAML
             # reads — and the per-field addresses travel beside it, which
@@ -97,6 +111,10 @@ class TaskProfileService:
             raise DomainValidationError(
                 f"task profile is not valid under HĐ-2: {error}", field_errors(error)
             ) from error
+
+    def create(self, payload: dict[str, Any], *, owner_user_id: str | None) -> StoredTaskProfile:
+        """Validate against HĐ-2, then store."""
+        profile = self.validate(payload)
         return self._repository.create(profile.model_dump(mode="json"), owner_user_id=owner_user_id)
 
     def get(self, profile_id: str) -> StoredTaskProfile:

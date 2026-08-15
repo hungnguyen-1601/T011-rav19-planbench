@@ -16,6 +16,7 @@ from task_profile_fakes import (
     three_missions,
 )
 
+from planbench_schemas.dynamic import DynamicObstacle, clock_key, position_at
 from planbench_schemas.task_profile import (
     HardwareSpec,
     Mission,
@@ -169,11 +170,122 @@ class TestEnvironmentTraffic:
         assert profile.environment.dynamic_obstacles[0].seed_time_offset == 0.0
 
     def test_duplicate_obstacle_names_rejected(self) -> None:
-        """The name is mixed into the seed hash; two obstacles sharing one
-        would move in lockstep."""
+        """A trace, a snapshot and a refusal all name the obstacle they
+        mean; two answering to one name makes every such record
+        ambiguous."""
         pair = [dict(TRAFFIC[0]), dict(TRAFFIC[0])]
         with pytest.raises(ValidationError, match="unique"):
             make_profile(environment=environment(dynamic_obstacles=pair))
+
+
+class TestTwoObstaclesMustNotShareAClock:
+    """Unique names were never enough, and the old message said they were.
+
+    The head start is hashed from ``seed_offset + len(name)``. Two names
+    of the same length therefore collide, and the collision is total: not
+    a similar head start, the *same* one, at every seed. ``cart`` and
+    ``rack`` pass the uniqueness rule and move as one object.
+
+    Found while writing the deployment form's traffic editor, which is
+    the first thing that lets anybody declare a second obstacle without
+    hand-editing YAML — so the trap had never been reachable by the
+    people most likely to fall into it.
+    """
+
+    @staticmethod
+    def crosser(name: str, **overrides: object) -> dict[str, object]:
+        obstacle: dict[str, object] = {
+            "name": name,
+            "radius": 0.4,
+            "seed_time_offset": 20.0,
+            "motion": {
+                "kind": "waypoint",
+                "waypoints": [{"x": 4.0, "y": 2.0}, {"x": 4.0, "y": 16.0}],
+                "speed": 0.7,
+                "loop": False,
+                "ping_pong": True,
+            },
+        }
+        obstacle.update(overrides)
+        return obstacle
+
+    def test_the_collision_is_real_before_it_is_refused(self) -> None:
+        """The defect itself, pinned. Without this the rule below looks
+        like a rule about spelling."""
+        cart = DynamicObstacle.model_validate(self.crosser("cart"))
+        rack = DynamicObstacle.model_validate(self.crosser("rack"))
+        assert clock_key(cart) == clock_key(rack)
+        for seed in (0, 1, 7, 42):
+            assert position_at(cart, 3.0, seed) == position_at(rack, 3.0, seed)
+
+    def test_same_length_names_are_refused(self) -> None:
+        with pytest.raises(ValidationError, match="clock key"):
+            make_profile(
+                environment=environment(
+                    dynamic_obstacles=[self.crosser("cart"), self.crosser("rack")]
+                )
+            )
+
+    def test_a_different_seed_offset_is_the_fix(self) -> None:
+        """What the refusal tells the author to do has to actually work."""
+        profile = make_profile(
+            environment=environment(
+                dynamic_obstacles=[self.crosser("cart"), self.crosser("rack", seed_offset=1)]
+            )
+        )
+        first, second = profile.environment.dynamic_obstacles
+        assert clock_key(first) != clock_key(second)
+        assert position_at(first, 3.0, 7) != position_at(second, 3.0, 7)
+
+    def test_different_lengths_pass_untouched(self) -> None:
+        """The common case stays legal without anybody thinking about it."""
+        profile = make_profile(
+            environment=environment(
+                dynamic_obstacles=[self.crosser("cart"), self.crosser("forklift")]
+            )
+        )
+        assert len(profile.environment.dynamic_obstacles) == 2
+
+    def test_obstacles_with_no_head_start_are_not_compared(self) -> None:
+        """At offset zero the shift is zero for everyone, so a shared key
+        means nothing — and ``random_walk``, the one motion allowed to sit
+        there, still reads the seed through its headings."""
+        walk: dict[str, object] = {
+            "radius": 0.3,
+            "seed_time_offset": 0.0,
+            "motion": {
+                "kind": "random_walk",
+                "origin": {"x": 8.0, "y": 8.0},
+                "speed": 0.6,
+                "change_interval": 2.0,
+                "max_radius": 4.0,
+            },
+        }
+        profile = make_profile(
+            environment=environment(
+                dynamic_obstacles=[
+                    {**walk, "name": "cart"},
+                    {**walk, "name": "rack", "motion": {**walk["motion"], "seed_offset": 3}},  # type: ignore[dict-item]
+                ]
+            )
+        )
+        assert len(profile.environment.dynamic_obstacles) == 2
+
+    def test_every_shipped_profile_still_loads(self) -> None:
+        """The rule was chosen to cost no re-measurement. This is that
+        claim, checked rather than asserted in a report.
+
+        Every profile in the directory rather than the two named further
+        down this file: a rule about *pairs* of obstacles is exactly the
+        kind a two-deployment sample can pass while a third fails.
+        """
+        import yaml
+
+        root = pathlib.Path(__file__).resolve().parents[1] / "profiles"
+        paths = sorted(root.glob("*.yaml"))
+        assert paths, "no shipped profiles found; this test would pass vacuously"
+        for path in paths:
+            TaskProfile.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
 
 
 #: One obstacle per motion law, each with a **known** top speed, so the

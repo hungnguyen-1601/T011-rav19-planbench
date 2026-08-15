@@ -172,21 +172,28 @@ class TestTheCheckItselfWorks:
         assert not any(path.startswith("missions.") for path in paths)
 
 
-class TestTrafficIsCarriedButNotYetAuthored:
-    """`environment.dynamic_obstacles` is bound — and only halfway.
+TRAFFIC_UI = (REPO_ROOT / "apps" / "web" / "src" / "components" / "TrafficEditor.tsx").read_text(
+    encoding="utf-8"
+)
+TRAFFIC_LIB = (REPO_ROOT / "apps" / "web" / "src" / "lib" / "traffic.ts").read_text(encoding="utf-8")
 
-    It used to sit in `NOT_IN_THE_FORM`, excused as deferred. That excuse
-    expired the day the form started writing the field: choosing a
-    library scenario now carries its traffic into the deployment, which
-    is what makes `sudden_stop` produce a deployment with the cart in it
-    rather than an empty lane.
 
-    **The guard is binary and the truth is not**, so the nuance lives
-    here instead of in a sentence nothing checks: the form *carries*
-    traffic, it does not let anybody *author* it. A reader who saw the
-    field disappear from the excuse list could otherwise conclude the
-    form can draw a cart. It cannot — that is still the YAML tab, and
-    still the reason `/scenarios` is kept alive.
+class TestTrafficIsAuthorable:
+    """`environment.dynamic_obstacles` is bound, and now all the way.
+
+    This class replaced one called ``TestTrafficIsCarriedButNotYetAuthored``,
+    which pinned the opposite: the form wrote the field when a library
+    scenario was chosen and offered no way to write one from scratch. It
+    checked that by asserting ``seed_time_offset`` and ``PeriodicMotion``
+    were absent from ``DeploymentForm.tsx``, and it said whoever added
+    them got to delete it. This is that deletion.
+
+    **Those assertions would still pass, which is why they had to go.**
+    The authoring lives in ``TrafficEditor.tsx`` and ``traffic.ts``, so a
+    grep of the form alone would have stayed green while being false —
+    the worst state a guard can be in, because nothing announces it.
+    What is checked here instead is presence: every motion law the
+    contract defines has a way into the document.
     """
 
     def test_the_form_writes_the_field(self, form_source) -> None:
@@ -195,21 +202,50 @@ class TestTrafficIsCarriedButNotYetAuthored:
     def test_it_carries_what_a_scenario_declares(self, form_source) -> None:
         assert "scenario?.dynamic_obstacles ?? []" in form_source
 
-    def test_it_offers_no_way_to_author_one(self, form_source) -> None:
-        """The half that is still missing, pinned so it cannot be forgotten.
+    def test_it_mounts_an_editor_for_what_it_carried(self, form_source) -> None:
+        assert "<TrafficEditor" in form_source
 
-        A motion kind picker, a speed, a period, a `seed_time_offset`
-        that must clear a full period — none of it is here. If any of
-        those ever appear, this test fails and whoever added them gets to
-        delete it, which is the point.
+    def test_every_motion_law_has_a_way_in(self) -> None:
+        """The check the old class could not make.
+
+        ``Motion`` is a closed union of four, and a UI offering three of
+        them makes the fourth unreachable without hand-editing YAML —
+        which is the state the TypeScript mirror was already in, missing
+        two of them, until this work.
         """
-        for authoring in ("SuddenStopMotion", "PeriodicMotion", "seed_time_offset", "motion:"):
-            assert authoring not in form_source, (
-                f"the form now authors traffic ({authoring}); update this test"
-            )
+        from planbench_schemas.dynamic import Motion
 
-    def test_the_scenario_editor_is_still_the_place_that_can(self) -> None:
-        """Why `/scenarios` survived P6, stated as a test rather than a note."""
+        kinds = {
+            option.model_fields["kind"].default
+            for option in Motion.__origin__.__args__  # type: ignore[attr-defined]
+        }
+        assert kinds, "could not enumerate the motion union"
+        for kind in kinds:
+            assert f'"{kind}"' in TRAFFIC_LIB, f"{kind} has no way into a deployment"
+
+    def test_the_head_start_is_offered_rather_than_left_at_zero(self) -> None:
+        """A field the server refuses at zero must not open at zero with
+        no way to fill it: that is a form writing documents it knows will
+        be refused."""
+        assert "seed_time_offset" in TRAFFIC_UI
+        assert "seedTimeOffsetSuggest" in TRAFFIC_UI
+
+    def test_the_verdict_still_comes_from_the_server(self, form_source) -> None:
+        """The rule the old class protected, kept while the rest went.
+
+        The form decides nothing. What changed is that it can now *ask* —
+        the same check filing runs, reached without filing — and that it
+        has somewhere to show a refusal addressed to ``environment``,
+        which is where every traffic rule lands.
+        """
+        assert '"/task-profiles/validate"' in form_source
+        assert 'entry.path.startsWith("environment.")' in form_source
+
+    def test_the_scenario_editor_can_still_do_it_too(self) -> None:
+        """`/scenarios` outlived P6 because it was the only thing that
+        could draw an obstacle. It is not any more, which turns retiring
+        it into a decision somebody takes rather than something to wait
+        for. Until that decision it keeps working."""
         editor = (
             REPO_ROOT / "apps" / "web" / "src" / "app" / "scenarios" / "[id]" / "page.tsx"
         ).read_text(encoding="utf-8")

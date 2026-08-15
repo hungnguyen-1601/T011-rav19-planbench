@@ -41,7 +41,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from planbench_schemas.dynamic import DynamicObstacle, max_speed
+from planbench_schemas.dynamic import DynamicObstacle, clock_key, max_speed
 from planbench_schemas.geometry import Pose2D
 from planbench_schemas.observations import ObservationToken, canonical_observations
 from planbench_schemas.recovery import NO_RECOVERY, RecoveryConfig
@@ -267,14 +267,47 @@ class EnvironmentSpec(BaseModel):
         start ("one full cycle: seeds meet the pedestrian anywhere"); it
         simply was not enforced, and the profile written later did not
         follow it.
+
+        **A shared clock key is the same failure a third way**, and it is
+        the one that hid behind a rule that reads as if it covered it.
+        The head start is hashed from ``seed_offset + len(name)``, so two
+        obstacles whose names merely have the same length get the same
+        fraction of their offset — ``cart`` and ``rack`` start together at
+        every seed. The name-uniqueness rule above used to claim it
+        prevented that; it never could. So the key itself is checked, by
+        calling the same :func:`clock_key` the shift is computed from
+        rather than by restating the formula here.
+
+        Only obstacles that actually take a head start are compared: at
+        ``seed_time_offset = 0`` the shift is zero for everyone, and for a
+        ``random_walk`` — the one motion allowed to sit at zero — the seed
+        still reaches the headings.
         """
         names = [obstacle.name for obstacle in self.dynamic_obstacles]
         duplicates = sorted({name for name in names if names.count(name) > 1})
         if duplicates:
             raise ValueError(
                 f"dynamic obstacle names must be unique, got duplicates {duplicates}; "
-                "the name is mixed into each obstacle's seed hash, so two obstacles "
-                "sharing one name would move in lockstep"
+                "the name is how a trace, a snapshot and a refusal say which obstacle "
+                "they mean, and two of them answering to one name makes every such "
+                "record ambiguous"
+            )
+        shifted: dict[int, list[str]] = {}
+        for obstacle in self.dynamic_obstacles:
+            if obstacle.seed_time_offset > 0.0:
+                shifted.setdefault(clock_key(obstacle), []).append(obstacle.name)
+        lockstep = sorted(
+            f"[{', '.join(sorted(group))}] (key {key})"
+            for key, group in shifted.items()
+            if len(group) > 1
+        )
+        if lockstep:
+            raise ValueError(
+                f"dynamic obstacle(s) {lockstep} share a clock key, so the seed shifts "
+                "their clocks by the same fraction and they move together across every "
+                "seed. Unique names do not prevent this: the key is seed_offset plus the "
+                "name's LENGTH, so 'cart' and 'rack' collide (measured: identical head "
+                "start at every seed). Give them different seed_offset values"
             )
         frozen_in_time = sorted(
             obstacle.name

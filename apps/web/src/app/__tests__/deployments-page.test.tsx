@@ -27,6 +27,8 @@ const PAGE = readFileSync(join(APP, "deployments", "page.tsx"), "utf8");
 const DECISIONS = readFileSync(join(APP, "decisions", "page.tsx"), "utf8");
 const FORM = readFileSync(join(process.cwd(), "src", "components", "DeploymentForm.tsx"), "utf8");
 const LIB = readFileSync(join(process.cwd(), "src", "lib", "deployments.ts"), "utf8");
+const TRAFFIC_UI = readFileSync(join(process.cwd(), "src", "components", "TrafficEditor.tsx"), "utf8");
+const TRAFFIC_LIB = readFileSync(join(process.cwd(), "src", "lib", "traffic.ts"), "utf8");
 
 describe("noise is a property of the deployment", () => {
   it("says so on the page rather than leaving it to be discovered", () => {
@@ -140,15 +142,19 @@ describe("the form is an input method, not a second definition", () => {
     expect(FORM).toContain("errorFor(path)");
   });
 
-  it("says out loud that it writes no moving traffic", () => {
+  it("says out loud what leaving both quiet costs", () => {
     /* With no traffic *and* no noise a deterministic planner replays one
        episode per seed, and G2's bound would rest on a sample of one.
        Legal, and the profile schema does not forbid it — so the form
-       says it rather than refusing. */
+       says it rather than refusing. The note used to end by sending the
+       reader to the YAML tab for traffic; it no longer can, because the
+       form writes traffic now. */
     const note = (en as Record<string, string>)["deployments.form.noiseNote"];
     expect(note).toContain("traffic");
     expect(note).toContain("one episode per seed");
+    expect(note).not.toContain("YAML");
     expect((vi as Record<string, string>)["deployments.form.noiseNote"]).toContain("traffic");
+    expect((vi as Record<string, string>)["deployments.form.noiseNote"]).not.toContain("YAML");
   });
 
   it("carries the form's draft into the YAML tab but not back", () => {
@@ -431,12 +437,150 @@ describe("the traffic comes with the map it belongs to", () => {
     expect(adopt).toContain("environment.dynamic_obstacles");
   });
 
-  it("does not validate the obstacles itself", () => {
-    /* `TaskProfile` refuses duplicate names and a periodic obstacle that
-       shifts by less than one period. A second opinion here would be
-       free to disagree with the one that decides. */
-    expect(FORM).not.toContain("seed_time_offset");
-    expect(EN_FORM["deployments.form.note"] ?? "").not.toContain("obstacle");
+  it("lets the author change what it carried", () => {
+    /* Carrying was only ever half of it. A map somebody drew arrived
+       with no traffic and no way to add any, and the only place to write
+       a cart was the YAML tab. */
+    expect(FORM).toContain("<TrafficEditor");
+    expect(FORM).toContain('set("environment.dynamic_obstacles", next)');
+  });
+
+  it("still refuses to judge the obstacles itself", () => {
+    /* The rule did not soften when the work moved into its own files.
+       `TaskProfile` decides; the browser asks. What would break this is
+       a comparison in TypeScript — an offset measured against a period,
+       a name checked against another name — so those are what is looked
+       for, in both files that could hold one. */
+    for (const source of [FORM, TRAFFIC_UI, TRAFFIC_LIB]) {
+      expect(source).not.toContain("< motion.period");
+      expect(source).not.toContain("seed_time_offset <=");
+      expect(source).not.toContain("seed_time_offset ===  0");
+      expect(source).not.toMatch(/must be unique|duplicate name/i);
+    }
+  });
+
+  it("asks the server for the verdict instead", () => {
+    expect(FORM).toContain('"/task-profiles/validate"');
+    expect(FORM).toContain("fieldErrorsOf(caught)");
+  });
+
+  it("has somewhere to show every refusal about the traffic, at either depth", () => {
+    /* Pydantic addresses what it can. A rule written as a model
+       validator on `EnvironmentSpec` — unique names, a head start, a
+       full period, a declared closing speed, a shared clock — lands on
+       `environment`; a field constraint lands on
+       `environment.dynamic_obstacles.0.radius`. Both are pinned in
+       tests/api/test_api_profile_validation.py.
+
+       The first version passed only the block-level path, so a refused
+       radius blocked filing while the author was shown nothing at all.
+       Hence: the form hands over everything addressed to this block, and
+       the editor renders the deep ones beside their row and the rest at
+       the top. */
+    expect(FORM).toContain('entry.path.startsWith("environment.")');
+    expect(TRAFFIC_UI).toContain("rowErrors");
+    expect(TRAFFIC_UI).toContain("blockErrors");
+  });
+
+  it("keeps a verdict from outliving the document it was about", () => {
+    /* A green "the server accepts this" beside a document that has
+       changed since is read as current. The clearing lived inside `set`
+       at first, so typing in a field invalidated it while moving the
+       start pose, adopting a map or applying a vehicle did not. */
+    expect(FORM).toContain("invalidateCheck");
+    /* Four ways to change the document, four calls: a field, the map,
+       the vehicle, the mission. The map's is at the end of `adopt`
+       rather than the start, because until the write succeeds nothing
+       has changed and there is no verdict to retire. Counted rather than
+       named so a fifth way added later fails here instead of silently
+       keeping a stale tick. */
+    expect(FORM.match(/invalidateCheck\(\)/g) ?? []).toHaveLength(4);
+    // And a reply already in flight when the document moved on is an
+    // answer to a question nobody is asking any more.
+    expect(FORM).toContain("revision.current !== asked");
+  });
+
+  it("does not let a reply about an older document draw over a newer one", () => {
+    /* Three handlers here finish after an await, and each of them can
+       land on a document that has moved on. Clearing the picture was not
+       enough for the preview: a request that left before the edit still
+       matched its own sequence when it returned, so it drew the old
+       world back over the cleared canvas. Adopting a map has the same
+       shape — a late answer about map A would put its paths under map
+       B's grid, and a `draft` captured before the await would undo
+       whatever was typed while it ran. */
+    expect(FORM).toContain("previewSeq.supersede()");
+    expect(FORM).toContain("adoption.isCurrent(token)");
+    expect(FORM).toContain("draftRef.current");
+  });
+
+  it("decides which map won when it was chosen, not when it answered", () => {
+    /* Claiming the token inside `adopt` — after the grid had been
+       fetched — ordered the maps by how fast the server answered. Pick
+       A, pick B, B answers first and takes token 1, A answers second and
+       takes token 2, and A wins although nobody selected it. The claim
+       belongs beside the choice; `sequencer.test.ts` checks that the
+       ordering itself behaves. */
+    const chooser = FORM.slice(
+      FORM.indexOf("const adoptStoredMap"),
+      FORM.indexOf("// Open on the default"),
+    );
+    expect(chooser.indexOf("adoption.claim()")).toBeLessThan(chooser.indexOf("api.getMap(id)"));
+  });
+
+  it("treats picking the blank option as a choice too", () => {
+    /* It says "not that map". Returning early without claiming left an
+       adoption already fetching, and it went on to commit a map the
+       picker no longer shows — the same race by the one path that
+       starts no request of its own. An unused token still supersedes
+       what is in flight, so the claim comes before the branch. */
+    const chooser = FORM.slice(
+      FORM.indexOf("const adoptStoredMap"),
+      FORM.indexOf("// Open on the default"),
+    );
+    expect(chooser.indexOf("adoption.claim()")).toBeLessThan(chooser.indexOf("if (!id) return"));
+  });
+
+  it("writes a map into the draft only once nothing can still fail", () => {
+    /* The old order set the grid, the id and the mission first and then
+       awaited the file write. A failure there left the canvas showing
+       one map while the draft still named another, with nothing to roll
+       it back and nothing saying so. */
+    const adopt = FORM.slice(FORM.indexOf("const adopt = useCallback"), FORM.indexOf("// Open on"));
+    expect(adopt.indexOf("await materialiseMap")).toBeLessThan(adopt.indexOf("setMapData(data)"));
+    expect(adopt).toContain("catch (caught)");
+  });
+
+  it("locks filing and checking while a map is being written out", () => {
+    /* During that window the canvas already shows the new map and the
+       draft still names the old one, so filing would store a deployment
+       nobody is looking at. */
+    expect(FORM).toContain("busy || checking || adopting");
+    expect(FORM).toContain('disabled={frozen || !complete} onClick={() => void submit()}');
+    expect(FORM).toContain("disabled={frozen || !complete} onClick={() => void check()}");
+  });
+
+  it("retires the picture when the instant it is labelled with changes", () => {
+    expect(FORM).toContain("scrubPreview");
+    expect(FORM.match(/scrubPreview\(\)/g) ?? []).toHaveLength(2);
+  });
+
+  it("disables the preview on the same answer that would make it do nothing", () => {
+    /* `previewRequestOf` returns nothing when the draft has not declared
+       something the scenario needs. Leaving the button enabled made a
+       click silently return, which reads as a broken preview rather than
+       as an unfinished deployment. */
+    expect(FORM).toContain("disabled={frozen || !previewRequest}");
+  });
+
+  it("shows the half of the preview's answer that is not a picture", () => {
+    /* The endpoint validates against the *map* — a start inside a wall,
+       an obstacle in occupied cells — and none of that reaches
+       `POST /task-profiles/validate`, which reads the document and never
+       opens the grid. Drawing the traffic while dropping `valid` shows a
+       scene that cannot run as though nothing were wrong. */
+    expect(FORM).toContain("preview && !preview.valid");
+    expect(FORM).toContain("preview.errors.map");
   });
 
   it("still advertises the count it is now honouring", () => {

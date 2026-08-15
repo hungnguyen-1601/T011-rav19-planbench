@@ -112,8 +112,11 @@ class DynamicObstacle(BaseModel):
             "motions (waypoint, periodic, sudden_stop) ignore the seed, so a "
             "multi-seed benchmark would replay the identical episode N times "
             "and report a fake variance of zero. A non-zero value shifts this "
-            "obstacle's clock by a hash of (seed, name) in [0, offset), which "
-            "is what makes traffic timing vary across seeds."
+            "obstacle's clock by a hash of (seed, clock_key) in [0, offset), "
+            "which is what makes traffic timing vary across seeds. The key is "
+            "seed_offset plus the name's LENGTH, not the name — see "
+            "``clock_key``, and note that EnvironmentSpec refuses two "
+            "obstacles that share one."
         ),
     )
     seed_offset: int = Field(
@@ -189,14 +192,39 @@ def position_at(obstacle: DynamicObstacle, time: float, seed: int) -> Point2D:
     raise TypeError(f"unsupported motion kind: {type(motion).__name__}")
 
 
+def clock_key(obstacle: DynamicObstacle) -> int:
+    """The integer that decides this obstacle's seed-derived head start.
+
+    **It is the name's length, not the name.** Two obstacles called
+    ``cart`` and ``rack`` with the same ``seed_offset`` therefore share a
+    key, and a shared key means one head start: measured at
+    ``seed_time_offset = 20``, both start 4.983802 s in at seed 0 and
+    19.384681 s in at seed 7, and their positions agree at every instant.
+    That is the lockstep the traffic rules exist to prevent, and unique
+    names do not prevent it.
+
+    Exposed rather than inlined because ``EnvironmentSpec`` refuses two
+    obstacles that share a key, and a validator that recomputed the
+    formula would be free to drift from the implementation it protects.
+
+    Hashing the name itself would be the tidier fix and was considered.
+    It is a **behaviour** change: every episode whose traffic carries a
+    head start would move, which includes five of the seven golden cases
+    in ``tests/golden/dwa_trajectories.json`` — a fixture generated
+    before ``dwa_core`` was extracted, and the only remaining evidence
+    that the extraction changed nothing. Refusing the collision costs
+    nobody a re-measurement; regenerating that fixture would cost the
+    proof.
+    """
+    return obstacle.seed_offset + len(obstacle.name)
+
+
 def _seed_time_shift(obstacle: DynamicObstacle, seed: int) -> float:
     """Deterministic clock offset in [0, seed_time_offset) for this seed."""
     if obstacle.seed_time_offset <= 0:
         return 0.0
     # Reuse the angle hash and map [-pi, pi) onto [0, 1).
-    unit = (_hashed_angle(seed, obstacle.seed_offset + len(obstacle.name), 0) + math.pi) / (
-        2.0 * math.pi
-    )
+    unit = (_hashed_angle(seed, clock_key(obstacle), 0) + math.pi) / (2.0 * math.pi)
     return unit * obstacle.seed_time_offset
 
 

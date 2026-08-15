@@ -21,9 +21,11 @@
 
 import { useState } from "react";
 
+import type { ObstacleMarker } from "@/components/MapCanvas";
 import { MapView } from "@/components/MapView";
 import { useTranslation } from "@/lib/i18n";
-import type { MapData, Pose2D } from "@/lib/types";
+import type { TrafficPlacement } from "@/lib/traffic";
+import type { MapData, ObstacleSnapshot, Pose2D } from "@/lib/types";
 
 /** What the next click on the map does.
  *
@@ -32,7 +34,7 @@ import type { MapData, Pose2D } from "@/lib/types";
  * author has to be able to *see* what the next click will do, or nudging
  * a start two pixels lands a goal instead.
  */
-export type PlacementMode = "none" | "start" | "goal";
+export type PlacementMode = "none" | "start" | "goal" | TrafficPlacement;
 
 export const DEGREES = (radians: number) => (radians * 180) / Math.PI;
 export const RADIANS = (degrees: number) => (degrees * Math.PI) / 180;
@@ -55,6 +57,26 @@ export interface MissionPlacerProps {
   disabled?: boolean;
   startNote: string;
   goalNote: string;
+  /** Lift the mode out when something else on the page also wants the
+   *  next click.
+   *
+   * The deployment form does: its traffic editor places waypoints on
+   * this same canvas. Two components each holding their own idea of what
+   * a click means is how a nudge to a start lands a waypoint instead —
+   * the failure the explicit mode was introduced to prevent, reappearing
+   * one level up. Uncontrolled when omitted, which is how the decisions
+   * page still uses it. */
+  mode?: PlacementMode;
+  onModeChange?: (next: PlacementMode) => void;
+  /** Where a click goes when the mode is not one of this component's
+   *  own two. Called with world coordinates. */
+  onPlace?: (x: number, y: number) => void;
+  /** Replaces the caption while somebody else's mode is active — this
+   *  component has nothing true to say about placing a waypoint. */
+  modeNote?: string;
+  dynamicObstacles?: ObstacleMarker[];
+  obstacleSnapshots?: ObstacleSnapshot[];
+  previewTime?: number;
 }
 
 export function MissionPlacer({
@@ -68,9 +90,18 @@ export function MissionPlacer({
   disabled = false,
   startNote,
   goalNote,
+  mode,
+  onModeChange,
+  onPlace,
+  modeNote,
+  dynamicObstacles,
+  obstacleSnapshots,
+  previewTime,
 }: MissionPlacerProps) {
   const { t } = useTranslation();
-  const [placing, setPlacing] = useState<PlacementMode>("start");
+  const [own, setOwn] = useState<PlacementMode>("start");
+  const placing = mode ?? own;
+  const setPlacing = onModeChange ?? setOwn;
 
   /** Move whichever pose the mode names, keeping its heading.
    *
@@ -84,10 +115,23 @@ export function MissionPlacer({
     if (placing === "start") {
       onChange({ start: { x, y, theta: start?.theta ?? 0 }, goal });
       if (goal === null) setPlacing("goal");
-    } else {
+    } else if (placing === "goal") {
       onChange({ start, goal: { x, y, theta: goal?.theta ?? 0 } });
+    } else {
+      // Somebody else's mode. This component does not know what a
+      // waypoint is, and guessing would place a pose on top of one.
+      onPlace?.(x, y);
     }
   };
+  /** Dragging belongs to the poses and to nothing else.
+   *
+   * `MapCanvas` fires a click on mouse-down and then a drag per
+   * mouse-move, which is what makes nudging a start feel continuous. In
+   * a waypoint mode that same gesture appends a waypoint per pixel
+   * travelled, so one careless drag writes a route of two hundred
+   * points. The canvas is left without a drag handler while somebody
+   * else's mode is active. */
+  const missionMode = placing === "none" || placing === "start" || placing === "goal";
 
   return (
     <>
@@ -108,7 +152,9 @@ export function MissionPlacer({
             {t(`decisions.map.place.${which}`)}
           </button>
         ))}
-        <span className="muted">{t(`decisions.map.mode.${placing}`)}</span>
+        <span className="muted">
+          {missionMode ? t(`decisions.map.mode.${placing}`) : (modeNote ?? "")}
+        </span>
       </div>
 
       <div style={{ marginTop: 8 }}>
@@ -119,8 +165,11 @@ export function MissionPlacer({
           robotRadius={robotRadius}
           positionUncertainty={positionUncertainty}
           goalTolerance={goalTolerance}
+          dynamicObstacles={dynamicObstacles}
+          obstacleSnapshots={obstacleSnapshots}
+          previewTime={previewTime}
           onWorldClick={(x, y) => place(x, y)}
-          onWorldDrag={(x, y) => place(x, y)}
+          {...(missionMode ? { onWorldDrag: (x: number, y: number) => place(x, y) } : {})}
         />
       </div>
 

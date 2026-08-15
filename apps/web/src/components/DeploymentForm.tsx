@@ -21,12 +21,16 @@
  * read after the choice rather than during it.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { MapPainter } from "@/components/MapPainter";
-import { MissionPlacer } from "@/components/MissionPlacer";
+import { MissionPlacer, type PlacementMode } from "@/components/MissionPlacer";
+import { TrafficEditor, type TrafficSelection, placementNote } from "@/components/TrafficEditor";
 import { api } from "@/lib/api";
+import { authFetch, fieldErrorsOf } from "@/lib/auth";
+import { createSequencer } from "@/lib/sequencer";
+import { placeOnMotion, previewRequestOf, snapshotsOf, trafficOf } from "@/lib/traffic";
 import {
   DEFAULT_LIBRARY_SCENARIO,
   at,
@@ -44,7 +48,7 @@ import { emptyBorderedMap } from "@/lib/demoMap";
 import { useTranslation } from "@/lib/i18n";
 import { listRobotProfiles, type RobotProfile } from "@/lib/models";
 import type { LibraryEntry } from "@/lib/platformTypes";
-import type { MapData, MapSummary, Pose2D } from "@/lib/types";
+import type { MapData, MapSummary, Pose2D, ScenarioPreview } from "@/lib/types";
 import { safetyEnvelope } from "@/lib/keepOut";
 
 /** Where the map under this deployment comes from. */
@@ -159,12 +163,90 @@ export function DeploymentForm({
    *  install, and typing the limits by hand still works. */
   const [vehicles, setVehicles] = useState<RobotProfile[]>([]);
   const [vehicleId, setVehicleId] = useState("");
+  /** The map the canvas is showing, whichever way it was chosen.
+   *
+   * Distinct from `storedMapId`, which is only the picker's selection: a
+   * drawn map is created before it is adopted and has an id just as real
+   * as a stored one, and the preview endpoint takes an id rather than a
+   * grid. Keeping one field for "the picker" and another for "what is on
+   * screen" is what lets all three sources preview. */
+  const [activeMapId, setActiveMapId] = useState("");
+  /** One placement mode for the whole page. The traffic editor and the
+   *  mission placer share a canvas, so they cannot each hold their own. */
+  const [placing, setPlacing] = useState<PlacementMode>("start");
+  const [trafficSelection, setTrafficSelection] = useState<TrafficSelection | null>(null);
+  /** Refusals from the check this form asked for, as opposed to the ones
+   *  the page got back from filing.
+   *
+   * Owned here because this form is what asked. The page still owns the
+   * refusal from `POST /task-profiles`, and the two are merged for
+   * display rather than one overwriting the other. */
+  const [dryRunErrors, setDryRunErrors] = useState<{ path: string; message: string }[]>([]);
+  const [checking, setChecking] = useState(false);
+  const [checkedClean, setCheckedClean] = useState(false);
+  const [preview, setPreview] = useState<ScenarioPreview | null>(null);
+  const [previewTime, setPreviewTime] = useState(0);
+  const [previewSeed, setPreviewSeed] = useState(0);
+
+  /** Everything the server has been asked about this document is now
+   *  about a previous document.
+   *
+   * **One function because there is one rule**, and the first version
+   * did not have it: the clearing lived inside `set`, so a field edit
+   * invalidated the verdict while moving the start pose, adopting a map
+   * or applying a vehicle did not. A green "the server accepts this"
+   * beside a document that has changed since is worse than showing
+   * nothing, because it is read as current — and so is traffic drawn on
+   * the canvas from a request about the old one.
+   *
+   * The revision is what makes it safe against a reply that is already
+   * in flight: a check or a preview that started before this bump
+   * belongs to a document that no longer exists, and its answer is
+   * dropped rather than rendered.
+   */
+  const revision = useRef(0);
+  /** Preview replies can overtake each other, so only the newest may
+   *  draw. Separate from `revision` because a scrub to another instant
+   *  supersedes a preview without invalidating a verdict. */
+  const previewSeq = useRef(createSequencer()).current;
+  /** Map adoption, which reads a grid and writes a document either side
+   *  of an await.
+   *
+   * **The token is claimed by the handler, before the fetch it starts,
+   * not by `adopt` when the fetch comes back.** Claiming late made the
+   * sequence describe the order answers *arrived* rather than the order
+   * the author *chose*: pick map A, pick map B, B answers first and
+   * takes token 1, A answers second and takes token 2 — and A, the map
+   * nobody selected, wins. */
+  const adoption = useRef(createSequencer()).current;
+  const [adopting, setAdopting] = useState(false);
+  /** The draft as it is *now*, for the handlers that resume after an
+   *  await. A `draft` captured in a closure is the document as it was
+   *  when the handler started, and writing it back undoes whatever was
+   *  typed in between. */
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+  const invalidateCheck = useCallback(() => {
+    revision.current += 1;
+    // The preview sequence moves too. Clearing the picture is not enough
+    // on its own: a request that left before this edit still matched the
+    // sequence when it landed, so it drew the old document back over the
+    // cleared canvas — the stale preview returning by the one door the
+    // first fix left open.
+    previewSeq.supersede();
+    setDryRunErrors([]);
+    setCheckedClean(false);
+    setPreview(null);
+  }, [previewSeq]);
 
   const set = useCallback(
     (path: string, value: unknown) => {
       if (draft) onDraftChange(withValue(draft, path, value));
+      invalidateCheck();
     },
-    [draft, onDraftChange],
+    [draft, onDraftChange, invalidateCheck],
   );
 
   // The defaults, from the shipped profile rather than a copy in here.
@@ -218,19 +300,86 @@ export function DeploymentForm({
    * and leaving it would put an obstacle in a place nobody chose.
    */
   const adopt = useCallback(
-    async (data: MapData, mapId: string, scenario: Parameters<typeof posesFor>[1]) => {
-      setMapData(data);
-      const poses = posesFor(data, scenario);
-      setStart(poses.start);
-      setGoal(poses.goal);
-      const paths = await materialiseMap(mapId);
-      if (!draft) return;
-      let next = withValue(draft, "environment.map", paths.map);
-      next = withValue(next, "environment.map_yaml", paths.map_yaml);
-      next = withValue(next, "environment.dynamic_obstacles", scenario?.dynamic_obstacles ?? []);
-      onDraftChange(next);
+    async (
+      data: MapData,
+      mapId: string,
+      scenario: Parameters<typeof posesFor>[1],
+      token: number,
+    ) => {
+      if (!adoption.isCurrent(token)) return;
+      setAdopting(true);
+      try {
+        // **The fallible half first, the commit second.** The other way
+        // round left the form in a state no deployment describes: the
+        // canvas showing the new map and the mission placed on it, while
+        // the draft still named the old map's files and carried its
+        // traffic. Nothing rolled that back, and nothing said so —
+        // filing it would have measured one world through another's
+        // walls.
+        const paths = await materialiseMap(mapId);
+        // Somebody may have chosen another map, or typed in a field. The
+        // newest choice wins, and the draft being edited is the one on
+        // screen now rather than the one captured before the await.
+        if (!adoption.isCurrent(token)) return;
+        const current = draftRef.current;
+        if (!current) return;
+        let next = withValue(current, "environment.map", paths.map);
+        next = withValue(next, "environment.map_yaml", paths.map_yaml);
+        next = withValue(next, "environment.dynamic_obstacles", scenario?.dynamic_obstacles ?? []);
+        const poses = posesFor(data, scenario);
+        setMapData(data);
+        setActiveMapId(mapId);
+        setTrafficSelection(null);
+        setStart(poses.start);
+        setGoal(poses.goal);
+        onDraftChange(next);
+        invalidateCheck();
+      } catch (caught) {
+        // Nothing was committed, so there is nothing to undo — the form
+        // still describes the map it described a moment ago.
+        if (adoption.isCurrent(token)) {
+          setError(caught instanceof Error ? caught.message : String(caught));
+        }
+      } finally {
+        if (adoption.isCurrent(token)) setAdopting(false);
+      }
     },
-    [draft, onDraftChange],
+    [adoption, onDraftChange, invalidateCheck],
+  );
+
+  /** Choosing a map out of the store, from the click through to the commit.
+   *
+   * **The whole lifecycle in one function, and the claim is its first
+   * statement.** Splitting it — the fetch at the call site, the ordering
+   * inside `adopt` — is what let the token drift away from the choice
+   * twice: first it was taken when the answer came back, and then, once
+   * that was fixed, it was still taken *after* the branch that adopts
+   * nothing.
+   *
+   * That branch is the subtle one. Picking the blank option is a choice
+   * and not the absence of one: it says "not that map". Returning early
+   * without claiming left an adoption already fetching, and it went on
+   * to commit a map the picker no longer shows. So the claim happens
+   * before anything, including before deciding there is nothing to
+   * fetch — an unused token still supersedes what is in flight.
+   */
+  const adoptStoredMap = useCallback(
+    (id: string) => {
+      const token = adoption.claim();
+      setStoredMapId(id);
+      if (!id) return;
+      void (async () => {
+        try {
+          const resource = await api.getMap(id);
+          await adopt(resource.map_data, id, null, token);
+        } catch (caught) {
+          if (adoption.isCurrent(token)) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+          }
+        }
+      })();
+    },
+    [adoption, adopt],
   );
 
   // Open on the default library scenario, so the form has a real map and
@@ -238,6 +387,7 @@ export function DeploymentForm({
   useEffect(() => {
     if (!draft || mapData || source !== "library") return;
     let cancelled = false;
+    const token = adoption.claim();
     void (async () => {
       try {
         const imported = await importLibraryScenario(libraryName);
@@ -245,7 +395,7 @@ export function DeploymentForm({
         const resource = await api.getMap(imported.map_id);
         if (cancelled) return;
         setStoredMapId(imported.map_id);
-        await adopt(resource.map_data, imported.map_id, imported.scenario);
+        await adopt(resource.map_data, imported.map_id, imported.scenario, token);
       } catch (caught) {
         if (!cancelled) setError(caught instanceof Error ? caught.message : String(caught));
       }
@@ -256,9 +406,22 @@ export function DeploymentForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft !== null, libraryName, source]);
 
+  /** Refusals from checking and from filing, in one list.
+   *
+   * The check runs the same code path filing does, so the two cannot
+   * disagree about a document; they can only be about *different*
+   * documents. The checked ones come first because they are the ones
+   * this form asked for and clears on every edit — a filing refusal
+   * belongs to the page and can outlive the document it was about, so it
+   * must not win a `find` against a fresher answer. */
+  const shownErrors = useMemo(
+    () => [...dryRunErrors, ...fieldErrors],
+    [dryRunErrors, fieldErrors],
+  );
+
   const errorFor = useCallback(
-    (path: string) => fieldErrors.find((entry) => entry.path === path)?.message,
-    [fieldErrors],
+    (path: string) => shownErrors.find((entry) => entry.path === path)?.message,
+    [shownErrors],
   );
 
   const complete = useMemo(() => {
@@ -270,21 +433,157 @@ export function DeploymentForm({
 
   if (!draft) return <p className="muted">{t("common.loading")}</p>;
 
+  /** Nothing may be edited while a check is in flight.
+   *
+   * Not cosmetic: the answer coming back is about the document that was
+   * sent, and an author who keeps typing turns it into an answer about a
+   * document that no longer exists. The revision guard already refuses
+   * to render such an answer, so this is the half that stops the author
+   * wondering why their check did nothing. */
+  const frozen = busy || checking || adopting;
+
+  /** The draft as the document that would be filed.
+   *
+   * The mission is assembled here rather than kept in the draft, so the
+   * two poses have exactly one home while they are being edited — the
+   * same reason the placer holds none of its own. Checking and filing
+   * both go through it, because a check of a *different* document to the
+   * one that gets filed is worse than no check.
+   */
+  const documentOf = (): ProfileDraft | null => {
+    if (!start || !goal) return null;
+    return withValue(draft, "missions", [
+      {
+        id: "custom_route",
+        start: [start.x, start.y, start.theta],
+        goal: [goal.x, goal.y, goal.theta],
+        probability: 1.0,
+      },
+    ]);
+  };
+
+  /** Ask the server whether this document is legal, without filing it.
+   *
+   * **Not a second opinion.** `POST /task-profiles/validate` runs the
+   * same `TaskProfile` check filing runs and refuses with the same
+   * per-field addresses, which is why the answer can be trusted to
+   * predict the refusal — and why nothing in this browser tries to work
+   * it out. Returns whether the document passed, so submit can use it as
+   * a gate rather than repeating the call's result in state.
+   *
+   * What it cannot see: the check reads the document only, so an id
+   * already on file with different content passes here and is refused by
+   * filing (HĐ-3.1). The note beside the button says so.
+   */
+  const check = async (): Promise<boolean> => {
+    // One at a time. Two checks in flight share one `checking` flag, so
+    // whichever finishes first unfreezes the form while the other is
+    // still running — and the author edits into the gap.
+    if (checking) return false;
+    const document = documentOf();
+    if (!document) return false;
+    const asked = revision.current;
+    setChecking(true);
+    try {
+      await authFetch("/task-profiles/validate", {
+        method: "POST",
+        body: JSON.stringify(document),
+      });
+      // The document may have moved on while this was in flight. An
+      // answer about the previous one is not a weaker answer, it is an
+      // answer to a different question — and rendering it as a verdict
+      // on what is on screen is exactly the stale green tick.
+      if (revision.current !== asked) return false;
+      setDryRunErrors([]);
+      setCheckedClean(true);
+      return true;
+    } catch (caught) {
+      if (revision.current !== asked) return false;
+      const addressed = fieldErrorsOf(caught);
+      setDryRunErrors(addressed);
+      setCheckedClean(false);
+      if (addressed.length === 0) {
+        setError(caught instanceof Error ? caught.message : String(caught));
+      }
+      return false;
+    } finally {
+      setChecking(false);
+    }
+  };
+
   const submit = async () => {
-    if (!start || !goal) return;
-    // The mission is assembled at submit rather than kept in the draft,
-    // so the two poses have exactly one home while they are being edited
-    // — the same reason the placer holds none of its own.
-    await onSubmit(
-      withValue(draft, "missions", [
-        {
-          id: "custom_route",
-          start: [start.x, start.y, start.theta],
-          goal: [goal.x, goal.y, goal.theta],
-          probability: 1.0,
-        },
-      ]),
-    );
+    const document = documentOf();
+    if (!document) return;
+    const asked = revision.current;
+    // Checked first so a refusal lands on the fields it is about before
+    // the page has to render a failed filing.
+    if (!(await check())) return;
+    // `document` was built before the await. Filing it after an edit
+    // would store a deployment nobody is looking at — the form would be
+    // showing one world and the server keeping another.
+    if (revision.current !== asked) return;
+    await onSubmit(document);
+  };
+
+  /** Moving to another instant or another seed retires the picture.
+   *
+   * Not an edit — the document is unchanged and a verdict about it is
+   * still good — but the canvas is now labelled with numbers it was not
+   * drawn from. Leaving it up is how a reader ends up believing the
+   * traffic is at t = 40 while looking at t = 0. */
+  const scrubPreview = () => {
+    previewSeq.supersede();
+    setPreview(null);
+  };
+
+  /** The request this draft can currently support, or nothing.
+   *
+   * Computed here rather than inside the handler so the button can be
+   * disabled on the same answer that would have made the click do
+   * nothing. A control that looks available and silently ignores you is
+   * worse than one that is visibly unavailable: the first reads as a
+   * broken preview, the second as a deployment that is not finished. */
+  const previewRequest =
+    start && goal && activeMapId
+      ? previewRequestOf({
+          draft,
+          start,
+          goal,
+          mapId: activeMapId,
+          time: previewTime,
+          seed: previewSeed,
+        })
+      : null;
+
+  /** Where the traffic is at `previewTime`, computed by the backend.
+   *
+   * The browser never evaluates a motion law: a second implementation
+   * would drift from the simulator's, and a preview that disagrees with
+   * the episode is worse than no preview — the author would place a
+   * start clear of an obstacle that is somewhere else when the run
+   * happens. */
+  const refreshPreview = async () => {
+    if (!previewRequest) return;
+    const request = previewRequest;
+    // Cleared before asking, not after answering. A picture of where the
+    // traffic was under the previous numbers, sitting on screen while a
+    // new request is in flight, is read as where it is now.
+    setPreview(null);
+    const asked = previewSeq.claim();
+    try {
+      const answer = await authFetch<ScenarioPreview>("/scenarios/preview", {
+        method: "POST",
+        body: JSON.stringify(request),
+      });
+      // Replies can overtake each other; only the newest request may
+      // draw. Without this a slow answer about t = 0 lands after a quick
+      // one about t = 40 and the canvas shows the older instant.
+      if (previewSeq.isCurrent(asked)) setPreview(answer);
+    } catch (caught) {
+      if (!previewSeq.isCurrent(asked)) return;
+      setPreview(null);
+      setError(caught instanceof Error ? caught.message : String(caught));
+    }
   };
 
   const field = (path: string, label: string, step?: number, note?: string) => (
@@ -295,7 +594,7 @@ export function DeploymentForm({
       error={errorFor(path)}
       value={at(draft, path)}
       step={step}
-      disabled={busy}
+      disabled={frozen}
       onChange={(value) => set(path, value)}
     />
   );
@@ -338,7 +637,7 @@ export function DeploymentForm({
           <input
             type="checkbox"
             checked={on}
-            disabled={busy}
+            disabled={frozen}
             onChange={(event) => {
               if (event.target.checked) {
                 set(path, remembered[path] ?? defaults.value);
@@ -356,7 +655,7 @@ export function DeploymentForm({
           error={errorFor(path)}
           value={at(draft, path)}
           step={defaults.step}
-          disabled={busy || !on}
+          disabled={frozen || !on}
           onChange={(value) => set(path, value)}
         />
       </div>
@@ -394,6 +693,7 @@ export function DeploymentForm({
       next = withValue(next, "robot.max_angular_acceleration", vehicle.max_angular_acceleration);
     }
     onDraftChange(next);
+    invalidateCheck();
   };
 
   const chosenVehicle = vehicles.find((entry) => entry.id === vehicleId);
@@ -431,7 +731,7 @@ export function DeploymentForm({
           label={t("deployments.form.claimLevel")}
           value={at(draft, "claim_level")}
           options={["mission", "deployment", "robust_deployment"]}
-          disabled={busy}
+          disabled={frozen}
           onChange={(value) => set("claim_level", value)}
           error={errorFor("claim_level")}
         />
@@ -439,7 +739,7 @@ export function DeploymentForm({
           label={t("deployments.form.role")}
           value={at(draft, "deployment_role")}
           options={["acceptance", "customer", "instrument"]}
-          disabled={busy}
+          disabled={frozen}
           onChange={(value) => set("deployment_role", value)}
           error={errorFor("deployment_role")}
         />
@@ -459,7 +759,7 @@ export function DeploymentForm({
           <span>{t("deployments.form.vehicle")}</span>
           <select
             value={vehicleId}
-            disabled={busy || vehicles.length === 0}
+            disabled={frozen || vehicles.length === 0}
             onChange={(event) => adoptVehicle(event.target.value)}
           >
             <option value="">{t("deployments.form.vehicleNone")}</option>
@@ -557,9 +857,10 @@ export function DeploymentForm({
         )}
         {noiseField("environment.sensor_noise.command_latency_steps", t("deployments.form.commandLatency"))}
       </div>
-      {/* The consequence of the one block this form cannot write. With no
-          traffic *and* no noise, a deterministic planner replays one
-          episode per seed and G2's bound rests on a sample of one. */}
+      {/* The consequence of leaving both quiet. With no traffic *and* no
+          noise, a deterministic planner replays one episode per seed and
+          G2's bound rests on a sample of one. Traffic is authored below,
+          under the map it is placed on. */}
       <p className="muted">{t("deployments.form.noiseNote")}</p>
 
       <h4>{t("deployments.form.obstacleSpeed")}</h4>
@@ -575,7 +876,7 @@ export function DeploymentForm({
             <input
               type="checkbox"
               checked={obstacleSpeedDeclared}
-              disabled={busy}
+              disabled={frozen}
               onChange={(event) => {
                 if (event.target.checked) {
                   set("environment.v_obstacle_max", remembered[V_OBSTACLE_MAX] ?? 1.0);
@@ -637,10 +938,15 @@ export function DeploymentForm({
           <button
             key={option}
             type="button"
-            disabled={busy}
+            disabled={frozen}
             className={source === option ? "active" : undefined}
             aria-pressed={source === option}
-            onClick={() => setSource(option)}
+            onClick={() => {
+              // An adoption started from the source being left is no
+              // longer wanted, however fast it answers.
+              adoption.supersede();
+              setSource(option);
+            }}
           >
             {t(`deployments.form.source.${option}`)}
           </button>
@@ -653,7 +959,7 @@ export function DeploymentForm({
           <span>{t("deployments.form.scenario")}</span>
           <select
             value={libraryName}
-            disabled={busy}
+            disabled={frozen}
             onChange={(event) => {
               setMapData(null);
               setLibraryName(event.target.value);
@@ -674,20 +980,8 @@ export function DeploymentForm({
           <span>{t("decisions.map.label")}</span>
           <select
             value={storedMapId}
-            disabled={busy}
-            onChange={(event) => {
-              const id = event.target.value;
-              setStoredMapId(id);
-              if (!id) return;
-              void (async () => {
-                try {
-                  const resource = await api.getMap(id);
-                  await adopt(resource.map_data, id, null);
-                } catch (caught) {
-                  setError(caught instanceof Error ? caught.message : String(caught));
-                }
-              })();
-            }}
+            disabled={frozen}
+            onChange={(event) => adoptStoredMap(event.target.value)}
           >
             <option value="">{t("decisions.map.pickDeploymentFirst")}</option>
             {maps.map((map) => (
@@ -701,8 +995,12 @@ export function DeploymentForm({
 
       {source === "drawn" ? (
         <DrawNewMap
-          disabled={busy}
-          onSaved={(data, id) => void adopt(data, id, null)}
+          disabled={frozen}
+          /* The claim is taken as the saved grid arrives rather than
+             before the save: `DrawNewMap` owns that request and disables
+             its own button while it runs, so there is never a second one
+             to be overtaken by. */
+          onSaved={(data, id) => void adopt(data, id, null, adoption.claim())}
           onError={setError}
         />
       ) : null}
@@ -727,7 +1025,7 @@ export function DeploymentForm({
           <input
             type="checkbox"
             checked={Boolean(at(draft, "replanning.enabled"))}
-            disabled={busy}
+            disabled={frozen}
             onChange={(event) => set("replanning.enabled", event.target.checked)}
           />
           <strong>{t("deployments.form.replanningEnabled")}</strong>
@@ -750,7 +1048,7 @@ export function DeploymentForm({
           <input
             type="checkbox"
             checked={Boolean(at(draft, "recovery.enabled"))}
-            disabled={busy}
+            disabled={frozen}
             onChange={(event) => set("recovery.enabled", event.target.checked)}
           />
           <strong>{t("deployments.form.recoveryEnabled")}</strong>
@@ -786,6 +1084,9 @@ export function DeploymentForm({
           onChange={(poses) => {
             setStart(poses.start);
             setGoal(poses.goal);
+            // The mission is part of the document being checked, so
+            // moving it is as much an edit as typing in a field.
+            invalidateCheck();
           }}
           robotRadius={numberAt(draft, "robot.radius")}
           positionUncertainty={safetyEnvelope({
@@ -796,20 +1097,144 @@ export function DeploymentForm({
             ),
           })}
           goalTolerance={numberAt(draft, "constraints.goal_tolerance_m")}
-          disabled={busy}
+          disabled={frozen}
           startNote={t("decisions.map.startHeadingNote")}
           goalNote={t("decisions.map.goalHeadingNote")}
+          mode={placing}
+          onModeChange={(next) => {
+            setPlacing(next);
+            // Switching to a mission mode ends the traffic selection, or
+            // the editor would keep a button lit for clicks it no longer
+            // receives.
+            if (next === "start" || next === "goal" || next === "none") setTrafficSelection(null);
+          }}
+          onPlace={(x, y) => {
+            if (!trafficSelection) return;
+            const obstacles = trafficOf(draft);
+            const chosen = obstacles[trafficSelection.index];
+            if (!chosen) return;
+            set(
+              "environment.dynamic_obstacles",
+              obstacles.map((obstacle, at) =>
+                at === trafficSelection.index
+                  ? {
+                      ...obstacle,
+                      motion: placeOnMotion(obstacle.motion, trafficSelection.mode, { x, y }),
+                    }
+                  : obstacle,
+              ),
+            );
+          }}
+          modeNote={placementNote(trafficSelection, trafficOf(draft), t)}
+          dynamicObstacles={(preview?.dynamic_obstacles ?? []).map((obstacle) => ({
+            name: obstacle.name,
+            radius: obstacle.radius,
+            position: obstacle.position,
+          }))}
+          obstacleSnapshots={snapshotsOf(preview)}
+          previewTime={preview?.time}
         />
       ) : (
         <p className="muted">{t("common.loading")}</p>
       )}
 
+      {/* Below the canvas rather than up with the noise it relates to:
+          placing a waypoint is a thing you do *while looking at the map*,
+          and a toolbar a screen away from the thing it draws on is the
+          arrangement that made the old editor hard to use. */}
+      <TrafficEditor
+        obstacles={trafficOf(draft)}
+        onChange={(next) => set("environment.dynamic_obstacles", next)}
+        selection={trafficSelection}
+        onSelect={(selection) => {
+          setTrafficSelection(selection);
+          setPlacing(selection ? selection.mode : "none");
+        }}
+        anchor={start ?? { x: 0, y: 0 }}
+        disabled={frozen}
+        /* Everything addressed to the environment that no control on
+           this page already renders. Passing only `environment` left a
+           deep path like `…dynamic_obstacles.0.radius` with nowhere to
+           go, and a refusal nobody can see blocks filing without saying
+           why. The noise amplitudes and the closing speed are excluded
+           because they have inputs of their own, and `errorFor` puts
+           their refusals beside them. */
+        errors={shownErrors.filter(
+          (entry) =>
+            (entry.path === "environment" || entry.path.startsWith("environment.")) &&
+            !entry.path.startsWith("environment.sensor_noise") &&
+            entry.path !== V_OBSTACLE_MAX,
+        )}
+      />
+
+      <div className="row" style={{ marginTop: 8, alignItems: "flex-end", gap: 12 }}>
+        <label className="field" style={{ width: 130 }}>
+          <span>{t("deployments.form.previewTime")}</span>
+          <input
+            type="number"
+            step={0.5}
+            min={0}
+            value={previewTime}
+            disabled={frozen || !activeMapId}
+            onChange={(event) => {
+              setPreviewTime(Number(event.target.value));
+              scrubPreview();
+            }}
+          />
+        </label>
+        <label className="field" style={{ width: 110 }}>
+          <span>{t("deployments.form.previewSeed")}</span>
+          <input
+            type="number"
+            step={1}
+            value={previewSeed}
+            disabled={frozen || !activeMapId}
+            onChange={(event) => {
+              setPreviewSeed(Number(event.target.value));
+              scrubPreview();
+            }}
+          />
+        </label>
+        <button type="button" disabled={frozen || !previewRequest} onClick={() => void refreshPreview()}>
+          {t("deployments.form.preview")}
+        </button>
+        <span className="muted">{t("deployments.form.previewNote")}</span>
+      </div>
+
+      {/* The preview endpoint answers two questions and the first
+          version read only one of them. It runs the scenario against the
+          *map* — a start pose inside a wall, an obstacle spawned in
+          occupied cells — and none of that is visible to
+          `POST /task-profiles/validate`, which reads the document and
+          never opens the grid. So a deployment can pass the check, come
+          back from here with `valid: false`, and the author would have
+          seen only traffic drawn as though nothing were wrong. */}
+      {preview && !preview.valid ? (
+        <div className="notice warn">
+          <strong>{t("deployments.form.previewInvalid")}</strong>
+          <ul>
+            {preview.errors.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div className="row" style={{ marginTop: 16, alignItems: "center", gap: 12 }}>
-        <button type="button" className="primary" disabled={busy || !complete} onClick={() => void submit()}>
+        {/* Both frozen, and the reason is the same for each: while a map
+            is being written out the canvas already shows it and the
+            draft does not, so filing would store a deployment nobody is
+            looking at. */}
+        <button type="button" className="primary" disabled={frozen || !complete} onClick={() => void submit()}>
           {t("deployments.file.submit")}
+        </button>
+        <button type="button" disabled={frozen || !complete} onClick={() => void check()}>
+          {checking ? t("deployments.form.validateBusy") : t("deployments.form.validate")}
         </button>
         <span className="muted">{t("deployments.file.idRule")}</span>
       </div>
+      <p className="muted">{t("deployments.form.validateNote")}</p>
+      {checkedClean ? <p className="notice">{t("deployments.form.validateOk")}</p> : null}
     </>
   );
 }

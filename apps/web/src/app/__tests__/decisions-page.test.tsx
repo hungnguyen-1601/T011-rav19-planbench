@@ -462,7 +462,14 @@ describe("placing the start and the goal", () => {
   });
 
   it("moves a pose by dragging as well as by clicking", () => {
-    expect(PLACER).toContain("onWorldDrag={(x, y) => place(x, y)}");
+    /* Dragging belongs to the poses and to nothing else. `MapCanvas`
+       fires a click on mouse-down and then a drag per mouse-move, which
+       is what makes nudging a start feel continuous — and what would
+       make one careless gesture append a waypoint per pixel travelled
+       once the deployment form started placing traffic on this same
+       canvas. So the handler is attached only while a mission mode is
+       the one holding the next click. */
+    expect(PLACER).toContain("missionMode ? { onWorldDrag: (x: number, y: number) => place(x, y) }");
   });
 
   it("lets a pose be typed as well as clicked", () => {
