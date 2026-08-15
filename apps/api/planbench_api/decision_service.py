@@ -47,7 +47,12 @@ from planbench_api.map_files import materialise_map
 from planbench_api.repositories import StoredMap, now_iso
 from planbench_api.repository_ports import MapRepositoryPort
 from planbench_api.worker import Job, JobQueue
-from planbench_benchmark.candidates import LOCAL_CONTROLLER_CONFIGS, candidate_from_stack
+from planbench_benchmark.candidates import (
+    LOCAL_CONTROLLER_CONFIGS,
+    ConfigControllerMismatch,
+    candidate_from_stack,
+    validate_config_names,
+)
 from planbench_benchmark.selection import DEFAULT_SCOPE, run_comparison
 from planbench_schemas.contracts import CONTRACTS_VERSION
 from planbench_schemas.task_profile import TaskProfile
@@ -308,6 +313,21 @@ class CandidateService:
                 f"unknown local controller {local_config!r}; "
                 f"known: {sorted(LOCAL_CONTROLLER_CONFIGS)}"
             )
+        # **Existing is not the same as belonging.** Configuration names
+        # are one flat namespace, and `dwa_coarse` is a perfectly real
+        # name that has nothing to do with `dwa_predictive` — while every
+        # one of its keys is a valid field there, so the pair constructs,
+        # stores, and then labels every report with a configuration the
+        # candidate never used.
+        #
+        # The comparison path gained this check at `build_candidates`;
+        # registration is the *other* door into the same mistake, and a
+        # candidate saved through it is wrong from then on rather than
+        # wrong for one run.
+        try:
+            validate_config_names([(stack, local_config)])
+        except ConfigControllerMismatch as error:
+            raise DomainValidationError(str(error)) from error
         try:
             candidate = candidate_from_stack(
                 stack, params=dict(LOCAL_CONTROLLER_CONFIGS[local_config])

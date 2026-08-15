@@ -102,6 +102,53 @@ Nếu ngày nào đó `dwa_coarse` thôi hợp lệ với config dự đoán, c�
 hỏng vì lý do khác và `validate_config_names` sẽ chỉ còn là trang trí —
 test này bắt đúng lúc đó.
 
+### 3b. Ba chỗ An bắt sau khi commit
+
+**(1) Phép kiểm mới chỉ chặn *một* cửa.** `validate_config_names` chỉ được
+gọi trong `selection.build_candidates`, tức luồng **comparison**. Nhưng
+`CandidateService.register()` — đường `/candidates` — chỉ kiểm *tên có tồn
+tại không*, rồi gọi thẳng `candidate_from_stack`. Vì các field tương
+thích, request này vẫn **lưu được**:
+
+```json
+{"stack": "astar+dwa_predictive", "local_config": "dwa_coarse"}
+```
+
+Và một candidate **đã lưu** thì sai **từ đó về sau**, khác một comparison
+chỉ sai một lần chạy. Đã thêm cùng phép kiểm vào `register()`, dịch thành
+`DomainValidationError` ⇒ **422**, kèm test API cho cả hai chiều (cặp lệch
+bị từ chối; cặp đúng đăng ký bình thường — stack mới **phải** còn đăng ký
+được, nếu không P7 không có gì để so).
+
+**Một test cũ đỏ lên, và nó đúng:**
+`test_every_offered_name_is_one_registration_accepts` đăng ký **mọi** tên
+trong `/local-controllers` với `astar+dwa`. Ý định của nó chuẩn — *"danh
+sách đưa ra cái gì thì server phải nhận đúng cái đó, một cái tên bị từ
+chối là một dropdown sinh lỗi"* — nhưng nó bỏ qua trường `controller` mà
+chính endpoint đã trả. Đã sửa: ghép mỗi entry với stack **thuộc về
+controller của nó**. Kiểm lại UI: `CandidatePicker.tsx:80` **đã** lọc theo
+`controller` từ trước, nên dropdown chưa bao giờ hỏng — chỉ test bỏ qua.
+
+**(2) Mô tả trong registry trích nhầm L13, đúng phải là L16.** Report ghi
+đúng, registry ghi sai — và registry là thứ **lên `/candidates`**. Đã sửa.
+
+**(3) Câu "checksum của code controller thực sự chạy" là nói quá.**
+Fingerprint phủ planner + tracking/tracks + `dwa_core`, nhưng **không** phủ
+`feasibility.py` — nơi `admissible_speed` **chính là** giới hạn tốc độ và
+`hard_clearance` **chính là** ngưỡng từ chối. Bỏ nó ra nghĩa là P1 — pha
+viết lại `admissible_speed` — sẽ **vô hình** với id.
+
+Đã làm hai việc: **thêm `planbench_schemas.feasibility`** vào cả hai
+controller, và **thu hẹp cách diễn đạt**. Nó là *"checksum trên một **tập
+khai báo**"*, không phải bao đóng bắc cầu — đi theo import sẽ tới `math`
+và phiên bản Python, nên phải dừng ở đâu đó, và chỗ dừng được **viết ra**
+kèm lý do từng module, cộng một câu thừa nhận: một thay đổi hành vi trong
+module **không** nằm trong danh sách sẽ **không** làm dịch id, và danh
+sách là chỗ để sửa khi điều đó xảy ra.
+
+Checksum sau khi thêm: `dwa` = `a2370d2e8e09`, `dwa_predictive` =
+`b929887fa059`.
+
 ---
 
 ## 4. Nợ 2 — `local_version` luôn là `"v1"` (việc 4)
@@ -224,6 +271,7 @@ Ca skip là `astar+ppo` — cần checkpoint, đã có bộ test riêng.
 | `tests/test_hard_feasible_set.py` (L4, bốn stack) | **29 passed** |
 | `test_candidate.py` · `test_candidate_bridge.py` · `test_gates.py` | 115 passed |
 | `test_measure.py` · `test_compare.py` · `test_fairness.py` · `test_decision_card.py` | 121 passed |
+| `tests/api/test_api_decisions.py` | **70 passed** (2 mới cho pairing ở `/candidates`) |
 | `ruff check .` | sạch |
 | **Full backend suite** | **CHƯA CHẠY** |
 

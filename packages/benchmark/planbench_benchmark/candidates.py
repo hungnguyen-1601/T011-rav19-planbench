@@ -130,26 +130,54 @@ DEFAULT_STRUCTURAL_PROFILE = StructuralResourceProfile(
 
 #: Modules whose source is hashed into a controller's ``local_version``.
 #:
-#: The shared core is in **every** entry on purpose. ``dwa`` and
-#: ``dwa_predictive`` call the same ``dwa_core`` functions, so a fix there
-#: changes what both candidates do — and hashing only each controller's
-#: own file would let that happen with both recorded ids unmoved, which is
-#: precisely the promise ``StackComponent.version`` makes and used to
-#: break.
+#: **A declared set, not a transitive closure**, and the distinction is
+#: the honest part of this fingerprint. Following imports would eventually
+#: reach ``math`` and the Python version; stopping somewhere is
+#: unavoidable, so where it stops is written down rather than implied.
+#:
+#: What is in, and why each earns its place:
+#:
+#: * the controller's **own** modules — obviously;
+#: * ``common.dwa_core`` — ``dwa`` and ``dwa_predictive`` call the same
+#:   functions, so a fix there changes what **both** do. Hashing only each
+#:   controller's own file would let that happen with both recorded ids
+#:   unmoved, which is precisely the promise ``StackComponent.version``
+#:   makes and used to break;
+#: * ``schemas.feasibility`` — ``admissible_speed`` **is** the speed bound
+#:   and ``hard_clearance`` **is** the refusal threshold. A change there
+#:   changes what every controller may do, and leaving it out would have
+#:   made P1 — which rewrote ``admissible_speed`` — invisible to the id.
+#:
+#: What is deliberately out: ``geometry``, ``robot``, ``episode`` and the
+#: rest carry types and constants rather than control decisions. That is a
+#: judgement, and a wrong one is possible — a behaviour change in an
+#: excluded module would not move the id. The list is the place to fix
+#: that when it happens.
 _CONTROLLER_SOURCES: dict[str, tuple[str, ...]] = {
-    "dwa": ("planbench_planning.dwa.planner", "planbench_planning.common.dwa_core"),
+    "dwa": (
+        "planbench_planning.dwa.planner",
+        "planbench_planning.common.dwa_core",
+        "planbench_schemas.feasibility",
+    ),
     "dwa_predictive": (
         "planbench_planning.dwa_predictive.planner",
         "planbench_planning.dwa_predictive.tracking",
         "planbench_planning.dwa_predictive.tracks",
         "planbench_planning.common.dwa_core",
+        "planbench_schemas.feasibility",
     ),
 }
 
 
 @cache
 def controller_version(controller: str) -> str:
-    """Short checksum of the code this controller actually runs.
+    """Short checksum over a **declared set** of the modules it depends on.
+
+    Not "the code this controller runs" — that would be the transitive
+    closure and it does not terminate anywhere useful. It is the set named
+    in :data:`_CONTROLLER_SOURCES`, chosen because those modules make
+    control decisions, and a behaviour change in a module left out of that
+    list **will not** move the id.
 
     **The debt this pays.** ``candidate_from_stack`` took
     ``local_version: str = "v1"`` and **no caller ever passed one**, so

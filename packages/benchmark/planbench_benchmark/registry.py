@@ -244,7 +244,7 @@ _DWA_PREDICTIVE_DESCRIPTION = (
     "Measured 2026-08-15 on `intersection`: with **perfect** perception "
     "the idea is worth something (11 of 11 paired disagreements favoured "
     "it, p = 0.0005), but the LiDAR tracker recovered **none** of it — "
-    "see KNOWN_LIMITATIONS L13."
+    "see KNOWN_LIMITATIONS L16."
 )
 
 ALGORITHMS: dict[str, _Entry] = {
