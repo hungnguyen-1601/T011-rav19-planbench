@@ -25,6 +25,7 @@ pythonpath = [
     "packages/planning",
     "packages/metrics",
     "packages/benchmark",
+    "packages/decision",
     "services/simulator",
     "services/tracking",
     "services/agent_service",

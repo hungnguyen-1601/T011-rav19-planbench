@@ -9,25 +9,36 @@ quy trình phê duyệt human-in-the-loop.
 
 ## Chạy nhanh
 
-**Windows** — nháy đúp `start.bat`, hoặc từ cmd:
-
-```
-start.bat            khởi động API + web UI rồi mở trình duyệt
-start.bat stop       dừng cả hai
-start.bat status     kiểm tra đang chạy hay không
-start.bat logs       xem log
-```
-
-**Linux / WSL / macOS** — cùng logic, chạy trực tiếp:
+**Cả stack** (API + web UI) — Linux, WSL, macOS, hoặc Git Bash trên Windows:
 
 ```bash
 ./scripts/dev_stack.sh start      # http://localhost:3000
 ./scripts/dev_stack.sh stop
+./scripts/dev_stack.sh status
+./scripts/dev_stack.sh logs
 ```
 
-`start.bat` tự chạy `alembic upgrade head` trước khi khởi động API, và
-in ra phương thức đăng nhập nào đang bật. Migration lỗi thì script dừng
-và báo rõ, không khởi động API với schema cũ.
+Script tự chạy `alembic upgrade head` trước khi khởi động API và in ra
+phương thức đăng nhập nào đang bật. Migration lỗi thì nó dừng và báo rõ,
+không khởi động API với schema cũ.
+
+**Chỉ API** — mọi nền tảng, kể cả Windows thuần (PowerShell, cmd):
+
+```
+.venv\Scripts\python.exe scripts\serve.py --reload --migrate
+```
+
+**Đừng gọi thẳng `python -m uvicorn planbench_api.main:app`.** Dự án
+không được cài đặt, nên mọi package dưới `packages/` và `services/` chỉ
+vào `sys.path` khi có thứ gì đó đặt chúng vào. Lệnh uvicorn trần hỏng
+ngay ở gói đầu tiên (`planbench_api`), và sửa tay từng cái sẽ dẫn qua
+mười traceback liên tiếp. `serve.py` đọc danh sách đường dẫn từ
+`pyproject.toml` — cùng một danh sách pytest dùng — rồi mới khởi động.
+
+> Trước 2026-08-12 mục này bảo Windows nháy đúp `start.bat`. File đó bị
+> xoá nhầm ở commit `3c04cf2` và, ngay cả khi còn, nó chỉ forward sang
+> WSL bằng một đường dẫn cứng trỏ vào thư mục nhà của một máy khác. Tức
+> Windows thuần **chưa bao giờ** có đường chạy dùng được.
 
 ### Lưu dữ liệu
 
@@ -76,7 +87,7 @@ Sinh `AUTH_SECRET`:
 python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-Điền xong chỉ cần chạy lại `start.bat` — không sửa code, không lệnh phụ.
+Điền xong chỉ cần khởi động lại stack — không sửa code, không lệnh phụ.
 
 Bỏ trống Google hoặc GitHub cũng được: nút đó không hiện, phần còn lại
 vẫn chạy. Bỏ trống cả hai cũng được — đặt
@@ -157,15 +168,21 @@ node --version      # cần >= 20
 npm --version
 ```
 
-Trên Windows, dự án chạy trong WSL — mọi lệnh dưới đây gõ trong terminal
-WSL, không phải PowerShell.
+Trên Windows có hai lối, và **cả hai đều chạy được**:
+
+- **WSL hoặc Git Bash** — gõ nguyên văn các lệnh `bash` dưới đây, kể cả
+  `./scripts/dev_stack.sh`.
+- **PowerShell / cmd thuần** — thay `.venv/bin/<x>` bằng
+  `.venv\Scripts\<x>.exe`, và dùng `scripts/serve.py` thay cho
+  `dev_stack.sh` (script đó là bash). Test và ruff chạy bình thường:
+  `.venv\Scripts\python.exe -m pytest tests/`.
 
 ## Cài đặt
 
 Từ đầu, sau khi `git clone`:
 
 ```bash
-cd Project_RAV19
+cd P-011           # tên thư mục bạn vừa clone về
 
 # 1. Python
 python3.12 -m venv .venv
@@ -182,11 +199,17 @@ cp .env.example .env
 Xong. Chạy dự án:
 
 ```bash
-./scripts/dev_stack.sh start      # Linux / WSL / macOS
+./scripts/dev_stack.sh start      # Linux / WSL / macOS / Git Bash
 ```
 
-hoặc trên Windows nháy đúp `start.bat`. Script tự chạy
-`alembic upgrade head` trước khi khởi động API.
+hoặc, nếu chỉ cần API và đang ở Windows thuần:
+
+```
+.venv\Scripts\python.exe scripts\serve.py --migrate
+```
+
+Cả hai đều chạy `alembic upgrade head` trước khi khởi động API — script
+thì tự động, `serve.py` thì khi có cờ `--migrate`.
 
 ### Để đăng nhập được ngay lần đầu
 
@@ -229,6 +252,38 @@ thì tính năng giảm chế độ có kiểm soát và **báo rõ**, chứ kh�
 | `mlflow` | Không đặt `PLANBENCH_MLFLOW_TRACKING_URI` thì dùng null tracker. Benchmark vẫn chạy và vẫn ghi đủ kết quả. |
 | `torch` + `gymnasium` + `stable-baselines3` | Stack `astar+ppo` không chạy được; mọi stack khác bình thường. `tests/test_rl.py` tự **skip**. |
 | `openai` / `anthropic` | Trợ lý AI chạy bằng provider mock tất định — offline, khớp từ khóa — và **giao diện nói rõ điều đó** thay vì giả vờ là model viết. |
+
+### Sau mỗi lần `git pull`: cài lại dependency
+
+```bash
+.venv/bin/pip install -r requirements.txt     # Windows: .venv\Scripts\pip
+```
+
+Rẻ khi không có gì mới (pip bỏ qua những gói đã đúng phiên bản) và cần
+thiết khi có. Bỏ bước này thì triệu chứng đến **muộn và ở chỗ khác**:
+
+```
+ModuleNotFoundError: No module named 'pyarrow'
+```
+
+Đã xảy ra thật (12-08). `pyarrow` và `jsonschema` được thêm vào
+`requirements.txt` ở commit `fa9df8a`; `.venv` dựng trước đó không có
+chúng, và mọi test đụng tới Parquet trace đỏ — trong khi `requirements.txt`
+hoàn toàn đúng. Không phải xung đột môi trường, chỉ là một môi trường cũ.
+
+**Kiểm nhanh `.venv` có khớp không:**
+
+```bash
+.venv/bin/pip install --dry-run -r requirements.txt | grep -i "would install"
+```
+
+Không in gì nghĩa là khớp.
+
+**Và luôn gọi Python qua đường dẫn trong `.venv`.** Máy có sẵn một Python
+khác (conda base, Python hệ thống) là chuyện thường, và cái đó có thể
+tình cờ đủ gói để test xanh — nên `pytest` gõ trần có thể **xanh trên
+một môi trường không phải môi trường của dự án**. Đó là cách một thiếu
+hụt thật nằm im nhiều ngày.
 
 ### Không có mạng khi cài?
 

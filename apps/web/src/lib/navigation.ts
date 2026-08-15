@@ -13,6 +13,19 @@ export interface NavItem {
   href: string;
   labelKey: string;
   icon: string;
+  /** One line saying what this page is *for*.
+   *
+   * Added when the sidebar was regrouped: twelve entries with nothing
+   * but names left a reader unable to tell that `Benchmarks` and
+   * `Decisions` answer different questions, or that `Scenarios` and
+   * `Deployments` describe the same thing twice. That was the largest
+   * cost of running two flows side by side and none of it was in the
+   * code.
+   *
+   * Optional in the type and required by a test: the routes with no
+   * sidebar entry (`/login`, `/welcome`) have nothing to describe.
+   */
+  descriptionKey?: string;
   /** Hidden from the sidebar but still resolvable for the title. */
   hidden?: boolean;
   /** Requires a session; shown but marked when signed out. */
@@ -24,32 +37,111 @@ export interface NavSection {
   items: NavItem[];
 }
 
+/** Grouped by **what the reader is doing**, not by which system produced
+ *  the screen.
+ *
+ * The previous grouping (Workspace / Results / Account) split by where a
+ * page came from, so the two flows ended up interleaved inside one
+ * heading — `Deployments` and `Decisions` sitting between `Benchmarks`
+ * and `Leaderboard`, with nothing saying which was replacing which.
+ *
+ * `nav.section.retiring` is deliberately visible rather than tidied
+ * away. Those pages still work and are still the only way to do some
+ * things; saying so is more use to a reader than a sidebar that quietly
+ * lists a replacement beside the thing it replaces.
+ */
 export const NAV_SECTIONS: readonly NavSection[] = [
   {
-    titleKey: "nav.section.workspace",
+    titleKey: "nav.section.doing",
     items: [
-      { href: "/", labelKey: "nav.dashboard", icon: "dashboard" },
-      { href: "/maps", labelKey: "nav.maps", icon: "map" },
-      { href: "/library", labelKey: "nav.library", icon: "library" },
-      { href: "/scenarios", labelKey: "nav.scenarios", icon: "map", session: true },
-      { href: "/simulate", labelKey: "nav.simulate", icon: "play" },
+      {
+        href: "/",
+        labelKey: "nav.dashboard",
+        icon: "dashboard",
+        descriptionKey: "nav.desc.dashboard",
+      },
+      {
+        href: "/deployments",
+        labelKey: "nav.deployments",
+        icon: "map",
+        descriptionKey: "nav.desc.deployments",
+      },
+      {
+        href: "/simulate",
+        labelKey: "nav.simulate",
+        icon: "play",
+        descriptionKey: "nav.desc.simulate",
+      },
+      {
+        href: "/decisions",
+        labelKey: "nav.decisions",
+        icon: "benchmark",
+        descriptionKey: "nav.desc.decisions",
+      },
     ],
   },
   {
-    titleKey: "nav.section.results",
+    titleKey: "nav.section.materials",
     items: [
-      { href: "/benchmarks", labelKey: "nav.benchmarks", icon: "benchmark" },
-      { href: "/leaderboard", labelKey: "nav.leaderboard", icon: "trophy" },
-      { href: "/algorithms", labelKey: "nav.algorithms", icon: "cpu" },
-      { href: "/models", labelKey: "nav.models", icon: "library", session: true },
-      { href: "/agent", labelKey: "nav.agent", icon: "sparkles" },
+      { href: "/maps", labelKey: "nav.maps", icon: "map", descriptionKey: "nav.desc.maps" },
+      {
+        href: "/library",
+        labelKey: "nav.library",
+        icon: "library",
+        descriptionKey: "nav.desc.library",
+      },
+      {
+        href: "/candidates",
+        labelKey: "nav.candidates",
+        icon: "cpu",
+        descriptionKey: "nav.desc.candidates",
+      },
+      {
+        href: "/models",
+        labelKey: "nav.models",
+        icon: "library",
+        session: true,
+        descriptionKey: "nav.desc.models",
+      },
+    ],
+  },
+  {
+    titleKey: "nav.section.retiring",
+    items: [
+      // `/benchmarks`, `/leaderboard` and `/algorithms` were removed in
+      // P6, each after the thing that replaced it existed: candidates and
+      // the registry moved to `/candidates`, the catalogue of results to
+      // `/decisions`, and watching one episode to `/simulate`. What did
+      // *not* move — the difficulty curve, the generalization gap over
+      // scenario splits, the split badges — was retired with them on
+      // purpose: they are claims across scenarios, and HĐ-1.4 scopes a
+      // recommendation to one deployment. See the P6 report.
+      //
+      // `/scenarios` stays. The deployment form still cannot draw
+      // obstacles, so this is the only place to build a scenario with
+      // them, and removing it would take away a capability rather than
+      // move one.
+      {
+        href: "/scenarios",
+        labelKey: "nav.scenarios",
+        icon: "map",
+        session: true,
+        descriptionKey: "nav.desc.scenarios",
+      },
     ],
   },
   {
     titleKey: "nav.section.account",
     items: [
-      { href: "/reviews", labelKey: "nav.reviews", icon: "inbox", session: true },
-      { href: "/system", labelKey: "nav.system", icon: "info" },
+      { href: "/agent", labelKey: "nav.agent", icon: "sparkles", descriptionKey: "nav.desc.agent" },
+      {
+        href: "/reviews",
+        labelKey: "nav.reviews",
+        icon: "inbox",
+        session: true,
+        descriptionKey: "nav.desc.reviews",
+      },
+      { href: "/system", labelKey: "nav.system", icon: "info", descriptionKey: "nav.desc.system" },
     ],
   },
 ];

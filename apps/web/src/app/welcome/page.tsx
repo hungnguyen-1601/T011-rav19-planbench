@@ -66,7 +66,7 @@ export default function WelcomePage() {
           body: JSON.stringify({ nickname: nickname.trim() }),
         });
         updateSessionUser(user);
-        router.push("/benchmarks");
+        router.push("/decisions");
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {

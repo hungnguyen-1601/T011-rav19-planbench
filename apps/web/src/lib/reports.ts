@@ -20,10 +20,16 @@ import { API_BASE } from "./api";
 import { clearSession, loadSession } from "./auth";
 import { filenameFromDisposition } from "./charts";
 
-/** Fetch the report and save it. Throws with the API's message on failure. */
-export async function downloadReportMarkdown(benchmarkId: string): Promise<string> {
+/** Fetch a Markdown report and save it. Throws with the API's message.
+ *
+ * Takes the path rather than an id: the mechanism — authenticated fetch,
+ * Blob, synthetic anchor, revoked object URL — is the same wherever the
+ * document comes from, and it was written once for benchmarks. That flow
+ * retired; this did not.
+ */
+export async function downloadReportMarkdown(path: string, fallbackName: string): Promise<string> {
   const session = loadSession();
-  const response = await fetch(`${API_BASE}/api/v1/benchmarks/${benchmarkId}/report.md`, {
+  const response = await fetch(`${API_BASE}/api/v1${path}`, {
     headers: session ? { Authorization: `Bearer ${session.token}` } : {},
     cache: "no-store",
   });
@@ -41,7 +47,7 @@ export async function downloadReportMarkdown(benchmarkId: string): Promise<strin
   }
   const filename = filenameFromDisposition(
     response.headers.get("content-disposition"),
-    benchmarkId,
+    fallbackName,
   );
   const url = URL.createObjectURL(await response.blob());
   try {
@@ -55,4 +61,13 @@ export async function downloadReportMarkdown(benchmarkId: string): Promise<strin
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
   return filename;
+}
+
+/** The selection run as Markdown — every run, ranked or not.
+ *
+ * Available before approval on purpose: this describes what was
+ * measured, and reading it is the act approval follows (HĐ-14).
+ */
+export function downloadDecisionReport(runId: string): Promise<string> {
+  return downloadReportMarkdown(`/decisions/${encodeURIComponent(runId)}/report.md`, runId);
 }

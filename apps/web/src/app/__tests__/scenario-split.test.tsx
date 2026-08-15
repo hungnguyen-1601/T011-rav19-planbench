@@ -1,10 +1,18 @@
-/** The dev/held-out surface (P05).
+/** The dev/held-out surface (P05), after P6 took half of it away.
  *
- * What has to hold in the UI: a held-out scenario says so *before* the
- * benchmark is created, a stored result carries the split it ran under,
- * an unassigned scenario is labelled rather than shown as dev, and a
- * one-sided generalization gap prints "not computable" instead of a
- * zero.
+ * The split *labelling* survives: `/library` and `/scenarios` still show
+ * which set each scenario belongs to, and that is a fact about the
+ * scenario, not about who ran it. `SplitBadge` still has two live
+ * callers.
+ *
+ * The split *analysis* did not. The generalization gap, the held-out
+ * usage counter and the pre-run held-out warning lived on `/leaderboard`
+ * and `/benchmarks`, and all three are claims across scenarios — "this
+ * stack generalises from dev to held-out". HĐ-1.4 scopes a
+ * recommendation to one deployment, so they retired with the flow that
+ * made them rather than being rehomed into one that does not. Their
+ * assertions are deleted here deliberately, and this paragraph is the
+ * record of that.
  *
  * Source-level, matching the other page tests: these pages sit behind an
  * effect and a fetch, so a first paint shows only a loading state.
@@ -20,10 +28,8 @@ import vi from "../../lib/i18n/locales/vi.json";
 const read = (...parts: string[]) => readFileSync(join(process.cwd(), "src", ...parts), "utf8");
 
 const BADGE = read("components", "SplitBadge.tsx");
-const CREATE = read("app", "benchmarks", "page.tsx");
-const DETAIL = read("app", "benchmarks", "[id]", "page.tsx");
 const LIBRARY = read("app", "library", "page.tsx");
-const LEADERBOARD = read("app", "leaderboard", "page.tsx");
+const SCENARIOS = read("app", "scenarios", "page.tsx");
 
 describe("the split badge distinguishes all three states", () => {
   it("styles held out as a warning, not as a neutral label", () => {
@@ -48,55 +54,12 @@ describe("the library shows where each scenario sits", () => {
   });
 });
 
-describe("a held-out scenario warns before the run, not after", () => {
-  it("resolves the split of the selected scenario", () => {
-    expect(CREATE).toContain("/scenario-protocol");
-    expect(CREATE).toContain("selectedSplit");
-  });
-
-  it("shows the warning only for held-out scenarios", () => {
-    expect(CREATE).toContain('selectedSplit === "holdout"');
-    expect(CREATE).toContain("protocol.holdoutWarning");
-  });
-
-  it("does not disable creation — a held-out set exists to be used once", () => {
-    expect(CREATE).not.toContain('disabled={selectedSplit === "holdout"');
-  });
-});
-
-describe("a stored report carries the split it ran under", () => {
-  it("shows the snapshotted split and protocol version", () => {
-    expect(DETAIL).toContain("results.report.scenario_split");
-    expect(DETAIL).toContain("results.report.protocol_version");
-  });
-
-  it("says outright when a result came from a held-out scenario", () => {
-    expect(DETAIL).toContain("protocol.holdoutBenchmarkNotice");
-  });
-
-  it("says an unassigned result is excluded from the gap", () => {
-    expect(DETAIL).toContain("protocol.unassignedBenchmarkNotice");
-  });
-});
-
-describe("the generalization gap admits what it cannot compute", () => {
-  it("prints a placeholder rather than a zero when a side is missing", () => {
-    expect(LEADERBOARD).toContain("generalization.noGap");
-    expect(LEADERBOARD).toContain("gap === undefined");
-  });
-
-  it("reads the metric direction from the backend instead of assuming it", () => {
-    expect(LEADERBOARD).toContain("metric.higher_is_better");
-  });
-
-  it("surfaces the per-stack warnings, not just the numbers", () => {
-    expect(LEADERBOARD).toContain("entry.warnings");
-    expect(LEADERBOARD).toContain("summary.warnings");
-  });
-
-  it("shows how often held-out scenarios have been consulted", () => {
-    expect(LEADERBOARD).toContain("holdout_usage");
-    expect(LEADERBOARD).toContain("generalization.holdoutUsageHint");
+describe("the editor labels a scenario's split too", () => {
+  it("shows it where scenarios are built, not only where they are listed", () => {
+    /* Which set a scenario belongs to changes what using it costs. The
+       page that creates them is the last place that should keep it
+       quiet. */
+    expect(SCENARIOS).toContain("SplitBadge");
   });
 });
 

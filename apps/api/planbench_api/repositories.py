@@ -352,3 +352,15 @@ class RepositoryHub:
         self.robot_profiles = InMemoryRobotProfileRepository()
         self.models = InMemoryModelRepository()
         self.conversations = InMemoryConversationRepository()
+        # Decision layer (HĐ-1, HĐ-2, HĐ-12/13). Imported here rather
+        # than at module scope because `planbench_api.decisions` imports
+        # `new_id`/`now_iso` from this module.
+        from planbench_api.decisions import (
+            CandidateRepository,
+            DecisionRunRepository,
+            TaskProfileRepository,
+        )
+
+        self.task_profiles = TaskProfileRepository()
+        self.candidates = CandidateRepository()
+        self.decision_runs = DecisionRunRepository()

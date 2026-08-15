@@ -23,6 +23,7 @@ import {
   type FacetKind,
   type SceneOptions,
 } from "@/lib/scene25d";
+import { KEEP_OUT_FILL, KEEP_OUT_STROKE } from "@/lib/keepOut";
 import type { MapData } from "@/lib/types";
 
 export interface Scene25DProps extends SceneOptions {
@@ -177,6 +178,31 @@ export function Scene25D({
       ctx.moveTo(top.sx, top.sy);
       ctx.lineTo(heading.sx, heading.sy);
       ctx.stroke();
+    }
+
+    // The planner's margin, on the floor and under everything else. It
+    // is context rather than an object, so it never gets a side wall:
+    // extruding it would draw a cylinder, and a cylinder reads as a
+    // second thing standing in the room. Faint enough that the obstacle
+    // it belongs to stays the subject of the picture.
+    for (const ring of scene.keepOut) {
+      ctx.beginPath();
+      ctx.ellipse(
+        ring.base.sx,
+        ring.base.sy,
+        Math.max(2, ring.radiusX),
+        Math.max(1.5, ring.radiusY),
+        0,
+        0,
+        Math.PI * 2,
+      );
+      ctx.fillStyle = KEEP_OUT_FILL;
+      ctx.fill();
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = KEEP_OUT_STROKE;
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
 
     for (const obstacle of scene.obstacles) {

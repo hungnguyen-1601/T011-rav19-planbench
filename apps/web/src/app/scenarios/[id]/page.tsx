@@ -23,7 +23,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { MapCanvas, type ObstacleMarker } from "@/components/MapCanvas";
+import { MapView } from "@/components/MapView";
+import type { ObstacleMarker } from "@/components/MapCanvas";
 import { authFetch, useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import type {
@@ -393,7 +394,7 @@ export default function ScenarioEditorPage() {
           ))}
         </div>
         {mapResource ? (
-          <MapCanvas
+          <MapView
             map={mapResource.map_data}
             width={720}
             height={480}
@@ -629,7 +630,7 @@ export default function ScenarioEditorPage() {
         {savedId ? (
           <p className="muted">
             {t("scenarios.savedAs", { id: savedId })}{" "}
-            <Link href="/benchmarks">{t("library.openBenchmarks")}</Link>
+            <Link href="/decisions">{t("library.openDecisions")}</Link>
           </p>
         ) : null}
       </div>

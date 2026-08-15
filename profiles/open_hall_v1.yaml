@@ -1,0 +1,108 @@
+# Fairness reference deployment (CONTRACTS HĐ-2).
+#
+# This profile is not a customer. It exists to answer one question about
+# the platform itself: **when two candidates differ, is that difference
+# coming from the candidates?** Everything here is chosen to remove other
+# explanations, and `tests/test_fairness.py` asserts the properties rather
+# than trusting this comment.
+#
+#   * The hall is easy. 24 x 16 m of open floor with a single block, and
+#     6.20 m of clear space either side of it against a 0.52 m robot. No
+#     stack is defeated by geometry here, so a failure means something
+#     about the stack. A hard map cannot tell you that: it fails
+#     candidates for reasons of its own.
+#   * The hall is mirror-symmetric about the mission line y = 8.0, and
+#     about x = 12.0. Going left of the block and going right of it are
+#     the same distance through the same width. On an asymmetric map
+#     "A* beat RRT*" can quietly mean "A* happened to prefer the shorter
+#     side", and no amount of statistics separates the two.
+#   * There is one obstacle, not none. An empty hall lets every planner
+#     drive the same straight line, which measures nothing.
+#   * There is no moving traffic. That is deliberate: with deterministic
+#     planners every seed then replays one episode, G2 will report an
+#     effective sample size of 1 and refuse to bound the collision
+#     probability — which is correct, and which is *not* what this
+#     profile is for. Fairness is a question about symmetry, not about
+#     sample size, and it is answerable on a single episode.
+#
+# The order to use these in: verify the platform is fair here, then take
+# candidates to the warehouse and let the hard map say what it says.
+
+id: open_hall_v1
+claim_level: mission
+
+# Same role as `open_hall_v2`, and for the same reason: this is the hall,
+# and the hall is an acceptance instrument — a place where one failure is
+# a diagnostic symptom rather than a statistic. What the field changes is
+# that early stopping is refused here: retiring a candidate the moment it
+# cannot pass a gate would throw away exactly the episodes this
+# deployment exists to produce.
+#
+# Declaring it here rather than leaving the `customer` default also keeps
+# the two halls identical outside their ids and their noise, which
+# `tests/test_simulator_fairness.py` asserts field by field: a v1 that
+# quietly allowed early stopping while v2 refused it would be two
+# different instruments wearing the same map.
+deployment_role: acceptance
+
+environment:
+  map: maps/open_hall.pgm
+  map_yaml: maps/open_hall.yaml
+
+missions:
+  # Straight through the middle: start, goal and block centre are all on
+  # y = 8.0, so the two ways around are geometrically identical.
+  - id: through_hall
+    start: [2.0, 8.0, 0.0]
+    goal: [22.0, 8.0, 0.0]
+    probability: 1.0
+
+robot:
+  # Identical to the warehouse robot. The deployment changes; the vehicle
+  # being deployed does not, or the two runs would not be comparable.
+  type: differential_drive
+  radius: 0.26
+  max_linear_velocity: 0.8
+  max_angular_velocity: 1.2
+  max_linear_acceleration: 0.5
+  max_angular_acceleration: 1.0
+  # 20 Hz, matching the warehouse. This field is G4's threshold, so a
+  # relaxed value here would be a widened gate rather than a property of
+  # this hall — see the note at the top of `warehouse_a_v2.yaml`.
+  control_period: 0.05
+
+available_observations: [lidar_2d]
+
+constraints:
+  # 95%, matching `open_hall_v2` — see the long note there, including why
+  # this number is known to be the wrong one and what is still open. The
+  # hall is one place and its acceptance standard is a property of the
+  # place, not of whether the noise model is switched on, so the two move
+  # together in both directions: they went to 1.00 together on 08-11 and
+  # came back together on 08-12. Keeping them in step is also what lets
+  # `test_they_differ_only_in_id_and_noise` stay a strong guard rather
+  # than a list of tolerated differences.
+  success_rate_min: 0.95
+  # 10% accepted risk => N_min = 30. Not a claim anyone would ship; this
+  # deployment is a test instrument, and G2 will refuse it anyway for
+  # want of distinct episodes (see the note on traffic above).
+  collision_probability_max: 0.1
+  no_path_rate_max: 0.02
+  goal_tolerance_m: 0.20
+  # Wide, for the same declared reason as the warehouse: the simulator
+  # has no final-orientation controller, so a heading requirement would
+  # fail every candidate for a property of the platform.
+  goal_tolerance_rad: 3.1416
+  episode_timeout_s: 120
+  stuck_threshold_s: 10
+  clearance_warning_m: 0.35
+
+hardware:
+  target_device: jetson_orin_nano
+  total_ram_mb: 8192
+  ram_budget_breakdown:
+    os_and_middleware_mb: 1536
+    perception_stack_mb: 2048
+    localization_mapping_mb: 819
+    logging_and_reserve_mb: 512
+  available_ram_mb: 3277

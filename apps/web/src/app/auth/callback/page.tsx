@@ -39,7 +39,7 @@ function Callback() {
     }
     exchangeOAuthCode(code)
       .then((session) => {
-        router.replace(session.user.needs_nickname ? "/welcome" : "/benchmarks");
+        router.replace(session.user.needs_nickname ? "/welcome" : "/decisions");
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)));
   }, [params, router, t]);

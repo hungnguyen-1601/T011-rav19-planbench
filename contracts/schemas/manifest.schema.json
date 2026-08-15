@@ -1,0 +1,351 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://planbench.local/contracts/schemas/manifest.schema.json",
+  "title": "Reproducibility manifest",
+  "description": "CONTRACTS HĐ-13. Acceptance criterion: hand this file to somebody else and they rebuild the same Decision Card, differing only in wall-clock time. Every field below exists because leaving it out breaks exactly that — including `bootstrap`, without which the confidence interval cannot be reproduced at all.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contracts_version",
+    "git_sha",
+    "docker_image_digest",
+    "task_profile_id",
+    "anchor_config_version",
+    "preference_profile",
+    "decision_mode",
+    "travel_time_accounting",
+    "candidates",
+    "episode_contexts",
+    "bootstrap",
+    "benchmark_host",
+    "created_at",
+    "constraints"
+  ],
+  "properties": {
+    "contracts_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "git_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,40}$",
+      "description": "The code that produced the card. Lower-case hex so a rebuilt manifest cannot differ by letter case alone."
+    },
+    "docker_image_digest": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Null when the run was not containerised. HĐ-7.4 requires the same image for every candidate in one comparison; recording it is how that is checkable afterwards."
+    },
+    "task_profile_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "anchor_config_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Mandatory (HĐ-8.3 law 3): a recommendation computed under unknown anchors cannot be rebuilt."
+    },
+    "preference_profile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision_mode": {
+      "enum": [
+        "technical",
+        "business_adjusted"
+      ]
+    },
+    "travel_time_accounting": {
+      "enum": [
+        "efficiency",
+        "monetized_cost"
+      ]
+    },
+    "candidates": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "bootstrap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "seed",
+        "n_resamples"
+      ],
+      "description": "Added at 2.2.0. The CI on the card comes from a random resample; without the seed two people running this manifest get two intervals, and that difference is not wall-clock time.",
+      "properties": {
+        "seed": {
+          "type": "integer"
+        },
+        "n_resamples": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "benchmark_host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpu",
+        "cores_allocated",
+        "threads"
+      ],
+      "description": "HĐ-7.4: same machine, same allocation, same thread count for every candidate — otherwise even the relative comparison is meaningless. `cpu_affinity` and `logical_cores` record what the run actually got: G4 reads wall-clock latency, and the same candidate measured 59.30 ms pooled p99 unpinned against 16.10 ms pinned to two cores. Both are optional so manifests written before anyone looked stay valid — absent means not recorded, which is the honest reading.",
+      "properties": {
+        "cpu": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cores_allocated": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "threads": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cpu_affinity": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "Cores the process was confined to, as the OS reported during the run."
+        },
+        "logical_cores": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "description": "Cores the machine has, so cores_allocated reads as a share."
+        },
+        "affinity_source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "script",
+            "inherited",
+            null
+          ],
+          "description": "Where the mask came from. `script` means the run pinned itself, so re-running it reproduces the same protection; `inherited` means it took whatever it was launched with. A mask alone cannot tell the two apart."
+        }
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ISO-8601. The one field a rebuild is allowed to differ on."
+    },
+    "episode_contexts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evaluation",
+        "neighborhood"
+      ],
+      "description": "The conditions themselves, not just their ids. episode_context_id is a hash (HĐ-3.1) and does not invert, so a manifest carrying only ids proves which episodes ran but leaves a rebuild unable to recompute their metrics — which is the acceptance test of this section.",
+      "properties": {
+        "evaluation": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "task_profile_id",
+              "mission_id",
+              "seed",
+              "environment_variant",
+              "sample_set",
+              "episode_context_id"
+            ],
+            "properties": {
+              "task_profile_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "mission_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "seed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "environment_variant": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sample_set": {
+                "type": "string",
+                "enum": [
+                  "evaluation",
+                  "neighborhood"
+                ]
+              },
+              "episode_context_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "neighborhood": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "task_profile_id",
+              "mission_id",
+              "seed",
+              "environment_variant",
+              "sample_set",
+              "episode_context_id"
+            ],
+            "properties": {
+              "task_profile_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "mission_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "seed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "environment_variant": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sample_set": {
+                "type": "string",
+                "enum": [
+                  "evaluation",
+                  "neighborhood"
+                ]
+              },
+              "episode_context_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "sensor_noise": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "HĐ-2.5 amplitudes for this run. Required on the manifest because episode_context_id does not hash them: two runs at the same seeds under different sigma share every context id while being two experiments.",
+      "properties": {
+        "lidar_range_sigma_m": {
+          "type": "number",
+          "minimum": 0
+        },
+        "wheel_slip_fraction": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "localization_drift_m": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Added 6.7.0. Peak gap between where the robot is and where it believes it is. Measurement only: it reaches Observation.pose and never the collision test."
+        },
+        "localization_jump_probability": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Added 6.7.0. Chance per relocalisation window that the estimate jumps and stays wrong. A controller rides out a slow error and cannot ride out a step change, so this is a separate axis from drift."
+        },
+        "lidar_dropout_probability": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1,
+          "description": "Added 6.7.0. Chance a ray returns nothing. Reported as maximum range, never zero: a dropped return reads to a costmap as free space, which is how a robot drives into glass."
+        },
+        "odometry_bias_fraction": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1,
+          "description": "Added 6.7.0. Systematic error in delivered velocity, drawn once per episode and held. Unlike wheel slip it accumulates instead of averaging out."
+        },
+        "command_latency_steps": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Added 6.7.0. Control steps between issuing a command and it taking effect. A stack tuned on an instant response is measured optimistically without it."
+        }
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "description": "HĐ-7 thresholds that turned measurements into verdicts. Required from 6.4.0. episode_context_id hashes neither these nor sensor_noise, but what follows differs: changing sensor_noise changes the WORLD and needs a new task_profile_id, while changing a constraint changes the VERDICT and leaves the episodes exactly as valid. So constraints may be edited in place, and this field is then the only thing between two cards that disagree and nobody able to say why.",
+      "properties": {
+        "success_rate_min": {
+          "type": "number"
+        },
+        "collision_probability_max": {
+          "type": "number"
+        },
+        "no_path_rate_max": {
+          "type": "number"
+        },
+        "goal_tolerance_m": {
+          "type": "number"
+        },
+        "goal_tolerance_rad": {
+          "type": "number"
+        },
+        "episode_timeout_s": {
+          "type": "number"
+        },
+        "stuck_threshold_s": {
+          "type": "number"
+        },
+        "clearance_warning_m": {
+          "type": "number"
+        },
+        "cost_per_mission_max": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "replanning": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Whether candidates could replan, and under what budget. Required for the same reason sensor_noise is: episode_context_id does not hash it, so two runs at the same seeds — one replanning, one not — share every context id while being two experiments. It sits on the sensor_noise side of that rule rather than the constraints side: replanning changes what the robot did, not how the result was judged, so switching it on needs a new task_profile_id. max_replans null means unlimited; the budget is the episode timeout and the latency each replan is charged.",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "max_replans": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

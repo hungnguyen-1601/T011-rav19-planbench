@@ -22,15 +22,76 @@ class NotFoundError(Exception):
 
 
 class DomainValidationError(Exception):
-    """Domain-level validation failed (semantically invalid input)."""
+    """Domain-level validation failed (semantically invalid input).
 
-    def __init__(self, message: str, details: list[str] | None = None) -> None:
+    ``details`` is deliberately untyped past ``list``. It began as a list
+    of sentences, which is all a paste-a-YAML form can use; a form with
+    thirty fields needs to know *which* field each sentence is about, and
+    that is a mapping rather than a sentence. Both shapes travel in the
+    same list and both serialise, so widening it costs no caller a change
+    (see :func:`field_errors`).
+    """
+
+    def __init__(self, message: str, details: list[Any] | None = None) -> None:
         self.details = details or []
         super().__init__(message)
 
 
+def field_errors(error: Exception) -> list[dict[str, str]]:
+    """Pydantic's own complaints, each tagged with the field it is about.
+
+    **This copies no rule.** The server still decides what is valid; all
+    this does is keep the *address* pydantic already computed instead of
+    flattening it into prose. Without it a form can only print one blob
+    and leave the reader to work out that "goal_tolerance_rad = 0.35
+    constrains the arrival heading" refers to a field thirty rows down.
+
+    ``loc`` is joined with dots, so a nested failure reads
+    ``missions.0.start`` — the same path the profile YAML uses, which is
+    what makes it usable by both the form and the paste box.
+
+    Duck-typed rather than importing pydantic: the callers catch
+    ``Exception`` on purpose ("ValidationError and friends"), and an
+    error that turns out not to carry field locations should degrade to
+    an empty list rather than raise while reporting an error.
+    """
+    collect = getattr(error, "errors", None)
+    if not callable(collect):
+        return []
+    try:
+        raw = collect()
+    except Exception:  # noqa: BLE001 - never fail while reporting a failure
+        return []
+    entries: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        location = item.get("loc") or ()
+        entries.append(
+            {
+                # Empty for a whole-model failure, which is honest: the
+                # complaint is about the profile, not about one field.
+                "path": ".".join(str(part) for part in location),
+                "message": str(item.get("msg", "")),
+            }
+        )
+    return entries
+
+
 class InvalidStateError(Exception):
-    """Operation not allowed in the resource's current state."""
+    """Operation not allowed in the resource's current state.
+
+    ``details`` exists for the refusals a caller is expected to answer
+    rather than merely read. Deleting a deployment that has runs is the
+    case that introduced it: the dialog asking "delete seven runs, two of
+    them approved?" needs those numbers, and counting them again in the
+    browser would be a second answer free to disagree with the one the
+    server refused on.
+    """
+
+    def __init__(self, message: str, details: list[Any] | None = None) -> None:
+        self.details = details or []
+        super().__init__(message)
 
 
 def _safe_details(errors: Any) -> Any:
@@ -170,7 +231,10 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(InvalidStateError)
     async def invalid_state(_: Request, exc: InvalidStateError) -> JSONResponse:
-        return JSONResponse(status_code=409, content=_error_body("invalid_state", str(exc)))
+        return JSONResponse(
+            status_code=409,
+            content=_error_body("invalid_state", str(exc), getattr(exc, "details", None)),
+        )
 
     @app.exception_handler(RequestValidationError)
     async def request_invalid(_: Request, exc: RequestValidationError) -> JSONResponse:

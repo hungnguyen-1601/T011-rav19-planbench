@@ -145,6 +145,15 @@ class AlgorithmInfo(BaseModel):
     #: out of ``id``: the id is a display convention, this is the fact
     #: a report has to be able to quote.
     global_planner: str = "astar"
+    #: Which local controller the stack runs, and stated for the same
+    #: reason as ``global_planner``.
+    #:
+    #: Added when the UI stopped offering whole stacks in one dropdown.
+    #: Choosing a global planner and a controller separately needs to
+    #: know which pairs the registry actually has — ``rrtstar+ppo`` is
+    #: not one of them — and deriving that by splitting the id would put
+    #: a parser between a picker and the fact it is picking.
+    local_controller: str = "dwa"
     #: True when the global planner draws random samples. Such a stack
     #: needs more seeds to say anything, and a report that hides this
     #: invites the reader to compare one lucky tree against A*.
@@ -214,6 +223,7 @@ ALGORITHMS: dict[str, _Entry] = {
     "astar+dwa": _Entry(
         info=AlgorithmInfo(
             id="astar+dwa",
+            local_controller="dwa",
             kind="stack",
             description=(
                 "A* global planner with a Dynamic Window Approach controller. "
@@ -233,6 +243,7 @@ ALGORITHMS: dict[str, _Entry] = {
     "astar+ppo": _Entry(
         info=AlgorithmInfo(
             id="astar+ppo",
+            local_controller="ppo",
             kind="stack",
             description=(
                 "A* global planner with a PPO-trained controller. Choose a model "
@@ -254,6 +265,7 @@ ALGORITHMS: dict[str, _Entry] = {
     "astar+pure_pursuit": _Entry(
         info=AlgorithmInfo(
             id="astar+pure_pursuit",
+            local_controller="pure_pursuit",
             kind="reference_stack",
             description=(
                 "A* global planner with a pure-pursuit follower. Temporary "
@@ -273,6 +285,7 @@ ALGORITHMS: dict[str, _Entry] = {
     "rrtstar+dwa": _Entry(
         info=AlgorithmInfo(
             id="rrtstar+dwa",
+            local_controller="dwa",
             kind="stack",
             description=(
                 _RRT_STAR_DESCRIPTION + " Paired here with the Dynamic Window "
@@ -294,6 +307,7 @@ ALGORITHMS: dict[str, _Entry] = {
     "rrtstar+pure_pursuit": _Entry(
         info=AlgorithmInfo(
             id="rrtstar+pure_pursuit",
+            local_controller="pure_pursuit",
             kind="reference_stack",
             description=(
                 "RRT* global planner with a pure-pursuit follower. Temporary "

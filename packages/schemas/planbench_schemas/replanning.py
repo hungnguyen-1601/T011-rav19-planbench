@@ -25,32 +25,86 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ReplanningConfig(BaseModel):
-    """How many times, and whether at all, a stack may replan.
+    """Whether a stack may replan, and — if anybody insists — how often.
 
     The trigger itself is not configurable, and deliberately so: the
     engine terminates an episode as ``STUCK`` or ``NO_PROGRESS``, and
     those two states are what replanning intervenes on. Making the
     trigger tunable would reopen exactly the door this config closes —
     one stack replanning on a hair trigger while another waits.
+
+    **The budget defaults to unlimited, and that is a reversal.** It used
+    to be a required cap, on the reasoning that an unbounded budget turns
+    "did the planner recover?" into "did the timeout arrive first?". The
+    reasoning was sound and the cure was worse: a shared ``max_replans``
+    is a number *somebody chose*, it binds differently for different
+    stacks, and under a budget of three a stack that would have escaped
+    on its fourth try is scored as a failure of the budget rather than of
+    the planner. That is the same class of artifact the replan
+    information privilege was (HĐ-4.1) — an evaluation condition quietly
+    deciding the result.
+
+    What replaces the cap is a price. Every replan now records its own
+    control-step row carrying the global planner's latency, so G4 pools
+    it with the rest: p99 cuts at the 99th percentile, so one or two
+    replans in four hundred steps sit above the cut and cost nothing,
+    while habitual replanning walks into the latency gate on its own. The
+    ceiling grows out of the physics rather than being declared, and it
+    is the same ceiling for every candidate because the deployment
+    declares one ``control_period`` and one ``episode_timeout_s``.
     """
 
     model_config = ConfigDict(frozen=True)
 
     enabled: bool = False
-    #: Upper bound on replans per episode. Bounded rather than unlimited
-    #: because an unbounded budget turns "did the planner recover?" into
-    #: "did the timeout arrive first?", and the two are different
-    #: questions with different answers.
-    max_replans: int = Field(default=0, ge=0)
+    #: ``None`` means unlimited. An integer still caps, because the
+    #: retiring benchmark flow stores specs that name one and a stored
+    #: run must keep describing the conditions it actually ran under.
+    #:
+    #: **The declared default stays 0, and that is not the same as the
+    #: effective one.** ``NO_REPLANNING`` is ``ReplanningConfig()``, its
+    #: ``checksum_payload`` spells ``max_replans=0``, and that string is
+    #: mixed into every stored conditions checksum — changing the
+    #: declared default to ``None`` would rewrite the checksum of every
+    #: benchmark ever run and tell its reader their old results became
+    #: incomparable, which is false. So the promotion below happens only
+    #: when replanning is switched on *and* nobody named a budget.
+    max_replans: int | None = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def _promote_unset_budget(self) -> ReplanningConfig:
+        """Enabled with no budget named means unlimited.
+
+        Keyed on ``model_fields_set`` rather than on the value, because
+        an explicit ``max_replans=0`` is a different statement from
+        leaving it out: the first is somebody asking for a budget that
+        does nothing, which the check below refuses, and the second is
+        somebody not capping at all.
+        """
+        if self.enabled and "max_replans" not in self.model_fields_set:
+            object.__setattr__(self, "max_replans", None)
+        return self
 
     @model_validator(mode="after")
     def _validate(self) -> ReplanningConfig:
-        if self.enabled and self.max_replans < 1:
+        if self.enabled and self.max_replans is not None and self.max_replans < 1:
             raise ValueError(
                 "replanning is enabled with a budget of 0 replans, which does nothing; "
-                "set max_replans >= 1 or leave replanning disabled"
+                "leave max_replans unset for unlimited, set it >= 1 to cap, or leave "
+                "replanning disabled"
             )
         return self
+
+    def allows(self, replans_so_far: int) -> bool:
+        """May the stack replan once more?
+
+        A method rather than a comparison at the call site: ``None``
+        means unlimited, and a bare ``<=`` against it raises. One place
+        that knows what ``None`` means is one place to get it wrong.
+        """
+        if not self.enabled:
+            return False
+        return self.max_replans is None or replans_so_far <= self.max_replans
 
     @property
     def is_default(self) -> bool:
