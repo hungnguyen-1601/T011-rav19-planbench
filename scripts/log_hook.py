@@ -58,6 +58,13 @@ def select_repo_root() -> bool:
     return True
 
 
+def response_text(value):
+    """Keep complete tool output while satisfying the ingest string schema."""
+    if value is None or isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False, default=str)
+
+
 def detect_tool(data: dict) -> str:
     """Detect which AI tool sent this hook event.
 
@@ -206,7 +213,7 @@ def normalize(data: dict, tool: str) -> dict | None:
                 "transcript_path": data.get("transcript_path", ""),
                 "tool_name": data.get("tool_name", ""),
                 "tool_input": data.get("tool_input"),
-                "tool_response": data.get("tool_response"),
+                "tool_response": response_text(data.get("tool_response")),
             }
         )
 
