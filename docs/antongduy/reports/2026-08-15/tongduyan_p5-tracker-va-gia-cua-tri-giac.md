@@ -359,11 +359,47 @@ chẩn đoán rồi mới kiểm nó. Phép kiểm bác bỏ nó. Chẩn đoán 
 phép đo *dọc theo đường đi* chứ không phải một bảng hình học — và bảng
 hình học thì trông thuyết phục hơn hẳn.
 
+## 4c. Hai lỗi plumbing An bắt sau khi P5 đóng
+
+**(1) `sensor_noise` chưa bao giờ tới tracker.** Tôi thêm tham số vào
+`DWAPredictivePlanner.reset()` nhưng **không** thêm vào `_reset_local()`,
+nơi truyền tham số bằng cách **dò tên trong chữ ký**. Nên tracker luôn
+được dựng với `SensorNoise()` mặc định: ngưỡng cắt cụm và sàn nhiễu đọc
+**số 0** thay vì thứ deployment khai.
+
+Không test nào đỏ, vì thư viện scenario **không nhiễu** và 0 tình cờ là
+đáp án đúng. Nó sẽ lộ ra lần đầu ở **P7 trên deployment có sigma thật** —
+dưới dạng sàn quá thấp, cho vận tốc ma lọt qua đúng chỗ nhiễu đáng lẽ
+phải được mô hình hoá.
+
+Đã sửa: thêm vào `_reset_local`, truyền `scenario.sensor_noise` ở **cả
+ba** chỗ reset, và một test **đi qua `run_stack`** chứ không gọi thẳng
+`reset` — lỗi nằm ở *plumbing*, nên một test bỏ qua plumbing sẽ xanh suốt.
+
+**Bài học chung, đã ghi vào docstring của `_reset_local`:** dò tên tiện
+lợi, và cũng là cách một tham số biến mất **im lặng**. Thêm tham số vào
+`reset` của controller thì phải thêm một dòng ở đây **và** một test chứng
+minh nó tới nơi.
+
+**(2) Bộ đếm bị xoá mỗi lần replan/recovery.** Mỗi `_reset_local` dựng
+tracker mới ⇒ counters về 0, nên event cuối episode chỉ chứa **đoạn cuối
+cùng**. Với P5 thì đúng (replanning tắt), nhưng một episode replan bốn
+lần sẽ mất gần hết hoạt động tracker — và **trông như** một bản ghi đầy
+đủ của một episode yên ắng.
+
+Đã sửa: cộng dồn trước mỗi reset, cộng thêm khoá **`segments`** để người
+đọc biết tổng này gồm mấy tracker. Một tổng trải trên năm tracker khác
+hẳn tổng của một, và khác biệt đó không nên phải suy ra.
+
+Test: `segments == số replan + 1` trên `sudden_stop` có bật replanning.
+
+---
+
 ## 5. Kiểm chứng
 
 | Việc | Kết quả |
 |---|---|
-| `tests/test_dwa_tracking.py` | **20 passed** — phân cụm, phân loại, ước lượng (7.1), năm dòng vòng đời, sàn nhiễu, tất định (7.6), đặc tả hoá vận tốc ma |
+| `tests/test_dwa_tracking.py` | **26 passed** — phân cụm, phân loại, ước lượng (7.1), năm dòng vòng đời, sàn nhiễu, tất định (7.6), đặc tả hoá vận tốc ma |
 | `tests/test_dwa_predictive.py` · `test_dwa_oracle.py` | 48 passed |
 | Đối chiếu tracker vs oracle (7.9b) | mục 4 |
 | `ruff check .` | sạch |

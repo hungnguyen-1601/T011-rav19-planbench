@@ -353,6 +353,80 @@ class TestTheCountersReachTheEpisodeRecord:
         for counter in ("frames", "clusters_seen", "clusters_tracked", "coasting", "floored"):
             assert counter in message, f"{counter} missing from the episode record"
 
+    def test_the_scenario_sigma_reaches_the_tracker(self) -> None:
+        """**Regression: it did not, and nothing failed.**
+
+        ``sensor_noise`` was added to ``DWAPredictivePlanner.reset`` and
+        never added to ``_reset_local``, which passes arguments by probing
+        the signature for names it knows. So the tracker was built with a
+        default ``SensorNoise()`` on every run: its cluster threshold and
+        its velocity floor read **zeros** instead of what the deployment
+        declared.
+
+        Nothing went red, because the scenario library is noiseless and
+        zero happened to be the right answer. It would have surfaced first
+        on a P7 deployment with real sigma — as a floor too low, letting
+        phantom velocities through exactly where the noise was meant to be
+        modelled.
+
+        Checked end to end through ``run_stack`` rather than by calling
+        ``reset`` directly: the defect lived in the *plumbing*, so a test
+        that bypassed the plumbing would have passed throughout.
+        """
+        shared = LOCAL_CONTROLLER_CONFIGS["dwa_balanced"]
+        map_data, scenario = build_scenario("intersection")
+        scenario = scenario.model_copy(
+            update={
+                "timeout_seconds": 5.0,
+                "sensor_noise": SensorNoise(lidar_range_sigma_m=0.05),
+            }
+        )
+        planner = DWAPredictivePlanner(DWAPredictiveConfig(**shared))
+        run_stack(
+            map_data,
+            scenario,
+            planner,
+            build_global_planner("astar+dwa", episode_seed=0),
+        )
+        assert planner._tracker._noise.lidar_range_sigma_m == pytest.approx(0.05)
+        # And it is not merely stored: the floor is derived from it.
+        spacing = SPAN / RAYS
+        quiet = LidarTracker(DWAPredictiveConfig(**shared), SafetyEnvelope(), SensorNoise())
+        assert planner._tracker.velocity_floor(3.0, spacing) > quiet.velocity_floor(3.0, spacing)
+
+    def test_counters_survive_a_replan(self) -> None:
+        """Every reset builds a new tracker, zeroing its counters, so an
+        episode that replanned would otherwise report only its last
+        segment — a partial record that looks complete.
+
+        ``segments`` is what makes the difference legible: one means a
+        single uninterrupted tracker, more means the total spans several.
+        """
+        from planbench_schemas.replanning import ReplanningConfig
+
+        shared = LOCAL_CONTROLLER_CONFIGS["dwa_balanced"]
+        map_data, scenario = build_scenario("sudden_stop")
+        scenario = scenario.model_copy(update={"timeout_seconds": 25.0})
+        run = run_stack(
+            map_data,
+            scenario,
+            DWAPredictivePlanner(DWAPredictiveConfig(**shared)),
+            build_global_planner("astar+dwa", episode_seed=0),
+            ReplanningConfig(enabled=True),
+        )
+        events = [e for e in run.result.events if e.type == "local_planner_diagnostics"]
+        assert len(events) == 1
+        counters = dict(
+            part.split("=")
+            for part in events[0].message.split()  # type: ignore[misc]
+        )
+        assert "segments" in counters
+        replans = sum(1 for e in run.result.events if e.type == "replan")
+        assert int(counters["segments"]) == replans + 1, (
+            "the record does not span every tracker the episode built"
+        )
+        assert int(counters["frames"]) > 0
+
     def test_a_controller_with_nothing_to_report_stays_silent(self) -> None:
         """``dwa`` keeps no counters, and an empty event would be noise in
         every episode the platform has ever run."""

@@ -76,6 +76,8 @@ nằm trong tầm. Ước lượng đủ tốt; **phát hiện** thì chập ch�
 | 4 | Sàn nhiễu của plan **bằng 0** trên deployment không nhiễu; vận tốc ma tới 1.27 m/s lọt qua | đã thêm số hạng lượng tử hoá quét |
 | 5 | `kinematics.py` giữ bậc không ⇒ **lạc quan** ~20 mm về quãng phanh | ghi L8, chưa sửa |
 | 6 | Bộ metric mục tiêu §8 của plan **chĩa nhầm trục** — dự đoán mua an toàn, không mua tốc độ | chưa quyết |
+| 7 | `sensor_noise` thêm vào `reset()` của controller mà **không** thêm vào `_reset_local` ⇒ tracker luôn dựng với `SensorNoise()` mặc định | đã sửa + test qua `run_stack` |
+| 8 | Bộ đếm tracker **bị xoá mỗi lần replan** ⇒ event cuối episode chỉ có đoạn cuối | đã sửa: cộng dồn + khoá `segments` |
 
 ---
 
@@ -140,7 +142,7 @@ chứng.
 | `test_dwa_core_refactor.py` (golden) | 20 passed |
 | `test_dwa_predictive.py` | 27 passed |
 | `test_dwa_oracle.py` | 21 passed |
-| `test_dwa_tracking.py` | **22 passed** |
+| `test_dwa_tracking.py` | **26 passed** |
 | `test_task_profile.py` · `test_dynamic_obstacles.py` | 94 passed |
 | Lát cắt lớn (`tests/api` + benchmark) | 877 passed, 1 skipped |
 | Lát cắt controller | 209 passed, 1 skipped |
@@ -149,7 +151,7 @@ chứng.
 | **Full backend suite** | **CHƯA CHẠY** |
 | Phép so tracker–oracle 120 seed | **xong** — 11 cơ hội, 0 giành lại (commit `63c5d7d`) |
 
-20 commit, tất cả tiền tố `TongDuyAn - `.
+21 commit, tất cả tiền tố `TongDuyAn - `.
 
 ---
 

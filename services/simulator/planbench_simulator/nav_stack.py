@@ -40,7 +40,7 @@ from planbench_schemas.recovery import NO_RECOVERY, RecoveryConfig
 from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
 from planbench_schemas.robot import RobotConfig, RobotState, SimAction
 from planbench_schemas.scenario import CircleObstacle, Scenario
-from planbench_schemas.sensor import LidarConfig
+from planbench_schemas.sensor import LidarConfig, SensorNoise
 from planbench_simulator.engine import SimulationEngine
 from planbench_simulator.grid import OccupancyGrid, rasterize_obstacles
 from planbench_simulator.path_follower import PurePursuitConfig, PurePursuitFollower
@@ -359,6 +359,7 @@ def _reset_local(
     robot: RobotConfig,
     envelope: SafetyEnvelope,
     obstacle_speed: float | None = None,
+    sensor_noise: SensorNoise | None = None,
 ) -> None:
     """Hand a path to the controller, with what the deployment declares.
 
@@ -369,10 +370,21 @@ def _reset_local(
     reset, from the signature, so a controller that gains the parameter
     later starts receiving it without anything here changing.
 
-    ``obstacle_speed`` is probed the same way and separately: a
-    controller may have learned about the envelope in phase 1 and not yet
-    about closing traffic, and forcing both at once would break the
-    former to deliver the latter.
+    ``obstacle_speed`` and ``sensor_noise`` are probed the same way and
+    separately: a controller may have learned about the envelope in phase
+    1 and not yet about closing traffic, and forcing all three at once
+    would break the first to deliver the others.
+
+    **Probing by name is convenient and it is also how a parameter goes
+    missing silently.** ``sensor_noise`` was added to
+    ``DWAPredictivePlanner.reset`` and *not* added here, so the tracker
+    was built with a default ``SensorNoise()`` on every run — its cluster
+    threshold and velocity floor read zeros instead of what the
+    deployment declared. Nothing failed: the scenario library is
+    noiseless, so zero was the right answer by accident, and the defect
+    would only have surfaced once P7 ran on a deployment with sigma. Any
+    parameter added to a controller's ``reset`` needs a line here and a
+    test that it arrives.
     """
     accepted = inspect.signature(local_planner.reset).parameters
     extra: dict[str, object] = {}
@@ -380,11 +392,44 @@ def _reset_local(
         extra["envelope"] = envelope
     if "obstacle_speed" in accepted:
         extra["obstacle_speed"] = obstacle_speed
+    if "sensor_noise" in accepted:
+        extra["sensor_noise"] = sensor_noise
     local_planner.reset(path, robot, **extra)  # type: ignore[arg-type]
 
 
-def _controller_diagnostics(local_planner: LocalPlanner) -> str:
-    """Whatever counters the controller kept, as one event message.
+def _controller_counters(local_planner: LocalPlanner) -> dict[str, int]:
+    """Whatever counters the controller keeps, or nothing.
+
+    Probed from the object rather than required of the interface, the
+    same way :func:`_reset_local` finds out whether a controller
+    understands the safety envelope.
+    """
+    counters = getattr(local_planner, "diagnostics", None)
+    return dict(counters) if counters else {}
+
+
+def _fold_counters(total: dict[str, int], latest: dict[str, int]) -> dict[str, int]:
+    """Add one segment's counters into the running total.
+
+    **Every reset builds the controller a new tracker, which zeroes its
+    counters**, so reading them once at the end reports only the last
+    segment. On an episode that replanned four times that is most of the
+    tracker's work missing, and the reader has no way to tell — the event
+    looks like a complete record of a quiet episode.
+
+    Folded before each reset instead, so the event carries the whole
+    episode. ``segments`` says how many pieces it came from, because a
+    total spanning five trackers is a different thing from one tracker's
+    total and the difference should not have to be inferred.
+    """
+    for key, value in latest.items():
+        total[key] = total.get(key, 0) + value
+    total["segments"] = total.get("segments", 0) + 1
+    return total
+
+
+def _diagnostics_message(counters: dict[str, int]) -> str:
+    """Counters as one event message.
 
     **Diagnostic, never a metric.** HĐ-5 makes the trace the single input
     of the Metrics Engine, so a number computed here that competed with
@@ -392,13 +437,7 @@ def _controller_diagnostics(local_planner: LocalPlanner) -> str:
     a question no ranked metric does — *did the estimator work at all* —
     and without them a flat comparison is unreadable: nobody can tell
     "prediction is worthless here" from "the tracker never saw anything".
-
-    Probed from the object rather than required of the interface, the same
-    way ``_reset_local`` finds out whether a controller understands the
-    safety envelope. A controller with nothing to report says nothing,
-    and no event is emitted.
     """
-    counters = getattr(local_planner, "diagnostics", None)
     if not counters:
         return ""
     return " ".join(f"{key}={value}" for key, value in sorted(counters.items()))
@@ -920,7 +959,14 @@ def run_stack(
     # deployment, not from the controller's own configuration, which is
     # what stops a candidate narrowing the set the planner used (L2).
     envelope = SafetyEnvelope.for_noise(scenario.sensor_noise)
-    _reset_local(local_planner, plan.path, scenario.robot, envelope, obstacle_speed)
+    _reset_local(
+        local_planner,
+        plan.path,
+        scenario.robot,
+        envelope,
+        obstacle_speed,
+        scenario.sensor_noise,
+    )
     if recorder is not None:
         recorder.bind_clearance(
             clearance_probe(
@@ -933,6 +979,8 @@ def run_stack(
 
     latencies: list[float] = []
     failures: list[EpisodeEvent] = []
+    #: Controller counters folded across every reset — see `_fold_counters`.
+    carried_counters: dict[str, int] = {}
     # Every plan this episode used, initial one first. Planning cost is
     # reported as the total the stack spent, so a stack that recovers by
     # replanning three times is not shown as cheap as one that planned
@@ -1092,7 +1140,15 @@ def run_stack(
                 continue
             if new_plan.success:
                 plans.append(new_plan)
-                _reset_local(local_planner, new_plan.path, scenario.robot, envelope, obstacle_speed)
+                _fold_counters(carried_counters, _controller_counters(local_planner))
+                _reset_local(
+                    local_planner,
+                    new_plan.path,
+                    scenario.robot,
+                    envelope,
+                    obstacle_speed,
+                    scenario.sensor_noise,
+                )
                 # Numbered by *attempt*, the same counter the failures
                 # use. Numbering successes separately produced an event
                 # stream reading "replan 6 found no path" then "replan 1
@@ -1149,8 +1205,14 @@ def run_stack(
                 )
                 if forgotten.success:
                     plans.append(forgotten)
+                    _fold_counters(carried_counters, _controller_counters(local_planner))
                     _reset_local(
-                        local_planner, forgotten.path, scenario.robot, envelope, obstacle_speed
+                        local_planner,
+                        forgotten.path,
+                        scenario.robot,
+                        envelope,
+                        obstacle_speed,
+                        scenario.sensor_noise,
                     )
                     held_action = None
             else:
@@ -1191,7 +1253,11 @@ def run_stack(
         )
 
     result = engine.get_result()
-    diagnostics = _controller_diagnostics(local_planner)
+    diagnostics = _diagnostics_message(
+        _fold_counters(carried_counters, _controller_counters(local_planner))
+        if _controller_counters(local_planner)
+        else carried_counters
+    )
     if diagnostics:
         failures.append(
             EpisodeEvent(
