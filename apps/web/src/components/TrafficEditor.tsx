@@ -126,7 +126,13 @@ export function TrafficEditor({
       <input
         type="number"
         step={options.step ?? 0.1}
-        value={value ?? ""}
+        /* A half-typed field parses to NaN, and NaN in `value` is an
+           empty box plus a React warning — so it is shown as the empty
+           box it already looks like. The number is not corrected on the
+           way in: what is legal here is the server's to say, and a form
+           that quietly replaced NaN with a plausible figure would be
+           filing a deployment nobody typed. */
+        value={value === undefined || !Number.isFinite(value) ? "" : value}
         disabled={disabled}
         onChange={(event) => onNumber(Number(event.target.value))}
       />
