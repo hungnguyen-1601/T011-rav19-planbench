@@ -488,13 +488,14 @@ describe("the traffic comes with the map it belongs to", () => {
        at first, so typing in a field invalidated it while moving the
        start pose, adopting a map or applying a vehicle did not. */
     expect(FORM).toContain("invalidateCheck");
-    /* Four ways to change the document, four calls: a field, the map,
-       the vehicle, the mission. The map's is at the end of `adopt`
-       rather than the start, because until the write succeeds nothing
-       has changed and there is no verdict to retire. Counted rather than
-       named so a fifth way added later fails here instead of silently
-       keeping a stale tick. */
-    expect(FORM.match(/invalidateCheck\(\)/g) ?? []).toHaveLength(4);
+    /* Four ways to change the document — a field, the map, the vehicle,
+       the mission — and five calls, because the map retires the verdict
+       twice: once when it is asked for, since the picker already shows
+       something the draft does not, and once when the write lands and
+       the draft actually changes. Counted rather than named so a further
+       way added later fails here instead of silently keeping a stale
+       tick. */
+    expect(FORM.match(/invalidateCheck\(\)/g) ?? []).toHaveLength(5);
     // And a reply already in flight when the document moved on is an
     // answer to a question nobody is asking any more.
     expect(FORM).toContain("revision.current !== asked");
@@ -528,6 +529,23 @@ describe("the traffic comes with the map it belongs to", () => {
     expect(chooser.indexOf("adoption.claim()")).toBeLessThan(chooser.indexOf("api.getMap(id)"));
   });
 
+  it("freezes from the moment the map is asked for, not from when it lands", () => {
+    /* The freezing started inside `adopt`, which runs only once the grid
+       has arrived — so for the whole length of the request the picker
+       already showed the new map while the draft, the canvas and the
+       mission were still the old one, and nothing was disabled. Filing
+       in that window stores a deployment nobody is looking at. */
+    const chooser = FORM.slice(
+      FORM.indexOf("const adoptStoredMap"),
+      FORM.indexOf("// Open on the default"),
+    );
+    expect(chooser.indexOf("beginAdoption()")).toBeLessThan(chooser.indexOf("api.getMap(id)"));
+    expect(FORM).toContain("setAdopting(true)");
+    // And it lifts again however the request ends, or a failed import
+    // leaves the form frozen for good.
+    expect(FORM.match(/setAdopting\(false\)/g) ?? []).toHaveLength(4);
+  });
+
   it("treats picking the blank option as a choice too", () => {
     /* It says "not that map". Returning early without claiming left an
        adoption already fetching, and it went on to commit a map the
@@ -538,7 +556,9 @@ describe("the traffic comes with the map it belongs to", () => {
       FORM.indexOf("const adoptStoredMap"),
       FORM.indexOf("// Open on the default"),
     );
-    expect(chooser.indexOf("adoption.claim()")).toBeLessThan(chooser.indexOf("if (!id) return"));
+    expect(chooser.indexOf("adoption.supersede()")).toBeLessThan(
+      chooser.indexOf("beginAdoption()"),
+    );
   });
 
   it("writes a map into the draft only once nothing can still fail", () => {

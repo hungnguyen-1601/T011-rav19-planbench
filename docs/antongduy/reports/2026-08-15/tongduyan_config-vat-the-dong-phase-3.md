@@ -6,7 +6,7 @@
 ## Trạng thái vào Phase 3
 
 Phần lớn Phase 3 đã làm xen kẽ trong Phase 2b và bốn vòng review: test
-hàm thuần (`traffic.test.ts`, 58 ca), test thứ tự đan xen
+hàm thuần (`traffic.test.ts`, 57 ca), test thứ tự đan xen
 (`sequencer.test.ts`, 8 ca), thay guard cũ đã hết đúng
 (`TestTrafficIsAuthorable`), dry-run API test, test tích hợp adapter.
 Còn lại **hai lỗ hổng**, và chúng khác loại nhau.
@@ -60,12 +60,24 @@ Phần *quyết định* đằng sau chúng đã tách ra và test được
 (`placeOnMotion`, `previewRequestOf`, `snapshotsOf`, `createSequencer`).
 Phần *nối dây tới con chuột* thì không.
 
-Hai đường đóng, cả hai cần An quyết:
+Đường đóng, và **một mình jsdom không đóng hết** (An chỉ ra ở vòng
+review Phase 3):
 
-- **Thêm `jsdom` + `@testing-library/react`** — một dependency, và mở
-  ra cả lớp test hành vi (bấm Preview rồi sửa field trong lúc chờ, đúng
-  lớp lỗi bốn vòng review vừa bắt).
-- **Hoặc giữ checklist tay** dưới đây và chấp nhận nó là kiểm thủ công.
+| Cần phủ | jsdom + Testing Library | Browser test thật |
+|---|---|---|
+| Nối dây click, thứ tự state, race giữa nhiều request | ✔ | ✔ |
+| Canvas vẽ đúng toạ độ, preview đúng vị trí, khung 2.5D | ✘ (canvas context phải mock, không kiểm được pixel) | ✔ |
+
+Nên có ba lựa chọn, đều cần An quyết:
+
+- **Chỉ jsdom + Testing Library** — đóng lớp lỗi bốn vòng review vừa
+  bắt (bấm Preview rồi sửa field trong lúc chờ), nhưng **nghiệm thu ba
+  hành vi canvas vẫn là thủ công**.
+- **Thêm cả browser test** (playwright) — đóng đủ bốn, giá là một hạ
+  tầng test mới cho repo.
+- **Giữ nguyên checklist tay** — khi đó phải ghi rõ: **acceptance của
+  Phase 3 cho phần canvas là thủ công**, không phải tự động. Đây là
+  trạng thái hiện tại, và report này chính là chỗ ghi.
 
 ## Checklist thủ công — chưa ai chạy
 
@@ -104,10 +116,20 @@ này chạm được.
 |---|---|
 | `npx vitest run traffic-editor.test.tsx` | **22 passed** (bắt 1 defect ở lần chạy đầu, đã sửa) |
 | `npm run typecheck` | sạch |
-| `npm run test` (web) | **766 passed / 35 file** |
+| `npm run test` (web) | **770 passed / 35 file** sau vòng review Phase 3 |
 | `npm run build` (Next production build) | **thành công** — biên dịch 4.4 s, sinh tĩnh 17/17 trang, `/deployments` 12.3 kB |
 
 Bản build production là phép kiểm mà unit test không thay được: nó chạy
 lint, kiểm kiểu ở chế độ build, và **sinh thật cả 17 trang** — một lỗi
 chỉ xuất hiện lúc server-render trang `/deployments` sẽ đỏ ở đây chứ
 không đỏ ở `vitest`.
+
+## Sửa sau review Phase 3 — 5 điểm, đúng cả 5
+
+| # | Lỗi | Đã sửa |
+|---|---|---|
+| H1 | **Cửa sổ chưa đóng băng khi đang tải map**: `setAdopting(true)` nằm trong `adopt()`, chạy **sau** `api.getMap()`. Suốt thời gian fetch, picker đã hiện map mới còn draft/canvas là map cũ, `frozen` vẫn false — nộp được document cũ dưới cái tên map mới. Defect thật, không phải thiếu test | `beginAdoption()` giành token + `setAdopting(true)` + `invalidateCheck()` **trước** fetch, ở cả luồng stored map lẫn luồng library; `finally` gỡ băng trên cả thành công lẫn thất bại (thiếu nó, import lỗi sẽ khoá form vĩnh viễn) |
+| M1 | Test NaN không chứng minh trải nghiệm gõ: `Number("")` là **0**, không phải NaN — nên xoá một ô ghi thầm số 0 vào tài liệu | Tách `numberFromInput()`: ô rỗng thành `NaN` (hiện là ô trống, đi thành `null`, server từ chối đúng như nó là) thay vì thành 0 mà không ai gõ; test riêng cho hàm đó; comment cũ mô tả sai cơ chế đã viết lại |
+| M2 | jsdom một mình không đóng hết lỗ hổng canvas | Bảng so sánh hai lớp phủ + ba lựa chọn, và ghi rõ **acceptance phần canvas hiện là thủ công** |
+| L1 | `KNOWN_LIMITATIONS.md` #47 và #50 đã sai sau Phase 3 | Viết lại cả hai: #47 tách rõ "form deployment vẽ được / replay chưa nối"; #50 nói đúng những gì render test phủ và những gì không |
+| L2 | Report ghi `traffic.test.ts` 58 ca, thực tế 54 | Sửa (giờ là 57 sau khi thêm test cho `numberFromInput`) |

@@ -36,6 +36,7 @@ import {
   changeMotionKind,
   dropLastWaypoint,
   headingDegrees,
+  numberFromInput,
   offsetHint,
   removeObstacle,
   updateObstacle,
@@ -126,15 +127,14 @@ export function TrafficEditor({
       <input
         type="number"
         step={options.step ?? 0.1}
-        /* A half-typed field parses to NaN, and NaN in `value` is an
-           empty box plus a React warning — so it is shown as the empty
-           box it already looks like. The number is not corrected on the
-           way in: what is legal here is the server's to say, and a form
-           that quietly replaced NaN with a plausible figure would be
-           filing a deployment nobody typed. */
+        /* An emptied box holds `NaN` — see `numberFromInput`, which is
+           what puts it there rather than the zero `Number("")` would
+           give. Rendered as the empty box it already is: `value={NaN}`
+           draws nothing anyway and warns, and the warning is the only
+           thing that told the two states apart. */
         value={value === undefined || !Number.isFinite(value) ? "" : value}
         disabled={disabled}
-        onChange={(event) => onNumber(Number(event.target.value))}
+        onChange={(event) => onNumber(numberFromInput(event.target.value))}
       />
       {options.note ? <small className="muted">{options.note}</small> : null}
     </label>

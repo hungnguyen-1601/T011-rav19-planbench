@@ -299,6 +299,25 @@ export function DeploymentForm({
    * `sudden_stop`'s coordinates means nothing on somebody else's walls,
    * and leaving it would put an obstacle in a place nobody chose.
    */
+  /** Take the next adoption token and say so on screen.
+   *
+   * **The freezing has to start with the fetch, not with the commit.**
+   * It began inside `adopt`, which runs only once the grid has arrived —
+   * so for the whole length of the request the picker already showed the
+   * new map while the draft, the canvas and the mission were still the
+   * old one, and nothing was disabled. Filing in that window stores a
+   * deployment nobody is looking at; previewing draws the old world
+   * under the new map's name. The verdict and the picture go at the same
+   * moment and for the same reason: what is on screen is already out of
+   * date, whatever the answer turns out to be.
+   */
+  const beginAdoption = useCallback(() => {
+    const token = adoption.claim();
+    setAdopting(true);
+    invalidateCheck();
+    return token;
+  }, [adoption, invalidateCheck]);
+
   const adopt = useCallback(
     async (
       data: MapData,
@@ -365,9 +384,14 @@ export function DeploymentForm({
    */
   const adoptStoredMap = useCallback(
     (id: string) => {
-      const token = adoption.claim();
+      if (!id) {
+        adoption.supersede();
+        setStoredMapId("");
+        setAdopting(false);
+        return;
+      }
+      const token = beginAdoption();
       setStoredMapId(id);
-      if (!id) return;
       void (async () => {
         try {
           const resource = await api.getMap(id);
@@ -376,10 +400,12 @@ export function DeploymentForm({
           if (adoption.isCurrent(token)) {
             setError(caught instanceof Error ? caught.message : String(caught));
           }
+        } finally {
+          if (adoption.isCurrent(token)) setAdopting(false);
         }
       })();
     },
-    [adoption, adopt],
+    [adoption, beginAdoption, adopt],
   );
 
   // Open on the default library scenario, so the form has a real map and
@@ -387,7 +413,7 @@ export function DeploymentForm({
   useEffect(() => {
     if (!draft || mapData || source !== "library") return;
     let cancelled = false;
-    const token = adoption.claim();
+    const token = beginAdoption();
     void (async () => {
       try {
         const imported = await importLibraryScenario(libraryName);
@@ -398,6 +424,10 @@ export function DeploymentForm({
         await adopt(resource.map_data, imported.map_id, imported.scenario, token);
       } catch (caught) {
         if (!cancelled) setError(caught instanceof Error ? caught.message : String(caught));
+      } finally {
+        // Without this a failed import leaves the form frozen for good:
+        // `adopt`, which is what normally lifts it, is never reached.
+        if (adoption.isCurrent(token)) setAdopting(false);
       }
     })();
     return () => {

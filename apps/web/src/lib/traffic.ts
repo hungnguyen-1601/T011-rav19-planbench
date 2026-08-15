@@ -191,6 +191,25 @@ export function headingDegrees(radians: number): number {
   return radians * DEGREES;
 }
 
+/** What the raw text of a number input means for the document.
+ *
+ * **`Number("")` is 0, and that is the trap.** Clearing a box to retype
+ * it wrote a zero nobody typed: a radius of 0, refused by the server for
+ * being not greater than zero — a complaint about a figure the author
+ * never entered, on a field that looked empty while they read it.
+ *
+ * An emptied box stays empty instead. `NaN` is what "there is no number
+ * here" looks like on the way through: it renders as nothing, it
+ * travels as JSON `null`, and the server refuses it as a missing number,
+ * which is exactly what it is. Nothing is substituted on the way in —
+ * what is legal is the server's to say, and a form quietly replacing a
+ * blank with a plausible figure would be filing a deployment nobody
+ * wrote.
+ */
+export function numberFromInput(raw: string): number {
+  return raw.trim() === "" ? Number.NaN : Number(raw);
+}
+
 function positive(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }

@@ -23,6 +23,7 @@ import {
   cycleSeconds,
   dropLastWaypoint,
   nextSeedOffset,
+  numberFromInput,
   offsetHint,
   placeOnMotion,
   previewRequestOf,
@@ -301,6 +302,32 @@ describe("why there is no number to suggest", () => {
     };
     expect(offsetHint(patrol)).toEqual({ kind: "suggestion", seconds: 9 });
     expect(offsetHint(stop)).toEqual({ kind: "suggestion", seconds: 2 });
+  });
+});
+
+describe("reading a number out of an input", () => {
+  /** The zero nobody typed.
+   *
+   * `Number("")` is 0, so clearing a box to retype it wrote a radius of
+   * zero into the document — refused by the server for not being greater
+   * than zero, which reads as a complaint about a figure the author
+   * never entered, on a field that looked empty while they read it.
+   */
+  it("keeps an emptied box empty rather than calling it zero", () => {
+    expect(numberFromInput("")).toBeNaN();
+    expect(numberFromInput("   ")).toBeNaN();
+  });
+
+  it("passes a real number through untouched", () => {
+    expect(numberFromInput("0.8")).toBe(0.8);
+    expect(numberFromInput("-1.5")).toBe(-1.5);
+  });
+
+  it("does not correct a value it dislikes", () => {
+    /* Zero is a number somebody can mean, and whether it is legal here
+       is the server's to say. A form that substituted something more
+       plausible would be filing a deployment nobody wrote. */
+    expect(numberFromInput("0")).toBe(0);
   });
 });
 

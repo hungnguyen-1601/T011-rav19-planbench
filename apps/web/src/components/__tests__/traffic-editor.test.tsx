@@ -168,10 +168,14 @@ describe("the seed head start", () => {
     };
     const html = render({ obstacles: [obstacle({ motion: unfinished })] });
     expect(html).toContain("Fill in the route and the speed");
-    /* And the half-typed number reaches the input as the empty box it
+    /* And the missing number reaches the input as the empty box it
        already looks like. `value={NaN}` renders empty anyway and warns,
-       which is how this was found — the warning is the only thing that
-       distinguishes it from a field somebody has not filled in yet. */
+       which is how this was found — the warning was the only thing that
+       distinguished it from a field nobody has filled in yet.
+
+       What this does *not* prove is the typing itself: no DOM here, so
+       the mapping from a cleared box to `NaN` is checked where it lives,
+       in `numberFromInput` (lib/__tests__/traffic.test.ts). */
     expect(html).not.toContain('value="NaN"');
   });
 
