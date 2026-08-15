@@ -19,10 +19,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
+from planbench_agent.critique import critique_with_model
 from planbench_api.auth import CurrentUser
 from planbench_api.decision_service import (
     CandidateService,
@@ -32,6 +33,7 @@ from planbench_api.decision_service import (
 )
 from planbench_api.decisions import StoredCandidate, StoredDecisionRun, StoredTaskProfile
 from planbench_api.dependencies import (
+    get_agent_service,
     get_candidate_service,
     get_decision_jobs,
     get_decision_run_service,
@@ -165,10 +167,14 @@ class FindingResource(BaseModel):
     ground: str
     field_path: str
     suggested_check: str
+    #: ``rule`` reproduces exactly; ``model`` does not. A reader deciding
+    #: how much weight to give an objection needs to know which it is.
+    source: str = "rule"
+    rank: int | None = None
 
 
 class CritiqueResource(BaseModel):
-    """Every objection the rules raise against one run.
+    """Every objection raised against one run, and what was discarded.
 
     ``rules_applied`` is here so an empty ``findings`` list reads as "the
     rules ran and found nothing" rather than "no rules ran". The counts
@@ -176,6 +182,11 @@ class CritiqueResource(BaseModel):
     that nobody noticed is a different failure from a contradiction
     nobody resolved — and published work on planted-error detection finds
     automated reviewers much weaker on the first.
+
+    The model fields are the honesty budget. ``fabricated`` counts
+    objections the model made up and had taken away; ``refused`` says why
+    there is no prose when there is none; ``deterministic`` says whether
+    asking again would give this same answer.
     """
 
     run_id: str
@@ -185,6 +196,13 @@ class CritiqueResource(BaseModel):
     material: int
     disclosure: int
     omissions: int
+    from_model: int = 0
+    summary: str = ""
+    fabricated: int = 0
+    refused: str = ""
+    provider: str = ""
+    model: str = ""
+    deterministic: bool = True
 
 
 class ReviewRequest(BaseModel):
@@ -773,7 +791,13 @@ def decision_audit(run_id: str, service: Runs) -> list[ReviewEventResource]:
 
 
 @router.get("/decisions/{run_id}/critique", response_model=CritiqueResource)
-def decision_critique(run_id: str, service: Runs) -> CritiqueResource:
+def decision_critique(
+    run_id: str,
+    service: Runs,
+    request: Request,
+    user: CurrentUser,
+    use_model: Annotated[bool, Query()] = False,
+) -> CritiqueResource:
     """Objections to this run, for a reviewer to weigh before signing.
 
     Read-only and derived: nothing is stored, so a rule added tomorrow
@@ -784,17 +808,50 @@ def decision_critique(run_id: str, service: Runs) -> CritiqueResource:
     An empty list is a result. It means the rules found nothing, not that
     the run is beyond question, and the response says how many rules ran
     so the two cannot be confused.
+
+    ``use_model`` adds a language model on top of the rules: it orders
+    them, writes a paragraph, and may add objections rules cannot reach —
+    a straw-man baseline, a scope claimed wider than the run. It cannot
+    remove a rule finding, and anything it cites that does not resolve in
+    the report is dropped and counted in ``fabricated``. Off by default,
+    because the deterministic answer is the one that reproduces.
     """
     stored = service.get(run_id)
-    findings = critique(stored.report)
+    if not use_model:
+        findings = critique(stored.report)
+        return _critique_resource(
+            run_id,
+            [FindingResource(**f.model_dump(), source="rule") for f in findings],
+        )
+
+    agent = get_agent_service(request, user)
+    result = critique_with_model(stored.report, agent.provider)
+    return _critique_resource(
+        run_id,
+        [FindingResource(**f.model_dump()) for f in result.findings],
+        summary=result.summary,
+        fabricated=result.fabricated,
+        refused=result.refused,
+        provider=result.provider,
+        model=result.model,
+        deterministic=result.deterministic,
+    )
+
+
+def _critique_resource(
+    run_id: str, findings: list[FindingResource], **extra: Any
+) -> CritiqueResource:
+    """Counts derived from the findings beside them, never passed in."""
     return CritiqueResource(
         run_id=run_id,
         rules_applied=len(RULE_CODES),
-        findings=[FindingResource(**f.model_dump()) for f in findings],
+        findings=findings,
         blocking=sum(1 for f in findings if f.severity == "blocking"),
         material=sum(1 for f in findings if f.severity == "material"),
         disclosure=sum(1 for f in findings if f.severity == "disclosure"),
         omissions=sum(1 for f in findings if f.kind == "omission"),
+        from_model=sum(1 for f in findings if f.source == "model"),
+        **extra,
     )
 
 
