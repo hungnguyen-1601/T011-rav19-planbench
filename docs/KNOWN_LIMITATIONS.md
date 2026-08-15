@@ -1440,3 +1440,76 @@ vật cản động chứ không phải ba.
 
 Mọi số đã lưu ở cảnh có random walk mà robot **có** nhìn thấy vật cản đó
 thì phải đo lại. Không cảnh nào trong golden fixture rơi vào diện này.
+
+---
+
+## `dwa_predictive` — hạn chế của chính ứng viên (P6, 2026-08-15)
+
+### L13. Mô hình là **vận tốc hằng**, và nó sai ngay khi có gì đó rẽ hoặc dừng
+
+`dwa_predictive` ngoại suy vật cản bằng vận tốc hằng. `SuddenStopMotion`
+là **phản ví dụ hoàn hảo**: vật chạy đều rồi đứng phắt, còn dự đoán nói nó
+đi tiếp, nên robot lách vào chỗ nó **không hề tới**. `PeriodicMotion` là
+hình sin — sai số ngoại suy trung vị sau 1.5 s đo được là **0.949 m** trên
+`crossing_obstacle`.
+
+Đây **không** phải ca hiếm cần vá; nó là miền giả định của mô hình. Cảnh
+nằm ngoài miền đó đo **giới hạn** của mô hình, không đo **giá trị** của
+nó — lý do cổng P4 loại `sudden_stop` và `random_walk`.
+
+### L14. Ba nguồn **vận tốc ma**, không nguồn nào giải triệt để ở tri giác 2D
+
+1. **Tâm cụm trượt khi vật lộ dần** sau góc khuất — vật đứng yên "chạy"
+   tới nửa bề rộng của nó.
+2. **`lidar_dropout_probability`** làm cụm vỡ đôi rồi liền lại.
+3. **Hai vật đi ngang nhau** ⇒ ghép cặp chéo, hai vận tốc đảo chiều.
+
+Cộng một nguồn thứ tư mà plan không lường: **lượng tử hoá quét**. Tâm một
+cụm lấy mẫu bằng tia rời rạc dịch khi *tập tia chạm vào nó* đổi — xảy ra
+mỗi khi robot di chuyển, **với cảm biến hoàn hảo**.
+
+Đo được trên ba cảnh **hoàn toàn tĩnh**, tắt mọi nhiễu: vận tốc ma trung
+vị **0.28–0.41 m/s**, đỉnh **1.27 m/s** — cùng bậc với traffic thật
+(0.6–0.8 m/s). Sàn nhiễu chặn được **biên độ**, không chặn được hiện
+tượng.
+
+### L15. Vật cản **không** được giả định né robot
+
+Không dùng RVO/ORCA. Vật cản trong `dynamic.py` là hàm thuần của
+`(spec, time, seed)` và **không phản ứng gì**. Một mô hình tương hỗ ở đây
+sẽ đo một giả định sai.
+
+### L16. Tracker **không giành lại được** lợi ích của dự đoán ở cấu hình 72 tia
+
+Đo trên `intersection`, 120 seed ghép cặp (`scripts/diagnose_tracker.py`,
+commit `63c5d7d`):
+
+| | va chạm | thành công | tốt hơn `dwa` | tệ hơn |
+|---|---|---|---|---|
+| `dwa` | 9/120 | 107/120 | — | — |
+| oracle (tri giác hoàn hảo) | **2/120** | **112/120** | **11** | 0 |
+| tracker (LiDAR thật) | 9/120 | 107/120 | **0** | 0 |
+
+**11 cơ hội, tracker lấy 0.** Nút thắt là **tần suất phát hiện**, không
+phải độ chính xác: khi tracker có báo vận tốc thì sai số trung vị chỉ
+**0.119 m/s** trên 0.800 (15%), nhưng nó chỉ báo ở **1.6%** số bước vật
+cản nằm trong tầm. Vật cản 0.35 m ở 4 m rộng **2 tia** (72 tia ⇒ 5.00°),
+nên cụm lúc có lúc không, track chết trước khi tích đủ mẫu.
+
+Hệ quả cho người đọc Decision Card: trên deployment dùng LiDAR 72 tia,
+`dwa_predictive` **được kỳ vọng ngang `dwa`**, và một tấm card nói vậy là
+card đúng. Nó **không** nói mô hình dự đoán vô dụng — oracle đã bác điều
+đó. Nó nói **cảm biến này không đủ để ước lượng cái mô hình cần**.
+
+### L17. Chưa đo dưới nhiễu định vị — pha hệ toạ độ vẫn treo
+
+Rollout robot dùng **pose thật** (`state.pose`) còn đám mây điểm dùng
+**pose robot tin là** (`observation.pose`). Hai đại lượng bị trừ cho nhau,
+lệch nhau đúng bằng sai số định vị. Hôm nay chỉ làm khoảng hở lệch một
+hằng số; **với tracking nhiều khung thì nó thành vận tốc** — tường đứng
+yên sẽ có vận tốc dao động.
+
+Nên mọi phép so `dwa` vs `dwa_predictive` phải chạy với
+`localization_drift_m = 0` và `localization_jump_probability = 0` cho tới
+khi pha hệ toạ độ (mục 2c của plan) xong. Kết quả thu được **không nói gì**
+về độ bền trước nhiễu định vị.

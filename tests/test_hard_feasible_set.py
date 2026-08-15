@@ -47,7 +47,11 @@ import yaml
 
 from planbench_benchmark.candidates import LOCAL_CONTROLLER_CONFIGS
 from planbench_benchmark.episode import scenario_for
-from planbench_benchmark.registry import build_global_planner, build_local_planner
+from planbench_benchmark.registry import (
+    algorithm_info,
+    build_global_planner,
+    build_local_planner,
+)
 from planbench_benchmark.scenarios import build_scenario
 from planbench_planning import DWAPlanner
 from planbench_schemas.episode import EpisodeStatus
@@ -111,9 +115,7 @@ def _uses(path: Path, expression: str) -> bool:
     return "".join(expression.split()) in haystack
 
 
-DWA_SOURCE = (
-    REPO_ROOT / "packages" / "planning" / "planbench_planning" / "dwa" / "planner.py"
-)
+DWA_SOURCE = REPO_ROOT / "packages" / "planning" / "planbench_planning" / "dwa" / "planner.py"
 NAV_STACK_SOURCE = REPO_ROOT / "services" / "simulator" / "planbench_simulator" / "nav_stack.py"
 NOISE_SOURCE = REPO_ROOT / "services" / "simulator" / "planbench_simulator" / "noise.py"
 
@@ -126,10 +128,23 @@ ROBOT = RobotConfig(
     max_angular_acceleration=1.0,
 )
 
-#: Both stacks the platform ships. L4 is a claim about the *contract*
-#: between the layers, so proving it for one global planner would prove
-#: only that A* happens to be conservative.
-STACKS = ("astar+dwa", "rrtstar+dwa")
+#: Every benchmarkable stack the platform ships. L4 is a claim about the
+#: *contract* between the layers, so proving it for one global planner
+#: would prove only that A* happens to be conservative — and proving it
+#: for one controller would prove only that ``dwa`` happens to refuse
+#: enough.
+#:
+#: ``dwa_predictive`` is here from P6. It is the case that would catch a
+#: predictive term leaking into the hard feasible set at the level the
+#: contract is stated: a candidate whose extra caution lived in the
+#: *refusal* rather than in the cost would start rejecting paths the
+#: global planner is entitled to return.
+STACKS = (
+    "astar+dwa",
+    "rrtstar+dwa",
+    "astar+dwa_predictive",
+    "rrtstar+dwa_predictive",
+)
 
 
 class TestTheEnvelopeIsDerivedRatherThanChosen:
@@ -155,7 +170,7 @@ class TestTheEnvelopeIsDerivedRatherThanChosen:
         assert envelope.position_uncertainty_m == pytest.approx(0.1 * math.sqrt(2.0))
 
     def test_a_possible_jump_is_counted_as_a_certainty(self) -> None:
-        """"Unlikely per window" is "it happens" across an episode of many
+        """ "Unlikely per window" is "it happens" across an episode of many
         windows, and a hard bound exceeded sometimes is not hard."""
         envelope = SafetyEnvelope.for_noise(
             SensorNoise(localization_drift_m=0.1, localization_jump_probability=0.02)
@@ -253,9 +268,7 @@ def _scene(noise: dict | None = None):
     """`sudden_stop` as a deployment, the way the form builds one."""
     map_data, library = build_scenario("sudden_stop")
     raw = copy.deepcopy(
-        yaml.safe_load(
-            (REPO_ROOT / "profiles" / "open_hall_v2.yaml").read_text(encoding="utf-8")
-        )
+        yaml.safe_load((REPO_ROOT / "profiles" / "open_hall_v2.yaml").read_text(encoding="utf-8"))
     )
     raw["id"] = "feasible_probe"
     raw["replanning"] = {"enabled": True}
@@ -288,11 +301,22 @@ def _scene(noise: dict | None = None):
 _RUNS: dict[tuple, tuple] = {}
 
 
+def _config_for(stack: str) -> str:
+    """The balanced configuration belonging to this stack's controller."""
+    controller = algorithm_info(stack).local_controller
+    return f"{controller}_balanced"
+
+
 def _run(stack: str, overrides: dict | None = None, noise: dict | None = None):
     key = (stack, tuple(sorted((overrides or {}).items())), tuple(sorted((noise or {}).items())))
     if key not in _RUNS:
         map_data, profile, scenario = _scene(noise)
-        local = {**LOCAL_CONTROLLER_CONFIGS["dwa_balanced"], **(overrides or {})}
+        # The configuration named for *this stack's* controller, not a
+        # literal. ``dwa_balanced`` would still run on a predictive stack —
+        # every one of its keys is a valid field there — which is exactly
+        # the mislabelled pairing ``validate_config_names`` now refuses, so
+        # a test that hardcoded it would be modelling the defect.
+        local = {**LOCAL_CONTROLLER_CONFIGS[_config_for(stack)], **(overrides or {})}
         _RUNS[key] = (
             map_data,
             scenario,
@@ -499,9 +523,7 @@ class TestAdmissibleStoppingIsAGuaranteeNotAWeight:
         stop**. Both are ordinary candidate knobs, which is the point: no
         legal configuration may reach through to the hard set.
         """
-        _, scenario, run = _run(
-            "astar+dwa", {"weight_clearance": 0.0, "horizon_seconds": 0.5}
-        )
+        _, scenario, run = _run("astar+dwa", {"weight_clearance": 0.0, "horizon_seconds": 0.5})
         assert run.result.status is not EpisodeStatus.COLLISION
         assert _stopping_violations(scenario, run) == []
 
@@ -524,7 +546,5 @@ class TestAdmissibleStoppingIsAGuaranteeNotAWeight:
         headroom = 0.64
         speed = planner._speed_that_stops_within(headroom, ROBOT)
         period = planner.control_period
-        assert stopping_distance(speed, ROBOT) + speed * period == pytest.approx(
-            headroom, abs=1e-6
-        )
+        assert stopping_distance(speed, ROBOT) + speed * period == pytest.approx(headroom, abs=1e-6)
         assert speed < math.sqrt(2.0 * ROBOT.max_linear_acceleration * headroom)

@@ -23,7 +23,11 @@ would need the ``MonolithicPolicy`` adapter of HĐ-4 to run one.
 
 from __future__ import annotations
 
+import hashlib
+import inspect
 from collections.abc import Sequence
+from functools import cache
+from importlib import import_module
 from typing import Any
 
 from planbench_benchmark.observation import ObservationClass
@@ -124,12 +128,62 @@ DEFAULT_STRUCTURAL_PROFILE = StructuralResourceProfile(
 )
 
 
+#: Modules whose source is hashed into a controller's ``local_version``.
+#:
+#: The shared core is in **every** entry on purpose. ``dwa`` and
+#: ``dwa_predictive`` call the same ``dwa_core`` functions, so a fix there
+#: changes what both candidates do — and hashing only each controller's
+#: own file would let that happen with both recorded ids unmoved, which is
+#: precisely the promise ``StackComponent.version`` makes and used to
+#: break.
+_CONTROLLER_SOURCES: dict[str, tuple[str, ...]] = {
+    "dwa": ("planbench_planning.dwa.planner", "planbench_planning.common.dwa_core"),
+    "dwa_predictive": (
+        "planbench_planning.dwa_predictive.planner",
+        "planbench_planning.dwa_predictive.tracking",
+        "planbench_planning.dwa_predictive.tracks",
+        "planbench_planning.common.dwa_core",
+    ),
+}
+
+
+@cache
+def controller_version(controller: str) -> str:
+    """Short checksum of the code this controller actually runs.
+
+    **The debt this pays.** ``candidate_from_stack`` took
+    ``local_version: str = "v1"`` and **no caller ever passed one**, so
+    every candidate the platform has produced was ``v1`` for ever — while
+    ``StackComponent``'s own docstring promised that *the same DWA after a
+    bug fix is a different candidate*. The id said two runs were the same
+    candidate when the code had changed underneath them.
+
+    Hashing source text rather than a version somebody types: a number a
+    human maintains is a number a human forgets, and the failure is
+    silent. Docstrings and comments count too — they cannot change
+    behaviour, but a checksum that tried to ignore them would need to
+    parse Python to decide what matters, and being occasionally too
+    sensitive is the safe direction for an identity.
+
+    Unknown controllers fall back to ``"v1"``: ``ppo`` carries its
+    checkpoint checksum already, and ``pure_pursuit`` is not
+    benchmarkable.
+    """
+    modules = _CONTROLLER_SOURCES.get(controller)
+    if not modules:
+        return "v1"
+    digest = hashlib.sha256()
+    for name in modules:
+        digest.update(inspect.getsource(import_module(name)).encode("utf-8"))
+    return digest.hexdigest()[:12]
+
+
 def candidate_from_stack(
     stack_id: str,
     *,
     params: dict[str, Any] | None = None,
     global_version: str = "v1",
-    local_version: str = "v1",
+    local_version: str | None = None,
     resource_profile: StructuralResourceProfile | None = None,
 ) -> Candidate:
     """Build the candidate for a registry stack and one parameter set.
@@ -141,10 +195,21 @@ def candidate_from_stack(
     parameters are not configurable through the registry yet, so the
     candidate carries no block for that layer.
 
-    The versions are arguments rather than registry facts because the
-    registry does not track code versions. Passing the real one is what
-    makes a candidate id distinguish the same stack before and after a
-    bug fix (HĐ-1.3).
+    ``local_version`` defaults to the **checksum of the controller's own
+    source plus the shared core** rather than to a literal. It used to
+    default to ``"v1"`` and no caller ever overrode it, so every candidate
+    id was ``v1`` permanently and two runs of materially different code
+    were recorded as the same candidate — the exact thing HĐ-1.3 says an
+    id must distinguish. Passing a value explicitly is still allowed, for
+    a caller reconstructing a historical candidate.
+
+    **This changes every candidate id in existence.** Runs stored before
+    it keep their old ids and no longer match the ids the same stacks
+    produce now. That is accepted rather than papered over (dev decision
+    15-08): the platform already refuses to edit identity in place —
+    ``same_deployment`` exists for the same reason — and the alternative,
+    hashing only the new controller, would leave the hole half-patched
+    while the two controllers share ``dwa_core``.
     """
     info = algorithm_info(stack_id)
     if info is None:
@@ -176,7 +241,10 @@ def candidate_from_stack(
     return Candidate(
         type="modular",
         global_planner=StackComponent(name=global_name, version=global_version),
-        local_controller=StackComponent(name=local_name, version=local_version),
+        local_controller=StackComponent(
+            name=local_name,
+            version=local_version or controller_version(local_name),
+        ),
         params={local_name: validated.model_dump(mode="json")},
         observation_requirements=observation_requirements_for(info),
         resource_profile=resource_profile or DEFAULT_STRUCTURAL_PROFILE,
@@ -260,6 +328,36 @@ CONTROLLER_CONFIGS: dict[str, dict[str, dict[str, Any]]] = {
             "horizon_seconds": 1.0,
         },
     },
+    # **Identical sampling density to `dwa`, deliberately.** The latency
+    # axis is only comparable if the two controllers sample the same
+    # number of candidates; a predictive stack that also sampled more
+    # coarsely would mix two changes into one G4 reading. Whatever this
+    # candidate costs above `dwa` is then the tracker plus the space-time
+    # broadcast, which is the number worth having.
+    #
+    # Names are the full `dwa_predictive_*`, not an abbreviation: item 3
+    # below checks a configuration name against the controller it belongs
+    # to, and these strings appear verbatim in every stored report.
+    "dwa_predictive": {
+        "dwa_predictive_coarse": {
+            "control_period": 0.05,
+            "velocity_samples": 7,
+            "omega_samples": 15,
+            "horizon_seconds": 1.0,
+        },
+        "dwa_predictive_balanced": {
+            "control_period": 0.05,
+            "velocity_samples": 12,
+            "omega_samples": 24,
+            "horizon_seconds": 1.0,
+        },
+        "dwa_predictive_default": {
+            "control_period": 0.05,
+            "velocity_samples": 20,
+            "omega_samples": 40,
+            "horizon_seconds": 1.0,
+        },
+    },
 }
 
 #: Every named configuration, flat, keyed by name.
@@ -298,6 +396,51 @@ CONTROLLER_OF_CONFIG: dict[str, str] = {
 #: stays registered saying so. Re-picking the sampling density until a
 #: number clears a gate is the move HĐ-15.3 asks about, and the four
 #: reverted changes of 2026-08-11 are what it looks like.
+
+
+class ConfigControllerMismatch(ValueError):
+    """A configuration name that belongs to a different controller."""
+
+
+def validate_config_names(specs: Sequence[tuple[str, str]]) -> None:
+    """Refuse ``astar+dwa_predictive:dwa_coarse`` and its relatives.
+
+    **A live hole until this existed.** Configuration names are a single
+    flat namespace, and nothing checked that the one a run asked for
+    belonged to the controller in its stack. ``dwa_coarse`` names only
+    sampling densities, and every one of its keys is also a valid
+    ``DWAPredictiveConfig`` field — so the pair above **runs**, and the
+    stored report says ``local_controller_config: dwa_coarse`` beside a
+    candidate that is not ``dwa``. Nothing is wrong with the episodes;
+    what is wrong is that the record describes a configuration nobody
+    chose, and that only becomes visible once a second controller exists.
+
+    ``CONTROLLER_OF_CONFIG`` has been derived and exported all along with
+    nothing reading it. This is the reader.
+
+    Checked here rather than at the registry: the registry knows a stack
+    and a config model, and ``dwa_coarse`` validates cleanly against
+    both. Only the *pairing* is wrong, and the pairing is what a run
+    declares.
+    """
+    for stack, config_name in specs:
+        info = algorithm_info(stack)
+        if info is None:
+            continue
+        owner = CONTROLLER_OF_CONFIG.get(config_name)
+        if owner is None:
+            raise ConfigControllerMismatch(
+                f"{stack}:{config_name} names a configuration that does not exist. "
+                f"Available: {', '.join(sorted(LOCAL_CONTROLLER_CONFIGS))}"
+            )
+        if owner != info.local_controller:
+            raise ConfigControllerMismatch(
+                f"{stack}:{config_name} pairs a {info.local_controller} stack with a "
+                f"{owner} configuration. It would run — every field of {config_name} is "
+                f"also valid for {info.local_controller} — and the report would then "
+                f"name a configuration this candidate never used. Pick one of: "
+                f"{', '.join(sorted(CONTROLLER_CONFIGS.get(info.local_controller, {})))}"
+            )
 
 
 class ControlRateViolation(ValueError):
