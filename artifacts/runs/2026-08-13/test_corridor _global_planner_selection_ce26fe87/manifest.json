@@ -1,0 +1,548 @@
+{
+  "contracts_version": "6.5.0",
+  "git_sha": "05b271769a5a68dbbbe3aba11d475e8d4f429f0e",
+  "docker_image_digest": null,
+  "task_profile_id": "test_corridor ",
+  "anchor_config_version": "v1.2",
+  "preference_profile": "kho_ban_dem",
+  "decision_mode": "technical",
+  "travel_time_accounting": "efficiency",
+  "sensor_noise": {
+    "lidar_range_sigma_m": 0.02,
+    "wheel_slip_fraction": 0.02
+  },
+  "constraints": {
+    "success_rate_min": 0.95,
+    "collision_probability_max": 0.1,
+    "no_path_rate_max": 0.02,
+    "goal_tolerance_m": 0.2,
+    "goal_tolerance_rad": 3.1416,
+    "episode_timeout_s": 120.0,
+    "stuck_threshold_s": 10.0,
+    "clearance_warning_m": 0.35,
+    "cost_per_mission_max": null
+  },
+  "candidates": [
+    "60c8e26fe591",
+    "db26440f6052"
+  ],
+  "episode_contexts": {
+    "evaluation": [
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 14,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "0215443eedcf"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 21,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "0414cfda14fa"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 54,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "06afb3d79a18"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 0,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "0944c28abfae"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 43,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "0da9f6b49d2b"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 27,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "13b4ee58a7b6"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 38,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "181de5614676"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 57,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "1aef0954cb6a"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 29,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "1b771a4bd906"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 17,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "1df548ad392a"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 28,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "2192c6dcda44"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 18,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "22950c4b054b"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 22,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "271523c641c1"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 46,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "296590c20cda"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 3,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "29799347b8c9"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 42,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "2a09fa1791fd"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 53,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "323cc9dac1d0"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 40,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "3449920eaac1"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 24,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "380babb00c59"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 58,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "4a6d8d5ffe06"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 11,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "58a601ae89bb"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 48,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "5f7705491254"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 52,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "618730e7acb3"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 36,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "6e306dfab690"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 34,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "6f6da34b6a5d"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 56,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "7140214a4a0c"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 25,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "77afd8352677"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 8,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "7df3038e4366"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 31,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "8683a9f66e25"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 26,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "922e3b9f2c75"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 12,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "94625b4f0f9c"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 59,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "9467401b0953"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 44,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "951b4d08e986"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 55,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "9623388b4802"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 49,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "982d30169f26"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 45,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "99f1a56ee7ec"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 15,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "9b56f2b62353"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 47,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "9c1636aa0ec6"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 9,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "9f77162440ba"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 6,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "9fe0a04be362"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 23,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "aa3e4945a53d"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 51,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "af722d8ca815"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 16,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "b11cb6618fb7"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 4,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "b5e9c4cc0f69"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 37,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "c0b3b52504da"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 32,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "c2f9c77dcea7"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 7,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "c6c1abb86301"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 35,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "c830820ab0f1"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 50,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "cd7f50d833e0"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 20,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "d2dff9a804f8"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 5,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "d5dbdd106ba1"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 41,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "d9151c359bc5"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 1,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "db120ef292de"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 10,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "e2a65aa60144"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 13,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "e5f8a4f08c3e"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 39,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "ec47e02220de"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 2,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "ee9e4f8b15a0"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 19,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "f06acfdf8336"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 33,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "f587104bb86b"
+      },
+      {
+        "task_profile_id": "test_corridor ",
+        "mission_id": "custom_route",
+        "seed": 30,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "f92a689fda7c"
+      }
+    ],
+    "neighborhood": []
+  },
+  "bootstrap": {
+    "seed": 0,
+    "n_resamples": 1000
+  },
+  "benchmark_host": {
+    "cpu": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+    "cores_allocated": 20,
+    "threads": 1,
+    "cpu_affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19
+    ],
+    "logical_cores": 20,
+    "affinity_source": null
+  },
+  "created_at": "2026-08-13T03:26:50.421319+00:00"
+}

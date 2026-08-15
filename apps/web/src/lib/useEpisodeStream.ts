@@ -105,6 +105,7 @@ export function useEpisodeStream(): EpisodeStream {
               theta: message.theta,
               linear_velocity: message.linear_velocity,
               angular_velocity: message.angular_velocity,
+              obstacles: message.obstacles,
             };
             framesRef.current = [...framesRef.current, frame];
             setFrames(framesRef.current);

@@ -82,12 +82,38 @@ class TestBasicMetrics:
 
 
 class TestClearanceMetrics:
-    def test_clearance_in_empty_grid(self, empty_grid: OccupancyGrid) -> None:
+    def test_clearance_far_from_anything_is_floored_at_the_window(
+        self, empty_grid: OccupancyGrid
+    ) -> None:
+        """Standing in the middle of an empty map reports the window.
+
+        The true answer is 2.0 — 2.5 m to each edge minus the radius —
+        and this used to assert it. The grid scan is now windowed at 2 m
+        (see `clearance_to_obstacles`), because the exhaustive version
+        was 90% of a test-bench episode's wall clock for a number HĐ-5's
+        Metrics Engine never reads.
+
+        **Nothing judged changes.** `min_clearance` is anchored at two
+        robot radii, about 0.52 m, so 1.5 and 2.0 both score a flat 1.0.
+        And the direction is the safe one: reporting less room than there
+        is can only make a candidate look worse, never wave one through.
+        """
         result = make_result(EpisodeStatus.SUCCESS, [tp(0.0, 2.5, 2.5)])
         metrics = compute_episode_metrics(result, grid=empty_grid, robot_radius=0.5)
-        # Only the map boundary: 2.5 m to each edge minus the radius.
-        assert metrics.min_clearance == pytest.approx(2.0)
-        assert metrics.mean_clearance == pytest.approx(2.0)
+        assert metrics.min_clearance == pytest.approx(1.5)
+        assert metrics.mean_clearance == pytest.approx(1.5)
+
+    def test_clearance_near_a_wall_is_still_exact(self, empty_grid: OccupancyGrid) -> None:
+        """The other side of the boundary the test above records.
+
+        Half a metre from the edge is well inside the window, so the
+        answer is the true distance and not a floor. Without this, the
+        pair above would document a cheaper computation without showing
+        that it is still exact wherever the value can change a metric.
+        """
+        result = make_result(EpisodeStatus.SUCCESS, [tp(0.0, 0.5, 2.5)])
+        metrics = compute_episode_metrics(result, grid=empty_grid, robot_radius=0.2)
+        assert metrics.min_clearance == pytest.approx(0.3)
 
     def test_clearance_requires_grid_and_radius(self) -> None:
         result = make_result(EpisodeStatus.SUCCESS, [tp(0.0, 2.5, 2.5)])

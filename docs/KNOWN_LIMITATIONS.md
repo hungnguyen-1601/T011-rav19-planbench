@@ -19,8 +19,10 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
    nghiệm; cần distance-field cache nếu map lớn (theo dõi ở M5).
 6. **Pure-pursuit chỉ là adapter tạm** (D12) — không xuất hiện trong
    benchmark comparison; DWA thay thế ở M4.
-7. **LiDAR không có noise model** — sẽ thêm noise có seed khi cần
-   benchmark sensor robustness.
+7. ~~**LiDAR không có noise model**~~ — **đã có từ 2026-08-11**
+   (contract 6.3.0, HĐ-2.5). `environment.sensor_noise` khai σ tầm quét
+   và tỉ lệ trượt bánh, mặc định **0** nên mọi profile cũ giữ nguyên
+   hành vi. Xem mục "MVP v1" cuối tài liệu này.
 8. **Planning time là wall-clock** — không deterministic (chỉ dùng làm
    metric, không tham gia logic).
 
@@ -985,3 +987,170 @@ và không phải lỗi báo cáo. Bằng chứng và số liệu đầy đủ:
 - Test frontend chạy ở môi trường Node (không jsdom); `vitest.config.ts`
   đặt `testTimeout: 20s` vì `auth.test.ts` reset module graph ở mỗi case
   và 15 file chạy song song có lúc vượt mốc 5s mặc định.
+
+## MVP v1 — Planner Selector (chốt 2026-08-11)
+
+Bản MVP đầu tiên của tầng quyết định. Nền tảng đo được, so được, và từ
+chối kết luận khi dữ liệu không đỡ. Các giới hạn dưới đây **không phải
+lỗi cần vá** — chúng là phạm vi mà mọi kết luận của bản này bị chặn
+trong, và mỗi cái có điều kiện gỡ rõ ràng.
+
+### L1. G4 và G5 mới xác nhận trên máy benchmark, **chưa trên bo mạch đích**
+
+Dự án **không có bo mạch đích** (Jetson Orin Nano hay board ARM nào). Nên
+theo bảo lưu HĐ-7.2/7.3:
+
+- `realtime_gate.status` **luôn** là `screened_on_host`; giá trị
+  `verified_on_target` không xuất hiện trên bất kỳ Decision Card nào của
+  dự án này, và `target_p99_ms` luôn null.
+- `memory_gate.status` chỉ nhận `estimated_from_structure` hoặc
+  `declared_by_author`. G5 **đếm** cấu trúc dữ liệu nhân kích thước byte
+  khai theo hiện thực đích, **không đo** RSS. `peak_rss_mb` là chẩn đoán,
+  và **không bao giờ** được đem so với `available_ram_mb`.
+
+**Suy luận nào còn hợp lệ:** đúng một chiều. Trượt trên máy benchmark
+nhanh ⇒ **chắc chắn** trượt trên bo mạch đích chậm hơn. Chiều ngược lại
+**không** suy được: qua G4 trên host **không** cho phép phát biểu
+candidate đạt thời gian thực trên bo mạch đích. Mọi card in nguyên văn
+*"G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"*.
+
+**Cấm dùng hệ số quy đổi giữa hai máy.** A\* (nặng truy cập bộ nhớ) và
+DWA (nặng tính toán) co giãn khác nhau giữa x86 và ARM; một hệ số dùng
+chung là con số bịa.
+
+Thêm một hệ quả đo được của lượt M4: `rrtstar+dwa` với lấy mẫu 20×40
+trượt G4 ở **50,28 ms** trên ngưỡng 50,00 ms — vượt 0,6%. Biên đó mỏng
+tới mức độ chính xác của phép đo bắt đầu quan trọng, nên phát biểu đúng
+là *"trượt theo số đo được"*, **không** phải *"chắc chắn trượt trên bo
+mạch đích"*. Lối ra hợp lệ là đăng ký candidate mới với lấy mẫu trung
+gian — **không** nới `control_period` (xem L4).
+
+**Gỡ khi:** có bo mạch đích, chạy pha P2 trên đúng board, gỡ bảo lưu
+HĐ-7.2/7.3 và tăng `contracts_version` MINOR.
+
+### L2. Chưa có adapter `MonolithicPolicy` — chỉ candidate `modular` chạy được
+
+HĐ-4 định nghĩa hai loại candidate: `modular` (global planner + local
+controller) và `monolithic` (policy end-to-end, không có global planner).
+Adapter cho loại thứ hai **chưa tồn tại**. `build_planners` từ chối một
+candidate `monolithic` bằng thông điệp nói rõ điều đó, và
+`test_only_modular_stacks_can_run_today` sẽ **đỏ** đúng ngày adapter
+được thêm.
+
+**Vì sao chốt chặn đó tồn tại, và đây là phần quan trọng:** ngày adapter
+chạy được, một bất cân xứng thông tin **đã biết** trở thành lỗi công bằng
+thật. Khi robot bị chặn, `nav_stack._replan` dựng lưới quy hoạch tạm với
+**vị trí thật** của vật cản động nung vào. Hôm nay công bằng vì mọi
+candidate đều là modular và nhận cùng lưới đó. Nhưng một policy
+end-to-end chỉ thấy `Observation`, còn global planner của stack modular
+thấy vật cản **thật sự ở đâu** — đúng đặc quyền mà G6 và P02 sinh ra để
+định giá, và nó sẽ ưu ái stack modular vì một lý do **không liên quan gì
+tới chất lượng điều hướng**.
+
+Luật đã ghi ở HĐ-4.1: phải gỡ đặc quyền này **trước** khi chấm bất kỳ
+candidate `monolithic` nào, và lời giải hợp lệ là **replan từ
+`Observation`** — không phải cấp ground truth cho cả hai bên (cấp cho cả
+hai chỉ đổi một phép so lệch thành hai phép đo sai).
+
+Hệ quả cho bản MVP này: mọi kết luận đều nằm trong họ **modular**, và
+tuyên bố *"nền tảng công bằng cho mọi thuật toán"* mới được chứng minh
+trên hai global planner cùng kiểu tìm đường trên lưới với một local
+controller. Phép thử thật của tuyên bố đó chưa được chạy.
+
+### L3. Bốn candidate, một qua cổng — chưa có Decision Card nào trên nền đã kiểm
+
+Trên `open_hall_v2` (30 episode ghép cặp, ghim 2 nhân, nhiễu σ = 2 cm /
+trượt 2%):
+
+| stack | local | success | p99 gộp | verdict |
+|---|---|---:|---:|---|
+| `astar+dwa` | `dwa_coarse` | 70% | 5,26 ms | fail G3 |
+| `astar+dwa` | `dwa_default` | 73% | 29,40 ms | fail G3 |
+| `rrtstar+dwa` | `dwa_coarse` | 100% | 6,06 ms | **pass** |
+| `rrtstar+dwa` | `dwa_default` | 100% | 50,28 ms | fail G4 |
+
+Không cặp nào có **hai** candidate cùng qua sáu cổng, nên không phép so
+nào ra được Decision Card. Đó là **kết quả**, không phải sự cố: bảng cổng
+trả lời "ai bị loại ở đâu sau bao nhiêu lần chạy", và
+`comparison_report.json` ghi lại đầy đủ.
+
+Một ràng buộc đọc kết quả: `open_hall_v2` khai `success_rate_min: 0.95`,
+và **con số đó vẫn chưa mang lập luận nào của riêng sảnh**. Nó được chép
+từ profile kho; ngày 08-11 đã đổi sang 1.00 kèm lý do, ngày 08-12 lùi lại
+vì hệ quả lên thang anchor — xem **L6**, việc còn để ngỏ. Nên *"A\* trượt
+G3 trên sảnh"* phải đọc là **A\* đạt 70% trên sảnh này**, và việc đó có
+phải thất bại hay không còn phụ thuộc một ngưỡng chưa được chốt cho
+deployment này.
+
+### L4. Bốn con số **không** được nới để có kết quả đẹp hơn
+
+Ghi ở đây vì cả bốn đã từng bị nới một lần và phải hoàn nguyên
+(2026-08-11):
+
+1. `robot.control_period` — là ngưỡng G4. Từng khai 10 Hz thay vì 20 Hz
+   vì DWA Python không kịp 50 ms, tức **nới cổng vì candidate không qua
+   nổi cổng**.
+2. `constraints.collision_probability_max` — là yêu cầu an toàn của hiện
+   trường, không phải núm vặn thời lượng chạy. Mũi tên chạy một chiều:
+   `rủi ro ⇒ N_min ⇒ số giờ`, không đọc ngược.
+3. Tham số DWA của candidate — đó là **thứ đang được đem đo**. Sửa nó
+   nghĩa là **đăng ký candidate mới**, không phải chỉnh tại chỗ.
+4. Map, mission, traffic — sửa chúng theo kết quả là đổi đề bài.
+
+Câu hỏi bắt buộc cho mọi hằng số mới trong profile (HĐ-15.3): *"con số
+này đến từ hiện trường, hay từ thứ máy/code của tôi chạy nổi?"* Vế sau
+thì nó thuộc mục bảo lưu của hợp đồng, không thuộc file profile.
+
+### L5. Vận hành
+
+- **Hai run đánh giá không được chạy song song trên cùng một máy.** Ghim
+  nhân là mặc định và luôn lấy `count` nhân **đầu**, nên hai tiến trình
+  cùng ghim sẽ giành đúng hai nhân đó: mỗi run thành tải nền của run
+  kia và G4 của cả hai đo một cái máy không tồn tại (HĐ-7.4). Chạy tuần
+  tự, hoặc `--no-pin` cộng `taskset` cấp mask rời nhau.
+- **Đổi `sensor_noise` phải đổi `task_profile_id`.** `episode_context_id`
+  không băm biên độ nhiễu (HĐ-3.1 đóng băng payload), nên sửa σ tại chỗ
+  sẽ khiến `--reuse-traces` phục vụ episode ghi trong một thế giới không
+  còn tồn tại — id khớp, không cảnh báo nào.
+- **`instance_difficulty` chưa nối** vào tầng quyết định; cache P03 khoá
+  theo `scenario_name` của thư viện cũ và không có entry cho profile nào
+  thời contract. **`robustness_margin` vẫn null** — cần Task Neighborhood
+  (pha 2).
+
+### L6. `success_rate_min` của sảnh: **nợ kỹ thuật, chưa giải quyết** (2026-08-12)
+
+`open_hall_v1` và `open_hall_v2` khai `success_rate_min: 0.95`. **Con số
+đó được biết là sai**, và nó ở đó như một biện pháp tạm.
+
+**Giá trị đúng theo lập luận là 1.00.** Sảnh là deployment nghiệm thu:
+dễ, đối xứng, chạy dưới nhiễu đã khai, không có gì đánh bại một stack
+bằng hình học. Nên một failure ở đây là **tín hiệu chẩn đoán**, không
+phải một thống kê để lấy trung bình — và 0.95 đang phát biểu rằng một
+lần hỏng trên hai mươi lần trên nhiệm vụ đối xứng dễ là chấp nhận được,
+điều không ai thực sự muốn nói. Ngày 2026-08-11 hai file đã chuyển sang
+1.00 đúng vì lý do này.
+
+**Vì sao lùi lại 0.95 (2026-08-12).** Luật 2 của HĐ-8.3 buộc `bad` của
+`success_rate` trỏ vào chính ngưỡng ấy, nên 1.00 làm `good == bad`, thang
+sập, và deployment mất khả năng xếp hạng (HĐ-8.4). Hệ quả kéo theo:
+`U_R` chết trên sảnh, `measure.py` không ra `decision_utility`, và tấm
+Decision Card duy nhất của dự án — dựng trên `open_hall_v2` — không tái
+lập được. Đưa sảnh ra khỏi vai xếp hạng là một quyết định lớn hơn cái
+đáng quyết trong lúc MVP còn dở, nên ngưỡng lùi về giá trị giữ cho mọi
+thứ chạy, và câu hỏi để lại đây.
+
+**Trạng thái hiện tại, nói rõ để không ai tưởng đã xong:**
+
+- Cơ chế **đã có**: HĐ-8.4 xử lý 1.00 tử tế — vẫn mô phỏng, vẫn ra sáu
+  phán quyết cổng, từ chối xếp hạng kèm lý do đọc được thay vì ném
+  `AnchorError`. Việc còn lại là **quyết định**, không phải hiện thực.
+- Cái chưa có: một lối để sảnh vừa giữ chuẩn nghiệm thu 1.00 vừa còn
+  thang cho `U_R`. Vài hướng chưa xét kỹ: tách `success_rate_min` (cổng)
+  khỏi neo `bad` của anchor (thang); cho anchor khai `bad` riêng khi
+  ngưỡng chạm trần; hoặc chấp nhận sảnh chỉ gác cổng và chuyển hẳn việc
+  xếp hạng sang một deployment khó-mà-đối-xứng (C2, chưa có).
+- **Không được coi 0.95 là câu trả lời.** Đọc *"A\* trượt G3 trên sảnh"*
+  vẫn phải đọc là **A\* đạt 70% trên sảnh này**; con số 0.95 hiện không
+  mang lập luận nào của riêng nó.
+
+Hẹn xử lý: sau khi MVP hoàn tất.

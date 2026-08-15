@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from planbench_api.auth import ActiveUser
 from planbench_api.config import get_settings
@@ -48,10 +48,41 @@ class RobotProfileRequest(BaseModel):
     footprint: str = "circle"
     max_linear_velocity: float = Field(gt=0)
     max_angular_velocity: float = Field(gt=0)
+    #: Optional, because a vehicle whose datasheet nobody has to hand is
+    #: still a vehicle worth recording. Absent is not zero: a deployment
+    #: needs both, so the form asks its author for what the profile does
+    #: not know instead of filling it in for them.
+    max_linear_acceleration: float | None = Field(default=None, gt=0)
+    max_angular_acceleration: float | None = Field(default=None, gt=0)
     lidar_beams: int = Field(default=24, ge=4)
     lidar_range: float = Field(default=6.0, gt=0)
     observation_type: str = "lidar_goal_velocity"
     action_type: str = "continuous_velocity"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _control_period_belongs_to_the_deployment(cls, value: object) -> object:
+        """Refuse T_cycle here rather than dropping it on the way in.
+
+        A body carrying ``control_period`` is somebody expecting it to
+        take effect. Ignoring it silently would leave them believing they
+        had set a cycle time for this vehicle everywhere — and the field
+        is gate G4's threshold, so "everywhere" would mean one edit
+        widening a gate for every deployment using the robot, with no new
+        ``task_profile_id`` to record that the standard moved.
+
+        Named rather than blanket-forbidden: this is the one field with a
+        reason, and refusing every unknown key would be a different
+        decision about an endpoint this change is not otherwise touching.
+        """
+        if isinstance(value, dict) and "control_period" in value:
+            raise ValueError(
+                "control_period is a property of a deployment, not of a robot: it is the "
+                "wall-clock budget one control step has on the target board (gate G4's "
+                "threshold), and the same vehicle at two sites can be held to two different "
+                "cycles. Declare it on the deployment's robot instead."
+            )
+        return value
 
 
 @router.get("/robot-profiles", response_model=list[RobotProfile])

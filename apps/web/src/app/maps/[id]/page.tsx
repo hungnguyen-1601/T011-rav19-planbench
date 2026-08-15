@@ -2,29 +2,18 @@
 
 /** Map editor: paint occupied/free/unknown cells and save a new version. */
 
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { MapCanvas } from "@/components/MapCanvas";
+import { MapPainter } from "@/components/MapPainter";
 import { api } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
-import { FREE, OCCUPIED, UNKNOWN } from "@/lib/demoMap";
-import { worldToCell } from "@/lib/transform";
 import type { MapData } from "@/lib/types";
-
-type Brush = "occupied" | "free" | "unknown";
-
-const BRUSH_VALUE: Record<Brush, number> = {
-  occupied: OCCUPIED,
-  free: FREE,
-  unknown: UNKNOWN,
-};
 
 export default function MapEditorPage({ params }: { params: Promise<{ id: string }> }) {
   const { t } = useTranslation();
   const { id } = use(params);
   const [map, setMap] = useState<MapData | null>(null);
   const [version, setVersion] = useState<number>(0);
-  const [brush, setBrush] = useState<Brush>("occupied");
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -46,24 +35,6 @@ export default function MapEditorPage({ params }: { params: Promise<{ id: string
       cancelled = true;
     };
   }, [id]);
-
-  const paint = useCallback(
-    (x: number, y: number) => {
-      setMap((current) => {
-        if (!current) return current;
-        const cell = worldToCell(current, x, y);
-        if (!cell) return current;
-        const index = cell.row * current.width + cell.col;
-        const value = BRUSH_VALUE[brush];
-        if (current.cells[index] === value) return current;
-        const cells = [...current.cells];
-        cells[index] = value;
-        setDirty(true);
-        return { ...current, cells };
-      });
-    },
-    [brush],
-  );
 
   const save = async () => {
     if (!map) return;
@@ -90,33 +61,33 @@ export default function MapEditorPage({ params }: { params: Promise<{ id: string
       {error ? <div className="error-box">{error}</div> : null}
       {status ? <p className="muted">{status}</p> : null}
 
-      <div className="toolbar">
-        <span className="muted">{t("maps.brushLabel")}</span>
-        {(["occupied", "free", "unknown"] as Brush[]).map((option) => (
-          <button
-            key={option}
-            className={brush === option ? "primary" : ""}
-            onClick={() => setBrush(option)}
-          >
-            {t(`maps.brush.${option}`)}
-          </button>
-        ))}
-        <button className="primary" disabled={!dirty} onClick={() => void save()}>
-          {dirty ? t("maps.saveNewVersion") : t("maps.saved")}
-        </button>
-        <Link href="/simulate">{t("maps.runSimulation")}</Link>
-      </div>
-
       <div className="panel">
-        <MapCanvas map={map} onWorldClick={paint} onWorldDrag={paint} />
-        <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
-          {t("maps.editorHint", {
-            width: map.width,
-            height: map.height,
-            resolution: map.resolution,
-            worldWidth: (map.width * map.resolution).toFixed(1),
-            worldHeight: (map.height * map.resolution).toFixed(1),
-          })}
+        {/* Saving is the page's business, not the painter's: this page
+            PUTs a new version by id, while the deployment form holds an
+            unsaved grid until the profile is filed. The painter takes
+            the button as a slot so both keep one toolbar row. */}
+        <MapPainter
+          map={map}
+          onChange={(next) => {
+            setMap(next);
+            setDirty(true);
+          }}
+          actions={
+            <>
+              <button type="button" className="primary" disabled={!dirty} onClick={() => void save()}>
+                {dirty ? t("maps.saveNewVersion") : t("maps.saved")}
+              </button>
+              <Link href="/simulate">{t("maps.runSimulation")}</Link>
+            </>
+          }
+        />
+        {/* Where the start and the goal are, since this is where people
+            look for them. They are not on a map and cannot be: `MapData`
+            is walls, and the same warehouse serves many missions. The
+            pair belongs to the deployment that runs on this map, so it
+            is chosen where that deployment is filed. */}
+        <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+          {t("maps.whereArePoses")} <Link href="/decisions">{t("maps.posesLink")}</Link>
         </p>
       </div>
     </>

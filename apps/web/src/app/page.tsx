@@ -39,6 +39,8 @@ function shortTime(value: string): string {
 
 const NO_STATS = {
   benchmarks: null,
+  decisions: null,
+  ranked: null,
   accepted: null,
   pendingReviews: null,
   scenarios: null,
@@ -67,7 +69,7 @@ export default function DashboardPage() {
   }, [refresh, userId]);
 
   const stats = data ? summarise(data) : NO_STATS;
-  const benchmarks = data ? recentBenchmarks(data) : [];
+  const decisions = data?.decisions ?? [];
   const simulations = data ? recentSimulations(data) : [];
   const reviews = data ? pendingForMe(data) : [];
   const signedIn = session !== null;
@@ -91,11 +93,25 @@ export default function DashboardPage() {
       <div className="stat-grid">
         <StatCard
           icon="benchmark"
-          label={t("dashboard.stats.benchmarks")}
-          hint={t("dashboard.stats.benchmarksHint")}
-          value={stats.benchmarks}
+          label={t("dashboard.stats.decisions")}
+          hint={t("dashboard.stats.decisionsHint")}
+          value={stats.decisions}
           loading={first}
-          href="/benchmarks"
+          href="/decisions"
+        />
+        {/* Ranked beside the total, never instead of it. Most runs
+            produce no card — fewer than two candidates through the gates
+            means no ΔU (HĐ-7) — so a lone "decisions" figure beside a
+            lone "accepted" one would make four runs in five read as
+            failures, which is the pressure that once produced a card
+            bounding a collision probability off a single episode. */}
+        <StatCard
+          icon="trophy"
+          label={t("dashboard.stats.ranked")}
+          hint={t("dashboard.stats.rankedHint")}
+          value={stats.ranked}
+          loading={first}
+          href="/decisions"
         />
         <StatCard
           icon="check"
@@ -103,7 +119,7 @@ export default function DashboardPage() {
           hint={t("dashboard.stats.acceptedHint")}
           value={stats.accepted}
           loading={first}
-          href="/leaderboard"
+          href="/decisions"
         />
         <StatCard
           icon="inbox"
@@ -123,11 +139,11 @@ export default function DashboardPage() {
         />
         <StatCard
           icon="cpu"
-          label={t("dashboard.stats.algorithms")}
-          hint={t("dashboard.stats.algorithmsHint")}
+          label={t("dashboard.stats.candidates")}
+          hint={t("dashboard.stats.candidatesHint")}
           value={stats.algorithms}
           loading={first}
-          href="/algorithms"
+          href="/candidates"
         />
         <StatCard
           icon="play"
@@ -144,8 +160,8 @@ export default function DashboardPage() {
       <div className="dashboard-columns">
         <section className="panel">
           <div className="panel-head">
-            <h3>{t("dashboard.recentBenchmarks")}</h3>
-            <Link href="/benchmarks">{t("dashboard.viewAll")}</Link>
+            <h3>{t("dashboard.recentDecisions")}</h3>
+            <Link href="/decisions">{t("dashboard.viewAll")}</Link>
           </div>
           {!signedIn ? (
             <EmptyState
@@ -155,34 +171,40 @@ export default function DashboardPage() {
               actionHref="/login"
               actionLabel={t("topbar.signIn")}
             />
-          ) : benchmarks.length === 0 ? (
+          ) : decisions.length === 0 ? (
             <EmptyState
               icon="benchmark"
-              title={t("dashboard.empty.benchmarks.title")}
-              body={t("dashboard.empty.benchmarks.body")}
-              actionHref="/benchmarks"
-              actionLabel={t("dashboard.action.createBenchmark")}
+              title={t("dashboard.empty.decisions.title")}
+              body={t("dashboard.empty.decisions.body")}
+              actionHref="/decisions"
+              actionLabel={t("dashboard.action.startComparison")}
             />
           ) : (
             <div className="table-scroll">
               <table>
                 <thead>
                   <tr>
-                    <th>{t("common.name")}</th>
+                    <th>{t("dashboard.column.deployment")}</th>
                     <th>{t("common.status")}</th>
                     <th>{t("common.created")}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {benchmarks.map((benchmark) => (
-                    <tr key={benchmark.id}>
+                  {decisions.slice(0, 5).map((run) => (
+                    <tr key={run.id}>
                       <td>
-                        <Link href={`/benchmarks/${benchmark.id}`}>{benchmark.spec.name}</Link>
+                        <Link href={`/decisions/${run.id}`}>{run.task_profile_id}</Link>
                       </td>
                       <td>
-                        <StateBadge state={benchmark.state} />
+                        {/* "No card" is an outcome, not a fault, so it is
+                            never coloured as one. */}
+                        {run.ranked ? (
+                          <span className="badge ok">{t("dashboard.ranked")}</span>
+                        ) : (
+                          <span className="badge warn">{t("dashboard.noCard")}</span>
+                        )}
                       </td>
-                      <td className="muted">{shortTime(benchmark.created_at)}</td>
+                      <td className="muted">{shortTime(run.created_at)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -224,9 +246,11 @@ export default function DashboardPage() {
                   {reviews.map((view) => (
                     <tr key={view.request.id}>
                       <td>
-                        <Link href={`/benchmarks/${view.request.benchmark_id}`}>
-                          {view.benchmark_name || view.request.benchmark_id}
-                        </Link>
+                        {/* Named, not linked: the benchmark page retired
+                            in P6 and a link to it would 404. The inbox
+                            still answers what it is for — what is waiting
+                            on somebody. */}
+                        {view.benchmark_name || view.request.benchmark_id}
                       </td>
                       <td>{view.requested_by?.nickname ?? "—"}</td>
                       <td>

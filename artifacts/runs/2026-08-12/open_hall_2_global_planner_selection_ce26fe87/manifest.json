@@ -1,0 +1,308 @@
+{
+  "contracts_version": "6.5.0",
+  "git_sha": "8ca2518f33f8c1f2d4206777ff7db8a0bab28dfc",
+  "docker_image_digest": null,
+  "task_profile_id": "open_hall_2",
+  "anchor_config_version": "v1.2",
+  "preference_profile": "kho_ban_dem",
+  "decision_mode": "technical",
+  "travel_time_accounting": "efficiency",
+  "sensor_noise": {
+    "lidar_range_sigma_m": 0.02,
+    "wheel_slip_fraction": 0.02
+  },
+  "constraints": {
+    "success_rate_min": 0.95,
+    "collision_probability_max": 0.1,
+    "no_path_rate_max": 0.02,
+    "goal_tolerance_m": 0.2,
+    "goal_tolerance_rad": 3.1416,
+    "episode_timeout_s": 120.0,
+    "stuck_threshold_s": 10.0,
+    "clearance_warning_m": 0.35,
+    "cost_per_mission_max": null
+  },
+  "candidates": [
+    "60c8e26fe591",
+    "db26440f6052"
+  ],
+  "episode_contexts": {
+    "evaluation": [
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 25,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "0b4dd2ae6411"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 0,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "0d8d0ef3d2a1"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 4,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "205ad555294a"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 1,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "214892080115"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 29,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "23338817672e"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 9,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "271f04e659ab"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 18,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "29780ef87c23"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 24,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "34bd93b08254"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 2,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "367d5e5f470e"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 7,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "3761c1ab6e6c"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 17,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "5d9cf3be5cc5"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 26,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "60f79f8fd084"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 5,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "6a6922a56e43"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 21,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "6cade45b315a"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 20,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "70e83d1c7fb4"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 13,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "75d7db429885"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 19,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "80207cdd9107"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 10,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "941fff021f1d"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 12,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "a74f80c58a49"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 15,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "a7be410cfcea"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 23,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "a8d22250bdc6"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 16,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "ae98f3074861"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 27,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "b52aa80ba1bd"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 11,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "c00721f7a58a"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 28,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "cefe8caf595b"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 8,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "d36cc77e71cc"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 22,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "dae8618a2c09"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 6,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "e7606970f3a1"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 3,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "e7ebc7420629"
+      },
+      {
+        "task_profile_id": "open_hall_2",
+        "mission_id": "custom_route",
+        "seed": 14,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "ff4aa8635e9f"
+      }
+    ],
+    "neighborhood": []
+  },
+  "bootstrap": {
+    "seed": 0,
+    "n_resamples": 1000
+  },
+  "benchmark_host": {
+    "cpu": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+    "cores_allocated": 20,
+    "threads": 1,
+    "cpu_affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19
+    ],
+    "logical_cores": 20,
+    "affinity_source": null
+  },
+  "created_at": "2026-08-12T18:01:56.310403+00:00"
+}

@@ -251,6 +251,10 @@ export type WsMessage =
       theta: number;
       linear_velocity: number;
       angular_velocity: number;
+      /** Where the traffic was at this sample. Optional because a server
+       *  older than this field simply omits it, and an absent list must
+       *  not be drawn as "the aisle was clear". */
+      obstacles?: ObstacleSnapshot[];
     }
   | { type: "result"; status: string; reason: string; elapsed_time: number; metrics: EpisodeMetrics }
   | { type: "error"; code: string; message: string };

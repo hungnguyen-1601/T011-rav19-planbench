@@ -13,7 +13,7 @@
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const APP = join(process.cwd(), "src", "app");
@@ -29,6 +29,17 @@ function pageFiles(directory: string): string[] {
     }
   }
   return found;
+}
+
+/** A page's path as a route, whatever the OS spells it with.
+ *
+ * `join` gives `src\app\system\page.tsx` on Windows, and comparing that
+ * against a hand-written `/system/page.tsx` fails for a reason that has
+ * nothing to do with the claim being tested. This test was red on
+ * Windows from the day it was written.
+ */
+function asRoute(file: string): string {
+  return file.replace(APP, "").split(sep).join("/");
 }
 
 const DASHBOARD = readFileSync(join(APP, "page.tsx"), "utf8");
@@ -53,7 +64,7 @@ describe("the API base URL appears on exactly one page", () => {
   it("is only referenced by /system", () => {
     const offenders = pageFiles(APP)
       .filter((file) => readFileSync(file, "utf8").includes("API_BASE"))
-      .map((file) => file.replace(APP, ""));
+      .map(asRoute);
     expect(offenders).toEqual(["/system/page.tsx"]);
   });
 
@@ -65,13 +76,13 @@ describe("the API base URL appears on exactly one page", () => {
 });
 
 describe("the dashboard shows something worth looking at", () => {
-  it("has the six stat cards", () => {
+  it("has a stat card for each thing worth counting", () => {
     for (const key of [
-      "dashboard.stats.benchmarks",
+      "dashboard.stats.decisions",
       "dashboard.stats.accepted",
       "dashboard.stats.pendingReviews",
       "dashboard.stats.scenarios",
-      "dashboard.stats.algorithms",
+      "dashboard.stats.candidates",
       "dashboard.stats.simulations",
     ]) {
       expect(DASHBOARD).toContain(key);
@@ -83,13 +94,13 @@ describe("the dashboard shows something worth looking at", () => {
   });
 
   it("has recent activity and pending reviews", () => {
-    expect(DASHBOARD).toContain("dashboard.recentBenchmarks");
+    expect(DASHBOARD).toContain("dashboard.recentDecisions");
     expect(DASHBOARD).toContain("dashboard.recentSimulations");
     expect(DASHBOARD).toContain("dashboard.pendingRequests");
   });
 
   it("has an empty state for each of them", () => {
-    expect(DASHBOARD).toContain("dashboard.empty.benchmarks.title");
+    expect(DASHBOARD).toContain("dashboard.empty.decisions.title");
     expect(DASHBOARD).toContain("dashboard.empty.simulations.title");
     expect(DASHBOARD).toContain("dashboard.empty.reviews.title");
   });

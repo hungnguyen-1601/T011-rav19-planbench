@@ -1,0 +1,159 @@
+# The hall, with a robot that measures and executes imperfectly.
+#
+# **v1 and v2 are the same hall for two different jobs, and keeping them
+# apart is the point of having both.**
+#
+#   * `open_hall_v1` is a *measuring instrument*. It is fully
+#     deterministic, which is what lets `tests/test_fairness.py` and
+#     `tests/test_simulator_fairness.py` compare two runs **step by
+#     step** and assert symmetry exactly. Switching noise on there would
+#     force every one of those assertions to become a comparison of
+#     distributions — trading a strong check for a weak one, for a reason
+#     that has nothing to do with symmetry.
+#   * `open_hall_v2` — this file — is a *deployment to measure on*. It
+#     declares the noise the vehicle actually has, so a deterministic
+#     stack stops replaying one episode per seed and G2's rule of three
+#     has independent draws to work with.
+#
+# Everything below is `open_hall_v1` unchanged except `id` and
+# `environment.sensor_noise`. A test asserts exactly that, because two
+# files that are meant to stay in step will not do so on their own.
+#
+# **The id changes with the noise, and this is the trap it avoids.**
+# `episode_context_id` hashes (task_profile_id, mission_id,
+# environment_variant, seed) and HĐ-3.1 freezes that payload — the noise
+# amplitude is *not* in it. Editing sigma while keeping the id would
+# produce contexts that hash identically to the quiet ones, and
+# `--reuse-traces` would then serve episodes recorded in a world that no
+# longer exists. Nothing warns; the ids match. Same shape of trap as
+# editing traffic in place, and the same answer: new world, new id.
+#
+# **Expect the numbers to get worse.** This is a fidelity correction, not
+# an improvement: a simulator with no noise is more optimistic than
+# reality, and the price of that optimism was a Decision Card bounding a
+# collision probability off a single episode driven a hundred times. A
+# report that sells this as a way to get a usable evaluation set is
+# repeating the drift the whole plan exists to stop.
+
+id: open_hall_v2
+claim_level: mission
+
+# What this deployment is *for*, as a field rather than as a paragraph.
+# The finding is not new — answering the `success_rate_min` question
+# needed the deployment's role, and the answer was that this hall is
+# neither a customer site nor merely a symmetric instrument but an
+# **acceptance deployment**: a place where one failure is a diagnostic
+# symptom, not a statistic. Until now that lived only in the comment
+# below, where no code could read it.
+#
+# What it changes: early stopping is refused here. Retiring a candidate
+# the moment it cannot pass a gate would be throwing away exactly the
+# episodes this deployment exists to produce, and the hall is the cheap
+# one, so the hours saved would be small anyway.
+#
+# Declared, not inferred. Deriving the role from `success_rate_min == 1.0`
+# is the shape of reasoning HĐ-1.4 already refused for `experiment_scope`:
+# the day somebody declares a real warehouse at 1.00, it would silently
+# acquire a role nobody chose.
+deployment_role: acceptance
+
+environment:
+  map: maps/open_hall.pgm
+  map_yaml: maps/open_hall.yaml
+  # Amplitudes from the topic document's noise-axis table (N5). They are
+  # a property of the vehicle and the site, never of the algorithm under
+  # test — a candidate allowed to declare its own would be choosing its
+  # own exam.
+  #
+  # Not tuned. If these turn out too small to make a deterministic stack
+  # produce distinct episodes, the correct response is to *measure* what
+  # a real 2D LiDAR and a real differential drive do and declare that —
+  # not to raise sigma until the sample count looks healthy. Turning a
+  # physical constant into a knob for the statistic it feeds is the exact
+  # move HĐ-15.3 asks about.
+  sensor_noise:
+    lidar_range_sigma_m: 0.02
+    wheel_slip_fraction: 0.02
+
+missions:
+  # Straight through the middle: start, goal and block centre are all on
+  # y = 8.0, so the two ways around are geometrically identical.
+  - id: through_hall
+    start: [2.0, 8.0, 0.0]
+    goal: [22.0, 8.0, 0.0]
+    probability: 1.0
+
+robot:
+  # Identical to the warehouse robot. The deployment changes; the vehicle
+  # being deployed does not, or the two runs would not be comparable.
+  type: differential_drive
+  radius: 0.26
+  max_linear_velocity: 0.8
+  max_angular_velocity: 1.2
+  max_linear_acceleration: 0.5
+  max_angular_acceleration: 1.0
+  # 20 Hz, matching the warehouse. This field is G4's threshold, so a
+  # relaxed value here would be a widened gate rather than a property of
+  # this hall — see the note at the top of `warehouse_a_v2.yaml`.
+  control_period: 0.05
+
+available_observations: [lidar_2d]
+
+constraints:
+  # 95%, **and this number is known to be the wrong one.** It is here as
+  # a deliberate short-term measure, not as an answer, and the reason it
+  # is written down rather than quietly left alone is that the honest
+  # value has already been worked out.
+  #
+  # The hall is an **acceptance deployment**: easy, mirror-symmetric, and
+  # run under the noise this profile declares. Nothing here defeats a
+  # stack by geometry. So a failure is not a statistic to be averaged —
+  # it is a **diagnostic signal**, and one of them is enough to say the
+  # stack or the configuration has something wrong with it. That reading
+  # gives 1.00, and on 2026-08-11 this file said 1.00 for exactly that
+  # reason.
+  #
+  # **Why it is 0.95 again.** HĐ-8.3 law 2 makes this metric's anchor
+  # `bad` point at this very threshold, so 1.00 collapses the scale onto
+  # `good` and the deployment stops being able to rank anything (HĐ-8.4).
+  # That consequence is real and was not anticipated when the threshold
+  # was chosen; taking the hall out of the ranking business is a bigger
+  # decision than this file should make on its own. So the threshold goes
+  # back to the value that keeps the hall working while the question is
+  # settled properly.
+  #
+  # **What is still open, and must not be forgotten:** an acceptance
+  # deployment whose declared threshold is 0.95 is saying that one
+  # failure in twenty on an easy symmetric mission is acceptable, and
+  # that is not what this hall means. Tracked in
+  # `docs/KNOWN_LIMITATIONS.md` (L6). The platform now *handles* 1.00
+  # legibly rather than crashing on it, so the remaining work is the
+  # decision, not the mechanism.
+  #
+  # Changing this re-simulates nothing: a constraint changes the verdict,
+  # not the world, so recorded episodes stay exactly as valid (HĐ-13,
+  # `manifest.constraints`).
+  success_rate_min: 0.95
+  # 10% accepted risk => N_min = 30. Not a claim anyone would ship; this
+  # deployment is a test instrument for the platform, and it says so
+  # rather than declaring a number it cannot back.
+  collision_probability_max: 0.1
+  no_path_rate_max: 0.02
+  goal_tolerance_m: 0.20
+  # Wide, for the same declared reason as the warehouse: the simulator
+  # has no final-orientation controller, so a heading requirement would
+  # fail every candidate for a property of the platform.
+  goal_tolerance_rad: 3.1416
+  episode_timeout_s: 120
+  stuck_threshold_s: 10
+  clearance_warning_m: 0.35
+
+hardware:
+  target_device: jetson_orin_nano
+  total_ram_mb: 8192
+  ram_budget_breakdown:
+    os_and_middleware_mb: 1536
+    perception_stack_mb: 2048
+    localization_mapping_mb: 819
+    logging_and_reserve_mb: 512
+  available_ram_mb: 3277

@@ -131,6 +131,9 @@ def normalize(data: dict, tool: str) -> dict | None:
                 "prompt": data.get("prompt", "")[:1000],
                 "turn_id": data.get("turn_id", ""),
                 "transcript_path": data.get("transcript_path", ""),
+                "tool_name": data.get("tool_name", ""),
+                "tool_input": data.get("tool_input"),
+                "tool_response": data.get("tool_response"),
             }
         )
 
@@ -197,8 +200,10 @@ def main():
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-    # Output valid JSON (required by some tools like Gemini)
-    print(json.dumps({"status": "logged"}))
+    # Codex validates hook output against event-specific schemas. An empty
+    # object is a successful no-op for UserPromptSubmit, PostToolUse and Stop.
+    # Other integrations keep the historical acknowledgement payload.
+    print(json.dumps({} if tool == "codex" else {"status": "logged"}))
 
 
 if __name__ == "__main__":

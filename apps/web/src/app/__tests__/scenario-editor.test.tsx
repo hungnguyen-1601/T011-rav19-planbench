@@ -67,8 +67,8 @@ describe("motion is never evaluated in the browser", () => {
 });
 
 describe("the canvas is reused rather than duplicated", () => {
-  it("draws both obstacle kinds through MapCanvas", () => {
-    expect(EDITOR).toContain("<MapCanvas");
+  it("draws both obstacle kinds through the shared map view", () => {
+    expect(EDITOR).toContain("<MapView");
     expect(EDITOR).toContain("staticObstacles=");
     expect(EDITOR).toContain("dynamicObstacles=");
   });

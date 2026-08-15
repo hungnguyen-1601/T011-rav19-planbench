@@ -17,6 +17,7 @@
 import { authFetch, loadSession } from "./auth";
 import { api } from "./api";
 import type { BenchmarkResource } from "./benchmarkTypes";
+import { listDecisions, type DecisionRun } from "./decisions";
 import type { LibraryEntry } from "./platformTypes";
 import type { SimulationResource } from "./types";
 import type { ReviewRequestView } from "./reviews";
@@ -28,6 +29,10 @@ export interface AlgorithmInfo {
 
 export interface DashboardData {
   benchmarks: BenchmarkResource[] | null;
+  /** Comparisons from the new flow. Null means the call failed, which
+   *  is a different thing from nobody having run one — the dashboard
+   *  renders the two differently. */
+  decisions: DecisionRun[] | null;
   simulations: SimulationResource[] | null;
   scenarios: LibraryEntry[] | null;
   algorithms: AlgorithmInfo[] | null;
@@ -39,6 +44,13 @@ export interface DashboardData {
 
 export interface DashboardStats {
   benchmarks: number | null;
+  /** Comparisons run, and how many produced a Decision Card.
+   *
+   * Both, because most runs produce no card — fewer than two candidates
+   * through the gates means no ΔU (HĐ-7) — and a single "decisions"
+   * count would make four runs out of five look like failures. */
+  decisions: number | null;
+  ranked: number | null;
   accepted: number | null;
   pendingReviews: number | null;
   scenarios: number | null;
@@ -56,7 +68,9 @@ function byNewest<T extends { created_at: string }>(items: readonly T[]): T[] {
 export function summarise(data: DashboardData): DashboardStats {
   return {
     benchmarks: data.benchmarks?.length ?? null,
-    accepted: data.benchmarks?.filter((item) => item.state === "accepted").length ?? null,
+    decisions: data.decisions?.length ?? null,
+    ranked: data.decisions?.filter((run) => run.ranked).length ?? null,
+    accepted: data.decisions?.filter((run) => run.config_state === "approved").length ?? null,
     pendingReviews: data.pendingReviews?.length ?? null,
     scenarios: data.scenarios?.length ?? null,
     // Reference-only stacks are excluded: the card says "stacks you can
@@ -100,20 +114,27 @@ async function attempt<T>(work: Promise<T>): Promise<T | null> {
 export async function loadDashboard(): Promise<DashboardData> {
   const signedIn = loadSession() !== null;
 
-  const [health, benchmarks, simulations, scenarios, algorithms, inbox] = await Promise.all([
-    attempt(api.health()),
-    signedIn ? attempt(authFetch<BenchmarkResource[]>("/benchmarks")) : Promise.resolve(null),
-    attempt(api.listSimulations()),
-    attempt(authFetch<LibraryEntry[]>("/scenario-library")),
-    attempt(authFetch<AlgorithmInfo[]>("/algorithms")),
-    signedIn
-      ? attempt(authFetch<{ requests: ReviewRequestView[]; pending: number }>("/reviews/inbox?pending_only=true"))
-      : Promise.resolve(null),
-  ]);
+  const [health, benchmarks, decisions, simulations, scenarios, algorithms, inbox] =
+    await Promise.all([
+      attempt(api.health()),
+      signedIn ? attempt(authFetch<BenchmarkResource[]>("/benchmarks")) : Promise.resolve(null),
+      attempt(listDecisions()),
+      attempt(api.listSimulations()),
+      attempt(authFetch<LibraryEntry[]>("/scenario-library")),
+      attempt(authFetch<AlgorithmInfo[]>("/algorithms")),
+      signedIn
+        ? attempt(
+            authFetch<{ requests: ReviewRequestView[]; pending: number }>(
+              "/reviews/inbox?pending_only=true",
+            ),
+          )
+        : Promise.resolve(null),
+    ]);
 
-  const sections = [benchmarks, simulations, scenarios, algorithms];
+  const sections = [decisions, simulations, scenarios, algorithms];
   return {
     benchmarks,
+    decisions,
     simulations,
     scenarios,
     algorithms,

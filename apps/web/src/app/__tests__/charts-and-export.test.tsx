@@ -1,14 +1,18 @@
-/** The F09 surfaces: three charts and the Markdown export.
+/** The Markdown export, and the charts that did not survive P6.
  *
- * Source-level, matching the other page tests: these pages sit behind an
- * effect and a fetch, so a first paint shows only a loading state and
- * there is no jsdom to click in. What is checked here is the wiring that
- * a chart cannot make honest on its own — that the panels are mounted,
- * that the caveats are rendered next to them, and that the download never
- * degrades into a link carrying a token.
+ * **What retired, and why it is not an oversight.** The difficulty curve
+ * and the generalization-gap chart lived on `/leaderboard` and
+ * `/benchmarks/[id]`. Both are claims *across scenarios* — "this stack
+ * generalises from the training split to the held-out one" — and HĐ-1.4
+ * scopes a recommendation to one deployment. They retired with the flow
+ * that made those claims rather than being rehomed into one that does
+ * not, and their components were deleted with them so no dead code sits
+ * behind a green test.
  *
- * The data decisions themselves are tested in `lib/__tests__/charts.test.ts`,
- * which is where they live.
+ * **What survived is the export**, because handing a result to somebody
+ * who will not open the platform is not a property of the old flow. The
+ * mechanism — authenticated fetch, Blob, synthetic anchor, revoked
+ * object URL — moved unchanged; only the document it fetches is new.
  */
 
 import { readFileSync } from "node:fs";
@@ -19,129 +23,91 @@ import en from "../../lib/i18n/locales/en.json";
 import vi from "../../lib/i18n/locales/vi.json";
 
 const read = (...parts: string[]) => readFileSync(join(process.cwd(), "src", ...parts), "utf8");
-
-const LEADERBOARD = read("app", "leaderboard", "page.tsx");
-const DETAIL = read("app", "benchmarks", "[id]", "page.tsx");
 const REPORTS = read("lib", "reports.ts");
-const CURVE = read("components", "DifficultyCurveChart.tsx");
-const INTERVALS = read("components", "MetricIntervalChart.tsx");
-const GAP = read("components", "GeneralizationGapChart.tsx");
+const DETAIL = read("app", "decisions", "[id]", "page.tsx");
+const MARKDOWN = readFileSync(
+  join(process.cwd(), "..", "api", "planbench_api", "decision_markdown.py"),
+  "utf8",
+);
 
-describe("the difficulty curve is on the leaderboard", () => {
-  it("mounts the chart", () => {
-    expect(LEADERBOARD).toContain("DifficultyCurveChart");
-    expect(LEADERBOARD).toContain("buildDifficultyCurve");
+describe("the export is a fetch, never a link", () => {
+  it("sends the token in a header instead of in the URL", () => {
+    /* A plain <a href> cannot send an Authorization header, so it would
+       either 401 or push the token into history and into every proxy log
+       on the way. */
+    expect(REPORTS).toContain("Authorization: `Bearer ${session.token}`");
+    expect(REPORTS).toContain("URL.createObjectURL");
   });
 
-  it("reads the measured calibration rather than curriculum order", () => {
-    expect(LEADERBOARD).toContain("/difficulty-calibration");
-    expect(LEADERBOARD).not.toContain("curriculum_index");
+  it("revokes the object URL, but not before the browser has read it", () => {
+    /* A Blob still referenced is held for the life of the document, so
+       twenty exports would hold twenty. Revoking synchronously saves an
+       empty file in some browsers. */
+    expect(REPORTS).toContain("setTimeout(() => URL.revokeObjectURL(url), 0)");
   });
 
-  it("says so when there is no calibration to plot against", () => {
-    expect(LEADERBOARD).toContain("charts.noCalibration");
-  });
-
-  it("names the scenarios that are not on the curve", () => {
-    expect(LEADERBOARD).toContain("charts.uncalibratedScenarios");
-    expect(LEADERBOARD).toContain("charts.staleScenarios");
-  });
-
-  it("states the baseline the difficulty scale was measured against", () => {
-    // Without it the axis is an unattributed number: "0.6 hard" instead
-    // of "the pinned baseline failed 60% of the time here".
-    expect(LEADERBOARD).toContain("charts.difficultyBaseline");
+  it("takes a path so the mechanism outlived the flow it was written for", () => {
+    expect(REPORTS).toContain("downloadReportMarkdown(path: string, fallbackName: string)");
+    expect(REPORTS).toContain("export function downloadDecisionReport(");
   });
 });
 
-describe("the gap chart keeps the table it came from", () => {
-  it("draws the bars", () => {
-    expect(LEADERBOARD).toContain("GeneralizationGapChart");
-    expect(LEADERBOARD).toContain("buildGapSeries");
+describe("every run can be exported, not only the ranked ones", () => {
+  it("offers the button regardless of whether a card came out", () => {
+    /* Most runs produce no card — fewer than two candidates through the
+       gates means no ΔU (HĐ-7). A button that appeared only on ranked
+       runs would make the ordinary outcome the one nobody can put in a
+       ticket. */
+    expect(DETAIL).toContain("<ExportReport");
+    const button = DETAIL.slice(
+      DETAIL.indexOf("function ExportReport"),
+      DETAIL.indexOf("function ObservationNotice"),
+    );
+    expect(button).not.toContain("run.ranked");
+    expect(button).not.toContain("config_state");
   });
 
-  it("does not replace the table", () => {
-    // The table is where a missing held-out result is visible as
-    // missing; a chart can only omit that bar.
-    expect(LEADERBOARD).toContain("generalization.noGap");
-  });
-
-  it("names the stacks whose gap is not computable", () => {
-    expect(LEADERBOARD).toContain("charts.incompleteGap");
-  });
-});
-
-describe("the distribution chart on the benchmark page", () => {
-  it("mounts one chart per metric that has a distribution", () => {
-    expect(DETAIL).toContain("MetricIntervalChart");
-    expect(DETAIL).toContain("INTERVAL_METRICS");
-    expect(DETAIL).toContain("buildIntervalSeries");
-  });
-
-  it("draws both the IQR and the CI95, not one of them", () => {
-    expect(INTERVALS).toContain("iqrError");
-    expect(INTERVALS).toContain("ciError");
-  });
-
-  it("carries the small-benchmark warning onto the chart panel", () => {
-    // The warning sits on the statistics table already; a chart read
-    // without it is exactly how five seeds become a conclusion.
-    const panel = DETAIL.split("function DistributionPanel", 1)[1] ?? DETAIL;
-    expect(panel).toContain("detail.fewSeedsWarning");
-  });
-
-  it("names stacks with no distribution instead of drawing them flat", () => {
-    expect(DETAIL).toContain("charts.noDistribution");
+  it("renders the no-card case as a section rather than refusing", () => {
+    expect(MARKDOWN).toContain("## No Decision Card");
+    expect(MARKDOWN).toContain("gate_only_deployment");
   });
 });
 
-describe("the Markdown export", () => {
-  it("is offered from the benchmark page", () => {
-    expect(DETAIL).toContain("downloadReportMarkdown");
-    expect(DETAIL).toContain("charts.downloadMarkdown");
+describe("the document keeps the caveats attached to the numbers", () => {
+  it("spells out null as 'not measured'", () => {
+    /* HĐ-12 defines null that way, and a blank cell in a Markdown table
+       reads as reassurance — worse on paper than on screen, because the
+       reader cannot ask. */
+    expect(MARKDOWN).toContain('NOT_MEASURED = "not measured"');
+    expect(MARKDOWN).toContain("None of the sensitivity margins were measured");
   });
 
-  it("fetches with the bearer header and never puts the token in a URL", () => {
-    expect(REPORTS).toContain("Authorization");
-    expect(REPORTS).toContain("report.md");
-    expect(REPORTS).not.toContain("token=");
-    expect(REPORTS).not.toContain("access_token=");
+  it("carries the recommendation's scope with the recommendation", () => {
+    expect(MARKDOWN).toContain("HĐ-1.4");
+    expect(MARKDOWN).toContain("and to nothing else");
   });
 
-  it("goes through a Blob and revokes the object URL", () => {
-    expect(REPORTS).toContain("createObjectURL");
-    expect(REPORTS).toContain("revokeObjectURL");
+  it("names every candidate retired early, with the sample it actually got", () => {
+    expect(MARKDOWN).toContain("def _stopped_early(");
+    expect(MARKDOWN).toContain("rest on fewer episodes");
   });
 
-  it("uses the filename the server chose", () => {
-    expect(REPORTS).toContain("filenameFromDisposition");
-    expect(REPORTS).toContain("content-disposition");
+  it("puts the gates before the card", () => {
+    expect(MARKDOWN.indexOf("_gates(report)")).toBeLessThan(MARKDOWN.indexOf("_card(run, report)"));
   });
 
-  it("reports which file it saved", () => {
-    expect(DETAIL).toContain("charts.exportSaved");
+  it("keeps an unpinned measurement host in the document", () => {
+    /* Unpinned, every latency number measures this machine as much as
+       the candidate. */
+    expect(MARKDOWN).toContain("Measurement environment");
   });
 });
 
-describe("the charts are translated in both languages", () => {
-  const dictionaries = { en, vi } as Record<string, Record<string, string>>;
-  const used = [
-    ...new Set(
-      [LEADERBOARD, DETAIL, CURVE, INTERVALS, GAP]
-        .join("\n")
-        .match(/"charts\.[A-Za-z]+"/g)
-        ?.map((quoted) => quoted.slice(1, -1)) ?? [],
-    ),
-  ];
-
-  it("uses chart keys at all", () => {
-    expect(used.length).toBeGreaterThan(8);
+describe("the button is translated in both languages", () => {
+  it("has its keys", () => {
+    for (const key of ["decisions.export.markdown", "decisions.export.busy"]) {
+      expect(en, `en missing ${key}`).toHaveProperty(key);
+      expect(vi, `vi missing ${key}`).toHaveProperty(key);
+    }
   });
-
-  for (const locale of ["en", "vi"]) {
-    it(`defines every chart key it renders in ${locale}`, () => {
-      const missing = used.filter((key) => !(key in dictionaries[locale]));
-      expect(missing).toEqual([]);
-    });
-  }
 });

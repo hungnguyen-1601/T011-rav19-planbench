@@ -1,6 +1,7 @@
 "use client";
 
 import { useTranslation } from "@/lib/i18n";
+import type { ReplanningConfig } from "@/lib/benchmarkTypes";
 import type { EpisodeMetrics, PlanResult } from "@/lib/types";
 
 function format(value: number | null | undefined, digits = 2, suffix = ""): string {
@@ -9,9 +10,14 @@ function format(value: number | null | undefined, digits = 2, suffix = ""): stri
 }
 
 export function MetricsPanel({
+  replanning,
   metrics,
   plan,
 }: {
+  /** The rule this run executed under, so the replan row can tell "off"
+   *  from "zero". Undefined means the caller does not know — a page that
+   *  cannot say must not answer. */
+  replanning?: Pick<ReplanningConfig, "enabled">;
   metrics: EpisodeMetrics | null;
   plan?: PlanResult | null;
 }) {
@@ -41,11 +47,28 @@ export function MetricsPanel({
         <Metric label={t("metrics.minClearance")} value={format(metrics.min_clearance, 3, " m")} />
         <Metric label={t("metrics.meanClearance")} value={format(metrics.mean_clearance, 3, " m")} />
         <Metric label={t("metrics.steps")} value={String(metrics.steps)} />
-        {/* Only when replanning was on. A column of zeros on every other
-         *  run says nothing and buries the metrics that do. */}
-        {metrics.replan_count ? (
-          <Metric label={t("metrics.replanCount")} value={String(metrics.replan_count)} />
-        ) : null}
+        {/* **Always shown, and that is a reversal.** It used to render
+            only when the count was truthy, on the reasoning that a column
+            of zeros on every non-replanning run says nothing and buries
+            the metrics that do. The reasoning was fine and the effect was
+            not: "replanned 0 times" and "this platform does not report
+            replans" became the same blank, so somebody who had switched
+            replanning on and watched a robot sit still had no way to tell
+            whether it never tried or the setting never arrived. That is
+            the exact question this row is for.
+
+            Three states, because there are three answers: off is not a
+            count, and 0 is not silence. */}
+        <Metric
+          label={t("metrics.replanCount")}
+          value={
+            replanning === undefined
+              ? t("metrics.replanUnknown")
+              : replanning.enabled
+                ? String(metrics.replan_count ?? 0)
+                : t("metrics.replanOff")
+          }
+        />
         {plan ? (
           <>
             <Metric label={t("metrics.plannedLength")} value={format(plan.path_length, 2, " m")} />

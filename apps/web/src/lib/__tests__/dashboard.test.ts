@@ -72,8 +72,24 @@ function review(id: string, status: string): ReviewRequestView {
   };
 }
 
+/** One comparison, as the dashboard reads it.
+ *
+ * `ranked` and `config_state` are the two the cards count, and they are
+ * independent: a run can rank and never be approved, and a run that
+ * ranks nobody can still have been read. */
+function decision(id: string, ranked: boolean, configState: string, created: string) {
+  return {
+    id,
+    task_profile_id: "open_hall_v2",
+    ranked,
+    config_state: configState,
+    created_at: created,
+  } as unknown as DashboardData["decisions"] extends (infer T)[] | null ? T : never;
+}
+
 const EMPTY: DashboardData = {
   benchmarks: null,
+  decisions: null,
   simulations: null,
   scenarios: null,
   algorithms: null,
@@ -87,6 +103,11 @@ const LOADED: DashboardData = {
     benchmark("b1", "accepted", "2026-08-01T10:00:00Z"),
     benchmark("b2", "draft", "2026-08-01T12:00:00Z"),
     benchmark("b3", "accepted", "2026-08-01T11:00:00Z"),
+  ],
+  decisions: [
+    decision("d1", true, "approved", "2026-08-01T10:00:00Z"),
+    decision("d2", false, "not_applicable", "2026-08-01T12:00:00Z"),
+    decision("d3", true, "pending", "2026-08-01T11:00:00Z"),
   ],
   simulations: [simulation("s1", "2026-08-01T09:00:00Z"), simulation("s2", "2026-08-01T13:00:00Z")],
   scenarios: [{ name: "open_space" }, { name: "doorway" }] as DashboardData["scenarios"],
@@ -108,8 +129,21 @@ describe("summarise", () => {
     expect(stats.pendingReviews).toBe(1);
   });
 
-  it("counts only accepted benchmarks as accepted", () => {
-    expect(summarise(LOADED).accepted).toBe(2);
+  it("counts ranked runs beside the total, not instead of it", () => {
+    /* Most runs produce no card: fewer than two candidates through the
+       gates means no ΔU (HĐ-7). A dashboard showing only "ranked" would
+       make the ordinary outcome look like a failure rate, which is the
+       pressure that once produced a card bounding a collision
+       probability off a single episode. */
+    const stats = summarise(LOADED);
+    expect(stats.decisions).toBe(3);
+    expect(stats.ranked).toBe(2);
+  });
+
+  it("counts only approved configurations as accepted", () => {
+    /* Reading a run and approving its configuration are separate acts
+       (HĐ-14), so "accepted" counts the second one alone. */
+    expect(summarise(LOADED).accepted).toBe(1);
   });
 
   it("excludes reference-only stacks from the algorithm count", () => {
@@ -121,6 +155,8 @@ describe("summarise", () => {
   it("reports null — not zero — for anything that failed to load", () => {
     const stats = summarise(EMPTY);
     expect(stats.benchmarks).toBeNull();
+    expect(stats.decisions).toBeNull();
+    expect(stats.ranked).toBeNull();
     expect(stats.accepted).toBeNull();
     expect(stats.pendingReviews).toBeNull();
     expect(stats.scenarios).toBeNull();
@@ -131,8 +167,9 @@ describe("summarise", () => {
   it("reports a real zero as zero", () => {
     // The other half of the rule: an empty list is a fact, and must not
     // be shown as unknown.
-    const stats = summarise({ ...EMPTY, benchmarks: [], partial: false });
-    expect(stats.benchmarks).toBe(0);
+    const stats = summarise({ ...EMPTY, decisions: [], partial: false });
+    expect(stats.decisions).toBe(0);
+    expect(stats.ranked).toBe(0);
     expect(stats.accepted).toBe(0);
   });
 });
