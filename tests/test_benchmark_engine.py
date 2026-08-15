@@ -71,13 +71,38 @@ class TestRegistry:
         config = validate_algorithm_config("astar+dwa", None)
         assert config.velocity_samples == 9  # type: ignore[attr-defined]
 
-    def test_two_stacks_are_benchmarkable_without_extra_installs(self) -> None:
-        # The point of adding RRT*: a fresh clone can compare two real
-        # stacks. astar+ppo does not count — it needs a trained model.
+    def test_every_stack_a_fresh_clone_can_compare(self) -> None:
+        """What a clone with no extra installs can put in a comparison.
+
+        The point of adding RRT* was that two real stacks could be
+        compared out of the box; P6 made it four by registering the
+        predictive controller against both global planners. ``astar+ppo``
+        still does not count — it needs a trained model.
+
+        Written as an exact set rather than a count: a stack appearing
+        here without anybody deciding to add it is the thing worth
+        catching, and that is the same defect whether the number is two
+        or four.
+        """
         ready = {
             info.id for info in list_algorithms() if info.benchmarkable and not info.requires_model
         }
-        assert ready == {"astar+dwa", "rrtstar+dwa"}
+        assert ready == {
+            "astar+dwa",
+            "rrtstar+dwa",
+            "astar+dwa_predictive",
+            "rrtstar+dwa_predictive",
+        }
+
+    def test_the_predictive_stacks_pair_the_same_controller_with_both_planners(self) -> None:
+        """The pair exists so a comparison can hold the global planner
+        fixed and vary only the controller — which is what
+        ``local_controller_selection`` scope requires."""
+        infos = {info.id: info for info in list_algorithms()}
+        assert infos["astar+dwa_predictive"].global_planner == "astar"
+        assert infos["rrtstar+dwa_predictive"].global_planner == "rrtstar"
+        for stack in ("astar+dwa_predictive", "rrtstar+dwa_predictive"):
+            assert infos[stack].local_controller == "dwa_predictive"
 
     def test_declares_the_global_planner_of_every_stack(self) -> None:
         infos = {info.id: info for info in list_algorithms()}

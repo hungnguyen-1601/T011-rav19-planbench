@@ -1,0 +1,401 @@
+{
+  "artifact": "comparison_report",
+  "identity": {
+    "task_profile_id": "sudden_stop_v4",
+    "experiment_scope": "global_planner_selection",
+    "sensor_noise": {
+      "lidar_range_sigma_m": 0.02,
+      "wheel_slip_fraction": 0.02,
+      "localization_drift_m": 0.0,
+      "localization_jump_probability": 0.0,
+      "lidar_dropout_probability": 0.0,
+      "odometry_bias_fraction": 0.0,
+      "command_latency_steps": 0
+    },
+    "git_sha": "b42e48da5bd383babcb04b9de5c8a152a3d0a8cd",
+    "anchor_config_version": "v1.2",
+    "created_at": "2026-08-15T07:47:49.419681+00:00"
+  },
+  "sample": {
+    "n_episodes": 10,
+    "n_episodes_requested": 10,
+    "interrupted": false,
+    "n_min_required": 30,
+    "episode_context_ids": [
+      "b9481c46de8a",
+      "3266ed00a5ba",
+      "1f72ca58c2fb",
+      "3e88c23c6439",
+      "30f881eb17b5",
+      "0976a14f0858",
+      "19b22d249499",
+      "71d8244712ca",
+      "9badf1df6a58",
+      "14179144683b"
+    ]
+  },
+  "early_stop": {
+    "enabled": false,
+    "min_episodes_before_stop": 30,
+    "deployment_role": "acceptance",
+    "gates_without_a_rule": {
+      "G4": "p99 gộp không đơn điệu — thêm control step có thể kéo phân vị xuống, nên 'đang vượt ngân sách' không chứng minh được 'sẽ vượt'",
+      "G6": "quyết trước episode một, trong build_candidates — không còn gì để dừng sớm"
+    },
+    "stopped": [],
+    "episodes_saved": 0
+  },
+  "candidates": [
+    {
+      "candidate_id": "e1251e42a20b",
+      "stack_label": "astar+dwa",
+      "local_controller_config": "dwa_coarse",
+      "global_observation_class": "full_static_map",
+      "local_observation_class": "lidar_only",
+      "n_episodes": 10,
+      "stopped_early": null,
+      "gates": {
+        "candidate_id": "e1251e42a20b",
+        "G1": "pass",
+        "G2": {
+          "result": "fail",
+          "observed": 0,
+          "n_runs": 10,
+          "n_distinct_episodes": 10,
+          "upper_bound_95": 0.3,
+          "n_min": 30,
+          "statement": "0 va chạm quan sát trong 10 lần chạy phân biệt; cận trên 95% dưới phân phối kịch bản đã mô phỏng: 30.0%",
+          "note": "chỉ 10 lần chạy phân biệt, dưới N_min = 30 = ceil(3 / 0.1); cận trên 30.0% còn lỏng hơn mức rủi ro đã khai"
+        },
+        "G3": "pass",
+        "G4": {
+          "result": "pass",
+          "status": "screened_on_host",
+          "p99_ms": 10.479065000026823,
+          "threshold_ms": 50.0,
+          "caveat": "G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"
+        },
+        "G5": {
+          "result": "pass",
+          "status": "estimated_from_structure",
+          "memory_estimate_mb": 8.007484436035156,
+          "available_ram_mb": 3277.0,
+          "peak_rss_mb_diagnostic": 205.125,
+          "note": "ước lượng từ bộ đếm cấu trúc dữ liệu nhân kích thước byte của hiện thực đích; pha sàng lọc là điều kiện cần — vượt ngân sách thì chắc chắn không vừa, không vượt thì chưa kết luận được điều ngược lại",
+          "target_implementation": "cpp_ros2",
+          "bytes_per_search_node": 40,
+          "peak_search_nodes": 45
+        },
+        "G6": "pass"
+      },
+      "cleared_gates": false,
+      "blocking_gates": [
+        "G2"
+      ],
+      "n_distinct_episodes": 10,
+      "success_rate": 1.0,
+      "pooled_p99_latency_ms": 10.479065000026823,
+      "replan_count": 10,
+      "episodes": [
+        {
+          "episode_context_id": "b9481c46de8a",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4926495785385242,
+          "travel_time_s": 21.950000000000177,
+          "p99_latency_ms": 10.129862999892797,
+          "replan_count": 1
+        },
+        {
+          "episode_context_id": "3266ed00a5ba",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.5592624918644197,
+          "travel_time_s": 22.450000000000184,
+          "p99_latency_ms": 10.085980999851918,
+          "replan_count": 1
+        },
+        {
+          "episode_context_id": "1f72ca58c2fb",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.568280540076186,
+          "travel_time_s": 22.650000000000187,
+          "p99_latency_ms": 8.943663000200061,
+          "replan_count": 1
+        },
+        {
+          "episode_context_id": "3e88c23c6439",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.5618703693685302,
+          "travel_time_s": 23.050000000000193,
+          "p99_latency_ms": 7.030235000147508,
+          "replan_count": 1
+        },
+        {
+          "episode_context_id": "30f881eb17b5",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.5546374909116801,
+          "travel_time_s": 22.400000000000183,
+          "p99_latency_ms": 6.580363999892142,
+          "replan_count": 1
+        },
+        {
+          "episode_context_id": "0976a14f0858",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.5542727501279129,
+          "travel_time_s": 22.90000000000019,
+          "p99_latency_ms": 10.303879999928546,
+          "replan_count": 1
+        },
+        {
+          "episode_context_id": "19b22d249499",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.5162793442037402,
+          "travel_time_s": 22.550000000000185,
+          "p99_latency_ms": 10.530784000156931,
+          "replan_count": 1
+        },
+        {
+          "episode_context_id": "71d8244712ca",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.5057267882770605,
+          "travel_time_s": 22.05000000000018,
+          "p99_latency_ms": 8.873132000053369,
+          "replan_count": 1
+        },
+        {
+          "episode_context_id": "9badf1df6a58",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.46964033150350815,
+          "travel_time_s": 21.950000000000177,
+          "p99_latency_ms": 10.941970999920162,
+          "replan_count": 1
+        },
+        {
+          "episode_context_id": "14179144683b",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.5116162119523421,
+          "travel_time_s": 22.350000000000183,
+          "p99_latency_ms": 13.767518000263395,
+          "replan_count": 1
+        }
+      ]
+    },
+    {
+      "candidate_id": "29cdf6266a44",
+      "stack_label": "rrtstar+dwa",
+      "local_controller_config": "dwa_coarse",
+      "global_observation_class": "full_static_map",
+      "local_observation_class": "lidar_only",
+      "n_episodes": 10,
+      "stopped_early": null,
+      "gates": {
+        "candidate_id": "29cdf6266a44",
+        "G1": "pass",
+        "G2": {
+          "result": "fail",
+          "observed": 0,
+          "n_runs": 10,
+          "n_distinct_episodes": 10,
+          "upper_bound_95": 0.3,
+          "n_min": 30,
+          "statement": "0 va chạm quan sát trong 10 lần chạy phân biệt; cận trên 95% dưới phân phối kịch bản đã mô phỏng: 30.0%",
+          "note": "chỉ 10 lần chạy phân biệt, dưới N_min = 30 = ceil(3 / 0.1); cận trên 30.0% còn lỏng hơn mức rủi ro đã khai"
+        },
+        "G3": "fail",
+        "G4": {
+          "result": "pass",
+          "status": "screened_on_host",
+          "p99_ms": 20.81861000017462,
+          "threshold_ms": 50.0,
+          "caveat": "G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"
+        },
+        "G5": {
+          "result": "pass",
+          "status": "estimated_from_structure",
+          "memory_estimate_mb": 8.096748352050781,
+          "available_ram_mb": 3277.0,
+          "peak_rss_mb_diagnostic": 205.078125,
+          "note": "ước lượng từ bộ đếm cấu trúc dữ liệu nhân kích thước byte của hiện thực đích; pha sàng lọc là điều kiện cần — vượt ngân sách thì chắc chắn không vừa, không vượt thì chưa kết luận được điều ngược lại",
+          "target_implementation": "cpp_ros2",
+          "bytes_per_search_node": 40,
+          "peak_search_nodes": 0
+        },
+        "G6": "pass"
+      },
+      "cleared_gates": false,
+      "blocking_gates": [
+        "G2",
+        "G3"
+      ],
+      "n_distinct_episodes": 10,
+      "success_rate": 0.5,
+      "pooled_p99_latency_ms": 20.81861000017462,
+      "replan_count": 91,
+      "episodes": [
+        {
+          "episode_context_id": "b9481c46de8a",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.17764913159393225,
+          "travel_time_s": 38.79999999999993,
+          "p99_latency_ms": 13.378428000087299,
+          "replan_count": 6
+        },
+        {
+          "episode_context_id": "3266ed00a5ba",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.16015744084649775,
+          "travel_time_s": 35.30000000000013,
+          "p99_latency_ms": 9.7504440002285,
+          "replan_count": 2
+        },
+        {
+          "episode_context_id": "1f72ca58c2fb",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.13579829352680994,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 1086.2836000001153,
+          "replan_count": 17
+        },
+        {
+          "episode_context_id": "3e88c23c6439",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.1670226179680917,
+          "travel_time_s": 28.750000000000274,
+          "p99_latency_ms": 8.464950000075078,
+          "replan_count": 1
+        },
+        {
+          "episode_context_id": "30f881eb17b5",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.15880198844654192,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 1161.7774000005738,
+          "replan_count": 14
+        },
+        {
+          "episode_context_id": "0976a14f0858",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.18510971512799523,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 1190.7289999999193,
+          "replan_count": 16
+        },
+        {
+          "episode_context_id": "19b22d249499",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.15349987866772907,
+          "travel_time_s": 31.050000000000306,
+          "p99_latency_ms": 18.588393000031807,
+          "replan_count": 2
+        },
+        {
+          "episode_context_id": "71d8244712ca",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.16167136959059458,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 1176.3436999999612,
+          "replan_count": 16
+        },
+        {
+          "episode_context_id": "9badf1df6a58",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.1327272866389082,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 1140.9819999998945,
+          "replan_count": 16
+        },
+        {
+          "episode_context_id": "14179144683b",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.15563008963395553,
+          "travel_time_s": 30.900000000000304,
+          "p99_latency_ms": 8.404213999720026,
+          "replan_count": 1
+        }
+      ]
+    }
+  ],
+  "measurement_environment": {
+    "benchmark_host": {
+      "cpu": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+      "cores_allocated": 20,
+      "threads": 1,
+      "cpu_affinity": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ],
+      "logical_cores": 20,
+      "affinity_source": null
+    },
+    "warning": "Đo trên toàn bộ 20 nhân, không ghim: G4 đọc độ trễ theo đồng hồ tường nên mọi tải khác trên máy đi thẳng vào con số. Cùng candidate đo được 59,30 ms không ghim và 16,10 ms khi ghim 2 nhân"
+  },
+  "run_uri": "file://artifacts\\runs\\2026-08-15\\sudden_stop_v4_global_planner_selection_c9cf7ea4",
+  "run_checksum": "41820ff0842dc89103c5a9f1202d42363847868091135ef2f2a8acb40239ca62",
+  "decision_card": null,
+  "manifest": null,
+  "gate_only_deployment": null,
+  "why_no_card": "chỉ 0/2 candidate qua đủ sáu cổng, nên không có ΔU để tính và không có Decision Card để viết. Đây là một KẾT QUẢ, không phải lỗi: bảng cổng đã trả lời ai bị loại ở đâu sau bao nhiêu lần chạy. Lối ra hợp lệ là ĐĂNG KÝ MỘT CANDIDATE MỚI, không phải nới deployment",
+  "checks": [
+    "all 2 candidates still in the run ran the same 10 episode contexts",
+    "all six gates reported for 2 candidates, with N",
+    "L_ref ≤ path_length + goal tolerance on all 15 successful episodes",
+    "peak_search_nodes ≤ costmap_cells on every episode"
+  ]
+}

@@ -54,6 +54,40 @@ def detect_tool(data: dict) -> str:
     return "unknown"
 
 
+def resolve_claude_model(data: dict) -> str:
+    """Claude Code hook payloads carry no top-level `model` field. Fall back
+    to the session transcript (`transcript_path`), which logs one JSON object
+    per turn with `message.model` set — read from the tail and take the most
+    recent one."""
+    transcript = data.get("transcript_path")
+    if not transcript:
+        return ""
+    path = Path(transcript)
+    if not path.is_file():
+        return ""
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - 20000))
+            chunk = f.read().decode("utf-8", errors="ignore")
+    except OSError:
+        return ""
+    for line in reversed(chunk.splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        message = entry.get("message")
+        model = message.get("model") if isinstance(message, dict) else None
+        if model:
+            return model
+    return ""
+
+
 def normalize(data: dict, tool: str) -> dict | None:
     """Normalize tool-specific payload to common log entry."""
     event = data.get("hook_event_name") or data.get("event", "")
@@ -70,6 +104,10 @@ def normalize(data: dict, tool: str) -> dict | None:
     if repo.endswith(".git"):
         repo = repo[:-4]
 
+    model = data.get("model", "")
+    if not model and tool == "claude":
+        model = resolve_claude_model(data)
+
     base = {
         "ts": ts,
         "tool": tool,
@@ -77,7 +115,7 @@ def normalize(data: dict, tool: str) -> dict | None:
         "session_id": (
             data.get("session_id") or data.get("conversation_id") or data.get("generation_id") or ""
         ),
-        "model": data.get("model", ""),
+        "model": model,
         "repo": repo,
         "branch": git("git rev-parse --abbrev-ref HEAD"),
         "commit": git("git rev-parse --short HEAD"),

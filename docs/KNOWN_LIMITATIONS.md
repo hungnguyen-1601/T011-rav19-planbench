@@ -1513,3 +1513,43 @@ Nên mọi phép so `dwa` vs `dwa_predictive` phải chạy với
 `localization_drift_m = 0` và `localization_jump_probability = 0` cho tới
 khi pha hệ toạ độ (mục 2c của plan) xong. Kết quả thu được **không nói gì**
 về độ bền trước nhiễu định vị.
+
+### L18. `v_obstacle_max` không dùng được trên bản đồ có vật cản tĩnh gần
+
+**Phát hiện ở P7, và nó làm tính năng của P1 gần như không dùng được ngoài
+sảnh trống.**
+
+Biên phanh áp lên `_nearest_obstacle_distance`, tức khoảng cách tới
+**return LiDAR gần nhất bất kể là gì** — kể cả **tường và kệ hàng**. Nên
+khai `v_obstacle_max = 0.8` là nói với controller: *anh chỉ được đi nhanh
+tới mức còn dừng kịp nếu cái kệ kia đang lao vào anh ở 0.8 m/s.*
+
+| khe hở | v cho phép (u=0) | v cho phép (u=0.8) |
+|---|---|---|
+| 0.3 m | 0.523 m/s | **0.145 m/s** |
+| 0.5 m | 0.683 m/s | **0.243 m/s** |
+| 1.0 m | 0.975 m/s | **0.456 m/s** |
+
+Đo được trên `warehouse_crossing_v1`, cùng episode, cùng seed:
+
+```
+v_obstacle_max = None  -> success  t = 65.2 s
+v_obstacle_max = 0.8   -> stuck    t = 26.1 s, dừng ở (5.4, 10.6)
+```
+
+Điểm dừng cách vật cản động **15 m** — nó bị chặn bởi **kệ hàng**, không
+phải bởi thứ đang chuyển động.
+
+**Vì sao P0/P1 không thấy:** cả hai đo trong **sảnh trống**, một xe đẩy
+lao thẳng, không có gì khác trong tầm. Đó đúng là hình học che giấu lỗi
+này.
+
+**Vì sao không sửa được bằng chỉnh tham số:** biên phải tính tốc độ khép
+**chỉ** với những thứ **có thể khép**. Phân biệt tĩnh/động chính là việc
+của tracker — mà P5 đo được là không đáng tin (L16). Nên đây là bài toán
+mở thật sự, không phải chuyện vặn số.
+
+**Hệ quả hôm nay:** không profile nào khai `v_obstacle_max`, nên **không
+deployment nào mang bảo đảm phanh trước vật cản đang lại gần** — L7 vẫn
+đúng nguyên văn. Lỗ hổng P0 đo được vẫn còn đó, và bản vá P1 chưa dùng
+được ở nơi có kệ hàng.
