@@ -1,8 +1,8 @@
-# Tổng kết P0–P5 — plan `dwa_predictive`, một phiên
+# Tổng kết P0–P6 — plan `dwa_predictive`, một phiên
 
 **Ngày:** 2026-08-14 → 2026-08-15
 **Plan:** `docs/antongduy/plans/2026-08-14/du-doan-chuyen-dong-vat-can.md`
-**Phạm vi:** commit plan, rồi P0 → P5. **P6, P7 chưa làm.**
+**Phạm vi:** commit plan, rồi P0 → P6. **P7 chưa làm.**
 **Trạng thái:** **chưa chạy full suite** · phép so 120 seed **đã xong**
 
 Báo cáo này phủ toàn bộ phiên. Chi tiết từng pha nằm ở sáu report riêng
@@ -64,6 +64,17 @@ Nút thắt đo được: khi tracker **có** báo vận tốc thì sai số ch�
 m/s** trên 0.800 (15%) — vấn đề là **tần suất**, chỉ 1.6% số bước vật cản
 nằm trong tầm. Ước lượng đủ tốt; **phát hiện** thì chập chờn.
 
+**P6 — nối vào nền tảng + trả hai món nợ**
+Đăng ký `astar+dwa_predictive` và `rrtstar+dwa_predictive`, **vẫn
+`lidar_only`**; ba config cùng mật độ lấy mẫu với `dwa` để trục latency so
+được. **Nợ 1:** `CONTROLLER_OF_CONFIG` tồn tại từ lâu mà chưa ai đọc — giờ
+`validate_config_names` chặn `astar+dwa_predictive:dwa_coarse`, cặp vốn
+**chạy được** và dán nhãn sai vào report. **Nợ 2:** `local_version` từng
+là `"v1"` vĩnh viễn vì không caller nào truyền; nay là checksum của
+controller **cộng lõi dùng chung** — An chốt phương án (a), **mọi
+`candidate_id` đang có đều đổi**. Hàng rào L4 mở lên bốn stack. Thêm
+L13–L17.
+
 ---
 
 ## 3. Những thứ tìm ra ngoài kế hoạch
@@ -79,6 +90,7 @@ nằm trong tầm. Ước lượng đủ tốt; **phát hiện** thì chập ch�
 | 7 | `sensor_noise` thêm vào `reset()` của controller mà **không** thêm vào `_reset_local` ⇒ tracker luôn dựng với `SensorNoise()` mặc định | đã sửa + test qua `run_stack` |
 | 8 | Bộ đếm tracker **bị xoá mỗi lần replan** ⇒ event cuối episode chỉ có đoạn cuối | đã sửa: cộng dồn + khoá `segments` |
 | 9 | Bản sửa (8) làm `dwa` **thường** phát event chẩn đoán rỗng khi có replan | đã sửa: fold no-op khi rỗng + test có replan thật |
+| 10 | Helper của **chính test L4** ghép config `dwa` với stack dự đoán — đúng lỗi việc 3 vừa cấm | đã sửa: suy config từ controller của stack |
 
 ---
 
@@ -131,7 +143,8 @@ chứng.
 | 4 | **L8** — `kinematics.py` bậc không | sửa là đổi tích phân ⇒ đổi mọi số đã lưu |
 | 5 | **§8 metric mục tiêu** | P4 cho thấy dự đoán mua an toàn; chạy P7 với metric cũ sẽ đo nhầm trục |
 | ~~6~~ | ~~Diagnostics chưa vào trace~~ | **đã làm**: `run_stack` phát event `local_planner_diagnostics` cuối episode; controller không có counter thì im lặng |
-| 7 | **`local_version` vẫn `"v1"`** | P6 việc 4; nay đã thành nợ thật vì hai controller dùng chung lõi |
+| ~~7~~ | ~~`local_version` vẫn `"v1"`~~ | **đã trả ở P6** — checksum controller + lõi; An chốt (a), mọi id cũ đứt gãy |
+| 8 | **Full backend suite chưa chạy cả phiên** | P6 vừa đổi **mọi** `candidate_id` — bán kính rộng nhất từ đầu plan. Nên chạy trước P7 |
 
 ---
 
@@ -144,6 +157,8 @@ chứng.
 | `test_dwa_predictive.py` | 27 passed |
 | `test_dwa_oracle.py` | 21 passed |
 | `test_dwa_tracking.py` | **29 passed** |
+| `test_candidate_identity.py` (P6) | **26 passed, 1 skipped** |
+| `test_hard_feasible_set.py` (L4, **bốn** stack) | **29 passed** |
 | `test_task_profile.py` · `test_dynamic_obstacles.py` | 94 passed |
 | Lát cắt lớn (`tests/api` + benchmark) | 877 passed, 1 skipped |
 | Lát cắt controller | 209 passed, 1 skipped |
@@ -152,7 +167,7 @@ chứng.
 | **Full backend suite** | **CHƯA CHẠY** |
 | Phép so tracker–oracle 120 seed | **xong** — 11 cơ hội, 0 giành lại (commit `63c5d7d`) |
 
-22 commit, tất cả tiền tố `TongDuyAn - `.
+24 commit, tất cả tiền tố `TongDuyAn - `.
 
 ---
 
@@ -164,5 +179,6 @@ chứng.
 - `2026-08-14/tongduyan_p3-rollout-khong-thoi-gian.md`
 - `2026-08-14/tongduyan_p4-oracle-va-cong-quyet-dinh-2.md`
 - `2026-08-15/tongduyan_p5-tracker-va-gia-cua-tri-giac.md`
+- `2026-08-15/tongduyan_p6-noi-vao-nen-tang-va-tra-hai-mon-no.md`
 
-Hạn chế đã ghi: `docs/KNOWN_LIMITATIONS.md` **L7–L12**.
+Hạn chế đã ghi: `docs/KNOWN_LIMITATIONS.md` **L7–L17**.
