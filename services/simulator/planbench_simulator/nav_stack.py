@@ -422,6 +422,16 @@ def _fold_counters(total: dict[str, int], latest: dict[str, int]) -> dict[str, i
     total spanning five trackers is a different thing from one tracker's
     total and the difference should not have to be inferred.
     """
+    if not latest:
+        # **A controller with no counters must stay entirely silent.**
+        # Counting a segment anyway leaves ``{"segments": N}`` behind, and
+        # that is truthy, so a plain ``dwa`` episode that happened to
+        # replan emitted a ``local_planner_diagnostics`` event saying
+        # nothing but how many times it had reset. A diagnostic about a
+        # controller that keeps no diagnostics is pure noise in the
+        # record, and it would have appeared on every replanning episode
+        # the platform has ever run.
+        return total
     for key, value in latest.items():
         total[key] = total.get(key, 0) + value
     total["segments"] = total.get("segments", 0) + 1

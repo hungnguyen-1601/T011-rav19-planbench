@@ -394,6 +394,71 @@ class TestTheCountersReachTheEpisodeRecord:
         quiet = LidarTracker(DWAPredictiveConfig(**shared), SafetyEnvelope(), SensorNoise())
         assert planner._tracker.velocity_floor(3.0, spacing) > quiet.velocity_floor(3.0, spacing)
 
+    def test_the_sigma_survives_a_replan(self) -> None:
+        """The second of three call sites, guarded on its own.
+
+        The test above proves the sigma reaches the tracker built at
+        episode start. A replan builds a **new** tracker from a different
+        line, and dropping the argument there would leave the controller
+        correct until the first replan and wrong afterwards — the hardest
+        shape of defect to notice.
+        """
+        from planbench_schemas.replanning import ReplanningConfig
+
+        shared = LOCAL_CONTROLLER_CONFIGS["dwa_balanced"]
+        map_data, scenario = build_scenario("sudden_stop")
+        scenario = scenario.model_copy(
+            update={
+                "timeout_seconds": 25.0,
+                "sensor_noise": SensorNoise(lidar_range_sigma_m=0.05),
+            }
+        )
+        planner = DWAPredictivePlanner(DWAPredictiveConfig(**shared))
+        run = run_stack(
+            map_data,
+            scenario,
+            planner,
+            build_global_planner("astar+dwa", episode_seed=0),
+            ReplanningConfig(enabled=True),
+        )
+        assert sum(1 for e in run.result.events if e.type == "replan") > 0, (
+            "nothing replanned, so the replan reset was never exercised"
+        )
+        assert planner._tracker._noise.lidar_range_sigma_m == pytest.approx(0.05)
+
+    def test_the_sigma_survives_a_recovery(self) -> None:
+        """And the third call site: the recovery ladder's ``forget`` rung
+        replans on the static map and resets the controller from a line of
+        its own.
+
+        Driven on the blocked-doorway scene the recovery suite uses, since
+        that is the one built to make the ladder actually climb — a test
+        that hoped a recovery would fire would silently stop covering this
+        line the day the controller got better at not getting stuck.
+        """
+        from blocked_route import blocked_scenario, two_doorway_map
+
+        from planbench_schemas.recovery import RecoveryConfig
+        from planbench_schemas.replanning import ReplanningConfig
+
+        shared = LOCAL_CONTROLLER_CONFIGS["dwa_balanced"]
+        scenario = blocked_scenario().model_copy(
+            update={"sensor_noise": SensorNoise(lidar_range_sigma_m=0.05)}
+        )
+        planner = DWAPredictivePlanner(DWAPredictiveConfig(**shared))
+        run = run_stack(
+            two_doorway_map(),
+            scenario,
+            planner,
+            None,
+            ReplanningConfig(enabled=True),
+            recovery=RecoveryConfig(enabled=True),
+        )
+        assert [e for e in run.result.events if e.type == "recovery"], (
+            "no recovery fired, so that reset was never exercised"
+        )
+        assert planner._tracker._noise.lidar_range_sigma_m == pytest.approx(0.05)
+
     def test_counters_survive_a_replan(self) -> None:
         """Every reset builds a new tracker, zeroing its counters, so an
         episode that replanned would otherwise report only its last
@@ -438,6 +503,37 @@ class TestTheCountersReachTheEpisodeRecord:
             scenario,
             build_local_planner("astar+dwa", shared),
             build_global_planner("astar+dwa", episode_seed=0),
+        )
+        assert not [e for e in run.result.events if e.type == "local_planner_diagnostics"]
+
+    def test_it_stays_silent_even_when_it_replans(self) -> None:
+        """**Regression, and the test above could not have caught it.**
+
+        The fold counted a segment on *every* reset, including resets of a
+        controller that keeps no counters at all. That left
+        ``{"segments": N}`` behind — truthy — so a plain ``dwa`` episode
+        that happened to replan emitted a ``local_planner_diagnostics``
+        event whose entire content was how many times it had reset.
+
+        The silence test above ran without replanning, so there was never
+        a second reset and the counter never appeared. Replanning is the
+        condition that exposes it, which is why it is stated separately
+        rather than folded into the case above.
+        """
+        from planbench_schemas.replanning import ReplanningConfig
+
+        shared = LOCAL_CONTROLLER_CONFIGS["dwa_balanced"]
+        map_data, scenario = build_scenario("sudden_stop")
+        scenario = scenario.model_copy(update={"timeout_seconds": 25.0})
+        run = run_stack(
+            map_data,
+            scenario,
+            build_local_planner("astar+dwa", shared),
+            build_global_planner("astar+dwa", episode_seed=0),
+            ReplanningConfig(enabled=True),
+        )
+        assert sum(1 for e in run.result.events if e.type == "replan") > 0, (
+            "nothing replanned, so this proves nothing"
         )
         assert not [e for e in run.result.events if e.type == "local_planner_diagnostics"]
 

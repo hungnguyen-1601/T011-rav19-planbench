@@ -393,13 +393,38 @@ hẳn tổng của một, và khác biệt đó không nên phải suy ra.
 
 Test: `segments == số replan + 1` trên `sudden_stop` có bật replanning.
 
+**(2b) Và bản sửa (2) đẻ ra một lỗi mới — An bắt.** `_fold_counters` đếm
+một segment ở **mọi** lần reset, kể cả reset của controller **không có**
+counter nào. Nó để lại `{"segments": N}` — truthy — nên một episode `dwa`
+**thường** mà có replan sẽ phát ra event `local_planner_diagnostics` với
+nội dung duy nhất là số lần nó đã reset. Một chẩn đoán về một controller
+không giữ chẩn đoán nào: nhiễu thuần tuý, và nó sẽ xuất hiện ở **mọi**
+episode có replan mà nền tảng từng chạy.
+
+Test "controller không có diagnostics thì im lặng" **không bắt được**, vì
+nó chạy **không** replanning — nên không bao giờ có lần reset thứ hai.
+
+Đã sửa: `_fold_counters` no-op khi `latest` rỗng. Test hồi quy riêng, có
+khẳng định replan **thật sự xảy ra** trước khi kiểm sự im lặng.
+
+**(2c) Test sigma chỉ phủ một trong ba chỗ reset.** Bản đầu chỉ chứng minh
+đường reset **đầu episode**. Replan và recovery dựng tracker mới từ **hai
+dòng khác**, và bỏ tham số ở một trong hai sẽ cho một controller đúng cho
+tới lần replan đầu tiên rồi sai từ đó — dạng lỗi khó thấy nhất.
+
+Đã thêm hai test riêng. Ca recovery chạy trên **cảnh hai cửa bị chặn** mà
+bộ test recovery dùng, chứ không hy vọng `sudden_stop` bị kẹt: một test
+*hy vọng* recovery nổ sẽ lặng lẽ thôi phủ dòng đó vào ngày controller giỏi
+lên và không còn kẹt nữa. Cả hai test khẳng định sự kiện đã xảy ra trước
+khi kiểm sigma.
+
 ---
 
 ## 5. Kiểm chứng
 
 | Việc | Kết quả |
 |---|---|
-| `tests/test_dwa_tracking.py` | **26 passed** — phân cụm, phân loại, ước lượng (7.1), năm dòng vòng đời, sàn nhiễu, tất định (7.6), đặc tả hoá vận tốc ma |
+| `tests/test_dwa_tracking.py` | **29 passed** — phân cụm, phân loại, ước lượng (7.1), năm dòng vòng đời, sàn nhiễu, tất định (7.6), đặc tả hoá vận tốc ma |
 | `tests/test_dwa_predictive.py` · `test_dwa_oracle.py` | 48 passed |
 | Đối chiếu tracker vs oracle (7.9b) | mục 4 |
 | `ruff check .` | sạch |
