@@ -15,6 +15,9 @@
  * docs/antongduy/reports/2026-08-15/).
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
@@ -253,6 +256,47 @@ describe("placing points on the map", () => {
 
   it("presses nothing while the mission owns the click", () => {
     expect(render()).not.toContain('aria-pressed="true"');
+  });
+});
+
+describe("a click on a control is not a click on the row", () => {
+  it("checks what was clicked before treating it as a focus", () => {
+    /* The bug this closes made the feature unusable: arming a
+       placement dispatched `beginPlacement`, the event bubbled to the
+       row, and the row's own `select` — running with the previous
+       render's idea of what was selected — cleared the placement a
+       moment after the button set it. The button lit up, and the next
+       click on the map moved the robot's start instead of the
+       obstacle's point.
+
+       No DOM here, so what is pinned is the guard's presence: the row
+       must look at `event.target` rather than firing on any bubble. */
+    const source = readFileSync(
+      join(process.cwd(), "src", "components", "TrafficEditor.tsx"),
+      "utf8",
+    );
+    const row = source.slice(source.indexOf("className=\"card\""), source.indexOf("aria-current"));
+    expect(row).toContain("event.target");
+    expect(row).toMatch(/closest\(\s*"button/);
+  });
+});
+
+describe("what the boxes on a route actually do", () => {
+  it("says what happens at the end of the route, for all three cases", () => {
+    /* "Loop" and "ping-pong" are only distinguishable to somebody who
+       already knows, and leaving both unticked is a third behaviour
+       that nothing on screen used to mention. */
+    const html = render();
+    expect(html).toContain("drive straight back to the first");
+    expect(html).toContain("turn round and retrace");
+    expect(html).toContain("drives the route once and parks");
+  });
+
+  it("explains the head start beside the field, not only in the locale file", () => {
+    /* The paragraph existed as a translated string for a release and
+       was never rendered — the least guessable field on the panel was
+       the only one with no explanation next to it. */
+    expect(render()).toContain("Seconds of seed-derived head start");
   });
 });
 

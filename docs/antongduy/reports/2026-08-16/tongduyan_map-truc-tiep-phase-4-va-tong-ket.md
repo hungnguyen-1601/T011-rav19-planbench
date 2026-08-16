@@ -2,7 +2,10 @@
 
 > Plan: `docs/antongduy/plans/2026-08-16/tuong-tac-map-va-refactor-layout-deployment.md` (v4).
 > Ngày làm: 2026-08-16. Nhánh: `tongduyan_plannerselector`.
-> Phase 0–3 An đã commit (`d9676e9`, `3046fb5`, `7c23e0a`, `7f91890`); Phase 4 **chưa commit**.
+> Commit: Phase 0 `d9676e9` · Phase 1 `3046fb5` · Phase 2 `7c23e0a` ·
+> Phase 3 `7f91890` · phần lớn Phase 4 `d0de947`.
+> **Chưa commit**: vòng sửa bố cục thứ hai ở mục A4 (hai cột dính nhau)
+> và bản report này.
 > Report này phủ Phase 4 **và** tổng kết cả bốn phase, theo quy ước "report phải phủ hết task".
 
 ---
@@ -99,7 +102,157 @@ candidate/committed được test kín ở tầng reducer (24 ca), nhưng **đư
 từ reducer tới con chuột** thì chỉ có mắt người và checklist tay. Đúng
 lỗ hổng mục B mô tả, và đây là ví dụ nó thật.
 
-### A4. Dọn sau refactor, và hai mục tài liệu đã sai
+### A4. Hai cột không dính nhau — An chỉ ra từ ảnh chụp, hai vòng
+
+**Vòng 1: dropdown tràn qua panel.** Canvas bị chặn ở
+`MAX_CANVAS_WIDTH_PX` (760), nhưng cột chứa nó thì không, nên dropdown
+chọn scenario kéo dài gần 270 px qua mép phải bản đồ. Sửa bằng cách bọc
+nội dung cột trong `maxWidth: canvas.width`.
+
+**Vòng 2: gốc rễ, và vòng 1 mới chỉ chữa triệu chứng.** An chỉ ra chỗ
+đúng: chữ dưới canvas vẫn dài hơn bản đồ, và lý do là *canvas căn lề
+trái của một cột rộng hơn nó, còn panel căn lề phải của cột kia* —
+`gridTemplateColumns: minmax(480px, 1fr) minmax(420px, 460px)` cho cả
+hai track co giãn, nên trên màn rộng còn một khoảng **~290 px ở giữa
+không thuộc về bên nào**. Mọi thứ trong cột trái trông như đang trôi
+giữa hai khối.
+
+Sửa theo đúng đề xuất của An — **track của bản đồ chính là bản đồ**:
+
+```
+gridTemplateColumns: `${canvas.width}px minmax(0, 1fr)`
+roomForMap = shellWidth − PANEL_MIN_PX − COLUMN_GAP_PX
+```
+
+Bản đồ lấy phần còn lại sau khi panel có tối thiểu của nó, tối đa bằng
+cap của chính nó; panel lấy **toàn bộ phần dư**. Chỗ thừa trên màn rộng
+giờ về tay các ô cấu hình thay vì thành khoảng trống. Không còn phải
+căn lề phải cho panel.
+
+Bỏ luôn được một `ResizeObserver`: cột bản đồ từng được đo, nhưng khi
+nó đã *bằng đúng* canvas thì đo nó cũng là tính nó. Chỉ còn một phép đo
+— của cả form.
+
+`maxWidth` ở vòng 1 **giữ lại**: thừa khi hai cột (track đã đúng bề
+rộng), nhưng cần khi **một cột** — lúc đó cột là cả form còn canvas vẫn
+bị cap, nên mọi cửa sổ nằm giữa điểm sập cột và cap sẽ lại kéo dropdown
+đi xa bản đồ.
+
+Hai guard ghim: `canvasSize(roomForMap`, và chuỗi template của
+`gridTemplateColumns`.
+
+### A5. Bấm nút đặt điểm không ăn — bug thật, An báo khi dùng
+
+An báo: *"bấm 1 vị trí thì thường thay đổi vị trí start của robot chứ
+không thay đổi vị trí obstacle"*. Nguyên nhân đúng như triệu chứng gợi
+ra, và nó là **của tôi**, thêm ở Phase 0 ngoài plan:
+
+Row obstacle có `onClick` để chọn row (tiện, cùng đường selection với
+click thân trên bản đồ). Nút "Place the start" nằm *bên trong* row. Bấm
+nút trên một row **chưa được chọn**:
+
+1. `onClick` của nút chạy → dispatch `beginPlacement` (mode đặt điểm bật);
+2. event **bubble** lên row → guard `if (!chosen)` đọc `chosen` của
+   render **cũ**, tức `false` → dispatch `select`;
+3. reducer `select` **xoá placement** (đúng theo invariant: focus mới
+   kết thúc gesture cũ).
+
+Kết quả: nút sáng lên rồi tắt ngay, mode quay về mission, cú click tiếp
+theo trên bản đồ dời start của robot. Lần bấm **thứ hai** thì chạy đúng
+— vì lúc đó row đã được chọn nên guard chặn. Đúng kiểu lỗi "thỉnh
+thoảng mới đúng" mà người dùng mô tả là *"thường"*.
+
+Sửa: row chỉ nhận cú click vào **nền** của nó —
+`event.target.closest("button, input, select, textarea, label")` thì bỏ
+qua. Một chỗ, phủ mọi control hiện có và mọi control thêm sau.
+
+Guard ghim sự có mặt của phép kiểm đó (Node không có DOM nên không mô
+phỏng được bubbling). Đây là **lần thứ hai** trong đợt này một defect
+lọt qua vì đường từ state tới con chuột không test tự động được — lần
+trước là `flushDrag` (A3). Cả hai đều đọc ra được bằng mắt, và cả hai
+đều nằm đúng chỗ mục B nói là chưa phủ.
+
+### A6. Bốn chỉ số không ai giải thích, An hỏi
+
+An hỏi nghĩa của **seed head start**, **loop**, **ping-pong**, và
+**Time/Seed** ở khối preview. Không phải câu hỏi lặt vặt — nếu phải hỏi
+thì UI chưa nói, và một con số không hiểu là một con số bị điền bừa.
+
+Điều đáng nói nhất: `seedTimeOffsetNote` — đoạn giải thích đầy đủ cho
+"seed head start" — **đã tồn tại trong cả hai file locale suốt một
+release mà chưa bao giờ được render**. Trường khó đoán nhất bảng cũng
+là trường duy nhất không có chữ nào bên cạnh.
+
+Đã thêm/hiện:
+
+| Chỗ | Nói gì |
+|---|---|
+| Seed head start | Render `seedTimeOffsetNote` (đã có sẵn) thành một đoạn dưới hàng — trong ô thì ba câu sẽ thành cột một chữ mỗi dòng |
+| Loop | "Tới waypoint cuối chạy thẳng về waypoint đầu; đoạn quay về là **nét đứt** trên bản đồ — không ai đặt điểm trên đó" |
+| Ping-pong | "Tới waypoint cuối thì quay đầu đi ngược lộ trình. **Không tick ô nào** thì đi hết lộ trình một lần rồi đỗ" — trạng thái thứ ba mà trước đây không chỗ nào nhắc |
+| Preview Time | Vẽ cảnh ở giây thứ mấy; traffic là hàm của thời gian |
+| Preview Seed | Lượt chạy thứ mấy; seed dịch đồng hồ từng vật cản theo head start và chọn dãy hướng cho random walk |
+
+Hai nhãn preview đặc biệt đáng chú thích vì chúng **hỏi** một câu về
+episode chứ không **đặt** gì trên deployment — "Time" và "Seed" đứng
+cạnh bản đồ đọc như hai ô nữa phải điền cho đúng.
+
+### A7. Giải thích chuyển sang hover, và một nút Undo
+
+An dùng thử vòng nữa: chữ giải thích **đúng nhưng chiếm quá nhiều chỗ
+và làm UI xấu**. Nhận xét đúng, và nó tự phủ định mục A6 vừa làm — mỗi
+con số một đoạn văn thì cộng lại chữ nhiều hơn control, mà một panel
+bốn phần năm là văn xuôi thì không ai đọc: lời giải thích chen mất
+chính cái nó giải thích.
+
+**`components/Hint.tsx`** — dấu `?` nhỏ cạnh nhãn, rê chuột thì bong
+bóng hiện **bám theo con trỏ**, `position: fixed`, tự lật khi sát mép
+phải hoặc mép dưới (bong bóng chạy ra ngoài cửa sổ là bong bóng không
+được hiện). `pointer-events: none` — nó đuổi theo chuột, nên nếu nhận
+được chuột thì nó sẽ tự đuổi chính mình khỏi control đang giải thích.
+
+**Toàn văn vẫn nằm trong markup**, làm `aria-label` của dấu `?`. Một
+tooltip chỉ tồn tại lúc chuột đang ở trên là tooltip mà screen reader,
+người dùng bàn phím và guard kiểm locale **không với tới** — và đây
+đúng là thứ chữ quyết định người ta hiểu hay đoán. Bàn phím Tab tới
+được, Esc đóng.
+
+**Ba loại chữ ở lại trên trang**, không chuyển thành hint, vì chúng
+không phải mô tả control:
+
+| Ở lại | Vì sao |
+|---|---|
+| Lỗi server cạnh field | Đây là *"tài liệu này sẽ không được nộp"*. Giấu sau hover là để tác giả nhìn cái form bấm nút không thấy gì xảy ra |
+| `noiseNote` | Cảnh báo về **tổ hợp** hai control (không traffic + không nhiễu), không có dấu `?` nào để treo lên; và người không bao giờ rê chuột chính là người nó nhắm tới |
+| `replanningTraffic`, hint offset, `vehicleUndeclared` | Chỉ hiện khi có chuyện cụ thể sắp bị đo sai — trạng thái, không phải mô tả |
+
+**Undo (Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y) + hai nút.**
+`lib/undo.ts` giữ **snapshot cả tài liệu** chứ không log thao tác: log
+sẽ phải biết cách đảo ngược từng phép (kéo waypoint, adopt map viết ba
+field, vehicle điền năm field), mỗi phép đảo là một định nghĩa thứ hai
+được tự do bất đồng với bản gốc. Snapshot không thể bất đồng với chính
+nó.
+
+`FormMemory` gồm `{draft, start, goal}` — **mission nằm trong đó** vì
+nó là phần của tài liệu, và là phần dễ bị đổi nhầm nhất: đúng ca An
+nêu, một cú click lạc lên canvas là start đã dời.
+
+Gộp bước bằng **label**: các lần ghi liên tiếp cùng label là **một**
+bước. Gõ `0.35` vào ô radius là bốn lần ghi nhưng một lần undo; mỗi
+frame của một cú kéo dùng chung `drag#N` nên cả cú kéo là một bước, còn
+cú kéo sau lấy số mới nên tách ra. Giới hạn 50 bước (snapshot là cả
+profile).
+
+**Ctrl+Z trong ô text thì nhường cho trình duyệt** — ở đó nó undo ký tự
+đang gõ, và cướp lấy để tua ngược cả profile là trả lời yêu cầu "cho
+tôi lại một chữ" bằng cách vứt đi một tấm bản đồ.
+
+Undo/redo cũng gọi `invalidateCheck()` (guard đếm lên **9**): đặt lại
+một tài liệu cũ cũng là một thay đổi, và dòng xanh "server chấp nhận"
+còn đứng nguyên sau một cú tua ngược là verdict về tài liệu không còn
+trên màn hình.
+
+### A8. Dọn sau refactor, và hai mục tài liệu đã sai
 
 Hai thứ chết sau khi layout đổi, đã xoá: state `showHardware` (nút gập
 phần cứng — tab thay vai trò của nó) và một prop `modeNote` truyền
@@ -118,24 +271,32 @@ thừa xuống `MissionCanvas`, vốn giờ nhận caption qua `toolbar`.
   khai** cũng chỉ vẽ ở khung phẳng, và lý do là phép chiếu 2.5D không
   có nghịch đảo (một pixel ứng với cả một tia xuyên cảnh).
 
-### A5. Bằng chứng
+### A9. Bằng chứng
 
 | Kiểm | Kết quả |
 |---|---|
 | `npm run typecheck` | sạch |
-| `npm run test` (toàn bộ web) | **896 passed / 43 file** |
+| `npm run test` (toàn bộ web) | **921 passed / 45 file** |
 | `npm run build` (Next production) | **thành công** — 18/18 trang server-render |
-| `pytest tests` (toàn bộ backend) | *(xem mục A6)* |
+| `pytest tests` (toàn bộ backend) | **2808 passed, 8 skipped** trong 40 phút 09 giây |
 
-Web trước loạt việc này: **770 passed / 35 file**. Sau: **896 / 43**
-(+126 ca, +8 file).
+Web trước loạt việc này: **770 passed / 35 file**. Sau: **921 / 45**
+(+151 ca, +10 file).
 
-### A6. Backend — không đụng, và chứng minh bằng diff
+### A10. Backend — không đụng, và chứng minh bằng diff
 
 `git diff --stat HEAD` ngoài `apps/web`, `docs`, `.ai-log` là **rỗng**.
-Không một dòng Python nào đổi trong cả bốn phase. Full pytest vẫn chạy
-theo đúng chốt của An ("không full suite tới phase cuối") — kết quả ghi
-ở mục "Bằng chứng cuối" bên dưới.
+Không một dòng Python nào đổi trong cả bốn phase.
+
+Full pytest vẫn chạy theo đúng chốt của An ("không full suite tới phase
+cuối"): **2808 passed, 8 skipped, 0 failed** trong 40 phút 09 giây. Hai
+warning đều có sẵn từ trước và không liên quan
+(`StarletteDeprecationWarning` về httpx, và một
+`PydanticJsonSchemaWarning` trong test chat).
+
+Chạy nó dù diff rỗng là có chủ đích: "không đụng backend" là một *tuyên
+bố*, và một lượt chạy xanh là thứ biến nó thành bằng chứng — rẻ hơn
+nhiều so với việc phát hiện ngược lại sau khi merge.
 
 ---
 
@@ -170,6 +331,7 @@ Mỗi mục một câu hỏi có/không.
 | 10 | Nhấn đúp mà tay **hơi rung** | Điểm bị xoá, **không** bị dời trước khi xoá |
 | 11 | Bật "Add waypoints" rồi nhấn đúp | Ra **hai điểm mới**, **không** xoá gì |
 | 12 | Click vào thân một obstacle trên bản đồ | Panel nhảy sang tab Traffic, đúng row sáng viền |
+| 12b | Trên một obstacle **chưa được chọn**, bấm "Place the start" **rồi** click bản đồ | Điểm của obstacle dời — **không** phải start của robot. Đây là bug A5; trước khi sửa, lần bấm đầu luôn hỏng và lần thứ hai mới đúng |
 | 13 | Click vào đĩa **hổ phách** của preview | **Không có gì xảy ra** — nó là ảnh chụp |
 | 14 | Bật placement rồi kéo ngang bản đồ | Đếm waypoint tăng đúng số lần click, **không** tăng vọt |
 | 15 | `/maps/[id]`, vẽ rồi kéo chuột ra ngoài canvas | Nét vẽ **dừng ở mép** — hành vi cũ y nguyên, không bị pointer capture giữ lại |
@@ -178,11 +340,17 @@ Mỗi mục một câu hỏi có/không.
 
 | # | Thao tác | Kỳ vọng |
 |---|---|---|
-| 16 | Mở form trên màn ≥1440px | Hai cột: bản đồ trái, 7 tab phải |
+| 16 | Mở form trên màn ≥1440px | Hai cột **dính nhau**: bản đồ trái, 7 tab phải, **không có khoảng trống ở giữa**; dropdown và mọi dòng chữ dưới canvas rộng đúng bằng bản đồ (xem A4) |
 | 17 | Thu cửa sổ về ~1100px | Vẫn hai cột, bản đồ nhỏ lại theo |
 | 18 | Thu tiếp xuống ~390px | Sập **một cột**, bản đồ trên panel dưới, **không tràn ngang** |
 | 19 | Ở **cả ba** cỡ: bấm đặt một điểm | Điểm rơi **đúng chỗ con trỏ**, không lệch |
 | 20 | Đổi tab qua lại vài vòng | Biên độ nhiễu đã sửa **không** mất; vehicle đã chọn **không** reset |
+| 20b | Rê chuột lên dấu `?` cạnh một nhãn | Bong bóng hiện **bám theo con trỏ**; rê sát mép phải/dưới màn hình thì nó **lật vào trong**, không chạy ra ngoài cửa sổ |
+| 20c | Tab tới dấu `?` bằng bàn phím rồi bấm Esc | Bong bóng hiện ở cạnh dấu, Esc đóng |
+| 20d | Click lạc lên canvas làm dời start, bấm **Ctrl+Z** | Start về đúng chỗ cũ; bấm Ctrl+Shift+Z thì tiến lại |
+| 20e | Gõ `0.35` vào một ô rồi Ctrl+Z **khi con trỏ vẫn trong ô** | Trình duyệt undo **ký tự**, không tua ngược cả profile |
+| 20f | Click ra ngoài ô rồi Ctrl+Z | Lần này undo cả bước gõ đó — một lần, không phải bốn |
+| 20g | Kéo một waypoint hai lần rồi Ctrl+Z hai lần | Mỗi cú kéo là **một** bước; sau hai lần undo về vị trí trước cả hai |
 | 21 | Đặt hai obstacle cùng độ dài tên + cùng `seed_offset`, bấm Check | Nhảy sang tab **Traffic**, badge đỏ có số, lỗi hiện đầu khối |
 | 22 | Đặt radius âm, bấm Check | Nhảy tab Traffic, lỗi hiện **cạnh đúng row**, có chữ `radius:` |
 | 23 | Cuộn xuống cuối form | Footer **dính đáy**, Check/File it luôn thấy; không đè mất nội dung |
@@ -284,7 +452,7 @@ quét key i18n tưởng là key thật. Guard làm đúng việc.
   được mode đặt pose. Kéo marker thì không cần mode, và caption dưới
   canvas vẫn nói mode hiện tại. Đúng như plan chốt; ghi ra để biết.
 - ~~**`KNOWN_LIMITATIONS.md`** #47/#50~~ — **đã trả trong Phase 4**,
-  xem mục A3.
+  xem mục A8.
 
 ---
 
@@ -292,8 +460,8 @@ quét key i18n tưởng là key thật. Guard làm đúng việc.
 
 | Kiểm | Trước loạt việc | Sau |
 |---|---:|---:|
-| Web (`npm run test`) | 770 passed / 35 file | **896 passed / 43 file** |
+| Web (`npm run test`) | 770 passed / 35 file | **921 passed / 45 file** |
 | `npm run typecheck` | sạch | sạch |
 | `npm run build` | thành công | **thành công**, 18/18 trang |
-| `pytest tests` | 2805 passed, 8 skipped | *(điền sau khi chạy xong)* |
+| `pytest tests` | 2805 passed, 8 skipped | **2808 passed, 8 skipped** (0 failed) |
 | `git diff` ngoài `apps/web`/`docs` | — | **rỗng** |

@@ -26,6 +26,7 @@
 
 import type { ReactNode } from "react";
 
+import { Hint } from "@/components/Hint";
 import { useTranslation } from "@/lib/i18n";
 import {
   MOTION_KINDS,
@@ -140,7 +141,10 @@ export function TrafficEditor({
     options: { step?: number; note?: string; width?: number } = {},
   ) => (
     <label className="field" style={{ width: options.width ?? 120 }}>
-      <span>{label}</span>
+      <span>
+        {label}
+        {options.note ? <Hint text={options.note} label={label} /> : null}
+      </span>
       <input
         type="number"
         step={options.step ?? 0.1}
@@ -153,7 +157,6 @@ export function TrafficEditor({
         disabled={disabled}
         onChange={(event) => onNumber(numberFromInput(event.target.value))}
       />
-      {options.note ? <small className="muted">{options.note}</small> : null}
     </label>
   );
 
@@ -187,8 +190,19 @@ export function TrafficEditor({
                 </button>
               </div>
             </div>
+            {/* Both boxes say what happens at the *end* of the route,
+                which is the thing neither name gives away: "loop" and
+                "ping-pong" are only distinguishable to somebody who
+                already knows, and leaving both unticked is a third
+                behaviour nothing on screen mentioned at all. */}
             <label className="field" style={{ width: 120 }}>
-              <span>{t("deployments.form.traffic.loop")}</span>
+              <span>
+                {t("deployments.form.traffic.loop")}
+                <Hint
+                  text={t("deployments.form.traffic.loopNote")}
+                  label={t("deployments.form.traffic.loop")}
+                />
+              </span>
               <input
                 type="checkbox"
                 checked={motion.loop ?? false}
@@ -197,7 +211,13 @@ export function TrafficEditor({
               />
             </label>
             <label className="field" style={{ width: 140 }}>
-              <span>{t("deployments.form.traffic.pingPong")}</span>
+              <span>
+                {t("deployments.form.traffic.pingPong")}
+                <Hint
+                  text={t("deployments.form.traffic.pingPongNote")}
+                  label={t("deployments.form.traffic.pingPong")}
+                />
+              </span>
               <input
                 type="checkbox"
                 checked={motion.ping_pong ?? false}
@@ -268,8 +288,13 @@ export function TrafficEditor({
 
   return (
     <>
-      <h4>{t("deployments.form.traffic.title")}</h4>
-      <p className="muted">{t("deployments.form.traffic.note")}</p>
+      <h4>
+        {t("deployments.form.traffic.title")}
+        <Hint
+          text={t("deployments.form.traffic.note")}
+          label={t("deployments.form.traffic.title")}
+        />
+      </h4>
 
       {/* Every traffic rule the server states as a model validator lands
           here, addressed to `environment`, because that is where those
@@ -293,11 +318,24 @@ export function TrafficEditor({
           <div
             key={index}
             className="card"
-            /* Clicking anywhere in a row focuses it, the same selection a
-               click on the obstacle's body on the map will make — one
-               highlight, two doors to it. */
-            onClick={() => {
-              if (!disabled && !chosen) onSelect(index);
+            /* Clicking the *background* of a row focuses it — the same
+               selection a click on the obstacle's body on the map makes,
+               one highlight reachable two ways.
+             *
+             * **A click on a control inside it is not that click**, and
+             * treating it as one broke the feature outright. Arming a
+             * placement dispatches `beginPlacement`; the event then
+             * bubbled to here, where `chosen` was still the previous
+             * render's `false`, and the `select` that followed cleared
+             * the placement a millisecond after the button set it. The
+             * button lit up and the next click on the map moved the
+             * robot's start instead of the obstacle's — the symptom
+             * being a form that ignores its own toolbar. */
+            onClick={(event) => {
+              if (disabled || chosen) return;
+              const target = event.target as HTMLElement;
+              if (target.closest("button, input, select, textarea, label")) return;
+              onSelect(index);
             }}
             aria-current={chosen ? "true" : undefined}
             style={{
@@ -361,7 +399,7 @@ export function TrafficEditor({
                 obstacle.seed_time_offset,
                 (seed_time_offset) =>
                   onChange(updateObstacle(obstacles, index, { seed_time_offset })),
-                { width: 170 },
+                { width: 190, note: t("deployments.form.traffic.seedTimeOffsetNote") },
               )}
               {/* A suggestion, not a rule: one full cycle is what makes
                   different seeds meet this obstacle at different points
@@ -383,6 +421,10 @@ export function TrafficEditor({
                   {t("deployments.form.traffic.seedTimeOffsetSuggest")} ({hint.seconds}s)
                 </button>
               ) : (
+                /* Not behind a mark: this one is not a description of
+                   the field, it is *why there is no number to offer for
+                   this obstacle* — an answer to a button the author
+                   just looked for and did not find. */
                 <small className="muted" style={{ maxWidth: 320 }}>
                   {t(`deployments.form.traffic.seedTimeOffset.${hint.kind}`)}
                 </small>
@@ -394,6 +436,7 @@ export function TrafficEditor({
                 { step: 1, width: 150, note: t("deployments.form.traffic.obstacleSeedNote") },
               )}
             </div>
+
 
             {/* One button per field this motion has a point for, so a
                 sudden stop never offers an end it does not own. */}
@@ -431,8 +474,11 @@ export function TrafficEditor({
         <button type="button" disabled={disabled} onClick={onAdd}>
           {t("deployments.form.traffic.add")}
         </button>
+        <Hint
+          text={t("deployments.form.traffic.flatOnly")}
+          label={t("deployments.form.traffic.title")}
+        />
       </div>
-      <p className="muted">{t("deployments.form.traffic.flatOnly")}</p>
     </>
   );
 }

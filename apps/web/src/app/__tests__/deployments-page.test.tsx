@@ -540,8 +540,14 @@ describe("the traffic comes with the map it belongs to", () => {
        to world coordinates assuming its surface and its CSS box are the
        same size, so a `width: 100%` stretch would land every click away
        from the pointer while the map still looked right. */
-    expect(FORM).toContain("canvasSize(mapColumnWidth");
+    expect(FORM).toContain("canvasSize(roomForMap");
     expect(FORM).toContain("width={canvas.width}");
+    /* And the map's track *is* the map. Two flexible tracks left the
+       canvas at the left edge of a wider column and the panel at the
+       right edge of another, with a gap between them that belonged to
+       neither — which is what made the picker under the map look like
+       it was floating between the two. */
+    expect(FORM).toContain("`${canvas.width}px minmax(0, 1fr)`");
   });
 
   it("says which tab a refusal is behind, and jumps there after a check", () => {
@@ -553,6 +559,51 @@ describe("the traffic comes with the map it belongs to", () => {
     /* And an address no tab claims is printed in full rather than
        counted into whichever tab looked closest. */
     expect(FORM).toContain("tally.unmapped.map");
+  });
+
+  it("can take back the change a stray click just made", () => {
+    /* One click on the canvas moves the start, and before this there
+       was no way back to the old coordinates except remembering them.
+       The mission is inside the snapshot for that reason — it is part
+       of the document, and the part most often changed by accident. */
+    expect(FORM).toContain("pushHistory(");
+    expect(FORM).toContain("undoHistory(");
+    const memory = FORM.slice(FORM.indexOf("interface FormMemory"), FORM.indexOf("const NOISE_DEFAULTS"));
+    expect(memory).toContain("draft");
+    expect(memory).toContain("start");
+    expect(memory).toContain("goal");
+  });
+
+  it("leaves Ctrl-Z alone while the caret is in a text box", () => {
+    /* The browser's own undo works there, on the characters being
+       typed. Taking it over to rewind the whole profile would answer a
+       request for one word back by throwing away a map. */
+    const shortcut = FORM.slice(FORM.indexOf("const onKey"), FORM.indexOf("window.addEventListener"));
+    expect(shortcut).toContain("input, textarea, select");
+    expect(shortcut).toContain("return;");
+  });
+
+  it("offers the shortcut as buttons too", () => {
+    /* Ctrl-Z is discoverable only to somebody who already suspects it
+       is there, and the accident it undoes happens to people who have
+       not thought about undo at all. */
+    expect(FORM).toContain('t("deployments.form.undo")');
+    expect(FORM).toContain("history.length === 0");
+    expect(FORM).toContain("future.length === 0");
+  });
+
+  it("explains a field beside it rather than under it", () => {
+    /* Thirty paragraphs of consequence took more room than the
+       controls they described, and a panel that is four-fifths prose
+       is one nobody reads. The text is still one sentence per number —
+       it is behind a mark now. */
+    expect(FORM).toContain("<Hint");
+    /* And a refusal is never behind one: a hidden refusal leaves an
+       author staring at a form that does nothing when they press the
+       button. */
+    const field = FORM.slice(FORM.indexOf("function Field({"), FORM.indexOf("function Choice({"));
+    expect(field).toContain('<span className="badge err">{error}</span>');
+    expect(field).not.toMatch(/<Hint[^/]*error/);
   });
 
   it("still refuses to judge the obstacles itself", () => {
@@ -617,8 +668,15 @@ describe("the traffic comes with the map it belongs to", () => {
        The seventh came with the two-column layout: the mission is now
        edited from two places — dragging its markers on the canvas in
        one column, typing its coordinates in the Mission tab in the
-       other — and each of them is a change to the document. */
-    expect(FORM.match(/invalidateCheck\(\)/g) ?? []).toHaveLength(7);
+       other — and each of them is a change to the document.
+
+       Eight and nine are undo and redo. Putting an older document back
+       is as much a change as making one: a green "the server accepts
+       this" left standing over a rewind would be a verdict about a
+       document that is no longer on screen — the exact failure this
+       count guards, arriving from the one direction nothing else
+       covers. */
+    expect(FORM.match(/invalidateCheck\(\)/g) ?? []).toHaveLength(9);
     // And a reply already in flight when the document moved on is an
     // answer to a question nobody is asking any more.
     expect(FORM).toContain("revision.current !== asked");

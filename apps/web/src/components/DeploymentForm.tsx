@@ -25,6 +25,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import Link from "next/link";
 
+import { Hint } from "@/components/Hint";
 import { MapPainter } from "@/components/MapPainter";
 import {
   MissionCanvas,
@@ -56,6 +57,7 @@ import {
   overlayOf,
 } from "@/lib/trafficOverlay";
 import { IDLE_TRAFFIC_UI, dragGate, trafficUiReducer, type Hit } from "@/lib/trafficUi";
+import { pushHistory, undoHistory, type Snapshot } from "@/lib/undo";
 import {
   DEFAULT_LIBRARY_SCENARIO,
   at,
@@ -69,7 +71,7 @@ import {
   withValue,
   type ProfileDraft,
 } from "@/lib/deployments";
-import { canvasSize, sideBySide } from "@/lib/canvasSize";
+import { COLUMN_GAP_PX, PANEL_MIN_PX, canvasSize, sideBySide } from "@/lib/canvasSize";
 import { emptyBorderedMap } from "@/lib/demoMap";
 import { firstTabWithError, tallyErrors, type FormTab } from "@/lib/formTabs";
 import { useTranslation } from "@/lib/i18n";
@@ -80,6 +82,19 @@ import { safetyEnvelope } from "@/lib/keepOut";
 
 /** Where the map under this deployment comes from. */
 type MapSource = "library" | "stored" | "drawn";
+
+/** Everything one undo puts back.
+ *
+ * The mission is in here alongside the draft because it *is* part of
+ * the document — `documentOf` assembles the two into one profile — and
+ * because a misplaced start pose is the commonest thing to want back:
+ * one click on the canvas moves it, and before this there was no way
+ * to return it except by remembering the old numbers. */
+interface FormMemory {
+  draft: ProfileDraft;
+  start: Pose2D | null;
+  goal: Pose2D | null;
+}
 
 /** What a new deployment declares about its robot's imperfections.
  *
@@ -226,9 +241,15 @@ export function DeploymentForm({
    * map beside it is for. */
   const [activeTab, setActiveTab] = useState<FormTab>("mission");
   /** Measured rather than guessed from the viewport: a sidebar makes
-   *  the window's width a liar about the room this form has. */
+   *  the window's width a liar about the room this form has.
+   *
+   * One measurement, of the whole form. The map column used to be
+   * measured too, but it was a `1fr` track — so it grew to whatever
+   * was left over while the canvas inside it stayed capped, and the
+   * two columns ended up with a 290 px gap between them that belonged
+   * to neither. The column is now exactly as wide as the map, which
+   * makes measuring it the same as computing it. */
   const [shellRef, shellWidth] = useMeasuredWidth();
-  const [mapColumnRef, mapColumnWidth] = useMeasuredWidth();
 
   /** Everything the server has been asked about this document is now
    *  about a previous document.
@@ -262,6 +283,14 @@ export function DeploymentForm({
    * nobody selected, wins. */
   const adoption = useRef(createSequencer()).current;
   const [adopting, setAdopting] = useState(false);
+  /** What Ctrl-Z puts back, and what Ctrl-Shift-Z takes forward again.
+   *
+   * A snapshot holds the mission as well as the draft, because moving
+   * a start pose is as much a change to the deployment as typing in a
+   * field — and it is the one an author is most likely to make by
+   * accident, since a stray click on the canvas does it. */
+  const [history, setHistory] = useState<Snapshot<FormMemory>[]>([]);
+  const [future, setFuture] = useState<Snapshot<FormMemory>[]>([]);
   /** The draft as it is *now*, for the handlers that resume after an
    *  await. A `draft` captured in a closure is the document as it was
    *  when the handler started, and writing it back undoes whatever was
@@ -270,6 +299,37 @@ export function DeploymentForm({
   useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
+  /** The mission as it is now, for the same reason `draftRef` exists:
+   *  a snapshot taken inside a handler must be of the document on
+   *  screen, not of the render that created the handler. */
+  const missionRef = useRef<{ start: Pose2D | null; goal: Pose2D | null }>({ start, goal });
+  useEffect(() => {
+    missionRef.current = { start, goal };
+  }, [start, goal]);
+  /** Distinguishes one continuous gesture from the next. Two drags of
+   *  the same handle are two undo steps; the frames within one drag
+   *  are not. */
+  const gestureCount = useRef(0);
+
+  /** Record the document a change is about to replace.
+   *
+   * Called *before* every write. `label` is what collapses a run into
+   * one step: consecutive writes sharing it are one edit, so typing
+   * four digits into a radius costs one undo rather than four, while
+   * two separate drags of the same waypoint cost two.
+   *
+   * Redo is dropped here rather than merged, because a new edit made
+   * after an undo is a different branch — keeping the old future would
+   * offer to "redo" its way into a document nobody ever had.
+   */
+  const remember = useCallback((label: string) => {
+    const document = draftRef.current;
+    if (!document) return;
+    setHistory((stack) =>
+      pushHistory(stack, label, { draft: document, ...missionRef.current }),
+    );
+    setFuture((stack) => (stack.length === 0 ? stack : []));
+  }, []);
   const invalidateCheck = useCallback(() => {
     revision.current += 1;
     // The preview sequence moves too. Clearing the picture is not enough
@@ -297,6 +357,8 @@ export function DeploymentForm({
     hit: Hit;
     downClient: Point2D;
     committed: boolean;
+    /** Which gesture this is, for the undo label. */
+    id: number;
     /** The last position a *move* reported. What `pointercancel`
      *  flushes: cancel can arrive from a gesture interruption carrying
      *  a position nobody pointed at. */
@@ -310,10 +372,13 @@ export function DeploymentForm({
 
   const set = useCallback(
     (path: string, value: unknown) => {
+      // Labelled by path, so a run of keystrokes into one box is one
+      // undo step and moving to another box starts a new one.
+      remember(path);
       if (draft) onDraftChange(withValue(draft, path, value));
       invalidateCheck();
     },
-    [draft, onDraftChange, invalidateCheck],
+    [draft, onDraftChange, invalidateCheck, remember],
   );
 
   /** The same write, but onto the document as it is *now*.
@@ -327,12 +392,13 @@ export function DeploymentForm({
    * outlives its render by design.
    */
   const setLive = useCallback(
-    (path: string, value: unknown) => {
+    (path: string, value: unknown, label: string) => {
+      remember(label);
       const current = draftRef.current;
       if (current) onDraftChange(withValue(current, path, value));
       invalidateCheck();
     },
-    [onDraftChange, invalidateCheck],
+    [onDraftChange, invalidateCheck, remember],
   );
 
   /** Write one handle to a position.
@@ -344,7 +410,7 @@ export function DeploymentForm({
    * drag silently discarded the position the pointer was released at.
    * A parameter cannot be cleared out from under the call. */
   const flushDrag = useCallback(
-    (hit: Hit, point: Point2D) => {
+    (hit: Hit, point: Point2D, gesture: number) => {
       const obstacles = trafficOf(draftRef.current);
       if (!obstacles[hit.index]) return;
       setLive(
@@ -354,6 +420,9 @@ export function DeploymentForm({
             ? { ...obstacle, motion: moveHandle(obstacle.motion, hit.handle, point) }
             : obstacle,
         ),
+        // Every frame of one drag shares a label and collapses to one
+        // undo step; the next drag gets a new number and its own step.
+        `drag#${gesture}`,
       );
     },
     [setLive],
@@ -374,11 +443,40 @@ export function DeploymentForm({
       if (!current) return;
       current.frame = null;
       if (current.pending) {
-        flushDrag(current.hit, current.pending);
+        flushDrag(current.hit, current.pending, current.id);
         current.pending = null;
       }
     });
   }, [flushDrag]);
+
+  /** The two shortcuts, reachable from an effect that is registered
+   *  once.
+   *
+   * A ref rather than dependencies on the handlers themselves: those
+   * close over `draft`, so a listener rebound on every keystroke would
+   * add and remove a window handler per character typed. */
+  const shortcuts = useRef<{ undo: () => void; redo: () => void }>({
+    undo: () => {},
+    redo: () => {},
+  });
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      if (event.key !== "z" && event.key !== "Z" && event.key !== "y" && event.key !== "Y") return;
+      // A text box has its own undo, on the characters in it. Taking
+      // that over to rewind the whole profile would answer a request
+      // for one word back by throwing away a map.
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      event.preventDefault();
+      const redo = event.key === "y" || event.key === "Y" || event.shiftKey;
+      if (redo) shortcuts.current.redo();
+      else shortcuts.current.undo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // The defaults, from the shipped profile rather than a copy in here.
   useEffect(() => {
@@ -605,6 +703,47 @@ export function DeploymentForm({
    * wondering why their check did nothing. */
   const frozen = busy || checking || adopting;
 
+  /** Put back the document as it was before the last change.
+   *
+   * **Not bound while the caret is in a text box.** The browser's own
+   * undo works there, on the characters being typed, and taking that
+   * away to rewind the whole profile instead would be a surprise of
+   * the worst kind — the author asked for their word back and lost
+   * their map. Outside an input the shortcut is unclaimed, and that is
+   * where it applies.
+   *
+   * Frozen while a check or an adoption is in flight, for the reason
+   * every other control is: the answer coming back is about the
+   * document that was sent.
+   */
+  const stepBack = () => {
+    if (frozen) return;
+    const step = undoHistory(history, { draft, ...missionRef.current });
+    if (!step) return;
+    setHistory(step.stack);
+    setFuture((stack) => [...stack, step.undone]);
+    onDraftChange(step.value.draft);
+    setStart(step.value.start);
+    setGoal(step.value.goal);
+    invalidateCheck();
+  };
+
+  const stepForward = () => {
+    if (frozen) return;
+    const step = undoHistory(future, { draft, ...missionRef.current });
+    if (!step) return;
+    setFuture(step.stack);
+    setHistory((stack) => [...stack, step.undone]);
+    onDraftChange(step.value.draft);
+    setStart(step.value.start);
+    setGoal(step.value.goal);
+    invalidateCheck();
+  };
+
+  // Rebound each render so the window listener, which is registered
+  // once, always calls the version closed over the current document.
+  shortcuts.current = { undo: stepBack, redo: stepForward };
+
   /** How near the pointer has to be, in screen pixels, to catch a
    *  point. Converted to metres at each event, because a map zoomed
    *  out has a very different idea of how far 8 px is. */
@@ -644,10 +783,12 @@ export function DeploymentForm({
       dispatchTrafficUi({ type: "select", index: hit.index });
       return true;
     }
+    gestureCount.current += 1;
     gesture.current = {
       hit,
       downClient: press.client,
       committed: false,
+      id: gestureCount.current,
       lastWorld: press.world,
       pending: null,
       frame: null,
@@ -691,7 +832,7 @@ export function DeploymentForm({
     // gesture interruption can report one nobody pointed at — so the
     // last position a *move* gave is what the document keeps.
     const settled = end.cancelled ? active.lastWorld : end.world;
-    if (settled) flushDrag(active.hit, settled);
+    if (settled) flushDrag(active.hit, settled, active.id);
   };
 
   const removeWaypointUnder = (at: { world: Point2D; worldPerPixel: number }) => {
@@ -928,10 +1069,10 @@ export function DeploymentForm({
             }}
           />
           <span>{label}</span>
+          {note ? <Hint text={note} label={label} /> : null}
         </label>
         <Field
           label=""
-          note={note}
           error={errorFor(path)}
           value={at(draft, path)}
           step={defaults.step}
@@ -962,6 +1103,8 @@ export function DeploymentForm({
     setVehicleId(id);
     const vehicle = vehicles.find((entry) => entry.id === id);
     if (!draft || !vehicle) return;
+    // Five fields at once, so one undo has to take back all five.
+    remember(`vehicle:${id}`);
     let next = draft;
     next = withValue(next, "robot.radius", vehicle.radius);
     next = withValue(next, "robot.max_linear_velocity", vehicle.max_linear_velocity);
@@ -1003,7 +1146,12 @@ export function DeploymentForm({
   const tally = tallyErrors(shownErrors);
   const twoColumns = sideBySide(shellWidth);
   const mapAspect = mapData && mapData.width > 0 ? mapData.height / mapData.width : 0.75;
-  const canvas = canvasSize(mapColumnWidth, mapAspect);
+  /** The map takes what is left after the panel has its minimum, up to
+   *  its own cap. The panel then takes the rest — so on a wide screen
+   *  the spare room goes to the controls rather than becoming a gap
+   *  between two things that are supposed to sit beside each other. */
+  const roomForMap = twoColumns ? shellWidth - PANEL_MIN_PX - COLUMN_GAP_PX : shellWidth;
+  const canvas = canvasSize(roomForMap, mapAspect);
 
   const badgeFor = (tab: FormTab) => tally.byTab[tab] || undefined;
   const badgeWord = (tab: FormTab) =>
@@ -1110,7 +1258,10 @@ export function DeploymentForm({
           and the deployment stays self-contained. */}
       <div className="row" style={{ alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
         <label className="field">
-          <span>{t("deployments.form.vehicle")}</span>
+          <span>
+            {t("deployments.form.vehicle")}
+            <Hint text={t("deployments.form.vehicleNote")} label={t("deployments.form.vehicle")} />
+          </span>
           <select
             value={vehicleId}
             disabled={frozen || vehicles.length === 0}
@@ -1124,11 +1275,14 @@ export function DeploymentForm({
             ))}
           </select>
         </label>
-        <p className="muted" style={{ flex: "1 1 260px", margin: 0 }}>
-          {undeclaredAccelerations
-            ? t("deployments.form.vehicleUndeclared")
-            : t("deployments.form.vehicleNote")}
-        </p>
+        {/* The undeclared-acceleration line stays visible: it is about
+            *this* vehicle having a gap, not about what the picker
+            does. The general explanation moved behind the mark. */}
+        {undeclaredAccelerations ? (
+          <p className="muted" style={{ flex: "1 1 260px", margin: 0 }}>
+            {t("deployments.form.vehicleUndeclared")}
+          </p>
+        ) : null}
       </div>
       <div className="row" style={{ alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
         {field("robot.radius", t("deployments.form.radius"), 0.01)}
@@ -1220,7 +1374,12 @@ export function DeploymentForm({
       {/* The consequence of leaving both quiet. With no traffic *and* no
           noise, a deterministic planner replays one episode per seed and
           G2's bound rests on a sample of one. Traffic is authored on the
-          tab next to this one, against the map beside it. */}
+          tab next to this one, against the map beside it.
+       *
+       * **This one stays on the page.** It is not an explanation of a
+       * control, it is a warning about a *combination* of two — there
+       * is no single mark to hang it on, and an author who never
+       * hovers is exactly the one it is for. */}
       <p className="muted">{t("deployments.form.noiseNote")}</p>
     </>
   );
@@ -1254,17 +1413,20 @@ export function DeploymentForm({
               }}
             />
             <strong>{t("deployments.form.obstacleSpeedEnabled")}</strong>
+            <Hint
+              text={
+                obstacleSpeedDeclared
+                  ? t("deployments.form.obstacleSpeedNote")
+                  : t("deployments.form.obstacleSpeedOffNote")
+              }
+              label={t("deployments.form.obstacleSpeedEnabled")}
+            />
           </label>
         </div>
         {obstacleSpeedDeclared
           ? field(V_OBSTACLE_MAX, t("deployments.form.obstacleSpeedValue"), 0.1)
           : null}
       </div>
-      <p className="muted">
-        {obstacleSpeedDeclared
-          ? t("deployments.form.obstacleSpeedNote")
-          : t("deployments.form.obstacleSpeedOffNote")}
-      </p>
 
       {/* **On the same tab as the closing speed, and next to the map
           rather than a scroll away from it.** Deciding whether the robot
@@ -1288,12 +1450,18 @@ export function DeploymentForm({
             onChange={(event) => set("replanning.enabled", event.target.checked)}
           />
           <strong>{t("deployments.form.replanningEnabled")}</strong>
+          <Hint
+            text={t("deployments.form.replanningNote")}
+            label={t("deployments.form.replanningEnabled")}
+          />
         </label>
+        {/* The warning stays on the page; the explanation went behind
+            the mark. This line only appears when the chosen scenario
+            has traffic and replanning is off — a specific thing about
+            to be measured wrongly, not a description of a control. */}
         {traffic > 0 && !at(draft, "replanning.enabled") ? (
           <p className="muted">{t("deployments.form.replanningTraffic", { n: String(traffic) })}</p>
-        ) : (
-          <p className="muted">{t("deployments.form.replanningNote")}</p>
-        )}
+        ) : null}
       </div>
 
       {/* Recovery sits directly under replanning because it is the same
@@ -1311,8 +1479,11 @@ export function DeploymentForm({
             onChange={(event) => set("recovery.enabled", event.target.checked)}
           />
           <strong>{t("deployments.form.recoveryEnabled")}</strong>
+          <Hint
+            text={t("deployments.form.recoveryNote")}
+            label={t("deployments.form.recoveryEnabled")}
+          />
         </label>
-        <p className="muted">{t("deployments.form.recoveryNote")}</p>
         {at(draft, "recovery.enabled") ? (
           <div className="grid">
             {field(
@@ -1378,7 +1549,15 @@ export function DeploymentForm({
   }));
 
   const mapColumn = (
-    <div ref={mapColumnRef}>
+    <div>
+      {/* **Everything in this column stops where the map stops.**
+          Redundant in two columns, where the track is already exactly
+          the canvas — but not in one, where the column is the whole
+          form and the canvas is still capped. Without it a wide phone
+          in portrait, or any window between the collapse point and the
+          cap, would stretch the scenario picker well past the map it
+          belongs to. */}
+      <div style={{ maxWidth: canvas.width }}>
       <h4>{t("deployments.form.map")}</h4>
       <div className="toolbar">
         {(["library", "stored", "drawn"] as MapSource[]).map((option) => (
@@ -1460,10 +1639,13 @@ export function DeploymentForm({
           start={start}
           goal={goal}
           onChange={(poses) => {
+            // The mission is part of the document being checked, so
+            // moving it is as much an edit as typing in a field — and
+            // as undoable. A stray click here is the accident this
+            // whole history exists for.
+            remember("mission");
             setStart(poses.start);
             setGoal(poses.goal);
-            // The mission is part of the document being checked, so
-            // moving it is as much an edit as typing in a field.
             invalidateCheck();
           }}
           toolbar={
@@ -1541,11 +1723,29 @@ export function DeploymentForm({
           leaving it to be inferred from colour: the amber marker is the
           backend's answer to "where is it at t", and clicking it does
           nothing on purpose. */}
-      {traffic > 0 ? <p className="muted">{t("deployments.form.traffic.legend")}</p> : null}
+      {traffic > 0 ? (
+        <p className="muted">
+          {t("deployments.form.traffic.legendShort")}
+          <Hint
+            text={t("deployments.form.traffic.legend")}
+            label={t("deployments.form.traffic.legendShort")}
+          />
+        </p>
+      ) : null}
 
       <div className="row" style={{ marginTop: 8, alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
+        {/* Both boxes are asking a question about the episode rather
+            than setting anything on the deployment, and neither label
+            says so on its own: "Time" and "Seed" beside a map read as
+            two more fields somebody has to fill in correctly. */}
         <label className="field" style={{ width: 130 }}>
-          <span>{t("deployments.form.previewTime")}</span>
+          <span>
+            {t("deployments.form.previewTime")}
+            <Hint
+              text={t("deployments.form.previewTimeNote")}
+              label={t("deployments.form.previewTime")}
+            />
+          </span>
           <input
             type="number"
             step={0.5}
@@ -1559,7 +1759,13 @@ export function DeploymentForm({
           />
         </label>
         <label className="field" style={{ width: 110 }}>
-          <span>{t("deployments.form.previewSeed")}</span>
+          <span>
+            {t("deployments.form.previewSeed")}
+            <Hint
+              text={t("deployments.form.previewSeedNote")}
+              label={t("deployments.form.previewSeed")}
+            />
+          </span>
           <input
             type="number"
             step={1}
@@ -1574,7 +1780,7 @@ export function DeploymentForm({
         <button type="button" disabled={frozen || !previewRequest} onClick={() => void refreshPreview()}>
           {t("deployments.form.preview")}
         </button>
-        <span className="muted">{t("deployments.form.previewNote")}</span>
+        <Hint text={t("deployments.form.previewNote")} label={t("deployments.form.preview")} />
       </div>
 
       {/* The preview endpoint answers two questions and the first
@@ -1595,6 +1801,7 @@ export function DeploymentForm({
           </ul>
         </div>
       ) : null}
+      </div>
     </div>
   );
 
@@ -1636,8 +1843,14 @@ export function DeploymentForm({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: twoColumns ? "minmax(480px, 1fr) minmax(420px, 460px)" : "1fr",
-          gap: 24,
+          /* The map's track is exactly the map, and the panel takes
+             everything else. Both tracks flexible left the canvas
+             pinned to the left of a wider column and the panel pushed
+             to the right of another, with a gap in the middle that
+             read as a third region — so the scenario picker under the
+             map looked like it belonged to neither side. */
+          gridTemplateColumns: twoColumns ? `${canvas.width}px minmax(0, 1fr)` : "1fr",
+          gap: COLUMN_GAP_PX,
           alignItems: "start",
           marginTop: 12,
         }}
@@ -1680,14 +1893,37 @@ export function DeploymentForm({
           <button type="button" disabled={frozen || !complete} onClick={() => void check()}>
             {checking ? t("deployments.form.validateBusy") : t("deployments.form.validate")}
           </button>
-          <span className="muted">{t("deployments.file.idRule")}</span>
+          {/* Buttons as well as the shortcut. Ctrl-Z is discoverable
+              only to somebody who already suspects it is there, and the
+              accident it undoes — a stray click that moved the start —
+              happens to people who have not thought about undo at
+              all. */}
+          <button
+            type="button"
+            disabled={frozen || history.length === 0}
+            onClick={stepBack}
+            title={t("deployments.form.undoHint")}
+          >
+            {t("deployments.form.undo")}
+          </button>
+          <button
+            type="button"
+            disabled={frozen || future.length === 0}
+            onClick={stepForward}
+            title={t("deployments.form.redoHint")}
+          >
+            {t("deployments.form.redo")}
+          </button>
+          <span className="muted">
+            {t("deployments.file.idRule")}
+            <Hint text={t("deployments.form.validateNote")} label={t("deployments.form.validate")} />
+          </span>
           {tally.total > 0 ? (
             <span className="badge err">
               {t("deployments.form.tabs.total", { n: String(tally.total) })}
             </span>
           ) : null}
         </div>
-        <p className="muted">{t("deployments.form.validateNote")}</p>
         {checkedClean ? <p className="notice">{t("deployments.form.validateOk")}</p> : null}
         {/* Addresses no tab claims. Shown here in full rather than
             counted into whichever tab looked closest: a refusal filed
@@ -1831,10 +2067,13 @@ function DrawNewMap({
 
 /** One input, its consequence, and the server's complaint about it.
  *
- * The complaint sits under the field rather than in a banner at the top:
- * a banner is exactly what makes a thirty-field form unusable, because
- * "2 validation errors for TaskProfile" leaves the reader to find which
- * two.
+ * **The consequence is behind a mark; the complaint never is.** Those
+ * two lines used to sit in the same place and they are not the same
+ * kind of thing. A note explains a field to whoever wants it explained,
+ * and thirty of them at once buried the controls they described. A
+ * refusal is the server saying *this document will not be filed*, and
+ * hiding that behind a hover would leave an author staring at a form
+ * that does nothing when they press the button.
  */
 function Field({
   label,
@@ -1856,7 +2095,10 @@ function Field({
   const numeric = step !== undefined;
   return (
     <label className="field" style={{ minWidth: 150 }}>
-      <span>{label}</span>
+      <span>
+        {label}
+        {note ? <Hint text={note} label={label} /> : null}
+      </span>
       <input
         type={numeric ? "number" : "text"}
         step={step}
@@ -1867,7 +2109,7 @@ function Field({
         }
         aria-invalid={error ? true : undefined}
       />
-      {error ? <span className="badge err">{error}</span> : note ? <span className="muted">{note}</span> : null}
+      {error ? <span className="badge err">{error}</span> : null}
     </label>
   );
 }

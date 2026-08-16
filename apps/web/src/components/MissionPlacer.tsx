@@ -34,6 +34,7 @@
 import type { ReactNode } from "react";
 import { useRef, useState } from "react";
 
+import { Hint } from "@/components/Hint";
 import type { ObstacleMarker } from "@/components/MapCanvas";
 import { MapView } from "@/components/MapView";
 import { useTranslation } from "@/lib/i18n";
@@ -470,7 +471,10 @@ function PoseFields({
   return (
     <div style={{ marginTop: 8 }}>
       <div className="row" style={{ alignItems: "flex-end", gap: 12 }}>
-        <strong style={{ minWidth: 90 }}>{label}</strong>
+        <strong style={{ minWidth: 90 }}>
+          {label}
+          <Hint text={note} label={label} />
+        </strong>
         {number("x", 0.1)}
         {number("y", 0.1)}
         <label className="field">
@@ -484,7 +488,6 @@ function PoseFields({
           />
         </label>
       </div>
-      <p className="muted">{note}</p>
     </div>
   );
 }

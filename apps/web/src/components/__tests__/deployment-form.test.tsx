@@ -123,6 +123,18 @@ describe("what the author sees first", () => {
   it("opens on the mission, the tab the map beside it is for", () => {
     expect(render()).toMatch(/id="deployment-form-tab-mission"[^>]*aria-selected="true"/);
   });
+
+  it("stops the map column where the map itself stops", () => {
+    /* The canvas is capped at 760 px; the column holding it is not. On
+       a wide screen the scenario picker stretched a clear 270 px past
+       the map's right edge and ran under the tab panel — a control
+       sitting between two things and belonging to neither. */
+    const html = render();
+    expect(html).toContain("max-width:760px");
+    const clamp = html.indexOf("max-width:760px");
+    expect(clamp).toBeGreaterThan(-1);
+    expect(html.indexOf("Map and mission")).toBeGreaterThan(clamp);
+  });
 });
 
 describe("the seven panels", () => {
