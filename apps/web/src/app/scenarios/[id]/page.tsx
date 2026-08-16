@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { LoadingState } from "@/components/LoadingSkeleton";
 import { MapCanvas, type ObstacleMarker } from "@/components/MapCanvas";
 import { authFetch, useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
@@ -383,6 +384,7 @@ export default function ScenarioEditorPage() {
               key={item}
               type="button"
               className={mode === item ? "active" : undefined}
+              aria-pressed={mode === item}
               onClick={() => {
                 setMode(mode === item ? "none" : item);
                 setPendingCorner(null);
@@ -407,7 +409,7 @@ export default function ScenarioEditorPage() {
             onWorldClick={onWorldClick}
           />
         ) : (
-          <p className="muted">{t("common.loading")}</p>
+          <LoadingState />
         )}
 
         <div className="dashboard-columns">
@@ -600,12 +602,29 @@ export default function ScenarioEditorPage() {
 
       <div className="panel">
         <h3>{t("scenarios.validation")}</h3>
-        <button type="button" disabled={busy || !mapId} onClick={() => void validate()}>
+        <button
+          type="button"
+          disabled={busy || !mapId}
+          title={!mapId ? t("disabled.noMap") : busy ? t("disabled.busy") : undefined}
+          onClick={() => void validate()}
+        >
           {t("scenarios.validate")}
         </button>{" "}
         <button
           type="button"
+          className="primary"
           disabled={!canEdit || busy || !mapId || !draft.name}
+          title={
+            !canEdit
+              ? t("disabled.signInRequired")
+              : busy
+                ? t("disabled.busy")
+                : !mapId
+                  ? t("disabled.noMap")
+                  : !draft.name
+                    ? t("disabled.noName")
+                    : undefined
+          }
           onClick={() => void save()}
         >
           {savedId ? t("scenarios.saveChanges") : t("scenarios.save")}

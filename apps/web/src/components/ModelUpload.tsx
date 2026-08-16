@@ -12,6 +12,7 @@
 import { useRef, useState } from "react";
 
 import { Icon } from "./Icon";
+import { ErrorMessage } from "@/components/ErrorMessage";
 import { useTranslation } from "@/lib/i18n";
 import {
   ACCEPTED,
@@ -125,7 +126,7 @@ export function ModelUpload({
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={t("models.upload")}>
       <div className="modal" ref={dialog} style={{ maxWidth: 560 }}>
         <h3 style={{ marginTop: 0 }}>{t("models.upload")}</h3>
-        {error ? <div className="error-box">{error}</div> : null}
+        {error ? <ErrorMessage error={error} /> : null}
 
         <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
           <div className="row" style={{ gap: 12 }}>
@@ -211,10 +212,28 @@ export function ModelUpload({
           ) : null}
 
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="primary" type="submit" disabled={!ready}>
+            <button
+              className="primary"
+              type="submit"
+              disabled={!ready}
+              title={
+                !name.trim()
+                  ? t("disabled.noName")
+                  : !model.file
+                    ? t("models.fileHint")
+                    : busy
+                      ? t("disabled.busy")
+                      : undefined
+              }
+            >
               {busy ? t("models.uploading") : t("models.upload")}
             </button>
-            <button type="button" onClick={onCancel} disabled={busy}>
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={busy}
+              title={busy ? t("disabled.busy") : undefined}
+            >
               {t("common.cancel")}
             </button>
           </div>

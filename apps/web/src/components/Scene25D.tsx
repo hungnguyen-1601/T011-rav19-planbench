@@ -15,6 +15,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "@/lib/i18n";
 import {
   DEFAULT_PROJECTION,
   buildScene,
@@ -77,6 +78,7 @@ export function Scene25D({
   trajectory,
   obstacles,
 }: Scene25DProps) {
+  const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [azimuth, setAzimuth] = useState(azimuthDeg);
   const [elevation, setElevation] = useState(elevationDeg);
@@ -201,7 +203,7 @@ export function Scene25D({
       {showControls ? (
         <div className="scene25d-controls">
           <label>
-            Rotate
+            {t("scene25d.rotate")}
             <input
               type="range"
               min={5}
@@ -212,7 +214,7 @@ export function Scene25D({
             <span className="muted">{azimuth}°</span>
           </label>
           <label>
-            Tilt
+            {t("scene25d.tilt")}
             <input
               type="range"
               min={0}
@@ -221,11 +223,11 @@ export function Scene25D({
               onChange={(event) => setElevation(Number(event.target.value))}
             />
             <span className="muted">
-              {elevation}°{elevation >= 88 ? " (top-down)" : ""}
+              {elevation}°{elevation >= 88 ? t("scene25d.topDown") : ""}
             </span>
           </label>
           <label>
-            Wall height
+            {t("scene25d.wallHeight")}
             <input
               type="range"
               min={0}

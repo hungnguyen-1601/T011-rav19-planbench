@@ -1,5 +1,6 @@
 "use client";
 
+import { StateBadge } from "@/components/StateBadge";
 import { useTranslation } from "@/lib/i18n";
 import type { EpisodeMetrics, PlanResult } from "@/lib/types";
 
@@ -24,12 +25,11 @@ export function MetricsPanel({
       </div>
     );
   }
-  const badge = metrics.success ? "ok" : metrics.collision ? "err" : "warn";
   return (
     <div className="panel">
       <h3>{t("metrics.title")}</h3>
       <div style={{ marginBottom: 12 }}>
-        <span className={`badge ${badge}`}>{metrics.status}</span>
+        <StateBadge state={metrics.status} />
       </div>
       <div className="metrics">
         <Metric label={t("metrics.travelTime")} value={format(metrics.travel_time, 2, " s")} />

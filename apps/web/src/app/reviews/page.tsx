@@ -13,6 +13,9 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorMessage } from "@/components/ErrorMessage";
+import { LoadingState } from "@/components/LoadingSkeleton";
+import { StateBadge } from "@/components/StateBadge";
 import { useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import {
@@ -23,12 +26,6 @@ import {
   fetchSent,
   type ReviewRequestView,
 } from "@/lib/reviews";
-
-function statusBadge(status: string): string {
-  if (status === "approved") return "badge ok";
-  if (status === "rejected" || status === "cancelled") return "badge warn";
-  return "badge";
-}
 
 function when(value: string): string {
   if (!value) return "";
@@ -73,9 +70,7 @@ function RequestCard({
             {when(request.created_at)}
           </div>
         </div>
-        <span className={statusBadge(request.status)} title={request.status}>
-          {t(`reviews.status.${request.status}`)}
-        </span>
+        <StateBadge state={request.status} />
       </div>
 
       {request.request_comment ? (
@@ -117,6 +112,7 @@ function RequestCard({
             )}
             <button
               disabled={busy || !comment.trim()}
+              title={!comment.trim() ? t("disabled.noComment") : busy ? t("disabled.busy") : undefined}
               onClick={() => {
                 onComment(request.id, comment);
                 setComment("");
@@ -185,7 +181,7 @@ export default function ReviewsPage() {
     [reload],
   );
 
-  if (!session) return <p className="muted">{t("common.loading")}</p>;
+  if (!session) return <LoadingState />;
 
   const shown = tab === "inbox" ? incoming : outgoing;
   const pendingCount = incoming.filter((view) => view.request.status === "pending").length;
@@ -197,13 +193,13 @@ export default function ReviewsPage() {
           <h2>{t("reviews.title")}</h2>
         </div>
       </div>
-      {error ? <div className="error-box">{error}</div> : null}
+      {error ? <ErrorMessage error={error} onRetry={reload} /> : null}
 
       <div className="toolbar" role="tablist">
         <button
           role="tab"
           aria-selected={tab === "inbox"}
-          className={tab === "inbox" ? "primary" : ""}
+          className={tab === "inbox" ? "active" : ""}
           onClick={() => setTab("inbox")}
         >
           {t("reviews.inbox")}
@@ -212,7 +208,7 @@ export default function ReviewsPage() {
         <button
           role="tab"
           aria-selected={tab === "sent"}
-          className={tab === "sent" ? "primary" : ""}
+          className={tab === "sent" ? "active" : ""}
           onClick={() => setTab("sent")}
         >
           {t("reviews.sent")}
@@ -225,8 +221,10 @@ export default function ReviewsPage() {
             icon="inbox"
             title={tab === "inbox" ? t("reviews.empty.inbox.title") : t("reviews.empty.sent.title")}
             body={tab === "inbox" ? t("reviews.empty.inbox.body") : t("reviews.empty.sent.body")}
-            actionHref={tab === "inbox" ? undefined : "/benchmarks"}
-            actionLabel={tab === "inbox" ? undefined : t("nav.benchmarks")}
+            actionHref={tab === "inbox" ? "/benchmarks" : "/benchmarks"}
+            actionLabel={tab === "inbox" ? t("nav.benchmarks") : t("nav.benchmarks")}
+            secondaryActionHref="/agent"
+            secondaryActionLabel={t("agent.askAssistant")}
           />
         </div>
       ) : (

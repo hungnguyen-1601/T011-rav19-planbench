@@ -210,6 +210,19 @@ export default function BenchmarksPage() {
                 // button is disabled so nobody has to discover that.
                 (selected.includes("astar+ppo") && !modelId)
               }
+              title={
+                busy
+                  ? t("disabled.busy")
+                  : !mapId
+                    ? t("disabled.noMap")
+                    : !scenarioId
+                      ? t("disabled.noScenario")
+                      : selected.length === 0
+                        ? t("disabled.noAlgorithm")
+                        : selected.includes("astar+ppo") && !modelId
+                          ? t("disabled.noPpoModel")
+                          : undefined
+              }
               onClick={() => void create()}
             >
               {busy ? t("benchmarks.creating") : t("benchmarks.createDraft")}
@@ -264,7 +277,7 @@ export default function BenchmarksPage() {
                     {t("benchmarks.noModels.body")}
                   </p>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <Link className="quick-action primary" href="/models">
+                    <Link className="quick-action" href="/models">
                       <Icon name="plus" size={14} /> {t("benchmarks.uploadModel")}
                     </Link>
                     <button
@@ -312,7 +325,9 @@ export default function BenchmarksPage() {
             title={t("benchmarks.empty.title")}
             body={t("benchmarks.empty.body")}
             actionHref="/agent"
-            actionLabel={t("dashboard.action.openAgent")}
+            actionLabel={t("agent.askAssistant")}
+            secondaryActionHref="/library"
+            secondaryActionLabel={t("library.openLibrary")}
           />
         ) : (
           <div className="table-scroll wide">

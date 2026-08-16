@@ -240,7 +240,7 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
           {isOwner ? (
             <>
               <button
-                className="primary"
+                className={canRun(isOwner, state, requests) ? "primary" : undefined}
                 disabled={busy || !canRun(isOwner, state, requests)}
                 title={pendingSpec ? t("detail.blockedBySpec") : undefined}
                 onClick={() => void act("run")}
@@ -248,7 +248,7 @@ export default function BenchmarkDetailPage({ params }: { params: Promise<{ id: 
                 {t("detail.run")}
               </button>
               <button
-                className="primary"
+                className={!canRun(isOwner, state, requests) && canAcceptResult(isOwner, state, requests) ? "primary" : undefined}
                 disabled={busy || !canAcceptResult(isOwner, state, requests)}
                 title={pendingResult ? t("detail.blockedByResult") : undefined}
                 onClick={() => void act("accept-result")}
@@ -889,7 +889,7 @@ function ExportPanel({ benchmarkId }: { benchmarkId: string }) {
       </p>
       {error ? <div className="error-box">{error}</div> : null}
       <div className="toolbar">
-        <button className="primary" disabled={busy} onClick={() => void download()}>
+        <button className="secondary" disabled={busy} onClick={() => void download()}>
           {busy ? t("charts.exporting") : t("charts.downloadMarkdown")}
         </button>
         {saved ? (

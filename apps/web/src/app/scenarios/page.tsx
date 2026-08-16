@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
+import { TableSkeleton } from "@/components/LoadingSkeleton";
 import { SplitBadge } from "@/components/SplitBadge";
 import { authFetch, useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
@@ -122,6 +123,13 @@ export default function ScenariosPage() {
                     <button
                       type="button"
                       disabled={!canEdit || busy !== null}
+                      title={
+                        !canEdit
+                          ? t("disabled.signInRequired")
+                          : busy === item.id
+                            ? t("disabled.busy")
+                            : undefined
+                      }
                       onClick={() => remove(item.id)}
                     >
                       {t("scenarios.delete")}
@@ -132,12 +140,16 @@ export default function ScenariosPage() {
             </tbody>
           </table>
         </div>
-        {!loaded ? <p className="muted">{t("common.loading")}</p> : null}
+        {!loaded ? <TableSkeleton rows={4} columns={6} /> : null}
         {loaded && scenarios.length === 0 ? (
           <EmptyState
             icon="library"
             title={t("scenarios.empty.title")}
             body={t("scenarios.empty.body")}
+            actionHref="/scenarios/new"
+            actionLabel={t("scenarios.create")}
+            secondaryActionHref="/library"
+            secondaryActionLabel={t("library.openLibrary")}
           />
         ) : null}
       </div>

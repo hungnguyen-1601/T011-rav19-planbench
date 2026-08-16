@@ -15,12 +15,18 @@ export function EmptyState({
   body,
   actionHref,
   actionLabel,
+  secondaryActionHref,
+  secondaryActionLabel,
+  secondaryActionOnClick,
 }: {
   icon?: IconName;
   title: string;
   body?: string;
   actionHref?: string;
   actionLabel?: string;
+  secondaryActionHref?: string;
+  secondaryActionLabel?: string;
+  secondaryActionOnClick?: () => void;
 }) {
   return (
     <div className="empty-state">
@@ -29,11 +35,22 @@ export function EmptyState({
       </span>
       <strong>{title}</strong>
       {body ? <p>{body}</p> : null}
-      {actionHref && actionLabel ? (
-        <Link className="quick-action" href={actionHref} style={{ marginTop: 6 }}>
-          {actionLabel}
-        </Link>
-      ) : null}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginTop: 8 }}>
+        {actionHref && actionLabel ? (
+          <Link className="quick-action primary" href={actionHref}>
+            {actionLabel}
+          </Link>
+        ) : null}
+        {secondaryActionHref && secondaryActionLabel ? (
+          <Link className="quick-action" href={secondaryActionHref}>
+            {secondaryActionLabel}
+          </Link>
+        ) : secondaryActionOnClick && secondaryActionLabel ? (
+          <button type="button" className="secondary" onClick={secondaryActionOnClick}>
+            {secondaryActionLabel}
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

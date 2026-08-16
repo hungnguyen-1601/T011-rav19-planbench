@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { ErrorMessage } from "@/components/ErrorMessage";
 import { useTranslation } from "@/lib/i18n";
 import { useDismiss } from "@/lib/useDismiss";
 import { searchMembers, sendForReview, type ReviewStage, type UserSummary } from "@/lib/reviews";
@@ -81,7 +82,7 @@ export function SendForReview({
         <p className="muted" style={{ fontSize: 12 }}>
           {defaultStage === "spec" ? t("sendReview.hintSpec") : t("sendReview.hintResult")}
         </p>
-        {error ? <div className="error-box">{error}</div> : null}
+        {error ? <ErrorMessage error={error} /> : null}
 
         <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
           <label className="field">

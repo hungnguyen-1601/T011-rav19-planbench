@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { EmptyState } from "@/components/EmptyState";
 import { Icon } from "@/components/Icon";
+import { TableSkeleton } from "@/components/LoadingSkeleton";
 import { api } from "@/lib/api";
 import { emptyBorderedMap, warehouseMap } from "@/lib/demoMap";
 import { useTranslation } from "@/lib/i18n";
@@ -81,13 +82,27 @@ export default function MapsPage() {
       ) : null}
 
       <div className="toolbar">
-        <button className="primary" disabled={busy} onClick={() => void create("warehouse")}>
+        <button
+          className="primary"
+          disabled={busy}
+          title={busy ? t("disabled.busy") : undefined}
+          onClick={() => void create("warehouse")}
+        >
           <Icon name="plus" size={14} /> {t("maps.newWarehouse")}
         </button>
-        <button disabled={busy} onClick={() => void create("empty")}>
+        <button
+          disabled={busy}
+          title={busy ? t("disabled.busy") : undefined}
+          onClick={() => void create("empty")}
+        >
           {t("maps.newEmpty")}
         </button>
-        <button disabled={busy} onClick={() => void refresh()} aria-label={t("common.refresh")}>
+        <button
+          disabled={busy}
+          title={busy ? t("disabled.busy") : undefined}
+          onClick={() => void refresh()}
+          aria-label={t("common.refresh")}
+        >
           <Icon name="refresh" size={14} /> {t("common.refresh")}
         </button>
         {busy ? <span className="spinner" aria-label={t("common.loading")} /> : null}
@@ -95,7 +110,7 @@ export default function MapsPage() {
 
       <div className="panel">
         {loading ? (
-          <p className="muted">{t("common.loading")}</p>
+          <TableSkeleton rows={4} columns={6} />
         ) : maps.length === 0 ? (
           <EmptyState
             icon="map"
@@ -103,6 +118,8 @@ export default function MapsPage() {
             body={t("maps.empty.body")}
             actionHref="/library"
             actionLabel={t("nav.library")}
+            secondaryActionHref="/scenarios"
+            secondaryActionLabel={t("common.scenario")}
           />
         ) : (
           <div className="table-scroll">

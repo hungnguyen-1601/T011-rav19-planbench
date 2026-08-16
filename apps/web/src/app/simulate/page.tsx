@@ -5,9 +5,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorMessage } from "@/components/ErrorMessage";
 import { MapCanvas } from "@/components/MapCanvas";
 import { MetricsPanel } from "@/components/MetricsPanel";
 import { NO_REPLANNING, ReplanningControls } from "@/components/ReplanningControls";
+import { StateBadge } from "@/components/StateBadge";
 import { api } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
 import { defaultScenario } from "@/lib/demoMap";
@@ -104,8 +106,8 @@ export default function SimulatePage() {
       } else {
         setError(
           result.plan && !result.plan.success
-            ? `No global path: ${result.plan.failure_reason}`
-            : "Episode produced no trajectory",
+            ? `${t("simulate.noGlobalPath")}: ${result.plan.failure_reason}`
+            : t("simulate.noTrajectory"),
         );
       }
     } catch (err) {
@@ -142,10 +144,8 @@ export default function SimulatePage() {
           <p>{t("simulate.subtitle")}</p>
         </div>
       </div>
-      {error ? <div className="error-box">{error}</div> : null}
-      {stream.error ? (
-        <div className="error-box">{t("simulate.stream", { message: stream.error })}</div>
-      ) : null}
+      {error ? <ErrorMessage error={error} onRetry={() => void run()} /> : null}
+      {stream.error ? <ErrorMessage error={stream.error} onRetry={stream.reset} /> : null}
 
       {maps.length === 0 ? (
         <div className="panel">
@@ -155,6 +155,8 @@ export default function SimulatePage() {
             body={t("simulate.noMaps")}
             actionHref="/maps"
             actionLabel={t("maps.create")}
+            secondaryActionHref="/library"
+            secondaryActionLabel={t("library.openLibrary")}
           />
         </div>
       ) : null}
@@ -175,14 +177,21 @@ export default function SimulatePage() {
         {(["start", "goal", "none"] as PlaceMode[]).map((mode) => (
           <button
             key={mode}
-            className={placeMode === mode ? "primary" : ""}
+            type="button"
+            className={placeMode === mode ? "active" : ""}
+            aria-pressed={placeMode === mode}
             onClick={() => setPlaceMode(mode)}
           >
             {t(`simulate.place.${mode}`)}
           </button>
         ))}
         <span className="muted">|</span>
-        <button className="primary" disabled={busy || !map} onClick={() => void run()}>
+        <button
+          className="primary"
+          disabled={busy || !map}
+          title={!map ? t("disabled.noMap") : busy ? t("disabled.busy") : undefined}
+          onClick={() => void run()}
+        >
           {busy ? t("simulate.running") : t("simulate.runSimulation")}
         </button>
       </div>
@@ -197,13 +206,13 @@ export default function SimulatePage() {
           {t("simulate.pause")}
         </button>
         <button onClick={stream.stop} disabled={stream.phase === "idle"}>
-          Stop
+          {t("simulate.stop")}
         </button>
         <button onClick={stream.reset} disabled={stream.frames.length === 0}>
-          Reset
+          {t("simulate.reset")}
         </button>
         <label className="inline">
-          Speed:
+          {t("simulate.speed")}:
           <select
             value={stream.speed}
             onChange={(event) => stream.setSpeed(Number(event.target.value))}
@@ -247,11 +256,7 @@ export default function SimulatePage() {
           />
           {t("simulate.trajectory")}
         </label>
-        {stream.status ? (
-          <span className={`badge ${stream.status === "success" ? "ok" : "err"}`}>
-            {stream.status}
-          </span>
-        ) : null}
+        {stream.status ? <StateBadge state={stream.status} /> : null}
         {stream.reason ? <span className="muted">{stream.reason}</span> : null}
       </div>
 
@@ -309,7 +314,7 @@ export default function SimulatePage() {
                     <td>{scenario.timeout_seconds} s</td>
                   </tr>
                   <tr>
-                    <td className="muted">dt</td>
+                    <td className="muted" title={t("simulate.tooltip.dt")}>{t("simulate.dt")}</td>
                     <td>{scenario.simulation_dt} s</td>
                   </tr>
                 </tbody>
@@ -325,22 +330,22 @@ export default function SimulatePage() {
               <table>
                 <tbody>
                   <tr>
-                    <td className="muted">t</td>
+                    <td className="muted" title={t("simulate.tooltip.t")}>t</td>
                     <td>{stream.currentFrame.time.toFixed(2)} s</td>
                   </tr>
                   <tr>
-                    <td className="muted">pose</td>
+                    <td className="muted" title={t("simulate.tooltip.pose")}>{t("simulate.pose")}</td>
                     <td>
                       {stream.currentFrame.x.toFixed(2)}, {stream.currentFrame.y.toFixed(2)},{" "}
                       {stream.currentFrame.theta.toFixed(2)} rad
                     </td>
                   </tr>
                   <tr>
-                    <td className="muted">v</td>
+                    <td className="muted" title={t("simulate.tooltip.v")}>v</td>
                     <td>{stream.currentFrame.linear_velocity.toFixed(2)} m/s</td>
                   </tr>
                   <tr>
-                    <td className="muted">ω</td>
+                    <td className="muted" title={t("simulate.tooltip.omega")}>ω</td>
                     <td>{stream.currentFrame.angular_velocity.toFixed(2)} rad/s</td>
                   </tr>
                 </tbody>

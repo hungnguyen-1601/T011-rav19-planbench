@@ -8,20 +8,14 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { ErrorMessage } from "@/components/ErrorMessage";
+import { StateBadge } from "@/components/StateBadge";
 import { authFetch } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import type { JobState, JobStatus } from "@/lib/platformTypes";
 
 const ACTIVE: JobState[] = ["queued", "running"];
 const POLL_MS = 1000;
-
-const BADGE: Record<JobState, string> = {
-  queued: "warn",
-  running: "warn",
-  succeeded: "ok",
-  failed: "err",
-  cancelled: "muted-badge",
-};
 
 export interface JobProgressProps {
   benchmarkId: string;
@@ -75,9 +69,7 @@ export function JobProgress({ benchmarkId, onFinished, canCancel = true }: JobPr
     <div className="panel">
       <h3>{t("job.title")}</h3>
       <div className="toolbar">
-        <span className={`badge ${BADGE[job.state]}`} title={job.state}>
-          {t(`job.state.${job.state}`)}
-        </span>
+        <StateBadge state={job.state} />
         <span className="muted">
           {t("job.episodes", { done: job.progress, total: job.total })}
         </span>
@@ -96,8 +88,8 @@ export function JobProgress({ benchmarkId, onFinished, canCancel = true }: JobPr
           style={{ width: `${percent}%` }}
         />
       </div>
-      {job.error ? <div className="error-box">{job.error}</div> : null}
-      {error ? <div className="error-box">{error}</div> : null}
+      {job.error ? <ErrorMessage error={job.error} /> : null}
+      {error ? <ErrorMessage error={error} /> : null}
       {canCancel && active ? (
         <button
           type="button"

@@ -53,7 +53,7 @@ describe("the API base URL appears on exactly one page", () => {
   it("is only referenced by /system", () => {
     const offenders = pageFiles(APP)
       .filter((file) => readFileSync(file, "utf8").includes("API_BASE"))
-      .map((file) => file.replace(APP, ""));
+      .map((file) => file.replace(APP, "").replace(/\\/g, "/"));
     expect(offenders).toEqual(["/system/page.tsx"]);
   });
 
@@ -108,7 +108,7 @@ describe("no page hardcodes English where a key belongs", () => {
   it("uses the translator on every page", () => {
     const untranslated = pageFiles(APP)
       .filter((file) => !readFileSync(file, "utf8").includes("useTranslation"))
-      .map((file) => file.replace(APP, ""));
+      .map((file) => file.replace(APP, "").replace(/\\/g, "/"));
     expect(untranslated).toEqual([]);
   });
 });

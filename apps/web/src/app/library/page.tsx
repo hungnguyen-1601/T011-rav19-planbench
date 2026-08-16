@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { DifficultyBadge } from "@/components/DifficultyBadge";
 import { EmptyState } from "@/components/EmptyState";
+import { TableSkeleton } from "@/components/LoadingSkeleton";
 import { Scene25D } from "@/components/Scene25D";
 import { SplitBadge } from "@/components/SplitBadge";
 import { authFetch, useSession } from "@/lib/auth";
@@ -151,6 +152,13 @@ export default function LibraryPage() {
                   <button
                     type="button"
                     disabled={!canImport || busy !== null}
+                    title={
+                      !canImport
+                        ? t("disabled.signInRequired")
+                        : busy === entry.name
+                          ? t("disabled.busy")
+                          : undefined
+                    }
                     onClick={() => importEntry(entry.name)}
                   >
                     {busy === entry.name ? t("library.importing") : t("library.import")}
@@ -161,12 +169,16 @@ export default function LibraryPage() {
           </tbody>
         </table>
         </div>
-        {entries.length === 0 && !error ? <p className="muted">{t("common.loading")}</p> : null}
+        {entries.length === 0 && !error ? <TableSkeleton rows={4} columns={9} /> : null}
         {entries.length === 0 && error ? (
           <EmptyState
             icon="library"
             title={t("library.empty.title")}
             body={t("library.empty.body")}
+            actionHref="/scenarios"
+            actionLabel={t("common.scenario")}
+            secondaryActionHref="/maps"
+            secondaryActionLabel={t("common.map")}
           />
         ) : null}
       </div>

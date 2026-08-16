@@ -273,9 +273,7 @@ export default function DashboardPage() {
                       {/* Algorithm ids are protocol tokens: never translated. */}
                       <td>{simulation.algorithm}</td>
                       <td>
-                        <span className={`badge ${simulation.state === "finished" ? "ok" : "warn"}`}>
-                          {simulation.state}
-                        </span>
+                        <StateBadge state={simulation.state} />
                       </td>
                       <td className="muted">{shortTime(simulation.created_at)}</td>
                     </tr>
