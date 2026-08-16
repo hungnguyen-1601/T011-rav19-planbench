@@ -32,32 +32,45 @@ import {
   PLACEMENTS,
   type MotionKind,
   type TrafficPlacement,
-  addObstacle,
-  changeMotionKind,
   dropLastWaypoint,
   headingDegrees,
   numberFromInput,
   offsetHint,
-  removeObstacle,
   updateObstacle,
 } from "@/lib/traffic";
-import type { DynamicObstacle, Motion, Point2D } from "@/lib/types";
+import type { DynamicObstacle, Motion } from "@/lib/types";
 
-/** Which obstacle the next map click belongs to, and which of its fields.
- *  Null means the map is placing the mission instead. */
-export interface TrafficSelection {
+/** Which obstacle field the next map click writes.
+ *  Null means the map is placing the mission instead.
+ *
+ * This used to be called the *selection*, and carried both meanings at
+ * once — which obstacle is highlighted and what the next click does. A
+ * click on an obstacle's body means "selected, placing nothing", and
+ * that state had no legal value under the old shape. The split lives in
+ * `lib/trafficUi`; this component just renders both halves. */
+export interface TrafficPlacementState {
   index: number;
   mode: TrafficPlacement;
 }
 
 export interface TrafficEditorProps {
   obstacles: DynamicObstacle[];
+  /** Identity-preserving edits only — a field typed into a row. The
+   *  edits that change what the indexes *mean* (add, remove, motion
+   *  law) go through their own intents below, because the caller owns
+   *  ui-state that must move with them. */
   onChange: (next: DynamicObstacle[]) => void;
-  selection: TrafficSelection | null;
-  onSelect: (selection: TrafficSelection | null) => void;
-  /** Where a new obstacle appears: somewhere the author is already
-   *  looking, rather than the map's origin behind a wall. */
-  anchor: Point2D;
+  /** Highlighted row. Distinct from `placement`: an obstacle can be
+   *  selected while the map places nothing. */
+  selectedIndex: number | null;
+  placement: TrafficPlacementState | null;
+  onSelect: (index: number | null) => void;
+  /** The caller flips between begin/end — this component does not know
+   *  what is currently active beyond what `placement` says. */
+  onPlacementToggle: (index: number, mode: TrafficPlacement) => void;
+  onAdd: () => void;
+  onRemove: (index: number) => void;
+  onKindChange: (index: number, kind: MotionKind) => void;
   disabled?: boolean;
   /** Every refusal the server addressed to this block — `environment`
    *  itself and anything under it.
@@ -90,9 +103,13 @@ const PLACEMENT_LABEL: Record<TrafficPlacement, string> = {
 export function TrafficEditor({
   obstacles,
   onChange,
-  selection,
+  selectedIndex,
+  placement,
   onSelect,
-  anchor,
+  onPlacementToggle,
+  onAdd,
+  onRemove,
+  onKindChange,
   disabled = false,
   errors,
 }: TrafficEditorProps) {
@@ -271,8 +288,24 @@ export function TrafficEditor({
       {obstacles.map((obstacle, index) => {
         const hint = offsetHint(obstacle.motion);
         const mine = rowErrors(index);
+        const chosen = selectedIndex === index;
         return (
-          <div key={index} className="card" style={{ marginTop: 8, padding: 12 }}>
+          <div
+            key={index}
+            className="card"
+            /* Clicking anywhere in a row focuses it, the same selection a
+               click on the obstacle's body on the map will make — one
+               highlight, two doors to it. */
+            onClick={() => {
+              if (!disabled && !chosen) onSelect(index);
+            }}
+            aria-current={chosen ? "true" : undefined}
+            style={{
+              marginTop: 8,
+              padding: 12,
+              ...(chosen ? { outline: "2px solid #4c9aff", outlineOffset: -2 } : {}),
+            }}
+          >
             <div className="row" style={{ gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
               <label className="field" style={{ width: 160 }}>
                 <span>{t("deployments.form.traffic.name")}</span>
@@ -292,16 +325,7 @@ export function TrafficEditor({
                 <select
                   value={obstacle.motion.kind}
                   disabled={disabled}
-                  onChange={(event) => {
-                    onSelect(null);
-                    onChange(
-                      obstacles.map((each, at) =>
-                        at === index
-                          ? changeMotionKind(each, event.target.value as MotionKind, anchor)
-                          : each,
-                      ),
-                    );
-                  }}
+                  onChange={(event) => onKindChange(index, event.target.value as MotionKind)}
                 >
                   {MOTION_KINDS.map((kind) => (
                     <option key={kind} value={kind}>
@@ -313,9 +337,11 @@ export function TrafficEditor({
               <button
                 type="button"
                 disabled={disabled}
-                onClick={() => {
-                  onSelect(null);
-                  onChange(removeObstacle(obstacles, index));
+                onClick={(event) => {
+                  // Not also a row-click: selecting the row about to
+                  // vanish would fight the caller's own reindexing.
+                  event.stopPropagation();
+                  onRemove(index);
                 }}
               >
                 {t("deployments.form.traffic.remove")}
@@ -373,7 +399,7 @@ export function TrafficEditor({
                 sudden stop never offers an end it does not own. */}
             <div className="toolbar" style={{ marginTop: 8 }}>
               {PLACEMENTS[obstacle.motion.kind].map((mode) => {
-                const active = selection?.index === index && selection.mode === mode;
+                const active = placement?.index === index && placement.mode === mode;
                 return (
                   <button
                     key={mode}
@@ -381,7 +407,7 @@ export function TrafficEditor({
                     disabled={disabled}
                     className={active ? "active" : undefined}
                     aria-pressed={active}
-                    onClick={() => onSelect(active ? null : { index, mode })}
+                    onClick={() => onPlacementToggle(index, mode)}
                   >
                     {t(PLACEMENT_LABEL[mode])}
                   </button>
@@ -402,11 +428,7 @@ export function TrafficEditor({
       })}
 
       <div className="toolbar" style={{ marginTop: 8 }}>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => onChange(addObstacle(obstacles, anchor))}
-        >
+        <button type="button" disabled={disabled} onClick={onAdd}>
           {t("deployments.form.traffic.add")}
         </button>
       </div>
@@ -417,12 +439,12 @@ export function TrafficEditor({
 
 /** The caption for whichever traffic field the map is placing. */
 export function placementNote(
-  selection: TrafficSelection | null,
+  placement: TrafficPlacementState | null,
   obstacles: DynamicObstacle[],
   t: (key: string, vars?: Record<string, string | number>) => string,
 ): string | undefined {
-  if (!selection) return undefined;
-  const name = obstacles[selection.index]?.name ?? "";
+  if (!placement) return undefined;
+  const name = obstacles[placement.index]?.name ?? "";
   const key: Record<TrafficPlacement, string> = {
     waypoint: "deployments.form.traffic.mode.waypoint",
     "periodic-start": "deployments.form.traffic.mode.periodicStart",
@@ -431,5 +453,5 @@ export function placementNote(
     "sudden-stop-start": "deployments.form.traffic.mode.suddenStart",
     "sudden-stop-heading": "deployments.form.traffic.mode.suddenHeading",
   };
-  return t(key[selection.mode], { name });
+  return t(key[placement.mode], { name });
 }

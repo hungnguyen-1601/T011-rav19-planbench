@@ -21,16 +21,25 @@
  * read after the choice rather than during it.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import Link from "next/link";
 
 import { MapPainter } from "@/components/MapPainter";
 import { MissionPlacer, type PlacementMode } from "@/components/MissionPlacer";
-import { TrafficEditor, type TrafficSelection, placementNote } from "@/components/TrafficEditor";
+import { TrafficEditor, placementNote } from "@/components/TrafficEditor";
 import { api } from "@/lib/api";
 import { authFetch, fieldErrorsOf } from "@/lib/auth";
 import { createSequencer } from "@/lib/sequencer";
-import { placeOnMotion, previewRequestOf, snapshotsOf, trafficOf } from "@/lib/traffic";
+import {
+  addObstacle,
+  changeMotionKind,
+  placeOnMotion,
+  previewRequestOf,
+  removeObstacle,
+  snapshotsOf,
+  trafficOf,
+} from "@/lib/traffic";
+import { IDLE_TRAFFIC_UI, trafficUiReducer } from "@/lib/trafficUi";
 import {
   DEFAULT_LIBRARY_SCENARIO,
   at,
@@ -171,10 +180,17 @@ export function DeploymentForm({
    * grid. Keeping one field for "the picker" and another for "what is on
    * screen" is what lets all three sources preview. */
   const [activeMapId, setActiveMapId] = useState("");
-  /** One placement mode for the whole page. The traffic editor and the
-   *  mission placer share a canvas, so they cannot each hold their own. */
+  /** The mission's own placement mode — start, goal or nothing.
+   *
+   * Traffic placement is *not* in here any more: which obstacle is
+   * highlighted, which field the next click writes and which handle a
+   * drag holds are three separate questions with invariants between
+   * them, and they live in one reducer (`lib/trafficUi`) so no pair of
+   * handlers can leave them pointing at different obstacles. The canvas
+   * still sees a single mode: traffic placement wins while it is active,
+   * this state otherwise. */
   const [placing, setPlacing] = useState<PlacementMode>("start");
-  const [trafficSelection, setTrafficSelection] = useState<TrafficSelection | null>(null);
+  const [trafficUi, dispatchTrafficUi] = useReducer(trafficUiReducer, IDLE_TRAFFIC_UI);
   /** Refusals from the check this form asked for, as opposed to the ones
    *  the page got back from filing.
    *
@@ -348,7 +364,9 @@ export function DeploymentForm({
         const poses = posesFor(data, scenario);
         setMapData(data);
         setActiveMapId(mapId);
-        setTrafficSelection(null);
+        // Nothing on the new map is the thing that was selected — and a
+        // clamped index would be in range and wrong, so this clears.
+        dispatchTrafficUi({ type: "reset" });
         setStart(poses.start);
         setGoal(poses.goal);
         onDraftChange(next);
@@ -1130,32 +1148,35 @@ export function DeploymentForm({
           disabled={frozen}
           startNote={t("decisions.map.startHeadingNote")}
           goalNote={t("decisions.map.goalHeadingNote")}
-          mode={placing}
+          mode={trafficUi.trafficPlacement?.mode ?? placing}
           onModeChange={(next) => {
-            setPlacing(next);
-            // Switching to a mission mode ends the traffic selection, or
-            // the editor would keep a button lit for clicks it no longer
-            // receives.
-            if (next === "start" || next === "goal" || next === "none") setTrafficSelection(null);
+            // The toolbar only speaks the mission's modes. Choosing one
+            // ends the traffic placement, or the editor would keep a
+            // button lit for clicks it no longer receives.
+            if (next === "start" || next === "goal" || next === "none") {
+              setPlacing(next);
+              dispatchTrafficUi({ type: "endPlacement" });
+            }
           }}
           onPlace={(x, y) => {
-            if (!trafficSelection) return;
+            const placement = trafficUi.trafficPlacement;
+            if (!placement) return;
             const obstacles = trafficOf(draft);
-            const chosen = obstacles[trafficSelection.index];
+            const chosen = obstacles[placement.index];
             if (!chosen) return;
             set(
               "environment.dynamic_obstacles",
               obstacles.map((obstacle, at) =>
-                at === trafficSelection.index
+                at === placement.index
                   ? {
                       ...obstacle,
-                      motion: placeOnMotion(obstacle.motion, trafficSelection.mode, { x, y }),
+                      motion: placeOnMotion(obstacle.motion, placement.mode, { x, y }),
                     }
                   : obstacle,
               ),
             );
           }}
-          modeNote={placementNote(trafficSelection, trafficOf(draft), t)}
+          modeNote={placementNote(trafficUi.trafficPlacement, trafficOf(draft), t)}
           dynamicObstacles={(preview?.dynamic_obstacles ?? []).map((obstacle) => ({
             name: obstacle.name,
             radius: obstacle.radius,
@@ -1175,12 +1196,39 @@ export function DeploymentForm({
       <TrafficEditor
         obstacles={trafficOf(draft)}
         onChange={(next) => set("environment.dynamic_obstacles", next)}
-        selection={trafficSelection}
-        onSelect={(selection) => {
-          setTrafficSelection(selection);
-          setPlacing(selection ? selection.mode : "none");
+        selectedIndex={trafficUi.selectedObstacleIndex}
+        placement={trafficUi.trafficPlacement}
+        onSelect={(index) => dispatchTrafficUi({ type: "select", index })}
+        onPlacementToggle={(index, mode) => {
+          const active =
+            trafficUi.trafficPlacement?.index === index &&
+            trafficUi.trafficPlacement.mode === mode;
+          dispatchTrafficUi(active ? { type: "endPlacement" } : { type: "beginPlacement", index, mode });
+          // While traffic owns the click, the mission must not also
+          // believe the next one is its own.
+          if (!active) setPlacing("none");
         }}
-        anchor={start ?? { x: 0, y: 0 }}
+        onAdd={() => {
+          const next = addObstacle(trafficOf(draft), start ?? { x: 0, y: 0 });
+          set("environment.dynamic_obstacles", next);
+          dispatchTrafficUi({ type: "obstacleAdded", count: next.length });
+        }}
+        onRemove={(index) => {
+          set("environment.dynamic_obstacles", removeObstacle(trafficOf(draft), index));
+          dispatchTrafficUi({ type: "obstacleRemoved", index });
+        }}
+        onKindChange={(index, kind) => {
+          set(
+            "environment.dynamic_obstacles",
+            trafficOf(draft).map((each, at) =>
+              at === index ? changeMotionKind(each, kind, start ?? { x: 0, y: 0 }) : each,
+            ),
+          );
+          // The old law's handles and placements name fields that no
+          // longer exist; the row stays selected — it is still the one
+          // being edited.
+          dispatchTrafficUi({ type: "motionKindChanged", index });
+        }}
         disabled={frozen}
         /* Everything addressed to the environment that no control on
            this page already renders. Passing only `environment` left a

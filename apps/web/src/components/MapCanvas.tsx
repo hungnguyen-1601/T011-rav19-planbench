@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { OCCUPIED, UNKNOWN } from "@/lib/demoMap";
+import { pointerRouting } from "@/lib/pointerRouting";
 import {
   CAUTION_FILL,
   CAUTION_STROKE,
@@ -61,8 +62,37 @@ export interface MapCanvasProps {
   showGrid?: boolean;
   showPlan?: boolean;
   showTrajectory?: boolean;
+  /** Legacy gesture props: a click on press, a drag per move, and the
+   *  drag *ends when the pointer leaves the canvas* — MapPainter's
+   *  stroke stops at the edge because of that. Kept working untouched
+   *  for every existing consumer; see `pointerRouting` for how they
+   *  yield to the new lifecycle below. */
   onWorldClick?: (x: number, y: number, event: React.MouseEvent<HTMLCanvasElement>) => void;
   onWorldDrag?: (x: number, y: number) => void;
+  /** The full pointer lifecycle, for a consumer that drags handles.
+   *
+   * Passing any of these turns pointer capture on — the drag then
+   * survives leaving the canvas, and `up`/`cancel` always arrive to
+   * finish it. Passing `onWorldPointerDown` silences `onWorldClick`;
+   * passing `onWorldPointerMove` silences `onWorldDrag` — one event,
+   * one owner, never both. */
+  onWorldPointerDown?: (point: Point2D, info: WorldPointerInfo) => void;
+  onWorldPointerMove?: (point: Point2D, info: WorldPointerInfo) => void;
+  onWorldPointerUp?: (point: Point2D, info: WorldPointerInfo) => void;
+  /** The browser took the pointer away (gesture interruption, capture
+   *  loss). The point carried here may be garbage — flush the last
+   *  trusted move coordinate instead of this one. */
+  onWorldPointerCancel?: (point: Point2D, info: WorldPointerInfo) => void;
+  onWorldDoubleClick?: (point: Point2D) => void;
+}
+
+/** What a world-space pointer event knows beyond its position. */
+export interface WorldPointerInfo {
+  pointerId: number;
+  /** Metres per screen pixel at the current viewport — what turns a
+   *  pixel tolerance ("within 8px of the handle") into world units. */
+  worldPerPixel: number;
+  event: React.PointerEvent<HTMLCanvasElement>;
 }
 
 const COLOR = {
@@ -104,6 +134,11 @@ export function MapCanvas({
   showTrajectory = true,
   onWorldClick,
   onWorldDrag,
+  onWorldPointerDown,
+  onWorldPointerMove,
+  onWorldPointerUp,
+  onWorldPointerCancel,
+  onWorldDoubleClick,
 }: MapCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const draggingRef = useRef(false);
@@ -409,25 +444,59 @@ export function MapCanvas({
     return canvasToWorld(viewport, event.clientX - rect.left, event.clientY - rect.top);
   };
 
+  /* Which generation of props owns each gesture — see `pointerRouting`.
+     Capture is only taken when the new lifecycle is in use: the legacy
+     consumers end a drag by leaving the canvas, and capturing would
+     quietly keep their stroke alive past the border. */
+  const routing = pointerRouting({
+    hasPointerDown: onWorldPointerDown !== undefined,
+    hasPointerMove: onWorldPointerMove !== undefined,
+    hasPointerUp: onWorldPointerUp !== undefined,
+    hasPointerCancel: onWorldPointerCancel !== undefined,
+  });
+
+  const infoOf = (event: React.PointerEvent<HTMLCanvasElement>): WorldPointerInfo => ({
+    pointerId: event.pointerId,
+    worldPerPixel: 1 / viewport.scale,
+    event,
+  });
+
   return (
     <canvas
       ref={canvasRef}
       data-testid="map-canvas"
-      onMouseDown={(event) => {
-        draggingRef.current = true;
-        const { x, y } = pointerWorld(event);
-        onWorldClick?.(x, y, event);
+      onPointerDown={(event) => {
+        const point = pointerWorld(event);
+        if (routing.capture) event.currentTarget.setPointerCapture(event.pointerId);
+        onWorldPointerDown?.(point, infoOf(event));
+        // The legacy drag arms on press whether or not a click handler
+        // is also given — that is what the mouse-event version did.
+        if (routing.legacyDrag) draggingRef.current = true;
+        if (routing.legacyClick) onWorldClick?.(point.x, point.y, event);
       }}
-      onMouseMove={(event) => {
-        if (!draggingRef.current || !onWorldDrag) return;
-        const { x, y } = pointerWorld(event);
-        onWorldDrag(x, y);
+      onPointerMove={(event) => {
+        const point = pointerWorld(event);
+        onWorldPointerMove?.(point, infoOf(event));
+        if (routing.legacyDrag && draggingRef.current && onWorldDrag) {
+          onWorldDrag(point.x, point.y);
+        }
       }}
-      onMouseUp={() => {
+      onPointerUp={(event) => {
+        draggingRef.current = false;
+        onWorldPointerUp?.(pointerWorld(event), infoOf(event));
+      }}
+      onPointerCancel={(event) => {
+        draggingRef.current = false;
+        onWorldPointerCancel?.(pointerWorld(event), infoOf(event));
+      }}
+      onPointerLeave={() => {
+        // Legacy lifecycle only: leaving ends the drag. Under capture
+        // this never fires mid-drag, because the capture holds the
+        // pointer target on the canvas until up or cancel.
         draggingRef.current = false;
       }}
-      onMouseLeave={() => {
-        draggingRef.current = false;
+      onDoubleClick={(event) => {
+        onWorldDoubleClick?.(pointerWorld(event));
       }}
     />
   );

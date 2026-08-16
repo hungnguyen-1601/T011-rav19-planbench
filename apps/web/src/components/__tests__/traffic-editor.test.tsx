@@ -51,9 +51,13 @@ function render(
     <TrafficEditor
       obstacles={[obstacle()]}
       onChange={() => {}}
-      selection={null}
+      selectedIndex={null}
+      placement={null}
       onSelect={() => {}}
-      anchor={ANCHOR}
+      onPlacementToggle={() => {}}
+      onAdd={() => {}}
+      onRemove={() => {}}
+      onKindChange={() => {}}
       errors={[]}
       {...overrides}
     />,
@@ -243,11 +247,27 @@ describe("while something else is in flight", () => {
 
 describe("placing points on the map", () => {
   it("lights the button for the field the next click belongs to", () => {
-    const html = render({ selection: { index: 0, mode: "waypoint" } });
+    const html = render({ placement: { index: 0, mode: "waypoint" } });
     expect(html).toContain('aria-pressed="true"');
   });
 
   it("presses nothing while the mission owns the click", () => {
     expect(render()).not.toContain('aria-pressed="true"');
+  });
+});
+
+describe("selection without placement", () => {
+  it("highlights the selected row even when the map places nothing", () => {
+    /* The state the old `{index, mode}` selection could not express: an
+       obstacle clicked on its body is focused, and no click is pending.
+       The row must show it, or a click on the map appears to do
+       nothing. */
+    const html = render({ selectedIndex: 0 });
+    expect(html).toContain('aria-current="true"');
+    expect(html).not.toContain('aria-pressed="true"');
+  });
+
+  it("highlights nothing when nothing is selected", () => {
+    expect(render()).not.toContain('aria-current="true"');
   });
 });
