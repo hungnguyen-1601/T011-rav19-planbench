@@ -176,7 +176,10 @@ export function PlacementCaption({
 }
 
 export interface MissionCanvasProps
-  extends Omit<MissionPlacerProps, "mode" | "onModeChange" | "startNote" | "goalNote"> {
+  extends Omit<
+    MissionPlacerProps,
+    "mode" | "onModeChange" | "startNote" | "goalNote" | "modeNote"
+  > {
   /** Fully controlled here: the canvas is never the thing that owns
    *  which mode the page is in. */
   mode: PlacementMode;

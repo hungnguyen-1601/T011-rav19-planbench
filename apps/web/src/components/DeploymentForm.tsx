@@ -185,7 +185,6 @@ export function DeploymentForm({
   const [remembered, setRemembered] = useState<Partial<Record<string, number>>>({});
   const [start, setStart] = useState<Pose2D | null>(null);
   const [goal, setGoal] = useState<Pose2D | null>(null);
-  const [showHardware, setShowHardware] = useState(false);
   /** The vehicle register. Empty is not an error — it is a fresh
    *  install, and typing the limits by hand still works. */
   const [vehicles, setVehicles] = useState<RobotProfile[]>([]);
@@ -336,18 +335,23 @@ export function DeploymentForm({
     [onDraftChange, invalidateCheck],
   );
 
-  /** Write the held handle to a position. */
+  /** Write one handle to a position.
+   *
+   * **Takes the handle rather than reading it back off `gesture`**, and
+   * that is not tidiness: the last write of a drag happens as the
+   * gesture ends, and an earlier version cleared `gesture.current`
+   * before calling this — so the flush found nothing to move and every
+   * drag silently discarded the position the pointer was released at.
+   * A parameter cannot be cleared out from under the call. */
   const flushDrag = useCallback(
-    (point: Point2D) => {
-      const active = gesture.current;
-      if (!active) return;
+    (hit: Hit, point: Point2D) => {
       const obstacles = trafficOf(draftRef.current);
-      if (!obstacles[active.hit.index]) return;
+      if (!obstacles[hit.index]) return;
       setLive(
         "environment.dynamic_obstacles",
         obstacles.map((obstacle, at) =>
-          at === active.hit.index
-            ? { ...obstacle, motion: moveHandle(obstacle.motion, active.hit.handle, point) }
+          at === hit.index
+            ? { ...obstacle, motion: moveHandle(obstacle.motion, hit.handle, point) }
             : obstacle,
         ),
       );
@@ -370,7 +374,7 @@ export function DeploymentForm({
       if (!current) return;
       current.frame = null;
       if (current.pending) {
-        flushDrag(current.pending);
+        flushDrag(current.hit, current.pending);
         current.pending = null;
       }
     });
@@ -687,7 +691,7 @@ export function DeploymentForm({
     // gesture interruption can report one nobody pointed at — so the
     // last position a *move* gave is what the document keeps.
     const settled = end.cancelled ? active.lastWorld : end.world;
-    if (settled) flushDrag(settled);
+    if (settled) flushDrag(active.hit, settled);
   };
 
   const removeWaypointUnder = (at: { world: Point2D; worldPerPixel: number }) => {
@@ -1508,7 +1512,6 @@ export function DeploymentForm({
               ),
             );
           }}
-          modeNote={placementNote(trafficUi.trafficPlacement, trafficOf(draft), t)}
           /* Traffic sees each press first and takes only what belongs
              to it — a handle to drag, an obstacle to select. Everything
              it declines reaches the poses exactly as before. */

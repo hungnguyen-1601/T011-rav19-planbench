@@ -180,7 +180,11 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     sẵn dữ liệu nhưng trang replay chưa nối vào `obstacleSnapshots`, nên
     xem lại một episode ở 2.5D vẫn thấy hành lang trống. Ngoài ra 2.5D
     **chỉ hiển thị, không đặt điểm được** — traffic được vẽ trên khung
-    phẳng, và đó là chủ ý chứ không phải thiếu sót.
+    phẳng, và đó là chủ ý chứ không phải thiếu sót. Lớp **traffic đã
+    khai** thêm ở 2026-08-16 (lộ trình, điểm cầm được, vòng lang thang —
+    `lib/trafficOverlay`) cũng chỉ vẽ ở khung phẳng, cùng lý do: phép
+    chiếu 2.5D không có nghịch đảo, một pixel trên màn ứng với cả một tia
+    xuyên qua cảnh chứ không với một điểm.
 48. **Chưa có endpoint model registry.** `/algorithms` hiển thị registry
     stack (gồm `astar+ppo` và `model_path` nó đòi), nhưng danh sách
     checkpoint đã train thì chưa có API — metadata mới nằm ở file sidecar
@@ -189,22 +193,29 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     chưa được truyền lại. Cần bảng riêng khi có PostgreSQL.
 50. **Component test dừng ở lần render đầu; không có test cho thao tác
     chuột.** Vitest phủ phần hình học thuần (`scene25d`, `transform`,
-    `playback`, `demoMap`), và một số component được render thật bằng
-    `renderToStaticMarkup` — `Sidebar`/`StatCard`/`EmptyState`
-    (`shell.test.tsx`) và `TrafficEditor` (`traffic-editor.test.tsx`,
-    2026-08-15). Cách đó phủ **lần vẽ đầu tiên**: field nào hiện với
-    luật chuyển động nào, lỗi server rơi vào đâu, control có bị khoá
-    không.
+    `playback`, `demoMap`, `trafficOverlay`, `canvasSize`), và một số
+    component được render thật bằng `renderToStaticMarkup` —
+    `Sidebar`/`StatCard`/`EmptyState` (`shell.test.tsx`),
+    `TrafficEditor` (2026-08-15), `Tabs` và **`DeploymentForm`** cả hai
+    từ 2026-08-16. Cách đó phủ **lần vẽ đầu tiên**: field nào hiện với
+    luật chuyển động nào, lỗi server rơi vào tab nào, panel ẩn có còn
+    trong DOM không, control có bị khoá không.
 
     Cái nó **không** phủ được: click, kéo, và mọi thứ chỉ xảy ra sau một
-    lần tương tác — gom waypoint trên canvas, hai click ra heading, ảnh
-    preview vẽ đúng toạ độ, và các race giữa nhiều request (sửa field
-    trong lúc đang kiểm, chọn map A rồi map B). Không có jsdom, không
-    Testing Library, không playwright. Phần *quyết định* sau mỗi click
-    đã được tách thành hàm thuần và test riêng (`lib/traffic`,
-    `lib/sequencer`); phần nối tới con chuột hiện nghiệm thu **bằng tay**
-    theo checklist ở
-    `docs/antongduy/reports/2026-08-15/tongduyan_config-vat-the-dong-phase-3.md`.
+    lần tương tác — kéo waypoint, nhấn đúp để xoá, pointer capture khi
+    con trỏ rời canvas, ảnh preview vẽ đúng toạ độ, click rơi đúng chỗ
+    sau khi `ResizeObserver` đổi kích thước canvas, và các race giữa
+    nhiều request (sửa field trong lúc đang kiểm, chọn map A rồi map B).
+    Không có jsdom, không Testing Library, không playwright.
+
+    Phần *quyết định* sau mỗi click đã được tách thành hàm thuần và test
+    riêng — `lib/traffic`, `lib/trafficUi` (vòng đời candidate/committed
+    của một cú kéo), `lib/trafficOverlay` (hit-test và ý nghĩa của một
+    cú nhấn), `lib/pointerRouting`, `lib/sequencer`. Phần nối tới con
+    chuột hiện nghiệm thu **bằng tay** theo checklist ở
+    `docs/antongduy/reports/2026-08-16/tongduyan_map-truc-tiep-phase-4-va-tong-ket.md`
+    (thay cho checklist 2026-08-15, đã bị nó bao trùm).
+
     Riêng canvas vẽ đúng pixel thì jsdom cũng không kiểm được — muốn
     đóng hẳn phải là browser test thật.
 

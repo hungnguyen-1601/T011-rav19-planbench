@@ -203,14 +203,31 @@ describe("the form is an input method, not a second definition", () => {
   });
 
   it("has every key it asks for, in both locales", () => {
-    const keys = new Set([...FORM.matchAll(/\bt\(\s*"([^"`]+)"/g)].map((match) => match[1]));
-    for (const key of keys) {
-      expect(en, `en is missing ${key}`).toHaveProperty(key);
-      expect(vi, `vi is missing ${key}`).toHaveProperty(key);
+    /* Both files, because the authoring moved into its own component
+       and the guard did not follow it. A dozen traffic keys were being
+       checked by nothing at all: an untranslated one renders as its own
+       dotted path, which reads as a bug in the page rather than as a
+       missing line in a locale file. */
+    for (const source of [FORM, TRAFFIC_UI]) {
+      const keys = new Set([...source.matchAll(/\bt\(\s*"([^"`]+)"/g)].map((match) => match[1]));
+      for (const key of keys) {
+        expect(en, `en is missing ${key}`).toHaveProperty(key);
+        expect(vi, `vi is missing ${key}`).toHaveProperty(key);
+      }
     }
+    /* Keys assembled from a variable, which the scan above cannot
+       see — every branch of each, spelled out. */
     for (const source of ["library", "stored", "drawn"]) {
       expect(en).toHaveProperty(`deployments.form.source.${source}`);
       expect(vi).toHaveProperty(`deployments.form.source.${source}`);
+    }
+    for (const hint of ["self-seeded", "one-shot", "incomplete"]) {
+      expect(en).toHaveProperty(`deployments.form.traffic.seedTimeOffset.${hint}`);
+      expect(vi).toHaveProperty(`deployments.form.traffic.seedTimeOffset.${hint}`);
+    }
+    for (const kind of ["waypoint", "periodic", "randomWalk", "suddenStop"]) {
+      expect(en).toHaveProperty(`deployments.form.traffic.kind.${kind}`);
+      expect(vi).toHaveProperty(`deployments.form.traffic.kind.${kind}`);
     }
   });
 });
@@ -503,6 +520,14 @@ describe("the traffic comes with the map it belongs to", () => {
        cancel event itself can arrive from a gesture interruption
        carrying one nobody pointed at. */
     expect(finish).toContain("active.lastWorld");
+    /* The last write of a drag happens as the gesture ends, so the
+       flush is handed the handle rather than reading it back off the
+       ref that has just been cleared. An earlier version did read it
+       back, found nothing, and silently threw away the position the
+       pointer was released at — a bug with no symptom except that a
+       dragged point settled a few pixels behind the mouse. */
+    expect(finish).toContain("flushDrag(active.hit,");
+    expect(FORM).not.toMatch(/flushDrag\(\s*(current\.)?pending/);
   });
 
   it("puts the map beside the controls rather than a screen below them", () => {
