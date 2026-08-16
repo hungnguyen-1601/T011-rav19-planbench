@@ -194,7 +194,12 @@ describe("the form is an input method, not a second definition", () => {
 
   it("draws and places through the shared components", () => {
     expect(FORM).toContain("<MapPainter");
-    expect(FORM).toContain("<MissionPlacer");
+    /* The canvas and the pose fields are mounted separately here, one
+       per column, while `/decisions` still uses the arrangement that
+       holds all three together. Same components either way — a second
+       copy would be a second answer to what clicking the map does. */
+    expect(FORM).toContain("<MissionCanvas");
+    expect(FORM).toContain("<MissionPoseFields");
   });
 
   it("has every key it asks for, in both locales", () => {
@@ -500,6 +505,31 @@ describe("the traffic comes with the map it belongs to", () => {
     expect(finish).toContain("active.lastWorld");
   });
 
+  it("puts the map beside the controls rather than a screen below them", () => {
+    /* Thirty fields stacked in one column left the map — the thing most
+       of them are about — near the bottom, so choosing a traffic route
+       meant scrolling away from the picture of it. */
+    expect(FORM).toContain("gridTemplateColumns");
+    expect(FORM).toContain("sideBySide(shellWidth)");
+    /* Measured, and passed down as a number. `MapCanvas` maps a press
+       to world coordinates assuming its surface and its CSS box are the
+       same size, so a `width: 100%` stretch would land every click away
+       from the pointer while the map still looked right. */
+    expect(FORM).toContain("canvasSize(mapColumnWidth");
+    expect(FORM).toContain("width={canvas.width}");
+  });
+
+  it("says which tab a refusal is behind, and jumps there after a check", () => {
+    /* A tab is a place to hide things. Without a badge and a jump, a
+       refused field on an unopened tab blocks filing while the author
+       is shown nothing at all. */
+    expect(FORM).toContain("tallyErrors(shownErrors)");
+    expect(FORM).toContain("firstTabWithError(addressed)");
+    /* And an address no tab claims is printed in full rather than
+       counted into whichever tab looked closest. */
+    expect(FORM).toContain("tally.unmapped.map");
+  });
+
   it("still refuses to judge the obstacles itself", () => {
     /* The rule did not soften when the work moved into its own files.
        `TaskProfile` decides; the browser asks. What would break this is
@@ -557,8 +587,13 @@ describe("the traffic comes with the map it belongs to", () => {
        drag writes once per animation frame and a closure captured at
        render time would rebuild the document from the state before the
        previous frame. Both writers retire the verdict, which is the
-       thing this count is here to protect. */
-    expect(FORM.match(/invalidateCheck\(\)/g) ?? []).toHaveLength(6);
+       thing this count is here to protect.
+
+       The seventh came with the two-column layout: the mission is now
+       edited from two places — dragging its markers on the canvas in
+       one column, typing its coordinates in the Mission tab in the
+       other — and each of them is a change to the document. */
+    expect(FORM.match(/invalidateCheck\(\)/g) ?? []).toHaveLength(7);
     // And a reply already in flight when the document moved on is an
     // answer to a question nobody is asking any more.
     expect(FORM).toContain("revision.current !== asked");
@@ -798,22 +833,32 @@ describe("replanning is declared by the deployment, and has no budget", () => {
    * stops it being a capability one stack has and another does not.
    */
   const EN_REPLAN = en as Record<string, string>;
+  const V_OBSTACLE_MAX_PATH = "environment.v_obstacle_max";
 
   it("offers the switch", () => {
     expect(FORM).toContain('at(draft, "replanning.enabled")');
     expect(FORM).toContain('set("replanning.enabled", event.target.checked)');
   });
 
-  it("sits under the map picker, not up with the other conditions", () => {
+  it("stays beside the map rather than up with the other conditions", () => {
     /* Where it belongs by category is beside the constraints; where it
        belongs by use is next to the map. Deciding whether the robot may
        replan is a thought you have *while looking at the traffic you
        just picked*, and up with the constraints it was a scroll away
-       from the moment it occurs to anybody. */
-    expect(FORM.indexOf('set("replanning.enabled"')).toBeGreaterThan(
-      FORM.indexOf('t("deployments.form.map")'),
+       from the moment it occurs to anybody.
+
+       In the single column that meant "directly under the map picker".
+       Now the map is a column of its own and the controls are tabs
+       beside it, so the same rule means "on the Policies tab, in view
+       of the map" — with the closing speed, which is the other thing
+       moving traffic makes you decide. */
+    const policies = FORM.slice(
+      FORM.indexOf("const policiesTab"),
+      FORM.indexOf("const hardwareTab"),
     );
-    expect(FORM.indexOf('set("replanning.enabled"')).toBeLessThan(FORM.indexOf("<MissionPlacer"));
+    expect(policies).toContain('set("replanning.enabled"');
+    expect(policies).toContain('set("recovery.enabled"');
+    expect(policies).toContain(V_OBSTACLE_MAX_PATH);
   });
 
   it("stands out when the chosen scenario has traffic", () => {
@@ -828,7 +873,10 @@ describe("replanning is declared by the deployment, and has no budget", () => {
        is that such decisions are declared rather than inferred.
        Highlighting says "this is the choice you are about to skip";
        ticking would say "we made it for you". */
-    const block = FORM.slice(FORM.indexOf('traffic > 0 ? "notice warn"'), FORM.indexOf("<MissionPlacer"));
+    const block = FORM.slice(
+      FORM.indexOf('traffic > 0 ? "notice warn"'),
+      FORM.indexOf("const hardwareTab"),
+    );
     expect(block).not.toContain('set("replanning.enabled", true)');
     expect(block).toContain("event.target.checked");
   });

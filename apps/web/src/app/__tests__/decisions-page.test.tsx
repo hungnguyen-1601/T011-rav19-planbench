@@ -442,7 +442,10 @@ describe("placing the start and the goal", () => {
        see what the next click does. A hidden alternation makes nudging a
        start two pixels drop a goal instead. */
     expect(PLACER).toContain("decisions.map.place.${which}");
-    expect(PLACER).toContain("decisions.map.mode.${placing}");
+    /* The caption became its own component when the deployment form put
+       the buttons in a tab panel and the map in another column — same
+       key, same rule, one variable name further out. */
+    expect(PLACER).toContain("decisions.map.mode.${mode}");
     /* Both branches of each templated key, since the coverage check
        above only sees literal ones. */
     for (const which of ["start", "goal"]) {

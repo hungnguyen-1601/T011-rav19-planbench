@@ -21,11 +21,19 @@
  * read after the choice rather than during it.
  */
 
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import Link from "next/link";
 
 import { MapPainter } from "@/components/MapPainter";
-import { MissionPlacer, type PlacementMode } from "@/components/MissionPlacer";
+import {
+  MissionCanvas,
+  MissionPoseFields,
+  PlacementButtons,
+  PlacementCaption,
+  type PlacementMode,
+} from "@/components/MissionPlacer";
+import { Tabs, type TabDefinition } from "@/components/Tabs";
 import { TrafficEditor, placementNote } from "@/components/TrafficEditor";
 import { api } from "@/lib/api";
 import { authFetch, fieldErrorsOf } from "@/lib/auth";
@@ -61,7 +69,9 @@ import {
   withValue,
   type ProfileDraft,
 } from "@/lib/deployments";
+import { canvasSize, sideBySide } from "@/lib/canvasSize";
 import { emptyBorderedMap } from "@/lib/demoMap";
+import { firstTabWithError, tallyErrors, type FormTab } from "@/lib/formTabs";
 import { useTranslation } from "@/lib/i18n";
 import { listRobotProfiles, type RobotProfile } from "@/lib/models";
 import type { LibraryEntry } from "@/lib/platformTypes";
@@ -211,6 +221,15 @@ export function DeploymentForm({
   const [preview, setPreview] = useState<ScenarioPreview | null>(null);
   const [previewTime, setPreviewTime] = useState(0);
   const [previewSeed, setPreviewSeed] = useState(0);
+  /** Which panel of controls is on top.
+   *
+   * Opens on the mission, because that is the tab whose controls the
+   * map beside it is for. */
+  const [activeTab, setActiveTab] = useState<FormTab>("mission");
+  /** Measured rather than guessed from the viewport: a sidebar makes
+   *  the window's width a liar about the room this form has. */
+  const [shellRef, shellWidth] = useMeasuredWidth();
+  const [mapColumnRef, mapColumnWidth] = useMeasuredWidth();
 
   /** Everything the server has been asked about this document is now
    *  about a previous document.
@@ -751,6 +770,14 @@ export function DeploymentForm({
       const addressed = fieldErrorsOf(caught);
       setDryRunErrors(addressed);
       setCheckedClean(false);
+      // A refusal behind a tab nobody has reason to open is a refusal
+      // nobody sees, and filing stays blocked with no visible cause.
+      // The badges say where they are; this saves the author having to
+      // hunt. Refusals on the identity row or with an address no tab
+      // claims move nothing: both are already on screen, and jumping to
+      // an unrelated tab to show them nothing is worse than staying.
+      const jump = firstTabWithError(addressed);
+      if (jump) setActiveTab(jump);
       if (addressed.length === 0) {
         setError(caught instanceof Error ? caught.message : String(caught));
       }
@@ -969,32 +996,106 @@ export function DeploymentForm({
   const nMin = nMinFor(risk);
   const leftOver = ramLeftOver(draft);
 
-  return (
-    <>
-      {error ? <div className="error-box">{error}</div> : null}
+  const tally = tallyErrors(shownErrors);
+  const twoColumns = sideBySide(shellWidth);
+  const mapAspect = mapData && mapData.width > 0 ? mapData.height / mapData.width : 0.75;
+  const canvas = canvasSize(mapColumnWidth, mapAspect);
 
-      <h4>{t("deployments.form.identity")}</h4>
-      <div className="row" style={{ alignItems: "flex-end", gap: 12 }}>
-        {field("id", t("deployments.form.id"), undefined, t("deployments.form.idNote"))}
-        <Choice
-          label={t("deployments.form.claimLevel")}
-          value={at(draft, "claim_level")}
-          options={["mission", "deployment", "robust_deployment"]}
+  const badgeFor = (tab: FormTab) => tally.byTab[tab] || undefined;
+  const badgeWord = (tab: FormTab) =>
+    tally.byTab[tab]
+      ? t("deployments.form.tabs.badge", { n: String(tally.byTab[tab]) })
+      : undefined;
+
+  const missionTab = (
+    <>
+      <div className="toolbar" style={{ marginTop: 8 }}>
+        <PlacementButtons
+          mode={trafficUi.trafficPlacement?.mode ?? placing}
+          onModeChange={(next) => {
+            if (next === "start" || next === "goal" || next === "none") {
+              setPlacing(next);
+              dispatchTrafficUi({ type: "endPlacement" });
+            }
+          }}
           disabled={frozen}
-          onChange={(value) => set("claim_level", value)}
-          error={errorFor("claim_level")}
-        />
-        <Choice
-          label={t("deployments.form.role")}
-          value={at(draft, "deployment_role")}
-          options={["acceptance", "customer", "instrument"]}
-          disabled={frozen}
-          onChange={(value) => set("deployment_role", value)}
-          error={errorFor("deployment_role")}
         />
       </div>
+      {/* Typed as well as clicked: a canvas cannot land on 2.00 exactly,
+          and a deployment written to two decimals is the one somebody
+          can repeat from the report. */}
+      <MissionPoseFields
+        start={start}
+        goal={goal}
+        onChange={(poses) => {
+          setStart(poses.start);
+          setGoal(poses.goal);
+          invalidateCheck();
+        }}
+        disabled={frozen}
+        startNote={t("decisions.map.startHeadingNote")}
+        goalNote={t("decisions.map.goalHeadingNote")}
+      />
+    </>
+  );
 
-      <h4>{t("deployments.form.robot")}</h4>
+  const trafficTab = (
+    <TrafficEditor
+      obstacles={trafficOf(draft)}
+      onChange={(next) => set("environment.dynamic_obstacles", next)}
+      selectedIndex={trafficUi.selectedObstacleIndex}
+      placement={trafficUi.trafficPlacement}
+      onSelect={(index) => dispatchTrafficUi({ type: "select", index })}
+      onPlacementToggle={(index, mode) => {
+        const active =
+          trafficUi.trafficPlacement?.index === index && trafficUi.trafficPlacement.mode === mode;
+        dispatchTrafficUi(
+          active ? { type: "endPlacement" } : { type: "beginPlacement", index, mode },
+        );
+        // While traffic owns the click, the mission must not also
+        // believe the next one is its own.
+        if (!active) setPlacing("none");
+      }}
+      onAdd={() => {
+        const next = addObstacle(trafficOf(draft), start ?? { x: 0, y: 0 });
+        set("environment.dynamic_obstacles", next);
+        dispatchTrafficUi({ type: "obstacleAdded", count: next.length });
+      }}
+      onRemove={(index) => {
+        set("environment.dynamic_obstacles", removeObstacle(trafficOf(draft), index));
+        dispatchTrafficUi({ type: "obstacleRemoved", index });
+      }}
+      onKindChange={(index, kind) => {
+        set(
+          "environment.dynamic_obstacles",
+          trafficOf(draft).map((each, at) =>
+            at === index ? changeMotionKind(each, kind, start ?? { x: 0, y: 0 }) : each,
+          ),
+        );
+        // The old law's handles and placements name fields that no
+        // longer exist; the row stays selected — it is still the one
+        // being edited.
+        dispatchTrafficUi({ type: "motionKindChanged", index });
+      }}
+      disabled={frozen}
+      /* Everything addressed to the environment that no control on
+         this page already renders. Passing only `environment` left a
+         deep path like `…dynamic_obstacles.0.radius` with nowhere to
+         go, and a refusal nobody can see blocks filing without saying
+         why. The noise amplitudes and the closing speed are excluded
+         because they have inputs of their own, and `errorFor` puts
+         their refusals beside them. */
+      errors={shownErrors.filter(
+        (entry) =>
+          (entry.path === "environment" || entry.path.startsWith("environment.")) &&
+          !entry.path.startsWith("environment.sensor_noise") &&
+          entry.path !== V_OBSTACLE_MAX,
+      )}
+    />
+  );
+
+  const robotTab = (
+    <>
       {/* The vehicle register is the source of truth for what the robot
           *is* — but it fills the form rather than being referenced from
           it. HĐ-13 asks somebody else to rebuild a run from the profile
@@ -1038,8 +1139,11 @@ export function DeploymentForm({
           t("deployments.form.controlPeriodNote"),
         )}
       </div>
+    </>
+  );
 
-      <h4>{t("deployments.form.constraints")}</h4>
+  const constraintsTab = (
+    <>
       <div className="row" style={{ alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
         {field(
           "constraints.success_rate_min",
@@ -1078,12 +1182,15 @@ export function DeploymentForm({
           t("deployments.form.clearancePreferenceNote"),
         )}
       </div>
+    </>
+  );
 
-      <h4>{t("deployments.form.noise")}</h4>
+  const noiseTab = (
+    <>
       {/* Every source has a switch, and the switch writes an amplitude
           rather than a flag — see `noiseField`. Unticking one is how a
           deployment says "this site does not have that problem". */}
-      <div className="row" style={{ alignItems: "flex-end", gap: 12 }}>
+      <div className="row" style={{ alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
         {noiseField("environment.sensor_noise.lidar_range_sigma_m", t("deployments.form.lidarSigma"))}
         {noiseField("environment.sensor_noise.wheel_slip_fraction", t("deployments.form.wheelSlip"))}
         {noiseField(
@@ -1092,7 +1199,7 @@ export function DeploymentForm({
           t("deployments.form.localizationDriftNote"),
         )}
       </div>
-      <div className="row" style={{ alignItems: "flex-end", gap: 12 }}>
+      <div className="row" style={{ alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
         {noiseField("environment.sensor_noise.localization_jump_probability", t("deployments.form.localizationJump"))}
         {noiseField(
           "environment.sensor_noise.lidar_dropout_probability",
@@ -1108,10 +1215,14 @@ export function DeploymentForm({
       </div>
       {/* The consequence of leaving both quiet. With no traffic *and* no
           noise, a deterministic planner replays one episode per seed and
-          G2's bound rests on a sample of one. Traffic is authored below,
-          under the map it is placed on. */}
+          G2's bound rests on a sample of one. Traffic is authored on the
+          tab next to this one, against the map beside it. */}
       <p className="muted">{t("deployments.form.noiseNote")}</p>
+    </>
+  );
 
+  const policiesTab = (
+    <>
       <h4>{t("deployments.form.obstacleSpeed")}</h4>
       {/* Not a `noiseField`, and the difference is the whole point of the
           control. A noise switch writes 0 for "off"; here 0 is a *claim*
@@ -1151,17 +1262,79 @@ export function DeploymentForm({
           : t("deployments.form.obstacleSpeedOffNote")}
       </p>
 
-      <h4>
-        <button
-          type="button"
-          className={showHardware ? "active" : undefined}
-          onClick={() => setShowHardware(!showHardware)}
-        >
-          {showHardware ? "▾" : "▸"} {t("deployments.form.hardware")}
-        </button>
-      </h4>
-      {showHardware ? (
-        <div className="row" style={{ alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
+      {/* **On the same tab as the closing speed, and next to the map
+          rather than a scroll away from it.** Deciding whether the robot
+          may replan is a thought you have *while looking at the traffic
+          you just picked*, and in the single column this form used to be
+          the control sat far below the picker that provokes it.
+
+          It is highlighted rather than ticked when the chosen scenario
+          has moving obstacles. Ticking it would be the form deciding an
+          evaluation condition on the author's behalf, and the whole
+          reason this field exists on the deployment is that such
+          decisions are declared rather than inferred. Highlighting says
+          "this is the choice you are about to skip"; ticking would say
+          "we made it for you". */}
+      <div className={traffic > 0 ? "notice warn" : ""} style={{ marginTop: 12 }}>
+        <label className="row" style={{ alignItems: "center", gap: 6 }}>
+          <input
+            type="checkbox"
+            checked={Boolean(at(draft, "replanning.enabled"))}
+            disabled={frozen}
+            onChange={(event) => set("replanning.enabled", event.target.checked)}
+          />
+          <strong>{t("deployments.form.replanningEnabled")}</strong>
+        </label>
+        {traffic > 0 && !at(draft, "replanning.enabled") ? (
+          <p className="muted">{t("deployments.form.replanningTraffic", { n: String(traffic) })}</p>
+        ) : (
+          <p className="muted">{t("deployments.form.replanningNote")}</p>
+        )}
+      </div>
+
+      {/* Recovery sits directly under replanning because it is the same
+          decision one rung further: what the robot may do when replanning
+          finds nothing. Declared on the deployment, not on the candidate
+          — a stack allowed to back up while its rival is not would be
+          compared on its recovery rather than on the layer this run is
+          about. */}
+      <div style={{ marginTop: 8 }}>
+        <label className="row" style={{ alignItems: "center", gap: 6 }}>
+          <input
+            type="checkbox"
+            checked={Boolean(at(draft, "recovery.enabled"))}
+            disabled={frozen}
+            onChange={(event) => set("recovery.enabled", event.target.checked)}
+          />
+          <strong>{t("deployments.form.recoveryEnabled")}</strong>
+        </label>
+        <p className="muted">{t("deployments.form.recoveryNote")}</p>
+        {at(draft, "recovery.enabled") ? (
+          <div className="grid">
+            {field(
+              "recovery.max_escalation",
+              t("deployments.form.recoveryEscalation"),
+              1,
+              t("deployments.form.recoveryEscalationNote"),
+            )}
+            {/* Its own budget because it spends something other than
+                time: this rung erases evidence rather than changing the
+                world, and a stack free to repeat it is free to forget an
+                obstacle it just saw. */}
+            {field(
+              "recovery.max_forgets",
+              t("deployments.form.recoveryForgets"),
+              1,
+              t("deployments.form.recoveryForgetsNote"),
+            )}
+          </div>
+        ) : null}
+      </div>
+    </>
+  );
+
+  const hardwareTab = (
+    <div className="row" style={{ alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
           {field("hardware.target_device", t("deployments.form.targetDevice"))}
           {field("hardware.total_ram_mb", t("deployments.form.totalRam"), 64)}
           {field("hardware.ram_budget_breakdown.os_and_middleware_mb", t("deployments.form.ramOs"), 64)}
@@ -1178,9 +1351,30 @@ export function DeploymentForm({
             64,
             leftOver === null ? undefined : t("deployments.form.availableRamNote", { left: String(leftOver) }),
           )}
-        </div>
-      ) : null}
+    </div>
+  );
 
+  /* Labels written out rather than assembled from the id: the locale
+     guard reads this file for translation keys written as literals, and
+     a key built from a template variable is a key it cannot see — so a
+     tab could ship without a translation and nothing would say so. */
+  const TAB_CONTENT: { id: FormTab; label: string; content: ReactNode }[] = [
+    { id: "mission", label: t("deployments.form.tabs.mission"), content: missionTab },
+    { id: "traffic", label: t("deployments.form.tabs.traffic"), content: trafficTab },
+    { id: "robot", label: t("deployments.form.tabs.robot"), content: robotTab },
+    { id: "constraints", label: t("deployments.form.tabs.constraints"), content: constraintsTab },
+    { id: "noise", label: t("deployments.form.tabs.noise"), content: noiseTab },
+    { id: "policies", label: t("deployments.form.tabs.policies"), content: policiesTab },
+    { id: "hardware", label: t("deployments.form.tabs.hardware"), content: hardwareTab },
+  ];
+  const TABS: TabDefinition<FormTab>[] = TAB_CONTENT.map((tab) => ({
+    ...tab,
+    badge: badgeFor(tab.id),
+    badgeLabel: badgeWord(tab.id),
+  }));
+
+  const mapColumn = (
+    <div ref={mapColumnRef}>
       <h4>{t("deployments.form.map")}</h4>
       <div className="toolbar">
         {(["library", "stored", "drawn"] as MapSource[]).map((option) => (
@@ -1254,80 +1448,11 @@ export function DeploymentForm({
         />
       ) : null}
 
-      {/* **Directly under whichever map picker was used, not up with the
-          other conditions.** It began beside the constraints, which is
-          where it belongs by category and the wrong place by use: the map
-          is chosen at the bottom of the form, and deciding whether the
-          robot may replan is a thought you have *while looking at the
-          traffic you just picked* — so the control was a scroll away from
-          the moment it occurs to anybody.
-
-          It is highlighted rather than ticked when the chosen scenario
-          has moving obstacles. Ticking it would be the form deciding an
-          evaluation condition on the author's behalf, and the whole
-          reason this field exists on the deployment is that such
-          decisions are declared rather than inferred. Highlighting says
-          "this is the choice you are about to skip"; ticking would say
-          "we made it for you". */}
-      <div className={traffic > 0 ? "notice warn" : ""} style={{ marginTop: 8 }}>
-        <label className="row" style={{ alignItems: "center", gap: 6 }}>
-          <input
-            type="checkbox"
-            checked={Boolean(at(draft, "replanning.enabled"))}
-            disabled={frozen}
-            onChange={(event) => set("replanning.enabled", event.target.checked)}
-          />
-          <strong>{t("deployments.form.replanningEnabled")}</strong>
-        </label>
-        {traffic > 0 && !at(draft, "replanning.enabled") ? (
-          <p className="muted">{t("deployments.form.replanningTraffic", { n: String(traffic) })}</p>
-        ) : (
-          <p className="muted">{t("deployments.form.replanningNote")}</p>
-        )}
-      </div>
-
-      {/* Recovery sits directly under replanning because it is the same
-          decision one rung further: what the robot may do when replanning
-          finds nothing. Declared on the deployment, not on the candidate
-          — a stack allowed to back up while its rival is not would be
-          compared on its recovery rather than on the layer this run is
-          about. */}
-      <div style={{ marginTop: 8 }}>
-        <label className="row" style={{ alignItems: "center", gap: 6 }}>
-          <input
-            type="checkbox"
-            checked={Boolean(at(draft, "recovery.enabled"))}
-            disabled={frozen}
-            onChange={(event) => set("recovery.enabled", event.target.checked)}
-          />
-          <strong>{t("deployments.form.recoveryEnabled")}</strong>
-        </label>
-        <p className="muted">{t("deployments.form.recoveryNote")}</p>
-        {at(draft, "recovery.enabled") ? (
-          <div className="grid">
-            {field(
-              "recovery.max_escalation",
-              t("deployments.form.recoveryEscalation"),
-              1,
-              t("deployments.form.recoveryEscalationNote"),
-            )}
-            {/* Its own budget because it spends something other than
-                time: this rung erases evidence rather than changing the
-                world, and a stack free to repeat it is free to forget an
-                obstacle it just saw. */}
-            {field(
-              "recovery.max_forgets",
-              t("deployments.form.recoveryForgets"),
-              1,
-              t("deployments.form.recoveryForgetsNote"),
-            )}
-          </div>
-        ) : null}
-      </div>
-
       {mapData ? (
-        <MissionPlacer
+        <MissionCanvas
           map={mapData}
+          width={canvas.width}
+          height={canvas.height}
           start={start}
           goal={goal}
           onChange={(poses) => {
@@ -1337,6 +1462,14 @@ export function DeploymentForm({
             // moving it is as much an edit as typing in a field.
             invalidateCheck();
           }}
+          toolbar={
+            <div className="toolbar" style={{ marginTop: 12 }}>
+              <PlacementCaption
+                mode={trafficUi.trafficPlacement?.mode ?? placing}
+                modeNote={placementNote(trafficUi.trafficPlacement, trafficOf(draft), t)}
+              />
+            </div>
+          }
           robotRadius={numberAt(draft, "robot.radius")}
           positionUncertainty={safetyEnvelope({
             localization_drift_m: numberAt(draft, "environment.sensor_noise.localization_drift_m"),
@@ -1347,8 +1480,6 @@ export function DeploymentForm({
           })}
           goalTolerance={numberAt(draft, "constraints.goal_tolerance_m")}
           disabled={frozen}
-          startNote={t("decisions.map.startHeadingNote")}
-          goalNote={t("decisions.map.goalHeadingNote")}
           mode={trafficUi.trafficPlacement?.mode ?? placing}
           onModeChange={(next) => {
             // The toolbar only speaks the mission's modes. Choosing one
@@ -1409,63 +1540,7 @@ export function DeploymentForm({
           nothing on purpose. */}
       {traffic > 0 ? <p className="muted">{t("deployments.form.traffic.legend")}</p> : null}
 
-      {/* Below the canvas rather than up with the noise it relates to:
-          placing a waypoint is a thing you do *while looking at the map*,
-          and a toolbar a screen away from the thing it draws on is the
-          arrangement that made the old editor hard to use. */}
-      <TrafficEditor
-        obstacles={trafficOf(draft)}
-        onChange={(next) => set("environment.dynamic_obstacles", next)}
-        selectedIndex={trafficUi.selectedObstacleIndex}
-        placement={trafficUi.trafficPlacement}
-        onSelect={(index) => dispatchTrafficUi({ type: "select", index })}
-        onPlacementToggle={(index, mode) => {
-          const active =
-            trafficUi.trafficPlacement?.index === index &&
-            trafficUi.trafficPlacement.mode === mode;
-          dispatchTrafficUi(active ? { type: "endPlacement" } : { type: "beginPlacement", index, mode });
-          // While traffic owns the click, the mission must not also
-          // believe the next one is its own.
-          if (!active) setPlacing("none");
-        }}
-        onAdd={() => {
-          const next = addObstacle(trafficOf(draft), start ?? { x: 0, y: 0 });
-          set("environment.dynamic_obstacles", next);
-          dispatchTrafficUi({ type: "obstacleAdded", count: next.length });
-        }}
-        onRemove={(index) => {
-          set("environment.dynamic_obstacles", removeObstacle(trafficOf(draft), index));
-          dispatchTrafficUi({ type: "obstacleRemoved", index });
-        }}
-        onKindChange={(index, kind) => {
-          set(
-            "environment.dynamic_obstacles",
-            trafficOf(draft).map((each, at) =>
-              at === index ? changeMotionKind(each, kind, start ?? { x: 0, y: 0 }) : each,
-            ),
-          );
-          // The old law's handles and placements name fields that no
-          // longer exist; the row stays selected — it is still the one
-          // being edited.
-          dispatchTrafficUi({ type: "motionKindChanged", index });
-        }}
-        disabled={frozen}
-        /* Everything addressed to the environment that no control on
-           this page already renders. Passing only `environment` left a
-           deep path like `…dynamic_obstacles.0.radius` with nowhere to
-           go, and a refusal nobody can see blocks filing without saying
-           why. The noise amplitudes and the closing speed are excluded
-           because they have inputs of their own, and `errorFor` puts
-           their refusals beside them. */
-        errors={shownErrors.filter(
-          (entry) =>
-            (entry.path === "environment" || entry.path.startsWith("environment.")) &&
-            !entry.path.startsWith("environment.sensor_noise") &&
-            entry.path !== V_OBSTACLE_MAX,
-        )}
-      />
-
-      <div className="row" style={{ marginTop: 8, alignItems: "flex-end", gap: 12 }}>
+      <div className="row" style={{ marginTop: 8, alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
         <label className="field" style={{ width: 130 }}>
           <span>{t("deployments.form.previewTime")}</span>
           <input
@@ -1517,29 +1592,144 @@ export function DeploymentForm({
           </ul>
         </div>
       ) : null}
+    </div>
+  );
 
-      <div className="row" style={{ marginTop: 16, alignItems: "center", gap: 12 }}>
-        {/* Both frozen, and the reason is the same for each: while a map
-            is being written out the canvas already shows it and the
-            draft does not, so filing would store a deployment nobody is
-            looking at. */}
-        <button type="button" className="primary" disabled={frozen || !complete} onClick={() => void submit()}>
-          {t("deployments.file.submit")}
-        </button>
-        <button type="button" disabled={frozen || !complete} onClick={() => void check()}>
-          {checking ? t("deployments.form.validateBusy") : t("deployments.form.validate")}
-        </button>
-        <span className="muted">{t("deployments.file.idRule")}</span>
+  return (
+    <div ref={shellRef}>
+      {error ? <div className="error-box">{error}</div> : null}
+
+      {/* Above the tabs rather than on one of them: the id and the two
+          claim fields are what the deployment *is*, and burying them
+          behind a tab would make the first thing an author types the
+          one thing they have to go looking for. */}
+      <h4>{t("deployments.form.identity")}</h4>
+      <div className="row" style={{ alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
+        {field("id", t("deployments.form.id"), undefined, t("deployments.form.idNote"))}
+        <Choice
+          label={t("deployments.form.claimLevel")}
+          value={at(draft, "claim_level")}
+          options={["mission", "deployment", "robust_deployment"]}
+          disabled={frozen}
+          onChange={(value) => set("claim_level", value)}
+          error={errorFor("claim_level")}
+        />
+        <Choice
+          label={t("deployments.form.role")}
+          value={at(draft, "deployment_role")}
+          options={["acceptance", "customer", "instrument"]}
+          disabled={frozen}
+          onChange={(value) => set("deployment_role", value)}
+          error={errorFor("deployment_role")}
+        />
       </div>
-      <p className="muted">{t("deployments.form.validateNote")}</p>
-      {checkedClean ? <p className="notice">{t("deployments.form.validateOk")}</p> : null}
-    </>
+
+      {/* **The map beside the controls, not a screen below them.**
+          Thirty fields stacked in one column put the map — the thing
+          most of them are *about* — near the bottom, so choosing a
+          traffic route meant scrolling away from the picture of it. The
+          columns collapse when the form is too narrow to hold both; see
+          `lib/canvasSize` for where that width comes from. */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: twoColumns ? "minmax(480px, 1fr) minmax(420px, 460px)" : "1fr",
+          gap: 24,
+          alignItems: "start",
+          marginTop: 12,
+        }}
+      >
+        {mapColumn}
+        <div>
+          <Tabs
+            tabs={TABS}
+            active={activeTab}
+            onSelect={setActiveTab}
+            idPrefix="deployment-form"
+            ariaLabel={t("deployments.form.tabs.label")}
+          />
+        </div>
+      </div>
+
+      {/* **Sticky inside the form, not fixed to the window.** Fixed
+          would sit over whatever is at the bottom of the page and take
+          a bite out of a phone screen permanently. */}
+      <div
+        style={{
+          position: "sticky",
+          bottom: 0,
+          marginTop: 16,
+          paddingTop: 12,
+          paddingBottom: 12,
+          background: "var(--panel, #16181d)",
+          borderTop: "1px solid var(--border, #2a2f3a)",
+          zIndex: 2,
+        }}
+      >
+        <div className="row" style={{ alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          {/* Both frozen, and the reason is the same for each: while a map
+              is being written out the canvas already shows it and the
+              draft does not, so filing would store a deployment nobody is
+              looking at. */}
+          <button type="button" className="primary" disabled={frozen || !complete} onClick={() => void submit()}>
+            {t("deployments.file.submit")}
+          </button>
+          <button type="button" disabled={frozen || !complete} onClick={() => void check()}>
+            {checking ? t("deployments.form.validateBusy") : t("deployments.form.validate")}
+          </button>
+          <span className="muted">{t("deployments.file.idRule")}</span>
+          {tally.total > 0 ? (
+            <span className="badge err">
+              {t("deployments.form.tabs.total", { n: String(tally.total) })}
+            </span>
+          ) : null}
+        </div>
+        <p className="muted">{t("deployments.form.validateNote")}</p>
+        {checkedClean ? <p className="notice">{t("deployments.form.validateOk")}</p> : null}
+        {/* Addresses no tab claims. Shown here in full rather than
+            counted into whichever tab looked closest: a refusal filed
+            under a heading that does not own it is a refusal the author
+            will not find, and filing stays blocked meanwhile. */}
+        {tally.unmapped.map((entry) => (
+          <p key={`${entry.path}:${entry.message}`} className="notice warn">
+            {entry.path}: {entry.message}
+          </p>
+        ))}
+      </div>
+    </div>
   );
 }
 
 function numberAt(draft: ProfileDraft, path: string): number | undefined {
   const value = at(draft, path);
   return typeof value === "number" ? value : undefined;
+}
+
+/** The width of an element, kept current as it changes.
+ *
+ * A callback ref rather than `useRef`, because the node this watches
+ * does not exist on the first render — the form shows a loading line
+ * until the template arrives, and an effect that ran once at mount
+ * would observe nothing and never look again.
+ *
+ * Zero until the first measurement. `canvasSize` treats that as "not
+ * measured yet" and draws full size for one frame rather than
+ * collapsing to nothing.
+ */
+function useMeasuredWidth(): [(node: HTMLDivElement | null) => void, number] {
+  const [node, setNode] = useState<HTMLDivElement | null>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    if (!node || typeof ResizeObserver === "undefined") return;
+    setWidth(node.getBoundingClientRect().width);
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) setWidth(entry.contentRect.width);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [node]);
+  return [setNode, width];
 }
 
 /** Draw a grid from scratch, save it, and hand it to the form.

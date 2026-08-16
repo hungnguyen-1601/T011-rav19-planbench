@@ -17,8 +17,21 @@
  *
  * The only state this component does own is which mode the toolbar is
  * in, and that is a tool selection rather than data.
+ *
+ * **Three parts, one file.** The deployment form puts the canvas in one
+ * column and the buttons and number fields in a tabbed panel in
+ * another, so the three are exported separately and `MissionPlacer`
+ * became the arrangement `/decisions` already had. They stay in this
+ * file deliberately: a dozen assertions read this path to pin what a
+ * click does and what state may live here, and moving code between
+ * files turns every one of them red while nothing about the behaviour
+ * has changed. The precedent is the painter split — *same assertion,
+ * different file it reads* — and it is worth paying only when the
+ * boundary genuinely moves. Here it does not: what changed is who
+ * arranges the parts, not what they know.
  */
 
+import type { ReactNode } from "react";
 import { useRef, useState } from "react";
 
 import type { ObstacleMarker } from "@/components/MapCanvas";
@@ -112,7 +125,77 @@ export interface MissionPlacerProps {
   previewTime?: number;
 }
 
-export function MissionPlacer({
+/** The two mode buttons, wherever the page wants to put them.
+ *
+ * Separated because the deployment form's canvas is in one column and
+ * its controls are in a tabbed panel in another; `/decisions` keeps
+ * them where they were, immediately above the map. */
+export function PlacementButtons({
+  mode,
+  onModeChange,
+  disabled = false,
+}: {
+  mode: PlacementMode;
+  onModeChange: (next: PlacementMode) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {(["start", "goal"] as const).map((which) => (
+        <button
+          key={which}
+          type="button"
+          disabled={disabled}
+          className={mode === which ? "active" : undefined}
+          aria-pressed={mode === which}
+          onClick={() => onModeChange(mode === which ? "none" : which)}
+        >
+          {t(`decisions.map.place.${which}`)}
+        </button>
+      ))}
+    </>
+  );
+}
+
+/** What the next click does, in words. */
+export function PlacementCaption({
+  mode,
+  modeNote,
+}: {
+  mode: PlacementMode;
+  modeNote?: string;
+}) {
+  const { t } = useTranslation();
+  const missionMode = mode === "none" || mode === "start" || mode === "goal";
+  return (
+    <span className="muted">
+      {missionMode ? t(`decisions.map.mode.${mode}`) : (modeNote ?? "")}
+    </span>
+  );
+}
+
+export interface MissionCanvasProps
+  extends Omit<MissionPlacerProps, "mode" | "onModeChange" | "startNote" | "goalNote"> {
+  /** Fully controlled here: the canvas is never the thing that owns
+   *  which mode the page is in. */
+  mode: PlacementMode;
+  onModeChange: (next: PlacementMode) => void;
+  /** Rendered above the map — the buttons, the caption, or nothing at
+   *  all when the page keeps its controls elsewhere. */
+  toolbar?: ReactNode;
+  /** Canvas width in CSS pixels. The canvas sets its own `style.width`
+   *  from this, which is what keeps a press's coordinates right: the
+   *  pointer maths assumes the drawing surface and the element are the
+   *  same size, so a `width: 100%` stretch would land clicks somewhere
+   *  else entirely. */
+  width?: number;
+  height?: number;
+}
+
+/** The map, and what a gesture on it means. No pose fields, no
+ *  buttons — those are the caller's to place. */
+export function MissionCanvas({
   map,
   start,
   goal,
@@ -121,12 +204,12 @@ export function MissionPlacer({
   positionUncertainty,
   goalTolerance,
   disabled = false,
-  startNote,
-  goalNote,
   mode,
   onModeChange,
   onPlace,
-  modeNote,
+  toolbar,
+  width,
+  height,
   onPointerDownFirst,
   onPointerMoveWhileDown,
   onPointerFinished,
@@ -135,11 +218,9 @@ export function MissionPlacer({
   obstacleSnapshots,
   authoredTraffic,
   previewTime,
-}: MissionPlacerProps) {
-  const { t } = useTranslation();
-  const [own, setOwn] = useState<PlacementMode>("start");
-  const placing = mode ?? own;
-  const setPlacing = onModeChange ?? setOwn;
+}: MissionCanvasProps) {
+  const placing = mode;
+  const setPlacing = onModeChange;
 
   /** Move whichever pose the mode names, keeping its heading.
    *
@@ -185,31 +266,13 @@ export function MissionPlacer({
 
   return (
     <>
-      {/* Explicit modes, and a caption saying what the next click does.
-          The same shape the scenario editor uses, and for the same
-          reason: a hidden alternation makes nudging a start land a
-          goal. */}
-      <div className="toolbar" style={{ marginTop: 12 }}>
-        {(["start", "goal"] as const).map((which) => (
-          <button
-            key={which}
-            type="button"
-            disabled={disabled}
-            className={placing === which ? "active" : undefined}
-            aria-pressed={placing === which}
-            onClick={() => setPlacing(placing === which ? "none" : which)}
-          >
-            {t(`decisions.map.place.${which}`)}
-          </button>
-        ))}
-        <span className="muted">
-          {missionMode ? t(`decisions.map.mode.${placing}`) : (modeNote ?? "")}
-        </span>
-      </div>
+      {toolbar}
 
       <div style={{ marginTop: 8 }}>
         <MapView
           map={map}
+          width={width}
+          height={height}
           startPose={start ?? undefined}
           goalPose={goal ?? undefined}
           robotRadius={robotRadius}
@@ -272,10 +335,33 @@ export function MissionPlacer({
               })}
         />
       </div>
+    </>
+  );
+}
 
-      {/* Typed as well as clicked. A canvas cannot land on 2.00 exactly,
-          and a deployment written down to two decimals is the one
-          somebody can repeat from the report. */}
+/** Both poses as numbers, for a caller that has somewhere to put them.
+ *
+ * Typed as well as clicked. A canvas cannot land on 2.00 exactly, and a
+ * deployment written down to two decimals is the one somebody can
+ * repeat from the report. */
+export function MissionPoseFields({
+  start,
+  goal,
+  onChange,
+  disabled = false,
+  startNote,
+  goalNote,
+}: {
+  start: Pose2D | null;
+  goal: Pose2D | null;
+  onChange: (next: { start: Pose2D | null; goal: Pose2D | null }) => void;
+  disabled?: boolean;
+  startNote: string;
+  goalNote: string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
       <PoseFields
         label={t("decisions.map.start")}
         value={start}
@@ -289,6 +375,45 @@ export function MissionPlacer({
         disabled={disabled}
         onChange={(pose) => onChange({ start, goal: pose })}
         note={goalNote}
+      />
+    </>
+  );
+}
+
+/** The three parts in the arrangement `/decisions` has always had.
+ *
+ * Uncontrolled mode when the caller passes none, which is what that
+ * page relies on. */
+export function MissionPlacer(props: MissionPlacerProps) {
+  const { mode, onModeChange, startNote, goalNote, modeNote, disabled = false } = props;
+  const [own, setOwn] = useState<PlacementMode>("start");
+  const placing = mode ?? own;
+  const setPlacing = onModeChange ?? setOwn;
+
+  return (
+    <>
+      {/* Explicit modes, and a caption saying what the next click does.
+          The same shape the scenario editor uses, and for the same
+          reason: a hidden alternation makes nudging a start land a
+          goal. */}
+      <MissionCanvas
+        {...props}
+        mode={placing}
+        onModeChange={setPlacing}
+        toolbar={
+          <div className="toolbar" style={{ marginTop: 12 }}>
+            <PlacementButtons mode={placing} onModeChange={setPlacing} disabled={disabled} />
+            <PlacementCaption mode={placing} modeNote={modeNote} />
+          </div>
+        }
+      />
+      <MissionPoseFields
+        start={props.start}
+        goal={props.goal}
+        onChange={props.onChange}
+        disabled={disabled}
+        startNote={startNote}
+        goalNote={goalNote}
       />
     </>
   );
