@@ -41,6 +41,9 @@ import {
   type RunCandidate,
   type TracePayload,
   observationClasses,
+  getCritique,
+  type Critique,
+  type CritiqueFinding,
 } from "@/lib/decisions";
 import { downloadDecisionReport } from "@/lib/reports";
 
@@ -84,6 +87,7 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
       <GateTable run={run} />
       <TracePanel run={run} />
       <Outcome run={run} />
+      <CritiquePanel runId={run.id} />
       <HumanActs run={run} onDone={refresh} />
       <Conditions run={run} />
       <Provenance run={run} />
@@ -1032,5 +1036,157 @@ function Figure({ label, value, unknown }: { label: string; value: string; unkno
       <span className="stat-card-head">{label}</span>
       <span className={`stat-card-value${unknown ? " unknown" : ""}`}>{value}</span>
     </div>
+  );
+}
+
+/** Objections to this run, before anyone signs it.
+ *
+ * **Above the two human acts, and that placement is the argument.** The
+ * next thing a reviewer does after reading the outcome is approve or
+ * reject it; anything meant to inform that decision has to sit between
+ * the two, not below them.
+ *
+ * Nothing loads until asked. The rules are cheap, but the model costs a
+ * call and several seconds, and a page that quietly spends both on every
+ * visit teaches people to stop reading it.
+ *
+ * The two buttons are deliberately separate rather than a toggle. They
+ * answer different questions — "what does the checklist say" and "what
+ * does a model make of this" — and the second is worth reaching for
+ * knowingly, because its answer does not reproduce.
+ */
+function CritiquePanel({ runId }: { runId: string }) {
+  const { t } = useTranslation();
+  const [critique, setCritique] = useState<Critique | null>(null);
+  const [busy, setBusy] = useState<"" | "rules" | "model">("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function load(useModel: boolean) {
+    setBusy(useModel ? "model" : "rules");
+    setError(null);
+    try {
+      setCritique(await getCritique(runId, useModel));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <div className="panel">
+      <h3>{t("critique.title")}</h3>
+      <p className="muted">{t("critique.subtitle")}</p>
+
+      <div className="toolbar">
+        <button disabled={busy !== ""} onClick={() => void load(false)}>
+          {busy === "rules" ? t("critique.running") : t("critique.runRules")}
+        </button>
+        <button className="primary" disabled={busy !== ""} onClick={() => void load(true)}>
+          {busy === "model" ? t("critique.asking") : t("critique.runModel")}
+        </button>
+      </div>
+
+      {error ? <div className="error-box">{error}</div> : null}
+
+      {critique ? <CritiqueBody critique={critique} /> : null}
+    </div>
+  );
+}
+
+function CritiqueBody({ critique }: { critique: Critique }) {
+  const { t } = useTranslation();
+  const usedModel = Boolean(critique.provider);
+
+  return (
+    <>
+      {usedModel ? (
+        <p className="muted" style={{ fontSize: 12 }}>
+          <code>
+            {critique.provider}
+            {critique.model ? ` · ${critique.model}` : ""}
+          </code>{" "}
+          <span className={critique.deterministic ? "badge warn" : "badge ok"}>
+            {t(critique.deterministic ? "critique.mock" : "critique.live")}
+          </span>
+        </p>
+      ) : null}
+
+      {/* Published, not buried. A reader weighing the prose needs to know
+          how often this model pointed at a field that was not there. */}
+      {critique.fabricated > 0 ? (
+        <div className="notice">
+          {t("critique.fabricated", { count: String(critique.fabricated) })}
+        </div>
+      ) : null}
+      {critique.refused ? (
+        <div className="notice">
+          {t("critique.refused")}: {critique.refused}
+        </div>
+      ) : null}
+
+      {critique.summary ? <p>{critique.summary}</p> : null}
+
+      {critique.findings.length === 0 ? (
+        /* Zero findings is a result, and it only means something beside
+           the number of rules that produced it. */
+        <p className="muted">
+          {t("critique.clean", { rules: String(critique.rules_applied) })}
+        </p>
+      ) : (
+        <>
+          <p className="muted" style={{ fontSize: 12 }}>
+            {t("critique.counts", {
+              blocking: String(critique.blocking),
+              material: String(critique.material),
+              disclosure: String(critique.disclosure),
+              omissions: String(critique.omissions),
+              rules: String(critique.rules_applied),
+            })}
+          </p>
+          <ul className="findings">
+            {critique.findings.map((finding, index) => (
+              <FindingRow key={`${finding.code}-${index}`} finding={finding} />
+            ))}
+          </ul>
+        </>
+      )}
+    </>
+  );
+}
+
+const SEVERITY_BADGE: Record<CritiqueFinding["severity"], string> = {
+  blocking: "badge err",
+  material: "badge warn",
+  disclosure: "badge",
+};
+
+function FindingRow({ finding }: { finding: CritiqueFinding }) {
+  const { t } = useTranslation();
+  return (
+    <li>
+      <div className="toolbar" style={{ gap: 8, alignItems: "baseline" }}>
+        <span className={SEVERITY_BADGE[finding.severity]}>
+          {t(`critique.severity.${finding.severity}`)}
+        </span>
+        {/* Which half of the system said this. A reader gives different
+            weight to a rule that reproduces and a model that does not. */}
+        <span className={finding.source === "model" ? "badge warn" : "badge muted-badge"}>
+          {t(`critique.source.${finding.source}`)}
+        </span>
+        <code>{finding.code}</code>
+        {finding.kind === "omission" ? (
+          <span className="badge muted-badge">{t("critique.kind.omission")}</span>
+        ) : null}
+      </div>
+      <p style={{ marginBottom: 4 }}>{finding.ground}</p>
+      <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>
+        {t("critique.claim")}: {finding.claim} · {t("critique.evidence")}:{" "}
+        <code>{finding.field_path}</code>
+      </p>
+      <p className="muted" style={{ fontSize: 12 }}>
+        {t("critique.next")}: {finding.suggested_check}
+      </p>
+    </li>
   );
 }

@@ -325,6 +325,103 @@ Nếu chỉ cài `requirements.txt`, `tests/test_rl.py` sẽ hiện **skipped** 
 đúng như thiết kế, vì nó cần nhóm PPO trong `requirements-optional.txt`.
 Mọi test còn lại vẫn chạy.
 
+## Biến môi trường
+
+Sao `.env.example` sang `.env` rồi điền. **Bỏ trống hết vẫn chạy được** —
+mỗi tính năng thiếu key sẽ giảm chế độ có báo, không crash.
+
+| Biến | Bắt buộc? | Để làm gì |
+|---|---|---|
+| `PLANBENCH_ENABLE_DEV_LOGIN` | nên bật khi dev | `true` thì trang đăng nhập có form user/mật khẩu, không cần OAuth |
+| `PLANBENCH_SEED_USERS` | đi kèm cái trên | `tên:mật_khẩu`, phân cách bằng dấu phẩy |
+| `AUTH_SECRET` | nên có | Ký token. Bỏ trống thì mỗi lần khởi động lại sinh secret mới, mọi người bị đăng xuất |
+| `PLANBENCH_AGENT_PROVIDER` | không | `auto` (mặc định), `gemini`, `anthropic`, `openai`, `mock`… |
+| `PLANBENCH_AGENT_MODEL` | **có, nếu dùng LLM** | Tên model. `auto` **bỏ qua** provider không có tên model — đây là lỗi hay gặp nhất |
+| `GEMINI_API_KEY` | nếu dùng Gemini | Key từ Google AI Studio |
+| `ANTHROPIC_API_KEY` | nếu dùng Claude | Provider này có model mặc định nên không cần `AGENT_MODEL` |
+| `PLANBENCH_DATABASE_URL` | không | Bỏ trống dùng SQLite cạnh repo. Ghi `=` rỗng thì thành in-memory, mất hết khi tắt |
+| `GOOGLE_CLIENT_ID` / `_SECRET` | không | Đăng nhập Google. Bỏ trống thì nút đó không hiện |
+
+Cấu hình LLM tối thiểu để chạy Gemini:
+
+```bash
+PLANBENCH_AGENT_PROVIDER=auto
+PLANBENCH_AGENT_MODEL=gemini-3-flash-preview
+GEMINI_API_KEY=<key cua ban>
+```
+
+Kiểm tra provider có dùng được không **trước khi** chạy cả stack:
+
+```bash
+set -a; source .env; set +a
+PYTHONPATH="services/agent_service:packages/schemas:packages/planning:packages/metrics:packages/benchmark:packages/decision:services/simulator:apps/api:." \
+  .venv/bin/python scripts/check_agent_provider.py
+```
+
+Nó in bảng provider nào sẵn sàng, còn thiếu gì, rồi gọi thật một request
+và thử structured output. `Determinist: False` nghĩa là đang chạy model
+thật; `True` nghĩa là đang rơi về mock tất định.
+
+## Thử nhanh
+
+### Phản biện một phép so (không cần LLM, ~2 giây)
+
+Bộ luật chất vấn một kết quả đã lưu trước khi người ký duyệt:
+
+```bash
+PYTHONPATH="packages/decision:packages/schemas" .venv/bin/python -c "
+import json, glob
+from planbench_decision.self_check import critique
+for f in sorted(glob.glob('artifacts/runs/*/*/comparison_report.json')):
+    findings = critique(json.load(open(f)))
+    print(f'{f.split(\"/\")[-2][:44]:<46} {len(findings)} finding')
+    for x in findings:
+        print(f'   [{x.severity:<10}] {x.code}')
+"
+```
+
+### Phản biện có LLM (~30 giây)
+
+```bash
+set -a; source .env; set +a
+PYTHONPATH="services/agent_service:packages/decision:packages/schemas:packages/benchmark:packages/planning:packages/metrics:services/simulator:apps/api:." \
+.venv/bin/python -c "
+import json, glob
+from planbench_agent.critique import critique_with_model
+from planbench_agent.factory import build_provider
+from planbench_api.config import get_settings
+s = get_settings()
+p = build_provider(s.agent_provider, model=s.agent_model or None)
+f = [x for x in glob.glob('artifacts/runs/*/*/comparison_report.json') if 'warehouse' in x][0]
+r = critique_with_model(json.load(open(f)), p)
+print(p.name, p.model)
+print(r.summary)
+print('fabricated:', r.fabricated)
+" 2>&1 | grep -v '^{'
+```
+
+`fabricated: 0` nghĩa là model không trỏ vào trường nào không tồn tại.
+
+### Qua giao diện
+
+1. `bash scripts/dev_stack.sh start`
+2. Mở `http://localhost:3000`, đăng nhập
+3. **Deployment** → khai một thế giới, hoặc dùng cái có sẵn
+4. **Quyết định** → chạy phép so hai ứng viên
+5. Mở kết quả → mục **Phản biện** → bấm *Kiểm bằng luật*, rồi *Hỏi thêm model*
+
+### Qua API
+
+```bash
+curl -H "Authorization: Bearer <token>" \
+  "http://localhost:8000/api/v1/decisions/<run_id>/critique"
+
+curl -H "Authorization: Bearer <token>" \
+  "http://localhost:8000/api/v1/decisions/<run_id>/critique?use_model=true"
+```
+
+Hoặc mở `http://localhost:8000/docs`, bấm **Authorize**, rồi thử trực tiếp.
+
 ## Cấu trúc thư mục
 
 ```

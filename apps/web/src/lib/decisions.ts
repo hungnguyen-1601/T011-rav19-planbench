@@ -758,3 +758,46 @@ export function withdrawConfig(runId: string, comment: string): Promise<Decision
     body: JSON.stringify({ comment }),
   });
 }
+
+// ---------------------------------------------------------------
+// Critique — objections to a run, before anyone signs it
+// ---------------------------------------------------------------
+
+export interface CritiqueFinding {
+  code: string;
+  severity: "blocking" | "material" | "disclosure";
+  kind: "present" | "omission";
+  claim: string;
+  ground: string;
+  field_path: string;
+  suggested_check: string;
+  /** `rule` reproduces exactly; `model` does not. Shown, not hidden. */
+  source: "rule" | "model";
+  rank: number | null;
+}
+
+export interface Critique {
+  run_id: string;
+  rules_applied: number;
+  findings: CritiqueFinding[];
+  blocking: number;
+  material: number;
+  disclosure: number;
+  omissions: number;
+  from_model: number;
+  summary: string;
+  /** Objections the model invented and had taken away. Published on
+   *  purpose: a reader deciding how much to trust the prose needs it. */
+  fabricated: number;
+  refused: string;
+  provider: string;
+  model: string;
+  deterministic: boolean;
+}
+
+/** Objections to a run. `useModel` adds a language model on top of the
+ *  rules — it can reorder them and add its own, never remove one. */
+export function getCritique(runId: string, useModel = false): Promise<Critique> {
+  const suffix = useModel ? "?use_model=true" : "";
+  return authFetch<Critique>(`/decisions/${encodeURIComponent(runId)}/critique${suffix}`);
+}
