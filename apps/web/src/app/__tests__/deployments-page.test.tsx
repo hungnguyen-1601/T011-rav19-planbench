@@ -464,6 +464,42 @@ describe("the traffic comes with the map it belongs to", () => {
     expect(EN_FORM["deployments.form.traffic.legend"]).toMatch(/not a control/i);
   });
 
+  it("lets the map be edited directly, and decides each press in one place", () => {
+    /* Placing used to be the only thing a press could mean, so moving a
+       waypoint meant re-placing it from the toolbar. The three meanings
+       a press now has — place, grab, select — are decided by one table
+       rather than by whichever handler ran first. */
+    expect(FORM).toContain("interpretPointer(");
+    expect(FORM).toContain("onPointerDownFirst={claimPress}");
+    expect(FORM).toContain("moveHandle(");
+  });
+
+  it("writes a drag through the document as it is now, not as it was", () => {
+    /* One write per frame, each onto `draftRef.current`. A handler
+       closed over the render's `draft` would rebuild from the state
+       before the previous frame and the point would jitter between two
+       positions — the same class of stale write the map adoption had
+       across its await. */
+    expect(FORM).toContain("requestAnimationFrame");
+    const live = FORM.slice(FORM.indexOf("const setLive"), FORM.indexOf("// The defaults, from"));
+    expect(live).toContain("draftRef.current");
+    expect(live).toContain("flushDrag");
+  });
+
+  it("never lets a press that did not travel move anything", () => {
+    /* A press on a waypoint is a candidate drag until it clears
+       `dragGate`. Below that it is a click — it selected, or it was
+       half of a double-click — and nudging the point under it would be
+       an edit nobody asked for. */
+    expect(FORM).toContain("dragGate(");
+    const finish = FORM.slice(FORM.indexOf("const endDrag"), FORM.indexOf("const removeWaypointUnder"));
+    expect(finish).toContain("if (!active.committed) return;");
+    /* And a cancel keeps the last position a *move* reported: the
+       cancel event itself can arrive from a gesture interruption
+       carrying one nobody pointed at. */
+    expect(finish).toContain("active.lastWorld");
+  });
+
   it("still refuses to judge the obstacles itself", () => {
     /* The rule did not soften when the work moved into its own files.
        `TaskProfile` decides; the browser asks. What would break this is
@@ -507,14 +543,22 @@ describe("the traffic comes with the map it belongs to", () => {
        at first, so typing in a field invalidated it while moving the
        start pose, adopting a map or applying a vehicle did not. */
     expect(FORM).toContain("invalidateCheck");
-    /* Four ways to change the document — a field, the map, the vehicle,
-       the mission — and five calls, because the map retires the verdict
-       twice: once when it is asked for, since the picker already shows
-       something the draft does not, and once when the write lands and
-       the draft actually changes. Counted rather than named so a further
-       way added later fails here instead of silently keeping a stale
-       tick. */
-    expect(FORM.match(/invalidateCheck\(\)/g) ?? []).toHaveLength(5);
+    /* Five ways to change the document — a field, the map, the vehicle,
+       the mission, and dragging a point on the canvas — across six
+       calls, because the map retires the verdict twice: once when it is
+       asked for, since the picker already shows something the draft
+       does not, and once when the write lands and the draft actually
+       changes. Counted rather than named so a further way added later
+       fails here instead of silently keeping a stale tick.
+
+       The sixth arrived with handle dragging and is a second *writer*
+       rather than a second rule: `setLive` writes onto
+       `draftRef.current` instead of the render's `draft`, because a
+       drag writes once per animation frame and a closure captured at
+       render time would rebuild the document from the state before the
+       previous frame. Both writers retire the verdict, which is the
+       thing this count is here to protect. */
+    expect(FORM.match(/invalidateCheck\(\)/g) ?? []).toHaveLength(6);
     // And a reply already in flight when the document moved on is an
     // answer to a question nobody is asking any more.
     expect(FORM).toContain("revision.current !== asked");

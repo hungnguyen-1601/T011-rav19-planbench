@@ -39,8 +39,15 @@ import {
   snapshotsOf,
   trafficOf,
 } from "@/lib/traffic";
-import { overlayOf } from "@/lib/trafficOverlay";
-import { IDLE_TRAFFIC_UI, trafficUiReducer } from "@/lib/trafficUi";
+import {
+  deleteWaypointAt,
+  hitTest,
+  interpretDoubleClick,
+  interpretPointer,
+  moveHandle,
+  overlayOf,
+} from "@/lib/trafficOverlay";
+import { IDLE_TRAFFIC_UI, dragGate, trafficUiReducer, type Hit } from "@/lib/trafficUi";
 import {
   DEFAULT_LIBRARY_SCENARIO,
   at,
@@ -58,7 +65,7 @@ import { emptyBorderedMap } from "@/lib/demoMap";
 import { useTranslation } from "@/lib/i18n";
 import { listRobotProfiles, type RobotProfile } from "@/lib/models";
 import type { LibraryEntry } from "@/lib/platformTypes";
-import type { MapData, MapSummary, Pose2D, ScenarioPreview } from "@/lib/types";
+import type { MapData, MapSummary, Point2D, Pose2D, ScenarioPreview } from "@/lib/types";
 import { safetyEnvelope } from "@/lib/keepOut";
 
 /** Where the map under this deployment comes from. */
@@ -258,6 +265,31 @@ export function DeploymentForm({
     setPreview(null);
   }, [previewSeq]);
 
+  /** The press in flight, as the gesture itself needs to see it.
+   *
+   * **A companion to the reducer's `activeDrag`, not a rival.** The
+   * reducer owns what is *shown* — which row is lit, whether the drag
+   * has committed — and a dispatch is not visible to the handler that
+   * made it, while a pointer-move arriving a millisecond later has to
+   * know what was grabbed. So the mechanics live in a ref and the
+   * display in the reducer, and the two are written at the same
+   * moments.
+   */
+  const gesture = useRef<{
+    hit: Hit;
+    downClient: Point2D;
+    committed: boolean;
+    /** The last position a *move* reported. What `pointercancel`
+     *  flushes: cancel can arrive from a gesture interruption carrying
+     *  a position nobody pointed at. */
+    lastWorld: Point2D | null;
+    pending: Point2D | null;
+    frame: number | null;
+  } | null>(null);
+  /** Whether the current click sequence contained a real drag, so the
+   *  double-click that ends it knows not to also delete. */
+  const draggedInSequence = useRef(false);
+
   const set = useCallback(
     (path: string, value: unknown) => {
       if (draft) onDraftChange(withValue(draft, path, value));
@@ -265,6 +297,65 @@ export function DeploymentForm({
     },
     [draft, onDraftChange, invalidateCheck],
   );
+
+  /** The same write, but onto the document as it is *now*.
+   *
+   * A drag writes once per animation frame, and `set` closes over the
+   * `draft` of the render that created the handler — so the second
+   * frame would rebuild the document from the state before the first,
+   * and the point would jitter between two positions. `draftRef` is
+   * already the answer to this elsewhere (the map adoption had the same
+   * bug across its `await`); this is the same fix for a callback that
+   * outlives its render by design.
+   */
+  const setLive = useCallback(
+    (path: string, value: unknown) => {
+      const current = draftRef.current;
+      if (current) onDraftChange(withValue(current, path, value));
+      invalidateCheck();
+    },
+    [onDraftChange, invalidateCheck],
+  );
+
+  /** Write the held handle to a position. */
+  const flushDrag = useCallback(
+    (point: Point2D) => {
+      const active = gesture.current;
+      if (!active) return;
+      const obstacles = trafficOf(draftRef.current);
+      if (!obstacles[active.hit.index]) return;
+      setLive(
+        "environment.dynamic_obstacles",
+        obstacles.map((obstacle, at) =>
+          at === active.hit.index
+            ? { ...obstacle, motion: moveHandle(obstacle.motion, active.hit.handle, point) }
+            : obstacle,
+        ),
+      );
+    },
+    [setLive],
+  );
+
+  /** One write per frame, however many moves the pointer reports.
+   *
+   * A move arrives per pixel travelled, and each one rebuilds the
+   * document and re-renders the form. Coalescing to the frame keeps the
+   * drag smooth; the position that matters — where the pointer stopped
+   * — is written by the up handler regardless, so nothing is lost by
+   * dropping the intermediate ones. */
+  const scheduleFlush = useCallback(() => {
+    const active = gesture.current;
+    if (!active || active.frame !== null) return;
+    active.frame = requestAnimationFrame(() => {
+      const current = gesture.current;
+      if (!current) return;
+      current.frame = null;
+      if (current.pending) {
+        flushDrag(current.pending);
+        current.pending = null;
+      }
+    });
+  }, [flushDrag]);
 
   // The defaults, from the shipped profile rather than a copy in here.
   useEffect(() => {
@@ -490,6 +581,115 @@ export function DeploymentForm({
    * to render such an answer, so this is the half that stops the author
    * wondering why their check did nothing. */
   const frozen = busy || checking || adopting;
+
+  /** How near the pointer has to be, in screen pixels, to catch a
+   *  point. Converted to metres at each event, because a map zoomed
+   *  out has a very different idea of how far 8 px is. */
+  const HIT_TOLERANCE_PX = 8;
+
+  const whatIsUnder = (x: number, y: number, worldPerPixel: number) =>
+    hitTest(
+      trafficOf(draft),
+      trafficUi.selectedObstacleIndex,
+      { x, y },
+      HIT_TOLERANCE_PX * worldPerPixel,
+    );
+
+  /** First refusal on every press. Returns whether the traffic took it.
+   *
+   * Declining is what leaves the mission placer exactly as it was: a
+   * press on empty floor still moves the start, and a press while a
+   * placement is armed still places, including the guard that stops a
+   * drag spraying waypoints. */
+  const claimPress = (press: {
+    world: Point2D;
+    client: Point2D;
+    worldPerPixel: number;
+    pointerId: number;
+    detail: number;
+  }): boolean => {
+    if (frozen) return false;
+    // The first press of a sequence starts it clean. `detail` counts
+    // clicks, so the second press of a double-click leaves the flag
+    // from the first alone — which is how the double-click handler
+    // knows whether a real drag happened in between.
+    if (press.detail <= 1) draggedInSequence.current = false;
+    const hit = whatIsUnder(press.world.x, press.world.y, press.worldPerPixel);
+    const verdict = interpretPointer(trafficUi.trafficPlacement !== null, hit);
+    if (verdict === "place" || verdict === "mission" || hit === null) return false;
+    if (verdict === "select") {
+      dispatchTrafficUi({ type: "select", index: hit.index });
+      return true;
+    }
+    gesture.current = {
+      hit,
+      downClient: press.client,
+      committed: false,
+      lastWorld: press.world,
+      pending: null,
+      frame: null,
+    };
+    dispatchTrafficUi({
+      type: "beginDrag",
+      hit,
+      pointerId: press.pointerId,
+      downClient: press.client,
+    });
+    return true;
+  };
+
+  const dragTo = (move: { world: Point2D; client: Point2D }) => {
+    const active = gesture.current;
+    if (!active) return;
+    const { world, client } = move;
+    active.lastWorld = world;
+    if (!active.committed) {
+      // **Below the threshold nothing moves.** A press that ends here
+      // is a click: it selected, or it was half of a double-click, and
+      // nudging the point under it would be an edit nobody asked for.
+      if (!dragGate(active.downClient, client)) return;
+      active.committed = true;
+      draggedInSequence.current = true;
+      dispatchTrafficUi({ type: "dragCommitted" });
+    }
+    active.pending = world;
+    scheduleFlush();
+  };
+
+  const endDrag = (end: { world: Point2D; cancelled: boolean }) => {
+    const active = gesture.current;
+    gesture.current = null;
+    dispatchTrafficUi({ type: "endDrag" });
+    if (!active) return;
+    if (active.frame !== null) cancelAnimationFrame(active.frame);
+    // A candidate never wrote anything and must not start now.
+    if (!active.committed) return;
+    // On cancel the event's own position is not to be trusted — a
+    // gesture interruption can report one nobody pointed at — so the
+    // last position a *move* gave is what the document keeps.
+    const settled = end.cancelled ? active.lastWorld : end.world;
+    if (settled) flushDrag(settled);
+  };
+
+  const removeWaypointUnder = (at: { world: Point2D; worldPerPixel: number }) => {
+    if (frozen) return;
+    const hit = whatIsUnder(at.world.x, at.world.y, at.worldPerPixel);
+    const verdict = interpretDoubleClick(
+      trafficUi.trafficPlacement !== null,
+      hit,
+      draggedInSequence.current,
+    );
+    if (!verdict.delete) return;
+    const obstacles = trafficOf(draft);
+    set(
+      "environment.dynamic_obstacles",
+      obstacles.map((obstacle, at) =>
+        at === verdict.index
+          ? { ...obstacle, motion: deleteWaypointAt(obstacle.motion, verdict.waypoint) }
+          : obstacle,
+      ),
+    );
+  };
 
   /** The draft as the document that would be filed.
    *
@@ -1178,6 +1378,13 @@ export function DeploymentForm({
             );
           }}
           modeNote={placementNote(trafficUi.trafficPlacement, trafficOf(draft), t)}
+          /* Traffic sees each press first and takes only what belongs
+             to it — a handle to drag, an obstacle to select. Everything
+             it declines reaches the poses exactly as before. */
+          onPointerDownFirst={claimPress}
+          onPointerMoveWhileDown={dragTo}
+          onPointerFinished={endDrag}
+          onDoubleClickMap={removeWaypointUnder}
           dynamicObstacles={(preview?.dynamic_obstacles ?? []).map((obstacle) => ({
             name: obstacle.name,
             radius: obstacle.radius,

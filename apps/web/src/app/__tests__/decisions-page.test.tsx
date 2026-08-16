@@ -463,13 +463,23 @@ describe("placing the start and the goal", () => {
 
   it("moves a pose by dragging as well as by clicking", () => {
     /* Dragging belongs to the poses and to nothing else. `MapCanvas`
-       fires a click on mouse-down and then a drag per mouse-move, which
-       is what makes nudging a start feel continuous — and what would
-       make one careless gesture append a waypoint per pixel travelled
-       once the deployment form started placing traffic on this same
-       canvas. So the handler is attached only while a mission mode is
-       the one holding the next click. */
-    expect(PLACER).toContain("missionMode ? { onWorldDrag: (x: number, y: number) => place(x, y) }");
+       fires a press and then a move per pixel travelled, which is what
+       makes nudging a start feel continuous — and what would make one
+       careless gesture append a waypoint per pixel once the deployment
+       form started placing traffic on this same canvas. So a drag
+       reaches `place` only while a mission mode is the one holding the
+       next click.
+
+       **Two lifecycles, one rule.** This screen still uses the legacy
+       props, where the drag handler is simply not attached outside a
+       mission mode. The deployment form lifts the full pointer
+       lifecycle to drag traffic handles, and there the same condition
+       is a guard on the move. Both are checked, because a rule enforced
+       on one path and forgotten on the other is the failure this test
+       exists to catch. */
+    expect(PLACER).toContain("missionMode");
+    expect(PLACER).toMatch(/missionMode\s*\n?\s*\?\s*\{\s*onWorldDrag/);
+    expect(PLACER).toContain("if (missionMode && info.event.buttons !== 0) place(point.x, point.y)");
   });
 
   it("lets a pose be typed as well as clicked", () => {

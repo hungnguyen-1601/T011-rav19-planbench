@@ -19,14 +19,14 @@
  * in, and that is a tool selection rather than data.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import type { ObstacleMarker } from "@/components/MapCanvas";
 import { MapView } from "@/components/MapView";
 import { useTranslation } from "@/lib/i18n";
 import type { TrafficPlacement } from "@/lib/traffic";
 import type { TrafficOverlay } from "@/lib/trafficOverlay";
-import type { MapData, ObstacleSnapshot, Pose2D } from "@/lib/types";
+import type { MapData, ObstacleSnapshot, Point2D, Pose2D } from "@/lib/types";
 
 /** What the next click on the map does.
  *
@@ -75,6 +75,32 @@ export interface MissionPlacerProps {
   /** Replaces the caption while somebody else's mode is active — this
    *  component has nothing true to say about placing a waypoint. */
   modeNote?: string;
+  /** First refusal on a press, for a caller that drags its own things.
+   *
+   * Returning `true` means "handled" and the placer does nothing else
+   * with that press — the deployment form uses it to grab a waypoint
+   * without also moving the start pose. Returning `false` leaves the
+   * gesture exactly as it was before this prop existed.
+   *
+   * **This component still does not know what a waypoint is.** It asks
+   * whoever passed the callback and obeys the answer; the hit-testing,
+   * the drag state and the document edit all live in the caller. A
+   * placer that understood routes would be a second home for them. */
+  onPointerDownFirst?: (press: {
+    world: Point2D;
+    /** Screen position of the press — the origin a drag threshold is
+     *  measured from. World units would make the threshold change with
+     *  the zoom, and a steady hand is a property of the screen. */
+    client: Point2D;
+    worldPerPixel: number;
+    pointerId: number;
+    /** Click count: 1 for the first press of a sequence, 2 for the
+     *  second half of a double-click. */
+    detail: number;
+  }) => boolean;
+  onPointerMoveWhileDown?: (move: { world: Point2D; client: Point2D }) => void;
+  onPointerFinished?: (end: { world: Point2D; cancelled: boolean }) => void;
+  onDoubleClickMap?: (at: { world: Point2D; worldPerPixel: number }) => void;
   dynamicObstacles?: ObstacleMarker[];
   obstacleSnapshots?: ObstacleSnapshot[];
   /** The traffic as declared, for the flat view to draw. Passed
@@ -101,6 +127,10 @@ export function MissionPlacer({
   onModeChange,
   onPlace,
   modeNote,
+  onPointerDownFirst,
+  onPointerMoveWhileDown,
+  onPointerFinished,
+  onDoubleClickMap,
   dynamicObstacles,
   obstacleSnapshots,
   authoredTraffic,
@@ -141,6 +171,18 @@ export function MissionPlacer({
    * else's mode is active. */
   const missionMode = placing === "none" || placing === "start" || placing === "goal";
 
+  /** Whether the caller took the press that is in flight.
+   *
+   * A ref rather than state: it is read by the move and up handlers of
+   * the same gesture, and a re-render between them would be both
+   * unnecessary and too late. */
+  const takenByCaller = useRef(false);
+  /** Does anybody want the full pointer lifecycle? Passing the handlers
+   *  through unconditionally would turn on pointer capture for every
+   *  screen using this placer — including `/decisions`, which has
+   *  always ended a drag by leaving the canvas. */
+  const lifted = onPointerDownFirst !== undefined;
+
   return (
     <>
       {/* Explicit modes, and a caption saying what the next click does.
@@ -177,8 +219,57 @@ export function MissionPlacer({
           obstacleSnapshots={obstacleSnapshots}
           authoredTraffic={authoredTraffic}
           previewTime={previewTime}
-          onWorldClick={(x, y) => place(x, y)}
-          {...(missionMode ? { onWorldDrag: (x: number, y: number) => place(x, y) } : {})}
+          {...(lifted
+            ? {
+                /* The caller sees every press first and says whether it
+                   took it. Only what it declines reaches the poses, so
+                   grabbing a waypoint never also nudges the start. */
+                onWorldPointerDown: (point, info) => {
+                  takenByCaller.current =
+                    onPointerDownFirst?.({
+                      world: point,
+                      client: { x: info.event.clientX, y: info.event.clientY },
+                      worldPerPixel: info.worldPerPixel,
+                      pointerId: info.pointerId,
+                      detail: info.event.detail,
+                    }) ?? false;
+                  if (!takenByCaller.current) place(point.x, point.y);
+                },
+                onWorldPointerMove: (point, info) => {
+                  if (takenByCaller.current) {
+                    onPointerMoveWhileDown?.({
+                      world: point,
+                      client: { x: info.event.clientX, y: info.event.clientY },
+                    });
+                    return;
+                  }
+                  /* Dragging belongs to the poses and to nothing else:
+                     `MapCanvas` fires a move per pixel travelled, so in
+                     a waypoint mode the same gesture would append a
+                     route of two hundred points. */
+                  if (missionMode && info.event.buttons !== 0) place(point.x, point.y);
+                },
+                onWorldPointerUp: (point) => {
+                  if (takenByCaller.current) {
+                    onPointerFinished?.({ world: point, cancelled: false });
+                  }
+                  takenByCaller.current = false;
+                },
+                onWorldPointerCancel: (point) => {
+                  if (takenByCaller.current) {
+                    onPointerFinished?.({ world: point, cancelled: true });
+                  }
+                  takenByCaller.current = false;
+                },
+                onWorldDoubleClick: (point, worldPerPixel) =>
+                  onDoubleClickMap?.({ world: point, worldPerPixel }),
+              }
+            : {
+                onWorldClick: (x: number, y: number) => place(x, y),
+                ...(missionMode
+                  ? { onWorldDrag: (x: number, y: number) => place(x, y) }
+                  : {}),
+              })}
         />
       </div>
 
