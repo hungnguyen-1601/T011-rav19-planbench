@@ -18,6 +18,7 @@ import {
   keepOutRadius,
 } from "@/lib/keepOut";
 import { canvasToWorld, fitViewport, type Viewport } from "@/lib/transform";
+import type { TrafficOverlay } from "@/lib/trafficOverlay";
 import type { MapData, Point2D, Pose2D, StaticObstacle, TrajectoryPoint } from "@/lib/types";
 
 /** One moving obstacle, already resolved to a position.
@@ -56,6 +57,15 @@ export interface MapCanvasProps {
   staticObstacles?: StaticObstacle[];
   /** Moving obstacles at one instant — see {@link ObstacleMarker}. */
   dynamicObstacles?: ObstacleMarker[];
+  /** The traffic *as declared*, drawn from the document rather than
+   *  from a simulated instant.
+   *
+   * A different question from `dynamicObstacles`, and drawn in a
+   * different colour for that reason: this is the route somebody wrote
+   * and can still grab, while those are where the backend says the
+   * obstacles are at *t*. Preview markers are never interactive; only
+   * these carry handles. */
+  authoredTraffic?: TrafficOverlay;
   /** The instant `dynamicObstacles` describes, in seconds, for the label.
    *  The editor passes the scrubber position; replay passes the playhead. */
   previewTime?: number;
@@ -111,6 +121,12 @@ const COLOR = {
   // instant and one seed, not about the map.
   staticObstacle: "#8a94a6",
   dynamicObstacle: "#f0b429",
+  // The authored route is a third kind of statement: not the world
+  // (grey), not where something is at an instant (amber), but what the
+  // author has written down and can still take hold of. Teal because it
+  // has to be told apart from the amber snapshot at a glance — those
+  // two describe the same obstacle and only one of them is editable.
+  authored: "#5ad1c8",
 };
 
 export function MapCanvas({
@@ -128,6 +144,7 @@ export function MapCanvas({
   collisionPoint,
   staticObstacles,
   dynamicObstacles,
+  authoredTraffic,
   previewTime,
   showGrid = true,
   showPlan = true,
@@ -297,6 +314,93 @@ export function MapCanvas({
       }
     }
 
+    // **The traffic as written, under the traffic as simulated.** Both
+    // describe the same obstacles, so when a preview is on screen the
+    // amber snapshot sits on top: that is the answer to "where is it at
+    // t", and the teal underneath is the route it was given. Drawn from
+    // stored points only — no motion law is evaluated here; see
+    // `lib/trafficOverlay`.
+    for (const shape of authoredTraffic?.shapes ?? []) {
+      ctx.globalAlpha = shape.selected ? 1 : 0.45;
+      ctx.strokeStyle = COLOR.authored;
+      ctx.fillStyle = COLOR.authored;
+      ctx.lineWidth = shape.selected ? 2 : 1.5;
+
+      // The bound a random walk declares, not a position it reaches.
+      if (shape.wanderRadius !== null && shape.home) {
+        const [cx, cy] = toCanvas(shape.home.x, shape.home.y);
+        ctx.setLineDash([3, 4]);
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.max(2, shape.wanderRadius * viewport.scale), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      const polyline = (points: Point2D[], dash: number[]) => {
+        if (points.length < 2) return;
+        ctx.setLineDash(dash);
+        ctx.beginPath();
+        points.forEach((point, index) => {
+          const [x, y] = toCanvas(point.x, point.y);
+          if (index === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        ctx.setLineDash([]);
+      };
+      polyline(shape.path, []);
+      // Dashed, because the author never placed a point on it: it is
+      // the consequence of the loop flag rather than part of the route.
+      if (shape.closingEdge) polyline(shape.closingEdge, [4, 4]);
+
+      if (shape.heading) {
+        const [fx, fy] = toCanvas(shape.heading.from.x, shape.heading.from.y);
+        const [tx, ty] = toCanvas(shape.heading.to.x, shape.heading.to.y);
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(tx, ty);
+        ctx.stroke();
+        const angle = Math.atan2(ty - fy, tx - fx);
+        const head = 7;
+        ctx.beginPath();
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(tx - head * Math.cos(angle - Math.PI / 6), ty - head * Math.sin(angle - Math.PI / 6));
+        ctx.lineTo(tx - head * Math.cos(angle + Math.PI / 6), ty - head * Math.sin(angle + Math.PI / 6));
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // The body, hollow: a filled disc here would compete with the
+      // preview's for the eye, and this one is not where the obstacle
+      // is — it is where its route begins.
+      if (shape.home && shape.radius !== null) {
+        const [x, y] = toCanvas(shape.home.x, shape.home.y);
+        ctx.beginPath();
+        ctx.arc(x, y, Math.max(3, shape.radius * viewport.scale), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      for (const grip of shape.handles) {
+        const [x, y] = toCanvas(grip.at.x, grip.at.y);
+        ctx.beginPath();
+        ctx.arc(x, y, shape.selected ? 4 : 3, 0, Math.PI * 2);
+        ctx.fill();
+        if (grip.label) {
+          // Ordinals, so a route that crosses itself can still be read
+          // in the order it is driven.
+          ctx.font = "10px ui-sans-serif, system-ui";
+          ctx.fillText(grip.label, x + 6, y - 5);
+        }
+      }
+
+      if (shape.home) {
+        const [x, y] = toCanvas(shape.home.x, shape.home.y);
+        ctx.font = "11px ui-sans-serif, system-ui";
+        ctx.fillText(shape.name, x + 8, y + 14);
+      }
+      ctx.globalAlpha = 1;
+    }
+
     if (dynamicObstacles) {
       for (const obstacle of dynamicObstacles) {
         const [x, y] = toCanvas(obstacle.position.x, obstacle.position.y);
@@ -431,6 +535,7 @@ export function MapCanvas({
     collisionPoint,
     staticObstacles,
     dynamicObstacles,
+    authoredTraffic,
     previewTime,
     showGrid,
     showPlan,

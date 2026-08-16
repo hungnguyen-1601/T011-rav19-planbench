@@ -1055,6 +1055,7 @@
   "deployments.form.traffic.mode.suddenStart": "Click the map to move where {name} sets off from.",
   "deployments.form.traffic.mode.suddenHeading": "Click the map to aim {name}. Only the direction is kept, not the point.",
   "deployments.form.traffic.flatOnly": "Traffic is placed on the flat view. The 2.5D view draws it but does not edit it.",
+  "deployments.form.traffic.legend": "Teal is the traffic as you declared it — routes, points and the obstacle's own size. Amber appears after Preview and is where the server puts each obstacle at that instant; it is a picture, not a control.",
   "deployments.form.validate": "Check with the server",
   "deployments.form.validateNote": "Runs the same check filing does, without filing anything. It reads the document only, so a clash with an id already on file still surfaces when you file.",
   "deployments.form.validateBusy": "Checking…",

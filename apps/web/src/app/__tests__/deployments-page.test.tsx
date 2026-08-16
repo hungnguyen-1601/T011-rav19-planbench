@@ -445,6 +445,25 @@ describe("the traffic comes with the map it belongs to", () => {
     expect(FORM).toContain('set("environment.dynamic_obstacles", next)');
   });
 
+  it("draws the route while it is being written, not only after a preview", () => {
+    /* Placing three waypoints used to draw nothing at all: the canvas
+       only ever showed positions the backend had computed, so authoring
+       a route meant clicking into an empty map and pressing Preview to
+       find out what had been written. The overlay comes from the
+       document itself. */
+    expect(FORM).toContain("authoredTraffic={overlayOf(");
+    expect(FORM).toContain("trafficUi.selectedObstacleIndex");
+  });
+
+  it("says which of the two drawings the author can move", () => {
+    /* Two pictures of the same obstacles sit on one canvas — the
+       declared route and the previewed instant — and only the first is
+       editable. Left to colour alone, a click on the amber marker reads
+       as a broken control. */
+    expect(FORM).toContain("deployments.form.traffic.legend");
+    expect(EN_FORM["deployments.form.traffic.legend"]).toMatch(/not a control/i);
+  });
+
   it("still refuses to judge the obstacles itself", () => {
     /* The rule did not soften when the work moved into its own files.
        `TaskProfile` decides; the browser asks. What would break this is

@@ -39,6 +39,7 @@ import {
   snapshotsOf,
   trafficOf,
 } from "@/lib/traffic";
+import { overlayOf } from "@/lib/trafficOverlay";
 import { IDLE_TRAFFIC_UI, trafficUiReducer } from "@/lib/trafficUi";
 import {
   DEFAULT_LIBRARY_SCENARIO,
@@ -1183,11 +1184,23 @@ export function DeploymentForm({
             position: obstacle.position,
           }))}
           obstacleSnapshots={snapshotsOf(preview)}
+          /* The document's own traffic, drawn from the points it
+             stores. Until this existed, placing waypoints drew nothing
+             until somebody pressed Preview — so a route was authored by
+             clicking into an empty map and hoping. */
+          authoredTraffic={overlayOf(trafficOf(draft), trafficUi.selectedObstacleIndex)}
           previewTime={preview?.time}
         />
       ) : (
         <p className="muted">{t("common.loading")}</p>
       )}
+
+      {/* Two drawings of the same obstacles, and only one of them is
+          the author's to move. Saying so beside the canvas rather than
+          leaving it to be inferred from colour: the amber marker is the
+          backend's answer to "where is it at t", and clicking it does
+          nothing on purpose. */}
+      {traffic > 0 ? <p className="muted">{t("deployments.form.traffic.legend")}</p> : null}
 
       {/* Below the canvas rather than up with the noise it relates to:
           placing a waypoint is a thing you do *while looking at the map*,

@@ -1055,6 +1055,7 @@
   "deployments.form.traffic.mode.suddenStart": "Nhấp lên bản đồ để dời chỗ {name} xuất phát.",
   "deployments.form.traffic.mode.suddenHeading": "Nhấp lên bản đồ để chỉ hướng cho {name}. Chỉ hướng được giữ lại, không giữ điểm.",
   "deployments.form.traffic.flatOnly": "Traffic được đặt trên khung nhìn phẳng. Khung 2.5D có vẽ nhưng không sửa được.",
+  "deployments.form.traffic.legend": "Màu xanh ngọc là traffic đúng như bạn khai — lộ trình, các điểm và cỡ vật cản. Màu hổ phách chỉ hiện sau khi bấm Preview, là chỗ server đặt từng vật cản ở thời điểm đó; nó là ảnh chụp, không phải nút bấm.",
   "deployments.form.validate": "Kiểm tra với server",
   "deployments.form.validateNote": "Chạy đúng phép kiểm mà lúc nộp sẽ chạy, nhưng không nộp gì cả. Nó chỉ đọc nội dung tài liệu, nên việc trùng id đã có trên hệ thống vẫn chỉ lộ ra lúc bạn nộp.",
   "deployments.form.validateBusy": "Đang kiểm…",

@@ -25,6 +25,7 @@ import type { ObstacleMarker } from "@/components/MapCanvas";
 import { MapView } from "@/components/MapView";
 import { useTranslation } from "@/lib/i18n";
 import type { TrafficPlacement } from "@/lib/traffic";
+import type { TrafficOverlay } from "@/lib/trafficOverlay";
 import type { MapData, ObstacleSnapshot, Pose2D } from "@/lib/types";
 
 /** What the next click on the map does.
@@ -76,6 +77,12 @@ export interface MissionPlacerProps {
   modeNote?: string;
   dynamicObstacles?: ObstacleMarker[];
   obstacleSnapshots?: ObstacleSnapshot[];
+  /** The traffic as declared, for the flat view to draw. Passed
+   *  straight through: this component knows what a *pose* is and
+   *  deliberately not what a waypoint is — the deployment form owns
+   *  that, and a placer that understood routes would be a second home
+   *  for them. */
+  authoredTraffic?: TrafficOverlay;
   previewTime?: number;
 }
 
@@ -96,6 +103,7 @@ export function MissionPlacer({
   modeNote,
   dynamicObstacles,
   obstacleSnapshots,
+  authoredTraffic,
   previewTime,
 }: MissionPlacerProps) {
   const { t } = useTranslation();
@@ -167,6 +175,7 @@ export function MissionPlacer({
           goalTolerance={goalTolerance}
           dynamicObstacles={dynamicObstacles}
           obstacleSnapshots={obstacleSnapshots}
+          authoredTraffic={authoredTraffic}
           previewTime={previewTime}
           onWorldClick={(x, y) => place(x, y)}
           {...(missionMode ? { onWorldDrag: (x: number, y: number) => place(x, y) } : {})}
