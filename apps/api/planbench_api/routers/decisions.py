@@ -41,7 +41,7 @@ from planbench_api.dependencies import (
 )
 from planbench_api.errors import DomainValidationError, NotFoundError
 from planbench_api.worker import Job, JobQueue
-from planbench_benchmark.candidates import CONTROLLER_CONFIGS
+from planbench_benchmark.candidates import offered_controller_configs
 from planbench_benchmark.selection import DEFAULT_SCOPE
 
 router = APIRouter(tags=["decisions"])
@@ -552,6 +552,13 @@ def list_local_controllers() -> list[LocalControllerConfig]:
     accepts — free to drift, and drifting silently until somebody's
     dropdown offers a configuration the server rejects.
 
+    **Only configurations a registration would accept appear.** A
+    controller whose every stack has been withdrawn still has entries in
+    ``CONTROLLER_CONFIGS`` — they are kept so past runs stay readable —
+    but offering them here would put names in a dropdown that
+    ``POST /candidates`` answers 422 to, which is the drift this endpoint
+    exists to prevent rather than to cause.
+
     The parameters travel with the name because the name alone says
     nothing: `dwa_coarse` and `dwa_default` differ by 7x15 samples
     against 20x40, which is the entire reason a sampling choice is a
@@ -560,7 +567,7 @@ def list_local_controllers() -> list[LocalControllerConfig]:
     """
     return [
         LocalControllerConfig(controller=controller, name=name, params=dict(params))
-        for controller, configs in sorted(CONTROLLER_CONFIGS.items())
+        for controller, configs in sorted(offered_controller_configs().items())
         for name, params in sorted(configs.items())
     ]
 

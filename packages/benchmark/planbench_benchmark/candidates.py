@@ -37,6 +37,7 @@ from planbench_benchmark.registry import (
     algorithm_info,
     build_global_planner,
     build_local_planner,
+    list_algorithms,
     validate_algorithm_config,
 )
 from planbench_decision.candidate import Candidate, StackComponent, StructuralResourceProfile
@@ -428,6 +429,29 @@ CONTROLLER_OF_CONFIG: dict[str, str] = {
 
 class ConfigControllerMismatch(ValueError):
     """A configuration name that belongs to a different controller."""
+
+
+def offered_controller_configs() -> dict[str, dict[str, dict]]:
+    """The named configurations a candidate can actually be registered with.
+
+    ``CONTROLLER_CONFIGS`` lists every configuration the platform knows;
+    this narrows it to the ones some **usable** stack pairs with, by
+    reading the registry rather than by keeping a second list beside it.
+
+    The distinction became real when ``dwa_predictive`` was withdrawn:
+    the catalogue still offered ``dwa_predictive_balanced`` while
+    registration refused every stack that could take it, so a dropdown
+    served a name the server would reject — the exact drift that serving
+    the catalogue instead of hard-coding it in the browser was meant to
+    prevent. Deriving it here means withdrawing a stack withdraws its
+    configurations in the same move, with nobody having to remember.
+    """
+    usable = {info.local_controller for info in list_algorithms() if info.benchmarkable}
+    return {
+        controller: configs
+        for controller, configs in CONTROLLER_CONFIGS.items()
+        if controller in usable
+    }
 
 
 def validate_config_names(specs: Sequence[tuple[str, str]]) -> None:

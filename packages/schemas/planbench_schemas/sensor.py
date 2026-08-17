@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class LidarConfig(BaseModel):
@@ -24,8 +24,48 @@ class LidarConfig(BaseModel):
         default=2 * math.pi,
         gt=0,
         le=2 * math.pi,
-        description="Total angular coverage in radians, centred on the robot heading.",
+        description=(
+            "Total angular coverage in radians, centred on the robot heading. "
+            "Only a full circle is supported today — see the validator below."
+        ),
     )
+
+    @model_validator(mode="after")
+    def _only_a_full_circle_is_implemented(self) -> LidarConfig:
+        """Refuse a partial sweep at the point it is declared.
+
+        The simulator honours ``angle_span`` faithfully
+        (``planbench_simulator.lidar.scan`` spaces its rays by
+        ``angle_span / num_rays``). **The consumers do not.** Both
+        ``planbench_planning.common.dwa_core.obstacle_points`` — used by
+        every ``lidar_only`` candidate, including plain ``dwa`` — and the
+        predictive tracker's clusterer rebuild world-frame points with a
+        hard-coded ``span = 2 * pi``.
+
+        So a deployment declaring a 180-degree scanner would get a
+        correct scan spread back over the whole circle by the controller:
+        every obstacle placed at the wrong bearing, and no error
+        anywhere. That is a wrong answer arriving quietly, which is worth
+        more care than an unimplemented feature.
+
+        Refusing here rather than teaching the consumers is a scope
+        judgement, not a preference: threading the sensor specification
+        down to both controllers touches the planner protocol and the
+        golden trajectories of two candidates. Until that is done, the
+        honest state is that this field has one supported value, and the
+        way to say so is to reject the others rather than to accept them
+        and behave as though they had not been asked for.
+        """
+        if abs(self.angle_span - 2.0 * math.pi) > 1e-9:
+            raise ValueError(
+                "angle_span must be a full circle (2*pi) for now: "
+                f"got {self.angle_span!r}. A partial sweep is simulated correctly but "
+                "read back incorrectly — dwa_core.obstacle_points and the dwa_predictive "
+                "clusterer both assume a full circle when rebuilding world-frame points, "
+                "so every return would be placed at the wrong bearing with nothing "
+                "raising. See KNOWN_LIMITATIONS L20."
+            )
+        return self
 
 
 #: How far a relocalisation jump moves the believed pose, in metres.

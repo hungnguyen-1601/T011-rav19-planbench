@@ -341,17 +341,28 @@ class TestCandidates:
         assert response.status_code == 422
         assert "dwa_predictive" in response.text
 
-    def test_the_matching_configuration_registers_normally(self, client, alice_headers):
-        """The refusal above is about the *pairing*, not about the new
-        stack — which has to remain registrable or P7 has nothing to
-        compare."""
+    def test_even_the_matching_configuration_is_refused_now(self, client, alice_headers):
+        """Two different refusals, and the second one arrived later.
+
+        The test above refuses ``dwa_coarse`` on ``astar+dwa_predictive``
+        because the *pairing* is a lie: the run would be sound and the
+        record would name a configuration belonging to another
+        controller. This one is refused for a reason that has nothing to
+        do with pairing — the stack was **withdrawn on 2026-08-16**,
+        after its LiDAR tracker was measured reporting obstacles moving
+        at up to 1.9 m/s on a static warehouse.
+
+        Both are 422, and the messages have to stay different or the
+        first defect becomes invisible behind the second.
+        """
         response = client.post(
             f"{API}/candidates",
             json={"stack": "astar+dwa_predictive", "local_config": "dwa_predictive_balanced"},
             headers=alice_headers,
         )
-        assert response.status_code in (200, 201)
-        assert response.json()["stack_label"] == "astar+dwa_predictive"
+        assert response.status_code == 422
+        assert "perception" in response.text, "the refusal must say it is a withdrawal"
+        assert "pairs a" not in response.text, "this is not the mismatched-pairing refusal"
 
     def test_a_reference_only_stack_is_refused(self, client, alice_headers):
         """``*+pure_pursuit`` ignores sensing and exists to check the
@@ -1271,6 +1282,10 @@ class TestWhatACandidateCanBeBuiltFrom:
         """
         stacks = {"dwa": "astar+dwa", "dwa_predictive": "astar+dwa_predictive"}
         offered = client.get(f"{API}/local-controllers").json()
+        assert not any(entry["controller"] == "dwa_predictive" for entry in offered), (
+            "a withdrawn controller's configurations must leave the catalogue with it, "
+            "or the dropdown offers names POST /candidates answers 422 to"
+        )
         assert offered, "an empty catalogue would pass this vacuously"
         for entry in offered:
             stack = stacks.get(entry["controller"])

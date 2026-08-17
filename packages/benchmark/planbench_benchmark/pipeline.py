@@ -38,7 +38,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from planbench_benchmark.contexts import episode_total, iter_run_plan
-from planbench_benchmark.episode import run_contract_episode
+from planbench_benchmark.episode import run_contract_episode, scenario_for
+from planbench_benchmark.fingerprint import execution_conditions_fingerprint
 from planbench_decision.anchors import load_anchors
 from planbench_decision.candidate import Candidate
 from planbench_decision.gates import GateReport, evaluate_gates
@@ -57,7 +58,7 @@ from planbench_metrics.definitions import (
 from planbench_schemas.episode_context import EpisodeContext
 from planbench_schemas.map import MapData
 from planbench_schemas.task_profile import TaskProfile
-from planbench_simulator.trace import read_trace, trace_path
+from planbench_simulator.trace import read_trace, read_trace_metadata, trace_path
 
 __all__ = [
     "AcceptanceFailure",
@@ -215,6 +216,15 @@ def simulate(
     total = episode_total(contexts, candidates)
     if journal is not None:
         journal.parent.mkdir(parents=True, exist_ok=True)
+        # **Truncated, not appended to.** The run directory is named from
+        # the profile id, the scope and the candidate set — none of which
+        # change when the *world* does — so a second sweep of a changed
+        # deployment lands in the same folder. Appending there produced a
+        # journal holding sixty `stuck` episodes from one world followed
+        # by sixty `success` ones from another, under identical context
+        # ids, which reads as a flaky episode rather than as two runs.
+        # Each sweep owns its journal; the traces are what persist.
+        journal.write_text("", encoding="utf-8")
     retired: dict[str, object] = {}
     covered: dict[str, list[EpisodeContext]] = {c.candidate_id: [] for c in candidates}
     for index, (context, candidate) in enumerate(iter_run_plan(contexts, candidates), start=1):
@@ -222,7 +232,7 @@ def simulate(
             continue
         covered[candidate.candidate_id].append(context)
         path = trace_path(candidate.candidate_id, context.episode_context_id, root=trace_root)
-        if reuse and path.is_file():
+        if reuse and path.is_file() and _was_run_under(path, profile, context, map_data):
             if progress is not None:
                 progress(index, total, candidate.stack_label)
             _consult_retire(retire, retired, candidate, context, journal, emit)
@@ -312,10 +322,36 @@ def _append_journal(path: Path, entry: dict[str, object]) -> None:
         handle.flush()
 
 
+class StaleTraceError(ValueError):
+    """A trace on disk describes a world this run is not asking about."""
+
+
+def _was_run_under(path: Path, profile, context, map_data) -> bool:
+    """Whether the trace at ``path`` came from these exact conditions.
+
+    **Fail closed.** A trace written before fingerprints existed carries
+    an empty one, and an empty fingerprint is *unknown*, not *matching* —
+    treating the two the same would keep the hole open for precisely the
+    traces most likely to predate the change that opened it. The cost is
+    re-simulating an existing trace store once; the alternative cost is a
+    comparison of two different worlds that nothing flags.
+    """
+    expected = execution_conditions_fingerprint(map_data, scenario_for(profile, context), profile)
+    try:
+        recorded = read_trace_metadata(path).execution_conditions_fingerprint
+    except Exception:
+        # An unreadable or metadata-less trace is not a trace this run
+        # may lean on. Re-simulating is always available here.
+        return False
+    return bool(recorded) and recorded == expected
+
+
 def paired_prefix(
     candidates: Sequence[Candidate],
     contexts: Sequence[EpisodeContext],
     trace_root: Path,
+    profile: TaskProfile | None = None,
+    map_data: MapData | None = None,
 ) -> list[EpisodeContext]:
     """The longest leading run of contexts every candidate has a trace for.
 
@@ -326,15 +362,33 @@ def paired_prefix(
     one candidate's 245 episodes against another's 244.
     """
     kept: list[EpisodeContext] = []
+    stale: list[str] = []
     for context in contexts:
-        if not all(
-            trace_path(
-                candidate.candidate_id, context.episode_context_id, root=trace_root
-            ).is_file()
+        paths = [
+            trace_path(candidate.candidate_id, context.episode_context_id, root=trace_root)
             for candidate in candidates
-        ):
+        ]
+        if not all(path.is_file() for path in paths):
             break
+        if profile is not None and map_data is not None:
+            mismatched = [
+                path for path in paths if not _was_run_under(path, profile, context, map_data)
+            ]
+            if mismatched:
+                stale.extend(str(path) for path in mismatched)
+                break
         kept.append(context)
+    if stale:
+        # **Refused, not truncated.** Scoring re-reads finished traces and
+        # never re-simulates, so there is no way to replace a stale one:
+        # quietly shortening the sample would hand back a report built
+        # partly from a world nobody asked about, and the length is the
+        # only clue it would leave.
+        raise StaleTraceError(
+            f"{len(stale)} trace(s) under {trace_root} were recorded under different "
+            "execution conditions than this profile describes, and scoring cannot "
+            "re-simulate them. Re-run the sweep instead of scoring. First: " + stale[0]
+        )
     return kept
 
 

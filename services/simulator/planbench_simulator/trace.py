@@ -164,6 +164,23 @@ class TraceMetadata(BaseModel):
     peak_rss_mb: float = Field(default=0.0, ge=0)
     cpu_time_s: float = Field(default=0.0, ge=0)
 
+    #: What this episode was simulated **under**, hashed.
+    #:
+    #: The two ids above say *which* episode this is; they do not say
+    #: what the world looked like, because HĐ-3.1 freezes
+    #: ``episode_context_id`` at *(task profile, mission, variant, seed)*
+    #: and the environment is not in that. Without this field a trace
+    #: from a world that no longer exists is indistinguishable from a
+    #: fresh one, and the reuse paths take it — which is how one
+    #: ``run_journal.jsonl`` came to hold sixty ``stuck`` episodes and
+    #: sixty ``success`` ones under identical ids.
+    #:
+    #: Empty on traces written before this existed. Readers must treat
+    #: the empty string as **unknown, therefore unusable**, never as
+    #: "matches": a trace that cannot say what it ran under is exactly
+    #: the trace this field was added to distrust.
+    execution_conditions_fingerprint: str = ""
+
     @classmethod
     def for_episode(
         cls,
@@ -244,6 +261,7 @@ class EpisodeTraceRecorder:
         costmap_cells: int = 0,
         global_plan_length_m: float | None = None,
         global_plan_time_ms: float | None = None,
+        execution_conditions_fingerprint: str = "",
     ) -> None:
         self._context = context
         self._candidate_id = candidate_id
@@ -252,6 +270,7 @@ class EpisodeTraceRecorder:
         self._costmap_cells = costmap_cells
         self._global_plan_length_m = global_plan_length_m
         self._global_plan_time_ms = global_plan_time_ms
+        self._fingerprint = execution_conditions_fingerprint
 
         self._rows: dict[str, list[Any]] = {name: [] for name in TRACE_COLUMNS}
         self._last_t: float | None = None
@@ -388,6 +407,7 @@ class EpisodeTraceRecorder:
             costmap_cells=self._costmap_cells if costmap_cells is None else costmap_cells,
             peak_rss_mb=self._peak_rss_mb,
             cpu_time_s=max(time.process_time() - self._cpu_start, 0.0),
+            execution_conditions_fingerprint=self._fingerprint,
         )
         write_trace(self._path, self._rows, metadata)
         self._closed = True
@@ -480,6 +500,25 @@ def write_trace(
     path.parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(table, path)
     return path
+
+
+def read_trace_metadata(path: Path | str) -> TraceMetadata:
+    """Just the footer, without reading a single row.
+
+    The reuse checks ask one question of every trace on disk before a
+    sweep starts — *were you made under these conditions?* — and reading
+    a whole episode's samples to answer it would make the check cost more
+    than the simulation it saves.
+    """
+    path = Path(path)
+    raw = (pq.read_schema(path).metadata or {}).get(METADATA_KEY)
+    if raw is None:
+        raise TraceError(
+            f"{path} carries no {METADATA_KEY.decode()} metadata; without "
+            "episode_context_id and candidate_id it cannot take part in a paired "
+            "comparison"
+        )
+    return TraceMetadata.model_validate(json.loads(raw))
 
 
 def read_trace(path: Path | str) -> LoadedTrace:

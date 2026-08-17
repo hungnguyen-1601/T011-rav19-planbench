@@ -488,7 +488,7 @@ class TestAReplanIsChargedForAsAControlStep:
         # under test already has.
         import pyarrow.parquet as pq
 
-        path, _ = self._run(tmp_path, ReplanningConfig(enabled=True))
+        path, run = self._run(tmp_path, ReplanningConfig(enabled=True))
         frame = pq.read_table(path).to_pydict()
         latencies = frame["planner_latency_ms"]
         replans = [
@@ -497,35 +497,43 @@ class TestAReplanIsChargedForAsAControlStep:
             if event == "replan"
         ]
         assert replans, "the episode that needs a replan recorded none"
-        # Not against a fixed millisecond figure. The first version
-        # asserted `> 50 ms`, calibrated on the 480x320 hall where A*
-        # takes ~740 ms, and failed here: `sudden_stop` is 14x9 m and the
-        # same planner takes ~5 ms, about twice a control step rather than
-        # sixty times. **The price of a replan scales with the map**, so
-        # on a small scenario replanning is nearly free and on a real
-        # deployment map it is not. The absolute figure is a property of
-        # the map; costing more than an ordinary step is the property of
-        # replanning, and it is the one worth pinning.
+
+        # **Against the planner's own measured time, not against another
+        # timing.** What this test has to prove is that the planner's
+        # cost is charged to the control step it delayed; the natural way
+        # to write that is to compare the replan row with an ordinary
+        # step, and it is the wrong way, because both sides are wall
+        # clock on a shared machine.
         #
-        # Against the **median** ordinary step, not the 99th percentile.
-        # The second version used p99 because that is the statistic G4
-        # reads, and it was wrong for this test: p99 of one episode is a
-        # single extreme sample — the slowest scheduling hiccup of ~460
-        # steps — so comparing one measurement against it is a race
-        # between two noise draws rather than a claim about cost. Run
-        # alone it read 12.8 ms against a p99 of 6.2; run inside the full
-        # suite it read 15.8 against 16.0 and failed, with the *median*
-        # unmoved at ~4 ms either way. G4's number stays p99; what this
-        # test proves is that the planner's time is charged at all.
-        ordinary = sorted(
-            latency
-            for event, latency in zip(frame["event"], latencies, strict=True)
-            if not event
-        )
-        typical = ordinary[len(ordinary) // 2]
-        assert max(replans) > 2 * typical, (
-            f"replan {max(replans):.1f} ms is not clearly above an ordinary "
-            f"step's {typical:.1f} ms, so the planner's time is not being charged"
+        # That mistake was made twice. The first version asserted a fixed
+        # `> 50 ms`, calibrated on the 480x320 hall where A* takes
+        # ~740 ms; `sudden_stop` is 14x9 m and the same planner takes
+        # ~5 ms, so the figure was really a property of the map. The
+        # second compared against the episode's p99 and lost a race
+        # between two noise draws — 12.8 ms against 6.2 run alone,
+        # 15.8 against 16.0 inside the suite. The third compared against
+        # the *median* and survived longer, then failed the same way in a
+        # 46-minute suite run: 2827 passed, this one red, and green again
+        # on its own and under deliberate CPU load.
+        #
+        # A recalibration would be a fourth patch on the symptom. The
+        # quantity that actually answers the question is already in this
+        # test: `run.plan.planning_time_seconds` is what the planner
+        # reported spending, measured independently of the trace. If the
+        # replan row carries that time, it was charged; if it carries an
+        # ordinary step's time, it was not. No second measurement, so
+        # nothing to race.
+        # Sums rather than maxima, because `pending_replan_ms`
+        # accumulates and flushes on the next control step: which row
+        # carries which replan is an implementation detail, that every
+        # replan's time reaches some row is the contract.
+        replanned = run.plans[1:]
+        assert replanned, "the scenario did not replan, so this proves nothing"
+        charged_ms = sum(plan.planning_time_seconds for plan in replanned) * 1000.0
+        assert sum(replans) >= charged_ms, (
+            f"the replan rows carry {sum(replans):.1f} ms between them but the "
+            f"planner reported spending {charged_ms:.1f} ms replanning, so its "
+            "time is not being charged to the steps it delayed"
         )
 
     def test_without_replanning_the_trace_has_no_such_row(self, tmp_path) -> None:

@@ -490,7 +490,7 @@ def run_comparison(
         # it left on disk need a way back into a report that does not
         # involve re-simulating them or hand-editing JSON. Same prefix
         # rule, same honesty about the sample it ended up with.
-        contexts = paired_prefix(candidates, contexts, trace_root)
+        contexts = paired_prefix(candidates, contexts, trace_root, profile, map_data)
         interrupted = len(contexts) < requested
         if not contexts:
             raise AcceptanceFailure(
@@ -526,7 +526,7 @@ def run_comparison(
             # already on disk, which is exactly the outcome that made a
             # three-hour run unreadable once.
             interrupted = True
-            contexts = paired_prefix(candidates, contexts, trace_root)
+            contexts = paired_prefix(candidates, contexts, trace_root, profile, map_data)
             contexts_by_candidate = {c.candidate_id: tuple(contexts) for c in candidates}
             say(
                 f"\n⚠ NGẮT GIỮA CHỪNG — chấm trên {len(contexts)}/{requested} episode đã ghép "

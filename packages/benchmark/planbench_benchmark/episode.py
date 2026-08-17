@@ -24,6 +24,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from planbench_benchmark.candidates import build_planners
+from planbench_benchmark.fingerprint import execution_conditions_fingerprint
 from planbench_decision.candidate import Candidate
 from planbench_planning.common.base import PlanResult
 from planbench_schemas.episode_context import EpisodeContext
@@ -144,6 +145,13 @@ def run_contract_episode(
         candidate.candidate_id,
         root=root,
         costmap_cells=map_data.width * map_data.height,
+        # What this episode ran under, so a later run can tell whether
+        # the file on disk describes the same world. The two ids in the
+        # path cannot answer that — HĐ-3.1 leaves the environment out of
+        # ``episode_context_id`` — and the reuse paths trusted them.
+        execution_conditions_fingerprint=execution_conditions_fingerprint(
+            map_data, scenario, profile
+        ),
     ) as recorder:
         run = run_stack(
             map_data,

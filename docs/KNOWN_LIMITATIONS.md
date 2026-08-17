@@ -1647,9 +1647,12 @@ trừ nền tự dựng từ chính scan của robot — thay vì *"cụm này h
 phải vật không"*. Hợp lệ với `lidar_only` (không đọc map ground truth),
 nhưng cần pose nhất quán giữa các khung, tức **phải trả L17 trước**.
 
-### L20. Hai nợ hạ tầng lộ ra khi làm plan tri giác — **chưa sửa**
+### L20. Hai nợ hạ tầng lộ ra khi làm plan tri giác — **đã sửa 2026-08-16**
 
-Cả hai không liên quan `dwa_predictive` và vẫn còn nguyên.
+Cả hai không liên quan `dwa_predictive`; chúng chỉ tình cờ lộ ra khi
+làm plan đó. Giữ mục này sau khi sửa vì cả hai đều là **lỗi im lặng** —
+không có gì báo, và chỉ một tạo tác tình cờ mới lộ ra — nên cách chúng
+xảy ra đáng đọc hơn việc chúng đã hết.
 
 **(a) Trace của thế giới cũ được dùng lại âm thầm.** Trace được định địa
 chỉ chỉ bằng `(candidate_id, episode_context_id)`; `--reuse-traces` chỉ
@@ -1660,8 +1663,25 @@ băng `episode_context_id` ở *(task profile, mission, variant, seed)* —
 `warehouse_crossing_v1` sau khi rút `v_obstacle_max` cho ra
 `run_journal.jsonl` **120 dòng** — 60 `stuck` rồi 60 `success`, **cùng**
 `episode_context_id b408516ece7f`. Hai thế giới, một id, một file.
-Bản vá đã thiết kế (`execution_conditions_fingerprint` băm từ chính
-object `scenario_for` trả về) nằm ở plan 16-08 §Q1.c.
+**Đã sửa.** `execution_conditions_fingerprint` băm từ **chính năm tham số
+điều kiện `run_stack` nhận** — không phải một danh sách field duy trì
+song song. Lý do chọn cách đó nằm ngay trong lịch sử của nó: bản liệt kê
+tay đầu tiên mắc cả hai chiều lỗi trong một lần viết — sót
+`clearance_preference` (đổi planning grid ⇒ đổi quỹ đạo) và đưa nhầm
+`clearance_warning_m` (chỉ Metrics Engine đọc lúc chấm).
+
+Bốn điểm chặn: fingerprint ghi vào `TraceMetadata`; `--reuse-traces` mô
+phỏng lại khi lệch; `--score-only` **từ chối** (`StaleTraceError`) vì
+chấm điểm không có đường mô phỏng lại, cắt ngắn im lặng sẽ trả report
+dựng một phần từ thế giới khác; `run_journal.jsonl` truncate mỗi sweep
+thay vì append.
+
+**Fail-closed:** fingerprint rỗng (trace cũ) đọc là *không biết*, không
+phải *khớp*. Giá là mô phỏng lại kho trace hiện có một lần.
+
+**Guard chống trôi:** `test_run_stack_has_not_grown_a_condition` so chữ
+ký `run_stack` với `CONDITION_ARGUMENTS`; thêm tham số điều kiện thứ sáu
+mà không quyết định nó có vào hash hay không ⇒ test đỏ.
 
 **(b) `angle_span ≠ 2π` làm hỏng MỌI candidate `lidar_only`.**
 `LidarConfig` cho khai `angle_span` bất kỳ và simulator tôn trọng nó
@@ -1671,3 +1691,12 @@ deployment khai LiDAR 180° sẽ khiến `dwa` **thường** dựng đám mây �
 lệch một phép quay. Hôm nay chưa nổ vì `LidarConfig` không khai được từ
 profile — nó là default cứng `scenario.py:78`. Ngày nào cảm biến thành
 thứ deployment khai, đây là lỗi chờ sẵn.
+
+**Đã sửa bằng cách chặn ở chỗ khai báo**, không phải dạy consumer:
+validator trên `LidarConfig` từ chối mọi `angle_span ≠ 2π`, và thông
+điệp nói rõ **ai** sẽ sai (`dwa_core.obstacle_points`, tức `dwa`
+thường). Truyền đặc tả cảm biến xuống hai controller chạm planner
+protocol và golden trajectory của cả hai — đó là pha riêng. Trạng thái
+trung thực là trường này có **một** giá trị được hỗ trợ, và cách nói ra
+là từ chối các giá trị khác chứ không nhận rồi hành xử như chưa từng
+được hỏi.
