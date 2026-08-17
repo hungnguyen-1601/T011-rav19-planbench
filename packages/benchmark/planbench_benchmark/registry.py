@@ -168,6 +168,17 @@ class AlgorithmInfo(BaseModel):
     #: fabrication the spec forbids, so the property is now stated
     #: outright instead of being a side effect of field defaults.
     requires_model: bool = False
+    #: Why this stack is not offered as a candidate, when it is not.
+    #:
+    #: ``benchmarkable=False`` has meant one thing since D12 — *a
+    #: reference adapter, never a contender* — and now it means two. A
+    #: stack can also be **withdrawn after being measured**, which is a
+    #: different fact about a different kind of entry, and a refusal that
+    #: told the second kind it was "a reference stack only" would be
+    #: misdirecting whoever reads it. So the reason travels with the
+    #: entry and the refusal quotes it. Empty for reference stacks, whose
+    #: reason has not changed.
+    withdrawn: str = ""
     #: What each half of the stack is allowed to see (P02).
     #:
     #: Deliberately without a default. A default would be a guess made
@@ -229,6 +240,26 @@ _RRT_STAR_DESCRIPTION = (
 )
 
 
+#: Why both predictive stacks stopped being candidates, in the words a
+#: reader of ``/algorithms`` gets. Short enough to survive a UI, specific
+#: enough that nobody has to go and re-derive it.
+_WITHDRAWN = (
+    "The prediction is sound and the perception feeding it is not. On a "
+    "static warehouse the tracker reports obstacles moving at up to "
+    "1.9 m/s, and raising LiDAR resolution makes that worse rather than "
+    "better: false-motion frames go 14% -> 99% between 72 and 360 rays "
+    "while real detections only go 0.9% -> 4.5%. The cause was traced to "
+    "a scan crossing the corner of two shelf faces, which clusters as one "
+    "object whose centroid slides smoothly as the robot drives past — "
+    "0.436 m/s off a corner that was not moving. Smooth is what makes it "
+    "unfixable downstream: no floor or confidence computed from the "
+    "velocity can separate that from a real obstacle. A shape-based split "
+    "was built and measured and did not separate corners from round "
+    "objects at this sampling density. The implementation, its oracle and "
+    "its diagnostics are kept so the result can be reproduced; it is not "
+    "offered as a deployment candidate. See KNOWN_LIMITATIONS L19."
+)
+
 _DWA_PREDICTIVE_DESCRIPTION = (
     "Dynamic Window Approach that rolls obstacle motion forward alongside "
     "its own trajectory, instead of scoring against a photograph of the "
@@ -244,7 +275,8 @@ _DWA_PREDICTIVE_DESCRIPTION = (
     "Measured 2026-08-15 on `intersection`: with **perfect** perception "
     "the idea is worth something (11 of 11 paired disagreements favoured "
     "it, p = 0.0005), but the LiDAR tracker recovered **none** of it — "
-    "see KNOWN_LIMITATIONS L16."
+    "see KNOWN_LIMITATIONS L16. "
+    "**WITHDRAWN 2026-08-16 — experimental, not recommendable.** " + _WITHDRAWN
 )
 
 ALGORITHMS: dict[str, _Entry] = {
@@ -277,7 +309,8 @@ ALGORITHMS: dict[str, _Entry] = {
                 "A* global planner with the space-time DWA controller. "
                 + _DWA_PREDICTIVE_DESCRIPTION
             ),
-            benchmarkable=True,
+            benchmarkable=False,
+            withdrawn=_WITHDRAWN,
             config_schema=DWAPredictiveConfig.model_json_schema(),
             global_observation_class="full_static_map",
             # **Still `lidar_only`, and that is the point.** Taking
@@ -303,7 +336,8 @@ ALGORITHMS: dict[str, _Entry] = {
                 + " Paired here with the space-time DWA controller. "
                 + _DWA_PREDICTIVE_DESCRIPTION
             ),
-            benchmarkable=True,
+            benchmarkable=False,
+            withdrawn=_WITHDRAWN,
             config_schema=DWAPredictiveConfig.model_json_schema(),
             global_planner="rrtstar",
             stochastic_global_planner=True,

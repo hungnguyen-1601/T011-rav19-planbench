@@ -75,9 +75,11 @@ class TestRegistry:
         """What a clone with no extra installs can put in a comparison.
 
         The point of adding RRT* was that two real stacks could be
-        compared out of the box; P6 made it four by registering the
-        predictive controller against both global planners. ``astar+ppo``
-        still does not count — it needs a trained model.
+        compared out of the box. P6 briefly made it four by registering
+        the predictive controller against both global planners; both were
+        **withdrawn on 2026-08-16** after the perception feeding them was
+        measured, so the set is back to two. ``astar+ppo`` still does not
+        count — it needs a trained model.
 
         Written as an exact set rather than a count: a stack appearing
         here without anybody deciding to add it is the thing worth
@@ -87,12 +89,7 @@ class TestRegistry:
         ready = {
             info.id for info in list_algorithms() if info.benchmarkable and not info.requires_model
         }
-        assert ready == {
-            "astar+dwa",
-            "rrtstar+dwa",
-            "astar+dwa_predictive",
-            "rrtstar+dwa_predictive",
-        }
+        assert ready == {"astar+dwa", "rrtstar+dwa"}
 
     def test_the_predictive_stacks_pair_the_same_controller_with_both_planners(self) -> None:
         """The pair exists so a comparison can hold the global planner

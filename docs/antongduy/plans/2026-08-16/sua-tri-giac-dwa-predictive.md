@@ -1,6 +1,28 @@
 # Sửa tầng tri giác của `dwa_predictive`
 
-**Trạng thái:** chờ dev duyệt. Chưa viết dòng code sửa nào.
+> ## ⚠ Q0 ĐÃ CHẠY VÀ BÁC BỎ TIỀN ĐỀ CỦA PLAN NÀY
+>
+> Đo lại ở N = 20 (`notes/2026-08-16/tongduyan_q0-do-lai-do-phan-giai-lidar.md`,
+> dữ liệu `artifacts/q0_resolution/`):
+>
+> 1. **Bảng §1.4 sai.** Không có "đỉnh ở 144 tia rồi thoái lui" —
+>    `vel_out` tăng đơn điệu 0.9 → 3.5 → 4.1 → 4.5%. Con số `err_med
+>    0.164` ở 144 tia là ăn may với n nhỏ; ở N = 20 nó là **0.935**.
+> 2. **Tăng độ phân giải mua ×5 phát hiện thật kèm ×7 ảo giác.**
+>    Vận tốc ma trên cảnh tĩnh: 14.17% → **99.19%** số frame ở 360 tia.
+>    Objective khai trước loại sạch mọi cấu hình trừ 72 tia.
+> 3. **Nguyên nhân là sàn vận tốc mô hình sai đại lượng**, không phải
+>    ngưỡng cụm chưa co giãn. Xem §Q0-KQ bên dưới.
+>
+> **Hệ quả:** §1.4, §3 vế 1 và 2, Q1, Q2, Q5 **không còn hiệu lực như
+> đang viết**. Giữ nguyên văn bản để đối chiếu, không xoá. Đề xuất sửa
+> hướng ở §Q0-KQ.
+>
+> Q3, Q4, Q6 và toàn bộ §2 (ba nước đi bị cấm), §5 (release gate), §6
+> (tám quyết định) **vẫn còn hiệu lực**.
+
+**Trạng thái:** Q0 xong, kết quả âm. Tám quyết định §6 đã chốt 16-08.
+Chưa viết dòng code sản phẩm nào. Chờ dev chốt hướng sửa ở §Q0-KQ.
 **Ngày lập:** 2026-08-16
 **Tiền đề:** plan `2026-08-14/du-doan-chuyen-dong-vat-can.md` đã chạy hết
 P0–P7. Plan này xử lý **kết quả âm của P5 và P7**, không mở tính năng mới.
@@ -224,11 +246,78 @@ else can re-run."*
    tracker "nhạy hơn" đều trông như cải thiện.
 2. Chạy lại toàn bộ §1.4 với **N ≥ 20 seed**, thay bảng một-seed.
 3. Ghi lại kết quả vào `notes/2026-08-16/`.
+4. **Kỷ luật seed — calibration tách khỏi evaluation, khai từ bây giờ:**
+
+   ```
+   Calibration A: {1000..1119}   Q0 + mọi hiệu chuẩn factor của Q2
+                                 (wall_continuity_factor, ε_wall,
+                                  association_ambiguity_margin, kiểm w_min)
+   Evaluation  B: {2000..2119}   cổng Q4; mở rộng một-lần: {2000..2359}
+   Đã cháy     : {0..119} và mọi seed lẻ đã dùng trong khảo sát §1
+   ```
+
+   Dải `{0..119}` **không được làm evaluation** dù ghi chú contamination
+   — khảo sát §1 chạy trên seed 0 thuộc dải đó, và P4/P5 đã nhìn toàn
+   dải khi thiết kế. Ghi nhận vết bẩn không biến seed đã nhìn thành
+   held-out; đổi dải mới là cách duy nhất. Hệ quả phải trả: **baseline
+   `dwa` và oracle phải chạy lại trên B mới** — số 11/120 opportunity
+   của P4 là số của dải cũ, không được mang sang so.
+
+   Không chỉnh bất kỳ parameter nào sau khi đã nhìn số liệu trên B —
+   seed đã dùng để chọn factor là training data, để nó lọt vào cổng là
+   tự chấm bài mình ra đề.
+5. **Objective chọn factor, khai trước để "đo ở Q0" không thoái hoá
+   thành chọn-bằng-mắt cấu hình đẹp:**
+
+   ```
+   ràng buộc cứng:  phantom-velocity rate (cảnh tĩnh) ≤ baseline 72-tia hiện tại
+   tối đa hoá:      tỉ lệ ra vận tốc trên cảnh có traffic
+   tie-break:       margin bảo thủ hơn (factor continuation nhỏ hơn,
+                    ambiguity margin lớn hơn); còn hoà thì cấu hình đơn giản hơn
+   ```
 
 **Không đổi một dòng code sản phẩm nào ở pha này.**
 
-**Ra khỏi pha khi:** bảng 1.4 được tái lập (hoặc bác bỏ) ở N ≥ 20, và
-script đã commit.
+**Ra khỏi pha khi:** bảng 1.4 được tái lập (hoặc bác bỏ) ở N ≥ 20 trên
+seed set A, script đã commit, và objective + seed split đã nằm trong
+chính script (in ra ở đầu output, không phải trong trí nhớ ai đó).
+
+#### Ba điều lộ ra khi dựng harness — ghi lại vì chúng đổi cách đọc mọi bảng sau
+
+**(1) `reset()` dựng tracker MỚI, nên đo bằng instance wrap là đo hư.**
+`DWAPredictivePlanner.reset` tạo `LidarTracker` mới (có chủ đích: "hai
+episode trên một instance phải bằng hai instance"), và `run_stack` gọi
+`reset` sau khi caller kịp bọc. Bản đầu của script bọc ở mức instance ⇒
+bị vứt trước scan đầu tiên ⇒ episode chạy thành công, **mọi counter
+bằng 0**, và bảng đọc ra "tracker không thấy gì" thay vì "không ai
+đang đo". Script giờ bọc ở mức class, khôi phục trong `finally`, và
+**ném lỗi nếu `frames == 0`** — im lặng là chế độ hỏng nguy hiểm nhất
+của một công cụ chẩn đoán.
+
+**(2) Không phải seed nào cũng có cuộc gặp.** Đo trên 8 seed calibration:
+**6/8 seed** robot mới vào tầm cảm biến của crosser; 2 seed còn lại
+`in_range = 0` cả episode. Có seed vào tầm 83 frame mà **0 tia** chạm
+được (che khuất hoàn toàn). Nên "N seed" **không phải** cỡ mẫu — cỡ mẫu
+là số seed có gặp, và bảng phải in cột `enc/eps`. Với N = 20 kỳ vọng
+~15 cuộc gặp, ~2300 frame in-range: đủ, nhưng phải nói ra chứ không để
+người đọc suy từ chữ "20 seed".
+
+**(3) Baseline vận tốc ma cao hơn dự đoán, và đây là ràng buộc cứng của
+objective.** Trên **cảnh tĩnh** (cùng deployment, rút hết traffic), 72
+tia, 8 seed:
+
+```
+phantom_rate  14.17%      p90 phantom speed  1.868 m/s
+```
+
+Nghĩa là trong một nhà kho **không có gì chuyển động**, tracker báo có
+vận tốc ở 1 trong 7 frame, và 10% số đó nhanh hơn 1.87 m/s — **hơn gấp
+đôi** tốc độ traffic thật (0.8 m/s). Sàn vận tốc đang chặn biên độ chứ
+không chặn được hiện tượng.
+
+Hệ quả cho Q2/Q3, phải nhớ khi chọn ngưỡng: mọi thay đổi làm tracker
+nhạy hơn sẽ **được thưởng ở cột traffic và bị phạt ở cột tĩnh**, và
+ràng buộc cứng là cột tĩnh. Con số 14.17% là mốc phải không vượt.
 
 **Rủi ro thật:** N=20 có thể cho thấy 144 không phải đỉnh, hoặc tính không
 đơn điệu là artefact của một seed. Nếu vậy **plan này phải viết lại** —
@@ -236,7 +325,7 @@ và đó là lý do Q0 đứng trước.
 
 ---
 
-### Q1 — Cảm biến trở thành thứ deployment khai · **1 ngày**
+### Q1 — Cảm biến trở thành thứ deployment khai · **1.5 ngày**
 
 Hôm nay `LidarConfig(num_rays=72, max_range=5.0)` là **default cứng** ở
 `scenario.py:78`, không profile nào khai được. Hệ quả: không thể có hai
@@ -245,16 +334,97 @@ deployment cùng bản đồ khác cảm biến, tức không thể so được.
 1. `EnvironmentSpec.lidar: LidarConfig | None = None` — `None` giữ nguyên
    default, nên **mọi profile đã có không đổi một float nào**.
 2. Nối qua `scenario_for()` trong `episode.py`.
-3. Ghi vào manifest (HĐ-13) cạnh `sensor_noise`.
 
-**Điểm bắt buộc, và nó là bài học vừa trả giá:** `episode_context_id` bị
-HĐ-3.1 đóng băng ở *(task profile, mission, variant, seed)*. Cảm biến
-**không** nằm trong payload. Codebase đã ghi cái bẫy này hai lần
-(`sensor_noise`, `replanning`) với cùng một lời giải: *đổi profile ⇒
-`task_profile_id` mới*.
+**Q1.a — `angle_span` bị chặn ở `2π`, có validator, có bằng chứng.**
 
-Nhưng lời giải đó **có lỗ, và tôi vừa rơi vào nó ở P7**. Chạy lại
-`warehouse_crossing_v1` sau khi rút `v_obstacle_max` cho ra:
+`LidarConfig` cho khai `angle_span` bất kỳ, và simulator tôn trọng nó
+(`lidar.py:89`: `increment = angle_span / num_rays`, tia đầu ở
+`-span/2`). Nhưng **hai** nơi phía tiêu thụ hardcode vòng tròn đầy:
+
+- tracker: `spacing = 2π / rays`, `start_angle = pose.theta - π`
+  (`tracking.py:209-210`);
+- **và cả `dwa` thường**: `obstacle_points` trong `dwa_core.py:216-218`
+  cũng `span = 2.0 * math.pi`.
+
+Nghĩa là deployment khai LiDAR 180° hôm nay không chỉ làm tracker chiếu
+sai centroid — nó làm **mọi candidate lidar_only** dựng đám mây điểm sai
+toạ độ, lệch một phép quay + phản chiếu. Đây là bug tồn tại sẵn, Q1 chỉ
+làm nó **khả khai** nên phải chặn trước.
+
+Quyết định: **phương án hẹp** — validator trên `EnvironmentSpec.lidar`
+từ chối `angle_span ≠ 2π` với thông điệp nói rõ vì sao (kể cả tên hai
+hàm hardcode). Truyền `LidarConfig` xuyên xuống planner/tracker là việc
+đúng dài hạn nhưng chạm `scenario_for → nav_stack → planner.reset →
+LidarTracker` + `dwa_core` + test golden của cả hai controller — scope
+đó là một pha riêng, không nhét vào plan sửa tri giác. Ghi thành nợ
+trong L19. Regression test: profile khai 180° phải bị từ chối **khi
+load**, không phải chạy sai âm thầm.
+
+**Q1.b — ghi đủ mọi điểm chạm, liệt kê tường minh.**
+
+`FairnessRecord` (luồng benchmark cũ) đã có `lidar_num_rays` /
+`lidar_max_range` và scenario checksum đã băm LiDAR. Nhưng luồng
+deployment thì **chưa**: HĐ-13 `Manifest` chỉ ghi `sensor_noise`
+(`card.py:363`), không có `lidar`. Danh sách phải sửa — đủ, không phải
+"manifest" chung chung:
+
+*Backend:*
+- [ ] `Manifest.lidar` (schema + field)
+- [ ] `Manifest.to_json_dict()`
+- [ ] `build_manifest()` — nằm ở **`card.py:555`**, `selection.py` chỉ
+      là caller (bản nháp trước ghi sai chỗ)
+- [ ] `identity` của comparison report (`selection.py:599` — nơi ghi
+      `sensor_noise` để run không sinh card vẫn nhận diện được môi
+      trường; LiDAR cùng lý do)
+- [ ] report của run bị ngắt trước episode đầu (cùng identity)
+- [ ] round-trip test manifest: dump → load → so bytes
+
+*Web form + preview — thiếu là preview nói dối:*
+- [ ] TypeScript `LidarConfig` + field `lidar` trên `Scenario` phía TS
+- [ ] control `num_rays` / `max_range` trên Deployment Form (angle_span
+      **không** có control — bị validator Q1.a chặn ở 2π)
+- [ ] `previewRequestOf()` gửi LiDAR của draft — preview adapter dựng
+      scenario bằng tay (`traffic.ts:590`); bỏ sót thì deployment chạy
+      144 tia nhưng preview vẫn vẽ thế giới 72 tia, đúng loại sai lệch
+      mà endpoint preview tồn tại để tránh
+- [ ] `ADAPTER_FIELDS` thêm `lidar`
+- [ ] mở rộng drift guard `test_the_adapter_fills_what_an_episode_fills`
+      (`test_api_profile_validation.py:298`) — và sửa docstring của nó:
+      hiện viết *"the LiDAR the platform fixes"*, mệnh đề hết đúng ngay
+      khi Q1 land
+
+**Danh sách trên KHÔNG phải thứ phải nhớ — có test cưỡng chế nó.**
+`tests/test_form_covers_the_contract.py` đọc thẳng `DeploymentForm.tsx`
+và đối chiếu với mọi field của `TaskProfile`: thêm `EnvironmentSpec.lidar`
+mà không bind ⇒ test **đỏ ngay**. Escape hatch duy nhất là ghi tên field
+vào `NOT_IN_THE_FORM` **kèm lý do** — và lý do đó là thứ người sau tranh
+luận được. Nghĩa là Q1 phải chọn tường minh một trong hai:
+
+- bind `environment.lidar.num_rays` và `environment.lidar.max_range` vào
+  form; **hoặc**
+- khai vào `NOT_IN_THE_FORM` rằng deployment chưa được chọn cảm biến
+  qua UI ở pha này, kèm lý do thật.
+
+`environment.lidar.angle_span` **thuộc nhóm thứ hai chắc chắn**, và lý
+do đã có sẵn từ Q1.a: validator chỉ nhận `2π`, nên một control cho nó là
+control không dùng được — cùng dạng lập luận mà `robot.type` đang dùng
+trong chính danh sách đó ("dropdown một lựa chọn là control không dùng
+được").
+
+**Q1.c — `execution_conditions_fingerprint`, thay cho checksum-cả-profile.**
+
+Bản nháp đầu của plan đề xuất checksum nội dung profile và đối chiếu với
+run đã lưu. **Sai hai chiều, bỏ.**
+
+*Chiều thứ nhất — quá hẹp về phạm vi bảo vệ.* Trace không nằm trong thư
+mục run. Nó được định địa chỉ chỉ bằng
+`trace_root / candidate_id / episode_context_id.parquet`
+(`pipeline.py:224`), và `--reuse-traces` chỉ kiểm **file có tồn tại
+không** rồi bỏ qua simulation; `--score-only` cũng tìm theo đúng hai id
+đó. `TraceMetadata` hiện chỉ lưu 4 id, không lưu điều kiện. Nên guard
+đặt ở mức run-directory không đỡ được: reuse trace của thế giới cũ,
+score-only trên trace ngày hôm trước, run directory đã xoá nhưng trace
+còn. Đây chính là cơ chế đã sinh ra journal 120 dòng ở P7:
 
 ```
 run_journal.jsonl:  120 bản ghi
@@ -263,55 +433,272 @@ run_journal.jsonl:  120 bản ghi
   episode_context_id block 1 == block 2 == b408516ece7f
 ```
 
-Hai thế giới khác nhau, **cùng context id, cùng thư mục run, journal nối
-đuôi nhau**. Người đọc file này sẽ kết luận episode đó chập chờn. Guard
-"từ chối nộp lại profile đã đổi dưới id cũ" nằm ở luồng API; `compare.py`
-nạp YAML thẳng từ path nên **đi vòng qua guard**.
+*Chiều thứ hai — quá rộng về nội dung băm.* Đổi `success_rate_min` chỉ
+đổi verdict, không đổi một sample nào của episode; bắt chạy lại toàn bộ
+vì nó là phạt sai chỗ.
 
-4. Thêm đúng phép kiểm đó vào `compare.py`: checksum nội dung profile,
-   đối chiếu với run đã lưu dưới cùng `task_profile_id`, **từ chối** nếu
-   khác. Kèm regression test.
-5. Ghi hạn chế mới (L19) cho tới khi (4) xong.
+Thiết kế thay thế — **suy từ đúng object mà simulator nhận, không phải
+danh sách field duy trì song song:**
 
-**Ra khỏi pha khi:** một profile khai được 144 tia, manifest ghi đúng, và
-chạy lại profile đã sửa dưới id cũ bị **từ chối** chứ không ghi đè.
+```python
+execution_conditions_fingerprint = sha256(
+    map_data.checksum(),
+    normalize(scenario_for(profile, context)),   # trừ name, description,
+                                                 # random_seed (context id
+                                                 # đã mang seed)
+    profile.replanning,                          # ba thứ run_stack nhận
+    profile.recovery,                            # NGOÀI scenario
+    profile.environment.v_obstacle_max,
+)
+```
+
+Vì sao suy-từ-object thay vì liệt-kê-field — bản liệt kê đầu tiên của
+chính plan này đã mắc **cả hai chiều lỗi** trong một lần viết:
+
+- **bỏ sót `clearance_preference`** — nó đổi planning grid và quỹ đạo
+  (`episode.py:114` đưa nó vào scenario), tức đổi thế giới, mà danh
+  sách tay không có;
+- **đưa nhầm `clearance_warning_m` vào** — tưởng nó sinh event trong
+  trace; thực tế chỉ Metrics Engine đọc để tính near-miss
+  (`definitions.py:407`), scoring-only, đổi nó không việc gì phải chạy
+  lại episode.
+
+`scenario_for` **là** định nghĩa "cái gì đi vào simulator" — field mới
+thêm vào scenario tự động vào fingerprint, không cần ai nhớ. Ba tham số
+`run_stack` nhận ngoài scenario (`replanning`, `recovery`,
+`obstacle_speed`) băm riêng, và **chỉ** ba cái đó — có test khẳng định
+chữ ký `run_stack` không mọc thêm tham số điều kiện nào chưa được băm.
+
+Luật phân loại giữ nguyên cho người đọc sau: **vào fingerprint nếu đổi
+nó có thể đổi quỹ đạo hoặc nội dung trace; ở ngoài nếu chỉ đổi cách
+phán xử trace.** Nhưng cơ chế thi hành là dẫn xuất từ object, không
+phải kỷ luật con người.
+
+Thi hành:
+- Lưu fingerprint trong `TraceMetadata` (footer Parquet). Đây là schema
+  bump — gộp chung với bump của Q5 (counter tracker) thành **một** lần
+  đổi schema, không hai.
+- Kiểm fingerprint **trước mọi nhánh reuse**: `--reuse-traces` so
+  fingerprint của trace với fingerprint tính từ profile hiện tại, lệch ⇒
+  chạy lại episode đó (không phải lỗi — trace cũ đơn giản là không dùng
+  được). `--score-only` lệch ⇒ **từ chối**, vì không còn đường tái mô
+  phỏng đúng.
+- Trace cũ không có fingerprint: **fail-closed** — coi như lệch. Giá là
+  mất khả năng reuse kho trace hiện có một lần; rẻ hơn một kết luận sai.
+- Thư mục run: `run_journal.jsonl` mở với chế độ ghi đè khi bắt đầu run
+  mới thay vì append vô điều kiện — sửa một dòng, chặn đúng vụ 120 dòng.
+
+**Ra khỏi pha khi:** một profile khai được 144 tia và bị từ chối nếu
+khai 180°; manifest + report identity ghi LiDAR ở mọi điểm trong danh
+sách Q1.b; trace của thế giới cũ không thể được reuse/score âm thầm
+(có regression test cho cả `--reuse-traces` lẫn `--score-only`).
 
 ---
 
-### Q2 — Ngưỡng co giãn theo cảm biến · **1.5 ngày**
+### Q2 — Ngưỡng co giãn theo cảm biến · **2.5 ngày** · ba pha con, đo sau từng pha
 
-Đây là pha làm cho việc tăng tia thôi phản tác dụng.
+Đây là pha làm cho việc tăng tia thôi phản tác dụng. Tách ba pha con
+**độc lập, land tuần tự, chạy harness Q0 sau mỗi pha** — để nếu vận tốc
+ma tăng thì biết chính xác thay đổi nào gây ra. Không land gộp.
 
-| ngưỡng | hôm nay | đề xuất | suy ra từ |
-|---|---|---|---|
-| `cluster_min_points` | `3` tia | số tia tối thiểu để một vật rộng `w_min` ở tầm `max_range` còn phân giải được | `Δθ`, `max_range` |
-| `cluster_wall_width` | `0.9` m | test tường không dựa vào bề rộng **một** cụm, mà vào việc **các cụm lân cận có nối tiếp cùng đường thẳng không** | hình học cụm |
-| `association_margin` | `0.25` m | giữ margin, nhưng thay veto-nhập-nhằng bằng **gán toàn cục** (nearest-neighbour toàn cục hoặc Hungarian) | — |
+#### Q2a — `cluster_min_points` theo tầm · 0.5 ngày
 
-Ghi chú về từng cái:
+Hôm nay: hằng số `3` tia, bất khả thi ở 72 tia (đo được 1.05 tia/frame),
+vô nghĩa ở 360 tia.
 
-- **`cluster_min_points`**: đây là ngưỡng duy nhất mà việc "hạ xuống 2"
-  nghe hợp lý và **có thể sai**. Cụm 2 điểm có centroid do nhiễu range
-  chi phối; sàn vận tốc sẽ dập phần lớn, nhưng phần lọt qua là vận tốc
-  rác. Phải đo cột "vận tốc ma trên cảnh tĩnh" của Q0 trước và sau.
-- **Test tường**: nguyên nhân thoái lui ở 271/360 tia. Mảnh tường hẹp
-  hiện lọt vì test chỉ nhìn bề rộng của **chính** cụm đó. Sửa đúng là hỏi
-  *"cụm bên cạnh có tiếp tục cùng một đường thẳng không"* — bất biến
-  theo độ phân giải.
-- **Gán toàn cục**: `_associate` hiện duyệt từng track theo thứ tự list,
-  và **bỏ hẳn** track nào có ≥2 cụm trong cổng. Ở Δθ mịn, mật độ cụm tăng
-  ⇒ `ambiguous_drops` đi **2 → 894** (72 → 360 tia, bảng §1.4) ⇒ track
-  thật bị hi sinh. Gán toàn cục giải đúng bài toán này và **không** làm
-  yếu nguyên tắc "nhập nhằng thì trả zero": nhập nhằng thật vẫn còn sau
-  khi gán tối ưu.
+Thiết kế chốt, không để người triển khai tự chọn:
 
-  Lưu ý thứ tự sửa: nếu Q2 sửa được test tường thì `cụm-"động"/frame` tụt
-  từ 8.76 xuống gần 1, và phần lớn nhập nhằng biến mất theo. Gán toàn cục
-  là lớp phòng thủ thứ hai, **không** phải cách vá cho test tường sai.
+```python
+n_required(d) = max(2, floor(w_min / (d · Δθ)))
+với  d  = max(khoảng cách từ observation.pose tới centroid cụm, EPS)
+     Δθ = angle_span / num_rays   # xem khoá bên dưới
+```
 
-**Ra khỏi pha khi:** bảng Q0 chạy lại cho thấy tỉ lệ ra vận tốc **đơn
-điệu tăng** theo số tia, hoặc ít nhất phẳng — không còn thoái lui — và
-vận tốc ma trên cảnh tĩnh **không tăng**.
+- Tính **theo từng cụm** tại tầm `d` của chính cụm đó — không phải một
+  hằng số toàn cục tại `max_range` (tại 72 tia, hằng số đó ra 0).
+  `d` đo từ **believed pose** — pose duy nhất controller có.
+- **Khoá Δθ, và một ràng buộc thực tế phải nói thẳng:** tracker chỉ nhận
+  `Observation`, không có kênh nào mang `LidarConfig` xuống — đó chính
+  là phần plumbing đã hoãn ở Q1.a. Nên trong code tracker, Δθ vẫn tính
+  bằng `2π / len(lidar_ranges)`; đẳng thức `2π / num_rays ==
+  angle_span / num_rays` được **validator Q1.a bảo đảm** (từ chối mọi
+  profile khai `angle_span ≠ 2π`). Bất biến này phải được khoá bằng
+  test: một test load profile 180° và khẳng định bị từ chối, kèm comment
+  trong tracker trỏ về validator. Ngày nào trả nợ plumbing (truyền
+  `LidarConfig` xuống planner/tracker) thì đổi công thức sang
+  `angle_span / num_rays` cùng lúc — ghi trong L19.
+- `w_min = 0.3 m`, hằng số **candidate-owned**, cùng loại sở hữu với
+  `association_speed_limit` — không đọc từ `DynamicObstacle.radius`
+  (§2b), không phải deployment khai. Nằm trong config ⇒ đi vào
+  `candidate_id`. Dev phê chuẩn trước phép đo (§6, quyết định #6),
+  **không chọn lại sau khi thấy Q4**.
+- **Phát biểu cho đúng phạm vi của tuyên bố:** `w_min` là *apparent
+  width tối thiểu mà cổng đếm-điểm được thiết kế để chấp nhận khi vật
+  được quan sát đầy đủ* — **không phải** bảo đảm mọi vật ≥ 0.3 m luôn
+  được phát hiện. Vật rộng vẫn có thể bị che, chỉ lộ một phần, dính vào
+  nền, hoặc rơi giữa hai tia. Đây là phạm vi năng lực của khâu
+  sampling/lọc, không phải detection guarantee — docstring phải viết
+  đúng như vậy, vì người đọc config sẽ đọc nhầm theo hướng mạnh hơn.
+- Clamp dưới ở **2**: một tia không bao giờ đủ (centroid của 1 điểm là
+  nhiễu thuần), và vật một-tia-ở-xa bị loại **có chủ đích** — nó sẽ được
+  theo khi lại gần, đó là hành vi đúng của sàn tri thức, không phải bug.
+- Rủi ro đo trước/sau: cụm 2 điểm có centroid nhiễu chi phối; cột "vận
+  tốc ma cảnh tĩnh" của Q0 là tiêu chí chặn.
+- **Boundary test quanh các điểm gãy của floor**, vì `floor` nhảy bậc:
+  `w_min/(d·Δθ) = 1.99 → 2`; `= 2.00 → 2`; `= 2.99 → 2`; `= 3.00 → 3`;
+  và cùng một vật ở cùng khoảng cách chạy qua 72/144/271/360 tia phải
+  cho `n_required` tăng đúng tỉ lệ.
+
+#### Q2b — Test tường bằng tính liên tục, thay bề rộng đơn cụm · 1 ngày
+
+Nguyên nhân thoái lui 271/360 tia. Định nghĩa cụ thể, trả lời đủ các
+câu hỏi mở:
+
+- **"Lân cận" = theo chỉ số tia, và CHỈ giữa hai run kề trực tiếp do
+  range split** — run sau bắt đầu ngay ở tia kế tiếp của run trước.
+  **Không nối qua bất kỳ tia no-return nào**: no-return nghĩa là *không
+  quan sát thấy bề mặt*, và bắc cầu qua nó là khẳng định một tính liên
+  tục không có bằng chứng — hai bức tường hai bên một khoảng trống sẽ
+  bị dán thành một. Bridging qua dropout là pha riêng, chỉ mở khi có
+  bằng chứng cần (khi đó phải thêm `max_missing_rays` + ownership +
+  objective hiệu chuẩn + test không-nối-hai-tường-qua-vùng-trống — ghi
+  nợ, không làm ở đây). Không dùng khoảng cách Cartesian — hai vật xa
+  nhau trong không gian có thể gần nhau qua phép chiếu.
+- **Khoảng trống tối đa**: ranh giới giữa hai run là *continuation* khi
+  bậc range tại đó `|r_a − r_b| ≤ wall_continuity_factor · (d·Δθ) +
+  cluster_range_margin · σ` — cùng dạng công thức với ngưỡng split,
+  hệ số riêng (`wall_continuity_factor`, đo ở Q0, dự kiến quanh 6–10:
+  lớn hơn split factor 3 vì tường nghiêng tạo bậc lớn hơn bậc của mặt
+  vuông góc, nhỏ hơn nhiều so với bậc vật-đứng-trước-tường vốn là hiệu
+  khoảng cách vật–nền, cỡ mét).
+
+  **Ràng buộc thứ tự, phải thành validator chứ không phải quy ước:**
+  hai cụm kề nhau tồn tại **chính vì** bậc range giữa chúng đã vượt
+  ngưỡng split. Nếu continuation dùng đúng ngưỡng đó thì hai điều kiện
+  loại trừ nhau và không cặp cụm nào nối được — test tường mới chết
+  lặng lẽ ngay ngày đầu. Nên bắt buộc:
+
+  ```
+  cluster_gap_factor < wall_continuity_factor    # validator trong config
+  ```
+
+  và Q0 hiệu chuẩn **khoảng cách giữa hai factor** (dải bậc range nằm
+  giữa "đủ để tách cụm" và "đủ để kết luận khác bề mặt"), không hiệu
+  chuẩn từng factor cô lập.
+- **Đồng tuyến**: góc giữa hai chord ≤ `ε_wall` **và** khoảng cách
+  vuông góc từ centroid cụm này tới đường chord của cụm kia ≤
+  `k·(d·Δθ) + m·σ`. `ε_wall` đo ở Q0.
+- **Phán quyết**: nếu chuỗi các run nối tiếp nhau (liên tục + đồng
+  tuyến) có **tổng** bề rộng > `cluster_wall_width` và straightness gộp
+  nhỏ ⇒ cả chuỗi là tường, mọi mảnh bị loại. Test tường chuyển từ thuộc
+  tính **một cụm** sang thuộc tính **chuỗi cụm** — bất biến theo Δθ.
+
+  **Quy tắc cho cụm ngắn — bắt buộc, vì Q2a vừa mở cửa cho cụm 2
+  điểm:** hai điểm xác định một đường *tuyệt đối*, residual luôn bằng 0
+  — "thẳng hoàn hảo" của cụm 2 điểm không phải bằng chứng nó là tường.
+  Nên: (i) cụm dưới 3 điểm **không bao giờ tự phân loại** là tường;
+  (ii) nó chỉ nhận nhãn tường khi **nối vào một chuỗi** mà tổng số điểm
+  và tổng bề rộng của cả chuỗi vượt ngưỡng; (iii) straightness của
+  chuỗi tính bằng **fit một đường trên toàn bộ điểm của chuỗi gộp**,
+  không suy từ residual của từng mảnh — từng mảnh ngắn thẳng tuyệt đối
+  là tautology, cả chuỗi thẳng mới là thông tin.
+- **Góc tường / kệ cong**: hai cạnh của góc không đồng tuyến ⇒ không
+  merge ⇒ mỗi cạnh tự xét riêng — đúng hành vi mong muốn. Kệ cong bán
+  kính lớn: các chord kề nhau lệch góc nhỏ, vẫn nối được từng đoạn;
+  bán kính nhỏ cỡ vật thật thì **không được** nối — và không nối là
+  đúng, vì nó chính là hình dạng của vật đáng theo.
+- **Vật đứng trước tường có bị nuốt không?** Không: ranh giới
+  vật–tường là bậc range bằng hiệu khoảng cách vật–nền (cỡ mét), vượt
+  xa ngưỡng continuation (cỡ cm). Vật **chạm sát tường cùng tầm** thì
+  nhập nhằng thật — chấp nhận là hạn chế, ghi vào docstring.
+
+#### Q2c — Gán toàn cục tất định + quyền từ chối · 1 ngày
+
+`_associate` hiện duyệt track theo thứ tự list và **bỏ hẳn** track có ≥2
+cụm trong cổng ⇒ `ambiguous_drops` 2 → 894 (§1.4) ⇒ track thật bị hi
+sinh giữa đám mảnh tường.
+
+Thứ tự phụ thuộc: Q2b hạ mật độ cụm-"động" từ 8.76 về gần 1 và phần lớn
+nhập nhằng biến mất theo. Q2c là lớp phòng thủ thứ hai, **không** phải
+cách vá cho test tường sai — land sau Q2b, đo riêng.
+
+Thiết kế chốt — **greedy toàn cục tất định, không phải Hungarian**, và
+**từ chối được xét trên cạnh, TRƯỚC khi greedy tiêu thụ bất kỳ cụm nào**:
+
+```
+1. Sinh mọi cạnh (track, cluster, distance) có distance ≤ gate
+   (gate trước assignment, như hiện tại).
+2. Đánh dấu cạnh NHẬP NHẰNG nếu tồn tại cạnh cạnh tranh đủ gần
+   (chênh distance < association_ambiguity_margin) ở MỘT TRONG HAI phía:
+     - cùng track, cluster khác;  HOẶC
+     - cùng cluster, track khác.
+3. Loại mọi cạnh nhập nhằng. KHÔNG đụng misses ở bước này — chỉ ghi
+   nhận tập track bị mất cạnh vì nhập nhằng, và
+   ambiguous_drops += (số TRACK trong tập đó)     # đếm track, không đếm cạnh
+4. Sắp cạnh còn lại theo (distance, track.identity, cluster.first_ray_index).
+5. Duyệt tăng dần, nhận cạnh nếu cả track lẫn cluster chưa bị dùng.
+6. MỘT lần duy nhất, cuối frame: mọi track không được ghép
+   (vì nhập nhằng, vì hết cạnh, hay vì cụm bị lấy mất) → misses += 1.
+```
+
+Bước 3 và 6 tách bạch có chủ đích — bản nháp trước tăng `misses` ở cả
+hai chỗ, nghĩa là track nhập nhằng bị **đếm hai lần trong một frame** và
+timeout sớm gấp đôi thiết kế. `misses` chỉ được tăng ở đúng một điểm;
+`ambiguous_drops` đếm **track nhập nhằng mỗi frame** (không phải cạnh bị
+loại) để so được trước/sau với chuỗi số liệu §1.4 hiện có, vốn cùng
+semantics track-một-lần-mỗi-frame.
+
+Hai điểm trong đặc tả này tồn tại vì hai lỗi cụ thể mà bản nháp trước
+sẽ mắc:
+
+- **Xét nhập nhằng trước tiêu thụ, không phải trong lúc duyệt.** Nếu xét
+  sau từng assignment, một track nhập nhằng có thể "giả vờ" thành rõ
+  ràng chỉ vì cụm cạnh tranh vừa bị track khác lấy mất — verdict phụ
+  thuộc thứ tự duyệt, tức không còn là tính chất của frame.
+- **Nhập nhằng hai phía.** Track A và track B mỗi bên chỉ có một ứng
+  viên duy nhất là cụm X ⇒ nhìn từng track thì "rõ ràng", nhưng danh
+  tính của X đang tranh chấp. So best/second-best chỉ theo phía track
+  sẽ gán bừa. Phía cluster phải được kiểm cùng lúc.
+
+**Field riêng, không mượn `association_margin`.** Margin hiện tại trả
+lời *"cạnh có khả thi không"* (nằm trong gate); đại lượng mới trả lời
+*"cạnh khả thi có đủ phân biệt không"*. Cùng đơn vị mét, hai câu hỏi
+khác nhau — dùng chung một field là coupling ngầm hai bán kính không có
+lý do gì phải bằng nhau. Đặt:
+
+- `association_margin` — giữ nguyên tên, nguyên nghĩa (đệm gate);
+- `association_ambiguity_margin` — mới, hiệu chuẩn ở Q0 theo seed set A.
+
+**`Cluster` phải mang `first_ray_index`.** Hiện `Cluster` không lưu chỉ
+số tia (`tracking.py:59`) nên khoá tie-break ở bước 4 chưa có chỗ đứng.
+Thêm field `first_ray_index: int` — với run nối qua seam (ray 0 + ray
+cuối), lấy chỉ số tia đầu của **đoạn sau khi nối**, tức phần tử đầu của
+run gộp, để ordinal ổn định giữa hai frame liên tiếp.
+
+Vì sao **không** Hungarian: (a) tối ưu toàn cục không cần — sai số ở
+đây do nhập nhằng thật, không do greedy kém; (b) Hungarian gán **bắt
+buộc**, phá đúng semantics từ chối mà test 203 khoá; ghép thêm tầng
+abstention lên trên nó là phức tạp hơn greedy-với-abstention mà không
+mua thêm gì; (c) không thêm dependency, không tự triển khai thuật toán
+O(n³) để giải bài toán không có. Test hiện có (track đứng giữa hai cụm
+phải từ chối — `test_dwa_tracking.py:203`) giữ nguyên và phải tiếp tục
+pass: hai cạnh cùng track chênh ≈ 0 < ambiguity margin ⇒ cả hai bị loại
+ở bước 3.
+
+Cost = khoảng cách tới **vị trí quan sát cuối** của track, không phải
+vị trí ngoại suy: vận tốc bị zero-gate khi `misses > 0`, nên "predicted
+position" sẽ dùng chính đại lượng mà module này tuyên bố không tin khi
+chưa nhìn thấy — output nói *"tôi không tin vận tốc này"* trong khi
+association lại dùng nó để quyết danh tính. Ngoại suy vị trí trong gate
+chỉ được xét lại khi có đủ bốn thứ: confidence được downstream đọc
+thật; trạng thái track tách bạch observed/coasting/lost; luật "vận tốc
+còn tin được trong bao lâu"; và bằng chứng đo được rằng nó thắng
+last-observation. Ghi nợ.
+
+**Ra khỏi Q2 (cả ba pha con) khi:** bảng Q0 chạy lại cho thấy tỉ lệ ra
+vận tốc **đơn điệu không giảm** theo số tia trong dải 72–360, và vận
+tốc ma trên cảnh tĩnh không tăng ở **từng** pha con (đo ba lần, không
+một lần cuối).
 
 ---
 
@@ -335,36 +722,149 @@ vận tốc ma trên cảnh tĩnh không xấu đi.
 
 ---
 
-### Q4 — Cổng quyết định · **1 ngày** · **khai trước khi chạy**
+### Q4 — Cổng quyết định · **1 ngày** · **khai trước khi chạy, đủ để tái lập verdict**
 
-Lặp lại đúng thiết kế cổng của P4, vì nó đã bắt được một kết luận sai một
-lần rồi.
+Lặp lại thiết kế cổng của P4, vì nó đã bắt được một kết luận sai một lần
+rồi. Bản đầu của mục này chưa đủ định nghĩa để hai người chạy ra cùng
+một verdict — dưới đây là đặc tả đầy đủ. Mọi con số phải chốt **trước**
+lần chạy đầu; §6 liệt kê cái nào cần dev phê chuẩn.
 
 Ba nhánh, cùng seed, ghép cặp: `dwa` — oracle (tri giác hoàn hảo) —
 `dwa_predictive` (tracker thật, cảm biến mới, ngưỡng mới).
 
-**Khai trước, trước khi chạy:**
-- n ≥ 120 seed ghép cặp
-- Thống kê: sign test một phía trên **các cặp bất đồng**, không phải hiệu
-  tỉ lệ trên toàn bộ — đúng sai lầm mà cổng P4 mắc lần đầu.
-- **Ngưỡng đạt:** tracker giành lại **≥ 40%** số cơ hội mà oracle giành
-  được. Hôm nay là **0/11**. Con số 40% là ngưỡng do dev chốt, không phải
-  do tôi suy ra — xem §6.
-- Metric bảo vệ (bất kỳ cái nào xấu đi ⇒ **không đạt**, bất kể p-value):
-  va chạm, tỉ lệ thành công, khoảng hở nhỏ nhất, p99 latency.
+**Harness và môi trường — ghim tường minh, vì harness hiện tại không
+chạy được cổng này:** `scripts/diagnose_tracker.py` hardcode scene
+built-in `intersection`, không nạp `TaskProfile`, không đi qua đường
+`EnvironmentSpec.lidar` — tức nếu không sửa nó thì LiDAR
+deployment-owned của Q1 **không hề được kiểm ở Q4**, cổng sẽ đo default
+72 tia và dán nhãn cấu hình mới. Việc phải làm:
 
-**Kết quả âm là kết quả hợp lệ.** Nếu tracker vẫn không giành lại được
-phần đáng kể, kết luận đúng là: `dwa_predictive` bị giới hạn bởi tri giác
-2D ở mọi độ phân giải khả thi, và nên **rút** hoặc ghi vĩnh viễn là
-sensor-limited. Plan này **không** cam kết một kết quả dương.
+- Mở rộng `diagnose_tracker.py`: nhận `--profile <yaml>` (nạp qua
+  `load_profile` + `scenario_for`, cùng đường với comparison thật) và
+  `--seeds-from/--seeds-to`. Ba arm nhận **cùng một** scenario object;
+  oracle bọc `GroundTruthObstacleProvider` quanh đúng scenario đó chứ
+  không dựng thế giới riêng.
+- **Môi trường chính của cổng:** profile mới
+  `warehouse_crossing_v2` = `warehouse_crossing_v1` + `lidar` khai cấu
+  hình được chọn ở Q0. Khai `lidar` là đổi thế giới ⇒ **id mới**, đúng
+  luật đã dùng hai lần (`sensor_noise`, `v_obstacle_max`) — không sửa
+  `_v1` tại chỗ.
+- **Môi trường đối chứng, báo cáo không gate:** `intersection` với cùng
+  cấu hình tia (qua override scenario trong harness) — để nối tiếp
+  chuỗi số P4/P5 và tách "tracker khá lên" khỏi "bản đồ dễ hơn". Chỉ
+  primary + harm trên `warehouse_crossing_v2` quyết định verdict.
+
+```
+ĐỊNH NGHĨA
+  outcome rank:      theo OUTCOME_RANK của diagnose_tracker.py
+                     (collision=0 < mọi non-arrival=1 < success=2)
+  opportunity:       seed mà rank(oracle) > rank(dwa)
+  recovered:         opportunity mà đồng thời rank(tracker) > rank(dwa)
+  tracker-worse:     seed mà rank(tracker) < rank(dwa)
+
+PRIMARY (cả hai phải đạt)
+  P-a  sign test một phía trên các cặp bất đồng tracker-vs-dwa,
+       H1: tracker tốt hơn, exact binomial, α = 0.05
+  P-b  recovered / opportunities ≥ 0.40, với opportunities ≥ K = 15
+       báo kèm Clopper-Pearson 95% CI của tỉ lệ (báo, không gate)
+
+CỠ MẪU (khai trước, không quyết sau khi nhìn số)
+  seed set B = {2000..2119}, disjoint với set A = {1000..1119} của
+    Q0/Q2; dải {0..119} đã cháy (khảo sát §1 + lịch sử P4/P5) —
+    không parameter nào được chỉnh sau khi nhìn số liệu trên B
+  baseline dwa và oracle CHẠY LẠI trên B — số 11/120 của P4 thuộc
+    dải cũ, chỉ dùng để ước lượng kỳ vọng, không để so
+  bắt đầu n = 120 seed ghép cặp
+  nếu opportunities < 15: mở rộng MỘT lần duy nhất lên n = 360
+    (B mở rộng {2000..2359}; oracle P4 ~11/120 ⇒ kỳ vọng ~33/360)
+  nếu vẫn < 15 sau 360: verdict = "không đủ cơ hội để đo" —
+    tính là KHÔNG ĐẠT, không chạy thêm
+  lý do K = 15: với K = 11, một cơ hội đổi phía xê dịch tỉ lệ 9 điểm
+    phần trăm (4/11 = 36% vs 5/11 = 45% vắt qua ngưỡng 40%);
+    K = 15 hạ bước nhảy xuống 6.7 điểm và, quan trọng hơn, buộc
+    verdict phải kèm CI thay vì một phân số mỏng
+
+HARM — vi phạm bất kỳ dòng nào ⇒ KHÔNG ĐẠT, bất kể primary
+  va chạm:       số seed (tracker va, dwa không va) = 0 — tuyệt đối,
+                 không margin: đây là trục an toàn, một va chạm mới
+                 là một va chạm câu "về sau không tệ hơn dwa" không đỡ được
+  thành công:    (số seed tracker-worse về success) ≤ (số tracker-better
+                 về success) — success ròng không giảm; tracker được
+                 phép hỏng một seed nếu cứu được ít nhất một seed khác.
+                 [Mệnh đề "drop ≤ 1/120" của bản nháp đã BỎ theo review
+                  16-08: nó mâu thuẫn margin với mệnh đề ròng — điều
+                  kiện ròng đã cấm giảm, thêm "được phép giảm 1" là
+                  hai định nghĩa cho một câu hỏi]
+  min-clearance: HAI lớp, vì median một mình che được một nhóm nhỏ seed
+                 bị giảm clearance rất mạnh:
+                 (i)  median của Δ ghép cặp ≥ −5 mm
+                      (5 mm = trên mức nhiễu float, dưới mức hành vi;
+                      1 mm lệch do số thực KHÔNG phải fail)
+                 (ii) near-miss rate của tracker ≤ near-miss rate của
+                      dwa trên cùng seed set — dùng near-miss thay
+                      percentile mới vì nó đã là metric của dự án
+                      (clearance_warning_m, definitions.py:407), có
+                      nghĩa an toàn đọc được sẵn
+  p99 latency:   TUYỆT ĐỐI < 50 ms trên host đã ghim affinity,
+                 ở cấu hình tia được chọn — không phải "không tăng"
+```
+
+**Kết quả âm là kết quả hợp lệ.** Plan này **không** cam kết một kết
+quả dương.
+
+**Định đoạt sau cổng — ba nhánh, chốt trước khi chạy (dev duyệt 16-08).**
+"Rút" không có nghĩa xoá code; cả ba nhánh giữ implementation, oracle
+test và diagnostics. Khác nhau ở chỗ candidate được **quảng bá** thế nào:
+
+```
+(a) Q4 ĐẠT
+    giữ candidate; trạng thái ghi trong registry description:
+      experimental — pass under zero localization noise
+    bước kế tiếp bắt buộc: pha L17
+    KHÔNG được ship — xem release gate bên dưới
+
+(b) KHÔNG ĐỦ OPPORTUNITIES (< 15 sau 360 seed)
+    giữ code cho nghiên cứu; trạng thái: inconclusive
+    Decision Card không được recommend candidate này
+    (cơ chế: hạ khỏi tập benchmarkable mặc định — xem dưới)
+
+(c) PRIMARY hoặc HARM FAIL
+    giữ code + test để tái lập nghiên cứu
+    bỏ khỏi tập candidate production/default:
+      registry hạ `benchmarkable` của astar+dwa_predictive và
+      rrtstar+dwa_predictive (hoặc flag experimental tương đương),
+      cập nhật test test_every_stack_a_fresh_clone_can_compare
+      về đúng tập mới — test đó là exact set, tự nó sẽ gãy nếu quên
+    đánh dấu: experimental / not recommendable
+```
+
+Lý do nhánh (b)/(c) mạnh hơn "giữ + ghi chú": một candidate không cải
+thiện gì so với `dwa`, tốn latency và memory hơn, mà vẫn hiện diện như
+lựa chọn bình thường trong registry — người dùng sẽ đọc nó là candidate
+production hợp lệ. Ghi chú trong KNOWN_LIMITATIONS không đỡ được cách
+đọc đó; vị trí trong registry mới đỡ được.
+
+**Release gate — Q4 đạt ≠ được ship (dev duyệt 16-08).** Verdict dương
+của Q4 chỉ có nghĩa: *candidate có tiềm năng khi pose không drift*.
+Không được chuyển thành *candidate hoạt động trong warehouse thực*.
+Chuỗi bắt buộc:
+
+```
+Q4 đạt → đáng đầu tư pha L17 (hệ toạ độ + localization noise)
+       → chạy lại cổng dưới localization noise thật
+       → chỉ SAU đó mới xét production-ready
+```
+
+Card và report của Q4 phải mang câu này nguyên văn, không phải chú
+thích cuối trang.
 
 ---
 
-### Q5 — G4, và nó có thể tự mình giết plan · **0.5 ngày**
+### Q5 — G4 và G5, và G4 có thể tự mình giết plan · **1 ngày**
 
-`obstacle_points(observation)` là O(số tia); `rollout_batch` là
-O(candidate × bước × điểm). Tăng tia làm tăng chi phí local planner
-**tuyến tính theo điểm**.
+**G4 — latency.** `obstacle_points(observation)` là O(số tia);
+`rollout_batch` là O(candidate × bước × điểm). Tăng tia làm tăng chi phí
+local planner **tuyến tính theo điểm**.
 
 Hiện trạng từ run P7: p99 = **27.42 ms** trên ngân sách **50 ms**. Biên
 chỉ 1.8×. Wall-clock episode đo được 29.9 → 43.0 s khi đi từ 72 sang 144
@@ -375,8 +875,64 @@ Phải đo p99 thật ở cấu hình được chọn, **trước** Q4. Nếu 14
 qua 50 ms thì candidate rớt G4, và đó lại là một kết quả âm hợp lệ cần
 ghi chứ không phải lý do nới ngưỡng.
 
-Ghi chú: `perception_stack_mb` trong `hardware` cũng đang giả định một
-tải tri giác; tăng tia 2× nên kiểm lại G5.
+**G5 — bộ nhớ, và hiện trạng là nó không nhìn thấy tri giác.** Ước lượng
+cấu trúc của G5 hôm nay đếm search nodes, tree nodes, costmap cells và
+một overhead cố định — **không có** số tia, không có cluster, không có
+track history, và `perception_stack_mb` là ngân sách deployment khai
+sẵn, không tự đổi khi tia 72 → 144. Nói "kiểm lại G5" mà không sửa gì
+là kiểm bằng con số không chứa đại lượng vừa tăng.
+
+Sửa cụ thể — mở rộng ước lượng cấu trúc bằng các số hạng tất định của
+tracker, cùng kỷ luật "structure counters × byte size" mà G5 đã dùng.
+Mọi ký hiệu định nghĩa tại chỗ, không để executor tự đoán:
+
+```
+bytes_tracker =
+    num_rays × B_point                    # đám mây điểm world-frame
+  + T_max × velocity_window × B_sample    # lịch sử track
+  + T_max × C_max × B_pair                # cạnh (track, cluster) của Q2c
+
+với (bytes theo hiện thực đích cpp_ros2, cùng quy ước
+     bytes_per_search_node = 40 hiện có của G5):
+  B_point  = 16   # (x, y) float64
+  B_sample = 24   # (t, x, y) float64
+  B_pair   = 24   # (track_ref 8, cluster_index 8, distance 8)
+
+  C_max         = ceil(num_rays / 2)      # run xen kẽ tối đa;
+                                          # num_rays/2 trần SAI với số
+                                          # tia lẻ (271 ⇒ 136, không 135.5)
+  C_movable_max = C_max                   # trần thô: mọi cụm đều qua lọc;
+                                          # trần chặt hơn cần giả định về
+                                          # scene — không được phép (§2b)
+  frames_alive  = ceil(track_timeout / control_period) + 1
+  T_max         = C_movable_max × frames_alive
+```
+
+**Không thêm runtime cap trong plan này.** `_tracks` đã có trần cấu
+trúc: tối đa `C_movable_max` track mới mỗi frame, mỗi track sống tối đa
+`frames_alive` frame trước khi `_expire` dọn ⇒ `len(_tracks) ≤ T_max`
+là **định lý về code hiện tại**, không phải chính sách mới. Cap là thay
+đổi hành vi tracker (phải có drop policy tất định, phải chạy lại Q0) để
+giải một bài toán chưa được chứng minh tồn tại. Thay vào đó:
+
+- viết công thức trần vào docstring của `LidarTracker`;
+- counter `max_live_tracks` trong diagnostics + **test bất biến**:
+  chạy các probe Q0 và khẳng định `max_live_tracks ≤ T_max`;
+- chỉ nâng lên cap nếu phép đo bác được định lý — lúc đó nó là bug fix
+  của `_expire`, có drop policy khai báo, và Q0 chạy lại.
+
+**Thứ tự schema — gỡ mâu thuẫn của bản nháp trước:** "Q1 và Q5 chung
+một schema bump" không khả thi vì Q1 land trước khi Q5 định nghĩa xong
+counter. Chốt: **Q1 định nghĩa trọn bộ field mới của `TraceMetadata`
+một lần** — `execution_conditions_fingerprint` (Q1 ghi ngay) và các
+field counter tracker (`max_live_tracks`, `clusters_peak`, optional,
+default `None`; Q5 bắt đầu ghi giá trị). Schema đổi một lần, giá trị
+đến theo pha; field `None` đọc là "chưa đo", không phải "bằng không".
+
+Nếu sau tất cả vẫn không muốn đưa tracker vào ước lượng cấu trúc, phương
+án lùi hợp lệ duy nhất là **ghi thẳng vào card**: G5 của candidate này
+chỉ được sàng bằng RSS chẩn đoán, chưa chứng nhận được — chứ không im
+lặng để con số cũ đứng tên một tải mới.
 
 ---
 
@@ -385,9 +941,13 @@ tải tri giác; tăng tia 2× nên kiểm lại G5.
 - Report ở `docs/antongduy/reports/<ngày>/tongduyan_*.md`, phủ **mọi** pha
   gồm cả pha âm.
 - Cập nhật **L16** (không còn đúng nếu Q4 đạt; đúng hơn nếu Q4 không đạt).
-- **L19** mới: `episode_context_id` không băm environment, và
-  `compare.py` đi vòng qua guard nộp-lại-profile — kèm bằng chứng
-  `run_journal.jsonl` 120 dòng ở trên.
+- **L19** mới: `episode_context_id` không băm environment; trace được
+  định địa chỉ chỉ bằng `(candidate_id, episode_context_id)` nên
+  reuse/score-only tin nhầm trace của thế giới cũ; `angle_span ≠ 2π`
+  bị chặn ở validator vì cả tracker lẫn `dwa_core.obstacle_points`
+  hardcode vòng tròn đầy — kèm bằng chứng `run_journal.jsonl` 120 dòng
+  ở trên. Mục nào Q1.c đã vá thì ghi là đã vá, phần sửa hợp đồng còn
+  lại ghi là nợ.
 - L17 (hai hệ toạ độ) **vẫn treo** và trở nên gấp hơn: xem §5.
 
 ---
@@ -412,13 +972,19 @@ theo tiếp không" — nhưng đây là **đánh đổi của dev**, không ph�
 
 ## 6. Quyết định cần dev chốt
 
-| # | Quyết định | Đề xuất của tôi | Vì sao cần dev |
+**Cả tám quyết định đã được dev chốt ngày 2026-08-16**, ba mục có điều
+chỉnh so với đề xuất (ghi ở cột cuối):
+
+| # | Quyết định | Chốt | Điều chỉnh của dev |
 |---|---|---|---|
-| 1 | Chạy plan này trước, hay làm pha hệ toạ độ (L17) trước | plan này trước | §5 — đây là đánh đổi ưu tiên, không phải kỹ thuật |
-| 2 | Ngưỡng đạt của cổng Q4 | ≥ 40% cơ hội oracle | Số này quyết định "thành công" nghĩa là gì. Không được chốt sau khi thấy kết quả |
-| 3 | Trần latency chấp nhận được cho tri giác | giữ nguyên 50 ms G4 | Nới ngân sách là quyết định phần cứng |
-| 4 | `episode_context_id`: sửa hợp đồng (băm environment, MAJOR, mọi id cũ đổi) hay giữ luật "profile đổi ⇒ id mới" + vá `compare.py` | vá `compare.py` trước, ghi sửa hợp đồng là nợ | Sửa hợp đồng làm mọi run đã lưu bất khả so |
-| 5 | Nếu Q4 không đạt: rút `dwa_predictive` hay giữ và ghi sensor-limited | giữ + ghi | Ảnh hưởng thứ team ship |
+| 1 | Thứ tự với pha L17 | plan này trước | **Kèm release gate**: Q4 đạt ≠ ship; Q4 đạt → đầu tư L17 → chạy lại dưới localization noise → mới xét production-ready. Đã ghi thành block trong Q4 |
+| 2 | Ngưỡng cổng Q4 | ≥ 40% cơ hội oracle, K = 15, α = 0.05, mở rộng một-lần 120 → 360 | — |
+| 3 | Trần latency tri giác | giữ 50 ms G4 | — |
+| 4 | `episode_context_id` | fingerprint Q1.c trước, sửa hợp đồng ghi nợ | — |
+| 5 | Định đoạt khi Q4 không đạt | **ba nhánh** thay cho "giữ + ghi" | (a) đạt: experimental-pass-under-zero-localization-noise, tiếp L17; (b) thiếu opportunities: inconclusive, card không recommend; (c) primary/harm fail: giữ code/test, **bỏ khỏi tập candidate production**, đánh dấu not-recommendable. Đã ghi thành block trong Q4 |
+| 6 | `w_min = 0.3 m` (Q2a) | 0.3 m, candidate-owned, vào `candidate_id` | — |
+| 7 | Biên harm Q4 | va chạm mới = 0; latency < 50 ms tuyệt đối | **Success**: bỏ mệnh đề "drop ≤ 1/120" (mâu thuẫn margin), giữ duy nhất điều kiện ròng ghép cặp. **Clearance**: thêm lớp hai — near-miss rate tracker ≤ dwa, vì median che được đuôi xấu. Đã sửa trong block Q4 |
+| 8 | Trace thiếu fingerprint | fail-closed | — |
 
 ---
 
@@ -427,16 +993,199 @@ theo tiếp không" — nhưng đây là **đánh đổi của dev**, không ph�
 | pha | ngày | chặn bởi |
 |---|---|---|
 | Q0 đo lại, commit script | 0.5 | — |
-| Q1 cảm biến deployment-owned + guard | 1.0 | Q0 |
-| Q2 ngưỡng co giãn | 1.5 | Q0, Q1 |
+| Q1 cảm biến deployment-owned + fingerprint | 1.5 | Q0 |
+| Q2a min_points theo tầm | 0.5 | Q0, Q1 |
+| Q2b test tường liên tục | 1.0 | Q2a |
+| Q2c gán toàn cục + từ chối | 1.0 | Q2b |
 | Q3 `clipped` trong clutter | 0.5 | Q0 |
-| Q5 G4/G5 | 0.5 | Q1, Q2 |
-| Q4 cổng quyết định | 1.0 | tất cả |
+| Q5 G4 + G5 accounting | 1.0 | Q1, Q2 |
+| Q4 cổng quyết định (gồm mở rộng harness + `warehouse_crossing_v2` + chạy lại baseline/oracle trên seed set mới) | 1.5 | tất cả |
 | Q6 report | 0.5 | Q4 |
-| **tổng** | **5.5** | |
+| **tổng** | **8.0** | |
 
 Q0 có thể huỷ toàn bộ phần còn lại (§4, Q0 "rủi ro thật"). Đó là mục
 đích của nó.
+
+---
+
+## Q0-KQ. Kết quả Q0 và đề xuất sửa hướng — **chờ dev chốt**
+
+Chi tiết ở `notes/2026-08-16/tongduyan_q0-do-lai-do-phan-giai-lidar.md`.
+Dưới đây là phần đổi plan.
+
+### Q0-KQ.1 — Số
+
+N = 20, seed A = 1000..1019, 17/20 seed có cuộc gặp.
+
+```
+                traffic                    |        cảnh tĩnh
+ rays   vel_out   err_med    n  | phantom_rate  p90     tracks/f  per-track
+   72     0.9%     0.429    22  |     14.17%   1.868      4.32      3.54%
+  144     3.5%     0.935    84  |     78.56%   1.515     11.02     14.53%
+  271     4.1%     0.813    97  |     97.52%   1.820     19.39     21.98%
+  360     4.5%     0.864   107  |     99.19%   2.023     25.72     22.88%
+```
+
+### Q0-KQ.2 — Cơ chế, và vì sao Q2 không giải được
+
+Ảo tăng do **cả hai** thừa số: `tracks/frame` ×6.0 **và** `per-track`
+×6.5. Q2b (test tường) chỉ tấn công thừa số thứ nhất. Kể cả nếu nó hoàn
+hảo — đưa 25.72 track/frame về 4.32 — thì `per-track` vẫn 22.88% thay
+vì 3.54%, và ảo vẫn cao hơn baseline nhiều lần.
+
+Bằng chứng quyết định nằm ở cột `p90`: biên độ vận tốc ảo **phẳng**
+(1.5–2.0 m/s) qua mọi độ phân giải, trong khi sàn chặn nó co tuyến tính
+theo `Δθ`:
+
+```
+velocity_floor = (2·σ_pose + margin·σ_range + reach·Δθ) / window
+tại 4 m:  72 tia -> 0.584 m/s      360 tia -> 0.186 m/s
+```
+
+Số hạng `reach·Δθ` (thêm ở P5) giả định **biên độ ảo tỉ lệ khoảng cách
+tia**. Phép đo nói **không**. Sàn đúng ở 72 tia vì trùng hợp độ lớn,
+không vì mô hình đúng. Nguồn ảo trội thật sự là centroid trượt dọc bề
+mặt khi robot di chuyển — phụ thuộc chuyển động robot, không phụ thuộc
+`Δθ`.
+
+### Q0-KQ.3 — Đề xuất sửa hướng
+
+**Đảo thứ tự. Sàn vận tốc phải thiết kế lại TRƯỚC, trước cả chuyện độ
+phân giải.** Plan mới đề xuất:
+
+| pha | việc | vì sao trước |
+|---|---|---|
+| **R1** | Đo nguồn ảo trội: tách đóng góp của (i) lượng tử hoá tia, (ii) centroid trượt theo chuyển động robot, (iii) nhiễu range. Cảnh tĩnh, robot **đứng yên** vs **di chuyển** | `p90` phẳng nói mô hình hiện tại sai; phải biết sai ở đâu trước khi viết công thức mới |
+| **R2** | Thiết kế lại sàn từ mô hình đo được ở R1. Nhiều khả năng có số hạng tỉ lệ **tốc độ robot**, không tỉ lệ `Δθ` | Đây là thứ chặn ảo; sửa nó là điều kiện cần cho mọi việc sau |
+| **R3** | Chạy lại harness Q0 với sàn mới. **Chỉ khi** ảo không còn bùng nổ theo độ phân giải mới xét tiếp Q1/Q2 | Q0 là cổng, không phải thủ tục |
+
+> ### R1 ĐÃ CHẠY — R2 như trên KHÔNG còn là bước đúng
+>
+> `notes/2026-08-16/tongduyan_r1-nguon-van-toc-ma.md`, dữ liệu
+> `artifacts/r1_phantom/`. Ba số đổi hướng:
+>
+> **(1) Sàn chưa bao giờ là cổng chính.** Phân rã lý do bị zero (nhà kho,
+> đứng yên + nhiễu): `coasting` 72–85%, `warmup` 4–7%, **`floored`
+> 2–5%**. Thứ giữ tracker im lặng là track không được nhìn thấy, không
+> phải sàn. `dwa_predictive` đang an toàn **nhờ tri giác kém**.
+>
+> **(2) Hình học quyết định, không phải độ phân giải.** Cùng ego-motion,
+> cảm biến **hoàn hảo**, tỉ lệ raw fit vượt 0.1 m/s: `isolated_object`
+> 9.7% → 0.0%; `warehouse` **84.3% → 84.6%**, phẳng theo độ phân giải.
+> Một vật cô lập gọn gàng gần như không sinh ảo ở bất kỳ độ phân giải nào.
+>
+> **(3) Cụm sống sót trải qua nhiều hơn một bề mặt — nhưng CƠ CHẾ chưa
+> xác định.** Survivor ở nhà kho: `width` 1.14–1.28 m, `straightness`
+> **0.56–0.62** — gấp 7 lần ngưỡng tường 0.08, nên test tường không bao
+> giờ kích hoạt. Mặt kệ phẳng không nhiễu phải có residual ≈ 0, nên
+> residual nửa mét chứng minh cụm trải qua nhiều bề mặt.
+>
+> Hai giả thuyết đầu **đều bị dữ liệu bác**: (a) *gộp do ngưỡng tách quá
+> rộng* — ngưỡng tỉ lệ `Δθ` nên ở 360 tia chặt gấp 5 lần, mà
+> `straightness` không đổi (0.382/0.620/0.558/0.586); (b) *cụm trải qua
+> góc tường* — hình học `corner` tổng hợp **có góc** và cho **0 ảo**
+> (24 record raw toàn 0.000), y như `straight_wall`. Chỉ bản đồ nhà kho
+> thật sinh ảo.
+>
+> **R1b ĐÃ CHẠY — cơ chế đã xác định: CỤM TRẢI QUA MỘT GÓC.**
+> Điểm quét thật của cụm sinh ảo mạnh nhất (72 tia, nhiễu tắt):
+> ba điểm trên `y = 6.000`, hai điểm trên `x = 6.000` — một góc vuông kệ
+> tại (6.000, 6.000). Bậc range lớn nhất giữa hai tia kề: 0.55 m; ngưỡng
+> tách ở 4 m: ≈1.05 m. **Không đủ tách.** Một cụm, hai mặt phẳng.
+>
+> Centroid trượt 0.305 m trong 0.70 s = **0.436 m/s**, khớp đúng
+> `out_speed`. Robot đi `+x` nên tỉ lệ nhìn thấy giữa hai mặt đổi trơn
+> tru, centroid của hợp hai mặt trượt dọc góc.
+>
+> **Và nó TRƠN TRU** — least-squares 15 khung cho một vận tốc ổn định,
+> tự tin. Trong bản thân tín hiệu vận tốc không có gì phân biệt nó với
+> vật thật đi 0.436 m/s. Đây là lý do cuối cùng và đủ để bỏ hướng
+> "thiết kế lại sàn": **không đại lượng nào tính từ vận tốc tách được
+> hai thứ này.**
+>
+> Chữ ký nhất quán toàn bộ cụm sống sót (72 và 271 tia): residual đỉnh ở
+> giữa cụm (`peak@` 0.40–0.59), `path/chord` 1.20–1.41, **0** cụm lân
+> cận trong 2.5 m. Đối chứng `isolated_object` (vật tròn, cung thoải,
+> `path/chord` ≈ 1.0) cho ảo ≈ 0.
+>
+> **Bản sửa, và nó đơn giản hơn Q2b đang viết:** tách cụm tại **chỗ đổi
+> hướng bên trong nó**, trước bước phân loại. Tách xong mỗi chân là mặt
+> phẳng dài và thẳng ⇒ **test tường hiện có** loại được cả hai. Không
+> cần họ ngưỡng mới.
+>
+> Q2b hiện hỏi *"các cụm lân cận có nối tiếp cùng đường thẳng không"*
+> (giữa các cụm). Cái cần là *"chính cụm này có phải một đường thẳng
+> không"* (trong một cụm). Đặc tả Q2b phải viết lại theo hướng đó —
+> phần continuation/`wall_continuity_factor` không còn cần thiết.
+
+> ### BẢN SỬA ĐÃ XÂY, ĐO, VÀ THU HỒI — Q2b ĐÓNG BẰNG KẾT QUẢ ÂM
+>
+> Hiện thực đầy đủ, 24 test, đúng hoàn toàn trên hình học sạch (góc tách,
+> tường/góc-thoải/đĩa-tròn không tách). **Trên bản đồ thật: ảo không đổi
+> (14.17% → 14.18%, 99.19% → 99.19%), phát hiện thật giảm (271 tia
+> 3.5% → 2.1%).** Splitter có chạy 165–222 lần/240 frame — trên những cụm
+> khác, không phải cụm sinh ảo.
+>
+> **Lý do, đo trực tiếp:** chân góc thật ở nhà kho có tỉ lệ cong
+> 0.088–0.228; chân đĩa tròn 0.207. **Chồng lấn.** Quét ngưỡng xác nhận
+> không tồn tại điểm vận hành nào vừa bắt góc thật vừa tha vật tròn:
+>
+> ```
+> tol=1.5 leg=0.08   CORNER [0,1,1,1]   DISC [0,0,0,0]   ← an toàn, vô dụng
+> tol=1.0 leg=0.15   CORNER [0,1,1,1]   DISC [0,1,1,1]   ← hữu dụng, cắt vật tròn
+> ```
+>
+> Gốc rễ: mỗi đặc trưng chỉ được **3–7 tia** lấy mẫu. Khớp "hai đoạn
+> thẳng" vào 6 điểm với một chân 2–3 điểm không phải phép đo có ý nghĩa.
+> Chữ ký hình học **tồn tại**; cảm biến không đủ độ phân giải để đọc.
+>
+> **Đây là §Q0-KQ.4 xảy ra.** Ghi trước như "khả năng phải chấp nhận",
+> giờ là số đo. Code sản phẩm đã thu hồi (dev chốt 16-08); giữ
+> `scripts/diagnose_phantom.py` và hai note.
+>
+> **Hệ quả cho phần còn lại của plan:** Q2a/Q2b/Q2c và Q3 đều tấn công
+> khâu nhận cụm bằng hình dạng. Q2b là cái có bằng chứng mạnh nhất và nó
+> vừa thất bại vì lý do **áp dụng cho cả bốn**: không đủ tia trên mỗi đặc
+> trưng. Chạy tiếp Q2a/Q2c/Q3 mà không có bằng chứng mới là lặp lại cùng
+> một thất bại ba lần nữa.
+>
+> **Kết luận:** hướng sửa là **khâu nhận cụm**, không phải sàn. Hai giới
+> hạn cứng của hướng thiết-kế-lại-sàn: ảo do nhiễu range đạt p99 **8.6
+> m/s** (không sàn hợp lý nào chặn nổi), còn ảo do chuyển động toàn dưới
+> **0.6 m/s** (một sàn 0.6 sẽ dọn sạch, nhưng crosser thật đi 0.8 m/s —
+> biên 0.2 m/s quá mỏng để gọi là ràng buộc).
+>
+> **R2 thay bằng: Q2b + Q3 — nhưng ngược chiều lập luận cũ.** Lập luận
+> cũ: độ phân giải mịn làm tường **vỡ vụn** thành mảnh hẹp lọt test bề
+> rộng. Đo được: ở **mọi** độ phân giải vấn đề là **gộp** nhiều bề mặt
+> thành một cụm lọt test độ thẳng. Ngược chiều, cùng một chỗ hỏng —
+> `_is_free_standing` nhận vào những thứ không phải vật. Đặc tả Q2b
+> (test tường theo **chuỗi cụm**) và Q3 (`clipped`) vẫn dùng được nguyên
+> văn; chỉ phần *vì sao* trong plan phải viết lại.
+>
+> Sửa `reach·Δθ` vẫn đáng làm nhưng **không** là tiên quyết, và một mình
+> nó không cứu được gì.
+
+Q1 (cảm biến deployment-owned) **vẫn có giá trị độc lập** — nó là điều
+kiện để so hai cảm biến ở bất kỳ phép đo nào, kể cả R3, và nó đi kèm
+`execution_conditions_fingerprint` là món nợ thật cần trả. Nhưng nó
+**không còn là đường tới kết quả**, mà là hạ tầng đo.
+
+Q2a/Q2b/Q2c chuyển thành **có điều kiện**: chỉ có nghĩa sau khi R2 xong
+và R3 cho thấy độ phân giải cao trở nên dùng được.
+
+### Q0-KQ.4 — Khả năng phải chấp nhận
+
+Nếu R1 cho thấy nguồn ảo trội là centroid trượt dọc tường theo chuyển
+động robot, thì đó **không phải** thứ một cái sàn vô hướng chặn được —
+nó cần phân biệt "cụm này là bề mặt tĩnh" với "cụm này là vật", tức
+đúng bài toán mà `_is_free_standing` đang giải sai. Khi đó câu trả lời
+trung thực có thể là: **tri giác 2D LiDAR đơn thuần không đủ để ước
+lượng vận tốc vật cản trong môi trường có tường gần**, và
+`dwa_predictive` nên đóng bằng kết quả âm theo nhánh (c) của §Q4.
+
+Ghi trước ở đây để nhánh đó không bị coi là thất bại của người thực hiện
+khi nó xảy ra.
 
 ---
 

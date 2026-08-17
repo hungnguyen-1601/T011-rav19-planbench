@@ -28,6 +28,7 @@ from planbench_benchmark.candidates import (
     CONTROLLER_OF_CONFIG,
     LOCAL_CONTROLLER_CONFIGS,
     ConfigControllerMismatch,
+    NotBenchmarkableError,
     candidate_from_stack,
     controller_version,
     validate_config_names,
@@ -42,11 +43,31 @@ class TestTheNewStacksAreReachable:
     """Registration, checked as a property rather than by eye."""
 
     @pytest.mark.parametrize("stack", ["astar+dwa_predictive", "rrtstar+dwa_predictive"])
-    def test_the_stack_is_registered_and_benchmarkable(self, stack: str) -> None:
+    def test_the_stack_is_still_registered_but_withdrawn(self, stack: str) -> None:
+        """**Registered, reachable, and not a candidate.**
+
+        Withdrawn on 2026-08-16 after the perception feeding it was
+        measured: on a static warehouse the tracker reports obstacles
+        moving at up to 1.9 m/s, and finer LiDAR makes that worse rather
+        than better. Keeping the entry is deliberate — the oracle, the
+        diagnostics and these tests are how the negative result stays
+        reproducible — but a candidate is something the platform may
+        *recommend*, and this is not one.
+        """
         info = algorithm_info(stack)
         assert info is not None
-        assert info.benchmarkable
         assert info.local_controller == "dwa_predictive"
+        assert not info.benchmarkable
+        assert info.withdrawn, "a withdrawal has to say why, or the refusal misinforms"
+
+    @pytest.mark.parametrize("stack", ["astar+dwa_predictive", "rrtstar+dwa_predictive"])
+    def test_it_cannot_be_built_as_a_candidate(self, stack: str) -> None:
+        """The withdrawal has to bite where candidates are made, not only
+        in a flag somebody may forget to read."""
+        with pytest.raises(NotBenchmarkableError, match="perception"):
+            candidate_from_stack(
+                stack, params=dict(LOCAL_CONTROLLER_CONFIGS["dwa_predictive_balanced"])
+            )
 
     @pytest.mark.parametrize("stack", ["astar+dwa_predictive", "rrtstar+dwa_predictive"])
     def test_it_stays_a_lidar_only_candidate(self, stack: str) -> None:

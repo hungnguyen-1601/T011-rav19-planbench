@@ -244,8 +244,8 @@ def candidate_from_stack(
         raise UnknownAlgorithmError(f"unknown algorithm {stack_id!r}")
     if not info.benchmarkable:
         raise NotBenchmarkableError(
-            f"{stack_id!r} is registered as a reference stack only and must not be "
-            "offered as a candidate"
+            f"{stack_id!r} may not be offered as a candidate: "
+            + (info.withdrawn or "registered as a reference stack only")
         )
     if not info.requires_global_path:
         raise NotBenchmarkableError(

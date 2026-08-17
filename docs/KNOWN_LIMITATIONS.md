@@ -1585,3 +1585,89 @@ mở thật sự, không phải chuyện vặn số.
 deployment nào mang bảo đảm phanh trước vật cản đang lại gần** — L7 vẫn
 đúng nguyên văn. Lỗ hổng P0 đo được vẫn còn đó, và bản vá P1 chưa dùng
 được ở nơi có kệ hàng.
+
+### L19. `dwa_predictive` **rút khỏi tập candidate** — tri giác 2D không nuôi nổi mô hình
+
+**Rút ngày 2026-08-16.** Cả `astar+dwa_predictive` lẫn
+`rrtstar+dwa_predictive` chuyển `benchmarkable=False`, kèm trường
+`withdrawn` nói lý do. Implementation, oracle và diagnostics **giữ
+nguyên** để tái lập kết quả; chúng chỉ không còn được đề xuất.
+
+**Không phải mô hình sai.** P4 đã chứng minh ngược lại: đưa vận tốc thật
+vào, 11/11 cặp bất đồng nghiêng về nó, p = 0.0005. Cái hỏng là khâu ước
+lượng vận tốc từ LiDAR.
+
+**Bốn phép đo, cùng một kết luận:**
+
+| | đo được |
+|---|---|
+| P5 | tracker giành lại **0/11** cơ hội mà oracle giành được |
+| P7 | **29/30** episode quỹ đạo giống hệt `dwa`; card chọn `dwa` |
+| Q0 | độ phân giải **không** phải đòn bẩy — xem bảng dưới |
+| R1 | sàn vận tốc chỉ loại 2–5%; `coasting` loại 72–85% |
+
+Q0 (N = 20 seed, `artifacts/q0_resolution/`):
+
+```
+ tia   phát hiện thật   vận tốc ma (cảnh TĨNH)
+  72       0.9%              14.2%
+ 144       3.5%              78.6%
+ 271       4.1%              97.5%
+ 360       4.5%              99.2%
+```
+
+Tăng độ phân giải mua ×5 phát hiện thật kèm ×7 ảo giác. Ở 360 tia,
+tracker báo có vật đang chuyển động ở **99.2% số frame của một nhà kho
+đứng yên hoàn toàn**.
+
+**Cơ chế, truy đến tận điểm quét** (R1b, `artifacts/r1_phantom/`): một
+tia quét qua **góc vuông của hai mặt kệ** gom thành một cụm — ba điểm
+trên `y = 6.000`, hai điểm trên `x = 6.000` — vì bậc range lớn nhất qua
+góc là 0.55 m, dưới ngưỡng tách ≈1.05 m ở tầm đó. Centroid của cụm đó là
+điểm cân bằng giữa phần nhìn thấy của hai mặt; robot đi thì cân bằng dịch
+**trơn tru**, đo được **0.436 m/s off một góc đứng yên**.
+
+**Trơn tru là chỗ chết.** Ảo nhiễu thì lọc được; ảo này cho một fit
+least-squares sạch và tự tin, nên **không đại lượng nào tính từ vận tốc**
+— sàn, làm mượt, confidence — tách được nó khỏi vật thật đi 0.436 m/s.
+
+**Đã thử sửa và đã thu hồi.** Một bước tách cụm tại chỗ đổi hướng
+(Ramer–Douglas–Peucker + ngưỡng góc) được xây, đo, rồi gỡ: ở mật độ lấy
+mẫu này góc kệ và vật tròn không tách được bằng hình dạng — dải residual
+của hai loại chồng lên nhau. Xem
+`docs/antongduy/notes/2026-08-16/tongduyan_r1-nguon-van-toc-ma.md`.
+
+**Sai lầm ở tầng quy trình, ghi lại để không lặp:** tiền đề *"một
+candidate `lidar_only` ước lượng được vận tốc vật cản"* **chưa bao giờ
+được kiểm trước khi xây**. P4 kiểm mô hình *giả sử tri giác hoàn hảo*;
+không ai kiểm tri giác có khả thi không. Bốn pha sau đó là hoá đơn.
+
+**Hướng còn mở, nếu quay lại:** hỏi *"chỗ này trước đây có gì không"* —
+trừ nền tự dựng từ chính scan của robot — thay vì *"cụm này hình dạng có
+phải vật không"*. Hợp lệ với `lidar_only` (không đọc map ground truth),
+nhưng cần pose nhất quán giữa các khung, tức **phải trả L17 trước**.
+
+### L20. Hai nợ hạ tầng lộ ra khi làm plan tri giác — **chưa sửa**
+
+Cả hai không liên quan `dwa_predictive` và vẫn còn nguyên.
+
+**(a) Trace của thế giới cũ được dùng lại âm thầm.** Trace được định địa
+chỉ chỉ bằng `(candidate_id, episode_context_id)`; `--reuse-traces` chỉ
+kiểm file có tồn tại (`pipeline.py:224`), `--score-only` cũng tra theo
+đúng hai id đó, và `TraceMetadata` không lưu điều kiện chạy. HĐ-3.1 đóng
+băng `episode_context_id` ở *(task profile, mission, variant, seed)* —
+**không** gồm environment. Bằng chứng thật: chạy lại
+`warehouse_crossing_v1` sau khi rút `v_obstacle_max` cho ra
+`run_journal.jsonl` **120 dòng** — 60 `stuck` rồi 60 `success`, **cùng**
+`episode_context_id b408516ece7f`. Hai thế giới, một id, một file.
+Bản vá đã thiết kế (`execution_conditions_fingerprint` băm từ chính
+object `scenario_for` trả về) nằm ở plan 16-08 §Q1.c.
+
+**(b) `angle_span ≠ 2π` làm hỏng MỌI candidate `lidar_only`.**
+`LidarConfig` cho khai `angle_span` bất kỳ và simulator tôn trọng nó
+(`lidar.py:89`), nhưng **cả** tracker (`tracking.py`) **lẫn**
+`dwa_core.obstacle_points` (`dwa_core.py:216`) hardcode `span = 2π`. Một
+deployment khai LiDAR 180° sẽ khiến `dwa` **thường** dựng đám mây điểm
+lệch một phép quay. Hôm nay chưa nổ vì `LidarConfig` không khai được từ
+profile — nó là default cứng `scenario.py:78`. Ngày nào cảm biến thành
+thứ deployment khai, đây là lỗi chờ sẵn.
