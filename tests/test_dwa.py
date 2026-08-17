@@ -66,6 +66,12 @@ class TestDWABasics:
             "heading",
             "path",
             "clearance",
+            # `safety_margin` used to be a hard refusal owned by this
+            # candidate's config, which let a stack silently narrow the
+            # feasible set the global planner had planned against. The
+            # hard boundary moved to the shared clearance; the wish for
+            # extra room stayed here as its own cost term.
+            "comfort",
             "velocity",
             "smoothness",
             "oscillation",
@@ -161,8 +167,15 @@ class TestDWASafety:
         # is far below the reachable maximum for this control period.
         max_reachable = robot.max_linear_acceleration * DWAConfig().control_period
         assert decision.action.linear_velocity < 0.25 * max_reachable
-        # Safety invariant: the whole rollout keeps radius + margin from
-        # the pocket walls (free cell spans [10, 11] x [10, 11]).
+        # The whole rollout keeps radius + margin from the pocket walls
+        # (free cell spans [10, 11] x [10, 11]). Note what kind of claim
+        # this is: `safety_margin` is a *preference* priced by the
+        # `comfort` cost, so what is asserted is that the preference wins
+        # here — with a metre of room and nowhere to hurry to, nothing
+        # outbids it. The hard boundary is `hard_clearance` and is
+        # narrower; a candidate that had reason to spend the margin would
+        # be allowed to, and `test_hard_feasible_set.py` is where the
+        # inviolable part is pinned.
         keep_out = robot.radius + DWAConfig().safety_margin
         for point in decision.predicted_trajectory:
             assert 10.0 + keep_out <= point.x <= 11.0 - keep_out

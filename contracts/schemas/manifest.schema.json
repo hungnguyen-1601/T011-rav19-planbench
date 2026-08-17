@@ -19,7 +19,10 @@
     "bootstrap",
     "benchmark_host",
     "created_at",
-    "constraints"
+    "constraints",
+    "sensor_noise",
+    "replanning",
+    "v_obstacle_max"
   ],
   "properties": {
     "contracts_version": {
@@ -346,6 +349,14 @@
           "minimum": 0
         }
       }
+    },
+    "v_obstacle_max": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Added 6.9.0. Worst-case speed at which traffic may close on the robot, m/s, which the admissible-velocity bound was sized for. Required for the same reason sensor_noise and replanning are: episode_context_id does not hash it, so one deployment run at the same seeds with and without a declared bound shares every context id while being two experiments. It sits on the sensor_noise side of that rule — the bound changes what the robot did, not how the result was judged, so declaring it needs a new task_profile_id. null means undeclared, and that is a statement rather than a gap: the deployment carried NO braking guarantee against moving obstacles. Reading null as 0.0 would read 'undeclared' as 'nothing moves here', which is the opposite claim."
     }
   }
 }

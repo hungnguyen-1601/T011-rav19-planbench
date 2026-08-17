@@ -89,13 +89,15 @@ describe("Sidebar — expanded", () => {
   it("says out loud which pages are being replaced", () => {
     /* One entry is left in that group. `/benchmarks`, `/leaderboard` and
        `/algorithms` were removed in P6, each only after the thing that
-       replaced it existed; `/scenarios` stays because the deployment
-       form still cannot draw obstacles, so removing it would take away a
-       capability rather than move one — and the sidebar says that rather
-       than leaving a reader to wonder why one old page survived. */
+       replaced it existed. `/scenarios` was kept on the same rule — the
+       deployment form could not draw obstacles, so removing it would
+       have taken a capability away rather than moved one. The form can
+       now, which makes retiring it a decision somebody has to take
+       rather than a thing to wait for; until then the sidebar says what
+       it is instead of implying it is still the only editor. */
     const html = sidebar({ user: ALICE });
     expect(html).toContain("Being replaced");
-    expect(html).toContain("Kept until the deployment form can draw obstacles");
+    expect(html).toContain("The older editor");
   });
 
   it("offers a collapse control", () => {

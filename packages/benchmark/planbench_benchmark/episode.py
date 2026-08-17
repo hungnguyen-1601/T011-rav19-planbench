@@ -108,6 +108,10 @@ def scenario_for(profile: TaskProfile, context: EpisodeContext) -> Scenario:
         # that could declare its own noise amplitude would be choosing
         # its own exam.
         sensor_noise=profile.environment.sensor_noise,
+        # Same reasoning, and the same trap avoided: a candidate that
+        # could set its own clearance preference would buy a shorter
+        # route by caring less than its rivals were made to.
+        clearance_preference=profile.clearance_preference,
         random_seed=context.seed,
         stuck_time_window=profile.constraints.stuck_threshold_s,
     )
@@ -156,6 +160,15 @@ def run_contract_episode(
             profile.replanning,
             recorder=recorder,
             legacy_metrics=False,
+            # Same argument, one rung further: a stack allowed to back up
+            # while its rival is not would be compared on its recovery.
+            recovery=profile.recovery,
+            # And once more, for the braking bound. A candidate that
+            # could pick the traffic speed it braked for would be
+            # choosing its own exam; worse, if only one stack braked
+            # correctly for closing traffic the comparison would be
+            # measuring safety rather than the layer it names.
+            obstacle_speed=profile.environment.v_obstacle_max,
         )
         recorder.close(
             peak_search_nodes=_search_nodes(candidate, run.plan),

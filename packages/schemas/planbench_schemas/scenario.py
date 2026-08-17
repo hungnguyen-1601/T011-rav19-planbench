@@ -90,6 +90,26 @@ class Scenario(BaseModel):
     #: cache is already keyed to the old scenario library and holds no
     #: entry for any contract-era profile, so nothing in use is lost.
     sensor_noise: SensorNoise = Field(default_factory=SensorNoise)
+    #: What a metre hugging the hard boundary costs a global planner
+    #: relative to a metre in the open, minus one. Carried down from the
+    #: deployment's ``TaskProfile.clearance_preference`` so it is one
+    #: number for every candidate in a comparison; a planner never sees
+    #: it directly, because it is baked into the planning grid's
+    #: traversal layer before any planner is handed the map.
+    #:
+    #: Zero is pure distance, and it is **not** the default even though
+    #: that is what scenarios built before this field existed used. Their
+    #: distance-only planning came paired with a binary inflation a whole
+    #: cell diagonal wider than the hard set; now that the prohibition
+    #: has shrunk to the hard set alone, zero here reproduces neither the
+    #: old behaviour nor a good one — it hands the planner a licence to
+    #: shave obstacles with nothing charging it for doing so, and the
+    #: controller then cannot drive what comes back. Measured on
+    #: `sudden_stop`: λ=0 times out where the default reaches the goal.
+    #:
+    #: So the default matches ``TaskProfile.clearance_preference``, and a
+    #: scenario that genuinely wants pure distance has to ask.
+    clearance_preference: float = Field(default=4.0, ge=0)
     random_seed: int = 0
     stuck_time_window: float = Field(default=5.0, gt=0)
     stuck_min_displacement: float = Field(default=0.05, gt=0)

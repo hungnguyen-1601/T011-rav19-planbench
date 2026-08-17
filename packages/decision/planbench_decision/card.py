@@ -376,6 +376,21 @@ class Manifest(BaseModel):
     #: not how the result was judged, so the episodes recorded without it
     #: are episodes of a different run and the deployment needs a new id.
     replanning: ReplanningConfig = Field(default_factory=ReplanningConfig)
+    #: The closing speed the braking guarantee was sized for, m/s.
+    #:
+    #: Carried for the fourth time, for the fourth instance of the same
+    #: rule: ``episode_context_id`` does not hash it, so one deployment
+    #: run twice at the same seeds — once declaring a bound, once not —
+    #: shares every context id while being two experiments. It sits on
+    #: the ``sensor_noise`` side: the bound changes what the robot *did*,
+    #: not how the result was judged, so switching it on needs a new
+    #: ``task_profile_id``.
+    #:
+    #: ``None`` is a statement, not a gap, and the card must be able to
+    #: make it: *this deployment carried no braking guarantee against
+    #: moving traffic*. Reading it as 0.0 would be reading "undeclared"
+    #: as "nothing moves here", which is the opposite claim.
+    v_obstacle_max: float | None = None
     #: The thresholds that turned measurements into verdicts (HĐ-7).
     #:
     #: Required, and required for the same reason ``sensor_noise`` is
@@ -422,6 +437,16 @@ class Manifest(BaseModel):
             "decision_mode": self.decision_mode,
             "travel_time_accounting": self.travel_time_accounting,
             "sensor_noise": self.sensor_noise.model_dump(),
+            # Both of these were fields the model carried and the file did
+            # not. The schema has described `replanning` since 6.4.0, and
+            # `additionalProperties: false` cannot catch a property that
+            # is merely absent — so every manifest written so far was
+            # silently missing the very condition its own docstring calls
+            # required. Written now, together, because a manifest that
+            # recorded the braking bound and not the replanning rule
+            # would be a new instance of the same hole.
+            "replanning": self.replanning.model_dump(),
+            "v_obstacle_max": self.v_obstacle_max,
             "constraints": self.constraints.model_dump(),
             "candidates": list(self.candidates),
             "episode_contexts": {
@@ -570,6 +595,7 @@ def build_manifest(
         travel_time_accounting=settings.travel_time_accounting,
         sensor_noise=profile.environment.sensor_noise,
         replanning=profile.replanning,
+        v_obstacle_max=profile.environment.v_obstacle_max,
         constraints=profile.constraints,
         candidates=tuple(sorted(gate_reports)),
         # Sorted by id so a rebuild produces the same file byte for byte

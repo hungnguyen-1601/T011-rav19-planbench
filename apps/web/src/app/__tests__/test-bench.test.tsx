@@ -275,6 +275,25 @@ describe("the traffic is on screen, at the instant on screen", () => {
        only the second is reassuring. */
     expect(PAGE).toContain("stream.currentFrame?.obstacles ?? []");
   });
+
+  it("shows the declared routes without running anything first", () => {
+    /* The map used to arrive only as a side effect of pressing Run, so
+       the traffic a deployment declares was invisible until after the
+       episode it was meant to inform — the wrong way round for a page
+       whose job is to check a deployment before a 300-episode
+       comparison commits to it. */
+    expect(PAGE).toContain("const prepare = useCallback");
+    expect(PAGE).toContain("showTheWorld");
+    expect(PAGE).toContain("authoredTraffic={overlayOf(");
+  });
+
+  it("stages once, whichever button asked for it", () => {
+    /* Both paths go through `prepare`, so "show me" and "run it" cannot
+       drift into two different ideas of which map a deployment means. */
+    const run = PAGE.slice(PAGE.indexOf("const runOne"), PAGE.indexOf("const visibleTrajectory"));
+    expect(run).toContain("await prepare()");
+    expect(run).not.toContain("stageTestBenchEpisode(");
+  });
 });
 
 describe("two views of one scene, and neither replaces the other", () => {

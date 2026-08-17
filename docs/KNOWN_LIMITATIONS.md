@@ -172,20 +172,52 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     vật cản động vẽ theo snapshot từng frame (view 2D), điểm va chạm
     đánh dấu trên timeline. Hook `useTrajectoryPlayback` tách riêng
     khỏi stream WebSocket của `/simulate`.
-47. **Vật cản động không hiện trong 2.5D.** Snapshot vị trí vật cản có
-    trong `TrajectoryPoint.obstacles`; view 2D top-down của replay đã
-    vẽ theo playhead (F08), nhưng renderer `Scene25D` vẫn chưa dùng —
-    2.5D chỉ vẽ map tĩnh, plan, trajectory và robot.
+47. **Vật cản động trong 2.5D: vẽ được, nhưng chỉ ở nơi có người truyền
+    xuống.** `Scene25D` nhận `obstacles` và dựng cả footprint lẫn vành
+    keep-out (`lib/scene25d.ts`), và form deployment truyền snapshot từ
+    preview xuống nên traffic hiện ở cả khung phẳng lẫn 2.5D (2026-08-15,
+    Phase 2b). Phần **replay** thì chưa: `TrajectoryPoint.obstacles` có
+    sẵn dữ liệu nhưng trang replay chưa nối vào `obstacleSnapshots`, nên
+    xem lại một episode ở 2.5D vẫn thấy hành lang trống. Ngoài ra 2.5D
+    **chỉ hiển thị, không đặt điểm được** — traffic được vẽ trên khung
+    phẳng, và đó là chủ ý chứ không phải thiếu sót. Lớp **traffic đã
+    khai** thêm ở 2026-08-16 (lộ trình, điểm cầm được, vòng lang thang —
+    `lib/trafficOverlay`) cũng chỉ vẽ ở khung phẳng, cùng lý do: phép
+    chiếu 2.5D không có nghịch đảo, một pixel trên màn ứng với cả một tia
+    xuyên qua cảnh chứ không với một điểm.
 48. **Chưa có endpoint model registry.** `/algorithms` hiển thị registry
     stack (gồm `astar+ppo` và `model_path` nó đòi), nhưng danh sách
     checkpoint đã train thì chưa có API — metadata mới nằm ở file sidecar
     cạnh checkpoint.
 49. **Agent console không lưu hội thoại.** Mỗi lượt độc lập; `history`
     chưa được truyền lại. Cần bảng riêng khi có PostgreSQL.
-50. **Chưa có test render cho component.** Vitest phủ phần hình học
-    thuần (`scene25d`, `transform`, `playback`, `demoMap`); component
-    React kiểm chứng bằng `tsc`, `next build` và chạy thật, chưa có
-    jsdom + Testing Library.
+50. **Component test dừng ở lần render đầu; không có test cho thao tác
+    chuột.** Vitest phủ phần hình học thuần (`scene25d`, `transform`,
+    `playback`, `demoMap`, `trafficOverlay`, `canvasSize`), và một số
+    component được render thật bằng `renderToStaticMarkup` —
+    `Sidebar`/`StatCard`/`EmptyState` (`shell.test.tsx`),
+    `TrafficEditor` (2026-08-15), `Tabs` và **`DeploymentForm`** cả hai
+    từ 2026-08-16. Cách đó phủ **lần vẽ đầu tiên**: field nào hiện với
+    luật chuyển động nào, lỗi server rơi vào tab nào, panel ẩn có còn
+    trong DOM không, control có bị khoá không.
+
+    Cái nó **không** phủ được: click, kéo, và mọi thứ chỉ xảy ra sau một
+    lần tương tác — kéo waypoint, nhấn đúp để xoá, pointer capture khi
+    con trỏ rời canvas, ảnh preview vẽ đúng toạ độ, click rơi đúng chỗ
+    sau khi `ResizeObserver` đổi kích thước canvas, và các race giữa
+    nhiều request (sửa field trong lúc đang kiểm, chọn map A rồi map B).
+    Không có jsdom, không Testing Library, không playwright.
+
+    Phần *quyết định* sau mỗi click đã được tách thành hàm thuần và test
+    riêng — `lib/traffic`, `lib/trafficUi` (vòng đời candidate/committed
+    của một cú kéo), `lib/trafficOverlay` (hit-test và ý nghĩa của một
+    cú nhấn), `lib/pointerRouting`, `lib/sequencer`. Phần nối tới con
+    chuột hiện nghiệm thu **bằng tay** theo checklist ở
+    `docs/antongduy/reports/2026-08-16/tongduyan_map-truc-tiep-phase-4-va-tong-ket.md`
+    (thay cho checklist 2026-08-15, đã bị nó bao trùm).
+
+    Riêng canvas vẽ đúng pixel thì jsdom cũng không kiểm được — muốn
+    đóng hẳn phải là browser test thật.
 
 ## Persistence / Docker (M10)
 
@@ -1154,3 +1186,402 @@ thứ chạy, và câu hỏi để lại đây.
   mang lập luận nào của riêng nó.
 
 Hẹn xử lý: sau khi MVP hoàn tất.
+
+---
+
+## Inflation theo bậc — RRT* trở thành biến thể cost-aware (2026-08-14)
+
+Lưới nhị phân được thay bằng **trường chi phí**: chỉ miền khả thi cứng
+(`hard_clearance` = footprint + safety envelope) là **cấm tuyệt đối**;
+dải quanh nó — vốn bị cấm hẳn — nay chỉ **đắt**. Cả hai global planner
+phải đọc trường đó, nếu không thì trường không có nghĩa.
+
+### Hạn chế 1 — bảo đảm tiệm cận tối ưu của RRT* **chưa được xác minh**
+
+Chi phí cạnh của RRT* giờ là **tích phân trường chi phí dọc cạnh**, thay
+vì độ dài Euclid. Bảo đảm tiệm cận tối ưu của RRT* (Karaman & Frazzoli)
+được chứng minh cho các phiếm hàm chi phí có tính chất liên tục và bị
+chặn nhất định; trường ở đây **hằng từng ô**, tức gián đoạn ở mọi cạnh ô.
+
+**Dev đã chốt (14-08): chấp nhận triển khai mà chưa xác minh.** Ghi ở
+đây và trong mô tả stack trên `/candidates`, không giấu trong comment.
+
+Từ nay, **"RRT\*" trong dự án này là một biến thể cost-aware**. Mọi so
+sánh — nhất là so với số liệu trong bài báo — phải đọc nó như thế.
+
+Cái **vẫn còn** và là thứ cơ chế rewire thực sự cần: chi phí cộng tính
+dọc đường, và đơn điệu theo khoảng cách (hệ số ≥ 1, nên khoảng cách
+đường thẳng là **chặn dưới** của mọi cạnh). Mọi bước cắt tỉa trong vòng
+lặp chỉ dựa vào đúng hai tính chất đó.
+
+### Hạn chế 2 — `clearance_preference` (λ) là số **do người chọn**
+
+Không suy ra được, khác với safety envelope hay `N_min`. Nên xử lý như
+mọi con số cùng loại: khai trên **deployment**, giống nhau cho mọi ứng
+viên, ghi vào manifest (HĐ-13). Mặc định `2.0` — một mét sát biên cứng
+đắt bằng ba mét chỗ trống, tức planner chịu đi vòng tới gấp ba quãng
+đường để khỏi cạo sát vật.
+
+Con số 2.0 **chưa được hiệu chuẩn theo dữ liệu**; nó là một lựa chọn hợp
+lý, không phải kết quả đo. Đổi nó **đổi mọi đường đi**, nên đổi nó là
+tạo deployment mới chứ không phải sửa cấu hình.
+
+### Hạn chế 3 — tích phân chi phí là **xấp xỉ lấy mẫu**
+
+`segment_cost` lấy mẫu mỗi 1/4 ô và cộng lại, không đi chính xác chuỗi ô
+mà đoạn thẳng cắt qua (Amanatides–Woo). Sai số bị chặn bởi 1/4 ô nhân
+một hệ số — dưới xa mức bất kỳ quyết định định tuyến nào phụ thuộc vào,
+và đúng bằng xấp xỉ mà `has_line_of_sight` vốn đã dùng.
+### Hạn chế 4 — vẫn phải nới lưới quanh robot, và bán kính cấm vẫn mang **nửa** đường chéo ô
+
+Lượng tử hoá là **hai phía**: vật cản nằm đâu đó trong ô của nó, robot
+nằm đâu đó trong ô của nó, nên khoảng cách tâm–tâm chỉ chặn khoảng cách
+thật trong phạm vi một đường chéo ô về **cả hai** hướng. Hệ quả: **không
+có bán kính inflation nào** khiến "controller nói tư thế này hợp lệ" kéo
+theo "lưới của planner đồng ý".
+
+Hai nửa được xử khác nhau:
+
+- **Nửa phía vật cản** (`√2/2 × resolution`) nằm trong `_hard_radius`.
+  Đây là **số học, không phải thận trọng**: ô OCCUPIED nghĩa là vật cản
+  chạm ô đó, không nói chạm ở đâu, nên bỏ nửa này ra thì lưới thành xấp
+  xỉ **lạc quan** của miền cứng — điều duy nhất nó không được phép là
+  thế. Đo trên phòng hai cửa ở ô 0.5 m, robot 0.3 m: inflate 0.30 m
+  **không đánh dấu thêm một ô nào**, vì tâm hai ô kề nhau cách 0.5 m; A*
+  trả về đường cạo sát tường, controller không lái được, và 40/43 lần
+  replan không tìm ra gì — đúng lỗi cũ, vào bằng cửa khác.
+- **Nửa phía robot** nằm trong `_caution_ramp` — chỉ tính tiền. Đường đi
+  là vật thể liên tục và được kiểm như thế: hàng rào L4 đo mọi đường
+  global theo **mét**, trên cả hai stack.
+
+`_with_standing_room` nới quanh robot **đúng phần thận trọng của lưới**:
+ô nào bị chặn trên lưới `_hard_radius` mà **tự do** trên lưới
+`_feasible_clearance` thì được mở, trong bán kính một `_caution_ramp`. Ô
+nằm trong miền cứng thật **không bao giờ** được mở.
+
+Riêng ô robot đang đứng thì mở **vô điều kiện**. Ô rộng 0.5 m: robot giữ
+khoảng cách 0.3 m với tường sẽ đặt LiDAR return gần nhất vào **chính ô
+chứa tâm nó**, nên luật có điều kiện từ chối đúng lúc cần nới nhất — đo
+được: "start is inside an obstacle" 43/44 lần replan. Nhưng robot **đang
+ở đó**, và engine kết thúc episode ngay khi robot chồng lên vật cản, nên
+sự hiện diện của nó chính là bằng chứng.
+
+**Vì sao đây không phải bong bóng B1 quay lại.** B1 mở mọi thứ mà
+*inflation* đã đánh dấu, tức trả lại **không gian trống thật**, và không
+gian trống có giá trị khác nhau với từng họ planner (đo trên
+`sudden_stop`: A* lấy hành lang rộng 0.59 m bằng 3 waypoint, RRT* cắt
+còn 0.13 m bằng 10 waypoint, có khúc quay 170° và 187° mà robot
+chỉ-tiến-không-lùi không lái nổi).
+
+Hai điểm khác: nới **dừng ở miền cứng** chứ không dừng ở vật cản thô,
+nên không bao giờ trả lại thứ bất hợp lệ; và mọi ô được mở **giữ nguyên
+hệ số chi phí cực đại**, nên cắt qua khe đó là **đắt** với bất kỳ ai làm
+thế — đó chính là câu trả lời của gradient cho thiên vị của B1.
+
+---
+
+## Bảo đảm phanh trước vật cản đang lại gần (P1, 2026-08-14)
+
+### L7. Deployment không khai `v_obstacle_max` **không có** bảo đảm phanh trước traffic
+
+Tiêu chuẩn vận tốc khả nhận chặn tốc độ theo lần quét **hiện tại**, tức
+nó phát biểu đúng một câu: *robot dừng kịp trước vật cản **đang đứng***.
+Với vật cản đang lại gần ở tốc độ `u`, khe hở co theo `(v + u)` trong khi
+robot chỉ dự trù `v`.
+
+Đo được, `astar+dwa` trên sảnh trống, xe đẩy lao thẳng, tắt hết nhiễu,
+robot mặc định (`v_max` 0.8, `a` 0.5):
+
+Tốc độ lúc chạm đo bằng **phép quét trong bước**, lấy vận tốc theo đúng
+mô hình bậc-không của engine (xem L10):
+
+| tốc độ xe đẩy | không khai | có khai |
+|---|---|---|
+| 0.20 m/s | 16 bước vượt biên, **va lúc còn chạy 0.350 m/s** | 0 bước, **0.000 m/s** |
+| 0.30 m/s | 12 bước, 0.378 m/s | 0 bước, 0.000 m/s |
+| 0.60 m/s | 9 bước, 0.440 m/s | 0 bước, 0.000 m/s |
+| 1.00 m/s | 8 bước, 0.575 m/s | 0 bước, 0.000 m/s |
+| 1.50 m/s | 6 bước, 0.638 m/s | 0 bước, 0.000 m/s |
+
+Với **trọng số đang ship**: cột không khai đọc 0.155–0.575 m/s, cột có
+khai bằng **0** ở mọi hàng.
+
+Lỗ hổng mở ra từ **0.15–0.20 m/s** — chậm hơn người đi bộ — và **trọng
+số đang ship cũng va chạm**, không riêng cấu hình đối kháng.
+
+`v_obstacle_max = null` là **mặc định** và mọi profile đang ship đều để
+trống, nên hôm nay **không deployment nào mang bảo đảm này**. Đó là chủ
+đích: sửa mặc định sẽ đổi hành vi của mọi lượt chạy đã lưu mà không đổi
+`task_profile_id`, đúng cái bẫy HĐ-3.1 sinh ra để chặn. Deployment muốn
+bảo đảm phải khai — và khai là tạo `task_profile_id` mới.
+
+Tái hiện: `tests/test_admissible_stopping.py`.
+
+### L8. `kinematics.py` giữ **một vận tốc cho cả bước** — độ trung thực, không phải lỗi công thức
+
+**Đây là bản viết lại. Bản trước của L8 nói biên phanh tính phí sai vì
+"robot chạy bước đó ở `v_current`". Điều đó *không đúng về engine* và đã
+bị rút.**
+
+`kinematics.step` giải vận tốc mới **trước** — kẹp theo giới hạn tốc độ,
+rồi kẹp theo **một bước gia tốc** — sau đó tích phân **toàn bộ `dt`**
+bằng vận tốc mới đó. Kiểm trên trace chứ không đọc docstring: quãng đi
+giữa hai mẫu bằng đúng `after.speed × dt` tới float cuối, ở mọi bước.
+
+Hệ quả: khi lệnh nằm trong tầm một bước gia tốc — mà cửa sổ động luôn
+bảo đảm, vì nó chỉ lấy mẫu trong `±a·T` quanh vận tốc hiện tại — số hạng
+phản ứng `v_candidate · T` **tính đúng bằng** quãng robot thật sự đi.
+Không có khoản thiếu nào.
+
+Phần còn dư, và nó nhỏ: khi `stopping_limit` tụt xuống dưới sàn ramp
+(`v_k − a·dt`), lệnh phát ra thấp hơn thứ engine với tới được trong một
+bước, nên robot đi bước đó nhanh hơn mức đã tính phí. Đo được: mức vượt
+lớn nhất là **0.0215–0.0248 m/s**, tức tới **99%** của một bước giảm tốc
+(`a·T` = 0.025) và **không bao giờ quá**. Nó **không** gây dừng muộn —
+xem bảng L7, tốc độ lúc chạm bằng 0 ở mọi tốc độ vật cản.
+
+**Hạn chế thật sự nằm ở chỗ khác, và nó thuộc simulator:** robot ngoài
+đời giảm tốc **liên tục trong bước**, engine thì giữ một vận tốc cho cả
+bước. Trong một bước phanh:
+
+```
+liên tục:  v_k·dt − ½·a·dt²
+engine:    (v_k − a·dt)·dt  =  v_k·dt − a·dt²
+```
+
+Engine đi **ít hơn `½·a·dt²`** mỗi bước — 0.625 mm với `a` = 0.5,
+`dt` = 0.05 — cộng dồn **≈ 20 mm** qua 32 bước cần để xả 0.8 m/s. Tức
+simulator **lạc quan** về quãng phanh, đúng chiều mà một phép đo an toàn
+không muốn sai.
+
+Đây là tính chất của `kinematics.py`, **áp cho mọi phép đo của nền tảng**
+— quãng phanh, khoảng hở nhỏ nhất, near-miss — không phải khuyết tật
+riêng của P1. Sửa nó là đổi tích phân của simulator, tức đổi mọi số đã
+lưu; nó là một pha riêng và phải được cân nhắc như một thay đổi độ trung
+thực (giống lần bật `sensor_noise`), không phải một bản vá.
+
+### L9. Bảo đảm này **không** hứa không va chạm
+
+Nó hứa robot luôn còn dừng được trước thứ nó nhìn thấy, và trong bảng L7
+nó làm được: tốc độ lúc chạm bằng **0** ở mọi tốc độ vật cản. Nhưng nó
+**không** hứa episode kết thúc mà không chạm — một xe đẩy lao xuống làn
+và đâm vào robot **đang đứng yên** vẫn là va chạm, và không giới hạn tốc
+độ nào với tới được chuyện đó. Chỉ tránh đường mới được, và đó là việc
+của tầng chi phí mềm.
+
+Trong bảng L7, mọi hàng từ 0.15 m/s trở lên **vẫn va chạm** sau khi khai
+biên; thứ đổi là tốc độ lúc bị chạm rơi từ 0.35–0.64 m/s xuống **0**.
+
+Đọc `collision_count` của một deployment có khai `v_obstacle_max` mà kỳ
+vọng nó về 0 là đang đọc một tuyên bố khác với tuyên bố đã được đo.
+
+### L10. Đo va chạm: quét trong bước, **và** đọc đúng vận tốc của bước
+
+Hai lỗi đọc chồng lên nhau, cả hai đều từng cho ra số sai trong report,
+và **cả hai đều làm test xanh**:
+
+1. **Lấy mẫu ở biên bước.** Bản đầu đọc tốc độ ở mẫu đầu tiên có
+   `gap ≤ 0`. Mẫu đó ở **cuối** bước, còn va chạm xảy ra **bên trong**
+   bước. Kết quả trông như dừng sạch ở mọi tốc độ.
+2. **Nội suy vận tốc qua bước.** Bản sửa thứ nhất tính
+   `before.v + s·(after.v − before.v)`, cho ra 5.8 mm/s và 5.0 mm/s ở
+   `u` = 1.0 và 1.5. Sai, vì engine **không** đổi vận tốc tuyến tính
+   trong bước — nó giữ `after.speed` cho cả bước. Vận tốc đúng tại mọi
+   thời điểm bên trong bước là **`after.speed`**, và ở bước xảy ra tiếp
+   xúc nó bằng **0**: robot không đi được milimét nào trong bước đó, xe
+   đẩy tự đi vào nó.
+
+Phép đo đúng, hai phần: **thời điểm** chạm là nghiệm đầu tiên trong
+`[0, 1]` của tam thức bậc hai `|d₀ + s·Δ|² = R²` giữa hai mẫu; **vận
+tốc** tại thời điểm đó là `after.speed`, hằng số.
+
+Luật rút ra cho mọi phép đo về sau: **quét trong bước để lấy thời điểm,
+và lấy vận tốc theo đúng mô hình tích phân của engine — đừng nội suy một
+đại lượng mà engine giữ bậc không.** Ghim bằng
+`TestTheStepModelIsZeroOrderHold`, đối chiếu thẳng với quãng đi trên
+trace chứ không với docstring: docstring là thứ ai đó *định* làm, mà lỗi
+đọc ở đây cũng là thứ ai đó định.
+
+### L11. P1 chỉ có hiệu lực trên luồng deployment, không trên luồng benchmark cũ
+
+`v_obstacle_max` đi từ `TaskProfile` xuống `run_stack`. Ba đường không
+mang nó, và cả ba đều đúng chứ không phải sót:
+
+| đường | vì sao |
+|---|---|
+| `run_benchmark` / `run_single` (`packages/benchmark/runner.py`) | nhận `Scenario` + `BenchmarkSpec`, **không có `TaskProfile`** — không có gì để truyền. Cùng tình trạng với `recovery`, cũng không đi qua đường này |
+| `/simulate` (`apps/api/services.py`) | chạy từ `StoredSimulation`, cũng không có profile. Sân thử, không phải chỗ đo deployment |
+| `tuning.py`, `calibrate_difficulty.py` | dùng `run_benchmark`, kế thừa như trên |
+
+Cả ba chạy với `obstacle_speed = None`, tức **hành vi cũ**. Nếu luồng
+benchmark cũ còn xuất hiện trên UI thì con số nó sinh ra **không** mang
+bảo đảm phanh trước vật cản đang lại gần, kể cả khi deployment có khai.
+
+### L12. `RandomWalkMotion` từng nhảy vị trí — **đã sửa 2026-08-15**
+
+Phát hiện lúc kiểm sai số mô hình từng cảnh cho cổng P4. Trên
+`dynamic_warehouse`, `wanderer` khai `speed = 0.5` m/s:
+
+```
+t=13.50  đi 1.4075 m trong MỘT bước 0.05 s  ->  28.15 m/s   (56x)
+t=19.15  đi 1.1025 m                        ->  22.05 m/s
+t= 4.10  đi 1.0750 m                        ->  21.50 m/s
+```
+
+**Gián đoạn, không phải nhiễu.** Phép phản xạ ở `max_radius` được quyết
+định từ **thời gian đã trôi *một phần*** của interval đang chạy:
+
+```python
+next_x = x + speed * cos(heading) * elapsed
+if hypot(next - origin) > max_radius:
+    next_x = x + speed * cos(toward) * elapsed   # hướng NGƯỢC LẠI
+```
+
+`elapsed` lớn dần từ 0 tới `change_interval`. Tới đúng lúc đường ngoại
+suy hướng ra vượt `max_radius`, nhánh **lật**, và vị trí nhảy giữa hai
+đường ngoại suy chỉ ngược chiều nhau — biên độ tới `2 · speed · elapsed`.
+
+**Đã sửa:** quyết định phản xạ lấy **một lần cho cả interval** (từ bước
+đầy đủ `change_interval`), rồi mới áp heading đã chọn với `elapsed`. Bên
+trong một interval vật cản đi theo **một** hướng với **đúng** `speed`,
+nên vị trí liên tục theo thời gian và cận trên là chính xác.
+
+Đo lại sau khi sửa: tốc độ thực hiện lớn nhất **0.500000 m/s** trên tốc
+độ khai 0.5 (tỉ số 1.0000), và vẫn ở trong `max_radius`.
+
+**Vì sao sửa motion chứ không bump contract.** HĐ-2.6 khai cận trên của
+luật này là `speed`, và điều đó đúng với **đặc tả** — tốc độ hằng, chỉ
+đổi hướng mỗi interval. Sai là ở **hiện thực**. Một lúc, `max_speed` đã
+được cho từ chối `random_walk` để tránh một tuyên bố an toàn sai; nhưng
+làm thế là **ghi một lỗi hiện thực vào ngữ nghĩa hợp đồng** và sẽ cần
+bump MAJOR. Sửa motion làm code khớp lại contract, **không** bump, không
+phải chạy lại lát cắt dọc. *(An chốt 15-08.)*
+
+**Hàng rào hồi quy:** `TestRandomWalkMotion::test_it_never_exceeds_its_own_declared_speed`
+— quét toàn bộ 30 s ở bước 0.01 s trên bốn seed và đòi không khoảng nào
+hàm ý tốc độ vượt `speed`. Cộng một test đối chiếu `max_speed` với
+`motion.speed` để hai con số không thể lệch nhau.
+
+**Đổi thế giới, và nó đổi ở đâu.** Quỹ đạo `wanderer` khác từ **t = 3.05 s**,
+lệch tối đa **1.38 m**. Nhưng golden fixture của P2 **vẫn xanh từng byte**,
+và đó không phải vì nó mù: trong ca `warehouse_three_movers` (cắt còn
+25 s) robot đi dọc `y = 6.0` còn `wanderer` quanh `(12, 2)`, cách **~9 m**
+— ngoài tầm LiDAR 6 m suốt cả episode, nên nó chưa bao giờ chạm vào một
+lệnh nào. Ghi ra vì nó có nghĩa là ca đó thực chất chỉ tập luyện **hai**
+vật cản động chứ không phải ba.
+
+Mọi số đã lưu ở cảnh có random walk mà robot **có** nhìn thấy vật cản đó
+thì phải đo lại. Không cảnh nào trong golden fixture rơi vào diện này.
+
+---
+
+## `dwa_predictive` — hạn chế của chính ứng viên (P6, 2026-08-15)
+
+### L13. Mô hình là **vận tốc hằng**, và nó sai ngay khi có gì đó rẽ hoặc dừng
+
+`dwa_predictive` ngoại suy vật cản bằng vận tốc hằng. `SuddenStopMotion`
+là **phản ví dụ hoàn hảo**: vật chạy đều rồi đứng phắt, còn dự đoán nói nó
+đi tiếp, nên robot lách vào chỗ nó **không hề tới**. `PeriodicMotion` là
+hình sin — sai số ngoại suy trung vị sau 1.5 s đo được là **0.949 m** trên
+`crossing_obstacle`.
+
+Đây **không** phải ca hiếm cần vá; nó là miền giả định của mô hình. Cảnh
+nằm ngoài miền đó đo **giới hạn** của mô hình, không đo **giá trị** của
+nó — lý do cổng P4 loại `sudden_stop` và `random_walk`.
+
+### L14. Ba nguồn **vận tốc ma**, không nguồn nào giải triệt để ở tri giác 2D
+
+1. **Tâm cụm trượt khi vật lộ dần** sau góc khuất — vật đứng yên "chạy"
+   tới nửa bề rộng của nó.
+2. **`lidar_dropout_probability`** làm cụm vỡ đôi rồi liền lại.
+3. **Hai vật đi ngang nhau** ⇒ ghép cặp chéo, hai vận tốc đảo chiều.
+
+Cộng một nguồn thứ tư mà plan không lường: **lượng tử hoá quét**. Tâm một
+cụm lấy mẫu bằng tia rời rạc dịch khi *tập tia chạm vào nó* đổi — xảy ra
+mỗi khi robot di chuyển, **với cảm biến hoàn hảo**.
+
+Đo được trên ba cảnh **hoàn toàn tĩnh**, tắt mọi nhiễu: vận tốc ma trung
+vị **0.28–0.41 m/s**, đỉnh **1.27 m/s** — cùng bậc với traffic thật
+(0.6–0.8 m/s). Sàn nhiễu chặn được **biên độ**, không chặn được hiện
+tượng.
+
+### L15. Vật cản **không** được giả định né robot
+
+Không dùng RVO/ORCA. Vật cản trong `dynamic.py` là hàm thuần của
+`(spec, time, seed)` và **không phản ứng gì**. Một mô hình tương hỗ ở đây
+sẽ đo một giả định sai.
+
+### L16. Tracker **không giành lại được** lợi ích của dự đoán ở cấu hình 72 tia
+
+Đo trên `intersection`, 120 seed ghép cặp (`scripts/diagnose_tracker.py`,
+commit `63c5d7d`):
+
+| | va chạm | thành công | tốt hơn `dwa` | tệ hơn |
+|---|---|---|---|---|
+| `dwa` | 9/120 | 107/120 | — | — |
+| oracle (tri giác hoàn hảo) | **2/120** | **112/120** | **11** | 0 |
+| tracker (LiDAR thật) | 9/120 | 107/120 | **0** | 0 |
+
+**11 cơ hội, tracker lấy 0.** Nút thắt là **tần suất phát hiện**, không
+phải độ chính xác: khi tracker có báo vận tốc thì sai số trung vị chỉ
+**0.119 m/s** trên 0.800 (15%), nhưng nó chỉ báo ở **1.6%** số bước vật
+cản nằm trong tầm. Vật cản 0.35 m ở 4 m rộng **2 tia** (72 tia ⇒ 5.00°),
+nên cụm lúc có lúc không, track chết trước khi tích đủ mẫu.
+
+Hệ quả cho người đọc Decision Card: trên deployment dùng LiDAR 72 tia,
+`dwa_predictive` **được kỳ vọng ngang `dwa`**, và một tấm card nói vậy là
+card đúng. Nó **không** nói mô hình dự đoán vô dụng — oracle đã bác điều
+đó. Nó nói **cảm biến này không đủ để ước lượng cái mô hình cần**.
+
+### L17. Chưa đo dưới nhiễu định vị — pha hệ toạ độ vẫn treo
+
+Rollout robot dùng **pose thật** (`state.pose`) còn đám mây điểm dùng
+**pose robot tin là** (`observation.pose`). Hai đại lượng bị trừ cho nhau,
+lệch nhau đúng bằng sai số định vị. Hôm nay chỉ làm khoảng hở lệch một
+hằng số; **với tracking nhiều khung thì nó thành vận tốc** — tường đứng
+yên sẽ có vận tốc dao động.
+
+Nên mọi phép so `dwa` vs `dwa_predictive` phải chạy với
+`localization_drift_m = 0` và `localization_jump_probability = 0` cho tới
+khi pha hệ toạ độ (mục 2c của plan) xong. Kết quả thu được **không nói gì**
+về độ bền trước nhiễu định vị.
+
+### L18. `v_obstacle_max` không dùng được trên bản đồ có vật cản tĩnh gần
+
+**Phát hiện ở P7, và nó làm tính năng của P1 gần như không dùng được ngoài
+sảnh trống.**
+
+Biên phanh áp lên `_nearest_obstacle_distance`, tức khoảng cách tới
+**return LiDAR gần nhất bất kể là gì** — kể cả **tường và kệ hàng**. Nên
+khai `v_obstacle_max = 0.8` là nói với controller: *anh chỉ được đi nhanh
+tới mức còn dừng kịp nếu cái kệ kia đang lao vào anh ở 0.8 m/s.*
+
+| khe hở | v cho phép (u=0) | v cho phép (u=0.8) |
+|---|---|---|
+| 0.3 m | 0.523 m/s | **0.145 m/s** |
+| 0.5 m | 0.683 m/s | **0.243 m/s** |
+| 1.0 m | 0.975 m/s | **0.456 m/s** |
+
+Đo được trên `warehouse_crossing_v1`, cùng episode, cùng seed:
+
+```
+v_obstacle_max = None  -> success  t = 65.2 s
+v_obstacle_max = 0.8   -> stuck    t = 26.1 s, dừng ở (5.4, 10.6)
+```
+
+Điểm dừng cách vật cản động **15 m** — nó bị chặn bởi **kệ hàng**, không
+phải bởi thứ đang chuyển động.
+
+**Vì sao P0/P1 không thấy:** cả hai đo trong **sảnh trống**, một xe đẩy
+lao thẳng, không có gì khác trong tầm. Đó đúng là hình học che giấu lỗi
+này.
+
+**Vì sao không sửa được bằng chỉnh tham số:** biên phải tính tốc độ khép
+**chỉ** với những thứ **có thể khép**. Phân biệt tĩnh/động chính là việc
+của tracker — mà P5 đo được là không đáng tin (L16). Nên đây là bài toán
+mở thật sự, không phải chuyện vặn số.
+
+**Hệ quả hôm nay:** không profile nào khai `v_obstacle_max`, nên **không
+deployment nào mang bảo đảm phanh trước vật cản đang lại gần** — L7 vẫn
+đúng nguyên văn. Lỗ hổng P0 đo được vẫn còn đó, và bản vá P1 chưa dùng
+được ở nơi có kệ hàng.

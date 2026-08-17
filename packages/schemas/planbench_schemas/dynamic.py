@@ -13,7 +13,9 @@ Motion kinds:
 - ``random_walk``: seeded piecewise-constant heading changes; the seed
   comes from the episode, so the same seed replays the same walk.
 - ``sudden_stop``: constant velocity until ``stop_time``, then parked —
-  the classic emergency-brake test for a local planner.
+  the classic emergency-brake test for a local planner. Declarable
+  either as a heading and a duration or as the point it stops at; see
+  :class:`SuddenStopMotion` for why only the first is stored.
 
 All obstacles are circles: the simulator's collision and LiDAR layers
 already handle circles exactly, and a moving polygon adds no benchmark
@@ -81,13 +83,77 @@ class RandomWalkMotion(_MotionBase):
 
 
 class SuddenStopMotion(_MotionBase):
-    """Constant velocity, then a permanent stop at ``stop_time``."""
+    """Constant velocity, then a permanent stop at ``stop_time``.
+
+    **Two ways to say it, one way to store it.** A stop can be declared
+    as a direction and a duration — ``heading`` and ``stop_time``, what
+    every shipped profile uses — or as ``stop_point``, the place the
+    obstacle comes to rest. The second is what an author means when they
+    click a spot on a map, and working out the angle and the seconds by
+    hand to express it is arithmetic nobody should have to do.
+
+    ``stop_point`` is **declaration syntax, not a field**. It is
+    resolved to ``heading``/``stop_time`` while the document is being
+    validated and never reaches the stored model. That is deliberate and
+    it is not tidiness:
+
+    - ``_scenario_checksum`` dumps a scenario with no ``exclude_none``,
+      so a new optional field would add ``stop_point: null`` to *every*
+      scenario carrying a sudden stop and change its checksum — even
+      though nothing about that world had changed. The module docstring
+      of :mod:`planbench_schemas.task_profile` calls that orphaning
+      every stored benchmark report, and the calibration entry for the
+      shipped ``sudden_stop`` scenario would go stale on the spot.
+    - The stored form stays the one the golden trajectories were
+      recorded against, so ``position_at`` is untouched and
+      ``tests/golden/dwa_trajectories.json`` cannot move.
+
+    Exactly one description may be given. Both at once would be two
+    statements free to disagree — a heading pointing north beside a stop
+    point to the east — with nothing to say which the simulator should
+    believe.
+    """
 
     kind: Literal["sudden_stop"] = "sudden_stop"
     start: Point2D
     heading: float
     speed: float = Field(gt=0)
     stop_time: float = Field(gt=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _resolve_stop_point(cls, data: object) -> object:
+        """Turn ``stop_point`` into the heading and duration it implies."""
+        if not isinstance(data, dict) or "stop_point" not in data:
+            return data
+        payload = dict(data)
+        target = payload.pop("stop_point")
+        if target is None:
+            return payload
+        if payload.get("heading") is not None or payload.get("stop_time") is not None:
+            raise ValueError(
+                "declare a sudden stop either by stop_point or by heading and "
+                "stop_time, not both: they are two descriptions of one motion "
+                "and nothing decides between them when they disagree"
+            )
+        start = Point2D.model_validate(payload.get("start"))
+        end = Point2D.model_validate(target)
+        dx, dy = end.x - start.x, end.y - start.y
+        distance = math.hypot(dx, dy)
+        if distance <= EPS:
+            raise ValueError(
+                "stop_point must differ from start: an obstacle that stops "
+                "where it began never moves, and no direction can be read "
+                "from a zero-length step"
+            )
+        speed = payload.get("speed")
+        if not isinstance(speed, int | float) or speed <= 0:
+            # Leave the complaint about speed to the field that owns it,
+            # rather than inventing a second message for the same fault.
+            return {**payload, "heading": math.atan2(dy, dx)}
+        payload["heading"] = math.atan2(dy, dx)
+        payload["stop_time"] = distance / speed
+        return payload
 
 
 Motion = Annotated[
@@ -112,12 +178,62 @@ class DynamicObstacle(BaseModel):
             "motions (waypoint, periodic, sudden_stop) ignore the seed, so a "
             "multi-seed benchmark would replay the identical episode N times "
             "and report a fake variance of zero. A non-zero value shifts this "
-            "obstacle's clock by a hash of (seed, name) in [0, offset), which "
-            "is what makes traffic timing vary across seeds."
+            "obstacle's clock by a hash of (seed, clock_key) in [0, offset), "
+            "which is what makes traffic timing vary across seeds. The key is "
+            "seed_offset plus the name's LENGTH, not the name — see "
+            "``clock_key``, and note that EnvironmentSpec refuses two "
+            "obstacles that share one."
         ),
     )
     seed_offset: int = Field(
         default=0, description="Mixes into the hash so obstacles differ from each other."
+    )
+
+
+def max_speed(motion: Motion) -> float:
+    """Fastest this law can ever move the obstacle, metres per second.
+
+    **A declared safety bound that nobody checks is a sentence, not a
+    guarantee.** A deployment stating ``v_obstacle_max = 1.0`` while one
+    of its carts runs a 1.5 m/s ``WaypointMotion`` leaves the braking
+    constraint wrong at precisely the place it is trusted most, and it
+    fails silently: the robot brakes for traffic slower than the traffic
+    it meets. This function is what lets that be refused at load.
+
+    Every law here has a **closed-form** bound, so the check is total and
+    there is no "cannot prove it" branch to reason about:
+
+    ============  ==============================================
+    Motion        Bound
+    ============  ==============================================
+    waypoint      ``speed``
+    random_walk   ``speed`` (heading turns; the rate does not)
+    sudden_stop   ``speed`` (it only ever slows, permanently)
+    periodic      ``π · |end − start| / period``
+    ============  ==============================================
+
+    The periodic case is the only one worth deriving. The path is
+    ``0.5·(1 − cos(2πt/T + φ))`` along the chord, whose derivative peaks
+    at ``π/T`` times the chord length — at the midpoint, where a
+    sinusoidal crossing is moving fastest, which is also where it is most
+    likely to be in front of a robot.
+
+    ``seed_time_offset`` shifts an obstacle's clock and never its rate,
+    so a bound taken here holds for every seed.
+
+    A future motion law reaches the explicit refusal below rather than a
+    silent zero: an unproven bound must cost a deployment its safety
+    claim, not be assumed generous.
+    """
+    if isinstance(motion, WaypointMotion | RandomWalkMotion | SuddenStopMotion):
+        return motion.speed
+    if isinstance(motion, PeriodicMotion):
+        chord = math.hypot(motion.end.x - motion.start.x, motion.end.y - motion.start.y)
+        return math.pi * chord / motion.period
+    raise NotImplementedError(
+        f"no closed-form speed bound for motion kind {type(motion).__name__}; "
+        "a deployment declaring v_obstacle_max cannot be validated against it, so "
+        "either derive the bound here or the deployment must not carry that claim"
     )
 
 
@@ -142,14 +258,39 @@ def position_at(obstacle: DynamicObstacle, time: float, seed: int) -> Point2D:
     raise TypeError(f"unsupported motion kind: {type(motion).__name__}")
 
 
+def clock_key(obstacle: DynamicObstacle) -> int:
+    """The integer that decides this obstacle's seed-derived head start.
+
+    **It is the name's length, not the name.** Two obstacles called
+    ``cart`` and ``rack`` with the same ``seed_offset`` therefore share a
+    key, and a shared key means one head start: measured at
+    ``seed_time_offset = 20``, both start 4.983802 s in at seed 0 and
+    19.384681 s in at seed 7, and their positions agree at every instant.
+    That is the lockstep the traffic rules exist to prevent, and unique
+    names do not prevent it.
+
+    Exposed rather than inlined because ``EnvironmentSpec`` refuses two
+    obstacles that share a key, and a validator that recomputed the
+    formula would be free to drift from the implementation it protects.
+
+    Hashing the name itself would be the tidier fix and was considered.
+    It is a **behaviour** change: every episode whose traffic carries a
+    head start would move, which includes five of the seven golden cases
+    in ``tests/golden/dwa_trajectories.json`` — a fixture generated
+    before ``dwa_core`` was extracted, and the only remaining evidence
+    that the extraction changed nothing. Refusing the collision costs
+    nobody a re-measurement; regenerating that fixture would cost the
+    proof.
+    """
+    return obstacle.seed_offset + len(obstacle.name)
+
+
 def _seed_time_shift(obstacle: DynamicObstacle, seed: int) -> float:
     """Deterministic clock offset in [0, seed_time_offset) for this seed."""
     if obstacle.seed_time_offset <= 0:
         return 0.0
     # Reuse the angle hash and map [-pi, pi) onto [0, 1).
-    unit = (_hashed_angle(seed, obstacle.seed_offset + len(obstacle.name), 0) + math.pi) / (
-        2.0 * math.pi
-    )
+    unit = (_hashed_angle(seed, clock_key(obstacle), 0) + math.pi) / (2.0 * math.pi)
     return unit * obstacle.seed_time_offset
 
 
@@ -205,14 +346,32 @@ def _random_walk_position(motion: RandomWalkMotion, time: float, seed: int) -> P
         if elapsed <= 0:
             break
         heading = _hashed_angle(seed, motion.seed_offset, index)
-        next_x = x + motion.speed * math.cos(heading) * elapsed
-        next_y = y + motion.speed * math.sin(heading) * elapsed
-        if math.hypot(next_x - motion.origin.x, next_y - motion.origin.y) > motion.max_radius:
+        # **Reflect or not is decided once, from the whole interval, and
+        # only then is the heading applied for the time actually elapsed.**
+        #
+        # Testing the *partial* step instead made the obstacle teleport.
+        # ``elapsed`` grows from 0 to ``change_interval`` as time advances
+        # inside the interval in progress, so a test on the partial
+        # endpoint flips from "outward" to "inward" partway through — and
+        # the position jumps between two extrapolations pointing opposite
+        # ways, by up to ``2 · speed · elapsed``. Measured on
+        # ``dynamic_warehouse`` before this was fixed: a 0.5 m/s obstacle
+        # moved 1.4075 m in a single 0.05 s step, which is 28 m/s and 56x
+        # its own declared speed.
+        #
+        # That also made the closed-form bound in HĐ-2.6 false: the
+        # contract states this law's speed bound is ``speed``, and the
+        # implementation exceeded it wildly. Deciding on the full interval
+        # restores it — within any interval the obstacle travels along one
+        # heading at exactly ``speed``, so position is continuous in time
+        # and the bound is exact.
+        full_x = x + motion.speed * math.cos(heading) * motion.change_interval
+        full_y = y + motion.speed * math.sin(heading) * motion.change_interval
+        if math.hypot(full_x - motion.origin.x, full_y - motion.origin.y) > motion.max_radius:
             # Reflect: head back toward the origin for this interval.
-            toward = math.atan2(motion.origin.y - y, motion.origin.x - x)
-            next_x = x + motion.speed * math.cos(toward) * elapsed
-            next_y = y + motion.speed * math.sin(toward) * elapsed
-        x, y = next_x, next_y
+            heading = math.atan2(motion.origin.y - y, motion.origin.x - x)
+        x = x + motion.speed * math.cos(heading) * elapsed
+        y = y + motion.speed * math.sin(heading) * elapsed
     return Point2D(x=x, y=y)
 
 

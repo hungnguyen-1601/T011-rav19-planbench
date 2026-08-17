@@ -20,7 +20,7 @@
  * so +z is up on screen, and a taller wall reaches further up.
  */
 
-import { keepOutRadius } from "./keepOut";
+import { cautionRadius, keepOutRadius } from "./keepOut";
 import type { MapData, ObstacleSnapshot, Point2D, Pose2D, TrajectoryPoint } from "./types";
 
 export const OCCUPIED_VALUE = 100;
@@ -76,6 +76,8 @@ export interface Scene25D {
    * the robot can hit — the controller drives through it every time it
    * squeezes past something. */
   keepOut: ObstacleMarker[];
+  /** The priced band beyond the boundary — passable, not forbidden. */
+  caution: ObstacleMarker[];
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
 }
 
@@ -181,6 +183,8 @@ export interface SceneOptions {
   goalPose?: Pose2D;
   robotPose?: Pose2D | null;
   robotRadius?: number;
+  /** Safety envelope in metres, from `safetyEnvelope(sensor_noise)`. */
+  positionUncertainty?: number;
   plannedPath?: Point2D[];
   trajectory?: TrajectoryPoint[];
   obstacles?: ObstacleSnapshot[];
@@ -246,11 +250,25 @@ export function buildScene(
     obstacles: (options.obstacles ?? []).map((o) =>
       obstacleMarker(projection, o.x, o.y, o.radius, robotHeight),
     ),
-    // Same number the flat view quotes, from the same function — two
+    // Same numbers the flat view quotes, from the same functions — two
     // hand-typed copies of an inflation radius is how the controller's
     // keep-out and the planner's came to differ by 0.30 m to begin with.
     keepOut: (options.obstacles ?? []).flatMap((o) => {
-      const radius = keepOutRadius(o.radius, map.resolution, options.robotRadius);
+      const radius = keepOutRadius(o.radius, options.robotRadius, options.positionUncertainty);
+      return radius === null ? [] : [obstacleMarker(projection, o.x, o.y, radius, 0)];
+    }),
+    // The band beyond the boundary: passable, and charged for. A
+    // separate list rather than a wider `keepOut`, because the renderer
+    // has to be able to draw them differently — one is a refusal and the
+    // other is a price, and a reader who cannot tell them apart is back
+    // to the picture that made a stuck robot inexplicable.
+    caution: (options.obstacles ?? []).flatMap((o) => {
+      const radius = cautionRadius(
+        o.radius,
+        map.resolution,
+        options.robotRadius,
+        options.positionUncertainty,
+      );
       return radius === null ? [] : [obstacleMarker(projection, o.x, o.y, radius, 0)];
     }),
     bounds: sceneBounds(facets),

@@ -28,6 +28,22 @@ class LidarConfig(BaseModel):
     )
 
 
+#: How far a relocalisation jump moves the believed pose, in metres.
+#:
+#: **Part of what the field means, not an implementation detail**, which
+#: is why it lives beside the field rather than inside the noise model.
+#: ``localization_jump_probability`` says *how often* the estimate jumps;
+#: this says *how far*, and anything computing a safety envelope from the
+#: declared noise needs both. Two copies of it — one in the simulator and
+#: one in whatever bounds the error — is exactly how the controller's
+#: keep-out and the planner's came to differ.
+#:
+#: The jump is sized against the drift so one profile field governs "how
+#: wrong can this estimate be", with the jump landing at the upper end;
+#: this is the floor for a deployment that declares little or no drift.
+MIN_JUMP_MAGNITUDE_M = 0.25
+
+
 class SensorNoise(BaseModel):
     """How badly this deployment's robot measures and executes.
 

@@ -57,6 +57,10 @@ import { useTranslation } from "@/lib/i18n";
 import { useEpisodeStream } from "@/lib/useEpisodeStream";
 import type { MapData, PlanResult, Point2D } from "@/lib/types";
 import type { AlgorithmInfo } from "@/lib/benchmarkTypes";
+import type { ProfileDraft } from "@/lib/deployments";
+import { safetyEnvelope } from "@/lib/keepOut";
+import { trafficOf } from "@/lib/traffic";
+import { overlayOf } from "@/lib/trafficOverlay";
 
 /** A mission as it comes off the wire.
  *
@@ -147,6 +151,46 @@ export default function TestBenchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileId, profiles]);
 
+  /** Put the world on screen without running anything.
+   *
+   * **The map used to arrive only as a side effect of pressing Run.**
+   * Until it did there was no canvas at all, so the traffic a
+   * deployment declares — the whole reason somebody opens this page
+   * before committing to a 300-episode comparison — was invisible
+   * until after the episode it was supposed to inform. Staging is what
+   * resolves the deployment to a map, and it is the same call Run
+   * makes; doing it on its own costs one staged episode and answers
+   * "what am I about to measure" before the measuring.
+   */
+  const prepare = useCallback(async () => {
+    if (!profileId || !mission || !choice.stack || !choice.local_config) return null;
+    const episode = await stageTestBenchEpisode(profileId, {
+      mission_id: mission.id,
+      seed,
+      stack: choice.stack,
+      local_config: choice.local_config,
+    });
+    setStaged(episode);
+    const resource = await api.getMap(episode.map_id);
+    setMap(resource.map_data);
+    return episode;
+  }, [profileId, mission, choice, seed]);
+
+  const showTheWorld = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setPlan(null);
+    stream.reset();
+    try {
+      await prepare();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prepare]);
+
   const runOne = useCallback(async () => {
     if (!profileId || !mission || !choice.stack || !choice.local_config) return;
     setBusy(true);
@@ -154,15 +198,8 @@ export default function TestBenchPage() {
     setPlan(null);
     stream.reset();
     try {
-      const episode = await stageTestBenchEpisode(profileId, {
-        mission_id: mission.id,
-        seed,
-        stack: choice.stack,
-        local_config: choice.local_config,
-      });
-      setStaged(episode);
-      const resource = await api.getMap(episode.map_id);
-      setMap(resource.map_data);
+      const episode = await prepare();
+      if (!episode) return;
       const result = await api.runSimulation(episode.simulation_id);
       setPlan(result.plan);
       if (result.result && result.result.trajectory.length > 0) {
@@ -180,7 +217,7 @@ export default function TestBenchPage() {
       setBusy(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profileId, mission, choice, seed, t]);
+  }, [prepare, t]);
 
   const visibleTrajectory = useMemo(() => {
     if (!showTrajectory) return [];
@@ -306,6 +343,18 @@ export default function TestBenchPage() {
             onClick={() => void runOne()}
           >
             {busy ? t("bench.running") : t("bench.run")}
+          </button>
+          {/* Answering "what am I about to measure" before measuring
+              it. The map and the declared traffic arrived only as a
+              side effect of running, which is the wrong way round for
+              a page whose job is to check a deployment before a
+              300-episode comparison commits to it. */}
+          <button
+            type="button"
+            disabled={busy || !ready || session === null}
+            onClick={() => void showTheWorld()}
+          >
+            {t("bench.showWorld")}
           </button>
         </div>
 
@@ -456,12 +505,24 @@ export default function TestBenchPage() {
               goalPose={goal ?? undefined}
               goalTolerance={deployment?.constraints?.goal_tolerance_m}
               robotRadius={deployment?.robot?.radius}
+              positionUncertainty={safetyEnvelope(deployment?.environment?.sensor_noise)}
               plannedPath={stream.planPath.length > 0 ? stream.planPath : plan?.path}
               trajectory={visibleTrajectory}
               robotPose={robotPose}
               collisionPoint={collisionPoint}
               dynamicObstacles={traffic}
               obstacleSnapshots={stream.currentFrame?.obstacles ?? []}
+              /* The routes the deployment declares, drawn from the
+                 document rather than from a run.
+               *
+               * Before this the only traffic on screen came out of the
+               * episode stream, so a deployment's obstacles did not
+               * exist until after it had been simulated — and an
+               * obstacle that starts parked at its stopping place
+               * looked like a stray circle rather than like a route
+               * somebody wrote. Teal says what was declared; the amber
+               * markers say where the engine actually had them. */
+              authoredTraffic={overlayOf(trafficOf(deployment as ProfileDraft | null), null)}
               previewTime={stream.playhead}
               showGrid={showGrid}
               showPlan={showPlan}

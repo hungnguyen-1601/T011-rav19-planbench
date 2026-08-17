@@ -303,6 +303,37 @@ def create_task_profile(
     return _profile(service.create(payload, owner_user_id=user.id))
 
 
+@router.post("/task-profiles/validate", status_code=status.HTTP_204_NO_CONTENT)
+def validate_task_profile(payload: dict[str, Any], service: Profiles, _: CurrentUser) -> None:
+    """Run the check filing runs, without filing anything.
+
+    **Why this exists rather than a copy of the rules in the browser.**
+    The form has thirty inputs and a block of traffic; a refusal that
+    arrives only on submit makes the author guess which of them the
+    server disliked. The tempting fix is to check the easy rules in
+    TypeScript, and that is exactly the thing the form is built not to
+    do — a second opinion in the browser is free to disagree with the one
+    that actually decides. So the verdict comes from here, from
+    ``TaskProfile`` itself.
+
+    **Same refusal shape as ``create``**: an invalid document raises
+    ``DomainValidationError`` and leaves as a 422 carrying the same
+    per-field addresses, so the form has one error path rather than two.
+    A valid one returns 204 and no body — there is nothing to say about a
+    document that is merely legal.
+
+    **It reads the document only.** Nothing is stored and nothing is
+    looked up, so a 204 is not a promise that filing will succeed: an id
+    already on file with different content is refused by ``create``
+    (HĐ-3.1), and that refusal cannot appear until then.
+
+    Signed in, like every other POST here. Nothing is written and nothing
+    is owned, but this runs the same code path ``create`` does, and a
+    door to it that needs no account is a door that drifts.
+    """
+    service.validate(payload)
+
+
 @router.post(
     "/task-profiles/derive",
     response_model=TaskProfileResource,
