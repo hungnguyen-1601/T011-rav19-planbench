@@ -46,6 +46,10 @@ export type TrafficHandle =
   | { kind: "periodic-end" }
   | { kind: "origin" }
   | { kind: "sudden-start" }
+  /** Where a sudden stop comes to rest, when it is declared that way.
+   *  Absent under the heading-and-duration spelling, which stores no
+   *  such point to grab. */
+  | { kind: "sudden-stop-point" }
   | { kind: "body" };
 
 /** What the pointer went down on. */

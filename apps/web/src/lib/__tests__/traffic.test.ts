@@ -21,17 +21,22 @@ import {
   blankMotion,
   changeMotionKind,
   cycleSeconds,
+  defaultSeedTimeOffset,
   dropLastWaypoint,
   nextSeedOffset,
   numberFromInput,
   offsetHint,
+  parkedFromTheStart,
   placeOnMotion,
+  placementsFor,
   previewRequestOf,
   removeObstacle,
   snapshotsOf,
+  stopMode,
   suggestSeedTimeOffset,
   trafficOf,
   updateObstacle,
+  withStopMode,
 } from "@/lib/traffic";
 import type {
   DynamicObstacle,
@@ -107,11 +112,37 @@ describe("changing the motion law", () => {
     expect(changeMotionKind(before, "waypoint", ORIGIN)).toBe(before);
   });
 
-  it("keeps everything outside the motion", () => {
+  it("keeps what the obstacle is, whatever law it follows", () => {
     const next = changeMotionKind(crosser({ name: "rack", radius: 0.6 }), "sudden_stop", ORIGIN);
     expect(next.name).toBe("rack");
     expect(next.radius).toBe(0.6);
-    expect(next.seed_time_offset).toBe(20);
+  });
+
+  it("re-derives the head start, because it was derived", () => {
+    /* It used to carry across, and that was a trap rather than a
+       courtesy: the number is seconds measured against the *old* law's
+       cycle, and cycles differ by an order of magnitude between laws. A
+       ping-ponging pair of waypoints runs thirteen seconds; a fresh
+       sudden stop, four. Carrying the thirteen over left an obstacle
+       whose head start was three times its whole trip, so most seeds
+       began with it already parked at its stopping place — never
+       moving, and looking like broken traffic rather than declared
+       traffic. */
+    const next = changeMotionKind(crosser({ seed_time_offset: 20 }), "sudden_stop", ORIGIN);
+    expect(next.seed_time_offset).toBe(defaultSeedTimeOffset(next.motion));
+    expect(next.seed_time_offset).toBeLessThan(cycleSeconds(next.motion)!);
+  });
+
+  it("still offers a full cycle to a law that repeats", () => {
+    /* The halving is only for a motion that ends. A route that comes
+       back round has no "after" to land in, so a full cycle is what
+       spreads the seeds over all of it. */
+    const next = changeMotionKind(
+      crosser({ seed_time_offset: 1 }),
+      "periodic",
+      ORIGIN,
+    );
+    expect(next.seed_time_offset).toBe(cycleSeconds(next.motion));
   });
 });
 
@@ -157,6 +188,142 @@ describe("placing a point on the map", () => {
   it("leaves a motion alone when the mode belongs to another law", () => {
     const motion = blankMotion("random_walk", ORIGIN);
     expect(placeOnMotion(motion, "periodic-end", { x: 1, y: 1 })).toBe(motion);
+  });
+});
+
+describe("the two ways a sudden stop says where it ends", () => {
+  const byAngle: Motion = {
+    kind: "sudden_stop",
+    start: { x: 0, y: 0 },
+    heading: 0,
+    speed: 2,
+    stop_time: 3,
+  };
+
+  it("reads the mode off which description is present", () => {
+    expect(stopMode(byAngle)).toBe("time");
+    expect(stopMode({ ...byAngle, stop_point: { x: 6, y: 0 } })).toBe("point");
+  });
+
+  it("offers the button that belongs to the mode, and only that one", () => {
+    /* A toolbar showing both would offer a way to write the document
+       the server refuses. */
+    expect(placementsFor(byAngle)).toEqual(["sudden-stop-start", "sudden-stop-heading"]);
+    expect(placementsFor({ ...byAngle, stop_point: { x: 6, y: 0 } })).toEqual([
+      "sudden-stop-start",
+      "sudden-stop-point",
+    ]);
+  });
+
+  it("switching to a point keeps the obstacle where it already stopped", () => {
+    /* 2 m/s for 3 s along heading 0 is six metres east. Landing the new
+       point anywhere else would make the picture jump for a change that
+       described the same motion. */
+    const switched = withStopMode(byAngle, "point");
+    expect(switched.kind === "sudden_stop" && switched.stop_point).toEqual({ x: 6, y: 0 });
+  });
+
+  it("switching back reads the heading and the duration off the point", () => {
+    const byPoint: Motion = {
+      kind: "sudden_stop",
+      start: { x: 1, y: 1 },
+      speed: 2,
+      stop_point: { x: 1, y: 5 },
+    };
+    const switched = withStopMode(byPoint, "time");
+    expect(switched.kind === "sudden_stop" && switched.heading).toBeCloseTo(Math.PI / 2);
+    expect(switched.kind === "sudden_stop" && switched.stop_time).toBe(2);
+  });
+
+  it("drops the fields of the description it left", () => {
+    /* The server takes exactly one. Leaving the other behind would send
+       a document it refuses — and a stale heading beside a stop point
+       would be a second opinion about which way the obstacle goes. */
+    const toPoint = withStopMode(byAngle, "point");
+    expect(Object.keys(toPoint).sort()).toEqual(["kind", "speed", "start", "stop_point"]);
+    const andBack = withStopMode(toPoint, "time");
+    expect(Object.keys(andBack).sort()).toEqual([
+      "heading",
+      "kind",
+      "speed",
+      "start",
+      "stop_time",
+    ]);
+  });
+
+  it("changes nothing when asked for the mode it is already in", () => {
+    expect(withStopMode(byAngle, "time")).toBe(byAngle);
+  });
+
+  it("survives a half-typed speed rather than writing Infinity", () => {
+    const switched = withStopMode({ ...byAngle, speed: Number.NaN }, "point");
+    const point = switched.kind === "sudden_stop" ? switched.stop_point : undefined;
+    expect(Number.isFinite(point?.x)).toBe(true);
+    expect(Number.isFinite(point?.y)).toBe(true);
+  });
+
+  it("places the stopping point from a click, storing it", () => {
+    /* The one placement that keeps the point. Under the other spelling
+       a second click only aims, because the document has no field for
+       where it lands. */
+    const placed = placeOnMotion({ ...byAngle, stop_point: { x: 6, y: 0 } }, "sudden-stop-point", {
+      x: 2,
+      y: 9,
+    });
+    expect(placed.kind === "sudden_stop" && placed.stop_point).toEqual({ x: 2, y: 9 });
+  });
+
+  it("works out how often a seed starts with it already parked", () => {
+    /* The head start shifts the clock somewhere in [0, offset). Past
+       `stop_time` the episode begins after the obstacle has braked: it
+       sits at its stopping place and never travels. A consequence of
+       two numbers, not a rule — the shipped `sudden_stop` scenario
+       declares exactly this on purpose. */
+    // 3 s trip, 6 s of head start: half the shifts land after it.
+    expect(parkedFromTheStart(byAngle, 6)).toBeCloseTo(0.5);
+    expect(parkedFromTheStart(byAngle, 4)).toBeCloseTo(0.25);
+  });
+
+  it("says nothing when every seed sees it driving", () => {
+    expect(parkedFromTheStart(byAngle, 3)).toBeNull();
+    expect(parkedFromTheStart(byAngle, 1)).toBeNull();
+  });
+
+  it("asks the question only of the motion it applies to", () => {
+    /* A waypoint route that loops has no "after" to land in, and a
+       random walk never stops at all. */
+    expect(parkedFromTheStart(blankMotion("waypoint", ORIGIN), 99)).toBeNull();
+    expect(parkedFromTheStart(blankMotion("random_walk", ORIGIN), 99)).toBeNull();
+  });
+
+  it("stays quiet on a half-typed obstacle rather than dividing by nothing", () => {
+    expect(parkedFromTheStart(byAngle, undefined)).toBeNull();
+    expect(parkedFromTheStart(byAngle, Number.NaN)).toBeNull();
+    expect(parkedFromTheStart({ ...byAngle, stop_time: Number.NaN }, 6)).toBeNull();
+  });
+
+  it("measures the trip from the stopping point when that is the spelling", () => {
+    const byPoint: Motion = {
+      kind: "sudden_stop",
+      start: { x: 0, y: 0 },
+      speed: 2,
+      stop_point: { x: 0, y: 4 },
+    };
+    // 4 m at 2 m/s is a 2 s trip; a 4 s head start parks half the seeds.
+    expect(parkedFromTheStart(byPoint, 4)).toBeCloseTo(0.5);
+  });
+
+  it("derives the cycle from the trip when the stop is a place", () => {
+    /* Otherwise the head-start suggestion would go blank for half the
+       ways of writing one motion. */
+    expect(
+      cycleSeconds({
+        kind: "sudden_stop",
+        start: { x: 0, y: 0 },
+        speed: 2,
+        stop_point: { x: 0, y: 5 },
+      }),
+    ).toBe(2.5);
   });
 });
 

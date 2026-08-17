@@ -101,14 +101,30 @@ export interface RandomWalkMotion {
   seed_offset?: number;
 }
 
+/** Constant velocity, then a permanent stop — declared one of two ways.
+ *
+ * **Exactly one of the two must be given, and the server enforces it.**
+ * They are the same motion described from opposite ends: a direction
+ * and a duration, or the place it ends up. Allowing both would be two
+ * statements free to disagree — a heading pointing north beside a stop
+ * point to the east — and there would be no way to say which one the
+ * simulator should believe.
+ *
+ * - `heading` + `stop_time`: travel this way for this long. What the
+ *   shipped profiles declare.
+ * - `stop_point`: travel to here and park. The direction and the
+ *   duration both follow from it, so neither is declared.
+ */
 export interface SuddenStopMotion {
   kind: "sudden_stop";
   start: Point2D;
-  /** Radians. There is no end point: the obstacle travels this way at
-   *  `speed` until `stop_time` and then stays where it is for good. */
-  heading: number;
+  /** Radians. Absent when `stop_point` says where it is going. */
+  heading?: number | null;
   speed: number;
-  stop_time: number;
+  stop_time?: number | null;
+  /** Where it comes to rest. Absent when a heading and a duration say
+   *  the same thing. */
+  stop_point?: Point2D | null;
 }
 
 export type Motion = WaypointMotion | PeriodicMotion | RandomWalkMotion | SuddenStopMotion;

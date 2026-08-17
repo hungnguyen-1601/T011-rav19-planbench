@@ -44,21 +44,47 @@ export type TrafficPlacement =
   | "periodic-end"
   | "random-walk-origin"
   | "sudden-stop-start"
-  | "sudden-stop-heading";
+  | "sudden-stop-heading"
+  | "sudden-stop-point";
 
 export const MOTION_KINDS = ["waypoint", "periodic", "random_walk", "sudden_stop"] as const;
 
 export type MotionKind = (typeof MOTION_KINDS)[number];
 
-/** Which placement modes each motion offers, in the order they are used.
- *  Read by the toolbar so a `sudden_stop` never shows a button for an
- *  end point it does not have. */
-export const PLACEMENTS: Record<MotionKind, TrafficPlacement[]> = {
-  waypoint: ["waypoint"],
-  periodic: ["periodic-start", "periodic-end"],
-  random_walk: ["random-walk-origin"],
-  sudden_stop: ["sudden-stop-start", "sudden-stop-heading"],
-};
+/** How a `sudden_stop` says where it comes to rest.
+ *
+ * Two descriptions of one motion, from opposite ends: a direction and
+ * a duration, or the place it ends up. The server accepts exactly one
+ * — both together would be two statements free to disagree, with
+ * nothing to say which the simulator should believe.
+ */
+export type StopMode = "time" | "point";
+
+export function stopMode(motion: Motion): StopMode {
+  return motion.kind === "sudden_stop" && motion.stop_point ? "point" : "time";
+}
+
+/** Which placement modes a motion offers, in the order they are used.
+ *
+ * A function rather than a table, because `sudden_stop` now offers two
+ * different second buttons depending on how it declares its stop — and
+ * a toolbar showing both would offer the author a way to write the
+ * document the server refuses.
+ */
+export function placementsFor(motion: Motion): TrafficPlacement[] {
+  switch (motion.kind) {
+    case "waypoint":
+      return ["waypoint"];
+    case "periodic":
+      return ["periodic-start", "periodic-end"];
+    case "random_walk":
+      return ["random-walk-origin"];
+    case "sudden_stop":
+      return stopMode(motion) === "point"
+        ? ["sudden-stop-start", "sudden-stop-point"]
+        : ["sudden-stop-start", "sudden-stop-heading"];
+  }
+}
 
 const DEGREES = 180 / Math.PI;
 
@@ -115,6 +141,8 @@ export function blankMotion(kind: MotionKind, anchor: Point2D): Motion {
         seed_offset: 0,
       };
     case "sudden_stop":
+      // Opens in the mode the shipped profiles use, so a new obstacle
+      // is the same shape as the ones already on file.
       return {
         kind: "sudden_stop",
         start: point(anchor.x, anchor.y),
@@ -123,6 +151,52 @@ export function blankMotion(kind: MotionKind, anchor: Point2D): Motion {
         stop_time: 4,
       };
   }
+}
+
+/** Switch how a sudden stop declares where it ends.
+ *
+ * **Built fresh, like `changeMotionKind`, and for the same reason.**
+ * The server takes exactly one description; leaving the other's fields
+ * behind would send a document it refuses — and if it ever stopped
+ * refusing, a stale heading beside a stop point would be a second
+ * opinion about which way the obstacle goes.
+ *
+ * The switch keeps what carries over honestly. Going to a point, the
+ * stop point starts where the old heading and duration would have put
+ * the obstacle — the same motion, said the other way, so the picture
+ * on the map does not jump. Coming back, the heading and duration are
+ * read off the point for the same reason.
+ */
+export function withStopMode(motion: Motion, mode: StopMode): Motion {
+  if (motion.kind !== "sudden_stop" || stopMode(motion) === mode) return motion;
+  const { start, speed } = motion;
+  if (mode === "point") {
+    const heading = motion.heading ?? 0;
+    const distance = positive(speed) && positive(motion.stop_time) ? speed * motion.stop_time : 2;
+    return {
+      kind: "sudden_stop",
+      start,
+      speed,
+      stop_point: point(
+        start.x + Math.cos(heading) * distance,
+        start.y + Math.sin(heading) * distance,
+      ),
+    };
+  }
+  const target = motion.stop_point ?? start;
+  const dx = target.x - start.x;
+  const dy = target.y - start.y;
+  const distance = Math.hypot(dx, dy);
+  return {
+    kind: "sudden_stop",
+    start,
+    speed,
+    heading: distance > 0 ? Math.atan2(dy, dx) : 0,
+    // Rounded because it is about to be shown in a box somebody may
+    // type over; a duration of 4.999999999 reads as a number nobody
+    // chose. Not a rule — the server decides what is legal.
+    stop_time: positive(speed) && distance > 0 ? Math.round((distance / speed) * 100) / 100 : 4,
+  };
 }
 
 /** The speed a motion declares, or undefined for the one that does not.
@@ -155,7 +229,15 @@ export function changeMotionKind(
   const carried = speedOf(obstacle.motion);
   const motion =
     carried !== undefined && fresh.kind !== "periodic" ? { ...fresh, speed: carried } : fresh;
-  return { ...obstacle, motion };
+  // **The head start is re-derived, because it was derived.** It is
+  // seconds measured against the *old* law's cycle, and cycles differ by
+  // an order of magnitude between laws: a ping-ponging route of two
+  // waypoints runs thirteen seconds, a fresh sudden stop four. Carrying
+  // the thirteen across leaves an obstacle whose head start is three
+  // times its whole trip, so most seeds begin with it already parked at
+  // its stopping place — never moving, and looking like broken traffic
+  // rather than declared traffic.
+  return { ...obstacle, motion, seed_time_offset: defaultSeedTimeOffset(motion) ?? 10 };
 }
 
 /** Apply a click to the field the mode names.
@@ -184,6 +266,12 @@ export function placeOnMotion(motion: Motion, mode: TrafficPlacement, at: Point2
       return motion.kind === "sudden_stop"
         ? { ...motion, heading: Math.atan2(at.y - motion.start.y, at.x - motion.start.x) }
         : motion;
+    case "sudden-stop-point":
+      // The one placement that *does* store the click. Under the other
+      // spelling a second click only aims, because the document has no
+      // field for where it lands; under this one that field is the
+      // whole point.
+      return motion.kind === "sudden_stop" ? { ...motion, stop_point: at } : motion;
   }
 }
 
@@ -240,7 +328,20 @@ function segmentSum(points: Point2D[]): number {
  */
 export function cycleSeconds(motion: Motion): number | null {
   if (motion.kind === "periodic") return positive(motion.period) ? motion.period : null;
-  if (motion.kind === "sudden_stop") return positive(motion.stop_time) ? motion.stop_time : null;
+  if (motion.kind === "sudden_stop") {
+    // Declared by its stopping place, the duration is the trip: the
+    // server works out the same number, and the suggestion beside the
+    // head-start box would otherwise go blank for half the ways of
+    // writing one motion.
+    if (motion.stop_point) {
+      const distance = Math.hypot(
+        motion.stop_point.x - motion.start.x,
+        motion.stop_point.y - motion.start.y,
+      );
+      return positive(motion.speed) && positive(distance) ? distance / motion.speed : null;
+    }
+    return positive(motion.stop_time) ? motion.stop_time : null;
+  }
   if (motion.kind === "random_walk") return null;
 
   if (!positive(motion.speed)) return null;
@@ -269,6 +370,65 @@ export function cycleSeconds(motion: Motion): number | null {
 export function suggestSeedTimeOffset(motion: Motion): number | null {
   const cycle = cycleSeconds(motion);
   return cycle === null ? null : Math.round(cycle * 100) / 100;
+}
+
+/** What fraction of its trip a one-shot motion is offered as a head
+ *  start. Half: enough that seeds meet it at visibly different points,
+ *  little enough that none of them meet it already parked. */
+const ONE_SHOT_SHARE = 0.5;
+
+/** The head start to *start* an obstacle at.
+ *
+ * **Not the same number as the suggestion for a repeating motion, and
+ * the difference is the whole point.** A waypoint route or a periodic
+ * crossing comes back round, so a full cycle of head start spreads the
+ * seeds over every phase of a motion that never ends. A `sudden_stop`
+ * does end: past `stop_time` it is parked for good. Giving it a full
+ * cycle therefore hands some fraction of the seeds an obstacle that has
+ * already finished — it sits at its stopping place and never moves,
+ * which reads as broken traffic rather than as declared traffic.
+ *
+ * So a one-shot motion opens at half its trip. Every seed still sees it
+ * driving, and they still see it at different places, which is what the
+ * head start is for.
+ *
+ * A default, not a rule: the shipped `sudden_stop` scenario deliberately
+ * uses more than its `stop_time`, because there the cart parks in the
+ * middle of the robot's lane and blocking the route is the point. The
+ * author can type any of that; this only decides where they begin.
+ */
+export function defaultSeedTimeOffset(motion: Motion): number | null {
+  const cycle = cycleSeconds(motion);
+  if (cycle === null) return null;
+  const share = motion.kind === "sudden_stop" ? ONE_SHOT_SHARE : 1;
+  return Math.round(cycle * share * 100) / 100;
+}
+
+/** How often a seed starts with this obstacle already parked.
+ *
+ * **A consequence, not a rule.** The seed head start shifts an
+ * obstacle's clock by a hashed amount somewhere in `[0, offset)`. A
+ * sudden stop finishes moving at `stop_time`, so any shift past that
+ * lands the episode after the obstacle has already braked: it is
+ * sitting at its stopping place before the robot has moved, and it
+ * never travels at all. That is a legitimate thing to declare — the
+ * shipped `sudden_stop` scenario does it on purpose, and its cart
+ * parks in the middle of the lane where it still blocks the route —
+ * but it is a surprise when the parking spot is somewhere harmless,
+ * because the traffic looks broken rather than declared.
+ *
+ * Returns the fraction of seeds affected, or null when the question
+ * does not apply. Nothing here refuses anything: `TaskProfile` decides
+ * what is legal, and this only says what the numbers already mean.
+ */
+export function parkedFromTheStart(
+  motion: Motion,
+  seedTimeOffset: number | undefined,
+): number | null {
+  if (motion.kind !== "sudden_stop") return null;
+  const cycle = cycleSeconds(motion);
+  if (cycle === null || !positive(seedTimeOffset)) return null;
+  return seedTimeOffset > cycle ? (seedTimeOffset - cycle) / seedTimeOffset : null;
 }
 
 /** Why there is or is not a number to offer, which is three questions.
@@ -351,7 +511,7 @@ export function addObstacle(existing: DynamicObstacle[], anchor: Point2D): Dynam
       name,
       radius: 0.35,
       motion,
-      seed_time_offset: suggestSeedTimeOffset(motion) ?? 10,
+      seed_time_offset: defaultSeedTimeOffset(motion) ?? 10,
       seed_offset: nextSeedOffset(existing, name),
     },
   ];

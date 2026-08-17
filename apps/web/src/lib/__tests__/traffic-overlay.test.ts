@@ -135,6 +135,45 @@ describe("the other three laws", () => {
     const shape = only([obstacle(blankMotion("sudden_stop", ANCHOR))]);
     expect(shape.handles.map((grip) => grip.handle.kind)).toEqual(["sudden-start"]);
   });
+
+  it("draws both ends when the stop is declared as a place", () => {
+    /* Under this spelling the far end is authored data, so it is a line
+       and a second handle rather than an arrow of conventional length. */
+    const shape = only([
+      obstacle({
+        kind: "sudden_stop",
+        start: { x: 0, y: 0 },
+        speed: 1,
+        stop_point: { x: 4, y: 3 },
+      }),
+    ]);
+    expect(shape.path).toEqual([
+      { x: 0, y: 0 },
+      { x: 4, y: 3 },
+    ]);
+    expect(shape.handles.map((grip) => grip.handle.kind)).toEqual([
+      "sudden-start",
+      "sudden-stop-point",
+    ]);
+    /* And no arrow: the line already says which way it goes, and a
+       fixed-length arrow beside a real endpoint would claim a second,
+       shorter answer to the same question. */
+    expect(shape.heading).toBeNull();
+  });
+
+  it("moves the stopping point when that handle is dragged", () => {
+    const moved = moveHandle(
+      { kind: "sudden_stop", start: { x: 0, y: 0 }, speed: 1, stop_point: { x: 4, y: 3 } },
+      { kind: "sudden-stop-point" },
+      { x: 9, y: 9 },
+    );
+    expect(moved.kind === "sudden_stop" && moved.stop_point).toEqual({ x: 9, y: 9 });
+  });
+
+  it("will not invent a stopping point on a motion that has none", () => {
+    const motion = blankMotion("sudden_stop", ANCHOR);
+    expect(moveHandle(motion, { kind: "sudden-stop-point" }, { x: 9, y: 9 })).toEqual(motion);
+  });
 });
 
 describe("a document being typed into", () => {

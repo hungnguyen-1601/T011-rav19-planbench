@@ -130,6 +130,49 @@ describe("each law shows its own fields and no others", () => {
     for (const label of absent) expect(html, `${kind} should not show ${label}`).not.toContain(label);
   });
 
+  it("offers a sudden stop both ways of saying where it ends", () => {
+    const html = render({ obstacles: [obstacle({ motion: blankMotion("sudden_stop", ANCHOR) })] });
+    expect(html).toContain("After a set time");
+    expect(html).toContain("At a chosen point");
+  });
+
+  it("shows the fields of the chosen way and none of the other's", () => {
+    /* Showing both sets would offer a document the server refuses, and
+       greying one out would suggest its numbers still count. */
+    const byTime = render({
+      obstacles: [obstacle({ motion: blankMotion("sudden_stop", ANCHOR) })],
+    });
+    expect(byTime).toContain("Stops at (s)");
+    expect(byTime).toContain("Heading (°)");
+    expect(byTime).toContain("Point the heading");
+    expect(byTime).not.toContain("Place where it stops");
+
+    const byPoint = render({
+      obstacles: [
+        obstacle({
+          motion: { kind: "sudden_stop", start: { x: 1, y: 1 }, speed: 1, stop_point: { x: 4, y: 5 } },
+        }),
+      ],
+    });
+    expect(byPoint).not.toContain("Stops at (s)");
+    expect(byPoint).not.toContain("Heading (°)");
+    expect(byPoint).toContain("Stops at (4.0, 5.0)");
+    expect(byPoint).toContain("Place where it stops");
+  });
+
+  it("reads a motion with neither description as the timed one", () => {
+    /* `trafficOf` narrows a deliberately loose draft, so a motion can
+       arrive from the YAML tab with neither spelling filled in. The
+       timed fields are the ones to show then: they are what the server
+       asks for by default, and an empty "stops at (…)" caption would
+       leave the author nothing to fill in. */
+    const html = render({
+      obstacles: [obstacle({ motion: { kind: "sudden_stop", start: { x: 1, y: 1 }, speed: 1 } })],
+    });
+    expect(html).toContain("Stops at (s)");
+    expect(html).toContain("Point the heading");
+  });
+
   it("gives a sudden stop no end point to place", () => {
     /* That motion has a start, a direction and a stopping time. A button
        offering an "end" would be offering a field the contract does not

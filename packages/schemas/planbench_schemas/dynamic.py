@@ -13,7 +13,9 @@ Motion kinds:
 - ``random_walk``: seeded piecewise-constant heading changes; the seed
   comes from the episode, so the same seed replays the same walk.
 - ``sudden_stop``: constant velocity until ``stop_time``, then parked —
-  the classic emergency-brake test for a local planner.
+  the classic emergency-brake test for a local planner. Declarable
+  either as a heading and a duration or as the point it stops at; see
+  :class:`SuddenStopMotion` for why only the first is stored.
 
 All obstacles are circles: the simulator's collision and LiDAR layers
 already handle circles exactly, and a moving polygon adds no benchmark
@@ -81,13 +83,77 @@ class RandomWalkMotion(_MotionBase):
 
 
 class SuddenStopMotion(_MotionBase):
-    """Constant velocity, then a permanent stop at ``stop_time``."""
+    """Constant velocity, then a permanent stop at ``stop_time``.
+
+    **Two ways to say it, one way to store it.** A stop can be declared
+    as a direction and a duration — ``heading`` and ``stop_time``, what
+    every shipped profile uses — or as ``stop_point``, the place the
+    obstacle comes to rest. The second is what an author means when they
+    click a spot on a map, and working out the angle and the seconds by
+    hand to express it is arithmetic nobody should have to do.
+
+    ``stop_point`` is **declaration syntax, not a field**. It is
+    resolved to ``heading``/``stop_time`` while the document is being
+    validated and never reaches the stored model. That is deliberate and
+    it is not tidiness:
+
+    - ``_scenario_checksum`` dumps a scenario with no ``exclude_none``,
+      so a new optional field would add ``stop_point: null`` to *every*
+      scenario carrying a sudden stop and change its checksum — even
+      though nothing about that world had changed. The module docstring
+      of :mod:`planbench_schemas.task_profile` calls that orphaning
+      every stored benchmark report, and the calibration entry for the
+      shipped ``sudden_stop`` scenario would go stale on the spot.
+    - The stored form stays the one the golden trajectories were
+      recorded against, so ``position_at`` is untouched and
+      ``tests/golden/dwa_trajectories.json`` cannot move.
+
+    Exactly one description may be given. Both at once would be two
+    statements free to disagree — a heading pointing north beside a stop
+    point to the east — with nothing to say which the simulator should
+    believe.
+    """
 
     kind: Literal["sudden_stop"] = "sudden_stop"
     start: Point2D
     heading: float
     speed: float = Field(gt=0)
     stop_time: float = Field(gt=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _resolve_stop_point(cls, data: object) -> object:
+        """Turn ``stop_point`` into the heading and duration it implies."""
+        if not isinstance(data, dict) or "stop_point" not in data:
+            return data
+        payload = dict(data)
+        target = payload.pop("stop_point")
+        if target is None:
+            return payload
+        if payload.get("heading") is not None or payload.get("stop_time") is not None:
+            raise ValueError(
+                "declare a sudden stop either by stop_point or by heading and "
+                "stop_time, not both: they are two descriptions of one motion "
+                "and nothing decides between them when they disagree"
+            )
+        start = Point2D.model_validate(payload.get("start"))
+        end = Point2D.model_validate(target)
+        dx, dy = end.x - start.x, end.y - start.y
+        distance = math.hypot(dx, dy)
+        if distance <= EPS:
+            raise ValueError(
+                "stop_point must differ from start: an obstacle that stops "
+                "where it began never moves, and no direction can be read "
+                "from a zero-length step"
+            )
+        speed = payload.get("speed")
+        if not isinstance(speed, int | float) or speed <= 0:
+            # Leave the complaint about speed to the field that owns it,
+            # rather than inventing a second message for the same fault.
+            return {**payload, "heading": math.atan2(dy, dx)}
+        payload["heading"] = math.atan2(dy, dx)
+        payload["stop_time"] = distance / speed
+        return payload
 
 
 Motion = Annotated[

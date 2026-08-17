@@ -30,14 +30,20 @@ import { Hint } from "@/components/Hint";
 import { useTranslation } from "@/lib/i18n";
 import {
   MOTION_KINDS,
-  PLACEMENTS,
   type MotionKind,
+  type StopMode,
   type TrafficPlacement,
+  cycleSeconds,
+  defaultSeedTimeOffset,
   dropLastWaypoint,
   headingDegrees,
   numberFromInput,
   offsetHint,
+  parkedFromTheStart,
+  placementsFor,
+  stopMode,
   updateObstacle,
+  withStopMode,
 } from "@/lib/traffic";
 import type { DynamicObstacle, Motion } from "@/lib/types";
 
@@ -99,6 +105,7 @@ const PLACEMENT_LABEL: Record<TrafficPlacement, string> = {
   "random-walk-origin": "deployments.form.traffic.place.origin",
   "sudden-stop-start": "deployments.form.traffic.place.suddenStart",
   "sudden-stop-heading": "deployments.form.traffic.place.suddenHeading",
+  "sudden-stop-point": "deployments.form.traffic.place.suddenPoint",
 };
 
 export function TrafficEditor({
@@ -266,23 +273,68 @@ export function TrafficEditor({
             )}
           </>
         );
-      case "sudden_stop":
+      case "sudden_stop": {
+        /* Two ways to say where it ends, and the picker is what makes
+           them exclusive on screen as well as in the contract: showing
+           both sets of fields would offer a document the server
+           refuses, and greying one out would suggest the numbers in it
+           still count. */
+        const mode = stopMode(motion);
         return (
           <>
             {numberField(t("deployments.form.traffic.speed"), motion.speed, (speed) =>
               patchMotion(index, { ...motion, speed }),
             )}
-            {numberField(t("deployments.form.traffic.stopTime"), motion.stop_time, (stop_time) =>
-              patchMotion(index, { ...motion, stop_time }),
-            )}
-            {numberField(
-              t("deployments.form.traffic.heading"),
-              Number(headingDegrees(motion.heading).toFixed(1)),
-              (degrees) => patchMotion(index, { ...motion, heading: (degrees * Math.PI) / 180 }),
-              { step: 1, note: t("deployments.form.traffic.headingNote") },
+            <label className="field" style={{ width: 190 }}>
+              <span>
+                {t("deployments.form.traffic.stopMode")}
+                <Hint
+                  text={t("deployments.form.traffic.stopModeNote")}
+                  label={t("deployments.form.traffic.stopMode")}
+                />
+              </span>
+              <select
+                value={mode}
+                disabled={disabled}
+                onChange={(event) => {
+                  onSelect(index);
+                  patchMotion(index, withStopMode(motion, event.target.value as StopMode));
+                }}
+              >
+                <option value="time">{t("deployments.form.traffic.stopMode.time")}</option>
+                <option value="point">{t("deployments.form.traffic.stopMode.point")}</option>
+              </select>
+            </label>
+            {mode === "time" ? (
+              <>
+                {numberField(
+                  t("deployments.form.traffic.stopTime"),
+                  motion.stop_time ?? undefined,
+                  (stop_time) => patchMotion(index, { ...motion, stop_time }),
+                )}
+                {numberField(
+                  t("deployments.form.traffic.heading"),
+                  Number(headingDegrees(motion.heading ?? 0).toFixed(1)),
+                  (degrees) =>
+                    patchMotion(index, { ...motion, heading: (degrees * Math.PI) / 180 }),
+                  { step: 1, note: t("deployments.form.traffic.headingNote") },
+                )}
+              </>
+            ) : (
+              /* Read-only on purpose: the point is placed by clicking
+                 the map, which is the whole reason this mode exists.
+                 Two number boxes for it would be the arithmetic the
+                 mode was added to avoid, in a second place. */
+              <span className="muted">
+                {t("deployments.form.traffic.stopsAt", {
+                  x: (motion.stop_point?.x ?? 0).toFixed(1),
+                  y: (motion.stop_point?.y ?? 0).toFixed(1),
+                })}
+              </span>
             )}
           </>
         );
+      }
     }
   };
 
@@ -314,6 +366,7 @@ export function TrafficEditor({
         const hint = offsetHint(obstacle.motion);
         const mine = rowErrors(index);
         const chosen = selectedIndex === index;
+        const parked = parkedFromTheStart(obstacle.motion, obstacle.seed_time_offset);
         return (
           <div
             key={index}
@@ -441,7 +494,7 @@ export function TrafficEditor({
             {/* One button per field this motion has a point for, so a
                 sudden stop never offers an end it does not own. */}
             <div className="toolbar" style={{ marginTop: 8 }}>
-              {PLACEMENTS[obstacle.motion.kind].map((mode) => {
+              {placementsFor(obstacle.motion).map((mode) => {
                 const active = placement?.index === index && placement.mode === mode;
                 return (
                   <button
@@ -457,6 +510,45 @@ export function TrafficEditor({
                 );
               })}
             </div>
+
+            {/* **A consequence of two numbers, so it goes on the page
+                rather than behind a mark.** With a head start longer
+                than the trip, some seeds begin after the obstacle has
+                already braked — it sits at its stopping place and
+                never moves, which reads as broken traffic rather than
+                as declared traffic. Not a refusal: the shipped
+                `sudden_stop` scenario does exactly this on purpose. */}
+            {parked !== null ? (
+              <div className="notice warn" style={{ marginTop: 6 }}>
+                {t("deployments.form.traffic.parkedFromTheStart", {
+                  percent: String(Math.round(parked * 100)),
+                  seconds: String(cycleSeconds(obstacle.motion) ?? 0),
+                })}
+                {/* A way out, not just a diagnosis. Reading that a
+                    quarter of the seeds start with the obstacle parked
+                    and being left to work out what number fixes it is
+                    only half an answer. */}
+                {defaultSeedTimeOffset(obstacle.motion) !== null ? (
+                  <div className="toolbar" style={{ marginTop: 6 }}>
+                    <button
+                      type="button"
+                      disabled={disabled}
+                      onClick={() =>
+                        onChange(
+                          updateObstacle(obstacles, index, {
+                            seed_time_offset: defaultSeedTimeOffset(obstacle.motion) ?? undefined,
+                          }),
+                        )
+                      }
+                    >
+                      {t("deployments.form.traffic.parkedFix", {
+                        seconds: String(defaultSeedTimeOffset(obstacle.motion)),
+                      })}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             {/* What the server said about this obstacle in particular. A
                 field constraint keeps its own address, so it belongs
@@ -498,6 +590,7 @@ export function placementNote(
     "random-walk-origin": "deployments.form.traffic.mode.origin",
     "sudden-stop-start": "deployments.form.traffic.mode.suddenStart",
     "sudden-stop-heading": "deployments.form.traffic.mode.suddenHeading",
+    "sudden-stop-point": "deployments.form.traffic.mode.suddenPoint",
   };
   return t(key[placement.mode], { name });
 }

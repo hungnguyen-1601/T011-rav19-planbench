@@ -95,8 +95,15 @@ function pathOf(motion: Motion): Point2D[] {
       return (motion.waypoints ?? []).filter(drawablePoint);
     case "periodic":
       return [motion.start, motion.end].filter(drawablePoint);
-    case "random_walk":
     case "sudden_stop":
+      // Under the stop-point spelling both ends are declared, so the
+      // line between them is authored data like any other route. Under
+      // the other one there is no second point to draw a line to — the
+      // heading arrow says which way instead.
+      return motion.stop_point && drawablePoint(motion.start) && drawablePoint(motion.stop_point)
+        ? [motion.start, motion.stop_point]
+        : [];
+    case "random_walk":
       return [];
   }
 }
@@ -123,9 +130,14 @@ function handlesOf(motion: Motion): OverlayHandle[] {
         ? [{ at: motion.origin, handle: { kind: "origin" as const } }]
         : [];
     case "sudden_stop":
-      return drawablePoint(motion.start)
-        ? [{ at: motion.start, handle: { kind: "sudden-start" as const } }]
-        : [];
+      return [
+        ...(drawablePoint(motion.start)
+          ? [{ at: motion.start, handle: { kind: "sudden-start" as const } }]
+          : []),
+        ...(motion.stop_point && drawablePoint(motion.stop_point)
+          ? [{ at: motion.stop_point, handle: { kind: "sudden-stop-point" as const } }]
+          : []),
+      ];
   }
 }
 
@@ -143,6 +155,7 @@ function shapeOf(obstacle: DynamicObstacle, index: number, selected: boolean): O
       : null;
   const heading =
     motion.kind === "sudden_stop" &&
+    !motion.stop_point &&
     drawablePoint(motion.start) &&
     drawable(motion.heading)
       ? {
@@ -299,6 +312,10 @@ export function moveHandle(motion: Motion, handle: TrafficHandle, at: Point2D): 
       return motion.kind === "random_walk" ? { ...motion, origin: at } : motion;
     case "sudden-start":
       return motion.kind === "sudden_stop" ? { ...motion, start: at } : motion;
+    case "sudden-stop-point":
+      return motion.kind === "sudden_stop" && motion.stop_point
+        ? { ...motion, stop_point: at }
+        : motion;
     case "body":
       return motion;
   }
