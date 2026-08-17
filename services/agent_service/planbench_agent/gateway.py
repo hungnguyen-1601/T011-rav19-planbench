@@ -8,20 +8,25 @@ HTTP app. Instead it declares the operations it needs as a Protocol, and
 Two consequences worth stating:
 
 - The tool surface is exactly this protocol. There is deliberately no
-  method for driving the robot, writing ``/cmd_vel``, editing a map, or
-  approving a benchmark — the agent physically cannot reach them.
+  method for driving the robot, writing ``/cmd_vel``, editing a map,
+  approving a run or accepting a result — the agent physically cannot
+  reach them.
 - Tests substitute a fake gateway and exercise the whole agent, tool
   policy included, without a server.
+
+**This port is read-only.** Every write the previous version offered
+created a benchmark in a UI that no longer exists, so removing them cost
+nothing and closed the gap between what the agent could do and what a
+person could see it do. Proposing an experiment is a person's job on the
+decisions page; the agent's job is to read what came back and argue with
+it.
 """
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
-
-from planbench_agent.specs import MissionDraft
-from planbench_benchmark import BenchmarkReport, FailureReport
 
 
 class ScenarioSummary(BaseModel):
@@ -34,118 +39,126 @@ class ScenarioSummary(BaseModel):
     timeout_seconds: float
 
 
-class AlgorithmSummary(BaseModel):
+class CandidateSummary(BaseModel):
+    """One configuration a comparison may choose between (HĐ-1).
+
+    ``candidate_id`` is a hash of the configuration, not a name somebody
+    picked, which is why it is safe to quote in a finding: two runs
+    naming the same id ran the same thing.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    candidate_id: str
+    stack_label: str
+    local_controller_config: str | None = None
+    observation_requirements: tuple[str, ...] = ()
+
+
+class DeploymentSummary(BaseModel):
+    """A world the platform is asked to measure something in (HĐ-2)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    task_profile_id: str
+    environment: str
+    missions: int = 0
+    n_min_episodes: int | None = None
+    created_at: str = ""
+
+
+class DecisionRunSummary(BaseModel):
+    """One comparison. ``ranked`` false is a result, not an error.
+
+    Fewer than two candidates through the gates means no ΔU and no card;
+    the gate table is then the whole deliverable. A summary that hid that
+    case would make an honest outcome look like a missing one.
+    """
+
     model_config = ConfigDict(frozen=True)
 
     id: str
-    description: str
-    benchmarkable: bool
-
-
-class BenchmarkSummary(BaseModel):
-    """Enough of a benchmark for the agent to reason and cite."""
-
-    model_config = ConfigDict(frozen=True)
-
-    id: str
-    name: str
-    state: str
-    map_id: str
-    scenario_id: str
-    scenario_name: str | None = None
-    algorithms: tuple[str, ...] = ()
-    seeds: tuple[int, ...] = ()
-    created_by: str = ""
-    conditions_checksum: str | None = None
-    report_artifact_uri: str | None = None
-
-
-class EpisodeSummary(BaseModel):
-    """One episode, identified so a report can cite it."""
-
-    model_config = ConfigDict(frozen=True)
-
-    id: str
-    benchmark_id: str
-    algorithm: str
-    seed: int
-    status: str
-    reason: str
-    travel_time: float | None = None
-    trajectory_length: float | None = None
-    min_clearance: float | None = None
-    artifact_uri: str | None = None
-
-
-class LeaderboardRow(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    algorithm: str
-    benchmark_id: str
-    conditions_checksum: str
-    scenario_name: str
-    episodes: int
-    success_rate: float
-    collision_rate: float
-    overall_score: float | None = None
+    task_profile_id: str
+    experiment_scope: str | None = None
+    created_at: str = ""
+    created_by: str | None = None
+    ranked: bool = False
+    recommended_candidate_id: str | None = None
+    status: str | None = None
+    review_state: str = "unreviewed"
+    config_state: str = "not_applicable"
 
 
 class GatewayError(Exception):
-    """The requested resource does not exist or the call was rejected."""
-
-
-class ApprovalRequired(GatewayError):
-    """Refused: a human reviewer has not approved this benchmark.
-
-    Raised *before* anything executes. This is gate 1 of the two
-    mandatory human gates, enforced on the agent's own side so the
-    refusal is visible in the transcript rather than buried in an HTTP
-    status code.
-    """
+    """The platform refused. Carries a message meant for the transcript."""
 
 
 @runtime_checkable
 class AgentGateway(Protocol):
-    """Everything the agent is allowed to do to PlanBench."""
+    """Everything the agent is allowed to do to PlanBench.
 
-    # -- read -----------------------------------------------------------
+    Read-only by construction: there is no write method to gate, so
+    there is no write path to get wrong.
+    """
+
+    # -- what can be compared, and in which world ------------------------
+    def list_deployments(self) -> list[DeploymentSummary]: ...
+
+    def get_deployment(self, task_profile_id: str) -> dict[str, Any]:
+        """The full profile: constraints, hardware, sensor noise, missions.
+
+        Returned raw rather than as a model because the agent quotes
+        fields from it by path, and a lossy summary would let it cite a
+        field this layer had dropped.
+        """
+        ...
+
+    def list_candidates(self) -> list[CandidateSummary]: ...
+
     def list_scenarios(self) -> list[ScenarioSummary]: ...
 
-    def list_algorithms(self) -> list[AlgorithmSummary]: ...
+    # -- what came back ---------------------------------------------------
+    def list_decision_runs(
+        self, task_profile_id: str | None = None
+    ) -> list[DecisionRunSummary]: ...
 
-    def list_benchmarks(self) -> list[BenchmarkSummary]: ...
+    def get_decision_run(self, run_id: str) -> dict[str, Any]:
+        """The stored ``comparison_report``, whole.
 
-    def get_benchmark(self, benchmark_id: str) -> BenchmarkSummary: ...
-
-    def get_report(self, benchmark_id: str) -> BenchmarkReport | None: ...
-
-    def list_episodes(self, benchmark_id: str) -> list[EpisodeSummary]: ...
-
-    def analyse_episode(self, episode_id: str) -> FailureReport: ...
-
-    def leaderboard(self, scenario_name: str | None = None) -> list[LeaderboardRow]: ...
-
-    # -- write (policy-gated) --------------------------------------------
-    def create_benchmark(self, draft: MissionDraft) -> BenchmarkSummary:
-        """Create a DRAFT benchmark. Drafting is not execution."""
+        Whole for the same reason as the profile: every objection the
+        agent raises has to cite a path that resolves in this dict, and
+        a trimmed copy would make honest citations unresolvable.
+        """
         ...
 
-    def submit_benchmark(self, benchmark_id: str) -> BenchmarkSummary:
-        """Send a draft to a human reviewer. Still not execution."""
+    def get_decision_card(self, run_id: str) -> dict[str, Any] | None:
+        """The recommendation, or None when the run ranked nobody."""
         ...
 
-    def run_benchmark(self, benchmark_id: str) -> BenchmarkSummary:
-        """Execute an already-APPROVED benchmark, or raise ApprovalRequired."""
+    def get_gate_table(self, run_id: str) -> list[dict[str, Any]]:
+        """Per-candidate G1–G6, including who was eliminated where.
+
+        Separate from the report because it is the one part of an
+        unranked run that still answers a question, and asking for it
+        should not mean paging in every episode row.
+        """
+        ...
+
+    def get_critique(self, run_id: str) -> list[dict[str, Any]]:
+        """What the deterministic rules already object to (self_check).
+
+        The agent reads this so it can say something *else*. Handing a
+        model the rules' output is what keeps its own findings additive
+        rather than a paraphrase of work already done.
+        """
         ...
 
 
 __all__ = [
     "AgentGateway",
-    "AlgorithmSummary",
-    "ApprovalRequired",
-    "BenchmarkSummary",
-    "EpisodeSummary",
+    "CandidateSummary",
+    "DecisionRunSummary",
+    "DeploymentSummary",
     "GatewayError",
-    "LeaderboardRow",
     "ScenarioSummary",
 ]

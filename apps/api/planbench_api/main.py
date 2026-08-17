@@ -35,7 +35,6 @@ from planbench_api.routers import (
     algorithms,
     auth,
     benchmarks,
-    chat,
     decisions,
     episodes,
     health,
@@ -190,7 +189,6 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     app.include_router(library.router, prefix=API_PREFIX)
     app.include_router(models.router, prefix=API_PREFIX)
     app.include_router(decisions.router, prefix=API_PREFIX)
-    app.include_router(chat.router, prefix=API_PREFIX)
     app.include_router(agent.router, prefix=API_PREFIX)
     app.include_router(ws.router)  # websockets are not under /api/v1
     return app

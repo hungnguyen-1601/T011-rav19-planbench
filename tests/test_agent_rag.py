@@ -7,7 +7,6 @@ from pathlib import Path
 from planbench_agent.rag import (
     Chunk,
     KnowledgeBase,
-    benchmark_chunks,
     load_markdown_directory,
     split_markdown,
     tokenize,
@@ -104,11 +103,9 @@ class TestKnowledgeBase:
         )
         assert base.search("benchmark rare_term")[0].chunk.id == "a#0"
 
-    def test_hits_convert_to_document_evidence(self):
+    def test_hits_carry_a_citable_id(self):
         base = KnowledgeBase(split_markdown("DOC.md", DOC))
-        item = base.search("conditions_checksum")[0].as_evidence()
-        assert item.citation.id.startswith("document:DOC.md#")
-        assert "conditions_checksum" in item.statement
+        assert base.search("conditions_checksum")[0].citation_id().startswith("document:DOC.md#")
 
 
 class TestCorpusLoading:
@@ -128,9 +125,32 @@ class TestCorpusLoading:
         assert ids == ["a.md", "b.md"]
 
 
-class TestBenchmarkChunks:
-    def test_indexed_results_are_citable_by_benchmark_id(self):
-        chunks = benchmark_chunks("abc123", "doorway run", "accepted", ["astar+dwa success 1.00"])
-        assert chunks[0].id == "benchmark:abc123#0"
-        base = KnowledgeBase(chunks)
-        assert base.search("doorway")[0].chunk.document_id == "benchmark:abc123"
+class TestRecursiveLoading:
+    """The corpus is nested, and the id has to survive the nesting.
+
+    Reading only the top level left the agent with eleven files out of a
+    hundred and thirty-five; keying on the bare file name would have made
+    the recursion silently lossy instead, because two notes written on
+    different days share a name and the index drops a repeated id.
+    """
+
+    def test_it_reads_nested_directories(self, tmp_path):
+        (tmp_path / "plans" / "2026-08-05").mkdir(parents=True)
+        (tmp_path / "top.md").write_text("# Top\nbody", encoding="utf-8")
+        (tmp_path / "plans" / "2026-08-05" / "mvp.md").write_text("# MVP\nbody", encoding="utf-8")
+        ids = {chunk.document_id for chunk in load_markdown_directory(tmp_path)}
+        assert ids == {"top.md", "plans/2026-08-05/mvp.md"}
+
+    def test_same_named_files_in_different_folders_both_survive(self, tmp_path):
+        for day in ("2026-08-05", "2026-08-06"):
+            folder = tmp_path / day
+            folder.mkdir()
+            (folder / "note.md").write_text(f"# {day}\nbody", encoding="utf-8")
+        base = KnowledgeBase(load_markdown_directory(tmp_path))
+        assert len(base.document_ids) == 2
+
+    def test_the_id_says_where_to_look(self, tmp_path):
+        (tmp_path / "reports").mkdir()
+        (tmp_path / "reports" / "gate.md").write_text("# G2\nbound", encoding="utf-8")
+        chunk = load_markdown_directory(tmp_path)[0]
+        assert chunk.id.startswith("reports/gate.md#")

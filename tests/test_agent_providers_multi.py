@@ -176,10 +176,17 @@ class TestPayload:
         assert response_format["json_schema"]["schema"] == schema
         assert response_format["json_schema"]["strict"] is True
 
-    def test_the_real_mission_schema_qualifies_for_strict_mode(self):
-        from planbench_agent.specs import mission_schema
+    def test_the_real_critique_schema_qualifies_for_strict_mode(self):
+        """The one schema this project actually sends.
 
-        payload = provider()._payload(request(output_schema=mission_schema()))
+        Strict mode is refused for schemas that leave a door open, so a
+        change to the critique schema that quietly drops
+        additionalProperties: false would show up here rather than as a
+        provider rejecting the request in production.
+        """
+        from planbench_agent.critique import critique_schema
+
+        payload = provider()._payload(request(output_schema=critique_schema()))
         assert payload["response_format"]["json_schema"]["strict"] is True
 
     def test_extra_options_are_merged(self):

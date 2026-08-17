@@ -177,77 +177,7 @@ class InMemoryModelRepository:
         return seen
 
 
-class InMemoryConversationRepository:
-    def __init__(self) -> None:
-        self._items: dict[str, dict] = {}
-        self._messages: dict[str, list[dict]] = {}
-        self._lock = threading.RLock()
-
-    def create(self, user_id: str, title: str, locale: str) -> dict:
-        with self._lock:
-            stamp = now_iso()
-            conversation = {
-                "id": new_id(),
-                "user_id": user_id,
-                "title": title,
-                "locale": locale,
-                "created_at": stamp,
-                "updated_at": stamp,
-            }
-            self._items[conversation["id"]] = conversation
-            self._messages[conversation["id"]] = []
-            return conversation
-
-    def get(self, conversation_id: str) -> dict:
-        conversation = self._items.get(conversation_id)
-        if conversation is None:
-            raise NotFoundError("conversation", conversation_id)
-        return conversation
-
-    def list_for_user(self, user_id: str) -> list[dict]:
-        return sorted(
-            (item for item in self._items.values() if item["user_id"] == user_id),
-            key=lambda item: item["updated_at"],
-            reverse=True,
-        )
-
-    def touch(self, conversation_id: str, title: str | None = None) -> dict:
-        with self._lock:
-            conversation = self.get(conversation_id)
-            conversation["updated_at"] = now_iso()
-            if title and not conversation["title"]:
-                conversation["title"] = title
-            return conversation
-
-    def add_message(
-        self, conversation_id: str, role: str, content: str, payload: dict | None = None
-    ) -> dict:
-        with self._lock:
-            self.get(conversation_id)
-            messages = self._messages.setdefault(conversation_id, [])
-            message = {
-                "sequence": len(messages),
-                "role": role,
-                "content": content,
-                "payload": payload,
-                "created_at": now_iso(),
-            }
-            messages.append(message)
-            return message
-
-    def messages(self, conversation_id: str) -> list[dict]:
-        self.get(conversation_id)
-        return list(self._messages.get(conversation_id, []))
-
-    def delete(self, conversation_id: str) -> None:
-        with self._lock:
-            self.get(conversation_id)
-            del self._items[conversation_id]
-            self._messages.pop(conversation_id, None)
-
-
 __all__ = [
-    "InMemoryConversationRepository",
     "InMemoryModelRepository",
     "InMemoryRobotProfileRepository",
 ]

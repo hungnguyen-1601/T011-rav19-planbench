@@ -18,8 +18,6 @@ from sqlalchemy.orm import Session
 
 from planbench_api.accounts import now_iso
 from planbench_api.db.models import (
-    ConversationMessageRow,
-    ConversationRow,
     ModelDocumentRow,
     ModelRow,
     ModelUsageRow,
@@ -284,81 +282,6 @@ class SqlModelRepository:
 # ---------------------------------------------------------------------
 
 
-class SqlConversationRepository:
-    def __init__(self, sessions: SessionFactory) -> None:
-        self._sessions = sessions
-
-    def create(self, user_id: str, title: str, locale: str) -> dict:
-        stamp = now_iso()
-        row = ConversationRow(
-            id=new_id(),
-            user_id=user_id,
-            title=title,
-            locale=locale,
-            created_at=stamp,
-            updated_at=stamp,
-        )
-        with self._sessions.begin() as session:
-            session.add(row)
-            session.flush()
-            return _to_conversation(row)
-
-    def get(self, conversation_id: str) -> dict:
-        with self._sessions.begin() as session:
-            return _to_conversation(
-                _require(session, ConversationRow, conversation_id, "conversation")
-            )
-
-    def list_for_user(self, user_id: str) -> list[dict]:
-        with self._sessions.begin() as session:
-            rows = session.scalars(
-                select(ConversationRow)
-                .where(ConversationRow.user_id == user_id)
-                .order_by(ConversationRow.updated_at.desc())
-            ).all()
-            return [_to_conversation(row) for row in rows]
-
-    def touch(self, conversation_id: str, title: str | None = None) -> dict:
-        with self._sessions.begin() as session:
-            row = _require(session, ConversationRow, conversation_id, "conversation")
-            row.updated_at = now_iso()
-            if title and not row.title:
-                row.title = title
-            session.flush()
-            return _to_conversation(row)
-
-    def add_message(
-        self, conversation_id: str, role: str, content: str, payload: dict | None = None
-    ) -> dict:
-        with self._sessions.begin() as session:
-            conversation = _require(session, ConversationRow, conversation_id, "conversation")
-            row = ConversationMessageRow(
-                conversation_id=conversation.id,
-                sequence=len(conversation.messages),
-                role=role,
-                content=content,
-                payload=payload,
-                created_at=now_iso(),
-            )
-            session.add(row)
-            session.flush()
-            return _to_message(row)
-
-    def messages(self, conversation_id: str) -> list[dict]:
-        with self._sessions.begin() as session:
-            conversation = _require(session, ConversationRow, conversation_id, "conversation")
-            return [_to_message(row) for row in conversation.messages]
-
-    def delete(self, conversation_id: str) -> None:
-        with self._sessions.begin() as session:
-            session.delete(_require(session, ConversationRow, conversation_id, "conversation"))
-
-
-# ---------------------------------------------------------------------
-# row <-> domain
-# ---------------------------------------------------------------------
-
-
 def _to_profile(row: RobotProfileRow) -> RobotProfile:
     return RobotProfile(
         id=row.id,
@@ -421,29 +344,7 @@ def _to_document(row: ModelDocumentRow) -> ModelDocument:
     )
 
 
-def _to_conversation(row: ConversationRow) -> dict:
-    return {
-        "id": row.id,
-        "user_id": row.user_id,
-        "title": row.title or "",
-        "locale": row.locale,
-        "created_at": row.created_at,
-        "updated_at": row.updated_at,
-    }
-
-
-def _to_message(row: ConversationMessageRow) -> dict:
-    return {
-        "sequence": row.sequence,
-        "role": row.role,
-        "content": row.content or "",
-        "payload": row.payload,
-        "created_at": row.created_at,
-    }
-
-
 __all__ = [
-    "SqlConversationRepository",
     "SqlModelRepository",
     "SqlRobotProfileRepository",
 ]

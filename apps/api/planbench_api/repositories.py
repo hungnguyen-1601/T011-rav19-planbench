@@ -335,7 +335,6 @@ class RepositoryHub:
 
     def __init__(self, artifacts: ArtifactStore) -> None:
         from planbench_api.registry_store import (
-            InMemoryConversationRepository,
             InMemoryModelRepository,
             InMemoryRobotProfileRepository,
         )
@@ -351,7 +350,6 @@ class RepositoryHub:
         self.reviews = InMemoryReviewRepository()
         self.robot_profiles = InMemoryRobotProfileRepository()
         self.models = InMemoryModelRepository()
-        self.conversations = InMemoryConversationRepository()
         # Decision layer (HĐ-1, HĐ-2, HĐ-12/13). Imported here rather
         # than at module scope because `planbench_api.decisions` imports
         # `new_id`/`now_iso` from this module.

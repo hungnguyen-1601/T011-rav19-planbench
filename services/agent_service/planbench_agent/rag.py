@@ -22,8 +22,6 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
-from planbench_agent.evidence import Citation, EvidenceItem, SourceKind
-
 _TOKEN = re.compile(r"[a-z0-9_+*][a-z0-9_+*.\-]*")
 _HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 
@@ -57,17 +55,14 @@ class RetrievedChunk(BaseModel):
     chunk: Chunk
     score: float
 
-    def as_evidence(self) -> EvidenceItem:
-        return EvidenceItem(
-            citation=Citation(
-                kind=SourceKind.DOCUMENT,
-                locator=self.chunk.id,
-                title=self.chunk.title,
-                uri=self.chunk.uri,
-            ),
-            statement=_condense(self.chunk.text),
-            value=round(self.score, 4),
-        )
+    def citation_id(self) -> str:
+        """How a hit is quoted: ``document:<chunk id>``.
+
+        The one thing callers ever needed from the old evidence adapter,
+        kept as a string because that is what both the tool result and a
+        finding's ``field_path`` check actually compare.
+        """
+        return f"document:{self.chunk.id}"
 
 
 def _condense(text: str, limit: int = 600) -> str:
@@ -191,46 +186,46 @@ class KnowledgeBase:
 def load_markdown_directory(
     directory: str | Path, patterns: Sequence[str] = ("*.md",)
 ) -> list[Chunk]:
-    """Read Markdown docs into chunks, sorted by filename for determinism."""
+    """Read Markdown docs into chunks, sorted by path for determinism.
+
+    **Recursive, and the document id is the relative path.** Both halves
+    are load-bearing and neither works without the other.
+
+    Reading only the top level meant the agent saw eleven files out of a
+    hundred and thirty-five: every design note under a dated subdirectory
+    and the contract itself were invisible to it, so it answered
+    questions about this project from whatever it remembered about
+    projects in general.
+
+    Keying chunks on ``path.name`` alone would have made the recursion
+    worse than useless. Two notes written on different days share a file
+    name often, and ``KnowledgeBase.add`` drops a chunk whose id it has
+    already seen — the second day's work would vanish silently. The
+    relative path is unique by construction and it is also what a reader
+    needs: ``antongduy/plans/2026-08-05/mvp.md#3`` says where to look,
+    ``mvp.md#3`` does not.
+    """
     root = Path(directory)
     if not root.is_dir():
         return []
     chunks: list[Chunk] = []
     seen: set[Path] = set()
     for pattern in patterns:
-        for path in sorted(root.glob(pattern)):
+        for path in sorted(root.rglob(pattern)):
             if path in seen or not path.is_file():
                 continue
             seen.add(path)
+            document_id = path.relative_to(root).as_posix()
             chunks.extend(
-                split_markdown(path.name, path.read_text(encoding="utf-8"), uri=str(path))
+                split_markdown(document_id, path.read_text(encoding="utf-8"), uri=str(path))
             )
     return chunks
-
-
-def benchmark_chunks(benchmark_id: str, name: str, state: str, lines: Sequence[str]) -> list[Chunk]:
-    """Index a finished benchmark so it is retrievable alongside the docs.
-
-    ``lines`` are rendered from stored aggregates by the caller; this
-    function never computes a metric, so an indexed result cannot drift
-    from the report it came from.
-    """
-    body = "\n".join(lines)
-    return [
-        Chunk(
-            id=f"benchmark:{benchmark_id}#0",
-            document_id=f"benchmark:{benchmark_id}",
-            title=f"{name} ({state})",
-            text=f"{name}\nstate {state}\n{body}",
-        )
-    ]
 
 
 __all__ = [
     "Chunk",
     "KnowledgeBase",
     "RetrievedChunk",
-    "benchmark_chunks",
     "load_markdown_directory",
     "split_markdown",
     "tokenize",

@@ -3,20 +3,22 @@
 Two rules shape this module.
 
 **Least authority.** A tool exists only if the agent genuinely needs it.
-There is no tool for driving the robot, editing a map, approving a
-benchmark, or accepting a result — the omissions are the enforcement.
+There is no tool for driving the robot, editing a map, approving a run,
+or accepting a result — the omissions are the enforcement.
 :data:`FORBIDDEN_CAPABILITIES` records them so a future contributor who
 adds one has to delete a line that says not to.
 
-**Explicit effect class.** Every tool declares whether it mutates state.
-:class:`ToolPolicy` can disable mutating tools wholesale (read-only
-sessions), and ``run_benchmark`` additionally re-checks the approval
-state before it calls the gateway, so the refusal appears in the
-transcript rather than as an opaque 409 from a lower layer.
+**Read-only, by having nothing else.** Every tool here reads. The
+previous version could draft and submit benchmarks, which mattered when
+a benchmark had a page; after P6 it created records nothing could
+display, so the model was spending turns producing invisible work. What
+replaced it is not a smaller version of the same idea — the agent now
+reads the decision layer a person is already looking at, and argues with
+it.
 
 Tool failures are returned to the model as error results, not raised.
-A model that asked for a nonexistent benchmark should see "not found"
-and correct itself; crashing the loop teaches it nothing.
+A model that asked for a nonexistent run should see "not found" and
+correct itself; crashing the loop teaches it nothing.
 """
 
 from __future__ import annotations
@@ -28,10 +30,9 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from planbench_agent.gateway import AgentGateway, ApprovalRequired, GatewayError
+from planbench_agent.gateway import AgentGateway, GatewayError
 from planbench_agent.provider import ToolCall, ToolResult, ToolSpec
 from planbench_agent.rag import KnowledgeBase
-from planbench_agent.specs import MissionDraft, parse_structured, validate_draft
 
 logger = logging.getLogger("planbench.agent.tools")
 
@@ -43,15 +44,14 @@ FORBIDDEN_CAPABILITIES: frozenset[str] = frozenset(
         "write_map",  # maps come from the library or a human
         "write_scenario",
         "write_metrics",  # metrics are computed, never authored
-        "approve_benchmark",  # human gate 1
+        "approve_run",  # human gate 1 (HĐ-14)
         "accept_result",  # human gate 2
         "reject_result",
         "declare_safe",  # the safety verdict belongs to a reviewer
+        "run_comparison",  # launching a sweep is a person's decision
+        "write_task_profile",  # a deployment is a claim about the world
     }
 )
-
-# The approval state a benchmark must be in before the agent may run it.
-RUNNABLE_STATE = "approved"
 
 
 class Effect(StrEnum):
@@ -63,10 +63,11 @@ class Effect(StrEnum):
 class ToolPolicy:
     """What this session's agent is permitted to do."""
 
-    allow_write: bool = True
-    #: Hard ceiling on episodes the agent may launch in one benchmark.
-    #: An LLM that miscounts seeds should waste seconds, not an hour.
-    max_episodes: int = 60
+    #: Kept even though every tool is currently READ. The class is the
+    #: place a future write tool would have to declare itself, and
+    #: deleting it would remove the seam that makes that declaration
+    #: unavoidable.
+    allow_write: bool = False
 
     def permits(self, effect: Effect) -> bool:
         return effect is Effect.READ or self.allow_write
@@ -127,9 +128,6 @@ class ToolRegistry:
             )
         try:
             payload = tool.handler(call.arguments or {})
-        except ApprovalRequired as exc:
-            logger.info("agent tool refused: %s", exc, extra={"context": {"tool": call.name}})
-            return self._error(call, f"refused: {exc}")
         except (GatewayError, ValueError, KeyError, TypeError) as exc:
             return self._error(call, f"{type(exc).__name__}: {exc}")
         return ToolResult(call_id=call.id, name=call.name, content=_render(payload))
@@ -169,13 +167,50 @@ def build_registry(
     knowledge: KnowledgeBase | None = None,
     policy: ToolPolicy | None = None,
 ) -> ToolRegistry:
-    """Assemble the tool set over a gateway (and optionally a corpus)."""
+    """Assemble the tool set over a gateway (and optionally a corpus).
+
+    Ordered the way a reader would work: what worlds exist, what could
+    run in them, what did run, and what the rules already said about it.
+    """
     policy = policy or ToolPolicy()
     tools: list[Tool] = [
         Tool(
+            name="list_deployments",
+            description=(
+                "List declared deployments (task profiles): the worlds the platform "
+                "has been asked to measure something in. Every comparison runs "
+                "inside exactly one of these."
+            ),
+            input_schema=_NO_ARGS,
+            effect=Effect.READ,
+            handler=lambda _: gateway.list_deployments(),
+        ),
+        Tool(
+            name="get_deployment",
+            description=(
+                "The full deployment profile: robot, missions, constraints, "
+                "hardware budget, sensor noise, replanning rule. Read this before "
+                "judging whether a comparison answered the question it claims to."
+            ),
+            input_schema=_one_id("task_profile_id", "Deployment id from list_deployments."),
+            effect=Effect.READ,
+            handler=lambda args: gateway.get_deployment(str(args["task_profile_id"])),
+        ),
+        Tool(
+            name="list_candidates",
+            description=(
+                "Registered candidates: complete navigation configurations a "
+                "comparison may choose between. candidate_id is a hash of the "
+                "configuration, so the same id always means the same thing."
+            ),
+            input_schema=_NO_ARGS,
+            effect=Effect.READ,
+            handler=lambda _: gateway.list_candidates(),
+        ),
+        Tool(
             name="list_scenarios",
             description=(
-                "List the built-in benchmark scenarios in curriculum order "
+                "List the built-in scenario library in curriculum order "
                 "(easiest first). These are the only scenarios that exist."
             ),
             input_schema=_NO_ARGS,
@@ -183,105 +218,70 @@ def build_registry(
             handler=lambda _: gateway.list_scenarios(),
         ),
         Tool(
-            name="list_algorithms",
+            name="list_decision_runs",
             description=(
-                "List registered navigation stacks. Only entries with "
-                "benchmarkable=true may be compared; a stack always pairs a "
-                "global planner with a local planner."
-            ),
-            input_schema=_NO_ARGS,
-            effect=Effect.READ,
-            handler=lambda _: gateway.list_algorithms(),
-        ),
-        Tool(
-            name="list_benchmarks",
-            description="List benchmarks with their approval state.",
-            input_schema=_NO_ARGS,
-            effect=Effect.READ,
-            handler=lambda _: gateway.list_benchmarks(),
-        ),
-        Tool(
-            name="get_benchmark",
-            description="Fetch one benchmark: spec, approval state, fairness checksum.",
-            input_schema=_one_id("benchmark_id", "Benchmark identifier."),
-            effect=Effect.READ,
-            handler=lambda args: gateway.get_benchmark(str(args["benchmark_id"])),
-        ),
-        Tool(
-            name="get_benchmark_report",
-            description=(
-                "Fetch the recorded report: per-algorithm aggregates and the "
-                "fairness record. Returns null when the benchmark has not run."
-            ),
-            input_schema=_one_id("benchmark_id", "Benchmark identifier."),
-            effect=Effect.READ,
-            handler=lambda args: gateway.get_report(str(args["benchmark_id"])),
-        ),
-        Tool(
-            name="list_episodes",
-            description="List the episodes of a benchmark with outcome and artifact URI.",
-            input_schema=_one_id("benchmark_id", "Benchmark identifier."),
-            effect=Effect.READ,
-            handler=lambda args: gateway.list_episodes(str(args["benchmark_id"])),
-        ),
-        Tool(
-            name="analyse_episode",
-            description=(
-                "Run evidence-based failure analysis on one recorded episode. "
-                "Returns a primary finding plus the evidence behind it."
-            ),
-            input_schema=_one_id("episode_id", "Episode identifier."),
-            effect=Effect.READ,
-            handler=lambda args: gateway.analyse_episode(str(args["episode_id"])),
-        ),
-        Tool(
-            name="get_leaderboard",
-            description=(
-                "Ranked stacks grouped by identical conditions. Rows in "
-                "different groups are not comparable."
+                "Comparisons that have been run. ranked=false means the run "
+                "eliminated candidates without recommending one — that is a "
+                "result, not a failure, and its gate table is the deliverable."
             ),
             input_schema={
                 "type": "object",
                 "properties": {
-                    "scenario_name": {"type": "string", "description": "Optional filter."}
+                    "task_profile_id": {
+                        "type": "string",
+                        "description": "Optional: only runs in this deployment.",
+                    }
                 },
                 "additionalProperties": False,
             },
             effect=Effect.READ,
-            handler=lambda args: gateway.leaderboard(args.get("scenario_name") or None),
+            handler=lambda args: gateway.list_decision_runs(
+                str(args["task_profile_id"]) if args.get("task_profile_id") else None
+            ),
         ),
         Tool(
-            name="propose_benchmark",
+            name="get_decision_run",
             description=(
-                "Create a DRAFT benchmark from a scenario, a list of stacks and "
-                "a list of seeds, then submit it for human approval. Drafting "
-                "does not execute anything."
+                "The whole stored comparison report: sample, per-candidate gates, "
+                "statistics, provenance. Cite fields from it by path, for example "
+                "sample.n_episodes or candidates[0].gates.G4.status."
             ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "description": {"type": "string"},
-                    "scenario": {"type": "string"},
-                    "algorithms": {"type": "array", "items": {"type": "string"}, "minItems": 1},
-                    "seeds": {"type": "array", "items": {"type": "integer"}, "minItems": 1},
-                },
-                "required": ["name", "scenario", "algorithms", "seeds"],
-                "additionalProperties": False,
-            },
-            effect=Effect.WRITE,
-            handler=lambda args: _propose(gateway, policy, args),
+            input_schema=_one_id("run_id", "Run id from list_decision_runs."),
+            effect=Effect.READ,
+            handler=lambda args: gateway.get_decision_run(str(args["run_id"])),
         ),
         Tool(
-            name="run_benchmark",
+            name="get_decision_card",
             description=(
-                "Execute a benchmark that a human reviewer has ALREADY "
-                "approved. Refuses in any other state — you cannot approve a "
-                "benchmark yourself."
+                "The recommendation for a run: which candidate, on what evidence, "
+                "with the interval around the difference. Returns null when the "
+                "run ranked nobody."
             ),
-            input_schema=_one_id("benchmark_id", "Benchmark identifier."),
-            effect=Effect.WRITE,
-            handler=lambda args: _run(gateway, str(args["benchmark_id"])),
+            input_schema=_one_id("run_id", "Run id."),
+            effect=Effect.READ,
+            handler=lambda args: gateway.get_decision_card(str(args["run_id"])),
+        ),
+        Tool(
+            name="get_gate_table",
+            description=(
+                "Per-candidate G1-G6 verdicts with the numbers behind them: who "
+                "was eliminated, at which gate, after how many episodes. Gates are "
+                "conditions of entry, never scores — a candidate that failed one "
+                "is not a runner-up."
+            ),
+            input_schema=_one_id("run_id", "Run id."),
+            effect=Effect.READ,
+            handler=lambda args: gateway.get_gate_table(str(args["run_id"])),
+        ),
+        Tool(
+            name="get_critique",
+            description=(
+                "What the deterministic rules already object to in this run. Read "
+                "it before answering so you add something rather than repeat it."
+            ),
+            input_schema=_one_id("run_id", "Run id."),
+            effect=Effect.READ,
+            handler=lambda args: gateway.get_critique(str(args["run_id"])),
         ),
     ]
 
@@ -290,8 +290,11 @@ def build_registry(
             Tool(
                 name="search_knowledge",
                 description=(
-                    "Search project documentation and indexed results. Each hit "
-                    "carries a chunk id to cite as [document:<chunk id>]."
+                    "Search project documentation and the contract. Each hit "
+                    "carries a chunk id to cite as [document:<chunk id>]. Use it "
+                    "before answering anything about how this project works — "
+                    "answering from memory is how a plausible wrong answer gets "
+                    "written."
                 ),
                 input_schema={
                     "type": "object",
@@ -324,53 +327,8 @@ def _search(knowledge: KnowledgeBase, args: Mapping[str, Any]) -> Any:
     ]
 
 
-def _propose(gateway: AgentGateway, policy: ToolPolicy, args: Mapping[str, Any]) -> Any:
-    draft, errors = parse_structured(
-        {
-            "name": args.get("name", ""),
-            "description": args.get("description", ""),
-            "scenario": args.get("scenario", ""),
-            "algorithms": tuple(args.get("algorithms", ())),
-            "seeds": tuple(args.get("seeds", ())),
-        }
-    )
-    if draft is None:
-        raise ValueError(f"invalid benchmark proposal: {'; '.join(errors)}")
-    errors = validate_draft(draft)
-    if errors:
-        raise ValueError(f"invalid benchmark proposal: {'; '.join(errors)}")
-    _check_size(draft, policy)
-    created = gateway.create_benchmark(draft)
-    submitted = gateway.submit_benchmark(created.id)
-    return {
-        "benchmark": submitted.model_dump(mode="json"),
-        "next_step": (
-            "A human reviewer must approve this benchmark before it can run. You cannot approve it."
-        ),
-    }
-
-
-def _check_size(draft: MissionDraft, policy: ToolPolicy) -> None:
-    if draft.episode_count > policy.max_episodes:
-        raise ValueError(
-            f"{draft.episode_count} episodes exceeds the per-benchmark limit of "
-            f"{policy.max_episodes}; reduce the seeds or the algorithm list"
-        )
-
-
-def _run(gateway: AgentGateway, benchmark_id: str) -> Any:
-    stored = gateway.get_benchmark(benchmark_id)
-    if stored.state != RUNNABLE_STATE:
-        raise ApprovalRequired(
-            f"benchmark {benchmark_id!r} is in state {stored.state!r}; "
-            f"it must be {RUNNABLE_STATE!r} (approved by a human reviewer) before it can run"
-        )
-    return gateway.run_benchmark(benchmark_id)
-
-
 __all__ = [
     "FORBIDDEN_CAPABILITIES",
-    "RUNNABLE_STATE",
     "Effect",
     "Tool",
     "ToolPolicy",

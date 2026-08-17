@@ -11,7 +11,6 @@ from planbench_agent import AgentService
 from planbench_agent.tools import ToolPolicy
 from planbench_api.agent_gateway import ApiAgentGateway
 from planbench_api.auth import CurrentUser
-from planbench_api.chat_service import ChatService
 from planbench_api.decision_service import (
     CandidateService,
     DecisionRunService,
@@ -82,16 +81,6 @@ def get_benchmark_job_service(request: Request) -> BenchmarkJobService:
     return BenchmarkJobService(get_benchmark_service(request), request.app.state.jobs)
 
 
-def get_chat_service(request: Request) -> ChatService:
-    repos = get_repos(request)
-    return ChatService(
-        repos,
-        get_model_service(request),
-        get_profile_service(request),
-        get_benchmark_service(request),
-    )
-
-
 def get_episode_service(request: Request) -> EpisodeService:
     return EpisodeService(get_repos(request))
 
@@ -99,23 +88,24 @@ def get_episode_service(request: Request) -> EpisodeService:
 def get_agent_service(request: Request, user: CurrentUser) -> AgentService:
     """An agent bound to the calling user.
 
-    Constructed per request so the gateway acts as that user: benchmarks
-    the agent creates are attributed to a real person, and separation of
-    duties still applies to whoever approves them. The provider and the
-    knowledge index are app-scoped and shared.
+    Constructed per request so the gateway acts as that user. Every tool
+    it reaches is read-only, so nothing it does needs attributing — but
+    authorisation is still per-caller, and a write tool added later would
+    find the identity already in place rather than needing it threaded
+    through afterwards. The provider and the knowledge index are
+    app-scoped and shared.
     """
     gateway = ApiAgentGateway(
-        repos=get_repos(request),
-        benchmarks=get_benchmark_service(request),
-        maps=get_map_service(request),
-        scenarios=get_scenario_service(request),
+        profiles=get_task_profile_service(request),
+        candidates=get_candidate_service(request),
+        runs=get_decision_run_service(request),
         user=user,
     )
     return AgentService(
         provider=request.app.state.agent_provider,
         gateway=gateway,
         knowledge=request.app.state.agent_knowledge,
-        policy=ToolPolicy(max_episodes=request.app.state.agent_max_episodes),
+        policy=ToolPolicy(),
     )
 
 

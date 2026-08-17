@@ -121,7 +121,12 @@ class Settings(BaseSettings):
     agent_base_url: str = ""
     # Directories indexed for retrieval, comma separated, relative to the
     # repository root. Empty disables retrieval.
-    agent_knowledge_dirs: str = "docs"
+    #: Comma-separated roots, read recursively. `contracts` is here
+    #: because HĐ-1..HĐ-15 are the rules the agent is asked about
+    #: most often, and answering those from memory rather than from
+    #: the file is exactly the failure the retrieval layer exists to
+    #: prevent.
+    agent_knowledge_dirs: str = "docs,contracts"
     # Ceiling on episodes the agent may propose in one benchmark.
     agent_max_episodes: int = 60
 
