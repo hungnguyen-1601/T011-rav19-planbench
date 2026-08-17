@@ -1096,19 +1096,16 @@ function CritiquePanel({ runId }: { runId: string }) {
 
 function CritiqueBody({ critique }: { critique: Critique }) {
   const { t } = useTranslation();
-  const usedModel = Boolean(critique.provider);
 
   return (
     <>
-      {usedModel ? (
-        <p className="muted" style={{ fontSize: 12 }}>
-          <code>
-            {critique.provider}
-            {critique.model ? ` · ${critique.model}` : ""}
-          </code>{" "}
-          <span className={critique.deterministic ? "badge warn" : "badge ok"}>
-            {t(critique.deterministic ? "critique.mock" : "critique.live")}
-          </span>
+      {/* No vendor or model name: what a reader has to weigh is whether
+          each finding points at a field that exists, which is asserted
+          below and does not depend on who answered. The one exception is
+          a canned critique, which must not pass for a model's. */}
+      {critique.provider && critique.deterministic ? (
+        <p>
+          <span className="badge warn">{t("critique.mock")}</span>
         </p>
       ) : null}
 

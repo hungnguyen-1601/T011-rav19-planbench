@@ -801,3 +801,63 @@ export function getCritique(runId: string, useModel = false): Promise<Critique> 
   const suffix = useModel ? "?use_model=true" : "";
   return authFetch<Critique>(`/decisions/${encodeURIComponent(runId)}/critique${suffix}`);
 }
+
+// ---------------------------------------------------------------
+// Reading a candidate out of a paper
+// ---------------------------------------------------------------
+
+export interface ExtractedParameter {
+  name: string;
+  value: string | number | boolean;
+  /** The sentence in the paper this came from, verified against the
+   *  source before it was shown. */
+  quote: string;
+  note: string;
+}
+
+export interface PaperExtraction {
+  stack: string;
+  params: Record<string, string | number | boolean>;
+  parameters: ExtractedParameter[];
+  /** Parameters the paper never stated. The usual reason a reproduction
+   *  fails, so they are shown rather than silently defaulted. */
+  assumptions: string[];
+  /** What the paper describes that this platform cannot express. */
+  not_representable: string[];
+  claimed_conditions: string;
+  /** Values whose quote was not in the source. Dropped, and counted. */
+  unquoted: number;
+  refused: string;
+  /** Non-empty means the draft would register as-is. */
+  candidate_id: string;
+  errors: string[];
+  provider: string;
+  model: string;
+  deterministic: boolean;
+  offerable_stacks: string[];
+}
+
+/** Recover a paper's reported configuration as a candidate draft.
+ *
+ * Nothing is stored. What comes back is a proposal for a person to
+ * correct and then register through the normal form.
+ */
+export function extractCandidateFromPaper(text: string): Promise<PaperExtraction> {
+  return authFetch<PaperExtraction>("/candidates/from-paper", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+}
+
+/** The same extraction, from an uploaded file.
+ *
+ * The file is read server-side and not kept. It is a shortcut past the
+ * copy step, not a new place papers live — what a reader eventually
+ * registers is the corrected draft, and the PDF is no part of its
+ * identity.
+ */
+export function extractCandidateFromPaperFile(file: File): Promise<PaperExtraction> {
+  const body = new FormData();
+  body.append("file", file);
+  return authFetch<PaperExtraction>("/candidates/from-paper/upload", { method: "POST", body });
+}

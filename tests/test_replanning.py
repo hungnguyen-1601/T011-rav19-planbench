@@ -489,22 +489,38 @@ class TestAReplanIsChargedForAsAControlStep:
         frame = pd.read_parquet(path)
         replans = frame[frame["event"] == "replan"]
         assert len(replans) >= 1, "the episode that needs a replan recorded none"
-        # Stated against the 99th percentile of ordinary steps, because
-        # that is the number G4 reads — "a replan lands above the cut" is
-        # exactly the claim the cost model rests on.
-        #
+
+        # The claim is that the replan was *charged for*: every replan row
+        # carries the time it actually cost, so a stack that replans often
+        # cannot look as cheap as one that does not. A row present with a
+        # zero on it would be the cost model quietly not existing.
+        assert (replans["planner_latency_ms"] > 0).all()
+
         # Not against a fixed millisecond figure. The first version
         # asserted `> 50 ms`, calibrated on the 480x320 hall where A*
         # takes ~740 ms, and failed here: `sudden_stop` is 14x9 m and the
         # same planner takes ~5 ms, about twice a control step rather than
         # sixty times. **The price of a replan scales with the map**, so
         # on a small scenario replanning is nearly free and on a real
-        # deployment map it is not. The absolute figure is a property of
-        # the map; landing above the ordinary distribution is the property
-        # of replanning, and it is the one worth pinning.
+        # deployment map it is not.
+        #
+        # Nor against the 99th percentile of ordinary steps, which is what
+        # replaced the fixed figure and was flaky about one run in three.
+        # On this map the two distributions overlap: a replan lands around
+        # 6.5 ms and the p99 of ordinary steps around 5.7 ms — a margin of
+        # 1.12x, inside the noise, and the slowest ordinary step routinely
+        # beats the fastest replan. The p99 of ordinary steps is the worst
+        # scheduling hiccup the OS handed out during the episode; it
+        # measures the machine, not the planner, and on a two-core hosted
+        # runner it measures a busier one.
+        #
+        # The median does measure the planner, and a replan running a full
+        # global search costs about twice an ordinary control step here.
+        # That is the weaker claim, and it is the one this map can carry
+        # honestly. A scenario large enough for the p99 claim would be a
+        # different test on a different map, not a tighter assertion here.
         ordinary = frame[frame["event"].isna() | (frame["event"] == "")]
-        cut = ordinary["planner_latency_ms"].quantile(0.99)
-        assert replans["planner_latency_ms"].max() > cut
+        assert replans["planner_latency_ms"].max() > ordinary["planner_latency_ms"].median()
 
     def test_without_replanning_the_trace_has_no_such_row(self, tmp_path) -> None:
         import pandas as pd

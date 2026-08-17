@@ -199,3 +199,76 @@ describe("choosing a candidate one layer at a time", () => {
     expect(vi).toHaveProperty("candidates.pick.noConfigs");
   });
 });
+
+describe("a paper can arrive as a file, not only as a paste", () => {
+  it("offers an upload button beside the box", () => {
+    /* Asking a reader to select a PDF's setup section, copy it and paste
+       it is the step that stops most people from trying the feature at
+       all. The paste box stays: a scanned paper no extractor can read
+       still has two lines somebody can retype. */
+    expect(PAGE).toContain('type="file"');
+    expect(PAGE).toContain('t("paper.upload")');
+    expect(PAGE).toContain('t("paper.read")');
+  });
+
+  it("filters the picker to the extensions the server can read", () => {
+    /* A courtesy, not the check — the server refuses independently. */
+    expect(PAGE).toContain(".pdf");
+    expect(PAGE).toContain("accept={PAPER_FILE_TYPES}");
+  });
+
+  it("sends the file as multipart rather than as a JSON string", () => {
+    expect(CLIENT).toContain("new FormData()");
+    expect(CLIENT).toContain('"/candidates/from-paper/upload"');
+  });
+
+  it("lets the same file be picked twice", () => {
+    /* A reader whose first upload failed picks the same file again, and
+       an input that keeps its value fires no change event. */
+    expect(PAGE).toContain("event.target.value = \"\"");
+  });
+
+  it("routes both entry points through one reader", () => {
+    /* So an upload and a paste of the same paper cannot drift into
+       producing different-looking drafts. */
+    expect(PAGE).toContain("async function run(");
+    expect(PAGE.match(/setResult\(await/g)).toHaveLength(1);
+  });
+
+  it("says the file is not kept", () => {
+    /* The upload is a shortcut past the copy step, not a new place
+       papers live — and the reader is entitled to know that before
+       uploading something unpublished. */
+    for (const locale of [en, vi]) {
+      expect((locale as Record<string, string>)["paper.uploadHint"]).toBeTruthy();
+    }
+    expect(en["paper.uploadHint"]).toMatch(/not stored/);
+  });
+});
+
+describe("the panel does not report which model answered", () => {
+  it("shows no provider or model badge", () => {
+    /* Which vendor served the request is a deployment fact, not
+       evidence about the paper. What the reader has to check is whether
+       the quoted sentences are in the paper, and a vendor string beside
+       them competes for that attention. */
+    expect(PAGE).not.toContain("result.provider");
+    expect(PAGE).not.toContain("result.model");
+    expect(PAGE).not.toContain("paper.mock");
+    expect(PAGE).not.toContain("paper.live");
+  });
+
+  it("drops the strings that badge used", () => {
+    for (const locale of [en, vi] as Record<string, string>[]) {
+      expect(locale["paper.mock"]).toBeUndefined();
+      expect(locale["paper.live"]).toBeUndefined();
+    }
+  });
+
+  it("still shows what a reader must check", () => {
+    /* Removing the badge must not remove the honesty: the quote behind
+       every value, and the count of the ones that were invented. */
+    expect(PAGE).toContain('t("paper.fromSentence")');
+    expect(PAGE).toContain("result.unquoted");
+  });
+});

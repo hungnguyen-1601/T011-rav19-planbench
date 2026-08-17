@@ -19,11 +19,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile, status
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from planbench_agent.critique import critique_with_model
+from planbench_agent.paper import (
+    extract_from_paper,
+    read_upload,
+    selectable_stacks,
+)
 from planbench_api.auth import CurrentUser
 from planbench_api.decision_service import (
     CandidateService,
@@ -203,6 +208,70 @@ class CritiqueResource(BaseModel):
     provider: str = ""
     model: str = ""
     deterministic: bool = True
+
+
+#: A paper that does not fit is a paper the model reads the tail of, and
+#: the Setup section is usually near the front. The cap is on the text
+#: after extraction, so it bounds the model's input rather than the
+#: upload.
+MAX_PAPER_CHARS = 60_000
+
+#: Well under what a PDF of a conference paper runs to, and small enough
+#: that a mis-picked file fails at the door rather than after a minute of
+#: parsing.
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+
+
+class PaperRequest(BaseModel):
+    """Text of a paper, pasted.
+
+    The sibling of the upload route rather than its predecessor: a reader
+    quoting one Setup paragraph should not have to make a file first, and
+    a scanned PDF that no extractor can read still has a person who can
+    retype the two lines that matter.
+    """
+
+    text: str = Field(min_length=1, max_length=MAX_PAPER_CHARS)
+
+
+class ExtractedParameterResource(BaseModel):
+    name: str
+    value: Any
+    #: The sentence in the source this value came from. Verified against
+    #: the text before it is shown, never trusted.
+    quote: str
+    note: str = ""
+
+
+class PaperExtractionResource(BaseModel):
+    """A candidate draft recovered from a paper, and what it could not do.
+
+    Nothing is registered. ``candidate_id`` says the draft *would*
+    register, which is different from having registered it — the person
+    reading still has to agree that this is what the paper said.
+    """
+
+    stack: str
+    params: dict[str, Any]
+    parameters: list[ExtractedParameterResource]
+    #: Parameters the paper never stated. These are the usual reason a
+    #: reproduction fails, so they are output rather than silently
+    #: defaulted.
+    assumptions: list[str]
+    #: What the paper describes that this platform cannot express.
+    not_representable: list[str]
+    claimed_conditions: str
+    #: Values whose quote was not in the source, dropped and counted.
+    unquoted: int
+    refused: str
+    candidate_id: str
+    errors: list[str]
+    provider: str
+    model: str
+    deterministic: bool
+    #: What the model was allowed to choose between, so a reader can see
+    #: the shortlist rather than infer it from the answer.
+    offerable_stacks: list[str]
 
 
 class ReviewRequest(BaseModel):
@@ -852,6 +921,75 @@ def _critique_resource(
         omissions=sum(1 for f in findings if f.kind == "omission"),
         from_model=sum(1 for f in findings if f.source == "model"),
         **extra,
+    )
+
+
+@router.post("/candidates/from-paper", response_model=PaperExtractionResource)
+def candidate_from_paper(
+    payload: PaperRequest,
+    request: Request,
+    user: CurrentUser,
+) -> PaperExtractionResource:
+    """Recover a paper's reported configuration as a candidate draft.
+
+    **Nothing is stored.** The response is a proposal: a person reads it,
+    corrects what the model misread, and registers the candidate through
+    ``POST /candidates`` if they agree. Skipping that step would make
+    every number downstream rest on an extraction nobody checked.
+
+    A paper whose method this platform does not implement comes back with
+    no stack and a reason. That is the correct answer, not a failure —
+    mapping it onto the nearest available planner would answer a
+    different question with the paper's authority.
+    """
+    agent = get_agent_service(request, user)
+    result = extract_from_paper(payload.text, agent.provider)
+    return PaperExtractionResource(
+        **result.model_dump(),
+        offerable_stacks=list(selectable_stacks()),
+    )
+
+
+@router.post("/candidates/from-paper/upload", response_model=PaperExtractionResource)
+async def candidate_from_paper_upload(
+    request: Request,
+    user: CurrentUser,
+    file: Annotated[UploadFile, File()],
+) -> PaperExtractionResource:
+    """The same extraction, from a file instead of a paste.
+
+    **Still stores nothing** — not the file, not the text, not the draft.
+    The upload exists to save a person the copy step, so keeping the PDF
+    would add a thing to govern for no gain: whatever the reader
+    registers goes through ``POST /candidates`` with a `candidate_id`
+    that is a hash of the configuration, and the source PDF is not part
+    of it.
+
+    Reading is deliberately shallow — page text, joined. Whether a
+    two-column layout interleaved is visible in the extracted quotes,
+    which the reader is already checking. A layout-aware parser would be
+    a second thing to be wrong about and would not make the model's
+    reading of the numbers any better.
+    """
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise DomainValidationError(
+            f"that file is {len(data) // (1024 * 1024)} MB; the limit is "
+            f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB"
+        )
+    # PdfUnavailable is deliberately not caught: it has its own handler
+    # and its own status, and flattening it into a 400 here would tell
+    # the caller their file was wrong when the deployment was.
+    try:
+        text = read_upload(file.filename or "", data)
+    except ValueError as exc:
+        raise DomainValidationError(str(exc)) from exc
+
+    agent = get_agent_service(request, user)
+    result = extract_from_paper(text[:MAX_PAPER_CHARS], agent.provider)
+    return PaperExtractionResource(
+        **result.model_dump(),
+        offerable_stacks=list(selectable_stacks()),
     )
 
 

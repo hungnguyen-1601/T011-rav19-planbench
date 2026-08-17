@@ -112,7 +112,7 @@ export default function AgentPage() {
           <h2>{t("agent.title")}</h2>
           <p>{t("agent.subtitle")}</p>
         </div>
-        {capabilities ? <ProviderBadge capabilities={capabilities} /> : null}
+        {capabilities?.deterministic ? <OfflineNotice /> : null}
       </div>
 
       {error ? <div className="error-box">{error}</div> : null}
@@ -187,22 +187,17 @@ export default function AgentPage() {
   );
 }
 
-function ProviderBadge({ capabilities }: { capabilities: Capabilities }) {
+/** Shown only when no model is answering.
+ *
+ * The vendor and model name are gone from this page: which provider
+ * served a request is a deployment fact, and a reader judging an answer
+ * has nothing to do with it. This is the one part that was not a
+ * badge — a canned answer and a model's answer read alike, so a page
+ * that let them look identical would be lying by omission.
+ */
+function OfflineNotice() {
   const { t } = useTranslation();
-  return (
-    <div className="toolbar" style={{ alignItems: "center" }}>
-      <code>
-        {capabilities.provider}
-        {capabilities.model ? ` · ${capabilities.model}` : ""}
-      </code>
-      <span className={capabilities.deterministic ? "badge warn" : "badge ok"}>
-        {t(capabilities.deterministic ? "agent.mock" : "agent.live")}
-      </span>
-      <span className="muted" style={{ fontSize: 12 }}>
-        {t("agent.indexed", { count: String(capabilities.knowledge_documents) })}
-      </span>
-    </div>
-  );
+  return <span className="badge warn">{t("agent.mock")}</span>;
 }
 
 function Bubble({ entry }: { entry: Entry }) {

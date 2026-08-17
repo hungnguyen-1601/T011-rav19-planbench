@@ -57,8 +57,20 @@
 fastapi==0.141.1
 uvicorn[standard]==0.52.0
 websockets==16.1.1
-# Form đăng nhập của OAuth2PasswordRequestForm là multipart.
+# Form đăng nhập của OAuth2PasswordRequestForm là multipart, và
+# POST /candidates/from-paper/upload nhận file cũng qua multipart.
 python-multipart==0.0.32
+
+# ---------- Đọc paper người dùng tải lên ----------
+# Trích text từ PDF cho POST /candidates/from-paper/upload. Ở đây chứ
+# không ở requirements-optional.txt: paper gần như luôn là PDF, nên
+# thiếu nó thì nút "Tải paper lên" chỉ còn dùng được với .txt/.md/.tex —
+# tức là tính năng chính hỏng chứ không phải giảm chế độ. Thuần Python,
+# ~1MB, không cần trình biên dịch.
+#
+# Code vẫn chịu được khi thiếu (`paper.PdfUnavailable` → API trả 503 kèm
+# đúng lệnh cài), phòng trường hợp môi trường bị cắt bớt.
+pypdf==6.16.1
 
 # ---------- Contract-first: Pydantic là nguồn sự thật của domain ----------
 pydantic==2.13.4

@@ -304,10 +304,14 @@ export async function login(username: string, password: string): Promise<Session
 /** Authenticated request against /api/v1; throws on non-2xx. */
 export async function authFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const session = loadSession();
+  // A `FormData` body must set its own Content-Type, because only the
+  // browser knows the multipart boundary it generated. Naming JSON here
+  // would produce a request the server cannot parse.
+  const multipart = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const response = await fetch(`${API_BASE}/api/v1${path}`, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
+      ...(multipart ? {} : { "Content-Type": "application/json" }),
       ...(session ? { Authorization: `Bearer ${session.token}` } : {}),
       ...init?.headers,
     },

@@ -127,6 +127,7 @@ def _error_body(code: str, message: str, details: Any = None) -> dict:
 def register_error_handlers(app: FastAPI) -> None:
     # Imported here to keep this module free of auth/domain imports at
     # module scope (errors.py is imported very early).
+    from planbench_agent.paper import PdfUnavailable
     from planbench_agent.provider import ProviderError, ProviderUnavailable
     from planbench_api.accounts import AccountError
     from planbench_api.approval import PermissionDenied, TransitionError
@@ -146,6 +147,17 @@ def register_error_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=503,
             content=_error_body("provider_unavailable", str(exc)),
+        )
+
+    @app.exception_handler(PdfUnavailable)
+    async def pdf_unavailable(_: Request, exc: PdfUnavailable) -> JSONResponse:
+        # 503, not 400: the caller's PDF was fine, this deployment is not
+        # equipped to read it. The message carries the install command,
+        # because the person who can fix it is often the person reading.
+        logger.warning("pdf reader unavailable: %s", exc)
+        return JSONResponse(
+            status_code=503,
+            content=_error_body("pdf_unavailable", str(exc)),
         )
 
     @app.exception_handler(ProviderError)
