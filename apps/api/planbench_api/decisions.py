@@ -58,7 +58,6 @@ ConfigState = Literal["not_applicable", "pending", "approved", "rejected"]
 ReviewAction = Literal["review", "approve_config", "reject_config", "withdraw_config"]
 
 
-
 def same_deployment(stored: dict, incoming: dict) -> bool:
     """Do these two documents describe the same world?
 
@@ -86,6 +85,7 @@ def same_deployment(stored: dict, incoming: dict) -> bool:
         return TaskProfile.model_validate(stored) == TaskProfile.model_validate(incoming)
     except Exception:
         return stored == incoming
+
 
 @dataclass
 class StoredTaskProfile:

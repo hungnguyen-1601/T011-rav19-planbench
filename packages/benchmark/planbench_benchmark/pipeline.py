@@ -227,9 +227,13 @@ def simulate(
                 progress(index, total, candidate.stack_label)
             _consult_retire(retire, retired, candidate, context, journal, emit)
             continue
-        started = time.time()
+        # monotonic, not time(): the wall clock steps when NTP corrects
+        # it and can run backwards, which writes a negative duration
+        # into the journal — a reader cannot tell that from a real
+        # measurement, and the journal is what a stopped run is judged on.
+        started = time.monotonic()
         _, run = run_contract_episode(candidate, profile, context, map_data, root=trace_root)
-        elapsed = time.time() - started
+        elapsed = time.monotonic() - started
         emit(
             f"  {index:>4}/{total}  {candidate.stack_label:<14} "
             f"seed {context.seed:<4} {run.result.status.value:<16} "

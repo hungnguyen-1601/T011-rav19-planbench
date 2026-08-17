@@ -46,9 +46,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "robot_profiles", sa.Column("max_linear_acceleration", sa.Float(), nullable=True)
-    )
+    op.add_column("robot_profiles", sa.Column("max_linear_acceleration", sa.Float(), nullable=True))
     op.add_column(
         "robot_profiles", sa.Column("max_angular_acceleration", sa.Float(), nullable=True)
     )

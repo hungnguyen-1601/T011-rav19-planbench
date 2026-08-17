@@ -584,5 +584,3 @@ class TestTheReplanCountIsEvidenceAndNotAScore:
             / "gates.py"
         )
         assert "replan" not in gates.read_text(encoding="utf-8")
-
-

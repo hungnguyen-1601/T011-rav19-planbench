@@ -86,9 +86,7 @@ class TestTheEpisodeIsTheDeploymentsOwn:
         assert scenario["goal_tolerance"] == constraints["goal_tolerance_m"]
         assert scenario["stuck_time_window"] == constraints["stuck_threshold_s"]
 
-    def test_the_noise_is_the_deployments_noise(
-        self, client: TestClient, deployment: dict
-    ) -> None:
+    def test_the_noise_is_the_deployments_noise(self, client: TestClient, deployment: dict) -> None:
         """A candidate that could soften the noise would choose its exam.
 
         The same argument as HĐ-3.1's, one layer earlier: the amplitudes
@@ -224,9 +222,7 @@ class TestStagingIsIdempotentInWhatItStores:
 
 
 class TestItRefusesBeforeSpendingAnything:
-    def test_a_mission_from_another_deployment(
-        self, client: TestClient, deployment: dict
-    ) -> None:
+    def test_a_mission_from_another_deployment(self, client: TestClient, deployment: dict) -> None:
         """Naming a mission the profile does not have is not runnable.
 
         The message says which profile was asked, because the mistake it
@@ -303,9 +299,7 @@ class TestDeletingADeployment:
     def test_a_deployment_nobody_ran_deletes_straight_away(
         self, client: TestClient, deployment: dict, alice_headers: dict[str, str]
     ) -> None:
-        response = client.delete(
-            f"{API}/task-profiles/{deployment['id']}", headers=alice_headers
-        )
+        response = client.delete(f"{API}/task-profiles/{deployment['id']}", headers=alice_headers)
         assert response.status_code == 200, response.text
         assert response.json()["deleted_runs"] == 0
         assert client.get(f"{API}/task-profiles/{deployment['id']}").status_code == 404
@@ -325,9 +319,7 @@ class TestDeletingADeployment:
         response = client.delete(f"{API}/task-profiles/no_such_thing", headers=alice_headers)
         assert response.status_code == 404
 
-    def test_signing_out_does_not_get_to_delete(
-        self, client: TestClient, deployment: dict
-    ) -> None:
+    def test_signing_out_does_not_get_to_delete(self, client: TestClient, deployment: dict) -> None:
         response = client.delete(f"{API}/task-profiles/{deployment['id']}")
         assert response.status_code in (401, 403)
         assert client.get(f"{API}/task-profiles/{deployment['id']}").status_code == 200
@@ -359,9 +351,7 @@ class TestDeletingADeployment:
                 status="recommended",
             )
         )
-        response = client.delete(
-            f"{API}/task-profiles/{deployment['id']}", headers=alice_headers
-        )
+        response = client.delete(f"{API}/task-profiles/{deployment['id']}", headers=alice_headers)
         assert response.status_code == 409
         body = response.json()["error"]
         assert body["details"][0]["runs"] == 1
@@ -479,7 +469,7 @@ class TestAnApprovalIsNotDeletableUntilItIsWithdrawn:
     def test_the_refusal_names_the_runs_holding_it(
         self, client: TestClient, deployment: dict, alice_headers: dict[str, str], app
     ) -> None:
-        """"Something is approved" leaves somebody hunting. The ids do not."""
+        """ "Something is approved" leaves somebody hunting. The ids do not."""
         run_id = self._approved_run(app, client, deployment, alice_headers)
         body = client.delete(
             f"{API}/task-profiles/{deployment['id']}", headers=alice_headers

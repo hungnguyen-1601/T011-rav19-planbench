@@ -183,9 +183,7 @@ class TaskProfileService:
                 ],
             )
         removed = (
-            self._runs.delete_for_profile(profile_id)
-            if runs and self._runs is not None
-            else 0
+            self._runs.delete_for_profile(profile_id) if runs and self._runs is not None else 0
         )
         self._repository.delete(profile_id)
         return removed
@@ -852,9 +850,7 @@ class TestBenchService:
                 f"known: {', '.join(sorted(LOCAL_CONTROLLER_CONFIGS))}"
             )
 
-        context = EpisodeContext(
-            task_profile_id=task_profile_id, mission_id=mission_id, seed=seed
-        )
+        context = EpisodeContext(task_profile_id=task_profile_id, mission_id=mission_id, seed=seed)
         try:
             scenario = scenario_for(profile, context)
         except EpisodeSetupError as error:

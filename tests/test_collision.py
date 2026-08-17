@@ -247,9 +247,7 @@ class TestTheMetricPathDoesNotScanTheWholeMap:
         assert reported == pytest.approx(DEFAULT_CLEARANCE_WINDOW_M - 0.2)
         assert reported < clearance_to_grid(centre, 0.2, grid)
 
-    def test_a_shape_obstacle_still_wins_when_it_is_nearer(
-        self, mixed_grid: OccupancyGrid
-    ) -> None:
+    def test_a_shape_obstacle_still_wins_when_it_is_nearer(self, mixed_grid: OccupancyGrid) -> None:
         """Windowing the grid must not lose the other half of the answer.
 
         (1.0, 1.0) has room: the nearest wall is the map boundary a metre

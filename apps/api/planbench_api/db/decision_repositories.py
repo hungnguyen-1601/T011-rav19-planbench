@@ -344,8 +344,14 @@ class SqlDecisionRunRepository:
             row.config_decided_by = None
             row.config_decided_at = None
             _append_event(
-                session, run_id, "withdraw_config", actor_user_id, username, previous,
-                "pending", comment,
+                session,
+                run_id,
+                "withdraw_config",
+                actor_user_id,
+                username,
+                previous,
+                "pending",
+                comment,
             )
             session.flush()
             return _to_run(row)

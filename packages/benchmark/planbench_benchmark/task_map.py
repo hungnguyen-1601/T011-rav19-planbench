@@ -30,6 +30,7 @@ is a fact about the candidate or about the profile.
 
 from __future__ import annotations
 
+import hashlib
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -70,15 +71,24 @@ class MapProfileMismatch(ValueError):
 class _CacheKey:
     """Identity of a map on disk: where it is and what it currently is.
 
-    Size and mtime are in the key so editing a map invalidates the cache.
-    A long benchmark session that reloads the same profile after the map
-    was regenerated must not keep planning on the previous walls.
+    The content digest is in the key so editing a map invalidates the
+    cache. A long benchmark session that reloads the same profile after
+    the map was regenerated must not keep planning on the previous
+    walls.
+
+    Size and mtime alone cannot carry that guarantee. Linux stamps
+    mtime from a cached clock updated once per timer tick, so a
+    same-size rewrite inside one tick — a regenerator writing both
+    files in a loop, or a test — leaves the fingerprint identical and
+    the stale map is served. Hashing costs one extra read of a file
+    that is about to be read anyway; parsing the image dominates it,
+    and that is the work the cache exists to skip.
     """
 
     image: str
     meta: str
-    image_stat: tuple[int, int]
-    meta_stat: tuple[int, int]
+    image_digest: str
+    meta_digest: str
 
 
 _CACHE: dict[_CacheKey, MapData] = {}
@@ -94,9 +104,9 @@ def _resolve(path_value: str, base_dir: Path) -> Path:
     return path if path.is_absolute() else (base_dir / path)
 
 
-def _fingerprint(path: Path) -> tuple[int, int]:
-    stat = path.stat()
-    return (stat.st_size, stat.st_mtime_ns)
+def _fingerprint(path: Path) -> str:
+    """Digest of the file's bytes — what the cache keys on."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def load_environment_map(
@@ -128,8 +138,8 @@ def load_environment_map(
     key = _CacheKey(
         image=str(image_path.resolve()),
         meta=str(meta_path.resolve()),
-        image_stat=_fingerprint(image_path),
-        meta_stat=_fingerprint(meta_path),
+        image_digest=_fingerprint(image_path),
+        meta_digest=_fingerprint(meta_path),
     )
     cached = _CACHE.get(key)
     if cached is not None:
