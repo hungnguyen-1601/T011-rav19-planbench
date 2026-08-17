@@ -1,0 +1,49 @@
+# Latency screening protocol — plan Algorithm Host §5.9 luật 5.
+#
+# Đây là THƯỚC, khai trước khi đo. Đổi file này là đổi thước: bump
+# version, và verdict cũ giữ nguyên version cũ trên record. Version này
+# ghi trên verdict record, KHÔNG vào execution_conditions_fingerprint —
+# nó chỉ đổi cách chấm, không đổi một mét quỹ đạo nào (luật phân loại
+# của packages/benchmark/planbench_benchmark/fingerprint.py).
+#
+# Verdict chỉ hợp lệ khi đo bằng run chuyên trách theo protocol này —
+# không bao giờ lấy số từ full test suite đang chạy.
+
+version: latency-screening-v1
+
+# -- Điều kiện tải khai trước --------------------------------------------
+warmup_episodes: 3          # bỏ, không tính: JIT/cache/import lần đầu
+repetitions: 30             # số episode đo mỗi candidate, sau warmup
+core_affinity: []           # điền theo máy đo lúc calibration; rỗng = ghi
+                            # lại vào verdict record là "không pin core"
+worker_count: 1             # tuần tự, không song song với việc khác
+blas_threads: 1             # OMP_NUM_THREADS / MKL_NUM_THREADS = 1
+
+# -- Sentinel: phát hiện host đang nhiễu ---------------------------------
+# Đo sentinel TRƯỚC và SAU phiên đo. Drift giữa hai lần vượt ngưỡng ⇒
+# mọi verdict của phiên là NOT_MEASURED. Cấm đo lại liên tục tới khi ra
+# số đẹp: retry là quyết định có hồ sơ (ghi lý do), không phải vòng lặp.
+sentinel_candidate: astar+dwa
+sentinel_config: dwa_balanced
+sentinel_metric: p99_algorithm_compute_ms
+sentinel_drift_max_fraction: 0.15
+
+# -- Deadline và margin ---------------------------------------------------
+# Deadline lấy từ deployment tại thời điểm đo, không hardcode ở đây:
+# mỗi deployment một control_period, thước dùng chung.
+deadline_source: deployment.robot.control_period
+guard_band_ms: 5.0
+
+# -- Ước lượng khoảng tin cậy --------------------------------------------
+# Tái dùng planbench_metrics/statistics bootstrap_ci sẵn có, không chế mới.
+confidence_method: bootstrap_ci
+confidence_level: 0.95
+bootstrap_resamples: 10000
+bootstrap_seed: 20260817
+
+# -- Verdict --------------------------------------------------------------
+# Tính trên p99(end_to_end_control_ms), p99 lấy trên tổng-cùng-tick.
+verdicts:
+  pass: "ci_upper_bound < deadline_ms - guard_band_ms"
+  fail: "ci_lower_bound > deadline_ms + guard_band_ms"
+  otherwise: inconclusive
