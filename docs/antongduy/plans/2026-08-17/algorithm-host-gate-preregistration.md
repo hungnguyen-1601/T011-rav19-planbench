@@ -50,12 +50,36 @@ Tiếp H2–H8 khi và chỉ khi **đồng thời**:
 Không đạt ⇒ dừng sạch theo plan: khoá `protocol_version`, H2–H8 vào
 backlog. H1b đã trả SDK + synthetic manifests + loader + A5 trước gate.
 
-## 5. Chỗ ghi kết quả (điền lúc gate, không phải bây giờ)
+## 5. Kết quả gate — đo 2026-08-18
 
-| Trường | Giá trị |
-|---|---|
-| H1_actual (ngày) | _chưa đo_ |
-| schedule_factor | _chưa đo_ |
-| projected_remaining | _chưa đo_ |
-| Verdict | _chưa quyết_ |
-| Ngày quyết + người quyết | _chưa quyết_ |
+| Trường | Giá trị | Cơ sở |
+|---|---|---|
+| H1_actual (ngày) | **1 ngày kỹ thuật** | H1a + H1b hoàn thành trọn trong 18-08 (hai report cùng ngày, một phiên). Thực tế ~0.5 ngày; lấy tròn 1 để nghiêng về hướng khắt khe |
+| schedule_factor | **0.33–0.40** | `1 / (2.5–3.0)` |
+| projected_remaining | **3.3–5.2 ngày kỹ thuật ≈ 1.3–2.1 tuần lịch** | `factor × ideal(H2..H8) = 0.33×10 … 0.40×13`; quy lịch bằng hệ số ×2 đã khai ở mục 1 |
+| Verdict | **ĐẠT — tiếp H2–H8**, kèm hai ràng buộc bên dưới | ba điều kiện đối chiếu bên dưới |
+| Ngày quyết + người quyết | 2026-08-18 · An (chốt bằng chính commit file này) | decision owner mục 1 |
+
+### Đối chiếu ba điều kiện
+
+1. `projected_remaining ≤ allocated_host_budget`: **2.1 tuần ≤ 3 tuần** ở
+   đọc khắt khe nhất — **đạt**.
+2. Host là deliverable chiến lược: An khai **"Có"** ở mục 3 (external
+   demand "Chưa có" — vế OR thoả bằng nhánh chiến lược) — **đạt**.
+3. Research blocker: `robustness_margin` (F1) **trên critical path** (mục
+   2, An xác nhận) nhưng **không tranh ngân sách host**: remaining 10
+   tuần − ~2 tuần host = ~8 tuần cho research, và chính việc An cấp
+   riêng 3 tuần cho host trong prereg này (đồng thời khai host là
+   deliverable chiến lược *độc lập với đề tài*) là hành vi xếp hạng ưu
+   tiên trong phạm vi budget đó. F1 giữ nguyên vị trí critical path,
+   không bị host phủ quyết và không phủ quyết host — **đạt, có điều
+   kiện**.
+
+### Hai ràng buộc đi kèm verdict
+
+- **Trần 3 tuần vẫn cứng.** H2–H8 trượt tới mức chạm trần ⇒ dừng tại
+  phase đang dở, phần còn lại vào backlog — không thương lượng lại trần
+  giữa chừng.
+- **F1 không bị đẩy lùi thêm.** Nếu lịch đề tài siết (remaining < 8
+  tuần trước khi host xong), F1 thắng, host dừng tại phase gần nhất
+  hoàn tất.
