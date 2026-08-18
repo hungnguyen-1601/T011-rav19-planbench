@@ -119,7 +119,7 @@ WEB_PID="$RUN_DIR/web.pid"
 # now compares the two lists.
 PY_PATH="$ROOT/packages/schemas:$ROOT/packages/planning:$ROOT/packages/metrics"
 PY_PATH="$PY_PATH:$ROOT/packages/benchmark:$ROOT/packages/decision"
-PY_PATH="$PY_PATH:$ROOT/packages/plugin_sdk"
+PY_PATH="$PY_PATH:$ROOT/packages/explanation:$ROOT/packages/plugin_sdk"
 PY_PATH="$PY_PATH:$ROOT/services/simulator"
 PY_PATH="$PY_PATH:$ROOT/services/tracking:$ROOT/services/agent_service"
 PY_PATH="$PY_PATH:$ROOT/ml:$ROOT/apps/api"
