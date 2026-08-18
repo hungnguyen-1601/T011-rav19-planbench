@@ -176,6 +176,11 @@ def resolve_compatibility(
     adapter_chain: tuple[str, ...] = (),
     missing_dependencies: tuple[str, ...] = (),
     declared_candidate_providers: tuple[str, ...] = (),
+    # Capabilities the **deployment** grants through its profile
+    # (``TaskProfile.granted_capabilities``). Passed rather than read off
+    # a profile, so this layer keeps knowing nothing about deployments:
+    # it resolves what it is handed.
+    deployment_grants: tuple[str, ...] = (),
 ) -> CompatibilityReport:
     """Decide whether ``manifest`` can run here, and say why not.
 
@@ -189,7 +194,7 @@ def resolve_compatibility(
     policy = policy or FairnessPolicy.production()
 
     produced = frozenset(graph.resolution.sources) if graph is not None else frozenset()
-    offered = available_capabilities | produced
+    offered = available_capabilities | produced | frozenset(deployment_grants)
 
     missing_capabilities = manifest.requirements.missing_from(offered)
     missing_providers = tuple(
