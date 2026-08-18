@@ -26,6 +26,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Scene25D } from "@/components/Scene25D";
 import { useTranslation } from "@/lib/i18n";
 import type { TracePayload } from "@/lib/decisions";
+import { frameIndexAt } from "@/lib/playback";
 
 /** Cells to pixels, keeping the aspect ratio and fitting the box. */
 function fit(map: TracePayload["map"], maxWidth: number, maxHeight: number): number {
@@ -62,12 +63,33 @@ function clearanceColour(metres: number, radius: number): string {
   return `hsl(${hue.toFixed(0)}, 80%, 45%)`;
 }
 
-export function TraceViewer({ trace }: { trace: TracePayload }) {
+export interface TraceViewerProps {
+  trace: TracePayload;
+  /** Supplied by the episode comparison so both maps share one clock. */
+  playbackTime?: number;
+  mode?: "flat" | "raised";
+  showControls?: boolean;
+  candidateSide?: "a" | "b";
+}
+
+export function TraceViewer({
+  trace,
+  playbackTime,
+  mode: controlledMode,
+  showControls = true,
+  candidateSide,
+}: TraceViewerProps) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [step, setStep] = useState(trace.x.length - 1);
   const [playing, setPlaying] = useState(false);
-  const [mode, setMode] = useState<"flat" | "raised">("flat");
+  const [localMode, setLocalMode] = useState<"flat" | "raised">("flat");
+  const mode = controlledMode ?? localMode;
+  const timedFrames = useMemo(() => trace.t.map((time) => ({ time })), [trace.t]);
+  const controlledStep = playbackTime === undefined
+    ? undefined
+    : Math.max(0, Math.min(trace.x.length - 1, frameIndexAt(timedFrames, playbackTime)));
+  const visibleStep = controlledStep ?? step;
 
   const cells = useMemo(
     () => unpack(trace.map.occupied_bits, trace.map.width * trace.map.height),
@@ -130,14 +152,27 @@ export function TraceViewer({ trace }: { trace: TracePayload }) {
     }
 
     for (const mission of trace.missions) {
-      context.strokeStyle = "#0ea5e9";
+      context.strokeStyle = "#16a34a";
       context.lineWidth = 2;
       context.beginPath();
       context.arc(toX(mission.start.x), toY(mission.start.y), 7, 0, Math.PI * 2);
       context.stroke();
-      context.strokeStyle = "#16a34a";
+      context.strokeStyle = "#d946ef";
       context.beginPath();
       context.arc(toX(mission.goal.x), toY(mission.goal.y), 7, 0, Math.PI * 2);
+      context.stroke();
+    }
+
+    // Candidate identity remains visible beneath the clearance ramp.
+    if (candidateSide && visibleStep > 0) {
+      context.strokeStyle = candidateSide === "a" ? "#2563eb" : "#7c3aed";
+      context.lineWidth = 5;
+      context.lineCap = "round";
+      context.beginPath();
+      context.moveTo(toX(trace.x[0]), toY(trace.y[0]));
+      for (let index = 1; index <= visibleStep && index < trace.x.length; index += 1) {
+        context.lineTo(toX(trace.x[index]), toY(trace.y[index]));
+      }
       context.stroke();
     }
 
@@ -145,7 +180,7 @@ export function TraceViewer({ trace }: { trace: TracePayload }) {
     // single stroked path could only carry one.
     context.lineWidth = 2.5;
     context.lineCap = "round";
-    for (let index = 1; index <= step && index < trace.x.length; index += 1) {
+    for (let index = 1; index <= visibleStep && index < trace.x.length; index += 1) {
       context.strokeStyle = clearanceColour(
         trace.clearance_m[index] ?? Number.NaN,
         trace.robot_radius_m,
@@ -157,7 +192,7 @@ export function TraceViewer({ trace }: { trace: TracePayload }) {
     }
 
     for (const event of trace.events) {
-      if (event.index > step) continue;
+      if (event.index > visibleStep) continue;
       context.fillStyle = "#dc2626";
       context.beginPath();
       context.arc(toX(trace.x[event.index]), toY(trace.y[event.index]), 5, 0, Math.PI * 2);
@@ -166,25 +201,25 @@ export function TraceViewer({ trace }: { trace: TracePayload }) {
 
     // The robot at the current step, to its declared radius rather than
     // a dot — a path that "looks clear" at one pixel per cell may not be.
-    if (step < trace.x.length) {
+    if (visibleStep < trace.x.length) {
       const radius = (trace.robot_radius_m / map.resolution) * scale;
       context.strokeStyle = "#111827";
       context.lineWidth = 2;
       context.beginPath();
-      context.arc(toX(trace.x[step]), toY(trace.y[step]), Math.max(radius, 2), 0, Math.PI * 2);
+      context.arc(toX(trace.x[visibleStep]), toY(trace.y[visibleStep]), Math.max(radius, 2), 0, Math.PI * 2);
       context.stroke();
       context.beginPath();
-      context.moveTo(toX(trace.x[step]), toY(trace.y[step]));
+      context.moveTo(toX(trace.x[visibleStep]), toY(trace.y[visibleStep]));
       context.lineTo(
-        toX(trace.x[step] + Math.cos(trace.theta[step]) * trace.robot_radius_m * 1.8),
-        toY(trace.y[step] + Math.sin(trace.theta[step]) * trace.robot_radius_m * 1.8),
+        toX(trace.x[visibleStep] + Math.cos(trace.theta[visibleStep]) * trace.robot_radius_m * 1.8),
+        toY(trace.y[visibleStep] + Math.sin(trace.theta[visibleStep]) * trace.robot_radius_m * 1.8),
       );
       context.stroke();
     }
-  }, [trace, cells, step]);
+  }, [trace, cells, visibleStep, candidateSide]);
 
-  const clearance = trace.clearance_m[step];
-  const latency = trace.planner_latency_ms[step];
+  const clearance = trace.clearance_m[visibleStep];
+  const latency = trace.planner_latency_ms[visibleStep];
 
   /** The trace's grid as the raised view takes it.
    *
@@ -208,14 +243,14 @@ export function TraceViewer({ trace }: { trace: TracePayload }) {
 
   return (
     <div>
-      <div className="toolbar" style={{ marginBottom: 8 }}>
+      {showControls ? <div className="toolbar" style={{ marginBottom: 8 }}>
         {(["flat", "raised"] as const).map((option) => (
           <button
             key={option}
             type="button"
             className={mode === option ? "primary" : ""}
             aria-pressed={mode === option}
-            onClick={() => setMode(option)}
+            onClick={() => setLocalMode(option)}
           >
             {t(`mapView.${option}`)}
           </button>
@@ -226,7 +261,7 @@ export function TraceViewer({ trace }: { trace: TracePayload }) {
             view draws a single-colour path. Switching trades the reading
             for the shape. */}
         {mode === "raised" ? <span className="muted">{t("trace.flatHasClearance")}</span> : null}
-      </div>
+      </div> : null}
 
       {mode === "raised" ? (
         <Scene25D
@@ -236,8 +271,8 @@ export function TraceViewer({ trace }: { trace: TracePayload }) {
           robotRadius={trace.robot_radius_m}
           startPose={trace.missions[0] ? { ...trace.missions[0].start, theta: 0 } : undefined}
           goalPose={trace.missions[0] ? { ...trace.missions[0].goal, theta: 0 } : undefined}
-          robotPose={{ x: trace.x[step], y: trace.y[step], theta: trace.theta[step] }}
-          trajectory={trace.x.slice(0, step + 1).map((x, index) => ({
+          robotPose={{ x: trace.x[visibleStep], y: trace.y[visibleStep], theta: trace.theta[visibleStep] }}
+          trajectory={trace.x.slice(0, visibleStep + 1).map((x, index) => ({
             time: trace.t[index] ?? 0,
             x,
             y: trace.y[index],
@@ -250,7 +285,7 @@ export function TraceViewer({ trace }: { trace: TracePayload }) {
         <canvas ref={canvasRef} style={{ maxWidth: "100%", border: "1px solid var(--border)" }} />
       )}
 
-      <div className="row" style={{ alignItems: "center", gap: 12, marginTop: 8 }}>
+      {showControls ? <div className="row" style={{ alignItems: "center", gap: 12, marginTop: 8 }}>
         <button type="button" onClick={() => setPlaying((current) => !current)}>
           {playing ? t("trace.pause") : t("trace.play")}
         </button>
@@ -268,7 +303,7 @@ export function TraceViewer({ trace }: { trace: TracePayload }) {
         <span className="muted">
           {step + 1}/{trace.x.length} · {(trace.t[step] ?? 0).toFixed(1)} s
         </span>
-      </div>
+      </div> : null}
 
       <div className="stat-grid" style={{ marginTop: 12 }}>
         <Figure

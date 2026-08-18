@@ -87,6 +87,7 @@ export function CandidatePicker({
   stacks,
   configs,
   disabled = false,
+  detailed = false,
 }: {
   label: string;
   value: CandidateSelection;
@@ -94,6 +95,8 @@ export function CandidatePicker({
   stacks: AlgorithmInfo[];
   configs: LocalControllerConfig[];
   disabled?: boolean;
+  /** Show each layer as a labelled field on engineering-console surfaces. */
+  detailed?: boolean;
 }) {
   const { t } = useTranslation();
   const selected = usableStacks(stacks).find((entry) => entry.id === value.stack);
@@ -149,8 +152,10 @@ export function CandidatePicker({
   }
 
   return (
-    <div className="field">
-      <span>{label}</span>
+    <div className={`field${detailed ? " candidate-picker--detailed" : ""}`}>
+      <span className="candidate-picker-label">{label}</span>
+      <label className="candidate-picker-field">
+      {detailed ? <span>{t("candidates.pick.global")}</span> : null}
       <select
         value={chosenGlobal}
         disabled={disabled}
@@ -164,6 +169,10 @@ export function CandidatePicker({
           </option>
         ))}
       </select>
+      {detailed ? <small>{t("bench.help.global")}</small> : null}
+      </label>
+      <label className="candidate-picker-field">
+      {detailed ? <span>{t("candidates.pick.local")}</span> : null}
       <select
         value={chosenLocal}
         disabled={disabled || controllers.length === 0}
@@ -177,6 +186,10 @@ export function CandidatePicker({
           </option>
         ))}
       </select>
+      {detailed ? <small>{t("bench.help.local")}</small> : null}
+      </label>
+      <label className="candidate-picker-field">
+      {detailed ? <span>{t("candidates.pick.config")}</span> : null}
       <select
         value={value.local_config}
         disabled={disabled || available.length === 0}
@@ -190,6 +203,7 @@ export function CandidatePicker({
           </option>
         ))}
       </select>
+      </label>
       {/* A controller with no named configuration is not an error — it
           is one nobody has written configurations for yet, and saying so
           is more use than an empty dropdown. */}

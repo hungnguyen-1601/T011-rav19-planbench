@@ -36,6 +36,35 @@ const MAP_EDITOR = readFileSync(join(APP, "maps", "[id]", "page.tsx"), "utf8");
 const COMPONENTS = join(process.cwd(), "src", "components");
 const PLACER = readFileSync(join(COMPONENTS, "MissionPlacer.tsx"), "utf8");
 const PAINTER = readFileSync(join(COMPONENTS, "MapPainter.tsx"), "utf8");
+const DEPLOYMENT_PREVIEW = readFileSync(join(COMPONENTS, "DecisionDeploymentPreview.tsx"), "utf8");
+
+describe("the selected deployment preview", () => {
+  it("sits after the candidate selectors and before the rank action", () => {
+    expect(LIST.indexOf("<DecisionDeploymentPreview")).toBeGreaterThan(LIST.indexOf("comparison-setup-grid"));
+    expect(LIST.indexOf("<DecisionDeploymentPreview")).toBeLessThan(LIST.indexOf("comparison-launch-actions"));
+  });
+
+  it("is read-only and does not reset either candidate", () => {
+    expect(DEPLOYMENT_PREVIEW).toContain("<MapView");
+    expect(DEPLOYMENT_PREVIEW).not.toMatch(/<(input|select|textarea|checkbox)\b/);
+    expect(DEPLOYMENT_PREVIEW).not.toContain("setFirst(");
+    expect(DEPLOYMENT_PREVIEW).not.toContain("setSecond(");
+  });
+
+  it("clears a stale map and isolates map loading failures", () => {
+    expect(DEPLOYMENT_PREVIEW).toContain("setMap(null)");
+    expect(DEPLOYMENT_PREVIEW).toContain("api.getMap");
+    expect(DEPLOYMENT_PREVIEW).toContain("decision-deployment-map-error");
+    expect(DEPLOYMENT_PREVIEW).toContain("decision-deployment-details");
+  });
+
+  it("keeps the map and compact read-only details in one responsive layout", () => {
+    expect(DEPLOYMENT_PREVIEW).toContain("decision-deployment-content");
+    expect(DEPLOYMENT_PREVIEW.indexOf("decision-deployment-map-column")).toBeLessThan(DEPLOYMENT_PREVIEW.indexOf("decision-deployment-details"));
+    expect(DEPLOYMENT_PREVIEW).toContain("aria-expanded={showAdvanced}");
+    expect(DEPLOYMENT_PREVIEW).toContain("decision-noise-details");
+  });
+});
 
 describe("the list shows every run, not only the ones that ranked", () => {
   it("defaults to no outcome filter at all", () => {
@@ -617,16 +646,34 @@ describe("which episodes failed, and how", () => {
     expect(en).toHaveProperty("decisions.episodes.notRunNote");
   });
 
-  it("opens an episode from its cell instead of asking for its hash", () => {
+  it("opens a whole episode row without asking for a candidate", () => {
     /* Finding the episode that collided and then copying its id into a
        dropdown is most of the work of looking at it. */
-    expect(DETAIL).toContain("onPick(candidate.candidate_id, episode)");
-    expect(DETAIL).toContain("void load(candidate, episode)");
+    expect(DETAIL).toContain("onClick={() => onPick(episode)}");
+    expect(DETAIL).toContain('aria-selected={episode === selectedEpisode}');
+    expect(DETAIL).toContain('event.key === "Enter" || event.key === " "');
   });
 
-  it("labels the episode dropdown with the outcome as well as the id", () => {
-    expect(DETAIL).toContain("decisions.episodes.pass");
-    expect(DETAIL).toContain("outcomes.get(episode)");
+  it("uses the same episode state for the table, dropdown, and pair load", () => {
+    expect(DETAIL).toContain('const [episodeId, setEpisodeId]');
+    expect(DETAIL).toContain('selectedEpisode={episodeId}');
+    expect(DETAIL).toContain('value={episodeId}');
+    expect(DETAIL).toContain('void loadPair(episodeId)');
+    expect(DETAIL).not.toContain('const [candidateId, setCandidateId]');
+  });
+
+  it("keeps candidate A left, candidate B right and tolerates one missing trace", () => {
+    expect(DETAIL).toContain('side={index === 0 ? "a" : "b"}');
+    expect(DETAIL).toContain('{ state: "missing" }');
+    expect(DETAIL).toContain('slot.state === "ready"');
+    expect(DETAIL).toContain('trace.missing');
+  });
+
+  it("shares top/raised mode and playback across both candidates", () => {
+    expect(DETAIL).toContain('const [mode, setMode]');
+    expect(DETAIL).toContain('mode={mode}');
+    expect(DETAIL).toContain('playbackTime={playback.time}');
+    expect(DETAIL).toContain('[0.25, 0.5, 1, 2, 4, 8]');
   });
 
   it("can narrow to the failures, and says how many it is hiding", () => {

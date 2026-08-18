@@ -14,9 +14,10 @@
  * which is the question HĐ-12 puts on a card in the first place.
  */
 
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { TraceViewer } from "@/components/TraceViewer";
+import { Icon } from "@/components/Icon";
 import { useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import {
@@ -43,6 +44,7 @@ import {
   observationClasses,
 } from "@/lib/decisions";
 import { downloadDecisionReport } from "@/lib/reports";
+import { initialPlayback, tick, type PlaybackState } from "@/lib/playback";
 
 export default function DecisionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -70,18 +72,22 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
   if (!run) return <p className="muted">{t("common.loading")}</p>;
 
   return (
-    <section>
-      <div className="page-head">
-        <h1>{run.task_profile_id}</h1>
+    <section className="decision-page decision-detail-page">
+      <header className="page-head decision-detail-head">
+        <span className="decision-page-icon"><Icon name="benchmark" size={21} /></span>
+        <div><span className="decision-eyebrow">{t("decisions.detail.eyebrow")}</span><h1>{run.task_profile_id}</h1>
         <p className="muted">
           {run.experiment_scope ?? "—"} · {run.created_at.slice(0, 16).replace("T", " ")} ·{" "}
           <Link href="/decisions">{t("decisions.backToList")}</Link>
-        </p>
+        </p></div>
+        <div className="decision-detail-badges"><span className={`badge ${run.ranked ? "ok" : "muted-badge"}`}>{run.ranked ? t("decisions.filter.ranked") : t("decisions.filter.unranked")}</span>
         <ExportReport runId={run.id} />
-      </div>
+        </div>
+      </header>
 
       <SampleBanner run={run} />
       <GateTable run={run} />
+      <CandidateComparison run={run} />
       <TracePanel run={run} />
       <Outcome run={run} />
       <HumanActs run={run} onDone={refresh} />
@@ -89,6 +95,54 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
       <Provenance run={run} />
       <AuditTrail events={events} />
     </section>
+  );
+}
+
+/** Side-by-side presentation of the backend's candidate evidence.
+ * Recommendation comes only from `recommended_candidate_id`; metric
+ * direction is deliberately not inferred in this view. */
+function CandidateComparison({ run }: { run: DecisionRun }) {
+  const { t } = useTranslation();
+  const candidates = run.report?.candidates ?? [];
+  if (candidates.length === 0) return null;
+  return (
+    <section className="panel comparison-results" aria-labelledby="comparison-results-title">
+      <div className="comparison-results-head">
+        <div><span className="decision-eyebrow">{t("decisions.detail.evidence")}</span><h3 id="comparison-results-title">{t("decisions.detail.results")}</h3></div>
+        {run.card ? <span className="badge ok"><Icon name="trophy" size={13} />{run.card.recommended.stack}</span> : <span className="badge muted-badge">{t("decisions.noCard.title")}</span>}
+      </div>
+      <div className="candidate-comparison-grid">
+        {candidates.slice(0, 2).map((candidate, index) => (
+          <CandidateComparisonColumn key={candidate.candidate_id} candidate={candidate} side={index === 0 ? "a" : "b"} recommended={run.recommended_candidate_id === candidate.candidate_id} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CandidateComparisonColumn({ candidate, side, recommended }: { candidate: RunCandidate; side: "a" | "b"; recommended: boolean }) {
+  const { t } = useTranslation();
+  const metrics = [
+    [t("decisions.gates.successRate"), `${Math.round(candidate.success_rate * 100)}%`],
+    [t("decisions.gates.p99"), `${candidate.pooled_p99_latency_ms.toFixed(2)} ms`],
+    [t("decisions.gates.runs"), String(candidate.n_distinct_episodes)],
+    [t("decisions.gates.replans"), candidate.replan_count === undefined ? "—" : String(candidate.replan_count)],
+  ];
+  return (
+    <article className={`candidate-result candidate-${side}${recommended ? " is-recommended" : ""}`}>
+      <header className="candidate-result-head">
+        <span className="candidate-result-icon"><Icon name="cpu" size={19} /></span>
+        <div><small>Candidate {side.toUpperCase()}</small><h4>{candidate.stack_label}</h4><code>{candidate.local_controller_config}</code></div>
+        {recommended ? <span className="badge ok"><Icon name="check" size={12} />{t("decisions.card.recommended")}</span> : null}
+      </header>
+      <div className="candidate-result-metrics">
+        {metrics.map(([label, value]) => <div className="metric-comparison-row" key={label}><span>{label}</span><strong>{value}</strong></div>)}
+      </div>
+      <details className="candidate-gates" open>
+        <summary><span>{t("decisions.gates.title")}</span><span className={`badge ${candidate.cleared_gates ? "ok" : "err"}`}>{candidate.cleared_gates ? t("decisions.gates.cleared") : candidate.blocking_gates.join(", ")}</span></summary>
+        <div>{GATES.map((gate) => <div key={gate}><code>{gate}</code><GateCell verdict={candidate.gates?.[gate]} /></div>)}</div>
+      </details>
+    </article>
   );
 }
 
@@ -108,100 +162,156 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
  */
 function TracePanel({ run }: { run: DecisionRun }) {
   const { t } = useTranslation();
-  const candidates = run.report?.candidates ?? [];
+  const candidates = useMemo(() => (run.report?.candidates ?? []).slice(0, 2), [run.report?.candidates]);
   const episodes = run.report?.sample?.episode_context_ids ?? [];
-  const [candidateId, setCandidateId] = useState(candidates[0]?.candidate_id ?? "");
   const [episodeId, setEpisodeId] = useState(episodes[0] ?? "");
-  const [trace, setTrace] = useState<TracePayload | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [slots, setSlots] = useState<Record<string, TraceSlot>>({});
+  const [mode, setMode] = useState<"flat" | "raised">("flat");
+  const [playback, setPlayback] = useState<PlaybackState>(initialPlayback);
+  const comparisonRef = useRef<HTMLDivElement | null>(null);
+  const requestId = useRef(0);
+
+  const loadPair = useCallback(async (episode: string) => {
+    const currentRequest = ++requestId.current;
+    setPlayback(initialPlayback);
+    setSlots(Object.fromEntries(candidates.map((candidate) => [candidate.candidate_id, { state: "loading" }])));
+    await Promise.all(candidates.map(async (candidate) => {
+      const outcome = outcomesByEpisode(candidate).get(episode);
+      if (!outcome) {
+        if (currentRequest === requestId.current) {
+          setSlots((current) => ({ ...current, [candidate.candidate_id]: { state: "missing" } }));
+        }
+        return;
+      }
+      try {
+        const trace = await getTrace(run.id, candidate.candidate_id, episode);
+        if (currentRequest === requestId.current) {
+          setSlots((current) => ({ ...current, [candidate.candidate_id]: trace.x.length > 0 ? { state: "ready", trace } : { state: "empty" } }));
+        }
+      } catch (caught) {
+        if (currentRequest !== requestId.current) return;
+        const message = caught instanceof Error ? caught.message : String(caught);
+        setSlots((current) => ({
+          ...current,
+          [candidate.candidate_id]: /404|not found|does not exist/i.test(message)
+            ? { state: "missing" }
+            : { state: "error", message },
+        }));
+      }
+    }));
+  }, [candidates, run.id]);
+
+  useEffect(() => {
+    if (episodeId) void loadPair(episodeId);
+  }, [episodeId, loadPair]);
+
+  const traces = candidates.flatMap((candidate) => {
+    const slot = slots[candidate.candidate_id];
+    return slot?.state === "ready" ? [slot.trace] : [];
+  });
+  const duration = Math.max(0, ...traces.map((trace) => trace.t.at(-1) ?? 0));
+
+  useEffect(() => {
+    if (!playback.playing) return;
+    const timer = window.setInterval(() => setPlayback((current) => tick(current, 0.05, duration)), 50);
+    return () => window.clearInterval(timer);
+  }, [duration, playback.playing]);
 
   if (candidates.length === 0 || episodes.length === 0) return null;
 
-  const load = async (candidate = candidateId, episode = episodeId) => {
-    setBusy(true);
-    setError(null);
-    try {
-      setTrace(await getTrace(run.id, candidate, episode));
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-      setTrace(null);
-    } finally {
-      setBusy(false);
-    }
+  const chooseEpisode = (episode: string, scroll = false) => {
+    setEpisodeId(episode);
+    if (scroll) window.setTimeout(() => comparisonRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
 
-  // The outcomes of whichever candidate the dropdown is on, so an
-  // episode option can say how it went. Two candidates disagree about
-  // the same episode all the time — that disagreement is the entire
-  // subject — so the labels have to follow the selected one.
-  const selected = candidates.find((candidate) => candidate.candidate_id === candidateId);
-  const outcomes: Map<string, EpisodeOutcome> = selected
-    ? outcomesByEpisode(selected)
-    : new Map();
-
   return (
-    <div className="panel">
+    <div className="panel decision-sample-panel episode-comparison">
       <div className="panel-head">
         <h3>{t("trace.title")}</h3>
       </div>
       <p className="muted">{t("trace.note")}</p>
+      <p className="episode-pick-note">{t("trace.pickEpisode")}</p>
 
       <EpisodeOutcomes
         run={run}
-        selectedCandidate={candidateId}
         selectedEpisode={episodeId}
-        onPick={(candidate, episode) => {
-          setCandidateId(candidate);
-          setEpisodeId(episode);
-          void load(candidate, episode);
-        }}
+        onPick={(episode) => chooseEpisode(episode, true)}
       />
 
-      {error ? <div className="error-box">{error}</div> : null}
-
-      <div className="row" style={{ alignItems: "flex-end" }}>
-        <label className="field">
-          <span>{t("trace.candidate")}</span>
-          <select value={candidateId} onChange={(event) => setCandidateId(event.target.value)}>
-            {candidates.map((candidate) => (
-              <option key={candidate.candidate_id} value={candidate.candidate_id}>
-                {candidate.stack_label} · {candidate.local_controller_config}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className="episode-toolbar">
         <label className="field">
           <span>{t("trace.episode")}</span>
-          <select value={episodeId} onChange={(event) => setEpisodeId(event.target.value)}>
+          <select value={episodeId} onChange={(event) => chooseEpisode(event.target.value)}>
             {episodes.map((episode, index) => {
-              // The outcome in the label, not only the id. Picking an
-              // episode to look at is picking one that went wrong, and
-              // a list of hashes makes that a guessing game.
-              const outcome = outcomes.get(episode);
-              const suffix =
-                outcome === undefined
-                  ? ""
-                  : outcome.success
-                    ? ` · ${t("decisions.episodes.pass")}`
-                    : ` · ${t(`decisions.episodes.reason.${outcome.failure_reason}`)}`;
               return (
                 <option key={episode} value={episode}>
                   #{index + 1} · {episode.slice(0, 8)}
-                  {suffix}
                 </option>
               );
             })}
           </select>
         </label>
-        <button type="button" disabled={busy} onClick={() => void load()}>
-          {busy ? t("common.loading") : t("trace.load")}
-        </button>
+        <div className="episode-view-toggle" role="group" aria-label={t("trace.viewMode")}>
+          {(["flat", "raised"] as const).map((option) => <button key={option} type="button" className={mode === option ? "primary" : ""} aria-pressed={mode === option} onClick={() => setMode(option)}>{t(`mapView.${option}`)}</button>)}
+        </div>
       </div>
 
-      {trace ? <TraceViewer trace={trace} /> : null}
+      <div ref={comparisonRef} className="episode-comparison-stage" tabIndex={-1}>
+        <EpisodeHeader run={run} episodeId={episodeId} candidates={candidates} />
+        <SharedPlayback playback={playback} duration={duration} onChange={setPlayback} />
+        <EpisodeLegend />
+        <div className="episode-comparison-grid">
+          {candidates.map((candidate, index) => <CandidateEpisode key={candidate.candidate_id} candidate={candidate} side={index === 0 ? "a" : "b"} episodeId={episodeId} slot={slots[candidate.candidate_id] ?? { state: "loading" }} mode={mode} playbackTime={playback.time} onRetry={() => void loadPair(episodeId)} />)}
+        </div>
+      </div>
     </div>
   );
+}
+
+type TraceSlot =
+  | { state: "loading" }
+  | { state: "ready"; trace: TracePayload }
+  | { state: "missing" | "empty" }
+  | { state: "error"; message: string };
+
+function outcomeLabel(outcome: EpisodeOutcome | undefined, t: (key: string) => string): string {
+  if (!outcome) return t("trace.missing");
+  return outcome.success ? t("decisions.episodes.pass") : t(`decisions.episodes.reason.${outcome.failure_reason}`);
+}
+
+function outcomeTone(outcome: EpisodeOutcome | undefined): string {
+  if (!outcome) return "muted-badge";
+  if (outcome.success) return "ok";
+  return outcome.failure_reason === "timeout" ? "warn" : "err";
+}
+
+function EpisodeHeader({ run, episodeId, candidates }: { run: DecisionRun; episodeId: string; candidates: RunCandidate[] }) {
+  const { t } = useTranslation();
+  const index = (run.report?.sample?.episode_context_ids ?? []).indexOf(episodeId) + 1;
+  return <header className="episode-comparison-head"><div><span className="decision-eyebrow">{t("trace.episode")} #{index}</span><h4>{episodeId}</h4><p className="muted">{t("trace.deployment")}: {run.task_profile_id}</p></div><div className="episode-result-badges">{candidates.map((candidate, candidateIndex) => { const outcome = outcomesByEpisode(candidate).get(episodeId); return <span key={candidate.candidate_id} className={`badge ${outcomeTone(outcome)}`}>Candidate {candidateIndex === 0 ? "A" : "B"}: {outcomeLabel(outcome, t)}</span>; })}</div></header>;
+}
+
+function SharedPlayback({ playback, duration, onChange }: { playback: PlaybackState; duration: number; onChange: (next: PlaybackState) => void }) {
+  const { t } = useTranslation();
+  return <div className="episode-playback"><button type="button" aria-label={playback.playing ? t("trace.pause") : t("trace.play")} onClick={() => onChange({ ...playback, playing: !playback.playing && duration > 0 })}>{playback.playing ? t("trace.pause") : t("trace.play")}</button><button type="button" aria-label={t("trace.replay")} onClick={() => onChange({ ...playback, time: 0, playing: duration > 0 })}>{t("trace.replay")}</button><label><span>{t("trace.speed")}</span><select value={playback.speed} onChange={(event) => onChange({ ...playback, speed: Number(event.target.value) })}>{[0.25, 0.5, 1, 2, 4, 8].map((speed) => <option key={speed} value={speed}>{speed}×</option>)}</select></label><input type="range" min={0} max={duration || 0} step="0.01" value={Math.min(playback.time, duration)} aria-label={t("trace.timeline")} aria-valuetext={`${playback.time.toFixed(1)} / ${duration.toFixed(1)} s`} onChange={(event) => onChange({ ...playback, playing: false, time: Number(event.target.value) })}/><output>{playback.time.toFixed(1)} / {duration.toFixed(1)} s</output></div>;
+}
+
+function EpisodeLegend() {
+  const { t } = useTranslation();
+  const items = [["start", t("trace.legend.start")], ["goal", t("trace.legend.goal")], ["candidate-a", t("trace.legend.candidateA")], ["candidate-b", t("trace.legend.candidateB")], ["dynamic", t("trace.legend.dynamic")], ["collision", t("trace.legend.collision")]];
+  return <div className="episode-legend" aria-label={t("trace.legend.title")}>{items.map(([tone, label]) => <span key={tone}><i className={`legend-dot legend-dot--${tone}`} aria-hidden="true" />{label}</span>)}</div>;
+}
+
+function CandidateEpisode({ candidate, side, episodeId, slot, mode, playbackTime, onRetry }: { candidate: RunCandidate; side: "a" | "b"; episodeId: string; slot: TraceSlot; mode: "flat" | "raised"; playbackTime: number; onRetry: () => void }) {
+  const { t } = useTranslation();
+  const outcome = outcomesByEpisode(candidate).get(episodeId);
+  return <article className={`episode-candidate episode-candidate--${side}`}><header><div><span>Candidate {side.toUpperCase()}</span><h4>{candidate.stack_label}</h4><code>{candidate.local_controller_config}</code></div><span className={`badge ${outcomeTone(outcome)}`}>{outcomeLabel(outcome, t)}</span></header><div className="episode-map">{slot.state === "loading" ? <div className="episode-skeleton" role="status">{t("trace.loadingCandidate")}</div> : slot.state === "ready" ? <TraceViewer trace={slot.trace} playbackTime={playbackTime} mode={mode} showControls={false} candidateSide={side} /> : slot.state === "missing" ? <div className="episode-empty" role="status">{t("trace.missing")}</div> : slot.state === "empty" ? <div className="episode-empty" role="status">{t("trace.emptyFrames")}</div> : <div className="episode-error" role="alert"><p>{t("trace.loadError")}</p><button type="button" onClick={onRetry}>{t("common.retry")}</button></div>}</div><EpisodeMetrics outcome={outcome} /></article>;
+}
+
+function EpisodeMetrics({ outcome }: { outcome: EpisodeOutcome | undefined }) {
+  const { t } = useTranslation();
+  const rows: [string, string, string][] = [[t("trace.result"), outcome ? outcomeLabel(outcome, t) : "—", t("trace.tip.result")], [t("metrics.travelTime"), outcome ? `${outcome.travel_time_s.toFixed(2)} s` : "—", t("trace.tip.time")], [t("metrics.minClearance"), outcome ? `${outcome.min_clearance.toFixed(3)} m` : "—", t("trace.tip.clearance")], [t("trace.p99Latency"), outcome ? `${outcome.p99_latency_ms.toFixed(2)} ms` : "—", t("trace.tip.latency")], [t("trace.collision"), outcome ? String(outcome.collision_count) : "—", t("trace.tip.collision")], [t("metrics.replanCount"), outcome?.replan_count === undefined ? "—" : String(outcome.replan_count), t("trace.tip.replan")]];
+  return <dl className="episode-metrics">{rows.map(([label, value, tip]) => <div key={label} title={tip}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
 }
 
 /** Which episodes each candidate passed, one row per episode.
@@ -223,14 +333,12 @@ function TracePanel({ run }: { run: DecisionRun }) {
  */
 function EpisodeOutcomes({
   run,
-  selectedCandidate,
   selectedEpisode,
   onPick,
 }: {
   run: DecisionRun;
-  selectedCandidate: string;
   selectedEpisode: string;
-  onPick: (candidateId: string, episodeContextId: string) => void;
+  onPick: (episodeContextId: string) => void;
 }) {
   const { t } = useTranslation();
   const [failuresOnly, setFailuresOnly] = useState(false);
@@ -309,8 +417,11 @@ function EpisodeOutcomes({
               </tr>
             </thead>
             <tbody>
-              {shown.map((episode) => (
-                <tr key={episode}>
+              {shown.map((episode) => {
+                const outcomes = candidates.map((candidate) => byCandidate.get(candidate.candidate_id)?.get(episode));
+                const differs = outcomes.length > 1 && outcomes[0]?.success !== outcomes[1]?.success;
+                return (
+                <tr key={episode} className={episode === selectedEpisode ? "is-selected" : ""} aria-selected={episode === selectedEpisode} tabIndex={0} onClick={() => onPick(episode)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onPick(episode); } }}>
                   {/* The number is the episode's place in the run, not
                       its place in this table — filtering must not
                       renumber them, or "#7 collided" would mean a
@@ -318,21 +429,17 @@ function EpisodeOutcomes({
                   <td title={episode}>
                     #{episodes.indexOf(episode) + 1} ·{" "}
                     <code className="muted">{episode.slice(0, 8)}</code>
+                    {differs ? <span className="episode-difference" title={t("trace.differentResults")} aria-label={t("trace.differentResults")}>!</span> : null}
                   </td>
                   {candidates.map((candidate) => (
                     <td key={candidate.candidate_id}>
                       <EpisodeCell
                         outcome={byCandidate.get(candidate.candidate_id)?.get(episode)}
-                        selected={
-                          candidate.candidate_id === selectedCandidate &&
-                          episode === selectedEpisode
-                        }
-                        onPick={() => onPick(candidate.candidate_id, episode)}
                       />
                     </td>
                   ))}
                 </tr>
-              ))}
+              );})}
             </tbody>
           </table>
         </div>
@@ -351,12 +458,8 @@ function EpisodeOutcomes({
  */
 function EpisodeCell({
   outcome,
-  selected,
-  onPick,
 }: {
   outcome: EpisodeOutcome | undefined;
-  selected: boolean;
-  onPick: () => void;
 }) {
   const { t } = useTranslation();
   if (outcome === undefined) {
@@ -370,11 +473,8 @@ function EpisodeCell({
     ? t("decisions.episodes.pass")
     : t(`decisions.episodes.reason.${outcome.failure_reason}`);
   return (
-    <button
-      type="button"
+    <span
       className="badge-button"
-      aria-pressed={selected}
-      onClick={onPick}
       title={t("decisions.episodes.cellNote", {
         clearance: outcome.min_clearance.toFixed(3),
         time: outcome.travel_time_s.toFixed(1),
@@ -382,7 +482,7 @@ function EpisodeCell({
       })}
     >
       <span className={`badge ${outcome.success ? "ok" : "err"}`}>{label}</span>
-    </button>
+    </span>
   );
 }
 
@@ -440,7 +540,7 @@ function HumanActs({ run, onDone }: { run: DecisionRun; onDone: () => Promise<vo
   }
 
   return (
-    <div className="panel">
+    <div className="panel decision-gates-panel">
       <div className="panel-head">
         <h3>{t("decisions.acts.title")}</h3>
       </div>
@@ -540,7 +640,7 @@ function SampleBanner({ run }: { run: DecisionRun }) {
   const short = sample.n_episodes < sample.n_min_required;
 
   return (
-    <div className="panel">
+    <div className="panel decision-summary">
       <div className="stat-grid">
         <Figure label={t("decisions.sample.measured")} value={String(sample.n_episodes)} />
         {sample.n_episodes_requested !== undefined ? (
@@ -586,7 +686,7 @@ function GateTable({ run }: { run: DecisionRun }) {
   if (candidates.length === 0) return null;
 
   return (
-    <div className="panel">
+    <div className="panel decision-summary decision-summary--card">
       <div className="panel-head">
         <h3>{t("decisions.gates.title")}</h3>
       </div>

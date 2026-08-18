@@ -39,20 +39,27 @@ export function QuickActions({ signedIn }: { signedIn: boolean }) {
   const { t } = useTranslation();
 
   return (
-    <>
-      <h3>{t("dashboard.quickActions")}</h3>
-      <div className="quick-actions">
+    <section className="dashboard-actions" aria-labelledby="dashboard-quick-actions-title">
+      <div className="dashboard-section-heading">
+        <span className="dashboard-section-icon" aria-hidden="true">
+          <Icon name="sparkles" size={17} />
+        </span>
+        <h3 id="dashboard-quick-actions-title">{t("dashboard.quickActions")}</h3>
+      </div>
+      <div className="quick-actions dashboard-quick-actions">
         {ACTIONS.map((action) => (
           <Link
             key={action.href + action.labelKey}
             className={`quick-action${action.primary ? " primary" : ""}`}
             href={action.session && !signedIn ? "/login" : action.href}
           >
-            <Icon name={action.icon} size={15} />
-            {t(action.labelKey)}
+            <span className="quick-action-icon" aria-hidden="true">
+              <Icon name={action.icon} size={17} />
+            </span>
+            <span>{t(action.labelKey)}</span>
           </Link>
         ))}
       </div>
-    </>
+    </section>
   );
 }
