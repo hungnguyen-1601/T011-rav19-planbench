@@ -19,6 +19,7 @@ import {
   extractCandidateFromPaper,
   extractCandidateFromPaperFile,
   getReproduction,
+  registerCandidate,
 } from "@/lib/decisions";
 import type { AdviceList } from "@/lib/decisions";
 import type { PaperExtraction, PluginDraft } from "@/lib/decisions";
@@ -72,6 +73,8 @@ export function FromPaperPanel({ enabled }: { enabled: boolean }) {
   const [building, setBuilding] = useState(false);
   const [repro, setRepro] = useState<(AdviceList & { parameters: unknown[] }) | null>(null);
   const [diffing, setDiffing] = useState(false);
+  const [registered, setRegistered] = useState<string | null>(null);
+  const [registering, setRegistering] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
 
   // Both entry points funnel here so an upload and a paste cannot drift
@@ -87,6 +90,7 @@ export function FromPaperPanel({ enabled }: { enabled: boolean }) {
     setResult(null);
     setPlugin(null);
     setRepro(null);
+    setRegistered(null);
     try {
       setResult(await read());
     } catch (caught) {
@@ -177,8 +181,34 @@ export function FromPaperPanel({ enabled }: { enabled: boolean }) {
           reading produced a registerable id — the endpoint answers 404
           for an id nobody registered, and that refusal is correct: a
           diff against nothing would be reassurance, not information. */}
+      {/* One click from reading to registration, with the exact
+          parameters the paper stated. The id the server hands back is
+          the id this panel printed — one hash path, one identity — and
+          the diff button right after it closes the loop. */}
       {result?.candidate_id ? (
-        <div style={{ marginTop: 10 }}>
+        <div className="toolbar" style={{ marginTop: 10 }}>
+          <button
+            type="button"
+            className="primary"
+            disabled={registering || registered !== null}
+            onClick={() => {
+              setRegistering(true);
+              setError(null);
+              registerCandidate({ stack: result.stack, params: result.params })
+                .then((made) => setRegistered(made.candidate_id))
+                .catch((caught) =>
+                  setError(caught instanceof Error ? caught.message : String(caught)),
+                )
+                .finally(() => setRegistering(false));
+            }}
+          >
+            {registering
+              ? t("paper.registering")
+              : registered
+                ? t("paper.registered")
+                : t("paper.register")}
+          </button>
+          {registered ? <code style={{ fontSize: 12 }}>{registered}</code> : null}
           <button
             type="button"
             disabled={diffing}

@@ -595,7 +595,10 @@ export function listCandidates(): Promise<RegisteredCandidate[]> {
 
 export function registerCandidate(request: {
   stack: string;
-  local_config: string;
+  local_config?: string;
+  /** Explicit parameters, from a paper reading. Either this or a named
+   *  local_config — the server refuses both at once, out loud. */
+  params?: Record<string, unknown>;
 }): Promise<RegisteredCandidate> {
   return authFetch<RegisteredCandidate>("/candidates", {
     method: "POST",

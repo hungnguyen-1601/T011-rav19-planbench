@@ -312,3 +312,66 @@ class TestOutcomeOverHttp:
         assert sorted(a["code"] for a in modeled["advice"] if a["source"] == "rule") == sorted(
             a["code"] for a in plain["advice"]
         )
+
+
+class TestAPaperCanActuallyBeRegistered:
+    """The end-user test that found the identity split.
+
+    The paper reading prints a candidate_id computed from the stated
+    parameters; the registration form only accepted a *named* config, so
+    that id could never be registered — the diff button 404'd for a user
+    who did everything right. Registration now takes explicit params,
+    through the same hash path, so the id the reading printed is the id
+    the registration returns.
+    """
+
+    EXTRACTION_PARAMS = {
+        "control_period": 0.1,
+        "horizon_seconds": 1.5,
+        "velocity_samples": 7,
+        "omega_samples": 15,
+    }
+
+    def test_registering_the_papers_params_yields_the_papers_id(self, client, alice_headers):
+        from planbench_benchmark.candidates import candidate_from_stack
+
+        expected = candidate_from_stack("rrtstar+dwa", params=dict(self.EXTRACTION_PARAMS))
+        response = client.post(
+            "/api/v1/candidates",
+            json={"stack": "rrtstar+dwa", "params": self.EXTRACTION_PARAMS},
+            headers=alice_headers,
+        )
+        assert response.status_code in (200, 201), response.text
+        assert response.json()["candidate_id"] == expected.candidate_id
+
+    def test_a_name_and_params_together_are_refused_out_loud(self, client, alice_headers):
+        """With both, which one defines the candidate would be the
+        server's private decision — and a private decision about
+        identity is an identity bug waiting to be filed."""
+        response = client.post(
+            "/api/v1/candidates",
+            json={
+                "stack": "rrtstar+dwa",
+                "local_config": "dwa_coarse",
+                "params": self.EXTRACTION_PARAMS,
+            },
+            headers=alice_headers,
+        )
+        assert response.status_code == 422
+        assert "not both" in response.text
+
+    def test_an_unknown_parameter_is_refused_not_ignored(self, client, alice_headers):
+        response = client.post(
+            "/api/v1/candidates",
+            json={"stack": "rrtstar+dwa", "params": {"no_such_knob": 1}},
+            headers=alice_headers,
+        )
+        assert response.status_code == 422
+
+    def test_the_bare_registration_still_defaults_to_dwa_coarse(self, client, alice_headers):
+        """Every existing caller sends only a stack name; that door must
+        not have moved."""
+        response = client.post(
+            "/api/v1/candidates", json={"stack": "astar+dwa"}, headers=alice_headers
+        )
+        assert response.status_code in (200, 201), response.text

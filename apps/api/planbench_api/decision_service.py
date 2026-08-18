@@ -307,7 +307,8 @@ class CandidateService:
         self,
         *,
         stack: str,
-        local_config: str,
+        local_config: str = "",
+        params: dict[str, Any] | None = None,
         registered_by: str | None,
         tuning: dict[str, Any] | None = None,
     ) -> StoredCandidate:
@@ -324,7 +325,21 @@ class CandidateService:
         layer charges an undeclared candidate for the silence, which is
         the honest handling.
         """
-        if local_config not in LOCAL_CONTROLLER_CONFIGS:
+        # Two doors, one identity. A named config and an explicit params
+        # dict both end in `candidate_from_stack`, which computes the one
+        # hash everything downstream keys on — so a paper's stated
+        # parameters register to exactly the id the paper reading
+        # printed. Both at once is ambiguous and refused out loud: a
+        # caller who names `dwa_coarse` *and* sends params would get
+        # whichever this function preferred, silently, and silence here
+        # is an identity bug waiting to be filed.
+        if params is not None and local_config:
+            raise DomainValidationError(
+                "give either a named local_config or explicit params, not both; "
+                "with both, which one defines the candidate would be this "
+                "function's private decision"
+            )
+        if params is None and local_config not in LOCAL_CONTROLLER_CONFIGS:
             raise DomainValidationError(
                 f"unknown local controller {local_config!r}; "
                 f"known: {sorted(LOCAL_CONTROLLER_CONFIGS)}"
@@ -340,13 +355,21 @@ class CandidateService:
         # registration is the *other* door into the same mistake, and a
         # candidate saved through it is wrong from then on rather than
         # wrong for one run.
+        if params is None:
+            try:
+                validate_config_names([(stack, local_config)])
+            except ConfigControllerMismatch as error:
+                raise DomainValidationError(str(error)) from error
         try:
-            validate_config_names([(stack, local_config)])
-        except ConfigControllerMismatch as error:
-            raise DomainValidationError(str(error)) from error
-        try:
+            # The explicit-params path needs no belonging check of its
+            # own: `candidate_from_stack` rejects any parameter the
+            # stack's config model does not declare, which is the same
+            # guarantee stated directly instead of via a config name.
             candidate = candidate_from_stack(
-                stack, params=dict(LOCAL_CONTROLLER_CONFIGS[local_config])
+                stack,
+                params=dict(params)
+                if params is not None
+                else dict(LOCAL_CONTROLLER_CONFIGS[local_config]),
             )
         except Exception as error:
             raise DomainValidationError(f"cannot register {stack!r}: {error}") from error

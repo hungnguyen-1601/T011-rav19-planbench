@@ -133,7 +133,14 @@ class CandidateRegistration(BaseModel):
     """
 
     stack: str = Field(min_length=1, description="Registry stack id, e.g. 'astar+dwa'.")
-    local_config: str = Field(default="dwa_coarse", description="Named local-controller config.")
+    #: Either a named config or explicit params — never both. The second
+    #: door exists for the paper flow: a paper states values, not a name
+    #: this platform invented, and forcing it through a name meant the
+    #: id the reading printed could never actually be registered.
+    local_config: str = Field(default="", description="Named local-controller config.")
+    params: dict[str, Any] | None = Field(
+        default=None, description="Explicit controller parameters, from a paper reading."
+    )
     #: HĐ-1.6's declaration with its evidence log. Absent is allowed and
     #: is not the same as zero — the objectives layer charges silence.
     tuning: dict[str, Any] | None = None
@@ -809,10 +816,16 @@ def stage_test_bench_episode(
 def register_candidate(
     registration: CandidateRegistration, service: Candidates, user: CurrentUser
 ) -> CandidateResource:
+    # An empty registration defaults to the named path with dwa_coarse,
+    # which is what every existing caller sends implicitly.
+    local_config = registration.local_config
+    if registration.params is None and not local_config:
+        local_config = "dwa_coarse"
     return _candidate(
         service.register(
             stack=registration.stack,
-            local_config=registration.local_config,
+            local_config=local_config,
+            params=registration.params,
             registered_by=user.id,
             tuning=registration.tuning,
         )

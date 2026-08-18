@@ -1342,5 +1342,8 @@
   "paper.diff": "Diff against the registered candidate",
   "paper.diffing": "Diffing…",
   "paper.reproNeedsRegistration": "Register the candidate first — the diff runs against what is stored",
-  "traceReview.title": "Why this episode ended the way it did"
+  "traceReview.title": "Why this episode ended the way it did",
+  "paper.register": "Register this candidate",
+  "paper.registering": "Registering…",
+  "paper.registered": "Registered as"
 }

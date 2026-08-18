@@ -1342,5 +1342,8 @@
   "paper.diff": "Đối chiếu với phương án đã đăng ký",
   "paper.diffing": "Đang đối chiếu…",
   "paper.reproNeedsRegistration": "Hãy đăng ký phương án trước — phép đối chiếu chạy trên bản đã lưu",
-  "traceReview.title": "Vì sao episode này kết thúc như vậy"
+  "traceReview.title": "Vì sao episode này kết thúc như vậy",
+  "paper.register": "Đăng ký phương án này",
+  "paper.registering": "Đang đăng ký…",
+  "paper.registered": "Đã đăng ký với id"
 }
