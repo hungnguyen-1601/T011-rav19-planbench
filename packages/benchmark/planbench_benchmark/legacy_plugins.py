@@ -159,6 +159,34 @@ def synthetic_manifests() -> tuple[dict[str, Any], ...]:
     return tuple(ordered)
 
 
+def discover_all(
+    *,
+    bundle_root: str | None = None,
+    include_entry_points: bool = True,
+):
+    """The whole roster: built-ins, bundles on disk, installed plugins.
+
+    H5's "one discovery path". The built-in stacks enter the same
+    registry as everything else rather than being listed beside it — a
+    roster assembled from two mechanisms drifts, and the first symptom
+    is a report naming stacks the runner cannot run.
+
+    Imported here rather than at module scope: this module is on the
+    identity path (``candidate_from_stack``), and pulling the simulator
+    in to answer a question about hashes would make an API process load
+    the engine to validate a form.
+    """
+    from planbench_simulator.host.discovery import PluginRegistry
+
+    registry = PluginRegistry()
+    registry.add_manifests(synthetic_manifests(), source="builtin")
+    if bundle_root is not None:
+        registry.discover_directory(bundle_root)
+    if include_entry_points:
+        registry.discover_entry_points()
+    return registry
+
+
 class LegacyPluginLoader:
     """Manifests in, the platform's own factories out.
 

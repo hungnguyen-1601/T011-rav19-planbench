@@ -11,9 +11,12 @@ from __future__ import annotations
 
 import re
 
-#: What this SDK speaks. Frozen at H1; bumped only by a decision, never
-#: by drift (plan §8: the fallback branch freezes it outright).
-PLUGIN_API_VERSION = "1.0.0"
+#: What this SDK speaks.
+#:
+#: 1.1.0 (H5) added ``entry_point`` and ``python_dependencies`` to a
+#: runtime profile — additive, so every 1.0 manifest still parses, which
+#: is the whole reason compatibility is judged on the major.
+PLUGIN_API_VERSION = "1.1.0"
 
 PLUGIN_API_MAJOR = 1
 

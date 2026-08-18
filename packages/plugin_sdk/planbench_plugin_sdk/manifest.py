@@ -70,6 +70,16 @@ class RuntimeProfile(BaseModel):
     protocol: str = Field(min_length=1)
     codec: str = Field(min_length=1)
     deadline_policy: str = Field(min_length=1)
+    #: ``package.module:Attribute`` — what to load **after** preflight
+    #: says this plugin may run. A string here, deliberately: discovery
+    #: reads it and does not resolve it, which is what keeps a plugin
+    #: whose import raises from taking discovery down with it.
+    entry_point: str = ""
+    #: Top-level modules this lane needs. Checked with ``find_spec``,
+    #: which locates without executing — the same trick ``_build_ppo``
+    #: already uses to keep torch optional. A missing one leaves the
+    #: plugin registered and not runnable, never crashed.
+    python_dependencies: tuple[str, ...] = ()
 
 
 class RuntimeSpec(BaseModel):

@@ -28,6 +28,12 @@ from planbench_simulator.host.compatibility import (
     RegistrationState,
     resolve_compatibility,
 )
+from planbench_simulator.host.discovery import (
+    ENTRY_POINT_GROUP,
+    DiscoveredPlugin,
+    PluginRegistry,
+    QuarantinedPlugin,
+)
 from planbench_simulator.host.facades import (
     HostBackedGlobalPlanner,
     HostBackedLocalPlanner,
@@ -67,11 +73,18 @@ from planbench_simulator.host.runtime_view import (
     ProviderRuntimeView,
     register_trusted_oracle,
 )
+from planbench_simulator.host.runtimes import RuntimeLoadError, TrustedPythonRuntime
 
 __all__ = [
+    "ENTRY_POINT_GROUP",
     "GRID_CHANNEL",
     "OBSERVATION_CHANNEL",
     "AlgorithmHost",
+    "DiscoveredPlugin",
+    "PluginRegistry",
+    "QuarantinedPlugin",
+    "RuntimeLoadError",
+    "TrustedPythonRuntime",
     "AuthorizedChannelBundle",
     "CadenceMonitor",
     "CapabilityRegistry",
