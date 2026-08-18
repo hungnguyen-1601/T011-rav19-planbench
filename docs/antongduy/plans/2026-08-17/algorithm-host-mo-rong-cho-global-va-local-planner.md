@@ -954,7 +954,39 @@ DoD:
 
 ## 11. Definition of Done cho MVP
 
-MVP đạt khi:
+> **Sửa 18-08, sau khi H0–H8 xong.** Bản gốc liệt DoD theo **kết quả**,
+> còn §8 chia việc theo **file**. Khoản nào nằm gọn trong danh sách file
+> của một pha thì xong; khoản nào **vắt qua nhiều pha** thì mỗi pha làm
+> phần rơi vào mình và không ai ráp lại — năm khoản hở đúng theo cơ chế
+> đó, phát hiện lúc đối chiếu cuối chứ không phải lúc làm.
+>
+> Nên từ nay **mỗi khoản chỉ đích danh pha sở hữu nó**, và mỗi pha đối
+> chiếu §11 khi đóng chứ không đợi cuối plan. Không có bước này, H9–H12
+> sẽ đẻ ra đúng lớp hở đó lần nữa, lần này với ít người còn nhớ để rà.
+>
+> Trạng thái sau H8: **12 đạt · 3 một phần · 2 chưa làm.**
+
+| # | Khoản | Pha sở hữu | Trạng thái sau H8 |
+|---|---|---|---|
+| 1 | A*, RRT*, DWA, PPO qua host không drift theo comparator H0 | H0 + H2 | ⚠️ PPO mới ở mức identity → **H12** |
+| 2 | Local plugin ngoài registry qua provider graph | H6 | ✅ |
+| 3 | Global plugin ngoài registry qua host | H6 | ✅ |
+| 4 | Thiếu runtime/provider vẫn đăng ký, báo đúng lý do | H4 + H5 | ✅ |
+| 5 | `run_stack()` không special-case proof plugin | H6 | ✅ |
+| 6 | Provider provenance vào fingerprint và report | H4 | ✅ |
+| 7 | Oracle provider `sim_only`, không production-recommendable | H3 + **H9A** | ⚠️ mới chặn ở preflight |
+| 8 | Crash/timeout không kéo chết host | H2 + H7 | ✅ |
+| 9 | Author guide đủ để thêm plugin không sửa core loop | H8 | ✅ |
+| 10 | Deployment khai capability bằng **additive grant** | **H11** | ❌ chưa làm |
+| 11 | Candidate-owned đổi candidate ID; deployment-owned đổi fingerprint; test **cả hai chiều** | **H9B** | ⚠️ mới một chiều |
+| 12 | Thiếu action/dynamics/runtime vẫn đăng ký, report đúng | H4 | ✅ |
+| 13 | Sáu lớp latency thành cột trace · deadline gate `screened_on_host` · runtime lane vào fingerprint | H7 + **H10** | ⚠️ gate chưa tồn tại |
+| 14 | `evidence_class` trong metadata và address · fail-closed ở một boundary · `withdrawn` riêng · `benchmarkable` derived | **H9A** + **H12** | ❌ chưa làm |
+| 15 | Hai cách khai capability → cùng `candidate_id` | H1a | ✅ |
+| 16 | Manifest khai đủ lane + custom capability surface | H1a + H7 | ✅ |
+| 17 | `algorithm_compute_ms` external là diagnostic; verdict theo protocol | H7 + **H10** | ⚠️ verdict chưa có |
+
+Nguyên văn các khoản:
 
 1. A*, RRT*, DWA, PPO chạy qua `AlgorithmHost` không drift theo comparator H0; chỉ các field wall-clock trong danh sách preregistered được loại trừ.
 2. Một local plugin ngoài registry cần richer observation chạy được qua provider graph.
@@ -1024,3 +1056,191 @@ Xây một capability-driven `AlgorithmHost` ở trên runtime hiện tại, v�
 - ROS 2 runtime
 - action/dynamics extension
 - hội tụ registry về manifest sau khi v2 ổn định
+
+---
+
+## 13. Sau H8 — thứ tự chốt 18-08 cho năm khoản hở
+
+Chốt sau vòng đánh giá của An trên bản tổng kết H0–H8. Xếp theo **thứ
+gì có thể làm hỏng dữ liệu không sửa được**, không theo thứ gì gần
+feature-complete nhất.
+
+### H9A — trace evidence safety · **P0**
+
+Khoản duy nhất hiện có thể **tạo dữ liệu sai vĩnh viễn**: oracle trace
+ghi đè production trace ở cùng địa chỉ, và production scoring đọc được
+nó nếu file đã tồn tại.
+
+```text
+root/<evidence_class>/<execution_fingerprint>/<candidate_id>/<context_id>.parquet
+```
+
+- `TraceMetadata.evidence_class`, bắt buộc;
+- metadata phải **khớp path** — lệch là từ chối;
+- **một** `TraceUsePolicy` duy nhất, mọi consumer đi qua: `read_trace`,
+  `--reuse-traces`, `--score-only`, Card assembly, API download;
+- trace cũ thiếu evidence class = *unknown* ⇒ fail closed. **Không
+  migrate, không đổi tên thành production** — trace không có provenance
+  phải chạy lại (tiền lệ fingerprint rỗng 16-08).
+
+Ba thứ phải tính trước, không được để lộ ra giữa chừng:
+
+1. **Fixture parity sẽ đỏ ở trường `trace.relative_path`.** Đổi address
+   là đổi trường đó. Phải là **amendment có ghi lý do**, sửa đúng một
+   trường, mọi trường khác giữ byte-identical — **tuyệt đối không
+   regenerate**, vì regenerate xoá luôn bằng chứng chín pha vừa dựa vào.
+2. **Kho trace hiện có thành bất khả truy cập** (mọi file ở địa chỉ cũ)
+   ⇒ phải mô phỏng lại một lần. Đây là thời gian máy, cộng ngoài 1.5–2.5
+   ngày code.
+3. **Còn địa chỉ thứ tư: thư mục run và `run_journal`.** Theo report
+   16-08, thư mục run đặt tên từ *(profile id, scope, candidate set)* —
+   **không có evidence class**. Research run và production run cùng bộ
+   ba đó sẽ chung thư mục và chung journal: đúng lỗ 16-08 lặp lại một
+   tầng trên trace path.
+
+Test bắt buộc: oracle/production cùng (candidate, context) không thể
+chung path · oracle không được production score/reuse · reference không
+được vào recommendation · thiếu evidence class fail closed · path nói
+production mà metadata nói oracle ⇒ từ chối · fingerprint trong path
+khác metadata ⇒ từ chối · mọi consumer dùng chung boundary · research
+vẫn đọc được oracle khi policy cho phép · trace legacy **không** tự nâng
+thành production · **hai run khác evidence class không chung run
+directory** · candidate ID và parity H0 không drift.
+
+**Ước lượng:** 1.5–2.5 ngày code + một lượt mô phỏng lại kho trace.
+
+### H9B — candidate provider identity · **P0**
+
+Hôm nay `candidate_id` chỉ băm stack, params, observation requirements.
+Provider riêng của candidate **không** vào id ⇒ hai candidate khác nhau ở
+provider chung một id.
+
+Không băm `(capability, tên class)` — hai bản code hoặc config khác nhau
+vẫn chung tên. Identity tĩnh:
+
+```text
+CandidateProviderBinding:
+  capability · provider_id · provider_version
+  manifest_checksum · config_digest · schema_digest
+```
+
+Canonical-sort rồi vào `candidate_id`. **Không** lấy từ resolved provider
+graph: `candidate_id` phải tồn tại trước khi có deployment và trước
+preflight.
+
+Hai bẫy canonical hoá, cả hai đều là bài học đã trả giá:
+
+- `capability` phải đi qua **alias bridge SDK** — không thì plugin khai
+  `lidar_2d` và plugin khai URI cho hai id, phá thẳng DoD 15;
+- `config_digest` phải **sort key** trước khi băm — đúng defect test H4
+  bắt được ở `HostConditions.providers`.
+
+Regression: `candidate_providers=()` giữ nguyên **mọi** legacy id · đổi
+version/checksum/config ⇒ đổi id · đổi deployment-owned provider ⇒ id
+không đổi, fingerprint đổi · cùng bindings khác thứ tự ⇒ cùng id ·
+candidate-owned chưa khai identity ⇒ preflight từ chối.
+
+**Ước lượng:** 0.5–1 ngày.
+
+> Sau H9A + H9B, hệ thống gọi được là **an toàn để không tạo dữ liệu
+> sai** — chưa feature-complete, nhưng không còn đường ghi ra thứ không
+> sửa được.
+
+### Amendment protocol latency — **làm trước H10, không phải trong H10**
+
+`configs/latency-screening-v1.yaml` đã commit như một preregistration
+(`f15ee25`, trước cả H0) nhưng chỉ ghi `confidence_method: bootstrap_ci`
+— **không nói resample đơn vị gì**. Một thước khai trước mà mơ hồ thì
+không phải thước khai trước.
+
+Sửa **hợp lệ ngay bây giờ** vì chưa có một phép đo nào tồn tại; sửa sau
+số đầu tiên là thay thước giữa chừng, đúng thứ kỷ luật P4 chặn.
+
+- Bump **`latency-screening-v2`**, không sửa tại chỗ v1 — lịch sử giữ
+  cả bản mơ hồ lẫn lý do nó bị thay.
+- **Bootstrap theo episode** (hoặc hierarchical), rồi tính lại pooled
+  p99 trong mỗi resample. Tick trong một episode có tương quan; coi
+  chúng là mẫu độc lập sẽ cho CI hẹp giả.
+- **Sample size vào verdict record**, kèm **N tối thiểu** dưới đó verdict
+  là `inconclusive` bất kể CI. Bootstrap theo episode nghĩa là N hiệu
+  dụng là **số episode** (30), không phải hàng nghìn tick — con số quyết
+  định độ rộng CI phải hiện ra, không ẩn sau một CI trông hẹp.
+
+### H10 — deadline screening
+
+G4 hiện đọc `planner_latency_ms` và so với `robot.control_period`. Giữ
+backward compatibility bằng cách **tách đôi**, không thay số:
+
+```text
+G4:
+  legacy_algorithm_compute_screen
+  end_to_end_deadline_screen
+  overall_result
+```
+
+Screen mới: parse + validate protocol · warmup riêng · sentinel trước ·
+đúng số repetitions, một worker · sentinel sau · drift > ngưỡng ⇒
+`NOT_MEASURED` · bootstrap CI theo episode cho p99
+`end_to_end_control_ms` · `pass | fail | inconclusive`.
+
+Verdict record lưu: protocol version · git SHA · candidate + runtime
+profile · host info · affinity/BLAS · sentinel trước/sau · CI bounds ·
+deadline + guard band · **sample size** · lý do retry nếu có.
+
+**Ước lượng:** 2–3 ngày.
+
+### H11 — capability grants
+
+```text
+CapabilityGrant:
+  capability · provider_id · provider_version
+  provider_config · provider_config_digest
+```
+
+Resolver hợp nhất `available_observations` v1 + `capability_grants` v2 →
+canonical granted capabilities. Hai provider một capability không có
+selection tường minh ⇒ **fail ambiguous** (host không tự chọn nguồn tốt
+nhất — §5.4). Validate config bằng provider schema **trước** episode.
+Deployment-owned provider/config vào execution fingerprint.
+`capability_grants` rỗng **không được** làm đổi fingerprint hay profile
+cũ; profile cũ load rồi dump lại không drift.
+
+Chạm schema + API persistence + form UI + migration ⇒ **không ghép vào
+commit trace safety**.
+
+**Ưu tiên:** chỉ làm ngay nếu có deployment/provider ngoài thật đang
+chờ. Chưa có thì vào backlog **sau** `robustness_margin` — đúng theo
+prereg gate, nơi F1 được khai là trên critical path.
+
+**Ước lượng:** backend 1.5–2.5 ngày, + ~1 ngày nếu có UI.
+
+### H12 — eligibility cleanup và PPO parity
+
+```text
+withdrawn: str | None
+reference: bool
+production_eligible = not reference and withdrawn is None
+benchmarkable = alias tương thích, deprecated
+```
+
+Giữ `benchmarkable` dạng computed/read-only một thời gian để không phá
+API/UI. **Kiểm — đừng giả định — rằng nó không phá dữ liệu đã lưu:**
+`AlgorithmInfo` frozen nhưng không `extra="forbid"`, nên nhiều khả năng
+an toàn, và "nhiều khả năng" không phải kết luận.
+
+**PPO parity.** DoD #1 hiện là **partial**: identity-level không chứng
+minh runtime không drift. H2 đã triển khai nên **không được** dựng
+"pre-host baseline" từ HEAD. Cách phục hồi bằng chứng đúng: checkpoint
+PPO cố định + môi trường có RL extras → checkout **`239132e`** (commit
+ngay trước H2) trong worktree riêng → chạy cùng profile/seed/checkpoint
+/comparator → chạy lại trên HEAD → so outcome, trajectory, events,
+candidate ID, fingerprint, trace deterministic fields → lưu hai SHA cùng
+checkpoint digest trong report. Chưa làm được thì DoD #1 **giữ
+partial** — đó là câu trả lời trung thực, không phải thất bại.
+
+### Thứ tự chốt
+
+```text
+H9A  →  H9B  →  [amendment protocol v2]  →  H10  →  H12  →  H11*
+                                                            * hoặc backlog
+```
