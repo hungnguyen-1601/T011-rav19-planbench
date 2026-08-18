@@ -374,7 +374,7 @@ export default function AgentPage() {
             </button>
           )}
         </form>
-        {capabilities ? <Boundaries capabilities={capabilities} /> : null}
+        <Boundaries />
       </div>
     </div>
   );
@@ -469,42 +469,27 @@ function Bubble({
  * checkable. A reviewer who wants to confirm the list matches the server
  * can open it; nobody else has to read it to understand the guarantee.
  */
-function Boundaries({ capabilities }: { capabilities: Capabilities }) {
+/** What the assistant can and cannot do, in two sentences.
+ *
+ * No function names. They were kept one fold deeper for a while, for
+ * checkability, and earned their removal: a reader who wants to verify
+ * the sentences against the server reads `GET /agent/capabilities`,
+ * which publishes the exact lists and is held to them by tests. The
+ * page's job is the claim, not the audit trail.
+ */
+function Boundaries() {
   const { t } = useTranslation();
   return (
     <details style={{ marginTop: 10 }}>
       <summary className="muted" style={{ fontSize: 12, cursor: "pointer" }}>
         {t("agent.boundaries")}
       </summary>
-
       <p className="muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 6 }}>
         {t("agent.canReadPlain")}
       </p>
       <p className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
         {t("agent.cannotPlain")}
       </p>
-
-      <details style={{ marginTop: 6 }}>
-        <summary className="muted" style={{ fontSize: 11, cursor: "pointer" }}>
-          {t("agent.boundariesRaw")}
-        </summary>
-        <p className="muted" style={{ fontSize: 11, marginTop: 6, marginBottom: 4 }}>
-          {t("agent.canRead")}:{" "}
-          {capabilities.tools.map((name) => (
-            <code key={name} style={{ marginRight: 6 }}>
-              {name}
-            </code>
-          ))}
-        </p>
-        <p className="muted" style={{ fontSize: 11, marginBottom: 0 }}>
-          {t("agent.cannot")}:{" "}
-          {capabilities.forbidden.map((name) => (
-            <code key={name} style={{ marginRight: 6 }}>
-              {name}
-            </code>
-          ))}
-        </p>
-      </details>
     </details>
   );
 }

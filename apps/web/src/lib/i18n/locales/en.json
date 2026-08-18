@@ -1277,9 +1277,6 @@
   "agent.boundaries": "What this assistant can and cannot do",
   "agent.canReadPlain": "It only reads. It looks up the deployments, candidates, comparison runs, gate tables and critiques this platform has stored, and answers from those.",
   "agent.cannotPlain": "It cannot run a comparison, approve or reject a result, declare anything safe, edit a deployment, or drive a robot. Those are decisions a person makes on the decisions page.",
-  "agent.boundariesRaw": "The exact list, as the server publishes it",
-  "agent.canRead": "Can read",
-  "agent.cannot": "Cannot do",
   "agent.quick.deployments": "Which deployments have been declared?",
   "agent.quick.runs": "What comparisons have been run, and did any recommend a candidate?",
   "agent.quick.candidates": "Which candidates are registered, and what does each one configure?",
@@ -1341,5 +1338,9 @@
   "plugin.refused": "Nothing usable came back",
   "plugin.hint": "Nothing is stored or executed. Review the code, finish the marked TODOs, add tests, and drop the bundle into the plugin directory for the Algorithm Host to discover.",
   "outcome.title": "Why it won, why it lost",
-  "outcome.hint": "Joins the stored numbers to the algorithms' own natures: which metric separated the candidates, whether the margin clears the noise, and whether the result is what each algorithm's strengths and weaknesses predict."
+  "outcome.hint": "Joins the stored numbers to the algorithms' own natures: which metric separated the candidates, whether the margin clears the noise, and whether the result is what each algorithm's strengths and weaknesses predict.",
+  "paper.diff": "Diff against the registered candidate",
+  "paper.diffing": "Diffing…",
+  "paper.reproNeedsRegistration": "Register the candidate first — the diff runs against what is stored",
+  "traceReview.title": "Why this episode ended the way it did"
 }

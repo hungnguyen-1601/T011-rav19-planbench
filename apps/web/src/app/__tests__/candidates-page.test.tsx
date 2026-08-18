@@ -431,12 +431,15 @@ describe("the boundaries section says something a person can read", () => {
     expect(en["agent.cannotPlain"]).toMatch(/robot/i);
   });
 
-  it("keeps the raw list one level deeper, so the claim stays checkable", () => {
-    /* Deleting it outright would make the guarantee unverifiable — a
-       reviewer could no longer confirm the page matches the server. */
-    expect(AGENT).toContain('t("agent.boundariesRaw")');
-    expect(AGENT).toContain("capabilities.forbidden.map");
-    expect(AGENT).toContain("capabilities.tools.map");
+  it("renders no function names anywhere", () => {
+    /* The raw lists lived one fold deeper for a while, for
+       checkability, and were judged redundant: `write_task_profile`
+       tells a reader nothing the sentence above it does not. The
+       checkable version is `GET /agent/capabilities`, which publishes
+       the exact lists and is held to them by its own tests. */
+    expect(AGENT).not.toContain("capabilities.forbidden.map");
+    expect(AGENT).not.toContain("capabilities.tools.map");
+    expect(AGENT).not.toContain('t("agent.boundariesRaw")');
   });
 });
 

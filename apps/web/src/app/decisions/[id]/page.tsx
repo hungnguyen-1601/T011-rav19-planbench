@@ -47,6 +47,7 @@ import {
   type CritiqueFinding,
   getDecisionAdvice,
   getOutcomeAdvice,
+  getTraceReview,
   getReportAdvice,
   type AdviceList,
 } from "@/lib/decisions";
@@ -125,6 +126,9 @@ function TracePanel({ run }: { run: DecisionRun }) {
   const [candidateId, setCandidateId] = useState(candidates[0]?.candidate_id ?? "");
   const [episodeId, setEpisodeId] = useState(episodes[0] ?? "");
   const [trace, setTrace] = useState<TracePayload | null>(null);
+  const [review, setReview] = useState<
+    (AdviceList & { summary: Record<string, unknown> }) | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -135,6 +139,12 @@ function TracePanel({ run }: { run: DecisionRun }) {
     setError(null);
     try {
       setTrace(await getTrace(run.id, candidate, episode));
+      // The review rides along with the drawing: the squiggle says what
+      // the robot did, the review says why it ended — clearance
+      // collapsing, the turn flapping sign, nine seconds parked short of
+      // the goal. Fetched together because a reader looking at one
+      // always asks the other.
+      setReview(await getTraceReview(run.id, candidate, episode));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
       setTrace(null);
@@ -212,6 +222,12 @@ function TracePanel({ run }: { run: DecisionRun }) {
       </div>
 
       {trace ? <TraceViewer trace={trace} /> : null}
+      {review ? (
+        <div style={{ marginTop: 10 }}>
+          <h4 style={{ margin: "0 0 6px" }}>{t("traceReview.title")}</h4>
+          <AdviceListView result={review} />
+        </div>
+      ) : null}
     </div>
   );
 }

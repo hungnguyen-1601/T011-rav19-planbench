@@ -985,3 +985,36 @@ export function getOutcomeAdvice(runId: string, useModel = false): Promise<Advic
   const suffix = useModel ? "?use_model=true" : "";
   return authFetch<AdviceList>(`/decisions/${encodeURIComponent(runId)}/outcome${suffix}`);
 }
+
+/** Diff a registered candidate against the paper it came from.
+ *
+ * The extraction travels in the request because the platform stores no
+ * paper — deliberately. The finding that matters most is the quiet one:
+ * the parameters the paper never stated, which the registry filled with
+ * defaults, making the configuration look complete.
+ */
+export function getReproduction(
+  candidateId: string,
+  extraction: PaperExtraction,
+  taskProfileId = "",
+): Promise<AdviceList & { parameters: Array<Record<string, unknown>> }> {
+  return authFetch(`/candidates/${encodeURIComponent(candidateId)}/reproduction`, {
+    method: "POST",
+    body: JSON.stringify({
+      candidate_id: candidateId,
+      extraction,
+      task_profile_id: taskProfileId,
+    }),
+  });
+}
+
+/** Why one episode ended the way it did, from its own trace. */
+export function getTraceReview(
+  runId: string,
+  candidateId: string,
+  episodeContextId: string,
+): Promise<AdviceList & { summary: Record<string, unknown> }> {
+  return authFetch(
+    `/decisions/${encodeURIComponent(runId)}/traces/${encodeURIComponent(candidateId)}/${encodeURIComponent(episodeContextId)}/review`,
+  );
+}

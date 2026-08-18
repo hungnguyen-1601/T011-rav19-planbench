@@ -1277,9 +1277,6 @@
   "agent.boundaries": "Trợ lý này làm được gì và không làm được gì",
   "agent.canReadPlain": "Nó chỉ đọc. Nó tra cứu deployment, phương án, phép so, bảng cổng và phần phản biện mà nền tảng đã lưu, rồi trả lời từ đó.",
   "agent.cannotPlain": "Nó không chạy được phép so, không duyệt hay bác được kết quả, không tuyên bố được thứ gì là an toàn, không sửa được deployment, và không điều khiển robot. Đó là những quyết định của con người, trên trang quyết định.",
-  "agent.boundariesRaw": "Danh sách chính xác, đúng như máy chủ công bố",
-  "agent.canRead": "Đọc được",
-  "agent.cannot": "Không làm được",
   "agent.quick.deployments": "Có những deployment nào đã được khai?",
   "agent.quick.runs": "Đã chạy những phép so nào, có cái nào khuyến nghị được phương án không?",
   "agent.quick.candidates": "Có những phương án nào đã đăng ký, mỗi cái cấu hình ra sao?",
@@ -1341,5 +1338,9 @@
   "plugin.refused": "Không có gì dùng được",
   "plugin.hint": "Không lưu, không chạy gì. Hãy đọc code, hoàn thiện các TODO, thêm test, rồi đặt bundle vào thư mục plugin cho Algorithm Host phát hiện.",
   "outcome.title": "Vì sao thắng, vì sao thua",
-  "outcome.hint": "Ghép số liệu đã lưu với bản chất của từng thuật toán: chỉ số nào tách hai phương án, biên có vượt nhiễu không, và kết quả có đúng như ưu nhược điểm của thuật toán dự đoán không."
+  "outcome.hint": "Ghép số liệu đã lưu với bản chất của từng thuật toán: chỉ số nào tách hai phương án, biên có vượt nhiễu không, và kết quả có đúng như ưu nhược điểm của thuật toán dự đoán không.",
+  "paper.diff": "Đối chiếu với phương án đã đăng ký",
+  "paper.diffing": "Đang đối chiếu…",
+  "paper.reproNeedsRegistration": "Hãy đăng ký phương án trước — phép đối chiếu chạy trên bản đã lưu",
+  "traceReview.title": "Vì sao episode này kết thúc như vậy"
 }

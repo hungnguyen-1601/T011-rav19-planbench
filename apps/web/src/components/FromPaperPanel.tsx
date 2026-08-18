@@ -12,12 +12,15 @@
 import { useRef, useState } from "react";
 
 import { PluginDraftView } from "@/components/PluginDraftView";
+import { AdviceListView } from "@/components/AdviceListView";
 import {
   draftPluginFromPaper,
   draftPluginFromPaperFile,
   extractCandidateFromPaper,
   extractCandidateFromPaperFile,
+  getReproduction,
 } from "@/lib/decisions";
+import type { AdviceList } from "@/lib/decisions";
 import type { PaperExtraction, PluginDraft } from "@/lib/decisions";
 import { useTranslation } from "@/lib/i18n";
 
@@ -67,6 +70,8 @@ export function FromPaperPanel({ enabled }: { enabled: boolean }) {
   const [lastSource, setLastSource] = useState<{ file?: File; text?: string } | null>(null);
   const [plugin, setPlugin] = useState<PluginDraft | null>(null);
   const [building, setBuilding] = useState(false);
+  const [repro, setRepro] = useState<(AdviceList & { parameters: unknown[] }) | null>(null);
+  const [diffing, setDiffing] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
 
   // Both entry points funnel here so an upload and a paste cannot drift
@@ -81,6 +86,7 @@ export function FromPaperPanel({ enabled }: { enabled: boolean }) {
     // in that table exists to prevent.
     setResult(null);
     setPlugin(null);
+    setRepro(null);
     try {
       setResult(await read());
     } catch (caught) {
@@ -167,6 +173,40 @@ export function FromPaperPanel({ enabled }: { enabled: boolean }) {
           drafted into one. Offered whenever a read happened — a person
           may want the plugin even for a method a stack approximates —
           but it is the no-stack case this exists for. */}
+      {/* The diff against what was registered. Only offered when the
+          reading produced a registerable id — the endpoint answers 404
+          for an id nobody registered, and that refusal is correct: a
+          diff against nothing would be reassurance, not information. */}
+      {result?.candidate_id ? (
+        <div style={{ marginTop: 10 }}>
+          <button
+            type="button"
+            disabled={diffing}
+            onClick={() => {
+              setDiffing(true);
+              setError(null);
+              getReproduction(result.candidate_id, result)
+                .then(setRepro)
+                .catch((caught) =>
+                  setError(
+                    caught instanceof Error
+                      ? `${t("paper.reproNeedsRegistration")} (${caught.message})`
+                      : String(caught),
+                  ),
+                )
+                .finally(() => setDiffing(false));
+            }}
+          >
+            {diffing ? t("paper.diffing") : t("paper.diff")}
+          </button>
+        </div>
+      ) : null}
+      {repro ? (
+        <div style={{ marginTop: 10 }}>
+          <AdviceListView result={repro} />
+        </div>
+      ) : null}
+
       {result && lastSource ? (
         <div style={{ marginTop: 10 }}>
           <button
