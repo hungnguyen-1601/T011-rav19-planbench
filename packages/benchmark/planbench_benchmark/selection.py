@@ -373,10 +373,12 @@ class _EarlyStopWatch:
         *,
         planned: int,
         floor: int,
+        evidence_class: str = "production",
     ) -> None:
         self._profile = profile
         self._map_data = map_data
         self._trace_root = trace_root
+        self._evidence_class = evidence_class
         self._planned = planned
         self._floor = floor
         self._metrics: dict[str, list] = {}
@@ -394,6 +396,7 @@ class _EarlyStopWatch:
                 context,  # type: ignore[arg-type]
                 self._map_data,  # type: ignore[arg-type]
                 self._trace_root,
+                evidence_class=self._evidence_class,
             )
         )
         verdict = check_early_stop(rows, self._profile, planned_episodes=self._planned)
@@ -428,6 +431,12 @@ def run_comparison(
     affinity_source: str | None = None,
     score_only: bool = False,
     stop_early: bool = False,
+    #: What this whole sweep's evidence is worth (§5.10). It reaches the
+    #: recorder, the trace addresses, the reuse check, the scoring reads
+    #: **and** the run directory — a knob that stopped at any one of
+    #: those would separate namespaces without routing anything into
+    #: them, which is how H9A first shipped.
+    evidence_class: str = "production",
     min_episodes_before_stop: int | None = None,
     progress: Progress | None = None,
 ) -> dict[str, object]:
@@ -463,7 +472,9 @@ def run_comparison(
     # run that dies in its first minute now leaves a directory saying it
     # was attempted instead of nothing at all.
     destination = (
-        run_root / created_at.strftime("%Y-%m-%d") / run_dir_name(profile.id, scope, candidates)
+        run_root
+        / created_at.strftime("%Y-%m-%d")
+        / run_dir_name(profile.id, scope, candidates, evidence_class)
     )
     destination.mkdir(parents=True, exist_ok=True)
 
@@ -479,7 +490,14 @@ def run_comparison(
             f"(cổng không có luật dừng: {', '.join(sorted(GATES_WITHOUT_A_RULE))})"
         )
     watch = (
-        _EarlyStopWatch(profile, map_data, trace_root, planned=requested, floor=floor)
+        _EarlyStopWatch(
+            profile,
+            map_data,
+            trace_root,
+            planned=requested,
+            floor=floor,
+            evidence_class=evidence_class,
+        )
         if stop_early and not score_only
         else None
     )
@@ -490,7 +508,9 @@ def run_comparison(
         # it left on disk need a way back into a report that does not
         # involve re-simulating them or hand-editing JSON. Same prefix
         # rule, same honesty about the sample it ended up with.
-        contexts = paired_prefix(candidates, contexts, trace_root, profile, map_data)
+        contexts = paired_prefix(
+            candidates, contexts, trace_root, profile, map_data, evidence_class=evidence_class
+        )
         interrupted = len(contexts) < requested
         if not contexts:
             raise AcceptanceFailure(
@@ -512,6 +532,7 @@ def run_comparison(
                 contexts,
                 map_data,
                 trace_root,
+                evidence_class=evidence_class,
                 reuse=reuse,
                 say=say,
                 journal=destination / "run_journal.jsonl",
@@ -526,7 +547,9 @@ def run_comparison(
             # already on disk, which is exactly the outcome that made a
             # three-hour run unreadable once.
             interrupted = True
-            contexts = paired_prefix(candidates, contexts, trace_root, profile, map_data)
+            contexts = paired_prefix(
+                candidates, contexts, trace_root, profile, map_data, evidence_class=evidence_class
+            )
             contexts_by_candidate = {c.candidate_id: tuple(contexts) for c in candidates}
             say(
                 f"\n⚠ NGẮT GIỮA CHỪNG — chấm trên {len(contexts)}/{requested} episode đã ghép "
@@ -548,6 +571,7 @@ def run_comparison(
             contexts_by_candidate[candidate.candidate_id],
             map_data,
             trace_root,
+            evidence_class=evidence_class,
         )
         for candidate in candidates
     }
@@ -718,7 +742,9 @@ def run_comparison(
     # computed from. Carried in the report because the API stores what
     # this function returns, not what it writes to disk.
     report["run_uri"] = f"file://{destination}"
-    report["run_checksum"] = trace_checksum(candidates, contexts, trace_root)
+    report["run_checksum"] = trace_checksum(
+        candidates, contexts, trace_root, profile, map_data, evidence_class=evidence_class
+    )
 
     if len(evidence) < 2:
         # Not an error. "Who was eliminated where, after how many runs"
@@ -904,7 +930,12 @@ def _say_summary(say, report: dict[str, object], destination: Path) -> None:  # 
     say(f"written to:     {destination}")
 
 
-def run_dir_name(profile_id: str, scope: str, candidates: Sequence[Candidate]) -> str:
+def run_dir_name(
+    profile_id: str,
+    scope: str,
+    candidates: Sequence[Candidate],
+    evidence_class: str = "production",
+) -> str:
     """One directory per (deployment, scope, candidate set).
 
     The first draft used ``{profile}_compare`` for every run, and the
@@ -921,7 +952,16 @@ def run_dir_name(profile_id: str, scope: str, candidates: Sequence[Candidate]) -
     fingerprint = hashlib.sha256(
         "|".join(sorted(c.candidate_id for c in candidates)).encode("utf-8")
     ).hexdigest()[:8]
-    return f"{profile_id}_{scope}_{fingerprint}"
+    # **The evidence class is part of the directory too.** The trace
+    # address grew one in H9A, but the run directory — and therefore
+    # ``run_journal.jsonl`` — was still named from (profile, scope,
+    # candidates) alone. A research sweep and a production sweep of the
+    # same three things shared a folder and truncated each other's
+    # journal: the 16-08 defect one level above the traces it was fixed
+    # in. ``production`` keeps its bare name so existing run directories
+    # stay where they are.
+    suffix = "" if evidence_class == "production" else f"_{evidence_class}"
+    return f"{profile_id}_{scope}_{fingerprint}{suffix}"
 
 
 def _observation_classes(stack_id: str) -> tuple[str | None, str | None]:

@@ -125,6 +125,7 @@ def run_contract_episode(
     map_data: MapData,
     *,
     root: Path | str = DEFAULT_TRACE_ROOT,
+    evidence_class: str = "production",
 ) -> tuple[Path, StackRun]:
     """Run one episode and write its HĐ-5 trace; return where it landed.
 
@@ -152,6 +153,13 @@ def run_contract_episode(
         execution_conditions_fingerprint=execution_conditions_fingerprint(
             map_data, scenario, profile
         ),
+        # **What this episode's evidence is worth, carried to the writer.**
+        # H9A gave traces a per-class address and then left this
+        # parameter off, so a sweep told to run the oracle lane still
+        # wrote into ``production/``: the namespace was separated and
+        # nothing was routed into it. A guard nobody reaches is not a
+        # guard, and this is the one line that makes the address real.
+        evidence_class=evidence_class,
     ) as recorder:
         run = run_stack(
             map_data,

@@ -554,7 +554,7 @@ class DecisionRunService:
         import pyarrow.parquet as pq
 
         from planbench_benchmark.task_map import load_task_map
-        from planbench_simulator.trace import trace_path
+        from planbench_simulator.trace import find_traces
 
         run = self._runs.get(run_id)
         report = run.report or {}
@@ -568,17 +568,40 @@ class DecisionRunService:
         if episodes and episode_context_id not in episodes:
             raise NotFoundError("episode in this run", episode_context_id)
 
-        path = trace_path(candidate_id, episode_context_id, root=self._trace_root)
-        if not path.is_file():
+        # Searched, not constructed. A trace is now addressed by its
+        # evidence class and the conditions it ran under, and this
+        # endpoint knows neither — building a path from a guessed
+        # fingerprint would produce a filename rather than an answer.
+        # The search applies the production policy, so an oracle episode
+        # is *not found* here rather than downloadable as evidence.
+        profile = self._profiles.load(run.task_profile_id)
+        map_data = load_task_map(profile, base_dir=self._repo_root, validate=False)
+
+        matches = find_traces(self._trace_root, candidate_id, episode_context_id)
+        # **Narrowed to this run's world.** A pair can legitimately have
+        # several production traces now — the same candidate measured
+        # under two deployments — and taking whichever sorted last would
+        # serve a different experiment's evidence under this run's name.
+        # That is the defect the conditions hash was added to close, so
+        # answering it with an arbitrary pick would reopen it at the one
+        # endpoint a human actually looks through.
+        expected = _expected_fingerprint(profile, map_data, episode_context_id)
+        if expected:
+            matches = [path for path in matches if path.parent.parent.name == expected]
+        if not matches:
             raise NotFoundError("trace file", f"{candidate_id}/{episode_context_id}")
+        if len(matches) > 1:
+            raise InvalidStateError(
+                f"{candidate_id}/{episode_context_id} has {len(matches)} traces under one "
+                "set of conditions; the store is ambiguous and serving either would be a "
+                "guess about which experiment this run meant"
+            )
+        path = matches[0]
 
         table = pq.read_table(path)
         columns = {name: table.column(name).to_pylist() for name in table.column_names}
         raw = (table.schema.metadata or {}).get(b"planbench_trace")
         metadata = json.loads(raw) if raw else {}
-
-        profile = self._profiles.load(run.task_profile_id)
-        map_data = load_task_map(profile, base_dir=self._repo_root, validate=False)
 
         return {
             "candidate_id": candidate_id,
@@ -919,3 +942,24 @@ class TestBenchService:
             if stored.map_id == map_id and stored.scenario.name == name:
                 return stored
         return None
+
+
+def _expected_fingerprint(profile, map_data, episode_context_id: str) -> str:
+    """The conditions hash this run's episode should carry, or ``""``.
+
+    Rebuilt from the deployment rather than read off a file, so it is a
+    statement about what was *asked for* and can be compared against
+    what is on disk. Empty when the context cannot be reconstructed —
+    the caller then falls back to the class filter alone rather than
+    refusing a download over a lookup it could not perform.
+    """
+    from planbench_benchmark.contexts import build_evaluation_contexts
+    from planbench_benchmark.episode import scenario_for
+    from planbench_benchmark.fingerprint import execution_conditions_fingerprint
+
+    for context in build_evaluation_contexts(profile):
+        if context.episode_context_id == episode_context_id:
+            return execution_conditions_fingerprint(
+                map_data, scenario_for(profile, context), profile
+            )
+    return ""

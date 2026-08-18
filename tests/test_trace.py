@@ -81,12 +81,69 @@ class TestRoundTrip:
         assert loaded.metadata.costmap_cells == 400_000
         assert loaded.metadata.global_plan_length_m == 41.2
 
-    def test_path_groups_by_candidate_and_names_by_context(self, tmp_path: Path) -> None:
-        """The pairing rule (HĐ-3.2) made visible: two candidates that ran
-        the same contexts hold two directories with identical file names."""
+    def test_the_address_carries_class_and_conditions(self, tmp_path: Path) -> None:
+        """**The address changed on purpose in H9A.**
+
+        It used to be ``candidate/context`` — exactly the two ids HĐ-3.1
+        leaves the environment out of — so an oracle run and a production
+        run of one candidate wrote to the *same file* and the second
+        replaced the first. The class and the conditions now come first,
+        and the pairing rule stays visible underneath them: two
+        candidates that ran the same contexts still hold two directories
+        with identical file names.
+        """
         ctx = context(seed=7)
-        expected = tmp_path / "cand12345678" / f"{ctx.episode_context_id}.parquet"
-        assert trace_path("cand12345678", ctx.episode_context_id, root=tmp_path) == expected
+        expected = (
+            tmp_path
+            / "production"
+            / "abc123"
+            / "cand12345678"
+            / f"{ctx.episode_context_id}.parquet"
+        )
+        assert (
+            trace_path(
+                "cand12345678",
+                ctx.episode_context_id,
+                root=tmp_path,
+                evidence_class="production",
+                execution_fingerprint="abc123",
+            )
+            == expected
+        )
+
+    def test_two_classes_of_one_episode_cannot_share_a_file(self, tmp_path: Path) -> None:
+        """The defect this address exists to close, stated as a test."""
+        ctx = context(seed=7)
+        common = {
+            "root": tmp_path,
+            "execution_fingerprint": "abc123",
+        }
+        production = trace_path(
+            "cand", ctx.episode_context_id, evidence_class="production", **common
+        )
+        oracle = trace_path("cand", ctx.episode_context_id, evidence_class="oracle", **common)
+        assert production != oracle
+
+    def test_two_worlds_of_one_episode_cannot_share_a_file(self, tmp_path: Path) -> None:
+        ctx = context(seed=7)
+        common = {"root": tmp_path, "evidence_class": "production"}
+        first = trace_path("cand", ctx.episode_context_id, execution_fingerprint="aaa", **common)
+        second = trace_path("cand", ctx.episode_context_id, execution_fingerprint="bbb", **common)
+        assert first != second
+
+    def test_a_trace_without_conditions_is_filed_where_that_shows(self, tmp_path: Path) -> None:
+        """An episode run outside the contract pipeline has no conditions
+        hash. Reuse and scoring already refuse it; this puts the state in
+        ``ls`` rather than only in an error message."""
+        ctx = context(seed=7)
+        path = trace_path(
+            "cand",
+            ctx.episode_context_id,
+            root=tmp_path,
+            evidence_class="production",
+            execution_fingerprint="",
+        )
+        assert path.parent.parent.name == "unfingerprinted"
 
     def test_context_manager_writes_on_exit(self, tmp_path: Path) -> None:
         with recorder(tmp_path) as rec:
