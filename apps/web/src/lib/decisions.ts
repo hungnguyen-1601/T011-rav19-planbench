@@ -835,6 +835,10 @@ export interface PaperExtraction {
   model: string;
   deterministic: boolean;
   offerable_stacks: string[];
+  /** How much of the document the model saw, against how much there
+   *  was. Unequal means the tail was cut. */
+  chars_read: number;
+  chars_total: number;
 }
 
 /** Recover a paper's reported configuration as a candidate draft.
@@ -856,8 +860,122 @@ export function extractCandidateFromPaper(text: string): Promise<PaperExtraction
  * registers is the corrected draft, and the PDF is no part of its
  * identity.
  */
-export function extractCandidateFromPaperFile(file: File): Promise<PaperExtraction> {
+export function extractCandidateFromPaperFile(
+  file: File,
+  signal?: AbortSignal,
+): Promise<PaperExtraction> {
   const body = new FormData();
   body.append("file", file);
-  return authFetch<PaperExtraction>("/candidates/from-paper/upload", { method: "POST", body });
+  return authFetch<PaperExtraction>("/candidates/from-paper/upload", {
+    method: "POST",
+    body,
+    signal,
+  });
+}
+
+/** One thing to do next, and the move that is barred.
+ *
+ * `do_not` is the field that earns the shape: every gate has a remedy
+ * that makes the symptom vanish without making the conclusion true, and
+ * advice that names only the legitimate step is an invitation to find
+ * the other one. `source` says which half produced the item — `rule` is
+ * deterministic, `model` is the LLM's addition held to the same
+ * citation standard.
+ */
+export interface AdviceItem {
+  code: string;
+  kind: string;
+  severity: "blocking" | "material" | "disclosure";
+  claim: string;
+  ground: string;
+  field_path: string;
+  do: string;
+  do_not: string;
+  subject: string;
+  source: string;
+}
+
+export interface AdviceList {
+  rules_applied: number;
+  advice: AdviceItem[];
+  blocking: number;
+  material: number;
+  disclosure: number;
+  summary: string;
+  fabricated: number;
+  refused: string;
+}
+
+export interface PreflightResult extends AdviceList {
+  task_profile_id: string;
+  scope: string;
+  plan: {
+    episodes_requested: number | null;
+    episodes_per_candidate: number;
+    seed_count: number;
+    n_min_required: number;
+    episode_runs_total: number;
+  };
+}
+
+/** Say what is wrong with a comparison before it costs anything.
+ *
+ * Takes the same body as the launch, so what gets checked is exactly
+ * what would run — never a paraphrase of it. Nothing is created and
+ * nothing is blocked: a finding here is advice, and the launch button
+ * works regardless.
+ */
+export function preflightDecision(body: {
+  task_profile_id: string;
+  candidates: Array<{ stack: string; local_config: string }>;
+  episodes?: number;
+}): Promise<PreflightResult> {
+  return authFetch<PreflightResult>("/decisions/preflight", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** What to do about each gate this run did not clear. */
+export function getDecisionAdvice(runId: string, useModel = false): Promise<AdviceList> {
+  const suffix = useModel ? "?use_model=true" : "";
+  return authFetch<AdviceList>(`/decisions/${encodeURIComponent(runId)}/advice${suffix}`);
+}
+
+/** What a reader may claim about this run, and what they may not. */
+export function getReportAdvice(runId: string): Promise<AdviceList> {
+  return authFetch<AdviceList>(`/decisions/${encodeURIComponent(runId)}/report-advice`);
+}
+
+/** A plugin bundle drafted from a paper, with the validator's verdict.
+ *
+ * The Algorithm Host accepts one shape — manifest + code + entry point —
+ * and `accepted` is the deterministic validator's word on whether this
+ * draft is in it. A rejected draft still returns in full, because the
+ * errors name what to fix.
+ */
+export interface PluginDraft {
+  manifest: Record<string, unknown>;
+  files: Record<string, string>;
+  errors: string[];
+  notes: string[];
+  summary: string;
+  refused: string;
+  accepted: boolean;
+  provider: string;
+  model: string;
+  deterministic: boolean;
+}
+
+export function draftPluginFromPaper(text: string): Promise<PluginDraft> {
+  return authFetch<PluginDraft>("/plugins/from-paper", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+}
+
+export function draftPluginFromPaperFile(file: File, signal?: AbortSignal): Promise<PluginDraft> {
+  const body = new FormData();
+  body.append("file", file);
+  return authFetch<PluginDraft>("/plugins/from-paper/upload", { method: "POST", body, signal });
 }

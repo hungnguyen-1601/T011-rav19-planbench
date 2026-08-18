@@ -99,3 +99,50 @@ class TestWhatComesBack:
         body = upload(client, alice_headers, "paper.txt", PAPER.encode()).json()
         assert body["offerable_stacks"]
         assert "astar+ppo" not in body["offerable_stacks"]
+
+
+class TestPartialReadingsSaySo:
+    """A reading of two thirds of a paper must not look like a reading
+    of the paper.
+
+    The tail past the character cap used to be dropped with no error and
+    no field recording it, so a long paper came back with a stack,
+    quoted parameters and an `assumptions` list computed over the part
+    the model saw — rendered identically to a complete extraction.
+    """
+
+    def test_a_whole_document_reports_itself_as_whole(self, client, alice_headers):
+        body = upload(client, alice_headers, "paper.txt", PAPER.encode()).json()
+        assert body["chars_read"] == body["chars_total"]
+
+    def test_a_cut_document_reports_both_numbers(self, client, alice_headers):
+        from planbench_api.routers.decisions import MAX_PAPER_CHARS
+
+        long_paper = PAPER + " padding." * 20_000
+        body = upload(client, alice_headers, "paper.txt", long_paper.encode()).json()
+        assert body["chars_total"] > body["chars_read"]
+        assert body["chars_read"] == MAX_PAPER_CHARS
+
+    def test_the_pasted_path_reports_them_too(self, client, alice_headers):
+        """Two doors into one extraction; a field on one and not the
+        other would make the reading's completeness depend on the door."""
+        body = client.post(
+            "/api/v1/candidates/from-paper", json={"text": PAPER}, headers=alice_headers
+        ).json()
+        assert body["chars_read"] == body["chars_total"] == len(PAPER)
+
+
+class TestOversizeIsRefusedBeforeItIsRead:
+    def test_a_file_past_the_limit_is_refused(self, client, alice_headers):
+        from planbench_api.routers.decisions import MAX_UPLOAD_BYTES
+
+        response = upload(client, alice_headers, "big.txt", b"x" * (MAX_UPLOAD_BYTES + 1))
+        assert response.status_code == 422
+        assert "MB" in response.text
+
+    def test_the_refusal_names_the_limit_rather_than_just_refusing(self, client, alice_headers):
+        """ "Invalid request" tells the reader nothing they can act on."""
+        from planbench_api.routers.decisions import MAX_UPLOAD_BYTES
+
+        response = upload(client, alice_headers, "big.txt", b"x" * (MAX_UPLOAD_BYTES + 1))
+        assert str(MAX_UPLOAD_BYTES // (1024 * 1024)) in response.text

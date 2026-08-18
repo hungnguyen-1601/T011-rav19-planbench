@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
+import { AdviceListView } from "@/components/AdviceListView";
 import { CandidatePicker } from "@/components/CandidatePicker";
 import { MissionPlacer } from "@/components/MissionPlacer";
 import { api } from "@/lib/api";
@@ -29,6 +30,7 @@ import {
   listDecisions,
   listTaskProfiles,
   noCardReason,
+  preflightDecision,
   queueDecision,
   runOutcome,
   type CandidateChoice,
@@ -329,6 +331,35 @@ function LaunchPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobs.some(jobIsLive)]);
 
+  const [preflight, setPreflight] = useState<import("@/lib/decisions").PreflightResult | null>(
+    null,
+  );
+  const [checking, setChecking] = useState(false);
+
+  /* The same body the launch would send — never a paraphrase. The
+     expensive mistakes live in the details (an episode count below what
+     the declared risk needs, two entries hashing to one identity), and a
+     summary would smooth over exactly those. Advisory only: the launch
+     button works regardless of what this says. */
+  const check = async () => {
+    setChecking(true);
+    setError(null);
+    try {
+      const parsed = Number.parseInt(episodes, 10);
+      setPreflight(
+        await preflightDecision({
+          task_profile_id: profileId,
+          candidates: [first, second],
+          ...(Number.isFinite(parsed) && parsed > 0 ? { episodes: parsed } : {}),
+        }),
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setChecking(false);
+    }
+  };
+
   const launch = async () => {
     setBusy(true);
     setError(null);
@@ -423,6 +454,14 @@ function LaunchPanel({
         </label>
         <button
           type="button"
+          disabled={checking || !profileId || customReady}
+          title={customReady ? t("preflight.disabledDerived") : undefined}
+          onClick={() => void check()}
+        >
+          {checking ? t("preflight.checking") : t("preflight.check")}
+        </button>
+        <button
+          type="button"
           className="primary"
           disabled={
             busy ||
@@ -438,6 +477,19 @@ function LaunchPanel({
           {customReady ? t("decisions.launch.submitDerived") : t("decisions.launch.submit")}
         </button>
       </div>
+
+      {preflight ? (
+        <div style={{ marginTop: 10 }}>
+          <p className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+            {t("preflight.plan", {
+              episodes: String(preflight.plan.episodes_per_candidate),
+              total: String(preflight.plan.episode_runs_total),
+              nmin: String(preflight.plan.n_min_required),
+            })}
+          </p>
+          <AdviceListView result={preflight} />
+        </div>
+      ) : null}
 
       <MapChoice
         base={base}

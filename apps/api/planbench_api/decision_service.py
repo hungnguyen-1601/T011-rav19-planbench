@@ -579,6 +579,40 @@ class DecisionRunService:
             ],
         }
 
+    def trace_summary(
+        self, run_id: str, candidate_id: str, episode_context_id: str
+    ) -> dict[str, Any]:
+        """The deterministic summary the trace reviewer reads.
+
+        Same ownership checks as :meth:`trace` — a summary of another
+        experiment's evidence under this run's name would be worse than a
+        404, because it would look diagnostic. The heavy part (Parquet →
+        DataFrame → aggregates) happens here in the service; the advice
+        rules that read the summary are pure and live in
+        :mod:`planbench_metrics.trace_review`.
+        """
+        import pandas as pd
+
+        from planbench_metrics.trace_review import summarise_trace
+        from planbench_simulator.trace import trace_path
+
+        run = self._runs.get(run_id)
+        report = run.report or {}
+        candidates = {
+            str(entry.get("candidate_id"))
+            for entry in report.get("candidates", [])  # type: ignore[union-attr]
+        }
+        if candidate_id not in candidates:
+            raise NotFoundError("candidate in this run", candidate_id)
+        episodes = set(report.get("sample", {}).get("episode_context_ids", []))  # type: ignore[union-attr]
+        if episodes and episode_context_id not in episodes:
+            raise NotFoundError("episode in this run", episode_context_id)
+
+        path = trace_path(candidate_id, episode_context_id, root=self._trace_root)
+        if not path.is_file():
+            raise NotFoundError("trace file", f"{candidate_id}/{episode_context_id}")
+        return summarise_trace(pd.read_parquet(path))
+
     def approved_config(self, run_id: str) -> str:
         """The deployable configuration, as YAML — approved runs only.
 

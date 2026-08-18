@@ -16,6 +16,7 @@ show.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -23,12 +24,14 @@ from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFi
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
+from planbench_agent.advisor import advise_with_model
 from planbench_agent.critique import critique_with_model
 from planbench_agent.paper import (
     extract_from_paper,
     read_upload,
     selectable_stacks,
 )
+from planbench_agent.plugin_author import author_plugin
 from planbench_api.auth import CurrentUser
 from planbench_api.decision_service import (
     CandidateService,
@@ -49,8 +52,35 @@ from planbench_api.dependencies import (
 from planbench_api.errors import DomainValidationError, NotFoundError
 from planbench_api.worker import Job, JobQueue
 from planbench_benchmark.candidates import CONTROLLER_CONFIGS
+from planbench_benchmark.preflight import PREFLIGHT_CODES, build_draft, preflight
+from planbench_benchmark.reproduction import (
+    REPRODUCTION_CODES,
+    build_comparison,
+    reproduction_advice,
+)
 from planbench_benchmark.selection import DEFAULT_SCOPE
+from planbench_decision.gate_advice import GATE_ADVICE_CODES, build_diagnosis, gate_advice
+from planbench_decision.report_advice import (
+    REPORT_ADVICE_CODES,
+    build_reporting_source,
+    report_advice,
+)
 from planbench_decision.self_check import RULE_CODES, critique
+from planbench_metrics.trace_review import TRACE_REVIEW_CODES, trace_advice
+
+logger = logging.getLogger("planbench.api")
+
+#: A paper that does not fit is a paper the model reads the tail of, and
+#: the Setup section is usually near the front. The cap is on the text
+#: after extraction, so it bounds the model's input rather than the
+#: upload.
+MAX_PAPER_CHARS = 60_000
+
+#: Well under what a PDF of a conference paper runs to, and small enough
+#: that a mis-picked file fails at the door rather than after a minute of
+#: parsing.
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+
 
 router = APIRouter(tags=["decisions"])
 
@@ -178,6 +208,144 @@ class FindingResource(BaseModel):
     rank: int | None = None
 
 
+class AdviceResource(BaseModel):
+    """One thing to do, and one thing not to.
+
+    ``do_not`` is the field that earns the shape. Every gate in this
+    platform has a remedy that makes the symptom vanish without making
+    the conclusion true — loosen the threshold, add the observation token
+    the deployment does not really have — and a reader told only "this
+    failed" is being invited to find it.
+    """
+
+    code: str
+    kind: str
+    severity: str
+    claim: str
+    ground: str
+    field_path: str
+    do: str
+    do_not: str = ""
+    subject: str = ""
+    #: ``rule`` is deterministic; ``model`` is the LLM's addition, held
+    #: to the same citation standard and scored separately.
+    source: str = "rule"
+
+
+class PreflightPlan(BaseModel):
+    """What the run would cost, in the units a person cancels over."""
+
+    episodes_requested: int | None
+    episodes_per_candidate: int
+    seed_count: int
+    n_min_required: int
+    episode_runs_total: int
+
+
+class PreflightResource(BaseModel):
+    """Advice about a comparison nobody has run yet.
+
+    ``rules_applied`` is here for the same reason it is on the critique:
+    an empty ``advice`` list has to read as "twelve rules looked and none
+    objected" rather than "nothing was checked". Without it, the most
+    valuable answer this endpoint gives — silence on a correct plan — is
+    indistinguishable from a broken feature.
+    """
+
+    task_profile_id: str
+    scope: str
+    plan: PreflightPlan
+    rules_applied: int
+    advice: list[AdviceResource]
+    blocking: int
+    material: int
+    disclosure: int
+    #: One paragraph the model wrote for the reader; empty when the
+    #: model did not run or declined.
+    summary: str = ""
+    #: Model additions dropped for citing a field that does not resolve.
+    #: Published, not buried: it is how a reader tells a model that added
+    #: judgement from one that added noise.
+    fabricated: int = 0
+    refused: str = ""
+
+
+class AdviceListResource(BaseModel):
+    """A list of advice, with the count of rules behind it.
+
+    ``rules_applied`` is not decoration. An empty list has to read as
+    "ten rules looked and none objected" rather than "nothing ran", and
+    without the count those two are the same response.
+    """
+
+    rules_applied: int
+    advice: list[AdviceResource]
+    blocking: int
+    material: int
+    disclosure: int
+
+
+class ReproductionRequest(BaseModel):
+    """A paper reading and a registered candidate, in one call.
+
+    Both in the request because the platform stores neither the paper nor
+    the reading — ``POST /candidates/from-paper`` returns a draft and
+    writes nothing, deliberately. The cost is that this diff cannot be
+    re-run later without the document again; the alternative was becoming
+    a place papers live.
+    """
+
+    candidate_id: str = Field(min_length=1)
+    extraction: dict[str, Any]
+    task_profile_id: str = ""
+
+
+class ReproductionResource(AdviceListResource):
+    """The advice, and the field-by-field table it was computed from."""
+
+    candidate_id: str
+    parameters: list[dict[str, Any]]
+
+
+class TraceReviewResource(AdviceListResource):
+    """Why one episode ended the way it did, from its own trace."""
+
+    candidate_id: str
+    episode_context_id: str
+    #: The numbers every piece of advice cites, published beside it so a
+    #: reader can check a citation without re-opening the Parquet.
+    summary: dict[str, Any]
+
+
+class PluginRequest(BaseModel):
+    """Text of a paper whose method this platform does not have."""
+
+    text: str = Field(min_length=1, max_length=MAX_PAPER_CHARS)
+
+
+class PluginDraftResource(BaseModel):
+    """A plugin bundle proposal, with the validator's verdict on it.
+
+    ``accepted`` is the deterministic validator's word, never the
+    model's: the Algorithm Host takes exactly one shape, and an answer
+    out of shape comes back rejected with the errors named — not
+    repaired, because a repaired draft teaches the model that malformed
+    output works. Nothing is stored; the bundle is text for a person to
+    review, finish and test.
+    """
+
+    manifest: dict[str, Any]
+    files: dict[str, str]
+    errors: list[str]
+    notes: list[str]
+    summary: str
+    refused: str
+    accepted: bool
+    provider: str
+    model: str
+    deterministic: bool
+
+
 class CritiqueResource(BaseModel):
     """Every objection raised against one run, and what was discarded.
 
@@ -208,18 +376,6 @@ class CritiqueResource(BaseModel):
     provider: str = ""
     model: str = ""
     deterministic: bool = True
-
-
-#: A paper that does not fit is a paper the model reads the tail of, and
-#: the Setup section is usually near the front. The cap is on the text
-#: after extraction, so it bounds the model's input rather than the
-#: upload.
-MAX_PAPER_CHARS = 60_000
-
-#: Well under what a PDF of a conference paper runs to, and small enough
-#: that a mis-picked file fails at the door rather than after a minute of
-#: parsing.
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
 
 class PaperRequest(BaseModel):
@@ -272,6 +428,12 @@ class PaperExtractionResource(BaseModel):
     #: What the model was allowed to choose between, so a reader can see
     #: the shortlist rather than infer it from the answer.
     offerable_stacks: list[str]
+    #: How much of the document the model actually saw, against how much
+    #: there was. Equal is the ordinary case; unequal means the tail was
+    #: cut, and a reading of two thirds of a paper must not be presented
+    #: as a reading of the paper.
+    chars_read: int = 0
+    chars_total: int = 0
 
 
 class ReviewRequest(BaseModel):
@@ -664,6 +826,298 @@ def get_candidate(candidate_id: str, service: Candidates) -> CandidateResource:
     return _candidate(service.get(candidate_id))
 
 
+def _advice_counts(items: list[AdviceResource], rules: int) -> dict[str, Any]:
+    """Counts derived beside the list, never passed in — the
+    `_critique_resource` precedent, for the same reason: a caller that
+    supplies its own counts can supply wrong ones."""
+    return {
+        "rules_applied": rules,
+        "advice": items,
+        "blocking": sum(1 for a in items if a.severity == "blocking"),
+        "material": sum(1 for a in items if a.severity == "material"),
+        "disclosure": sum(1 for a in items if a.severity == "disclosure"),
+    }
+
+
+@router.get("/decisions/{run_id}/advice", response_model=AdviceListResource)
+def decision_advice(
+    run_id: str,
+    service: Runs,
+    profiles: Profiles,
+    request: Request,
+    user: CurrentUser,
+    use_model: Annotated[bool, Query()] = False,
+) -> AdviceListResource:
+    """What to do about each gate this run did not clear.
+
+    The gate table already says *which* gate failed. This says what the
+    failure means, what the legitimate next step is, and — the part that
+    earns the endpoint — which remedy the contract bars. Every gate here
+    has one that makes the symptom vanish without making the conclusion
+    true, and it is one field away in a form the same person may edit.
+
+    Read-only, like every advisory route. It re-decides nothing: the
+    verdicts are read from the stored report, never recomputed, because a
+    module that could disagree with a gate would be a gate with no
+    contract behind it.
+    """
+    stored = service.get(run_id)
+    report = stored.report if isinstance(stored.report, dict) else dict(stored.report or {})
+    profile: dict[str, Any] = {}
+    try:
+        profile = profiles.load(report.get("identity", {}).get("task_profile_id", "")).model_dump(
+            mode="json"
+        )
+    except (NotFoundError, DomainValidationError):
+        # Narrow on purpose. The thresholds live on the profile and the
+        # observations live on the report, so a deployment that has since
+        # been deleted costs the advice its numbers rather than its
+        # existence — that degradation is wanted. A bare `except
+        # Exception` here would give the same quiet fallback to a typo in
+        # this function, and the advice would come back numberless with
+        # nothing anywhere saying why.
+        logger.warning("advice: task profile unavailable for run %s", run_id)
+        profile = {}
+    diagnosis = build_diagnosis(report, profile)
+    found = gate_advice(diagnosis)
+    if not use_model:
+        items = [AdviceResource(**a.model_dump()) for a in found]
+        return AdviceListResource(**_advice_counts(items, len(GATE_ADVICE_CODES)))
+
+    # The model may rank and extend, never overrule: the rules' advice is
+    # the floor, additions must cite a field that exists, and a fabricated
+    # citation is dropped and counted where the reader can see the count.
+    agent = get_agent_service(request, user)
+    advised = advise_with_model("diagnosis", diagnosis, found, agent.provider)
+    items = [
+        AdviceResource(
+            code=a.code,
+            kind=a.kind,
+            severity=a.severity,
+            claim=a.claim,
+            ground=a.ground,
+            field_path=a.field_path,
+            do=a.do,
+            do_not=a.do_not,
+            subject=a.subject,
+            source=a.source,
+        )
+        for a in advised.advice
+    ]
+    return AdviceListResource(
+        **_advice_counts(items, len(GATE_ADVICE_CODES)),
+        summary=advised.summary,
+        fabricated=advised.fabricated,
+        refused=advised.refused,
+    )
+
+
+@router.post("/candidates/{candidate_id}/reproduction", response_model=ReproductionResource)
+def candidate_reproduction(
+    candidate_id: str,
+    payload: ReproductionRequest,
+    candidates: Candidates,
+    profiles: Profiles,
+    user: CurrentUser,
+) -> ReproductionResource:
+    """Why this candidate's numbers will differ from the paper's.
+
+    **Nothing is stored, and the request shape follows from that.** The
+    reading is passed in rather than looked up, because the platform
+    keeps no copy of a paper. The cost is real and worth naming: two
+    months from now this diff cannot be re-run without the document
+    again. The alternative was a document store, with everything that
+    implies about retention and provenance.
+
+    The finding that matters most is the quiet one. A paper states two or
+    three parameters; the registry fills eighteen; the candidate then
+    looks complete because every field has a value, and a reader
+    comparing success rates is comparing against a configuration nobody
+    published.
+    """
+    stored = candidates.get(candidate_id)
+    profile: dict[str, Any] = {}
+    if payload.task_profile_id:
+        try:
+            profile = profiles.load(payload.task_profile_id).model_dump(mode="json")
+        except Exception:
+            profile = {}
+    # Read from the stored spec, not from attributes `StoredCandidate`
+    # does not have. `getattr(stored, "params", None)` returned None on
+    # every call — the field is `spec`, and `stack` is `stack_label` —
+    # so the diff was computed against the registry's defaults instead of
+    # against this candidate. A candidate registered on `dwa_coarse`
+    # reported `horizon_seconds = 1.5` where it actually runs 1.0, and
+    # said the value had been defaulted when it had been chosen. Every
+    # number a reader saw was wrong, which is the misattribution this
+    # whole endpoint exists to prevent.
+    spec = dict(stored.spec or {})
+    comparison = build_comparison(
+        payload.extraction,
+        {
+            "candidate_id": candidate_id,
+            "stack": stored.stack_label or payload.extraction.get("stack", ""),
+            "params": spec.get("params") or {},
+        },
+        profile,
+    )
+    items = [AdviceResource(**a.model_dump()) for a in reproduction_advice(comparison)]
+    return ReproductionResource(
+        candidate_id=candidate_id,
+        parameters=list(comparison["parameters"]),
+        **_advice_counts(items, len(REPRODUCTION_CODES)),
+    )
+
+
+@router.get("/decisions/{run_id}/report-advice", response_model=AdviceListResource)
+def decision_report_advice(run_id: str, service: Runs, user: CurrentUser) -> AdviceListResource:
+    """What a reader may claim about this run, and what they may not.
+
+    `report.md` renders the tables; this is the guardrail beside them.
+    Every claim boundary the card's own shape supports — a
+    NEAR_EQUIVALENT that must not be reported as a win, an interval
+    containing zero that must not be quoted as a difference, a host-only
+    latency screen that must not be called a real-time guarantee — comes
+    back as advice with the barred sentence named.
+    """
+    stored = service.get(run_id)
+    report = stored.report if isinstance(stored.report, dict) else dict(stored.report or {})
+    found = report_advice(build_reporting_source(report, card=report.get("decision_card")))
+    items = [AdviceResource(**a.model_dump()) for a in found]
+    return AdviceListResource(**_advice_counts(items, len(REPORT_ADVICE_CODES)))
+
+
+@router.get(
+    "/decisions/{run_id}/traces/{candidate_id}/{episode_context_id}/review",
+    response_model=TraceReviewResource,
+)
+def trace_review(
+    run_id: str,
+    candidate_id: str,
+    episode_context_id: str,
+    service: Runs,
+    user: CurrentUser,
+) -> TraceReviewResource:
+    """Why this episode ended the way it did, from its own trace.
+
+    The gate table says a candidate failed; the trace says what the
+    robot was doing when it happened — clearance collapsing after a
+    replan, angular velocity flapping sign, nine seconds parked short of
+    the goal. The summary of those numbers is published beside the
+    advice so every citation is checkable without re-opening the file.
+    """
+    summary = service.trace_summary(run_id, candidate_id, episode_context_id)
+    found = trace_advice(summary)
+    items = [AdviceResource(**a.model_dump()) for a in found]
+    return TraceReviewResource(
+        candidate_id=candidate_id,
+        episode_context_id=episode_context_id,
+        summary=summary,
+        **_advice_counts(items, len(TRACE_REVIEW_CODES)),
+    )
+
+
+def _plugin_resource(draft: Any) -> PluginDraftResource:
+    return PluginDraftResource(
+        manifest=dict(draft.manifest),
+        files=dict(draft.files),
+        errors=list(draft.errors),
+        notes=list(draft.notes),
+        summary=draft.summary,
+        refused=draft.refused,
+        accepted=draft.accepted,
+        provider=draft.provider,
+        model=draft.model,
+        deterministic=draft.deterministic,
+    )
+
+
+@router.post("/plugins/from-paper", response_model=PluginDraftResource)
+def plugin_from_paper(
+    payload: PluginRequest, request: Request, user: CurrentUser
+) -> PluginDraftResource:
+    """Draft an Algorithm Host plugin from a paper the platform cannot map.
+
+    The candidate extractor refuses a method no existing stack
+    implements — correctly. This is the way forward from that refusal:
+    the host accepts algorithms as plugin bundles (manifest + code +
+    entry point), so the model's output is forced into exactly that
+    shape and then validated against the documented manifest rules.
+    **Out of shape means rejected with the errors named**, never
+    repaired. Nothing is stored, imported or executed — the bundle is a
+    reviewed starting point, not a running algorithm.
+    """
+    agent = get_agent_service(request, user)
+    return _plugin_resource(author_plugin(payload.text, agent.provider))
+
+
+@router.post("/plugins/from-paper/upload", response_model=PluginDraftResource)
+async def plugin_from_paper_upload(
+    request: Request, user: CurrentUser, file: Annotated[UploadFile, File()]
+) -> PluginDraftResource:
+    """The same drafting, from a file instead of a paste."""
+    if file.size is not None and file.size > MAX_UPLOAD_BYTES:
+        raise DomainValidationError(
+            f"that file is {file.size // (1024 * 1024)} MB; the limit is "
+            f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB"
+        )
+    data = await file.read()
+    try:
+        text = read_upload(file.filename or "", data)
+    except ValueError as exc:
+        raise DomainValidationError(str(exc)) from exc
+    agent = get_agent_service(request, user)
+    return _plugin_resource(author_plugin(text[:MAX_PAPER_CHARS], agent.provider))
+
+
+@router.post("/decisions/preflight", response_model=PreflightResource)
+def preflight_decision(
+    request: DecisionRequest,
+    profiles: Profiles,
+    map_root: MapRoot,
+    user: CurrentUser,
+) -> PreflightResource:
+    """Say what is wrong with a comparison before it costs anything.
+
+    **200, never 201 and never 4xx on a finding.** Nothing is created and
+    nothing is refused: a pre-flight that could reject a launch would be a
+    seventh gate written against a plan instead of against evidence, with
+    none of a gate's guarantees. Every answer here is advice a person may
+    read and overrule, and `POST /decisions` is untouched — a comparison
+    this endpoint hates still runs if somebody asks for it.
+
+    It takes the same body as the launch, so a caller pre-flights exactly
+    what it is about to send rather than a paraphrase of it. That matters:
+    the expensive mistakes are in the details — an episode count below
+    what the declared collision risk needs, two entries that hash to one
+    identity — and a summary would smooth over precisely those.
+
+    The gates already catch most of this. They catch it after tens of
+    minutes of simulation, because a gate reads evidence and evidence has
+    to be produced first. This reads the request.
+    """
+    profile = profiles.load(request.task_profile_id)
+    draft = build_draft(
+        profile.model_dump(mode="json"),
+        [spec.model_dump() for spec in request.candidates],
+        scope=request.scope,
+        episodes=request.episodes,
+        map_base_dir=map_root,
+    )
+    found = preflight(draft)
+    items = [AdviceResource(**advice.model_dump()) for advice in found]
+    return PreflightResource(
+        task_profile_id=request.task_profile_id,
+        scope=request.scope,
+        plan=PreflightPlan(**draft["plan"]),
+        rules_applied=len(PREFLIGHT_CODES),
+        advice=items,
+        blocking=sum(1 for a in items if a.severity == "blocking"),
+        material=sum(1 for a in items if a.severity == "material"),
+        disclosure=sum(1 for a in items if a.severity == "disclosure"),
+    )
+
+
 @router.post("/decisions", response_model=DecisionRunResource, status_code=status.HTTP_201_CREATED)
 def run_decision(request: DecisionRequest, service: Runs, user: CurrentUser) -> DecisionRunResource:
     """Run a selection and store the result, ranked or not.
@@ -947,6 +1401,8 @@ def candidate_from_paper(
     return PaperExtractionResource(
         **result.model_dump(),
         offerable_stacks=list(selectable_stacks()),
+        chars_read=len(payload.text),
+        chars_total=len(payload.text),
     )
 
 
@@ -971,8 +1427,17 @@ async def candidate_from_paper_upload(
     a second thing to be wrong about and would not make the model's
     reading of the numbers any better.
     """
+    # Refused before the bytes are pulled into one `bytes` object.
+    # Starlette reports the size once the part is spooled, and reading
+    # first meant a gigabyte was received, written to a temp file and
+    # made resident before the limit did anything but shape the message.
+    if file.size is not None and file.size > MAX_UPLOAD_BYTES:
+        raise DomainValidationError(
+            f"that file is {file.size // (1024 * 1024)} MB; the limit is "
+            f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB"
+        )
     data = await file.read()
-    if len(data) > MAX_UPLOAD_BYTES:
+    if len(data) > MAX_UPLOAD_BYTES:  # a client that lied about its size
         raise DomainValidationError(
             f"that file is {len(data) // (1024 * 1024)} MB; the limit is "
             f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB"
@@ -990,6 +1455,12 @@ async def candidate_from_paper_upload(
     return PaperExtractionResource(
         **result.model_dump(),
         offerable_stacks=list(selectable_stacks()),
+        # A 90k-character paper used to come back looking complete: a
+        # stack, quoted parameters, and an `assumptions` list computed
+        # over the first two thirds. Saying how much was read is the
+        # difference between a partial reading and a wrong one.
+        chars_read=min(len(text), MAX_PAPER_CHARS),
+        chars_total=len(text),
     )
 
 

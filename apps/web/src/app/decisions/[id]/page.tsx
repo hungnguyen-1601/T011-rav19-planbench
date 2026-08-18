@@ -16,6 +16,7 @@
 
 import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { AdviceListView } from "@/components/AdviceListView";
 import { TraceViewer } from "@/components/TraceViewer";
 import { useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
@@ -44,6 +45,9 @@ import {
   getCritique,
   type Critique,
   type CritiqueFinding,
+  getDecisionAdvice,
+  getReportAdvice,
+  type AdviceList,
 } from "@/lib/decisions";
 import { downloadDecisionReport } from "@/lib/reports";
 
@@ -88,6 +92,8 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
       <TracePanel run={run} />
       <Outcome run={run} />
       <CritiquePanel runId={run.id} />
+      <AdvicePanel runId={run.id} />
+      <ReportAdvicePanel runId={run.id} />
       <HumanActs run={run} onDone={refresh} />
       <Conditions run={run} />
       <Provenance run={run} />
@@ -1055,6 +1061,98 @@ function Figure({ label, value, unknown }: { label: string; value: string; unkno
  * does a model make of this" — and the second is worth reaching for
  * knowingly, because its answer does not reproduce.
  */
+/** What to do about each gate this run did not clear.
+ *
+ * Loaded on demand rather than on mount: the gate table above answers
+ * "what happened", and this panel answers "so what do I do" — a question
+ * a reader asks after reading, not before. The model button layers an
+ * LLM over the rules; the rules' advice is the floor it may rank and
+ * extend but never remove, and additions citing a field that does not
+ * resolve are dropped and counted where the reader can see the count.
+ */
+function AdvicePanel({ runId }: { runId: string }) {
+  const { t } = useTranslation();
+  const [result, setResult] = useState<AdviceList | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async (useModel: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      setResult(await getDecisionAdvice(runId, useModel));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <h3>{t("advice.title")}</h3>
+        <div className="toolbar">
+          <button type="button" disabled={busy} onClick={() => void load(false)}>
+            {busy ? t("advice.loading") : t("advice.load")}
+          </button>
+          <button type="button" disabled={busy} onClick={() => void load(true)}>
+            {t("advice.askModel")}
+          </button>
+        </div>
+      </div>
+      {error ? <div className="error-box">{error}</div> : null}
+      {result ? <AdviceListView result={result} /> : (
+        <p className="muted">{t("advice.hint")}</p>
+      )}
+    </div>
+  );
+}
+
+/** What a report about this run may claim, and what it may not.
+ *
+ * `report.md` renders the tables; these are the sentences the evidence
+ * does not license — a NEAR_EQUIVALENT reported as a win, an interval
+ * containing zero quoted as a difference, a host screening called a
+ * real-time guarantee. Shown before the reader writes, because the
+ * wrong sentence is cheaper to prevent than to retract.
+ */
+function ReportAdvicePanel({ runId }: { runId: string }) {
+  const { t } = useTranslation();
+  const [result, setResult] = useState<AdviceList | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setResult(await getReportAdvice(runId));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <h3>{t("reportAdvice.title")}</h3>
+        <div className="toolbar">
+          <button type="button" disabled={busy} onClick={() => void load()}>
+            {busy ? t("advice.loading") : t("advice.load")}
+          </button>
+        </div>
+      </div>
+      {error ? <div className="error-box">{error}</div> : null}
+      {result ? <AdviceListView result={result} /> : (
+        <p className="muted">{t("reportAdvice.hint")}</p>
+      )}
+    </div>
+  );
+}
+
 function CritiquePanel({ runId }: { runId: string }) {
   const { t } = useTranslation();
   const [critique, setCritique] = useState<Critique | null>(null);

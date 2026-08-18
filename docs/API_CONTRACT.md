@@ -472,8 +472,20 @@ cắm vào.
 
 | Method | Path | Role | Response |
 |---|---|---|---|
-| GET | `/agent/capabilities` | operator, reviewer | `{provider, model, deterministic, tools[], forbidden[], knowledge_documents}` |
+| GET | `/agent/capabilities` | operator, reviewer | `{provider, model, deterministic, tools[], forbidden[], providers[]}` |
 | POST | `/agent/chat` | operator, reviewer | `{provider, model, deterministic, turn:{text, tools_used[], tool_errors[], iterations, truncated}}` |
+
+Tầng cố vấn (đầy đủ trong `docs/AI_CAPABILITIES.md`; tất cả chỉ đọc,
+không route nào tạo/sửa gì):
+
+| Method | Path | Trả về |
+|---|---|---|
+| POST | `/decisions/preflight` | Lời khuyên về một phép so **chưa chạy**; body đúng bằng body của `POST /decisions` |
+| GET | `/decisions/{run_id}/advice?use_model=` | Việc cần làm cho từng cổng chưa qua, kèm việc bị cấm; `use_model` thêm tầng LLM xếp hạng/bổ sung |
+| GET | `/decisions/{run_id}/report-advice` | Câu nào bằng chứng không cho phép viết vào báo cáo |
+| GET | `/decisions/{run_id}/traces/{cid}/{eid}/review` | Vì sao episode này kết thúc như vậy, từ chính trace của nó |
+| POST | `/candidates/{candidate_id}/reproduction` | Khác biệt giữa phương án đã đăng ký và cấu hình paper nêu |
+| POST | `/plugins/from-paper[/upload]` | Bundle plugin Algorithm Host nháp từ paper; `accepted` là phán quyết của bộ kiểm định tất định |
 | POST | `/agent/missions` | operator | `{session, draft?, refusal?, benchmark?, next_step}` |
 | POST | `/agent/benchmarks/{id}/run` | operator | `BenchmarkSummary`; **409** nếu chưa được approve |
 | GET | `/agent/benchmarks/{id}/evidence` | operator, reviewer | `EvidenceBundle` |

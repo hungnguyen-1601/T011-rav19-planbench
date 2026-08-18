@@ -87,7 +87,7 @@ describe("TopBar — where you are", () => {
     /* `/candidates` was reading "Candidate" in the Vietnamese locale —
        an English string sitting in a translated file, which a test
        naming only one page would never have caught. */
-    expect(topbar({ pathname: "/candidates" }, "vi")).toContain("Ứng viên");
+    expect(topbar({ pathname: "/candidates" }, "vi")).toContain("Phương án");
   });
 });
 

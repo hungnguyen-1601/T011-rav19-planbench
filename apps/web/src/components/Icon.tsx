@@ -34,6 +34,7 @@ export type IconName =
   | "monitor"
   | "globe"
   | "logout"
+  | "paperclip"
   | "plus"
   | "refresh"
   | "check"
@@ -138,6 +139,9 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
       <path d="m16 17 5-5-5-5M21 12H9" />
     </>
+  ),
+  paperclip: (
+    <path d="M21.4 11.05 12.25 20.2a5.5 5.5 0 0 1-7.78-7.78l9.2-9.19a3.67 3.67 0 1 1 5.18 5.18l-9.2 9.2a1.83 1.83 0 0 1-2.59-2.59l8.5-8.49" />
   ),
   plus: <path d="M12 5v14M5 12h14" />,
   refresh: (
