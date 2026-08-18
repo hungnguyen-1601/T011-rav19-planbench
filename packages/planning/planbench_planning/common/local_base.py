@@ -28,6 +28,11 @@ class LocalPlanResult(BaseModel):
     cost_components: dict[str, float] = {}
     latency_seconds: float = 0.0
     failure_reason: str = ""
+    #: The six §5.9 layers of this decision, when something measured
+    #: them. ``None`` for every controller that is simply a function of
+    #: its inputs — which is all of the built-in ones, and why this is
+    #: optional rather than a field every planner must invent values for.
+    latency_layers: dict[str, float | str] | None = None
 
 
 class LocalPlanner(ABC):

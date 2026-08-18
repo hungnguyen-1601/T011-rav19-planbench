@@ -47,9 +47,20 @@ from planbench_simulator.host.fairness_policy import (
     meet,
     provenance_class,
 )
+from planbench_simulator.host.freshness import (
+    FreshnessFilter,
+    FreshnessPolicy,
+    StaleChannelError,
+)
 from planbench_simulator.host.graph_source import (
     GraphBackedLocalPlanner,
     GraphChannelSource,
+)
+from planbench_simulator.host.latency import (
+    HOST_MEASURED,
+    LATENCY_LAYERS,
+    PLUGIN_REPORTED,
+    LatencyLedger,
 )
 from planbench_simulator.host.legacy_global import LegacyGlobalPlugin
 from planbench_simulator.host.legacy_local import LegacyLocalPlugin
@@ -77,7 +88,13 @@ from planbench_simulator.host.runtime_view import (
     ProviderRuntimeView,
     register_trusted_oracle,
 )
-from planbench_simulator.host.runtimes import RuntimeLoadError, TrustedPythonRuntime
+from planbench_simulator.host.runtimes import (
+    RuntimeLoadError,
+    SubprocessPlugin,
+    SubprocessRuntime,
+    TrustedPythonRuntime,
+    UnencodableRequest,
+)
 
 __all__ = [
     "ENTRY_POINT_GROUP",
@@ -85,10 +102,20 @@ __all__ = [
     "OBSERVATION_CHANNEL",
     "AlgorithmHost",
     "DiscoveredPlugin",
+    "HOST_MEASURED",
+    "LATENCY_LAYERS",
+    "PLUGIN_REPORTED",
+    "FreshnessFilter",
+    "FreshnessPolicy",
+    "LatencyLedger",
     "PluginRegistry",
     "QuarantinedPlugin",
     "RuntimeLoadError",
+    "StaleChannelError",
+    "SubprocessPlugin",
+    "SubprocessRuntime",
     "TrustedPythonRuntime",
+    "UnencodableRequest",
     "AuthorizedChannelBundle",
     "CadenceMonitor",
     "CapabilityRegistry",

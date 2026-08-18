@@ -346,9 +346,26 @@ Nguyên tắc:
 - timeout và invalid output phải thành `safe_stop`
 
 Trusted in-process Python không phải security boundary tuyệt đối: code cùng
-process có thể monkeypatch/import internals. “Không đọc world truth” là hard
-isolation cho subprocess/container, còn in-process là trust policy +
-conformance. Plugin không tin cậy không chạy in-process.
+process có thể monkeypatch/import internals. In-process là trust policy +
+conformance; plugin không tin cậy không chạy in-process.
+
+**Sửa 18-08, sau khi H7 dựng lane subprocess thật.** Bản gốc gọi
+subprocess/container là “hard isolation”, và với subprocess điều đó
+**quá mạnh**. Đo được: worker kế thừa toàn bộ environment của host, nhận
+`PYTHONPATH` chứa code repo, có nguyên quyền filesystem/network của user
+đang chạy host, và nhận config qua command line — hiện trong mọi process
+listing. Nói đúng phải là:
+
+| Lane | Cách ly được gì | **Không** được gì |
+|---|---|---|
+| in-process | (không) | mọi thứ — chỉ có trust policy |
+| **subprocess** | crash, hang, interpreter state | quyền hệ thống, environment, filesystem, network |
+| container (post-MVP) | + quyền, environment, filesystem, network | — |
+
+Nên gọi subprocess là **crash/process isolation**. Plugin thật sự không
+tin cậy cần container có drop privileges và environment đã dọn — vẫn là
+post-MVP. Gọi tên đúng ở đây quan trọng vì tên sai sẽ được đọc thành
+“đã an toàn cho plugin lạ”, và đó là kết luận không ai đo.
 
 ### 5.8 Compatibility resolver
 

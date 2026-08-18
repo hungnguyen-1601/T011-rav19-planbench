@@ -101,6 +101,43 @@ TRACE_SCHEMA = pa.schema(
 
 TRACE_COLUMNS: tuple[str, ...] = tuple(TRACE_SCHEMA.names)
 
+#: The six layers of §5.9, appended when a run actually measures them.
+#:
+#: **Opt-in, and that is a measurement decision rather than a
+#: compatibility dodge.** An in-process legacy stack has no transport and
+#: no adapter chain; writing six columns of zeros for it would put
+#: numbers nobody measured into the file the Metrics Engine treats as the
+#: single source of truth, and a reader could not tell "zero milliseconds
+#: of transport" from "this lane has no transport". A run that measures
+#: the layers writes them; a run that does not, does not — and the
+#: column's absence is the honest statement.
+LATENCY_LAYER_COLUMNS: tuple[str, ...] = (
+    "shared_provider_ms",
+    "candidate_provider_ms",
+    "transport_ms",
+    "algorithm_compute_ms",
+    "action_adapter_ms",
+    "host_overhead_ms",
+)
+
+#: Who measured ``algorithm_compute_ms`` on each row (§5.9 rule 6). A
+#: gate must not read that column where this says ``plugin``, so the two
+#: travel together — a number whose provenance lives somewhere else is a
+#: number somebody will read without it.
+COMPUTE_MEASURED_BY_COLUMN = "compute_measured_by"
+
+_LATENCY_FIELDS = [
+    *(pa.field(name, pa.float64(), nullable=False) for name in LATENCY_LAYER_COLUMNS),
+    pa.field(COMPUTE_MEASURED_BY_COLUMN, pa.string(), nullable=False),
+]
+
+#: The schema of a trace that records the layers: HĐ-5's columns, then
+#: the layers. HĐ-5's own columns keep their positions, so every existing
+#: reader keeps working.
+TRACE_SCHEMA_WITH_LAYERS = pa.schema([*TRACE_SCHEMA, *_LATENCY_FIELDS])
+
+TRACE_COLUMNS_WITH_LAYERS: tuple[str, ...] = tuple(TRACE_SCHEMA_WITH_LAYERS.names)
+
 #: Repo statuses that HĐ-5's vocabulary does not distinguish.
 #: ``no_progress`` is this simulator's "moved less than the threshold in
 #: the window"; the contract calls both that and a wedged robot
@@ -209,8 +246,16 @@ class LoadedTrace(BaseModel):
 
     def column(self, name: str) -> list[Any]:
         """One column as a Python list, in recorded order."""
-        if name not in TRACE_COLUMNS:
-            raise TraceError(f"{name!r} is not an HĐ-5 column; columns are {TRACE_COLUMNS}")
+        if name not in TRACE_COLUMNS_WITH_LAYERS:
+            raise TraceError(
+                f"{name!r} is not an HĐ-5 column; columns are {TRACE_COLUMNS_WITH_LAYERS}"
+            )
+        if name not in self.table.column_names:
+            raise TraceError(
+                f"{name!r} is a latency layer and this trace does not carry them: it was "
+                "written by a run that did not measure them, and answering with zeros "
+                "would report measurements nobody made"
+            )
         return self.table.column(name).to_pylist()
 
     @property
@@ -262,6 +307,7 @@ class EpisodeTraceRecorder:
         global_plan_length_m: float | None = None,
         global_plan_time_ms: float | None = None,
         execution_conditions_fingerprint: str = "",
+        latency_layers: bool = False,
     ) -> None:
         self._context = context
         self._candidate_id = candidate_id
@@ -272,7 +318,13 @@ class EpisodeTraceRecorder:
         self._global_plan_time_ms = global_plan_time_ms
         self._fingerprint = execution_conditions_fingerprint
 
-        self._rows: dict[str, list[Any]] = {name: [] for name in TRACE_COLUMNS}
+        #: Decided once, at construction, because a Parquet file has one
+        #: schema: a recorder that started plain and grew columns midway
+        #: could not write the rows it had already taken.
+        self._latency_layers = latency_layers
+        self._schema = TRACE_SCHEMA_WITH_LAYERS if latency_layers else TRACE_SCHEMA
+        self._columns = TRACE_COLUMNS_WITH_LAYERS if latency_layers else TRACE_COLUMNS
+        self._rows: dict[str, list[Any]] = {name: [] for name in self._columns}
         self._last_t: float | None = None
         self._cpu_start = time.process_time()
         self._peak_rss_mb = 0.0
@@ -288,12 +340,20 @@ class EpisodeTraceRecorder:
         *,
         planner_latency_ms: float = 0.0,
         clearance_m: float | None = None,
+        latency_layers: dict[str, Any] | None = None,
     ) -> None:
         """Append one sample (HĐ-4/HĐ-5).
 
         ``clearance_m`` is measured now if not supplied, because it
         cannot be measured later: by the end of the episode the moving
         obstacles are somewhere else.
+
+        ``latency_layers`` carries the six layers of §5.9 plus who
+        measured the compute. Required on every row when the recorder was
+        built with ``latency_layers=True`` and refused otherwise: a file
+        whose layer columns are present on some rows and absent on others
+        would make a percentile over them a percentile over an unstated
+        subset.
         """
         if self._closed:
             raise TraceError(
@@ -328,9 +388,34 @@ class EpisodeTraceRecorder:
             self._require_finite(name, value)
             self._rows[name].append(float(value))
         self._rows["event"].append(event)
+        self._record_layers(latency_layers)
 
         self._last_t = t
         self._sample_rss()
+
+    def _record_layers(self, layers: dict[str, Any] | None) -> None:
+        """The six §5.9 columns, all present or all absent — never mixed."""
+        if not self._latency_layers:
+            if layers is not None:
+                raise TraceError(
+                    "latency layers were supplied to a recorder that was not built to "
+                    "write them; pass latency_layers=True at construction, because a "
+                    "Parquet file has one schema and it is fixed before the first row"
+                )
+            return
+        if layers is None:
+            raise TraceError(
+                "this recorder writes latency layers, so every row needs them: a file "
+                "carrying them on some rows and not others makes any percentile over "
+                "them a percentile over an unstated subset"
+            )
+        for name in LATENCY_LAYER_COLUMNS:
+            value = layers.get(name, 0.0)
+            self._require_finite(name, value)
+            self._rows[name].append(float(value))
+        self._rows[COMPUTE_MEASURED_BY_COLUMN].append(
+            str(layers.get(COMPUTE_MEASURED_BY_COLUMN, "host"))
+        )
 
     def _measure_clearance(self, pose: Pose2D) -> float:
         if self._clearance is None:
@@ -493,7 +578,13 @@ def write_trace(
     missing = [name for name in TRACE_COLUMNS if name not in columns]
     if missing:
         raise TraceError(f"trace is missing HĐ-5 column(s) {missing}")
-    table = pa.table({name: columns[name] for name in TRACE_COLUMNS}, schema=TRACE_SCHEMA)
+    # The layers are all-or-nothing: whichever schema the caller filled,
+    # it filled completely, and a half-populated one is a bug worth
+    # failing on rather than a file worth writing.
+    with_layers = all(name in columns for name in LATENCY_LAYER_COLUMNS)
+    schema = TRACE_SCHEMA_WITH_LAYERS if with_layers else TRACE_SCHEMA
+    names = TRACE_COLUMNS_WITH_LAYERS if with_layers else TRACE_COLUMNS
+    table = pa.table({name: columns[name] for name in names}, schema=schema)
     table = table.replace_schema_metadata(
         {METADATA_KEY: metadata.model_dump_json().encode("utf-8")}
     )

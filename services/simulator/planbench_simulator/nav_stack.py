@@ -1054,6 +1054,11 @@ def run_stack(
                     # what `replan_count` counts.
                     event="replan" if pending_replan_ms > 0.0 else None,
                     planner_latency_ms=step_latency_ms,
+                    # Passed through untouched: the loop does not know
+                    # what a layer is, and a controller that measured
+                    # none supplies None — which the recorder refuses or
+                    # ignores according to how it was built.
+                    latency_layers=decision.latency_layers,
                 )
             if decision.failure_reason:
                 failures.append(

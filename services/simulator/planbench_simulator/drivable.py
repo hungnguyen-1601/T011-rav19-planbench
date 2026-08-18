@@ -102,8 +102,9 @@ def _samples(path: Sequence[Point2D], step: float) -> Iterable[Point2D]:
         span = math.hypot(end.x - start.x, end.y - start.y)
         for index in range(1, max(1, int(math.ceil(span / step)))):
             fraction = index * step / span
-            yield Point2D(x=start.x + (end.x - start.x) * fraction,
-                          y=start.y + (end.y - start.y) * fraction)
+            yield Point2D(
+                x=start.x + (end.x - start.x) * fraction, y=start.y + (end.y - start.y) * fraction
+            )
         yield end
 
 

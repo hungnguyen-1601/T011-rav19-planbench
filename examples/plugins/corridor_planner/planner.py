@@ -128,6 +128,5 @@ def _to_point(grid, cell):
 
 def _length(path) -> float:
     return sum(
-        math.hypot(nxt.x - cur.x, nxt.y - cur.y)
-        for cur, nxt in zip(path, path[1:], strict=False)
+        math.hypot(nxt.x - cur.x, nxt.y - cur.y) for cur, nxt in zip(path, path[1:], strict=False)
     )

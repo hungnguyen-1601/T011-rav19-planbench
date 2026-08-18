@@ -221,9 +221,7 @@ class OccupancyGrid:
         inflated_map = self._map.model_copy(update={"cells": tuple(cells.ravel().tolist())})
         return OccupancyGrid(inflated_map, self._unknown_as_occupied)
 
-    def inflate_graded(
-        self, hard_radius: float, ramp: float, preference: float
-    ) -> OccupancyGrid:
+    def inflate_graded(self, hard_radius: float, ramp: float, preference: float) -> OccupancyGrid:
         r"""Block only the hard set; grade the caution beyond it as cost.
 
         **The problem this replaces.** Binary inflation answers one

@@ -58,7 +58,12 @@ class HostSupport:
     action_types: frozenset[str] = frozenset({"continuous-velocity@1", "global-path@1"})
     robot_dynamics: frozenset[str] = frozenset({"differential-drive@1"})
     execution_models: frozenset[str] = frozenset({"synchronous-step@1"})
-    runtime_lanes: frozenset[str] = frozenset({"python_in_process"})
+    #: ``subprocess`` joined on 2026-08-18, when H7 built the lane —
+    #: not when the plan named it. A host that declared support for a
+    #: lane it had not implemented would let preflight pass a plugin
+    #: straight into a loader that could not start it, turning a clean
+    #: refusal into a crash one phase later.
+    runtime_lanes: frozenset[str] = frozenset({"python_in_process", "subprocess"})
 
 
 @dataclass(frozen=True)

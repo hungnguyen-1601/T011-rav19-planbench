@@ -34,16 +34,40 @@ from planbench_schemas.geometry import Point2D
 from planbench_schemas.robot import RobotConfig, RobotState
 from planbench_simulator.host.algorithm_host import AlgorithmHost
 from planbench_simulator.host.channel_bundle import AuthorizedChannelBundle
+from planbench_simulator.host.freshness import FreshnessFilter, FreshnessPolicy
 from planbench_simulator.host.provider_graph import ProviderGraph
 from planbench_simulator.host.runtime_view import ProviderRuntimeView
 
 
 class GraphChannelSource:
-    """The loop's channel seam, backed by a provider graph."""
+    """The loop's channel seam, backed by a provider graph.
 
-    def __init__(self, graph: ProviderGraph, *, grant_truth: bool = False) -> None:
+    Also where the freshness policy is *applied* rather than merely
+    defined. A policy with unit tests and no caller is a description of
+    what the host would do, and the first person to read the export list
+    would reasonably conclude lateness was handled. Every bundle handed
+    to a plugin now passes through :class:`FreshnessFilter`, so stale
+    reuse, dropping, out-of-order rejection and skew tolerance are
+    properties of episodes rather than of a test file.
+
+    **The policy is an execution condition, and it is declared as one.**
+    Switching ``reuse`` to ``drop`` changes what a plugin sees on a late
+    tick, which changes the command, which changes the trajectory — so
+    :meth:`host_conditions` folds it into the fingerprint alongside the
+    provider graph. Two runs under different freshness policies are two
+    experiments and must not share a trace.
+    """
+
+    def __init__(
+        self,
+        graph: ProviderGraph,
+        *,
+        grant_truth: bool = False,
+        freshness: FreshnessPolicy | None = None,
+    ) -> None:
         self._graph = graph
         self._grant_truth = grant_truth
+        self._freshness = FreshnessFilter(freshness or FreshnessPolicy())
         self._view: ProviderRuntimeView | None = None
 
     def bind(self, engine: Any, planning_grid: Any, episode_seed: int) -> None:
@@ -55,16 +79,54 @@ class GraphChannelSource:
         )
         # Providers drop episode state here, not in their constructors:
         # one graph may run many episodes, and perception carried across
-        # them would leak one episode into the next.
+        # them would leak one episode into the next. The freshness filter
+        # is history too — a revision carried over would make this
+        # episode's first channel look like a regression.
         self._graph.reset()
+        self._freshness.reset()
 
     def advance(self) -> None:
         view = self._require_view()
         self._graph.advance(view.tick(), view.now(), view)
 
     def bundle(self, granted: tuple[str, ...]) -> AuthorizedChannelBundle:
+        """The granted channels, after the freshness policy has spoken.
+
+        A channel the policy withholds is **absent** from the bundle, not
+        present-and-empty: the plugin's own ``LookupError`` then says a
+        capability it declared did not arrive, which is the truth, and
+        the host turns that into a safe stop. Substituting a blank
+        payload would let it compute on nothing and call the result a
+        measurement.
+        """
         view = self._require_view()
-        return self._graph.bundle_for(granted, now=view.now())
+        now = view.now()
+        raw = self._graph.bundle_for(granted, now=now)
+        admitted = [
+            envelope
+            for envelope in (self._freshness.admit(entry, now) for entry in raw.envelopes())
+            if envelope is not None
+        ]
+        return AuthorizedChannelBundle(tuple(admitted))
+
+    def host_conditions(self) -> dict[str, object]:
+        """The freshness policy as an execution condition (§5.9, §7.1)."""
+        policy = self._freshness.policy
+        return {
+            "freshness_on_stale": policy.on_stale,
+            "freshness_max_age_s": dict(sorted(policy.max_age_s.items())),
+            "freshness_clock_skew_s": policy.clock_skew_tolerance_s,
+        }
+
+    @property
+    def freshness_stats(self) -> dict[str, int]:
+        """How much of this episode ran on reused or withheld data.
+
+        An episode where a third of the ticks ran on stale channels is a
+        different measurement from one where none did, and no other
+        column in the trace would show it.
+        """
+        return dict(self._freshness.stats)
 
     def _require_view(self) -> ProviderRuntimeView:
         if self._view is None:
