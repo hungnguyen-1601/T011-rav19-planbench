@@ -69,13 +69,13 @@ class GroundTruthTrackProvider(Provider):
         for index, obstacle in enumerate(current):
             vx = vy = 0.0
             if elapsed and elapsed > 0.0 and index < len(self._previous):
-                earlier = self._previous[index]
-                vx = (obstacle.x - earlier.x) / elapsed
-                vy = (obstacle.y - earlier.y) / elapsed
+                earlier = self._previous[index].center
+                vx = (obstacle.center.x - earlier.x) / elapsed
+                vy = (obstacle.center.y - earlier.y) / elapsed
             tracks.append(
                 {
-                    "x": obstacle.x,
-                    "y": obstacle.y,
+                    "x": obstacle.center.x,
+                    "y": obstacle.center.y,
                     "radius": obstacle.radius,
                     "vx": vx,
                     "vy": vy,

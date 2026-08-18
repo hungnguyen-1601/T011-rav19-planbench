@@ -41,6 +41,7 @@ from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
 from planbench_schemas.robot import RobotConfig, RobotState, SimAction
 from planbench_schemas.scenario import CircleObstacle, Scenario
 from planbench_schemas.sensor import LidarConfig, SensorNoise
+from planbench_simulator.channel_source import ChannelSource
 from planbench_simulator.engine import SimulationEngine
 from planbench_simulator.grid import OccupancyGrid, rasterize_obstacles
 from planbench_simulator.path_follower import PurePursuitConfig, PurePursuitFollower
@@ -807,6 +808,7 @@ def run_policy(
     policy: LocalPlanner,
     recorder: EpisodeTraceRecorder | None = None,
     legacy_metrics: bool = True,
+    channel_source: ChannelSource | None = None,
 ) -> StackRun:
     """Run one episode of a monolithic candidate (HĐ-4's second shape).
 
@@ -829,6 +831,7 @@ def run_policy(
         replanning=NO_REPLANNING,
         recorder=recorder,
         legacy_metrics=legacy_metrics,
+        channel_source=channel_source,
     )
 
 
@@ -842,6 +845,7 @@ def run_stack(
     legacy_metrics: bool = True,
     recovery: RecoveryConfig | None = None,
     obstacle_speed: float | None = None,
+    channel_source: ChannelSource | None = None,
 ) -> StackRun:
     """Run one episode of ``<global_planner>+<local_planner>`` on a scenario.
 
@@ -891,6 +895,16 @@ def run_stack(
     bounded by one rank; the alternative — dating ``goal_reached`` to the
     last control tick — would move the final pose that HĐ-6 checks against
     the goal tolerance, which is not bounded at all.
+
+    ``channel_source`` is the one seam a channel-native plugin needs and
+    the loop deliberately knows nothing about: bound once per episode,
+    advanced once per control decision (see
+    :mod:`planbench_simulator.channel_source`). It is **plumbing, not a
+    condition** — what it delivers can absolutely change an outcome, but
+    those conditions are hashed as ``HostConditions`` where they are
+    resolved, and hashing an opaque callable here would hash an object
+    identity rather than a fact. ``None`` reproduces the previous
+    behaviour exactly, which the parity fixture checks.
 
     ``legacy_metrics=False`` skips the previous topic's ``EpisodeMetrics``
     entirely. Two reasons, and the first is the one that matters: HĐ-5
@@ -969,6 +983,8 @@ def run_stack(
     # deployment, not from the controller's own configuration, which is
     # what stops a candidate narrowing the set the planner used (L2).
     envelope = SafetyEnvelope.for_noise(scenario.sensor_noise)
+    if channel_source is not None:
+        channel_source.bind(engine, raw_grid, scenario.random_seed)
     _reset_local(
         local_planner,
         plan.path,
@@ -1021,6 +1037,8 @@ def run_stack(
             held_action is None or control_period is None or engine.time >= next_control_time - EPS
         )
         if recompute:
+            if channel_source is not None:
+                channel_source.advance()
             decision = local_planner.compute(engine.get_state(), engine.get_observation())
             step_latency_ms = decision.latency_seconds * 1000.0 + pending_replan_ms
             latencies.append(step_latency_ms / 1000.0)

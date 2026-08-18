@@ -245,7 +245,19 @@ class TestConditionArgumentsStayGuarded:
 
     def test_run_policy_has_not_grown_a_condition(self) -> None:
         parameters = set(inspect.signature(run_policy).parameters)
-        not_conditions = {"policy", "recorder", "legacy_metrics"}
+        not_conditions = {
+            "policy",
+            "recorder",
+            "legacy_metrics",
+            # Same argument, same answer as the ``run_stack`` guard in
+            # ``test_execution_conditions``: ``channel_source`` is an
+            # opaque callable, so hashing it would hash an object
+            # identity rather than a fact. What it delivers is hashed as
+            # ``HostConditions`` where it is resolved. Recorded at both
+            # doors on purpose — a decision written down once and
+            # inherited silently at the second is how the two drift.
+            "channel_source",
+        }
         conditions = parameters - not_conditions
         assert conditions <= set(CONDITION_ARGUMENTS), (
             "run_policy grew an argument that describes the world; decide whether it "

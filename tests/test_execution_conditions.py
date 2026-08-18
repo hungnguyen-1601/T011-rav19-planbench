@@ -130,6 +130,17 @@ class TestNothingTheSimulatorReadsIsUnhashed:
             "recorder",
             "legacy_metrics",
             "self",
+            # **Decided on 2026-08-18, when H6 added it, and the decision
+            # is the point of this guard.** ``channel_source`` delivers a
+            # provider graph, and what that graph delivers absolutely can
+            # change an outcome — so it looks like a condition. It is
+            # not hashed *here* because it is an opaque callable: hashing
+            # it would hash an object identity, which is a different
+            # number every run and says nothing about the world. The
+            # conditions it carries — which providers, which lane, which
+            # adapters — are hashed as ``HostConditions`` where they are
+            # resolved and are facts rather than references.
+            "channel_source",
         }
         conditions = parameters - not_conditions
         assert conditions == set(CONDITION_ARGUMENTS), (

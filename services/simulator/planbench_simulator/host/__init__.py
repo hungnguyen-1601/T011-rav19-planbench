@@ -47,6 +47,10 @@ from planbench_simulator.host.fairness_policy import (
     meet,
     provenance_class,
 )
+from planbench_simulator.host.graph_source import (
+    GraphBackedLocalPlanner,
+    GraphChannelSource,
+)
 from planbench_simulator.host.legacy_global import LegacyGlobalPlugin
 from planbench_simulator.host.legacy_local import LegacyLocalPlugin
 from planbench_simulator.host.legacy_policy import LegacyPolicyPlugin
@@ -94,6 +98,8 @@ __all__ = [
     "EvidenceClass",
     "FairnessPolicy",
     "FairnessViolation",
+    "GraphBackedLocalPlanner",
+    "GraphChannelSource",
     "GraphResolution",
     "HostBackedGlobalPlanner",
     "HostBackedLocalPlanner",

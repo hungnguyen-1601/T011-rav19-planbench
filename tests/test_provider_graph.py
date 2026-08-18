@@ -496,11 +496,19 @@ class TestTheOracleIsGatedAndMarked:
         """An oracle that knew the future would measure something no
         estimator could approach even in principle — P4's rule."""
 
-        class _Obstacle:
-            def __init__(self, x: float) -> None:
-                self.x, self.y, self.radius = x, 0.0, 0.3
+        # The real schema, not a stub shaped like one. An earlier draft
+        # of this test used an object with bare ``x``/``y`` attributes,
+        # and ``CircleObstacle`` keeps its position in ``center`` — so
+        # the test passed while the provider could not have read a single
+        # real obstacle. A stub that is easier to write than the type it
+        # stands in for is a test agreeing with itself.
+        from planbench_schemas.geometry import Point2D
+        from planbench_schemas.scenario import CircleObstacle
 
-        positions = [(_Obstacle(0.0),), (_Obstacle(0.1),)]
+        def _obstacle(x: float) -> CircleObstacle:
+            return CircleObstacle(center=Point2D(x=x, y=0.0), radius=0.3)
+
+        positions = [(_obstacle(0.0),), (_obstacle(0.1),)]
         graph = ProviderGraph(builtin_providers(include_oracle=True), builtin_registry())
         graph.advance(0, 0.0, _view(truth=positions[0]))
         first = graph.bundle_for((HUMAN_STATE_ESTIMATES,), now=0.0).payload(HUMAN_STATE_ESTIMATES)

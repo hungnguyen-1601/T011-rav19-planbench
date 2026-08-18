@@ -60,6 +60,14 @@ BUILTIN_CHANNEL_URIS: frozenset[str] = frozenset(
     {
         "planbench://channel/robot-state@1",
         "planbench://channel/global-path@1",
+        # Host-internal channels the provider graph actually produces
+        # (H3). Listed from H6, when the first plugin outside this
+        # repository needed to *require* one: a capability the platform
+        # provides but a manifest may not name is a data plane only the
+        # core can use, which is the opposite of the point.
+        "planbench://channel/legacy-observation@1",
+        "planbench://channel/planning-grid@1",
+        "planbench://channel/static-costmap@1",
         *V1_TOKEN_TO_URI.values(),
     }
 )
