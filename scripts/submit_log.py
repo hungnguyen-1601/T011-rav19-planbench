@@ -21,12 +21,41 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
+
+def _load_dotenv_by_hand() -> None:
+    """Read `.env` without python-dotenv.
+
+    The import used to fall through to `pass`, which meant a Python
+    lacking the package produced "AI_LOG_SERVER not set" — a message that
+    names the wrong missing thing and reads like a configuration choice.
+    Logs were dropped for days behind it. This file is a handful of
+    `KEY=value` lines; parsing it is cheaper than the failure mode.
+    """
+    path = Path(__file__).resolve().parent.parent / ".env"
+    if not path.exists():
+        return
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if not key or key in os.environ:
+            # A real environment variable outranks the file, which is
+            # what `load_dotenv` does and what CI relies on.
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        os.environ[key] = value
+
+
 try:
     from dotenv import load_dotenv
 
     load_dotenv()
 except ImportError:
-    pass
+    _load_dotenv_by_hand()
 
 SERVER_URL = os.environ.get("AI_LOG_SERVER", "")
 API_KEY = os.environ.get("AI_LOG_API_KEY", "")
