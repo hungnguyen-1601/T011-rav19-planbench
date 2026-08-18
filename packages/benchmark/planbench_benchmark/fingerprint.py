@@ -43,6 +43,8 @@ import hashlib
 import json
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
 from planbench_schemas.map import MapData
 from planbench_schemas.scenario import Scenario
 from planbench_schemas.task_profile import TaskProfile
@@ -99,23 +101,98 @@ def scenario_payload(scenario: Scenario) -> dict:
     )
 
 
+class HostConditions(BaseModel):
+    """Execution conditions the **host** contributes (plan §5.9, §7.1).
+
+    This model exists so the Algorithm Host extends *this* hash rather
+    than growing a second one somewhere else — two places hashing two
+    ideas of "what this ran under" is how trace reuse and report lineage
+    drift apart, and §7.1 forbids it outright.
+
+    **What belongs here, and what deliberately does not.** The ownership
+    boundary decides:
+
+    * **deployment-owned providers** are conditions — the deployment
+      chose to run a tracker, and a candidate measured with one is not
+      comparable to the same candidate measured without. They go in.
+    * **oracle providers** likewise, and harder: an episode fed ground
+      truth is a different experiment, and the evidence class alone is
+      not enough, because two runs must also be *addressed* apart.
+    * **candidate-owned providers are excluded on purpose.** A provider
+      the candidate ships is part of the candidate; it changes
+      ``candidate_id``. Hashing it here as well would split one
+      candidate's episodes across two fingerprints for a change already
+      recorded in its identity.
+    * **the resolved runtime profile** goes in, and only became a
+      condition when the deadline gate started reading ``transport_ms``.
+      Before that a lane was bookkeeping; a lane that can change a
+      verdict is a condition, and comparing two candidates measured in
+      different lanes compares transports.
+
+    Absent — the legacy in-process path — this contributes **nothing at
+    all** to the payload, so every fingerprint recorded before the host
+    existed still describes the same conditions. That is checked against
+    the committed H0 value, not asserted.
+
+    Like the rest of this module the payload is derived from the object,
+    so a field added here is hashed without anybody remembering to add
+    it to a list.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    #: ``(capability, provider)`` pairs owned by the deployment or the
+    #: oracle lane. Sorted **here**, at the door, rather than by each
+    #: caller: a set written in two orders is one set, and the argument
+    #: is the same one ``canonical_observations`` makes — an identity
+    #: that depended on the order somebody listed things in would make
+    #: two spellings of one condition look like two conditions.
+    providers: tuple[tuple[str, str], ...] = ()
+    #: Action adapters between the plugin's output and the simulator's.
+    #: **Not** sorted: a chain is ordered by construction, and two
+    #: adapters applied in the other order are a different transform.
+    adapter_chain: tuple[str, ...] = ()
+    #: The runtime lane actually resolved, with its codec and deadline
+    #: policy — not merely the word "subprocess" (§5.9 rule 4).
+    runtime_profile: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("providers", mode="before")
+    @classmethod
+    def _canonical_providers(cls, value: object) -> object:
+        if isinstance(value, (list, tuple)):
+            return tuple(sorted({tuple(entry) for entry in value}))
+        return value
+
+    def is_empty(self) -> bool:
+        """True when the host adds no condition the legacy path lacked."""
+        return not (self.providers or self.adapter_chain or self.runtime_profile)
+
+
 def execution_conditions_fingerprint(
     map_data: MapData,
     scenario: Scenario,
     profile: TaskProfile,
+    host: HostConditions | None = None,
 ) -> str:
     """SHA-256 over everything the episode was simulated under.
 
     Two traces with the same fingerprint were produced by the same world
     under the same rules and may be compared; two with different ones may
     not, whatever their ids say.
+
+    ``host`` is omitted from the payload when it is absent or empty, so
+    the legacy path hashes exactly as it did before the Algorithm Host —
+    see :class:`HostConditions` for why that is a requirement rather than
+    a convenience.
     """
-    payload = {
+    payload: dict[str, Any] = {
         "map": map_data.checksum(),
         "scenario": scenario_payload(scenario),
         "replanning": _canonical(profile.replanning),
         "recovery": _canonical(profile.recovery),
         "obstacle_speed": profile.environment.v_obstacle_max,
     }
+    if host is not None and not host.is_empty():
+        payload["host"] = _canonical(host)
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]

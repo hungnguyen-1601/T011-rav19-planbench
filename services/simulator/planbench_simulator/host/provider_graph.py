@@ -269,3 +269,15 @@ class ProviderGraph:
         """Every provenance the resolved graph carries — the input of the
         fairness verdict (§5.10)."""
         return tuple(sorted({provider.provenance for provider in self._chosen.values()}))
+
+    def provenance_of(self, capability: str) -> str:
+        """Who owns one resolved capability — the input of the ownership
+        split that decides whether a change moves ``candidate_id`` or the
+        execution fingerprint (§7.1)."""
+        provider = self._chosen.get(capability)
+        if provider is None:
+            raise ProviderGraphError(
+                f"capability {capability!r} is not in the resolved graph; resolved: "
+                f"{sorted(self._chosen)}"
+            )
+        return provider.provenance

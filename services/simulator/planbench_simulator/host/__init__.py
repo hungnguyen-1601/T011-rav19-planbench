@@ -21,6 +21,13 @@ from planbench_simulator.host.channel_bundle import (
     ChannelContractError,
     UndeclaredChannelError,
 )
+from planbench_simulator.host.compatibility import (
+    CompatibilityReport,
+    HostSupport,
+    ProviderOwnership,
+    RegistrationState,
+    resolve_compatibility,
+)
 from planbench_simulator.host.facades import (
     HostBackedGlobalPlanner,
     HostBackedLocalPlanner,
@@ -70,6 +77,7 @@ __all__ = [
     "CapabilityRegistry",
     "CapabilitySpec",
     "ChannelContractError",
+    "CompatibilityReport",
     "EvidenceClass",
     "FairnessPolicy",
     "FairnessViolation",
@@ -78,6 +86,7 @@ __all__ = [
     "HostBackedLocalPlanner",
     "HostPluginError",
     "HostStats",
+    "HostSupport",
     "HostedGlobalPlugin",
     "HostedLocalPlugin",
     "LegacyGlobalPlugin",
@@ -88,7 +97,9 @@ __all__ = [
     "ProviderError",
     "ProviderGraph",
     "ProviderGraphError",
+    "ProviderOwnership",
     "ProviderRuntimeView",
+    "RegistrationState",
     "UndeclaredChannelError",
     "builtin_providers",
     "builtin_registry",
@@ -98,4 +109,5 @@ __all__ = [
     "meet",
     "provenance_class",
     "register_trusted_oracle",
+    "resolve_compatibility",
 ]
