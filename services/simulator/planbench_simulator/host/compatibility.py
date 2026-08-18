@@ -168,6 +168,7 @@ def resolve_compatibility(
     policy: FairnessPolicy | None = None,
     support: HostSupport | None = None,
     adapter_chain: tuple[str, ...] = (),
+    missing_dependencies: tuple[str, ...] = (),
 ) -> CompatibilityReport:
     """Decide whether ``manifest`` can run here, and say why not.
 
@@ -190,11 +191,19 @@ def resolve_compatibility(
         if capability in available_capabilities and capability not in offered
     )
 
-    missing_runtime = (
+    # **A lane whose dependencies are absent is not an available lane.**
+    # ``missing_dependencies`` arrives from discovery, the only layer
+    # that probes the interpreter, and is folded into the *runtime*
+    # verdict rather than reported beside it: a report saying
+    # ``registered_and_runnable`` next to a list of missing modules is
+    # two conclusions about one plugin, and an operator has to guess
+    # which one the platform will act on.
+    lane_missing = (
         ()
         if manifest.runtime.production_lane in support.runtime_lanes
         else (manifest.runtime.production_lane,)
     )
+    missing_runtime = lane_missing + tuple(f"module {name}" for name in missing_dependencies)
 
     incompatible_actions = _unsupported(manifest.supports.action_types, support.action_types)
     incompatible_dynamics = _unsupported(manifest.supports.robot_dynamics, support.robot_dynamics)

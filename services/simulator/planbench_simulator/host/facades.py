@@ -73,8 +73,13 @@ class HostBackedGlobalPlanner(GlobalPlanner):
 class HostBackedLocalPlanner(LocalPlanner):
     """``LocalPlanner`` outside, reset/step requests inside."""
 
-    def __init__(self, host: AlgorithmHost) -> None:
+    def __init__(self, host: AlgorithmHost, *, episode_seed: int = 0) -> None:
         self._host = host
+        #: Reaches the plugin through ``reset``. Carried on the facade
+        #: because the ABC's ``reset`` does not take one and the loop
+        #: has no reason to grow an argument for it: the seed is a
+        #: property of the episode this facade was built for.
+        self._episode_seed = episode_seed
 
     @property
     def name(self) -> str:
@@ -101,6 +106,7 @@ class HostBackedLocalPlanner(LocalPlanner):
             LocalResetRequest(
                 global_path=tuple((point.x, point.y) for point in global_path),
                 robot={"robot_config": robot},
+                episode_seed=self._episode_seed,
                 declared={
                     "envelope": envelope,
                     "obstacle_speed": obstacle_speed,
@@ -126,7 +132,10 @@ class HostBackedLocalPlanner(LocalPlanner):
 
 
 def host_backed_planners(
-    global_planner: GlobalPlanner, local_planner: LocalPlanner
+    global_planner: GlobalPlanner,
+    local_planner: LocalPlanner,
+    *,
+    episode_seed: int = 0,
 ) -> tuple[HostBackedGlobalPlanner, HostBackedLocalPlanner]:
     """Wrap one episode's planners behind one host.
 
@@ -139,7 +148,7 @@ def host_backed_planners(
         local_plugin=LegacyLocalPlugin(local_planner),
         control_deadline_s=local_planner.control_period,
     )
-    return HostBackedGlobalPlanner(host), HostBackedLocalPlanner(host)
+    return HostBackedGlobalPlanner(host), HostBackedLocalPlanner(host, episode_seed=episode_seed)
 
 
 def host_backed_policy(policy: LocalPlanner) -> HostBackedLocalPlanner:

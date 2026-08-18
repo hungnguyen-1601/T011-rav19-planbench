@@ -16,6 +16,13 @@ from planbench_plugin_sdk.capabilities import (
     is_builtin,
 )
 from planbench_plugin_sdk.channels import Cadence, ChannelEnvelope, Provenance
+from planbench_plugin_sdk.conformance import (
+    ConformanceReport,
+    Finding,
+    check_declarations,
+    check_global_plugin,
+    check_local_plugin,
+)
 from planbench_plugin_sdk.errors import (
     DuplicatePluginError,
     IncompatibleProtocolError,
@@ -48,7 +55,9 @@ __all__ = [
     "Cadence",
     "CapabilityRef",
     "ChannelEnvelope",
+    "ConformanceReport",
     "DuplicatePluginError",
+    "Finding",
     "GlobalPlanRequest",
     "GlobalPlanResponse",
     "IncompatibleProtocolError",
@@ -64,6 +73,9 @@ __all__ = [
     "UnknownCapabilityError",
     "canonical_requirement",
     "canonical_requirements",
+    "check_declarations",
+    "check_global_plugin",
+    "check_local_plugin",
     "is_builtin",
     "is_compatible",
     "load_manifest",

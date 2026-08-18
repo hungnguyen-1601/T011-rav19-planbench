@@ -27,15 +27,35 @@ columns already carry the wall-clock truth, and gate G4 reads those.
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass, field
 
-from planbench_plugin_sdk import GlobalPlanRequest, LocalResetRequest, LocalStepRequest
+from planbench_plugin_sdk import (
+    GlobalPlanRequest,
+    GlobalPlanResponse,
+    LocalResetRequest,
+    LocalStepRequest,
+)
 
 from planbench_planning.common.base import PlanResult
 from planbench_planning.common.local_base import LocalPlanResult
+from planbench_schemas.geometry import Point2D
 from planbench_schemas.robot import SimAction
 from planbench_simulator.host.lifecycle import HostedGlobalPlugin, HostedLocalPlugin
+
+
+def _path_length(path: tuple[tuple[float, float], ...]) -> float:
+    """Length of a plugin's path, computed here rather than trusted.
+
+    ``GlobalPlanResponse`` has no length field on purpose: it is a
+    property of the path, and a plugin that reported one could report a
+    different number from the geometry it actually returned.
+    """
+    return sum(
+        math.hypot(nxt[0] - cur[0], nxt[1] - cur[1])
+        for cur, nxt in zip(path, path[1:], strict=False)
+    )
 
 
 class HostPluginError(RuntimeError):
@@ -100,13 +120,28 @@ class AlgorithmHost:
                 success=False,
                 failure_reason=f"global plugin {self._global.name!r} crashed: {error!r}",
             )
+        if isinstance(result, GlobalPlanResponse):
+            # **The SDK's own response type, converted here.** A plugin
+            # outside this repository depends on the SDK and nothing
+            # else, so demanding ``PlanResult`` — which lives in
+            # ``planbench_planning`` — would have made "one dependency"
+            # false. The conversion belongs on this side of the
+            # boundary, where both types are already in scope.
+            return PlanResult(
+                success=result.success,
+                path=tuple(Point2D(x=x, y=y) for x, y in result.path),
+                path_length=_path_length(result.path),
+                failure_reason=result.failure_reason,
+                expanded_nodes=result.expanded_nodes,
+            )
         if not isinstance(result, PlanResult):
             self.stats.invalid_outputs += 1
             return PlanResult(
                 success=False,
                 failure_reason=(
                     f"global plugin {self._global.name!r} returned "
-                    f"{type(result).__name__}, not a PlanResult"
+                    f"{type(result).__name__}, which is neither a PlanResult nor a "
+                    "GlobalPlanResponse"
                 ),
             )
         return result

@@ -48,6 +48,14 @@ class LocalResetRequest(BaseModel):
     global_path: tuple[tuple[float, float], ...] = ()
     robot: dict[str, Any] = Field(default_factory=dict)
     declared: dict[str, Any] = Field(default_factory=dict)
+    #: The episode's seed, so a stochastic plugin can be reproducible.
+    #:
+    #: Added in 1.2.0 because the author guide told plugins to draw
+    #: randomness from it and the contract did not carry it — advice that
+    #: could not be followed. HĐ-4 lets a sampling algorithm be
+    #: deterministic *given its seed*, and without one reaching the
+    #: plugin the only way to be random is to be irreproducible.
+    episode_seed: int = 0
 
 
 class LocalStepRequest(BaseModel):

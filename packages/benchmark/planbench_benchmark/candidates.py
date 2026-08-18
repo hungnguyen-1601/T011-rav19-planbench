@@ -579,4 +579,5 @@ def build_planners(
     return host_backed_planners(
         build_global_planner(stack_id, episode_seed=episode_seed),
         build_local_planner(stack_id, local_params),
+        episode_seed=episode_seed,
     )

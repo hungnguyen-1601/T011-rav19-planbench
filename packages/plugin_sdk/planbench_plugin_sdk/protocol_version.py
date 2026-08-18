@@ -16,7 +16,12 @@ import re
 #: 1.1.0 (H5) added ``entry_point`` and ``python_dependencies`` to a
 #: runtime profile — additive, so every 1.0 manifest still parses, which
 #: is the whole reason compatibility is judged on the major.
-PLUGIN_API_VERSION = "1.1.0"
+#:
+#: 1.2.0 (H8 review) added ``episode_seed`` to the reset request. The
+#: author guide had been telling plugins to seed themselves from it
+#: before it existed; the version moved because the contract did, not
+#: because the documentation was corrected.
+PLUGIN_API_VERSION = "1.2.0"
 
 PLUGIN_API_MAJOR = 1
 
