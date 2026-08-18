@@ -27,6 +27,8 @@ const PAGE = readFileSync(join(APP, "deployments", "page.tsx"), "utf8");
 const DECISIONS = readFileSync(join(APP, "decisions", "page.tsx"), "utf8");
 const FORM = readFileSync(join(process.cwd(), "src", "components", "DeploymentForm.tsx"), "utf8");
 const LIB = readFileSync(join(process.cwd(), "src", "lib", "deployments.ts"), "utf8");
+const TRAFFIC_UI = readFileSync(join(process.cwd(), "src", "components", "TrafficEditor.tsx"), "utf8");
+const TRAFFIC_LIB = readFileSync(join(process.cwd(), "src", "lib", "traffic.ts"), "utf8");
 
 describe("noise is a property of the deployment", () => {
   it("says so on the page rather than leaving it to be discovered", () => {
@@ -140,15 +142,19 @@ describe("the form is an input method, not a second definition", () => {
     expect(FORM).toContain("errorFor(path)");
   });
 
-  it("says out loud that it writes no moving traffic", () => {
+  it("says out loud what leaving both quiet costs", () => {
     /* With no traffic *and* no noise a deterministic planner replays one
        episode per seed, and G2's bound would rest on a sample of one.
        Legal, and the profile schema does not forbid it — so the form
-       says it rather than refusing. */
+       says it rather than refusing. The note used to end by sending the
+       reader to the YAML tab for traffic; it no longer can, because the
+       form writes traffic now. */
     const note = (en as Record<string, string>)["deployments.form.noiseNote"];
     expect(note).toContain("traffic");
     expect(note).toContain("one episode per seed");
+    expect(note).not.toContain("YAML");
     expect((vi as Record<string, string>)["deployments.form.noiseNote"]).toContain("traffic");
+    expect((vi as Record<string, string>)["deployments.form.noiseNote"]).not.toContain("YAML");
   });
 
   it("carries the form's draft into the YAML tab but not back", () => {
@@ -188,18 +194,40 @@ describe("the form is an input method, not a second definition", () => {
 
   it("draws and places through the shared components", () => {
     expect(FORM).toContain("<MapPainter");
-    expect(FORM).toContain("<MissionPlacer");
+    /* The canvas and the pose fields are mounted separately here, one
+       per column, while `/decisions` still uses the arrangement that
+       holds all three together. Same components either way — a second
+       copy would be a second answer to what clicking the map does. */
+    expect(FORM).toContain("<MissionCanvas");
+    expect(FORM).toContain("<MissionPoseFields");
   });
 
   it("has every key it asks for, in both locales", () => {
-    const keys = new Set([...FORM.matchAll(/\bt\(\s*"([^"`]+)"/g)].map((match) => match[1]));
-    for (const key of keys) {
-      expect(en, `en is missing ${key}`).toHaveProperty(key);
-      expect(vi, `vi is missing ${key}`).toHaveProperty(key);
+    /* Both files, because the authoring moved into its own component
+       and the guard did not follow it. A dozen traffic keys were being
+       checked by nothing at all: an untranslated one renders as its own
+       dotted path, which reads as a bug in the page rather than as a
+       missing line in a locale file. */
+    for (const source of [FORM, TRAFFIC_UI]) {
+      const keys = new Set([...source.matchAll(/\bt\(\s*"([^"`]+)"/g)].map((match) => match[1]));
+      for (const key of keys) {
+        expect(en, `en is missing ${key}`).toHaveProperty(key);
+        expect(vi, `vi is missing ${key}`).toHaveProperty(key);
+      }
     }
+    /* Keys assembled from a variable, which the scan above cannot
+       see — every branch of each, spelled out. */
     for (const source of ["library", "stored", "drawn"]) {
       expect(en).toHaveProperty(`deployments.form.source.${source}`);
       expect(vi).toHaveProperty(`deployments.form.source.${source}`);
+    }
+    for (const hint of ["self-seeded", "one-shot", "incomplete"]) {
+      expect(en).toHaveProperty(`deployments.form.traffic.seedTimeOffset.${hint}`);
+      expect(vi).toHaveProperty(`deployments.form.traffic.seedTimeOffset.${hint}`);
+    }
+    for (const kind of ["waypoint", "periodic", "randomWalk", "suddenStop"]) {
+      expect(en).toHaveProperty(`deployments.form.traffic.kind.${kind}`);
+      expect(vi).toHaveProperty(`deployments.form.traffic.kind.${kind}`);
     }
   });
 });
@@ -431,12 +459,329 @@ describe("the traffic comes with the map it belongs to", () => {
     expect(adopt).toContain("environment.dynamic_obstacles");
   });
 
-  it("does not validate the obstacles itself", () => {
-    /* `TaskProfile` refuses duplicate names and a periodic obstacle that
-       shifts by less than one period. A second opinion here would be
-       free to disagree with the one that decides. */
-    expect(FORM).not.toContain("seed_time_offset");
-    expect(EN_FORM["deployments.form.note"] ?? "").not.toContain("obstacle");
+  it("lets the author change what it carried", () => {
+    /* Carrying was only ever half of it. A map somebody drew arrived
+       with no traffic and no way to add any, and the only place to write
+       a cart was the YAML tab. */
+    expect(FORM).toContain("<TrafficEditor");
+    expect(FORM).toContain('set("environment.dynamic_obstacles", next)');
+  });
+
+  it("draws the route while it is being written, not only after a preview", () => {
+    /* Placing three waypoints used to draw nothing at all: the canvas
+       only ever showed positions the backend had computed, so authoring
+       a route meant clicking into an empty map and pressing Preview to
+       find out what had been written. The overlay comes from the
+       document itself. */
+    expect(FORM).toContain("authoredTraffic={overlayOf(");
+    expect(FORM).toContain("trafficUi.selectedObstacleIndex");
+  });
+
+  it("says which of the two drawings the author can move", () => {
+    /* Two pictures of the same obstacles sit on one canvas — the
+       declared route and the previewed instant — and only the first is
+       editable. Left to colour alone, a click on the amber marker reads
+       as a broken control. */
+    expect(FORM).toContain("deployments.form.traffic.legend");
+    expect(EN_FORM["deployments.form.traffic.legend"]).toMatch(/not a control/i);
+  });
+
+  it("lets the map be edited directly, and decides each press in one place", () => {
+    /* Placing used to be the only thing a press could mean, so moving a
+       waypoint meant re-placing it from the toolbar. The three meanings
+       a press now has — place, grab, select — are decided by one table
+       rather than by whichever handler ran first. */
+    expect(FORM).toContain("interpretPointer(");
+    expect(FORM).toContain("onPointerDownFirst={claimPress}");
+    expect(FORM).toContain("moveHandle(");
+  });
+
+  it("writes a drag through the document as it is now, not as it was", () => {
+    /* One write per frame, each onto `draftRef.current`. A handler
+       closed over the render's `draft` would rebuild from the state
+       before the previous frame and the point would jitter between two
+       positions — the same class of stale write the map adoption had
+       across its await. */
+    expect(FORM).toContain("requestAnimationFrame");
+    const live = FORM.slice(FORM.indexOf("const setLive"), FORM.indexOf("// The defaults, from"));
+    expect(live).toContain("draftRef.current");
+    expect(live).toContain("flushDrag");
+  });
+
+  it("never lets a press that did not travel move anything", () => {
+    /* A press on a waypoint is a candidate drag until it clears
+       `dragGate`. Below that it is a click — it selected, or it was
+       half of a double-click — and nudging the point under it would be
+       an edit nobody asked for. */
+    expect(FORM).toContain("dragGate(");
+    const finish = FORM.slice(FORM.indexOf("const endDrag"), FORM.indexOf("const removeWaypointUnder"));
+    expect(finish).toContain("if (!active.committed) return;");
+    /* And a cancel keeps the last position a *move* reported: the
+       cancel event itself can arrive from a gesture interruption
+       carrying one nobody pointed at. */
+    expect(finish).toContain("active.lastWorld");
+    /* The last write of a drag happens as the gesture ends, so the
+       flush is handed the handle rather than reading it back off the
+       ref that has just been cleared. An earlier version did read it
+       back, found nothing, and silently threw away the position the
+       pointer was released at — a bug with no symptom except that a
+       dragged point settled a few pixels behind the mouse. */
+    expect(finish).toContain("flushDrag(active.hit,");
+    expect(FORM).not.toMatch(/flushDrag\(\s*(current\.)?pending/);
+  });
+
+  it("puts the map beside the controls rather than a screen below them", () => {
+    /* Thirty fields stacked in one column left the map — the thing most
+       of them are about — near the bottom, so choosing a traffic route
+       meant scrolling away from the picture of it. */
+    expect(FORM).toContain("gridTemplateColumns");
+    expect(FORM).toContain("sideBySide(shellWidth)");
+    /* Measured, and passed down as a number. `MapCanvas` maps a press
+       to world coordinates assuming its surface and its CSS box are the
+       same size, so a `width: 100%` stretch would land every click away
+       from the pointer while the map still looked right. */
+    expect(FORM).toContain("canvasSize(roomForMap");
+    expect(FORM).toContain("width={canvas.width}");
+    /* And the map's track *is* the map. Two flexible tracks left the
+       canvas at the left edge of a wider column and the panel at the
+       right edge of another, with a gap between them that belonged to
+       neither — which is what made the picker under the map look like
+       it was floating between the two. */
+    expect(FORM).toContain("`${canvas.width}px minmax(0, 1fr)`");
+  });
+
+  it("says which tab a refusal is behind, and jumps there after a check", () => {
+    /* A tab is a place to hide things. Without a badge and a jump, a
+       refused field on an unopened tab blocks filing while the author
+       is shown nothing at all. */
+    expect(FORM).toContain("tallyErrors(shownErrors)");
+    expect(FORM).toContain("firstTabWithError(addressed)");
+    /* And an address no tab claims is printed in full rather than
+       counted into whichever tab looked closest. */
+    expect(FORM).toContain("tally.unmapped.map");
+  });
+
+  it("can take back the change a stray click just made", () => {
+    /* One click on the canvas moves the start, and before this there
+       was no way back to the old coordinates except remembering them.
+       The mission is inside the snapshot for that reason — it is part
+       of the document, and the part most often changed by accident. */
+    expect(FORM).toContain("pushHistory(");
+    expect(FORM).toContain("undoHistory(");
+    const memory = FORM.slice(FORM.indexOf("interface FormMemory"), FORM.indexOf("const NOISE_DEFAULTS"));
+    expect(memory).toContain("draft");
+    expect(memory).toContain("start");
+    expect(memory).toContain("goal");
+  });
+
+  it("leaves Ctrl-Z alone while the caret is in a text box", () => {
+    /* The browser's own undo works there, on the characters being
+       typed. Taking it over to rewind the whole profile would answer a
+       request for one word back by throwing away a map. */
+    const shortcut = FORM.slice(FORM.indexOf("const onKey"), FORM.indexOf("window.addEventListener"));
+    expect(shortcut).toContain("input, textarea, select");
+    expect(shortcut).toContain("return;");
+  });
+
+  it("offers the shortcut as buttons too", () => {
+    /* Ctrl-Z is discoverable only to somebody who already suspects it
+       is there, and the accident it undoes happens to people who have
+       not thought about undo at all. */
+    expect(FORM).toContain('t("deployments.form.undo")');
+    expect(FORM).toContain("history.length === 0");
+    expect(FORM).toContain("future.length === 0");
+  });
+
+  it("explains a field beside it rather than under it", () => {
+    /* Thirty paragraphs of consequence took more room than the
+       controls they described, and a panel that is four-fifths prose
+       is one nobody reads. The text is still one sentence per number —
+       it is behind a mark now. */
+    expect(FORM).toContain("<Hint");
+    /* And a refusal is never behind one: a hidden refusal leaves an
+       author staring at a form that does nothing when they press the
+       button. */
+    const field = FORM.slice(FORM.indexOf("function Field({"), FORM.indexOf("function Choice({"));
+    expect(field).toContain('<span className="badge err">{error}</span>');
+    expect(field).not.toMatch(/<Hint[^/]*error/);
+  });
+
+  it("still refuses to judge the obstacles itself", () => {
+    /* The rule did not soften when the work moved into its own files.
+       `TaskProfile` decides; the browser asks. What would break this is
+       a comparison in TypeScript — an offset measured against a period,
+       a name checked against another name — so those are what is looked
+       for, in both files that could hold one. */
+    for (const source of [FORM, TRAFFIC_UI, TRAFFIC_LIB]) {
+      expect(source).not.toContain("< motion.period");
+      expect(source).not.toContain("seed_time_offset <=");
+      expect(source).not.toContain("seed_time_offset ===  0");
+      expect(source).not.toMatch(/must be unique|duplicate name/i);
+    }
+  });
+
+  it("asks the server for the verdict instead", () => {
+    expect(FORM).toContain('"/task-profiles/validate"');
+    expect(FORM).toContain("fieldErrorsOf(caught)");
+  });
+
+  it("has somewhere to show every refusal about the traffic, at either depth", () => {
+    /* Pydantic addresses what it can. A rule written as a model
+       validator on `EnvironmentSpec` — unique names, a head start, a
+       full period, a declared closing speed, a shared clock — lands on
+       `environment`; a field constraint lands on
+       `environment.dynamic_obstacles.0.radius`. Both are pinned in
+       tests/api/test_api_profile_validation.py.
+
+       The first version passed only the block-level path, so a refused
+       radius blocked filing while the author was shown nothing at all.
+       Hence: the form hands over everything addressed to this block, and
+       the editor renders the deep ones beside their row and the rest at
+       the top. */
+    expect(FORM).toContain('entry.path.startsWith("environment.")');
+    expect(TRAFFIC_UI).toContain("rowErrors");
+    expect(TRAFFIC_UI).toContain("blockErrors");
+  });
+
+  it("keeps a verdict from outliving the document it was about", () => {
+    /* A green "the server accepts this" beside a document that has
+       changed since is read as current. The clearing lived inside `set`
+       at first, so typing in a field invalidated it while moving the
+       start pose, adopting a map or applying a vehicle did not. */
+    expect(FORM).toContain("invalidateCheck");
+    /* Five ways to change the document — a field, the map, the vehicle,
+       the mission, and dragging a point on the canvas — across six
+       calls, because the map retires the verdict twice: once when it is
+       asked for, since the picker already shows something the draft
+       does not, and once when the write lands and the draft actually
+       changes. Counted rather than named so a further way added later
+       fails here instead of silently keeping a stale tick.
+
+       The sixth arrived with handle dragging and is a second *writer*
+       rather than a second rule: `setLive` writes onto
+       `draftRef.current` instead of the render's `draft`, because a
+       drag writes once per animation frame and a closure captured at
+       render time would rebuild the document from the state before the
+       previous frame. Both writers retire the verdict, which is the
+       thing this count is here to protect.
+
+       The seventh came with the two-column layout: the mission is now
+       edited from two places — dragging its markers on the canvas in
+       one column, typing its coordinates in the Mission tab in the
+       other — and each of them is a change to the document.
+
+       Eight and nine are undo and redo. Putting an older document back
+       is as much a change as making one: a green "the server accepts
+       this" left standing over a rewind would be a verdict about a
+       document that is no longer on screen — the exact failure this
+       count guards, arriving from the one direction nothing else
+       covers. */
+    expect(FORM.match(/invalidateCheck\(\)/g) ?? []).toHaveLength(9);
+    // And a reply already in flight when the document moved on is an
+    // answer to a question nobody is asking any more.
+    expect(FORM).toContain("revision.current !== asked");
+  });
+
+  it("does not let a reply about an older document draw over a newer one", () => {
+    /* Three handlers here finish after an await, and each of them can
+       land on a document that has moved on. Clearing the picture was not
+       enough for the preview: a request that left before the edit still
+       matched its own sequence when it returned, so it drew the old
+       world back over the cleared canvas. Adopting a map has the same
+       shape — a late answer about map A would put its paths under map
+       B's grid, and a `draft` captured before the await would undo
+       whatever was typed while it ran. */
+    expect(FORM).toContain("previewSeq.supersede()");
+    expect(FORM).toContain("adoption.isCurrent(token)");
+    expect(FORM).toContain("draftRef.current");
+  });
+
+  it("decides which map won when it was chosen, not when it answered", () => {
+    /* Claiming the token inside `adopt` — after the grid had been
+       fetched — ordered the maps by how fast the server answered. Pick
+       A, pick B, B answers first and takes token 1, A answers second and
+       takes token 2, and A wins although nobody selected it. The claim
+       belongs beside the choice; `sequencer.test.ts` checks that the
+       ordering itself behaves. */
+    const chooser = FORM.slice(
+      FORM.indexOf("const adoptStoredMap"),
+      FORM.indexOf("// Open on the default"),
+    );
+    expect(chooser.indexOf("adoption.claim()")).toBeLessThan(chooser.indexOf("api.getMap(id)"));
+  });
+
+  it("freezes from the moment the map is asked for, not from when it lands", () => {
+    /* The freezing started inside `adopt`, which runs only once the grid
+       has arrived — so for the whole length of the request the picker
+       already showed the new map while the draft, the canvas and the
+       mission were still the old one, and nothing was disabled. Filing
+       in that window stores a deployment nobody is looking at. */
+    const chooser = FORM.slice(
+      FORM.indexOf("const adoptStoredMap"),
+      FORM.indexOf("// Open on the default"),
+    );
+    expect(chooser.indexOf("beginAdoption()")).toBeLessThan(chooser.indexOf("api.getMap(id)"));
+    expect(FORM).toContain("setAdopting(true)");
+    // And it lifts again however the request ends, or a failed import
+    // leaves the form frozen for good.
+    expect(FORM.match(/setAdopting\(false\)/g) ?? []).toHaveLength(4);
+  });
+
+  it("treats picking the blank option as a choice too", () => {
+    /* It says "not that map". Returning early without claiming left an
+       adoption already fetching, and it went on to commit a map the
+       picker no longer shows — the same race by the one path that
+       starts no request of its own. An unused token still supersedes
+       what is in flight, so the claim comes before the branch. */
+    const chooser = FORM.slice(
+      FORM.indexOf("const adoptStoredMap"),
+      FORM.indexOf("// Open on the default"),
+    );
+    expect(chooser.indexOf("adoption.supersede()")).toBeLessThan(
+      chooser.indexOf("beginAdoption()"),
+    );
+  });
+
+  it("writes a map into the draft only once nothing can still fail", () => {
+    /* The old order set the grid, the id and the mission first and then
+       awaited the file write. A failure there left the canvas showing
+       one map while the draft still named another, with nothing to roll
+       it back and nothing saying so. */
+    const adopt = FORM.slice(FORM.indexOf("const adopt = useCallback"), FORM.indexOf("// Open on"));
+    expect(adopt.indexOf("await materialiseMap")).toBeLessThan(adopt.indexOf("setMapData(data)"));
+    expect(adopt).toContain("catch (caught)");
+  });
+
+  it("locks filing and checking while a map is being written out", () => {
+    /* During that window the canvas already shows the new map and the
+       draft still names the old one, so filing would store a deployment
+       nobody is looking at. */
+    expect(FORM).toContain("busy || checking || adopting");
+    expect(FORM).toContain('disabled={frozen || !complete} onClick={() => void submit()}');
+    expect(FORM).toContain("disabled={frozen || !complete} onClick={() => void check()}");
+  });
+
+  it("retires the picture when the instant it is labelled with changes", () => {
+    expect(FORM).toContain("scrubPreview");
+    expect(FORM.match(/scrubPreview\(\)/g) ?? []).toHaveLength(2);
+  });
+
+  it("disables the preview on the same answer that would make it do nothing", () => {
+    /* `previewRequestOf` returns nothing when the draft has not declared
+       something the scenario needs. Leaving the button enabled made a
+       click silently return, which reads as a broken preview rather than
+       as an unfinished deployment. */
+    expect(FORM).toContain("disabled={frozen || !previewRequest}");
+  });
+
+  it("shows the half of the preview's answer that is not a picture", () => {
+    /* The endpoint validates against the *map* — a start inside a wall,
+       an obstacle in occupied cells — and none of that reaches
+       `POST /task-profiles/validate`, which reads the document and never
+       opens the grid. Drawing the traffic while dropping `valid` shows a
+       scene that cannot run as though nothing were wrong. */
+    expect(FORM).toContain("preview && !preview.valid");
+    expect(FORM).toContain("preview.errors.map");
   });
 
   it("still advertises the count it is now honouring", () => {
@@ -571,22 +916,32 @@ describe("replanning is declared by the deployment, and has no budget", () => {
    * stops it being a capability one stack has and another does not.
    */
   const EN_REPLAN = en as Record<string, string>;
+  const V_OBSTACLE_MAX_PATH = "environment.v_obstacle_max";
 
   it("offers the switch", () => {
     expect(FORM).toContain('at(draft, "replanning.enabled")');
     expect(FORM).toContain('set("replanning.enabled", event.target.checked)');
   });
 
-  it("sits under the map picker, not up with the other conditions", () => {
+  it("stays beside the map rather than up with the other conditions", () => {
     /* Where it belongs by category is beside the constraints; where it
        belongs by use is next to the map. Deciding whether the robot may
        replan is a thought you have *while looking at the traffic you
        just picked*, and up with the constraints it was a scroll away
-       from the moment it occurs to anybody. */
-    expect(FORM.indexOf('set("replanning.enabled"')).toBeGreaterThan(
-      FORM.indexOf('t("deployments.form.map")'),
+       from the moment it occurs to anybody.
+
+       In the single column that meant "directly under the map picker".
+       Now the map is a column of its own and the controls are tabs
+       beside it, so the same rule means "on the Policies tab, in view
+       of the map" — with the closing speed, which is the other thing
+       moving traffic makes you decide. */
+    const policies = FORM.slice(
+      FORM.indexOf("const policiesTab"),
+      FORM.indexOf("const hardwareTab"),
     );
-    expect(FORM.indexOf('set("replanning.enabled"')).toBeLessThan(FORM.indexOf("<MissionPlacer"));
+    expect(policies).toContain('set("replanning.enabled"');
+    expect(policies).toContain('set("recovery.enabled"');
+    expect(policies).toContain(V_OBSTACLE_MAX_PATH);
   });
 
   it("stands out when the chosen scenario has traffic", () => {
@@ -601,7 +956,10 @@ describe("replanning is declared by the deployment, and has no budget", () => {
        is that such decisions are declared rather than inferred.
        Highlighting says "this is the choice you are about to skip";
        ticking would say "we made it for you". */
-    const block = FORM.slice(FORM.indexOf('traffic > 0 ? "notice warn"'), FORM.indexOf("<MissionPlacer"));
+    const block = FORM.slice(
+      FORM.indexOf('traffic > 0 ? "notice warn"'),
+      FORM.indexOf("const hardwareTab"),
+    );
     expect(block).not.toContain('set("replanning.enabled", true)');
     expect(block).toContain("event.target.checked");
   });

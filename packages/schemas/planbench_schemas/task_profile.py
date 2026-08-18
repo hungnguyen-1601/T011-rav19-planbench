@@ -41,9 +41,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from planbench_schemas.dynamic import DynamicObstacle
+from planbench_schemas.dynamic import DynamicObstacle, clock_key, max_speed
 from planbench_schemas.geometry import Pose2D
 from planbench_schemas.observations import ObservationToken, canonical_observations
+from planbench_schemas.recovery import NO_RECOVERY, RecoveryConfig
 from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
 from planbench_schemas.robot import RobotConfig
 from planbench_schemas.sensor import SensorNoise
@@ -140,6 +141,103 @@ class EnvironmentSpec(BaseModel):
     #: It belongs to ``environment`` because it describes the site and
     #: the vehicle deployed there, not the algorithm being judged.
     sensor_noise: SensorNoise = Field(default_factory=SensorNoise)
+    #: Fastest anything at this site may close on the robot, m/s.
+    #:
+    #: **Layer 2, and it fixes a hole with a reproducible collision.**
+    #: The admissible-velocity criterion bounds speed by what the robot
+    #: can brake before the *scan it has now*, which is the same as
+    #: promising it can stop before an obstacle that is **standing**. P0
+    #: measured what that omits: a cart driving head-on at 0.2 m/s —
+    #: slower than a person strolling — puts the robot through 6 to 25
+    #: consecutive steps its own criterion calls admissible and ends the
+    #: episode in contact, under the shipped weights as readily as under
+    #: adversarial ones. Declaring this number restores the guarantee for
+    #: **every** candidate equally; see
+    #: :func:`~planbench_schemas.feasibility.admissible_speed`.
+    #:
+    #: **Three meanings, and ``None`` is not one of the numbers.**
+    #:
+    #: * ``None`` — not declared. Behaviour is byte-identical to before
+    #:   this field existed, and the deployment carries **no** braking
+    #:   claim against moving traffic; the manifest says so. Nothing is
+    #:   validated, because there is no claim to check.
+    #: * a positive number — declared, and checked against every motion
+    #:   law below at load.
+    #: * ``0.0`` — the assertion that *nothing here moves*. Legal, and
+    #:   refused if the environment declares a moving obstacle. A wrong
+    #:   assertion is worse than an absent one.
+    #:
+    #: ``None`` rather than ``0.0`` as the default, and the difference is
+    #: not cosmetic: every profile written before this field exists
+    #: declares moving traffic, so a ``0.0`` default would fail its own
+    #: validator on load and break every stored deployment. Precedent:
+    #: ``robustness_margin: float | None``, where null has the defined
+    #: meaning "not measured" rather than "measured as zero".
+    #:
+    #: Declared on the deployment and not on the candidate for the same
+    #: reason as ``sensor_noise`` and ``recovery``: a candidate that could
+    #: choose the traffic it braked for would be choosing its own exam,
+    #: and a comparison in which only one stack braked correctly would be
+    #: measuring **safety** rather than the layer it claims to compare.
+    v_obstacle_max: float | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Worst-case speed at which traffic may close on the robot, m/s. Null means "
+            "undeclared: legacy behaviour, and no braking guarantee against moving "
+            "obstacles."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _validate_obstacle_speed_bound(self) -> EnvironmentSpec:
+        """A declared bound must survive the traffic declared beside it.
+
+        **Fail at startup, not after 300 episodes.** A profile whose
+        bound is too small does not crash; it produces a robot that
+        brakes for slower traffic than it meets, and the episodes it
+        yields answer a question nobody asked. Same shape as HĐ-1.4's
+        refusal to infer a scope: the error is only cheap while the
+        deployment is still being loaded.
+
+        Skipped entirely when ``v_obstacle_max`` is ``None`` — there is
+        no claim to falsify, and a profile written before this field
+        existed must load exactly as it did.
+
+        ``default=0.0`` on the ``max`` is not decoration. Without it an
+        environment with no dynamic obstacles raises ``ValueError`` from
+        inside the validator on an empty sequence, and 0.0 is also the
+        right answer: nothing moving means nothing closes.
+        """
+        if self.v_obstacle_max is None:
+            return self
+        # A motion whose bound cannot be proven raises rather than
+        # guessing, and that refusal has to reach the person filing the
+        # deployment as a load rejection — not as a NotImplementedError
+        # three frames down inside pydantic, which does not convert it.
+        try:
+            bounds = [max_speed(obstacle.motion) for obstacle in self.dynamic_obstacles]
+        except NotImplementedError as unbounded:
+            raise ValueError(
+                f"v_obstacle_max is declared as {self.v_obstacle_max} m/s, but one of "
+                f"this environment's obstacles has no provable speed bound: {unbounded}"
+            ) from unbounded
+        fastest = max(bounds, default=0.0)
+        if fastest > self.v_obstacle_max:
+            culprits = sorted(
+                f"{obstacle.name} ({max_speed(obstacle.motion):.3g} m/s)"
+                for obstacle in self.dynamic_obstacles
+                if max_speed(obstacle.motion) > self.v_obstacle_max
+            )
+            raise ValueError(
+                f"v_obstacle_max is {self.v_obstacle_max} m/s but this environment "
+                f"declares faster traffic: {', '.join(culprits)}. The robot would size "
+                "its braking distance for traffic slower than the traffic it meets, and "
+                f"nothing would report it. Either raise v_obstacle_max to at least "
+                f"{fastest:.3g}, slow the obstacle(s) down, or remove the field to run "
+                "without a braking guarantee against moving obstacles"
+            )
+        return self
 
     @model_validator(mode="after")
     def _validate_obstacles(self) -> EnvironmentSpec:
@@ -169,14 +267,47 @@ class EnvironmentSpec(BaseModel):
         start ("one full cycle: seeds meet the pedestrian anywhere"); it
         simply was not enforced, and the profile written later did not
         follow it.
+
+        **A shared clock key is the same failure a third way**, and it is
+        the one that hid behind a rule that reads as if it covered it.
+        The head start is hashed from ``seed_offset + len(name)``, so two
+        obstacles whose names merely have the same length get the same
+        fraction of their offset — ``cart`` and ``rack`` start together at
+        every seed. The name-uniqueness rule above used to claim it
+        prevented that; it never could. So the key itself is checked, by
+        calling the same :func:`clock_key` the shift is computed from
+        rather than by restating the formula here.
+
+        Only obstacles that actually take a head start are compared: at
+        ``seed_time_offset = 0`` the shift is zero for everyone, and for a
+        ``random_walk`` — the one motion allowed to sit at zero — the seed
+        still reaches the headings.
         """
         names = [obstacle.name for obstacle in self.dynamic_obstacles]
         duplicates = sorted({name for name in names if names.count(name) > 1})
         if duplicates:
             raise ValueError(
                 f"dynamic obstacle names must be unique, got duplicates {duplicates}; "
-                "the name is mixed into each obstacle's seed hash, so two obstacles "
-                "sharing one name would move in lockstep"
+                "the name is how a trace, a snapshot and a refusal say which obstacle "
+                "they mean, and two of them answering to one name makes every such "
+                "record ambiguous"
+            )
+        shifted: dict[int, list[str]] = {}
+        for obstacle in self.dynamic_obstacles:
+            if obstacle.seed_time_offset > 0.0:
+                shifted.setdefault(clock_key(obstacle), []).append(obstacle.name)
+        lockstep = sorted(
+            f"[{', '.join(sorted(group))}] (key {key})"
+            for key, group in shifted.items()
+            if len(group) > 1
+        )
+        if lockstep:
+            raise ValueError(
+                f"dynamic obstacle(s) {lockstep} share a clock key, so the seed shifts "
+                "their clocks by the same fraction and they move together across every "
+                "seed. Unique names do not prevent this: the key is seed_offset plus the "
+                "name's LENGTH, so 'cart' and 'rack' collide (measured: identical head "
+                "start at every seed). Give them different seed_offset values"
             )
         frozen_in_time = sorted(
             obstacle.name
@@ -449,6 +580,54 @@ class TaskProfile(BaseModel):
     #: an existing id is refused, so switching it on is a new deployment
     #: with a new id rather than an edit.
     replanning: ReplanningConfig = NO_REPLANNING
+    #: What the robot may do when replanning cannot find a way out.
+    #:
+    #: On the **deployment** for the reason HĐ-4.1 gives about replan
+    #: information: recovery applied to one candidate and not another
+    #: measures recovery rather than the layer the run claims to compare.
+    #: A scope where recovery *is* the thing compared
+    #: (``recovery_selection``) would move it to the candidate, and does
+    #: not exist yet — see ``planbench_schemas.recovery``.
+    #:
+    #: Off by default, like ``replanning``: it changes where the robot
+    #: ends up, so it changes every metric downstream, and every stored
+    #: run was measured without it.
+    recovery: RecoveryConfig = NO_RECOVERY
+    #: How much a metre hugging the hard boundary costs a global planner
+    #: compared with a metre in the open, minus one. At ``4.0`` a metre
+    #: against the boundary costs five, so a planner takes any detour up
+    #: to five times as long rather than shave the obstacle.
+    #:
+    #: **This is a number a person chooses and there is no deriving it**,
+    #: unlike the safety envelope or ``N_min``. So it is treated the way
+    #: every other such number here is: declared on the **deployment**,
+    #: identical for every candidate in the comparison, and written into
+    #: the manifest (HĐ-13). A candidate-owned version would let one
+    #: stack buy a shorter route by caring less, which is the same defect
+    #: ``safety_margin`` had while it was a hard refusal.
+    #:
+    #: **The default is measured rather than picked, and its effect is
+    #: not monotone** — which is why it took measuring. Across the two
+    #: scenarios the suite pins, only ``4.0`` gets every case home:
+    #:
+    #: ===  =================  ==============  ================
+    #: λ    two-doorway room   sudden_stop A*   sudden_stop RRT*
+    #: ===  =================  ==============  ================
+    #: 2.0  timeout, 42 replans  success        success
+    #: 4.0  **success, 1**       **success**    **success**
+    #: 6.0  success, 1           success        timeout
+    #: ===  =================  ==============  ================
+    #:
+    #: Below it the planner still shaves a blocked doorway the controller
+    #: cannot drive through; far above it the sampling planner wanders,
+    #: because a strong enough gradient makes almost every edge expensive
+    #: and the tree stops converging on anything. So this is a working
+    #: value, not an optimum, and it has not been calibrated against real
+    #: deployment data — see ``docs/KNOWN_LIMITATIONS.md``.
+    #:
+    #: Zero switches the gradient off: every planner reverts to pure
+    #: distance.
+    clearance_preference: float = Field(default=4.0, ge=0)
     environment: EnvironmentSpec
     missions: tuple[Mission, ...] = Field(min_length=1)
     robot: TaskRobotSpec

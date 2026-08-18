@@ -47,7 +47,12 @@ from planbench_api.map_files import materialise_map
 from planbench_api.repositories import StoredMap, now_iso
 from planbench_api.repository_ports import MapRepositoryPort
 from planbench_api.worker import Job, JobQueue
-from planbench_benchmark.candidates import LOCAL_CONTROLLER_CONFIGS, candidate_from_stack
+from planbench_benchmark.candidates import (
+    LOCAL_CONTROLLER_CONFIGS,
+    ConfigControllerMismatch,
+    candidate_from_stack,
+    validate_config_names,
+)
 from planbench_benchmark.selection import DEFAULT_SCOPE, run_comparison
 from planbench_schemas.contracts import CONTRACTS_VERSION
 from planbench_schemas.task_profile import TaskProfile
@@ -72,8 +77,8 @@ class TaskProfileService:
         #: is true for every one of them.
         self._runs = runs
 
-    def create(self, payload: dict[str, Any], *, owner_user_id: str | None) -> StoredTaskProfile:
-        """Validate against HĐ-2, then store.
+    def validate(self, payload: dict[str, Any]) -> TaskProfile:
+        """The contract check on its own, with nothing stored.
 
         Validation happens through ``TaskProfile`` rather than here: it
         is the single definition of the contract, and it is what refuses
@@ -81,9 +86,23 @@ class TaskProfileService:
         obstacle that shifts by less than one period, and a RAM budget
         that does not add up. Re-checking any of that at this layer would
         be a second opinion nobody asked for.
+
+        **Split out so a caller can ask without filing.** The form needs
+        the verdict while somebody is still typing, and the only honest
+        way to give it is to run the check that will actually decide —
+        anything else is a preview free to disagree with the refusal.
+        ``create`` goes through here for the same reason: two entry
+        points wrapping ``model_validate`` themselves would be two
+        definitions of what a refusal looks like.
+
+        **What this does not see.** It reads the document and nothing
+        else — no repository, no ids in use. So an id already filed with
+        different content still passes here and is refused by ``create``
+        (HĐ-3.1); the endpoint says so rather than letting a caller read
+        a pass as "this will file".
         """
         try:
-            profile = TaskProfile.model_validate(payload)
+            return TaskProfile.model_validate(payload)
         except Exception as error:  # pydantic ValidationError and friends
             # The blob message stays — it is what somebody pasting YAML
             # reads — and the per-field addresses travel beside it, which
@@ -92,6 +111,10 @@ class TaskProfileService:
             raise DomainValidationError(
                 f"task profile is not valid under HĐ-2: {error}", field_errors(error)
             ) from error
+
+    def create(self, payload: dict[str, Any], *, owner_user_id: str | None) -> StoredTaskProfile:
+        """Validate against HĐ-2, then store."""
+        profile = self.validate(payload)
         return self._repository.create(profile.model_dump(mode="json"), owner_user_id=owner_user_id)
 
     def get(self, profile_id: str) -> StoredTaskProfile:
@@ -306,6 +329,21 @@ class CandidateService:
                 f"unknown local controller {local_config!r}; "
                 f"known: {sorted(LOCAL_CONTROLLER_CONFIGS)}"
             )
+        # **Existing is not the same as belonging.** Configuration names
+        # are one flat namespace, and `dwa_coarse` is a perfectly real
+        # name that has nothing to do with `dwa_predictive` — while every
+        # one of its keys is a valid field there, so the pair constructs,
+        # stores, and then labels every report with a configuration the
+        # candidate never used.
+        #
+        # The comparison path gained this check at `build_candidates`;
+        # registration is the *other* door into the same mistake, and a
+        # candidate saved through it is wrong from then on rather than
+        # wrong for one run.
+        try:
+            validate_config_names([(stack, local_config)])
+        except ConfigControllerMismatch as error:
+            raise DomainValidationError(str(error)) from error
         try:
             candidate = candidate_from_stack(
                 stack, params=dict(LOCAL_CONTROLLER_CONFIGS[local_config])

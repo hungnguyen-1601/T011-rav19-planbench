@@ -51,7 +51,7 @@ from planbench_api.dependencies import (
 )
 from planbench_api.errors import DomainValidationError, NotFoundError
 from planbench_api.worker import Job, JobQueue
-from planbench_benchmark.candidates import CONTROLLER_CONFIGS
+from planbench_benchmark.candidates import offered_controller_configs
 from planbench_benchmark.preflight import PREFLIGHT_CODES, build_draft, preflight
 from planbench_benchmark.reproduction import (
     REPRODUCTION_CODES,
@@ -80,7 +80,6 @@ MAX_PAPER_CHARS = 60_000
 #: that a mis-picked file fails at the door rather than after a minute of
 #: parsing.
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
-
 
 router = APIRouter(tags=["decisions"])
 
@@ -585,6 +584,37 @@ def create_task_profile(
     return _profile(service.create(payload, owner_user_id=user.id))
 
 
+@router.post("/task-profiles/validate", status_code=status.HTTP_204_NO_CONTENT)
+def validate_task_profile(payload: dict[str, Any], service: Profiles, _: CurrentUser) -> None:
+    """Run the check filing runs, without filing anything.
+
+    **Why this exists rather than a copy of the rules in the browser.**
+    The form has thirty inputs and a block of traffic; a refusal that
+    arrives only on submit makes the author guess which of them the
+    server disliked. The tempting fix is to check the easy rules in
+    TypeScript, and that is exactly the thing the form is built not to
+    do — a second opinion in the browser is free to disagree with the one
+    that actually decides. So the verdict comes from here, from
+    ``TaskProfile`` itself.
+
+    **Same refusal shape as ``create``**: an invalid document raises
+    ``DomainValidationError`` and leaves as a 422 carrying the same
+    per-field addresses, so the form has one error path rather than two.
+    A valid one returns 204 and no body — there is nothing to say about a
+    document that is merely legal.
+
+    **It reads the document only.** Nothing is stored and nothing is
+    looked up, so a 204 is not a promise that filing will succeed: an id
+    already on file with different content is refused by ``create``
+    (HĐ-3.1), and that refusal cannot appear until then.
+
+    Signed in, like every other POST here. Nothing is written and nothing
+    is owned, but this runs the same code path ``create`` does, and a
+    door to it that needs no account is a door that drifts.
+    """
+    service.validate(payload)
+
+
 @router.post(
     "/task-profiles/derive",
     response_model=TaskProfileResource,
@@ -803,6 +833,13 @@ def list_local_controllers() -> list[LocalControllerConfig]:
     accepts — free to drift, and drifting silently until somebody's
     dropdown offers a configuration the server rejects.
 
+    **Only configurations a registration would accept appear.** A
+    controller whose every stack has been withdrawn still has entries in
+    ``CONTROLLER_CONFIGS`` — they are kept so past runs stay readable —
+    but offering them here would put names in a dropdown that
+    ``POST /candidates`` answers 422 to, which is the drift this endpoint
+    exists to prevent rather than to cause.
+
     The parameters travel with the name because the name alone says
     nothing: `dwa_coarse` and `dwa_default` differ by 7x15 samples
     against 20x40, which is the entire reason a sampling choice is a
@@ -811,7 +848,7 @@ def list_local_controllers() -> list[LocalControllerConfig]:
     """
     return [
         LocalControllerConfig(controller=controller, name=name, params=dict(params))
-        for controller, configs in sorted(CONTROLLER_CONFIGS.items())
+        for controller, configs in sorted(offered_controller_configs().items())
         for name, params in sorted(configs.items())
     ]
 

@@ -8,8 +8,17 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { OCCUPIED, UNKNOWN } from "@/lib/demoMap";
-import { KEEP_OUT_FILL, KEEP_OUT_STROKE, keepOutRadius } from "@/lib/keepOut";
+import { pointerRouting } from "@/lib/pointerRouting";
+import {
+  CAUTION_FILL,
+  CAUTION_STROKE,
+  KEEP_OUT_FILL,
+  KEEP_OUT_STROKE,
+  cautionRadius,
+  keepOutRadius,
+} from "@/lib/keepOut";
 import { canvasToWorld, fitViewport, type Viewport } from "@/lib/transform";
+import type { TrafficOverlay } from "@/lib/trafficOverlay";
 import type { MapData, Point2D, Pose2D, StaticObstacle, TrajectoryPoint } from "@/lib/types";
 
 /** One moving obstacle, already resolved to a position.
@@ -34,6 +43,11 @@ export interface MapCanvasProps {
   goalPose?: Pose2D;
   goalTolerance?: number;
   robotRadius?: number;
+  /** Safety envelope in metres, from `safetyEnvelope(sensor_noise)`.
+   *
+   * Zero is the truthful default: a view with no deployment behind it
+   * shows a scenario, and a scenario declares no localisation error. */
+  positionUncertainty?: number;
   plannedPath?: Point2D[];
   trajectory?: TrajectoryPoint[];
   robotPose?: Pose2D | null;
@@ -43,14 +57,55 @@ export interface MapCanvasProps {
   staticObstacles?: StaticObstacle[];
   /** Moving obstacles at one instant — see {@link ObstacleMarker}. */
   dynamicObstacles?: ObstacleMarker[];
+  /** The traffic *as declared*, drawn from the document rather than
+   *  from a simulated instant.
+   *
+   * A different question from `dynamicObstacles`, and drawn in a
+   * different colour for that reason: this is the route somebody wrote
+   * and can still grab, while those are where the backend says the
+   * obstacles are at *t*. Preview markers are never interactive; only
+   * these carry handles. */
+  authoredTraffic?: TrafficOverlay;
   /** The instant `dynamicObstacles` describes, in seconds, for the label.
    *  The editor passes the scrubber position; replay passes the playhead. */
   previewTime?: number;
   showGrid?: boolean;
   showPlan?: boolean;
   showTrajectory?: boolean;
+  /** Legacy gesture props: a click on press, a drag per move, and the
+   *  drag *ends when the pointer leaves the canvas* — MapPainter's
+   *  stroke stops at the edge because of that. Kept working untouched
+   *  for every existing consumer; see `pointerRouting` for how they
+   *  yield to the new lifecycle below. */
   onWorldClick?: (x: number, y: number, event: React.MouseEvent<HTMLCanvasElement>) => void;
   onWorldDrag?: (x: number, y: number) => void;
+  /** The full pointer lifecycle, for a consumer that drags handles.
+   *
+   * Passing any of these turns pointer capture on — the drag then
+   * survives leaving the canvas, and `up`/`cancel` always arrive to
+   * finish it. Passing `onWorldPointerDown` silences `onWorldClick`;
+   * passing `onWorldPointerMove` silences `onWorldDrag` — one event,
+   * one owner, never both. */
+  onWorldPointerDown?: (point: Point2D, info: WorldPointerInfo) => void;
+  onWorldPointerMove?: (point: Point2D, info: WorldPointerInfo) => void;
+  onWorldPointerUp?: (point: Point2D, info: WorldPointerInfo) => void;
+  /** The browser took the pointer away (gesture interruption, capture
+   *  loss). The point carried here may be garbage — flush the last
+   *  trusted move coordinate instead of this one. */
+  onWorldPointerCancel?: (point: Point2D, info: WorldPointerInfo) => void;
+  /** Carries `worldPerPixel` like the others: a double-click has to
+   *  find what is under it, and finding it means the same pixel
+   *  tolerance in world units that a press uses. */
+  onWorldDoubleClick?: (point: Point2D, worldPerPixel: number) => void;
+}
+
+/** What a world-space pointer event knows beyond its position. */
+export interface WorldPointerInfo {
+  pointerId: number;
+  /** Metres per screen pixel at the current viewport — what turns a
+   *  pixel tolerance ("within 8px of the handle") into world units. */
+  worldPerPixel: number;
+  event: React.PointerEvent<HTMLCanvasElement>;
 }
 
 const COLOR = {
@@ -69,6 +124,12 @@ const COLOR = {
   // instant and one seed, not about the map.
   staticObstacle: "#8a94a6",
   dynamicObstacle: "#f0b429",
+  // The authored route is a third kind of statement: not the world
+  // (grey), not where something is at an instant (amber), but what the
+  // author has written down and can still take hold of. Teal because it
+  // has to be told apart from the amber snapshot at a glance — those
+  // two describe the same obstacle and only one of them is editable.
+  authored: "#5ad1c8",
 };
 
 export function MapCanvas({
@@ -79,18 +140,25 @@ export function MapCanvas({
   goalPose,
   goalTolerance = 0.3,
   robotRadius = 0.3,
+  positionUncertainty = 0,
   plannedPath,
   trajectory,
   robotPose,
   collisionPoint,
   staticObstacles,
   dynamicObstacles,
+  authoredTraffic,
   previewTime,
   showGrid = true,
   showPlan = true,
   showTrajectory = true,
   onWorldClick,
   onWorldDrag,
+  onWorldPointerDown,
+  onWorldPointerMove,
+  onWorldPointerUp,
+  onWorldPointerCancel,
+  onWorldDoubleClick,
 }: MapCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const draggingRef = useRef(false);
@@ -167,29 +235,50 @@ export function MapCanvas({
     //
     // Worth drawing at all because it was invisible and cost a session
     // to diagnose: a robot parked half a metre clear of a cart looks
-    // like it is standing in open space, and the reason it cannot replan
-    // from there is this ring — which is two and a half times the circle
-    // the canvas was drawing.
-    const ringFor = (radius: number) => keepOutRadius(radius, map.resolution, robotRadius);
-    const drawRing = (worldX: number, worldY: number, radius: number | null) => {
+    // like it is standing in open space, and the reason it could not
+    // replan from there was not on screen anywhere.
+    //
+    // **Two rings, because there are two different claims.** The inner
+    // one is forbidden — inside it the controller refuses to drive. The
+    // outer one is merely *expensive*: a planner will pay to avoid it
+    // and will cross it when the alternative costs more. Drawing them
+    // as one disc, which is what this did before the gradient existed,
+    // makes ground the robot may legally stand on look like a wall.
+    const hardFor = (radius: number) =>
+      keepOutRadius(radius, robotRadius, positionUncertainty);
+    const cautionFor = (radius: number) =>
+      cautionRadius(radius, map.resolution, robotRadius, positionUncertainty);
+    const disc = (
+      worldX: number,
+      worldY: number,
+      radius: number | null,
+      fill: string,
+      stroke: string,
+      dash: number[],
+    ) => {
       if (radius === null) return;
       const [x, y] = toCanvas(worldX, worldY);
       ctx.beginPath();
       ctx.arc(x, y, Math.max(2, radius * viewport.scale), 0, Math.PI * 2);
-      ctx.fillStyle = KEEP_OUT_FILL;
+      ctx.fillStyle = fill;
       ctx.fill();
-      // Dashed and thin: a solid ring reads as a wall, which is the one
-      // thing this is not — the controller will drive through it, the
-      // planner just will not route through it.
-      ctx.setLineDash([4, 4]);
+      // Never solid: a solid ring reads as a wall, and neither of these
+      // is one. Dashed for the hard boundary, dotted for the priced
+      // band, so which is which survives a screenshot.
+      ctx.setLineDash(dash);
       ctx.lineWidth = 1;
-      ctx.strokeStyle = KEEP_OUT_STROKE;
+      ctx.strokeStyle = stroke;
       ctx.stroke();
       ctx.setLineDash([]);
     };
+    const drawRing = (worldX: number, worldY: number, radius: number) => {
+      // Priced band first, so the forbidden ring sits on top of it.
+      disc(worldX, worldY, cautionFor(radius), CAUTION_FILL, CAUTION_STROKE, [2, 3]);
+      disc(worldX, worldY, hardFor(radius), KEEP_OUT_FILL, KEEP_OUT_STROKE, [4, 4]);
+    };
     for (const obstacle of staticObstacles ?? []) {
       if (obstacle.type === "circle") {
-        drawRing(obstacle.center.x, obstacle.center.y, ringFor(obstacle.radius));
+        drawRing(obstacle.center.x, obstacle.center.y, obstacle.radius);
       } else {
         // A rectangle's ring is drawn from its centre at the radius of
         // its circumscribing circle: an exact rounded-rectangle offset
@@ -199,11 +288,11 @@ export function MapCanvas({
         const cx = (obstacle.min_x + obstacle.max_x) / 2;
         const cy = (obstacle.min_y + obstacle.max_y) / 2;
         const half = Math.hypot(obstacle.max_x - obstacle.min_x, obstacle.max_y - obstacle.min_y) / 2;
-        drawRing(cx, cy, ringFor(half));
+        drawRing(cx, cy, half);
       }
     }
     for (const obstacle of dynamicObstacles ?? []) {
-      drawRing(obstacle.position.x, obstacle.position.y, ringFor(obstacle.radius));
+      drawRing(obstacle.position.x, obstacle.position.y, obstacle.radius);
     }
 
     // Obstacles go under the plan and trajectory: the question the
@@ -226,6 +315,93 @@ export function MapCanvas({
           );
         }
       }
+    }
+
+    // **The traffic as written, under the traffic as simulated.** Both
+    // describe the same obstacles, so when a preview is on screen the
+    // amber snapshot sits on top: that is the answer to "where is it at
+    // t", and the teal underneath is the route it was given. Drawn from
+    // stored points only — no motion law is evaluated here; see
+    // `lib/trafficOverlay`.
+    for (const shape of authoredTraffic?.shapes ?? []) {
+      ctx.globalAlpha = shape.selected ? 1 : 0.45;
+      ctx.strokeStyle = COLOR.authored;
+      ctx.fillStyle = COLOR.authored;
+      ctx.lineWidth = shape.selected ? 2 : 1.5;
+
+      // The bound a random walk declares, not a position it reaches.
+      if (shape.wanderRadius !== null && shape.home) {
+        const [cx, cy] = toCanvas(shape.home.x, shape.home.y);
+        ctx.setLineDash([3, 4]);
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.max(2, shape.wanderRadius * viewport.scale), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      const polyline = (points: Point2D[], dash: number[]) => {
+        if (points.length < 2) return;
+        ctx.setLineDash(dash);
+        ctx.beginPath();
+        points.forEach((point, index) => {
+          const [x, y] = toCanvas(point.x, point.y);
+          if (index === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        ctx.setLineDash([]);
+      };
+      polyline(shape.path, []);
+      // Dashed, because the author never placed a point on it: it is
+      // the consequence of the loop flag rather than part of the route.
+      if (shape.closingEdge) polyline(shape.closingEdge, [4, 4]);
+
+      if (shape.heading) {
+        const [fx, fy] = toCanvas(shape.heading.from.x, shape.heading.from.y);
+        const [tx, ty] = toCanvas(shape.heading.to.x, shape.heading.to.y);
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(tx, ty);
+        ctx.stroke();
+        const angle = Math.atan2(ty - fy, tx - fx);
+        const head = 7;
+        ctx.beginPath();
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(tx - head * Math.cos(angle - Math.PI / 6), ty - head * Math.sin(angle - Math.PI / 6));
+        ctx.lineTo(tx - head * Math.cos(angle + Math.PI / 6), ty - head * Math.sin(angle + Math.PI / 6));
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // The body, hollow: a filled disc here would compete with the
+      // preview's for the eye, and this one is not where the obstacle
+      // is — it is where its route begins.
+      if (shape.home && shape.radius !== null) {
+        const [x, y] = toCanvas(shape.home.x, shape.home.y);
+        ctx.beginPath();
+        ctx.arc(x, y, Math.max(3, shape.radius * viewport.scale), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      for (const grip of shape.handles) {
+        const [x, y] = toCanvas(grip.at.x, grip.at.y);
+        ctx.beginPath();
+        ctx.arc(x, y, shape.selected ? 4 : 3, 0, Math.PI * 2);
+        ctx.fill();
+        if (grip.label) {
+          // Ordinals, so a route that crosses itself can still be read
+          // in the order it is driven.
+          ctx.font = "10px ui-sans-serif, system-ui";
+          ctx.fillText(grip.label, x + 6, y - 5);
+        }
+      }
+
+      if (shape.home) {
+        const [x, y] = toCanvas(shape.home.x, shape.home.y);
+        ctx.font = "11px ui-sans-serif, system-ui";
+        ctx.fillText(shape.name, x + 8, y + 14);
+      }
+      ctx.globalAlpha = 1;
     }
 
     if (dynamicObstacles) {
@@ -355,12 +531,14 @@ export function MapCanvas({
     goalPose,
     goalTolerance,
     robotRadius,
+    positionUncertainty,
     plannedPath,
     trajectory,
     robotPose,
     collisionPoint,
     staticObstacles,
     dynamicObstacles,
+    authoredTraffic,
     previewTime,
     showGrid,
     showPlan,
@@ -374,25 +552,59 @@ export function MapCanvas({
     return canvasToWorld(viewport, event.clientX - rect.left, event.clientY - rect.top);
   };
 
+  /* Which generation of props owns each gesture — see `pointerRouting`.
+     Capture is only taken when the new lifecycle is in use: the legacy
+     consumers end a drag by leaving the canvas, and capturing would
+     quietly keep their stroke alive past the border. */
+  const routing = pointerRouting({
+    hasPointerDown: onWorldPointerDown !== undefined,
+    hasPointerMove: onWorldPointerMove !== undefined,
+    hasPointerUp: onWorldPointerUp !== undefined,
+    hasPointerCancel: onWorldPointerCancel !== undefined,
+  });
+
+  const infoOf = (event: React.PointerEvent<HTMLCanvasElement>): WorldPointerInfo => ({
+    pointerId: event.pointerId,
+    worldPerPixel: 1 / viewport.scale,
+    event,
+  });
+
   return (
     <canvas
       ref={canvasRef}
       data-testid="map-canvas"
-      onMouseDown={(event) => {
-        draggingRef.current = true;
-        const { x, y } = pointerWorld(event);
-        onWorldClick?.(x, y, event);
+      onPointerDown={(event) => {
+        const point = pointerWorld(event);
+        if (routing.capture) event.currentTarget.setPointerCapture(event.pointerId);
+        onWorldPointerDown?.(point, infoOf(event));
+        // The legacy drag arms on press whether or not a click handler
+        // is also given — that is what the mouse-event version did.
+        if (routing.legacyDrag) draggingRef.current = true;
+        if (routing.legacyClick) onWorldClick?.(point.x, point.y, event);
       }}
-      onMouseMove={(event) => {
-        if (!draggingRef.current || !onWorldDrag) return;
-        const { x, y } = pointerWorld(event);
-        onWorldDrag(x, y);
+      onPointerMove={(event) => {
+        const point = pointerWorld(event);
+        onWorldPointerMove?.(point, infoOf(event));
+        if (routing.legacyDrag && draggingRef.current && onWorldDrag) {
+          onWorldDrag(point.x, point.y);
+        }
       }}
-      onMouseUp={() => {
+      onPointerUp={(event) => {
+        draggingRef.current = false;
+        onWorldPointerUp?.(pointerWorld(event), infoOf(event));
+      }}
+      onPointerCancel={(event) => {
+        draggingRef.current = false;
+        onWorldPointerCancel?.(pointerWorld(event), infoOf(event));
+      }}
+      onPointerLeave={() => {
+        // Legacy lifecycle only: leaving ends the drag. Under capture
+        // this never fires mid-drag, because the capture holds the
+        // pointer target on the canvas until up or cancel.
         draggingRef.current = false;
       }}
-      onMouseLeave={() => {
-        draggingRef.current = false;
+      onDoubleClick={(event) => {
+        onWorldDoubleClick?.(pointerWorld(event), 1 / viewport.scale);
       }}
     />
   );

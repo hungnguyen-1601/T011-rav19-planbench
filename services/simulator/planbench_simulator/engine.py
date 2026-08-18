@@ -339,8 +339,8 @@ class SimulationEngine:
             raise RuntimeError("load_scenario() must be called before dynamic_obstacles_now()")
         return self._dynamic_now()
 
-    def resume_after_replan(self, note: str) -> None:
-        """Revive an episode that ended STUCK or NO_PROGRESS, once replanned.
+    def resume_after_replan(self, note: str, event_type: str = "replan") -> None:
+        """Revive an episode that ended STUCK or NO_PROGRESS.
 
         Only those two statuses: a collision or a timeout is a verdict on
         the episode, and letting a new path undo it would let replanning
@@ -354,24 +354,33 @@ class SimulationEngine:
         Seeding it with a single sample at the current time restarts both
         the stuck and the no-progress clocks from here.
 
-        The terminating event is replaced by a ``replan`` event carrying
-        ``note``. Leaving the ``stuck`` event in place would put a
-        termination in the record of an episode that did not terminate
-        there; the replan event keeps the same moment, and the reason,
+        The terminating event is replaced by an event of ``event_type``
+        carrying ``note``. Leaving the ``stuck`` event in place would put
+        a termination in the record of an episode that did not terminate
+        there; the replacement keeps the same moment, and the reason,
         visible.
+
+        ``event_type`` exists because a replan is not the only thing that
+        can revive a standstill — a recovery behaviour backs the robot
+        away from what it was stuck against and the episode carries on.
+        The two must stay **distinguishable in the record**: "the planner
+        found another way" and "the robot backed up and tried again" are
+        different facts about a stack, and collapsing them under one
+        event name would make a run that recovered five times read like
+        one that replanned five times.
         """
         if self._state is not EngineState.FINISHED or self._status not in (
             EpisodeStatus.STUCK,
             EpisodeStatus.NO_PROGRESS,
         ):
             raise RuntimeError(
-                f"cannot resume after replan: engine state is {self._state.value} "
+                f"cannot resume ({event_type}): engine state is {self._state.value} "
                 f"with status {self._status.value}"
             )
         assert self._robot is not None
         if self._events and self._events[-1].type == self._status.value:
             self._events.pop()
-        self._events.append(EpisodeEvent(time=self._time, type="replan", message=note))
+        self._events.append(EpisodeEvent(time=self._time, type=event_type, message=note))
         self._status = EpisodeStatus.RUNNING
         self._reason = ""
         self._window = deque(
@@ -402,6 +411,19 @@ class SimulationEngine:
     @property
     def time(self) -> float:
         return self._time
+
+    @property
+    def steps(self) -> int:
+        """Simulation steps taken since ``reset()``.
+
+        Public because the provider seam addresses randomness by tick
+        (see ``host.runtime_view``), and a seam that had to reach for
+        ``_steps`` would be documenting one boundary while crossing
+        another. It is the same counter the noise model already indexes
+        its streams by, so two providers reading one tick and the engine
+        drawing that tick's noise agree by construction.
+        """
+        return self._steps
 
     # -- control -------------------------------------------------------
 

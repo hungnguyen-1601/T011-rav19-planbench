@@ -1,42 +1,4 @@
 {
-  "description": "Log Codex prompts and tool usage for submission on git push.",
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash scripts/_pyrun.sh scripts/log_hook.py --tool=codex",
-            "commandWindows": "powershell.exe -NoProfile -Command \"& (Join-Path (git rev-parse --show-toplevel) 'scripts\\_pyrun.cmd') (Join-Path (git rev-parse --show-toplevel) 'scripts\\log_hook.py') --tool=codex\"",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash scripts/_pyrun.sh scripts/log_hook.py --tool=codex",
-            "commandWindows": "powershell.exe -NoProfile -Command \"& (Join-Path (git rev-parse --show-toplevel) 'scripts\\_pyrun.cmd') (Join-Path (git rev-parse --show-toplevel) 'scripts\\log_hook.py') --tool=codex\"",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash scripts/_pyrun.sh scripts/log_hook.py --tool=codex",
-            "commandWindows": "powershell.exe -NoProfile -Command \"& (Join-Path (git rev-parse --show-toplevel) 'scripts\\_pyrun.cmd') (Join-Path (git rev-parse --show-toplevel) 'scripts\\log_hook.py') --tool=codex\"",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
-  }
+  "description": "AI logging is installed in the user Codex layer so every new VS Code session loads it reliably.",
+  "hooks": {}
 }

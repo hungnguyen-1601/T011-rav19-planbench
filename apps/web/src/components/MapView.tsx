@@ -93,6 +93,12 @@ export function MapView({
           goalPose={canvas.goalPose}
           robotPose={canvas.robotPose}
           robotRadius={canvas.robotRadius}
+          /* The keep-out ring has to be the same size in both views. It
+             already flows to the flat view through the props spread
+             below; forgetting it here would draw two different rings for
+             one number, which is the failure this ring exists to make
+             visible in the first place. */
+          positionUncertainty={canvas.positionUncertainty}
           /* `showPlan`/`showTrajectory` are the canvas's checkboxes, and
              the raised view has to obey the same ones — a layer hidden in
              one view and drawn in the other is two answers to one

@@ -59,7 +59,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from planbench_schemas.sensor import SensorNoise
+from planbench_schemas.sensor import MIN_JUMP_MAGNITUDE_M, SensorNoise
 
 #: Stream tags mixed into the seed so the two sources can never draw the
 #: same numbers. The values are arbitrary but **frozen**: changing one
@@ -202,10 +202,12 @@ class NoiseModel:
             window = step // _JUMP_WINDOW_STEPS
             draw = self._rng(_JUMP_STREAM, window)
             if float(draw.random()) < jump_probability:
-                # Sized against the drift so one profile field governs
-                # "how wrong can this estimate be", with the jump landing
-                # at the upper end of it.
-                magnitude = max(drift, 0.25)
+                # The magnitude is declared beside the field it belongs
+                # to (`sensor.MIN_JUMP_MAGNITUDE_M`), not chosen here: a
+                # safety envelope derived from the declared noise needs
+                # the same number, and two copies of it is how two layers
+                # drift apart.
+                magnitude = max(drift, MIN_JUMP_MAGNITUDE_M)
                 angle = float(draw.uniform(0.0, 2.0 * np.pi))
                 dx += magnitude * float(np.cos(angle))
                 dy += magnitude * float(np.sin(angle))

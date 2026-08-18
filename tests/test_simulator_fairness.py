@@ -735,29 +735,56 @@ class TestTheReplanGridIsAKnownInformationAsymmetry:
         seen = _map_as_the_robot_sees_it(empty, observation, lidar)
         assert seen.cells == empty.cells
 
-    def test_a_monolithic_candidate_still_cannot_be_built(self) -> None:
-        """The tripwire, narrowed to what is actually still missing.
+    def test_a_monolithic_candidate_can_now_be_built(self) -> None:
+        """**The tripwire fired on 2026-08-18, and this is the answer.**
 
-        Two things stood between this platform and a monolithic
-        candidate. The replan privilege went on 2026-08-13 (6.6.0), and
-        the simulator-side adapter with it: ``MonolithicPolicy`` exists
-        and ``run_policy`` drives one. What is left is the *policy
-        registry* — resolving a candidate's policy name and checkpoint to
-        something loadable.
-
-        The day that lands, read this class before comparing a policy
-        against a modular stack: G6 prices observation requirements, and
-        a policy declaring different ones is the first candidate that
-        clause has ever had to price for real.
+        It used to assert the policy registry did not exist, so that
+        building the first monolithic candidate could not happen quietly.
+        H1b built it (debt A5): ``build_policy`` resolves a policy name
+        and checkpoint, and ``run_policy`` drives the result through the
+        shared loop. So the premise is gone and the assertion is
+        rewritten rather than deleted — deleting it would discard the
+        question it was placed to force.
         """
-        from planbench_benchmark import candidates as candidates_module
+        from planbench_benchmark.policies import BUILTIN_CHECKPOINT, build_policy
+        from planbench_decision.candidate import Candidate
+        from planbench_planning.common.policy_base import MonolithicPolicy
 
-        source = inspect.getsource(candidates_module)
-        assert "does not exist yet" in source, (
-            "A monolithic candidate can now be built. Before comparing one against a "
+        candidate = Candidate(
+            type="monolithic",
+            policy={"name": "greedy_reference_policy", "checkpoint": BUILTIN_CHECKPOINT},
+            observation_requirements=("lidar_2d",),
+            resource_profile={
+                "kind": "artifact",
+                "model_artifact_mb": 0.1,
+                "runtime_footprint_mb": 1.0,
+            },
+        )
+        assert isinstance(build_policy(candidate), MonolithicPolicy)
+
+    def test_g6_has_still_never_priced_an_observation_difference(self) -> None:
+        """The other half of the tripwire, re-armed for the real event.
+
+        The warning was never about *building* a policy; it was about
+        **comparing** one against a modular stack. G6 prices
+        ``observation_requirements``, and every candidate this platform
+        has ever run declared the same set — so the clause is green
+        because it has never been tried, not because it is right.
+
+        That has not changed: the one registered policy is a D12
+        reference, which may never be a contender. This goes red the day
+        somebody registers a policy that can be, which is exactly when
+        the pricing has to be checked for real — before a comparison is
+        published, not after.
+        """
+        from planbench_benchmark.policies import list_policies
+
+        contenders = [entry.name for entry in list_policies() if not entry.reference]
+        assert not contenders, (
+            f"policy {contenders} may be a contender. Before comparing it against a "
             "modular stack, check G6's observation pricing: every candidate so far has "
             "declared the same requirements, so that clause has never actually priced a "
-            "difference."
+            "difference, and a wrong price would look like a fair ranking."
         )
 
     def test_the_ground_truth_hatch_is_used_by_the_stack_not_by_a_planner(self) -> None:

@@ -231,7 +231,14 @@ export default function DeploymentsPage() {
             {mode === "form" ? (
               <DeploymentForm
                 draft={formDraft}
-                onDraftChange={setFormDraft}
+                onDraftChange={(next) => {
+                  setFormDraft(next);
+                  // A refusal from filing is about the document that was
+                  // filed. Keeping it on screen after an edit makes it
+                  // read as a refusal of what is there now, and the
+                  // author corrects a field the server never mentioned.
+                  setFieldErrors([]);
+                }}
                 onSubmit={file}
                 busy={busy}
                 fieldErrors={fieldErrors}

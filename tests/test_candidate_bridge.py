@@ -119,7 +119,7 @@ class TestBuildPlanners:
                 "runtime_footprint_mb": 2100.0,
             },
         )
-        with pytest.raises(NotBenchmarkableError, match="MonolithicPolicy"):
+        with pytest.raises(NotBenchmarkableError, match="build_policy"):
             build_planners(mono, episode_seed=0)
 
 

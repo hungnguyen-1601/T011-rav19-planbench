@@ -23,6 +23,7 @@ from planbench_planning import (
     RRTStarPlanner,
 )
 from planbench_planning.common.local_base import LocalPlanner
+from planbench_planning.dwa_predictive import DWAPredictiveConfig, DWAPredictivePlanner
 from planbench_simulator.nav_stack import PurePursuitLocalPlanner
 from planbench_simulator.path_follower import PurePursuitConfig
 
@@ -167,6 +168,17 @@ class AlgorithmInfo(BaseModel):
     #: fabrication the spec forbids, so the property is now stated
     #: outright instead of being a side effect of field defaults.
     requires_model: bool = False
+    #: Why this stack is not offered as a candidate, when it is not.
+    #:
+    #: ``benchmarkable=False`` has meant one thing since D12 — *a
+    #: reference adapter, never a contender* — and now it means two. A
+    #: stack can also be **withdrawn after being measured**, which is a
+    #: different fact about a different kind of entry, and a refusal that
+    #: told the second kind it was "a reference stack only" would be
+    #: misdirecting whoever reads it. So the reason travels with the
+    #: entry and the refusal quotes it. Empty for reference stacks, whose
+    #: reason has not changed.
+    withdrawn: str = ""
     #: What each half of the stack is allowed to see (P02).
     #:
     #: Deliberately without a default. A default would be a guess made
@@ -211,13 +223,61 @@ def _rrtstar(episode_seed: int) -> GlobalPlanner:
     return RRTStarPlanner(RRTStarConfig(), episode_seed=episode_seed)
 
 
+#: Read on `/candidates` rather than left in a comment, on purpose: the
+#: cost-aware variant is a real departure from the published algorithm,
+#: and anybody comparing this against a paper's RRT* numbers has to know
+#: before they draw the conclusion, not after.
 _RRT_STAR_DESCRIPTION = (
     "RRT* global planner: samples the free space, rewires the tree towards "
-    "shorter paths, and keeps improving for its whole iteration budget. "
+    "cheaper paths, and keeps improving for its whole iteration budget. "
     "Randomised — the tree is seeded from the episode seed, so results "
-    "must be read across many seeds, not from one run."
+    "must be read across many seeds, not from one run. "
+    "Cost-aware variant: edge cost integrates the deployment's clearance "
+    "field rather than being pure length, so hugging an obstacle is "
+    "expensive rather than free. RRT*'s asymptotic-optimality guarantee "
+    "is proved for cost functionals this field may not satisfy, and "
+    "whether it survives has not been verified — see KNOWN_LIMITATIONS."
 )
 
+
+#: Why both predictive stacks stopped being candidates, in the words a
+#: reader of ``/algorithms`` gets. Short enough to survive a UI, specific
+#: enough that nobody has to go and re-derive it.
+_WITHDRAWN = (
+    "The prediction is sound and the perception feeding it is not. On a "
+    "static warehouse the tracker reports obstacles moving at up to "
+    "1.9 m/s, and raising LiDAR resolution makes that worse rather than "
+    "better: false-motion frames go 14% -> 99% between 72 and 360 rays "
+    "while real detections only go 0.9% -> 4.5%. The cause was traced to "
+    "a scan crossing the corner of two shelf faces, which clusters as one "
+    "object whose centroid slides smoothly as the robot drives past — "
+    "0.436 m/s off a corner that was not moving. Smooth is what makes it "
+    "unfixable downstream: no floor or confidence computed from the "
+    "velocity can separate that from a real obstacle. A shape-based split "
+    "was built and measured and did not separate corners from round "
+    "objects at this sampling density. The implementation, its oracle and "
+    "its diagnostics are kept so the result can be reproduced; it is not "
+    "offered as a deployment candidate. See KNOWN_LIMITATIONS L19."
+)
+
+_DWA_PREDICTIVE_DESCRIPTION = (
+    "Dynamic Window Approach that rolls obstacle motion forward alongside "
+    "its own trajectory, instead of scoring against a photograph of the "
+    "world at t=0. "
+    "**Obstacle velocity is estimated from this robot's own LiDAR** — it "
+    "is not given — so the estimator's error is part of the candidate. "
+    "**The motion model is constant velocity**, which is wrong the moment "
+    "anything turns or stops; `sudden_stop` is the counter-example, not a "
+    "corner case. Obstacles are not assumed to avoid the robot in return. "
+    "Prediction feeds the cost only: the hard feasible set and the "
+    "admissible-speed bound are identical to `dwa`, so this candidate may "
+    "never enter anywhere `dwa` is forbidden. "
+    "Measured 2026-08-15 on `intersection`: with **perfect** perception "
+    "the idea is worth something (11 of 11 paired disagreements favoured "
+    "it, p = 0.0005), but the LiDAR tracker recovered **none** of it — "
+    "see KNOWN_LIMITATIONS L16. "
+    "**WITHDRAWN 2026-08-16 — experimental, not recommendable.** " + _WITHDRAWN
+)
 
 ALGORITHMS: dict[str, _Entry] = {
     "astar+dwa": _Entry(
@@ -239,6 +299,55 @@ ALGORITHMS: dict[str, _Entry] = {
         config_model=DWAConfig,
         factory=lambda config: DWAPlanner(config),  # type: ignore[arg-type]
         global_factory=_astar,
+    ),
+    "astar+dwa_predictive": _Entry(
+        info=AlgorithmInfo(
+            id="astar+dwa_predictive",
+            local_controller="dwa_predictive",
+            kind="stack",
+            description=(
+                "A* global planner with the space-time DWA controller. "
+                + _DWA_PREDICTIVE_DESCRIPTION
+            ),
+            benchmarkable=False,
+            withdrawn=_WITHDRAWN,
+            config_schema=DWAPredictiveConfig.model_json_schema(),
+            global_observation_class="full_static_map",
+            # **Still `lidar_only`, and that is the point.** Taking
+            # velocities from the engine would make this a
+            # `lidar+human_states` candidate, which the ranking refuses to
+            # compare against `dwa` by default — and rightly, since a
+            # candidate that is told where everything is would win for a
+            # reason that has nothing to do with prediction.
+            local_observation_class="lidar_only",
+            requires_global_path=True,
+        ),
+        config_model=DWAPredictiveConfig,
+        factory=lambda config: DWAPredictivePlanner(config),  # type: ignore[arg-type]
+        global_factory=_astar,
+    ),
+    "rrtstar+dwa_predictive": _Entry(
+        info=AlgorithmInfo(
+            id="rrtstar+dwa_predictive",
+            local_controller="dwa_predictive",
+            kind="stack",
+            description=(
+                _RRT_STAR_DESCRIPTION
+                + " Paired here with the space-time DWA controller. "
+                + _DWA_PREDICTIVE_DESCRIPTION
+            ),
+            benchmarkable=False,
+            withdrawn=_WITHDRAWN,
+            config_schema=DWAPredictiveConfig.model_json_schema(),
+            global_planner="rrtstar",
+            stochastic_global_planner=True,
+            global_observation_class="full_static_map",
+            local_observation_class="lidar_only",
+            requires_global_path=True,
+        ),
+        config_model=DWAPredictiveConfig,
+        factory=lambda config: DWAPredictivePlanner(config),  # type: ignore[arg-type]
+        global_factory=_rrtstar,
     ),
     "astar+ppo": _Entry(
         info=AlgorithmInfo(

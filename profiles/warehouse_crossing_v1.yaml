@@ -1,0 +1,168 @@
+# A warehouse aisle with **constant-velocity** crossing traffic.
+#
+# **Why this deployment exists at all**, since the platform already has
+# two: `warehouse_a_v2` declares a *sinusoidal* forklift, and a sinusoid
+# is outside the assumption `dwa_predictive` is built on. Measured: a
+# constant-velocity extrapolation of that motion is out by a median of
+# 0.949 m after 1.5 s. Comparing a predictive controller there would
+# measure the **limits** of its model rather than its **value**, which is
+# the distinction decision gate 2 was written to protect (see the plan's
+# P4, and KNOWN_LIMITATIONS L13).
+#
+# So the traffic here is a `waypoint` crosser: genuinely constant velocity
+# except at its turns. That is the domain the model claims, and a
+# candidate should be measured inside the domain it claims before anyone
+# asks how it behaves outside it.
+#
+# **This is a new deployment, not an edit.** `task_profile_id` changes
+# because the world changes: different traffic is a different set of
+# episodes, and HĐ-3.1 does not hash the environment into
+# `episode_context_id`, so reusing `warehouse_a_v2` would produce contexts
+# that hash identically to episodes from a world that no longer exists.
+# Same trap, same answer: new world, new id.
+
+id: warehouse_crossing_v1
+claim_level: mission
+
+# An instrument, not a customer site. It exists to answer one question —
+# what a constant-velocity prediction is worth — so a failure here is a
+# measurement rather than an incident report.
+deployment_role: instrument
+
+environment:
+  map: maps/warehouse_a.pgm
+  map_yaml: maps/warehouse_a.yaml
+
+  sensor_noise:
+    # Measurement and actuation error stay on: switching them off would
+    # make the comparison optimistic in the direction that flatters both
+    # candidates, and the tracker's velocity floor is derived partly from
+    # the declared range sigma, so a zero here would silently change what
+    # `dwa_predictive` does.
+    lidar_range_sigma_m: 0.02
+    wheel_slip_fraction: 0.02
+
+    # **Localisation noise is off, and that is a stated limitation rather
+    # than a convenience.**
+    #
+    # The controller rolls its own trajectory from the *true* pose while
+    # building its obstacle cloud from the *believed* one, and those two
+    # are subtracted from each other. Today that only shifts a clearance
+    # by a constant. With multi-frame tracking it becomes a **velocity**:
+    # a stationary wall acquires one, oscillating with the drift.
+    #
+    # Fixing that is the coordinate-frame phase (the plan's §2c) and it is
+    # not done. Until it is, any comparison run under drift would be
+    # measuring an unfixed defect rather than the candidates. So drift is
+    # zero here, and **this deployment's results say nothing about
+    # robustness to localisation error** — KNOWN_LIMITATIONS L17.
+    localization_drift_m: 0.0
+    localization_jump_probability: 0.0
+
+  # **Not declared, and the reason is a defect rather than an oversight.**
+  #
+  # This profile did declare `v_obstacle_max: 0.8` — the crosser's exact
+  # speed, verified at load. Every one of 30 paired episodes then ended
+  # `stuck`, and not near the crosser: the robot stalled at (5.4, 10.6),
+  # fifteen metres away from it, between two shelves.
+  #
+  # The bound is applied against `_nearest_obstacle_distance`, which is
+  # the distance to the nearest LiDAR return **of any kind**. Declaring a
+  # closing speed therefore tells the controller *you may only go as fast
+  # as you could stop if that shelf were charging at you at 0.8 m/s*:
+  #
+  #     headroom   v allowed (u=0)   v allowed (u=0.8)
+  #       0.3 m       0.523 m/s          0.145 m/s
+  #       0.5 m       0.683 m/s          0.243 m/s
+  #       1.0 m       0.975 m/s          0.456 m/s
+  #
+  # In a 3 m aisle the robot is throttled to a crawl by walls that are
+  # not going anywhere, and `stuck_threshold_s` fires. Measured: identical
+  # episode, `v_obstacle_max` absent -> success in 65.2 s; declared ->
+  # stuck at 26.1 s.
+  #
+  # P0 and P1 measured this bound in an **open hall** with one cart and
+  # nothing else in range, which is exactly the geometry that hides it.
+  # The fix needs the bound to charge a closing speed only against things
+  # that can close — and telling those apart is what the tracker is for,
+  # which P5 showed is not reliable. So it is a real open problem, not a
+  # tuning matter: KNOWN_LIMITATIONS L18.
+  #
+  # Leaving it undeclared means this deployment carries **no braking
+  # guarantee against moving traffic**, and the manifest says so. That is
+  # the honest state, and it is the same state every other shipped profile
+  # is in.
+
+  dynamic_obstacles:
+    - name: crossing-amr
+      radius: 0.4
+      # A full traverse and back is 2 x 18 m at 0.8 m/s = 45 s, so a full
+      # cycle of offset is what makes seeds meet it at different phases
+      # rather than replaying one encounter (HĐ-3.3, and the mistake
+      # `warehouse_a_v2`'s comment documents at length).
+      seed_time_offset: 45.0
+      motion:
+        kind: waypoint
+        # Straight across the robot's route at constant speed. `ping_pong`
+        # rather than `loop` so it retraces the same line instead of
+        # teleporting back to the start.
+        waypoints:
+          - {x: 20.0, y: 3.0}
+          - {x: 20.0, y: 21.0}
+        speed: 0.8
+        loop: false
+        ping_pong: true
+
+missions:
+  - id: m1
+    start: [2.0, 3.0, 0.0]
+    goal: [38.0, 21.0, 1.57]
+    probability: 1.0
+
+robot:
+  # The same vehicle as every other deployment. The site changes; the
+  # robot being deployed does not, or the runs would not be comparable.
+  type: differential_drive
+  radius: 0.26
+  max_linear_velocity: 0.8
+  max_angular_velocity: 1.2
+  max_linear_acceleration: 0.5
+  max_angular_acceleration: 1.0
+  control_period: 0.05
+
+available_observations: [lidar_2d]
+
+constraints:
+  success_rate_min: 0.95
+  # 10% accepted risk => N_min = 30 by the rule of three. Deliberately
+  # looser than the warehouse's 1%, and the reason is what this
+  # deployment is *for*: it is an instrument for comparing two
+  # controllers, not a site anyone ships to. Declaring 1% here would
+  # demand 300 clean paired episodes to certify a bound nobody intends to
+  # publish.
+  #
+  # What this costs, stated rather than hidden: with N_min = 30, G2's
+  # collision bound from this deployment is weak and must not be quoted
+  # as a safety claim. The comparison it supports is *relative* — which
+  # controller behaved better on identical episodes — and that is the
+  # question being asked.
+  collision_probability_max: 0.1
+  no_path_rate_max: 0.02
+  goal_tolerance_m: 0.20
+  # Wide for the same declared reason as every other profile: the
+  # simulator has no final-orientation controller, so a heading
+  # requirement would fail every candidate for a property of the platform.
+  goal_tolerance_rad: 3.1416
+  episode_timeout_s: 180
+  stuck_threshold_s: 10
+  clearance_warning_m: 0.35
+
+hardware:
+  target_device: jetson_orin_nano
+  total_ram_mb: 8192
+  ram_budget_breakdown:
+    os_and_middleware_mb: 1536
+    perception_stack_mb: 2048
+    localization_mapping_mb: 819
+    logging_and_reserve_mb: 512
+  available_ram_mb: 3277

@@ -24,6 +24,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from planbench_benchmark.candidates import build_planners
+from planbench_benchmark.fingerprint import execution_conditions_fingerprint
 from planbench_decision.candidate import Candidate
 from planbench_planning.common.base import PlanResult
 from planbench_schemas.episode_context import EpisodeContext
@@ -108,6 +109,10 @@ def scenario_for(profile: TaskProfile, context: EpisodeContext) -> Scenario:
         # that could declare its own noise amplitude would be choosing
         # its own exam.
         sensor_noise=profile.environment.sensor_noise,
+        # Same reasoning, and the same trap avoided: a candidate that
+        # could set its own clearance preference would buy a shorter
+        # route by caring less than its rivals were made to.
+        clearance_preference=profile.clearance_preference,
         random_seed=context.seed,
         stuck_time_window=profile.constraints.stuck_threshold_s,
     )
@@ -140,6 +145,13 @@ def run_contract_episode(
         candidate.candidate_id,
         root=root,
         costmap_cells=map_data.width * map_data.height,
+        # What this episode ran under, so a later run can tell whether
+        # the file on disk describes the same world. The two ids in the
+        # path cannot answer that — HĐ-3.1 leaves the environment out of
+        # ``episode_context_id`` — and the reuse paths trusted them.
+        execution_conditions_fingerprint=execution_conditions_fingerprint(
+            map_data, scenario, profile
+        ),
     ) as recorder:
         run = run_stack(
             map_data,
@@ -156,6 +168,15 @@ def run_contract_episode(
             profile.replanning,
             recorder=recorder,
             legacy_metrics=False,
+            # Same argument, one rung further: a stack allowed to back up
+            # while its rival is not would be compared on its recovery.
+            recovery=profile.recovery,
+            # And once more, for the braking bound. A candidate that
+            # could pick the traffic speed it braked for would be
+            # choosing its own exam; worse, if only one stack braked
+            # correctly for closing traffic the comparison would be
+            # measuring safety rather than the layer it names.
+            obstacle_speed=profile.environment.v_obstacle_max,
         )
         recorder.close(
             peak_search_nodes=_search_nodes(candidate, run.plan),

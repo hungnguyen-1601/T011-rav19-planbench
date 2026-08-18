@@ -39,6 +39,7 @@ import yaml
 from planbench_benchmark.candidates import (
     LOCAL_CONTROLLER_CONFIGS,
     candidate_from_stack,
+    validate_config_names,
     validate_control_rate,
 )
 from planbench_benchmark.contexts import build_evaluation_contexts
@@ -162,12 +163,19 @@ def build_candidates(
 ) -> tuple[Candidate, ...]:
     """Every candidate, checked against the deployment before episode one.
 
-    Two refusals happen here rather than after hours of simulation:
-    ``validate_experiment_scope`` on whether the set can support the
-    declared claim (HĐ-1.4), and ``validate_control_rate`` on whether
-    each controller keeps up with the deployment's T_cycle — which G4
-    cannot see, since it times one call and never counts them.
+    Three refusals happen here rather than after hours of simulation:
+    ``validate_config_names`` on whether each configuration belongs to
+    the controller it was paired with, ``validate_experiment_scope`` on
+    whether the set can support the declared claim (HĐ-1.4), and
+    ``validate_control_rate`` on whether each controller keeps up with
+    the deployment's T_cycle — which G4 cannot see, since it times one
+    call and never counts them.
+
+    The first is checked **before** the candidates are built: a mismatched
+    pair constructs perfectly well and only becomes visible in the report
+    it goes on to mislabel.
     """
+    validate_config_names(specs)
     candidates = tuple(
         candidate_from_stack(stack, params=dict(LOCAL_CONTROLLER_CONFIGS[local])).model_copy(
             update={
@@ -482,7 +490,7 @@ def run_comparison(
         # it left on disk need a way back into a report that does not
         # involve re-simulating them or hand-editing JSON. Same prefix
         # rule, same honesty about the sample it ended up with.
-        contexts = paired_prefix(candidates, contexts, trace_root)
+        contexts = paired_prefix(candidates, contexts, trace_root, profile, map_data)
         interrupted = len(contexts) < requested
         if not contexts:
             raise AcceptanceFailure(
@@ -518,7 +526,7 @@ def run_comparison(
             # already on disk, which is exactly the outcome that made a
             # three-hour run unreadable once.
             interrupted = True
-            contexts = paired_prefix(candidates, contexts, trace_root)
+            contexts = paired_prefix(candidates, contexts, trace_root, profile, map_data)
             contexts_by_candidate = {c.candidate_id: tuple(contexts) for c in candidates}
             say(
                 f"\n⚠ NGẮT GIỮA CHỪNG — chấm trên {len(contexts)}/{requested} episode đã ghép "

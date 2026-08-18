@@ -1076,6 +1076,55 @@ details summary {
   font-size: 13px;
 }
 
+/* The mark that carries a field's explanation — see components/Hint.
+   Small and quiet: it sits beside every labelled number on the
+   deployment form, and a row of loud icons would be its own kind of
+   clutter, which is the thing this replaced. */
+.hint-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  margin-left: 5px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  user-select: none;
+  vertical-align: middle;
+}
+
+.hint-mark:hover,
+.hint-mark:focus-visible {
+  color: var(--text);
+  border-color: var(--accent, #4c9aff);
+  outline: none;
+}
+
+.hint-bubble {
+  z-index: 60;
+  display: block;
+  padding: 9px 11px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 400;
+  /* Never in the way of the pointer that summoned it: the bubble
+     follows the cursor, so a bubble that could receive the mouse would
+     chase itself off the control being explained. */
+  pointer-events: none;
+  white-space: normal;
+}
+
 .review-comment {
   background: var(--bg-elevated);
   border: 1px solid var(--border);

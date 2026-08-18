@@ -1,0 +1,300 @@
+{
+  "contracts_version": "6.9.0",
+  "git_sha": "b42e48da5bd383babcb04b9de5c8a152a3d0a8cd",
+  "docker_image_digest": null,
+  "task_profile_id": "warehouse_crossing_v1",
+  "anchor_config_version": "v1.2",
+  "preference_profile": "kho_ban_dem",
+  "decision_mode": "technical",
+  "travel_time_accounting": "efficiency",
+  "sensor_noise": {
+    "lidar_range_sigma_m": 0.02,
+    "wheel_slip_fraction": 0.02,
+    "localization_drift_m": 0.0,
+    "localization_jump_probability": 0.0,
+    "lidar_dropout_probability": 0.0,
+    "odometry_bias_fraction": 0.0,
+    "command_latency_steps": 0
+  },
+  "replanning": {
+    "enabled": false,
+    "max_replans": 0
+  },
+  "v_obstacle_max": null,
+  "constraints": {
+    "success_rate_min": 0.95,
+    "collision_probability_max": 0.1,
+    "no_path_rate_max": 0.02,
+    "goal_tolerance_m": 0.2,
+    "goal_tolerance_rad": 3.1416,
+    "episode_timeout_s": 180.0,
+    "stuck_threshold_s": 10.0,
+    "clearance_warning_m": 0.35,
+    "cost_per_mission_max": null
+  },
+  "candidates": [
+    "3b18dfbfa9e7",
+    "da8d812bee98"
+  ],
+  "episode_contexts": {
+    "evaluation": [
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 4,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "02aebc23d9f5"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 5,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "143deebc961c"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 16,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "157ed242e243"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 8,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "1cdf23b2fa98"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 24,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "32bce1518850"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 10,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "354c124b59eb"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 26,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "37eccb09dec5"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 27,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "40da04598b8e"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 15,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "4752cdd01d17"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 20,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "59e545157c95"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 7,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "5c42e1a74d5f"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 11,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "64f7e9d1c823"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 1,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "66d4a7599890"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 28,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "72a65d2c47df"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 25,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "86b342d34592"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 29,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "889eccc06e3b"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 13,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "92428105ee46"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 3,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "9acbe9ba77e4"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 19,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "a3c43674fec3"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 9,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "ab325d70e8ac"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 12,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "ab8a538bda76"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 14,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "b1af3d77c3a0"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 0,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "b408516ece7f"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 18,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "b8bc710e548a"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 6,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "ddf3dfda3757"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 22,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "de955510daa0"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 2,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "eb0ced43c9eb"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 23,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "ee68242ac88c"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 21,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "efba36f5a141"
+      },
+      {
+        "task_profile_id": "warehouse_crossing_v1",
+        "mission_id": "m1",
+        "seed": 17,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "f91c961b9eca"
+      }
+    ],
+    "neighborhood": []
+  },
+  "bootstrap": {
+    "seed": 0,
+    "n_resamples": 1000
+  },
+  "benchmark_host": {
+    "cpu": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+    "cores_allocated": 2,
+    "threads": 1,
+    "cpu_affinity": [
+      0,
+      1
+    ],
+    "logical_cores": 20,
+    "affinity_source": "script"
+  },
+  "created_at": "2026-08-15T04:09:56.352277+00:00"
+}

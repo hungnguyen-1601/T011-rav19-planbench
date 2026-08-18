@@ -318,6 +318,52 @@ class TestCandidates:
         assert first["candidate_id"] == second["candidate_id"]
         assert first["created_at"] == second["created_at"]
 
+    def test_a_configuration_belonging_to_another_controller_is_refused(
+        self, client, alice_headers
+    ):
+        """**Registration is the second door into the same mistake.**
+
+        ``dwa_coarse`` exists, so the "unknown configuration" check passes
+        it; every one of its keys is also a valid ``DWAPredictiveConfig``
+        field, so ``candidate_from_stack`` builds happily. The candidate
+        would then be **stored** carrying a configuration name it never
+        used — and unlike a bad comparison, which is wrong for one run, a
+        stored candidate is wrong from then on.
+
+        The comparison path gained this check at ``build_candidates``.
+        This is the other entrance.
+        """
+        response = client.post(
+            f"{API}/candidates",
+            json={"stack": "astar+dwa_predictive", "local_config": "dwa_coarse"},
+            headers=alice_headers,
+        )
+        assert response.status_code == 422
+        assert "dwa_predictive" in response.text
+
+    def test_even_the_matching_configuration_is_refused_now(self, client, alice_headers):
+        """Two different refusals, and the second one arrived later.
+
+        The test above refuses ``dwa_coarse`` on ``astar+dwa_predictive``
+        because the *pairing* is a lie: the run would be sound and the
+        record would name a configuration belonging to another
+        controller. This one is refused for a reason that has nothing to
+        do with pairing — the stack was **withdrawn on 2026-08-16**,
+        after its LiDAR tracker was measured reporting obstacles moving
+        at up to 1.9 m/s on a static warehouse.
+
+        Both are 422, and the messages have to stay different or the
+        first defect becomes invisible behind the second.
+        """
+        response = client.post(
+            f"{API}/candidates",
+            json={"stack": "astar+dwa_predictive", "local_config": "dwa_predictive_balanced"},
+            headers=alice_headers,
+        )
+        assert response.status_code == 422
+        assert "perception" in response.text, "the refusal must say it is a withdrawal"
+        assert "pairs a" not in response.text, "this is not the mismatched-pairing refusal"
+
     def test_a_reference_only_stack_is_refused(self, client, alice_headers):
         """``*+pure_pursuit`` ignores sensing and exists to check the
         pipeline; registering it as a candidate would let a conclusion
@@ -1220,11 +1266,33 @@ class TestWhatACandidateCanBeBuiltFrom:
     def test_every_offered_name_is_one_registration_accepts(self, client, alice_headers):
         """The point of serving the list: what it offers must be exactly
         what the server takes. A name here that registration refused
-        would be a dropdown that produces an error."""
-        for entry in client.get(f"{API}/local-controllers").json():
+        would be a dropdown that produces an error.
+
+        **Paired with the stack the entry says it belongs to.** Each entry
+        carries its ``controller``, and since P6 registration refuses a
+        configuration paired with a different one — ``dwa_coarse`` on a
+        predictive stack builds cleanly and then mislabels every report.
+        A test that ignored ``controller`` and posted everything at
+        ``astar+dwa`` would be asserting the platform accepts exactly the
+        mistake it now rejects.
+
+        Which is also the requirement on the client: the list is flat, so
+        a dropdown has to filter it by ``controller`` rather than offer
+        every name for every stack.
+        """
+        stacks = {"dwa": "astar+dwa", "dwa_predictive": "astar+dwa_predictive"}
+        offered = client.get(f"{API}/local-controllers").json()
+        assert not any(entry["controller"] == "dwa_predictive" for entry in offered), (
+            "a withdrawn controller's configurations must leave the catalogue with it, "
+            "or the dropdown offers names POST /candidates answers 422 to"
+        )
+        assert offered, "an empty catalogue would pass this vacuously"
+        for entry in offered:
+            stack = stacks.get(entry["controller"])
+            assert stack, f"no stack known for controller {entry['controller']!r}"
             response = client.post(
                 f"{API}/candidates",
-                json={"stack": "astar+dwa", "local_config": entry["name"]},
+                json={"stack": stack, "local_config": entry["name"]},
                 headers=alice_headers,
             )
             assert response.status_code == 201, f"{entry['name']}: {response.text}"

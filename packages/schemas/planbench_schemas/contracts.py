@@ -16,4 +16,4 @@ rebuild the same Decision Card) quietly stops holding.
 from __future__ import annotations
 
 #: Must equal the `contracts_version` in the header of contracts/CONTRACTS.md.
-CONTRACTS_VERSION = "6.8.0"
+CONTRACTS_VERSION = "6.9.0"

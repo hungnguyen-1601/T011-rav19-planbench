@@ -69,6 +69,14 @@ ARCHIVE_DIR = LOG_DIR / "archive"
 BATCH_LIMIT = 500
 
 
+def _normalize_for_ingest(entry: dict) -> dict:
+    """Adapt locally lossless hook data to the server's current schema."""
+    response = entry.get("tool_response")
+    if response is not None and not isinstance(response, str):
+        entry["tool_response"] = json.dumps(response, ensure_ascii=False, default=str)
+    return entry
+
+
 def _archive(pending: Path) -> None:
     """Append pending file to today's archive. Never overwrites existing data."""
     if not pending.exists() or pending.stat().st_size == 0:
@@ -129,7 +137,7 @@ def main():
                 continue
             # An unparseable line is dropped rather than aborting the batch.
             with contextlib.suppress(json.JSONDecodeError):
-                entries.append(json.loads(stripped))
+                entries.append(_normalize_for_ingest(json.loads(stripped)))
 
     if not entries:
         # Nothing to send; archive whatever was there (probably junk) and bail.
@@ -152,6 +160,20 @@ def main():
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             print(f"[ai-log] Submitted {len(entries)} entries → {resp.status}", file=sys.stderr)
+    except urllib.error.HTTPError as e:
+        # HTTPError is also a URLError, but it carries the validation response
+        # body. Preserve it so schema failures such as 422 can be diagnosed
+        # instead of being reduced to an opaque status line.
+        with contextlib.suppress(Exception):
+            detail = e.read().decode("utf-8", errors="replace").strip()
+        if not detail:
+            detail = str(e)
+        _restore_pending(pending)
+        print(
+            f"[ai-log] Submit failed: HTTP {e.code}: {detail[:4000]} — logs kept locally.",
+            file=sys.stderr,
+        )
+        sys.exit(0)  # Don't block push on server validation errors
     except urllib.error.URLError as e:
         # Failure: restore the whole pending (including leftover) for next push.
         _restore_pending(pending)

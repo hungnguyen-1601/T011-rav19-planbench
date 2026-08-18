@@ -23,7 +23,11 @@ would need the ``MonolithicPolicy`` adapter of HĐ-4 to run one.
 
 from __future__ import annotations
 
+import hashlib
+import inspect
 from collections.abc import Sequence
+from functools import cache
+from importlib import import_module
 from typing import Any
 
 from planbench_benchmark.observation import ObservationClass
@@ -33,6 +37,7 @@ from planbench_benchmark.registry import (
     algorithm_info,
     build_global_planner,
     build_local_planner,
+    list_algorithms,
     validate_algorithm_config,
 )
 from planbench_decision.candidate import Candidate, StackComponent, StructuralResourceProfile
@@ -124,12 +129,90 @@ DEFAULT_STRUCTURAL_PROFILE = StructuralResourceProfile(
 )
 
 
+#: Modules whose source is hashed into a controller's ``local_version``.
+#:
+#: **A declared set, not a transitive closure**, and the distinction is
+#: the honest part of this fingerprint. Following imports would eventually
+#: reach ``math`` and the Python version; stopping somewhere is
+#: unavoidable, so where it stops is written down rather than implied.
+#:
+#: What is in, and why each earns its place:
+#:
+#: * the controller's **own** modules — obviously;
+#: * ``common.dwa_core`` — ``dwa`` and ``dwa_predictive`` call the same
+#:   functions, so a fix there changes what **both** do. Hashing only each
+#:   controller's own file would let that happen with both recorded ids
+#:   unmoved, which is precisely the promise ``StackComponent.version``
+#:   makes and used to break;
+#: * ``schemas.feasibility`` — ``admissible_speed`` **is** the speed bound
+#:   and ``hard_clearance`` **is** the refusal threshold. A change there
+#:   changes what every controller may do, and leaving it out would have
+#:   made P1 — which rewrote ``admissible_speed`` — invisible to the id.
+#:
+#: What is deliberately out: ``geometry``, ``robot``, ``episode`` and the
+#: rest carry types and constants rather than control decisions. That is a
+#: judgement, and a wrong one is possible — a behaviour change in an
+#: excluded module would not move the id. The list is the place to fix
+#: that when it happens.
+_CONTROLLER_SOURCES: dict[str, tuple[str, ...]] = {
+    "dwa": (
+        "planbench_planning.dwa.planner",
+        "planbench_planning.common.dwa_core",
+        "planbench_schemas.feasibility",
+    ),
+    "dwa_predictive": (
+        "planbench_planning.dwa_predictive.planner",
+        "planbench_planning.dwa_predictive.tracking",
+        "planbench_planning.dwa_predictive.tracks",
+        "planbench_planning.common.dwa_core",
+        "planbench_schemas.feasibility",
+    ),
+}
+
+
+@cache
+def controller_version(controller: str) -> str:
+    """Short checksum over a **declared set** of the modules it depends on.
+
+    Not "the code this controller runs" — that would be the transitive
+    closure and it does not terminate anywhere useful. It is the set named
+    in :data:`_CONTROLLER_SOURCES`, chosen because those modules make
+    control decisions, and a behaviour change in a module left out of that
+    list **will not** move the id.
+
+    **The debt this pays.** ``candidate_from_stack`` took
+    ``local_version: str = "v1"`` and **no caller ever passed one**, so
+    every candidate the platform has produced was ``v1`` for ever — while
+    ``StackComponent``'s own docstring promised that *the same DWA after a
+    bug fix is a different candidate*. The id said two runs were the same
+    candidate when the code had changed underneath them.
+
+    Hashing source text rather than a version somebody types: a number a
+    human maintains is a number a human forgets, and the failure is
+    silent. Docstrings and comments count too — they cannot change
+    behaviour, but a checksum that tried to ignore them would need to
+    parse Python to decide what matters, and being occasionally too
+    sensitive is the safe direction for an identity.
+
+    Unknown controllers fall back to ``"v1"``: ``ppo`` carries its
+    checkpoint checksum already, and ``pure_pursuit`` is not
+    benchmarkable.
+    """
+    modules = _CONTROLLER_SOURCES.get(controller)
+    if not modules:
+        return "v1"
+    digest = hashlib.sha256()
+    for name in modules:
+        digest.update(inspect.getsource(import_module(name)).encode("utf-8"))
+    return digest.hexdigest()[:12]
+
+
 def candidate_from_stack(
     stack_id: str,
     *,
     params: dict[str, Any] | None = None,
     global_version: str = "v1",
-    local_version: str = "v1",
+    local_version: str | None = None,
     resource_profile: StructuralResourceProfile | None = None,
 ) -> Candidate:
     """Build the candidate for a registry stack and one parameter set.
@@ -141,18 +224,29 @@ def candidate_from_stack(
     parameters are not configurable through the registry yet, so the
     candidate carries no block for that layer.
 
-    The versions are arguments rather than registry facts because the
-    registry does not track code versions. Passing the real one is what
-    makes a candidate id distinguish the same stack before and after a
-    bug fix (HĐ-1.3).
+    ``local_version`` defaults to the **checksum of the controller's own
+    source plus the shared core** rather than to a literal. It used to
+    default to ``"v1"`` and no caller ever overrode it, so every candidate
+    id was ``v1`` permanently and two runs of materially different code
+    were recorded as the same candidate — the exact thing HĐ-1.3 says an
+    id must distinguish. Passing a value explicitly is still allowed, for
+    a caller reconstructing a historical candidate.
+
+    **This changes every candidate id in existence.** Runs stored before
+    it keep their old ids and no longer match the ids the same stacks
+    produce now. That is accepted rather than papered over (dev decision
+    15-08): the platform already refuses to edit identity in place —
+    ``same_deployment`` exists for the same reason — and the alternative,
+    hashing only the new controller, would leave the hole half-patched
+    while the two controllers share ``dwa_core``.
     """
     info = algorithm_info(stack_id)
     if info is None:
         raise UnknownAlgorithmError(f"unknown algorithm {stack_id!r}")
     if not info.benchmarkable:
         raise NotBenchmarkableError(
-            f"{stack_id!r} is registered as a reference stack only and must not be "
-            "offered as a candidate"
+            f"{stack_id!r} may not be offered as a candidate: "
+            + (info.withdrawn or "registered as a reference stack only")
         )
     if not info.requires_global_path:
         raise NotBenchmarkableError(
@@ -176,7 +270,10 @@ def candidate_from_stack(
     return Candidate(
         type="modular",
         global_planner=StackComponent(name=global_name, version=global_version),
-        local_controller=StackComponent(name=local_name, version=local_version),
+        local_controller=StackComponent(
+            name=local_name,
+            version=local_version or controller_version(local_name),
+        ),
         params={local_name: validated.model_dump(mode="json")},
         observation_requirements=observation_requirements_for(info),
         resource_profile=resource_profile or DEFAULT_STRUCTURAL_PROFILE,
@@ -186,24 +283,19 @@ def candidate_from_stack(
 def stack_id_for(candidate: Candidate) -> str:
     """The registry id that builds this candidate's planners.
 
-    **What is and is not missing for a monolithic candidate, as of
-    6.6.0.** The simulator can run one: ``MonolithicPolicy`` is the
-    adapter and ``run_policy`` drives it through the same loop, charged
-    for no global search and handed no path. What has no home yet is the
-    step before that — turning a ``Candidate(type='monolithic')`` into a
-    running policy, which needs a registry of policies keyed by
-    ``PolicyComponent.name`` and a way to resolve
-    ``PolicyComponent.checkpoint`` to weights.
-
-    Until that exists a monolithic candidate can be *declared* and not
-    *built*, and this is where the declaration stops.
+    Modular only, by construction: this resolves a *stack*, and a
+    monolithic candidate has none. Since H1b that is a redirect rather
+    than a dead end — ``planbench_benchmark.policies.build_policy`` turns
+    a declared monolithic candidate into a running policy, and
+    ``run_policy`` drives it through the same loop, charged for no global
+    search and handed no path.
     """
     if candidate.type != "modular":
         raise NotBenchmarkableError(
-            "monolithic candidates have no registry stack. The MonolithicPolicy adapter "
-            "exists (planbench_planning.common.policy_base) and the simulator runs one "
-            "through run_policy; the policy registry that maps a candidate's policy name "
-            "and checkpoint to a loadable object does not exist yet"
+            "monolithic candidates have no registry stack; build them with "
+            "planbench_benchmark.policies.build_policy and run them through "
+            "run_policy — the modular path here would plan a global route the "
+            "policy must never receive"
         )
     return candidate.stack_label
 
@@ -260,6 +352,36 @@ CONTROLLER_CONFIGS: dict[str, dict[str, dict[str, Any]]] = {
             "horizon_seconds": 1.0,
         },
     },
+    # **Identical sampling density to `dwa`, deliberately.** The latency
+    # axis is only comparable if the two controllers sample the same
+    # number of candidates; a predictive stack that also sampled more
+    # coarsely would mix two changes into one G4 reading. Whatever this
+    # candidate costs above `dwa` is then the tracker plus the space-time
+    # broadcast, which is the number worth having.
+    #
+    # Names are the full `dwa_predictive_*`, not an abbreviation: item 3
+    # below checks a configuration name against the controller it belongs
+    # to, and these strings appear verbatim in every stored report.
+    "dwa_predictive": {
+        "dwa_predictive_coarse": {
+            "control_period": 0.05,
+            "velocity_samples": 7,
+            "omega_samples": 15,
+            "horizon_seconds": 1.0,
+        },
+        "dwa_predictive_balanced": {
+            "control_period": 0.05,
+            "velocity_samples": 12,
+            "omega_samples": 24,
+            "horizon_seconds": 1.0,
+        },
+        "dwa_predictive_default": {
+            "control_period": 0.05,
+            "velocity_samples": 20,
+            "omega_samples": 40,
+            "horizon_seconds": 1.0,
+        },
+    },
 }
 
 #: Every named configuration, flat, keyed by name.
@@ -298,6 +420,74 @@ CONTROLLER_OF_CONFIG: dict[str, str] = {
 #: stays registered saying so. Re-picking the sampling density until a
 #: number clears a gate is the move HĐ-15.3 asks about, and the four
 #: reverted changes of 2026-08-11 are what it looks like.
+
+
+class ConfigControllerMismatch(ValueError):
+    """A configuration name that belongs to a different controller."""
+
+
+def offered_controller_configs() -> dict[str, dict[str, dict]]:
+    """The named configurations a candidate can actually be registered with.
+
+    ``CONTROLLER_CONFIGS`` lists every configuration the platform knows;
+    this narrows it to the ones some **usable** stack pairs with, by
+    reading the registry rather than by keeping a second list beside it.
+
+    The distinction became real when ``dwa_predictive`` was withdrawn:
+    the catalogue still offered ``dwa_predictive_balanced`` while
+    registration refused every stack that could take it, so a dropdown
+    served a name the server would reject — the exact drift that serving
+    the catalogue instead of hard-coding it in the browser was meant to
+    prevent. Deriving it here means withdrawing a stack withdraws its
+    configurations in the same move, with nobody having to remember.
+    """
+    usable = {info.local_controller for info in list_algorithms() if info.benchmarkable}
+    return {
+        controller: configs
+        for controller, configs in CONTROLLER_CONFIGS.items()
+        if controller in usable
+    }
+
+
+def validate_config_names(specs: Sequence[tuple[str, str]]) -> None:
+    """Refuse ``astar+dwa_predictive:dwa_coarse`` and its relatives.
+
+    **A live hole until this existed.** Configuration names are a single
+    flat namespace, and nothing checked that the one a run asked for
+    belonged to the controller in its stack. ``dwa_coarse`` names only
+    sampling densities, and every one of its keys is also a valid
+    ``DWAPredictiveConfig`` field — so the pair above **runs**, and the
+    stored report says ``local_controller_config: dwa_coarse`` beside a
+    candidate that is not ``dwa``. Nothing is wrong with the episodes;
+    what is wrong is that the record describes a configuration nobody
+    chose, and that only becomes visible once a second controller exists.
+
+    ``CONTROLLER_OF_CONFIG`` has been derived and exported all along with
+    nothing reading it. This is the reader.
+
+    Checked here rather than at the registry: the registry knows a stack
+    and a config model, and ``dwa_coarse`` validates cleanly against
+    both. Only the *pairing* is wrong, and the pairing is what a run
+    declares.
+    """
+    for stack, config_name in specs:
+        info = algorithm_info(stack)
+        if info is None:
+            continue
+        owner = CONTROLLER_OF_CONFIG.get(config_name)
+        if owner is None:
+            raise ConfigControllerMismatch(
+                f"{stack}:{config_name} names a configuration that does not exist. "
+                f"Available: {', '.join(sorted(LOCAL_CONTROLLER_CONFIGS))}"
+            )
+        if owner != info.local_controller:
+            raise ConfigControllerMismatch(
+                f"{stack}:{config_name} pairs a {info.local_controller} stack with a "
+                f"{owner} configuration. It would run — every field of {config_name} is "
+                f"also valid for {info.local_controller} — and the report would then "
+                f"name a configuration this candidate never used. Pick one of: "
+                f"{', '.join(sorted(CONTROLLER_CONFIGS.get(info.local_controller, {})))}"
+            )
 
 
 class ControlRateViolation(ValueError):
@@ -370,11 +560,24 @@ def build_planners(
     ``episode_seed`` comes from the episode context, never from global
     randomness: a sampling planner must explore a different tree per
     episode while staying reproducible from the context id (HĐ-3.2).
+
+    Since H2 the pair comes back wrapped behind an ``AlgorithmHost``:
+    same ABCs outside, host mediation inside (crash → safe stop, invalid
+    output refused). The wrap is byte-neutral, and that is not asserted
+    here but *pinned* — ``tests/test_host_parity_golden.py`` compares
+    episodes run through this exact function against a fixture generated
+    before the host existed.
     """
+    # Imported at build time, not module import: candidates.py serves
+    # identity-only callers (API validation, id hashing) that never run
+    # an episode and should not pull the simulator in to answer.
+    from planbench_simulator.host import host_backed_planners
+
     stack_id = stack_id_for(candidate)
     assert candidate.local_controller is not None
     local_params = candidate.layer_params(candidate.local_controller.name)
-    return (
+    return host_backed_planners(
         build_global_planner(stack_id, episode_seed=episode_seed),
         build_local_planner(stack_id, local_params),
+        episode_seed=episode_seed,
     )

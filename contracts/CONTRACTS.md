@@ -1,6 +1,6 @@
 # CONTRACTS.md — Planner Selector
 
-> **Phiên bản hợp đồng:** `contracts_version: 6.8.0`
+> **Phiên bản hợp đồng:** `contracts_version: 6.9.0`
 > **Trạng thái:** cần cả nhóm đọc và ký ở mục 16. Phase 1 (schema gốc) đã hiện thực theo bản 1.1.0; bản 2.0.0 sửa G5 — xem lịch sử phiên bản ở mục 18.
 > **Vị trí:** `contracts/CONTRACTS.md` ở gốc repo (trước đây là `docs/antongduy/CONTRACTS_1.md`).
 > **Tài liệu mẹ:** `docs/antongduy/de-tai-moi-planner-selector.md`. Khi hai tài liệu mâu thuẫn, **CONTRACTS.md thắng** — plan là lý do, contract là luật.
@@ -270,6 +270,54 @@ Hai candidate chạy khác số bước và replan khác thời điểm. Nếu n
 Quỹ đạo hai candidate vẫn khác nhau — dĩ nhiên, vì lệnh điều khiển khác nhau. Đó là thế giới **phản ứng** với robot, không phải thế giới **thiên vị** robot.
 
 **Vi phạm trông như thế nào:** một `NoiseModel` giữ generator làm trạng thái và gọi `.normal()` mỗi lần cần số; hoặc tầng va chạm đọc `lidar_ranges` thay vì pose thật.
+
+---
+
+### 2.6. `v_obstacle_max` — tốc độ khép của traffic, cũng thuộc environment *(thêm ở 6.9.0)*
+
+`environment.v_obstacle_max` khai **nhanh nhất một vật cản ở hiện trường này có thể lao về phía robot**, đơn vị m/s:
+
+```yaml
+environment:
+  v_obstacle_max: 1.0
+```
+
+**Vì sao phải có.** Tiêu chuẩn vận tốc khả nhận (Fox–Burgard–Thrun 1997) chặn tốc độ theo khoảng cách tới vật cản **trên lần quét hiện tại**, tức nó phát biểu đúng một câu: *robot dừng kịp trước vật cản **đang đứng***. Với vật cản đang lại gần ở tốc độ `u`, khe hở co theo `(v + u)` trong khi robot chỉ dự trù `v`. Đo được ngày 14-08 trên `astar+dwa`, robot mặc định (`v_max` 0.8, `a` 0.5): một xe đẩy lao thẳng ở **0.2 m/s** — chậm hơn người đi bộ — đưa robot qua 6–25 bước liên tiếp mà tiêu chuẩn của chính nó chấm là khả nhận, rồi va chạm. Với trọng số **đang ship** cũng va chạm, và va chạm ở tốc độ vật cản còn thấp hơn.
+
+Biên đúng, và nó thay `v·T + v²/(2a)`:
+
+```
+(v + u)·T  +  v²/(2a)  +  u·v/a  ≤  headroom
+```
+
+`u·v/a` là quãng vật cản đi trong `t_stop = v/a` giây robot phanh; `(v + u)·T` là quãng **cả hai** cùng khép trong chu kỳ phản ứng. Với `u = 0` biểu thức trở về đúng công thức cũ, từng float một.
+
+**Ba nghĩa, và `null` không phải một con số:**
+
+| giá trị | nghĩa |
+|---|---|
+| `null` *(mặc định)* | chưa khai. Hành vi **y hệt** trước bản này, và deployment **không mang** tuyên bố an toàn phanh trước vật cản động — manifest ghi rõ |
+| số dương | đã khai, và **bị kiểm chứng** lúc nạp |
+| `0.0` | tuyên bố *"ở đây không gì chuyển động"*. Hợp lệ, và **bị từ chối** nếu environment khai vật cản động |
+
+Mặc định là `null` chứ không phải `0.0`: mọi profile viết trước bản này đều khai traffic, nên mặc định `0.0` sẽ tự trượt validator của chính pha này và làm hỏng mọi deployment đã lưu. Cùng tiền lệ `robustness_margin: float | None`, nơi null mang nghĩa được định nghĩa sẵn là *"chưa đo"*.
+
+**Một con số khai mà không ai kiểm thì không phải bảo đảm.** Loader **phải từ chối** profile khai 1.0 m/s trong khi environment chứa một `WaypointMotion` chạy 1.5 m/s — nếu không, biên phanh sai **đúng ở chỗ nó được tin tưởng nhất**, và không có gì báo. Cả bốn luật chuyển động đều có cận trên đóng dạng nên phép kiểm là **toàn phần**:
+
+| motion | cận trên tốc độ |
+|---|---|
+| `waypoint` | `speed` |
+| `random_walk` | `speed` |
+| `sudden_stop` | `speed` |
+| `periodic` | `π · \|end − start\| / period` |
+
+Một luật chuyển động **tương lai** không chứng minh được cận trên phải **từ chối tường minh**, không được mặc định bằng 0.
+
+**Vì sao nó ở environment và không ở candidate:** cùng lý lẽ với 2.3 và 2.5. Một candidate được chọn tốc độ traffic mà nó phải phanh trước là đang tự chọn đề thi; nặng hơn, nếu chỉ một ứng viên phanh đúng trước vật cản đang tới thì phép so **đo an toàn** chứ không đo tầng mà nó tuyên bố đang so.
+
+**Hệ quả hợp đồng:** `episode_context_id` **không** băm trường này (HĐ-3.1), nên hai lượt chạy cùng deployment cùng seed — một bên khai, một bên không — dùng chung mọi context id mà là **hai thí nghiệm**. Nó nằm về phía `sensor_noise` chứ không phía `constraints`: biên phanh đổi **thứ robot đã làm**, không đổi cách phán xử. Vậy nên khai nó ⇒ **`task_profile_id` mới**, và `manifest.v_obstacle_max` là bắt buộc.
+
+**Vi phạm trông như thế nào:** một profile khai `v_obstacle_max: 0.5` cạnh một `PeriodicMotion` đi 1.2 m/s và nạp thành công; hoặc một manifest không mang trường này trong khi profile có khai.
 
 ---
 
@@ -861,7 +909,7 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
 
 ```json
 {
-  "contracts_version": "6.8.0",
+  "contracts_version": "6.9.0",
   "recommendation_scope": "MISSION_LEVEL | DEPLOYMENT_LEVEL | ROBUST_DEPLOYMENT_LEVEL",
   "experiment_scope": "full_stack_selection",
   "decision_mode": "technical | business_adjusted",
@@ -924,7 +972,7 @@ Mọi lần ra quyết định ghi một `manifest.json`:
 
 ```json
 {
-  "contracts_version": "6.8.0",
+  "contracts_version": "6.9.0",
   "git_sha": "...",
   "docker_image_digest": "sha256:...",
   "task_profile_id": "warehouse_a_v1",
@@ -933,6 +981,8 @@ Mọi lần ra quyết định ghi một `manifest.json`:
   "decision_mode": "technical",
   "travel_time_accounting": "efficiency",
   "sensor_noise": {"lidar_range_sigma_m": 0.02, "wheel_slip_fraction": 0.02},
+  "replanning": {"enabled": true, "max_replans": null},
+  "v_obstacle_max": 1.0,
   "candidates": ["...", "..."],
   "episode_contexts": {
     "evaluation": [
@@ -1132,6 +1182,7 @@ Hai định danh frozen của contract (`candidate_id`, `episode_context_id`) d�
 | 6.4.0 | 2026-08-11 | MINOR | **HĐ-13: manifest phải ghi `constraints`.** Cùng gốc với `sensor_noise` ở 6.3.0 — `episode_context_id` không băm ngưỡng nào — nhưng hệ quả ngược nhau: đổi nhiễu đổi **thế giới** nên phải đổi `task_profile_id`; đổi ràng buộc đổi **phán quyết** nên episode cũ vẫn đúng và chỉ cần ghi vào hồ sơ. Không có trường này thì cùng một profile id dưới hai ngưỡng `success_rate_min` cho manifest giống nhau từng byte mà bảng cổng khác nhau. Phát hiện khi chốt `success_rate_min` cho `open_hall_v2`. Thêm một trường, không xoá gì, không đổi ngữ nghĩa metric hay cổng nào ⇒ MINOR. |
 | 6.5.0 | 2026-08-12 | MINOR | **HĐ-8.4: thang của metric có cổng sập về một điểm thì từ chối cả phép xếp hạng, có tên, thay vì ném `AnchorError` thô.** Hệ quả trực tiếp của luật 2 mà 6.4.0 chưa nhìn ra: `success_rate_min: 1.00` làm `good == bad`, và cách cũ báo "thang rỗng" — đọc như lỗi cấu hình, trong khi deployment đang phát biểu một điều mạch lạc. Nay: sập thang trên metric **có cổng** và `bad` trỏ vào profile ⇒ ghi nhận, deployment vẫn đo và vẫn ra bảng cổng nhưng không xếp hạng; sập thang ở mọi chỗ khác vẫn fatal như cũ. Từ chối **toàn bộ** phép xếp hạng chứ không bỏ metric chết rồi chấm tiếp — bỏ đi sẽ ra `decision_utility` đủ sáu chữ số trên một tập objective khác tập đã khai. Thêm trường `gate_only_deployment` (present-and-null) vào comparison report và measurement report; tiêu chí tái lập HĐ-15.1 đổi đối tượng sang bảng cổng khi không có utility. **Điều khoản chỉ nói hệ phải làm gì, không nói deployment nào nên đặt ngưỡng ở đâu** — hai sảnh về lại `success_rate_min: 0.95` cùng ngày, và câu hỏi ngưỡng đúng cho một deployment nghiệm thu còn để ngỏ (`KNOWN_LIMITATIONS` L6). Không xoá trường, không đổi ngữ nghĩa metric hay cổng nào, nới một trường hợp trước đây fatal ⇒ MINOR. |
 | 6.8.0 | 2026-08-13 | MINOR | **Replan bỏ trần, và bắt đầu bị tính tiền.** ① `ReplanningConfig.max_replans` nhận `None` = **không giới hạn**, và đó là mặc định khi bật. Trần dùng chung là một con số *do người chọn*, nó ràng buộc mỗi stack một kiểu, và dưới trần 3 thì một stack lẽ ra thoát ở lần thứ 4 bị chấm là hỏng — **hỏng vì cái trần, không phải vì bộ lập kế hoạch**. Đó đúng loại tạo tác mà đặc quyền lưới replan (HĐ-4.1) từng là: một điều kiện đánh giá lặng lẽ quyết định kết quả. ② Thay cho trần là **cái giá**: mỗi lần replan nay ghi **một dòng bước điều khiển của riêng nó** mang latency của global planner, nên G4 gộp nó vào cùng p99. Trước bản này lời gọi `_replan` nằm **ngoài** nhánh ghi — G4 gộp p99 trên một tập **không chứa** chi phí replan, nên một stack có thể quy hoạch lại toàn bản đồ năm mươi lần mà vẫn qua một cổng độ trễ đang đo các bước DWA 12 ms. Vì p99 cắt ở phân vị 99, một hai lần replan trong bốn trăm bước nằm trên lát cắt và không tốn gì, còn replan thành thói quen thì tự đâm vào G4: **trần mọc ra từ vật lý thay vì được khai**. ③ `EpisodeMetricSet.replan_count` — **bằng chứng, không phải điểm**. Cố ý **không** vào hàm mục tiêu: replan tốn thời gian và độ trễ, mà `travel_time_s` và `p99_latency_ms` đã tính cả hai; thêm một số hạng phạt là **tính tiền hai lần** cùng một thứ, và trọng số của nó lại là một con số do người chọn — đúng cái núm vặn mà bỏ `max_replans` là để tránh. Nó có mặt để người đọc phân biệt *"thoát ngay lần đầu"* với *"replan bốn mươi lần rồi timeout"*, điều một chữ `timeout` trơ trọi không nói được. Đếm từ chính sự kiện `replan` của trace, nên vẫn đi qua đầu vào duy nhất của HĐ-5. **Không đổi số liệu nào đã lưu**: trace ghi trước bản này không có sự kiện `replan` nào, và 0 là câu trả lời đúng cho chúng. Thêm trường có mặc định, nới một ràng buộc, không xoá gì, không đổi ngữ nghĩa cổng ⇒ MINOR. ④ **HĐ-2: `task_profile.replanning`** — trước bản này replanning tồn tại trong simulator nhưng **không profile nào khai được**, nên mọi episode từng đo đều chạy với nó tắt và không gì nói ra điều đó. Đặt ở top level cạnh `min_episodes_before_stop` vì cùng loại: điều kiện đánh giá, không phải thế giới, không phải xe, không phải ngưỡng cổng. Đặt trên candidate mới là thứ cho phép một stack replan trong khi stack kia đứng đợi. ⑤ **HĐ-13: manifest ghi `replanning`** — lý do y hệt `sensor_noise` và `constraints`: `episode_context_id` không băm nó, nên hai lượt chạy cùng seed, một bên replan một bên không, **dùng chung mọi context id** mà là hai thí nghiệm — và chênh lệch lớn, vì bên được replan có cơ hội thứ hai ở đúng những episode bên kia bỏ cuộc. Nó thuộc phía `sensor_noise` của quy tắc chứ không phải phía `constraints`: replanning đổi **thứ robot đã làm**, không đổi cách phán xét, nên bật nó lên cần một `task_profile_id` mới. |
+| 6.9.0 | 2026-08-14 | MINOR | **Bảo đảm phanh nay tính cả vật cản đang lại gần.** ① **HĐ-2.6: `environment.v_obstacle_max`** — tiêu chuẩn vận tốc khả nhận chặn tốc độ theo lần quét **hiện tại**, tức chỉ hứa *dừng kịp trước vật cản đang đứng*. Đo được ngày 14-08 trên `astar+dwa`, robot mặc định: một xe đẩy lao thẳng ở **0,2 m/s** — chậm hơn người đi bộ — đưa robot qua 6–25 bước liên tiếp mà tiêu chuẩn của chính nó chấm là khả nhận, rồi **va chạm**; với trọng số **đang ship** cũng va chạm, ở tốc độ vật cản còn thấp hơn. Biên mới `(v+u)·T + v²/(2a) + u·v/a ≤ headroom` cộng thêm quãng vật cản đi trong lúc robot phanh; với `u = 0` nó **trở về đúng công thức cũ từng float một**, nên deployment không khai giữ nguyên hành vi và không lượt chạy đã lưu nào mất hiệu lực. ② **Ba nghĩa, `null` là mặc định**: `null` = chưa khai, hành vi cũ, **không mang tuyên bố an toàn**; số dương = đã khai **và bị kiểm chứng** lúc nạp; `0.0` = tuyên bố *"ở đây không gì chuyển động"*, hợp lệ và **bị từ chối** nếu environment khai vật cản động. Mặc định **không** phải `0.0`: mọi profile viết trước bản này đều khai traffic nên sẽ tự trượt validator của chính pha này. Cùng tiền lệ `robustness_margin: float | None`. ③ **Validator toàn phần**: cả bốn luật chuyển động có cận trên đóng dạng (`waypoint`/`random_walk`/`sudden_stop` = `speed`; `periodic` = `π·|end−start|/period`), nên một profile khai 1,0 m/s cạnh một `WaypointMotion` 1,5 m/s **bị từ chối lúc nạp** thay vì sinh ra 300 episode trả lời câu hỏi khác. Luật chuyển động tương lai không chứng minh được cận trên phải từ chối tường minh, không được mặc định bằng 0. ④ **Khai trên deployment, không trên candidate** — cùng lý lẽ 2.3 và 2.5: một ứng viên được chọn tốc độ traffic mà nó phải phanh trước là tự chọn đề thi, và nếu chỉ một ứng viên phanh đúng thì phép so **đo an toàn** chứ không đo tầng nó tuyên bố đang so. ⑤ **HĐ-13: manifest ghi `v_obstacle_max`** — `episode_context_id` không băm nó, nên cùng deployment cùng seed có và không có biên là **hai thí nghiệm** dùng chung mọi context id; khai nó ⇒ **`task_profile_id` mới**. Cùng bản này, manifest **bắt đầu thật sự ghi `replanning`**: trường đã có trong model và trong schema từ 6.4.0 nhưng chưa bao giờ được serialise, và `additionalProperties: false` không bắt được một thuộc tính **vắng mặt**. Thêm trường có mặc định, không xoá gì, không đổi ngữ nghĩa cổng ⇒ MINOR. |
 | 6.6.0 | 2026-08-13 | MINOR | **HĐ-4.1: đặc quyền lưới replan đã được gỡ.** Điều khoản viết ở 6.1.0 nêu một luật và một việc phải làm trước khi chấm candidate `monolithic`; bản này làm việc đó. `nav_stack._replan` dựng lưới từ chính tia LiDAR robot nhận được (`_map_as_the_robot_sees_it`) thay vì `engine.dynamic_obstacles_now()`, đúng lời giải điều khoản chỉ định và loại trừ phương án cấp ground truth cho cả hai bên. Ba tính chất có test: tia tới hạn tầm xa không đánh dấu gì · một tia một ô · nhiễu tới được planner nhưng không tới được phép kiểm va chạm. **Không đổi số liệu nào đã lưu**: `ReplanningConfig.enabled` mặc định False và tầng quyết định không bật nó, nên `_replan` chưa từng chạy trong một lượt chạy đánh giá nào. Không trường nào bị xoá, không ngữ nghĩa metric hay cổng nào đổi ⇒ MINOR. |
 | 6.7.0 | 2026-08-13 | MINOR | **HĐ-2.5: bốn trục nhiễu mới, mặc định tắt.** `SensorNoise` thêm `localization_drift_m`, `localization_jump_probability` (sai số định vị — **chỉ phép đo**, tới `Observation.pose` và không bao giờ tới phép kiểm va chạm), `lidar_dropout_probability` (tia mất, báo về **tầm xa nhất** chứ không phải 0 — tia mất đọc ra thành khoảng trống với costmap), `odometry_bias_fraction` (lệch hệ thống, rút một lần cho cả episode nên nó **tích luỹ** thay vì triệt tiêu như trượt bánh) và `command_latency_steps` (**đổi thế giới thật**). `manifest.schema.json` thêm cả năm trường. **Mọi trường mặc định 0**, nên profile viết trước bản này giữ nguyên hành vi tới từng float và chưa lượt đo nào bị ảnh hưởng; bật một trục lên là **đổi thế giới** ⇒ phải khai `task_profile_id` mới (HĐ-13). Không trường nào bị xoá, không ngữ nghĩa metric hay cổng nào đổi ⇒ MINOR. |
 
