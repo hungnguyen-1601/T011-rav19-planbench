@@ -166,6 +166,78 @@ class PolicyComponent(BaseModel):
     version: str = Field(default="v1", min_length=1)
 
 
+def provider_config_digest(config: Mapping[str, Any] | None) -> str:
+    """A provider configuration as one digest, keys sorted.
+
+    Sorted here rather than left to each caller, for the reason
+    ``canonical_observations`` is sorted: an identity that depended on
+    the order somebody typed a config in would make two spellings of one
+    configuration two candidates. The same defect was found once already,
+    in ``HostConditions.providers``, by a test that wrote the same set
+    twice.
+
+    An absent or empty config digests to ``""`` — the honest value for
+    "nothing was configured", and one that keeps a candidate with a
+    default-configured provider from depending on the digest of ``{}``.
+    """
+    if not config:
+        return ""
+    return sha256_short(canonical_json(dict(config)), length=16)
+
+
+class CandidateProviderBinding(BaseModel):
+    """One provider the **candidate** brings, as part of its identity.
+
+    §7.1 splits providers three ways, and this is the third: a provider
+    the candidate ships is part of what is being measured, so changing it
+    must change ``candidate_id`` — exactly as changing the controller
+    does. Deployment-owned and oracle providers are execution conditions
+    instead, and live in the fingerprint.
+
+    **Not the provider's class name.** The first sketch of this hashed
+    ``(capability, provider_class_name)``, which two different builds of
+    one provider share: a rewritten estimator would keep the id of the
+    results it invalidated. So identity is what actually pins the code
+    and its settings — the bundle's checksum, the declared version, the
+    payload schema, and the configuration digest.
+
+    **Derived before any deployment exists.** These fields all come from
+    the plugin bundle, never from a resolved provider graph: a
+    ``candidate_id`` has to exist before preflight has anything to
+    resolve, and a candidate whose identity depended on the deployment it
+    ran against would have a different id per deployment.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    capability: str = Field(min_length=1)
+    provider_id: str = Field(min_length=1)
+    provider_version: str = Field(min_length=1)
+    #: Checksum of the bundle manifest that declares this provider.
+    manifest_checksum: str = Field(min_length=1)
+    #: Digest of the provider's configuration; ``""`` when unconfigured.
+    config_digest: str = ""
+    #: Digest of the payload schema this provider produces; ``""`` for a
+    #: built-in capability whose schema is a platform model.
+    schema_digest: str = ""
+
+    @field_validator("capability", mode="before")
+    @classmethod
+    def _canonical_capability(cls, value: object) -> object:
+        """One spelling, through the SDK's alias bridge.
+
+        Without this a candidate declaring ``lidar_2d`` and one declaring
+        ``planbench://channel/lidar-2d@1`` would get different ids for the
+        same binding — undoing the guarantee H1a exists for and was
+        tested for.
+        """
+        if not isinstance(value, str):
+            return value
+        from planbench_plugin_sdk import canonical_requirement
+
+        return canonical_requirement(value)
+
+
 class Candidate(BaseModel):
     """A complete navigation configuration under test (HĐ-1.2).
 
@@ -189,6 +261,11 @@ class Candidate(BaseModel):
     policy: PolicyComponent | None = None
     params: dict[str, Any] = Field(default_factory=dict)
     observation_requirements: tuple[ObservationToken, ...] = ()
+    #: Providers this candidate ships (§7.1). Empty for every candidate
+    #: built from the registry, which is why the hash below omits the key
+    #: entirely when it is empty: adding ``"providers": []`` to the
+    #: payload would change every stored id for candidates that have none.
+    providers: tuple[CandidateProviderBinding, ...] = ()
     resource_profile: ResourceProfile
     #: HĐ-1.6. Defaults to undeclared: a candidate without it still runs
     #: episodes and still passes gates. It cannot be *scored* on O4, and
@@ -305,17 +382,23 @@ class Candidate(BaseModel):
         candidate that already ran 300 episodes into two orphans over a
         bookkeeping edit.
         """
-        return sha256_short(
-            canonical_json(
-                {
-                    "type": self.type,
-                    "stack": self._stack_payload(),
-                    "params": self.params,
-                    "observation_requirements": list(self.observation_requirements),
-                }
-            ),
-            length=CANDIDATE_ID_LENGTH,
-        )
+        payload: dict[str, Any] = {
+            "type": self.type,
+            "stack": self._stack_payload(),
+            "params": self.params,
+            "observation_requirements": list(self.observation_requirements),
+        }
+        if self.providers:
+            # **Absent, not empty, when the candidate ships none.** Every
+            # candidate this platform has measured has none, and adding
+            # the key unconditionally would move all of their ids for a
+            # field none of them uses. Sorted, because a set written in
+            # two orders is one set.
+            payload["providers"] = sorted(
+                (binding.model_dump(mode="json") for binding in self.providers),
+                key=canonical_json,
+            )
+        return sha256_short(canonical_json(payload), length=CANDIDATE_ID_LENGTH)
 
     def _stack_payload(self) -> dict[str, Any]:
         if self.type == "monolithic":

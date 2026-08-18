@@ -122,6 +122,8 @@ class CompatibilityReport:
     incompatible_dynamics: tuple[str, ...] = ()
     incompatible_execution_models: tuple[str, ...] = ()
     fairness_refusals: tuple[str, ...] = ()
+    #: Candidate-owned providers the candidate's identity does not name.
+    undeclared_providers: tuple[str, ...] = ()
     graph_problems: tuple[str, ...] = ()
     provider_order: tuple[str, ...] = ()
     ownership: ProviderOwnership = field(default_factory=ProviderOwnership)
@@ -153,6 +155,10 @@ class CompatibilityReport:
             ("robot dynamics this host cannot simulate", self.incompatible_dynamics),
             ("execution models this host cannot run", self.incompatible_execution_models),
             ("provenance the fairness policy refuses", self.fairness_refusals),
+            (
+                "candidate-owned providers missing from candidate_id",
+                self.undeclared_providers,
+            ),
             ("provider graph", self.graph_problems),
         ):
             if values:
@@ -169,6 +175,7 @@ def resolve_compatibility(
     support: HostSupport | None = None,
     adapter_chain: tuple[str, ...] = (),
     missing_dependencies: tuple[str, ...] = (),
+    declared_candidate_providers: tuple[str, ...] = (),
 ) -> CompatibilityReport:
     """Decide whether ``manifest`` can run here, and say why not.
 
@@ -221,6 +228,20 @@ def resolve_compatibility(
             order = graph.resolution.order
         provenances = graph.provenances()
 
+    # **A candidate-owned provider must be in the candidate's identity.**
+    # §7.1 says a provider the candidate ships is part of what is being
+    # measured, so two candidates differing only in one would otherwise
+    # share a ``candidate_id`` — and every result recorded against that
+    # id would describe two different things. The graph knows which
+    # providers are candidate-owned; only the candidate can say it
+    # declared them, so the two are compared here rather than trusted
+    # separately.
+    undeclared_providers = tuple(
+        capability
+        for capability, _ in ownership.candidate_owned
+        if capability not in set(declared_candidate_providers)
+    )
+
     fairness_refusals = _fairness_refusals(policy, provenances)
     evidence_class = policy.evidence_class(provenances)
 
@@ -229,7 +250,7 @@ def resolve_compatibility(
         missing_providers=missing_providers,
         missing_runtime=missing_runtime,
         incompatible=incompatible_actions + incompatible_dynamics + incompatible_models,
-        blocked=fairness_refusals + graph_problems,
+        blocked=fairness_refusals + graph_problems + undeclared_providers,
     )
 
     return CompatibilityReport(
@@ -241,6 +262,7 @@ def resolve_compatibility(
         incompatible_dynamics=incompatible_dynamics,
         incompatible_execution_models=incompatible_models,
         fairness_refusals=fairness_refusals,
+        undeclared_providers=undeclared_providers,
         graph_problems=graph_problems,
         provider_order=order,
         ownership=ownership,
