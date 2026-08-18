@@ -560,11 +560,23 @@ def build_planners(
     ``episode_seed`` comes from the episode context, never from global
     randomness: a sampling planner must explore a different tree per
     episode while staying reproducible from the context id (HĐ-3.2).
+
+    Since H2 the pair comes back wrapped behind an ``AlgorithmHost``:
+    same ABCs outside, host mediation inside (crash → safe stop, invalid
+    output refused). The wrap is byte-neutral, and that is not asserted
+    here but *pinned* — ``tests/test_host_parity_golden.py`` compares
+    episodes run through this exact function against a fixture generated
+    before the host existed.
     """
+    # Imported at build time, not module import: candidates.py serves
+    # identity-only callers (API validation, id hashing) that never run
+    # an episode and should not pull the simulator in to answer.
+    from planbench_simulator.host import host_backed_planners
+
     stack_id = stack_id_for(candidate)
     assert candidate.local_controller is not None
     local_params = candidate.layer_params(candidate.local_controller.name)
-    return (
+    return host_backed_planners(
         build_global_planner(stack_id, episode_seed=episode_seed),
         build_local_planner(stack_id, local_params),
     )
