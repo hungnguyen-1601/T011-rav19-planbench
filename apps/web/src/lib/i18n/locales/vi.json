@@ -944,7 +944,7 @@
   "deployments.form.noise": "Nhiễu đã khai",
   "deployments.form.lidarSigma": "σ tầm LiDAR (m)",
   "deployments.form.wheelSlip": "Trượt bánh",
-  "deployments.form.noiseNote": "Thuộc về hiện trường và phương tiện, không bao giờ thuộc phương án. Form này chưa viết được vật cản động — với σ = 0 và không có traffic, planner tất định phát lại một episode cho mỗi seed và 300 lần chạy mang thông tin của một. Thêm traffic ở tab YAML.",
+  "deployments.form.noiseNote": "Thuộc về hiện trường và phương tiện, không bao giờ thuộc phương án. Với σ = 0 và không có traffic, planner tất định phát lại một episode cho mỗi seed, nên 300 lần chạy mang thông tin của một — hãy khai một trong hai, hoặc nói rõ rằng hiện trường vắng lặng đến thế.",
   "deployments.form.obstacleSpeed": "Phanh trước traffic đang chuyển động",
   "deployments.form.obstacleSpeedEnabled": "Khai tốc độ vật cản có thể lao về phía robot",
   "deployments.form.obstacleSpeedValue": "Tốc độ khép lớn nhất (m/s)",
@@ -952,7 +952,7 @@
   "deployments.form.obstacleSpeedOffNote": "Tắt nghĩa là **chưa khai**, không phải bằng 0 — deployment này không mang tuyên bố an toàn phanh trước vật cản động, và manifest ghi rõ điều đó. Số 0 là tuyên bố ngược lại, rằng ở đây không gì chuyển động, và loader từ chối nó nếu có traffic được khai.",
   "deployments.form.obstacleSpeedL18Note": "Cái giá đã biết khi bật: biên này bị tính với tia LiDAR gần nhất thuộc bất kỳ loại nào, kể cả kệ hàng đứng yên. Trong hành lang hẹp, robot bị ghìm xuống tốc độ bò và episode kết thúc ở trạng thái stuck, cách đúng chỗ traffic mà nó định phanh tới mười lăm mét (KNOWN_LIMITATIONS L18).",
   "deployments.form.traffic.title": "Vật cản động",
-  "deployments.form.traffic.note": "Traffic thuộc về hiện trường, không thuộc về candidate — cùng một tập vật cản mới là thứ khiến hai candidate thi chung một đề. Nó cũng là thứ làm cho 300 seed mang lượng thông tin của 300: không traffic và không nhiễu thì planner tất định chỉ phát lại một episode cho mọi seed.",
+  "deployments.form.traffic.note": "Traffic thuộc về hiện trường, không thuộc về phương án — cùng một tập vật cản mới là thứ khiến hai phương án thi chung một đề. Nó cũng là thứ làm cho 300 seed mang lượng thông tin của 300: không traffic và không nhiễu thì planner tất định chỉ phát lại một episode cho mọi seed.",
   "deployments.form.traffic.empty": "Chưa khai vật cản động nào.",
   "deployments.form.traffic.add": "Thêm vật cản",
   "deployments.form.traffic.remove": "Xoá",
@@ -1095,7 +1095,7 @@
   "nav.desc.models": "Policy đã huấn luyện và con robot chúng được huấn luyện cho",
   "nav.desc.benchmarks": "Phép so cũ. Decisions đang thay nó",
   "nav.desc.leaderboard": "Xếp hạng xuyên scenario — điều một khuyến nghị không làm được (HĐ-1.4)",
-  "nav.desc.scenarios": "Giữ tới khi form deployment vẽ được vật cản",
+  "nav.desc.scenarios": "Trình soạn cũ. Form deployment giờ cũng vẽ được vật cản",
   "nav.desc.agent": "Hỏi về nền tảng bằng lời",
   "nav.desc.system": "Phiên bản, sức khoẻ, kết nối",
   "nav.desc.reviews": "Những gì đang chờ bạn",
@@ -1339,5 +1339,7 @@
   "plugin.errors": "Vì sao host sẽ từ chối bundle này",
   "plugin.notes": "Model đã giả định gì, bỏ dở gì",
   "plugin.refused": "Không có gì dùng được",
-  "plugin.hint": "Không lưu, không chạy gì. Hãy đọc code, hoàn thiện các TODO, thêm test, rồi đặt bundle vào thư mục plugin cho Algorithm Host phát hiện."
+  "plugin.hint": "Không lưu, không chạy gì. Hãy đọc code, hoàn thiện các TODO, thêm test, rồi đặt bundle vào thư mục plugin cho Algorithm Host phát hiện.",
+  "outcome.title": "Vì sao thắng, vì sao thua",
+  "outcome.hint": "Ghép số liệu đã lưu với bản chất của từng thuật toán: chỉ số nào tách hai phương án, biên có vượt nhiễu không, và kết quả có đúng như ưu nhược điểm của thuật toán dự đoán không."
 }

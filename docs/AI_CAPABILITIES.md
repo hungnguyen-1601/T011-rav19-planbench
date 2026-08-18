@@ -15,13 +15,14 @@ phải tin suông.
 | 4 | Cổng G1–G6 | — (luật tất định của nền tảng, **cố ý không LLM**) | — | — |
 | 5a | Cổng trượt | 10 luật giải nghĩa + việc cần làm + việc bị cấm; LLM xếp hạng/bổ sung khi bật | `GET /decisions/{id}/advice[?use_model=true]` | `test_gate_advice.py`, `test_advisor.py` |
 | 5b | Episode trượt | 11 luật đọc trace Parquet: khoảng an toàn sập, dao động, kẹt | `GET /decisions/{id}/traces/{cid}/{eid}/review` | `test_trace_review.py` |
+| 5b' | **Vì sao thắng/thua** | 7 luật ghép số liệu với ưu-nhược điểm thuật toán (bảng trait có neo vào registry); LLM kể chuyện khi bật | `GET /decisions/{id}/outcome[?use_model=true]` + tool chat `get_outcome` | `test_outcome.py`, `test_api_advice.py` |
 | 5c | Phản biện trước khi ký | 15 luật + LLM tối đa 3 phản biện | `GET /decisions/{id}/critique[?use_model=true]` | `test_self_check.py`, `test_agent_critique.py` |
 | 5d | Đối chiếu với paper | 6 luật: tham số nào paper nêu/khác/mặc-định-âm-thầm | `POST /candidates/{id}/reproduction` | `test_reproduction.py`, `test_api_advice.py` |
 | 5e | Trước khi viết báo cáo | 18 luật rào chắn: câu nào bằng chứng không cho phép viết | `GET /decisions/{id}/report-advice` | `test_report_advice.py` |
 | 6 | Ký duyệt | — (con người, HĐ-14) | — | — |
 | * | Hỏi đáp mọi lúc | 9 công cụ chỉ đọc trên database | `POST /agent/chat` | `test_api_agent.py` |
 
-Tổng: **57 luật cố vấn + 15 luật phản biện**, chung một kiểu `Advice`
+Tổng: **64 luật cố vấn + 15 luật phản biện**, chung một kiểu `Advice`
 (`packages/decision/planbench_decision/advice.py`).
 
 ## Paper-to-Plugin — luật của mentor

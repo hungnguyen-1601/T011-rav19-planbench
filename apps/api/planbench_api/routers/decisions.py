@@ -52,6 +52,7 @@ from planbench_api.dependencies import (
 from planbench_api.errors import DomainValidationError, NotFoundError
 from planbench_api.worker import Job, JobQueue
 from planbench_benchmark.candidates import offered_controller_configs
+from planbench_benchmark.outcome import OUTCOME_CODES, build_outcome, outcome_advice
 from planbench_benchmark.preflight import PREFLIGHT_CODES, build_draft, preflight
 from planbench_benchmark.reproduction import (
     REPRODUCTION_CODES,
@@ -282,6 +283,14 @@ class AdviceListResource(BaseModel):
     blocking: int
     material: int
     disclosure: int
+    #: One paragraph the model wrote for the reader; empty when the
+    #: model did not run or declined.
+    summary: str = ""
+    #: Model additions dropped for citing a field that does not resolve.
+    #: Published, not buried — it is how a reader tells a model that
+    #: added judgement from one that added noise.
+    fabricated: int = 0
+    refused: str = ""
 
 
 class ReproductionRequest(BaseModel):
@@ -1003,6 +1012,73 @@ def candidate_reproduction(
         candidate_id=candidate_id,
         parameters=list(comparison["parameters"]),
         **_advice_counts(items, len(REPRODUCTION_CODES)),
+    )
+
+
+@router.get("/decisions/{run_id}/outcome", response_model=AdviceListResource)
+def decision_outcome(
+    run_id: str,
+    service: Runs,
+    profiles: Profiles,
+    request: Request,
+    user: CurrentUser,
+    use_model: Annotated[bool, Query()] = False,
+) -> AdviceListResource:
+    """Why this run ended the way it did — numbers joined to natures.
+
+    The card says who won; the gate table says who was eliminated where.
+    This says *why*, in two registers a reader can check separately: the
+    stored numbers (which metric separated the field, whether the margin
+    clears the noise), and the algorithms' own natures (a sampling
+    planner's latency tail is its textbook price; the same tail on a
+    deterministic planner is a surprise worth chasing). Every trait is
+    anchored — a registry flag or the algorithm's defining mechanics —
+    so the analysis never rests on folklore.
+
+    Two refusals are built in rather than left to taste: a candidate
+    eliminated at a gate is never described as "beaten" (nobody was
+    compared), and an interval containing zero never yields a winner.
+
+    ``use_model`` layers the LLM over the rules for the narrative — same
+    constitution as everywhere: rank and extend, never remove.
+    """
+    stored = service.get(run_id)
+    report = stored.report if isinstance(stored.report, dict) else dict(stored.report or {})
+    profile: dict[str, Any] = {}
+    try:
+        profile = profiles.load(report.get("identity", {}).get("task_profile_id", "")).model_dump(
+            mode="json"
+        )
+    except (NotFoundError, DomainValidationError):
+        logger.warning("outcome: task profile unavailable for run %s", run_id)
+        profile = {}
+    source = build_outcome(report, profile)
+    found = outcome_advice(source)
+    if not use_model:
+        items = [AdviceResource(**a.model_dump()) for a in found]
+        return AdviceListResource(**_advice_counts(items, len(OUTCOME_CODES)))
+    agent = get_agent_service(request, user)
+    advised = advise_with_model("diagnosis", source, found, agent.provider)
+    items = [
+        AdviceResource(
+            code=a.code,
+            kind=a.kind,
+            severity=a.severity,
+            claim=a.claim,
+            ground=a.ground,
+            field_path=a.field_path,
+            do=a.do,
+            do_not=a.do_not,
+            subject=a.subject,
+            source=a.source,
+        )
+        for a in advised.advice
+    ]
+    return AdviceListResource(
+        **_advice_counts(items, len(OUTCOME_CODES)),
+        summary=advised.summary,
+        fabricated=advised.fabricated,
+        refused=advised.refused,
     )
 
 

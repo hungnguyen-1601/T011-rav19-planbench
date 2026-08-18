@@ -236,6 +236,14 @@ class FakeGateway:
         self.calls.append("get_critique")
         return [finding.model_dump(mode="json") for finding in critique(self._require(run_id))]
 
+    def get_outcome(self, run_id: str) -> list[dict[str, Any]]:
+        self.calls.append("get_outcome")
+        from planbench_benchmark.outcome import build_outcome, outcome_advice
+
+        return [
+            a.model_dump(mode="json") for a in outcome_advice(build_outcome(self._require(run_id)))
+        ]
+
     def _require(self, run_id: str) -> dict[str, Any]:
         if run_id not in self.runs:
             raise GatewayError(f"decision run {run_id!r} not found")

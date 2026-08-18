@@ -269,3 +269,46 @@ class TestTheModelLayerDegradesHonestly:
         rule_codes = sorted(a["code"] for a in plain["advice"])
         surviving = sorted(a["code"] for a in modeled["advice"] if a["source"] == "rule")
         assert surviving == rule_codes
+
+
+class TestOutcomeOverHttp:
+    def test_requires_authentication(self, client):
+        assert client.get("/api/v1/decisions/x/outcome").status_code == 401
+
+    def test_an_unknown_run_is_a_404(self, client, alice_headers):
+        assert (
+            client.get("/api/v1/decisions/no_such/outcome", headers=alice_headers).status_code
+            == 404
+        )
+
+    def test_a_gate_elimination_is_never_narrated_as_a_defeat(self, client, alice_headers):
+        """The refusal that earns the endpoint: a candidate that never
+        qualified was never compared, and "X beat Y" would describe a
+        comparison that did not happen."""
+        runs = client.get("/api/v1/decisions", headers=alice_headers).json()
+        if not runs:
+            import pytest
+
+            pytest.skip("no stored run in this database")
+        body = client.get(
+            f"/api/v1/decisions/{runs[0]['id']}/outcome", headers=alice_headers
+        ).json()
+        eliminated = [a for a in body["advice"] if a["code"] == "OC_ELIMINATED_BY_GATE"]
+        for item in eliminated:
+            assert "winning" in item["do_not"] or "beat" in item["do_not"]
+
+    def test_the_model_layer_keeps_the_rules_when_it_cannot_run(self, client, alice_headers):
+        runs = client.get("/api/v1/decisions", headers=alice_headers).json()
+        if not runs:
+            import pytest
+
+            pytest.skip("no stored run in this database")
+        run_id = runs[0]["id"]
+        plain = client.get(f"/api/v1/decisions/{run_id}/outcome", headers=alice_headers).json()
+        modeled = client.get(
+            f"/api/v1/decisions/{run_id}/outcome?use_model=true", headers=alice_headers
+        ).json()
+        assert modeled["refused"]
+        assert sorted(a["code"] for a in modeled["advice"] if a["source"] == "rule") == sorted(
+            a["code"] for a in plain["advice"]
+        )

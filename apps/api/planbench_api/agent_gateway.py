@@ -158,6 +158,18 @@ class ApiAgentGateway:
             finding.model_dump(mode="json") for finding in critique(self._lookup_run(run_id).report)
         ]
 
+    def get_outcome(self, run_id: str) -> list[dict[str, Any]]:
+        """Why the run ended as it did, from the deterministic rules.
+
+        The chat model narrates on top of these; it does not get to
+        replace them with its own recollection of what the algorithms
+        are like.
+        """
+        from planbench_benchmark.outcome import build_outcome, outcome_advice
+
+        report = self._lookup_run(run_id).report or {}
+        return [item.model_dump(mode="json") for item in outcome_advice(build_outcome(report))]
+
     # -- lookups ---------------------------------------------------------
 
     def _lookup_profile(self, task_profile_id: str) -> Any:

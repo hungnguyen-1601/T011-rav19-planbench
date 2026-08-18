@@ -46,6 +46,7 @@ import {
   type Critique,
   type CritiqueFinding,
   getDecisionAdvice,
+  getOutcomeAdvice,
   getReportAdvice,
   type AdviceList,
 } from "@/lib/decisions";
@@ -92,6 +93,7 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
       <TracePanel run={run} />
       <Outcome run={run} />
       <CritiquePanel runId={run.id} />
+      <OutcomePanel runId={run.id} />
       <AdvicePanel runId={run.id} />
       <ReportAdvicePanel runId={run.id} />
       <HumanActs run={run} onDone={refresh} />
@@ -1070,6 +1072,55 @@ function Figure({ label, value, unknown }: { label: string; value: string; unkno
  * extend but never remove, and additions citing a field that does not
  * resolve are dropped and counted where the reader can see the count.
  */
+/** Why one candidate won and the other lost.
+ *
+ * Two registers, both checkable: the stored numbers (which metric
+ * separated the field, whether the margin clears the noise) and the
+ * algorithms' natures (a sampling planner's latency tail is its textbook
+ * price; the same tail on a deterministic one is a surprise worth
+ * chasing). Two refusals are built in: a gate elimination is never
+ * called a defeat, and an interval containing zero never names a
+ * winner. The model button adds narrative on top; the rules stay.
+ */
+function OutcomePanel({ runId }: { runId: string }) {
+  const { t } = useTranslation();
+  const [result, setResult] = useState<AdviceList | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async (useModel: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      setResult(await getOutcomeAdvice(runId, useModel));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <h3>{t("outcome.title")}</h3>
+        <div className="toolbar">
+          <button type="button" disabled={busy} onClick={() => void load(false)}>
+            {busy ? t("advice.loading") : t("advice.load")}
+          </button>
+          <button type="button" disabled={busy} onClick={() => void load(true)}>
+            {t("advice.askModel")}
+          </button>
+        </div>
+      </div>
+      {error ? <div className="error-box">{error}</div> : null}
+      {result ? <AdviceListView result={result} /> : (
+        <p className="muted">{t("outcome.hint")}</p>
+      )}
+    </div>
+  );
+}
+
 function AdvicePanel({ runId }: { runId: string }) {
   const { t } = useTranslation();
   const [result, setResult] = useState<AdviceList | null>(null);

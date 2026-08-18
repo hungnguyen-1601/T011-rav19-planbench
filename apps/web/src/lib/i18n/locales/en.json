@@ -944,7 +944,7 @@
   "deployments.form.noise": "Declared noise",
   "deployments.form.lidarSigma": "LiDAR range σ (m)",
   "deployments.form.wheelSlip": "Wheel slip",
-  "deployments.form.noiseNote": "Belongs to the site and the vehicle, never to the candidate. This form writes no moving traffic yet — with σ = 0 and no traffic, a deterministic planner replays one episode per seed and 300 runs carry the information of one. Add traffic on the YAML tab.",
+  "deployments.form.noiseNote": "Belongs to the site and the vehicle, never to the candidate. With σ = 0 and no traffic a deterministic planner replays one episode per seed, so 300 runs carry the information of one — declare one or the other, or say out loud that the deployment is that quiet.",
   "deployments.form.obstacleSpeed": "Braking against moving traffic",
   "deployments.form.obstacleSpeedEnabled": "Declare how fast traffic may close on the robot",
   "deployments.form.obstacleSpeedValue": "Fastest closing speed (m/s)",
@@ -1095,7 +1095,7 @@
   "nav.desc.models": "Trained policies and the robots they were trained for",
   "nav.desc.benchmarks": "The old comparison. Decisions replaces it",
   "nav.desc.leaderboard": "Ranks across scenarios, which a recommendation cannot do (HĐ-1.4)",
-  "nav.desc.scenarios": "Kept until the deployment form can draw obstacles",
+  "nav.desc.scenarios": "The older editor. The deployment form now draws obstacles too",
   "nav.desc.agent": "Ask about the platform in words",
   "nav.desc.reviews": "What is waiting on you",
   "nav.desc.system": "Versions, health, connection",
@@ -1339,5 +1339,7 @@
   "plugin.errors": "Why the host would refuse this bundle",
   "plugin.notes": "What the model assumed or left unfinished",
   "plugin.refused": "Nothing usable came back",
-  "plugin.hint": "Nothing is stored or executed. Review the code, finish the marked TODOs, add tests, and drop the bundle into the plugin directory for the Algorithm Host to discover."
+  "plugin.hint": "Nothing is stored or executed. Review the code, finish the marked TODOs, add tests, and drop the bundle into the plugin directory for the Algorithm Host to discover.",
+  "outcome.title": "Why it won, why it lost",
+  "outcome.hint": "Joins the stored numbers to the algorithms' own natures: which metric separated the candidates, whether the margin clears the noise, and whether the result is what each algorithm's strengths and weaknesses predict."
 }

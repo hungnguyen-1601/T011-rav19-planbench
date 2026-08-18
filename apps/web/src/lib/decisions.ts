@@ -979,3 +979,9 @@ export function draftPluginFromPaperFile(file: File, signal?: AbortSignal): Prom
   body.append("file", file);
   return authFetch<PluginDraft>("/plugins/from-paper/upload", { method: "POST", body, signal });
 }
+
+/** Why the run ended the way it did — numbers joined to algorithm natures. */
+export function getOutcomeAdvice(runId: string, useModel = false): Promise<AdviceList> {
+  const suffix = useModel ? "?use_model=true" : "";
+  return authFetch<AdviceList>(`/decisions/${encodeURIComponent(runId)}/outcome${suffix}`);
+}

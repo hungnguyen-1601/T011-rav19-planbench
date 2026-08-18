@@ -153,6 +153,16 @@ class AgentGateway(Protocol):
         """
         ...
 
+    def get_outcome(self, run_id: str) -> list[dict[str, Any]]:
+        """Why the run ended as it did: numbers joined to algorithm natures.
+
+        Deterministic rules produce this (outcome_advice); the agent
+        reads it so its own narrative starts from grounded findings —
+        which metric separated the field, who was eliminated rather than
+        beaten — instead of from the model's recollection of what A* is.
+        """
+        ...
+
 
 __all__ = [
     "AgentGateway",

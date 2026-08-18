@@ -289,6 +289,19 @@ def build_registry(
             effect=Effect.READ,
             handler=lambda args: gateway.get_critique(str(args["run_id"])),
         ),
+        Tool(
+            name="get_outcome",
+            description=(
+                "Why a run ended the way it did: which metric separated the "
+                "candidates, who was eliminated at a gate rather than beaten, and "
+                "which algorithm traits the numbers confirm or contradict. Read "
+                "this before explaining a win or a loss — your narrative starts "
+                "from these grounded findings, not from memory of what A* is."
+            ),
+            input_schema=_one_id("run_id", "Run id."),
+            effect=Effect.READ,
+            handler=lambda args: gateway.get_outcome(str(args["run_id"])),
+        ),
     ]
 
     return ToolRegistry(tools, policy)

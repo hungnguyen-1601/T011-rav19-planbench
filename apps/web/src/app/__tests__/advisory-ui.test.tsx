@@ -128,3 +128,15 @@ describe("the strings exist in both languages", () => {
     },
   );
 });
+
+describe("the outcome panel explains wins and losses", () => {
+  it("is a panel on the run page with the model opt-in beside the rules", () => {
+    expect(DETAIL).toContain("getOutcomeAdvice");
+    expect(DETAIL).toContain("<OutcomePanel");
+  });
+
+  it("names the feature in both languages", () => {
+    expect((en as Record<string, string>)["outcome.title"]).toBeTruthy();
+    expect((vi as Record<string, string>)["outcome.title"]).toBeTruthy();
+  });
+});
