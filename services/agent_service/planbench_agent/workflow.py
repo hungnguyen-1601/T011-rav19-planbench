@@ -33,7 +33,6 @@ from planbench_agent.provider import (
     LLMRequest,
     StopReason,
 )
-from planbench_agent.rag import KnowledgeBase
 from planbench_agent.tools import ToolPolicy, ToolRegistry, build_registry
 
 logger = logging.getLogger("planbench.agent.workflow")
@@ -80,13 +79,11 @@ class AgentService:
         self,
         provider: LLMProvider,
         gateway: AgentGateway,
-        knowledge: KnowledgeBase | None = None,
         policy: ToolPolicy | None = None,
     ) -> None:
         self._provider = provider
         self._gateway = gateway
-        self._knowledge = knowledge
-        self._registry = build_registry(gateway, knowledge, policy)
+        self._registry = build_registry(gateway, policy)
 
     @property
     def registry(self) -> ToolRegistry:
@@ -95,10 +92,6 @@ class AgentService:
     @property
     def provider(self) -> LLMProvider:
         return self._provider
-
-    @property
-    def knowledge(self) -> KnowledgeBase | None:
-        return self._knowledge
 
     def converse(
         self,

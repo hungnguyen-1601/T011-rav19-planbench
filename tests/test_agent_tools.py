@@ -19,7 +19,6 @@ from agent_fakes import FakeGateway, populated_gateway
 
 from planbench_agent.gateway import AgentGateway
 from planbench_agent.provider import ToolCall
-from planbench_agent.rag import KnowledgeBase, split_markdown
 from planbench_agent.tools import (
     FORBIDDEN_CAPABILITIES,
     Effect,
@@ -144,27 +143,35 @@ class TestFailuresComeBackAsMessages:
         assert call(registry, "get_decision_run").is_error
 
 
-class TestKnowledgeSearch:
-    @staticmethod
-    def _registry_with_docs():
-        base = KnowledgeBase(
-            split_markdown(
-                "CONTRACTS.md",
-                "# G2\nZero collisions over at least N_min distinct episodes.\n",
-            )
-        )
-        return build_registry(populated_gateway(), base)
+class TestEveryToolReadsStoredData:
+    """The agent has no corpus, and that is the design.
 
-    def test_hits_carry_a_citable_id(self) -> None:
-        hits = json.loads(call(self._registry_with_docs(), "search_knowledge", query="G2").content)
-        assert hits[0]["citation_id"] == "document:CONTRACTS.md#1"
+    It used to search the team's own Markdown — design diaries, plans,
+    course notes. A document that has drifted from the code makes the
+    agent confidently wrong rather than merely ignorant, and one of those
+    documents claimed seven stacks and a `dwa_predictive` this platform
+    has never had. Answers now come from the database, where what a run
+    did is what a run did.
+    """
 
-    def test_a_miss_says_so_rather_than_inviting_a_guess(self) -> None:
-        result = call(self._registry_with_docs(), "search_knowledge", query="quantum tunnelling")
-        assert "do not answer from memory" in result.content
-
-    def test_the_tool_is_absent_when_no_corpus_is_configured(self, registry) -> None:
+    def test_there_is_no_documentation_search(self, registry) -> None:
         assert "search_knowledge" not in registry.names()
+        assert not [name for name in registry.names() if "knowledge" in name or "doc" in name]
+
+    def test_every_tool_is_named_after_stored_data(self, registry) -> None:
+        """`list_`/`get_` and nothing else: a verb that is not a lookup
+        would be a tool that does something."""
+        assert all(name.startswith(("list_", "get_")) for name in registry.names()), (
+            registry.names()
+        )
+
+    def test_the_outside_world_enters_only_through_a_paper(self) -> None:
+        """One document, chosen by a person, with every value tied to the
+        sentence it came from — which is a different contract from a
+        corpus nobody re-reads."""
+        from planbench_agent.paper import extract_from_paper
+
+        assert callable(extract_from_paper)
 
 
 class TestPolicy:

@@ -21,7 +21,6 @@ from planbench_agent.provider import (
     StopReason,
     ToolCall,
 )
-from planbench_agent.rag import KnowledgeBase, split_markdown
 from planbench_agent.workflow import CHAT_SYSTEM, MAX_TOOL_ITERATIONS, AgentService
 
 
@@ -52,8 +51,8 @@ def answer(text: str) -> LLMResponse:
     return LLMResponse(text=text, stop_reason=StopReason.END_TURN)
 
 
-def service(provider: MockProvider, knowledge: KnowledgeBase | None = None) -> AgentService:
-    return AgentService(provider=provider, gateway=populated_gateway(), knowledge=knowledge)
+def service(provider: MockProvider) -> AgentService:
+    return AgentService(provider=provider, gateway=populated_gateway())
 
 
 class TestItAnswers:
@@ -159,15 +158,14 @@ class TestToolsAreOfferedToTheModel:
         names = {spec.name for spec in provider.requests[0].tools}
         assert "get_decision_run" in names
 
-    def test_knowledge_search_appears_only_with_a_corpus(self) -> None:
-        base = KnowledgeBase(split_markdown("CONTRACTS.md", "# G2\ncollision bound\n"))
-        with_docs = scripted(answer("hi"))
-        service(with_docs, base).converse("q")
-        assert "search_knowledge" in {spec.name for spec in with_docs.requests[0].tools}
-
-        without = scripted(answer("hi"))
-        service(without).converse("q")
-        assert "search_knowledge" not in {spec.name for spec in without.requests[0].tools}
+    def test_no_documentation_search_is_offered(self) -> None:
+        """The model cannot reach for a corpus, because there is none to
+        reach for. Every tool it is handed returns stored data."""
+        provider = scripted(answer("hi"))
+        service(provider).converse("q")
+        names = {spec.name for spec in provider.requests[0].tools}
+        assert "search_knowledge" not in names
+        assert names and all(n.startswith(("list_", "get_")) for n in names)
 
 
 def test_history_is_prepended_to_the_conversation() -> None:

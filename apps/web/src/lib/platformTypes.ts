@@ -248,7 +248,6 @@ export interface AgentCapabilities {
   deterministic: boolean;
   tools: string[];
   forbidden: string[];
-  knowledge_documents: number;
   providers: ProviderInfo[];
 }
 

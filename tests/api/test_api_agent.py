@@ -38,10 +38,14 @@ class TestCapabilities:
         body = client.get("/api/v1/agent/capabilities", headers=alice_headers).json()
         assert not set(body["tools"]) & set(body["forbidden"])
 
-    def test_it_reports_how_much_documentation_is_indexed(self, client, alice_headers):
-        """Zero here explains an agent that answers everything vaguely."""
+    def test_it_does_not_advertise_a_documentation_corpus(self, client, alice_headers):
+        """There is none. The field used to say how many of the team's own
+        Markdown files were indexed, and a design note that disagrees with
+        the code is worse than no note: it makes the agent confidently
+        wrong. Answers come from the database now."""
         body = client.get("/api/v1/agent/capabilities", headers=alice_headers).json()
-        assert body["knowledge_documents"] >= 0
+        assert "knowledge_documents" not in body
+        assert not [name for name in body["tools"] if "knowledge" in name]
 
     def test_it_says_which_providers_are_ready_and_what_is_missing(self, client, alice_headers):
         """So "why is it still on the mock?" is answerable from the API

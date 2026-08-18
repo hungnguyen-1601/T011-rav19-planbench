@@ -15,7 +15,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from planbench_agent import KnowledgeBase, build_provider, load_markdown_directory
+from planbench_agent import build_provider
 from planbench_api.artifacts import FileSystemArtifactStore
 from planbench_api.auth import AuthService
 from planbench_api.config import get_settings
@@ -75,25 +75,6 @@ def _build_repositories(settings, artifacts, app: FastAPI):
         "persistence: SQL", extra={"context": {"dialect": engine.dialect.name}}
     )
     return SqlRepositoryHub(sessions, artifacts)
-
-
-def _build_knowledge(settings) -> KnowledgeBase | None:
-    """Index the configured documentation directories once, at startup.
-
-    Indexing is not on the request path: the corpus is static for the
-    process, and rebuilding it per request would make retrieval results
-    depend on timing.
-    """
-    directories = [
-        part.strip() for part in settings.agent_knowledge_dirs.split(",") if part.strip()
-    ]
-    if not directories:
-        return None
-    chunks: list = []
-    for directory in directories:
-        path = Path(directory)
-        chunks.extend(load_markdown_directory(path if path.is_absolute() else REPO_ROOT / path))
-    return KnowledgeBase(chunks) if chunks else None
 
 
 def create_app(artifact_dir: str | None = None) -> FastAPI:
@@ -165,7 +146,6 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
         model=settings.agent_model or None,
         base_url=settings.agent_base_url or None,
     )
-    app.state.agent_knowledge = _build_knowledge(settings)
     app.state.agent_max_episodes = settings.agent_max_episodes
     app.add_middleware(
         CORSMiddleware,

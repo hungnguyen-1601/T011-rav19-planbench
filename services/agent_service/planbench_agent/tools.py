@@ -32,7 +32,6 @@ from typing import Any
 
 from planbench_agent.gateway import AgentGateway, GatewayError
 from planbench_agent.provider import ToolCall, ToolResult, ToolSpec
-from planbench_agent.rag import KnowledgeBase
 
 logger = logging.getLogger("planbench.agent.tools")
 
@@ -164,13 +163,20 @@ def _one_id(field: str, description: str) -> dict[str, Any]:
 
 def build_registry(
     gateway: AgentGateway,
-    knowledge: KnowledgeBase | None = None,
     policy: ToolPolicy | None = None,
 ) -> ToolRegistry:
-    """Assemble the tool set over a gateway (and optionally a corpus).
+    """Assemble the tool set over the gateway.
 
     Ordered the way a reader would work: what worlds exist, what could
     run in them, what did run, and what the rules already said about it.
+
+    Every tool reads stored data. There is no documentation search: the
+    corpus this used to carry was the team's own Markdown — design
+    diaries, plans, course notes — and a document that disagrees with the
+    code makes the agent confidently wrong rather than merely ignorant.
+    One of those documents claimed seven stacks and a `dwa_predictive`
+    that does not exist. What a run actually did is in the database, and
+    that is what these tools return.
     """
     policy = policy or ToolPolicy()
     tools: list[Tool] = [
@@ -285,46 +291,7 @@ def build_registry(
         ),
     ]
 
-    if knowledge is not None:
-        tools.append(
-            Tool(
-                name="search_knowledge",
-                description=(
-                    "Search project documentation and the contract. Each hit "
-                    "carries a chunk id to cite as [document:<chunk id>]. Use it "
-                    "before answering anything about how this project works — "
-                    "answering from memory is how a plausible wrong answer gets "
-                    "written."
-                ),
-                input_schema={
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string"},
-                        "limit": {"type": "integer", "minimum": 1, "maximum": 10},
-                    },
-                    "required": ["query"],
-                    "additionalProperties": False,
-                },
-                effect=Effect.READ,
-                handler=lambda args: _search(knowledge, args),
-            )
-        )
     return ToolRegistry(tools, policy)
-
-
-def _search(knowledge: KnowledgeBase, args: Mapping[str, Any]) -> Any:
-    hits = knowledge.search(str(args["query"]), limit=int(args.get("limit", 5)))
-    if not hits:
-        return "no matching documentation; do not answer from memory"
-    return [
-        {
-            "citation_id": f"document:{hit.chunk.id}",
-            "title": hit.chunk.title,
-            "score": round(hit.score, 4),
-            "text": hit.chunk.text,
-        }
-        for hit in hits
-    ]
 
 
 __all__ = [

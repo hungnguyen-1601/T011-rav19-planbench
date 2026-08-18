@@ -1,11 +1,18 @@
-"""Agentic layer: LLM provider abstraction, tool calling, retrieval, critique.
+"""Agentic layer: LLM provider abstraction, tool calling, paper reading, critique.
 
-The layer does two jobs and refuses the third.
+The layer does three jobs and refuses the fourth.
 
 **It answers questions about stored runs** (:mod:`workflow`), through a
 read-only tool surface (:mod:`tools`) over a narrow port
-(:mod:`gateway`), with documentation retrieval that returns citable chunk
-ids (:mod:`rag`).
+(:mod:`gateway`). Every answer comes from the database. There is no
+documentation corpus behind it, deliberately: the team's own Markdown
+was the corpus, and a design note that has drifted from the code turns
+the agent from ignorant into confidently wrong.
+
+**It reads a paper the reader supplies** (:mod:`paper`) and recovers the
+configuration it reports, with each value tied to the sentence it came
+from. That is where outside knowledge enters — one document, chosen by a
+person, quoted verifiably.
 
 **It argues with a conclusion** (:mod:`critique`), on top of the
 deterministic rules in :mod:`planbench_decision.self_check` — which it
@@ -58,13 +65,6 @@ from planbench_agent.provider import (
     ToolResult,
     ToolSpec,
 )
-from planbench_agent.rag import (
-    Chunk,
-    KnowledgeBase,
-    RetrievedChunk,
-    load_markdown_directory,
-    split_markdown,
-)
 from planbench_agent.tools import (
     FORBIDDEN_CAPABILITIES,
     Effect,
@@ -92,14 +92,12 @@ __all__ = [
     "AgentService",
     "CandidateSummary",
     "ChatTurn",
-    "Chunk",
     "CritiqueResult",
     "DecisionRunSummary",
     "DeploymentSummary",
     "DeterministicResponder",
     "Effect",
     "GatewayError",
-    "KnowledgeBase",
     "LLMMessage",
     "LLMProvider",
     "LLMRequest",
@@ -108,7 +106,6 @@ __all__ = [
     "MockProvider",
     "ProviderStatus",
     "ProviderUnavailable",
-    "RetrievedChunk",
     "ScenarioSummary",
     "ScoredFinding",
     "StopReason",
@@ -122,7 +119,5 @@ __all__ = [
     "build_registry",
     "critique_schema",
     "critique_with_model",
-    "load_markdown_directory",
     "provider_status",
-    "split_markdown",
 ]

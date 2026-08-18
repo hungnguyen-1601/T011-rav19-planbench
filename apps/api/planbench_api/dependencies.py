@@ -104,7 +104,6 @@ def get_agent_service(request: Request, user: CurrentUser) -> AgentService:
     return AgentService(
         provider=request.app.state.agent_provider,
         gateway=gateway,
-        knowledge=request.app.state.agent_knowledge,
         policy=ToolPolicy(),
     )
 

@@ -24,7 +24,6 @@ export interface Capabilities {
   /** Capabilities the agent must never have, published so the claim is
    *  checkable rather than promised. */
   forbidden: string[];
-  knowledge_documents: number;
   providers: ProviderInfo[];
 }
 

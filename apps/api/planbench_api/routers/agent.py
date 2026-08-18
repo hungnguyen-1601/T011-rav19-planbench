@@ -46,7 +46,6 @@ class CapabilitiesResponse(BaseModel):
     deterministic: bool
     tools: tuple[str, ...]
     forbidden: tuple[str, ...]
-    knowledge_documents: int
     providers: tuple[ProviderInfo, ...] = ()
 
 
@@ -74,14 +73,12 @@ def capabilities(agent: Agent, _: ActiveUser) -> CapabilitiesResponse:
     reading server logs — most often the answer is an unset model id,
     which `auto` treats as a reason to skip a provider that has a key.
     """
-    knowledge = agent.knowledge
     return CapabilitiesResponse(
         provider=agent.provider.name,
         model=agent.provider.model,
         deterministic=agent.provider.deterministic,
         tools=agent.registry.names(),
         forbidden=tuple(sorted(FORBIDDEN_CAPABILITIES)),
-        knowledge_documents=len(knowledge.document_ids) if knowledge is not None else 0,
         providers=tuple(
             ProviderInfo(
                 name=status.name,

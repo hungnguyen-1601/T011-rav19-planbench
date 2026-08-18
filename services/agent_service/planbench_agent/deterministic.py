@@ -117,7 +117,12 @@ def _plan(text: str, first: str) -> list[tuple[str, dict[str, Any]]]:
         plan.append(("list_candidates", {}))
     if "scenario" in lowered:
         plan.append(("list_scenarios", {}))
-    plan.append(("search_knowledge", {"query": first or text}))
+    if not plan:
+        # A documentation search used to be the catch-all here, and it is
+        # gone. Listing the runs is the honest replacement: it answers
+        # nothing directly, but it answers from stored data, and the
+        # summary that follows says plainly that nothing was asserted.
+        plan.append(("list_decision_runs", {}))
     return plan
 
 
