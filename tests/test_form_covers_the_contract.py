@@ -37,6 +37,16 @@ FORM_PATH = REPO_ROOT / "apps" / "web" / "src" / "components" / "DeploymentForm.
 #: field belongs here when offering it would be wrong or useless — never
 #: because wiring it up was inconvenient.
 NOT_IN_THE_FORM: dict[str, str] = {
+    "capability_grants": (
+        "H11 gave the deployment side a way to declare capabilities beyond the two v1 "
+        "tokens, and shipped the backend only. A grant names a provider id, a version and "
+        "a config whose schema the platform cannot yet validate — so a form control here "
+        "would collect three strings nothing checks, and a typo in a provider id would "
+        "produce a valid-looking profile with a fingerprint of its own. The field is "
+        "declared in YAML until provider-schema validation exists; the report for H11 "
+        "carries the same statement, and this entry is what stops it being a gap nobody "
+        "wrote down."
+    ),
     "replanning.max_replans": (
         "There is no budget any more and offering the field would put back exactly what "
         "removing it fixed. A shared cap is a number somebody chose; it binds differently for "
