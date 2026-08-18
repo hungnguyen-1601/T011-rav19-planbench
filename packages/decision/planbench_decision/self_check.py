@@ -42,7 +42,7 @@ and it is the measurement that makes a false-alarm rate computable.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -53,6 +53,7 @@ __all__ = [
     "Kind",
     "Severity",
     "critique",
+    "exists",
     "resolve",
 ]
 
@@ -93,6 +94,29 @@ def resolve(report: dict[str, Any], field_path: str) -> Any:
     does not resolve is a bug in a rule, and the same call is what an LLM
     layer's citations get checked with.
     """
+    found = _walk(report, field_path)
+    return None if found is _MISSING else found
+
+
+#: Returned by :func:`_walk` when a path runs off the data. Distinct from
+#: ``None``, which is a value a field can legitimately hold.
+_MISSING = object()
+
+
+def _walk(report: Mapping[str, Any], field_path: str) -> Any:
+    """The path walk both :func:`resolve` and :func:`exists` share.
+
+    Tests against ``Mapping`` and ``Sequence`` rather than ``dict`` and
+    ``list``. Every module in this family type-hints its source as a
+    ``Mapping``, and a caller who honoured that hint with a
+    ``MappingProxyType`` — the obvious way to hand out a read-only report —
+    had **every** citation fail and every piece of advice deleted without
+    a word. The narrowing was invisible because a dropped citation and a
+    rule that chose not to fire look identical from outside.
+
+    ``str`` and ``bytes`` are Sequences and must not be indexed as one:
+    ``summary.note[0]`` would otherwise resolve to a character.
+    """
     node: Any = report
     for part in field_path.split("."):
         index: int | None = None
@@ -100,14 +124,35 @@ def resolve(report: dict[str, Any], field_path: str) -> Any:
             part, _, raw = part.partition("[")
             index = int(raw.rstrip("]"))
         if part:
-            if not isinstance(node, dict) or part not in node:
-                return None
+            if not isinstance(node, Mapping) or part not in node:
+                return _MISSING
             node = node[part]
         if index is not None:
-            if not isinstance(node, list) or index >= len(node):
-                return None
+            if isinstance(node, (str, bytes)) or not isinstance(node, Sequence):
+                return _MISSING
+            if index >= len(node):
+                return _MISSING
             node = node[index]
     return node
+
+
+def exists(report: Mapping[str, Any], field_path: str) -> bool:
+    """Whether the path is present, **even when its value is null**.
+
+    :func:`resolve` answers ``None`` for two different situations — a
+    field that is absent, and a field that is present and holds null —
+    and a caller that treats the second as the first drops exactly the
+    findings that exist to point at it. "This run recorded no effect
+    size" is a claim about a field that is there and empty; refusing to
+    cite it would leave the reader with the impression it was never
+    asked about.
+
+    Added rather than folded into :func:`resolve` because that function's
+    "None means nothing there" contract is what the existing rules in
+    this module are written against, and quietly widening it would change
+    what fourteen of them mean.
+    """
+    return _walk(report, field_path) is not _MISSING
 
 
 def _gate(candidate: dict[str, Any], name: str) -> dict[str, Any] | None:
