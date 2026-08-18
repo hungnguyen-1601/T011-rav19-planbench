@@ -104,6 +104,7 @@ class TestBothPluginsAreFoundOutsideTheRegistry:
         found = sorted(plugin.manifest.id for plugin in discovered.plugins())
         assert found == [
             "org.planbench.example.corridor",
+            "org.planbench.example.remote-wanderer",
             "org.planbench.example.social-nav",
         ]
         assert discovered.quarantined() == ()

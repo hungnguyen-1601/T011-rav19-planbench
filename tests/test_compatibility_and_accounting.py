@@ -80,6 +80,21 @@ def _manifest(**overrides):
     return parse_manifest(data)
 
 
+def _unbuilt_lane() -> dict:
+    """A runtime lane the plan names as post-MVP and nobody has built."""
+    return {
+        "supported_lanes": ["ros2_node"],
+        "production_lane": "ros2_node",
+        "profiles": {
+            "ros2_node": {
+                "protocol": "planbench-ros2/v1",
+                "codec": "ros-msg-v1",
+                "deadline_policy": "control-period",
+            }
+        },
+    }
+
+
 class _CandidateProvider(Provider):
     """A provider the candidate ships — part of what is being measured."""
 
@@ -253,24 +268,18 @@ class TestPreflightAnswersBeforeTheEpisode:
         assert "capabilities not offered" in report.explain()
 
     def test_an_unavailable_runtime_lane_is_its_own_state(self) -> None:
-        runtime = {
-            "supported_lanes": ["subprocess"],
-            "production_lane": "subprocess",
-            "profiles": {
-                "subprocess": {
-                    "protocol": "planbench-subprocess/v1",
-                    "codec": "protobuf-v1",
-                    "deadline_policy": "control-period",
-                }
-            },
-        }
+        """``ros2_node`` rather than ``subprocess``: this test used the
+        subprocess lane until H7 built it, and a test asserting a lane is
+        unavailable has to name one that actually is — otherwise it
+        passes for a while and then reports the platform's own progress
+        as a failure."""
         report = resolve_compatibility(
-            _manifest(runtime=runtime),
+            _manifest(runtime=_unbuilt_lane()),
             available_capabilities=frozenset(),
             graph=self._graph(),
         )
         assert report.state == "registered_but_missing_runtime"
-        assert report.missing_runtime == ("subprocess",)
+        assert report.missing_runtime == ("ros2_node",)
 
     def test_unbuilt_dynamics_register_as_incompatible(self) -> None:
         """The plan's own example: an Ackermann plugin registers and is
@@ -333,11 +342,7 @@ class TestPreflightAnswersBeforeTheEpisode:
         report = resolve_compatibility(
             _manifest(
                 requirements={"all_of": [HUMAN_STATE_ESTIMATES]},
-                runtime={
-                    "supported_lanes": ["subprocess"],
-                    "production_lane": "subprocess",
-                    "profiles": {},
-                },
+                runtime=_unbuilt_lane(),
             ),
             available_capabilities=frozenset(),
             graph=self._graph(),
