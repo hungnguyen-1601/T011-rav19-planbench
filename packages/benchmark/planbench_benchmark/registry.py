@@ -11,7 +11,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from importlib.util import find_spec
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    computed_field,
+    model_validator,
+)
 
 from planbench_benchmark.observation import ObservationClass
 from planbench_planning import (
@@ -140,7 +147,11 @@ class AlgorithmInfo(BaseModel):
     id: str
     kind: str
     description: str
-    benchmarkable: bool
+    #: A D12 pipeline reference: exists to exercise the machinery, never
+    #: to be a contender. ``*+pure_pursuit`` is the case — it ignores
+    #: sensing, so recommending it is the failure the gates exist to
+    #: prevent.
+    reference: bool = False
     config_schema: dict
     #: Which global planner the stack runs. Stated rather than parsed
     #: out of ``id``: the id is a display convention, this is the fact
@@ -168,16 +179,14 @@ class AlgorithmInfo(BaseModel):
     #: fabrication the spec forbids, so the property is now stated
     #: outright instead of being a side effect of field defaults.
     requires_model: bool = False
-    #: Why this stack is not offered as a candidate, when it is not.
+    #: Why this stack was retired **after being measured**, when it was.
     #:
-    #: ``benchmarkable=False`` has meant one thing since D12 — *a
-    #: reference adapter, never a contender* — and now it means two. A
-    #: stack can also be **withdrawn after being measured**, which is a
-    #: different fact about a different kind of entry, and a refusal that
-    #: told the second kind it was "a reference stack only" would be
-    #: misdirecting whoever reads it. So the reason travels with the
-    #: entry and the refusal quotes it. Empty for reference stacks, whose
-    #: reason has not changed.
+    #: A different fact from :attr:`reference`, and the two used to share
+    #: one boolean: ``benchmarkable=False`` meant "D12 reference adapter"
+    #: until ``dwa_predictive`` was withdrawn on measured evidence, after
+    #: which it meant two things and a refusal could not say which. Now
+    #: each says its own, and ``production_eligible`` derives from both —
+    #: so the flag that carried two meanings carries none.
     withdrawn: str = ""
     #: What each half of the stack is allowed to see (P02).
     #:
@@ -193,6 +202,50 @@ class AlgorithmInfo(BaseModel):
     #: that ignores it (end-to-end policies, in principle) solves a
     #: different problem and a report should be able to say so.
     requires_global_path: bool
+
+    @model_validator(mode="before")
+    @classmethod
+    def _refuse_the_retired_flag(cls, value: object) -> object:
+        """``benchmarkable=`` is derived now, and passing it is a no-op.
+
+        Refused rather than ignored: this model does not forbid extras,
+        so an entry still passing the old flag would be accepted and have
+        no effect — a stack meant to be withheld would quietly become a
+        contender, which is the one direction this field must never fail
+        in.
+        """
+        if isinstance(value, dict) and "benchmarkable" in value:
+            raise ValueError(
+                "benchmarkable is derived from reference and withdrawn; passing it here "
+                "would be silently ignored. Set reference=True for a D12 pipeline "
+                "adapter, or withdrawn='...' for a stack retired after measurement"
+            )
+        return value
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def production_eligible(self) -> bool:
+        """May this entry be offered as a candidate at all.
+
+        The **entry** half of §5.10's two gates. The other half is the
+        resolved ``evidence_class`` of a particular execution, and
+        production scoring needs both: a production-eligible entry run
+        with an oracle provider still produces oracle evidence.
+        """
+        return not self.reference and not self.withdrawn
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def benchmarkable(self) -> bool:
+        """Deprecated alias of :attr:`production_eligible`.
+
+        Kept, and kept *computed*, because ``/algorithms`` serialises it
+        and the web candidate picker filters on it. Renaming the wire
+        field would break a running UI to make a Python attribute read
+        better; leaving it derived costs nothing and removes the
+        possibility of the two disagreeing.
+        """
+        return self.production_eligible
 
 
 class _Entry(BaseModel):
@@ -290,7 +343,6 @@ ALGORITHMS: dict[str, _Entry] = {
                 "Classic baseline: samples reachable velocities, rejects colliding "
                 "rollouts and minimises a weighted cost."
             ),
-            benchmarkable=True,
             config_schema=DWAConfig.model_json_schema(),
             global_observation_class="full_static_map",
             local_observation_class="lidar_only",
@@ -309,7 +361,6 @@ ALGORITHMS: dict[str, _Entry] = {
                 "A* global planner with the space-time DWA controller. "
                 + _DWA_PREDICTIVE_DESCRIPTION
             ),
-            benchmarkable=False,
             withdrawn=_WITHDRAWN,
             config_schema=DWAPredictiveConfig.model_json_schema(),
             global_observation_class="full_static_map",
@@ -336,7 +387,6 @@ ALGORITHMS: dict[str, _Entry] = {
                 + " Paired here with the space-time DWA controller. "
                 + _DWA_PREDICTIVE_DESCRIPTION
             ),
-            benchmarkable=False,
             withdrawn=_WITHDRAWN,
             config_schema=DWAPredictiveConfig.model_json_schema(),
             global_planner="rrtstar",
@@ -360,7 +410,6 @@ ALGORITHMS: dict[str, _Entry] = {
                 "verifies the observation and reward versions on load, and records "
                 "the checksum of what actually ran."
             ),
-            benchmarkable=True,
             requires_model=True,
             config_schema=PPOStackConfig.model_json_schema(),
             global_observation_class="full_static_map",
@@ -381,7 +430,7 @@ ALGORITHMS: dict[str, _Entry] = {
                 "pipeline reference only — it ignores sensing, so it must not "
                 "be used to draw benchmark conclusions."
             ),
-            benchmarkable=False,
+            reference=True,
             config_schema=PurePursuitConfig.model_json_schema(),
             global_observation_class="full_static_map",
             local_observation_class="lidar_only",
@@ -401,7 +450,6 @@ ALGORITHMS: dict[str, _Entry] = {
                 "Approach controller, so it differs from astar+dwa in the "
                 "global planner alone."
             ),
-            benchmarkable=True,
             config_schema=DWAConfig.model_json_schema(),
             global_planner="rrtstar",
             stochastic_global_planner=True,
@@ -423,7 +471,7 @@ ALGORITHMS: dict[str, _Entry] = {
                 "pipeline reference only — it ignores sensing, so it must not "
                 "be used to draw benchmark conclusions."
             ),
-            benchmarkable=False,
+            reference=True,
             config_schema=PurePursuitConfig.model_json_schema(),
             global_planner="rrtstar",
             stochastic_global_planner=True,
