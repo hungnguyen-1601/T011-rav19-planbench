@@ -283,24 +283,19 @@ def candidate_from_stack(
 def stack_id_for(candidate: Candidate) -> str:
     """The registry id that builds this candidate's planners.
 
-    **What is and is not missing for a monolithic candidate, as of
-    6.6.0.** The simulator can run one: ``MonolithicPolicy`` is the
-    adapter and ``run_policy`` drives it through the same loop, charged
-    for no global search and handed no path. What has no home yet is the
-    step before that — turning a ``Candidate(type='monolithic')`` into a
-    running policy, which needs a registry of policies keyed by
-    ``PolicyComponent.name`` and a way to resolve
-    ``PolicyComponent.checkpoint`` to weights.
-
-    Until that exists a monolithic candidate can be *declared* and not
-    *built*, and this is where the declaration stops.
+    Modular only, by construction: this resolves a *stack*, and a
+    monolithic candidate has none. Since H1b that is a redirect rather
+    than a dead end — ``planbench_benchmark.policies.build_policy`` turns
+    a declared monolithic candidate into a running policy, and
+    ``run_policy`` drives it through the same loop, charged for no global
+    search and handed no path.
     """
     if candidate.type != "modular":
         raise NotBenchmarkableError(
-            "monolithic candidates have no registry stack. The MonolithicPolicy adapter "
-            "exists (planbench_planning.common.policy_base) and the simulator runs one "
-            "through run_policy; the policy registry that maps a candidate's policy name "
-            "and checkpoint to a loadable object does not exist yet"
+            "monolithic candidates have no registry stack; build them with "
+            "planbench_benchmark.policies.build_policy and run them through "
+            "run_policy — the modular path here would plan a global route the "
+            "policy must never receive"
         )
     return candidate.stack_label
 
