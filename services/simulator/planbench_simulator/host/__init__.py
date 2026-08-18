@@ -13,11 +13,26 @@ from planbench_simulator.host.algorithm_host import (
     HostPluginError,
     HostStats,
 )
+from planbench_simulator.host.channel_bundle import (
+    AuthorizedChannelBundle,
+    CadenceMonitor,
+    CapabilityRegistry,
+    CapabilitySpec,
+    ChannelContractError,
+    UndeclaredChannelError,
+)
 from planbench_simulator.host.facades import (
     HostBackedGlobalPlanner,
     HostBackedLocalPlanner,
     host_backed_planners,
     host_backed_policy,
+)
+from planbench_simulator.host.fairness_policy import (
+    EvidenceClass,
+    FairnessPolicy,
+    FairnessViolation,
+    meet,
+    provenance_class,
 )
 from planbench_simulator.host.legacy_global import LegacyGlobalPlugin
 from planbench_simulator.host.legacy_local import LegacyLocalPlugin
@@ -29,11 +44,36 @@ from planbench_simulator.host.lifecycle import (
     HostedLocalPlugin,
     channel_payload,
 )
+from planbench_simulator.host.provider_graph import (
+    GraphResolution,
+    ProviderGraph,
+    ProviderGraphError,
+)
+from planbench_simulator.host.providers import (
+    Provider,
+    ProviderError,
+    builtin_providers,
+    builtin_registry,
+)
+from planbench_simulator.host.runtime_view import (
+    OracleAccessDenied,
+    ProviderRuntimeView,
+    register_trusted_oracle,
+)
 
 __all__ = [
     "GRID_CHANNEL",
     "OBSERVATION_CHANNEL",
     "AlgorithmHost",
+    "AuthorizedChannelBundle",
+    "CadenceMonitor",
+    "CapabilityRegistry",
+    "CapabilitySpec",
+    "ChannelContractError",
+    "EvidenceClass",
+    "FairnessPolicy",
+    "FairnessViolation",
+    "GraphResolution",
     "HostBackedGlobalPlanner",
     "HostBackedLocalPlanner",
     "HostPluginError",
@@ -43,7 +83,19 @@ __all__ = [
     "LegacyGlobalPlugin",
     "LegacyLocalPlugin",
     "LegacyPolicyPlugin",
+    "OracleAccessDenied",
+    "Provider",
+    "ProviderError",
+    "ProviderGraph",
+    "ProviderGraphError",
+    "ProviderRuntimeView",
+    "UndeclaredChannelError",
+    "builtin_providers",
+    "builtin_registry",
     "channel_payload",
     "host_backed_planners",
     "host_backed_policy",
+    "meet",
+    "provenance_class",
+    "register_trusted_oracle",
 ]

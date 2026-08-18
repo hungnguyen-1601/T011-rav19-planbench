@@ -412,6 +412,19 @@ class SimulationEngine:
     def time(self) -> float:
         return self._time
 
+    @property
+    def steps(self) -> int:
+        """Simulation steps taken since ``reset()``.
+
+        Public because the provider seam addresses randomness by tick
+        (see ``host.runtime_view``), and a seam that had to reach for
+        ``_steps`` would be documenting one boundary while crossing
+        another. It is the same counter the noise model already indexes
+        its streams by, so two providers reading one tick and the engine
+        drawing that tick's noise agree by construction.
+        """
+        return self._steps
+
     # -- control -------------------------------------------------------
 
     def pause(self) -> None:
