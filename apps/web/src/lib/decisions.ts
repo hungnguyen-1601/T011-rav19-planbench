@@ -480,6 +480,109 @@ export interface ExemplarSet {
  * list in that case rather than a set chosen some other way under a
  * label that says it was preregistered.
  */
+/** One detector's summary across the episodes it was looked for in (E3).
+ *
+ * `episodes_seen` over `episodes_total` is the part that stops one vivid
+ * episode reading as a pattern: 1/30 is an anecdote, 27/30 is a property
+ * of the pairing. The page renders the fraction rather than a rate for
+ * the same reason.
+ */
+export interface PacketObservation {
+  type: string;
+  candidate_id: string;
+  episodes_seen: number;
+  episodes_total: number;
+  typical: Record<string, number>;
+  worst_episode_context_id: string | null;
+}
+
+/** What the contrast lattice concluded about one detection type (E3).
+ *
+ * Three of the four verdicts are refusals, and they do not mean the same
+ * thing — `rules_out_component_specific_attribution` is a *finding*
+ * (both stacks do this, so the component is not what differs), while
+ * `insufficient_contrast` is a shrug. A page that rendered them alike
+ * would turn evidence into silence.
+ */
+export interface PacketLatticeFinding {
+  detection_type: string;
+  verdict: string;
+  subject: string | null;
+  pairs: [string, string][];
+  reason: string;
+}
+
+/** A gap the platform declares about itself, and what it forbids.
+ *
+ * Shown rather than hidden: an explanation that lists what it cannot
+ * know is worth more than one that quietly stops short.
+ */
+export interface PacketKnownUnknown {
+  id: string;
+  blocks_claim_types: string[];
+  source: string;
+}
+
+export interface PacketWaterfallBar {
+  objective: string;
+  weight: number;
+  delta_objective_mean: number;
+  contribution: number;
+  ci95: [number, number];
+}
+
+export interface PacketWaterfall {
+  candidate_a: string;
+  candidate_b: string;
+  n_episodes: number;
+  delta_utility_mean: number;
+  delta_utility_median: number;
+  total_ci95: [number, number];
+  bars: PacketWaterfallBar[];
+}
+
+export interface CasePacket {
+  run_id: string;
+  task: {
+    task_profile_id: string;
+    robot: { radius_m: number; required_passage_width_m: number | null };
+  };
+  candidates: { candidate_id: string }[];
+  decision: {
+    status: string;
+    /** `null` on a run that ranked nobody — no pair, so nothing to
+     * decompose. Not a failure, and the page must not draw an empty
+     * chart for it. */
+    waterfall: PacketWaterfall | null;
+  };
+  lattice: PacketLatticeFinding[];
+  observations: PacketObservation[];
+  known_unknowns: PacketKnownUnknown[];
+  evidence_class: string;
+}
+
+/** The case packet, plus an account of what could not be built.
+ *
+ * `omissions` is not diagnostics: it is what turns a thin explanation
+ * from "there was nothing to say" into "this part could not be built,
+ * and here is why". The page shows it.
+ */
+export interface ExplanationView {
+  packet: CasePacket;
+  omissions: string[];
+  skipped_episodes: string[];
+}
+
+/** The evidence behind a decision (E4.1/E4.2).
+ *
+ * Built while the run was scored, so a run recorded before that answers
+ * 409 — a state, not a fault, and the caller is expected to render it as
+ * one.
+ */
+export function getExplanation(runId: string): Promise<ExplanationView> {
+  return authFetch<ExplanationView>(`/decisions/${runId}/explanation`);
+}
+
 export function getExemplars(runId: string): Promise<ExemplarSet> {
   return authFetch<ExemplarSet>(`/decisions/${runId}/exemplars`);
 }

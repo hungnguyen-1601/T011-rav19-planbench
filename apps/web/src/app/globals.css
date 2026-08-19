@@ -3280,3 +3280,29 @@ main.content.bare-page {
   .episode-skeleton { animation: none; }
   .decision-sample-panel tbody tr[tabindex] { transition: none; }
 }
+
+/* Evidence panel (E4.1/E4.2) — what was seen, under the gate table.
+   Tables rather than a drawn chart: the numbers are the point, and a
+   bar with no interval beside it invites reading the height alone. */
+.evidence-panel > * + * { margin-top: 14px; }
+.evidence-lede { margin: 0 0 8px; }
+.evidence-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.evidence-table th,
+.evidence-table td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+.evidence-table thead th { font-weight: 600; color: var(--muted); }
+.evidence-table tfoot th { border-bottom: none; border-top: 2px solid var(--border); }
+.evidence-bar-wrap { display: flex; align-items: center; gap: 8px; }
+/* The bar is a reading aid behind the number, never instead of it. */
+.evidence-bar { display: inline-block; height: 8px; border-radius: 2px; min-width: 1px; }
+.evidence-bar.pos { background: var(--ok, #3f9a5a); }
+.evidence-bar.neg { background: var(--err, #b4483f); }
+.evidence-sightings h4 { margin: 0 0 6px; font-size: 13px; }
+.evidence-lattice > ul,
+.evidence-gaps > ul,
+.evidence-omissions > ul { margin: 8px 0 0; padding-left: 18px; }
+.evidence-lattice li + li,
+.evidence-gaps li + li,
+.evidence-omissions li + li { margin-top: 8px; }
+.evidence-lattice li p { margin: 4px 0 0; }
+.evidence-subject { margin-left: 6px; }
+.evidence-panel .small { font-size: 12px; }

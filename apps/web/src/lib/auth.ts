@@ -219,6 +219,19 @@ export class FieldError extends Error {
      * narrow as a form needs.
      */
     public raw: unknown[] = [],
+    /** The HTTP status the refusal arrived with.
+     *
+     * Present because some refusals are **states**, not faults: a 409
+     * says "this run is in a condition that has no answer", and a page
+     * that cannot tell it from a 500 renders a red box for something
+     * that is simply true about the data. Carried as a number rather
+     * than left to be recovered by matching the message, for the same
+     * reason a checker's failure code is typed: prose changes when
+     * somebody improves a sentence.
+     *
+     * ``0`` for a refusal that never reached the network.
+     */
+    public status: number = 0,
   ) {
     super(message);
     this.name = "FieldError";
@@ -319,7 +332,7 @@ export async function authFetch<T>(path: string, init?: RequestInit): Promise<T>
     // Always a `FieldError`, even with no details: one type of refusal
     // is easier to reason about than two, and `details` being empty is
     // the honest answer for an error nobody addressed.
-    throw new FieldError(message, details, raw);
+    throw new FieldError(message, details, raw, response.status);
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;

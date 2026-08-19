@@ -19,6 +19,7 @@ import Link from "next/link";
 import { TraceViewer } from "@/components/TraceViewer";
 import { ProgressSync, type SyncSlot } from "@/components/ProgressSync";
 import { commonProgress, panelCandidates, sideTime } from "@/lib/replaySync";
+import { EvidencePanel } from "@/components/EvidencePanel";
 import { panelPlan } from "@/lib/explainPanel";
 import { Icon } from "@/components/Icon";
 import { useSession } from "@/lib/auth";
@@ -95,8 +96,15 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
 
       <SampleBanner run={run} />
       <GateTable run={run} />
-      <CandidateComparison run={run} />
+      {/* The headline and its caveats sit immediately above the
+          evidence, which is what `ExplanationHeader` was written for:
+          a qualifier below the thing it qualifies has already been
+          scrolled past. When the evidence panel landed under the gate
+          table this header was left three sections down, still correct
+          and no longer doing its job. */}
       <ExplanationHeader run={run} />
+      <EvidencePanel run={run} />
+      <CandidateComparison run={run} />
       <TracePanel run={run} />
       <Outcome run={run} />
       <HumanActs run={run} onDone={refresh} />
