@@ -136,7 +136,7 @@ def packet(**overrides) -> CasePacket:  # type: ignore[no-untyped-def]
         "header": header(),
         "task": TaskFacts(
             task_profile_id="warehouse_a_v1",
-            robot=RobotFacts(radius_m=0.26, required_clearance_m=0.74),
+            robot=RobotFacts(radius_m=0.26, required_passage_width_m=0.74),
         ),
         "candidates": [stack("cand_a"), stack("cand_b", "rrtstar")],
         "decision": DecisionFacts(status="CLEAR_RECOMMENDATION", waterfall=waterfall()),

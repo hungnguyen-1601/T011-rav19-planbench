@@ -170,7 +170,7 @@ def packet(**overrides) -> CasePacket:  # type: ignore[no-untyped-def]
         "header": header(),
         "task": TaskFacts(
             task_profile_id="warehouse_a_v1",
-            robot=RobotFacts(radius_m=0.26, required_clearance_m=0.74),
+            robot=RobotFacts(radius_m=0.26, required_passage_width_m=0.74),
         ),
         "candidates": [stack("cand_a"), stack("cand_b", "rrtstar")],
         "decision": DecisionFacts(status="CLEAR_RECOMMENDATION", waterfall=waterfall()),
@@ -200,6 +200,20 @@ def analysis(**overrides) -> AnalysisRequest:  # type: ignore[no-untyped-def]
     }
     fields.update(overrides)
     return AnalysisRequest(**fields)  # type: ignore[arg-type]
+
+
+def version_of(tool_id: str) -> str:
+    """The version the catalog serves for this tool.
+
+    Looked up rather than written down: E6a moved two cards to 2.0.0 and
+    every hard-coded "1.0.0" in this file became a request for a tool
+    the catalog no longer has — which is the version bump working, and
+    is why a test file should not restate a version it does not own.
+    """
+    for card in TOOL_CATALOG.cards:
+        if card.tool_id == tool_id:
+            return card.tool_version
+    return "1.0.0"
 
 
 #: Arguments each tool the tests reach for actually requires, so a
@@ -239,7 +253,7 @@ def request(session_analysis: AnalysisRequest, **overrides) -> ToolRequest:  # t
         "analyst_bundle_id": session_analysis.analyst_bundle_id,
         "sequence": 1,
         "tool_id": "gap_vs_footprint",
-        "tool_version": "1.0.0",
+        "tool_version": version_of(tool_id),
         "hypothesis_id": "hyp-1",
         "arguments": dict(ARGUMENTS.get(tool_id, {})),
     }
@@ -280,7 +294,7 @@ def test_navigation_tools_promote_nothing_and_research_tools_run_nothing() -> No
 
 def test_a_deterministic_tool_can_still_be_capped_at_associated() -> None:
     """Counting expansions reproduces exactly and explains nothing causally."""
-    card = TOOL_CATALOG.card("latency_vs_expanded_nodes", "1.0.0")
+    card = TOOL_CATALOG.card("latency_vs_expanded_nodes", version_of("latency_vs_expanded_nodes"))
     assert card.proposition_policy.maximum_claim_level == "associated"
     assert "candidate_latency_attribution" in card.proposition_policy.forbidden_inference_types
 
@@ -297,7 +311,7 @@ def test_every_card_pairs_its_prose_with_its_typed_policy() -> None:
 
 
 def test_the_replay_check_accepts_the_only_pedigree_an_old_run_has() -> None:
-    card = TOOL_CATALOG.card("replay_global_plan", "1.0.0")
+    card = TOOL_CATALOG.card("replay_global_plan", version_of("replay_global_plan"))
     assert "reconstructed" in card.evidence_policy.allowed_input_provenance
 
 
@@ -390,11 +404,11 @@ def test_the_shortfall_is_available_before_the_round_starts() -> None:
 
 
 def completed_result(**overrides) -> ToolResult:  # type: ignore[no-untyped-def]
-    card = TOOL_CATALOG.card("gap_vs_footprint", "1.0.0")
+    card = TOOL_CATALOG.card("gap_vs_footprint", version_of("gap_vs_footprint"))
     fields = {
         "request_id": "req-001",
         "tool_id": "gap_vs_footprint",
-        "tool_version": "1.0.0",
+        "tool_version": version_of("gap_vs_footprint"),
         "execution_status": "completed",
         "input_provenance": "recorded",
         "proposition_verdict": "supported",
@@ -408,9 +422,9 @@ def completed_result(**overrides) -> ToolResult:  # type: ignore[no-untyped-def]
         "unsupported_inferences": card.proposition_policy.forbidden_inference_types,
         "measurements": {
             "passage_width_m": 0.68,
-            "required_clearance_m": 0.74,
+            "required_passage_width_m": 0.74,
             "margin_m": -0.06,
-            "inflation_radius_m": 0.22,
+            "inflation_margin_m": 0.11,
         },
         "references": (EvidenceReference(kind="map_region", ref="region:aisle_B7"),),
         "evidence_artifact_ref": "artifacts/explain/gap.json",
@@ -1401,7 +1415,7 @@ def test_every_card_points_at_a_schema_that_exists_and_is_current() -> None:
 
 
 def test_the_generated_schema_says_what_the_host_enforces() -> None:
-    card = TOOL_CATALOG.card("gap_vs_footprint", "1.0.0")
+    card = TOOL_CATALOG.card("gap_vs_footprint", version_of("gap_vs_footprint"))
     schema = card.io.request_schema(tool_id=card.tool_id, tool_version=card.tool_version)
     assert schema["additionalProperties"] is False
     assert sorted(schema["required"]) == ["candidate_id", "region_id"]
@@ -1480,7 +1494,7 @@ def test_a_check_that_did_not_run_owes_no_numbers() -> None:
 
 def test_a_navigation_tool_must_return_the_pointer_not_just_the_count() -> None:
     """``n_exemplars: 4`` says how many episodes to open, not which."""
-    card = TOOL_CATALOG.card("find_exemplar_episodes", "1.0.0")
+    card = TOOL_CATALOG.card("find_exemplar_episodes", version_of("find_exemplar_episodes"))
     assert card.io.required_reference_kinds == ("episode",)
 
     live = analysis()
@@ -1527,14 +1541,14 @@ def test_every_measurement_carries_a_unit_and_a_sentence() -> None:
 
 
 def test_the_result_schema_states_what_a_completed_result_owes() -> None:
-    card = TOOL_CATALOG.card("gap_vs_footprint", "1.0.0")
+    card = TOOL_CATALOG.card("gap_vs_footprint", version_of("gap_vs_footprint"))
     schema = card.io.result_schema(tool_id=card.tool_id, tool_version=card.tool_version)
     measurements = schema["properties"]["measurements"]
     assert sorted(measurements["required"]) == [
-        "inflation_radius_m",
+        "inflation_margin_m",
         "margin_m",
         "passage_width_m",
-        "required_clearance_m",
+        "required_passage_width_m",
     ]
     assert measurements["properties"]["margin_m"]["unit"] == "m"
     kinds = schema["properties"]["references"]["items"]["properties"]["kind"]["enum"]
@@ -1543,7 +1557,7 @@ def test_the_result_schema_states_what_a_completed_result_owes() -> None:
 
 def test_an_optional_measurement_is_for_a_conditional_quantity() -> None:
     """The lower bound exists only where the map bounds one side."""
-    card = TOOL_CATALOG.card("get_map_region_features", "1.0.0")
+    card = TOOL_CATALOG.card("get_map_region_features", version_of("get_map_region_features"))
     optional = {
         measurement.name for measurement in card.io.measurements if not measurement.required
     }
@@ -1644,7 +1658,7 @@ def test_the_schema_requires_the_pointer_the_host_requires() -> None:
     optional, so a navigation payload with no episode pointer validated
     against the published file and was refused at recording.
     """
-    card = TOOL_CATALOG.card("find_exemplar_episodes", "1.0.0")
+    card = TOOL_CATALOG.card("find_exemplar_episodes", version_of("find_exemplar_episodes"))
     schema = card.io.result_schema(tool_id=card.tool_id, tool_version=card.tool_version)
     assert "references" in schema["required"]
     assert schema["properties"]["references"]["minItems"] == 1
@@ -1668,7 +1682,9 @@ def test_each_required_kind_gets_its_own_contains() -> None:
 
 
 def test_a_tool_with_no_required_pointer_does_not_demand_one() -> None:
-    card = TOOL_CATALOG.card("get_objective_decomposition", "1.0.0")
+    card = TOOL_CATALOG.card(
+        "get_objective_decomposition", version_of("get_objective_decomposition")
+    )
     schema = card.io.result_schema(tool_id=card.tool_id, tool_version=card.tool_version)
     assert "references" not in schema["required"]
     assert "minItems" not in schema["properties"]["references"]

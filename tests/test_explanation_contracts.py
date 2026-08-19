@@ -537,6 +537,15 @@ def sidecar(attempt: int = 1, **overrides: object) -> PlanningInputEvidence:
         "simulation_tick": 148,
         "query": QUERY,
         "costmap_checksum": "cm-abc",
+        # E4.5: a record indexes a snapshot rather than being one. A
+        # checksum verifies a grid somebody already has; it cannot
+        # produce one, so the reference to what a replay loads is part
+        # of the record.
+        "snapshot_ref": "snapshots/attempt-001.json",
+        # E4.5 round two: the record pins the **whole** snapshot, not
+        # only its grid. A swapped start, goal, planner configuration or
+        # seed loaded clean when the grid checksum was the only pin.
+        "snapshot_checksum": "a" * 64,
         "planner_fingerprint": "astar@w1.0",
         "execution_environment_ref": "git:7a7c195aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "outcome": "no_path",

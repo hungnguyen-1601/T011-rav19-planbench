@@ -9,6 +9,8 @@ admitted request the same way the mock's was.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -33,9 +35,13 @@ from planbench_explanation.checkers import (
 from planbench_explanation.contrast import CandidateComponents
 from planbench_explanation.host import (
     AWAITING_SIDECAR,
+    EvidenceIdentity,
+    EvidenceMismatch,
+    InMemoryEvidenceSink,
     PacketEvidence,
     ReportEvidence,
     ToolHost,
+    identity_of,
 )
 from planbench_explanation.knowledge import KNOWLEDGE_BASE_VERSION
 from planbench_explanation.ledger import HypothesisProposal
@@ -76,12 +82,13 @@ def features(
     return RouteFeatures(**fields)  # type: ignore[arg-type]
 
 
-def gap(**overrides) -> GapEvidence:  # type: ignore[no-untyped-def]
+def gap(radius: float = 0.26, margin: float = 0.11, **overrides) -> GapEvidence:  # type: ignore[no-untyped-def]
     fields = {
         "region_id": "aisle_B7",
         "features": features(),
-        "robot_radius_m": 0.26,
-        "inflation_radius_m": 0.48,
+        "robot_radius_m": radius,
+        "inflation_margin_m": margin,
+        "required_passage_width_m": 2.0 * (radius + margin),
     }
     fields.update(overrides)
     return GapEvidence(**fields)  # type: ignore[arg-type]
@@ -90,8 +97,33 @@ def gap(**overrides) -> GapEvidence:  # type: ignore[no-untyped-def]
 def test_a_passage_narrower_than_the_configured_clearance_is_supported() -> None:
     outcome = check_gap_vs_footprint(gap())
     assert outcome.verdict == "supported"
+    assert outcome.measurements["required_passage_width_m"] == pytest.approx(0.74)
     assert outcome.measurements["margin_m"] == pytest.approx(-0.06)
-    assert outcome.measurements["required_clearance_m"] == pytest.approx(0.74)
+
+
+def test_a_width_is_never_compared_against_a_radius() -> None:
+    """The unit bug, pinned.
+
+    ``narrowest_passage_m`` is a corridor cross-section. A 0.26 m robot
+    with an 0.11 m margin needs ``2 * 0.37 = 0.74`` m of corridor, not
+    ``0.37``. The first version compared against the radius sum and a
+    0.50 m doorway read as passable.
+    """
+    evidence = gap(features=features(0.50, 0.50))
+    assert evidence.required_passage_width_m == pytest.approx(0.74)
+    assert check_gap_vs_footprint(evidence).verdict == "supported"
+
+
+def test_a_required_width_that_does_not_follow_from_the_parts_is_refused() -> None:
+    """One definition in the platform, and the schema checks it is the one used."""
+    with pytest.raises((CheckerRefusal, ValidationError), match="does not"):
+        GapEvidence(
+            region_id="aisle_B7",
+            features=features(),
+            robot_radius_m=0.26,
+            inflation_margin_m=0.11,
+            required_passage_width_m=0.37,
+        )
 
 
 def test_a_passage_that_clears_refutes_rather_than_going_quiet() -> None:
@@ -115,10 +147,8 @@ def test_a_route_measured_only_on_one_side_yields_no_verdict() -> None:
 
 def test_the_check_is_about_the_configuration_not_the_robot() -> None:
     """Same robot, same passage, different inflation: different answer."""
-    tight = check_gap_vs_footprint(gap(inflation_radius_m=0.48))
-    relaxed = check_gap_vs_footprint(gap(inflation_radius_m=0.30))
-    assert tight.verdict == "supported"
-    assert relaxed.verdict == "refuted"
+    assert check_gap_vs_footprint(gap(margin=0.11)).verdict == "supported"
+    assert check_gap_vs_footprint(gap(margin=0.04)).verdict == "refuted"
 
 
 # --------------------------------------------------------------------------
@@ -289,7 +319,7 @@ def analysis(**overrides) -> AnalysisRequest:  # type: ignore[no-untyped-def]
         header=header(),
         task=TaskFacts(
             task_profile_id="warehouse_a_v1",
-            robot=RobotFacts(radius_m=0.26, required_clearance_m=0.74),
+            robot=RobotFacts(radius_m=0.26, inflation_margin_m=0.11, required_passage_width_m=0.74),
         ),
         candidates=[stack("cand_a"), stack("cand_b", "rrtstar")],
         decision=DecisionFacts(status="CLEAR_RECOMMENDATION", waterfall=waterfall()),
@@ -307,27 +337,27 @@ def analysis(**overrides) -> AnalysisRequest:  # type: ignore[no-untyped-def]
 
 def report(n: int = 10, *, expanded: bool = True, tree: bool = False) -> dict[str, object]:
     """Episode rows in the shape scoring writes them."""
+    rows = [
+        {
+            "episode_context_id": f"ep-{index:03d}",
+            "peak_search_nodes": 100 * (index + 1) if expanded else 0,
+            "peak_tree_nodes": 40 * (index + 1) if tree else 0,
+            "p99_latency_ms": 5.0 * (index + 1),
+        }
+        for index in range(n)
+    ]
     return {
+        "identity": {"task_profile_id": "warehouse_a_v1"},
         "candidates": [
-            {
-                "candidate_id": "cand_a",
-                "episodes": [
-                    {
-                        "episode_context_id": f"ep-{index:03d}",
-                        "peak_search_nodes": 100 * (index + 1) if expanded else 0,
-                        "peak_tree_nodes": 40 * (index + 1) if tree else 0,
-                        "p99_latency_ms": 5.0 * (index + 1),
-                    }
-                    for index in range(n)
-                ],
-            }
-        ]
+            {"candidate_id": "cand_a", "episodes": rows},
+            {"candidate_id": "cand_b", "episodes": rows},
+        ],
     }
 
 
 def host_for(evidence, **overrides) -> ToolHost:  # type: ignore[no-untyped-def]
     live = analysis(**overrides)
-    running = ToolHost(live, evidence, implementation_ref=BUILD)
+    running = ToolHost(live, evidence, implementation_ref=BUILD, sink=InMemoryEvidenceSink())
     running.session.declare(
         (
             HypothesisProposal(
@@ -351,7 +381,9 @@ def ask(running: ToolHost, tool_id: str, arguments: dict[str, object], **overrid
         "analyst_bundle_id": live.analyst_bundle_id,
         "sequence": 1,
         "tool_id": tool_id,
-        "tool_version": "1.0.0",
+        "tool_version": TOOL_CATALOG.card(tool_id, "2.0.0").tool_version
+        if tool_id in ("gap_vs_footprint", "latency_vs_expanded_nodes")
+        else "1.0.0",
         "hypothesis_id": "hyp-1",
         "arguments": arguments,
     }
@@ -362,9 +394,8 @@ def ask(running: ToolHost, tool_id: str, arguments: dict[str, object], **overrid
 def evidence_for(**overrides) -> ReportEvidence:  # type: ignore[no-untyped-def]
     fields = {
         "report": report(),
+        "packet": analysis().packet,
         "regions": {("cand_a", "aisle_B7"): features()},
-        "robot_radius_m": 0.26,
-        "inflation_radius_m": 0.48,
     }
     fields.update(overrides)
     return ReportEvidence(fields.pop("report"), **fields)  # type: ignore[arg-type]
@@ -388,7 +419,7 @@ def test_the_host_stamps_the_refusals_the_card_carries() -> None:
     result = running.call(
         ask(running, "gap_vs_footprint", {"candidate_id": "cand_a", "region_id": "aisle_B7"})
     )
-    card = TOOL_CATALOG.card("gap_vs_footprint", "1.0.0")
+    card = TOOL_CATALOG.card("gap_vs_footprint", "2.0.0")
     assert set(result.unsupported_inferences) == set(
         card.proposition_policy.forbidden_inference_types
     )
@@ -460,7 +491,7 @@ def test_the_checks_that_need_the_sidecar_say_so_rather_than_approximating() -> 
 
 
 def test_a_host_with_no_evidence_source_answers_nothing_and_invents_nothing() -> None:
-    running = host_for(PacketEvidence())
+    running = host_for(PacketEvidence(analysis().packet))
     result = running.call(
         ask(running, "gap_vs_footprint", {"candidate_id": "cand_a", "region_id": "aisle_B7"})
     )
@@ -490,7 +521,7 @@ def test_the_latency_card_promises_only_what_the_trace_records() -> None:
     expansions per tick. The card now says across episodes, and the
     evidence it asks for is what scoring actually writes.
     """
-    card = TOOL_CATALOG.card("latency_vs_expanded_nodes", "1.0.0")
+    card = TOOL_CATALOG.card("latency_vs_expanded_nodes", "2.0.0")
     assert card.required_evidence == ("episode_expanded_nodes", "episode_latency")
     assert "n_episodes" in card.io.measurement_keys
     assert "n_replans" not in card.io.measurement_keys
@@ -513,3 +544,209 @@ def test_a_candidate_reporting_both_node_columns_is_not_guessed_at() -> None:
     result = running.call(ask(running, "latency_vs_expanded_nodes", {"candidate_id": "cand_a"}))
     assert result.execution_status == "not_checkable"
     assert result.failure_code == "expansion_counts_missing"
+
+
+# --------------------------------------------------------------------------
+# The source has to be about the packet
+# --------------------------------------------------------------------------
+
+
+def test_a_report_about_another_task_profile_is_refused() -> None:
+    """Derived from the report, not declared beside it.
+
+    The identity used to be a constructor argument, so a caller could
+    hand over run B's report with run A's identity and pass the host's
+    check. It stopped accidental miswiring and was not a trust boundary.
+    """
+    wrong = report()
+    wrong["identity"] = {"task_profile_id": "some_other_profile"}
+    with pytest.raises(EvidenceMismatch, match="task profile"):
+        ReportEvidence(wrong, packet=analysis().packet)
+
+
+def test_a_report_missing_a_candidate_the_packet_compares_is_refused() -> None:
+    wrong = report()
+    wrong["candidates"] = [{"candidate_id": "cand_z", "episodes": []}]
+    with pytest.raises(EvidenceMismatch, match="no rows for"):
+        ReportEvidence(wrong, packet=analysis().packet)
+
+
+def test_a_host_refuses_a_source_bound_to_another_packet() -> None:
+    other = analysis(
+        packet=build_case_packet(
+            run_id="run_099",
+            header=header(),
+            task=TaskFacts(
+                task_profile_id="warehouse_a_v1",
+                robot=RobotFacts(radius_m=0.26),
+            ),
+            candidates=[stack("cand_a"), stack("cand_b", "rrtstar")],
+            decision=DecisionFacts(status="CLEAR_RECOMMENDATION", waterfall=waterfall()),
+        )
+    )
+    with pytest.raises(EvidenceMismatch, match="different run"):
+        ToolHost(
+            analysis(),
+            ReportEvidence(report(), packet=other.packet),
+            implementation_ref=BUILD,
+            sink=InMemoryEvidenceSink(),
+        )
+
+
+def test_what_the_report_claims_and_the_packet_cannot_confirm_is_labelled() -> None:
+    """``run_uri`` and ``run_checksum`` have no counterpart to check against."""
+    with_uri = report()
+    with_uri["run_uri"] = "file://artifacts/runs/2026-08-19/whatever"
+    with_uri["run_checksum"] = "b21b6d0d"
+    source = ReportEvidence(with_uri, packet=analysis().packet)
+    assert source.unverified_report_identity["run_uri"].endswith("whatever")
+
+
+def test_the_identity_a_source_must_match_comes_off_the_packet() -> None:
+    packet = analysis().packet
+    identity = identity_of(packet)
+    assert identity.run_id == packet.run_id
+    assert identity.candidate_ids == {"cand_a", "cand_b"}
+    assert isinstance(identity, EvidenceIdentity)
+
+
+def test_the_robot_facts_a_check_uses_come_from_the_packet() -> None:
+    """Two sources for one fact is one source too many."""
+    packet = analysis().packet
+    source = ReportEvidence(report(), packet=packet, regions={("cand_a", "aisle_B7"): features()})
+    evidence = source.gap_evidence(candidate_id="cand_a", region_id="aisle_B7")
+    assert evidence is not None
+    assert evidence.robot_radius_m == packet.task.robot.radius_m
+    assert evidence.required_passage_width_m == packet.task.robot.required_passage_width_m
+
+
+def test_a_run_that_never_recorded_its_inflation_cannot_be_gap_checked() -> None:
+    """Absent rather than assumed: a guessed margin is another costmap."""
+    packet = build_case_packet(
+        run_id="run_017",
+        header=header(),
+        task=TaskFacts(task_profile_id="warehouse_a_v1", robot=RobotFacts(radius_m=0.26)),
+        candidates=[stack("cand_a"), stack("cand_b", "rrtstar")],
+        decision=DecisionFacts(status="CLEAR_RECOMMENDATION", waterfall=waterfall()),
+    )
+    source = ReportEvidence(report(), packet=packet, regions={("cand_a", "aisle_B7"): features()})
+    assert source.gap_evidence(candidate_id="cand_a", region_id="aisle_B7") is None
+
+
+# --------------------------------------------------------------------------
+# The artifact a result points at exists
+# --------------------------------------------------------------------------
+
+
+def test_a_completed_result_points_at_an_artifact_that_was_written() -> None:
+    """A reference that resolves to nothing looks like diligence and is not."""
+    sink = InMemoryEvidenceSink()
+    live = analysis()
+    running = ToolHost(live, evidence_for(), implementation_ref=BUILD, sink=sink)
+    running.session.declare(
+        (
+            HypothesisProposal(
+                hypothesis_id="hyp-1",
+                hypothesis_statement="the aisle is closed by inflation",
+                proposition_type="geometric_infeasibility",
+                proposed_subject="costmap_inflation",
+            ),
+        )
+    )
+    result = running.call(
+        ask(running, "gap_vs_footprint", {"candidate_id": "cand_a", "region_id": "aisle_B7"})
+    )
+    assert result.evidence_artifact_ref in sink.artifacts
+    stored = sink.artifacts[result.evidence_artifact_ref]
+    assert stored["measurements"] == result.measurements
+    assert stored["run_id"] == live.packet.run_id
+
+
+def test_the_checksum_on_a_result_is_of_what_was_stored(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from planbench_explanation.host import FileEvidenceSink
+    from planbench_explanation.versioning import artifact_checksum
+
+    sink = FileEvidenceSink(tmp_path / "artifacts" / "explain", relative_to=tmp_path)
+    running = ToolHost(analysis(), evidence_for(), implementation_ref=BUILD, sink=sink)
+    running.session.declare(
+        (
+            HypothesisProposal(
+                hypothesis_id="hyp-1",
+                hypothesis_statement="the aisle is closed by inflation",
+                proposition_type="geometric_infeasibility",
+                proposed_subject="costmap_inflation",
+            ),
+        )
+    )
+    result = running.call(
+        ask(running, "gap_vs_footprint", {"candidate_id": "cand_a", "region_id": "aisle_B7"})
+    )
+    written = tmp_path / result.evidence_artifact_ref
+    assert written.exists()
+    assert artifact_checksum(json.loads(written.read_text(encoding="utf-8"))) == (
+        result.evidence_checksum
+    )
+
+
+# --------------------------------------------------------------------------
+# A changed contract is a changed version
+# --------------------------------------------------------------------------
+
+
+def test_the_catalog_version_moved_with_the_contract() -> None:
+    """A bundle frozen against the old wire contract must stop matching."""
+    assert TOOL_CATALOG_VERSION == "2.0.0"
+    assert TOOL_CATALOG.card("latency_vs_expanded_nodes", "2.0.0").tool_version == "2.0.0"
+    assert TOOL_CATALOG.card("gap_vs_footprint", "2.0.0").tool_version == "2.0.0"
+
+
+def test_the_old_tool_version_is_gone_rather_than_quietly_reinterpreted() -> None:
+    from planbench_explanation.tools import ToolNotInCatalog
+
+    with pytest.raises(ToolNotInCatalog):
+        TOOL_CATALOG.card("latency_vs_expanded_nodes", "1.0.0")
+
+
+# --------------------------------------------------------------------------
+# The sink writes inside the root, whatever the analyst calls its request
+# --------------------------------------------------------------------------
+
+
+def test_a_request_id_cannot_walk_out_of_the_artifact_root(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """It is analyst-supplied and it used to be pasted into a path."""
+    from planbench_explanation.host import FileEvidenceSink
+
+    sink = FileEvidenceSink(tmp_path / "root", relative_to=tmp_path)
+    stored = sink.store(tool_id="gap_vs_footprint", request_id="../../outside", payload={"x": 1})
+    written = tmp_path / stored.artifact_ref
+    assert written.resolve().is_relative_to((tmp_path / "root").resolve())
+    assert not (tmp_path.parent / "outside.json").exists()
+
+
+def test_the_request_id_survives_inside_the_artifact_even_though_the_name_is_hashed(
+    tmp_path,
+) -> None:  # type: ignore[no-untyped-def]
+    from planbench_explanation.host import FileEvidenceSink
+
+    sink = FileEvidenceSink(tmp_path, relative_to=tmp_path)
+    stored = sink.store(tool_id="gap_vs_footprint", request_id="req-001", payload={"x": 1})
+    body = json.loads((tmp_path / stored.artifact_ref).read_text(encoding="utf-8"))
+    assert body["request_id"] == "req-001"
+
+
+def test_a_protocol_request_id_is_bounded_and_printable() -> None:
+    """Defence in depth: a value that cannot be a path in the first place."""
+    live = analysis()
+    with pytest.raises(ValidationError):
+        ask(
+            ToolHost(live, evidence_for(), implementation_ref=BUILD, sink=InMemoryEvidenceSink()),
+            "gap_vs_footprint",
+            {"candidate_id": "cand_a", "region_id": "aisle_B7"},
+            request_id="../../outside",
+        )
+
+
+def test_a_host_will_not_default_to_a_sink_that_dies_with_it() -> None:
+    """``memory://`` outliving the dict it points into is a dangling pointer."""
+    with pytest.raises(TypeError):
+        ToolHost(analysis(), evidence_for(), implementation_ref=BUILD)  # type: ignore[call-arg]

@@ -73,11 +73,33 @@ class RobotFacts(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
     radius_m: float = Field(gt=0)
-    #: Radius plus the costmap's inflation. ``None`` when the run did not
-    #: record it — absent rather than assumed, because a clearance
-    #: argument built on a guessed inflation is an argument about a
-    #: costmap nobody configured.
-    required_clearance_m: float | None = Field(default=None, gt=0)
+    #: The costmap's inflation margin **beyond** the robot's own radius,
+    #: per side. Recorded so :attr:`required_passage_width_m` can be
+    #: checked against the parts it was derived from rather than taken
+    #: on trust.
+    inflation_margin_m: float | None = Field(default=None, ge=0)
+    #: **The narrowest corridor this configuration can drive through**,
+    #: as a width: ``2 * (radius + inflation_margin)``. ``None`` when the
+    #: run did not record the inflation — absent rather than assumed,
+    #: because a clearance argument built on a guessed inflation is an
+    #: argument about a costmap nobody configured.
+    #:
+    #: It was called ``required_clearance_m`` and documented as "radius
+    #: plus the costmap's inflation", which is a **radius**, and it was
+    #: being compared against ``narrowest_passage_m``, which is a
+    #: **cross-section**. Both halves of a corridor have to clear, so the
+    #: comparison was short by a factor of two and a 0.50 m doorway read
+    #: as passable for a 0.26 m robot with a 0.22 m margin. Renamed so
+    #: the unit is in the name: two quantities that are not the same kind
+    #: of thing must not share a plausible name.
+    required_passage_width_m: float | None = Field(default=None, gt=0)
+
+    @property
+    def derived_passage_width_m(self) -> float | None:
+        """What the width should be, from the parts. ``None`` without a margin."""
+        if self.inflation_margin_m is None:
+            return None
+        return 2.0 * (self.radius_m + self.inflation_margin_m)
 
 
 class TaskFacts(BaseModel):

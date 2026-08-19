@@ -6,32 +6,32 @@
     "measurements": {
       "additionalProperties": false,
       "properties": {
-        "inflation_radius_m": {
-          "description": "The inflation radius that was configured.",
+        "inflation_margin_m": {
+          "description": "The inflation margin per side that was configured.",
           "type": "number",
           "unit": "m"
         },
         "margin_m": {
-          "description": "Width minus required clearance; negative is the infeasible case.",
+          "description": "Passage width minus required width; negative is the infeasible case.",
           "type": "number",
           "unit": "m"
         },
         "passage_width_m": {
-          "description": "Measured width of the passage.",
+          "description": "Measured cross-section of the passage.",
           "type": "number",
           "unit": "m"
         },
-        "required_clearance_m": {
-          "description": "Footprint radius plus the configured inflation margin.",
+        "required_passage_width_m": {
+          "description": "Corridor this configuration needs: 2 * (radius + inflation margin). A width, compared against a width \u2014 the first card compared it against a radius.",
           "type": "number",
           "unit": "m"
         }
       },
       "required": [
         "passage_width_m",
-        "required_clearance_m",
+        "required_passage_width_m",
         "margin_m",
-        "inflation_radius_m"
+        "inflation_margin_m"
       ],
       "type": "object"
     },
@@ -84,6 +84,6 @@
     "measurements",
     "references"
   ],
-  "title": "gap_vs_footprint@1.0.0 output",
+  "title": "gap_vs_footprint@2.0.0 output",
   "type": "object"
 }

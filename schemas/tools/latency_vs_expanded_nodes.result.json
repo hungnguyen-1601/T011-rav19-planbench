@@ -65,6 +65,6 @@
   "required": [
     "measurements"
   ],
-  "title": "latency_vs_expanded_nodes@1.0.0 output",
+  "title": "latency_vs_expanded_nodes@2.0.0 output",
   "type": "object"
 }

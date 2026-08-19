@@ -209,7 +209,11 @@ class ToolRequest(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    request_id: str = Field(min_length=1)
+    #: Bounded and printable. It is an analyst-supplied string that ends
+    #: up in filenames and log lines, and the file sink hashes it before
+    #: using it as a path — but a value that cannot be a path in the
+    #: first place is one fewer thing to reason about.
+    request_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
     analysis_run_id: str = Field(min_length=1)
     case_packet_checksum: str = Field(pattern=CHECKSUM_PATTERN)
     tool_catalog_version: str = Field(min_length=1)

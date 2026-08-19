@@ -402,11 +402,11 @@ def detect_all(
     reference: ReferenceLine,
     settings: DetectorSettings | None = None,
     narrowest_passage_m: float | None = None,
-    required_clearance_m: float | None = None,
+    required_passage_width_m: float | None = None,
 ) -> tuple[Detection, ...]:
     """Every detector, over one episode, in a fixed order.
 
-    ``narrowest_passage_m`` and ``required_clearance_m`` come from the
+    ``narrowest_passage_m`` and ``required_passage_width_m`` come from the
     map features and the robot; without them ``narrow_gap_refusal``
     simply does not run rather than guessing at a width.
     """
@@ -427,7 +427,7 @@ def detect_all(
             reference,
             config,
             narrowest_passage_m=narrowest_passage_m,
-            required_clearance_m=required_clearance_m,
+            required_passage_width_m=required_passage_width_m,
         )
     )
     return tuple(found)
@@ -632,7 +632,7 @@ def _narrow_gap_refusal(
     config: DetectorSettings,
     *,
     narrowest_passage_m: float | None,
-    required_clearance_m: float | None,
+    required_passage_width_m: float | None,
 ) -> list[Detection]:
     """The planner refused, and the route's narrowest passage is too narrow.
 
@@ -643,17 +643,23 @@ def _narrow_gap_refusal(
     detector does not run — half of this pair is not a weaker version of
     it.
 
+    **Both sides are widths.** ``required_passage_width_m`` is
+    ``2 * (radius + margin)`` — the corridor a configuration needs, not
+    the half of it a radius describes. The two were compared as a width
+    against a radius until E6a, which made a doorway look passable at
+    half the width the stack actually needs.
+
     **``narrowest_passage_m`` must be a measured width, never a lower
     bound.** ``RouteFeatures`` now returns ``None`` rather than a bound
     for exactly this caller: "the passage is at least 0.3 m" and "the
     robot needs 0.74 m" do not combine into "the passage is too narrow",
     because the unmapped side may open into a five-metre hall.
     """
-    if narrowest_passage_m is None or required_clearance_m is None:
+    if narrowest_passage_m is None or required_passage_width_m is None:
         return []
     if not any(name in ("no_path", "stuck") for _, name in view.events):
         return []
-    if narrowest_passage_m >= required_clearance_m:
+    if narrowest_passage_m >= required_passage_width_m:
         return []
     return [
         Detection(
@@ -662,8 +668,8 @@ def _narrow_gap_refusal(
             episode_context_id=view.episode_context_id,
             measurements={
                 "narrowest_passage_m": narrowest_passage_m,
-                "required_clearance_m": required_clearance_m,
-                "margin_m": narrowest_passage_m - required_clearance_m,
+                "required_passage_width_m": required_passage_width_m,
+                "margin_m": narrowest_passage_m - required_passage_width_m,
             },
         )
     ]

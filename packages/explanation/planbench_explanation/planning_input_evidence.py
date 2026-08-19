@@ -67,6 +67,12 @@ class PlanningInputEvidence(BaseModel):
     frozen contract identities and no existing schema. Adding it costs
     the runner a write per planning attempt and buys the only route to
     ``mechanism_verified`` for a replay.
+
+    **The record is an index, not the evidence.** It carries what a
+    replay *compares* — checksums, the query, the fingerprint — and a
+    ``snapshot_ref`` to what a replay *loads*. Keeping the grid out of
+    the record keeps the sidecar readable and one line per attempt;
+    keeping the reference in it is what makes the record worth writing.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -78,6 +84,22 @@ class PlanningInputEvidence(BaseModel):
     simulation_tick: int = Field(ge=0)
     query: PlanningQuery
     costmap_checksum: str = Field(min_length=1)
+    #: Where the grid, the query and the planner's actual configuration
+    #: were written. **A checksum cannot be replayed from.** It verifies
+    #: that a snapshot somebody already has is the right one; it does not
+    #: produce the snapshot, and the first cut of the writer stored only
+    #: the checksum — which meant a replay had nothing to load and the
+    #: whole point of the sidecar was missing while its tests passed,
+    #: because they built the replay's inputs by copying the record.
+    snapshot_ref: str = Field(min_length=1)
+    #: SHA-256 of the **whole** snapshot, canonically serialised.
+    #:
+    #: ``costmap_checksum`` covers the grid, and the first version
+    #: checked only that — so a snapshot whose start pose, goal, planner
+    #: parameters or seed had been swapped loaded cleanly, and a replay
+    #: would have answered a different question with the right grid.
+    #: Every field a replay reads is inside this one.
+    snapshot_checksum: str = Field(pattern=r"^[0-9a-f]{64}$")
     provider_revision_refs: tuple[str, ...] = ()
     planner_fingerprint: str = Field(min_length=1)
     #: ``git:<40 hex>`` or ``sha256:<64 hex>`` of the code that ran.

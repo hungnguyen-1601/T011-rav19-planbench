@@ -27,6 +27,22 @@ exist. They report ``checker_not_implemented``, which is the truth, and
 they will keep reporting it until there is something to replay from
 rather than something to reconstruct.
 
+**The evidence source is bound to the packet before anything runs.**
+A host given an :class:`AnalysisRequest` for one run and an evidence
+source pointed at another would admit every request correctly and then
+answer them from the wrong run's data, stamped ``recorded``. Nothing
+downstream could see it: the result names a tool and a request, not a
+run. So a source declares an :class:`EvidenceIdentity` and the
+constructor refuses a mismatch — before a checker exists to be wrong.
+
+**A result's artifact reference points at a file that exists.** The
+first version composed a path and a checksum and wrote nothing there, so
+every completed result carried a reference an auditor could not resolve
+— a traceability field that traced to nothing, which is worse than an
+absent one because it looks like diligence. Writing goes through an
+:class:`EvidenceSink`, and the reference on the result is the one the
+sink returned after storing the bytes.
+
 **The host signs with its own build, and that is a real limitation.**
 ``implementation_ref`` names the code that produced a result, and here
 it is whatever the caller declares the platform build to be. Within one
@@ -38,10 +54,16 @@ module is where that will need doing.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from types import MappingProxyType
 from typing import Protocol
 
+from pydantic import BaseModel, ConfigDict, Field
+
+from planbench_explanation.case_packet import CasePacket
 from planbench_explanation.checkers import (
     CheckerRefusal,
     CheckOutcome,
@@ -71,6 +93,117 @@ from planbench_explanation.versioning import artifact_checksum
 AWAITING_SIDECAR: frozenset[str] = frozenset({"replay_global_plan", "rrt_convergence"})
 
 
+class EvidenceMismatch(ValueError):
+    """An evidence source that is not about the packet being analysed."""
+
+
+class EvidenceIdentity(BaseModel):
+    """Which run an evidence source speaks for.
+
+    Compared against the packet at construction. Map checksum is
+    deliberately **not** here: the case packet does not carry one, so a
+    host cannot check it, and a field nobody compares is a field that
+    reads as a guarantee without being one. When the packet grows one,
+    this grows one.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    run_id: str = Field(min_length=1)
+    source_manifest_ref: str = Field(min_length=1)
+    source_manifest_checksum: str = Field(min_length=64, max_length=64)
+    task_profile_id: str = Field(min_length=1)
+    candidate_ids: frozenset[str]
+
+
+class StoredEvidence(BaseModel):
+    """Where a sink put an artifact, and the hash of what it wrote."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    artifact_ref: str = Field(min_length=1)
+    checksum: str = Field(min_length=64, max_length=64)
+
+
+class EvidenceSink(Protocol):
+    """Where a checker's artifact is written before its result is returned."""
+
+    def store(
+        self, *, tool_id: str, request_id: str, payload: dict[str, object]
+    ) -> StoredEvidence: ...
+
+
+class InMemoryEvidenceSink:
+    """Keeps artifacts in a dict. For tests and for a dry run.
+
+    Not a null sink: a sink that discards would put the dangling
+    reference back, and the point of the protocol is that the reference
+    resolves to something. What it resolves to here is memory, and
+    :attr:`artifacts` is how a caller reads it.
+
+    **Chosen explicitly, never defaulted to.** It was the host's default
+    sink, which meant a production host wrote every artifact into a dict
+    that dies with the process while its results kept a ``memory://``
+    reference that outlived it — a dangling pointer with a plausible
+    scheme. A host now requires a sink, and picking this one is a
+    statement that the results are not being kept.
+    """
+
+    def __init__(self, prefix: str = "memory://explain") -> None:
+        self.prefix = prefix
+        self.artifacts: dict[str, dict[str, object]] = {}
+
+    def store(self, *, tool_id: str, request_id: str, payload: dict[str, object]) -> StoredEvidence:
+        ref = f"{self.prefix}/{tool_id}/{request_id}.json"
+        self.artifacts[ref] = payload
+        return StoredEvidence(artifact_ref=ref, checksum=artifact_checksum(payload))
+
+
+def _safe_name(value: str) -> str:
+    """A filename derived from an untrusted string.
+
+    ``request_id`` comes from the analyst. The first version pasted it
+    into a path — ``../../outside`` would have written wherever it
+    pointed. The id is hashed rather than sanitised: a filter has to
+    anticipate every spelling of "go up a level", and a digest has
+    nothing to anticipate. The id itself is stored inside the artifact,
+    so a reader loses nothing.
+    """
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:32]
+
+
+class FileEvidenceSink:
+    """Writes artifacts under a root directory, one JSON file each.
+
+    Two independent defences, because the first is a judgement about
+    strings and the second is a fact about paths: the filename comes
+    from a digest, and the resolved path is checked to be under the root
+    before anything is written.
+    """
+
+    def __init__(self, root: Path, *, relative_to: Path | None = None) -> None:
+        self.root = root
+        self.relative_to = relative_to or root
+
+    def store(self, *, tool_id: str, request_id: str, payload: dict[str, object]) -> StoredEvidence:
+        body = {"request_id": request_id, "tool_id": tool_id, **payload}
+        path = self.root / _safe_name(tool_id) / f"{_safe_name(request_id)}.json"
+        root = self.root.resolve()
+        if not path.resolve().is_relative_to(root):
+            raise EvidenceMismatch(
+                f"refusing to write {path.resolve()} outside the artifact root {root}"
+            )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(body, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
+        )
+        try:
+            ref = path.relative_to(self.relative_to).as_posix()
+        except ValueError:
+            ref = path.as_posix()
+        return StoredEvidence(artifact_ref=ref, checksum=artifact_checksum(body))
+
+
 class EvidenceSource(Protocol):
     """Where a host gets what a tool needs.
 
@@ -85,9 +218,23 @@ class EvidenceSource(Protocol):
     evidence being absent.
     """
 
+    @property
+    def identity(self) -> EvidenceIdentity: ...
+
     def gap_evidence(self, *, candidate_id: str, region_id: str) -> GapEvidence | None: ...
 
     def latency_evidence(self, *, candidate_id: str) -> LatencyEvidence | None: ...
+
+
+def identity_of(packet: CasePacket) -> EvidenceIdentity:
+    """The identity a source must match to serve this packet."""
+    return EvidenceIdentity(
+        run_id=packet.run_id,
+        source_manifest_ref=packet.header.source_manifest_ref,
+        source_manifest_checksum=packet.header.source_manifest_checksum,
+        task_profile_id=packet.task.task_profile_id,
+        candidate_ids=frozenset(candidate.candidate_id for candidate in packet.candidates),
+    )
 
 
 class PacketEvidence:
@@ -99,6 +246,13 @@ class PacketEvidence:
     on disk, and honest about what it cannot do.
     """
 
+    def __init__(self, packet: CasePacket) -> None:
+        self._identity = identity_of(packet)
+
+    @property
+    def identity(self) -> EvidenceIdentity:
+        return self._identity
+
     def gap_evidence(self, *, candidate_id: str, region_id: str) -> GapEvidence | None:
         return None
 
@@ -108,6 +262,12 @@ class PacketEvidence:
 
 class ReportEvidence:
     """Evidence read off a scoring report and a measured map.
+
+    Built **from the packet it will serve**, not told what it is about.
+    The report's own identity block and candidate rows are checked
+    against the packet at construction; the robot's radius, inflation
+    margin and required passage width are read off the packet rather
+    than accepted from the caller.
 
     The report is where the columns the latency check needs live, written
     per episode at scoring time: ``peak_search_nodes``,
@@ -138,24 +298,91 @@ class ReportEvidence:
         self,
         report: Mapping[str, object],
         *,
+        packet: CasePacket,
         regions: Mapping[tuple[str, str], RouteFeatures] = MappingProxyType({}),
-        robot_radius_m: float,
-        inflation_radius_m: float,
     ) -> None:
         self.report = report
+        self.packet = packet
+        self._identity = identity_of(packet)
         self.regions = regions
-        self.robot_radius_m = robot_radius_m
-        self.inflation_radius_m = inflation_radius_m
+        self._verify_report_is_about(packet)
+
+    def _verify_report_is_about(self, packet: CasePacket) -> None:
+        """Check the report against the packet, rather than being told.
+
+        The identity used to be a constructor argument beside the
+        report, so a caller could hand over run B's report and run A's
+        identity and pass the host's check — the binding stopped
+        accidental miswiring and was not a trust boundary. What can be
+        compared is compared here, from the report's own fields.
+
+        What **cannot** be compared is named rather than skipped:
+        ``run_uri`` and ``run_checksum`` have no counterpart on the
+        packet, and neither does a map checksum, so those are recorded
+        below and not cross-checked. A reader should know which of these
+        the platform actually verified.
+        """
+        identity = self.report.get("identity")
+        if isinstance(identity, Mapping):
+            profile = identity.get("task_profile_id")
+            if profile is not None and profile != packet.task.task_profile_id:
+                raise EvidenceMismatch(
+                    f"the report is about task profile {profile!r} and the packet "
+                    f"about {packet.task.task_profile_id!r}"
+                )
+        reported = {
+            entry.get("candidate_id")
+            for entry in self.report.get("candidates", [])  # type: ignore[union-attr]
+            if isinstance(entry, Mapping)
+        }
+        if reported:
+            missing = sorted(
+                candidate.candidate_id
+                for candidate in packet.candidates
+                if candidate.candidate_id not in reported
+            )
+            if missing:
+                raise EvidenceMismatch(
+                    f"the report has no rows for {missing}, which the packet compares"
+                )
+
+    #: What the report says about itself that the packet cannot confirm.
+    #: Kept for an auditor and deliberately **not** treated as verified.
+    @property
+    def unverified_report_identity(self) -> dict[str, object]:
+        return {
+            "run_uri": self.report.get("run_uri"),
+            "run_checksum": self.report.get("run_checksum"),
+        }
+
+    @property
+    def identity(self) -> EvidenceIdentity:
+        return self._identity
 
     def gap_evidence(self, *, candidate_id: str, region_id: str) -> GapEvidence | None:
+        """Robot facts come from the **packet**, never from the caller.
+
+        They were constructor arguments, which meant the radius and the
+        margin a check compared against were whatever the caller said —
+        beside a packet that carries its own. Two sources for one fact
+        is one source too many, and the packet is the one the analyst
+        was shown.
+        """
         features = self.regions.get((candidate_id, region_id))
         if features is None:
+            return None
+        robot = self.packet.task.robot
+        if robot.inflation_margin_m is None or robot.required_passage_width_m is None:
+            # The run did not record the inflation. Absent rather than
+            # assumed — a clearance argument on a guessed margin is an
+            # argument about a costmap nobody configured.
             return None
         return GapEvidence(
             region_id=region_id,
             features=features,
-            robot_radius_m=self.robot_radius_m,
-            inflation_radius_m=self.inflation_radius_m,
+            robot_radius_m=robot.radius_m,
+            inflation_margin_m=robot.inflation_margin_m,
+            required_passage_width_m=robot.required_passage_width_m,
         )
 
     def latency_evidence(self, *, candidate_id: str) -> LatencyEvidence | None:
@@ -222,12 +449,28 @@ class ToolHost:
         evidence: EvidenceSource,
         *,
         implementation_ref: str,
+        sink: EvidenceSink,
         input_provenance: InputProvenance = "recorded",
     ) -> None:
+        expected = identity_of(analysis.packet)
+        actual = evidence.identity
+        if actual != expected:
+            differing = sorted(
+                field
+                for field in expected.model_dump()
+                if getattr(actual, field) != getattr(expected, field)
+            )
+            raise EvidenceMismatch(
+                f"the evidence source is about a different run than the packet: "
+                f"{differing} differ. Admission would have passed every request and "
+                "answered it from the wrong run, stamped 'recorded', and nothing "
+                "downstream names a run to notice with."
+            )
         self.session = ToolSession(analysis)
         self.analysis = analysis
         self.evidence = evidence
         self.implementation_ref = implementation_ref
+        self.sink = sink
         self.input_provenance = input_provenance
 
     def call(self, request: ToolRequest) -> ToolResult:
@@ -263,11 +506,11 @@ class ToolHost:
             return self._unavailable(card, request, "region_not_resolved")
         try:
             outcome = check_gap_vs_footprint(evidence)
-        except CheckerRefusal:
-            # The map never bounded the route on both sides, so the only
-            # figure is a lower bound — which cannot show a passage is
-            # too narrow. Reported as ambiguous geometry, not as a width.
-            return self._unavailable(card, request, "ambiguous_passage_geometry")
+        except CheckerRefusal as error:
+            # The checker's own code, forwarded. It used to be inferred
+            # from the message, so improving a sentence relabelled the
+            # failure.
+            return self._unavailable(card, request, error.code)
         return self._completed(
             card,
             request,
@@ -290,12 +533,7 @@ class ToolHost:
         try:
             outcome = check_latency_vs_expanded_nodes(evidence)
         except CheckerRefusal as error:
-            code = (
-                "no_variation_to_rank"
-                if "same expanded-node" in str(error)
-                else "insufficient_episodes"
-            )
-            return self._unavailable(card, request, code)
+            return self._unavailable(card, request, error.code)
         return self._completed(card, request, outcome)
 
     # -- shaping ---------------------------------------------------------
@@ -308,12 +546,21 @@ class ToolHost:
         *,
         references: tuple[EvidenceReference, ...] = (),
     ) -> ToolResult:
-        artifact = {
-            "tool": card.key,
-            "request": request.request_id,
-            "measurements": outcome.measurements,
-            "note": outcome.note,
-        }
+        stored = self.sink.store(
+            tool_id=card.tool_id,
+            request_id=request.request_id,
+            payload={
+                "tool": list(card.key),
+                "request": request.request_id,
+                "run_id": self.analysis.packet.run_id,
+                "arguments": dict(request.arguments),
+                "proposition_type": outcome.proposition_type,
+                "verdict": outcome.verdict,
+                "measurements": outcome.measurements,
+                "references": [reference.model_dump() for reference in references],
+                "note": outcome.note,
+            },
+        )
         return stamped_result(
             card,
             request,
@@ -329,8 +576,8 @@ class ToolHost:
             ),
             measurements=outcome.measurements,
             references=references,
-            evidence_artifact_ref=(f"artifacts/explain/{card.tool_id}/{request.request_id}.json"),
-            evidence_checksum=artifact_checksum(artifact),
+            evidence_artifact_ref=stored.artifact_ref,
+            evidence_checksum=stored.checksum,
             implementation_ref=self.implementation_ref,
         )
 

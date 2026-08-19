@@ -98,7 +98,17 @@ def _points_at(kind: str, description: str, *, required: bool = True) -> Referen
 #: Bump MINOR when a card is added, MAJOR when an existing card's typed
 #: policy changes. The version appears in every request and every
 #: artifact header, so a change here is visible in the audit trail.
-TOOL_CATALOG_VERSION = "1.0.0"
+#:
+#: **2.0.0** — E6a changed ``latency_vs_expanded_nodes`` from a
+#: per-replan measurement to a per-episode one: different arguments,
+#: different required evidence, different measurement names, a different
+#: proposition. Leaving the version at 1.0.0 would have let a bundle
+#: frozen against the old wire contract, and a gate decision recorded
+#: for it, keep looking valid — which is precisely what the immutable
+#: bundle exists to prevent. A contract is not edited in place.
+#: ``gap_vs_footprint`` also moved to 2.0.0: it now compares a width
+#: against a width, which changes the measurement names it returns.
+TOOL_CATALOG_VERSION = "2.0.0"
 
 _RECORDED = EvidencePolicy(allowed_input_provenance=("recorded",))
 _RECORDED_OR_VERIFIED = EvidencePolicy(
@@ -524,7 +534,7 @@ EVENT_NEIGHBORHOOD = ToolCard(
 
 GAP_VS_FOOTPRINT = ToolCard(
     tool_id="gap_vs_footprint",
-    tool_version="1.0.0",
+    tool_version="2.0.0",
     title="Check geometric passage feasibility against the inflated footprint",
     tool_class="mechanism_check",
     purpose=ToolPurpose(
@@ -564,18 +574,22 @@ GAP_VS_FOOTPRINT = ToolCard(
     io=ToolIO(
         arguments=(_CANDIDATE, _REGION),
         measurements=(
-            _measure("passage_width_m", "m", "Measured width of the passage."),
+            _measure("passage_width_m", "m", "Measured cross-section of the passage."),
             _measure(
-                "required_clearance_m",
+                "required_passage_width_m",
                 "m",
-                "Footprint radius plus the configured inflation margin.",
+                "Corridor this configuration needs: 2 * (radius + inflation margin). "
+                "A width, compared against a width — the first card compared it "
+                "against a radius.",
             ),
             _measure(
                 "margin_m",
                 "m",
-                "Width minus required clearance; negative is the infeasible case.",
+                "Passage width minus required width; negative is the infeasible case.",
             ),
-            _measure("inflation_radius_m", "m", "The inflation radius that was configured."),
+            _measure(
+                "inflation_margin_m", "m", "The inflation margin per side that was configured."
+            ),
         ),
         references=(_points_at("map_region", "The passage the check measured."),),
     ),
@@ -664,7 +678,7 @@ REPLAY_GLOBAL_PLAN = ToolCard(
 
 LATENCY_VS_EXPANDED_NODES = ToolCard(
     tool_id="latency_vs_expanded_nodes",
-    tool_version="1.0.0",
+    tool_version="2.0.0",
     title="Relate search expansions to control-tick latency",
     tool_class="mechanism_check",
     purpose=ToolPurpose(

@@ -51,10 +51,21 @@ from planbench_explanation.propositions import PropositionType
 from planbench_explanation.protocol import AnalysisResponse
 from planbench_explanation.subjects import Subject
 
-#: Whether the planning-input sidecar (E4.5) exists. A platform
-#: constant, in this module, for the same reason ``H4_ACCOUNTING_COMPLETE``
-#: is one: it decides what the platform may certify, and the party being
-#: certified must not be able to pass it as an argument.
+#: Whether planted runs **recorded with** the planning-input sidecar
+#: exist. A platform constant, in this module, for the same reason
+#: ``H4_ACCOUNTING_COMPLETE`` is one: it decides what the platform may
+#: certify, and the party being certified must not be able to pass it as
+#: an argument.
+#:
+#: The writer itself landed in E4.5 and is no longer what this waits on.
+#: What remains is a run: the planted episodes of the six families have
+#: to be executed with a
+#: :class:`~planbench_explanation.sidecar_writer.PlanningInputRecorder`
+#: attached, because a packet fixture built from a run that predates the
+#: writer carries reconstructed planning inputs — and a threshold agreed
+#: against those bakes the reconstruction's errors into the bar.
+#: Flipping this is a code change with a diff, made after those runs
+#: exist and their sidecars validate.
 OFFICIAL_GOLDEN_READY = False
 
 #: The six mechanism families the suite covers (design section 6).

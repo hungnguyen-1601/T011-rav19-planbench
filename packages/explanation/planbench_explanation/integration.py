@@ -309,6 +309,21 @@ class MockToolHost:
         return None
 
 
+def _card_named(catalog, tool_id: str):  # type: ignore[no-untyped-def]
+    """The card for a tool, whatever version the catalog serves.
+
+    The version was written down here as "1.0.0" until E6a moved two
+    cards to 2.0.0, at which point this stub silently stopped proposing
+    anything for two detection types — the lookup failed and the loop
+    skipped on. A caller that pins a version it does not own is a caller
+    that goes quiet when the owner changes it.
+    """
+    for card in catalog.cards:
+        if card.tool_id == tool_id:
+            return card
+    return None
+
+
 def _observations_by_type(observations: Iterable[Observation]) -> dict[str, Observation]:
     """First observation of each type, in the packet's order.
 
@@ -345,9 +360,8 @@ def reference_analyst(analysis: AnalysisRequest) -> AnalysisResponse:
             # The packet says this cannot be claimed here. Proposing it
             # anyway is the blocked-claim leak the suite counts.
             continue
-        try:
-            card = analysis.catalog.card(tool_id, "1.0.0")
-        except Exception:  # pragma: no cover - catalog is fixed in practice
+        card = _card_named(analysis.catalog, tool_id)
+        if card is None:  # pragma: no cover - catalog is fixed in practice
             continue
         arguments = _arguments_for(card, observation)
         gaps = sorted(set(card.required_evidence) - analysis.available_evidence)

@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -60,8 +61,29 @@ MINIMUM_EPISODES_FOR_ASSOCIATION = 8
 ASSOCIATION_RHO = 0.4
 
 
+#: Why a checker declined. A closed vocabulary because the host turns
+#: these into a result's ``failure_code``, and it used to do that by
+#: matching substrings of the message — so rewording an explanation
+#: silently relabelled the failure.
+RefusalCode = Literal[
+    "ambiguous_passage_geometry",
+    "insufficient_episodes",
+    "no_variation_to_rank",
+    "episode_counted_twice",
+]
+
+
 class CheckerRefusal(ValueError):
-    """A check that cannot be run on the evidence it was given."""
+    """A check that cannot be run on the evidence it was given.
+
+    Carries a typed :attr:`code`. The host forwards it; it does not read
+    the prose, because prose is written for people and changes when
+    somebody improves a sentence.
+    """
+
+    def __init__(self, code: RefusalCode, detail: str) -> None:
+        self.code: RefusalCode = code
+        super().__init__(f"{code}: {detail}")
 
 
 class CheckOutcome(BaseModel):
@@ -86,7 +108,16 @@ class CheckOutcome(BaseModel):
 
 
 class GapEvidence(BaseModel):
-    """Everything ``gap_vs_footprint`` needs, and nothing else."""
+    """Everything ``gap_vs_footprint`` needs, and nothing else.
+
+    **Widths are compared with widths.** ``required_passage_width_m`` is
+    the platform's own figure, and the parts it was derived from travel
+    beside it so the derivation can be checked here rather than trusted.
+    The first version compared a cross-section against
+    ``radius + inflation`` — a radius — and passed its tests only
+    because the fixture happened to pick numbers summing to the right
+    answer.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
@@ -95,11 +126,28 @@ class GapEvidence(BaseModel):
     #: around a point — see :mod:`planbench_explanation.map_features`.
     features: RouteFeatures
     robot_radius_m: float = Field(gt=0)
-    #: The configured inflation margin. Kept apart from the radius
-    #: because the mechanism under test is the *configuration*, not the
-    #: robot: a passage the footprint clears and the inflation does not
-    #: is exactly the finding.
-    inflation_radius_m: float = Field(ge=0)
+    #: The configured inflation margin **per side**, beyond the radius.
+    #: Kept apart from the radius because the mechanism under test is
+    #: the *configuration*, not the robot: a passage the footprint
+    #: clears and the inflation does not is exactly the finding.
+    inflation_margin_m: float = Field(ge=0)
+    #: The corridor width this configuration needs. Supplied rather than
+    #: computed so there is one definition in the platform and this is
+    #: it; the validator below checks it against the parts.
+    required_passage_width_m: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def _check(self) -> GapEvidence:
+        expected = 2.0 * (self.robot_radius_m + self.inflation_margin_m)
+        if abs(self.required_passage_width_m - expected) > 1e-9:
+            raise CheckerRefusal(
+                "ambiguous_passage_geometry",
+                f"required_passage_width_m={self.required_passage_width_m} does not "
+                f"follow from 2 * ({self.robot_radius_m} + {self.inflation_margin_m}) "
+                f"= {expected}. Both sides of a corridor have to clear, and a figure "
+                "that does not follow from the parts is a second definition.",
+            )
+        return self
 
 
 def check_gap_vs_footprint(evidence: GapEvidence) -> CheckOutcome:
@@ -118,18 +166,19 @@ def check_gap_vs_footprint(evidence: GapEvidence) -> CheckOutcome:
     width = evidence.features.narrowest_passage_m
     if width is None:
         raise CheckerRefusal(
+            "ambiguous_passage_geometry",
             f"region {evidence.region_id!r} was never measured between two mapped "
             "obstacles, so the only figure available is a lower bound — and a lower "
-            "bound cannot show a passage is too narrow"
+            "bound cannot show a passage is too narrow",
         )
 
-    required = evidence.robot_radius_m + evidence.inflation_radius_m
+    required = evidence.required_passage_width_m
     margin = width - required
     measurements = {
         "passage_width_m": width,
-        "required_clearance_m": required,
+        "required_passage_width_m": required,
         "margin_m": margin,
-        "inflation_radius_m": evidence.inflation_radius_m,
+        "inflation_margin_m": evidence.inflation_margin_m,
     }
     if margin < 0.0:
         return CheckOutcome(
@@ -138,7 +187,7 @@ def check_gap_vs_footprint(evidence: GapEvidence) -> CheckOutcome:
             measurements=measurements,
             note=(
                 f"the narrowest cross-section of {evidence.region_id} is {width:.3f} m "
-                f"and the configured inflation requires {required:.3f} m, leaving "
+                f"and this configuration needs a corridor of {required:.3f} m, leaving "
                 f"{margin:.3f} m"
             ),
         )
@@ -178,8 +227,9 @@ class LatencyEvidence(BaseModel):
         duplicates = sorted({item for item in ids if ids.count(item) > 1})
         if duplicates:
             raise CheckerRefusal(
+                "episode_counted_twice",
                 f"episode(s) {duplicates} appear twice; one episode counted twice "
-                "moves a correlation without adding a measurement"
+                "moves a correlation without adding a measurement",
             )
         return self
 
@@ -199,9 +249,10 @@ def check_latency_vs_expanded_nodes(evidence: LatencyEvidence) -> CheckOutcome:
     episodes = evidence.episodes
     if len(episodes) < MINIMUM_EPISODES_FOR_ASSOCIATION:
         raise CheckerRefusal(
+            "insufficient_episodes",
             f"{len(episodes)} episode(s) for {evidence.candidate_id}; an association "
             f"needs at least {MINIMUM_EPISODES_FOR_ASSOCIATION} points to be anything "
-            "other than the shape a handful of episodes happens to make"
+            "other than the shape a handful of episodes happens to make",
         )
 
     expansions = [float(episode.expanded_nodes) for episode in episodes]
@@ -209,9 +260,10 @@ def check_latency_vs_expanded_nodes(evidence: LatencyEvidence) -> CheckOutcome:
     rho = _spearman(expansions, latencies)
     if rho is None:
         raise CheckerRefusal(
+            "no_variation_to_rank",
             f"{evidence.candidate_id}: every episode reports the same expanded-node "
             "count or the same latency, so the two cannot be ranked against each "
-            "other. A constant column is not a weak association, it is no measurement"
+            "other. A constant column is not a weak association, it is no measurement",
         )
 
     measurements = {

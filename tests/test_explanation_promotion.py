@@ -123,7 +123,7 @@ def gap_result(
                 result=verdict,  # type: ignore[arg-type]
             ),
         ),
-        measurements={"passage_width_m": 0.68, "required_clearance_m": 0.74},
+        measurements={"passage_width_m": 0.68, "required_passage_width_m": 0.74},
         evidence_artifact_ref="artifacts/explain/gap_check.json",
         evidence_checksum="e" * 64,
         implementation_ref="git:7a7c195aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
