@@ -1425,5 +1425,19 @@
   "trace.exemplar.why.typical": "ΔU gần median nhất — lấy đây làm mốc để đọc các episode khác.",
   "trace.exemplar.why.strongest_for_winner": "Chỗ candidate A thắng đậm nhất. Luôn hiện cùng cực của B, không bao giờ đứng một mình.",
   "trace.exemplar.why.strongest_for_runnerup": "Chỗ candidate B thắng đậm nhất.",
-  "trace.exemplar.why.safety_critical": "Kết cục an toàn tệ nhất trên cả hai candidate, bất kể utility nói gì."
+  "trace.exemplar.why.safety_critical": "Kết cục an toàn tệ nhất trên cả hai candidate, bất kể utility nói gì.",
+  "explain.title": "Vì sao có kết quả này",
+  "explain.headline.clear": "Vì sao ứng viên được khuyến nghị thắng.",
+  "explain.headline.nearEquivalent": "Hai bên gần tương đương; đây là chỗ khác nhau.",
+  "explain.headline.noSurvivors": "Không có khuyến nghị: chưa tới hai candidate qua đủ cổng.",
+  "explain.headline.gateOnly": "Không có khuyến nghị: deployment này không xếp hạng được ai.",
+  "explain.headline.interrupted": "Lượt chạy bị ngắt — phần đã đo được.",
+  "explain.headline.interruptedBeforeRanking": "Bị ngắt trước khi có phép so ghép cặp nào.",
+  "explain.caveat.scope": "Chỉ đúng dưới phân phối kịch bản mô phỏng mà deployment này khai.",
+  "explain.caveat.insideTheNoise": "Khoảng tin cậy của ΔU vắt qua 0: xếp hạng không quyết định việc này.",
+  "explain.caveat.tieBreak": "Thang tie-break đã khai là thứ chọn ra khuyến nghị.",
+  "explain.caveat.fewerEpisodes": "Ít episode hơn số đã yêu cầu; mọi con số ở đây dựa trên mẫu nhỏ hơn đó.",
+  "explain.caveat.noComparisonYet": "Lượt chạy dừng trước khi có phép so ghép cặp, nên không có ΔU để giải thích.",
+  "explain.caveat.registerABetterCandidate": "Cách sửa là một candidate tốt hơn — không bao giờ là một deployment dễ hơn.",
+  "explain.caveat.deploymentCannotRank": "Dùng deployment có ngưỡng chừa chỗ phía trên; không candidate nào đổi được điều này."
 }

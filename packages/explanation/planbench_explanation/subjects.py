@@ -51,6 +51,18 @@ KNOWN_SUBJECTS: tuple[Subject, ...] = (
 #: Subjects whose attribution H4's accounting does not yet support.
 PRE_H4_CAPPED_SUBJECTS: tuple[Subject, ...] = ("perception_provider", "runtime_transport")
 
+#: Whether the platform can attribute latency and perception compute
+#: between candidate, deployment and transport yet.
+#:
+#: **A constant, not a parameter.** It was briefly a keyword argument on
+#: the ledger builder, which put the answer in the hands of whoever
+#: called it — including the party whose candidate is being judged.
+#: Whether the accounting exists is a fact about this repository, and
+#: flipping it changes which claims the matrix will promote, so it is a
+#: promotion-matrix version bump and a code change, made by the platform
+#: and visible in a diff.
+H4_ACCOUNTING_COMPLETE = False
+
 
 class UnknownSubjectError(ValueError):
     """A subject outside :data:`KNOWN_SUBJECTS`."""

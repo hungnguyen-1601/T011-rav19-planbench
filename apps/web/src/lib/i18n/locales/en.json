@@ -1425,5 +1425,19 @@
   "trace.exemplar.why.typical": "ΔU closest to the median — calibrate on this one.",
   "trace.exemplar.why.strongest_for_winner": "Where candidate A won hardest. Shown together with B's best, never alone.",
   "trace.exemplar.why.strongest_for_runnerup": "Where candidate B won hardest.",
-  "trace.exemplar.why.safety_critical": "Worst safety outcome across both candidates, whatever the utility says."
+  "trace.exemplar.why.safety_critical": "Worst safety outcome across both candidates, whatever the utility says.",
+  "explain.title": "Why this result",
+  "explain.headline.clear": "Why the recommendation won.",
+  "explain.headline.nearEquivalent": "The two are near-equivalent; here is what separates them.",
+  "explain.headline.noSurvivors": "No recommendation: fewer than two candidates cleared the gates.",
+  "explain.headline.gateOnly": "No recommendation: this deployment cannot rank anybody.",
+  "explain.headline.interrupted": "Interrupted run — what it did measure.",
+  "explain.headline.interruptedBeforeRanking": "Interrupted before any comparison was made.",
+  "explain.caveat.scope": "Holds under the simulated scenario distribution declared for this deployment.",
+  "explain.caveat.insideTheNoise": "The interval of ΔU covers zero: the ranking did not decide this.",
+  "explain.caveat.tieBreak": "The declared tie-break ladder chose the recommendation.",
+  "explain.caveat.fewerEpisodes": "Fewer episodes than requested; every number here rests on that smaller sample.",
+  "explain.caveat.noComparisonYet": "This run stopped before a paired comparison existed, so there is no ΔU to explain.",
+  "explain.caveat.registerABetterCandidate": "The fix is a better candidate — never a softer deployment.",
+  "explain.caveat.deploymentCannotRank": "Use a deployment whose threshold leaves room above it; no candidate changes this."
 }

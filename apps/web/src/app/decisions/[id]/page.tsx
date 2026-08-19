@@ -19,6 +19,7 @@ import Link from "next/link";
 import { TraceViewer } from "@/components/TraceViewer";
 import { ProgressSync, type SyncSlot } from "@/components/ProgressSync";
 import { commonProgress, panelCandidates, sideTime } from "@/lib/replaySync";
+import { panelPlan } from "@/lib/explainPanel";
 import { Icon } from "@/components/Icon";
 import { useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
@@ -95,6 +96,7 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
       <SampleBanner run={run} />
       <GateTable run={run} />
       <CandidateComparison run={run} />
+      <ExplanationHeader run={run} />
       <TracePanel run={run} />
       <Outcome run={run} />
       <HumanActs run={run} onDone={refresh} />
@@ -167,6 +169,35 @@ function CandidateComparisonColumn({ candidate, side, recommended }: { candidate
  * all to show one would be paying for a hundred pictures nobody asked to
  * see.
  */
+/** What this run may be explained with, and the caveats that travel.
+ *
+ * The panel plan is read rather than decided here: three of the five
+ * run outcomes have no paired comparison, and a page that worked that
+ * out for itself would work it out differently from the platform.
+ *
+ * The caveats are rendered *above* the evidence, not under it. A
+ * qualifier below the fold qualifies nothing.
+ */
+function ExplanationHeader({ run }: { run: DecisionRun }) {
+  const { t } = useTranslation();
+  const plan = panelPlan(run);
+  return (
+    <div className="panel explanation-header">
+      <div className="panel-head">
+        <h3>{t("explain.title")}</h3>
+      </div>
+      <p>{t(plan.headlineKey)}</p>
+      {plan.caveatKeys.length > 0 ? (
+        <ul className="explanation-caveats">
+          {plan.caveatKeys.map((key) => (
+            <li key={key}>{t(key)}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 function TracePanel({ run }: { run: DecisionRun }) {
   const { t } = useTranslation();
   // Winner first, and the *same* two the exemplar recipe runs on — both
@@ -289,7 +320,13 @@ function TracePanel({ run }: { run: DecisionRun }) {
     return () => window.clearInterval(timer);
   }, [scan.playing, span]);
 
+  const plan = panelPlan(run);
   if (candidates.length === 0 || episodes.length === 0) return null;
+  // The viewer stays for every outcome — a candidate that failed a gate
+  // has traces, and hiding them would hide the only evidence those runs
+  // have. What a run without a comparison does not get is the four
+  // preregistered episodes, below.
+  if (!plan.showTraceEvidence) return null;
 
   const chooseEpisode = (episode: string, scroll = false) => {
     setEpisodeId(episode);
@@ -326,7 +363,7 @@ function TracePanel({ run }: { run: DecisionRun }) {
         <div className="episode-view-toggle" role="group" aria-label={t("trace.viewMode")}>
           {(["flat", "raised"] as const).map((option) => <button key={option} type="button" className={mode === option ? "primary" : ""} aria-pressed={mode === option} onClick={() => setMode(option)}>{t(`mapView.${option}`)}</button>)}
         </div>
-        {exemplars.length > 0 ? (
+        {plan.showExemplars && exemplars.length > 0 ? (
           <div className="episode-exemplars" aria-label={t("trace.exemplar.title")}>
             <span className="muted">{t("trace.exemplar.title")}:</span>
             {exemplars.map((item) => (

@@ -555,6 +555,7 @@ def test_an_estimated_profile_weighted_impact_qualifies_the_claim() -> None:
         assumptions=("the excised segment is otherwise nominal",),
         uncertainty="paired bootstrap CI",
         profile_weighted=True,
+        profile_ref="kho_ban_dem",
     )
     outcome = run(record=record(impact_ref=impact))
     assert outcome.claim is not None

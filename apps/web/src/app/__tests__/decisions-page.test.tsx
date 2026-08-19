@@ -695,6 +695,19 @@ describe("which episodes failed, and how", () => {
     expect(DETAIL).toContain('t("trace.sync.mode")');
   });
 
+  it("says what this run may be explained with before showing any of it", () => {
+    // The caveats render above the evidence: a qualifier below the fold
+    // qualifies nothing. And three of the five outcomes have no paired
+    // comparison, so the page reads the plan rather than deciding.
+    expect(DETAIL).toContain("<ExplanationHeader");
+    expect(DETAIL).toContain('panelPlan(run)');
+    expect(DETAIL).toContain("plan.caveatKeys.map");
+    expect(DETAIL).toContain("if (!plan.showTraceEvidence) return null;");
+    // Exemplars are gated separately: a run with no ranked pair still
+    // has traces worth opening.
+    expect(DETAIL).toContain("plan.showExemplars && exemplars.length > 0");
+  });
+
   it("hands the panel work to a component a test can render", () => {
     // These used to be four source-string assertions on this file. They
     // moved with the code they describe: the caveat, the ruler and the

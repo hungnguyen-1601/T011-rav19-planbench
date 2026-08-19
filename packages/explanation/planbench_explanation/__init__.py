@@ -13,6 +13,15 @@ proposal may contain, what a signed checker result looks like, and what
 evidence is required before a sentence reaches a screen.
 """
 
+from planbench_explanation.case_packet import (
+    STANDING_UNKNOWNS,
+    CasePacket,
+    CasePacketRefusal,
+    DecisionFacts,
+    RobotFacts,
+    TaskFacts,
+    build_case_packet,
+)
 from planbench_explanation.contrast import (
     CandidateComponents,
     ContrastFinding,
@@ -73,6 +82,14 @@ from planbench_explanation.ledger import (
     RecordStatus,
     RequestedCheck,
 )
+from planbench_explanation.ledger_store import (
+    ClaimLedger,
+    LedgerEntry,
+    LedgerRefusal,
+    LedgerVerificationFailure,
+    build_ledger,
+    verify_ledger,
+)
 from planbench_explanation.levels import (
     CLAIM_LEVEL_ORDER,
     ENGLISH_PHRASES,
@@ -89,6 +106,15 @@ from planbench_explanation.map_features import (
     MapFeatureRefusal,
     RouteFeatures,
     measure_route,
+)
+from planbench_explanation.panel import (
+    PANEL_PLANS,
+    RUN_OUTCOMES,
+    PanelPlan,
+    PanelRefusal,
+    RunOutcome,
+    outcome_of,
+    plan_for,
 )
 from planbench_explanation.planning_input_evidence import (
     REPLAY_CEILING,
@@ -122,6 +148,14 @@ from planbench_explanation.provenance import (
     MissingInputEvidence,
     PropositionVerdict,
     provenance_ceiling,
+)
+from planbench_explanation.render import (
+    IMPACT_TEMPLATES,
+    LEVEL_TEMPLATES,
+    NO_CLAIM_SENTENCE,
+    RenderRefusal,
+    render_claim,
+    render_no_claim,
 )
 from planbench_explanation.replay_sync import (
     ANCHOR_EVENTS,
@@ -189,6 +223,12 @@ __all__ = [
     "KNOWLEDGE_BASE",
     "KNOWLEDGE_BASE_ID",
     "KNOWLEDGE_BASE_VERSION",
+    "IMPACT_TEMPLATES",
+    "LEVEL_TEMPLATES",
+    "NO_CLAIM_SENTENCE",
+    "PANEL_PLANS",
+    "RUN_OUTCOMES",
+    "STANDING_UNKNOWNS",
     "ARTIFACT_CHECKSUM_VERSION",
     "ASSERTABLE_PROPOSITIONS",
     "CLAIM_LEVEL_ORDER",
@@ -239,6 +279,19 @@ __all__ = [
     "RouteFeatures",
     "SourceStrength",
     "TraceView",
+    "CasePacket",
+    "CasePacketRefusal",
+    "ClaimLedger",
+    "DecisionFacts",
+    "LedgerEntry",
+    "LedgerRefusal",
+    "LedgerVerificationFailure",
+    "PanelPlan",
+    "PanelRefusal",
+    "RenderRefusal",
+    "RobotFacts",
+    "RunOutcome",
+    "TaskFacts",
     "CheckerResult",
     "Claim",
     "ClaimLevel",
@@ -306,6 +359,13 @@ __all__ = [
     "read_trace",
     "resolve",
     "summarise",
+    "build_case_packet",
+    "build_ledger",
+    "verify_ledger",
+    "outcome_of",
+    "plan_for",
+    "render_claim",
+    "render_no_claim",
     "artifact_checksum",
     "build_waterfall",
     "canonical_propositions",

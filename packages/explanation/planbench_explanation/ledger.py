@@ -311,12 +311,28 @@ class ImpactRef(BaseModel):
     method: str = Field(min_length=1)
     assumptions: tuple[str, ...] = ()
     uncertainty: str | None = None
-    #: True when the decomposition depends on the preference profile, in
-    #: which case the profile must be named wherever this is rendered.
+    #: True when the decomposition depends on the preference profile.
     profile_weighted: bool = False
+    #: *Which* profile. Required whenever ``profile_weighted`` is set,
+    #: because the boolean alone lets two runs under different
+    #: preferences render identically — and the whole point of saying a
+    #: number is profile-weighted is that a reader can ask "weighted by
+    #: whose priorities?" and get an answer.
+    profile_ref: str | None = None
 
     @model_validator(mode="after")
     def _check(self) -> ImpactRef:
+        if self.profile_weighted and not self.profile_ref:
+            raise ValueError(
+                "a profile-weighted impact must name the profile; 'weighted by the "
+                "deployment's preference profile' with no profile named is a caveat "
+                "that cannot be checked and two different profiles that read alike"
+            )
+        if self.profile_ref and not self.profile_weighted:
+            raise ValueError(
+                f"impact names profile {self.profile_ref!r} but is not marked "
+                "profile-weighted; one of the two is wrong"
+            )
         if self.impact_kind == "attributable_effect_estimate":
             if not self.assumptions:
                 raise ValueError(
