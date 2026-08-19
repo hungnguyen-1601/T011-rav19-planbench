@@ -212,7 +212,8 @@ nhóm AI; nguồn chân lý là canonical KB.
 | **E0** | Explanation contracts: ledger schemas (Proposal/Record/Claim/EvidenceRef/CheckerResult), promotion matrix (claim type × tool × verdict × provenance, đọc từ ToolCard), `PlanningInputEvidence` spec + validator, `impact_ref` hai loại, artifact versioning | 1–2 ngày |
 | **E1** | Waterfall paired ΔU + CI marginal (copy khóa test) + drill-down hai mức utility | 1–2 ngày |
 | **E2** | Audit/merge branch replay + progress-sync (`projection_quality` + fallback) + exemplar preregistered + regression | 2–4 ngày sau audit |
-| **E3** | Detectors → Observation · map features · contrast graph 4 đầu ra · **KB v1 + matcher deterministic** (`source_strength`/`review_status`, không tham gia promotion) | 4–5 ngày |
+| **E3** | Detectors → Observation · map features (khe hẹp nhất + mật độ vật cản; **topology và số ngã rẽ hoãn sang E3.5**) · contrast graph 4 đầu ra · **KB v1 + matcher deterministic** (`source_strength`/`review_status`, không tham gia promotion) | 4–5 ngày |
+| **E3.5** | Map topology + số ngã rẽ (Voronoi/skeleton). Tách ra vì cần một phép phân tích hình học riêng, và một nhãn topology đoán ra đặt cạnh số đo thật là điều tệ hơn không có nhãn. Cũng là thứ detector "chọn nhánh khác tại ngã rẽ" (§4.2 note) đang chờ. | 1–2 ngày, sau E4 |
 | **E4** | CasePacket builder + claim ledger nối liền + render template (khóa cách nói theo mức và impact_kind) + ma trận UI 5 kết cục run | 2–3 ngày |
 | **E4.5** | Minimal sidecar writer `PlanningInputEvidence` — mọi attempt kể cả `no_path`; neo `AlgorithmHost`; seam chưa ổn ⇒ hoãn sau H4/H6 + luật "không golden chính thức trước khi writer sẵn sàng" | 1–2 ngày |
 | **E5** | **AI enablement**: AnalysisRequest interface · ToolCard đầy đủ cho mọi tool 4 lớp (§3.3) · ToolRequest/ToolResult schema + validation · **AnalystBundle schema** (§6) · Knowledge contract §3.4 · research specification schema · golden fixture format + visible/calibration fixtures + đáp án preregistered · integration mock/stub cho nhóm AI · schema rejection tests · feature flag (analyst chưa qua gate ⇒ không xuất hiện trên card) | 3–5 ngày |
@@ -294,7 +295,13 @@ calibration target, platform preregister · LLM offline/async, nút "Phân tích
 nhân", interface trung lập, version mới không ghi đè · golden 6 họ × 12–20 ·
 checker + tool host = platform (E6) · hidden gate platform chạy · KB matcher giữ E3.
 
-**Còn treo:** tên branch replay (An đưa lúc thi hành) · thứ tự E1–E3 (một người ⇒
+**Đã chốt thêm (19-08):** khoản treo "tên branch replay" đóng — đối tượng audit là
+UI hai canvas merge ở `d3ba3b6`, xem `notes/2026-08-19/tongduyan_audit-ui-hai-canvas-cho-e2.md`
+· progress-sync đi đường fallback trước, API sau · ΔU theo episode ghi vào report
+lúc chấm (`episode_decision_utility`) · **topology + số ngã rẽ tách thành E3.5**,
+không nằm trong định nghĩa "E3 xong".
+
+**Còn treo:** thứ tự E1–E3 (một người ⇒
 đề xuất E1 → E3 → E2) · lịch E6 khớp H4/H6.
 
 ## 10. Rủi ro chính

@@ -110,3 +110,30 @@ def test_the_recipe_runs_on_the_real_report_end_to_end(
     episodes = {item.episode_context_id for item in chosen.exemplars}
     known = {row["episode_context_id"] for row in report["candidates"][0]["episodes"]}  # type: ignore[index]
     assert episodes <= known
+
+
+def test_the_report_names_each_candidates_layers_as_fields(
+    report: dict[str, object],
+) -> None:
+    """The lattice reading needs components, not a label to split.
+
+    ``stack_label`` says ``"astar+dwa"``, and parsing that works right
+    up until a stack name contains a plus sign — at which point the
+    contrast graph compares the wrong things and says so confidently.
+    """
+    from planbench_explanation.contrast import components_from_report
+
+    candidates = report["candidates"]
+    assert isinstance(candidates, list)
+    for entry in candidates:
+        block = entry["components"]
+        assert block is not None, entry["candidate_id"]
+        assert block["global_planner"]
+        assert block["local_controller"]
+        assert block["local_controller_config"]
+
+    lattice = components_from_report(report)
+    assert len(lattice) == len(candidates)
+    # This run is a global-planner selection: the two differ in exactly
+    # that one component, which is what makes a swap readable at all.
+    assert lattice[0].differs_in(lattice[1]) == ("global_planner",)

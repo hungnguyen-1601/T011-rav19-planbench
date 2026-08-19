@@ -684,6 +684,15 @@ def run_comparison(
                 "candidate_id": candidate.candidate_id,
                 "stack_label": candidate.stack_label,
                 "local_controller_config": local,
+                # **The stack, as fields rather than as a label.** The
+                # lattice reading of E3 asks which pairs differ in
+                # exactly one component, and ``stack_label`` answers
+                # that only by being split on a plus sign — which works
+                # until a stack name contains one, at which point the
+                # comparison quietly changes meaning. Typed here, where
+                # the candidate object is in scope and nothing has to
+                # be inferred.
+                "components": _components(candidate, local),
                 # What this candidate was allowed to see. Recorded per
                 # candidate because a comparison between stacks shown
                 # different things is not a comparison between the
@@ -994,6 +1003,24 @@ def run_dir_name(
     # stay where they are.
     suffix = "" if evidence_class == "production" else f"_{evidence_class}"
     return f"{profile_id}_{scope}_{fingerprint}{suffix}"
+
+
+def _components(candidate: Candidate, local_config: str) -> dict[str, str] | None:
+    """A modular candidate's layers, named one field each.
+
+    ``None`` for a monolithic policy, which has no layers to swap: the
+    lattice reading compares candidates that differ in exactly one
+    component, and a policy is not one component of anything. Saying so
+    keeps it out of those comparisons instead of giving it placeholder
+    names that look swappable.
+    """
+    if candidate.global_planner is None or candidate.local_controller is None:
+        return None
+    return {
+        "global_planner": candidate.global_planner.name,
+        "local_controller": candidate.local_controller.name,
+        "local_controller_config": local_config,
+    }
 
 
 def _observation_classes(stack_id: str) -> tuple[str | None, str | None]:

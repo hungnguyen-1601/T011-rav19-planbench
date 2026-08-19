@@ -13,6 +13,26 @@ proposal may contain, what a signed checker result looks like, and what
 evidence is required before a sentence reaches a screen.
 """
 
+from planbench_explanation.contrast import (
+    CandidateComponents,
+    ContrastFinding,
+    ContrastRefusal,
+    ContrastVerdict,
+    components_from_report,
+    read_lattice,
+)
+from planbench_explanation.detectors import (
+    ArcWindow,
+    Detection,
+    DetectionType,
+    DetectorRefusal,
+    DetectorSettings,
+    Observation,
+    TraceView,
+    detect_all,
+    read_trace,
+    summarise,
+)
 from planbench_explanation.exemplars import (
     EXEMPLAR_ROLES,
     Exemplar,
@@ -23,6 +43,19 @@ from planbench_explanation.exemplars import (
     compared_pair,
     index_metrics,
     select_exemplars,
+)
+from planbench_explanation.knowledge import (
+    KNOWLEDGE_BASE,
+    KNOWLEDGE_BASE_ID,
+    KNOWLEDGE_BASE_VERSION,
+    ActivationConditions,
+    KnowledgeEntry,
+    KnowledgeMatch,
+    KnowledgeRefusal,
+    ReviewStatus,
+    SourceStrength,
+    match,
+    resolve,
 )
 from planbench_explanation.ledger import (
     CheckerResult,
@@ -51,6 +84,11 @@ from planbench_explanation.levels import (
     check_phrases,
     level_rank,
     weakest,
+)
+from planbench_explanation.map_features import (
+    MapFeatureRefusal,
+    RouteFeatures,
+    measure_route,
 )
 from planbench_explanation.planning_input_evidence import (
     REPLAY_CEILING,
@@ -148,6 +186,9 @@ __all__ = [
     "DEGRADED_QUALITIES",
     "EXEMPLAR_ROLES",
     "PROGRESS_SYNC_WARNING",
+    "KNOWLEDGE_BASE",
+    "KNOWLEDGE_BASE_ID",
+    "KNOWLEDGE_BASE_VERSION",
     "ARTIFACT_CHECKSUM_VERSION",
     "ASSERTABLE_PROPOSITIONS",
     "CLAIM_LEVEL_ORDER",
@@ -179,6 +220,25 @@ __all__ = [
     "ReferenceLine",
     "ReplaySyncRefusal",
     "TrackPoint",
+    "ActivationConditions",
+    "ArcWindow",
+    "CandidateComponents",
+    "ContrastFinding",
+    "ContrastRefusal",
+    "ContrastVerdict",
+    "Detection",
+    "DetectionType",
+    "DetectorRefusal",
+    "DetectorSettings",
+    "KnowledgeEntry",
+    "KnowledgeMatch",
+    "KnowledgeRefusal",
+    "MapFeatureRefusal",
+    "Observation",
+    "ReviewStatus",
+    "RouteFeatures",
+    "SourceStrength",
+    "TraceView",
     "CheckerResult",
     "Claim",
     "ClaimLevel",
@@ -238,6 +298,14 @@ __all__ = [
     "index_metrics",
     "project",
     "select_exemplars",
+    "components_from_report",
+    "detect_all",
+    "match",
+    "measure_route",
+    "read_lattice",
+    "read_trace",
+    "resolve",
+    "summarise",
     "artifact_checksum",
     "build_waterfall",
     "canonical_propositions",
