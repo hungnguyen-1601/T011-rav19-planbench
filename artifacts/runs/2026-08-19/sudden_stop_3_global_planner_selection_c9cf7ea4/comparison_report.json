@@ -1,11 +1,11 @@
 {
   "artifact": "comparison_report",
   "identity": {
-    "task_profile_id": "sudden_stop_2",
+    "task_profile_id": "sudden_stop_3",
     "experiment_scope": "global_planner_selection",
     "sensor_noise": {
-      "lidar_range_sigma_m": 0.02,
-      "wheel_slip_fraction": 0.02,
+      "lidar_range_sigma_m": 0.0,
+      "wheel_slip_fraction": 0.0,
       "localization_drift_m": 0.0,
       "localization_jump_probability": 0.0,
       "lidar_dropout_probability": 0.0,
@@ -14,7 +14,7 @@
     },
     "git_sha": "6a4c8ef4555856e46646e17bbaeb830bccd4f8a8",
     "anchor_config_version": "v1.2",
-    "created_at": "2026-08-19T16:45:00.569789+00:00"
+    "created_at": "2026-08-19T16:47:45.478448+00:00"
   },
   "sample": {
     "n_episodes": 5,
@@ -22,11 +22,11 @@
     "interrupted": false,
     "n_min_required": 30,
     "episode_context_ids": [
-      "dec1e8b956a7",
-      "796e7bf4fb4d",
-      "072b35f6e637",
-      "0949c968b71e",
-      "891f5e1f7578"
+      "72737e7d6959",
+      "e779a756fb25",
+      "5223e909abb3",
+      "39afc83e3fa8",
+      "770053242ce7"
     ]
   },
   "early_stop": {
@@ -61,17 +61,17 @@
           "result": "fail",
           "observed": 0,
           "n_runs": 5,
-          "n_distinct_episodes": 5,
-          "upper_bound_95": 0.6,
+          "n_distinct_episodes": 1,
+          "upper_bound_95": 3.0,
           "n_min": 30,
-          "statement": "0 va chạm quan sát trong 5 lần chạy phân biệt; cận trên 95% dưới phân phối kịch bản đã mô phỏng: 60.0%",
-          "note": "chỉ 5 lần chạy phân biệt, dưới N_min = 30 = ceil(3 / 0.1); cận trên 60.0% còn lỏng hơn mức rủi ro đã khai"
+          "statement": "0 va chạm quan sát trong 1 lần chạy phân biệt; cận trên 95% dưới phân phối kịch bản đã mô phỏng: 300.0%",
+          "note": "chỉ 1 lần chạy phân biệt trên 5 episode, dưới N_min = 30 = ceil(3 / 0.1); cận trên 300.0% còn lỏng hơn mức rủi ro đã khai"
         },
         "G3": "pass",
         "G4": {
           "result": "pass",
           "status": "screened_on_host",
-          "p99_ms": 21.416341999465654,
+          "p99_ms": 11.11585199974797,
           "threshold_ms": 50.0,
           "caveat": "G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"
         },
@@ -80,7 +80,7 @@
           "status": "estimated_from_structure",
           "memory_estimate_mb": 8.007484436035156,
           "available_ram_mb": 3277.0,
-          "peak_rss_mb_diagnostic": 252.5546875,
+          "peak_rss_mb_diagnostic": 224.8359375,
           "note": "ước lượng từ bộ đếm cấu trúc dữ liệu nhân kích thước byte của hiện thực đích; pha sàng lọc là điều kiện cần — vượt ngân sách thì chắc chắn không vừa, không vượt thì chưa kết luận được điều ngược lại",
           "target_implementation": "cpp_ros2",
           "bytes_per_search_node": 40,
@@ -92,71 +92,71 @@
       "blocking_gates": [
         "G2"
       ],
-      "n_distinct_episodes": 5,
+      "n_distinct_episodes": 1,
       "success_rate": 1.0,
-      "pooled_p99_latency_ms": 21.416341999465654,
+      "pooled_p99_latency_ms": 11.11585199974797,
       "replan_count": 5,
       "episodes": [
         {
-          "episode_context_id": "dec1e8b956a7",
+          "episode_context_id": "72737e7d6959",
           "success": true,
           "failure_reason": null,
           "collision_count": 0,
-          "min_clearance": 0.5233847032153446,
-          "travel_time_s": 29.30000000000028,
-          "p99_latency_ms": 18.273177999071773,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 11.098555999888049,
           "peak_search_nodes": 45,
           "peak_tree_nodes": 0,
           "replan_count": 1,
           "episode_decision_utility": null
         },
         {
-          "episode_context_id": "796e7bf4fb4d",
+          "episode_context_id": "e779a756fb25",
           "success": true,
           "failure_reason": null,
           "collision_count": 0,
-          "min_clearance": 0.5382323331647848,
-          "travel_time_s": 29.750000000000288,
-          "p99_latency_ms": 21.66484499921351,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 9.705323999769462,
           "peak_search_nodes": 45,
           "peak_tree_nodes": 0,
           "replan_count": 1,
           "episode_decision_utility": null
         },
         {
-          "episode_context_id": "072b35f6e637",
+          "episode_context_id": "5223e909abb3",
           "success": true,
           "failure_reason": null,
           "collision_count": 0,
-          "min_clearance": 0.5246602943348421,
-          "travel_time_s": 29.25000000000028,
-          "p99_latency_ms": 21.048389999759802,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 10.108720000243919,
           "peak_search_nodes": 45,
           "peak_tree_nodes": 0,
           "replan_count": 1,
           "episode_decision_utility": null
         },
         {
-          "episode_context_id": "0949c968b71e",
+          "episode_context_id": "39afc83e3fa8",
           "success": true,
           "failure_reason": null,
           "collision_count": 0,
-          "min_clearance": 0.564602350464222,
-          "travel_time_s": 30.5500000000003,
-          "p99_latency_ms": 21.935571998892552,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 10.258964000204287,
           "peak_search_nodes": 45,
           "peak_tree_nodes": 0,
           "replan_count": 1,
           "episode_decision_utility": null
         },
         {
-          "episode_context_id": "891f5e1f7578",
+          "episode_context_id": "770053242ce7",
           "success": true,
           "failure_reason": null,
           "collision_count": 0,
-          "min_clearance": 0.5483899254146517,
-          "travel_time_s": 29.500000000000284,
-          "p99_latency_ms": 20.518030001039737,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 11.768284000099811,
           "peak_search_nodes": 45,
           "peak_tree_nodes": 0,
           "replan_count": 1,
@@ -192,9 +192,9 @@
         },
         "G3": "fail",
         "G4": {
-          "result": "pass",
+          "result": "fail",
           "status": "screened_on_host",
-          "p99_ms": 22.194803999664135,
+          "p99_ms": 2098.395659999823,
           "threshold_ms": 50.0,
           "caveat": "G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"
         },
@@ -203,7 +203,7 @@
           "status": "estimated_from_structure",
           "memory_estimate_mb": 8.096748352050781,
           "available_ram_mb": 3277.0,
-          "peak_rss_mb_diagnostic": 252.5625,
+          "peak_rss_mb_diagnostic": 224.84765625,
           "note": "ước lượng từ bộ đếm cấu trúc dữ liệu nhân kích thước byte của hiện thực đích; pha sàng lọc là điều kiện cần — vượt ngân sách thì chắc chắn không vừa, không vượt thì chưa kết luận được điều ngược lại",
           "target_implementation": "cpp_ros2",
           "bytes_per_search_node": 40,
@@ -214,76 +214,77 @@
       "cleared_gates": false,
       "blocking_gates": [
         "G2",
-        "G3"
+        "G3",
+        "G4"
       ],
       "n_distinct_episodes": 5,
       "success_rate": 0.4,
-      "pooled_p99_latency_ms": 22.194803999664135,
-      "replan_count": 34,
+      "pooled_p99_latency_ms": 2098.395659999823,
+      "replan_count": 60,
       "episodes": [
         {
-          "episode_context_id": "dec1e8b956a7",
+          "episode_context_id": "72737e7d6959",
           "success": true,
           "failure_reason": null,
           "collision_count": 0,
-          "min_clearance": 0.16222209615308503,
-          "travel_time_s": 55.999999999998956,
-          "p99_latency_ms": 24.12321999981941,
+          "min_clearance": 0.1546295169954467,
+          "travel_time_s": 40.29999999999985,
+          "p99_latency_ms": 11.676544000110876,
           "peak_search_nodes": 0,
           "peak_tree_nodes": 2367,
-          "replan_count": 3,
+          "replan_count": 7,
           "episode_decision_utility": null
         },
         {
-          "episode_context_id": "796e7bf4fb4d",
-          "success": false,
-          "failure_reason": "timeout",
-          "collision_count": 0,
-          "min_clearance": 0.15009605805183845,
-          "travel_time_s": 119.99999999999532,
-          "p99_latency_ms": 21.3566999991599,
-          "peak_search_nodes": 0,
-          "peak_tree_nodes": 2332,
-          "replan_count": 10,
-          "episode_decision_utility": null
-        },
-        {
-          "episode_context_id": "072b35f6e637",
-          "success": false,
-          "failure_reason": "timeout",
-          "collision_count": 0,
-          "min_clearance": 0.13376241894946317,
-          "travel_time_s": 119.99999999999532,
-          "p99_latency_ms": 19.9216000000888,
-          "peak_search_nodes": 0,
-          "peak_tree_nodes": 2385,
-          "replan_count": 10,
-          "episode_decision_utility": null
-        },
-        {
-          "episode_context_id": "0949c968b71e",
+          "episode_context_id": "e779a756fb25",
           "success": true,
           "failure_reason": null,
           "collision_count": 0,
-          "min_clearance": 0.1563484189975245,
-          "travel_time_s": 36.40000000000007,
-          "p99_latency_ms": 20.06978800083744,
+          "min_clearance": 0.13996349061464564,
+          "travel_time_s": 32.250000000000306,
+          "p99_latency_ms": 11.079314999869888,
           "peak_search_nodes": 0,
-          "peak_tree_nodes": 2349,
-          "replan_count": 1,
+          "peak_tree_nodes": 2332,
+          "replan_count": 2,
           "episode_decision_utility": null
         },
         {
-          "episode_context_id": "891f5e1f7578",
+          "episode_context_id": "5223e909abb3",
           "success": false,
           "failure_reason": "timeout",
           "collision_count": 0,
-          "min_clearance": 0.15169818674327895,
-          "travel_time_s": 119.99999999999532,
-          "p99_latency_ms": 23.177500001111184,
+          "min_clearance": 0.1129163889084418,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 2101.6333999996277,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2385,
+          "replan_count": 17,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "39afc83e3fa8",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.11285145953695863,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 2125.652100001389,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2349,
+          "replan_count": 17,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "770053242ce7",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.12208920924730071,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 2368.5970999995334,
           "peak_search_nodes": 0,
           "peak_tree_nodes": 2364,
-          "replan_count": 10,
+          "replan_count": 17,
           "episode_decision_utility": null
         }
       ]
@@ -321,8 +322,8 @@
     },
     "warning": "Đo trên toàn bộ 20 nhân, không ghim: G4 đọc độ trễ theo đồng hồ tường nên mọi tải khác trên máy đi thẳng vào con số. Cùng candidate đo được 59,30 ms không ghim và 16,10 ms khi ghim 2 nhân"
   },
-  "run_uri": "file://artifacts\\runs\\2026-08-19\\sudden_stop_2_global_planner_selection_c9cf7ea4",
-  "run_checksum": "cf2f7f6e5161730e2495c14c7ce8f6a055485d18b81f861ec4b99bfab8fbb59d",
+  "run_uri": "file://artifacts\\runs\\2026-08-19\\sudden_stop_3_global_planner_selection_c9cf7ea4",
+  "run_checksum": "0f0e855afb5bfe70775b880f44635de3627726fca0d16dedd4bdc44dba6a541c",
   "decision_card": null,
   "manifest": null,
   "gate_only_deployment": null,
@@ -337,16 +338,16 @@
     "packet": {
       "header": {
         "source_manifest_ref": "comparison_report.json",
-        "source_manifest_checksum": "95722f73142cd9d2421022dba0791bcc279e431574d4cc40dbd3b514dd97e37a",
+        "source_manifest_checksum": "d37961c7c82bdd4a06880f41c2bb8ec79151cf04fe41cb3803846b2e1366875c",
         "explanation_schema_version": "0.1.0",
         "promotion_matrix_version": "0.1.0",
         "detector_version": "0.1.0",
         "knowledge_base_version": "v1.0.0",
         "tool_catalog_version": "3.0.0"
       },
-      "run_id": "sudden_stop_2_global_planner_selection_c9cf7ea4",
+      "run_id": "sudden_stop_3_global_planner_selection_c9cf7ea4",
       "task": {
-        "task_profile_id": "sudden_stop_2",
+        "task_profile_id": "sudden_stop_3",
         "robot": {
           "radius_m": 0.26,
           "inflation_margin_m": 0.0,
@@ -414,10 +415,15 @@
         },
         {
           "detection_type": "replan_storm",
-          "verdict": "insufficient_contrast",
-          "subject": null,
-          "pairs": [],
-          "reason": "the pattern appeared in no candidate that a swap could compare"
+          "verdict": "supports_component_specific_attribution",
+          "subject": "global_planner",
+          "pairs": [
+            [
+              "29cdf6266a44",
+              "e1251e42a20b"
+            ]
+          ],
+          "reason": "the pattern follows global_planner across every pair that changes only that component, it is the only component it follows, and every other part of the stack was held fixed"
         },
         {
           "detection_type": "oscillation",
@@ -453,21 +459,31 @@
           "episodes_seen": 5,
           "episodes_total": 5,
           "typical": {
-            "peak_latency_ms": 2543.655299999955,
-            "ticks": 2.0
+            "peak_latency_ms": 2382.844299999306,
+            "ticks": 4.0
           },
-          "worst_episode_context_id": "891f5e1f7578"
+          "worst_episode_context_id": "39afc83e3fa8"
         },
         {
           "type": "near_miss_cluster",
           "candidate_id": "29cdf6266a44",
-          "episodes_seen": 1,
+          "episodes_seen": 4,
           "episodes_total": 5,
           "typical": {
-            "min_clearance_m": 0.13376241894946317,
-            "samples": 175.0
+            "min_clearance_m": 0.11750279907787126,
+            "samples": 173.5
           },
-          "worst_episode_context_id": "072b35f6e637"
+          "worst_episode_context_id": "39afc83e3fa8"
+        },
+        {
+          "type": "replan_storm",
+          "candidate_id": "29cdf6266a44",
+          "episodes_seen": 4,
+          "episodes_total": 5,
+          "typical": {
+            "replans": 4.0
+          },
+          "worst_episode_context_id": "770053242ce7"
         },
         {
           "type": "stuck_cluster",
@@ -475,10 +491,10 @@
           "episodes_seen": 5,
           "episodes_total": 5,
           "typical": {
-            "stopped_seconds": 109.54999999999532,
-            "stops": 2.0
+            "stopped_seconds": 51.79999999999875,
+            "stops": 1.0
           },
-          "worst_episode_context_id": "072b35f6e637"
+          "worst_episode_context_id": "770053242ce7"
         },
         {
           "type": "stuck_cluster",
@@ -486,10 +502,10 @@
           "episodes_seen": 5,
           "episodes_total": 5,
           "typical": {
-            "stopped_seconds": 11.050000000000134,
+            "stopped_seconds": 3.800000000000045,
             "stops": 1.0
           },
-          "worst_episode_context_id": "0949c968b71e"
+          "worst_episode_context_id": "e779a756fb25"
         }
       ],
       "representative_episodes": null,

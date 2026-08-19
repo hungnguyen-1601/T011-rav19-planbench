@@ -109,6 +109,20 @@ class PlanningInputEvidence(BaseModel):
     execution_environment_ref: str = Field(min_length=1)
     outcome: PlanningOutcome
     output_plan_checksum: str | None = None
+    #: The route this attempt returned, in world coordinates.
+    #:
+    #: **Nothing else persists it.** The trace records where the robot
+    #: *went*; ``StackRun.plans`` lives only in the process that ran the
+    #: episode; the metrics keep the plan's *length* and throw the
+    #: polyline away. So a page drawing a trajectory could not show what
+    #: the planner had actually asked for — and the gap between the two
+    #: is most of what a replan is about.
+    #:
+    #: Optional, and empty for an attempt that found nothing: a refusal
+    #: has no route to store. A record written before this field existed
+    #: loads with it empty, which is the honest reading — that run did
+    #: not keep its plans.
+    output_path: tuple[tuple[float, float], ...] = ()
     failure_code: str | None = None
 
     @model_validator(mode="after")
@@ -122,6 +136,11 @@ class PlanningInputEvidence(BaseModel):
             if self.failure_code:
                 raise ValueError("a successful planning attempt has no failure code")
         else:
+            if self.output_path:
+                raise ValueError(
+                    f"outcome={self.outcome!r} carries a route; an attempt that found "
+                    "no path produced nothing to draw"
+                )
             if self.output_plan_checksum is not None:
                 raise ValueError(
                     f"outcome={self.outcome!r} recorded an output plan checksum; "

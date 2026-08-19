@@ -366,6 +366,40 @@ export function decideConfig(
  * few hundred rows into a few hundred objects would triple the payload
  * to say the same thing.
  */
+/** One dynamic obstacle's position at each of the trace's timestamps.
+ *
+ * **Sampled server-side.** `position_at` is the one implementation of
+ * these motion models — seed shift included — and a second copy in
+ * TypeScript would drift from it the first time either was fixed. The
+ * page receives coordinates and draws circles.
+ *
+ * Indexed in lockstep with `t`/`x`/`y`, so the obstacle and the robot on
+ * one canvas are always the same instant.
+ */
+export interface ObstacleTrack {
+  name: string;
+  radius_m: number;
+  x: number[];
+  y: number[];
+}
+
+/** One route the global planner returned, and the step it took over on.
+ *
+ * `from_index` is a row of this trace, placed server-side from the
+ * trace's own replan events — the sidecar counts simulation ticks and
+ * the trace counts control steps, and converting between them in the
+ * browser would be a third opinion about the episode's timeline.
+ *
+ * `points` is empty for an attempt that found nothing. That is a real
+ * state and not a gap: at that step the robot had no plan, and leaving
+ * the previous one on screen would show a route nobody was following.
+ */
+export interface PlannedRoute {
+  attempt: number;
+  from_index: number;
+  points: { x: number; y: number }[];
+}
+
 export interface TracePayload {
   candidate_id: string;
   episode_context_id: string;
@@ -393,6 +427,14 @@ export interface TracePayload {
   /** Sparse — only the steps that carry one. A collision and an arrival
    *  are the same shape of curve; the event is what tells them apart. */
   events: { index: number; event: string }[];
+  /** What moved while the robot drove. Empty for a deployment with no
+   *  traffic, and empty when the episode context could not be rebuilt —
+   *  obstacles drawn at another seed's positions look like evidence. */
+  dynamic_obstacles: ObstacleTrack[];
+  /** Every route the global planner returned, in order. Empty for a run
+   *  recorded before the planning-input sidecar existed — such a run
+   *  kept its plans' lengths and threw the polylines away. */
+  planned_routes: PlannedRoute[];
 }
 
 /** Which line arc length was measured along — and how honest it is.
@@ -444,6 +486,47 @@ export interface ReplaySyncView {
   /** Whose driven path became the ruler, when one did. That candidate's
    *  cross-track offset is zero everywhere by construction. */
   reference_source_candidate_id: string | null;
+  /** Both candidates measured at each rung of the progress ladder — E4.3.
+   *
+   *  `null`, never `[]`, when the comparison could not be made: the
+   *  composite is the deployment's own objective curves, and a run whose
+   *  anchors will not resolve has none. An empty list would render as a
+   *  panel with no differences in it, which reads as "the two are
+   *  identical" — the opposite of "this could not be computed".
+   */
+  running: RunningPoint[] | null;
+}
+
+/** One candidate's standing at one rung of the ladder.
+ *
+ * Mirrors `planbench_explanation.running_metrics.RunningSample`. Every
+ * field is dimensionless or normalised to something the deployment
+ * declared, so the same row reads the same way in every episode and for
+ * every algorithm — and nothing here is a planner-specific counter,
+ * because A*, RRT*, and a learned policy share none.
+ */
+export interface RunningSample {
+  progress_fraction: number;
+  progress_rate: number;
+  elapsed_s: number;
+  safety_margin: number;
+  exposure_s: number;
+  compute_budget: number;
+  path_efficiency: number;
+  replans: number;
+}
+
+export interface RunningPoint {
+  progress_m: number;
+  a: RunningSample;
+  b: RunningSample;
+  /** The deployment's safety-versus-efficiency trade-off over the part
+   *  of the episode that has happened, as `A − B`. **Not ΔU**: `U_R` is
+   *  "did it reach the goal", which has no value halfway through. */
+  partial_advantage: number;
+  /** Which objectives went into `partial_advantage`, so a reader is
+   *  never left to assume it was all four. */
+  partial_objectives: string[];
 }
 
 export type ExemplarRole =

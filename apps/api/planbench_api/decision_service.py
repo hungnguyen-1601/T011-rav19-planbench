@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -600,6 +601,14 @@ class DecisionRunService:
 
         table = pq.read_table(path)
         columns = {name: table.column(name).to_pylist() for name in table.column_names}
+        # Built once: the planned routes are placed against these same
+        # indices, and two lists built the same way twice is two lists
+        # that can disagree.
+        events = [
+            {"index": index, "event": value}
+            for index, value in enumerate(columns.get("event", []))
+            if value
+        ]
         raw = (table.schema.metadata or {}).get(b"planbench_trace")
         metadata = json.loads(raw) if raw else {}
 
@@ -633,11 +642,22 @@ class DecisionRunService:
             # Sparse: only the steps that carry one. HĐ-5 events are what
             # turn a path into an outcome, and dropping them would leave a
             # collision indistinguishable from an arrival.
-            "events": [
-                {"index": index, "event": value}
-                for index, value in enumerate(columns.get("event", []))
-                if value
-            ],
+            "events": events,
+            # **What moved while the robot drove.** The map is static and
+            # the trace records only the robot, so a canvas drawing both
+            # showed a path bending around nothing — the one thing on
+            # screen that explained the bend was missing from it. One
+            # position per timestamp, so the obstacle and the robot are
+            # always the same instant apart.
+            "dynamic_obstacles": _obstacle_tracks(
+                profile,
+                _context_for(profile, episode_context_id),
+                columns.get("t", []),
+            ),
+            # **What the planner asked for, beside where the robot
+            # went.** A replan is the moment those two diverged, and a
+            # canvas showing only the second cannot say so.
+            "planned_routes": _planned_routes(path, events),
         }
 
     def replay_sync(
@@ -662,13 +682,23 @@ class DecisionRunService:
         to this run and applies the production trace policy; everything
         after that is :func:`build_replay_sync_view`.
         """
-        from planbench_explanation.replay_sync import ReplaySyncRefusal
+        from planbench_explanation.replay_sync import ReferenceLine, ReplaySyncRefusal
         from planbench_explanation.replay_view import build_replay_sync_view
 
+        payload_a = self.trace(run_id, candidate_a, episode_context_id)
+        payload_b = self.trace(run_id, candidate_b, episode_context_id)
         try:
             view = build_replay_sync_view(
-                self.trace(run_id, candidate_a, episode_context_id),
-                self.trace(run_id, candidate_b, episode_context_id),
+                payload_a,
+                payload_b,
+                # **The reference line can be the real plan now.** E4.5
+                # records every attempt's polyline and the trace endpoint
+                # serves it, so a run made after that gets
+                # ``reference_plan`` quality instead of measuring arc
+                # length along a candidate's own trajectory. A run made
+                # before it passes ``None`` and the view still says which
+                # lens it fell back to.
+                planned_path=_first_route(payload_a),
                 steps=steps,
             )
         except ReplaySyncRefusal as refusal:
@@ -679,7 +709,88 @@ class DecisionRunService:
             # global handler would file an expected outcome as an
             # internal error and bury it in the logs as a bug.
             raise DomainValidationError(str(refusal)) from refusal
-        return view.model_dump()
+
+        body = view.model_dump()
+        body["running"] = self._running_comparison(
+            run_id,
+            payload_a,
+            payload_b,
+            # The same ruler the ladder was built on, handed back rather
+            # than rebuilt: two rulers on one canvas is how a comparison
+            # starts disagreeing with the chart above it.
+            ReferenceLine(
+                points=tuple(tuple(point) for point in view.plan.reference.points),
+                quality=view.plan.reference.quality,
+            ),
+            view.plan.rows,
+        )
+        return body
+
+    def _running_comparison(
+        self,
+        run_id: str,
+        payload_a: dict[str, Any],
+        payload_b: dict[str, Any],
+        reference,  # type: ignore[no-untyped-def]
+        rows: Sequence[Any],
+    ) -> list[dict[str, Any]] | None:
+        """Both candidates at each rung of the progress ladder (E4.3).
+
+        ``None`` rather than an empty list when the comparison cannot be
+        made: a deployment whose anchors will not resolve has no
+        objective curves, and a composite computed without them would be
+        a number this platform did not author. Empty would read as "the
+        two are identical".
+        """
+        from planbench_decision.anchors import AnchorError, load_anchors
+        from planbench_decision.objectives import DecisionSettings
+        from planbench_explanation.replay_sync import ReplaySyncRefusal
+        from planbench_explanation.running_metrics import (
+            Deployment,
+            RunningMetricsRefusal,
+            compare_at_progress,
+        )
+
+        run = self._runs.get(run_id)
+        profile = self._profiles.load(run.task_profile_id)
+        try:
+            anchors = load_anchors().resolve(profile)
+        except AnchorError:
+            return None
+        if not rows:
+            return None
+
+        reference_length = max(float(row.progress_m) for row in rows)
+        if reference_length <= 0:
+            return None
+        deployment = Deployment(
+            robot_radius_m=profile.robot.radius,
+            control_period_s=profile.robot.control_period,
+            clearance_warning_m=profile.constraints.clearance_warning_m,
+            max_linear_velocity=profile.robot.max_linear_velocity,
+            reference_length_m=reference_length,
+        )
+
+        try:
+            slices = [_slice_for(payload, reference) for payload in (payload_a, payload_b)]
+        except (ReplaySyncRefusal, RunningMetricsRefusal, ValueError):
+            return None
+
+        settings = DecisionSettings()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            comparison = compare_at_progress(
+                slices[0],
+                slices[1],
+                float(row.progress_m),
+                deployment=deployment,
+                settings=settings,
+                anchors=anchors,
+            )
+            if comparison is None:
+                continue
+            out.append({"progress_m": float(row.progress_m), **comparison.model_dump()})
+        return out or None
 
     def explanation(self, run_id: str) -> dict[str, Any]:
         """The analyst's case packet for one run (E4.1).
@@ -1049,6 +1160,165 @@ class TestBenchService:
         return None
 
 
+def _context_for(profile, episode_context_id: str):  # type: ignore[no-untyped-def]
+    """The episode context behind an id, or ``None``.
+
+    The id is a content hash, so it cannot be taken apart — the only way
+    back is to rebuild the deployment's contexts and look for the one
+    that hashes to it. Extracted because two callers now need it and a
+    second copy of the scan would be a second place to forget the
+    ``sample_set`` rule.
+    """
+    from planbench_benchmark.contexts import build_evaluation_contexts
+
+    for context in build_evaluation_contexts(profile):
+        if context.episode_context_id == episode_context_id:
+            return context
+    return None
+
+
+def _obstacle_tracks(profile, context, times: list[float]) -> list[dict[str, object]]:
+    """Where each dynamic obstacle was, at the trace's own timestamps.
+
+    **Computed here, never in the browser.** ``position_at`` is the one
+    implementation of these motion models, seed shift included, and a
+    second copy in TypeScript would drift from it the first time either
+    was fixed — the same argument that keeps progress-sync on the
+    server. The page receives coordinates and draws circles.
+
+    Sampled at the trace's timestamps rather than on a grid of its own,
+    so an obstacle and the robot on the same canvas are always being
+    shown at the same instant. Empty when the context could not be
+    rebuilt: a moving obstacle drawn at the wrong seed's positions is
+    worse than no obstacle, because it looks like evidence.
+    """
+    if context is None or not times:
+        return []
+    from planbench_schemas.dynamic import position_at
+
+    tracks = []
+    for obstacle in profile.environment.dynamic_obstacles:
+        points = [position_at(obstacle, time, context.seed) for time in times]
+        tracks.append(
+            {
+                "name": obstacle.name,
+                "radius_m": obstacle.radius,
+                "x": [point.x for point in points],
+                "y": [point.y for point in points],
+            }
+        )
+    return tracks
+
+
+def _first_route(payload: Mapping[str, Any]) -> list[tuple[float, float]] | None:
+    """The initial planned route, for use as the replay's reference line.
+
+    The *first* attempt rather than the last: arc length has to be
+    measured along one line for the whole episode, and a later replan's
+    route describes only the part after it.
+    """
+    routes = payload.get("planned_routes") or []
+    for route in routes:
+        points = route.get("points") or []
+        if len(points) >= 2:
+            return [(float(point["x"]), float(point["y"])) for point in points]
+    return None
+
+
+def _slice_for(payload: Mapping[str, Any], reference):  # type: ignore[no-untyped-def]
+    """One candidate's trace in the shape the running metrics take.
+
+    Progress comes from :func:`~planbench_explanation.replay_sync.project`
+    against **the reference line the view published**, so the arc length
+    here is the same arc length the progress ladder was built on. An
+    earlier draft used cumulative driven distance as a stand-in, which
+    would have made ``path_efficiency`` — progress over distance driven —
+    identically 1.0 for every candidate: a metric that renders, reads
+    plausibly, and measures nothing.
+    """
+    from planbench_explanation.replay_sync import project
+    from planbench_explanation.replay_view import _track  # noqa: PLC2701
+    from planbench_explanation.running_metrics import TraceSlice
+
+    projected = project(_track(payload), reference)
+    replans = tuple(
+        int(event["index"])
+        for event in payload.get("events") or []
+        if event.get("event") == "replan"
+    )
+    return TraceSlice(
+        candidate_id=str(payload.get("candidate_id") or ""),
+        t=tuple(float(value) for value in payload.get("t") or []),
+        x=tuple(float(value) for value in payload.get("x") or []),
+        y=tuple(float(value) for value in payload.get("y") or []),
+        clearance_m=tuple(float(value) for value in payload.get("clearance_m") or []),
+        planner_latency_ms=tuple(
+            float(value) for value in payload.get("planner_latency_ms") or []
+        ),
+        progress_m=tuple(sample.progress_m for sample in projected.samples),
+        replan_indices=replans,
+    )
+
+
+def _planned_routes(trace_path, events: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Every route the global planner returned, and when each took over.
+
+    Read from the E4.5 sidecar beside the trace — nothing else keeps a
+    plan's polyline. The metrics store its length, ``StackRun.plans``
+    dies with the process that ran the episode, and the trace records
+    where the robot *went*, which is the other half of the very
+    comparison a reader is trying to make.
+
+    **The handover point comes from the trace's own replan events, not
+    from the sidecar's tick counter.** The record counts simulation
+    ticks and the trace counts control steps; they are different clocks,
+    and converting between them here would be a third opinion about the
+    episode's timeline. The events are already in the payload and
+    already indexed against the rows the canvas draws.
+
+    Returns nothing rather than guessing when the two disagree. A run
+    with three recorded attempts and one replan event is a run whose
+    plans cannot be placed, and a route drawn at the wrong moment is a
+    picture of a decision nobody made.
+    """
+    from planbench_explanation.planning_input_evidence import SidecarViolation
+    from planbench_explanation.sidecar_writer import read_sidecar
+
+    sidecar = trace_path.with_suffix(".planning_inputs.jsonl")
+    if not sidecar.exists():
+        return []
+    try:
+        _header, records = read_sidecar(sidecar)
+    except (SidecarViolation, ValueError):
+        # A sidecar that cannot be read is a file problem, not a reason
+        # to fail a trace download. The canvas draws one fewer thing.
+        return []
+
+    replans = [int(event["index"]) for event in events if event.get("event") == "replan"]
+    if len(records) != len(replans) + 1:
+        return []
+
+    # Attempt 1 is in force from the first row; attempt k+1 from the row
+    # its replan was recorded on.
+    starts = [0, *replans]
+    routes = []
+    for record, start in zip(records, starts, strict=True):
+        if not record.output_path:
+            # A refused attempt has no route. Recorded so the canvas can
+            # say the plan went *away* at that step rather than silently
+            # keeping the previous one on screen.
+            routes.append({"attempt": record.planning_attempt, "from_index": start, "points": []})
+            continue
+        routes.append(
+            {
+                "attempt": record.planning_attempt,
+                "from_index": start,
+                "points": [{"x": x, "y": y} for x, y in record.output_path],
+            }
+        )
+    return routes
+
+
 def _expected_fingerprint(profile, map_data, episode_context_id: str) -> str:
     """The conditions hash this run's episode should carry, or ``""``.
 
@@ -1058,13 +1328,10 @@ def _expected_fingerprint(profile, map_data, episode_context_id: str) -> str:
     the caller then falls back to the class filter alone rather than
     refusing a download over a lookup it could not perform.
     """
-    from planbench_benchmark.contexts import build_evaluation_contexts
     from planbench_benchmark.episode import scenario_for
     from planbench_benchmark.fingerprint import execution_conditions_fingerprint
 
-    for context in build_evaluation_contexts(profile):
-        if context.episode_context_id == episode_context_id:
-            return execution_conditions_fingerprint(
-                map_data, scenario_for(profile, context), profile
-            )
-    return ""
+    context = _context_for(profile, episode_context_id)
+    if context is None:
+        return ""
+    return execution_conditions_fingerprint(map_data, scenario_for(profile, context), profile)

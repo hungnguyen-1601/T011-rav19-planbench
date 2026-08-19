@@ -89,11 +89,17 @@ def build_replay_sync_view(
     """Build the progress-synced view from two trace payloads.
 
     ``planned_path`` is the global planner's route when the platform has
-    it. It does not today — the plan is written to the episode JSON and
-    older runs have none — so the reference falls to a driven path or to
-    start→goal, and the view reports which. The argument exists so that
-    the day the API can supply the route, nothing here changes except
-    that ``quality`` stops saying ``degraded_*``.
+    it. **It does now**: the E4.5 sidecar records every planning
+    attempt's polyline and the trace endpoint serves them, so a run made
+    after that passes its first route in here and ``quality`` reads
+    ``reference_plan`` instead of ``degraded_candidate_path``. A run
+    made before it still falls back, and still says so.
+
+    ``running`` is the E4.3 comparison: both candidates measured at each
+    rung of the progress ladder, on the objectives that are defined on a
+    prefix. Absent when the deployment's anchors were not supplied,
+    because the composite is the platform's own objective curves and
+    inventing a stand-in for them is the one thing it must not do.
     """
     episode = _same_episode(trace_a, trace_b)
     candidate_a = str(trace_a.get("candidate_id") or "")

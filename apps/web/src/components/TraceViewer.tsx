@@ -22,6 +22,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { routeAt } from "@/lib/evidence";
 
 import { Scene25D } from "@/components/Scene25D";
 import { useTranslation } from "@/lib/i18n";
@@ -163,6 +164,26 @@ export function TraceViewer({
       context.stroke();
     }
 
+    // **What the planner asked for, under everything else.** Dashed and
+    // pale on purpose: it is an intention, not a measurement, and a
+    // solid line would compete with the trajectory that actually
+    // happened. Drawn first so the driven path sits on top of it —
+    // where the two diverge is the thing worth seeing.
+    const planned = routeAt(trace.planned_routes ?? [], visibleStep);
+    if (planned && planned.points.length > 1) {
+      context.save();
+      context.setLineDash([6, 5]);
+      context.strokeStyle = "rgba(15, 23, 42, 0.45)";
+      context.lineWidth = 2;
+      context.beginPath();
+      context.moveTo(toX(planned.points[0].x), toY(planned.points[0].y));
+      for (const point of planned.points.slice(1)) {
+        context.lineTo(toX(point.x), toY(point.y));
+      }
+      context.stroke();
+      context.restore();
+    }
+
     // Candidate identity remains visible beneath the clearance ramp.
     if (candidateSide && visibleStep > 0) {
       context.strokeStyle = candidateSide === "a" ? "#2563eb" : "#7c3aed";
@@ -188,6 +209,29 @@ export function TraceViewer({
       context.beginPath();
       context.moveTo(toX(trace.x[index - 1]), toY(trace.y[index - 1]));
       context.lineTo(toX(trace.x[index]), toY(trace.y[index]));
+      context.stroke();
+    }
+
+    // **Traffic, at the instant being shown.** Drawn after the path and
+    // before the robot: over the path because it is what the path was
+    // avoiding, under the robot because the robot is the subject. Until
+    // this existed a route bent around nothing, and the one thing on
+    // screen that explained the bend was the thing missing from it.
+    for (const track of trace.dynamic_obstacles ?? []) {
+      const step = Math.min(visibleStep, track.x.length - 1);
+      if (step < 0) continue;
+      const radius = Math.max((track.radius_m / map.resolution) * scale, 3);
+      const centreX = toX(track.x[step]);
+      const centreY = toY(track.y[step]);
+      // Amber, and filled softly rather than solid: it is an obstacle,
+      // not an event, and a solid disc at cart size would hide the path
+      // underneath exactly where a reader is looking.
+      context.fillStyle = "rgba(217, 119, 6, 0.22)";
+      context.beginPath();
+      context.arc(centreX, centreY, radius, 0, Math.PI * 2);
+      context.fill();
+      context.strokeStyle = "#b45309";
+      context.lineWidth = 2;
       context.stroke();
     }
 

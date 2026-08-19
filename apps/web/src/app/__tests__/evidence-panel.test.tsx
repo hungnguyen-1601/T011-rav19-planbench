@@ -144,3 +144,108 @@ describe("the client", () => {
     expect(CLIENT).toMatch(/waterfall: PacketWaterfall \| null/);
   });
 });
+
+/** Traffic on the trace canvas.
+ *
+ * The map is static and the trace records only the robot, so a route
+ * that bent around a cart was bending around nothing. The positions
+ * come from the server; what this file can check is that the browser
+ * asks for them, draws them at the instant being shown, and never
+ * recomputes them itself.
+ */
+describe("dynamic obstacles on the canvas", () => {
+  const VIEWER = readFileSync(join(SRC, "components", "TraceViewer.tsx"), "utf8");
+
+  it("draws whatever tracks the payload carries", () => {
+    expect(VIEWER).toContain("trace.dynamic_obstacles");
+    expect(VIEWER).toContain("context.arc");
+  });
+
+  it("draws them at the step being shown, not at the end of the episode", () => {
+    // A cart parked at its final position for the whole replay would
+    // explain nothing about a bend that happened at t = 3 s.
+    expect(VIEWER).toMatch(/Math\.min\(visibleStep, track\.x\.length - 1\)/);
+  });
+
+  it("puts the obstacle under the robot and over the path", () => {
+    // Over the path because it is what the path was avoiding; under the
+    // robot because the robot is the subject of the picture.
+    const path = VIEWER.indexOf("clearanceColour(");
+    const obstacles = VIEWER.indexOf("trace.dynamic_obstacles");
+    const robot = VIEWER.indexOf("The robot at the current step");
+    expect(obstacles).toBeGreaterThan(path);
+    expect(obstacles).toBeLessThan(robot);
+  });
+
+  it("keeps the motion model on the server", () => {
+    // `position_at` is the one implementation, seed shift included. A
+    // second copy here would drift the first time either was fixed —
+    // the same argument that keeps progress-sync server-side.
+    expect(VIEWER).not.toContain("seed_time_offset");
+    expect(VIEWER).not.toMatch(/WaypointMotion|SuddenStop|position_at/);
+  });
+
+  it("survives a payload that predates the field", () => {
+    // `?? []` rather than a required read: an older API answering this
+    // page should draw one fewer thing, not throw.
+    expect(VIEWER).toContain("trace.dynamic_obstacles ?? []");
+  });
+
+  it("says on the canvas what the amber circles are", () => {
+    expect(en["trace.colourNote"]).toContain("Amber circles");
+    expect(vi["trace.colourNote"]).toContain("hổ phách");
+  });
+});
+
+/** The planned route on the trace canvas.
+ *
+ * Nothing persisted a plan's polyline before the planning-input sidecar:
+ * the metrics kept its length and threw the shape away. The canvas could
+ * show where the robot went and not what it had been asked to do — and
+ * the gap between those two is most of what a replan is.
+ */
+describe("planned routes on the canvas", () => {
+  const VIEWER = readFileSync(join(SRC, "components", "TraceViewer.tsx"), "utf8");
+  const CLIENT2 = readFileSync(join(SRC, "lib", "decisions.ts"), "utf8");
+
+  it("draws the plan in force at the step being shown", () => {
+    expect(VIEWER).toContain("routeAt(trace.planned_routes ?? []");
+  });
+
+  it("draws it under the driven path, where the two can be compared", () => {
+    // An intention behind a measurement. On top it would compete with
+    // the trajectory that actually happened.
+    //
+    // Anchored on the comment above the drawing loop, not on
+    // `clearanceColour(` — that name's first occurrence is the
+    // function's own definition near the top of the file, so the first
+    // version of this compared the plan against a declaration and
+    // failed for a reason that had nothing to do with layering.
+    const planned = VIEWER.indexOf("routeAt(trace.planned_routes");
+    const driven = VIEWER.indexOf("Segment by segment, because the colour is the clearance");
+    expect(driven).toBeGreaterThan(-1);
+    expect(planned).toBeLessThan(driven);
+  });
+
+  it("dashes it, because it is an intention and not a measurement", () => {
+    expect(VIEWER).toContain("setLineDash");
+  });
+
+  it("does not pick the active plan in the component", () => {
+    // `routeAt` is where the replacement rule lives, so it can be tested
+    // without a DOM. A loop here would put it back out of reach.
+    expect(VIEWER).not.toMatch(/from_index\s*<=/);
+  });
+
+  it("types a refused replan as an empty route rather than a missing one", () => {
+    // "The robot had no plan at that step" is a state worth drawing as
+    // nothing, and it is not the same as "this run kept no plans".
+    expect(CLIENT2).toContain("points: { x: number; y: number }[]");
+    expect(CLIENT2).toContain("planned_routes: PlannedRoute[]");
+  });
+
+  it("says on the canvas what the dashed line is", () => {
+    expect(en["trace.colourNote"]).toContain("dashed grey");
+    expect(vi["trace.colourNote"]).toContain("nét đứt");
+  });
+});

@@ -14,6 +14,7 @@ import type {
   PacketLatticeFinding,
   PacketObservation,
   PacketWaterfall,
+  PlannedRoute,
 } from "@/lib/decisions";
 
 /** How a lattice verdict should read.
@@ -111,4 +112,28 @@ export function orderedFindings(findings: PacketLatticeFinding[]): PacketLattice
     const byVerdict = (VERDICT_RANK[left.verdict] ?? 9) - (VERDICT_RANK[right.verdict] ?? 9);
     return byVerdict !== 0 ? byVerdict : left.detection_type.localeCompare(right.detection_type);
   });
+}
+
+
+/** The plan the robot was following at a given step.
+ *
+ * **The newest one that has taken over, and only that one.** A replan
+ * replaces the route; drawing every attempt at once would show a fan of
+ * paths the robot never had, and the reader could not tell which one
+ * the trajectory was supposed to be following at the moment they are
+ * looking at.
+ *
+ * `null` before any plan exists and — deliberately — for an attempt
+ * that found nothing: at that step the robot had no route, and keeping
+ * the previous one on screen would draw a plan that had already been
+ * abandoned.
+ */
+export function routeAt(routes: PlannedRoute[], step: number): PlannedRoute | null {
+  let current: PlannedRoute | null = null;
+  for (const route of routes) {
+    if (route.from_index > step) break;
+    current = route;
+  }
+  if (!current || current.points.length === 0) return null;
+  return current;
 }

@@ -19,6 +19,7 @@ import {
   firedSightings,
   missingNotes,
   orderedFindings,
+  routeAt,
   sightingsState,
   verdictTone,
   waterfallState,
@@ -157,5 +158,58 @@ describe("bar scaling", () => {
 
   it("scales by the widest bar in either direction", () => {
     expect(widestContribution(waterfall([0.02, -0.31, 0.05]))).toBeCloseTo(0.31);
+  });
+});
+
+describe("which plan the robot was following", () => {
+  function route(attempt: number, from_index: number, points: [number, number][]) {
+    return {
+      attempt,
+      from_index,
+      points: points.map(([x, y]) => ({ x, y })),
+    };
+  }
+
+  const initial = route(1, 0, [
+    [0, 0],
+    [5, 0],
+  ]);
+  const afterReplan = route(2, 40, [
+    [2, 0],
+    [2, 3],
+    [5, 3],
+  ]);
+
+  it("shows the initial plan before anything replaced it", () => {
+    expect(routeAt([initial, afterReplan], 10)?.attempt).toBe(1);
+  });
+
+  it("replaces the old plan with the new one, rather than drawing both", () => {
+    // A fan of every attempt at once is a set of paths the robot never
+    // had, and nothing on screen would say which one it was following.
+    expect(routeAt([initial, afterReplan], 40)?.attempt).toBe(2);
+    expect(routeAt([initial, afterReplan], 200)?.attempt).toBe(2);
+  });
+
+  it("takes over on the step the replan was recorded on, not the one after", () => {
+    expect(routeAt([initial, afterReplan], 39)?.attempt).toBe(1);
+  });
+
+  it("shows nothing when a replan found no path", () => {
+    // The robot had no route at that step. Leaving the previous one up
+    // would draw a plan that had already been abandoned.
+    const refused = route(2, 40, []);
+    expect(routeAt([initial, refused], 50)).toBeNull();
+    expect(routeAt([initial, refused], 39)?.attempt).toBe(1);
+  });
+
+  it("shows nothing for a run that kept no plans", () => {
+    // Recorded before the planning-input sidecar existed: the lengths
+    // were stored and the polylines thrown away.
+    expect(routeAt([], 10)).toBeNull();
+  });
+
+  it("shows nothing before the first plan exists", () => {
+    expect(routeAt([route(1, 5, [[0, 0], [1, 1]])], 2)).toBeNull();
   });
 });

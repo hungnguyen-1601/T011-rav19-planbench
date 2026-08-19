@@ -114,6 +114,10 @@ function view(rows: ReplaySyncView["plan"]["rows"]): ReplaySyncView {
     },
     divergence: { sustained: null, anchors: [] },
     reference_source_candidate_id: "winner",
+    // These fixtures predate E4.3 and are about alignment, not about
+    // the running metrics. `null` is what the server sends when the
+    // comparison could not be built, so it is the honest default here.
+    running: null,
   };
 }
 

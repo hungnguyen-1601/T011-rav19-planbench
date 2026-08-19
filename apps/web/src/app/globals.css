@@ -3306,3 +3306,50 @@ main.content.bare-page {
 .evidence-lattice li p { margin: 4px 0 0; }
 .evidence-subject { margin-left: 6px; }
 .evidence-panel .small { font-size: 12px; }
+
+/* Running comparison (E4.3) — both candidates at one rung of the ladder.
+   Two tables rather than one: the metrics belong to two different
+   clocks, and a single eight-row block would invite reading a
+   worst-clearance against a progress fraction as if they answered the
+   same question. */
+.episode-running { margin-top: 16px; }
+.episode-running h4 { margin: 0 0 4px; font-size: 14px; }
+.episode-running h5 { margin: 0 0 2px; font-size: 13px; }
+.episode-running-clock + .episode-running-clock { margin-top: 12px; }
+.episode-running-clock p { margin: 0 0 6px; font-size: 12px; }
+.episode-running table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.episode-running th,
+.episode-running td { padding: 5px 8px; border-bottom: 1px solid var(--border); }
+.episode-running thead th { font-weight: 600; color: var(--muted); text-align: left; }
+.episode-running tbody th { font-weight: 400; text-align: left; }
+/* Tabular figures: a column whose digits shift width as the slider
+   moves is a column the eye cannot compare down. */
+.episode-running td { text-align: right; font-variant-numeric: tabular-nums; }
+.episode-running td.ok { font-weight: 600; color: var(--ok, #3f9a5a); }
+.episode-running-composite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 12px;
+}
+.episode-running-composite strong { font-variant-numeric: tabular-nums; }
+.episode-running-composite strong.ok { color: var(--ok, #3f9a5a); }
+.episode-running-composite strong.warn { color: var(--err, #b4483f); }
+/* The caveat takes the whole next line rather than trailing the number:
+   a qualifier that wraps into the gap beside a figure is a qualifier
+   that gets skipped. */
+.episode-running-composite p { flex-basis: 100%; margin: 0; font-size: 12px; }
+/* Available to a screen reader, absent from the layout. The colour
+   carries the "leads" claim visually; this carries it otherwise. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
