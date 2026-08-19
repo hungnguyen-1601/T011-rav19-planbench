@@ -218,7 +218,8 @@ nhóm AI; nguồn chân lý là canonical KB.
 | **E4.1** | Endpoint packet/ledger. Vướng một quyết định thật: dựng packet cần đọc trace mọi episode để chạy detector ⇒ **dựng lúc chấm** (đọc rẻ, phải bump report) hay **dựng theo yêu cầu + cache** (report không đổi, request đầu nặng). Chờ An chốt. | 1 ngày sau khi chốt |
 | **E4.5** | Minimal sidecar writer `PlanningInputEvidence` — mọi attempt kể cả `no_path`; neo `AlgorithmHost`; seam chưa ổn ⇒ hoãn sau H4/H6 + luật "không golden chính thức trước khi writer sẵn sàng" | 1–2 ngày |
 | **E5** ✅ | **AI enablement** (xong 19-08): AnalysisRequest/ToolRequest/ToolResult + ToolSession · catalog 16 card đủ 4 lớp · AnalystBundle + GateDecision + feature flag · knowledge contract §3.4 · research specification schema · golden format + 12 case visible (calibration, **không** preregistered — chặn bằng `OFFICIAL_GOLDEN_READY=False`) · mock tool host + reference analyst · 72 test | 3–5 ngày |
-| **E6** | **Tool host + mechanism-check implementations** (platform, ①) + **gate harness**: platform giữ hidden subset, chạy **AnalystBundle bất biến** (§6) trên hidden packets trong môi trường platform kiểm soát, tự chấm, quyết định bật flag (②). Lịch phối hợp H4/H6 | 4–6 ngày |
+| **E6a** ✅ | **Tool host thật + hai mechanism check** (xong 19-08): `ToolHost` + `EvidenceSource` + `ReportEvidence` · `gap_vs_footprint` và `latency_vs_expanded_nodes` chạy thật · card latency sửa sang **theo episode** vì HĐ-5 không ghi expanded node theo tick · 24 test | 1–2 ngày |
+| **E6b** | **Phần còn lại của E6**: `replay_global_plan` + `rrt_convergence` (**chặn bởi E4.5** — không có planning input ghi lúc chạy) · gate harness chạy AnalystBundle bất biến trên hidden packet (**chặn bởi E4.5 + bundle nhóm AI**) · quyết định bật flag. Lịch phối hợp H4/H6 | 3–5 ngày |
 
 E5 **không** deliver: LLM client, prompt, RAG, tool routing, AI evaluation run, model backend.
 E5 cũng **không** deliver checker thật (E6) và **không** dựng được packet fixture cho golden
@@ -293,6 +294,8 @@ gate run · AI5 controlled rollout sau flag.
 E0 ──> E1 ──┐
 E0 ──> E2 ──┼──> E4 ──> E4.5 ──> E5 ──> E6 (phối hợp H4/H6)
 E0 ──> E3 ──┘                     └──> nhóm AI bắt đầu AI1/AI2 song song trên mock E5
+                                  E5 ──> E6a (host + 2 checker, xong)
+                                  E4.5 ──> E6b (2 checker replay + gate harness)
 ```
 
 E0–E4 chỉ đọc artifact; E4.5 writer phía runner; E6 thực thi planner ở chế độ chẩn đoán.

@@ -7,28 +7,28 @@
       "additionalProperties": false,
       "properties": {
         "median_expanded_nodes": {
-          "description": "Median frontier size per replan.",
+          "description": "Median search size per episode.",
           "type": "number",
           "unit": "count"
         },
         "median_latency_ms": {
-          "description": "Median latency of the ticks carrying them.",
+          "description": "Median planner latency per episode.",
           "type": "number",
           "unit": "ms"
         },
-        "n_replans": {
-          "description": "Replan rows the association was computed over.",
+        "n_episodes": {
+          "description": "Episodes the association was ranked over.",
           "type": "number",
           "unit": "count"
         },
         "spearman_rho": {
-          "description": "Rank correlation of expanded nodes with tick latency.",
+          "description": "Rank correlation of expanded nodes with planner latency across episodes.",
           "type": "number",
           "unit": "correlation"
         }
       },
       "required": [
-        "n_replans",
+        "n_episodes",
         "spearman_rho",
         "median_expanded_nodes",
         "median_latency_ms"

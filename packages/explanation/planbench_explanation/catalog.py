@@ -670,8 +670,8 @@ LATENCY_VS_EXPANDED_NODES = ToolCard(
     purpose=ToolPurpose(
         verifies={
             "expansion_latency_association": (
-                "Ticks carrying larger expansions took correspondingly longer, over "
-                "this run's recorded replans."
+                "Episodes of this candidate whose search expanded more nodes recorded "
+                "higher planner latency, ranked across the run."
             )
         },
         does_not_verify={
@@ -687,6 +687,14 @@ LATENCY_VS_EXPANDED_NODES = ToolCard(
         notes=(
             "Deterministic and exact, and capped at associated for that reason: the "
             "arithmetic reproduces, the causal reading does not follow from it.",
+            "Across episodes, not across replans. HĐ-5's trace records "
+            "planner_latency_ms per row and no expanded-node column, and that schema "
+            "is frozen — so the per-tick version the first card promised cannot be "
+            "computed from what runs record, and the card says what the data supports "
+            "instead of what would have been nicer.",
+            "Within one candidate. The benchmark separates a grid search's expanded "
+            "nodes from a sampling planner's tree size because they count different "
+            "things; ranking one against the other would measure the units.",
         ),
     ),
     proposition_policy=PropositionPolicy(
@@ -698,29 +706,25 @@ LATENCY_VS_EXPANDED_NODES = ToolCard(
         maximum_claim_level="associated",
     ),
     evidence_policy=_RECORDED,
-    required_evidence=("trace", "replan_rows"),
+    required_evidence=("episode_expanded_nodes", "episode_latency"),
     io=ToolIO(
-        arguments=(
-            _CANDIDATE,
-            _argument(
-                "episode_context_id",
-                "string",
-                "Restrict to one episode; the whole run if omitted.",
-                required=False,
-            ),
-        ),
+        arguments=(_CANDIDATE,),
         measurements=(
-            _measure("n_replans", "count", "Replan rows the association was computed over."),
+            _measure("n_episodes", "count", "Episodes the association was ranked over."),
             _measure(
                 "spearman_rho",
                 "correlation",
-                "Rank correlation of expanded nodes with tick latency.",
+                "Rank correlation of expanded nodes with planner latency across episodes.",
             ),
-            _measure("median_expanded_nodes", "count", "Median frontier size per replan."),
-            _measure("median_latency_ms", "ms", "Median latency of the ticks carrying them."),
+            _measure("median_expanded_nodes", "count", "Median search size per episode."),
+            _measure("median_latency_ms", "ms", "Median planner latency per episode."),
         ),
     ),
-    failure_modes=("no_replan_rows", "expansion_counts_missing", "insufficient_samples"),
+    failure_modes=(
+        "expansion_counts_missing",
+        "insufficient_episodes",
+        "no_variation_to_rank",
+    ),
 )
 
 RRT_CONVERGENCE = ToolCard(

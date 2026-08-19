@@ -147,7 +147,8 @@ TYPICAL_AVAILABLE_EVIDENCE = frozenset(
         "detector_version",
         "trace",
         "reference_line",
-        "replan_rows",
+        "episode_expanded_nodes",
+        "episode_latency",
     }
 )
 

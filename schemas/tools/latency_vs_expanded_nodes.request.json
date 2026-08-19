@@ -6,10 +6,6 @@
     "candidate_id": {
       "description": "Which candidate's data to read.",
       "type": "string"
-    },
-    "episode_context_id": {
-      "description": "Restrict to one episode; the whole run if omitted.",
-      "type": "string"
     }
   },
   "required": [

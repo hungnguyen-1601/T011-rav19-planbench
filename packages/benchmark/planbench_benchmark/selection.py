@@ -1077,6 +1077,18 @@ def _episode_outcomes(
             "min_clearance": m.min_clearance,
             "travel_time_s": m.travel_time_s,
             "p99_latency_ms": m.p99_latency_ms,
+            # The global search's size, kept in the two columns HĐ-6
+            # already separates it into. A grid search's expanded nodes
+            # and a sampling planner's tree size count different things,
+            # so they stay apart here and whoever reads them picks one —
+            # summing them would produce a number about the units.
+            #
+            # Written per episode because that is the only level an
+            # association between search size and search cost can be
+            # made at: HĐ-5's trace carries planner latency per row and
+            # no expanded-node column, and that schema is frozen.
+            "peak_search_nodes": m.peak_search_nodes,
+            "peak_tree_nodes": m.peak_tree_nodes,
             # Per episode as well as per candidate: a total of forty
             # replans reads very differently when it is one runaway
             # episode than when it is one replan in each of forty.
