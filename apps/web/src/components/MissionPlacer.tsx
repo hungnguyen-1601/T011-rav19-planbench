@@ -148,7 +148,7 @@ export function PlacementButtons({
           key={which}
           type="button"
           disabled={disabled}
-          className={mode === which ? "active" : undefined}
+          className={`placement-button placement-button--${which}${mode === which ? " active" : ""}`}
           aria-pressed={mode === which}
           onClick={() => onModeChange(mode === which ? "none" : which)}
         >
@@ -367,6 +367,7 @@ export function MissionPoseFields({
   return (
     <>
       <PoseFields
+        tone="start"
         label={t("decisions.map.start")}
         value={start}
         disabled={disabled}
@@ -374,6 +375,7 @@ export function MissionPoseFields({
         note={startNote}
       />
       <PoseFields
+        tone="goal"
         label={t("decisions.map.goal")}
         value={goal}
         disabled={disabled}
@@ -435,12 +437,14 @@ export function MissionPlacer(props: MissionPlacerProps) {
  * with a label.
  */
 function PoseFields({
+  tone,
   label,
   value,
   disabled,
   onChange,
   note,
 }: {
+  tone: "start" | "goal";
   label: string;
   value: Pose2D | null;
   disabled: boolean;
@@ -469,7 +473,7 @@ function PoseFields({
   );
 
   return (
-    <div style={{ marginTop: 8 }}>
+    <div className={`mission-pose mission-pose--${tone}`}>
       <div className="row" style={{ alignItems: "flex-end", gap: 12 }}>
         <strong style={{ minWidth: 90 }}>
           {label}

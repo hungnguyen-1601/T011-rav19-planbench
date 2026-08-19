@@ -40,6 +40,7 @@ import Link from "next/link";
 
 import { CandidatePicker, type CandidateSelection } from "@/components/CandidatePicker";
 import { EmptyState } from "@/components/EmptyState";
+import { Icon, type IconName } from "@/components/Icon";
 import { MapView } from "@/components/MapView";
 import { MetricsPanel } from "@/components/MetricsPanel";
 import { api } from "@/lib/api";
@@ -106,6 +107,7 @@ export default function TestBenchPage() {
   const [showGrid, setShowGrid] = useState(true);
   const [showPlan, setShowPlan] = useState(true);
   const [showTrajectory, setShowTrajectory] = useState(true);
+  const [conditionsExpanded, setConditionsExpanded] = useState(true);
 
   const stream = useEpisodeStream();
 
@@ -256,28 +258,61 @@ export default function TestBenchPage() {
     : start;
 
   const ready = Boolean(profileId && mission && choice.stack && choice.local_config);
+  const episodeStatus = stream.status ?? (busy ? "running" : stream.frames.length > 0 ? "paused" : "ready");
+  const statusTone = episodeStatus === "success"
+    ? "success"
+    : episodeStatus === "collision" || episodeStatus === "failed"
+      ? "failed"
+      : episodeStatus === "timeout"
+        ? "timeout"
+        : episodeStatus === "running"
+          ? "running"
+          : episodeStatus === "paused"
+            ? "paused"
+            : "ready";
+  const runDisabledReason = session === null
+    ? t("bench.signedOut")
+    : !profileId
+      ? t("bench.disabled.deployment")
+      : !mission
+        ? t("bench.disabled.mission")
+        : !choice.stack || !choice.local_config
+          ? t("bench.disabled.candidate")
+          : null;
 
   return (
-    <>
-      <div className="page-head">
-        <div>
+    <main className="simulate-page">
+      <header className="page-head simulate-page-head">
+        <span className="simulate-page-icon" aria-hidden="true"><Icon name="play" size={21} /></span>
+        <div className="simulate-page-heading">
           <h2>{t("bench.title")}</h2>
           <p>{t("bench.subtitle")}</p>
         </div>
-      </div>
+        <span className={`simulate-status simulate-status--${statusTone}`}>
+          <span className="simulate-status-dot" aria-hidden="true" />
+          {episodeStatus}
+        </span>
+      </header>
 
       {/* Stated before anything is run, not after. A reader who watches a
           clean episode and then finds out it counted for nothing has been
           told too late to have made a decision with it. */}
-      <div className="notice">{t("bench.notEvidence")}</div>
+      <details className="simulate-notice">
+        <summary>
+          <span className="simulate-notice-icon" aria-hidden="true"><Icon name="info" size={18} /></span>
+          <span><strong>{t("bench.noticeTitle")}</strong><small>{t("bench.noticeSummary")}</small></span>
+          <Icon name="chevronDown" size={16} />
+        </summary>
+        <p>{t("bench.notEvidence")}</p>
+      </details>
 
-      {error ? <div className="error-box">{error}</div> : null}
+      {error ? <div className="error-box simulate-error"><Icon name="alert" size={18} /><span>{error}</span></div> : null}
       {stream.error ? (
-        <div className="error-box">{t("simulate.stream", { message: stream.error })}</div>
+        <div className="error-box simulate-error"><Icon name="alert" size={18} /><span>{t("simulate.stream", { message: stream.error })}</span></div>
       ) : null}
 
       {profiles.length === 0 ? (
-        <div className="panel">
+        <div className="simulate-empty-banner">
           <EmptyState
             icon="cpu"
             title={t("bench.empty.title")}
@@ -288,10 +323,16 @@ export default function TestBenchPage() {
         </div>
       ) : null}
 
-      <div className="panel">
-        <div className="row" style={{ alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
-          <label className="field">
-            <span>{t("bench.deployment")}</span>
+      <section className="panel simulate-setup" aria-labelledby="simulate-setup-title">
+        <div className="simulate-section-head">
+          <span className="simulate-section-icon"><Icon name="cpu" size={18} /></span>
+          <div><h3 id="simulate-setup-title">{t("bench.setupTitle")}</h3><p>{t("bench.setupSubtitle")}</p></div>
+        </div>
+        <div className="simulate-setup-grid">
+          <fieldset className="simulate-setup-group simulate-setup-group--conditions">
+            <legend>{t("bench.group.conditions")}</legend>
+            <label className="field simulate-field">
+              <span>{t("bench.deployment")}</span>
             <select value={profileId} onChange={(event) => setProfileId(event.target.value)}>
               {profiles.map((entry) => (
                 <option key={entry.id} value={entry.id}>
@@ -299,10 +340,11 @@ export default function TestBenchPage() {
                 </option>
               ))}
             </select>
-          </label>
+              <small>{t("bench.help.deployment")}</small>
+            </label>
 
-          <label className="field">
-            <span>{t("bench.mission")}</span>
+            <label className="field simulate-field">
+              <span>{t("bench.mission")}</span>
             <select
               value={mission?.id ?? ""}
               disabled={missions.length === 0}
@@ -314,34 +356,47 @@ export default function TestBenchPage() {
                 </option>
               ))}
             </select>
-          </label>
+              <small>{t("bench.help.mission")}</small>
+            </label>
+          </fieldset>
 
-          <label className="field">
-            <span>{t("bench.seed")}</span>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              value={seed}
-              onChange={(event) => setSeed(Math.max(0, Math.trunc(Number(event.target.value))))}
+          <fieldset className="simulate-setup-group simulate-setup-group--candidate">
+            <legend>{t("bench.group.candidate")}</legend>
+            <CandidatePicker
+              label={t("bench.candidate")}
+              value={choice}
+              onChange={setChoice}
+              stacks={stacks}
+              configs={configs}
+              disabled={busy}
+              detailed
             />
-          </label>
+          </fieldset>
 
-          <CandidatePicker
-            label={t("bench.candidate")}
-            value={choice}
-            onChange={setChoice}
-            stacks={stacks}
-            configs={configs}
-            disabled={busy}
-          />
+          <fieldset className="simulate-setup-group simulate-setup-group--seed">
+            <legend>{t("bench.group.reproducibility")}</legend>
+            <label className="field simulate-field">
+              <span>{t("bench.seed")}</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={seed}
+                onChange={(event) => setSeed(Math.max(0, Math.trunc(Number(event.target.value))))}
+              />
+              <small>{t("bench.seedNote")}</small>
+            </label>
+          </fieldset>
+        </div>
 
+        <div className="simulate-run-actions">
           <button
             type="button"
-            className="primary"
+            className="primary simulate-run-button"
             disabled={busy || !ready || session === null}
             onClick={() => void runOne()}
           >
+            {busy ? <span className="simulate-spinner" aria-hidden="true" /> : <Icon name="play" size={18} />}
             {busy ? t("bench.running") : t("bench.run")}
           </button>
           {/* Answering "what am I about to measure" before measuring
@@ -349,155 +404,128 @@ export default function TestBenchPage() {
               side effect of running, which is the wrong way round for
               a page whose job is to check a deployment before a
               300-episode comparison commits to it. */}
-          <button
+          <button className="simulate-world-button"
             type="button"
             disabled={busy || !ready || session === null}
             onClick={() => void showTheWorld()}
           >
+            <Icon name="map" size={17} />
             {t("bench.showWorld")}
           </button>
+          {runDisabledReason ? <p className="simulate-disabled-reason"><Icon name="info" size={15} />{runDisabledReason}</p> : null}
         </div>
-
-        {/* The same seed is the same episode. Saying so is what turns the
-            number from a mysterious knob into the control that lets you
-            re-watch what you just saw. */}
-        <p className="muted" style={{ marginTop: 8 }}>
-          {t("bench.seedNote")}
-        </p>
-        {session === null ? <p className="muted">{t("bench.signedOut")}</p> : null}
-      </div>
+      </section>
 
       {/* What the deployment fixed, shown rather than editable. Every one
           of these is a condition the comparison will run under, and a
           field that let you nudge one "just for the preview" would make
           this a different experiment. */}
       {deployment ? (
-        <div className="panel">
-          <div className="panel-head">
-            <h3>{t("bench.conditions")}</h3>
-          </div>
-          <p className="muted">{t("bench.conditionsNote")}</p>
-          <div className="table-scroll wide">
-            <table>
-              <tbody>
-                <tr>
-                  <td className="muted">{t("simulate.start")}</td>
-                  <td>
-                    {start ? `${start.x.toFixed(2)}, ${start.y.toFixed(2)} m` : "—"}
-                  </td>
-                  <td className="muted">{t("simulate.goal")}</td>
-                  <td>
-                    {goal ? `${goal.x.toFixed(2)}, ${goal.y.toFixed(2)} m` : "—"}
-                  </td>
-                </tr>
-                <tr>
-                  <td className="muted">{t("bench.tolerance")}</td>
-                  <td>{deployment.constraints?.goal_tolerance_m ?? "—"} m</td>
-                  <td className="muted">{t("library.timeout")}</td>
-                  <td>{deployment.constraints?.episode_timeout_s ?? "—"} s</td>
-                </tr>
-                <tr>
-                  <td className="muted">{t("simulate.robotRadius")}</td>
-                  <td>{deployment.robot?.radius ?? "—"} m</td>
-                  <td className="muted">{t("simulate.maxSpeed")}</td>
-                  <td>{deployment.robot?.max_linear_velocity ?? "—"} m/s</td>
-                </tr>
-                <tr>
-                  <td className="muted">{t("bench.traffic")}</td>
-                  <td>{deployment.environment?.dynamic_obstacles?.length ?? 0}</td>
-                  {/* Left off this table until somebody went looking for
-                      it here. Whether a candidate may replan changes what
-                      happens the moment the robot is blocked — which is
-                      the moment the whole page exists to show — so a
-                      table of "what the deployment fixed" that omitted it
-                      was omitting the condition most likely to explain
-                      what you are watching. */}
-                  <td className="muted">{t("bench.replanning")}</td>
-                  <td>
-                    {deployment.replanning?.enabled
-                      ? t("bench.replanningOn")
-                      : t("bench.replanningOff")}
-                  </td>
-                  <td className="muted">{t("bench.noise")}</td>
-                  <td>{describeNoise(deployment.environment?.sensor_noise, t)}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          {staged ? (
-            <p className="muted" style={{ marginTop: 8 }}>
-              {t("bench.contextId")} <code>{staged.episode_context_id}</code>{" "}
-              {t("bench.contextIdNote")}
+        <section className={`panel deployment-conditions${conditionsExpanded ? " is-expanded" : " is-collapsed"}`}>
+          <header className="deployment-conditions-header">
+            <span className="deployment-conditions-title-icon"><Icon name="check" size={18} /></span>
+            <div><h3>{t("bench.conditions")}</h3><p>{t("bench.conditionsNote")}</p></div>
+            <span className="deployment-conditions-lock" title={t("bench.conditionsLockedHint")}><Icon name="check" size={13} />{t("bench.conditionsLocked")}</span>
+            <button type="button" className="deployment-conditions-toggle" aria-expanded={conditionsExpanded} onClick={() => setConditionsExpanded((current) => !current)}>{conditionsExpanded ? t("bench.conditionsCollapse") : t("bench.conditionsExpand")}<Icon name="chevronDown" size={14} /></button>
+          </header>
+
+          {!conditionsExpanded ? (
+            <p className="deployment-conditions-summary">
+              {t("bench.conditionsSummary", {
+                start: start ? `${start.x.toFixed(2)}, ${start.y.toFixed(2)}` : "—",
+                goal: goal ? `${goal.x.toFixed(2)}, ${goal.y.toFixed(2)}` : "—",
+                radius: deployment.robot?.radius === undefined ? "—" : `${deployment.robot.radius} m`,
+                replanning: deployment.replanning?.enabled ? t("bench.on") : t("bench.off"),
+                traffic: String(deployment.environment?.dynamic_obstacles?.length ?? 0),
+              })}
             </p>
+          ) : (
+            <div className="deployment-conditions-grid">
+              <ConditionGroup title={t("bench.conditionsMission")} icon="map" tone="mission" rows={[
+                [t("simulate.start"), start ? `${start.x.toFixed(2)}, ${start.y.toFixed(2)} m` : "—"],
+                [t("simulate.goal"), goal ? `${goal.x.toFixed(2)}, ${goal.y.toFixed(2)} m` : "—"],
+                [t("bench.tolerance"), formatCondition(deployment.constraints?.goal_tolerance_m, "m")],
+                [t("library.timeout"), formatCondition(deployment.constraints?.episode_timeout_s, "s")],
+              ]} />
+              <ConditionGroup title={t("bench.conditionsRobot")} icon="cpu" tone="robot" rows={[
+                [t("simulate.robotRadius"), formatCondition(deployment.robot?.radius, "m")],
+                [t("simulate.maxSpeed"), formatCondition(deployment.robot?.max_linear_velocity, "m/s")],
+                [t("bench.controlPeriod"), formatCondition(deployment.robot?.control_period, "s")],
+              ]} />
+              <section className="deployment-condition-group deployment-condition-group--environment">
+                <header><span><Icon name="sparkles" size={16} /></span><h4>{t("bench.conditionsEnvironment")}</h4></header>
+                <dl className="deployment-condition-list">
+                  <div className="deployment-condition-row"><dt>{t("bench.traffic")}</dt><dd>{deployment.environment?.dynamic_obstacles?.length ?? 0}</dd></div>
+                  <div className="deployment-condition-row"><dt>{t("bench.replanning")}</dt><dd><span className={`condition-status ${deployment.replanning?.enabled ? "is-on" : "is-off"}`}><Icon name={deployment.replanning?.enabled ? "check" : "close"} size={12} />{deployment.replanning?.enabled ? t("bench.on") : t("bench.off")}</span></dd></div>
+                  <div className="deployment-condition-row deployment-condition-row--noise"><dt>{t("bench.noise")}</dt><dd className="condition-noise-tags">{activeNoiseNames(deployment.environment?.sensor_noise).length > 0 ? activeNoiseNames(deployment.environment?.sensor_noise).map((name) => <span key={name} title={name}>{name}</span>) : <span className="condition-status is-off">{t("bench.noiseNone")}</span>}</dd></div>
+                </dl>
+              </section>
+            </div>
+          )}
+          {staged ? (
+            <footer className="deployment-condition-footer" title={staged.episode_context_id}><span>{t("bench.contextId")}</span><code>{shortContextId(staged.episode_context_id)}</code><span>{t("bench.contextIdNote")}</span></footer>
           ) : null}
-        </div>
+        </section>
       ) : null}
 
-      <div className="toolbar">
-        <button onClick={stream.play} disabled={stream.frames.length === 0 || stream.playing}>
-          {t("simulate.play")}
-        </button>
-        <button onClick={stream.pause} disabled={!stream.playing}>
-          {t("simulate.pause")}
-        </button>
-        <button onClick={stream.reset} disabled={stream.frames.length === 0}>
-          {t("bench.replay")}
-        </button>
-        <label className="inline">
-          {t("bench.speed")}
-          <select
-            value={stream.speed}
-            onChange={(event) => stream.setSpeed(Number(event.target.value))}
-          >
-            {[0.25, 0.5, 1, 2, 4, 8].map((value) => (
-              <option key={value} value={value}>
-                {value}×
-              </option>
-            ))}
-          </select>
-        </label>
-        <input
-          type="range"
-          min={0}
-          max={Math.max(stream.duration, 0.001)}
-          step={0.01}
-          value={stream.playhead}
-          onChange={(event) => stream.seek(Number(event.target.value))}
-          style={{ flex: 1, minWidth: 160 }}
-          aria-label={t("simulate.timeline")}
-        />
-        <span className="muted" style={{ fontVariantNumeric: "tabular-nums" }}>
-          {stream.playhead.toFixed(2)} / {stream.duration.toFixed(2)} s
-        </span>
-      </div>
+      <section className="simulate-console" aria-label={t("bench.consoleTitle")}>
+        <div className="simulate-playback">
+          <div className="simulate-playback-buttons">
+            <button className="simulate-play" onClick={stream.play} disabled={stream.frames.length === 0 || stream.playing} aria-label={t("simulate.play")}>
+              <Icon name="play" size={17} /><span>{t("simulate.play")}</span>
+            </button>
+            <button onClick={stream.pause} disabled={!stream.playing} aria-label={t("simulate.pause")}>
+              <span className="simulate-pause-icon" aria-hidden="true" /><span>{t("simulate.pause")}</span>
+            </button>
+            <button onClick={stream.reset} disabled={stream.frames.length === 0} aria-label={t("bench.replay")}>
+              <Icon name="refresh" size={17} /><span>{t("bench.replay")}</span>
+            </button>
+          </div>
+          <label className="simulate-speed">
+            <span>{t("bench.speed")}</span>
+            <select value={stream.speed} onChange={(event) => stream.setSpeed(Number(event.target.value))}>
+              {[0.25, 0.5, 1, 2, 4, 8].map((value) => <option key={value} value={value}>{value}×</option>)}
+            </select>
+          </label>
+          <div className="simulate-timeline">
+            <input
+              type="range"
+              min={0}
+              max={Math.max(stream.duration, 0.001)}
+              step={0.01}
+              value={stream.playhead}
+              onChange={(event) => stream.seek(Number(event.target.value))}
+              aria-label={t("simulate.timeline")}
+              aria-valuetext={`${stream.playhead.toFixed(2)} / ${stream.duration.toFixed(2)} s`}
+            />
+            <span>{stream.playhead.toFixed(2)} / {stream.duration.toFixed(2)} s</span>
+          </div>
+          <span className={`simulate-status simulate-status--${statusTone}`}><span className="simulate-status-dot" aria-hidden="true" />{episodeStatus}</span>
+          {stream.reason ? <span className="simulate-stop-reason">{stream.reason}</span> : null}
+        </div>
 
-      <div className="toolbar">
-        <label className="inline">
-          <input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} />
-          {t("simulate.grid")}
-        </label>
-        <label className="inline">
-          <input type="checkbox" checked={showPlan} onChange={(e) => setShowPlan(e.target.checked)} />
-          {t("simulate.globalPath")}
-        </label>
-        <label className="inline">
-          <input
-            type="checkbox"
-            checked={showTrajectory}
-            onChange={(e) => setShowTrajectory(e.target.checked)}
-          />
-          {t("simulate.trajectory")}
-        </label>
-        {stream.status ? (
-          <span className={`badge ${stream.status === "success" ? "ok" : "err"}`}>
-            {stream.status}
-          </span>
-        ) : null}
-        {stream.reason ? <span className="muted">{stream.reason}</span> : null}
-      </div>
+        <div className="simulate-layers" role="group" aria-label={t("bench.layersTitle")}>
+          <strong>{t("bench.layersTitle")}</strong>
+          <label className="simulate-layer simulate-layer--grid">
+            <input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} />
+            <span className="simulate-layer-swatch" aria-hidden="true" />{t("simulate.grid")}
+          </label>
+          <label className="simulate-layer simulate-layer--plan">
+            <input type="checkbox" checked={showPlan} onChange={(e) => setShowPlan(e.target.checked)} />
+            <span className="simulate-layer-swatch" aria-hidden="true" />{t("simulate.globalPath")}
+          </label>
+          <label className="simulate-layer simulate-layer--trajectory">
+            <input type="checkbox" checked={showTrajectory} onChange={(e) => setShowTrajectory(e.target.checked)} />
+            <span className="simulate-layer-swatch" aria-hidden="true" />{t("simulate.trajectory")}
+          </label>
+        </div>
 
-      <div className="row">
-        <div className="panel" style={{ flex: "1 1 auto" }}>
+        <div className="simulate-workspace">
+          <div className="panel simulate-map-panel">
+            <div className="simulate-map-head">
+              <div><strong>{t("bench.worldTitle")}</strong><span>{staged ? `${profileId} · seed ${seed}` : t("bench.worldSubtitle")}</span></div>
+              <span className={`simulate-status simulate-status--${statusTone}`}><span className="simulate-status-dot" aria-hidden="true" />{episodeStatus}</span>
+            </div>
           {map ? (
             <MapView
               map={map}
@@ -529,66 +557,61 @@ export default function TestBenchPage() {
               showTrajectory={showTrajectory}
             />
           ) : (
-            <p className="muted">{t("bench.selectDeployment")}</p>
+            <div className="simulate-map-placeholder">
+              <span><Icon name="map" size={28} /></span>
+              <strong>{t("bench.worldEmptyTitle")}</strong>
+              <p>{t("bench.selectDeployment")}</p>
+            </div>
           )}
-        </div>
+          </div>
 
-        <div style={{ flex: "0 0 300px", minWidth: 280 }}>
-          <div className="panel">
-            <h3>{t("simulate.robotState")}</h3>
+          <aside className="simulate-side-panel">
+          <div className={`panel simulate-status-panel simulate-status-panel--${statusTone}`}>
+            <div className="simulate-section-head simulate-section-head--compact"><span className="simulate-section-icon"><Icon name="cpu" size={17} /></span><div><h3>{t("simulate.robotState")}</h3><p>{t("bench.robotStateSubtitle")}</p></div></div>
             {stream.currentFrame ? (
-              <table>
-                <tbody>
-                  <tr>
-                    <td className="muted">t</td>
-                    <td>{stream.currentFrame.time.toFixed(2)} s</td>
-                  </tr>
-                  <tr>
-                    <td className="muted">pose</td>
-                    <td>
-                      {stream.currentFrame.x.toFixed(2)}, {stream.currentFrame.y.toFixed(2)},{" "}
-                      {stream.currentFrame.theta.toFixed(2)} rad
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="muted">v</td>
-                    <td>{stream.currentFrame.linear_velocity.toFixed(2)} m/s</td>
-                  </tr>
-                  <tr>
-                    <td className="muted">ω</td>
-                    <td>{stream.currentFrame.angular_velocity.toFixed(2)} rad/s</td>
-                  </tr>
-                </tbody>
-              </table>
+              <dl className="simulate-telemetry">
+                <div><dt>{t("bench.telemetry.time")}</dt><dd>{stream.currentFrame.time.toFixed(2)} <small>s</small></dd></div>
+                <div><dt>X</dt><dd>{stream.currentFrame.x.toFixed(2)} <small>m</small></dd></div>
+                <div><dt>Y</dt><dd>{stream.currentFrame.y.toFixed(2)} <small>m</small></dd></div>
+                <div><dt>θ</dt><dd>{stream.currentFrame.theta.toFixed(2)} <small>rad</small></dd></div>
+                <div><dt>{t("bench.telemetry.linear")}</dt><dd>{stream.currentFrame.linear_velocity.toFixed(2)} <small>m/s</small></dd></div>
+                <div><dt>{t("bench.telemetry.angular")}</dt><dd>{stream.currentFrame.angular_velocity.toFixed(2)} <small>rad/s</small></dd></div>
+                <div className="simulate-telemetry-status"><dt>{t("bench.telemetry.status")}</dt><dd><span className={`simulate-status simulate-status--${statusTone}`}>{episodeStatus}</span></dd></div>
+                {stream.reason ? <div className="simulate-telemetry-reason"><dt>{t("bench.telemetry.reason")}</dt><dd>{stream.reason}</dd></div> : null}
+              </dl>
             ) : (
-              <p className="muted">{t("simulate.noEpisode")}</p>
+              <div className="simulate-mini-empty"><Icon name="cpu" size={22} /><p>{t("simulate.noEpisode")}</p></div>
             )}
           </div>
 
-          <div className="panel">
-            <h3>{t("bench.next")}</h3>
+          <div className="panel simulate-next-card">
+            <span className="simulate-next-icon"><Icon name="benchmark" size={19} /></span>
+            <h3>{t("bench.nextTitle")}</h3>
             <p className="muted">{t("bench.nextNote")}</p>
-            <Link href="/decisions" className="button-link">
-              {t("bench.toComparison")}
+            <Link href="/decisions" className={`button-link${stream.frames.length > 0 ? " primary" : ""}`}>
+              {t("bench.toComparison")}<Icon name="chevronRight" size={16} />
             </Link>
           </div>
+          </aside>
         </div>
-      </div>
+      </section>
 
       {/* Read off the run itself, not off a trace — so they are the right
           numbers for "did that look sane" and the wrong ones for any
           claim, which is what HĐ-5 means by the trace being the sole
           input of the Metrics Engine. */}
-      <MetricsPanel
-        metrics={stream.metrics}
-        plan={plan}
-        // Straight from the deployment rather than from the run: it is
-        // the same value the episode was staged with, and it is the one
-        // that answers "did the setting arrive at all".
-        replanning={deployment ? { enabled: Boolean(deployment.replanning?.enabled) } : undefined}
-      />
-      <p className="muted">{t("bench.metricsNote")}</p>
-    </>
+      <section className="simulate-metrics">
+        <MetricsPanel
+          metrics={stream.metrics}
+          plan={plan}
+          // Straight from the deployment rather than from the run: it is
+          // the same value the episode was staged with, and it is the one
+          // that answers "did the setting arrive at all".
+          replanning={deployment ? { enabled: Boolean(deployment.replanning?.enabled) } : undefined}
+        />
+        <p className="simulate-metrics-note"><Icon name="info" size={15} />{t("bench.metricsNote")}</p>
+      </section>
+    </main>
   );
 }
 
@@ -603,9 +626,42 @@ function describeNoise(
   noise: Record<string, number | boolean> | undefined,
   t: (key: string) => string,
 ): string {
-  if (!noise) return t("bench.noiseNone");
-  const on = Object.entries(noise)
+  const on = activeNoiseNames(noise);
+  return on.length > 0 ? on.join(", ") : t("bench.noiseNone");
+}
+
+function activeNoiseNames(noise: Record<string, number | boolean> | undefined): string[] {
+  if (!noise) return [];
+  return Object.entries(noise)
     .filter(([key, value]) => key !== "active" && typeof value === "number" && value > 0)
     .map(([key]) => key);
-  return on.length > 0 ? on.join(", ") : t("bench.noiseNone");
+}
+
+function formatCondition(value: number | undefined, unit: string): string {
+  return value === undefined || !Number.isFinite(value) ? "—" : `${value} ${unit}`;
+}
+
+function shortContextId(value: string): string {
+  return value.length <= 16 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
+}
+
+function ConditionGroup({
+  title,
+  icon,
+  tone,
+  rows,
+}: {
+  title: string;
+  icon: IconName;
+  tone: "mission" | "robot";
+  rows: [string, string][];
+}) {
+  return (
+    <section className={`deployment-condition-group deployment-condition-group--${tone}`}>
+      <header><span><Icon name={icon} size={16} /></span><h4>{title}</h4></header>
+      <dl className="deployment-condition-list">
+        {rows.map(([label, value]) => <div className="deployment-condition-row" key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+      </dl>
+    </section>
+  );
 }
