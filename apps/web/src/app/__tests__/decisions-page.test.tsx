@@ -669,10 +669,49 @@ describe("which episodes failed, and how", () => {
     expect(DETAIL).toContain('trace.missing');
   });
 
+  it("offers the preregistered four, and both extremes among them", () => {
+    // Which pair loads first is a choice that looks like evidence, so a
+    // recipe makes it. Showing the winner's best without the
+    // runner-up's is the cherry-pick that recipe exists to prevent.
+    expect(DETAIL).toContain("getExemplars(run.id)");
+    expect(DETAIL).toContain("trace.exemplar.");
+    expect(DETAIL).toContain("item.tie_break_over.length > 0");
+  });
+
+  it("falls back to the plain episode list when no recipe answer exists", () => {
+    // A run scored before per-episode utility was stored has no ΔU, so
+    // three of the four roles cannot be filled. An empty set is the
+    // honest state — not a set chosen another way under the label.
+    expect(DETAIL).toContain("setExemplars([])");
+    expect(DETAIL).toContain("exemplars.length > 0");
+  });
+
+  it("keeps the alignment toggle apart from the draw mode", () => {
+    // `mode` is flat/raised — how the map is *drawn*. Reusing that name
+    // for time/progress would read, to the next person, as if the page
+    // already had two sync modes.
+    expect(DETAIL).toContain('const [syncMode, setSyncMode]');
+    expect(DETAIL).toContain('"time" | "progress"');
+    expect(DETAIL).toContain('t("trace.sync.mode")');
+  });
+
+  it("hands the panel work to a component a test can render", () => {
+    // These used to be four source-string assertions on this file. They
+    // moved with the code they describe: the caveat, the ruler and the
+    // divergence chips are now asserted against rendered HTML in
+    // `progress-sync.test.tsx`, and the pairing in
+    // `lib/__tests__/replay-sync.test.ts` — both of which can fail for
+    // the right reason, which a string search cannot.
+    expect(DETAIL).toContain("<ProgressSync");
+    expect(DETAIL).toContain('from "@/components/ProgressSync"');
+    expect(DETAIL).toContain("panelCandidates(run,");
+  });
+
   it("shares top/raised mode and playback across both candidates", () => {
     expect(DETAIL).toContain('const [mode, setMode]');
     expect(DETAIL).toContain('mode={mode}');
-    expect(DETAIL).toContain('playbackTime={playback.time}');
+    expect(DETAIL).toContain('playbackTime={at}');
+    expect(DETAIL).toContain('syncMode === "progress" ? sideTime(view, scan.time, side) : playback.time');
     expect(DETAIL).toContain('[0.25, 0.5, 1, 2, 4, 8]');
   });
 

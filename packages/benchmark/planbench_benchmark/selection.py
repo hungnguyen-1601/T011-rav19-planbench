@@ -29,10 +29,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from types import MappingProxyType
 
 import yaml
 
@@ -602,6 +603,16 @@ def run_comparison(
         gate_only = str(refusal)
         evidence = []
 
+    # **Episode-level utility, kept per episode.** The card's number is
+    # the *set* level and cannot be taken apart afterwards; the paired
+    # statistics run on this one, and until now it existed only inside
+    # this function. Anything downstream that needs "which episode did
+    # the winner win hardest" — the E2 exemplar recipe, the E4 case
+    # packet — had to either recompute the whole metric set from the
+    # traces or invent a proxy. A candidate eliminated at a gate has no
+    # entry, which is the honest answer: it was never scored.
+    utility_by_candidate = {item.candidate_id: item.episode_utilities for item in evidence}
+
     # Checks that hold whether or not a card comes out. They are the
     # ones about the *measurement*; the ΔU check needs a comparison and
     # only runs when there is one.
@@ -725,7 +736,10 @@ def run_comparison(
                 "replan_count": sum(
                     m.replan_count for m in metrics_by_candidate[candidate.candidate_id]
                 ),
-                "episodes": _episode_outcomes(metrics_by_candidate[candidate.candidate_id]),
+                "episodes": _episode_outcomes(
+                    metrics_by_candidate[candidate.candidate_id],
+                    utilities=utility_by_candidate.get(candidate.candidate_id, {}),
+                ),
             }
             for candidate, (_stack, local) in zip(candidates, candidate_specs, strict=True)
         ],
@@ -821,6 +835,24 @@ def run_comparison(
     )
     card, manifest = bundle.card, bundle.manifest
     report["decision_card"] = card.to_json_dict()
+    # **Which two candidates the paired comparison was about.**
+    #
+    # Not derivable from the card. ``recommended`` is on it, but the
+    # other half is not: ``alternative`` may only ever name a
+    # PARETO_FRONTIER candidate (HĐ-12), so it is ``None`` on every run
+    # that did not do a Pareto analysis — and when it is set it can be a
+    # *different* candidate from the one ΔU was computed against.
+    # Second-on-the-ranking and not-dominated are two claims, and the
+    # card is deliberately careful not to conflate them.
+    #
+    # Everything downstream that shows the two runs side by side — the
+    # comparison canvases, the exemplar roles, the replay alignment — is
+    # about the pair the statistics used, so that pair is recorded here
+    # rather than guessed at by each reader.
+    report["comparison_pair"] = {
+        "recommended_candidate_id": recommendation.recommended_id,
+        "runner_up_candidate_id": recommendation.runner_up_id,
+    }
     # Returned, not merely written beside the card. HĐ-13's acceptance
     # criterion is that somebody else rebuilds the same card *from the
     # manifest*, so a caller that keeps only the card keeps a claim it
@@ -980,7 +1012,11 @@ def _observation_classes(stack_id: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-def _episode_outcomes(metrics: Sequence[EpisodeMetricSet]) -> list[dict[str, object]]:
+def _episode_outcomes(
+    metrics: Sequence[EpisodeMetricSet],
+    *,
+    utilities: Mapping[str, float] = MappingProxyType({}),
+) -> list[dict[str, object]]:
     """Which episodes this candidate passed, and how the rest failed.
 
     **The aggregate was never the whole answer.** ``success_rate: 0.70``
@@ -1018,6 +1054,14 @@ def _episode_outcomes(metrics: Sequence[EpisodeMetricSet]) -> list[dict[str, obj
             # replans reads very differently when it is one runaway
             # episode than when it is one replan in each of forty.
             "replan_count": m.replan_count,
+            # **Episode level, not the card's number** (HĐ-9.1). The two
+            # differ at U_R, where every episode is clipped, so a reader
+            # averaging this column will not land on the card — which is
+            # correct and is why the name says which level it is.
+            #
+            # Absent for a candidate that never reached scoring: a gate
+            # eliminated it, and 0.0 would read as "scored, and terrible".
+            "episode_decision_utility": utilities.get(m.episode_context_id),
         }
         for m in metrics
     ]

@@ -798,6 +798,62 @@ def get_trace(
     return service.trace(run_id, candidate_id, episode_context_id)
 
 
+@router.get("/decisions/{run_id}/exemplars")
+def get_exemplars(run_id: str, service: Runs) -> dict[str, Any]:
+    """Which four episodes to look at, decided by a fixed recipe.
+
+    Thirty episodes and one viewer: something has to choose which pair
+    loads first, and a person choosing it is a choice that looks like
+    evidence. The recipe returns the median episode, *both* extremes —
+    they travel as a pair, since showing the winner's best without the
+    runner-up's is the cherry-pick this exists to prevent — and the
+    worst safety outcome, which the utility ranking never surfaces on
+    its own.
+    """
+    return service.exemplars(run_id)
+
+
+@router.get("/decisions/{run_id}/replay-sync/{episode_context_id}")
+def get_replay_sync(
+    run_id: str,
+    episode_context_id: str,
+    candidate_a: str,
+    candidate_b: str,
+    service: Runs,
+    # Bounded, because this one parameter sizes both a loop and the
+    # response body and the route needs no login to reach. `steps=1e9`
+    # is not a client that wants a finer chart; the ceiling is far above
+    # any real one — the page asks for 200.
+    steps: Annotated[int, Query(ge=2, le=2000)] = 200,
+) -> dict[str, Any]:
+    """Both candidates of one episode, placed on arc length instead of the clock.
+
+    The comparison page drives its two canvases from one playhead, which
+    is time-sync and is the honest default: at a shared timestamp the
+    two robots saw the same world. This endpoint serves the other view —
+    the same part of the *map* for both — which is what makes a
+    geometric cause visible and what silently changes the meaning of
+    "at the same moment".
+
+    So the payload carries its own caveat: the projection quality (the
+    platform has no planned route to project onto yet, so today it is
+    always a degraded one) and the fixed warning that the two runs
+    reached each place at different times. A client cannot obtain the
+    rows without them.
+
+    Not a response model, for the reason :func:`get_trace` is not one:
+    the rows are bulk telemetry, and the shape is already validated by
+    the model that produced them.
+    """
+    return service.replay_sync(
+        run_id,
+        episode_context_id,
+        candidate_a=candidate_a,
+        candidate_b=candidate_b,
+        steps=steps,
+    )
+
+
 @router.post("/decisions/{run_id}/config-approval/withdraw", response_model=DecisionRunResource)
 def withdraw_config(
     run_id: str, request: ReviewRequest, service: Runs, user: CurrentUser

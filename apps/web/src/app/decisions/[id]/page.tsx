@@ -17,6 +17,8 @@
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { TraceViewer } from "@/components/TraceViewer";
+import { ProgressSync, type SyncSlot } from "@/components/ProgressSync";
+import { commonProgress, panelCandidates, sideTime } from "@/lib/replaySync";
 import { Icon } from "@/components/Icon";
 import { useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
@@ -28,6 +30,8 @@ import {
   withdrawConfig,
   getDecision,
   getTrace,
+  getReplaySync,
+  getExemplars,
   listDecisionEvents,
   noCardReason,
   reviewRun,
@@ -41,6 +45,9 @@ import {
   type ReviewEvent,
   type RunCandidate,
   type TracePayload,
+  type DivergencePoint,
+  type Exemplar,
+  type ReplaySyncView,
   observationClasses,
 } from "@/lib/decisions";
 import { downloadDecisionReport } from "@/lib/reports";
@@ -162,12 +169,30 @@ function CandidateComparisonColumn({ candidate, side, recommended }: { candidate
  */
 function TracePanel({ run }: { run: DecisionRun }) {
   const { t } = useTranslation();
-  const candidates = useMemo(() => (run.report?.candidates ?? []).slice(0, 2), [run.report?.candidates]);
+  // Winner first, and the *same* two the exemplar recipe runs on — both
+  // read the card rather than list order.
+  const candidates = useMemo(
+    () => panelCandidates(run, run.report?.candidates ?? []),
+    [run],
+  );
   const episodes = run.report?.sample?.episode_context_ids ?? [];
   const [episodeId, setEpisodeId] = useState(episodes[0] ?? "");
   const [slots, setSlots] = useState<Record<string, TraceSlot>>({});
   const [mode, setMode] = useState<"flat" | "raised">("flat");
+  // Named `syncMode`, not `mode`: `mode` above is how the map is *drawn*
+  // (2D or 2.5D). Two unrelated ideas under one name is how a later
+  // reader concludes the page already had two sync modes.
+  const [syncMode, setSyncMode] = useState<"time" | "progress">("time");
+  const [sync, setSync] = useState<SyncSlot>({ state: "idle" });
+  /** Empty until the recipe answers, and empty for a run too old to
+   *  carry per-episode utility — the plain list is the honest fallback,
+   *  not a set chosen another way under a preregistered label. */
+  const [exemplars, setExemplars] = useState<Exemplar[]>([]);
   const [playback, setPlayback] = useState<PlaybackState>(initialPlayback);
+  /** Where the progress playhead is, in metres of arc length. A second
+   *  state rather than reusing `playback.time`, whose unit is seconds —
+   *  one variable holding two units is a bug waiting for a reader. */
+  const [scan, setScan] = useState<PlaybackState>(initialPlayback);
   const comparisonRef = useRef<HTMLDivElement | null>(null);
   const requestId = useRef(0);
 
@@ -205,6 +230,44 @@ function TracePanel({ run }: { run: DecisionRun }) {
     if (episodeId) void loadPair(episodeId);
   }, [episodeId, loadPair]);
 
+  useEffect(() => {
+    let live = true;
+    getExemplars(run.id)
+      .then((set) => {
+        if (!live) return;
+        // Fail closed on disagreement. The server reads the card and so
+        // does this page, so they should never differ — and if they ever
+        // do, four chips labelling episodes of *another* pair is worse
+        // than no chips.
+        const shown = candidates.map((candidate) => candidate.candidate_id);
+        const about = [set.candidate_a, set.candidate_b];
+        setExemplars(about.every((id) => shown.includes(id)) ? set.exemplars : []);
+      })
+      .catch(() => live && setExemplars([]));
+    return () => {
+      live = false;
+    };
+  }, [candidates, run.id]);
+
+  // Progress-sync is computed by the platform, not here: projecting in
+  // the browser would put a second copy of the arc-length rules in
+  // TypeScript, and the two would drift the first time either is fixed.
+  useEffect(() => {
+    if (syncMode !== "progress" || !episodeId || candidates.length < 2) return;
+    let live = true;
+    setSync({ state: "loading" });
+    setScan(initialPlayback);
+    getReplaySync(run.id, episodeId, candidates[0].candidate_id, candidates[1].candidate_id)
+      .then((view) => live && setSync({ state: "ready", view }))
+      .catch((caught: unknown) =>
+        live &&
+        setSync({ state: "error", message: caught instanceof Error ? caught.message : String(caught) }),
+      );
+    return () => {
+      live = false;
+    };
+  }, [candidates, episodeId, run.id, syncMode]);
+
   const traces = candidates.flatMap((candidate) => {
     const slot = slots[candidate.candidate_id];
     return slot?.state === "ready" ? [slot.trace] : [];
@@ -216,6 +279,15 @@ function TracePanel({ run }: { run: DecisionRun }) {
     const timer = window.setInterval(() => setPlayback((current) => tick(current, 0.05, duration)), 50);
     return () => window.clearInterval(timer);
   }, [duration, playback.playing]);
+
+  const view: ReplaySyncView | null = sync.state === "ready" ? sync.view : null;
+  const span = view ? commonProgress(view) : 0;
+
+  useEffect(() => {
+    if (!scan.playing) return;
+    const timer = window.setInterval(() => setScan((current) => tick(current, 0.05, span)), 50);
+    return () => window.clearInterval(timer);
+  }, [scan.playing, span]);
 
   if (candidates.length === 0 || episodes.length === 0) return null;
 
@@ -254,14 +326,57 @@ function TracePanel({ run }: { run: DecisionRun }) {
         <div className="episode-view-toggle" role="group" aria-label={t("trace.viewMode")}>
           {(["flat", "raised"] as const).map((option) => <button key={option} type="button" className={mode === option ? "primary" : ""} aria-pressed={mode === option} onClick={() => setMode(option)}>{t(`mapView.${option}`)}</button>)}
         </div>
+        {exemplars.length > 0 ? (
+          <div className="episode-exemplars" aria-label={t("trace.exemplar.title")}>
+            <span className="muted">{t("trace.exemplar.title")}:</span>
+            {exemplars.map((item) => (
+              <button
+                key={item.role}
+                type="button"
+                className={`chip${episodeId === item.episode_context_id ? " primary" : ""}`}
+                title={t(`trace.exemplar.why.${item.role}`)}
+                onClick={() => chooseEpisode(item.episode_context_id, true)}
+              >
+                {t(`trace.exemplar.${item.role}`)}
+                {item.tie_break_over.length > 0 ? ` (${t("trace.exemplar.tied")})` : ""}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div className="episode-view-toggle" role="group" aria-label={t("trace.sync.mode")}>
+          {(["time", "progress"] as const).map((option) => <button key={option} type="button" className={syncMode === option ? "primary" : ""} aria-pressed={syncMode === option} onClick={() => setSyncMode(option)}>{t(`trace.sync.${option}`)}</button>)}
+        </div>
       </div>
 
       <div ref={comparisonRef} className="episode-comparison-stage" tabIndex={-1}>
         <EpisodeHeader run={run} episodeId={episodeId} candidates={candidates} />
-        <SharedPlayback playback={playback} duration={duration} onChange={setPlayback} />
+        {syncMode === "time" ? (
+          <SharedPlayback playback={playback} duration={duration} onChange={setPlayback} />
+        ) : (
+          <ProgressSync sync={sync} scan={scan} span={span} onScan={setScan} candidates={candidates} />
+        )}
         <EpisodeLegend />
         <div className="episode-comparison-grid">
-          {candidates.map((candidate, index) => <CandidateEpisode key={candidate.candidate_id} candidate={candidate} side={index === 0 ? "a" : "b"} episodeId={episodeId} slot={slots[candidate.candidate_id] ?? { state: "loading" }} mode={mode} playbackTime={playback.time} onRetry={() => void loadPair(episodeId)} />)}
+          {candidates.map((candidate, index) => {
+            const side = index === 0 ? "a" : "b";
+            // In progress-sync the two panels are at *different*
+            // timestamps on purpose — that is the whole difference
+            // between the modes, and it is why the warning above is
+            // not optional.
+            const at = syncMode === "progress" ? sideTime(view, scan.time, side) : playback.time;
+            return (
+              <CandidateEpisode
+                key={candidate.candidate_id}
+                candidate={candidate}
+                side={side}
+                episodeId={episodeId}
+                slot={slots[candidate.candidate_id] ?? { state: "loading" }}
+                mode={mode}
+                playbackTime={at}
+                onRetry={() => void loadPair(episodeId)}
+              />
+            );
+          })}
         </div>
       </div>
     </div>

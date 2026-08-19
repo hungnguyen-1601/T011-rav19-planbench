@@ -640,6 +640,71 @@ class DecisionRunService:
             ],
         }
 
+    def replay_sync(
+        self,
+        run_id: str,
+        episode_context_id: str,
+        *,
+        candidate_a: str,
+        candidate_b: str,
+        steps: int = 200,
+    ) -> dict[str, Any]:
+        """The two panels of one episode, aligned by arc length (E2).
+
+        Time-sync needs nothing from the server: both panels already run
+        off one clock in the browser. Progress-sync does, because the
+        projection has rules — which line the arc length is measured
+        along, and how honest that line is — and a second copy of them
+        in TypeScript would drift from the one the tests cover.
+
+        Thin on purpose. Two traces come out of :meth:`trace`, which
+        already refuses an episode or a candidate that does not belong
+        to this run and applies the production trace policy; everything
+        after that is :func:`build_replay_sync_view`.
+        """
+        from planbench_explanation.replay_sync import ReplaySyncRefusal
+        from planbench_explanation.replay_view import build_replay_sync_view
+
+        try:
+            view = build_replay_sync_view(
+                self.trace(run_id, candidate_a, episode_context_id),
+                self.trace(run_id, candidate_b, episode_context_id),
+                steps=steps,
+            )
+        except ReplaySyncRefusal as refusal:
+            # A refusal here is a statement about *this evidence* — two
+            # different episodes, a run with no samples, columns that do
+            # not line up. The caller asked something the data cannot
+            # answer, which is a 422; letting it fall through to the
+            # global handler would file an expected outcome as an
+            # internal error and bury it in the logs as a bug.
+            raise DomainValidationError(str(refusal)) from refusal
+        return view.model_dump()
+
+    def exemplars(self, run_id: str) -> dict[str, Any]:
+        """The four episodes the comparison page should open with (E2).
+
+        Preregistered, so that which pair a reader sees first is not a
+        choice somebody made after looking at the results. Refuses for a
+        run scored before per-episode utility was stored: three of the
+        four roles are defined on ΔU, and no column left in the report
+        can stand in for it.
+        """
+        from planbench_explanation.exemplars import (
+            ExemplarRefusal,
+            select_exemplars_from_report,
+        )
+
+        run = self._runs.get(run_id)
+        try:
+            return select_exemplars_from_report(run.report or {}).model_dump()
+        except ExemplarRefusal as refusal:
+            # 409, not 422 and not 500: nothing is wrong with the
+            # request. This run is in a state that has no exemplar set —
+            # no card, or scored before per-episode utility was kept —
+            # and the answer is the same however politely it is asked.
+            raise InvalidStateError(str(refusal)) from refusal
+
     def approved_config(self, run_id: str) -> str:
         """The deployable configuration, as YAML — approved runs only.
 

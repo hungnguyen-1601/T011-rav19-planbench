@@ -13,6 +13,17 @@ proposal may contain, what a signed checker result looks like, and what
 evidence is required before a sentence reaches a screen.
 """
 
+from planbench_explanation.exemplars import (
+    EXEMPLAR_ROLES,
+    Exemplar,
+    ExemplarRefusal,
+    ExemplarRole,
+    ExemplarSet,
+    ReportExemplarRefusal,
+    compared_pair,
+    index_metrics,
+    select_exemplars,
+)
 from planbench_explanation.ledger import (
     CheckerResult,
     Claim,
@@ -74,6 +85,25 @@ from planbench_explanation.provenance import (
     PropositionVerdict,
     provenance_ceiling,
 )
+from planbench_explanation.replay_sync import (
+    ANCHOR_EVENTS,
+    DEGRADED_QUALITIES,
+    PROGRESS_SYNC_WARNING,
+    DivergencePoint,
+    DivergenceReport,
+    ProgressSyncPlan,
+    ProgressSyncRow,
+    ProjectedPath,
+    ProjectedSample,
+    ProjectionQuality,
+    ReferenceLine,
+    ReplaySyncRefusal,
+    TrackPoint,
+    build_progress_sync,
+    choose_reference,
+    find_divergence,
+    project,
+)
 from planbench_explanation.subjects import (
     KNOWN_SUBJECTS,
     PRE_H4_CAPPED_SUBJECTS,
@@ -114,6 +144,10 @@ from planbench_explanation.waterfall import (
 )
 
 __all__ = [
+    "ANCHOR_EVENTS",
+    "DEGRADED_QUALITIES",
+    "EXEMPLAR_ROLES",
+    "PROGRESS_SYNC_WARNING",
     "ARTIFACT_CHECKSUM_VERSION",
     "ASSERTABLE_PROPOSITIONS",
     "CLAIM_LEVEL_ORDER",
@@ -130,6 +164,21 @@ __all__ = [
     "PROPOSITION_VERDICTS",
     "REPLAY_CEILING",
     "SUM_TOLERANCE",
+    "DivergencePoint",
+    "DivergenceReport",
+    "Exemplar",
+    "ExemplarRefusal",
+    "ExemplarRole",
+    "ExemplarSet",
+    "ReportExemplarRefusal",
+    "ProgressSyncPlan",
+    "ProgressSyncRow",
+    "ProjectedPath",
+    "ProjectedSample",
+    "ProjectionQuality",
+    "ReferenceLine",
+    "ReplaySyncRefusal",
+    "TrackPoint",
     "CheckerResult",
     "Claim",
     "ClaimLevel",
@@ -182,6 +231,13 @@ __all__ = [
     "WaterfallRefusal",
     "admit_replay_with_sidecar",
     "admit_replay_without_sidecar",
+    "build_progress_sync",
+    "choose_reference",
+    "find_divergence",
+    "compared_pair",
+    "index_metrics",
+    "project",
+    "select_exemplars",
     "artifact_checksum",
     "build_waterfall",
     "canonical_propositions",

@@ -150,8 +150,21 @@ export interface RunSample {
   episode_context_ids: string[];
 }
 
+/** Which two candidates the paired comparison was about.
+ *
+ * Written by the scoring run from the recommendation itself. The card
+ * cannot answer this: `alternative` is a Pareto claim, not the
+ * statistical runner-up, and it is null whenever that analysis did not
+ * run. Absent on runs scored before the field existed.
+ */
+export interface ComparisonPair {
+  recommended_candidate_id: string;
+  runner_up_candidate_id: string;
+}
+
 export interface ComparisonReport {
   artifact: string;
+  comparison_pair?: ComparisonPair | null;
   identity: {
     task_profile_id: string;
     experiment_scope: string;
@@ -380,6 +393,113 @@ export interface TracePayload {
   /** Sparse — only the steps that carry one. A collision and an arrival
    *  are the same shape of curve; the event is what tells them apart. */
   events: { index: number; event: string }[];
+}
+
+/** Which line arc length was measured along — and how honest it is.
+ *
+ * The platform has no planned route to project onto yet (the global
+ * plan is written to the episode JSON and older runs have none), so in
+ * practice this is a `degraded_*` value today. It is rendered rather
+ * than hidden: a progress-synced panel that cannot say what it measured
+ * progress against is asking to be believed.
+ */
+export type ProjectionQuality =
+  | "reference_plan"
+  | "degraded_candidate_path"
+  | "degraded_straight_line";
+
+export interface ProgressSyncRow {
+  progress_m: number;
+  /** Null where that run never got this far — draw nothing, not a guess. */
+  time_a: number | null;
+  time_b: number | null;
+  cross_track_a: number | null;
+  cross_track_b: number | null;
+}
+
+export interface DivergencePoint {
+  kind: "sustained_cross_track" | "event";
+  progress_m: number;
+  time_a: number | null;
+  time_b: number | null;
+  separation_m: number | null;
+  event: string | null;
+  side: "a" | "b" | null;
+}
+
+export interface ReplaySyncView {
+  episode_context_id: string;
+  candidate_a: string;
+  candidate_b: string;
+  plan: {
+    reference: { points: [number, number][]; quality: ProjectionQuality };
+    rows: ProgressSyncRow[];
+    backward_samples_a: number;
+    backward_samples_b: number;
+    /** Fixed server-side text. Rendered verbatim: a caveat the client
+     *  can reword is a caveat the client can water down. */
+    warning: string;
+  };
+  divergence: { sustained: DivergencePoint | null; anchors: DivergencePoint[] };
+  /** Whose driven path became the ruler, when one did. That candidate's
+   *  cross-track offset is zero everywhere by construction. */
+  reference_source_candidate_id: string | null;
+}
+
+export type ExemplarRole =
+  | "typical"
+  | "strongest_for_winner"
+  | "strongest_for_runnerup"
+  | "safety_critical";
+
+export interface Exemplar {
+  role: ExemplarRole;
+  episode_context_id: string;
+  delta_utility: number;
+  /** The number that chose it: metres of clearance for the safety role,
+   *  ΔU for the rest. */
+  criterion: number;
+  /** Episodes that tied with it, resolved by id. "Worst by a wide
+   *  margin" and "worst by a coin flip the recipe made for you" are
+   *  different pieces of evidence. */
+  tie_break_over: string[];
+}
+
+export interface ExemplarSet {
+  candidate_a: string;
+  candidate_b: string;
+  n_episodes: number;
+  exemplars: Exemplar[];
+}
+
+/** Which four episodes to open with, by a recipe fixed in advance.
+ *
+ * Rejects with 4xx for a run scored before per-episode utility was
+ * stored — three of the four roles are defined on ΔU and nothing left
+ * in the report can stand in for it. The page shows the plain episode
+ * list in that case rather than a set chosen some other way under a
+ * label that says it was preregistered.
+ */
+export function getExemplars(runId: string): Promise<ExemplarSet> {
+  return authFetch<ExemplarSet>(`/decisions/${runId}/exemplars`);
+}
+
+/** Both candidates of one episode, placed on arc length (E2).
+ *
+ * Computed server-side on purpose: projecting in the browser would put
+ * a second copy of the arc-length rules in TypeScript, and the copies
+ * would disagree the first time either was fixed.
+ */
+export function getReplaySync(
+  runId: string,
+  episodeContextId: string,
+  candidateA: string,
+  candidateB: string,
+): Promise<ReplaySyncView> {
+  const query = new URLSearchParams({ candidate_a: candidateA, candidate_b: candidateB });
+  return authFetch<ReplaySyncView>(
+    `/decisions/${runId}/replay-sync/${episodeContextId}?${query.toString()}`,
+  );
 }
 
 export function getTrace(

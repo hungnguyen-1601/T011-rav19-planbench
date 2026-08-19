@@ -114,7 +114,12 @@ describe("playback", () => {
     expect(VIEWER).toContain('mode?: "flat" | "raised"');
     expect(VIEWER).toContain("frameIndexAt(timedFrames, playbackTime)");
     expect(DETAIL).toContain("<SharedPlayback");
-    expect(DETAIL).toContain("playbackTime={playback.time}");
+    // One clock still drives both panels — but which clock depends on
+    // the alignment: seconds in time-sync, and in progress-sync the
+    // timestamp each run reached the same arc length at, which is a
+    // *different* timestamp per side on purpose.
+    expect(DETAIL).toContain("playbackTime={at}");
+    expect(DETAIL).toContain('syncMode === "progress" ? sideTime(view, scan.time, side) : playback.time');
   });
 });
 
