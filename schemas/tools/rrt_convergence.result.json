@@ -7,7 +7,7 @@
       "additionalProperties": false,
       "properties": {
         "budget_multiplier": {
-          "description": "Sample budget as a multiple of configured.",
+          "description": "The larger budget, as a multiple of configured.",
           "type": "number",
           "unit": "ratio"
         },
@@ -21,8 +21,13 @@
           "type": "number",
           "unit": "count"
         },
-        "success_rate": {
-          "description": "seeds_reaching_corridor over seeds_run.",
+        "success_rate_at_budget": {
+          "description": "Rate at the configured sample budget.",
+          "type": "number",
+          "unit": "ratio"
+        },
+        "success_rate_at_high_budget": {
+          "description": "Rate at the larger preregistered budget. The pair is the measurement: a rate that does not move with the budget points at the geometry.",
           "type": "number",
           "unit": "ratio"
         }
@@ -30,8 +35,9 @@
       "required": [
         "seeds_run",
         "seeds_reaching_corridor",
-        "budget_multiplier",
-        "success_rate"
+        "success_rate_at_budget",
+        "success_rate_at_high_budget",
+        "budget_multiplier"
       ],
       "type": "object"
     },
@@ -65,6 +71,6 @@
   "required": [
     "measurements"
   ],
-  "title": "rrt_convergence@1.0.0 output",
+  "title": "rrt_convergence@2.0.0 output",
   "type": "object"
 }

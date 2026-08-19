@@ -466,24 +466,31 @@ def test_too_few_episodes_is_reported_as_such() -> None:
     assert result.failure_code == "insufficient_episodes"
 
 
-def test_the_checks_that_need_the_sidecar_say_so_rather_than_approximating() -> None:
-    """A replay from reconstructed inputs is a different measurement."""
-    assert {"replay_global_plan", "rrt_convergence"} == AWAITING_SIDECAR
+def test_nothing_is_awaiting_the_sidecar_any_more() -> None:
+    """Both replay checks landed in E6b.
+
+    ``replay_global_plan`` when E4.5 gave it inputs and a planner could
+    be injected; ``rrt_convergence`` when its evidence grew the run's own
+    seed set. The set stays as a named empty one: a tool with no branch
+    still answers ``checker_not_implemented``, and the next card added
+    lands in exactly that situation.
+    """
+    assert AWAITING_SIDECAR == frozenset()
+
+
+def test_a_host_without_a_planner_cannot_replay_and_says_which_half_is_missing() -> None:
+    """Not a failure of the run: this host was built without a planner."""
     running = host_for(
         evidence_for(),
         available_evidence=AVAILABLE
-        | {
-            "planning_inputs",
-            "planner_parameters",
-            "planner_implementation_version",
-            "seed_set",
-        },
+        | {"planning_inputs", "planner_parameters", "planner_implementation_version"},
     )
+    assert running.replay_planner is None
     result = running.call(
         ask(
             running,
             "replay_global_plan",
-            {"candidate_id": "cand_a", "episode_context_id": "ep-001", "attempt_index": 0},
+            {"candidate_id": "cand_a", "episode_context_id": "ep-001", "attempt_index": 1},
         )
     )
     assert result.execution_status == "not_checkable"
@@ -695,9 +702,10 @@ def test_the_checksum_on_a_result_is_of_what_was_stored(tmp_path) -> None:  # ty
 
 def test_the_catalog_version_moved_with_the_contract() -> None:
     """A bundle frozen against the old wire contract must stop matching."""
-    assert TOOL_CATALOG_VERSION == "2.0.0"
+    assert TOOL_CATALOG_VERSION == "3.0.0"
     assert TOOL_CATALOG.card("latency_vs_expanded_nodes", "2.0.0").tool_version == "2.0.0"
     assert TOOL_CATALOG.card("gap_vs_footprint", "2.0.0").tool_version == "2.0.0"
+    assert TOOL_CATALOG.card("rrt_convergence", "2.0.0").tool_version == "2.0.0"
 
 
 def test_the_old_tool_version_is_gone_rather_than_quietly_reinterpreted() -> None:

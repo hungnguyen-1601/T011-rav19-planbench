@@ -346,6 +346,38 @@ def trace_path(
     )
 
 
+def planning_inputs_path(
+    candidate_id: str,
+    episode_context_id: str,
+    *,
+    root: Path | str = DEFAULT_TRACE_ROOT,
+    evidence_class: EvidenceClass,
+    execution_fingerprint: str,
+) -> Path:
+    """Where one episode's planning-input sidecar (E4.5) belongs.
+
+    **The same address as the trace, with a different suffix.** Not a
+    parallel tree: the class and the conditions fingerprint are what
+    keep an oracle run from overwriting a production one, and a sidecar
+    filed anywhere else would have to re-derive that separation and
+    would eventually get it wrong. Sitting beside the trace also means
+    ``ls`` answers the same question for both — did these two candidates
+    record the same episodes — which is the reason the trace layout is
+    shaped this way in the first place.
+
+    Snapshots go in a directory named for the episode alongside it, so
+    one episode's evidence is one file plus one folder and nothing is
+    interleaved.
+    """
+    return trace_path(
+        candidate_id,
+        episode_context_id,
+        root=root,
+        evidence_class=evidence_class,
+        execution_fingerprint=execution_fingerprint,
+    ).with_suffix(".planning_inputs.jsonl")
+
+
 class EpisodeTraceRecorder:
     """Collects one episode's samples and writes one Parquet file.
 

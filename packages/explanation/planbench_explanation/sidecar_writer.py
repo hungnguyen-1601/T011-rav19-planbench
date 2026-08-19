@@ -73,7 +73,14 @@ from planbench_explanation.versioning import artifact_checksum, validate_code_re
 from planbench_schemas.geometry import Pose2D
 
 #: Shape of the sidecar file. Bump MINOR to add an optional field.
-SIDECAR_SCHEMA_VERSION = "0.1.0"
+#:
+#: **0.2.0** — grids are stored run-length encoded. The real warehouse
+#: map is 800x500, and a JSON array of its 400,000 cells is 1,020 KB per
+#: attempt; run-length encoded it is 21.6 KB, a factor of 47, because an
+#: occupancy grid is mostly long stretches of the same value. At two
+#: candidates, thirty episodes and a handful of attempts each, the
+#: difference is between a few megabytes and a few hundred.
+SIDECAR_SCHEMA_VERSION = "0.2.0"
 
 #: Name of the sidecar beside an episode's other artifacts.
 SIDECAR_FILENAME = "planning_inputs.jsonl"
@@ -143,13 +150,39 @@ def planner_fingerprint(name: str, parameters: dict[str, Any]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def run_length_encode(cells: Iterable[int]) -> tuple[tuple[int, int], ...]:
+    """``(value, count)`` pairs, in order. Lossless and deterministic."""
+    runs: list[list[int]] = []
+    for cell in cells:
+        value = int(cell)
+        if runs and runs[-1][0] == value:
+            runs[-1][1] += 1
+        else:
+            runs.append([value, 1])
+    return tuple((value, count) for value, count in runs)
+
+
+def run_length_decode(runs: Iterable[tuple[int, int]]) -> tuple[int, ...]:
+    """The cells back, exactly."""
+    out: list[int] = []
+    for value, count in runs:
+        out.extend([value] * count)
+    return tuple(out)
+
+
 class GridSnapshot(BaseModel):
     """The occupancy grid the planner was handed, in full.
 
-    Cells as a flat row-major tuple, plus the geometry needed to place
-    them in the world. Enough to rebuild the grid object without the
-    simulator's types, which is the point: a replay harness should not
-    have to be the simulator to load one.
+    Stored **run-length encoded**, expanded on read. An occupancy grid is
+    mostly long stretches of one value, and the map this platform
+    actually runs on is 800x500: a JSON array of its cells is 1,020 KB
+    and the encoded form is 21.6 KB. Storing the array would have made
+    the sidecar cost more disk than the traces it sits beside, which is
+    how a recording feature gets turned off.
+
+    The geometry travels with it, so a replay harness can rebuild the
+    grid without being the simulator — which is the point of the
+    snapshot existing at all.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
@@ -159,20 +192,56 @@ class GridSnapshot(BaseModel):
     resolution: float = Field(gt=0)
     origin_x: float
     origin_y: float
-    cells: tuple[int, ...]
+    #: ``(value, count)`` pairs, row-major.
+    cells_rle: tuple[tuple[int, int], ...]
+
+    @classmethod
+    def from_cells(
+        cls,
+        cells: Iterable[int],
+        *,
+        width: int,
+        height: int,
+        resolution: float,
+        origin_x: float,
+        origin_y: float,
+    ) -> GridSnapshot:
+        return cls(
+            width=width,
+            height=height,
+            resolution=resolution,
+            origin_x=origin_x,
+            origin_y=origin_y,
+            cells_rle=run_length_encode(cells),
+        )
 
     @model_validator(mode="after")
     def _check(self) -> GridSnapshot:
-        if len(self.cells) != self.width * self.height:
+        if any(count < 1 for _value, count in self.cells_rle):
+            raise SidecarViolation("a run of length zero encodes nothing")
+        total = sum(count for _value, count in self.cells_rle)
+        if total != self.width * self.height:
             raise SidecarViolation(
                 f"grid says {self.width}x{self.height} = {self.width * self.height} "
-                f"cells and carries {len(self.cells)}; a snapshot that does not "
+                f"cells and the encoding carries {total}; a snapshot that does not "
                 "describe itself cannot be replayed from"
             )
         return self
 
     @property
+    def cells(self) -> tuple[int, ...]:
+        """The grid, expanded. What a replay hands the planner."""
+        return run_length_decode(self.cells_rle)
+
+    @property
     def checksum(self) -> str:
+        """Identity of the grid, over the **expanded** cells.
+
+        Hashing the encoding would make the identity depend on how it
+        was stored: two writers producing the same grid with different
+        run boundaries would disagree about whether it is the same
+        world. What the planner saw is the cells.
+        """
         return costmap_checksum(
             self.cells,
             width=self.width,

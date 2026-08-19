@@ -215,11 +215,11 @@ nhóm AI; nguồn chân lý là canonical KB.
 | **E3** | Detectors → Observation · map features (khe hẹp nhất + mật độ vật cản; **topology và số ngã rẽ hoãn sang E3.5**) · contrast graph 4 đầu ra · **KB v1 + matcher deterministic** (`source_strength`/`review_status`, không tham gia promotion) | 4–5 ngày |
 | **E3.5** | Map topology + số ngã rẽ (Voronoi/skeleton). Tách ra vì cần một phép phân tích hình học riêng, và một nhãn topology đoán ra đặt cạnh số đo thật là điều tệ hơn không có nhãn. Cũng là thứ detector "chọn nhánh khác tại ngã rẽ" (§4.2 note) đang chờ. | 1–2 ngày, sau E4 |
 | **E4** | CasePacket builder + claim ledger nối liền + render template (khóa cách nói theo mức và impact_kind) + ma trận UI 5 kết cục run **(đã cắm vào trang + i18n)** | 2–3 ngày |
-| **E4.1** | Endpoint packet/ledger. Vướng một quyết định thật: dựng packet cần đọc trace mọi episode để chạy detector ⇒ **dựng lúc chấm** (đọc rẻ, phải bump report) hay **dựng theo yêu cầu + cache** (report không đổi, request đầu nặng). Chờ An chốt. | 1 ngày sau khi chốt |
+| **E4.1** 🔜 | **Đã chốt 19-08: dựng packet lúc chấm, ghi vào report.** `CandidateEvidence` chỉ tồn tại trong lượt chấm — tái tạo nó từ report là mở một đường thứ hai tính ra cùng con số, đúng loại nguồn-thứ-hai HĐ-5 cấm ở chỗ khác. Giá phải trả: bump schema `comparison_report`, và run cũ không có packet. Gồm: dựng packet ở `run_comparison` · endpoint `GET /decisions/{id}/explanation` · detector chạy trên trace lúc chấm | 1–2 ngày |
 | **E4.5** ✅ | **Sidecar writer** (xong 19-08): `PlanningInputRecorder` ghi mọi planning attempt **kể cả `no_path`** · `costmap_checksum` băm **grid planner được đưa**, không phải map trên đĩa · `planner_fingerprint` gồm cả tham số · file JSONL có header, ghi ngay từng dòng · nối vào `run_nav_stack` qua tham số tuỳ chọn, run không có recorder chạy y hệt như cũ · 17 test | 1–2 ngày |
 | **E5** ✅ | **AI enablement** (xong 19-08): AnalysisRequest/ToolRequest/ToolResult + ToolSession · catalog 16 card đủ 4 lớp · AnalystBundle + GateDecision + feature flag · knowledge contract §3.4 · research specification schema · golden format + 12 case visible (calibration, **không** preregistered — chặn bằng `OFFICIAL_GOLDEN_READY=False`) · mock tool host + reference analyst · 72 test | 3–5 ngày |
 | **E6a** ✅ | **Tool host thật + hai mechanism check** (xong 19-08): `ToolHost` + `EvidenceSource` + `ReportEvidence` · `gap_vs_footprint` và `latency_vs_expanded_nodes` chạy thật · card latency sửa sang **theo episode** vì HĐ-5 không ghi expanded node theo tick · 24 test | 1–2 ngày |
-| **E6b** | **Phần còn lại của E6**: `replay_global_plan` + `rrt_convergence` (**seam đã mở sau E4.5** — còn thiếu bản thân bộ replay và run có sidecar) · gate harness chạy AnalystBundle bất biến trên hidden packet (**còn chặn**: cần run planted có sidecar + bundle nhóm AI) · quyết định bật flag. Lịch phối hợp H4/H6 | 3–5 ngày |
+| **E6b** ✅ nền tảng | ✅ recorder nối vào pipeline chấm · ✅ `replay_global_plan` qua `ReplayPlanner` injection · ✅ `rrt_convergence` sweep seed set × 2 budget · ✅ `AWAITING_SIDECAR` rỗng · ✅ gate harness `gate.py` · ✅ 3/6 họ planted có sidecar. **Hoãn theo quyết định 19-08:** 3 họ còn lại + `OFFICIAL_GOLDEN_READY` chờ E4.1 (packet cần waterfall cần `CandidateEvidence`) và làm **sau UI**; gate run thật chờ AnalystBundle nhóm AI | 3–5 ngày |
 
 E5 **không** deliver: LLM client, prompt, RAG, tool routing, AI evaluation run, model backend.
 E5 cũng **không** deliver checker thật (E6) và **không** dựng được packet fixture cho golden
@@ -319,6 +319,8 @@ không nằm trong định nghĩa "E3 xong".
 suy ra từ GateDecision chứ không phải cờ ai bật cũng được · golden chưa được preregister
 cho tới khi có writer E4.5, cưỡng chế bằng hằng số nền tảng · mock host trả
 `not_checkable` cho mọi mechanism-check cho tới E6.
+
+**Đã chốt thêm (19-08, cuối E6b):** E4.1 = dựng packet **lúc chấm**, ghi vào report · thứ tự tiếp theo = **E4.1 → UI → sweep golden** · `rrt_convergence` lấy seed set từ chính sidecar của run, budget multiplier preregistered `(1.0, 4.0)`.
 
 **Còn treo:** thứ tự E1–E3 (một người ⇒
 đề xuất E1 → E3 → E2) · lịch E6 khớp H4/H6 · E4.1 cách dựng packet (chờ An) ·

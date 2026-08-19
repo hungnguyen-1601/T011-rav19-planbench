@@ -111,6 +111,16 @@ class StackRun(BaseModel):
     for them would claim they never replanned.
     """
 
+    replan_attempts: int = 0
+    """How many times the loop replanned. The runner's own counter.
+
+    Exposed because the E4.5 sidecar has to be closed against a count
+    the **runner** owns — a validator handed the writer's own tally can
+    only agree with it — and the contract pipeline builds no
+    ``EpisodeMetrics``, so the only other place this number lived was
+    unreachable exactly where it was needed.
+    """
+
 
 def _planning_grid(
     map_data: MapData,
@@ -241,13 +251,13 @@ def _record_attempt(
         return
     from planbench_explanation.sidecar_writer import GridSnapshot
 
-    snapshot = GridSnapshot(
+    snapshot = GridSnapshot.from_cells(
+        grid.map_data.cells,
         width=grid.width,
         height=grid.height,
         resolution=grid.resolution,
         origin_x=grid.map_data.origin.x,
         origin_y=grid.map_data.origin.y,
-        cells=tuple(int(cell) for cell in grid.map_data.cells),
     )
     common = {
         "simulation_tick": simulation_tick,
@@ -1140,7 +1150,12 @@ def run_stack(
             else None
         )
         return StackRun(
-            algorithm=algorithm, plan=plan, result=result, metrics=metrics, plans=(plan,)
+            algorithm=algorithm,
+            plan=plan,
+            result=result,
+            metrics=metrics,
+            plans=(plan,),
+            replan_attempts=0,
         )
 
     engine = SimulationEngine()
@@ -1494,5 +1509,10 @@ def run_stack(
         else None
     )
     return StackRun(
-        algorithm=algorithm, plan=plan, result=result, metrics=metrics, plans=tuple(plans)
+        algorithm=algorithm,
+        plan=plan,
+        result=result,
+        metrics=metrics,
+        plans=tuple(plans),
+        replan_attempts=replan_attempts,
     )

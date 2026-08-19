@@ -27,6 +27,13 @@ exist. They report ``checker_not_implemented``, which is the truth, and
 they will keep reporting it until there is something to replay from
 rather than something to reconstruct.
 
+**The replay checker arrives as an argument, not as an import.** A
+replay needs a planner, and this package must not contain one — see
+:mod:`planbench_explanation.replay`. So a host is given a
+:class:`~planbench_explanation.replay.ReplayPlanner` or it is not, and
+without one ``replay_global_plan`` stays ``not_checkable`` exactly as it
+was. The dependency points from the simulator into here and never back.
+
 **The evidence source is bound to the packet before anything runs.**
 A host given an :class:`AnalysisRequest` for one run and an evidence
 source pointed at another would admit every request correctly and then
@@ -84,13 +91,32 @@ from planbench_explanation.protocol import (
     stamped_result,
 )
 from planbench_explanation.provenance import InputProvenance
+from planbench_explanation.replay import (
+    ConvergenceEvidence,
+    ReplayEvidence,
+    ReplayPlanner,
+    ReplayUnavailable,
+    check_replay_global_plan,
+    check_rrt_convergence,
+)
+from planbench_explanation.sidecar_writer import read_sidecar, snapshot_for
 from planbench_explanation.tools import ToolCard
 from planbench_explanation.versioning import artifact_checksum
 
 #: Checks whose evidence the platform does not record yet. Named here so
 #: the gap is one list rather than a condition scattered through the
 #: dispatch, and so removing one is a visible diff.
-AWAITING_SIDECAR: frozenset[str] = frozenset({"replay_global_plan", "rrt_convergence"})
+#: Tools with no implementation behind them yet, whatever evidence
+#: exists. **Empty since E6b.** ``replay_global_plan`` left when E4.5
+#: gave it inputs and a planner could be injected; ``rrt_convergence``
+#: left when its evidence grew the run's own seed set, which is where a
+#: deployment's seeds live — the sidecar records the attempt that
+#: happened and this check is about the attempts that did not.
+#:
+#: Kept as a named empty set rather than deleted: a host still answers
+#: ``checker_not_implemented`` for a tool with no branch, and the next
+#: card added to the catalog lands in exactly this situation.
+AWAITING_SIDECAR: frozenset[str] = frozenset()
 
 
 class EvidenceMismatch(ValueError):
@@ -225,6 +251,14 @@ class EvidenceSource(Protocol):
 
     def latency_evidence(self, *, candidate_id: str) -> LatencyEvidence | None: ...
 
+    def replay_evidence(
+        self, *, candidate_id: str, episode_context_id: str, planning_attempt: int
+    ) -> ReplayEvidence | None: ...
+
+    def convergence_evidence(
+        self, *, candidate_id: str, episode_context_id: str, planning_attempt: int
+    ) -> ConvergenceEvidence | None: ...
+
 
 def identity_of(packet: CasePacket) -> EvidenceIdentity:
     """The identity a source must match to serve this packet."""
@@ -257,6 +291,16 @@ class PacketEvidence:
         return None
 
     def latency_evidence(self, *, candidate_id: str) -> LatencyEvidence | None:
+        return None
+
+    def replay_evidence(
+        self, *, candidate_id: str, episode_context_id: str, planning_attempt: int
+    ) -> ReplayEvidence | None:
+        return None
+
+    def convergence_evidence(
+        self, *, candidate_id: str, episode_context_id: str, planning_attempt: int
+    ) -> ConvergenceEvidence | None:
         return None
 
 
@@ -300,9 +344,16 @@ class ReportEvidence:
         *,
         packet: CasePacket,
         regions: Mapping[tuple[str, str], RouteFeatures] = MappingProxyType({}),
+        sidecar_directory: Path | None = None,
     ) -> None:
         self.report = report
         self.packet = packet
+        #: Where this run's ``<episode>.planning_inputs.jsonl`` files
+        #: live. Handed in rather than derived: the address is the
+        #: **trace layout's** rule (class, conditions fingerprint,
+        #: candidate), and re-deriving it here would put a second copy of
+        #: that rule in the layer least able to keep it current.
+        self.sidecar_directory = sidecar_directory
         self._identity = identity_of(packet)
         self.regions = regions
         self._verify_report_is_about(packet)
@@ -450,6 +501,7 @@ class ToolHost:
         *,
         implementation_ref: str,
         sink: EvidenceSink,
+        replay_planner: ReplayPlanner | None = None,
         input_provenance: InputProvenance = "recorded",
     ) -> None:
         expected = identity_of(analysis.packet)
@@ -471,6 +523,7 @@ class ToolHost:
         self.evidence = evidence
         self.implementation_ref = implementation_ref
         self.sink = sink
+        self.replay_planner = replay_planner
         self.input_provenance = input_provenance
 
     def call(self, request: ToolRequest) -> ToolResult:
@@ -493,6 +546,10 @@ class ToolHost:
             return self._gap(card, request)
         if card.tool_id == "latency_vs_expanded_nodes":
             return self._latency(card, request)
+        if card.tool_id == "replay_global_plan":
+            return self._replay(card, request)
+        if card.tool_id == "rrt_convergence":
+            return self._convergence(card, request)
         return self._unavailable(card, request, "tool_unavailable")
 
     # -- the two checks this platform can run ----------------------------
@@ -581,6 +638,46 @@ class ToolHost:
             implementation_ref=self.implementation_ref,
         )
 
+    def _replay(self, card: ToolCard, request: ToolRequest) -> ToolResult:
+        if self.replay_planner is None:
+            # No planner was injected. Not a failure of the run: this
+            # host was built without the half that can re-run a query.
+            return self._unavailable(card, request, "checker_not_implemented")
+        evidence = self.evidence.replay_evidence(
+            candidate_id=str(request.arguments["candidate_id"]),
+            episode_context_id=str(request.arguments["episode_context_id"]),
+            planning_attempt=int(request.arguments["attempt_index"]),
+        )
+        if evidence is None:
+            return self._unavailable(card, request, "planning_inputs_missing")
+        try:
+            outcome = check_replay_global_plan(evidence, planner=self.replay_planner)
+        except CheckerRefusal as error:
+            return self._unavailable(card, request, error.code)
+        except ReplayUnavailable as error:
+            # The harness said it cannot rebuild this planner. A harness
+            # that cannot run has refuted nothing.
+            return self._unavailable(card, request, str(error.code))
+        return self._completed(card, request, outcome)
+
+    def _convergence(self, card: ToolCard, request: ToolRequest) -> ToolResult:
+        if self.replay_planner is None:
+            return self._unavailable(card, request, "checker_not_implemented")
+        evidence = self.evidence.convergence_evidence(
+            candidate_id=str(request.arguments["candidate_id"]),
+            episode_context_id=str(request.arguments["episode_context_id"]),
+            planning_attempt=1,
+        )
+        if evidence is None:
+            return self._unavailable(card, request, "planning_inputs_missing")
+        try:
+            outcome = check_rrt_convergence(evidence, planner=self.replay_planner)
+        except CheckerRefusal as error:
+            return self._unavailable(card, request, error.code)
+        except ReplayUnavailable as error:
+            return self._unavailable(card, request, str(error.code))
+        return self._completed(card, request, outcome)
+
     def _unavailable(self, card: ToolCard, request: ToolRequest, code: str) -> ToolResult:
         return stamped_result(
             card,
@@ -594,3 +691,72 @@ class ToolHost:
 def _positive(value: object) -> bool:
     """A node count that says something happened."""
     return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+
+    def replay_evidence(
+        self, *, candidate_id: str, episode_context_id: str, planning_attempt: int
+    ) -> ReplayEvidence | None:
+        """One recorded attempt and the snapshot it pins, or ``None``.
+
+        ``None`` where the run predates the sidecar or the attempt was
+        never recorded — the host turns that into ``not_checkable``,
+        which is the truthful answer and the one the evidence ladder
+        already prices.
+        """
+        if self.sidecar_directory is None:
+            return None
+        path = self.sidecar_directory / f"{episode_context_id}.planning_inputs.jsonl"
+        if not path.exists():
+            return None
+        header, records = read_sidecar(path)
+        if header.candidate_id != candidate_id:
+            raise EvidenceMismatch(
+                f"the sidecar at {path} is {header.candidate_id!r}'s and the request "
+                f"is about {candidate_id!r}"
+            )
+        for record in records:
+            if record.planning_attempt == planning_attempt:
+                return ReplayEvidence(
+                    record=record,
+                    snapshot=snapshot_for(path, record),
+                    inputs_loaded_from_record=True,
+                )
+        return None
+
+    def convergence_evidence(
+        self, *, candidate_id: str, episode_context_id: str, planning_attempt: int
+    ) -> ConvergenceEvidence | None:
+        """One recorded query, plus the seeds this candidate actually ran.
+
+        **The seed set comes from the run's own sidecars**, one per
+        episode, not from the report and not from the caller. The report
+        does not carry seeds — its episodes are context hashes — and a
+        caller-supplied set would be the same self-declared value the
+        evidence identity already had to stop being. What the run drew
+        from is recorded in the runs it made.
+
+        Sampling planners only: an episode whose snapshot records no
+        seed contributes none, and a candidate that never records one
+        yields no evidence rather than a sweep over a seed set of
+        ``[0]``.
+        """
+        replay = self.replay_evidence(
+            candidate_id=candidate_id,
+            episode_context_id=episode_context_id,
+            planning_attempt=planning_attempt,
+        )
+        if replay is None or self.sidecar_directory is None:
+            return None
+
+        seeds: list[int] = []
+        for path in sorted(self.sidecar_directory.glob("*.planning_inputs.jsonl")):
+            header, records = read_sidecar(path)
+            if header.candidate_id != candidate_id or not records:
+                continue
+            seed = snapshot_for(path, records[0]).seed
+            if seed is not None and seed not in seeds:
+                seeds.append(seed)
+        if not seeds:
+            return None
+        return ConvergenceEvidence(
+            record=replay.record, snapshot=replay.snapshot, seeds=tuple(seeds)
+        )

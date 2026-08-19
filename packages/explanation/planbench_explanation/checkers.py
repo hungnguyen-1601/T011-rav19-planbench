@@ -70,6 +70,13 @@ RefusalCode = Literal[
     "insufficient_episodes",
     "no_variation_to_rank",
     "episode_counted_twice",
+    # E6b, the replay check
+    "replay_did_not_reproduce",
+    "replay_inputs_mismatched",
+    "replay_harness_incomplete",
+    "seed_counted_twice",
+    "budget_parameter_not_recorded",
+    "insufficient_seeds",
 ]
 
 

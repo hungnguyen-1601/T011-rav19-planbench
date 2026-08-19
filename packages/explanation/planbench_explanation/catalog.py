@@ -108,7 +108,13 @@ def _points_at(kind: str, description: str, *, required: bool = True) -> Referen
 #: bundle exists to prevent. A contract is not edited in place.
 #: ``gap_vs_footprint`` also moved to 2.0.0: it now compares a width
 #: against a width, which changes the measurement names it returns.
-TOOL_CATALOG_VERSION = "2.0.0"
+#:
+#: **3.0.0** — ``rrt_convergence`` reports a rate at **two** budgets
+#: rather than one, because one rate cannot tell "the budget is too
+#: small" from "the corridor is not there": both look like a low number.
+#: Different measurement names, so a different wire contract, so a
+#: different version.
+TOOL_CATALOG_VERSION = "3.0.0"
 
 _RECORDED = EvidencePolicy(allowed_input_provenance=("recorded",))
 _RECORDED_OR_VERIFIED = EvidencePolicy(
@@ -743,7 +749,7 @@ LATENCY_VS_EXPANDED_NODES = ToolCard(
 
 RRT_CONVERGENCE = ToolCard(
     tool_id="rrt_convergence",
-    tool_version="1.0.0",
+    tool_version="2.0.0",
     title="Check whether the sampling budget reaches the corridor",
     tool_class="mechanism_check",
     purpose=ToolPurpose(
@@ -793,8 +799,16 @@ RRT_CONVERGENCE = ToolCard(
         measurements=(
             _measure("seeds_run", "count", "Seeds the corridor was attempted on."),
             _measure("seeds_reaching_corridor", "count", "Seeds whose tree reached it."),
-            _measure("budget_multiplier", "ratio", "Sample budget as a multiple of configured."),
-            _measure("success_rate", "ratio", "seeds_reaching_corridor over seeds_run."),
+            _measure("success_rate_at_budget", "ratio", "Rate at the configured sample budget."),
+            _measure(
+                "success_rate_at_high_budget",
+                "ratio",
+                "Rate at the larger preregistered budget. The pair is the measurement: "
+                "a rate that does not move with the budget points at the geometry.",
+            ),
+            _measure(
+                "budget_multiplier", "ratio", "The larger budget, as a multiple of configured."
+            ),
         ),
     ),
     failure_modes=(

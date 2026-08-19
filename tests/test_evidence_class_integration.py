@@ -26,8 +26,8 @@ from planbench_benchmark.candidates import LOCAL_CONTROLLER_CONFIGS, candidate_f
 from planbench_benchmark.contexts import build_evaluation_contexts
 from planbench_benchmark.episode import run_contract_episode
 from planbench_benchmark.task_map import load_task_map
+from planbench_explanation.sidecar_writer import read_sidecar, snapshot_for
 from planbench_simulator.trace import RESEARCH_USE, TraceUseRefused, read_trace_metadata
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -181,3 +181,92 @@ class TestTheClassesDoNotSeeEachOther:
             use=RESEARCH_USE,
         )
         assert len(metrics) == len(contexts)
+
+
+# --------------------------------------------------------------------------
+# The scoring pipeline actually writes one
+# --------------------------------------------------------------------------
+
+
+class TestTheSweepRecordsPlanningInputs:
+    """The blocker E6b was really waiting on.
+
+    ``run_stack`` took a recorder from the day E4.5 landed and nothing in
+    the scoring pipeline passed one, so no run produced a sidecar — the
+    writer existed and the data did not.
+    """
+
+    def test_an_episode_writes_its_sidecar_beside_its_trace(
+        self, tmp_path: Path, deployment
+    ) -> None:
+        profile, map_data, contexts, candidate = deployment
+        trace, run = run_contract_episode(candidate, profile, contexts[0], map_data, root=tmp_path)
+        sidecar = trace.with_suffix(".planning_inputs.jsonl")
+        assert sidecar.exists()
+
+        header, records = read_sidecar(sidecar)
+        assert header.candidate_id == candidate.candidate_id
+        assert header.execution_environment_ref.startswith("git:")
+        assert len(records) == run.replan_attempts + 1
+
+    def test_the_sidecar_shares_the_traces_class_and_conditions(
+        self, tmp_path: Path, deployment
+    ) -> None:
+        """One address, so an oracle run cannot overwrite a production one.
+
+        The separation H9A added to the trace path is the separation the
+        sidecar needs, and filing it anywhere else would mean deriving
+        that rule a second time.
+        """
+        profile, map_data, contexts, candidate = deployment
+        trace, _ = run_contract_episode(
+            candidate, profile, contexts[0], map_data, root=tmp_path, evidence_class="oracle"
+        )
+        sidecar = trace.with_suffix(".planning_inputs.jsonl")
+        assert sidecar.parent == trace.parent
+        assert sidecar.parts[-4] == "oracle"
+
+    def test_every_record_resolves_to_a_snapshot_a_replay_can_load(
+        self, tmp_path: Path, deployment
+    ) -> None:
+        profile, map_data, contexts, candidate = deployment
+        trace, _ = run_contract_episode(candidate, profile, contexts[0], map_data, root=tmp_path)
+        sidecar = trace.with_suffix(".planning_inputs.jsonl")
+        _header, records = read_sidecar(sidecar)
+
+        for record in records:
+            snapshot = snapshot_for(sidecar, record)
+            assert snapshot.planner_name == "astar"
+            assert len(snapshot.grid.cells) == snapshot.grid.width * snapshot.grid.height
+
+    def test_the_grid_is_stored_encoded_rather_than_cell_by_cell(
+        self, tmp_path: Path, deployment
+    ) -> None:
+        """The real map is 800x500; a JSON array of it is a megabyte an attempt.
+
+        Run-length encoded it is about twenty kilobytes, and a recording
+        feature that costs more disk than the traces beside it is a
+        recording feature somebody turns off.
+        """
+        profile, map_data, contexts, candidate = deployment
+        trace, _ = run_contract_episode(candidate, profile, contexts[0], map_data, root=tmp_path)
+        sidecar = trace.with_suffix(".planning_inputs.jsonl")
+        _header, records = read_sidecar(sidecar)
+        snapshot = snapshot_for(sidecar, records[0])
+
+        cells = len(snapshot.grid.cells)
+        assert cells > 100
+        assert len(snapshot.grid.cells_rle) < cells
+
+    def test_a_run_can_decline_to_record_them(self, tmp_path: Path, deployment) -> None:
+        """For the diagnostic scripts. Not a performance dial."""
+        profile, map_data, contexts, candidate = deployment
+        trace, _ = run_contract_episode(
+            candidate,
+            profile,
+            contexts[0],
+            map_data,
+            root=tmp_path,
+            record_planning_inputs=False,
+        )
+        assert not trace.with_suffix(".planning_inputs.jsonl").exists()

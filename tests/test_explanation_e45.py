@@ -51,8 +51,8 @@ BUILD = "git:" + "c" * 40
 def grid(blocked_column: int = 2) -> GridSnapshot:
     """A 4x4 world with one column of obstacles. Small and real."""
     cells = [1 if col == blocked_column else 0 for _row in range(4) for col in range(4)]
-    return GridSnapshot(
-        width=4, height=4, resolution=0.5, origin_x=0.0, origin_y=0.0, cells=tuple(cells)
+    return GridSnapshot.from_cells(
+        cells, width=4, height=4, resolution=0.5, origin_x=0.0, origin_y=0.0
     )
 
 

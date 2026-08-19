@@ -20,6 +20,6 @@
     "candidate_id",
     "episode_context_id"
   ],
-  "title": "rrt_convergence@1.0.0 arguments",
+  "title": "rrt_convergence@2.0.0 arguments",
   "type": "object"
 }
