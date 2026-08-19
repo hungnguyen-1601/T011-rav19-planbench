@@ -50,6 +50,16 @@ from planbench_explanation.replay_sync import (
 #: rather than for a cause: ``stuck_cluster`` is a description a reader
 #: can check against the replay, while "local minimum" is a hypothesis
 #: about why.
+#: Version of the rules in this module. Bump on **any** change that
+#: could move a detection: a new detector, a changed threshold, a
+#: different fold from detections to observations.
+#:
+#: It lives here because this module owns the rules, and until E4.1
+#: every caller typed the string itself — an artifact header field whose
+#: value nobody owned, which is a version that drifts the first time two
+#: callers disagree.
+DETECTOR_VERSION = "0.1.0"
+
 DetectionType = Literal[
     "detour",
     "stuck_cluster",

@@ -59,6 +59,7 @@ from planbench_explanation.contrast import (
     read_lattice,
 )
 from planbench_explanation.detectors import (
+    DETECTOR_VERSION,
     ArcWindow,
     Detection,
     DetectionType,
@@ -177,6 +178,13 @@ from planbench_explanation.map_features import (
     MapFeatureRefusal,
     RouteFeatures,
     measure_route,
+)
+from planbench_explanation.packet_builder import (
+    EpisodeTrace,
+    PacketBuildReport,
+    build_scoring_packet,
+    packet_block,
+    packet_from_block,
 )
 from planbench_explanation.panel import (
     PANEL_PLANS,
@@ -369,6 +377,7 @@ __all__ = [
     "ContrastVerdict",
     "ConvergenceEvidence",
     "DEGRADED_QUALITIES",
+    "DETECTOR_VERSION",
     "DecisionFacts",
     "Detection",
     "DetectionType",
@@ -381,6 +390,7 @@ __all__ = [
     "EXEMPLAR_ROLES",
     "EXPLANATION_SCHEMA_VERSION",
     "EpisodeSearchCost",
+    "EpisodeTrace",
     "EvidenceKind",
     "EvidenceLane",
     "EvidencePolicy",
@@ -448,6 +458,7 @@ __all__ = [
     "PROGRESS_SYNC_WARNING",
     "PROMOTION_MATRIX_VERSION",
     "PROPOSITION_VERDICTS",
+    "PacketBuildReport",
     "PacketEvidence",
     "PanelPlan",
     "PanelRefusal",
@@ -540,6 +551,7 @@ __all__ = [
     "build_case_packet",
     "build_ledger",
     "build_progress_sync",
+    "build_scoring_packet",
     "build_waterfall",
     "canonical_propositions",
     "canonical_qualifiers",
@@ -564,6 +576,8 @@ __all__ = [
     "measure_route",
     "missing_evidence_for",
     "outcome_of",
+    "packet_block",
+    "packet_from_block",
     "parameter_intervention",
     "plan_for",
     "planner_fingerprint",

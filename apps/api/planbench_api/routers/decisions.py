@@ -798,6 +798,22 @@ def get_trace(
     return service.trace(run_id, candidate_id, episode_context_id)
 
 
+@router.get("/decisions/{run_id}/explanation")
+def get_explanation(run_id: str, service: Runs) -> dict[str, Any]:
+    """The case packet: the evidence behind this run's decision (E4.1).
+
+    Built while the run was scored, not on the way out. The waterfall
+    needs the scoring pass's own evidence objects, and reconstructing
+    them here would mean a second implementation computing the same ΔU —
+    so this route reads a block off the report and validates it.
+
+    A run scored before E4.1 answers 409. It has no packet, and it
+    cannot be given one without exactly the second implementation this
+    design refused.
+    """
+    return service.explanation(run_id)
+
+
 @router.get("/decisions/{run_id}/exemplars")
 def get_exemplars(run_id: str, service: Runs) -> dict[str, Any]:
     """Which four episodes to look at, decided by a fixed recipe.

@@ -681,6 +681,46 @@ class DecisionRunService:
             raise DomainValidationError(str(refusal)) from refusal
         return view.model_dump()
 
+    def explanation(self, run_id: str) -> dict[str, Any]:
+        """The analyst's case packet for one run (E4.1).
+
+        Everything the decision page needs to show *evidence* rather
+        than a verdict: the ΔU decomposition, what the detectors saw,
+        what the contrast lattice would and would not attribute, the
+        four preregistered exemplars, and the gaps the platform declares
+        about itself.
+
+        **Claims are not here, and that is not an omission.** A claim
+        comes from the promotion matrix run over a checker result, and
+        no analyst has passed the gate yet — so the honest answer is
+        evidence with no conclusions drawn on it. The panel already
+        knows how to render that state; what it lacked was the evidence.
+
+        Refuses a run scored before E4.1 rather than returning an empty
+        packet. The two are different facts, and only one of them means
+        "nobody could explain this run".
+        """
+        from planbench_explanation.case_packet import CasePacketRefusal
+        from planbench_explanation.packet_builder import packet_from_block
+
+        run = self._runs.get(run_id)
+        block = (run.report or {}).get("case_packet")
+        try:
+            packet = packet_from_block(block if isinstance(block, dict) else {})
+        except CasePacketRefusal as refusal:
+            # 409 for the same reason the exemplars route uses it: the
+            # request is fine, the run is in a state that has no packet.
+            raise InvalidStateError(str(refusal)) from refusal
+        return {
+            "packet": packet.model_dump(mode="json"),
+            # Carried through so a reader can tell a thin packet from a
+            # broken one without opening the report.
+            "omissions": list(block.get("omissions") or []) if isinstance(block, dict) else [],
+            "skipped_episodes": (
+                list(block.get("skipped_episodes") or []) if isinstance(block, dict) else []
+            ),
+        }
+
     def exemplars(self, run_id: str) -> dict[str, Any]:
         """The four episodes the comparison page should open with (E2).
 

@@ -50,6 +50,7 @@ from planbench_benchmark.pipeline import (
     GateOnlyDeployment,
     Progress,
     SweepResult,
+    TraceLocator,
     check_delta_u,
     check_gate_table,
     check_l_ref,
@@ -95,7 +96,20 @@ from planbench_decision.sensitivity import (
     weight_stability,
 )
 from planbench_decision.stats import CandidateEvidence, Recommendation, recommend
+from planbench_explanation.catalog import TOOL_CATALOG_VERSION
+from planbench_explanation.detectors import DETECTOR_VERSION
+from planbench_explanation.knowledge import KNOWLEDGE_BASE_VERSION
+from planbench_explanation.packet_builder import (
+    EpisodeTrace,
+    build_scoring_packet,
+    packet_block,
+)
+from planbench_explanation.versioning import file_checksum
+from planbench_explanation.waterfall import Waterfall, build_waterfall
 from planbench_metrics.definitions import EpisodeMetricSet
+from planbench_schemas.episode_context import EpisodeContext
+from planbench_schemas.feasibility import SafetyEnvelope, hard_clearance
+from planbench_schemas.map import MapData
 from planbench_schemas.task_profile import DEFAULT_MIN_EPISODES_BEFORE_STOP, TaskProfile
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -800,6 +814,29 @@ def run_comparison(
             )
         )
         report["checks"] = checks
+        # **A run that ranked nobody still gets a packet (E4.2).** It has
+        # no pair, so no waterfall and no exemplars — but the sightings,
+        # the geometry and the gate table are facts about this run, and
+        # "why did it fail" is asked of exactly these runs. Building only
+        # in the ranked branch meant the detectors never ran here and the
+        # explanation endpoint answered 409 to the one question the run
+        # provoked.
+        report["case_packet"] = _explanation_packet(
+            destination=destination,
+            run_id=destination.name,
+            profile=profile,
+            map_data=map_data,
+            candidates=candidates,
+            contexts_by_candidate=contexts_by_candidate,
+            waterfall=None,
+            decision_status="NO_DECISION_CARD",
+            gate_reports=gate_reports,
+            trace_root=trace_root,
+            evidence_class=evidence_class,
+            report=report,
+            say=say,
+            manifest_written=False,
+        )
         _write_json(destination / "comparison_report.json", report)
         _say_summary(say, report, destination)
         return report
@@ -872,11 +909,183 @@ def run_comparison(
     report["manifest"] = manifest.to_json_dict()
     report["gate_only_deployment"] = None
     report["checks"] = checks
-    _write_json(destination / "comparison_report.json", report)
+
+    # **The manifest is written before the packet is built**, because the
+    # packet's header names it by checksum and a checksum of bytes needs
+    # the bytes. Writing the report last then keeps the ordinary
+    # invariant: every file the report refers to is already on disk when
+    # the report lands.
     _write_json(destination / "decision_card.json", card.to_json_dict())
     _write_json(destination / "manifest.json", manifest.to_json_dict())
+
+    report["case_packet"] = _explanation_packet(
+        destination=destination,
+        run_id=destination.name,
+        profile=profile,
+        map_data=map_data,
+        candidates=candidates,
+        contexts_by_candidate=contexts_by_candidate,
+        waterfall=_decomposition(evidence, recommendation, settings, bootstrap_seed, say),
+        decision_status="CLEAR_RECOMMENDATION",
+        gate_reports=gate_reports,
+        trace_root=trace_root,
+        evidence_class=evidence_class,
+        report=report,
+        say=say,
+        manifest_written=True,
+    )
+    _write_json(destination / "comparison_report.json", report)
     _say_summary(say, report, destination)
     return report
+
+
+def _decomposition(
+    evidence: Sequence[CandidateEvidence],
+    recommendation: Recommendation,
+    settings: DecisionSettings,
+    bootstrap_seed: int,
+    say,  # type: ignore[no-untyped-def]
+) -> Waterfall | None:
+    """The paired ΔU decomposition, or ``None`` with the reason said out loud.
+
+    Separated from packet assembly because the packet is now built on
+    both paths and only one of them has a pair. A caller that could not
+    tell "this run has no comparison" from "the decomposition failed"
+    would file the second as the first.
+    """
+    try:
+        winner = next(
+            item for item in evidence if item.candidate_id == recommendation.recommended_id
+        )
+        runner_up = next(
+            item for item in evidence if item.candidate_id == recommendation.runner_up_id
+        )
+        return build_waterfall(winner, runner_up, settings=settings, seed=bootstrap_seed)
+    except Exception as error:  # noqa: BLE001 - a thin packet beats a lost sweep
+        say(f"⚠ không dựng được waterfall cho tầng giải thích: {error!r}")
+        return None
+
+
+def _explanation_packet(
+    *,
+    destination: Path,
+    run_id: str,
+    profile: TaskProfile,
+    map_data: MapData,
+    candidates: Sequence[Candidate],
+    contexts_by_candidate: Mapping[str, Sequence[EpisodeContext]],
+    waterfall: Waterfall | None,
+    decision_status: str,
+    gate_reports: Mapping[str, object],
+    trace_root: Path,
+    evidence_class: str,
+    report: Mapping[str, object],
+    say,  # type: ignore[no-untyped-def]
+    manifest_written: bool,
+) -> dict[str, object]:
+    """Build the analyst's case packet while the scoring pass holds its parts.
+
+    **Here rather than behind an endpoint, and that was the decision.**
+    The waterfall needs two ``CandidateEvidence`` objects and they exist
+    only in this function; rebuilding them from the report later would
+    put a second piece of code in the repository computing the same ΔU,
+    which is the parallel source HĐ-5 forbids everywhere else. The price
+    is paid in the open: the report grows a block, and a run scored
+    before this has no packet and cannot be given one.
+
+    **Called on both paths (E4.2).** ``waterfall`` is ``None`` for a run
+    that ranked nobody, and the packet then carries sightings, geometry
+    and a gate table with no comparison — which is what those runs have
+    to say, and what somebody asking "why did it fail" opens.
+
+    **The traces are read a second time.** Scoring already read them to
+    recompute the metrics, and holding every candidate's traces in
+    memory until now would cost more than re-reading a file the OS still
+    has cached. Said out loud because "reads the traces twice" is the
+    kind of thing that looks like an oversight in a profile.
+
+    A failure here does not fail the run. A comparison report with no
+    packet is a run somebody can still act on; a sweep that died after
+    the last episode because a detector refused is hours thrown away.
+    """
+    try:
+        locator = TraceLocator(trace_root, profile, map_data, evidence_class=evidence_class)
+        traces: list[EpisodeTrace] = []
+        for candidate in candidates:
+            for context in contexts_by_candidate.get(candidate.candidate_id, ()):
+                loaded = locator.load(candidate, context)
+                events = [
+                    {"index": index, "event": name}
+                    for index, name in enumerate(loaded.column("event"))
+                    if name
+                ]
+                traces.append(
+                    EpisodeTrace(
+                        candidate_id=candidate.candidate_id,
+                        episode_context_id=context.episode_context_id,
+                        columns={
+                            "t": loaded.column("t"),
+                            "x": loaded.column("x"),
+                            "y": loaded.column("y"),
+                            "clearance_m": loaded.column("clearance_m"),
+                            "planner_latency_ms": loaded.column("planner_latency_ms"),
+                            "events": events,
+                        },
+                    )
+                )
+
+        # The margin the planner's grid was inflated by, from the
+        # deployment's own numbers. ``hard_clearance`` is the one figure
+        # both layers are required to agree on, so the packet quotes it
+        # rather than re-deriving a margin of its own — and the envelope
+        # comes from the environment's declared sensor noise, the same
+        # way ``nav_stack`` derives it for the grid the planner is given.
+        # A profile is not the carrier of an envelope; the noise is.
+        margin = (
+            hard_clearance(
+                profile.robot, SafetyEnvelope.for_noise(profile.environment.sensor_noise)
+            )
+            - profile.robot.radius
+        )
+
+        # A run with no card writes no manifest, and a header cannot name
+        # a file that will not exist. Its own report is the artifact of
+        # record on that path, so that is what the packet points at.
+        manifest_name = "manifest.json" if manifest_written else "comparison_report.json"
+        manifest_bytes = (
+            (destination / "manifest.json").read_bytes()
+            if manifest_written
+            else json.dumps(dict(report), sort_keys=True, default=str).encode("utf-8")
+        )
+
+        built = build_scoring_packet(
+            run_id=run_id,
+            source_manifest_ref=manifest_name,
+            source_manifest_checksum=file_checksum(manifest_bytes),
+            detector_version=DETECTOR_VERSION,
+            knowledge_base_version=KNOWLEDGE_BASE_VERSION,
+            tool_catalog_version=TOOL_CATALOG_VERSION,
+            task_profile_id=profile.id,
+            robot_radius_m=profile.robot.radius,
+            inflation_margin_m=max(margin, 0.0),
+            decision_status=decision_status,
+            waterfall=waterfall,
+            report=report,
+            traces=traces,
+            episodes_total=max((len(rows) for rows in contexts_by_candidate.values()), default=0),
+            evidence_class=evidence_class,
+            gates={
+                name: {"passed": bool(getattr(row, "passed", False))}
+                for name, row in gate_reports.items()
+            },
+        )
+    except Exception as error:  # noqa: BLE001 - a thin packet beats a lost sweep
+        say(f"⚠ không dựng được case packet cho tầng giải thích: {error!r}")
+        return {"packet": None, "skipped_episodes": [], "omissions": [repr(error)]}
+
+    if built.omissions:
+        say(f"  case packet: {len(built.omissions)} phần thiếu, ghi trong report")
+    return packet_block(built)
 
 
 def _interrupted_before_any_episode(

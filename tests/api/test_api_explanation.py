@@ -220,3 +220,112 @@ class TestReplaySync:
         )
 
         assert response.status_code == 404
+
+
+class TestTheExplanationRoute:
+    """E4.1 — the case packet, served from what the scoring pass wrote."""
+
+    def _packet_block(self) -> dict[str, object]:
+        """A packet built the way the scoring pass builds one."""
+        from test_explanation_e41 import report_with_components, waterfall
+
+        from planbench_explanation.catalog import TOOL_CATALOG_VERSION
+        from planbench_explanation.detectors import DETECTOR_VERSION
+        from planbench_explanation.knowledge import KNOWLEDGE_BASE_VERSION
+        from planbench_explanation.packet_builder import build_scoring_packet, packet_block
+
+        return packet_block(
+            build_scoring_packet(
+                run_id="run_packet",
+                source_manifest_ref="manifest.json",
+                source_manifest_checksum="a" * 64,
+                detector_version=DETECTOR_VERSION,
+                knowledge_base_version=KNOWLEDGE_BASE_VERSION,
+                tool_catalog_version=TOOL_CATALOG_VERSION,
+                task_profile_id="warehouse_a_v1",
+                robot_radius_m=0.26,
+                inflation_margin_m=0.11,
+                decision_status="CLEAR_RECOMMENDATION",
+                waterfall=waterfall(),
+                report=report_with_components(),
+                traces=[],
+                episodes_total=0,
+                evidence_class="production",
+            )
+        )
+
+    def test_a_scored_run_serves_its_packet(
+        self, client: TestClient, app, alice_headers: dict[str, str]
+    ) -> None:
+        seed_run(app, "run_packet", card=None, candidates=[])
+        stored = app.state.repos.decision_runs.get("run_packet")
+        stored.report["case_packet"] = self._packet_block()
+
+        response = client.get(f"{API}/decisions/run_packet/explanation", headers=alice_headers)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["packet"]["task"]["task_profile_id"] == "warehouse_a_v1"
+        assert body["packet"]["decision"]["waterfall"]["candidate_a"] == "cand_a"
+
+    def test_the_packet_carries_the_gaps_the_platform_declares(
+        self, client: TestClient, app, alice_headers: dict[str, str]
+    ) -> None:
+        """Evidence with the holes named, which is the point of the packet."""
+        seed_run(app, "run_packet", card=None, candidates=[])
+        app.state.repos.decision_runs.get("run_packet").report["case_packet"] = self._packet_block()
+
+        body = client.get(f"{API}/decisions/run_packet/explanation", headers=alice_headers).json()
+
+        blocked = {
+            kind for gap in body["packet"]["known_unknowns"] for kind in gap["blocks_claim_types"]
+        }
+        assert "perception_attribution" in blocked
+
+    def test_a_thin_packet_says_why_it_is_thin(
+        self, client: TestClient, app, alice_headers: dict[str, str]
+    ) -> None:
+        """Whoever asks why an explanation is thin should not have to guess."""
+        seed_run(app, "run_packet", card=None, candidates=[])
+        app.state.repos.decision_runs.get("run_packet").report["case_packet"] = self._packet_block()
+
+        body = client.get(f"{API}/decisions/run_packet/explanation", headers=alice_headers).json()
+
+        assert any("no episode traces" in note for note in body["omissions"])
+
+    def test_a_run_scored_before_e41_answers_409_not_an_empty_packet(
+        self, client: TestClient, app, alice_headers: dict[str, str]
+    ) -> None:
+        """ "No packet" and "nothing to explain" are different facts."""
+        seed_run(app, "run_old", card=None, candidates=[])
+
+        response = client.get(f"{API}/decisions/run_old/explanation", headers=alice_headers)
+
+        assert response.status_code == 409
+        assert "scored before E4.1" in response.json()["error"]["message"]
+
+    def test_a_run_with_no_card_serves_evidence_without_a_comparison(
+        self, client: TestClient, app, alice_headers: dict[str, str]
+    ) -> None:
+        """E4.2 — the runs somebody most asks "why did it fail" about.
+
+        No pair, so no waterfall and no exemplars. Everything else is
+        still a fact about this run, and the route serves it rather than
+        answering 409 to the one question the run provoked.
+        """
+        from planbench_explanation.packet_builder import packet_block
+        from test_explanation_e41 import built
+
+        seed_run(app, "run_no_pair", card=None, candidates=[])
+        app.state.repos.decision_runs.get("run_no_pair").report["case_packet"] = packet_block(
+            built(waterfall=None, decision_status="NO_DECISION_CARD")
+        )
+
+        body = client.get(
+            f"{API}/decisions/run_no_pair/explanation", headers=alice_headers
+        ).json()
+
+        assert body["packet"]["decision"]["waterfall"] is None
+        assert body["packet"]["decision"]["status"] == "NO_DECISION_CARD"
+        assert body["packet"]["lattice"]
+        assert any("ranked nobody" in note for note in body["omissions"])

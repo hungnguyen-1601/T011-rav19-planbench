@@ -117,12 +117,24 @@ class TaskFacts(BaseModel):
 
 
 class DecisionFacts(BaseModel):
-    """What the card decided, and the decomposition behind it."""
+    """What the run decided, and the decomposition behind it if there is one."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
     status: str = Field(min_length=1)
-    waterfall: Waterfall
+    #: ``None`` on a run that ranked nobody — a gate-only deployment, a
+    #: field where no candidate cleared all six gates, a sweep
+    #: interrupted before ranking.
+    #:
+    #: **Absent rather than the packet being absent.** The first version
+    #: required it, which meant those runs got no packet at all: the
+    #: detectors never ran and an analyst asking "why did it fail" was
+    #: handed a 409. Those are precisely the runs somebody asks that
+    #: about. A ΔU decomposition is a statement about a *pair* the
+    #: statistics chose, and without a ranking there is no such pair —
+    #: but the sightings, the geometry and the gate table are all still
+    #: facts about this run, and they are what is left to look at.
+    waterfall: Waterfall | None = None
     #: Gate verdicts as the report holds them: who was eliminated where.
     gates: dict[str, dict[str, object]] = Field(default_factory=dict)
 
@@ -164,13 +176,15 @@ class CasePacket(BaseModel):
                 "a packet explains a comparison, and a comparison needs two candidates"
             )
         known = {item.candidate_id for item in self.candidates}
-        compared = {self.decision.waterfall.candidate_a, self.decision.waterfall.candidate_b}
-        if not compared <= known:
-            raise CasePacketRefusal(
-                f"the waterfall compares {sorted(compared)} but the packet describes "
-                f"{sorted(known)}; an analyst reading this would be explaining a "
-                "comparison between candidates it cannot see"
-            )
+        waterfall = self.decision.waterfall
+        if waterfall is not None:
+            compared = {waterfall.candidate_a, waterfall.candidate_b}
+            if not compared <= known:
+                raise CasePacketRefusal(
+                    f"the waterfall compares {sorted(compared)} but the packet describes "
+                    f"{sorted(known)}; an analyst reading this would be explaining a "
+                    "comparison between candidates it cannot see"
+                )
         strangers = {item.candidate_id for item in self.observations} - known
         if strangers:
             raise CasePacketRefusal(
@@ -189,7 +203,13 @@ class CasePacket(BaseModel):
                 "a constraint on this one"
             )
 
-        if self.representative_episodes is not None:
+        if self.representative_episodes is not None and waterfall is None:
+            raise CasePacketRefusal(
+                "this packet carries exemplars and no waterfall. Three of the four "
+                "roles are defined against the pair ΔU was computed for, so exemplars "
+                "without a ranking are four episodes with labels nothing earned"
+            )
+        if self.representative_episodes is not None and waterfall is not None:
             # **Ordered**, not a set. ``strongest_for_winner`` is defined
             # against whichever candidate ΔU was computed *for*, so an
             # exemplar set built the other way round is the same four
@@ -198,10 +218,7 @@ class CasePacket(BaseModel):
                 self.representative_episodes.candidate_a,
                 self.representative_episodes.candidate_b,
             )
-            expected = (
-                self.decision.waterfall.candidate_a,
-                self.decision.waterfall.candidate_b,
-            )
+            expected = (waterfall.candidate_a, waterfall.candidate_b)
             if ordered != expected:
                 raise CasePacketRefusal(
                     f"the exemplars are about {ordered} and the waterfall about "
@@ -237,6 +254,13 @@ def build_case_packet(
     evidence_class: str = "production",
 ) -> CasePacket:
     """Assemble one packet from parts every other module already made.
+
+    **A packet with no comparison is still a packet.** See
+    :attr:`DecisionFacts.waterfall`: a run that ranked nobody has
+    sightings, geometry and a gate table, and those are the evidence
+    somebody asking "why did it fail" needs. What it does not have is a
+    pair, so it carries no waterfall and no exemplars — and the panel
+    matrix already knows not to draw either.
 
     A composition, on purpose. Detectors, the waterfall, the lattice and
     the exemplar recipe are each testable alone and each refuse their
