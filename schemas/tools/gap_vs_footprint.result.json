@@ -1,0 +1,89 @@
+{
+  "$id": "schemas/tools/gap_vs_footprint.result.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "measurements": {
+      "additionalProperties": false,
+      "properties": {
+        "inflation_radius_m": {
+          "description": "The inflation radius that was configured.",
+          "type": "number",
+          "unit": "m"
+        },
+        "margin_m": {
+          "description": "Width minus required clearance; negative is the infeasible case.",
+          "type": "number",
+          "unit": "m"
+        },
+        "passage_width_m": {
+          "description": "Measured width of the passage.",
+          "type": "number",
+          "unit": "m"
+        },
+        "required_clearance_m": {
+          "description": "Footprint radius plus the configured inflation margin.",
+          "type": "number",
+          "unit": "m"
+        }
+      },
+      "required": [
+        "passage_width_m",
+        "required_clearance_m",
+        "margin_m",
+        "inflation_radius_m"
+      ],
+      "type": "object"
+    },
+    "references": {
+      "allOf": [
+        {
+          "contains": {
+            "properties": {
+              "kind": {
+                "const": "map_region"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "map_region"
+            ]
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ref": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "measurements",
+    "references"
+  ],
+  "title": "gap_vs_footprint@1.0.0 output",
+  "type": "object"
+}

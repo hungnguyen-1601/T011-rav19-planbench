@@ -29,10 +29,29 @@ The card is also where deterministic stops meaning causal:
 whose maximum claim level is ``associated``, because correlating node
 expansions with latency does not demonstrate that the expansions caused
 it.
+
+**And the card closes the data shape, not only the conclusions.** A
+catalog that says which tools exist and what they may establish, while
+leaving arguments as a free-form mapping, locks the wrong half: every
+checker written against it invents its own argument names and its own
+measurement keys, and the contract becomes whatever the first
+implementation happened to do. :class:`ToolIO` is the other half —
+which arguments a request must and may carry, and which measurement
+keys a result may return — enforced at admission and at recording.
+
+The JSON Schema files the design section names
+(``schemas/tools/<tool_id>.request.json``) are **generated from**
+:class:`ToolIO` rather than written beside it. Two hand-maintained
+descriptions of one contract disagree eventually, and the one nobody
+runs is the one that rots; here the typed spec is the source and the
+file is an export of it, with a test that regenerating changes nothing.
 """
 
 from __future__ import annotations
 
+import json
+from collections.abc import Iterable, Mapping
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -120,6 +139,309 @@ class EvidencePolicy(BaseModel):
         return self
 
 
+#: JSON-Schema-expressible argument kinds. Deliberately four: an
+#: argument that needs a richer type is an argument that wants to be two
+#: arguments, and a free-form object here would reopen exactly the hole
+#: this class closes.
+ArgumentKind = Literal["string", "integer", "number", "boolean"]
+
+_JSON_TYPES: dict[ArgumentKind, str] = {
+    "string": "string",
+    "integer": "integer",
+    "number": "number",
+    "boolean": "boolean",
+}
+
+
+class ArgumentSpec(BaseModel):
+    """One argument a tool takes."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_]*$")
+    kind: ArgumentKind
+    required: bool = True
+    description: str = Field(min_length=1)
+
+
+#: Physical units a measurement can carry, plus the two dimensionless
+#: kinds. Closed so ``0.68`` cannot mean metres in one checker and
+#: centimetres in another, which is the classic way two correct
+#: implementations disagree.
+MeasurementUnit = Literal["m", "s", "ms", "count", "ratio", "correlation", "flag"]
+
+#: What an evidence-navigation tool points at. A pointer has a kind:
+#: "episode ep-004" and "the window 12.5–18.0 s of ep-004" are different
+#: things to open, and a caller that cannot tell them apart cannot open
+#: either.
+ReferenceKind = Literal[
+    "episode",
+    "replay_window",
+    "trajectory_segment",
+    "trace_rows",
+    "map_region",
+]
+
+
+class MeasurementSpec(BaseModel):
+    """One number a tool may report, with its unit."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_]*$")
+    unit: MeasurementUnit
+    #: Whether a **completed** result must carry it. Optional
+    #: measurements exist for genuinely conditional quantities — a lower
+    #: bound that only appears where the map is one-sided — not as a
+    #: default for anything inconvenient.
+    required: bool = True
+    description: str = Field(min_length=1)
+
+
+class ReferenceSpec(BaseModel):
+    """One kind of pointer a tool may return."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: ReferenceKind
+    required: bool = True
+    description: str = Field(min_length=1)
+
+
+class ToolIO(BaseModel):
+    """What a tool takes and what it may report.
+
+    Three closed sets rather than one. ``arguments`` is the request
+    shape. ``measurements`` is the numbers, each with a unit and a
+    required flag — a key list alone stops a checker inventing
+    ``width``, but it does not stop one returning nothing at all and
+    calling it a completed check. ``references`` is the pointers, which
+    are not numbers and were being smuggled through as counts: a
+    navigation tool that reports ``n_exemplars: 4`` has told the caller
+    how many episodes to open and not which.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    arguments: tuple[ArgumentSpec, ...] = ()
+    measurements: tuple[MeasurementSpec, ...] = ()
+    references: tuple[ReferenceSpec, ...] = ()
+
+    @model_validator(mode="after")
+    def _check(self) -> ToolIO:
+        names = [argument.name for argument in self.arguments]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            raise ValueError(f"argument(s) {duplicates} declared twice on one tool")
+        keys = [measurement.name for measurement in self.measurements]
+        repeated = sorted({key for key in keys if keys.count(key) > 1})
+        if repeated:
+            raise ValueError(f"measurement(s) {repeated} declared twice on one tool")
+        kinds = [reference.kind for reference in self.references]
+        twice = sorted({kind for kind in kinds if kinds.count(kind) > 1})
+        if twice:
+            raise ValueError(f"reference kind(s) {twice} declared twice on one tool")
+        return self
+
+    @property
+    def required_arguments(self) -> tuple[str, ...]:
+        return tuple(argument.name for argument in self.arguments if argument.required)
+
+    @property
+    def known_arguments(self) -> tuple[str, ...]:
+        return tuple(argument.name for argument in self.arguments)
+
+    @property
+    def measurement_keys(self) -> tuple[str, ...]:
+        return tuple(measurement.name for measurement in self.measurements)
+
+    @property
+    def required_measurement_keys(self) -> tuple[str, ...]:
+        return tuple(measurement.name for measurement in self.measurements if measurement.required)
+
+    @property
+    def reference_kinds(self) -> tuple[str, ...]:
+        return tuple(reference.kind for reference in self.references)
+
+    @property
+    def required_reference_kinds(self) -> tuple[str, ...]:
+        return tuple(reference.kind for reference in self.references if reference.required)
+
+    def check_arguments(self, arguments: Mapping[str, object]) -> tuple[str, ...]:
+        """Everything wrong with a request's arguments, as sentences.
+
+        Returns a list rather than raising so a caller can report every
+        problem at once: an analyst told about one missing argument at a
+        time spends its round rediscovering the signature.
+        """
+        problems: list[str] = []
+        missing = sorted(set(self.required_arguments) - set(arguments))
+        if missing:
+            problems.append(f"missing required argument(s) {missing}")
+        unknown = sorted(set(arguments) - set(self.known_arguments))
+        if unknown:
+            problems.append(
+                f"unknown argument(s) {unknown}; the tool takes {list(self.known_arguments)}"
+            )
+        by_name = {argument.name: argument for argument in self.arguments}
+        for name, value in sorted(arguments.items()):
+            spec = by_name.get(name)
+            if spec is None:
+                continue
+            if not _kind_matches(spec.kind, value):
+                problems.append(
+                    f"argument {name!r} is {type(value).__name__}, expected {spec.kind}"
+                )
+        return tuple(problems)
+
+    def check_measurements(
+        self, measurements: Mapping[str, float], *, completed: bool
+    ) -> tuple[str, ...]:
+        """Unknown keys always; missing required keys only when completed.
+
+        A check that did not run reports no numbers, and demanding them
+        would force a failing checker to invent some.
+        """
+        problems: list[str] = []
+        unknown = sorted(set(measurements) - set(self.measurement_keys))
+        if unknown:
+            problems.append(
+                f"measurement key(s) {unknown} are not on this tool's card; the card "
+                f"declares {list(self.measurement_keys)}"
+            )
+        if completed:
+            missing = sorted(set(self.required_measurement_keys) - set(measurements))
+            if missing:
+                problems.append(
+                    f"completed result omits required measurement(s) {missing}; a "
+                    "check that reports nothing is not a check that found nothing"
+                )
+        return tuple(problems)
+
+    def check_references(self, kinds: Iterable[str], *, completed: bool) -> tuple[str, ...]:
+        present = set(kinds)
+        problems: list[str] = []
+        unknown = sorted(present - set(self.reference_kinds))
+        if unknown:
+            problems.append(
+                f"reference kind(s) {unknown} are not on this tool's card; the card "
+                f"declares {list(self.reference_kinds)}"
+            )
+        if completed:
+            missing = sorted(set(self.required_reference_kinds) - present)
+            if missing:
+                problems.append(
+                    f"completed result carries no {missing} reference; a navigation "
+                    "tool that returns a count and no pointer has said how many "
+                    "things to open without saying which"
+                )
+        return tuple(problems)
+
+    def request_schema(self, *, tool_id: str, tool_version: str) -> dict[str, object]:
+        """The JSON Schema the design section points at, generated."""
+        return {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": f"schemas/tools/{tool_id}.request.json",
+            "title": f"{tool_id}@{tool_version} arguments",
+            "type": "object",
+            "additionalProperties": False,
+            "required": list(self.required_arguments),
+            "properties": {
+                argument.name: {
+                    "type": _JSON_TYPES[argument.kind],
+                    "description": argument.description,
+                }
+                for argument in self.arguments
+            },
+        }
+
+    def result_schema(self, *, tool_id: str, tool_version: str) -> dict[str, object]:
+        """The output half: measurements with units, and typed pointers.
+
+        Written to be **as strict as the host**, which the first version
+        was not: it required ``measurements`` and left ``references``
+        optional, so a navigation payload with no episode pointer
+        validated against the published schema and was then refused at
+        recording. A schema weaker than the runtime is worse than no
+        schema — it tells an integrator their payload is fine.
+
+        Required reference kinds become a ``contains`` apiece rather
+        than one blanket ``minItems``: a tool needing an episode *and* a
+        window is not satisfied by two episodes.
+        """
+        required: list[str] = []
+        if self.required_measurement_keys:
+            required.append("measurements")
+        references: dict[str, object] = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["kind", "ref"],
+                "properties": {
+                    "kind": {"enum": list(self.reference_kinds)},
+                    "ref": {"type": "string", "minLength": 1},
+                    "label": {"type": ["string", "null"]},
+                },
+            },
+        }
+        if self.required_reference_kinds:
+            required.append("references")
+            references["minItems"] = 1
+            references["allOf"] = [
+                {
+                    "contains": {
+                        "type": "object",
+                        "required": ["kind"],
+                        "properties": {"kind": {"const": kind}},
+                    }
+                }
+                for kind in self.required_reference_kinds
+            ]
+        return {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": f"schemas/tools/{tool_id}.result.json",
+            "title": f"{tool_id}@{tool_version} output",
+            "type": "object",
+            "additionalProperties": False,
+            "required": required,
+            "properties": {
+                "measurements": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": list(self.required_measurement_keys),
+                    "properties": {
+                        measurement.name: {
+                            "type": "number",
+                            "unit": measurement.unit,
+                            "description": measurement.description,
+                        }
+                        for measurement in self.measurements
+                    },
+                },
+                "references": references,
+            },
+        }
+
+
+def _kind_matches(kind: ArgumentKind, value: object) -> bool:
+    """Type check with the two JSON traps closed.
+
+    ``bool`` is a subclass of ``int`` in Python, so a naive check accepts
+    ``True`` where an integer was asked for. And an integer is a
+    perfectly good ``number``, so that direction is allowed on purpose.
+    """
+    if isinstance(value, bool):
+        return kind == "boolean"
+    if kind == "integer":
+        return isinstance(value, int)
+    if kind == "number":
+        return isinstance(value, (int, float))
+    if kind == "string":
+        return isinstance(value, str)
+    return False
+
+
 class ToolCard(BaseModel):
     """One entry of the tool catalog."""
 
@@ -139,12 +461,33 @@ class ToolCard(BaseModel):
     evidence_policy: EvidencePolicy
     #: Evidence the packet must carry before the tool may be requested.
     required_evidence: tuple[str, ...] = ()
+    #: The arguments this tool takes and the measurement keys it may
+    #: return. Enforced at admission and at recording, not documented.
+    io: ToolIO = ToolIO()
+    #: Failure codes specific to this tool. A **closed** list: the host
+    #: contributes its own generic codes, and anything outside the union
+    #: is refused, because a failure code nobody enumerated is a failure
+    #: mode nobody designed for.
     failure_modes: tuple[str, ...] = ()
 
     @property
     def key(self) -> tuple[str, str]:
         """``(tool_id, tool_version)`` — how a result names its card."""
         return (self.tool_id, self.tool_version)
+
+    @property
+    def input_schema_ref(self) -> str:
+        """Where the generated request schema lives. Derived, not stored.
+
+        Stored, it would be a string somebody could point anywhere. The
+        path follows from the tool id, and
+        :func:`write_tool_schemas` is what puts a file there.
+        """
+        return f"schemas/tools/{self.tool_id}.request.json"
+
+    @property
+    def output_schema_ref(self) -> str:
+        return f"schemas/tools/{self.tool_id}.result.json"
 
     @model_validator(mode="after")
     def _check(self) -> ToolCard:
@@ -169,6 +512,12 @@ class ToolCard(BaseModel):
             raise ValueError(
                 "evidence-navigation tools return evidence references and promote "
                 "nothing; leave supported_proposition_types empty"
+            )
+        if self.tool_class == "research_proposal" and typed_keys:
+            raise ValueError(
+                "research-proposal tools emit a specification for an experiment "
+                "nobody has run; a specification establishes nothing, so leave "
+                "supported_proposition_types empty"
             )
         if self.tool_class == "research_proposal" and self.execution_authorized:
             raise ValueError(
@@ -214,3 +563,32 @@ class ToolCatalog(BaseModel):
             f"catalog {self.catalog_version} has no card for {tool_id}@{tool_version}; "
             "a result from a tool nobody declared cannot be scored"
         )
+
+
+def tool_schemas(catalog: ToolCatalog) -> dict[str, dict[str, object]]:
+    """Every card's request and result schema, keyed by path.
+
+    One function so the exporter and the drift test read the same thing;
+    a test that re-implements the export is a test that can agree with
+    itself while disagreeing with what ships.
+    """
+    documents: dict[str, dict[str, object]] = {}
+    for card in catalog.cards:
+        documents[card.input_schema_ref] = card.io.request_schema(
+            tool_id=card.tool_id, tool_version=card.tool_version
+        )
+        documents[card.output_schema_ref] = card.io.result_schema(
+            tool_id=card.tool_id, tool_version=card.tool_version
+        )
+    return documents
+
+
+def write_tool_schemas(catalog: ToolCatalog, root: Path) -> tuple[Path, ...]:
+    """Write the generated schemas under ``root``. Returns what it wrote."""
+    written = []
+    for ref, document in sorted(tool_schemas(catalog).items()):
+        path = root / ref
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        written.append(path)
+    return tuple(written)

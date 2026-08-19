@@ -1,0 +1,70 @@
+{
+  "$id": "schemas/tools/rrt_convergence.result.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "measurements": {
+      "additionalProperties": false,
+      "properties": {
+        "budget_multiplier": {
+          "description": "Sample budget as a multiple of configured.",
+          "type": "number",
+          "unit": "ratio"
+        },
+        "seeds_reaching_corridor": {
+          "description": "Seeds whose tree reached it.",
+          "type": "number",
+          "unit": "count"
+        },
+        "seeds_run": {
+          "description": "Seeds the corridor was attempted on.",
+          "type": "number",
+          "unit": "count"
+        },
+        "success_rate": {
+          "description": "seeds_reaching_corridor over seeds_run.",
+          "type": "number",
+          "unit": "ratio"
+        }
+      },
+      "required": [
+        "seeds_run",
+        "seeds_reaching_corridor",
+        "budget_multiplier",
+        "success_rate"
+      ],
+      "type": "object"
+    },
+    "references": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": []
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ref": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "measurements"
+  ],
+  "title": "rrt_convergence@1.0.0 output",
+  "type": "object"
+}

@@ -1,0 +1,83 @@
+{
+  "$id": "schemas/tools/get_replay_window.result.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "measurements": {
+      "additionalProperties": false,
+      "properties": {
+        "n_rows": {
+          "description": "Trace rows inside the window.",
+          "type": "number",
+          "unit": "count"
+        },
+        "window_end_s": {
+          "description": "Window end, in episode seconds.",
+          "type": "number",
+          "unit": "s"
+        },
+        "window_start_s": {
+          "description": "Window start, in episode seconds.",
+          "type": "number",
+          "unit": "s"
+        }
+      },
+      "required": [
+        "window_start_s",
+        "window_end_s",
+        "n_rows"
+      ],
+      "type": "object"
+    },
+    "references": {
+      "allOf": [
+        {
+          "contains": {
+            "properties": {
+              "kind": {
+                "const": "replay_window"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "replay_window"
+            ]
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ref": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "measurements",
+    "references"
+  ],
+  "title": "get_replay_window@1.0.0 output",
+  "type": "object"
+}

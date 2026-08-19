@@ -1,0 +1,58 @@
+{
+  "$id": "schemas/tools/get_candidate_contrast.result.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "measurements": {
+      "additionalProperties": false,
+      "properties": {
+        "n_differing_axes": {
+          "description": "Declared components the two candidates differ on; more than one and the reading refuses to attribute.",
+          "type": "number",
+          "unit": "count"
+        },
+        "n_findings": {
+          "description": "Lattice findings for this pair.",
+          "type": "number",
+          "unit": "count"
+        }
+      },
+      "required": [
+        "n_findings",
+        "n_differing_axes"
+      ],
+      "type": "object"
+    },
+    "references": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": []
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ref": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "measurements"
+  ],
+  "title": "get_candidate_contrast@1.0.0 output",
+  "type": "object"
+}

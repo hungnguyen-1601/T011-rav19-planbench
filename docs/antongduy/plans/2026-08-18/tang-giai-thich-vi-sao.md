@@ -217,10 +217,12 @@ nhóm AI; nguồn chân lý là canonical KB.
 | **E4** | CasePacket builder + claim ledger nối liền + render template (khóa cách nói theo mức và impact_kind) + ma trận UI 5 kết cục run **(đã cắm vào trang + i18n)** | 2–3 ngày |
 | **E4.1** | Endpoint packet/ledger. Vướng một quyết định thật: dựng packet cần đọc trace mọi episode để chạy detector ⇒ **dựng lúc chấm** (đọc rẻ, phải bump report) hay **dựng theo yêu cầu + cache** (report không đổi, request đầu nặng). Chờ An chốt. | 1 ngày sau khi chốt |
 | **E4.5** | Minimal sidecar writer `PlanningInputEvidence` — mọi attempt kể cả `no_path`; neo `AlgorithmHost`; seam chưa ổn ⇒ hoãn sau H4/H6 + luật "không golden chính thức trước khi writer sẵn sàng" | 1–2 ngày |
-| **E5** | **AI enablement**: AnalysisRequest interface · ToolCard đầy đủ cho mọi tool 4 lớp (§3.3) · ToolRequest/ToolResult schema + validation · **AnalystBundle schema** (§6) · Knowledge contract §3.4 · research specification schema · golden fixture format + visible/calibration fixtures + đáp án preregistered · integration mock/stub cho nhóm AI · schema rejection tests · feature flag (analyst chưa qua gate ⇒ không xuất hiện trên card) | 3–5 ngày |
+| **E5** ✅ | **AI enablement** (xong 19-08): AnalysisRequest/ToolRequest/ToolResult + ToolSession · catalog 16 card đủ 4 lớp · AnalystBundle + GateDecision + feature flag · knowledge contract §3.4 · research specification schema · golden format + 12 case visible (calibration, **không** preregistered — chặn bằng `OFFICIAL_GOLDEN_READY=False`) · mock tool host + reference analyst · 72 test | 3–5 ngày |
 | **E6** | **Tool host + mechanism-check implementations** (platform, ①) + **gate harness**: platform giữ hidden subset, chạy **AnalystBundle bất biến** (§6) trên hidden packets trong môi trường platform kiểm soát, tự chấm, quyết định bật flag (②). Lịch phối hợp H4/H6 | 4–6 ngày |
 
 E5 **không** deliver: LLM client, prompt, RAG, tool routing, AI evaluation run, model backend.
+E5 cũng **không** deliver checker thật (E6) và **không** dựng được packet fixture cho golden
+— cần sidecar E4.5; `PlantedCase.packet_ref` hiện là đường dẫn chưa resolve.
 
 Chi tiết kỹ thuật từng đợt E0–E4.5 giữ nguyên như bản 5 (waterfall mean-only + marginal
 CI; exemplar recipe; contrast graph; sidecar validator; ma trận UI CLEAR /
@@ -256,10 +258,17 @@ với API model, hidden packet vẫn rời platform tới vendor; và bundle kh�
 nondeterminism của API — đo bằng repeated runs, giảm nhẹ bằng hidden rotation theo
 version (đã có §6 trình tự khóa).
 
-- Platform cung cấp (E5): planted-case schema · packet fixtures · expected hypothesis
-  IDs · expected abstention cases · expected checker requests · forbidden claims ·
-  metric definitions.
-- Bộ: **6 họ × 12–20 biến thể (72–120 packet)** — inflation đóng khe · DWA local
+- Platform cung cấp, **tách theo đợt** (sửa 19-08 — bản trước gộp hết vào E5 trong khi
+  packet fixture phụ thuộc writer chưa có, tự mâu thuẫn với bảng §5):
+  - **E5**: planted-case schema · expected hypothesis IDs · expected abstention cases ·
+    expected checker requests · forbidden claims · metric definitions + scorer ·
+    **visible calibration skeleton** (12 case, `status="calibration"`).
+  - **E4.5**: packet fixtures thật, có provenance chính thức — mọi họ dựa trên replay
+    cần sidecar ghi planning input đúng lúc xảy ra.
+  - **E6**: hidden suite · gate harness chạy AnalystBundle · preregistration thật.
+  Cưỡng chế bằng `OFFICIAL_GOLDEN_READY` trong `golden.py`: `status="preregistered"`
+  bị từ chối cho tới khi writer sẵn sàng.
+- Bộ **chính thức** (E4.5 + E6): **6 họ × 12–20 biến thể (72–120 packet)** — inflation đóng khe · DWA local
   minimum · RRT\* thiếu sample · expansion gây latency · negative control ·
   confounded/insufficient-evidence. Mỗi họ có positive / negative / ca phải abstain /
   biến thể gần ranh giới. Báo macro-average theo họ + micro-average.
@@ -302,8 +311,14 @@ UI hai canvas merge ở `d3ba3b6`, xem `notes/2026-08-19/tongduyan_audit-ui-hai-
 lúc chấm (`episode_decision_utility`) · **topology + số ngã rẽ tách thành E3.5**,
 không nằm trong định nghĩa "E3 xong".
 
+**Đã chốt thêm (19-08, sau E5):** đơn vị được chấm là AnalystBundle bất biến, feature flag
+suy ra từ GateDecision chứ không phải cờ ai bật cũng được · golden chưa được preregister
+cho tới khi có writer E4.5, cưỡng chế bằng hằng số nền tảng · mock host trả
+`not_checkable` cho mọi mechanism-check cho tới E6.
+
 **Còn treo:** thứ tự E1–E3 (một người ⇒
-đề xuất E1 → E3 → E2) · lịch E6 khớp H4/H6.
+đề xuất E1 → E3 → E2) · lịch E6 khớp H4/H6 · E4.1 cách dựng packet (chờ An) ·
+duyệt KB v1 để entry được phép đỡ claim.
 
 ## 10. Rủi ro chính
 

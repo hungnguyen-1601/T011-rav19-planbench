@@ -1,0 +1,20 @@
+{
+  "$id": "schemas/tools/latency_vs_expanded_nodes.request.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "candidate_id": {
+      "description": "Which candidate's data to read.",
+      "type": "string"
+    },
+    "episode_context_id": {
+      "description": "Restrict to one episode; the whole run if omitted.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "candidate_id"
+  ],
+  "title": "latency_vs_expanded_nodes@1.0.0 arguments",
+  "type": "object"
+}

@@ -1,0 +1,31 @@
+{
+  "$id": "schemas/tools/get_trajectory_segment.request.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "candidate_id": {
+      "description": "Which candidate's data to read.",
+      "type": "string"
+    },
+    "episode_context_id": {
+      "description": "The paired episode context, the identity both candidates share.",
+      "type": "string"
+    },
+    "from_progress_m": {
+      "description": "Segment start, as arc length on the line.",
+      "type": "number"
+    },
+    "to_progress_m": {
+      "description": "Segment end, as arc length on the line.",
+      "type": "number"
+    }
+  },
+  "required": [
+    "candidate_id",
+    "episode_context_id",
+    "from_progress_m",
+    "to_progress_m"
+  ],
+  "title": "get_trajectory_segment@1.0.0 arguments",
+  "type": "object"
+}

@@ -1,0 +1,76 @@
+{
+  "$id": "schemas/tools/get_map_region_features.result.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "measurements": {
+      "additionalProperties": false,
+      "properties": {
+        "narrowest_lower_bound_m": {
+          "description": "Lower bound from one-sided cross-sections. Cannot show a passage is too narrow, only that it is at least this wide.",
+          "type": "number",
+          "unit": "m"
+        },
+        "narrowest_passage_m": {
+          "description": "Narrowest doubly-bounded cross-section along the route. Absent where the map never closes both sides.",
+          "type": "number",
+          "unit": "m"
+        },
+        "obstacle_density": {
+          "description": "Occupied cells over cells sampled.",
+          "type": "number",
+          "unit": "ratio"
+        },
+        "samples_limited_by_coverage": {
+          "description": "Cross-sections the map bounded on one side only.",
+          "type": "number",
+          "unit": "count"
+        },
+        "samples_taken": {
+          "description": "Cross-sections measured along the route.",
+          "type": "number",
+          "unit": "count"
+        }
+      },
+      "required": [
+        "obstacle_density",
+        "samples_taken",
+        "samples_limited_by_coverage"
+      ],
+      "type": "object"
+    },
+    "references": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "map_region"
+            ]
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ref": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "measurements"
+  ],
+  "title": "get_map_region_features@1.0.0 output",
+  "type": "object"
+}
