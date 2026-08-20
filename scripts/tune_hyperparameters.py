@@ -31,6 +31,8 @@ for relative in (
     "packages/planning",
     "packages/metrics",
     "packages/benchmark",
+    "packages/explanation",
+    "packages/plugin_sdk",
     "services/simulator",
 ):
     sys.path.insert(0, str(REPO_ROOT / relative))
