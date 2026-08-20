@@ -322,3 +322,286 @@ tệ nhất 0.62 bán kính, replan 3 lần. Còn `eff 1.000` của A mang dấu
 Ghi chú: chạy pytest xen kẽ `tests/api/... tests/... tests/api/...` cho lỗi
 `fixture 'client' not found`. Đã kiểm bằng ba file cũ hoàn toàn — **quirk sẵn có** của
 cách repo này khám phá conftest, không liên quan tới thay đổi ở đây.
+
+---
+
+## 12. Sắp lại hàng tile: động ở trên, tĩnh ở dưới
+
+### 12.1 Một lỗi tìm thấy khi soi ảnh chụp của An
+
+Ảnh cho `Route covered 63.7 %` trong khi robot mới đi ~30% chiều ngang canvas.
+
+Nguyên nhân: `progress_fraction` chia cho **nấc cao nhất của thang**,
+`max(row.progress_m)` — tức quãng mà **cả hai** candidate cùng đi tới được. Episode
+đó B timeout nên quãng chung ngắn hẳn, và phân số phình lên. Nhãn nói "tuyến", mẫu số
+lại là một thứ khác; ở một episode mà B chết sớm, tile sẽ báo **100% khi robot mới đi
+nửa map**, và không có gì trên màn hình nói rằng thang đo vừa đổi.
+
+Sửa: chia cho `reference.length_m` — chiều dài của chính đường reference. Đo lại trên
+run thật: A giờ kết thúc ở **0.982** thay vì 1.000, đúng sự thật (robot dừng trong
+dung sai đích, ngắn hơn tuyến 11 m một chút).
+
+Ba test: dừng sớm thì không đọc thành 1.0; đi hết tuyến thì đọc 1.0 (để test trên
+không pass bằng việc mọi run đều ngắn); và một source check, vì hậu quả **không nhìn
+ra được trong ảnh chụp**.
+
+### 12.2 `Episode length` và `Last event` rời khỏi hàng động
+
+Theo yêu cầu của An — chúng là kết quả cuối, không phải realtime.
+
+- **`Episode length` không được "chuyển xuống" mà bị bỏ.** Nó là `trace.t.at(-1)`,
+  đúng bằng `Travel time` ở bảng dưới, chỉ khác nguồn: một cái lấy từ timestamp cuối
+  của trace, một cái lấy từ outcome đã chấm. Chuyển xuống là đặt cùng một số hai lần
+  trong một bảng. Khoá i18n `trace.duration` đã xoá luôn.
+- **`Last event` chuyển xuống, đặt cạnh `Result`, không gộp vào.** `Result` là cách
+  **cổng đọc** episode; `Last event` là bản ghi cuối của **chính HĐ-5**. Chúng trùng
+  nhau ở hầu hết run — đó đúng là lý do gộp lại thì sẽ không ai phát hiện.
+
+### 12.3 Một khung, hai trạng thái
+
+Bản đầu tôi làm sai ý An: đổi **từng tile** khi hết episode. An muốn khác — **cùng một
+khung**, đang chạy thì là chỉ số realtime, chạy xong thì chính khung đó thành metrics
+cuối, và metrics cuối bị **ẩn hoàn toàn** trong lúc đang chạy. Đã làm lại theo đúng
+vậy, và bản này **ít nhánh hơn** bản cũ.
+
+Lý do thiết kế thì vẫn giữ nguyên, chỉ là giải quyết triệt để hơn:
+
+- Đang chạy mà bày sẵn kết quả cuối bên cạnh thì **một con số tổng nằm trong hàng số
+  đọc tức thời sẽ bị đọc thành số đọc tức thời**.
+- Chạy xong mà vẫn để hàng realtime thì đó là **một loạt số đứng yên dưới nhãn ghi
+  "now"**. Chính là ca candidate B trong ảnh của An: `Planner latency now 7.63 ms`
+  cạnh `P99 2101.63 ms`.
+
+Đổi cả khung giải quyết cả hai, và **bỏ hẳn** cơ chế đổi-từng-tile lượt trước.
+
+Bảng kết quả **được truyền vào** viewer chứ không dựng trong đó: viewer biết trace,
+không biết run được chấm thế nào. Tính lại min clearance từ cột clearance ngay tại
+viewer là bản cài đặt thứ hai của một con số bảng kia đang render — hai chỗ rồi có
+thể báo hai min khác nhau cho cùng một episode.
+
+### 12.4 Nút chuyển, và vì sao nó là **một** nút
+
+Nút "Xem kết quả cuối" ở thanh công cụ, `auto` ⟷ `final`:
+
+- **`auto`** (mặc định): mỗi replay tự đổi sang kết quả **khi chính nó chạy hết**.
+- **`final`**: cả hai hiện kết quả ngay, không cần xem hết.
+
+**Đặt ở thanh công cụ chứ không phải mỗi canvas một nút.** Hai panel hiện hai *loại*
+số khác nhau thì không đọc chéo được — mà đọc chéo là lý do duy nhất chúng nằm cạnh
+nhau.
+
+Bấm lần nữa thì về `auto`. Không có đường về thì việc xem kết quả sớm thành cửa một
+chiều, và kéo thanh trượt sau đó sẽ nhìn vào một bảng không thèm phản ứng với thanh
+trượt.
+
+Ở chế độ time, A (22.8 s) hết trước B (60 s), nên panel A đổi sang kết quả trong khi
+B còn chạy. Đó là hành vi đúng — và tự nó đã nói lên một điều.
+
+Một ca biên: candidate không nạp được trace thì **không có replay để chạy hết**, nên
+không có hàng realtime nào để thay. Bảng kết quả hiện thẳng, không giấu sau một phép
+đổi không có gì để đổi.
+
+**Test:** 58 + 27 passed (Python), **1130 passed** (web), `ruff` sạch, `tsc` sạch.
+
+---
+
+## 13. Nút không tìm thấy, và biểu đồ độ trễ
+
+### 13.1 Nút có render — nhưng ở sai chỗ
+
+An báo không thấy cách nào chuyển sang metrics cuối giữa chừng. Nút **có** render,
+nằm trong `.episode-toolbar` — tức **ba mục phía trên** khu vực canvas, chỗ người
+đang xem replay không bao giờ nhìn tới.
+
+Một điều khiển đổi nội dung của khung metrics thì phải nằm **cạnh khung đó**. Đã
+chuyển xuống ngay trên lưới hai canvas, dưới legend. Có test khoá thứ tự
+`toolbar < legend < toggle < grid`, vì "nút tồn tại" và "nút tìm thấy được" là hai
+chuyện khác nhau, và bản trước đã pass mọi test trong khi không dùng được.
+
+### 13.2 Biểu đồ độ trễ planner
+
+Đặt ngay dưới metrics của từng candidate, mỗi thuật toán một biểu đồ, thay vào chỗ
+đoạn chữ giải thích màu.
+
+**Vì sao riêng latency đáng có biểu đồ.** Đây là đại lượng duy nhất ở đây mà **một
+con số không nói được**: tile đọc "now", bảng kết quả đọc p99 — cả hai đều là bản tóm
+tắt của một *hình dạng*. Candidate B trong ảnh của An hiện `7.63 ms` ở thanh trượt
+bên cạnh `p99 2101.63 ms`; không cách sắp xếp hai con số nào giải thích được vì sao.
+
+Hai quyết định đáng sai, và **không cái nào nhìn ra được trong ảnh chụp** — nên tách
+sang `lib/latencyChart.ts` để test được:
+
+- **Tick không chạy planner không phải tick tốn 0 ms.** Cột lưu 0 ở những tick
+  planner không chạy. Polyline xuyên qua các số 0 đó sẽ **bổ nhào xuống trục giữa các
+  lần replan**, vẽ ra một hình răng cưa trông như độ trễ dao động dữ dội, trong khi
+  sự thật là "ở đây không có gì xảy ra". Các điểm đó **ngắt đường** thay vì được vẽ.
+- **Trục dọc phải chịu được bốn bậc độ lớn.** Đo trên trace thật: run lành 0.66–11.24
+  ms so với ngân sách 50 ms; run kẹt có peak **3032 ms**. Nên trục **luôn bao gồm
+  ngân sách**: run còn dư thì đường nằm thấp và ngưỡng ở trên, run vượt thì ngược
+  lại. Không dùng log — người đọc phải nhớ "trục này là log" là người đọc sẽ đọc sai
+  đúng cái biểu đồ quan trọng nhất.
+
+Vẽ thêm **đường p99** (lấy từ outcome đã chấm, không tự tính lại percentile — tính
+lại là ý kiến thứ hai về con số bảng dưới đang hiện), vì một spike đơn lẻ chiếm trọn
+trục dọc và nếu không có nó thì phần thân của run không còn gì tóm tắt được.
+
+Ngưỡng lấy từ `control_period_s` — **thêm vào payload trace lần này**. Hardcode 50 ms
+sẽ chấm sai mọi deployment khai chu kỳ điều khiển khác.
+
+Playhead bám `trace.t[visibleStep]`, cùng dòng mà pose được vẽ.
+
+### 13.3 Đoạn chữ giải thích màu: chuyển, không xoá
+
+An bảo thay vào chỗ đoạn chữ đó. Nhưng xoá hẳn thì canvas mất phần giải thích màu là
+gì, chấm đỏ là gì, đường nét đứt là gì.
+
+Đoạn đó vốn render **một lần cho mỗi candidate** — cùng bốn câu, hai lần, cạnh nhau —
+mà nó mô tả **cách canvas được vẽ**, tức một sự thật về cả cặp chứ không phải mỗi bên
+một bản. Nên chuyển lên **legend dùng chung**, đúng chỗ nó giải thích, còn lại một
+bản. Chỗ dưới canvas trống ra cho biểu đồ.
+
+**Test:** 10 test cho `latencyChart` (ngắt đoạn, thang đo, playhead), 13 test cho vị
+trí và ràng buộc nguồn số. Tổng **1153 passed** (web), `ruff` sạch, `tsc` sạch.
+
+---
+
+## 14. Biểu đồ thành một chỉ số realtime thật
+
+An yêu cầu hai điều: biểu đồ **vẽ dần theo replay** chứ không bày sẵn hình đã xong, và
+nó **thuộc khung realtime** nên mất khi episode chạy hết.
+
+### 14.1 Chỗ khó không phải việc cắt, mà là thang dọc
+
+Cắt polyline tới playhead thì dễ. Nhưng nếu vẫn lấy `max` của **cả episode** làm trần
+trục dọc thì **trục đã tiết lộ trước cái kết**: nó chốt ở 3000 ms từ giây đầu, tức
+người xem biết sắp có spike vài giây trước khi đường vẽ tới đó. Xem một biểu đồ đã nói
+trước đoạn kết thì không còn là realtime nữa.
+
+Nên trần trục dọc là **max chạy dần** trên phần đã vẽ. Nó **chỉ tăng, không bao giờ
+giảm** — đó là thứ giữ cho hình khỏi giật: một thang được phép co lại sẽ vẽ lại toàn bộ
+đường mỗi lần một đỉnh cũ hết là đỉnh.
+
+Trục ngang thì **ngược lại — cố định theo cả episode ngay từ khung hình đầu**. Trục
+thời gian mà giãn theo playhead sẽ giữ đường luôn chiếm hết bề ngang và **bóp dẹp hình
+dạng của nó khi chạy**, đọc thành "planner đang ổn định dần" trong khi không có gì
+thay đổi.
+
+Badge "vượt ngân sách" cũng chạy dần: sáng lên vì một spike còn cách mười giây nữa là
+đang báo cáo tương lai.
+
+### 14.2 Đường p99 đổi thành p99-tới-giờ
+
+p99 của cả episode là **một con số từ tương lai** khi replay còn đang chạy. Thay bằng
+p99 tích luỹ — lấy từ chính `compute_budget` của chuỗi running, nhân ngược lại thành
+mili giây.
+
+Đây là **phép nghịch đảo chính xác** của cách nó được chuẩn hoá
+(`_percentile(...) / (T_cycle * 1000)`), không phải một phép tính percentile thứ hai:
+một bản cài đặt, hai đơn vị. Nên đường trên biểu đồ và tile compute ngay cạnh nó
+**không thể lệch nhau**.
+
+### 14.3 Vào trong khung realtime
+
+Biểu đồ chuyển vào **trong nhánh** mà bảng kết quả thay thế, nên nó biến mất cùng các
+tile khi episode chạy xong hoặc khi bấm "Xem kết quả cuối". Prop `p99Ms` mà trang
+truyền xuống thành thừa — đã bỏ.
+
+**Test:** 17 test cho `latencyChart` (7 cái mới cho phần vẽ dần: không vẽ quá playhead,
+thang không tiết lộ spike, badge không sáng sớm, trục ngang cố định, thang dọc không
+bao giờ co, kẹp hai đầu, và vẫn vẽ cả episode khi không truyền playhead). Tổng
+**1162 passed** (web), `tsc` sạch.
+
+Một chỗ test suýt hỏng: assertion neo vào chuỗi có ký tự xuống dòng, vỡ khi ghi file.
+Đổi sang regex `showFinal \? \([\s\S]*?<LatencyChart` — neo theo cấu trúc, không
+theo vị trí dòng, nên thêm một tile nữa không làm nó gãy.
+
+---
+
+## 15. Biểu đồ kiêm luôn thanh thời gian
+
+An muốn bấm vào một vị trí trên biểu đồ thì replay nhảy về đúng thời điểm đó, và
+**áp cho cả hai thuật toán** để giữ tính realtime.
+
+### 15.1 Cú bấm cho ra giây, nhưng thanh trượt không phải lúc nào cũng đo bằng giây
+
+Đây là chỗ dễ làm sai. Ở chế độ **time**, hai panel dùng chung đồng hồ tường nên số
+giây đi thẳng vào scrubber. Ở chế độ **progress**, scrubber đo bằng **mét arc length** —
+áp thẳng số giây vào đó sẽ nhảy tới một vị trí **không liên quan gì** tới chỗ vừa bấm,
+mà vẫn trông như nó có phản ứng.
+
+Nên thêm `sideProgress(view, seconds, side)` vào `lib/replaySync.ts` — phép nghịch đảo
+của `sideTime` đã có sẵn, đọc **cùng bộ rows** mà view công bố. Hai ràng buộc:
+
+- **Cùng quy ước với `sideTime`** (nấc cuối tại hoặc trước giá trị hỏi, không nội
+  suy), nên `time → progress → time` quay về đúng chỗ xuất phát thay vì trôi một nấc
+  mỗi vòng. Có test round-trip.
+- **`null` là "run này chưa tới đây", không phải "nó ở đây lúc t=0".** Đọc thành 0 thì
+  những nấc cuối của một run có bạn đồng hành dừng sớm sẽ **kéo scrubber về đầu**. Có
+  test riêng cho ca rows lệch.
+
+Kẹp về nấc mà **cả hai** run cùng tới được — đúng tầm mà scrubber progress thật sự có.
+
+### 15.2 Hằng số hình học chuyển vào lib
+
+Vẽ đường và bắt điểm bấm phải dùng **cùng một bộ padding**. Hai bản sao thì mọi cú
+bấm lệch đúng 44 đơn vị viewBox — vài giây trên episode ngắn — mà **biểu đồ vẫn trông
+đúng**, vì đường và playhead đều vẽ từ bản sao mà component đang giữ.
+
+Nên `CHART`, `PLOT_WIDTH`, `PLOT_HEIGHT` và `timeAtFraction()` nằm ở
+`lib/latencyChart.ts`; component import về. Ba test: giữa vùng vẽ ra giữa episode, hai
+mép vùng vẽ ra hai mép episode, và bấm vào **máng nhãn trục bên trái** thì kẹp về 0
+chứ không trả thời gian âm.
+
+### 15.3 Không chỉ chuột
+
+Bấm được mà không dùng bàn phím được thì đó là một điều khiển một nửa số người đọc
+không với tới. SVG chuyển `role="img"` → `role="slider"` khi có `onSeek`, kèm
+`tabIndex`, `aria-valuemin/max/now/text`, và phím Trái/Phải (2% episode mỗi lần),
+Home/End. Khi không seek được thì vẫn là `img` — gắn role slider lên thứ không set
+được giá trị là thông báo một điều khiển không tồn tại.
+
+### 15.4 Seek thì dừng phát
+
+Bấm mà vẫn chạy tiếp thì nó đi khỏi đúng cái khoảnh khắc vừa được hỏi. Cả hai nhánh
+đặt `playing: false`; có test đếm đúng hai chỗ.
+
+**Test:** 20 test `latencyChart`, 16 test `replaySync` (6 mới cho `sideProgress`), 6
+test cho phần nối. Tổng **1177 passed** (web), `tsc` sạch.
+
+---
+
+## 16. Hai lần đảo lại quyết định của chính tôi
+
+Cả hai thay đổi lần này đều lật ngược điều tôi đã lập luận ở mục trước. An đã dùng
+thật rồi, nên theo đó — và tôi sửa **cả phần bình luận trong code**, không để lại một
+lập luận đã bị bác nằm cạnh đoạn code làm ngược nó.
+
+### 16.1 Bấm biểu đồ thì không pause nữa
+
+Tôi từng viết: *"bấm mà vẫn chạy tiếp thì nó đi khỏi đúng cái khoảnh khắc vừa được
+hỏi"*, và đặt `playing: false` ở cả hai nhánh.
+
+Dùng thật thì ngược lại. Bấm vào biểu đồ **chính là cách nhảy tới đoạn đáng xem để
+*xem nó chạy***; phải bấm play lại mỗi lần khiến biểu đồ thành một scrubber tệ hơn
+chính cái scrubber. Giờ `seekFrom` **không đụng vào trạng thái phát** — đang chạy thì
+chạy tiếp từ chỗ mới, đang dừng thì vẫn dừng.
+
+### 16.2 Nút kết quả cuối tách riêng mỗi bên
+
+Tôi từng lập luận phải dùng chung một nút: *"hai panel hiện hai loại số khác nhau thì
+không đọc chéo được, mà đọc chéo là lý do duy nhất chúng nằm cạnh nhau"*.
+
+Lập luận đó **đã sai sẵn với chính hành vi tự động của nó**: mỗi replay tự đổi sang kết
+quả khi **chính nó** chạy hết, nên một run 22.8 s và một run 60 s đã hợp lệ khác loại
+nhau suốt nửa episode. Và nó **cấm mất đúng ca người đọc cần**: xem kết quả của stack
+đã xong trong khi stack kia còn đang chạy.
+
+Giờ mỗi panel một nút, đặt trong header của chính panel đó, cạnh badge kết quả. State
+đổi từ `"auto" | "final"` dùng chung sang `{ a: boolean; b: boolean }`.
+
+Một chi tiết đi kèm: `aria-label` của nút mang theo tên stack. Hai nút cùng ghi
+"Show final results" là hai điều khiển mà screen reader không phân biệt được.
+
+**Test:** hai test cũ khẳng định đúng hành vi vừa bỏ (`playing: false` xuất hiện đúng
+hai lần; "một nút cho cả hai canvas") — đã viết lại thành khẳng định hành vi mới, kèm
+lý do đổi. Tổng **1178 passed** (web), `tsc` sạch.

@@ -937,7 +937,6 @@
   "trace.pause": "Dừng",
   "trace.clearance": "Khoảng hở hiện tại",
   "trace.latency": "Độ trễ planner hiện tại",
-  "trace.duration": "Độ dài episode",
   "trace.outcome": "Sự kiện cuối",
   "trace.noEvent": "không có sự kiện",
   "trace.colourNote": "Đường đi tô màu theo khoảng hở đo từ MẶT robot (HĐ-8.2): đỏ là ranh giới va chạm, xanh là còn trọn một bán kính robot. Chấm đỏ là sự kiện HĐ-5 — va chạm và tới đích vẽ ra cùng một đường cong, chỉ có dấu mới phân biệt được. Vòng tròn hổ phách là vật cản động của deployment tại đúng thời điểm đó, vẽ theo bán kính đã khai. Đường nét đứt xám là tuyến global planner yêu cầu tại thời điểm đó; mỗi lần replan thay thế nó.",
@@ -1494,5 +1493,14 @@
   "trace.running.margin": "Clearance tệ nhất tới giờ",
   "trace.running.exposure": "Thời gian trong khoảng cảnh báo",
   "trace.running.efficiency": "Tiến độ trên mỗi mét đã chạy",
-  "trace.running.replans": "Replan tới giờ"
+  "trace.running.replans": "Replan tới giờ",
+  "trace.tip.lastEvent": "Sự kiện HĐ-5 cuối cùng trace ghi được. Đặt cạnh Result — cách cổng đọc chính episode đó; hai cái chỉ thường trùng nhau, không phải luôn.",
+  "trace.metricsView.final": "Xem kết quả cuối",
+  "trace.metricsView.live": "Xem chỉ số realtime",
+  "trace.metricsView.hint": "Replay này tự đổi chỉ số realtime sang kết quả episode khi chạy hết. Nút này lấy kết quả ngay, chỉ cho candidate này.",
+  "trace.latencyChart.title": "Độ trễ planner (ms)",
+  "trace.latencyChart.alt": "Độ trễ planner suốt episode, so với chu kỳ điều khiển của deployment.",
+  "trace.latencyChart.over": "vượt ngân sách",
+  "trace.latencyChart.under": "trong ngân sách",
+  "trace.latencyChart.noPlanning": "Planner không chạy lần nào trong episode này, nên không có độ trễ để vẽ."
 }

@@ -937,7 +937,6 @@
   "trace.pause": "Pause",
   "trace.clearance": "Clearance now",
   "trace.latency": "Planner latency now",
-  "trace.duration": "Episode length",
   "trace.outcome": "Last event",
   "trace.noEvent": "no event",
   "trace.colourNote": "The path is coloured by clearance measured from the robot's surface (HĐ-8.2): red at the collision boundary, blue at a full robot radius of room. Red dots are HĐ-5 events — a collision and an arrival draw the same curve, and only the marker tells them apart. Amber circles are the deployment's moving obstacles at that instant, drawn to their declared radius. The dashed grey line is the route the global planner had asked for at that instant; a replan replaces it.",
@@ -1494,5 +1493,14 @@
   "trace.running.margin": "Worst clearance so far",
   "trace.running.exposure": "Time inside warning distance",
   "trace.running.efficiency": "Progress per metre driven",
-  "trace.running.replans": "Replans so far"
+  "trace.running.replans": "Replans so far",
+  "trace.tip.lastEvent": "The final HĐ-5 event the trace recorded. Beside Result, which is the gate's reading of the same episode — the two are only usually the same word.",
+  "trace.metricsView.final": "Show final results",
+  "trace.metricsView.live": "Show live metrics",
+  "trace.metricsView.hint": "This replay swaps its live readings for the episode's result when it runs out. This asks for that result now, for this candidate only.",
+  "trace.latencyChart.title": "Planner latency (ms)",
+  "trace.latencyChart.alt": "Planner latency over the episode, against the deployment's control period.",
+  "trace.latencyChart.over": "over budget",
+  "trace.latencyChart.under": "within budget",
+  "trace.latencyChart.noPlanning": "The planner did not run during this episode, so there is no latency to plot."
 }

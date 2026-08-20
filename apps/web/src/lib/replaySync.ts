@@ -74,3 +74,42 @@ export function sideTime(
   const stamp = side === "a" ? chosen.time_a : chosen.time_b;
   return stamp ?? 0;
 }
+
+/** The arc length one side had reached at this timestamp — `sideTime`
+ *  backwards.
+ *
+ * Needed because the two alignments measure the scrubber in different
+ * units. Clicking the latency chart hands back a *time* on one
+ * candidate's own clock, and in progress alignment the shared scrubber
+ * is in metres, so the click has to be converted before it can be
+ * applied to both panels. Doing that arithmetic at the call site would
+ * put a second, informal copy of the rows' meaning in the page.
+ *
+ * Matched to `sideTime`'s convention — the last rung at or before the
+ * value asked for, no interpolation — so time → progress → time returns
+ * where it started rather than creeping by a rung each round trip.
+ *
+ * Clamped to the last rung *both* runs reached, which is the range the
+ * progress scrubber actually has: a click at 50 s on a run whose partner
+ * stopped at 22 s would otherwise return a position the slider cannot
+ * hold.
+ */
+export function sideProgress(
+  view: ReplaySyncView | null,
+  seconds: number,
+  side: "a" | "b",
+): number {
+  if (!view || view.plan.rows.length === 0) return 0;
+  const limit = commonProgress(view);
+  let chosen = 0;
+  for (const row of view.plan.rows) {
+    const stamp = side === "a" ? row.time_a : row.time_b;
+    // A null is "this run never got this far", not "it was here at
+    // t=0"; treating it as zero would drag the scrubber back to the
+    // start whenever the slower run's rows ran out.
+    if (stamp === null) continue;
+    if (stamp > seconds) break;
+    chosen = row.progress_m;
+  }
+  return Math.min(chosen, limit);
+}

@@ -21,9 +21,10 @@
  *   might have been going the other way.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { routeAt } from "@/lib/evidence";
 
+import { LatencyChart } from "@/components/LatencyChart";
 import { Scene25D } from "@/components/Scene25D";
 import { useTranslation } from "@/lib/i18n";
 import type { RunningSample, TracePayload } from "@/lib/decisions";
@@ -77,6 +78,25 @@ export interface TraceViewerProps {
    *  pair and therefore no shared reference line to measure progress
    *  along. The dynamic tiles simply do not appear. */
   running?: RunningSample[] | null;
+  /** What to show in place of the live readings once the replay has
+   *  run out — the episode's scored result. Passed in rather than built
+   *  here because it is the caller's table: this component knows the
+   *  trace, not how the run was graded.
+   *
+   *  **The same frame holds one or the other, never both.** While the
+   *  replay is playing, a column of final results beside it invites
+   *  reading a total as a reading; once it has stopped, a row of live
+   *  values is a set of frozen numbers under labels that say "now". */
+  finalPanel?: ReactNode;
+  /** Show the final panel without waiting for the replay to finish.
+   *  The control belongs to the comparison, not to one canvas: two
+   *  panels showing different kinds of number cannot be read against
+   *  each other. */
+  forceFinal?: boolean;
+  /** Seek the replay from the latency chart, in seconds on this
+   *  candidate's own clock. The caller decides what that means for the
+   *  pair — see the page's `seekFrom`. */
+  onSeek?: (seconds: number) => void;
   /** True when *this* candidate's own driven path became the reference
    *  line — only ever on a run with no recorded plan. Its
    *  `path_efficiency` is then 1.00 by construction rather than by
@@ -91,6 +111,9 @@ export function TraceViewer({
   showControls = true,
   candidateSide,
   running,
+  finalPanel,
+  forceFinal = false,
+  onSeek,
   isReferenceRuler = false,
 }: TraceViewerProps) {
   const { t } = useTranslation();
@@ -280,6 +303,12 @@ export function TraceViewer({
   // Indexed by the same row the pose is drawn from, so the tile and the
   // robot on the canvas are never two different moments.
   const live = running?.[visibleStep] ?? null;
+  // The scrubber has reached the last recorded pose: there is no "now"
+  // left to report. `forceFinal` is the reader asking for the result
+  // before the replay gets there.
+  const showFinal =
+    Boolean(finalPanel) &&
+    (forceFinal || (trace.x.length > 0 && visibleStep >= trace.x.length - 1));
 
   /** The trace's grid as the raised view takes it.
    *
@@ -365,51 +394,85 @@ export function TraceViewer({
         </span>
       </div> : null}
 
-      {/* **What is true at this instant**, above the episode's totals.
-          The first two move with the scrubber and the rest accumulate;
-          none of them is a summary of the whole run, which is what the
-          table further down is for. */}
-      <div className="stat-grid" style={{ marginTop: 12 }}>
-        <Figure
-          label={t("trace.clearance")}
-          value={Number.isFinite(clearance) ? `${clearance.toFixed(3)} m` : "—"}
-        />
-        <Figure
-          label={t("trace.latency")}
-          value={Number.isFinite(latency) ? `${latency.toFixed(2)} ms` : "—"}
-        />
-        {live ? (
-          <>
-            <Figure
-              label={t("trace.running.progress")}
-              value={`${(live.progress_fraction * 100).toFixed(1)} %`}
-            />
-            <Figure
-              label={t("trace.running.margin")}
-              value={`${live.safety_margin.toFixed(2)} r`}
-            />
-            <Figure
-              label={t("trace.running.exposure")}
-              value={`${live.exposure_s.toFixed(1)} s`}
-            />
-            <Figure
-              label={t("trace.running.efficiency")}
-              value={`${live.path_efficiency.toFixed(3)}${isReferenceRuler ? " †" : ""}`}
-              note={isReferenceRuler ? t("running.rulerArtefact") : undefined}
-            />
-            <Figure label={t("trace.running.replans")} value={`${live.replans}`} />
-          </>
-        ) : null}
-        <Figure label={t("trace.duration")} value={`${(trace.t.at(-1) ?? 0).toFixed(1)} s`} />
-        <Figure
-          label={t("trace.outcome")}
-          value={trace.events.at(-1)?.event ?? t("trace.noEvent")}
-        />
-      </div>
+      {/* **One frame, one kind of number.**
 
-      <p className="muted" style={{ marginTop: 8 }}>
-        {t("trace.colourNote")}
-      </p>
+          While the replay is running this holds only what is true at
+          this instant; the episode's result is not shown beside it,
+          because a total sitting in a row of readings gets read as a
+          reading. Once the replay has run out — or the reader asks for
+          it early — the same frame holds the result instead, and the
+          live row goes away rather than freezing under labels that say
+          "now". Candidate B on a timeout episode used to sit at
+          "7.63 ms" beside a p99 of 2101 ms.
+
+          The first two tiles are momentary and the rest accumulate. The
+          cumulative ones arrive at the episode's totals by
+          construction — worst-clearance-so-far at the last row *is* the
+          minimum — which is why nothing here has to reconcile them with
+          the result panel. */}
+      {showFinal ? (
+        finalPanel
+      ) : (
+        <>
+          <div className="stat-grid" style={{ marginTop: 12 }}>
+            <Figure
+              label={t("trace.clearance")}
+              value={Number.isFinite(clearance) ? `${clearance.toFixed(3)} m` : "—"}
+            />
+            <Figure
+              label={t("trace.latency")}
+              value={Number.isFinite(latency) ? `${latency.toFixed(2)} ms` : "—"}
+            />
+            {live ? (
+              <>
+                <Figure
+                  label={t("trace.running.progress")}
+                  value={`${(live.progress_fraction * 100).toFixed(1)} %`}
+                />
+                <Figure
+                  label={t("trace.running.margin")}
+                  value={`${live.safety_margin.toFixed(2)} r`}
+                />
+                <Figure
+                  label={t("trace.running.exposure")}
+                  value={`${live.exposure_s.toFixed(1)} s`}
+                />
+                <Figure
+                  label={t("trace.running.efficiency")}
+                  value={`${live.path_efficiency.toFixed(3)}${isReferenceRuler ? " †" : ""}`}
+                  note={isReferenceRuler ? t("running.rulerArtefact") : undefined}
+                />
+                <Figure label={t("trace.running.replans")} value={`${live.replans}`} />
+              </>
+            ) : null}
+          </div>
+          {/* **The chart is one of the live readings**, so it lives
+              inside this branch and goes away with them. It also takes
+              the space the per-canvas colour note used to: that note was
+              rendered once per candidate — the same four sentences twice,
+              side by side — and it explains how the canvas is drawn,
+              which is one fact about the pair. It now sits once on the
+              shared legend above.
+
+              What replaces it is the one quantity a single number cannot
+              report: latency has a *shape*, and both the tile ("now") and
+              the result panel ("p99") are summaries of it. */}
+          <LatencyChart
+            times={trace.t}
+            latencies={trace.planner_latency_ms}
+            controlPeriodS={trace.control_period_s}
+            step={visibleStep}
+            atTime={trace.t[visibleStep] ?? 0}
+            // The running p99 the compute tile is normalised from,
+            // turned back into milliseconds. An exact inversion of
+            // `_percentile(...) / (T_cycle * 1000)`, not a second
+            // percentile — one implementation, two units.
+            p99Ms={live ? live.compute_budget * trace.control_period_s * 1000 : null}
+            onSeek={onSeek}
+          />
+        </>
+      )}
+
     </div>
   );
 }

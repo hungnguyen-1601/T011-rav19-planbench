@@ -933,6 +933,11 @@ class TestReadingBackTheEvidence:
         path that looks clear at one pixel per cell may not be."""
         trace = self._fetch(client, a_run).json()
         assert trace["robot_radius_m"] > 0
+        # G4's budget travels with the trace so the latency chart can
+        # draw where "too slow" is. Without it the chart is a shape with
+        # no threshold, and a deployment that declares a different
+        # control rate would be graded against somebody else's line.
+        assert trace["control_period_s"] > 0
         assert trace["missions"]
         first = trace["missions"][0]
         assert set(first["start"]) == {"x", "y"}

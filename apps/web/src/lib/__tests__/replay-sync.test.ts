@@ -10,7 +10,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { DecisionRun, ReplaySyncView, RunCandidate } from "@/lib/decisions";
-import { commonProgress, comparedPair, panelCandidates, sideTime } from "@/lib/replaySync";
+import { commonProgress, comparedPair, panelCandidates, sideProgress, sideTime } from "@/lib/replaySync";
 
 function candidate(id: string): RunCandidate {
   return {
@@ -149,5 +149,51 @@ describe("where each run is at one arc length", () => {
 
   it("has nowhere to be before the view arrives", () => {
     expect(sideTime(null, 3, "a")).toBe(0);
+  });
+});
+
+describe("turning a click on the latency chart into a scrubber position", () => {
+  // Candidate A runs the route in 10 s; B takes twice as long.
+  const ROWS_PAIRED = [
+    { progress_m: 0, time_a: 0, time_b: 0, cross_track_a: 0, cross_track_b: 0 },
+    { progress_m: 5, time_a: 5, time_b: 10, cross_track_a: 0, cross_track_b: 0 },
+    { progress_m: 10, time_a: 10, time_b: 20, cross_track_a: 0, cross_track_b: 0 },
+  ];
+
+  it("reads each side on its own clock", () => {
+    // The same wall-clock second is a different point of the task for
+    // each run — that is the whole difference between the alignments.
+    expect(sideProgress(view(ROWS_PAIRED), 10, "a")).toBe(10);
+    expect(sideProgress(view(ROWS_PAIRED), 10, "b")).toBe(5);
+  });
+
+  it("round-trips with sideTime rather than creeping a rung each way", () => {
+    const v = view(ROWS_PAIRED);
+    const seconds = sideTime(v, 5, "b");
+    expect(sideProgress(v, seconds, "b")).toBe(5);
+  });
+
+  it("clamps past the end instead of returning a position the slider cannot hold", () => {
+    expect(sideProgress(view(ROWS_PAIRED), 9999, "a")).toBe(10);
+  });
+
+  it("stays at the start before the first rung", () => {
+    expect(sideProgress(view(ROWS_PAIRED), -1, "a")).toBe(0);
+  });
+
+  it("does not drag the scrubber back when the partner's rows run out", () => {
+    // A null is "this run never got this far", not "it was here at
+    // t=0". Read as zero, the last rungs of a run whose partner stopped
+    // early would send the scrubber to the beginning.
+    const ragged = [
+      { progress_m: 0, time_a: 0, time_b: 0, cross_track_a: 0, cross_track_b: 0 },
+      { progress_m: 5, time_a: 5, time_b: 10, cross_track_a: 0, cross_track_b: 0 },
+      { progress_m: 10, time_a: 10, time_b: null, cross_track_a: 0, cross_track_b: null },
+    ];
+    expect(sideProgress(view(ragged), 10, "a")).toBe(5);
+  });
+
+  it("answers zero for a view that has no rows", () => {
+    expect(sideProgress(null, 5, "a")).toBe(0);
   });
 });

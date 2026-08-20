@@ -415,6 +415,10 @@ export interface TracePayload {
     occupied_bits: string;
   };
   robot_radius_m: number;
+  /** G4's own budget. The latency chart draws its threshold from this
+   *  rather than from a constant, so a deployment that declares a
+   *  different control rate gets a different line. */
+  control_period_s: number;
   missions: { id: string; start: { x: number; y: number }; goal: { x: number; y: number } }[];
   t: number[];
   x: number[];

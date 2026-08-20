@@ -166,3 +166,50 @@ class TestTheSeriesTheCanvasTilesRead:
         series = sample_series(slice_, deployment=DEPLOYMENT)
         for index in range(len(series)):
             assert sample_at(slice_, index, deployment=DEPLOYMENT) == series[index]
+
+
+class TestWhatRouteCoveredIsAFractionOf:
+    """The denominator behind the tile labelled "route covered"."""
+
+    def test_stopping_short_of_the_line_does_not_read_one(self) -> None:
+        """A robot that stops inside goal tolerance has not covered the
+        whole planned route, and the tile should not claim it did."""
+        from planbench_explanation.running_metrics import Deployment, sample_series
+
+        deployment = DEPLOYMENT.model_copy(update={"reference_length_m": STRAIGHT.length_m})
+        assert isinstance(deployment, Deployment)
+        slice_ = _slice_for(payload([(0.0, 0.0), (5.0, 0.0), (9.8, 0.0)]), STRAIGHT)
+        series = sample_series(slice_, deployment=deployment)
+        assert series[-1].progress_fraction == pytest.approx(0.98)
+
+    def test_covering_the_whole_line_reads_one(self) -> None:
+        """The other half of the pair, so the test above cannot pass by
+        every run scoring short."""
+        from planbench_explanation.running_metrics import sample_series
+
+        deployment = DEPLOYMENT.model_copy(update={"reference_length_m": STRAIGHT.length_m})
+        slice_ = _slice_for(payload([(0.0, 0.0), (5.0, 0.0), (10.0, 0.0)]), STRAIGHT)
+        series = sample_series(slice_, deployment=deployment)
+        assert series[-1].progress_fraction == pytest.approx(1.0)
+
+    def test_the_service_divides_by_the_line_not_by_the_common_span(self) -> None:
+        """A source check, and it is here because the consequence is
+        invisible in a screenshot.
+
+        The ladder's top rung is the furthest point *both* candidates
+        reached. Using it as the denominator makes the fraction read
+        100% whenever the slower candidate stops — with the faster
+        robot drawn halfway down the map, and nothing on screen to say
+        the scale had changed.
+        """
+        from pathlib import Path
+
+        source = (
+            Path(__file__).resolve().parents[2]
+            / "apps"
+            / "api"
+            / "planbench_api"
+            / "decision_service.py"
+        ).read_text(encoding="utf-8")
+        assert "reference_length = reference.length_m" in source
+        assert "reference_length = max(float(row.progress_m) for row in rows)" not in source

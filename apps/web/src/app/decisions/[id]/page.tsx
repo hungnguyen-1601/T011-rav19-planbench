@@ -18,7 +18,7 @@ import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { TraceViewer } from "@/components/TraceViewer";
 import { ProgressSync, type SyncSlot } from "@/components/ProgressSync";
-import { commonProgress, panelCandidates, sideTime } from "@/lib/replaySync";
+import { commonProgress, panelCandidates, sideProgress, sideTime } from "@/lib/replaySync";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { panelPlan } from "@/lib/explainPanel";
 import { Icon } from "@/components/Icon";
@@ -223,6 +223,17 @@ function TracePanel({ run }: { run: DecisionRun }) {
   // (2D or 2.5D). Two unrelated ideas under one name is how a later
   // reader concludes the page already had two sync modes.
   const [syncMode, setSyncMode] = useState<"time" | "progress">("time");
+  // **One switch per canvas.** The first version shared a single
+  // control, on the reasoning that two panels showing different kinds
+  // of number cannot be compared. That was already untrue of its own
+  // automatic behaviour — each replay flips to its result when *it*
+  // runs out, so a short run and a long one legitimately differ for
+  // half the episode — and it forbade the case a reader actually wants:
+  // reading one stack's results while the other is still driving.
+  //
+  // Unset means automatic: that replay switches when it reaches its own
+  // end.
+  const [finalFor, setFinalFor] = useState<{ a: boolean; b: boolean }>({ a: false, b: false });
   const [sync, setSync] = useState<SyncSlot>({ state: "idle" });
   /** Empty until the recipe answers, and empty for a run too old to
    *  carry per-episode utility — the plain list is the honest fallback,
@@ -329,6 +340,36 @@ function TracePanel({ run }: { run: DecisionRun }) {
   }, [duration, playback.playing]);
 
   const view: ReplaySyncView | null = sync.state === "ready" ? sync.view : null;
+
+  /** A click on one candidate's latency chart, applied to **both**.
+   *
+   * The chart hands back a moment on that candidate's own clock, and
+   * what the pair does with it depends on the alignment:
+   *
+   * - by time, the two panels share a wall clock, so the seconds go
+   *   straight to the shared scrubber;
+   * - by progress, the scrubber is in **metres**, so the timestamp is
+   *   converted through the rows the view published — the same rows
+   *   `sideTime` reads forwards.
+   *
+   * Seeking only the canvas that was clicked would be the smaller
+   * change and would break the one thing this view is for: at any
+   * moment the two panels are supposed to be answering the same
+   * question.
+   */
+  const seekFrom = (side: "a" | "b", seconds: number) => {
+    // **Playback is left alone.** An earlier version paused on every
+    // seek, reasoning that a replay which keeps rolling walks away from
+    // the moment just asked for. In use that is backwards: clicking the
+    // chart is how you jump to the interesting part and *watch it*, and
+    // having to press play again every time makes the chart a worse
+    // scrubber than the scrubber.
+    if (syncMode === "time") {
+      setPlayback((current) => ({ ...current, time: Math.min(seconds, duration) }));
+      return;
+    }
+    setScan((current) => ({ ...current, time: sideProgress(view, seconds, side) }));
+  };
   const span = view ? commonProgress(view) : 0;
 
   useEffect(() => {
@@ -428,6 +469,9 @@ function TracePanel({ run }: { run: DecisionRun }) {
                 mode={mode}
                 playbackTime={at}
                 running={view?.running?.by_step[side] ?? null}
+                forceFinal={finalFor[side]}
+                onToggleFinal={() => setFinalFor((current) => ({ ...current, [side]: !current[side] }))}
+                onSeek={(seconds) => seekFrom(side, seconds)}
                 isReferenceRuler={view?.reference_source_candidate_id === candidate.candidate_id}
                 onRetry={() => void loadPair(episodeId)}
               />
@@ -470,18 +514,44 @@ function SharedPlayback({ playback, duration, onChange }: { playback: PlaybackSt
 function EpisodeLegend() {
   const { t } = useTranslation();
   const items = [["start", t("trace.legend.start")], ["goal", t("trace.legend.goal")], ["candidate-a", t("trace.legend.candidateA")], ["candidate-b", t("trace.legend.candidateB")], ["dynamic", t("trace.legend.dynamic")], ["collision", t("trace.legend.collision")]];
-  return <div className="episode-legend" aria-label={t("trace.legend.title")}>{items.map(([tone, label]) => <span key={tone}><i className={`legend-dot legend-dot--${tone}`} aria-hidden="true" />{label}</span>)}</div>;
+  // The colour note used to sit under each canvas — the same four
+  // sentences rendered twice, side by side. It describes how the canvas
+  // is drawn, which is one fact about the pair rather than one per
+  // candidate, so it belongs here with the legend it explains.
+  return <div className="episode-legend" aria-label={t("trace.legend.title")}><div className="episode-legend-keys">{items.map(([tone, label]) => <span key={tone}><i className={`legend-dot legend-dot--${tone}`} aria-hidden="true" />{label}</span>)}</div><p className="muted">{t("trace.colourNote")}</p></div>;
 }
 
-function CandidateEpisode({ candidate, side, episodeId, slot, mode, playbackTime, running, isReferenceRuler, onRetry }: { candidate: RunCandidate; side: "a" | "b"; episodeId: string; slot: TraceSlot; mode: "flat" | "raised"; playbackTime: number; running: RunningSample[] | null; isReferenceRuler: boolean; onRetry: () => void }) {
+function CandidateEpisode({ candidate, side, episodeId, slot, mode, playbackTime, running, forceFinal, onToggleFinal, onSeek, isReferenceRuler, onRetry }: { candidate: RunCandidate; side: "a" | "b"; episodeId: string; slot: TraceSlot; mode: "flat" | "raised"; playbackTime: number; running: RunningSample[] | null; forceFinal: boolean; onToggleFinal: () => void; onSeek: (seconds: number) => void; isReferenceRuler: boolean; onRetry: () => void }) {
   const { t } = useTranslation();
   const outcome = outcomesByEpisode(candidate).get(episodeId);
-  return <article className={`episode-candidate episode-candidate--${side}`}><header><div><span>Candidate {side.toUpperCase()}</span><h4>{candidate.stack_label}</h4><code>{candidate.local_controller_config}</code></div><span className={`badge ${outcomeTone(outcome)}`}>{outcomeLabel(outcome, t)}</span></header><div className="episode-map">{slot.state === "loading" ? <div className="episode-skeleton" role="status">{t("trace.loadingCandidate")}</div> : slot.state === "ready" ? <TraceViewer trace={slot.trace} playbackTime={playbackTime} mode={mode} showControls={false} candidateSide={side} running={running} isReferenceRuler={isReferenceRuler} /> : slot.state === "missing" ? <div className="episode-empty" role="status">{t("trace.missing")}</div> : slot.state === "empty" ? <div className="episode-empty" role="status">{t("trace.emptyFrames")}</div> : <div className="episode-error" role="alert"><p>{t("trace.loadError")}</p><button type="button" onClick={onRetry}>{t("common.retry")}</button></div>}</div><EpisodeMetrics outcome={outcome} /></article>;
+  const ready = slot.state === "ready" ? slot : null;
+  const finalPanel = <EpisodeMetrics outcome={outcome} lastEvent={ready ? (ready.trace.events.at(-1)?.event ?? null) : null} />;
+  return <article className={`episode-candidate episode-candidate--${side}`}><header><div><span>Candidate {side.toUpperCase()}</span><h4>{candidate.stack_label}</h4><code>{candidate.local_controller_config}</code></div><div className="episode-candidate-actions"><span className={`badge ${outcomeTone(outcome)}`}>{outcomeLabel(outcome, t)}</span>{/* Named with the stack, because the page carries two of these
+        and "Show final results" twice over is two controls a screen
+        reader cannot tell apart. */}
+      <button type="button" className={forceFinal ? "primary" : ""} aria-pressed={forceFinal} aria-label={`${t(forceFinal ? "trace.metricsView.live" : "trace.metricsView.final")} — ${candidate.stack_label}`} title={t("trace.metricsView.hint")} onClick={onToggleFinal}>{t(forceFinal ? "trace.metricsView.live" : "trace.metricsView.final")}</button></div></header><div className="episode-map">{slot.state === "loading" ? <div className="episode-skeleton" role="status">{t("trace.loadingCandidate")}</div> : ready ? <TraceViewer trace={ready.trace} playbackTime={playbackTime} mode={mode} showControls={false} candidateSide={side} running={running} finalPanel={finalPanel} forceFinal={forceFinal} onSeek={onSeek} isReferenceRuler={isReferenceRuler} /> : slot.state === "missing" ? <div className="episode-empty" role="status">{t("trace.missing")}</div> : slot.state === "empty" ? <div className="episode-empty" role="status">{t("trace.emptyFrames")}</div> : <div className="episode-error" role="alert"><p>{t("trace.loadError")}</p><button type="button" onClick={onRetry}>{t("common.retry")}</button></div>}</div>{/* A candidate whose trace would not load has no replay to run, so
+      there is no live row for the result to replace — and the result
+      is still the answer to what happened. Shown outright rather than
+      hidden behind a swap that has nothing to swap with. */}
+    {ready ? null : finalPanel}</article>;
 }
 
-function EpisodeMetrics({ outcome }: { outcome: EpisodeOutcome | undefined }) {
+/** What the episode came to, once. Nothing here moves with the scrubber.
+ *
+ * `Last event` sits here rather than beside the live readings because it
+ * is a fact about the end of the run, not about the moment on screen. It
+ * is kept **beside** `Result` rather than folded into it: `Result` is
+ * the gate's reading of the episode and `Last event` is HĐ-5's own final
+ * record, and the two are only usually the same sentence.
+ *
+ * There is no `Episode length` row to add — `Travel time` is that
+ * number, taken from the scored outcome instead of from the trace's last
+ * timestamp, so the tile that used to show it was a second reading of
+ * one quantity.
+ */
+function EpisodeMetrics({ outcome, lastEvent }: { outcome: EpisodeOutcome | undefined; lastEvent: string | null }) {
   const { t } = useTranslation();
-  const rows: [string, string, string][] = [[t("trace.result"), outcome ? outcomeLabel(outcome, t) : "—", t("trace.tip.result")], [t("metrics.travelTime"), outcome ? `${outcome.travel_time_s.toFixed(2)} s` : "—", t("trace.tip.time")], [t("metrics.minClearance"), outcome ? `${outcome.min_clearance.toFixed(3)} m` : "—", t("trace.tip.clearance")], [t("trace.p99Latency"), outcome ? `${outcome.p99_latency_ms.toFixed(2)} ms` : "—", t("trace.tip.latency")], [t("trace.collision"), outcome ? String(outcome.collision_count) : "—", t("trace.tip.collision")], [t("metrics.replanCount"), outcome?.replan_count === undefined ? "—" : String(outcome.replan_count), t("trace.tip.replan")]];
+  const rows: [string, string, string][] = [[t("trace.result"), outcome ? outcomeLabel(outcome, t) : "—", t("trace.tip.result")], [t("trace.outcome"), lastEvent ?? t("trace.noEvent"), t("trace.tip.lastEvent")], [t("metrics.travelTime"), outcome ? `${outcome.travel_time_s.toFixed(2)} s` : "—", t("trace.tip.time")], [t("metrics.minClearance"), outcome ? `${outcome.min_clearance.toFixed(3)} m` : "—", t("trace.tip.clearance")], [t("trace.p99Latency"), outcome ? `${outcome.p99_latency_ms.toFixed(2)} ms` : "—", t("trace.tip.latency")], [t("trace.collision"), outcome ? String(outcome.collision_count) : "—", t("trace.tip.collision")], [t("metrics.replanCount"), outcome?.replan_count === undefined ? "—" : String(outcome.replan_count), t("trace.tip.replan")]];
   return <dl className="episode-metrics">{rows.map(([label, value, tip]) => <div key={label} title={tip}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
 }
 

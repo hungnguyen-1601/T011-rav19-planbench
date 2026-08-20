@@ -619,6 +619,10 @@ class DecisionRunService:
             "metadata": metadata,
             "map": _packed_map(map_data),
             "robot_radius_m": profile.robot.radius,
+            # G4's budget, so a latency chart can say where "too slow"
+            # is rather than drawing a shape and leaving the reader to
+            # supply the threshold from memory.
+            "control_period_s": profile.robot.control_period,
             # Explicit fields rather than `list(pose)`: iterating a
             # pydantic model yields (name, value) pairs, which serialised
             # the start pose as [["x", 2.0], ["y", 8.0], ["theta", 0.0]]
@@ -774,7 +778,13 @@ class DecisionRunService:
         if not rows:
             return None
 
-        reference_length = max(float(row.progress_m) for row in rows)
+        # **The line's own length, not the ladder's top rung.** The top
+        # rung is the furthest point *both* candidates reached, so a run
+        # where one fails early gives a short denominator and a
+        # ``progress_fraction`` that reads 100% with the robot halfway
+        # down the map. The tile is labelled "route covered"; the route
+        # is the reference line.
+        reference_length = reference.length_m
         if reference_length <= 0:
             return None
         deployment = Deployment(
