@@ -1,0 +1,21 @@
+{
+  "$id": "schemas/tools/build_task_perturbation_spec.request.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "feature": {
+      "description": "The task feature to perturb.",
+      "type": "string"
+    },
+    "hypothesis_id": {
+      "description": "Which hypothesis the experiment would settle.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "hypothesis_id",
+    "feature"
+  ],
+  "title": "build_task_perturbation_spec@1.0.0 arguments",
+  "type": "object"
+}

@@ -152,8 +152,28 @@ _STATUS_TO_EVENT: dict[EpisodeStatus, TraceEvent] = {
 }
 
 
+#: What a trace's evidence is worth (plan §5.10).
+#:
+#: ``unknown`` is not a class anybody declares — it is what a trace
+#: written before this existed reads back as, and every policy refuses
+#: it. Naming it here rather than leaving it implicit means a reader
+#: sees the refusal as a decision rather than as a missing case.
+EvidenceClass = Literal["production", "reference", "oracle", "unknown"]
+EVIDENCE_CLASSES: frozenset[str] = frozenset(("production", "reference", "oracle", "unknown"))
+
+#: Directory a trace lands in when it has no conditions fingerprint —
+#: an episode run outside the contract pipeline. Reuse and scoring
+#: already refuse an empty fingerprint; this only makes the state
+#: visible in the filesystem rather than only in an error message.
+UNFINGERPRINTED = "unfingerprinted"
+
+
 class TraceError(ValueError):
     """A trace that would misinform the Metrics Engine."""
+
+
+class TraceUseRefused(TraceError):
+    """A trace exists and this use may not have it."""
 
 
 def event_for_status(status: EpisodeStatus) -> TraceEvent | None:
@@ -188,6 +208,19 @@ class TraceMetadata(BaseModel):
     candidate_id: str = Field(min_length=1)
     task_profile_id: str = Field(min_length=1)
     sample_set: SampleSet
+
+    #: What this episode's evidence is worth (plan §5.10).
+    #:
+    #: ``production`` may be scored and recommended; ``reference`` may be
+    #: compared against but never recommended; ``oracle`` was fed a
+    #: source no robot has and measures an upper bound.
+    #:
+    #: **Defaults to ``unknown``, and unknown is refused everywhere.** A
+    #: trace written before this field existed cannot say what it was,
+    #: and treating "did not say" as "production" would admit precisely
+    #: the traces most likely to predate the change — the same reasoning,
+    #: and the same fail-closed answer, as the empty fingerprint below.
+    evidence_class: EvidenceClass = "unknown"
 
     global_plan_length_m: float | None = Field(default=None, ge=0)
     global_plan_time_ms: float | None = Field(default=None, ge=0)
@@ -268,15 +301,81 @@ def trace_path(
     episode_context_id: str,
     *,
     root: Path | str = DEFAULT_TRACE_ROOT,
+    evidence_class: EvidenceClass,
+    execution_fingerprint: str,
 ) -> Path:
     """Where the trace for one (candidate, context) pair belongs.
 
     Grouping by candidate and naming by context makes the pairing rule
     visible in the filesystem: two candidates compared on the same set of
-    contexts hold two directories with identical file names, and
-    ``ls`` answers "did both run the same episodes" (HĐ-3.2).
+    contexts hold two directories with identical file names, and ``ls``
+    answers "did both run the same episodes" (HĐ-3.2).
+
+    **The class and the conditions come first, and they are load
+    bearing.** The address used to be ``candidate/context``, which is
+    exactly the two ids HĐ-3.1 leaves the environment out of — so an
+    oracle run and a production run of one candidate wrote to the *same
+    file*, and the second silently replaced the first. Metadata alone
+    could not fix that: a guard on read still leaves the write
+    destroying evidence nobody can recover.
+
+    The class is required rather than defaulted: a default would be a
+    guess about provenance made on behalf of whoever called, and the
+    point of this layer is that provenance is never guessed.
+
+    An **empty** fingerprint is not refused here, it is filed under
+    :data:`UNFINGERPRINTED`. A trace written outside the contract
+    pipeline — a test, a diagnostic script — genuinely has no conditions
+    hash, and the rule for it already exists and has not changed: an
+    empty fingerprint reads as *unknown*, so ``--reuse-traces`` and
+    scoring refuse it. Giving that state its own directory makes it
+    visible in ``ls`` instead of leaving it to be discovered by a
+    refusal.
     """
-    return Path(root) / candidate_id / f"{episode_context_id}.parquet"
+    if evidence_class not in EVIDENCE_CLASSES:
+        raise TraceError(
+            f"{evidence_class!r} is not an evidence class; known classes are "
+            f"{sorted(EVIDENCE_CLASSES)}"
+        )
+    return (
+        Path(root)
+        / evidence_class
+        / (execution_fingerprint or UNFINGERPRINTED)
+        / candidate_id
+        / f"{episode_context_id}.parquet"
+    )
+
+
+def planning_inputs_path(
+    candidate_id: str,
+    episode_context_id: str,
+    *,
+    root: Path | str = DEFAULT_TRACE_ROOT,
+    evidence_class: EvidenceClass,
+    execution_fingerprint: str,
+) -> Path:
+    """Where one episode's planning-input sidecar (E4.5) belongs.
+
+    **The same address as the trace, with a different suffix.** Not a
+    parallel tree: the class and the conditions fingerprint are what
+    keep an oracle run from overwriting a production one, and a sidecar
+    filed anywhere else would have to re-derive that separation and
+    would eventually get it wrong. Sitting beside the trace also means
+    ``ls`` answers the same question for both — did these two candidates
+    record the same episodes — which is the reason the trace layout is
+    shaped this way in the first place.
+
+    Snapshots go in a directory named for the episode alongside it, so
+    one episode's evidence is one file plus one folder and nothing is
+    interleaved.
+    """
+    return trace_path(
+        candidate_id,
+        episode_context_id,
+        root=root,
+        evidence_class=evidence_class,
+        execution_fingerprint=execution_fingerprint,
+    ).with_suffix(".planning_inputs.jsonl")
 
 
 class EpisodeTraceRecorder:
@@ -308,11 +407,23 @@ class EpisodeTraceRecorder:
         global_plan_time_ms: float | None = None,
         execution_conditions_fingerprint: str = "",
         latency_layers: bool = False,
+        evidence_class: EvidenceClass = "production",
     ) -> None:
         self._context = context
         self._candidate_id = candidate_id
         self._clearance = clearance
-        self._path = trace_path(candidate_id, context.episode_context_id, root=root)
+        self._evidence_class = evidence_class
+        # Addressed by class and conditions, so an oracle run and a
+        # production run of one candidate cannot land on one file. This
+        # is the write-side half; the read-side half is
+        # ``load_trace_for_use``, and neither is sufficient alone.
+        self._path = trace_path(
+            candidate_id,
+            context.episode_context_id,
+            root=root,
+            evidence_class=evidence_class,
+            execution_fingerprint=execution_conditions_fingerprint,
+        )
         self._costmap_cells = costmap_cells
         self._global_plan_length_m = global_plan_length_m
         self._global_plan_time_ms = global_plan_time_ms
@@ -493,6 +604,11 @@ class EpisodeTraceRecorder:
             peak_rss_mb=self._peak_rss_mb,
             cpu_time_s=max(time.process_time() - self._cpu_start, 0.0),
             execution_conditions_fingerprint=self._fingerprint,
+            # Written into the file as well as into the path. The path
+            # stops an overwrite; the field is what lets a reader refuse
+            # a file that was moved, copied or renamed into a directory
+            # whose name no longer describes it.
+            evidence_class=self._evidence_class,
         )
         write_trace(self._path, self._rows, metadata)
         self._closed = True
@@ -591,6 +707,142 @@ def write_trace(
     path.parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(table, path)
     return path
+
+
+class TraceUsePolicy(BaseModel):
+    """Which evidence classes one use of a trace may accept (§5.10).
+
+    **One object, consulted by every reader**, because the alternative
+    was tried and failed: guarding only Card assembly leaves
+    ``--score-only``, ``--reuse-traces``, the checksum and the API
+    download each free to read whatever is on disk. That is the shape of
+    the stale-trace hole of 16-08 — checked at one consumer, open at the
+    rest — and it does not become a different shape by being about
+    provenance instead of about conditions.
+
+    ``unknown`` is in no policy. A trace that cannot say what it is gets
+    re-simulated; the cost is one re-run of a trace store, and the
+    alternative is a production number computed from an oracle episode
+    with nothing on disk to show it.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    accepts: frozenset[str]
+
+    def admits(self, evidence_class: str) -> bool:
+        return evidence_class in self.accepts
+
+    def require(self, metadata: TraceMetadata, path: Path) -> None:
+        if not self.admits(metadata.evidence_class):
+            raise TraceUseRefused(
+                f"{path} is {metadata.evidence_class!r} evidence and this is a "
+                f"{self.name} use, which accepts {sorted(self.accepts)}. "
+                + (
+                    "A trace written before evidence classes existed cannot say what "
+                    "it was; re-simulate it rather than assuming."
+                    if metadata.evidence_class == "unknown"
+                    else "Scoring it here would put an upper bound, or a reference "
+                    "adapter, into a number somebody reads as a recommendation."
+                )
+            )
+
+
+#: The ordinary benchmark use. Nothing but production evidence.
+PRODUCTION_USE = TraceUsePolicy(name="production", accepts=frozenset({"production"}))
+
+#: A comparison that may look at reference adapters — still never at an
+#: oracle, which measures a bound rather than a candidate.
+REFERENCE_USE = TraceUsePolicy(name="reference", accepts=frozenset({"production", "reference"}))
+
+#: The research lane: everything, and the evidence class travels with
+#: whatever it produces so no reader mistakes it for a recommendation.
+RESEARCH_USE = TraceUsePolicy(
+    name="research", accepts=frozenset({"production", "reference", "oracle"})
+)
+
+
+def _check_address(metadata: TraceMetadata, path: Path) -> None:
+    """The file's own claims must match where it was found.
+
+    A trace that says ``oracle`` under a ``production/`` directory is
+    either a copy somebody made by hand or a bug in whatever wrote it.
+    Both are reasons to refuse: the address is what stops an overwrite,
+    so an address that disagrees with the content has already stopped
+    being a guarantee.
+    """
+    parts = path.resolve().parts
+    if len(parts) < 4:
+        return
+    class_from_path, fingerprint_from_path = parts[-4], parts[-3]
+    if class_from_path in EVIDENCE_CLASSES and class_from_path != metadata.evidence_class:
+        raise TraceUseRefused(
+            f"{path} sits under {class_from_path!r} but its metadata says "
+            f"{metadata.evidence_class!r}; the address is what prevents one class "
+            "overwriting another, so an address that disagrees with the file is not "
+            "protecting anything"
+        )
+    recorded = metadata.execution_conditions_fingerprint
+    if recorded and fingerprint_from_path != recorded:
+        raise TraceUseRefused(
+            f"{path} sits under conditions {fingerprint_from_path!r} but was recorded "
+            f"under {recorded!r}"
+        )
+
+
+def find_traces(
+    root: Path | str,
+    candidate_id: str,
+    episode_context_id: str,
+    *,
+    use: TraceUsePolicy = PRODUCTION_USE,
+) -> list[Path]:
+    """Traces for one (candidate, context) pair that ``use`` may have.
+
+    For readers that know the pair but not the conditions — the API's
+    trace download, chiefly. It searches rather than guesses: inventing a
+    fingerprint to build a path with would produce a filename, not an
+    answer.
+
+    Returns **every** admitted match, sorted, rather than one. A pair can
+    legitimately have several traces now — the same candidate measured
+    under two worlds — and picking one silently would hand a caller an
+    arbitrary experiment. Deciding between them is the caller's, with the
+    conditions hash visible in the path.
+    """
+    matches = sorted(Path(root).glob(f"*/*/{candidate_id}/{episode_context_id}.parquet"))
+    admitted: list[Path] = []
+    for path in matches:
+        try:
+            metadata_for_use(path, use=use)
+        except TraceError:
+            continue
+        admitted.append(path)
+    return admitted
+
+
+def load_trace_for_use(path: Path | str, *, use: TraceUsePolicy = PRODUCTION_USE) -> LoadedTrace:
+    """**The** way to read a trace for anything that draws a conclusion.
+
+    Validates the class against the policy and the address against the
+    content, then returns the rows. Callers that only need the footer
+    use :func:`metadata_for_use`, which applies the same two checks.
+    """
+    path = Path(path)
+    metadata = read_trace_metadata(path)
+    use.require(metadata, path)
+    _check_address(metadata, path)
+    return read_trace(path)
+
+
+def metadata_for_use(path: Path | str, *, use: TraceUsePolicy = PRODUCTION_USE) -> TraceMetadata:
+    """The footer, with the same two refusals as :func:`load_trace_for_use`."""
+    path = Path(path)
+    metadata = read_trace_metadata(path)
+    use.require(metadata, path)
+    _check_address(metadata, path)
+    return metadata
 
 
 def read_trace_metadata(path: Path | str) -> TraceMetadata:

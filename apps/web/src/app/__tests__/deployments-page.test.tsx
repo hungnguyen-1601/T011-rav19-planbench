@@ -202,6 +202,27 @@ describe("the form is an input method, not a second definition", () => {
     expect(FORM).toContain("<MissionPoseFields");
   });
 
+  it("renders the draw editor and preview as mutually exclusive map modes", () => {
+    const area = FORM.slice(FORM.indexOf("const mapArea"), FORM.indexOf("return (", FORM.indexOf("const mapArea")));
+    const condition = area.indexOf('source === "drawn" ? (');
+    const editor = area.indexOf("<DrawNewMap");
+    const alternative = area.indexOf(") : (", editor);
+    const preview = area.indexOf('className="deployment-map-workspace deployment-map-stage deployment-map-preview"');
+    expect(condition).toBeGreaterThan(-1);
+    expect(editor).toBeGreaterThan(condition);
+    expect(alternative).toBeGreaterThan(editor);
+    expect(preview).toBeGreaterThan(alternative);
+    expect(area.match(/<DrawNewMap/g)).toHaveLength(1);
+    expect(area.match(/<MissionCanvas/g)).toHaveLength(1);
+  });
+
+  it("sizes the draw canvas from the same full-width measured room", () => {
+    expect(FORM).toContain("availableWidth={roomForMap}");
+    expect(FORM).toContain("canvasSize(availableWidth, height / Math.max(width, 1), availableWidth)");
+    expect(FORM).toContain("width={painterSize.width}");
+    expect(FORM).toContain("height={painterSize.height}");
+  });
+
   it("has every key it asks for, in both locales", () => {
     /* Both files, because the authoring moved into its own component
        and the guard did not follow it. A dozen traffic keys were being
@@ -530,24 +551,20 @@ describe("the traffic comes with the map it belongs to", () => {
     expect(FORM).not.toMatch(/flushDrag\(\s*(current\.)?pending/);
   });
 
-  it("puts the map beside the controls rather than a screen below them", () => {
-    /* Thirty fields stacked in one column left the map — the thing most
-       of them are about — near the bottom, so choosing a traffic route
-       meant scrolling away from the picture of it. */
+  it("keeps the configuration split above a full-width map", () => {
     expect(FORM).toContain("gridTemplateColumns");
     expect(FORM).toContain("sideBySide(shellWidth)");
+    expect(FORM).toContain('className="deployment-map-selector"');
+    expect(FORM).toContain('className="deployment-map-fullwidth"');
+    expect(FORM.indexOf("{mapArea}")).toBeGreaterThan(FORM.indexOf("deployment-config-panel"));
     /* Measured, and passed down as a number. `MapCanvas` maps a press
        to world coordinates assuming its surface and its CSS box are the
        same size, so a `width: 100%` stretch would land every click away
        from the pointer while the map still looked right. */
     expect(FORM).toContain("canvasSize(roomForMap");
     expect(FORM).toContain("width={canvas.width}");
-    /* And the map's track *is* the map. Two flexible tracks left the
-       canvas at the left edge of a wider column and the panel at the
-       right edge of another, with a gap between them that belonged to
-       neither — which is what made the picker under the map look like
-       it was floating between the two. */
-    expect(FORM).toContain("`${canvas.width}px minmax(0, 1fr)`");
+    expect(FORM).toContain('"minmax(0, 1fr) minmax(0, 1fr)"');
+    expect(FORM).toContain("canvasSize(roomForMap, mapAspect, roomForMap)");
   });
 
   it("says which tab a refusal is behind, and jumps there after a check", () => {

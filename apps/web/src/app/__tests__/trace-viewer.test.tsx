@@ -32,11 +32,12 @@ describe("the viewer sits with the evidence it explains", () => {
     expect(DETAIL.indexOf("<TracePanel")).toBeLessThan(DETAIL.indexOf("<Outcome"));
   });
 
-  it("loads one episode on demand rather than all of them", () => {
+  it("loads both candidate traces for only the selected episode", () => {
     /* A run holds thirty to three hundred episodes per candidate, each a
        map plus a few hundred poses. */
-    expect(DETAIL).toContain("getTrace(run.id, candidate, episode)");
-    expect(DETAIL).toContain("trace.load");
+    expect(DETAIL).toContain("getTrace(run.id, candidate.candidate_id, episode)");
+    expect(DETAIL).toContain("Promise.all(candidates.map");
+    expect(DETAIL).toContain("episode_context_id");
   });
 
   it("says what the picture is evidence for", () => {
@@ -106,6 +107,19 @@ describe("playback", () => {
   it("stops the timer when it reaches the end", () => {
     expect(VIEWER).toContain("setPlaying(false)");
     expect(VIEWER).toContain("clearInterval(timer)");
+  });
+
+  it("accepts one externally controlled clock and view mode", () => {
+    expect(VIEWER).toContain("playbackTime?: number");
+    expect(VIEWER).toContain('mode?: "flat" | "raised"');
+    expect(VIEWER).toContain("frameIndexAt(timedFrames, playbackTime)");
+    expect(DETAIL).toContain("<SharedPlayback");
+    // One clock still drives both panels — but which clock depends on
+    // the alignment: seconds in time-sync, and in progress-sync the
+    // timestamp each run reached the same arc length at, which is a
+    // *different* timestamp per side on purpose.
+    expect(DETAIL).toContain("playbackTime={at}");
+    expect(DETAIL).toContain('syncMode === "progress" ? sideTime(view, scan.time, side) : playback.time');
   });
 });
 

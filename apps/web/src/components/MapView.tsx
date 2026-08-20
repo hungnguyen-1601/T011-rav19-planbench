@@ -64,14 +64,14 @@ export function MapView({
     (obstacleSnapshots?.length ?? 0) > 0;
 
   return (
-    <div>
+    <div className="map-view">
       {showModeSwitch ? (
-        <div className="toolbar" style={{ marginBottom: 8 }}>
+        <div className="toolbar map-view-switch">
           {(["flat", "raised"] as const).map((option) => (
             <button
               key={option}
               type="button"
-              className={mode === option ? "primary" : ""}
+              className={mode === option ? "active" : ""}
               onClick={() => setMode(option)}
               aria-pressed={mode === option}
             >

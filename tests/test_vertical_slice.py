@@ -30,11 +30,13 @@ import yaml
 from jsonschema import Draft202012Validator
 
 from planbench_benchmark import pipeline as pipeline_module
+from planbench_benchmark.episode import scenario_for
+from planbench_benchmark.fingerprint import execution_conditions_fingerprint
 from planbench_benchmark.task_map import load_task_map
 from planbench_decision.card import CARD_SCHEMA_PATH, MANIFEST_SCHEMA_PATH
 from planbench_metrics.definitions import compute_metrics
 from planbench_schemas.episode_context import EpisodeContext
-from planbench_simulator.trace import read_trace, trace_path
+from planbench_simulator.trace import load_trace_for_use, trace_path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -282,10 +284,25 @@ class TestTheManifestCanActuallyRebuild:
         trace_root = next(base.rglob("traces"))
         rebuilt = 0
         for context in contexts:
-            path = trace_path(candidate_id, context.episode_context_id, root=trace_root)
+            # Since H9A a trace is addressed by the conditions it ran
+            # under, so finding one takes the profile and the map as well
+            # as the two ids — which is exactly what this test claims a
+            # rebuild needs, and all of it is here.
+            path = trace_path(
+                candidate_id,
+                context.episode_context_id,
+                root=trace_root,
+                evidence_class="production",
+                execution_fingerprint=execution_conditions_fingerprint(
+                    map_data, scenario_for(profile, context), profile
+                ),
+            )
             if not path.is_file():
                 continue
-            metrics = compute_metrics(read_trace(path), profile, context, map_data)
+            # Through the one boundary, not around it: a rebuild that
+            # read the file directly would recompute metrics from a trace
+            # nothing had checked the provenance of.
+            metrics = compute_metrics(load_trace_for_use(path), profile, context, map_data)
             assert metrics.episode_context_id == context.episode_context_id
             assert metrics.path_length_m > 0.0
             rebuilt += 1
@@ -465,7 +482,11 @@ class TestTheRunPlanInterleaves:
 
         dispatched: list[tuple[str, int]] = []
 
-        def record(candidate, _profile, context, _map_data, root):  # type: ignore[no-untyped-def]
+        def record(candidate, _profile, context, _map_data, root, **_kwargs):  # type: ignore[no-untyped-def]
+            # ``**_kwargs`` because this fake stands in for
+            # ``run_contract_episode``, which grew ``evidence_class`` in
+            # H9A. A stand-in with a narrower signature than the thing it
+            # replaces answers for a function that no longer exists.
             dispatched.append((candidate.candidate_id, context.seed))
             return None, _FakeRun()
 
@@ -494,7 +515,7 @@ class TestTheRunPlanInterleaves:
 
         done: list[str] = []
 
-        def die_after_seven(candidate, _profile, context, _map_data, root):  # type: ignore[no-untyped-def]
+        def die_after_seven(candidate, _profile, context, _map_data, root, **_kwargs):  # type: ignore[no-untyped-def]
             if len(done) == 7:
                 raise KeyboardInterrupt
             done.append(candidate.candidate_id)

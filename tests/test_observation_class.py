@@ -52,7 +52,6 @@ class TestRegistryDeclaration:
                 id="new+stack",
                 kind="stack",
                 description="a planner someone forgot to label",
-                benchmarkable=True,
                 config_schema={},
             )
         missing = {error["loc"][0] for error in excinfo.value.errors()}

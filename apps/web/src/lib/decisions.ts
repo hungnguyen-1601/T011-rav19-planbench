@@ -150,8 +150,21 @@ export interface RunSample {
   episode_context_ids: string[];
 }
 
+/** Which two candidates the paired comparison was about.
+ *
+ * Written by the scoring run from the recommendation itself. The card
+ * cannot answer this: `alternative` is a Pareto claim, not the
+ * statistical runner-up, and it is null whenever that analysis did not
+ * run. Absent on runs scored before the field existed.
+ */
+export interface ComparisonPair {
+  recommended_candidate_id: string;
+  runner_up_candidate_id: string;
+}
+
 export interface ComparisonReport {
   artifact: string;
+  comparison_pair?: ComparisonPair | null;
   identity: {
     task_profile_id: string;
     experiment_scope: string;
@@ -380,6 +393,216 @@ export interface TracePayload {
   /** Sparse — only the steps that carry one. A collision and an arrival
    *  are the same shape of curve; the event is what tells them apart. */
   events: { index: number; event: string }[];
+}
+
+/** Which line arc length was measured along — and how honest it is.
+ *
+ * The platform has no planned route to project onto yet (the global
+ * plan is written to the episode JSON and older runs have none), so in
+ * practice this is a `degraded_*` value today. It is rendered rather
+ * than hidden: a progress-synced panel that cannot say what it measured
+ * progress against is asking to be believed.
+ */
+export type ProjectionQuality =
+  | "reference_plan"
+  | "degraded_candidate_path"
+  | "degraded_straight_line";
+
+export interface ProgressSyncRow {
+  progress_m: number;
+  /** Null where that run never got this far — draw nothing, not a guess. */
+  time_a: number | null;
+  time_b: number | null;
+  cross_track_a: number | null;
+  cross_track_b: number | null;
+}
+
+export interface DivergencePoint {
+  kind: "sustained_cross_track" | "event";
+  progress_m: number;
+  time_a: number | null;
+  time_b: number | null;
+  separation_m: number | null;
+  event: string | null;
+  side: "a" | "b" | null;
+}
+
+export interface ReplaySyncView {
+  episode_context_id: string;
+  candidate_a: string;
+  candidate_b: string;
+  plan: {
+    reference: { points: [number, number][]; quality: ProjectionQuality };
+    rows: ProgressSyncRow[];
+    backward_samples_a: number;
+    backward_samples_b: number;
+    /** Fixed server-side text. Rendered verbatim: a caveat the client
+     *  can reword is a caveat the client can water down. */
+    warning: string;
+  };
+  divergence: { sustained: DivergencePoint | null; anchors: DivergencePoint[] };
+  /** Whose driven path became the ruler, when one did. That candidate's
+   *  cross-track offset is zero everywhere by construction. */
+  reference_source_candidate_id: string | null;
+}
+
+export type ExemplarRole =
+  | "typical"
+  | "strongest_for_winner"
+  | "strongest_for_runnerup"
+  | "safety_critical";
+
+export interface Exemplar {
+  role: ExemplarRole;
+  episode_context_id: string;
+  delta_utility: number;
+  /** The number that chose it: metres of clearance for the safety role,
+   *  ΔU for the rest. */
+  criterion: number;
+  /** Episodes that tied with it, resolved by id. "Worst by a wide
+   *  margin" and "worst by a coin flip the recipe made for you" are
+   *  different pieces of evidence. */
+  tie_break_over: string[];
+}
+
+export interface ExemplarSet {
+  candidate_a: string;
+  candidate_b: string;
+  n_episodes: number;
+  exemplars: Exemplar[];
+}
+
+/** Which four episodes to open with, by a recipe fixed in advance.
+ *
+ * Rejects with 4xx for a run scored before per-episode utility was
+ * stored — three of the four roles are defined on ΔU and nothing left
+ * in the report can stand in for it. The page shows the plain episode
+ * list in that case rather than a set chosen some other way under a
+ * label that says it was preregistered.
+ */
+/** One detector's summary across the episodes it was looked for in (E3).
+ *
+ * `episodes_seen` over `episodes_total` is the part that stops one vivid
+ * episode reading as a pattern: 1/30 is an anecdote, 27/30 is a property
+ * of the pairing. The page renders the fraction rather than a rate for
+ * the same reason.
+ */
+export interface PacketObservation {
+  type: string;
+  candidate_id: string;
+  episodes_seen: number;
+  episodes_total: number;
+  typical: Record<string, number>;
+  worst_episode_context_id: string | null;
+}
+
+/** What the contrast lattice concluded about one detection type (E3).
+ *
+ * Three of the four verdicts are refusals, and they do not mean the same
+ * thing — `rules_out_component_specific_attribution` is a *finding*
+ * (both stacks do this, so the component is not what differs), while
+ * `insufficient_contrast` is a shrug. A page that rendered them alike
+ * would turn evidence into silence.
+ */
+export interface PacketLatticeFinding {
+  detection_type: string;
+  verdict: string;
+  subject: string | null;
+  pairs: [string, string][];
+  reason: string;
+}
+
+/** A gap the platform declares about itself, and what it forbids.
+ *
+ * Shown rather than hidden: an explanation that lists what it cannot
+ * know is worth more than one that quietly stops short.
+ */
+export interface PacketKnownUnknown {
+  id: string;
+  blocks_claim_types: string[];
+  source: string;
+}
+
+export interface PacketWaterfallBar {
+  objective: string;
+  weight: number;
+  delta_objective_mean: number;
+  contribution: number;
+  ci95: [number, number];
+}
+
+export interface PacketWaterfall {
+  candidate_a: string;
+  candidate_b: string;
+  n_episodes: number;
+  delta_utility_mean: number;
+  delta_utility_median: number;
+  total_ci95: [number, number];
+  bars: PacketWaterfallBar[];
+}
+
+export interface CasePacket {
+  run_id: string;
+  task: {
+    task_profile_id: string;
+    robot: { radius_m: number; required_passage_width_m: number | null };
+  };
+  candidates: { candidate_id: string }[];
+  decision: {
+    status: string;
+    /** `null` on a run that ranked nobody — no pair, so nothing to
+     * decompose. Not a failure, and the page must not draw an empty
+     * chart for it. */
+    waterfall: PacketWaterfall | null;
+  };
+  lattice: PacketLatticeFinding[];
+  observations: PacketObservation[];
+  known_unknowns: PacketKnownUnknown[];
+  evidence_class: string;
+}
+
+/** The case packet, plus an account of what could not be built.
+ *
+ * `omissions` is not diagnostics: it is what turns a thin explanation
+ * from "there was nothing to say" into "this part could not be built,
+ * and here is why". The page shows it.
+ */
+export interface ExplanationView {
+  packet: CasePacket;
+  omissions: string[];
+  skipped_episodes: string[];
+}
+
+/** The evidence behind a decision (E4.1/E4.2).
+ *
+ * Built while the run was scored, so a run recorded before that answers
+ * 409 — a state, not a fault, and the caller is expected to render it as
+ * one.
+ */
+export function getExplanation(runId: string): Promise<ExplanationView> {
+  return authFetch<ExplanationView>(`/decisions/${runId}/explanation`);
+}
+
+export function getExemplars(runId: string): Promise<ExemplarSet> {
+  return authFetch<ExemplarSet>(`/decisions/${runId}/exemplars`);
+}
+
+/** Both candidates of one episode, placed on arc length (E2).
+ *
+ * Computed server-side on purpose: projecting in the browser would put
+ * a second copy of the arc-length rules in TypeScript, and the copies
+ * would disagree the first time either was fixed.
+ */
+export function getReplaySync(
+  runId: string,
+  episodeContextId: string,
+  candidateA: string,
+  candidateB: string,
+): Promise<ReplaySyncView> {
+  const query = new URLSearchParams({ candidate_a: candidateA, candidate_b: candidateB });
+  return authFetch<ReplaySyncView>(
+    `/decisions/${runId}/replay-sync/${episodeContextId}?${query.toString()}`,
+  );
 }
 
 export function getTrace(

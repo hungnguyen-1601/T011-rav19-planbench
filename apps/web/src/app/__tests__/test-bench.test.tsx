@@ -35,6 +35,7 @@ const APP = join(process.cwd(), "src", "app");
 const PAGE = readFileSync(join(APP, "simulate", "page.tsx"), "utf8");
 const CLIENT = readFileSync(join(process.cwd(), "src", "lib", "decisions.ts"), "utf8");
 const EN = en as Record<string, string>;
+const VI = vi as Record<string, string>;
 
 describe("the episode comes from a deployment, not from a form", () => {
   it("takes a deployment and one of its missions", () => {
@@ -74,7 +75,11 @@ describe("the episode comes from a deployment, not from a form", () => {
     expect(PAGE).toContain("bench.conditions");
     expect(PAGE).toContain("deployment.constraints?.episode_timeout_s");
     expect(PAGE).toContain("deployment.environment?.sensor_noise");
-    expect(EN["bench.conditionsNote"]).toContain("different experiment");
+    expect(EN["bench.conditionsNote"]).toContain("kept unchanged");
+    expect(VI["bench.conditions"]).toBe("Điều kiện triển khai");
+    expect(PAGE).toContain("deployment-conditions-grid");
+    expect(PAGE).toContain("<ConditionGroup");
+    expect(PAGE).not.toContain('<section className="panel simulate-conditions">');
   });
 
   it("names which noise streams are switched on", () => {
@@ -85,6 +90,27 @@ describe("the episode comes from a deployment, not from a form", () => {
     expect(PAGE).toContain("function describeNoise(");
     expect(en).toHaveProperty("bench.noiseNone");
     expect(vi).toHaveProperty("bench.noiseNone");
+  });
+
+  it("presents locked conditions as semantic compact groups", () => {
+    expect(PAGE).toContain('className="deployment-condition-list"');
+    expect(PAGE).toContain("<dt>");
+    expect(PAGE).toContain("<dd>");
+    expect(PAGE).toContain("bench.conditionsLockedHint");
+    expect(PAGE).toContain("aria-expanded={conditionsExpanded}");
+    expect(PAGE).toContain("bench.conditionsSummary");
+  });
+
+  it("renders replanning and active noise as labelled badges, not raw JSON", () => {
+    expect(PAGE).toContain('condition-status ${deployment.replanning?.enabled ? "is-on" : "is-off"}');
+    expect(PAGE).toContain("activeNoiseNames(deployment.environment?.sensor_noise)");
+    expect(PAGE).toContain("bench.noiseNone");
+  });
+
+  it("shortens only the displayed context id", () => {
+    expect(PAGE).toContain("shortContextId(staged.episode_context_id)");
+    expect(PAGE).toContain('title={staged.episode_context_id}');
+    expect(PAGE).toContain("stageTestBenchEpisode");
   });
 });
 

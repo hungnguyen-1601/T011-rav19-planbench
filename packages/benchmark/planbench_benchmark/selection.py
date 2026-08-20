@@ -29,10 +29,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from types import MappingProxyType
 
 import yaml
 
@@ -49,6 +50,7 @@ from planbench_benchmark.pipeline import (
     GateOnlyDeployment,
     Progress,
     SweepResult,
+    TraceLocator,
     check_delta_u,
     check_gate_table,
     check_l_ref,
@@ -94,7 +96,20 @@ from planbench_decision.sensitivity import (
     weight_stability,
 )
 from planbench_decision.stats import CandidateEvidence, Recommendation, recommend
+from planbench_explanation.catalog import TOOL_CATALOG_VERSION
+from planbench_explanation.detectors import DETECTOR_VERSION
+from planbench_explanation.knowledge import KNOWLEDGE_BASE_VERSION
+from planbench_explanation.packet_builder import (
+    EpisodeTrace,
+    build_scoring_packet,
+    packet_block,
+)
+from planbench_explanation.versioning import file_checksum
+from planbench_explanation.waterfall import Waterfall, build_waterfall
 from planbench_metrics.definitions import EpisodeMetricSet
+from planbench_schemas.episode_context import EpisodeContext
+from planbench_schemas.feasibility import SafetyEnvelope, hard_clearance
+from planbench_schemas.map import MapData
 from planbench_schemas.task_profile import DEFAULT_MIN_EPISODES_BEFORE_STOP, TaskProfile
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -373,10 +388,12 @@ class _EarlyStopWatch:
         *,
         planned: int,
         floor: int,
+        evidence_class: str = "production",
     ) -> None:
         self._profile = profile
         self._map_data = map_data
         self._trace_root = trace_root
+        self._evidence_class = evidence_class
         self._planned = planned
         self._floor = floor
         self._metrics: dict[str, list] = {}
@@ -394,6 +411,7 @@ class _EarlyStopWatch:
                 context,  # type: ignore[arg-type]
                 self._map_data,  # type: ignore[arg-type]
                 self._trace_root,
+                evidence_class=self._evidence_class,
             )
         )
         verdict = check_early_stop(rows, self._profile, planned_episodes=self._planned)
@@ -428,6 +446,12 @@ def run_comparison(
     affinity_source: str | None = None,
     score_only: bool = False,
     stop_early: bool = False,
+    #: What this whole sweep's evidence is worth (§5.10). It reaches the
+    #: recorder, the trace addresses, the reuse check, the scoring reads
+    #: **and** the run directory — a knob that stopped at any one of
+    #: those would separate namespaces without routing anything into
+    #: them, which is how H9A first shipped.
+    evidence_class: str = "production",
     min_episodes_before_stop: int | None = None,
     progress: Progress | None = None,
 ) -> dict[str, object]:
@@ -463,7 +487,9 @@ def run_comparison(
     # run that dies in its first minute now leaves a directory saying it
     # was attempted instead of nothing at all.
     destination = (
-        run_root / created_at.strftime("%Y-%m-%d") / run_dir_name(profile.id, scope, candidates)
+        run_root
+        / created_at.strftime("%Y-%m-%d")
+        / run_dir_name(profile.id, scope, candidates, evidence_class)
     )
     destination.mkdir(parents=True, exist_ok=True)
 
@@ -479,7 +505,14 @@ def run_comparison(
             f"(cổng không có luật dừng: {', '.join(sorted(GATES_WITHOUT_A_RULE))})"
         )
     watch = (
-        _EarlyStopWatch(profile, map_data, trace_root, planned=requested, floor=floor)
+        _EarlyStopWatch(
+            profile,
+            map_data,
+            trace_root,
+            planned=requested,
+            floor=floor,
+            evidence_class=evidence_class,
+        )
         if stop_early and not score_only
         else None
     )
@@ -490,7 +523,9 @@ def run_comparison(
         # it left on disk need a way back into a report that does not
         # involve re-simulating them or hand-editing JSON. Same prefix
         # rule, same honesty about the sample it ended up with.
-        contexts = paired_prefix(candidates, contexts, trace_root, profile, map_data)
+        contexts = paired_prefix(
+            candidates, contexts, trace_root, profile, map_data, evidence_class=evidence_class
+        )
         interrupted = len(contexts) < requested
         if not contexts:
             raise AcceptanceFailure(
@@ -512,6 +547,7 @@ def run_comparison(
                 contexts,
                 map_data,
                 trace_root,
+                evidence_class=evidence_class,
                 reuse=reuse,
                 say=say,
                 journal=destination / "run_journal.jsonl",
@@ -526,7 +562,9 @@ def run_comparison(
             # already on disk, which is exactly the outcome that made a
             # three-hour run unreadable once.
             interrupted = True
-            contexts = paired_prefix(candidates, contexts, trace_root, profile, map_data)
+            contexts = paired_prefix(
+                candidates, contexts, trace_root, profile, map_data, evidence_class=evidence_class
+            )
             contexts_by_candidate = {c.candidate_id: tuple(contexts) for c in candidates}
             say(
                 f"\n⚠ NGẮT GIỮA CHỪNG — chấm trên {len(contexts)}/{requested} episode đã ghép "
@@ -548,6 +586,7 @@ def run_comparison(
             contexts_by_candidate[candidate.candidate_id],
             map_data,
             trace_root,
+            evidence_class=evidence_class,
         )
         for candidate in candidates
     }
@@ -577,6 +616,16 @@ def run_comparison(
     except GateOnlyDeployment as refusal:
         gate_only = str(refusal)
         evidence = []
+
+    # **Episode-level utility, kept per episode.** The card's number is
+    # the *set* level and cannot be taken apart afterwards; the paired
+    # statistics run on this one, and until now it existed only inside
+    # this function. Anything downstream that needs "which episode did
+    # the winner win hardest" — the E2 exemplar recipe, the E4 case
+    # packet — had to either recompute the whole metric set from the
+    # traces or invent a proxy. A candidate eliminated at a gate has no
+    # entry, which is the honest answer: it was never scored.
+    utility_by_candidate = {item.candidate_id: item.episode_utilities for item in evidence}
 
     # Checks that hold whether or not a card comes out. They are the
     # ones about the *measurement*; the ΔU check needs a comparison and
@@ -649,6 +698,15 @@ def run_comparison(
                 "candidate_id": candidate.candidate_id,
                 "stack_label": candidate.stack_label,
                 "local_controller_config": local,
+                # **The stack, as fields rather than as a label.** The
+                # lattice reading of E3 asks which pairs differ in
+                # exactly one component, and ``stack_label`` answers
+                # that only by being split on a plus sign — which works
+                # until a stack name contains one, at which point the
+                # comparison quietly changes meaning. Typed here, where
+                # the candidate object is in scope and nothing has to
+                # be inferred.
+                "components": _components(candidate, local),
                 # What this candidate was allowed to see. Recorded per
                 # candidate because a comparison between stacks shown
                 # different things is not a comparison between the
@@ -701,7 +759,10 @@ def run_comparison(
                 "replan_count": sum(
                     m.replan_count for m in metrics_by_candidate[candidate.candidate_id]
                 ),
-                "episodes": _episode_outcomes(metrics_by_candidate[candidate.candidate_id]),
+                "episodes": _episode_outcomes(
+                    metrics_by_candidate[candidate.candidate_id],
+                    utilities=utility_by_candidate.get(candidate.candidate_id, {}),
+                ),
             }
             for candidate, (_stack, local) in zip(candidates, candidate_specs, strict=True)
         ],
@@ -718,7 +779,9 @@ def run_comparison(
     # computed from. Carried in the report because the API stores what
     # this function returns, not what it writes to disk.
     report["run_uri"] = f"file://{destination}"
-    report["run_checksum"] = trace_checksum(candidates, contexts, trace_root)
+    report["run_checksum"] = trace_checksum(
+        candidates, contexts, trace_root, profile, map_data, evidence_class=evidence_class
+    )
 
     if len(evidence) < 2:
         # Not an error. "Who was eliminated where, after how many runs"
@@ -751,6 +814,29 @@ def run_comparison(
             )
         )
         report["checks"] = checks
+        # **A run that ranked nobody still gets a packet (E4.2).** It has
+        # no pair, so no waterfall and no exemplars — but the sightings,
+        # the geometry and the gate table are facts about this run, and
+        # "why did it fail" is asked of exactly these runs. Building only
+        # in the ranked branch meant the detectors never ran here and the
+        # explanation endpoint answered 409 to the one question the run
+        # provoked.
+        report["case_packet"] = _explanation_packet(
+            destination=destination,
+            run_id=destination.name,
+            profile=profile,
+            map_data=map_data,
+            candidates=candidates,
+            contexts_by_candidate=contexts_by_candidate,
+            waterfall=None,
+            decision_status="NO_DECISION_CARD",
+            gate_reports=gate_reports,
+            trace_root=trace_root,
+            evidence_class=evidence_class,
+            report=report,
+            say=say,
+            manifest_written=False,
+        )
         _write_json(destination / "comparison_report.json", report)
         _say_summary(say, report, destination)
         return report
@@ -795,6 +881,24 @@ def run_comparison(
     )
     card, manifest = bundle.card, bundle.manifest
     report["decision_card"] = card.to_json_dict()
+    # **Which two candidates the paired comparison was about.**
+    #
+    # Not derivable from the card. ``recommended`` is on it, but the
+    # other half is not: ``alternative`` may only ever name a
+    # PARETO_FRONTIER candidate (HĐ-12), so it is ``None`` on every run
+    # that did not do a Pareto analysis — and when it is set it can be a
+    # *different* candidate from the one ΔU was computed against.
+    # Second-on-the-ranking and not-dominated are two claims, and the
+    # card is deliberately careful not to conflate them.
+    #
+    # Everything downstream that shows the two runs side by side — the
+    # comparison canvases, the exemplar roles, the replay alignment — is
+    # about the pair the statistics used, so that pair is recorded here
+    # rather than guessed at by each reader.
+    report["comparison_pair"] = {
+        "recommended_candidate_id": recommendation.recommended_id,
+        "runner_up_candidate_id": recommendation.runner_up_id,
+    }
     # Returned, not merely written beside the card. HĐ-13's acceptance
     # criterion is that somebody else rebuilds the same card *from the
     # manifest*, so a caller that keeps only the card keeps a claim it
@@ -805,11 +909,183 @@ def run_comparison(
     report["manifest"] = manifest.to_json_dict()
     report["gate_only_deployment"] = None
     report["checks"] = checks
-    _write_json(destination / "comparison_report.json", report)
+
+    # **The manifest is written before the packet is built**, because the
+    # packet's header names it by checksum and a checksum of bytes needs
+    # the bytes. Writing the report last then keeps the ordinary
+    # invariant: every file the report refers to is already on disk when
+    # the report lands.
     _write_json(destination / "decision_card.json", card.to_json_dict())
     _write_json(destination / "manifest.json", manifest.to_json_dict())
+
+    report["case_packet"] = _explanation_packet(
+        destination=destination,
+        run_id=destination.name,
+        profile=profile,
+        map_data=map_data,
+        candidates=candidates,
+        contexts_by_candidate=contexts_by_candidate,
+        waterfall=_decomposition(evidence, recommendation, settings, bootstrap_seed, say),
+        decision_status="CLEAR_RECOMMENDATION",
+        gate_reports=gate_reports,
+        trace_root=trace_root,
+        evidence_class=evidence_class,
+        report=report,
+        say=say,
+        manifest_written=True,
+    )
+    _write_json(destination / "comparison_report.json", report)
     _say_summary(say, report, destination)
     return report
+
+
+def _decomposition(
+    evidence: Sequence[CandidateEvidence],
+    recommendation: Recommendation,
+    settings: DecisionSettings,
+    bootstrap_seed: int,
+    say,  # type: ignore[no-untyped-def]
+) -> Waterfall | None:
+    """The paired ΔU decomposition, or ``None`` with the reason said out loud.
+
+    Separated from packet assembly because the packet is now built on
+    both paths and only one of them has a pair. A caller that could not
+    tell "this run has no comparison" from "the decomposition failed"
+    would file the second as the first.
+    """
+    try:
+        winner = next(
+            item for item in evidence if item.candidate_id == recommendation.recommended_id
+        )
+        runner_up = next(
+            item for item in evidence if item.candidate_id == recommendation.runner_up_id
+        )
+        return build_waterfall(winner, runner_up, settings=settings, seed=bootstrap_seed)
+    except Exception as error:  # noqa: BLE001 - a thin packet beats a lost sweep
+        say(f"⚠ không dựng được waterfall cho tầng giải thích: {error!r}")
+        return None
+
+
+def _explanation_packet(
+    *,
+    destination: Path,
+    run_id: str,
+    profile: TaskProfile,
+    map_data: MapData,
+    candidates: Sequence[Candidate],
+    contexts_by_candidate: Mapping[str, Sequence[EpisodeContext]],
+    waterfall: Waterfall | None,
+    decision_status: str,
+    gate_reports: Mapping[str, object],
+    trace_root: Path,
+    evidence_class: str,
+    report: Mapping[str, object],
+    say,  # type: ignore[no-untyped-def]
+    manifest_written: bool,
+) -> dict[str, object]:
+    """Build the analyst's case packet while the scoring pass holds its parts.
+
+    **Here rather than behind an endpoint, and that was the decision.**
+    The waterfall needs two ``CandidateEvidence`` objects and they exist
+    only in this function; rebuilding them from the report later would
+    put a second piece of code in the repository computing the same ΔU,
+    which is the parallel source HĐ-5 forbids everywhere else. The price
+    is paid in the open: the report grows a block, and a run scored
+    before this has no packet and cannot be given one.
+
+    **Called on both paths (E4.2).** ``waterfall`` is ``None`` for a run
+    that ranked nobody, and the packet then carries sightings, geometry
+    and a gate table with no comparison — which is what those runs have
+    to say, and what somebody asking "why did it fail" opens.
+
+    **The traces are read a second time.** Scoring already read them to
+    recompute the metrics, and holding every candidate's traces in
+    memory until now would cost more than re-reading a file the OS still
+    has cached. Said out loud because "reads the traces twice" is the
+    kind of thing that looks like an oversight in a profile.
+
+    A failure here does not fail the run. A comparison report with no
+    packet is a run somebody can still act on; a sweep that died after
+    the last episode because a detector refused is hours thrown away.
+    """
+    try:
+        locator = TraceLocator(trace_root, profile, map_data, evidence_class=evidence_class)
+        traces: list[EpisodeTrace] = []
+        for candidate in candidates:
+            for context in contexts_by_candidate.get(candidate.candidate_id, ()):
+                loaded = locator.load(candidate, context)
+                events = [
+                    {"index": index, "event": name}
+                    for index, name in enumerate(loaded.column("event"))
+                    if name
+                ]
+                traces.append(
+                    EpisodeTrace(
+                        candidate_id=candidate.candidate_id,
+                        episode_context_id=context.episode_context_id,
+                        columns={
+                            "t": loaded.column("t"),
+                            "x": loaded.column("x"),
+                            "y": loaded.column("y"),
+                            "clearance_m": loaded.column("clearance_m"),
+                            "planner_latency_ms": loaded.column("planner_latency_ms"),
+                            "events": events,
+                        },
+                    )
+                )
+
+        # The margin the planner's grid was inflated by, from the
+        # deployment's own numbers. ``hard_clearance`` is the one figure
+        # both layers are required to agree on, so the packet quotes it
+        # rather than re-deriving a margin of its own — and the envelope
+        # comes from the environment's declared sensor noise, the same
+        # way ``nav_stack`` derives it for the grid the planner is given.
+        # A profile is not the carrier of an envelope; the noise is.
+        margin = (
+            hard_clearance(
+                profile.robot, SafetyEnvelope.for_noise(profile.environment.sensor_noise)
+            )
+            - profile.robot.radius
+        )
+
+        # A run with no card writes no manifest, and a header cannot name
+        # a file that will not exist. Its own report is the artifact of
+        # record on that path, so that is what the packet points at.
+        manifest_name = "manifest.json" if manifest_written else "comparison_report.json"
+        manifest_bytes = (
+            (destination / "manifest.json").read_bytes()
+            if manifest_written
+            else json.dumps(dict(report), sort_keys=True, default=str).encode("utf-8")
+        )
+
+        built = build_scoring_packet(
+            run_id=run_id,
+            source_manifest_ref=manifest_name,
+            source_manifest_checksum=file_checksum(manifest_bytes),
+            detector_version=DETECTOR_VERSION,
+            knowledge_base_version=KNOWLEDGE_BASE_VERSION,
+            tool_catalog_version=TOOL_CATALOG_VERSION,
+            task_profile_id=profile.id,
+            robot_radius_m=profile.robot.radius,
+            inflation_margin_m=max(margin, 0.0),
+            decision_status=decision_status,
+            waterfall=waterfall,
+            report=report,
+            traces=traces,
+            episodes_total=max((len(rows) for rows in contexts_by_candidate.values()), default=0),
+            evidence_class=evidence_class,
+            gates={
+                name: {"passed": bool(getattr(row, "passed", False))}
+                for name, row in gate_reports.items()
+            },
+        )
+    except Exception as error:  # noqa: BLE001 - a thin packet beats a lost sweep
+        say(f"⚠ không dựng được case packet cho tầng giải thích: {error!r}")
+        return {"packet": None, "skipped_episodes": [], "omissions": [repr(error)]}
+
+    if built.omissions:
+        say(f"  case packet: {len(built.omissions)} phần thiếu, ghi trong report")
+    return packet_block(built)
 
 
 def _interrupted_before_any_episode(
@@ -904,7 +1180,12 @@ def _say_summary(say, report: dict[str, object], destination: Path) -> None:  # 
     say(f"written to:     {destination}")
 
 
-def run_dir_name(profile_id: str, scope: str, candidates: Sequence[Candidate]) -> str:
+def run_dir_name(
+    profile_id: str,
+    scope: str,
+    candidates: Sequence[Candidate],
+    evidence_class: str = "production",
+) -> str:
     """One directory per (deployment, scope, candidate set).
 
     The first draft used ``{profile}_compare`` for every run, and the
@@ -921,7 +1202,34 @@ def run_dir_name(profile_id: str, scope: str, candidates: Sequence[Candidate]) -
     fingerprint = hashlib.sha256(
         "|".join(sorted(c.candidate_id for c in candidates)).encode("utf-8")
     ).hexdigest()[:8]
-    return f"{profile_id}_{scope}_{fingerprint}"
+    # **The evidence class is part of the directory too.** The trace
+    # address grew one in H9A, but the run directory — and therefore
+    # ``run_journal.jsonl`` — was still named from (profile, scope,
+    # candidates) alone. A research sweep and a production sweep of the
+    # same three things shared a folder and truncated each other's
+    # journal: the 16-08 defect one level above the traces it was fixed
+    # in. ``production`` keeps its bare name so existing run directories
+    # stay where they are.
+    suffix = "" if evidence_class == "production" else f"_{evidence_class}"
+    return f"{profile_id}_{scope}_{fingerprint}{suffix}"
+
+
+def _components(candidate: Candidate, local_config: str) -> dict[str, str] | None:
+    """A modular candidate's layers, named one field each.
+
+    ``None`` for a monolithic policy, which has no layers to swap: the
+    lattice reading compares candidates that differ in exactly one
+    component, and a policy is not one component of anything. Saying so
+    keeps it out of those comparisons instead of giving it placeholder
+    names that look swappable.
+    """
+    if candidate.global_planner is None or candidate.local_controller is None:
+        return None
+    return {
+        "global_planner": candidate.global_planner.name,
+        "local_controller": candidate.local_controller.name,
+        "local_controller_config": local_config,
+    }
 
 
 def _observation_classes(stack_id: str) -> tuple[str | None, str | None]:
@@ -940,7 +1248,11 @@ def _observation_classes(stack_id: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-def _episode_outcomes(metrics: Sequence[EpisodeMetricSet]) -> list[dict[str, object]]:
+def _episode_outcomes(
+    metrics: Sequence[EpisodeMetricSet],
+    *,
+    utilities: Mapping[str, float] = MappingProxyType({}),
+) -> list[dict[str, object]]:
     """Which episodes this candidate passed, and how the rest failed.
 
     **The aggregate was never the whole answer.** ``success_rate: 0.70``
@@ -974,10 +1286,30 @@ def _episode_outcomes(metrics: Sequence[EpisodeMetricSet]) -> list[dict[str, obj
             "min_clearance": m.min_clearance,
             "travel_time_s": m.travel_time_s,
             "p99_latency_ms": m.p99_latency_ms,
+            # The global search's size, kept in the two columns HĐ-6
+            # already separates it into. A grid search's expanded nodes
+            # and a sampling planner's tree size count different things,
+            # so they stay apart here and whoever reads them picks one —
+            # summing them would produce a number about the units.
+            #
+            # Written per episode because that is the only level an
+            # association between search size and search cost can be
+            # made at: HĐ-5's trace carries planner latency per row and
+            # no expanded-node column, and that schema is frozen.
+            "peak_search_nodes": m.peak_search_nodes,
+            "peak_tree_nodes": m.peak_tree_nodes,
             # Per episode as well as per candidate: a total of forty
             # replans reads very differently when it is one runaway
             # episode than when it is one replan in each of forty.
             "replan_count": m.replan_count,
+            # **Episode level, not the card's number** (HĐ-9.1). The two
+            # differ at U_R, where every episode is clipped, so a reader
+            # averaging this column will not land on the card — which is
+            # correct and is why the name says which level it is.
+            #
+            # Absent for a candidate that never reached scoring: a gate
+            # eliminated it, and 0.0 would read as "scored, and terrible".
+            "episode_decision_utility": utilities.get(m.episode_context_id),
         }
         for m in metrics
     ]

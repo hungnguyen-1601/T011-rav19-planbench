@@ -124,16 +124,14 @@ describe("what the author sees first", () => {
     expect(render()).toMatch(/id="deployment-form-tab-mission"[^>]*aria-selected="true"/);
   });
 
-  it("stops the map column where the map itself stops", () => {
-    /* The canvas is capped at 760 px; the column holding it is not. On
-       a wide screen the scenario picker stretched a clear 270 px past
-       the map's right edge and ran under the tab panel — a control
-       sitting between two things and belonging to neither. */
+  it("puts the map in a full-width row after the two configuration columns", () => {
     const html = render();
-    expect(html).toContain("max-width:760px");
-    const clamp = html.indexOf("max-width:760px");
-    expect(clamp).toBeGreaterThan(-1);
-    expect(html.indexOf("Map and mission")).toBeGreaterThan(clamp);
+    const selector = html.indexOf('class="deployment-map-selector"');
+    const config = html.indexOf('class="deployment-config-panel"');
+    const map = html.indexOf('class="deployment-map-fullwidth"');
+    expect(selector).toBeGreaterThan(-1);
+    expect(config).toBeGreaterThan(selector);
+    expect(map).toBeGreaterThan(config);
   });
 });
 

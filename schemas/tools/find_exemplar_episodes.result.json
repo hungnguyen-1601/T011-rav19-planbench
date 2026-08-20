@@ -1,0 +1,71 @@
+{
+  "$id": "schemas/tools/find_exemplar_episodes.result.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "measurements": {
+      "additionalProperties": false,
+      "properties": {
+        "n_exemplars": {
+          "description": "Episodes the preregistered recipe chose.",
+          "type": "number",
+          "unit": "count"
+        }
+      },
+      "required": [
+        "n_exemplars"
+      ],
+      "type": "object"
+    },
+    "references": {
+      "allOf": [
+        {
+          "contains": {
+            "properties": {
+              "kind": {
+                "const": "episode"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "episode"
+            ]
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ref": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "measurements",
+    "references"
+  ],
+  "title": "find_exemplar_episodes@1.0.0 output",
+  "type": "object"
+}

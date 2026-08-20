@@ -577,7 +577,7 @@ class DecisionRunService:
         import pyarrow.parquet as pq
 
         from planbench_benchmark.task_map import load_task_map
-        from planbench_simulator.trace import trace_path
+        from planbench_simulator.trace import find_traces
 
         run = self._runs.get(run_id)
         report = run.report or {}
@@ -591,17 +591,40 @@ class DecisionRunService:
         if episodes and episode_context_id not in episodes:
             raise NotFoundError("episode in this run", episode_context_id)
 
-        path = trace_path(candidate_id, episode_context_id, root=self._trace_root)
-        if not path.is_file():
+        # Searched, not constructed. A trace is now addressed by its
+        # evidence class and the conditions it ran under, and this
+        # endpoint knows neither — building a path from a guessed
+        # fingerprint would produce a filename rather than an answer.
+        # The search applies the production policy, so an oracle episode
+        # is *not found* here rather than downloadable as evidence.
+        profile = self._profiles.load(run.task_profile_id)
+        map_data = load_task_map(profile, base_dir=self._repo_root, validate=False)
+
+        matches = find_traces(self._trace_root, candidate_id, episode_context_id)
+        # **Narrowed to this run's world.** A pair can legitimately have
+        # several production traces now — the same candidate measured
+        # under two deployments — and taking whichever sorted last would
+        # serve a different experiment's evidence under this run's name.
+        # That is the defect the conditions hash was added to close, so
+        # answering it with an arbitrary pick would reopen it at the one
+        # endpoint a human actually looks through.
+        expected = _expected_fingerprint(profile, map_data, episode_context_id)
+        if expected:
+            matches = [path for path in matches if path.parent.parent.name == expected]
+        if not matches:
             raise NotFoundError("trace file", f"{candidate_id}/{episode_context_id}")
+        if len(matches) > 1:
+            raise InvalidStateError(
+                f"{candidate_id}/{episode_context_id} has {len(matches)} traces under one "
+                "set of conditions; the store is ambiguous and serving either would be a "
+                "guess about which experiment this run meant"
+            )
+        path = matches[0]
 
         table = pq.read_table(path)
         columns = {name: table.column(name).to_pylist() for name in table.column_names}
         raw = (table.schema.metadata or {}).get(b"planbench_trace")
         metadata = json.loads(raw) if raw else {}
-
-        profile = self._profiles.load(run.task_profile_id)
-        map_data = load_task_map(profile, base_dir=self._repo_root, validate=False)
 
         return {
             "candidate_id": candidate_id,
@@ -640,39 +663,110 @@ class DecisionRunService:
             ],
         }
 
-    def trace_summary(
-        self, run_id: str, candidate_id: str, episode_context_id: str
+    def replay_sync(
+        self,
+        run_id: str,
+        episode_context_id: str,
+        *,
+        candidate_a: str,
+        candidate_b: str,
+        steps: int = 200,
     ) -> dict[str, Any]:
-        """The deterministic summary the trace reviewer reads.
+        """The two panels of one episode, aligned by arc length (E2).
 
-        Same ownership checks as :meth:`trace` — a summary of another
-        experiment's evidence under this run's name would be worse than a
-        404, because it would look diagnostic. The heavy part (Parquet →
-        DataFrame → aggregates) happens here in the service; the advice
-        rules that read the summary are pure and live in
-        :mod:`planbench_metrics.trace_review`.
+        Time-sync needs nothing from the server: both panels already run
+        off one clock in the browser. Progress-sync does, because the
+        projection has rules — which line the arc length is measured
+        along, and how honest that line is — and a second copy of them
+        in TypeScript would drift from the one the tests cover.
+
+        Thin on purpose. Two traces come out of :meth:`trace`, which
+        already refuses an episode or a candidate that does not belong
+        to this run and applies the production trace policy; everything
+        after that is :func:`build_replay_sync_view`.
         """
-        import pandas as pd
+        from planbench_explanation.replay_sync import ReplaySyncRefusal
+        from planbench_explanation.replay_view import build_replay_sync_view
 
-        from planbench_metrics.trace_review import summarise_trace
-        from planbench_simulator.trace import trace_path
+        try:
+            view = build_replay_sync_view(
+                self.trace(run_id, candidate_a, episode_context_id),
+                self.trace(run_id, candidate_b, episode_context_id),
+                steps=steps,
+            )
+        except ReplaySyncRefusal as refusal:
+            # A refusal here is a statement about *this evidence* — two
+            # different episodes, a run with no samples, columns that do
+            # not line up. The caller asked something the data cannot
+            # answer, which is a 422; letting it fall through to the
+            # global handler would file an expected outcome as an
+            # internal error and bury it in the logs as a bug.
+            raise DomainValidationError(str(refusal)) from refusal
+        return view.model_dump()
+
+    def explanation(self, run_id: str) -> dict[str, Any]:
+        """The analyst's case packet for one run (E4.1).
+
+        Everything the decision page needs to show *evidence* rather
+        than a verdict: the ΔU decomposition, what the detectors saw,
+        what the contrast lattice would and would not attribute, the
+        four preregistered exemplars, and the gaps the platform declares
+        about itself.
+
+        **Claims are not here, and that is not an omission.** A claim
+        comes from the promotion matrix run over a checker result, and
+        no analyst has passed the gate yet — so the honest answer is
+        evidence with no conclusions drawn on it. The panel already
+        knows how to render that state; what it lacked was the evidence.
+
+        Refuses a run scored before E4.1 rather than returning an empty
+        packet. The two are different facts, and only one of them means
+        "nobody could explain this run".
+        """
+        from planbench_explanation.case_packet import CasePacketRefusal
+        from planbench_explanation.packet_builder import packet_from_block
 
         run = self._runs.get(run_id)
-        report = run.report or {}
-        candidates = {
-            str(entry.get("candidate_id"))
-            for entry in report.get("candidates", [])  # type: ignore[union-attr]
+        block = (run.report or {}).get("case_packet")
+        try:
+            packet = packet_from_block(block if isinstance(block, dict) else {})
+        except CasePacketRefusal as refusal:
+            # 409 for the same reason the exemplars route uses it: the
+            # request is fine, the run is in a state that has no packet.
+            raise InvalidStateError(str(refusal)) from refusal
+        return {
+            "packet": packet.model_dump(mode="json"),
+            # Carried through so a reader can tell a thin packet from a
+            # broken one without opening the report.
+            "omissions": list(block.get("omissions") or []) if isinstance(block, dict) else [],
+            "skipped_episodes": (
+                list(block.get("skipped_episodes") or []) if isinstance(block, dict) else []
+            ),
         }
-        if candidate_id not in candidates:
-            raise NotFoundError("candidate in this run", candidate_id)
-        episodes = set(report.get("sample", {}).get("episode_context_ids", []))  # type: ignore[union-attr]
-        if episodes and episode_context_id not in episodes:
-            raise NotFoundError("episode in this run", episode_context_id)
 
-        path = trace_path(candidate_id, episode_context_id, root=self._trace_root)
-        if not path.is_file():
-            raise NotFoundError("trace file", f"{candidate_id}/{episode_context_id}")
-        return summarise_trace(pd.read_parquet(path))
+    def exemplars(self, run_id: str) -> dict[str, Any]:
+        """The four episodes the comparison page should open with (E2).
+
+        Preregistered, so that which pair a reader sees first is not a
+        choice somebody made after looking at the results. Refuses for a
+        run scored before per-episode utility was stored: three of the
+        four roles are defined on ΔU, and no column left in the report
+        can stand in for it.
+        """
+        from planbench_explanation.exemplars import (
+            ExemplarRefusal,
+            select_exemplars_from_report,
+        )
+
+        run = self._runs.get(run_id)
+        try:
+            return select_exemplars_from_report(run.report or {}).model_dump()
+        except ExemplarRefusal as refusal:
+            # 409, not 422 and not 500: nothing is wrong with the
+            # request. This run is in a state that has no exemplar set —
+            # no card, or scored before per-episode utility was kept —
+            # and the answer is the same however politely it is asked.
+            raise InvalidStateError(str(refusal)) from refusal
 
     def approved_config(self, run_id: str) -> str:
         """The deployable configuration, as YAML — approved runs only.
@@ -976,3 +1070,24 @@ class TestBenchService:
             if stored.map_id == map_id and stored.scenario.name == name:
                 return stored
         return None
+
+
+def _expected_fingerprint(profile, map_data, episode_context_id: str) -> str:
+    """The conditions hash this run's episode should carry, or ``""``.
+
+    Rebuilt from the deployment rather than read off a file, so it is a
+    statement about what was *asked for* and can be compared against
+    what is on disk. Empty when the context cannot be reconstructed —
+    the caller then falls back to the class filter alone rather than
+    refusing a download over a lookup it could not perform.
+    """
+    from planbench_benchmark.contexts import build_evaluation_contexts
+    from planbench_benchmark.episode import scenario_for
+    from planbench_benchmark.fingerprint import execution_conditions_fingerprint
+
+    for context in build_evaluation_contexts(profile):
+        if context.episode_context_id == episode_context_id:
+            return execution_conditions_fingerprint(
+                map_data, scenario_for(profile, context), profile
+            )
+    return ""

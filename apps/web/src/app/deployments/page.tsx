@@ -23,7 +23,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { DeploymentForm } from "@/components/DeploymentForm";
-import { EmptyState } from "@/components/EmptyState";
+import { Icon } from "@/components/Icon";
 import { fieldErrorsOf, useSession } from "@/lib/auth";
 import {
   createTaskProfile,
@@ -150,10 +150,17 @@ export default function DeploymentsPage() {
   };
 
   return (
-    <section>
-      <div className="page-head">
-        <h1>{t("deployments.title")}</h1>
-        <p className="muted">{t("deployments.subtitle")}</p>
+    <section className="deployment-page">
+      <div className="deployment-page-head">
+        <span className="deployment-page-icon" aria-hidden="true"><Icon name="map" size={22} /></span>
+        <div className="deployment-page-heading">
+          <h1>{t("deployments.title")}</h1>
+          <p className="muted">{t("deployments.subtitle")}</p>
+        </div>
+        <span className="deployment-count-badge">
+          <strong>{loading ? "—" : profiles.length}</strong>
+          <span>{t("deployments.countLabel")}</span>
+        </span>
       </div>
 
       {error ? <div className="error-box">{error}</div> : null}
@@ -162,15 +169,21 @@ export default function DeploymentsPage() {
       ) : null}
 
       {loading ? (
-        <p className="muted">{t("common.loading")}</p>
+        <div className="deployment-loading"><span className="skeleton" />{t("common.loading")}</div>
       ) : profiles.length === 0 ? (
-        <EmptyState
-          icon="map"
-          title={t("deployments.empty.title")}
-          body={t("deployments.empty.body")}
-        />
+        <div className="deployment-empty-banner">
+          <span className="deployment-empty-icon" aria-hidden="true"><Icon name="map" size={24} /></span>
+          <div>
+            <strong>{t("deployments.empty.title")}</strong>
+            <p>{t("deployments.empty.body")}</p>
+          </div>
+          <a className="quick-action primary" href="#deployment-file-panel">
+            <Icon name="plus" size={16} />
+            {t("deployments.file.title")}
+          </a>
+        </div>
       ) : (
-        <div className="panel">
+        <div className="panel deployment-list-panel">
           <div className="table-scroll wide">
             <table>
               <thead>
@@ -198,9 +211,9 @@ export default function DeploymentsPage() {
         </div>
       )}
 
-      <div className="panel">
+      <div className="panel deployment-file-panel" id="deployment-file-panel">
         <div className="panel-head">
-          <h3>{t("deployments.file.title")}</h3>
+          <h3><span className="panel-title-icon" aria-hidden="true"><Icon name="plus" size={17} /></span>{t("deployments.file.title")}</h3>
         </div>
         {!session ? (
           <p className="muted">{t("deployments.file.signedOut")}</p>
@@ -212,20 +225,24 @@ export default function DeploymentsPage() {
                 to start from than a blank textarea; the YAML tab stays
                 because it is the only way to write the blocks the form
                 does not cover yet — traffic, most of all. */}
-            <div className="toolbar">
+            <div className="deployment-mode-bar">
+              <div className="deployment-mode-tabs" role="tablist" aria-label={t("deployments.file.title")}>
               {(["form", "yaml"] as Mode[]).map((option) => (
                 <button
                   key={option}
                   type="button"
                   disabled={busy}
                   className={mode === option ? "active" : undefined}
-                  aria-pressed={mode === option}
+                  role="tab"
+                  aria-selected={mode === option}
                   onClick={() => switchTo(option)}
                 >
+                  <Icon name={option === "form" ? "dashboard" : "library"} size={16} />
                   {t(`deployments.mode.${option}`)}
                 </button>
               ))}
-              <span className="muted">{t("deployments.mode.note")}</span>
+              </div>
+              <span className="deployment-mode-note"><Icon name="alert" size={15} />{t("deployments.mode.note")}</span>
             </div>
 
             {mode === "form" ? (
@@ -244,7 +261,7 @@ export default function DeploymentsPage() {
                 fieldErrors={fieldErrors}
               />
             ) : (
-              <>
+              <div className="deployment-yaml-mode">
                 <p className="muted">{t("deployments.file.note")}</p>
                 <textarea
                   value={draft}
@@ -253,9 +270,9 @@ export default function DeploymentsPage() {
                   rows={18}
                   spellCheck={false}
                   disabled={busy}
-                  style={{ width: "100%", fontFamily: "monospace" }}
+                  className="deployment-yaml-editor"
                 />
-                <div className="row" style={{ marginTop: 12, alignItems: "center", gap: 12 }}>
+                <div className="deployment-yaml-actions">
                   <button
                     type="button"
                     className="primary"
@@ -266,7 +283,7 @@ export default function DeploymentsPage() {
                   </button>
                   <span className="muted">{t("deployments.file.idRule")}</span>
                 </div>
-              </>
+              </div>
             )}
           </>
         )}

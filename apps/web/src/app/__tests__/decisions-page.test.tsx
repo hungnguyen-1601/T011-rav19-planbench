@@ -36,6 +36,35 @@ const MAP_EDITOR = readFileSync(join(APP, "maps", "[id]", "page.tsx"), "utf8");
 const COMPONENTS = join(process.cwd(), "src", "components");
 const PLACER = readFileSync(join(COMPONENTS, "MissionPlacer.tsx"), "utf8");
 const PAINTER = readFileSync(join(COMPONENTS, "MapPainter.tsx"), "utf8");
+const DEPLOYMENT_PREVIEW = readFileSync(join(COMPONENTS, "DecisionDeploymentPreview.tsx"), "utf8");
+
+describe("the selected deployment preview", () => {
+  it("sits after the candidate selectors and before the rank action", () => {
+    expect(LIST.indexOf("<DecisionDeploymentPreview")).toBeGreaterThan(LIST.indexOf("comparison-setup-grid"));
+    expect(LIST.indexOf("<DecisionDeploymentPreview")).toBeLessThan(LIST.indexOf("comparison-launch-actions"));
+  });
+
+  it("is read-only and does not reset either candidate", () => {
+    expect(DEPLOYMENT_PREVIEW).toContain("<MapView");
+    expect(DEPLOYMENT_PREVIEW).not.toMatch(/<(input|select|textarea|checkbox)\b/);
+    expect(DEPLOYMENT_PREVIEW).not.toContain("setFirst(");
+    expect(DEPLOYMENT_PREVIEW).not.toContain("setSecond(");
+  });
+
+  it("clears a stale map and isolates map loading failures", () => {
+    expect(DEPLOYMENT_PREVIEW).toContain("setMap(null)");
+    expect(DEPLOYMENT_PREVIEW).toContain("api.getMap");
+    expect(DEPLOYMENT_PREVIEW).toContain("decision-deployment-map-error");
+    expect(DEPLOYMENT_PREVIEW).toContain("decision-deployment-details");
+  });
+
+  it("keeps the map and compact read-only details in one responsive layout", () => {
+    expect(DEPLOYMENT_PREVIEW).toContain("decision-deployment-content");
+    expect(DEPLOYMENT_PREVIEW.indexOf("decision-deployment-map-column")).toBeLessThan(DEPLOYMENT_PREVIEW.indexOf("decision-deployment-details"));
+    expect(DEPLOYMENT_PREVIEW).toContain("aria-expanded={showAdvanced}");
+    expect(DEPLOYMENT_PREVIEW).toContain("decision-noise-details");
+  });
+});
 
 describe("the list shows every run, not only the ones that ranked", () => {
   it("defaults to no outcome filter at all", () => {
@@ -617,16 +646,86 @@ describe("which episodes failed, and how", () => {
     expect(en).toHaveProperty("decisions.episodes.notRunNote");
   });
 
-  it("opens an episode from its cell instead of asking for its hash", () => {
+  it("opens a whole episode row without asking for a candidate", () => {
     /* Finding the episode that collided and then copying its id into a
        dropdown is most of the work of looking at it. */
-    expect(DETAIL).toContain("onPick(candidate.candidate_id, episode)");
-    expect(DETAIL).toContain("void load(candidate, episode)");
+    expect(DETAIL).toContain("onClick={() => onPick(episode)}");
+    expect(DETAIL).toContain('aria-selected={episode === selectedEpisode}');
+    expect(DETAIL).toContain('event.key === "Enter" || event.key === " "');
   });
 
-  it("labels the episode dropdown with the outcome as well as the id", () => {
-    expect(DETAIL).toContain("decisions.episodes.pass");
-    expect(DETAIL).toContain("outcomes.get(episode)");
+  it("uses the same episode state for the table, dropdown, and pair load", () => {
+    expect(DETAIL).toContain('const [episodeId, setEpisodeId]');
+    expect(DETAIL).toContain('selectedEpisode={episodeId}');
+    expect(DETAIL).toContain('value={episodeId}');
+    expect(DETAIL).toContain('void loadPair(episodeId)');
+    expect(DETAIL).not.toContain('const [candidateId, setCandidateId]');
+  });
+
+  it("keeps candidate A left, candidate B right and tolerates one missing trace", () => {
+    expect(DETAIL).toContain('side={index === 0 ? "a" : "b"}');
+    expect(DETAIL).toContain('{ state: "missing" }');
+    expect(DETAIL).toContain('slot.state === "ready"');
+    expect(DETAIL).toContain('trace.missing');
+  });
+
+  it("offers the preregistered four, and both extremes among them", () => {
+    // Which pair loads first is a choice that looks like evidence, so a
+    // recipe makes it. Showing the winner's best without the
+    // runner-up's is the cherry-pick that recipe exists to prevent.
+    expect(DETAIL).toContain("getExemplars(run.id)");
+    expect(DETAIL).toContain("trace.exemplar.");
+    expect(DETAIL).toContain("item.tie_break_over.length > 0");
+  });
+
+  it("falls back to the plain episode list when no recipe answer exists", () => {
+    // A run scored before per-episode utility was stored has no ΔU, so
+    // three of the four roles cannot be filled. An empty set is the
+    // honest state — not a set chosen another way under the label.
+    expect(DETAIL).toContain("setExemplars([])");
+    expect(DETAIL).toContain("exemplars.length > 0");
+  });
+
+  it("keeps the alignment toggle apart from the draw mode", () => {
+    // `mode` is flat/raised — how the map is *drawn*. Reusing that name
+    // for time/progress would read, to the next person, as if the page
+    // already had two sync modes.
+    expect(DETAIL).toContain('const [syncMode, setSyncMode]');
+    expect(DETAIL).toContain('"time" | "progress"');
+    expect(DETAIL).toContain('t("trace.sync.mode")');
+  });
+
+  it("says what this run may be explained with before showing any of it", () => {
+    // The caveats render above the evidence: a qualifier below the fold
+    // qualifies nothing. And three of the five outcomes have no paired
+    // comparison, so the page reads the plan rather than deciding.
+    expect(DETAIL).toContain("<ExplanationHeader");
+    expect(DETAIL).toContain('panelPlan(run)');
+    expect(DETAIL).toContain("plan.caveatKeys.map");
+    expect(DETAIL).toContain("if (!plan.showTraceEvidence) return null;");
+    // Exemplars are gated separately: a run with no ranked pair still
+    // has traces worth opening.
+    expect(DETAIL).toContain("plan.showExemplars && exemplars.length > 0");
+  });
+
+  it("hands the panel work to a component a test can render", () => {
+    // These used to be four source-string assertions on this file. They
+    // moved with the code they describe: the caveat, the ruler and the
+    // divergence chips are now asserted against rendered HTML in
+    // `progress-sync.test.tsx`, and the pairing in
+    // `lib/__tests__/replay-sync.test.ts` — both of which can fail for
+    // the right reason, which a string search cannot.
+    expect(DETAIL).toContain("<ProgressSync");
+    expect(DETAIL).toContain('from "@/components/ProgressSync"');
+    expect(DETAIL).toContain("panelCandidates(run,");
+  });
+
+  it("shares top/raised mode and playback across both candidates", () => {
+    expect(DETAIL).toContain('const [mode, setMode]');
+    expect(DETAIL).toContain('mode={mode}');
+    expect(DETAIL).toContain('playbackTime={at}');
+    expect(DETAIL).toContain('syncMode === "progress" ? sideTime(view, scan.time, side) : playback.time');
+    expect(DETAIL).toContain('[0.25, 0.5, 1, 2, 4, 8]');
   });
 
   it("can narrow to the failures, and says how many it is hiding", () => {

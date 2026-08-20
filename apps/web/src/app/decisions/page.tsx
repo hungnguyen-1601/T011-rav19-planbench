@@ -16,6 +16,8 @@ import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
 import { AdviceListView } from "@/components/AdviceListView";
 import { CandidatePicker } from "@/components/CandidatePicker";
+import { DecisionDeploymentPreview } from "@/components/DecisionDeploymentPreview";
+import { Icon, type IconName } from "@/components/Icon";
 import { MissionPlacer } from "@/components/MissionPlacer";
 import { api } from "@/lib/api";
 import { authFetch, useSession } from "@/lib/auth";
@@ -124,33 +126,34 @@ export default function DecisionsPage() {
   const oneDeployment = profileId !== "";
 
   return (
-    <section>
-      <div className="page-head">
-        <h1>{t("decisions.title")}</h1>
-        <p className="muted">{t("decisions.subtitle")}</p>
-      </div>
+    <section className="decision-page">
+      <header className="page-head decision-page-head">
+        <span className="decision-page-icon"><Icon name="benchmark" size={21} /></span>
+        <div><h1>{t("decisions.title")}</h1><p className="muted">{t("decisions.workspaceSubtitle")}</p></div>
+        {loading ? <span className="decision-running-badge"><span className="decision-spinner" />{t("common.loading")}</span> : null}
+      </header>
 
       {error ? <div className="error-box">{error}</div> : null}
 
       <LaunchPanel profiles={profiles} onFinished={refresh} />
 
-      <div className="panel">
-        <div className="stat-grid">
-          <Tally label={t("decisions.tally.runs")} value={totals.runs} />
-          <Tally label={t("decisions.tally.deployments")} value={totals.deployments} />
-          <Tally label={t("decisions.tally.ranked")} value={totals.ranked} />
-          <Tally label={t("decisions.tally.reviewed")} value={totals.reviewed} />
-          <Tally label={t("decisions.tally.approved")} value={totals.approved} />
+      <div className="decision-tally-panel">
+        <div className="stat-grid decision-tallies">
+          <Tally icon="benchmark" tone="blue" label={t("decisions.tally.runs")} value={totals.runs} />
+          <Tally icon="map" tone="cyan" label={t("decisions.tally.deployments")} value={totals.deployments} />
+          <Tally icon="trophy" tone="purple" label={t("decisions.tally.ranked")} value={totals.ranked} />
+          <Tally icon="info" tone="orange" label={t("decisions.tally.reviewed")} value={totals.reviewed} />
+          <Tally icon="check" tone="green" label={t("decisions.tally.approved")} value={totals.approved} />
         </div>
         {/* Counting is not ranking, and the distinction is the reason
             this replaced a leaderboard rather than moving one. */}
-        <p className="muted" style={{ marginTop: 8 }}>
+        <p className="muted decision-tally-note">
           {t("decisions.tally.note")}
         </p>
       </div>
 
-      <div className="panel">
-        <div className="row" style={{ alignItems: "flex-end" }}>
+      <div className="decision-filter-bar">
+        <div className="decision-filter-fields">
           <label className="field">
             <span>{t("decisions.filter.deployment")}</span>
             <select value={profileId} onChange={(event) => setProfileId(event.target.value)}>
@@ -192,7 +195,8 @@ export default function DecisionsPage() {
         {/* Said out loud rather than left to be inferred from the row
             count: a reader who filters to "ranked" and sees one row
             should know the others still exist. */}
-        <p className="muted" style={{ marginTop: 8 }}>
+        <span className="decision-result-count">{shown.length} {t("decisions.filter.results")}</span>
+        <p className="muted decision-filter-note">
           {t("decisions.filter.note")}
         </p>
       </div>
@@ -206,7 +210,7 @@ export default function DecisionsPage() {
           body={t("decisions.empty.body")}
         />
       ) : (
-        <div className="panel">
+        <div className="panel decision-table-panel">
           <div className="table-scroll">
             <table>
             <thead>
@@ -410,14 +414,16 @@ function LaunchPanel({
   if (!session) return null;
 
   return (
-    <div className="panel">
+    <div className="panel comparison-setup">
       <div className="panel-head">
-        <h3>{t("decisions.launch.title")}</h3>
+        <h3><Icon name="play" size={18} />{t("decisions.launch.title")}</h3>
       </div>
 
       {error ? <div className="error-box">{error}</div> : null}
 
-      <div className="row" style={{ alignItems: "flex-end" }}>
+      <div className="comparison-setup-grid">
+        <fieldset className="comparison-common">
+          <legend>{t("decisions.launch.common")}</legend>
         <label className="field">
           <span>{t("decisions.launch.deployment")}</span>
           <select value={profileId} onChange={(event) => setProfileId(event.target.value)}>
@@ -429,20 +435,6 @@ function LaunchPanel({
             ))}
           </select>
         </label>
-        <CandidatePicker
-          label={t("decisions.launch.candidateA")}
-          value={first}
-          onChange={setFirst}
-          stacks={stacks}
-          configs={configs}
-        />
-        <CandidatePicker
-          label={t("decisions.launch.candidateB")}
-          value={second}
-          onChange={setSecond}
-          stacks={stacks}
-          configs={configs}
-        />
         <label className="field">
           <span>{t("decisions.launch.episodes")}</span>
           <input
@@ -452,6 +444,35 @@ function LaunchPanel({
             inputMode="numeric"
           />
         </label>
+        </fieldset>
+        <div className="candidate-card candidate-a">
+          <div className="candidate-card-head"><span><Icon name="cpu" size={18} /></span><div><small>Candidate A</small><strong>{first.stack || "—"}</strong></div></div>
+        <CandidatePicker
+          label={t("decisions.launch.candidateA")}
+          value={first}
+          onChange={setFirst}
+          stacks={stacks}
+          configs={configs}
+          detailed
+        />
+        </div>
+        <span className="candidate-vs" aria-hidden="true">VS</span>
+        <div className="candidate-card candidate-b">
+          <div className="candidate-card-head"><span><Icon name="cpu" size={18} /></span><div><small>Candidate B</small><strong>{second.stack || "—"}</strong></div></div>
+        <CandidatePicker
+          label={t("decisions.launch.candidateB")}
+          value={second}
+          onChange={setSecond}
+          stacks={stacks}
+          configs={configs}
+          detailed
+        />
+        </div>
+      </div>
+
+      <DecisionDeploymentPreview deployment={base} />
+
+      <div className="comparison-launch-actions">
         <button
           type="button"
           disabled={checking || !profileId || customReady}
@@ -474,8 +495,12 @@ function LaunchPanel({
           }
           onClick={() => void launch()}
         >
+          {busy ? <span className="decision-spinner" /> : <Icon name="play" size={18} />}
           {customReady ? t("decisions.launch.submitDerived") : t("decisions.launch.submit")}
         </button>
+        {(busy || !profileId || live.length > 0 || (custom.mapId !== "" && !customReady)) ? (
+          <span className="comparison-disabled-reason"><Icon name="info" size={15} />{busy ? t("decisions.launch.busy") : !profileId ? t("decisions.launch.needDeployment") : live.length > 0 ? t("decisions.launch.oneAtATime") : t("decisions.launch.needMap")}</span>
+        ) : null}
       </div>
 
       {preflight ? (
@@ -498,10 +523,10 @@ function LaunchPanel({
         disabled={busy || live.length > 0}
       />
 
-      <p className="muted" style={{ marginTop: 8 }}>
-        {live.length > 0 ? t("decisions.launch.oneAtATime") : t("decisions.launch.note")}{" "}
-        <Link href="/candidates">{t("decisions.launch.whatAreThese")}</Link>
-      </p>
+      <details className="comparison-explainer">
+        <summary><Icon name="info" size={16} /><strong>{t("decisions.launch.howTitle")}</strong><Icon name="chevronDown" size={15} /></summary>
+        <p>{live.length > 0 ? t("decisions.launch.oneAtATime") : t("decisions.launch.note")} {" "}<Link href="/candidates">{t("decisions.launch.whatAreThese")}</Link></p>
+      </details>
 
       {jobs.length > 0 ? (
         <JobList
@@ -741,7 +766,10 @@ function JobList({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="table-scroll" style={{ marginTop: 12 }}>
+    <div className="decision-progress-panel" aria-live="polite">
+      <div className="decision-progress-head"><span><span className="decision-spinner" />{t("decisions.job.progress")}</span><strong>{jobs.filter(jobIsLive).length > 0 ? t("decisions.job.running") : t("decisions.job.finished")}</strong></div>
+      {jobs.find(jobIsLive)?.total ? <div className="decision-progress-track"><span style={{ width: `${Math.min(100, (jobs.find(jobIsLive)!.progress / jobs.find(jobIsLive)!.total) * 100)}%` }} /></div> : null}
+    <div className="table-scroll">
       <table>
         <thead>
           <tr>
@@ -802,6 +830,7 @@ function JobList({
           ))}
         </tbody>
       </table>
+    </div>
     </div>
   );
 }
@@ -898,9 +927,10 @@ function DecisionRow({ run, withUtility }: { run: DecisionRun; withUtility: bool
 }
 
 /** One number with a label, for the tally strip. */
-function Tally({ label, value }: { label: string; value: number }) {
+function Tally({ label, value, icon, tone }: { label: string; value: number; icon: IconName; tone: string }) {
   return (
-    <div className="stat-card">
+    <div className={`stat-card decision-tally decision-tally--${tone}${value === 0 ? " is-zero" : ""}`}>
+      <span className="decision-tally-icon"><Icon name={icon} size={17} /></span>
       <span className="stat-card-head">{label}</span>
       <span className="stat-card-value">{value}</span>
     </div>

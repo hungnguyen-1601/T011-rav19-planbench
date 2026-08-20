@@ -1,0 +1,25 @@
+{
+  "$id": "schemas/tools/get_objective_decomposition.request.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "candidate_a": {
+      "description": "First candidate of the compared pair.",
+      "type": "string"
+    },
+    "candidate_b": {
+      "description": "Second candidate of the compared pair.",
+      "type": "string"
+    },
+    "preference_profile": {
+      "description": "Which weight profile to decompose under; the run's own if omitted.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "candidate_a",
+    "candidate_b"
+  ],
+  "title": "get_objective_decomposition@1.0.0 arguments",
+  "type": "object"
+}

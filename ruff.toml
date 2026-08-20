@@ -51,6 +51,7 @@ known-first-party = [
     "planbench_metrics",
     "planbench_benchmark",
     "planbench_decision",
+    "planbench_explanation",
     "planbench_tracking",
     "planbench_rl",
     "planbench_agent",

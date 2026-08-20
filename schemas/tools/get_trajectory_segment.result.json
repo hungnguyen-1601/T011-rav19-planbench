@@ -1,0 +1,83 @@
+{
+  "$id": "schemas/tools/get_trajectory_segment.result.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "measurements": {
+      "additionalProperties": false,
+      "properties": {
+        "max_lateral_offset_m": {
+          "description": "Furthest the robot strayed from the reference line in the segment.",
+          "type": "number",
+          "unit": "m"
+        },
+        "n_samples": {
+          "description": "Pose samples inside the segment.",
+          "type": "number",
+          "unit": "count"
+        },
+        "segment_length_m": {
+          "description": "Arc length of the segment on the line.",
+          "type": "number",
+          "unit": "m"
+        }
+      },
+      "required": [
+        "segment_length_m",
+        "n_samples",
+        "max_lateral_offset_m"
+      ],
+      "type": "object"
+    },
+    "references": {
+      "allOf": [
+        {
+          "contains": {
+            "properties": {
+              "kind": {
+                "const": "trajectory_segment"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "trajectory_segment"
+            ]
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ref": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "measurements",
+    "references"
+  ],
+  "title": "get_trajectory_segment@1.0.0 output",
+  "type": "object"
+}

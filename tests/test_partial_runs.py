@@ -21,7 +21,26 @@ from test_vertical_slice import write_profile
 
 from planbench_benchmark import pipeline, selection
 from planbench_benchmark.contexts import build_evaluation_contexts
-from planbench_simulator.trace import trace_path
+from planbench_benchmark.task_map import load_task_map
+from planbench_simulator.trace import EpisodeTraceRecorder
+
+
+def _write_trace(locator, candidate, context) -> Path:
+    """One real, readable trace at the address this run would use."""
+    from planbench_schemas.geometry import Pose2D
+    from planbench_schemas.robot import RobotState
+
+    with EpisodeTraceRecorder(
+        context,
+        candidate.candidate_id,
+        root=locator.root,
+        clearance=lambda _pose: 1.0,
+        execution_conditions_fingerprint=locator.fingerprint(context),
+        evidence_class=locator.evidence_class,
+    ) as recorder:
+        recorder.record(0.0, RobotState(pose=Pose2D(x=0.0, y=0.0, theta=0.0)))
+    return recorder.path
+
 
 CANDIDATES = (("astar+dwa", "dwa_coarse"), ("rrtstar+dwa", "dwa_coarse"))
 
@@ -115,15 +134,21 @@ class TestThePrefixRule:
         real, but keeping them would mean comparing candidates on episode
         lists that differ by whatever the hole was."""
         profile = selection.load_profile(write_profile(tmp_path))
+        map_data = load_task_map(profile, base_dir=tmp_path)
         candidates = selection.build_candidates(profile, CANDIDATES, "global_planner_selection")
         contexts = build_evaluation_contexts(profile, seed_count=5)
         root = tmp_path / "traces"
+        # **Real traces now, not empty files.** Since H9A a trace is
+        # addressed by the conditions it ran under and read through a
+        # policy, so "a file exists here" is no longer the same claim as
+        # "this episode can be scored" — and the prefix rule is about the
+        # second. A zero-byte placeholder would now be a hole rather than
+        # an episode, which is a different test from this one.
+        locator = pipeline.TraceLocator(root, profile, map_data)
         for index, context in enumerate(contexts):
             for candidate in candidates:
                 if index == 2 and candidate is candidates[1]:
                     continue  # the half-finished context
-                path = trace_path(candidate.candidate_id, context.episode_context_id, root=root)
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(b"")
-        kept = pipeline.paired_prefix(candidates, contexts, root)
+                _write_trace(locator, candidate, context)
+        kept = pipeline.paired_prefix(candidates, contexts, root, profile, map_data)
         assert [c.seed for c in kept] == [0, 1]
