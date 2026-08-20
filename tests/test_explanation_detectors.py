@@ -242,7 +242,9 @@ def test_a_refusal_where_the_route_was_wide_enough_is_not_this_pattern() -> None
     view = read_trace(trace(xs=[0.0, 1.0], events=[{"index": 1, "event": "no_path"}]))
 
     assert "narrow_gap_refusal" not in kinds(
-        detect_all(view, reference=CORRIDOR, narrowest_passage_m=1.20, required_passage_width_m=0.74)
+        detect_all(
+            view, reference=CORRIDOR, narrowest_passage_m=1.20, required_passage_width_m=0.74
+        )
     )
 
 

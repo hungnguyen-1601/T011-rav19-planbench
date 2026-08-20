@@ -1,0 +1,314 @@
+{
+  "contracts_version": "6.9.0",
+  "git_sha": "2d3902eddeb107681458536a78e7da42169efabb",
+  "docker_image_digest": null,
+  "task_profile_id": "demo_hall",
+  "anchor_config_version": "v1.2",
+  "preference_profile": "kho_ban_dem",
+  "decision_mode": "technical",
+  "travel_time_accounting": "efficiency",
+  "sensor_noise": {
+    "lidar_range_sigma_m": 0.02,
+    "wheel_slip_fraction": 0.02,
+    "localization_drift_m": 0.0,
+    "localization_jump_probability": 0.0,
+    "lidar_dropout_probability": 0.0,
+    "odometry_bias_fraction": 0.0,
+    "command_latency_steps": 0
+  },
+  "replanning": {
+    "enabled": false,
+    "max_replans": 0
+  },
+  "v_obstacle_max": null,
+  "constraints": {
+    "success_rate_min": 0.95,
+    "collision_probability_max": 0.1,
+    "no_path_rate_max": 0.02,
+    "goal_tolerance_m": 0.2,
+    "goal_tolerance_rad": 3.1416,
+    "episode_timeout_s": 120.0,
+    "stuck_threshold_s": 10.0,
+    "clearance_warning_m": 0.35,
+    "cost_per_mission_max": null
+  },
+  "candidates": [
+    "29cdf6266a44",
+    "e1251e42a20b"
+  ],
+  "episode_contexts": {
+    "evaluation": [
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 8,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "21e989688d1e"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 2,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "2274d4058101"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 16,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "2daf2b14028c"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 24,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "320ccc8af134"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 11,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "3bb2e41112c1"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 12,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "3ee85ad51a48"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 3,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "4dd1981c0fc8"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 23,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "543b3ecfa30a"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 28,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "547b8d23d102"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 14,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "649a7620c243"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 29,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "64fea5fd8bfc"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 27,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "6eeb77c2288d"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 0,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "6fae4afd090e"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 26,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "779dd6d166cd"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 19,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "7ade7bc88b1e"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 9,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "7b53de476fb5"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 10,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "8d3655ddbf4e"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 17,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "a0e0f0dcb230"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 15,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "b75789230687"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 21,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "bc8ea8c9b2a9"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 6,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "bd3dda064b36"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 18,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "c3b86cc9ab86"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 1,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "c790e17d0364"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 5,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "c86fb0b21480"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 20,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "dd93e9379286"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 7,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "df04dc5aa94f"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 22,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "df7c1506ce4f"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 25,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "e74e4f68b26b"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 4,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "f86a13eff080"
+      },
+      {
+        "task_profile_id": "demo_hall",
+        "mission_id": "through_hall",
+        "seed": 13,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "ffcbe0842569"
+      }
+    ],
+    "neighborhood": []
+  },
+  "bootstrap": {
+    "seed": 0,
+    "n_resamples": 1000
+  },
+  "benchmark_host": {
+    "cpu": "x86_64",
+    "cores_allocated": 16,
+    "threads": 1,
+    "cpu_affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "logical_cores": 16,
+    "affinity_source": null
+  },
+  "created_at": "2026-08-20T03:00:23.125076+00:00"
+}

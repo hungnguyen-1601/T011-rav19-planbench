@@ -101,8 +101,12 @@ class TestGrantsAreExecutionConditions:
     def test_declaration_order_does_not(self, deployment) -> None:
         profile, map_data = deployment
         other = dict(TRACKER, capability="org.lab://channel/social-costmap@1")
-        forwards = profile.model_copy(update={"capability_grants": (CapabilityGrant(**TRACKER), CapabilityGrant(**other))})
-        backwards = profile.model_copy(update={"capability_grants": (CapabilityGrant(**other), CapabilityGrant(**TRACKER))})
+        forwards = profile.model_copy(
+            update={"capability_grants": (CapabilityGrant(**TRACKER), CapabilityGrant(**other))}
+        )
+        backwards = profile.model_copy(
+            update={"capability_grants": (CapabilityGrant(**other), CapabilityGrant(**TRACKER))}
+        )
         assert _fingerprint(forwards, map_data) == _fingerprint(backwards, map_data)
 
 
@@ -166,9 +170,7 @@ class TestTheTwoVocabulariesMergeIntoOne:
         )
         graph = ProviderGraph(builtin_providers(), builtin_registry())
 
-        without = resolve_compatibility(
-            manifest, available_capabilities=frozenset(), graph=graph
-        )
+        without = resolve_compatibility(manifest, available_capabilities=frozenset(), graph=graph)
         assert without.state == "registered_but_missing_provider"
 
         profile = make_profile(capability_grants=[TRACKER])

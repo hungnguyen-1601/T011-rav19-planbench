@@ -762,9 +762,7 @@ class TaskProfile(BaseModel):
         not see two.
         """
         return tuple(
-            sorted(
-                {*self.available_observations, *(g.capability for g in self.capability_grants)}
-            )
+            sorted({*self.available_observations, *(g.capability for g in self.capability_grants)})
         )
 
     @model_validator(mode="after")

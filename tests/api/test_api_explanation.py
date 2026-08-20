@@ -321,9 +321,7 @@ class TestTheExplanationRoute:
             built(waterfall=None, decision_status="NO_DECISION_CARD")
         )
 
-        body = client.get(
-            f"{API}/decisions/run_no_pair/explanation", headers=alice_headers
-        ).json()
+        body = client.get(f"{API}/decisions/run_no_pair/explanation", headers=alice_headers).json()
 
         assert body["packet"]["decision"]["waterfall"] is None
         assert body["packet"]["decision"]["status"] == "NO_DECISION_CARD"

@@ -141,14 +141,10 @@ class TestTheVerdicts:
 
 
 class TestTheFloorsBeatTheInterval:
-    def test_too_few_episodes_is_inconclusive_however_tight_the_interval(
-        self, protocol
-    ) -> None:
+    def test_too_few_episodes_is_inconclusive_however_tight_the_interval(self, protocol) -> None:
         """Four identical episodes give an interval of essentially zero
         width, and it still says nothing about the fifth."""
-        record = screen(
-            [[10.0] * 300 for _ in range(4)], protocol=protocol, deadline_ms=50.0
-        )
+        record = screen([[10.0] * 300 for _ in range(4)], protocol=protocol, deadline_ms=50.0)
         assert record.verdict == "inconclusive"
         assert "floor" in record.reason
         assert record.episodes == 4
@@ -265,9 +261,7 @@ class TestG4KeepsBothScreens:
     def test_an_inconclusive_screen_does_not_read_as_a_pass(self, protocol) -> None:
         from planbench_decision.gates import G4Result
 
-        record = screen(
-            episodes(30, mean=44.0, spread=7.0), protocol=protocol, deadline_ms=50.0
-        )
+        record = screen(episodes(30, mean=44.0, spread=7.0), protocol=protocol, deadline_ms=50.0)
         result = G4Result(
             result="pass", n_runs=30, p99_ms=12.0, threshold_ms=50.0, end_to_end=record
         )
