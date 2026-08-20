@@ -605,3 +605,63 @@ Một chi tiết đi kèm: `aria-label` của nút mang theo tên stack. Hai nú
 **Test:** hai test cũ khẳng định đúng hành vi vừa bỏ (`playing: false` xuất hiện đúng
 hai lần; "một nút cho cả hai canvas") — đã viết lại thành khẳng định hành vi mới, kèm
 lý do đổi. Tổng **1178 passed** (web), `tsc` sạch.
+
+---
+
+## 17. Dọn chữ giải thích khỏi tab decision
+
+An: mọi câu kiểu *"Six feasibility gates run before anything is scored (HĐ-7)…"* gói
+hết vào một dấu `?`, di chuột mới hiện; câu nào không đại diện cho phần nào thì bỏ hẳn.
+
+### 17.1 Dùng lại `Hint`, không viết mới
+
+Repo **đã có** `components/Hint.tsx`, dựng cho đúng vấn đề này ở trang Deployment, với
+đúng lập luận: *"panel bốn phần năm là chữ thì không ai đọc — phần giải thích lấn át
+chính những trường nó đang giải thích"*. Nó giữ nguyên văn bản làm **accessible name**
+của dấu `?`, nên screen reader, người dùng bàn phím và tìm-kiếm-văn-bản vẫn với tới
+được. Viết một tooltip thứ hai là một cách nói khác của "mất một nửa số người đọc".
+
+### 17.2 Ranh giới: câu nào được phép ẩn
+
+Đây là phần đáng nghĩ, không phải phần gõ code.
+
+- **Giải thích thường trực của một mục** → vào `?`. Nó là nền, có thể đợi tới lúc được
+  hỏi. Chín câu: `gates.note`, `trace.note`, `trace.colourNote`, `card.scopeNote`,
+  `tally.note`, `filter.note`, `launch.note`, `map.note`, `preview.sharedNotice`.
+- **Thông điệp chỉ xuất hiện ở một trạng thái** → **giữ nguyên trên màn hình**. "Run
+  này bị cắt ngang", "hai candidate được cho xem thứ khác nhau", "detector đã chạy và
+  không thấy gì". Đó là **phát hiện**, và một phát hiện nằm sau dấu chấm hỏi không ai
+  trỏ vào là một phát hiện không ai đọc. Cả `EvidencePanel` vì thế **không đụng tới**.
+- **Câu chỉ dẫn thừa** → bỏ hẳn. `trace.pickEpisode` ("Select an episode to compare
+  both candidates visually") nằm ngay trên một `<select>` đã có nhãn của chính nó — một
+  `?` ở đó sẽ là dấu hỏi không giải thích gì. Xoá khoá khỏi cả hai locale.
+
+Một chỗ tôi làm sai rồi sửa: `decisions.map.note` ban đầu tôi **xoá luôn**. Nhưng nó
+giải thích vì sao chọn map khác lại tạo deployment **mới** thay vì sửa cái đang chọn —
+mất nó là mất một lời giải thích thật. Đã gắn lại vào `?` cạnh ô nhập id mới, đúng
+control mà nó nói về.
+
+### 17.3 Ngoại lệ duy nhất: caveat của composite
+
+`running.composite.partial` từng có bình luận của chính tôi: *"đặt cạnh con số chứ
+không sau tooltip: một composite mà caveat có thể bị bỏ lỡ là một composite sẽ bị đọc
+thành ΔU"*.
+
+Vẫn đúng. Nên chỉ **phần dài** vào `?`, còn ba chữ **"không phải ΔU"** ở lại trên màn
+hình dưới dạng badge. Một cảnh báo phải trỏ vào mới thấy là cảnh báo sẽ bị bỏ lỡ bởi
+đúng người cần nó.
+
+### 17.4 Test giữ ranh giới đó
+
+`decision-prose.test.tsx`, 35 test. Không chỉ kiểm "đã có Hint" mà kiểm cả ba mệnh đề:
+mỗi câu nền **đi qua Hint** và **không còn là một `<p>`** (khớp theo *hình dạng render*,
+nên viết lại đoạn chữ dưới class khác vẫn bị bắt); mỗi câu nền **vẫn còn trong cả hai
+locale** (ẩn chứ không xoá); và mỗi **phát hiện vẫn ở dạng chữ**, không nằm sau Hint.
+
+Một chỗ suýt vô nghĩa: mẫu `t("KEY")` không bắt được các ca chọn khoá bằng ternary
+**bên trong** lời gọi — nó sẽ báo xanh cho một thông điệp đã bị giấu. Đổi sang bắt
+chính khoá.
+
+Dọn kèm: 4 rule CSS chết, 1 khoá i18n chết.
+
+**Test:** 1214 passed (web), `tsc` sạch.

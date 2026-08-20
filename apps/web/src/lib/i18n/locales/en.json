@@ -1308,7 +1308,6 @@
   "mapView.raised": "2.5D",
   "mapView.editInFlat": "Switch to top-down to place or paint — the raised view has no inverse projection, so a click cannot name a cell.",
   "trace.flatHasClearance": "The top-down view colours the path by clearance; this one does not.",
-  "trace.pickEpisode": "Select an episode to compare both candidates visually.",
   "trace.viewMode": "Map view mode",
   "trace.deployment": "Deployment",
   "trace.missing": "No trace is available for this candidate.",
@@ -1502,5 +1501,6 @@
   "trace.latencyChart.alt": "Planner latency over the episode, against the deployment's control period.",
   "trace.latencyChart.over": "over budget",
   "trace.latencyChart.under": "within budget",
-  "trace.latencyChart.noPlanning": "The planner did not run during this episode, so there is no latency to plot."
+  "trace.latencyChart.noPlanning": "The planner did not run during this episode, so there is no latency to plot.",
+  "running.composite.short": "not ΔU"
 }

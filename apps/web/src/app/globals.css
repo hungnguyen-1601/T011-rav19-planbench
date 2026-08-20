@@ -2066,7 +2066,6 @@ a.stat-card:hover {
 .decision-deployment-header code { max-width: 36rem; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .decision-deployment-header > a { font-size: 11px; }
 .decision-readonly-badge { padding: 4px 8px; border: 1px solid color-mix(in srgb, var(--info) 30%, var(--border)); border-radius: 999px; color: var(--info); background: var(--info-soft); font-size: 10px; font-weight: 750; }
-.decision-deployment-notice { margin: 10px 13px; padding: 9px 11px; border-left: 3px solid var(--info); border-radius: 7px; background: var(--info-soft); font-size: 11px; }
 .decision-deployment-content { display: grid; grid-template-columns: minmax(0, 3fr) minmax(340px, 2fr); align-items: start; gap: 16px; padding: 0 13px 13px; }
 .decision-deployment-map-column, .decision-deployment-details { min-width: 0; }
 .decision-deployment-map { min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
@@ -2117,12 +2116,10 @@ a.stat-card:hover {
 .decision-tally--orange .decision-tally-icon { background: var(--orange-soft); color: var(--orange); }
 .decision-tally--green .decision-tally-icon { background: var(--ok-soft); color: var(--ok); }
 .decision-tally.is-zero .decision-tally-icon { background: var(--panel-2); color: var(--muted); }
-.decision-tally-note { margin: 6px 2px 0; font-size: 10px; }
 .decision-filter-bar { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: end; gap: 8px 12px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel); }
 .decision-filter-fields { display: flex; align-items: flex-end; gap: 10px; }
 .decision-filter-fields .field { min-width: 150px; }
 .decision-result-count { padding: 5px 8px; border-radius: 999px; background: var(--panel-2); color: var(--muted); font-size: 11px; font-weight: 700; }
-.decision-filter-note { grid-column: 1/-1; margin: 0; font-size: 10px; }
 .decision-table-panel { padding: 0; overflow: hidden; }
 .decision-table-panel .table-scroll { border: 0; }
 
@@ -3096,11 +3093,6 @@ main.content.bare-page {
   --candidate-b-border: color-mix(in srgb, #7c3aed 48%, var(--border));
 }
 
-.episode-pick-note {
-  margin: 10px 0 14px;
-  color: var(--text);
-  font-weight: 600;
-}
 
 .episode-toolbar,
 .episode-playback,
@@ -3403,3 +3395,5 @@ main.content.bare-page {
 /* The chart doubles as the timeline: clicking it seeks both replays. */
 .latency-seekable { cursor: pointer; }
 .latency-seekable:focus-visible { outline: 2px solid var(--accent, #2563eb); outline-offset: 2px; }
+/* The mark sits in headings now, not only beside form labels. */
+h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }

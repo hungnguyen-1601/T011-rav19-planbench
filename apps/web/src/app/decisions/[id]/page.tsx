@@ -17,6 +17,7 @@
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { TraceViewer } from "@/components/TraceViewer";
+import { Hint } from "@/components/Hint";
 import { ProgressSync, type SyncSlot } from "@/components/ProgressSync";
 import { commonProgress, panelCandidates, sideProgress, sideTime } from "@/lib/replaySync";
 import { EvidencePanel } from "@/components/EvidencePanel";
@@ -394,10 +395,8 @@ function TracePanel({ run }: { run: DecisionRun }) {
   return (
     <div className="panel decision-sample-panel episode-comparison">
       <div className="panel-head">
-        <h3>{t("trace.title")}</h3>
+        <h3>{t("trace.title")} <Hint text={t("trace.note")} label={t("trace.title")} /></h3>
       </div>
-      <p className="muted">{t("trace.note")}</p>
-      <p className="episode-pick-note">{t("trace.pickEpisode")}</p>
 
       <EpisodeOutcomes
         run={run}
@@ -518,7 +517,7 @@ function EpisodeLegend() {
   // sentences rendered twice, side by side. It describes how the canvas
   // is drawn, which is one fact about the pair rather than one per
   // candidate, so it belongs here with the legend it explains.
-  return <div className="episode-legend" aria-label={t("trace.legend.title")}><div className="episode-legend-keys">{items.map(([tone, label]) => <span key={tone}><i className={`legend-dot legend-dot--${tone}`} aria-hidden="true" />{label}</span>)}</div><p className="muted">{t("trace.colourNote")}</p></div>;
+  return <div className="episode-legend" aria-label={t("trace.legend.title")}><div className="episode-legend-keys">{items.map(([tone, label]) => <span key={tone}><i className={`legend-dot legend-dot--${tone}`} aria-hidden="true" />{label}</span>)}</div><Hint text={t("trace.colourNote")} label={t("trace.legend.title")} /></div>;
 }
 
 function CandidateEpisode({ candidate, side, episodeId, slot, mode, playbackTime, running, forceFinal, onToggleFinal, onSeek, isReferenceRuler, onRetry }: { candidate: RunCandidate; side: "a" | "b"; episodeId: string; slot: TraceSlot; mode: "flat" | "raised"; playbackTime: number; running: RunningSample[] | null; forceFinal: boolean; onToggleFinal: () => void; onSeek: (seconds: number) => void; isReferenceRuler: boolean; onRetry: () => void }) {
@@ -929,9 +928,11 @@ function GateTable({ run }: { run: DecisionRun }) {
   return (
     <div className="panel decision-summary decision-summary--card">
       <div className="panel-head">
-        <h3>{t("decisions.gates.title")}</h3>
+        <h3>{t("decisions.gates.title")} <Hint text={t("decisions.gates.note")} label={t("decisions.gates.title")} /></h3>
       </div>
-      <p className="muted">{t("decisions.gates.note")}</p>
+      {/* Stays on the page: this one fires only when the candidates were
+          shown different things, and a warning behind a mark nobody
+          points at is a warning nobody reads. */}
       <ObservationNotice candidates={candidates} />
       <div className="table-scroll wide">
         <table>
@@ -1162,7 +1163,7 @@ function CardPanel({ run }: { run: DecisionRun }) {
   return (
     <div className="panel">
       <div className="panel-head">
-        <h3>{t("decisions.card.title")}</h3>
+        <h3>{t("decisions.card.title")} <Hint text={t("decisions.card.scopeNote", { scope: card.experiment_scope })} label={t("decisions.card.title")} /></h3>
         <span className="badge ok">{card.status}</span>
       </div>
       <div className="stat-grid">
@@ -1210,9 +1211,7 @@ function CardPanel({ run }: { run: DecisionRun }) {
         />
       </div>
 
-      <p className="muted" style={{ marginTop: 12 }}>
-        {t("decisions.card.scopeNote", { scope: card.experiment_scope })}
-      </p>
+
     </div>
   );
 }

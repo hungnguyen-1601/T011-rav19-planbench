@@ -1308,7 +1308,6 @@
   "mapView.raised": "2.5D",
   "mapView.editInFlat": "Chuyển về nhìn từ trên để đặt điểm hoặc vẽ — bản 2.5D không có phép chiếu ngược nên một cú click không chỉ được đúng ô nào.",
   "trace.flatHasClearance": "Bản nhìn từ trên tô màu đường đi theo khoảng hở; bản này thì không.",
-  "trace.pickEpisode": "Chọn một Episode để so sánh trực quan hai Candidate.",
   "trace.viewMode": "Chế độ hiển thị bản đồ",
   "trace.deployment": "Cấu hình triển khai",
   "trace.missing": "Không có trace cho Candidate này.",
@@ -1502,5 +1501,6 @@
   "trace.latencyChart.alt": "Độ trễ planner suốt episode, so với chu kỳ điều khiển của deployment.",
   "trace.latencyChart.over": "vượt ngân sách",
   "trace.latencyChart.under": "trong ngân sách",
-  "trace.latencyChart.noPlanning": "Planner không chạy lần nào trong episode này, nên không có độ trễ để vẽ."
+  "trace.latencyChart.noPlanning": "Planner không chạy lần nào trong episode này, nên không có độ trễ để vẽ.",
+  "running.composite.short": "không phải ΔU"
 }

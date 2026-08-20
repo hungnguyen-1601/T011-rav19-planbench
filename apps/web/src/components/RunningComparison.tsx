@@ -14,6 +14,7 @@
  * would be a smaller component and a wrong one.
  */
 
+import { Hint } from "@/components/Hint";
 import { useTranslation } from "@/lib/i18n";
 import type { RunCandidate, RunningPoint, RunningSample } from "@/lib/decisions";
 import type { MetricRow, RulerSide } from "@/lib/running";
@@ -107,13 +108,17 @@ export function RunningComparison({
           {point.partial_advantage >= 0 ? "+" : ""}
           {point.partial_advantage.toFixed(3)}
         </strong>
-        <span className="muted">
-          {point.partial_objectives.join(" · ")}
+        <span className="muted">{point.partial_objectives.join(" · ")}</span>
+        {/* **The short form stays on the page.** The rest of the caveat
+            moves behind the mark like everything else, but not the
+            first three characters of it: this is the one number here
+            that a reader will otherwise take for ΔU, and a warning that
+            has to be pointed at is a warning that will be missed by
+            exactly the reader who needed it. */}
+        <span className="badge muted-badge">
+          {t("running.composite.short")}{" "}
+          <Hint text={t(compositeCaveat(point))} label={t("running.composite.title")} />
         </span>
-        {/* Rendered beside the number, not behind a tooltip: a composite
-            whose caveat can be missed is a composite that will be read
-            as ΔU. */}
-        <p className="muted">{t(compositeCaveat(point))}</p>
       </div>
     </section>
   );
@@ -139,8 +144,12 @@ function ClockTable({
   const { t } = useTranslation();
   return (
     <div className="episode-running-clock">
-      <h5>{heading}</h5>
-      <p className="muted">{hint}</p>
+      {/* The sentence explaining which clock this table belongs to is
+          background, not a reading — behind the mark, where it is still
+          the mark's accessible name and still findable by search. */}
+      <h5>
+        {heading} <Hint text={hint} label={heading} />
+      </h5>
       <table>
         <thead>
           <tr>
