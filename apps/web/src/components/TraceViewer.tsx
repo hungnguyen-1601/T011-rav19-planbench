@@ -26,7 +26,7 @@ import { routeAt } from "@/lib/evidence";
 
 import { Scene25D } from "@/components/Scene25D";
 import { useTranslation } from "@/lib/i18n";
-import type { TracePayload } from "@/lib/decisions";
+import type { RunningSample, TracePayload } from "@/lib/decisions";
 import { frameIndexAt } from "@/lib/playback";
 
 /** Cells to pixels, keeping the aspect ratio and fitting the box. */
@@ -71,6 +71,17 @@ export interface TraceViewerProps {
   mode?: "flat" | "raised";
   showControls?: boolean;
   candidateSide?: "a" | "b";
+  /** This candidate's E4.3 series, one entry per trace row (see
+   *  `RunningBlock.by_step`). Absent for a run whose objective anchors
+   *  would not resolve, and for the standalone viewer, which has no
+   *  pair and therefore no shared reference line to measure progress
+   *  along. The dynamic tiles simply do not appear. */
+  running?: RunningSample[] | null;
+  /** True when *this* candidate's own driven path became the reference
+   *  line — only ever on a run with no recorded plan. Its
+   *  `path_efficiency` is then 1.00 by construction rather than by
+   *  merit, and the tile has to say so. */
+  isReferenceRuler?: boolean;
 }
 
 export function TraceViewer({
@@ -79,6 +90,8 @@ export function TraceViewer({
   mode: controlledMode,
   showControls = true,
   candidateSide,
+  running,
+  isReferenceRuler = false,
 }: TraceViewerProps) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -264,6 +277,9 @@ export function TraceViewer({
 
   const clearance = trace.clearance_m[visibleStep];
   const latency = trace.planner_latency_ms[visibleStep];
+  // Indexed by the same row the pose is drawn from, so the tile and the
+  // robot on the canvas are never two different moments.
+  const live = running?.[visibleStep] ?? null;
 
   /** The trace's grid as the raised view takes it.
    *
@@ -349,6 +365,10 @@ export function TraceViewer({
         </span>
       </div> : null}
 
+      {/* **What is true at this instant**, above the episode's totals.
+          The first two move with the scrubber and the rest accumulate;
+          none of them is a summary of the whole run, which is what the
+          table further down is for. */}
       <div className="stat-grid" style={{ marginTop: 12 }}>
         <Figure
           label={t("trace.clearance")}
@@ -358,6 +378,28 @@ export function TraceViewer({
           label={t("trace.latency")}
           value={Number.isFinite(latency) ? `${latency.toFixed(2)} ms` : "—"}
         />
+        {live ? (
+          <>
+            <Figure
+              label={t("trace.running.progress")}
+              value={`${(live.progress_fraction * 100).toFixed(1)} %`}
+            />
+            <Figure
+              label={t("trace.running.margin")}
+              value={`${live.safety_margin.toFixed(2)} r`}
+            />
+            <Figure
+              label={t("trace.running.exposure")}
+              value={`${live.exposure_s.toFixed(1)} s`}
+            />
+            <Figure
+              label={t("trace.running.efficiency")}
+              value={`${live.path_efficiency.toFixed(3)}${isReferenceRuler ? " †" : ""}`}
+              note={isReferenceRuler ? t("running.rulerArtefact") : undefined}
+            />
+            <Figure label={t("trace.running.replans")} value={`${live.replans}`} />
+          </>
+        ) : null}
         <Figure label={t("trace.duration")} value={`${(trace.t.at(-1) ?? 0).toFixed(1)} s`} />
         <Figure
           label={t("trace.outcome")}
@@ -372,11 +414,14 @@ export function TraceViewer({
   );
 }
 
-function Figure({ label, value }: { label: string; value: string }) {
+function Figure({ label, value, note }: { label: string; value: string; note?: string }) {
   return (
-    <div className="stat-card">
+    <div className="stat-card" title={note}>
       <span className="stat-card-head">{label}</span>
-      <span className="stat-card-value">{value}</span>
+      <span className={note ? "stat-card-value muted" : "stat-card-value"}>{value}</span>
+      {/* The dagger carries the caveat for a sighted reader; this
+          carries it for everyone else. */}
+      {note ? <span className="sr-only">{note}</span> : null}
     </div>
   );
 }

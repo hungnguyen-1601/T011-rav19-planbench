@@ -1488,5 +1488,11 @@
   "running.composite.title": "Đánh đổi an toàn – hiệu quả, trên phần đã diễn ra",
   "running.composite.partial": "Không phải ΔU. Chỉ 2 trong 4 mục tiêu — tới đích thì nửa chừng episode chưa có giá trị — và hiệu quả đo theo reference line của replay, không phải L_ref. Utility thật của episode nằm trên card.",
   "running.composite.full": "Đủ cả bốn mục tiêu.",
-  "running.leads": "dẫn"
+  "running.leads": "dẫn",
+  "running.rulerArtefact": "Run này không ghi kế hoạch, nên chính quỹ đạo của candidate này thành reference line — hiệu suất bằng 1,00 do định nghĩa, không phải do chạy tốt.",
+  "trace.running.progress": "Đã đi được",
+  "trace.running.margin": "Clearance tệ nhất tới giờ",
+  "trace.running.exposure": "Thời gian trong khoảng cảnh báo",
+  "trace.running.efficiency": "Tiến độ trên mỗi mét đã chạy",
+  "trace.running.replans": "Replan tới giờ"
 }

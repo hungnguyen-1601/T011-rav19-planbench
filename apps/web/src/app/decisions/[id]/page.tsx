@@ -50,6 +50,7 @@ import {
   type DivergencePoint,
   type Exemplar,
   type ReplaySyncView,
+  type RunningSample,
   observationClasses,
 } from "@/lib/decisions";
 import { downloadDecisionReport } from "@/lib/reports";
@@ -291,8 +292,16 @@ function TracePanel({ run }: { run: DecisionRun }) {
   // Progress-sync is computed by the platform, not here: projecting in
   // the browser would put a second copy of the arc-length rules in
   // TypeScript, and the two would drift the first time either is fixed.
+  //
+  // **Fetched in both alignment modes**, not just the progress one. The
+  // same response carries the per-step series the tiles under each
+  // canvas read, and those are shown whichever way the two replays are
+  // aligned — the numbers are each candidate's own standing at its own
+  // current row, which does not depend on how the panels are paired.
+  // Not fetching it in time mode was the reason the metrics appeared
+  // only behind a toggle nobody had a reason to press.
   useEffect(() => {
-    if (syncMode !== "progress" || !episodeId || candidates.length < 2) return;
+    if (!episodeId || candidates.length < 2) return;
     let live = true;
     setSync({ state: "loading" });
     setScan(initialPlayback);
@@ -305,7 +314,7 @@ function TracePanel({ run }: { run: DecisionRun }) {
     return () => {
       live = false;
     };
-  }, [candidates, episodeId, run.id, syncMode]);
+  }, [candidates, episodeId, run.id]);
 
   const traces = candidates.flatMap((candidate) => {
     const slot = slots[candidate.candidate_id];
@@ -418,6 +427,8 @@ function TracePanel({ run }: { run: DecisionRun }) {
                 slot={slots[candidate.candidate_id] ?? { state: "loading" }}
                 mode={mode}
                 playbackTime={at}
+                running={view?.running?.by_step[side] ?? null}
+                isReferenceRuler={view?.reference_source_candidate_id === candidate.candidate_id}
                 onRetry={() => void loadPair(episodeId)}
               />
             );
@@ -462,10 +473,10 @@ function EpisodeLegend() {
   return <div className="episode-legend" aria-label={t("trace.legend.title")}>{items.map(([tone, label]) => <span key={tone}><i className={`legend-dot legend-dot--${tone}`} aria-hidden="true" />{label}</span>)}</div>;
 }
 
-function CandidateEpisode({ candidate, side, episodeId, slot, mode, playbackTime, onRetry }: { candidate: RunCandidate; side: "a" | "b"; episodeId: string; slot: TraceSlot; mode: "flat" | "raised"; playbackTime: number; onRetry: () => void }) {
+function CandidateEpisode({ candidate, side, episodeId, slot, mode, playbackTime, running, isReferenceRuler, onRetry }: { candidate: RunCandidate; side: "a" | "b"; episodeId: string; slot: TraceSlot; mode: "flat" | "raised"; playbackTime: number; running: RunningSample[] | null; isReferenceRuler: boolean; onRetry: () => void }) {
   const { t } = useTranslation();
   const outcome = outcomesByEpisode(candidate).get(episodeId);
-  return <article className={`episode-candidate episode-candidate--${side}`}><header><div><span>Candidate {side.toUpperCase()}</span><h4>{candidate.stack_label}</h4><code>{candidate.local_controller_config}</code></div><span className={`badge ${outcomeTone(outcome)}`}>{outcomeLabel(outcome, t)}</span></header><div className="episode-map">{slot.state === "loading" ? <div className="episode-skeleton" role="status">{t("trace.loadingCandidate")}</div> : slot.state === "ready" ? <TraceViewer trace={slot.trace} playbackTime={playbackTime} mode={mode} showControls={false} candidateSide={side} /> : slot.state === "missing" ? <div className="episode-empty" role="status">{t("trace.missing")}</div> : slot.state === "empty" ? <div className="episode-empty" role="status">{t("trace.emptyFrames")}</div> : <div className="episode-error" role="alert"><p>{t("trace.loadError")}</p><button type="button" onClick={onRetry}>{t("common.retry")}</button></div>}</div><EpisodeMetrics outcome={outcome} /></article>;
+  return <article className={`episode-candidate episode-candidate--${side}`}><header><div><span>Candidate {side.toUpperCase()}</span><h4>{candidate.stack_label}</h4><code>{candidate.local_controller_config}</code></div><span className={`badge ${outcomeTone(outcome)}`}>{outcomeLabel(outcome, t)}</span></header><div className="episode-map">{slot.state === "loading" ? <div className="episode-skeleton" role="status">{t("trace.loadingCandidate")}</div> : slot.state === "ready" ? <TraceViewer trace={slot.trace} playbackTime={playbackTime} mode={mode} showControls={false} candidateSide={side} running={running} isReferenceRuler={isReferenceRuler} /> : slot.state === "missing" ? <div className="episode-empty" role="status">{t("trace.missing")}</div> : slot.state === "empty" ? <div className="episode-empty" role="status">{t("trace.emptyFrames")}</div> : <div className="episode-error" role="alert"><p>{t("trace.loadError")}</p><button type="button" onClick={onRetry}>{t("common.retry")}</button></div>}</div><EpisodeMetrics outcome={outcome} /></article>;
 }
 
 function EpisodeMetrics({ outcome }: { outcome: EpisodeOutcome | undefined }) {

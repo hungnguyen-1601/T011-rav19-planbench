@@ -16,11 +16,12 @@
 
 import { useTranslation } from "@/lib/i18n";
 import type { RunCandidate, RunningPoint, RunningSample } from "@/lib/decisions";
-import type { MetricRow } from "@/lib/running";
+import type { MetricRow, RulerSide } from "@/lib/running";
 import {
   PROGRESS_CLOCK,
   TIME_CLOCK,
   compositeCaveat,
+  isRulerArtefact,
   leader,
   rowAt,
 } from "@/lib/running";
@@ -31,16 +32,23 @@ export function RunningComparison({
   candidateA,
   candidateB,
   candidates,
+  referenceSource,
 }: {
   running: RunningPoint[] | null;
   progress: number;
   candidateA: string;
   candidateB: string;
   candidates: RunCandidate[];
+  /** Whose driven path became the reference line, when no plan was
+   *  recorded. That candidate's `path_efficiency` is 1.0 by
+   *  construction, and the table has to say so. */
+  referenceSource: string | null;
 }) {
   const { t } = useTranslation();
   const label = (id: string) =>
     candidates.find((entry) => entry.candidate_id === id)?.stack_label ?? id;
+  const ruler: RulerSide =
+    referenceSource === candidateA ? "a" : referenceSource === candidateB ? "b" : null;
 
   // `null` and `[]` mean different things and the server sends only the
   // former. Distinguished anyway: an empty table reads as "no
@@ -81,6 +89,7 @@ export function RunningComparison({
         point={point}
         labelA={label(candidateA)}
         labelB={label(candidateB)}
+        ruler={ruler}
       />
       <ClockTable
         heading={t("running.clock.time")}
@@ -89,6 +98,7 @@ export function RunningComparison({
         point={point}
         labelA={label(candidateA)}
         labelB={label(candidateB)}
+        ruler={ruler}
       />
 
       <div className="episode-running-composite">
@@ -116,6 +126,7 @@ function ClockTable({
   point,
   labelA,
   labelB,
+  ruler,
 }: {
   heading: string;
   hint: string;
@@ -123,6 +134,7 @@ function ClockTable({
   point: RunningPoint;
   labelA: string;
   labelB: string;
+  ruler: RulerSide;
 }) {
   const { t } = useTranslation();
   return (
@@ -139,12 +151,24 @@ function ClockTable({
         </thead>
         <tbody>
           {rows.map((row) => {
-            const winner = leader(row, point.a, point.b);
+            const winner = leader(row, point.a, point.b, ruler);
             return (
               <tr key={String(row.key)}>
                 <th scope="row">{t(`running.metric.${String(row.key)}`)}</th>
-                <Cell row={row} sample={point.a} lead={winner === "a"} lead_label={t("running.leads")} />
-                <Cell row={row} sample={point.b} lead={winner === "b"} lead_label={t("running.leads")} />
+                <Cell
+                  row={row}
+                  sample={point.a}
+                  lead={winner === "a"}
+                  lead_label={t("running.leads")}
+                  artefact={isRulerArtefact(row, "a", ruler) ? t("running.rulerArtefact") : null}
+                />
+                <Cell
+                  row={row}
+                  sample={point.b}
+                  lead={winner === "b"}
+                  lead_label={t("running.leads")}
+                  artefact={isRulerArtefact(row, "b", ruler) ? t("running.rulerArtefact") : null}
+                />
               </tr>
             );
           })}
@@ -159,20 +183,27 @@ function Cell({
   sample,
   lead,
   lead_label,
+  artefact,
 }: {
   row: MetricRow;
   sample: RunningSample;
   lead: boolean;
   lead_label: string;
+  /** Set when this number follows from the choice of reference line
+   *  rather than from how the robot drove. Greyed and captioned rather
+   *  than hidden: the value is real, what it is *evidence of* is not. */
+  artefact: string | null;
 }) {
   const value = Number(sample[row.key]);
   return (
-    <td className={lead ? "ok" : undefined}>
+    <td className={artefact ? "muted" : lead ? "ok" : undefined} title={artefact ?? undefined}>
       {value.toFixed(row.digits)}
       {row.unit ? ` ${row.unit}` : ""}
+      {artefact ? <span className="episode-running-artefact"> †</span> : null}
       {/* The colour carries the claim for a sighted reader; this carries
           it for everyone else. */}
       {lead ? <span className="sr-only"> ({lead_label})</span> : null}
+      {artefact ? <span className="sr-only"> — {artefact}</span> : null}
     </td>
   );
 }

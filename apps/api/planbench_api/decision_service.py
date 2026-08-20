@@ -711,7 +711,7 @@ class DecisionRunService:
             raise DomainValidationError(str(refusal)) from refusal
 
         body = view.model_dump()
-        body["running"] = self._running_comparison(
+        body["running"] = self._running_block(
             run_id,
             payload_a,
             payload_b,
@@ -726,18 +726,31 @@ class DecisionRunService:
         )
         return body
 
-    def _running_comparison(
+    def _running_block(
         self,
         run_id: str,
         payload_a: dict[str, Any],
         payload_b: dict[str, Any],
         reference,  # type: ignore[no-untyped-def]
         rows: Sequence[Any],
-    ) -> list[dict[str, Any]] | None:
-        """Both candidates at each rung of the progress ladder (E4.3).
+    ) -> dict[str, Any] | None:
+        """The E4.3 numbers, in the two shapes the page reads them in.
 
-        ``None`` rather than an empty list when the comparison cannot be
-        made: a deployment whose anchors will not resolve has no
+        ``ladder`` pairs the candidates at each rung of the progress
+        scale — the comparison table. ``by_step`` is each candidate's own
+        series, one entry per row of its trace, which is what the tiles
+        under each canvas show as the scrubber moves.
+
+        **One computation, two shapes.** The alternative was to let the
+        browser derive the tiles from the trace columns it already has,
+        which is a second implementation of "the running minimum
+        clearance" living in a different language — free to drift from
+        this one, and the drift invisible because both would render as
+        clearances. Everything here is projected onto the same reference
+        line the ladder above it uses.
+
+        ``None`` rather than an empty structure when the numbers cannot
+        be made: a deployment whose anchors will not resolve has no
         objective curves, and a composite computed without them would be
         a number this platform did not author. Empty would read as "the
         two are identical".
@@ -749,6 +762,7 @@ class DecisionRunService:
             Deployment,
             RunningMetricsRefusal,
             compare_at_progress,
+            sample_series,
         )
 
         run = self._runs.get(run_id)
@@ -777,7 +791,7 @@ class DecisionRunService:
             return None
 
         settings = DecisionSettings()
-        out: list[dict[str, Any]] = []
+        ladder: list[dict[str, Any]] = []
         for row in rows:
             comparison = compare_at_progress(
                 slices[0],
@@ -789,8 +803,20 @@ class DecisionRunService:
             )
             if comparison is None:
                 continue
-            out.append({"progress_m": float(row.progress_m), **comparison.model_dump()})
-        return out or None
+            ladder.append({"progress_m": float(row.progress_m), **comparison.model_dump()})
+
+        # Indexed by trace row, so the tile under a canvas and the pose
+        # drawn on it are the same instant. Anything else — a time grid
+        # of its own, a decimated series — would drift against the
+        # scrubber, and the drift would look like the metric moving.
+        by_step = {
+            side: [
+                sample.model_dump()
+                for sample in sample_series(slice_, deployment=deployment)
+            ]
+            for side, slice_ in zip(("a", "b"), slices, strict=True)
+        }
+        return {"ladder": ladder, "by_step": by_step}
 
     def explanation(self, run_id: str) -> dict[str, Any]:
         """The analyst's case packet for one run (E4.1).

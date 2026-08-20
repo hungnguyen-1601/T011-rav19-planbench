@@ -13,6 +13,7 @@ import {
   PROGRESS_CLOCK,
   TIME_CLOCK,
   compositeCaveat,
+  isRulerArtefact,
   leader,
   rowAt,
 } from "@/lib/running";
@@ -146,5 +147,55 @@ describe("the composite never stands unqualified", () => {
     // makes U_R computable on a prefix, this is where the caveat stops.
     const full = point(2, { partial_objectives: ["U_S", "U_E", "U_R", "U_C"] });
     expect(compositeCaveat(full)).toBe("running.composite.full");
+  });
+});
+
+describe("when a candidate's own path is the ruler", () => {
+  // A run recorded before the planning-input sidecar has no plan to
+  // project onto, so E2 falls back to one candidate's driven path. That
+  // candidate's progress then equals its distance driven at every
+  // sample, and `path_efficiency` — the ratio of the two — reads 1.000
+  // however badly it drove. Measured on a real 19-08 run: 1.000 against
+  // the other stack's 0.860.
+  const efficiency = rowFor("path_efficiency");
+
+  it("marks the reference candidate's efficiency as an artefact", () => {
+    expect(isRulerArtefact(efficiency, "a", "a")).toBe(true);
+    expect(isRulerArtefact(efficiency, "b", "a")).toBe(false);
+  });
+
+  it("marks nothing when the reference was a recorded plan", () => {
+    expect(isRulerArtefact(efficiency, "a", null)).toBe(false);
+    expect(isRulerArtefact(efficiency, "b", null)).toBe(false);
+  });
+
+  it("leaves the other metrics alone", () => {
+    // Only efficiency is defined as progress over distance driven. The
+    // ruler does not make elapsed time or clearance unmeasurable.
+    expect(isRulerArtefact(rowFor("elapsed_s"), "a", "a")).toBe(false);
+    expect(isRulerArtefact(rowFor("safety_margin"), "a", "a")).toBe(false);
+  });
+
+  it("declares no winner on a row the ruler cannot lose", () => {
+    // The whole point. Without this the panel awards a green 1.000 to
+    // whichever candidate happened to be passed to the view first — a
+    // result on a comparison that was never made.
+    const ruled = sample({ path_efficiency: 1 });
+    const other = sample({ path_efficiency: 0.86 });
+    expect(leader(efficiency, ruled, other, "a")).toBeNull();
+    expect(leader(efficiency, other, ruled, "b")).toBeNull();
+  });
+
+  it("still calls that row when the reference was a real plan", () => {
+    // Otherwise the fix would suppress the metric everywhere and the
+    // test above would pass by the column being dead.
+    const ruled = sample({ path_efficiency: 1 });
+    const other = sample({ path_efficiency: 0.86 });
+    expect(leader(efficiency, ruled, other, null)).toBe("a");
+  });
+
+  it("still calls the other rows on a ruled run", () => {
+    expect(leader(rowFor("elapsed_s"), sample({ elapsed_s: 8 }), sample({ elapsed_s: 12 }), "a"))
+      .toBe("a");
   });
 });

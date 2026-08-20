@@ -58,13 +58,45 @@ export const TIME_CLOCK: MetricRow[] = [
  */
 const TIE_TOLERANCE = 1e-3;
 
+/** Which side, if either, supplied the line progress is measured along.
+ *
+ * Only ever set on a run with no recorded plan. E2 then falls back to a
+ * *candidate's own driven path* as the reference — and the view says so
+ * — which makes that candidate's arc length equal to its distance
+ * driven at every sample.
+ */
+export type RulerSide = "a" | "b" | null;
+
+/** Whether this cell is an artefact of the ruler rather than a measurement.
+ *
+ * `path_efficiency` is progress over distance driven. For the candidate
+ * whose own path *became* the reference, those are the same number by
+ * construction, so the cell reads 1.000 on every such run no matter how
+ * the robot drove. Left unmarked it is the most flattering number on the
+ * panel, awarded to whichever candidate happened to be passed first.
+ */
+export function isRulerArtefact(row: MetricRow, side: "a" | "b", ruler: RulerSide): boolean {
+  return row.key === "path_efficiency" && ruler === side;
+}
+
 /** Who is doing better on one metric. `null` is a genuine tie.
  *
  * Scaled rather than absolute: a 0.01 s difference in `elapsed_s` and a
  * 0.01 difference in `path_efficiency` are not the same size of claim,
  * and a fixed epsilon would call one and miss the other.
+ *
+ * **No winner on a row one side cannot lose.** When the reference line
+ * is a candidate's own path, that candidate's `path_efficiency` is 1.0
+ * by construction; calling it the leader would declare a result on a
+ * comparison that was never made.
  */
-export function leader(row: MetricRow, a: RunningSample, b: RunningSample): "a" | "b" | null {
+export function leader(
+  row: MetricRow,
+  a: RunningSample,
+  b: RunningSample,
+  ruler: RulerSide = null,
+): "a" | "b" | null {
+  if (isRulerArtefact(row, "a", ruler) || isRulerArtefact(row, "b", ruler)) return null;
   const left = Number(a[row.key]);
   const right = Number(b[row.key]);
   const scale = Math.max(Math.abs(left), Math.abs(right), 1);

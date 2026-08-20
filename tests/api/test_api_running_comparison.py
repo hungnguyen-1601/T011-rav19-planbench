@@ -138,3 +138,31 @@ class TestRefusalsRatherThanWrongRows:
     def test_a_trace_with_no_samples_is_refused(self) -> None:
         with pytest.raises(ValueError, match="no samples"):
             _slice_for(payload([]), STRAIGHT)
+
+
+class TestTheSeriesTheCanvasTilesRead:
+    """The tiles index this with a scrubber position (`RunningBlock.by_step`)."""
+
+    def test_one_entry_per_trace_row(self) -> None:
+        """An off-by-one here shows one candidate a different instant
+        than the pose drawn beside it — and nothing on screen would say
+        so, because both numbers are plausible for that episode."""
+        from planbench_explanation.running_metrics import sample_series
+
+        body = payload([(0.0, 0.0), (1.0, 0.0), (2.0, 0.5), (3.0, 0.5)])
+        series = sample_series(_slice_for(body, STRAIGHT), deployment=DEPLOYMENT)
+        assert len(series) == len(body["t"])  # type: ignore[arg-type]
+
+    def test_the_series_agrees_with_the_ladder_at_the_same_row(self) -> None:
+        """Two shapes of one computation, not two computations.
+
+        The tile under a canvas and the table above it are read together
+        by the same person, and a disagreement between them is the
+        failure that would be hardest to explain.
+        """
+        from planbench_explanation.running_metrics import sample_at, sample_series
+
+        slice_ = _slice_for(payload([(0.0, 0.0), (2.0, 0.0), (2.0, 3.0), (5.0, 3.0)]), STRAIGHT)
+        series = sample_series(slice_, deployment=DEPLOYMENT)
+        for index in range(len(series)):
+            assert sample_at(slice_, index, deployment=DEPLOYMENT) == series[index]

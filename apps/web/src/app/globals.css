@@ -3353,3 +3353,8 @@ main.content.bare-page {
   white-space: nowrap;
   border: 0;
 }
+/* The dagger beside a number that follows from the choice of reference
+   line rather than from how the robot drove. Marked rather than hidden:
+   the value is real, what it is evidence of is not. */
+.episode-running-artefact { opacity: 0.7; cursor: help; }
+.episode-running td.muted { color: var(--muted); font-weight: 400; }

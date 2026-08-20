@@ -50,6 +50,7 @@ end-to-end policy do not share. Compute is measured as latency against
 
 from __future__ import annotations
 
+from bisect import insort
 from collections.abc import Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -233,6 +234,88 @@ def _percentile(values: Sequence[float], fraction: float) -> float:
     return ordered[rank - 1]
 
 
+def sample_series(
+    slice_: TraceSlice,
+    *,
+    deployment: Deployment,
+    rate_window_s: float = 2.0,
+) -> tuple[RunningSample, ...]:
+    """Every row of one candidate's episode, in one pass.
+
+    **The single implementation of these eight numbers.**
+    :func:`sample_at` indexes into this rather than recomputing, because
+    two functions producing "the running minimum clearance" is two
+    definitions free to drift — and the drift would be invisible: both
+    would render, both would look like clearances.
+
+    The series exists because the decision page shows these under each
+    canvas at whatever moment the scrubber is on, which is a value per
+    trace row, not a value per rung of the progress ladder. Computing it
+    row by row through a prefix-scanning ``sample_at`` would be
+    quadratic in the trace length; the accumulators here carry forward
+    instead.
+    """
+    if not slice_.t:
+        raise RunningMetricsRefusal(f"{slice_.candidate_id} has no samples")
+
+    out: list[RunningSample] = []
+    driven = 0.0
+    worst = slice_.clearance_m[0]
+    exposure = 0.0
+    # Nearest-rank p99 over the prefix. Kept sorted by insertion rather
+    # than re-sorted per row: the same number G4 pools, arrived at in
+    # linear-ish time.
+    latencies: list[float] = []
+    # Trailing edge of the rate window, walked forward rather than
+    # searched: the window only ever moves one way.
+    earlier = 0
+    replans = 0
+    replan_at = sorted(slice_.replan_indices)
+    next_replan = 0
+
+    for index in range(len(slice_.t)):
+        if index > 0:
+            driven += (
+                (slice_.x[index] - slice_.x[index - 1]) ** 2
+                + (slice_.y[index] - slice_.y[index - 1]) ** 2
+            ) ** 0.5
+            # Exposure is measured in seconds, not samples: a control
+            # loop that ticks twice as often would otherwise look twice
+            # as exposed.
+            if slice_.clearance_m[index] < deployment.clearance_warning_m:
+                exposure += slice_.t[index] - slice_.t[index - 1]
+        worst = min(worst, slice_.clearance_m[index])
+        if slice_.planner_latency_ms[index] > 0.0:
+            insort(latencies, slice_.planner_latency_ms[index])
+        while next_replan < len(replan_at) and replan_at[next_replan] <= index:
+            replans += 1
+            next_replan += 1
+
+        cutoff = slice_.t[index] - rate_window_s
+        while earlier + 1 <= index and slice_.t[earlier + 1] <= cutoff:
+            earlier += 1
+
+        progress = slice_.progress_m[index]
+        window = slice_.t[index] - slice_.t[earlier]
+        rate = (progress - slice_.progress_m[earlier]) / window if window > 0 else 0.0
+        efficiency = min(progress / driven, 1.0) if driven > 0 else 0.0
+
+        out.append(
+            RunningSample(
+                progress_fraction=min(progress / deployment.reference_length_m, 1.0),
+                progress_rate=rate,
+                elapsed_s=slice_.t[index] - slice_.t[0],
+                safety_margin=worst / deployment.robot_radius_m,
+                exposure_s=exposure,
+                compute_budget=_percentile(latencies, 0.99)
+                / (deployment.control_period_s * 1000.0),
+                path_efficiency=efficiency,
+                replans=replans,
+            )
+        )
+    return tuple(out)
+
+
 def sample_at(
     slice_: TraceSlice,
     index: int,
@@ -240,42 +323,14 @@ def sample_at(
     deployment: Deployment,
     rate_window_s: float = 2.0,
 ) -> RunningSample:
-    """One candidate's standing at trace row ``index``."""
-    if not slice_.t:
-        raise RunningMetricsRefusal(f"{slice_.candidate_id} has no samples")
-    index = max(0, min(index, len(slice_.t) - 1))
-    elapsed = slice_.t[index] - slice_.t[0]
-    progress = slice_.progress_m[index]
+    """One candidate's standing at trace row ``index``.
 
-    earlier = _index_at_time(slice_.t, slice_.t[index] - rate_window_s) or 0
-    window = slice_.t[index] - slice_.t[earlier]
-    rate = (progress - slice_.progress_m[earlier]) / window if window > 0 else 0.0
-
-    clearances = slice_.clearance_m[: index + 1]
-    worst = min(clearances) if clearances else 0.0
-    # Exposure is measured in seconds, not samples: a control loop that
-    # ticks twice as often would otherwise look twice as exposed.
-    exposure = 0.0
-    for step in range(1, index + 1):
-        if slice_.clearance_m[step] < deployment.clearance_warning_m:
-            exposure += slice_.t[step] - slice_.t[step - 1]
-
-    latencies = [value for value in slice_.planner_latency_ms[: index + 1] if value > 0.0]
-    budget = _percentile(latencies, 0.99) / (deployment.control_period_s * 1000.0)
-
-    driven = _driven_distance(slice_, index)
-    efficiency = min(progress / driven, 1.0) if driven > 0 else 0.0
-
-    return RunningSample(
-        progress_fraction=min(progress / deployment.reference_length_m, 1.0),
-        progress_rate=rate,
-        elapsed_s=elapsed,
-        safety_margin=worst / deployment.robot_radius_m,
-        exposure_s=exposure,
-        compute_budget=budget,
-        path_efficiency=efficiency,
-        replans=sum(1 for position in slice_.replan_indices if position <= index),
-    )
+    A lookup into :func:`sample_series`, not a second derivation. Rows
+    past either end clamp, so a caller holding a scrubber position does
+    not have to bounds-check what the platform can bound itself.
+    """
+    series = sample_series(slice_, deployment=deployment, rate_window_s=rate_window_s)
+    return series[max(0, min(index, len(series) - 1))]
 
 
 def partial_utility(

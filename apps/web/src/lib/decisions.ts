@@ -486,15 +486,32 @@ export interface ReplaySyncView {
   /** Whose driven path became the ruler, when one did. That candidate's
    *  cross-track offset is zero everywhere by construction. */
   reference_source_candidate_id: string | null;
-  /** Both candidates measured at each rung of the progress ladder — E4.3.
+  /** The E4.3 numbers — E4.3.
    *
-   *  `null`, never `[]`, when the comparison could not be made: the
+   *  `null`, never an empty structure, when they could not be made: the
    *  composite is the deployment's own objective curves, and a run whose
-   *  anchors will not resolve has none. An empty list would render as a
-   *  panel with no differences in it, which reads as "the two are
-   *  identical" — the opposite of "this could not be computed".
+   *  anchors will not resolve has none. Empty would render as a panel
+   *  with no differences in it, which reads as "the two are identical" —
+   *  the opposite of "this could not be computed".
    */
-  running: RunningPoint[] | null;
+  running: RunningBlock | null;
+}
+
+/** The same computation in the two shapes the page reads it in.
+ *
+ * Both come from one server-side pass over the same reference line, so
+ * a tile under a canvas and the table above it cannot disagree. The
+ * browser deriving the tiles from the trace columns it already holds
+ * would have been less code and a second implementation of "the running
+ * minimum clearance" — free to drift, and the drift invisible, because
+ * both would render as clearances.
+ */
+export interface RunningBlock {
+  /** Both candidates paired at each rung of the progress scale. */
+  ladder: RunningPoint[];
+  /** Each candidate's own series, one entry per row of its trace, so a
+   *  tile and the pose drawn beside it are the same instant. */
+  by_step: { a: RunningSample[]; b: RunningSample[] };
 }
 
 /** One candidate's standing at one rung of the ladder.

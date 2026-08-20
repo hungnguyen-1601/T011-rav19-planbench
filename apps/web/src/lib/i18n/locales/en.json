@@ -1488,5 +1488,11 @@
   "running.composite.title": "Safety-versus-efficiency, over the part that has happened",
   "running.composite.partial": "Not ΔU. Two of four objectives — reaching the goal has no value halfway through — and efficiency is measured against the replay's reference line, not L_ref. The episode's real utility is on the card.",
   "running.composite.full": "All four objectives.",
-  "running.leads": "leads"
+  "running.leads": "leads",
+  "running.rulerArtefact": "This run recorded no plan, so this candidate's own path became the reference line — its efficiency is 1.00 by construction, not by merit.",
+  "trace.running.progress": "Route covered",
+  "trace.running.margin": "Worst clearance so far",
+  "trace.running.exposure": "Time inside warning distance",
+  "trace.running.efficiency": "Progress per metre driven",
+  "trace.running.replans": "Replans so far"
 }

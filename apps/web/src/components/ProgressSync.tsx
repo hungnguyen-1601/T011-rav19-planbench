@@ -99,11 +99,12 @@ export function ProgressSync({
           reader is standing on, with no second position to keep in
           sync. */}
       <RunningComparison
-        running={view.running}
+        running={view.running?.ladder ?? null}
         progress={scan.time}
         candidateA={view.candidate_a}
         candidateB={view.candidate_b}
         candidates={candidates}
+        referenceSource={view.reference_source_candidate_id}
       />
     </div>
   );

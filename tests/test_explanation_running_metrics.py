@@ -28,11 +28,11 @@ from planbench_explanation.running_metrics import (
 
 @pytest.fixture(scope="module")
 def anchors():  # type: ignore[no-untyped-def]
-    from planbench_benchmark.task_map import load_task_map  # noqa: F401
     from pathlib import Path
 
     import yaml
 
+    from planbench_benchmark.task_map import load_task_map  # noqa: F401
     from planbench_schemas.task_profile import TaskProfile
 
     path = Path(__file__).resolve().parents[1] / "profiles" / "open_hall_v1.yaml"
@@ -326,3 +326,90 @@ def test_the_composite_measures_efficiency_against_the_replay_s_reference_line(a
         partial_utility(wandering, 10, deployment=DEPLOYMENT, settings=settings, anchors=anchors)
         < short_line
     )
+
+
+# --------------------------------------------------------------------------
+# The per-row series the decision page's canvases read
+# --------------------------------------------------------------------------
+
+
+def _wandering_slice() -> TraceSlice:
+    """A trace long enough that a prefix bug would show, and not straight."""
+    from planbench_explanation.running_metrics import TraceSlice
+
+    times = [round(index * 0.05, 3) for index in range(200)]
+    xs = [index * 0.02 for index in range(200)]
+    ys = [0.3 * ((index // 20) % 2) for index in range(200)]
+    clearances = [0.8 - 0.5 * (1 if 40 <= index < 90 else 0) for index in range(200)]
+    latencies = [4.0 + (index % 7) for index in range(200)]
+    return TraceSlice(
+        candidate_id="cand_a",
+        t=tuple(times),
+        x=tuple(xs),
+        y=tuple(ys),
+        clearance_m=tuple(clearances),
+        planner_latency_ms=tuple(latencies),
+        progress_m=tuple(xs),
+        replan_indices=(30, 120),
+    )
+
+
+def test_the_series_has_one_entry_per_trace_row() -> None:
+    """The canvases index it with a scrubber position, so an off-by-one
+    would show one candidate a different instant than the other."""
+    from planbench_explanation.running_metrics import sample_series
+
+    slice_ = _wandering_slice()
+    series = sample_series(slice_, deployment=DEPLOYMENT)
+    assert len(series) == len(slice_.t)
+
+
+def test_the_accumulators_only_ever_go_one_way() -> None:
+    """Worst-so-far cannot recover, exposure cannot be repaid, and a
+    replan cannot be taken back. Each of those is the whole reason the
+    quantity is cumulative rather than instantaneous, and each is the
+    kind of thing a rewritten prefix scan silently breaks."""
+    from planbench_explanation.running_metrics import sample_series
+
+    series = sample_series(_wandering_slice(), deployment=DEPLOYMENT)
+    margins = [sample.safety_margin for sample in series]
+    exposures = [sample.exposure_s for sample in series]
+    replans = [sample.replans for sample in series]
+    assert margins == sorted(margins, reverse=True)
+    assert exposures == sorted(exposures)
+    assert replans == sorted(replans)
+
+
+def test_the_accumulators_actually_move() -> None:
+    """Otherwise the test above passes on a flat series."""
+    from planbench_explanation.running_metrics import sample_series
+
+    series = sample_series(_wandering_slice(), deployment=DEPLOYMENT)
+    assert series[-1].safety_margin < series[0].safety_margin
+    assert series[-1].exposure_s > 0.0
+    assert series[-1].replans == 2
+
+
+def test_one_sample_is_a_lookup_into_the_series() -> None:
+    """`sample_at` must not be a second derivation of these numbers.
+
+    Two functions computing "the running minimum clearance" are two
+    definitions free to drift, and the drift would be invisible — both
+    would render, and both would look like clearances.
+    """
+    from planbench_explanation.running_metrics import sample_at, sample_series
+
+    slice_ = _wandering_slice()
+    series = sample_series(slice_, deployment=DEPLOYMENT)
+    for index in (0, 1, 37, 99, len(series) - 1):
+        assert sample_at(slice_, index, deployment=DEPLOYMENT) == series[index]
+
+
+def test_a_row_past_either_end_clamps() -> None:
+    """The caller is a scrubber, and a scrubber runs past the end."""
+    from planbench_explanation.running_metrics import sample_at, sample_series
+
+    slice_ = _wandering_slice()
+    series = sample_series(slice_, deployment=DEPLOYMENT)
+    assert sample_at(slice_, -5, deployment=DEPLOYMENT) == series[0]
+    assert sample_at(slice_, 10_000, deployment=DEPLOYMENT) == series[-1]
