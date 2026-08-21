@@ -164,3 +164,43 @@ describe("the value cells", () => {
     expect(draw(pair())).toContain('<span class="num">30</span><span class="unit"></span>');
   });
 });
+
+describe("which cell is marked as leading", () => {
+  it("marks the better side and says so in words too", () => {
+    const html = renderToStaticMarkup(
+      <ComparisonGrid
+        run={run}
+        candidates={[
+          candidate({ candidate_id: "a", pooled_p99_latency_ms: 7.85 }),
+          candidate({ candidate_id: "b", pooled_p99_latency_ms: 17.2 }),
+        ]}
+      />,
+    );
+    /* Lower latency leads. The mark is a class plus a phrase — never a
+       colour on its own, which a greyscale screenshot or a colourblind
+       reader would lose entirely. */
+    const cells = [...html.matchAll(/<td class="(comparison-cell comparison-value[^"]*)">(.*?)<\/td>/g)];
+    const leading = cells.filter(([, cls]) => cls.includes("is-best"));
+    expect(leading.length).toBeGreaterThan(0);
+    for (const [, , inner] of leading) expect(inner).toContain("(leads)");
+  });
+
+  it("marks nobody on a row with no direction", () => {
+    /* Replans is evidence, not a score: it is already charged in travel
+       time and in latency, and marking a winner would price it twice. */
+    const html = renderToStaticMarkup(
+      <ComparisonGrid
+        run={run}
+        candidates={[
+          candidate({ candidate_id: "a", replan_count: 30 }),
+          candidate({ candidate_id: "b", replan_count: 242 }),
+        ]}
+      />,
+    );
+    const replanRow = [...html.matchAll(/<tr>(.*?)<\/tr>/gs)]
+      .map(([, inner]) => inner)
+      .find((inner) => inner.includes("Replans across the run"))!;
+    expect(replanRow).toBeTruthy();
+    expect(replanRow).not.toContain("is-best");
+  });
+});

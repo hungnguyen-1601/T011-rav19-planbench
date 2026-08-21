@@ -3710,7 +3710,28 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
   white-space: nowrap;
   color: var(--muted);
 }
-.comparison-value.is-best { color: var(--ok, #3f9a5a); }
+/* Leading a metric is a **background**, never a colour.
+   ===================================================================
+   This used to be `color: var(--ok)` — the same green as `.badge.ok`,
+   which on this very table means "cleared every gate". One colour was
+   saying two unrelated things, and after the gate verdict moved up to
+   the column head the two sat inches apart: a green badge above a
+   column of green numbers, where the badge means a candidate is
+   admissible and the numbers only mean it is 0.1 s quicker.
+
+   Green also overclaims. A gate verdict is pass or fail; leading a
+   metric is a comparison, and the margin can be a rounding error the
+   ΔU interval cannot separate. A tint says "this one is ahead here"
+   without borrowing the vocabulary of a safety verdict.
+
+   The old declaration also carried `var(--ok, #3f9a5a)` — a literal
+   fallback for a token that exists. That is the shape of the three
+   bugs `tokens.test.ts` was written for: a fallback makes a missing
+   token quieter, not more correct. */
+.comparison-value.is-best {
+  background: var(--accent-soft);
+  font-weight: 700;
+}
 
 /* The six-cell gate grid, now inside a collapsed <details> below the
    metric grid rather than as its last row.

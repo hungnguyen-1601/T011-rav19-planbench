@@ -1130,3 +1130,42 @@ describe("the value cell aligns its decimals", () => {
     expect(GRID).not.toContain("metric.text");
   });
 });
+
+describe("leading a metric stopped borrowing the gate colour", () => {
+  const bestRule = () => {
+    const at = CSS.indexOf(".comparison-value.is-best {");
+    return CSS.slice(at, CSS.indexOf("}", at));
+  };
+
+  it("marks the leader with a background, not with green text", () => {
+    /* `color: var(--ok)` is the green `.badge.ok` uses for "cleared
+       every gate". After the gate verdict moved to the column head the
+       two sat inches apart in one table: a green badge above a column of
+       green numbers, where the badge means a candidate is admissible and
+       the numbers mean it is 0.1 s quicker. */
+    expect(bestRule()).not.toContain("color:");
+    expect(bestRule()).toContain("background: var(--accent-soft)");
+  });
+
+  it("keeps a signal that survives greyscale", () => {
+    /* A tint alone is a colour-only cue. The weight carries the same
+       claim without it, and the screen reader gets it in words. */
+    expect(bestRule()).toContain("font-weight: 700");
+    expect(GRID).toContain('<span className="sr-only"> ({t("running.leads")})</span>');
+  });
+
+  it("leaves green meaning exactly one thing", () => {
+    /* The gate badge keeps it — that is the meaning worth a state
+       colour, because a gate verdict is pass or fail rather than a
+       comparison whose margin may be a rounding error. */
+    const badge = CSS.slice(CSS.indexOf(".badge.ok {"), CSS.indexOf("}", CSS.indexOf(".badge.ok {")));
+    expect(badge).toContain("color: var(--ok)");
+  });
+
+  it("does not carry a literal fallback for a token that exists", () => {
+    /* `var(--ok, #3f9a5a)` is the shape of the three bugs `tokens.test`
+       was written for: a fallback makes a missing token quieter, not
+       more correct. */
+    expect(bestRule()).not.toMatch(/#[0-9a-fA-F]{3,6}/);
+  });
+});
