@@ -21,6 +21,7 @@ import { ConclusionPanel } from "@/components/ConclusionPanel";
 import { Hint } from "@/components/Hint";
 import { type MetricRow, comparisonRows, leaders } from "@/lib/candidateMetrics";
 import { type HeadingField, candidateNames, headingField } from "@/lib/candidateHeading";
+import { gateSummary, gateVerdictBadge } from "@/lib/gateSummary";
 import {
   clampPage,
   pageCount,
@@ -166,6 +167,7 @@ function CandidateComparison({ run }: { run: DecisionRun }) {
   // statement about what this comparison varied, and two columns cannot
   // disagree about that.
   const heading = headingField(candidates);
+  const summary = gateSummary(candidates);
   // A row of empty bordered cells is not a finding. The flags row exists
   // to carry two of them — an undeclared observation class and a
   // candidate retired early — and renders only when one is present.
@@ -230,9 +232,22 @@ function CandidateComparison({ run }: { run: DecisionRun }) {
                     observation class. Nothing is lost either way. */}
                 <span className="candidate-secondary">{names.secondary}</span>
               </div>
-              {run.recommended_candidate_id === candidate.candidate_id ? (
-                <span className="badge ok"><Icon name="check" size={12} />{t("decisions.card.recommended")}</span>
-              ) : null}
+              <span className="candidate-marks">
+                {run.recommended_candidate_id === candidate.candidate_id ? (
+                  <span className="badge ok"><Icon name="check" size={12} />{t("decisions.card.recommended")}</span>
+                ) : null}
+                {/* Six gates run *before* anything is scored (HĐ-7), so a
+                    candidate that failed one was never ranked at all. That
+                    belongs beside its name, not eleven metric rows down. */}
+                {(() => {
+                  const verdict = gateVerdictBadge(candidate);
+                  return (
+                    <span className={`badge ${verdict.tone}`}>
+                      {t(verdict.key, { gates: verdict.gates })}
+                    </span>
+                  );
+                })()}
+              </span>
             </div>
           );
         })}
@@ -298,29 +313,51 @@ function CandidateComparison({ run }: { run: DecisionRun }) {
           );
         })}
 
-        <div className="comparison-gutter comparison-label comparison-grid-foot">
-          {t("decisions.gates.title")}{" "}
-          <Hint text={t("decisions.gates.note")} label={t("decisions.gates.title")} />
-        </div>
-        {candidates.map((candidate, index) => (
-          <div key={candidate.candidate_id} className={`comparison-cell comparison-gates comparison-grid-foot candidate-${SIDES[index] ?? "n"}`}>
-            <span className={`badge ${candidate.cleared_gates ? "ok" : "err"}`}>
-              {candidate.cleared_gates ? t("decisions.gates.cleared") : candidate.blocking_gates.join(", ")}
-            </span>
-            <div className="comparison-gate-grid">
-              {GATES.map((gate) => (
-                <div key={gate}>
-                  <span className="candidate-gate-name">
-                    <code>{gate}</code>
-                    <Hint text={t(`decisions.gates.blocks.${gate}`)} label={gate} />
-                  </span>
-                  <GateCell verdict={candidate.gates?.[gate]} />
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
       </div>
+
+      {/* **Collapsed, because the verdict is already on the column head.**
+          Open, it is six cells per candidate — the *reason* behind a
+          verdict the reader has already been given. Closed, its summary
+          still has to be true, which is why the badge states a ratio: it
+          sits on the control somebody uses to decide whether to open
+          this at all, so "cleared" over a field where one candidate was
+          eliminated is wrong at the point of maximum cost. */}
+      {summary ? (
+        <details className="comparison-gate-detail">
+          <summary>
+            <Icon name="chevronRight" size={14} />
+            <span>{t("decisions.gates.detail")}</span>
+            <Hint text={t("decisions.gates.note")} label={t("decisions.gates.detail")} />
+            <span className={`badge ${summary.tone}`}>
+              {t(summary.key, {
+                total: String(summary.total),
+                blocked: String(summary.blocked),
+                cleared: String(summary.cleared),
+              })}
+            </span>
+          </summary>
+          <div className="comparison-gate-detail-body">
+            {candidates.map((candidate, index) => (
+              <div key={candidate.candidate_id}>
+                <p className={`comparison-gate-owner candidate-${SIDES[index] ?? "n"}`}>
+                  {candidateNames(candidate, heading).heading}
+                </p>
+                <div className="comparison-gate-grid">
+                  {GATES.map((gate) => (
+                    <div key={gate}>
+                      <span className="candidate-gate-name">
+                        <code>{gate}</code>
+                        <Hint text={t(`decisions.gates.blocks.${gate}`)} label={gate} />
+                      </span>
+                      <GateCell verdict={candidate.gates?.[gate]} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
     </section>
   );
 }

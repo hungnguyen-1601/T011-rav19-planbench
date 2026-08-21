@@ -3657,8 +3657,53 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
 }
 .comparison-value.is-best { color: var(--ok, #3f9a5a); }
 
-.comparison-grid-foot { border-bottom: 0; }
-.comparison-gates { display: grid; gap: 8px; align-content: start; }
+/* The six-cell gate grid, now inside a collapsed <details> below the
+   metric grid rather than as its last row.
+   ===================================================================
+   The verdict itself moved up to the column head — a candidate that
+   failed a gate was never ranked (HĐ-7), and reading that eleven metric
+   rows down inverts the contract on screen. What is left here is the
+   *reason*, which is worth a click and not worth a row. */
+/* No `border-top` here: the metric grid's last row already draws its
+   bottom border, and the two together made a 2px line. The rule that
+   used to strip that border from the last row (`.comparison-grid-foot`)
+   went with the gate row it existed for. */
+.comparison-gate-detail { }
+.comparison-gate-detail > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  cursor: pointer;
+  /* The default triangle sits outside the flex row and cannot be
+     aligned with the badge; the chevron below replaces it. */
+  list-style: none;
+}
+.comparison-gate-detail > summary::-webkit-details-marker { display: none; }
+.comparison-gate-detail > summary svg { flex: none; transition: transform 120ms ease; }
+.comparison-gate-detail[open] > summary svg:first-child { transform: rotate(90deg); }
+/* Pushed to the end of the row so it lands in the same place whatever
+   the label's length — it is the part a reader scans for. */
+.comparison-gate-detail > summary .badge { margin-left: auto; }
+.comparison-gate-detail-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-4);
+  padding: 0 var(--space-4) var(--space-4);
+}
+/* Names the candidate the way the column head did — the field that
+   actually differs on this run, in that candidate's colour. */
+.comparison-gate-owner { margin: 0 0 var(--space-2); font-size: var(--fs-sm); font-weight: 600; }
+.comparison-gate-owner.candidate-a { color: var(--candidate-a); }
+.comparison-gate-owner.candidate-b { color: var(--candidate-b); }
+.comparison-gate-owner.candidate-n { color: var(--muted); }
+
+/* Both marks a column head can carry, wrapping rather than squeezing:
+   a recommended candidate that also cleared every gate has two. */
+.candidate-marks { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+
 .comparison-gate-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .comparison-gate-grid > div {
   display: flex;

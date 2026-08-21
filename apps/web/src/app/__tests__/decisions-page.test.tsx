@@ -30,6 +30,10 @@ const DETAIL = readFileSync(join(APP, "decisions", "[id]", "page.tsx"), "utf8");
    much as present — a removed column tint leaves nothing to assert on
    in the markup. */
 const CSS = readFileSync(join(APP, "globals.css"), "utf8");
+/* The modules the page delegates its decisions to. Asserting a key on
+   the page would fail by design: the page renders `t(verdict.key)` and
+   the key is chosen where the rule lives. */
+const GATE_LIB = readFileSync(join(process.cwd(), "src", "lib", "gateSummary.ts"), "utf8");
 /* Read here because of one assertion below: the map editor is where
    people go looking for the start and the goal, and it has to send them
    to the page that actually has them. */
@@ -1009,5 +1013,63 @@ describe("the comparison grid stopped tinting whole columns", () => {
        reach into any `.candidate-a` container that later grows an h4. */
     expect(CSS).not.toContain(".candidate-a .comparison-grid-head h4");
     expect(CSS).toContain(".comparison-grid-head.candidate-a h4");
+  });
+});
+
+describe("the gate verdict moved to the column head", () => {
+  it("puts pass or fail beside the candidate's name", () => {
+    /* Six gates run before anything is scored (HĐ-7), so a candidate
+       that failed one was never ranked at all. Reading that eleven
+       metric rows down inverts the contract on screen. */
+    expect(DETAIL).toContain("gateVerdictBadge(candidate)");
+    expect(GATE_LIB).toContain("decisions.gates.badge.cleared");
+    expect(GATE_LIB).toContain("decisions.gates.badge.blocked");
+    for (const key of ["decisions.gates.badge.cleared", "decisions.gates.badge.blocked"]) {
+      expect(en, key).toHaveProperty(key);
+      expect(vi, key).toHaveProperty(key);
+    }
+  });
+
+  it("uses the badge classes the stylesheet actually has", () => {
+    /* `.badge.ok` / `.badge.err` exist; `.badge--ok` does not, and
+       writing it would leave an unstyled badge for the whole gap
+       between this plan and the one that renames them. */
+    expect(CSS).toContain(".badge.ok");
+    expect(CSS).toContain(".badge.err");
+    expect(DETAIL).not.toContain("badge--");
+  });
+
+  it("collapses the six cells below the metric grid", () => {
+    expect(DETAIL).toContain('<details className="comparison-gate-detail">');
+    expect(DETAIL).not.toContain("comparison-grid-foot");
+    expect(CSS).not.toMatch(/^\.comparison-grid-foot\s*\{/m);
+  });
+
+  it("summarises the field as a ratio, never as one side's verdict", () => {
+    /* The badge sits on the control that decides whether the detail is
+       opened, so `cleared` over a field where somebody was eliminated is
+       wrong at the point of maximum cost. Three states, not two. */
+    for (const key of ["allCleared", "someBlocked", "allBlocked"]) {
+      expect(en, key).toHaveProperty(`decisions.gates.summary.${key}`);
+      expect(vi, key).toHaveProperty(`decisions.gates.summary.${key}`);
+    }
+    expect(DETAIL).toContain("gateSummary(candidates)");
+  });
+
+  it("counts in the summary wording rather than asserting a state", () => {
+    const dicts = [en, vi] as Record<string, string>[];
+    for (const dict of dicts) {
+      expect(dict["decisions.gates.summary.someBlocked"]).toContain("{blocked}");
+      expect(dict["decisions.gates.summary.someBlocked"]).toContain("{total}");
+      /* And the partial case must not use the word the all-clear case
+         uses — that was the original mistake. */
+      expect(dict["decisions.gates.summary.someBlocked"]).not.toBe(
+        dict["decisions.gates.summary.allCleared"],
+      );
+    }
+  });
+
+  it("names each candidate in the detail the way the head did", () => {
+    expect(DETAIL).toContain("candidateNames(candidate, heading).heading");
   });
 });
