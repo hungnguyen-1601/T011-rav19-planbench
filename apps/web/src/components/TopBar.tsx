@@ -20,6 +20,8 @@ import { ThemeSwitcher } from "./ThemeSwitcher";
 import { UserMenu } from "./UserMenu";
 import type { SessionUser } from "@/lib/auth";
 import type { Translator } from "@/lib/i18n";
+import { useCrumbOverride } from "@/lib/crumbOverride";
+import { crumbLabel } from "@/lib/navigation";
 import { breadcrumbs, pageTitleKey } from "@/lib/navigation";
 
 export function TopBar({
@@ -36,6 +38,11 @@ export function TopBar({
   onOpenSidebar: () => void;
 }) {
   const crumbs = breadcrumbs(pathname);
+  // A page may name its own last crumb — `/decisions/20750b0d9dbe` is
+  // the `sudden_stop_v5` comparison, which the path cannot know and the
+  // page fetched. Only the last crumb, and only when it is the raw
+  // segment `breadcrumbs()` could not name.
+  const named = useCrumbOverride();
 
   return (
     <header className="topbar">
@@ -60,7 +67,11 @@ export function TopBar({
                   <Link href={crumb.href}>{crumb.labelKey ? t(crumb.labelKey) : crumb.label}</Link>
                 ) : (
                   // Ids and names are shown verbatim — never translated.
-                  <span>{crumb.label}</span>
+                  // A page-supplied name *replaces* the id rather than
+                  // translating it; the two are different claims, and
+                  // the fallback is still the id. Which crumb may be
+                  // replaced is decided in `crumbLabel`.
+                  <span>{crumbLabel(crumbs, index, named).label}</span>
                 )}
               </span>
             ))}

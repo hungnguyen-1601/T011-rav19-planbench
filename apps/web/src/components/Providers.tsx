@@ -15,6 +15,7 @@ import { useEffect } from "react";
 
 import { LocaleContext, localeStore, type Locale } from "@/lib/i18n";
 import { applyTheme, themeStore, watchSystemTheme } from "@/lib/theme";
+import { CrumbOverrideProvider } from "@/lib/crumbOverride";
 import { usePersisted } from "@/lib/persisted";
 
 export function Providers({
@@ -42,5 +43,12 @@ export function Providers({
     document.documentElement.lang = locale;
   }, [locale]);
 
-  return <LocaleContext.Provider value={locale}>{children}</LocaleContext.Provider>;
+  return (
+    <LocaleContext.Provider value={locale}>
+      {/* Inside the locale provider, because the breadcrumb it feeds is
+          rendered by `TopBar` and a page cannot pass a prop upward to
+          something the root layout mounted above it. */}
+      <CrumbOverrideProvider>{children}</CrumbOverrideProvider>
+    </LocaleContext.Provider>
+  );
 }

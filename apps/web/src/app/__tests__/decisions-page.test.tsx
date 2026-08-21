@@ -1251,3 +1251,48 @@ describe("the detail header carries the id and drops the tile", () => {
     expect(DETAIL).toContain("navigator.clipboard?.writeText(text)");
   });
 });
+
+describe("the breadcrumb names the profile, not the id", () => {
+  it("reads the field that exists on the run", () => {
+    /* `run.task_profile_id`, not `run.report.task_profile_id`. The wrong
+       path yields `undefined`, which falls back to the id — so the
+       breadcrumb would simply never change, with nothing thrown and
+       nothing logged. That is the failure this task exists to fix,
+       reintroduced silently. */
+    expect(DETAIL).toContain("useNameThisCrumb(run?.task_profile_id)");
+    expect(DETAIL).not.toContain("run?.report?.task_profile_id)");
+  });
+
+  it("puts the provider above the page, since a page cannot pass upward", () => {
+    /* `TopBar` renders the breadcrumb and the root layout mounts it
+       above the page; there is no prop to hand up. */
+    const providers = readFileSync(
+      join(process.cwd(), "src", "components", "Providers.tsx"),
+      "utf8",
+    );
+    expect(providers).toContain("<CrumbOverrideProvider>");
+  });
+
+  it("leaves breadcrumbs() a pure function of the path", () => {
+    /* Its own comment is right that an id must not be run through a
+       dictionary. This replaces the id with a fetched name, which is a
+       different claim — and the pure function stays the one place that
+       decides what a *path* means. */
+    const nav = readFileSync(join(process.cwd(), "src", "lib", "navigation.ts"), "utf8");
+    const fn = nav.slice(
+      nav.indexOf("export function breadcrumbs("),
+      nav.indexOf("\n}", nav.indexOf("export function breadcrumbs(")),
+    );
+    expect(fn).not.toContain("override");
+    expect(fn).not.toContain("named");
+  });
+
+  it("clears the name when the page goes", () => {
+    /* Without this the crumb outlives the page: navigate to another
+       record and it still names the decision — not a stale label but a
+       wrong one, and only visible after a navigation, which is when
+       nobody is looking at the breadcrumb. */
+    const lib = readFileSync(join(process.cwd(), "src", "lib", "crumbOverride.tsx"), "utf8");
+    expect(lib).toContain("return () => set(null);");
+  });
+});

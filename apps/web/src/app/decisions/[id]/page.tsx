@@ -38,6 +38,7 @@ import { useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import { BELOW_N_MIN, noticeKey, sampleLineFor, sampleNotice } from "@/lib/sample";
 import { COPY_FEEDBACK_MS, type CopyOutcome, copyDecisionId, copyStateKey } from "@/lib/copyId";
+import { useNameThisCrumb } from "@/lib/crumbOverride";
 import {
   GATES,
   approvedConfigUrl,
@@ -91,6 +92,12 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // The breadcrumb reads `20750b0d9dbe` off the path; the profile this
+  // run measured is what a reader recognises. `run.task_profile_id`, not
+  // `run.report.task_profile_id` — the latter is `undefined`, which
+  // falls back to the id and leaves the crumb silently unchanged.
+  useNameThisCrumb(run?.task_profile_id);
 
   if (error) return <div className="error-box">{error}</div>;
   if (!run) return <p className="muted">{t("common.loading")}</p>;

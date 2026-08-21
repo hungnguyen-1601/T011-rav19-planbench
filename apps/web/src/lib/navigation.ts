@@ -195,6 +195,30 @@ export interface Crumb {
  * record id (`/benchmarks/ab12`) and shown verbatim: ids, checksums and
  * user-supplied names must never be run through a dictionary.
  */
+/**
+ * What one crumb shows, given a name the page supplied for its own.
+ *
+ * Three conditions, and each rules out a way of renaming the wrong
+ * thing:
+ *
+ * - **the last crumb only.** `/decisions/abc` puts `Decisions` first;
+ *   naming that one would relabel a section after one of its records.
+ * - **only a crumb with no `href`.** Those are the ones `breadcrumbs()`
+ *   could not name — the raw path segment. A crumb that has an `href`
+ *   is a known route whose label comes from the dictionary.
+ * - **only when a name was actually supplied.** `null` while the page's
+ *   fetch is in flight, and the id stands until it lands.
+ */
+export function crumbLabel(
+  crumbs: readonly Crumb[],
+  index: number,
+  named: string | null,
+): { labelKey?: string; label?: string } {
+  const crumb = crumbs[index];
+  if (crumb.href || index !== crumbs.length - 1 || !named) return crumb;
+  return { label: named };
+}
+
 export function breadcrumbs(pathname: string): Crumb[] {
   const route = matchRoute(pathname);
   if (!route || route.href === "/") return [];

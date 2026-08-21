@@ -12,6 +12,7 @@ import {
   ALL_ROUTES,
   NAV_SECTIONS,
   breadcrumbs,
+  crumbLabel,
   isActive,
   matchRoute,
   pageTitleKey,
@@ -126,5 +127,47 @@ describe("breadcrumbs", () => {
 
   it("is empty for a path that matches nothing", () => {
     expect(breadcrumbs("/nowhere/at/all")).toEqual([]);
+  });
+});
+
+describe("a page naming its own last crumb", () => {
+  const path = breadcrumbs("/decisions/20750b0d9dbe");
+
+  it("leaves breadcrumbs() itself untouched", () => {
+    /* The pure function stays the one place that decides what a *path*
+       means, and it still shows an unknown segment verbatim. The name
+       arrives from the page, not from a dictionary. */
+    expect(path).toHaveLength(2);
+    expect(path[1]).toEqual({ label: "20750b0d9dbe" });
+  });
+
+  it("replaces the id when a name was supplied", () => {
+    expect(crumbLabel(path, 1, "sudden_stop_v5")).toEqual({ label: "sudden_stop_v5" });
+  });
+
+  it("leaves the id standing while the page has no name yet", () => {
+    /* `null` during the fetch. The crumb must say something, and the id
+       is what the path supports. */
+    expect(crumbLabel(path, 1, null)).toEqual({ label: "20750b0d9dbe" });
+  });
+
+  it("never renames a crumb that is a known route", () => {
+    /* `Decisions` is the section. Naming it after one of its records is
+       the mistake this condition exists to prevent — and it is the one a
+       reader would misread as navigation. */
+    expect(crumbLabel(path, 0, "sudden_stop_v5")).toBe(path[0]);
+    expect(crumbLabel(path, 0, "sudden_stop_v5").labelKey).toBeTruthy();
+  });
+
+  it("never renames anything but the last crumb", () => {
+    const three = [...path, { label: "extra" }];
+    expect(crumbLabel(three, 1, "sudden_stop_v5")).toEqual({ label: "20750b0d9dbe" });
+    expect(crumbLabel(three, 2, "sudden_stop_v5")).toEqual({ label: "sudden_stop_v5" });
+  });
+
+  it("treats an empty name as no name", () => {
+    /* An empty crumb is worse than an id: it looks like the breadcrumb
+       broke. */
+    expect(crumbLabel(path, 1, "")).toEqual({ label: "20750b0d9dbe" });
   });
 });
