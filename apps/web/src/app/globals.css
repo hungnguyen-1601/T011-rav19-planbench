@@ -149,6 +149,19 @@
   }
 }
 
+/* Typography tokens sit outside the theme blocks above on purpose: a
+   typeface does not change when the palette does, so declaring the stack
+   in all three blocks would be three places to forget it.
+
+   This is the public token every rule reads. A webfont will not replace
+   this declaration — next/font emits its own `--font-mono-loaded`, and
+   the value here becomes `var(--font-mono-loaded, <this stack>)`, so
+   anything reading `--font-mono` keeps rendering whether or not the font
+   finished loading. */
+:root {
+  --font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -1864,7 +1877,7 @@ a.stat-card:hover {
 .condition-status.is-on { color: var(--ok); background: var(--ok-soft); }
 .condition-status.is-off { color: var(--muted); background: var(--panel-2); }
 .condition-noise-tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 230px; }
-.condition-noise-tags > span:not(.condition-status) { max-width: 100%; padding: 3px 6px; overflow: hidden; border-radius: 5px; color: var(--orange); background: var(--orange-soft); font-family: var(--font-mono, monospace); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.condition-noise-tags > span:not(.condition-status) { max-width: 100%; padding: 3px 6px; overflow: hidden; border-radius: 5px; color: var(--orange); background: var(--orange-soft); font-family: var(--font-mono); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 
 .deployment-conditions-summary { margin: 0; padding: 11px 16px; color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .deployment-condition-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; padding: 8px 13px; border-top: 1px solid var(--border); color: var(--muted); font-size: 10px; }
@@ -1894,7 +1907,7 @@ a.stat-card:hover {
 .simulate-speed select { min-height: 34px; padding-block: 4px; }
 .simulate-timeline { display: grid; grid-template-columns: minmax(120px, 1fr) auto; align-items: center; gap: 10px; }
 .simulate-timeline input { width: 100%; accent-color: var(--accent); }
-.simulate-timeline span { min-width: 92px; color: var(--muted); font: 11px ui-monospace, SFMono-Regular, Consolas, monospace; font-variant-numeric: tabular-nums; text-align: right; }
+.simulate-timeline span { min-width: 92px; color: var(--muted); font: 11px var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
 .simulate-stop-reason { grid-column: 1 / -1; color: var(--err); font-size: 11px; }
 
 .simulate-layers { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel-2); }
@@ -1929,7 +1942,7 @@ a.stat-card:hover {
 .simulate-telemetry > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .simulate-telemetry > div:last-child { border-bottom: 0; }
 .simulate-telemetry dt { color: var(--muted); font-size: 11px; }
-.simulate-telemetry dd { margin: 0; font: 650 12px ui-monospace, SFMono-Regular, Consolas, monospace; font-variant-numeric: tabular-nums; text-align: right; }
+.simulate-telemetry dd { margin: 0; font: 650 12px var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
 .simulate-telemetry dd small { color: var(--muted); font-size: 9px; font-weight: 500; }
 .simulate-telemetry-status,
 .simulate-telemetry-reason { grid-column: 1 / -1; }
@@ -2336,7 +2349,7 @@ a.stat-card:hover {
   border-radius: 9px;
   background: var(--canvas-bg);
   color: var(--text);
-  font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+  font: 12px/1.55 var(--font-mono);
   resize: vertical;
 }
 
@@ -3110,7 +3123,7 @@ main.content.bare-page {
 .episode-comparison-head h4 {
   margin: 3px 0;
   overflow-wrap: anywhere;
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
 }
 
 .episode-result-badges { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
@@ -3443,7 +3456,7 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
    would in a single-unit table — every row carries its own unit,
    so the column is not read as one quantity. */
 .comparison-value {
-  font: 700 16px ui-monospace,SFMono-Regular,Consolas,monospace;
+  font: 700 16px var(--font-mono);
   font-variant-numeric: tabular-nums;
   text-align: center;
   white-space: nowrap;
@@ -3496,7 +3509,7 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
 .conclusion-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .conclusion-stack { font-size: 14px; font-weight: 600; }
 .conclusion-stack code { margin-left: 6px; color: var(--muted); font-size: 11px; font-weight: 400; }
-.conclusion-mark { font: 700 18px ui-monospace,SFMono-Regular,Consolas,monospace; font-variant-numeric: tabular-nums; }
+.conclusion-mark { font: 700 18px var(--font-mono); font-variant-numeric: tabular-nums; }
 .conclusion-bar { height: 10px; margin-top: 5px; border-radius: 5px; background: var(--panel-2); overflow: hidden; }
 .conclusion-bar > span { display: block; height: 100%; background: var(--accent); }
 .conclusion-group.is-separated .conclusion-bar > span { background: var(--muted); }
