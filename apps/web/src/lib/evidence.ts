@@ -137,3 +137,36 @@ export function routeAt(routes: PlannedRoute[], step: number): PlannedRoute | nu
   if (!current || current.points.length === 0) return null;
   return current;
 }
+
+/** The planned route's colour, one per replan.
+ *
+ * **The point is that it changes, not which colour it lands on.** The
+ * dashed line is replaced outright at every replan, and with one colour
+ * for all of them a reader watching the canvas cannot tell "the plan
+ * bent" from "the plan was thrown away and a new one drawn" — the two
+ * look identical mid-scrub, and only one of them is a replan.
+ *
+ * Four, cycling. Enough that consecutive plans never share a colour,
+ * few enough to stay distinguishable; a run with five replans reuses the
+ * first, which is fine, because the question this answers is "did it
+ * just change" and not "which attempt is this".
+ *
+ * Chosen to sit clear of what the canvas already spends colour on — blue
+ * and purple for the two candidates' paths, amber for moving obstacles,
+ * red for HĐ-5 events. Kept translucent and dashed either way: this is
+ * an intention, not a measurement.
+ */
+export const PLANNED_ROUTE_COLOURS = [
+  "rgba(15, 23, 42, 0.55)",
+  "rgba(15, 118, 110, 0.7)",
+  "rgba(146, 64, 14, 0.7)",
+  "rgba(77, 124, 15, 0.75)",
+] as const;
+
+export function plannedRouteColour(attempt: number): string {
+  // Attempts are 1-based in the sidecar. A missing or nonsensical value
+  // takes the first colour rather than crashing a canvas over a
+  // decoration.
+  const index = Number.isFinite(attempt) ? Math.max(0, Math.round(attempt) - 1) : 0;
+  return PLANNED_ROUTE_COLOURS[index % PLANNED_ROUTE_COLOURS.length];
+}

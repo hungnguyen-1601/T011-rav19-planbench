@@ -22,7 +22,7 @@
  */
 
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { routeAt } from "@/lib/evidence";
+import { plannedRouteColour, routeAt } from "@/lib/evidence";
 
 import { LatencyChart } from "@/components/LatencyChart";
 import { Scene25D } from "@/components/Scene25D";
@@ -205,11 +205,16 @@ export function TraceViewer({
     // solid line would compete with the trajectory that actually
     // happened. Drawn first so the driven path sits on top of it —
     // where the two diverge is the thing worth seeing.
+    //
+    // The colour changes at every replan. One colour for all of them
+    // left a reader unable to tell "the plan bent" from "the plan was
+    // thrown away and a new one drawn": mid-scrub the two look the
+    // same, and only one of them is a replan.
     const planned = routeAt(trace.planned_routes ?? [], visibleStep);
     if (planned && planned.points.length > 1) {
       context.save();
       context.setLineDash([6, 5]);
-      context.strokeStyle = "rgba(15, 23, 42, 0.45)";
+      context.strokeStyle = plannedRouteColour(planned.attempt);
       context.lineWidth = 2;
       context.beginPath();
       context.moveTo(toX(planned.points[0].x), toY(planned.points[0].y));

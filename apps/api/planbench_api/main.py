@@ -174,6 +174,13 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # Without this the browser hides `Content-Disposition` from
+        # JavaScript on any cross-origin read — and the web app is on a
+        # different port from the API in every local setup. The download
+        # helper then cannot see the filename the server chose and falls
+        # back to one it guessed, which is how the Excel export came to
+        # save itself as `.md`.
+        expose_headers=["Content-Disposition"],
     )
     register_error_handlers(app)
     app.include_router(health.router, prefix=API_PREFIX)

@@ -2133,23 +2133,6 @@ a.stat-card:hover {
 .comparison-results-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
 .comparison-results-head h3 { margin: 2px 0 0; }
 .comparison-results-head .badge { display: inline-flex; align-items: center; gap: 5px; }
-.candidate-comparison-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
-.candidate-result { min-width: 0; }
-.candidate-result + .candidate-result { border-left: 1px solid var(--border-strong); }
-.candidate-result.is-recommended { box-shadow: inset 0 3px 0 var(--ok); }
-.candidate-result-head { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 10px; min-height: 94px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
-.candidate-result.candidate-a .candidate-result-head { background: var(--candidate-a-soft); }
-.candidate-result.candidate-b .candidate-result-head { background: var(--candidate-b-soft); }
-.candidate-result-icon { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 9px; background: var(--panel); }
-.candidate-result.candidate-a .candidate-result-icon { color: var(--candidate-a); }
-.candidate-result.candidate-b .candidate-result-icon { color: var(--candidate-b); }
-.candidate-result-head small { display: block; color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-.candidate-result-head h4 { margin: 2px 0; font-size: 15px; }
-.candidate-result-head code { color: var(--muted); font-size: 10px; }
-.candidate-result-metrics { display: grid; }
-.metric-comparison-row { display: flex; min-height: 48px; align-items: center; justify-content: space-between; gap: 14px; padding: 9px 16px; border-bottom: 1px solid var(--border); }
-.metric-comparison-row span { color: var(--muted); font-size: 11px; }
-.metric-comparison-row strong { font: 700 13px ui-monospace,SFMono-Regular,Consolas,monospace; font-variant-numeric: tabular-nums; }
 .candidate-gates { margin: 12px; border: 1px solid var(--border); border-radius: 8px; }
 .candidate-gates summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 10px; cursor: pointer; }
 .candidate-gates > div { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; padding: 0 10px 10px; }
@@ -2176,13 +2159,9 @@ a.stat-card:hover {
   .decision-filter-fields { align-items: stretch; flex-direction: column; }
   .decision-filter-fields .field { width: 100%; }
   .decision-result-count { justify-self: start; }
-  .candidate-comparison-grid { grid-template-columns: minmax(0,1fr); }
-  .candidate-result + .candidate-result { border-top: 10px solid var(--bg); border-left: 0; }
   .decision-sample-panel .stat-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 @media (max-width: 420px) {
-  .candidate-result-head { grid-template-columns: auto minmax(0,1fr); }
-  .candidate-result-head > .badge { grid-column: 2; }
   .candidate-gates > div { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -3397,3 +3376,129 @@ main.content.bare-page {
 .latency-seekable:focus-visible { outline: 2px solid var(--accent, #2563eb); outline-offset: 2px; }
 /* The mark sits in headings now, not only beside form labels. */
 h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
+
+/* The hint belongs to the gate id, not to the gap between it and the
+   verdict — `space-between` on the chip was pushing the mark into the
+   middle of the cell where it looked like a third column. */
+.candidate-gate-name { display: inline-flex; align-items: center; gap: 2px; }
+
+/* Five episodes a window. A three-hundred-episode sweep would otherwise
+   make the table the page. */
+.episode-pager { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.episode-pager-ids { display: flex; flex-wrap: wrap; gap: 6px; }
+.episode-pager-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.episode-pager-tabs button { min-width: 30px; padding: 3px 8px; font-size: 12px; }
+.episode-pager-tabs button[disabled] { opacity: .4; cursor: default; }
+.episode-pager-tabs > .muted { margin-left: 4px; font-size: 11px; }
+
+/* **The comparison, as one grid.** A neutral gutter on the left holds
+   each metric's name — written once, so a comparison is a glance along
+   a row — and every column after it is one candidate, tinted from its
+   header down through its gate verdicts.
+
+   Emitted row by row rather than card by card. A row of cards cannot
+   promise that a label sits level with its values; the grid can, and at
+   ten metrics that alignment is the whole readability of the thing. */
+.comparison-grid { display: grid; align-items: stretch; }
+.comparison-gutter { padding: 8px 14px; border-bottom: 1px solid var(--border); }
+.comparison-cell { padding: 8px 14px; border-bottom: 1px solid var(--border); }
+.comparison-cell.candidate-a { background: var(--candidate-a-soft); }
+.comparison-cell.candidate-b { background: var(--candidate-b-soft); }
+/* Past two, neutral. Reusing candidate A's blue for candidate C would
+   put two stacks in one colour on a page whose job is telling them
+   apart. */
+.comparison-cell.candidate-n { background: var(--panel-2); }
+.comparison-cell + .comparison-cell { border-left: 1px solid var(--border); }
+
+.comparison-grid-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+.comparison-grid-head small { display: block; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.comparison-grid-head h4 { margin: 2px 0; font-size: 15px; }
+.comparison-grid-head code { color: var(--muted); font-size: 10px; }
+.candidate-result-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 9px; background: var(--panel); }
+.candidate-a .candidate-result-icon { color: var(--candidate-a); }
+.candidate-b .candidate-result-icon { color: var(--candidate-b); }
+
+.comparison-flags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.comparison-flags .badge { font-size: 12px; }
+
+/* Bold and a size up: the gutter is the column a reader scans to
+   find the row they want, so the names have to carry more weight
+   than the muted footnote they were set as. */
+.comparison-label { color: var(--text); font-size: 14.5px; font-weight: 650; line-height: 1.35; }
+/* The limit stays light and small — it qualifies the metric, it is
+   not a second name for it. */
+.comparison-limit { display: block; margin-top: 2px; color: var(--muted); font-size: 12.5px; font-weight: 400; opacity: .9; }
+/* Centred rather than flush right, per An. Tabular figures keep the
+   digits themselves aligned; what centring gives up is the decimal
+   points lining up down a column, which matters less here than it
+   would in a single-unit table — every row carries its own unit,
+   so the column is not read as one quantity. */
+.comparison-value {
+  font: 700 16px ui-monospace,SFMono-Regular,Consolas,monospace;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+.comparison-value.is-best { color: var(--ok, #3f9a5a); }
+
+.comparison-grid-foot { border-bottom: 0; }
+.comparison-gates { display: grid; gap: 8px; align-content: start; }
+.comparison-gate-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.comparison-gate-grid > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+@media (max-width: 900px) {
+  /* Below this the columns are too narrow to read a number in. One
+     candidate at a time, its gutter label above it, beats three
+     unreadable columns. */
+  .comparison-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  .comparison-cell + .comparison-cell { border-left: 0; }
+  .comparison-gutter { padding-bottom: 0; border-bottom: 0; font-weight: 600; }
+  .comparison-value { text-align: left; }
+  .comparison-gate-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* The unpinned-host caveat, above the numbers it qualifies. */
+.comparison-host-warning { margin: 0 16px 12px; font-size: 12.5px; }
+/* Two export formats, side by side. */
+.decision-export { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* Which stack to use. Two groups with a line between them: inside a
+   group the mark ranks, across the line it does not compare — a gate
+   failure the utility cannot see would otherwise crown the wrong
+   candidate. */
+.conclusion-headline { padding: 0 16px 12px; font-size: 14px; }
+.conclusion-headline strong { font-size: 16px; }
+.conclusion-headline--muted { color: var(--muted); }
+.conclusion-headline .badge { margin-left: 8px; }
+.conclusion-group { padding: 0 16px 12px; }
+.conclusion-group h4 { margin: 8px 0; font-size: 13px; color: var(--muted); }
+/* The line itself. Not a divider between two lists of the same kind —
+   it marks where ranking stops meaning anything. */
+.conclusion-group.is-separated { border-top: 2px dashed var(--border-strong); padding-top: 12px; }
+.conclusion-row + .conclusion-row { margin-top: 12px; }
+.conclusion-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.conclusion-stack { font-size: 14px; font-weight: 600; }
+.conclusion-stack code { margin-left: 6px; color: var(--muted); font-size: 11px; font-weight: 400; }
+.conclusion-mark { font: 700 18px ui-monospace,SFMono-Regular,Consolas,monospace; font-variant-numeric: tabular-nums; }
+.conclusion-bar { height: 10px; margin-top: 5px; border-radius: 5px; background: var(--panel-2); overflow: hidden; }
+.conclusion-bar > span { display: block; height: 100%; background: var(--accent); }
+.conclusion-group.is-separated .conclusion-bar > span { background: var(--muted); }
+.conclusion-objectives { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.conclusion-objectives code { font-weight: 700; }
+.conclusion-flags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.conclusion-flags .badge { font-size: 11px; }

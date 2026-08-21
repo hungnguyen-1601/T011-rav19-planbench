@@ -25,25 +25,47 @@ const CLIENT = readFileSync(join(SRC, "lib", "decisions.ts"), "utf8");
 const AUTH = readFileSync(join(SRC, "lib", "auth.ts"), "utf8");
 
 describe("where the evidence sits", () => {
-  it("is mounted under the gate table, after the headline that qualifies it", () => {
-    // The gate table says who was eliminated where; the next thing a
-    // reader should meet is what was seen while they ran, not a
-    // recommendation three sections down.
+  it("comes after the result and the replay", () => {
+    // The page opens on what the run concluded and what it looked like;
+    // the evidence explains that, and the gate table — a list of
+    // eliminations — closes the argument rather than opening it.
     //
-    // And the headline goes *between* them. `ExplanationHeader` carries
-    // the caveats, and its own contract is that they sit above the
-    // evidence — a qualifier below the thing it qualifies has already
-    // been scrolled past. Dropping the evidence in under the gates left
-    // that header three sections down: still correct, no longer doing
-    // its job.
-    const gates = DETAIL.indexOf("<GateTable run={run} />");
+    // This order is a product decision, not something derivable from
+    // the code. What *is* derivable is the pair below it.
+    const comparison = DETAIL.indexOf("<CandidateComparison run={run} />");
+    const trace = DETAIL.indexOf("<TracePanel run={run} />");
+    const evidence = DETAIL.indexOf("<EvidencePanel run={run} />");
+    expect(comparison).toBeGreaterThan(-1);
+    expect(trace).toBeGreaterThan(comparison);
+    expect(evidence).toBeGreaterThan(trace);
+    // The gate table it used to precede is gone; the verdicts live
+    // on the candidate cards at the top of the page now.
+    expect(DETAIL).not.toContain("<GateTable");
+  });
+
+  it("keeps the headline immediately above the evidence it qualifies", () => {
+    // `ExplanationHeader`'s whole contract. A qualifier below the thing
+    // it qualifies has already been scrolled past — so this holds
+    // wherever the pair ends up, and it is the reason they move
+    // together.
     const headline = DETAIL.indexOf("<ExplanationHeader run={run} />");
     const evidence = DETAIL.indexOf("<EvidencePanel run={run} />");
-    const comparison = DETAIL.indexOf("<CandidateComparison run={run} />");
-    expect(gates).toBeGreaterThan(-1);
-    expect(headline).toBeGreaterThan(gates);
-    expect(evidence).toBeGreaterThan(headline);
-    expect(evidence).toBeLessThan(comparison);
+    expect(headline).toBeGreaterThan(-1);
+    expect(headline).toBeLessThan(evidence);
+    // *Immediately* above, and checked as such: nothing else may be
+    // rendered between them. Asserting only "before" would let a
+    // section slide in and push the caveats off the reader's screen
+    // while the test stayed green.
+    const between = DETAIL.slice(headline + "<ExplanationHeader run={run} />".length, evidence);
+    expect(between).not.toMatch(/<[A-Z]/);
+  });
+
+  it("leaves the sample banner above everything it qualifies", () => {
+    // "This run was stopped before it finished" is true of every number
+    // on the page, so it cannot sit below any of them.
+    const banner = DETAIL.indexOf("<SampleBanner run={run} />");
+    expect(banner).toBeGreaterThan(-1);
+    expect(banner).toBeLessThan(DETAIL.indexOf("<CandidateComparison run={run} />"));
   });
 });
 
@@ -245,7 +267,18 @@ describe("planned routes on the canvas", () => {
   });
 
   it("says on the canvas what the dashed line is", () => {
-    expect(en["trace.colourNote"]).toContain("dashed grey");
+    // No longer "dashed grey": the line takes a different colour at
+    // every replan, so naming one colour would describe the first plan
+    // and mislead about the rest.
+    expect(en["trace.colourNote"]).toContain("dashed line");
+    expect(en["trace.colourNote"]).not.toContain("dashed grey");
     expect(vi["trace.colourNote"]).toContain("nét đứt");
+  });
+
+  it("says the colour change means a replan", () => {
+    // Otherwise the reader sees four colours and reads them as four
+    // kinds of plan rather than four plans.
+    expect(en["trace.colourNote"]).toContain("changes colour at every replan");
+    expect(vi["trace.colourNote"]).toContain("đổi màu mỗi lần replan");
   });
 });

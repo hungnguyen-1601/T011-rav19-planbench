@@ -86,7 +86,7 @@ from planbench_decision.early_stop import (
     check_early_stop,
 )
 from planbench_decision.gates import GateReport
-from planbench_decision.objectives import DecisionSettings
+from planbench_decision.objectives import DecisionSettings, ObjectiveBreakdown
 from planbench_decision.pareto import ParetoReport, label_field
 from planbench_decision.sensitivity import (
     AnchorStability,
@@ -95,7 +95,12 @@ from planbench_decision.sensitivity import (
     anchor_stability,
     weight_stability,
 )
-from planbench_decision.stats import CandidateEvidence, Recommendation, recommend
+from planbench_decision.stats import (
+    CandidateEvidence,
+    Recommendation,
+    build_evidence,
+    recommend,
+)
 from planbench_explanation.catalog import TOOL_CATALOG_VERSION
 from planbench_explanation.detectors import DETECTOR_VERSION
 from planbench_explanation.knowledge import KNOWLEDGE_BASE_VERSION
@@ -627,6 +632,35 @@ def run_comparison(
     # entry, which is the honest answer: it was never scored.
     utility_by_candidate = {item.candidate_id: item.episode_utilities for item in evidence}
 
+    # **What every candidate achieved, gate verdict aside — for the
+    # report only.**
+    #
+    # `evidence` above is the field the *card* may consider, and it stays
+    # that way: HĐ-7 keeps "fastest" from competing with "did not
+    # collide" by never scoring an eliminated candidate at all. Nothing
+    # below reaches the card, the recommendation, or ΔU.
+    #
+    # It exists because the decision page has to show something for a
+    # deployment where nobody clears every gate — which is every
+    # deployment today — and "no number at all" leaves a reader with six
+    # pass/fail columns and no sense of how close anything came.
+    #
+    # **The same function, so this cannot become a second scale.**
+    # `build_evidence` takes metrics, contexts and anchors and never
+    # consults a gate; what differs here is only the argument list.
+    #
+    # A caveat that has to travel with these numbers, and does — see
+    # `recommendation_eligible` below and the warning the UI hangs off
+    # it: **G2 and G6 leave no trace in the utility.** Collisions are
+    # excluded from `U_S` on purpose (HĐ-6: letting them lower a score
+    # would imply they trade against speed) and no objective reflects a
+    # missing observation channel. So a candidate that collided can
+    # score *above* one that did not, and the number alone must never be
+    # read as a ranking across that line.
+    scored_all = _score_every_candidate(
+        candidates, metrics_by_candidate, profile, contexts, settings
+    )
+
     # Checks that hold whether or not a card comes out. They are the
     # ones about the *measurement*; the ΔU check needs a comparison and
     # only runs when there is one.
@@ -762,6 +796,21 @@ def run_comparison(
                 "episodes": _episode_outcomes(
                     metrics_by_candidate[candidate.candidate_id],
                     utilities=utility_by_candidate.get(candidate.candidate_id, {}),
+                ),
+                # The four objectives and the utility they add up to, for
+                # this candidate alone. `None` when it could not be
+                # scored — an objective over an empty episode set is
+                # undefined, not zero.
+                # Two reductions over the episode column, computed once
+                # here rather than in each reader. The decision page was
+                # taking the min and the median in TypeScript while the
+                # export would have taken them again in Python, and a
+                # median has a real choice in it (which way an even count
+                # rounds) that two implementations can disagree about.
+                **_episode_aggregates(metrics_by_candidate[candidate.candidate_id]),
+                **_objective_fields(
+                    scored_all.get(candidate.candidate_id),
+                    eligible=gate_reports[candidate.candidate_id].passed,
                 ),
             }
             for candidate, (_stack, local) in zip(candidates, candidate_specs, strict=True)
@@ -1247,6 +1296,101 @@ def _observation_classes(stack_id: str) -> tuple[str | None, str | None]:
             return info.global_observation_class, info.local_observation_class
     return None, None
 
+
+def _score_every_candidate(
+    candidates: Sequence[Candidate],
+    metrics_by_candidate: dict[str, list[EpisodeMetricSet]],
+    profile: TaskProfile,
+    contexts: Sequence[EpisodeContext],
+    settings: DecisionSettings,
+) -> dict[str, ObjectiveBreakdown]:
+    """Set-level objectives for every candidate that produced episodes.
+
+    Separate from `score_survivors` and named so nobody mistakes the two:
+    that one answers "who may be recommended", this one answers "what did
+    each stack achieve". Only the second is allowed to include a
+    candidate that failed a gate.
+
+    **One candidate failing to score must not cost the others.** An
+    objective over an empty episode set is undefined rather than zero, a
+    candidate with no declared target memory cannot have `U_C`, and a
+    gate-only deployment refuses ranking outright. Each of those is
+    recorded as an absence for that candidate and nothing more — a report
+    that died because one stack could not be scored would lose the other
+    nine along with it.
+    """
+    try:
+        anchors = load_anchors().resolve(profile)
+    except Exception:  # noqa: BLE001 - a deployment without anchors scores nobody
+        return {}
+
+    scored: dict[str, ObjectiveBreakdown] = {}
+    for candidate in candidates:
+        metrics = metrics_by_candidate.get(candidate.candidate_id) or []
+        if not metrics:
+            continue
+        try:
+            scored[candidate.candidate_id] = build_evidence(
+                candidate, metrics, contexts, anchors, settings
+            ).set_objectives
+        except Exception:  # noqa: BLE001 - see the docstring
+            continue
+    return scored
+
+
+def _episode_aggregates(metrics: Sequence[EpisodeMetricSet]) -> dict[str, object]:
+    """The worst clearance of the whole run, and the typical episode length.
+
+    Both are descriptive reductions rather than scored quantities — the
+    platform defines neither elsewhere — but they belong in the report
+    rather than in whoever renders it, because the page and the export
+    both want them and a number computed twice is a number that can
+    differ twice.
+
+    **The median, not the mean, for travel time.** One timeout parked at
+    the deployment's cap drags a mean by tens of seconds, and the figure
+    then describes the cap rather than the stack.
+    """
+    clearances = [m.min_clearance for m in metrics if m.min_clearance is not None]
+    times = sorted(m.travel_time_s for m in metrics if m.travel_time_s is not None)
+    median: float | None = None
+    if times:
+        middle = len(times) // 2
+        median = times[middle] if len(times) % 2 else (times[middle - 1] + times[middle]) / 2
+    return {
+        "worst_clearance_m": min(clearances) if clearances else None,
+        "median_travel_time_s": median,
+    }
+
+def _objective_fields(
+    breakdown: ObjectiveBreakdown | None, *, eligible: bool
+) -> dict[str, object]:
+    """The candidate's objectives, and whether it may be recommended.
+
+    ``recommendation_eligible`` travels beside the numbers rather than
+    being left for a reader to infer from the gate table further down.
+    It is the difference between "scored lower" and "was never in the
+    running", and on this platform those are not the same claim: a
+    candidate that collided is excluded at G2 and its collision appears
+    nowhere in the utility, so the number alone cannot be compared
+    across that line.
+    """
+    if breakdown is None:
+        return {
+            "objectives": None,
+            "decision_utility": None,
+            "recommendation_eligible": eligible,
+        }
+    return {
+        "objectives": {
+            "U_R": breakdown.u_r,
+            "U_S": breakdown.u_s,
+            "U_E": breakdown.u_e,
+            "U_C": breakdown.u_c,
+        },
+        "decision_utility": breakdown.decision_utility,
+        "recommendation_eligible": eligible,
+    }
 
 def _episode_outcomes(
     metrics: Sequence[EpisodeMetricSet],

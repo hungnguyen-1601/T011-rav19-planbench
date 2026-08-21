@@ -24,6 +24,7 @@ import { describe, expect, it } from "vitest";
 
 import en from "../../lib/i18n/locales/en.json";
 import vi from "../../lib/i18n/locales/vi.json";
+import { GATES } from "@/lib/decisions";
 
 const SRC = join(process.cwd(), "src");
 const read = (...parts: string[]) => readFileSync(join(SRC, ...parts), "utf8");
@@ -36,6 +37,9 @@ const EVIDENCE = read("components", "EvidencePanel.tsx");
 
 /** Every standing explanation, and the file that now hints it. */
 const HINTED: [string, string][] = [
+  // Moved with the gates themselves: the standalone table is gone,
+  // so the sentence explaining what the six are now sits on the
+  // gate list inside each candidate card.
   ["decisions.gates.note", DETAIL],
   ["trace.note", DETAIL],
   ["trace.colourNote", DETAIL],
@@ -111,5 +115,71 @@ describe("the one caveat that keeps a visible stub", () => {
     expect(RUNNING).toContain("compositeCaveat(point)");
     expect(en).toHaveProperty("running.composite.short");
     expect(vi).toHaveProperty("running.composite.short");
+  });
+});
+
+describe("what each gate blocks", () => {
+  // A column headed "G4" with a red cell under it says a candidate was
+  // eliminated and not by what — and the six are not interchangeable.
+  // G1 and G3 both count failures, but for different jobs on different
+  // layers of the stack; G5 and G6 can exclude a candidate that was
+  // never driven at all.
+
+  it("marks every gate on the card that lists them", () => {
+    // One list now, not two: the standalone gate table was the same
+    // six verdicts a second time.
+    expect(DETAIL.match(/decisions\.gates\.blocks\.\$\{gate\}/g)).toHaveLength(1);
+  });
+
+  it.each([...GATES])("%s has an explanation in both locales", (gate) => {
+    // Composed at runtime from the gate id, so no scan of the source
+    // would catch a missing one — the mark would render with the key
+    // as its own text and read as broken data.
+    const key = `decisions.gates.blocks.${gate}`;
+    expect(en).toHaveProperty(key);
+    expect(vi).toHaveProperty(key);
+  });
+
+  it.each([...GATES])("%s says what it blocks, not what it measures", (gate) => {
+    // The distinction the user asked for. "p99 latency" names a
+    // quantity; "blocks a planner that misses control deadlines" names
+    // the elimination, which is what a reader looking at a red cell
+    // wants.
+    const text = (en as Record<string, string>)[`decisions.gates.blocks.${gate}`];
+    expect(text.toLowerCase()).toContain("blocks");
+    expect(text.length).toBeGreaterThan(60);
+  });
+});
+
+describe("where the conclusion and the exports sit", () => {
+  it("puts the marks after the evidence that justifies them", () => {
+    const evidence = DETAIL.indexOf("<EvidencePanel run={run} />");
+    const conclusion = DETAIL.indexOf("<ConclusionPanel run={run} />");
+    expect(evidence).toBeGreaterThan(-1);
+    expect(conclusion).toBeGreaterThan(evidence);
+  });
+
+  it("puts the export buttons after the marks", () => {
+    // That is the point at which a reader knows whether this run is
+    // worth sending on. They used to sit in the page header, before
+    // anything had been read.
+    const conclusion = DETAIL.indexOf("<ConclusionPanel run={run} />");
+    const exportButtons = DETAIL.indexOf("<ExportReport runId={run.id} />");
+    expect(exportButtons).toBeGreaterThan(conclusion);
+    expect(DETAIL.indexOf("decision-detail-badges")).toBeLessThan(conclusion);
+  });
+
+  it("never takes the headline from the top of the ranking", () => {
+    // HĐ-10.1 refuses a Pareto-dominated candidate even when it leads
+    // on utility, so the winner comes from the card.
+    const panel = readFileSync(join(SRC, "components", "ConclusionPanel.tsx"), "utf8");
+    expect(panel).toContain("verdictOf(run)");
+    expect(panel).not.toContain("eligible[0].label");
+  });
+
+  it("keeps the two groups from being ranked against each other", () => {
+    const panel = readFileSync(join(SRC, "components", "ConclusionPanel.tsx"), "utf8");
+    expect(panel).toContain("const { eligible, blocked } = standings(candidates)");
+    expect(panel).toContain("is-separated");
   });
 });

@@ -1,0 +1,1237 @@
+{
+  "artifact": "comparison_report",
+  "identity": {
+    "task_profile_id": "sudden_stop_3",
+    "experiment_scope": "global_planner_selection",
+    "sensor_noise": {
+      "lidar_range_sigma_m": 0.0,
+      "wheel_slip_fraction": 0.0,
+      "localization_drift_m": 0.0,
+      "localization_jump_probability": 0.0,
+      "lidar_dropout_probability": 0.0,
+      "odometry_bias_fraction": 0.0,
+      "command_latency_steps": 0
+    },
+    "git_sha": "99e518f437684beacb1fd34c4d4296fd90b151f0",
+    "anchor_config_version": "v1.2",
+    "created_at": "2026-08-21T02:50:51.079928+00:00"
+  },
+  "sample": {
+    "n_episodes": 30,
+    "n_episodes_requested": 30,
+    "interrupted": false,
+    "n_min_required": 30,
+    "episode_context_ids": [
+      "72737e7d6959",
+      "e779a756fb25",
+      "5223e909abb3",
+      "39afc83e3fa8",
+      "770053242ce7",
+      "466819ab3f37",
+      "13c82e950f42",
+      "27bcb6e066e8",
+      "207b99729aed",
+      "705a89e38eff",
+      "e9217d0eff29",
+      "305017e8348e",
+      "32b902c98ab9",
+      "e3d90a17921a",
+      "39df20c19ebb",
+      "33b5e10d49da",
+      "0129bef895cc",
+      "98eb6a5c1d9d",
+      "4eb2310db29c",
+      "9c6a3ad6d27d",
+      "5b51025768c4",
+      "80f77f418717",
+      "001f1a4516d7",
+      "f3906482098d",
+      "48c6d6e082d9",
+      "828f23c33c4a",
+      "3a909ecd4cac",
+      "483ba490164a",
+      "525e8ba62b0c",
+      "415de4aeeec4"
+    ]
+  },
+  "early_stop": {
+    "enabled": false,
+    "min_episodes_before_stop": 30,
+    "deployment_role": "acceptance",
+    "gates_without_a_rule": {
+      "G4": "p99 gộp không đơn điệu — thêm control step có thể kéo phân vị xuống, nên 'đang vượt ngân sách' không chứng minh được 'sẽ vượt'",
+      "G6": "quyết trước episode một, trong build_candidates — không còn gì để dừng sớm"
+    },
+    "stopped": [],
+    "episodes_saved": 0
+  },
+  "candidates": [
+    {
+      "candidate_id": "e1251e42a20b",
+      "stack_label": "astar+dwa",
+      "local_controller_config": "dwa_coarse",
+      "components": {
+        "global_planner": "astar",
+        "local_controller": "dwa",
+        "local_controller_config": "dwa_coarse"
+      },
+      "global_observation_class": "full_static_map",
+      "local_observation_class": "lidar_only",
+      "n_episodes": 30,
+      "stopped_early": null,
+      "gates": {
+        "candidate_id": "e1251e42a20b",
+        "G1": "pass",
+        "G2": {
+          "result": "fail",
+          "observed": 0,
+          "n_runs": 30,
+          "n_distinct_episodes": 1,
+          "upper_bound_95": 3.0,
+          "n_min": 30,
+          "statement": "0 va chạm quan sát trong 1 lần chạy phân biệt; cận trên 95% dưới phân phối kịch bản đã mô phỏng: 300.0%",
+          "note": "chỉ 1 lần chạy phân biệt trên 30 episode, dưới N_min = 30 = ceil(3 / 0.1); cận trên 300.0% còn lỏng hơn mức rủi ro đã khai"
+        },
+        "G3": "pass",
+        "G4": {
+          "result": "pass",
+          "status": "screened_on_host",
+          "p99_ms": 10.338992000151848,
+          "threshold_ms": 50.0,
+          "caveat": "G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"
+        },
+        "G5": {
+          "result": "pass",
+          "status": "estimated_from_structure",
+          "memory_estimate_mb": 8.007484436035156,
+          "available_ram_mb": 3277.0,
+          "peak_rss_mb_diagnostic": 232.71875,
+          "note": "ước lượng từ bộ đếm cấu trúc dữ liệu nhân kích thước byte của hiện thực đích; pha sàng lọc là điều kiện cần — vượt ngân sách thì chắc chắn không vừa, không vượt thì chưa kết luận được điều ngược lại",
+          "target_implementation": "cpp_ros2",
+          "bytes_per_search_node": 40,
+          "peak_search_nodes": 45
+        },
+        "G6": "pass"
+      },
+      "cleared_gates": false,
+      "blocking_gates": [
+        "G2"
+      ],
+      "n_distinct_episodes": 1,
+      "success_rate": 1.0,
+      "pooled_p99_latency_ms": 10.338992000151848,
+      "replan_count": 30,
+      "episodes": [
+        {
+          "episode_context_id": "72737e7d6959",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 11.098555999888049,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "e779a756fb25",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 9.705323999769462,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "5223e909abb3",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 10.108720000243919,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "39afc83e3fa8",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 10.258964000204287,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "770053242ce7",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 11.768284000099811,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "466819ab3f37",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 11.37667200062424,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "13c82e950f42",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 9.99482000057469,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "27bcb6e066e8",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 10.487143999853288,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "207b99729aed",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 7.688232000073183,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "705a89e38eff",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 6.81161599975894,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "e9217d0eff29",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 5.244519999869226,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "305017e8348e",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 5.107619999653252,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "32b902c98ab9",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 4.880799999846204,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "e3d90a17921a",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 3.952787999987777,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "39df20c19ebb",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 3.7523720005992796,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "33b5e10d49da",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 3.7966959995537763,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "0129bef895cc",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 4.01735599978565,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "98eb6a5c1d9d",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 3.8783520001379657,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "4eb2310db29c",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 3.6261959998591915,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "9c6a3ad6d27d",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 4.475068000429019,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "5b51025768c4",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 9.571160000123198,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "80f77f418717",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 6.893515999763622,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "001f1a4516d7",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 4.707539999944856,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "f3906482098d",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 16.253244000290568,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "48c6d6e082d9",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 8.163891999975021,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "828f23c33c4a",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 12.718716000126733,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "3a909ecd4cac",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 8.2101479998164,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "483ba490164a",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 9.51445999966381,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "525e8ba62b0c",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 9.797388000042702,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "415de4aeeec4",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.4943384921772441,
+          "travel_time_s": 22.80000000000019,
+          "p99_latency_ms": 9.495512000175948,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        }
+      ],
+      "objectives": {
+        "U_R": 1.0,
+        "U_S": 1.0,
+        "U_E": 0.5853655318681057,
+        "U_C": 0.9532565789473684
+      },
+      "decision_utility": 0.8799811855986054,
+      "recommendation_eligible": false
+    },
+    {
+      "candidate_id": "29cdf6266a44",
+      "stack_label": "rrtstar+dwa",
+      "local_controller_config": "dwa_coarse",
+      "components": {
+        "global_planner": "rrtstar",
+        "local_controller": "dwa",
+        "local_controller_config": "dwa_coarse"
+      },
+      "global_observation_class": "full_static_map",
+      "local_observation_class": "lidar_only",
+      "n_episodes": 30,
+      "stopped_early": null,
+      "gates": {
+        "candidate_id": "29cdf6266a44",
+        "G1": "pass",
+        "G2": {
+          "result": "pass",
+          "observed": 0,
+          "n_runs": 30,
+          "n_distinct_episodes": 30,
+          "upper_bound_95": 0.1,
+          "n_min": 30,
+          "statement": "0 va chạm quan sát trong 30 lần chạy phân biệt; cận trên 95% dưới phân phối kịch bản đã mô phỏng: 10.0%",
+          "note": "dưới phân phối kịch bản đã mô phỏng"
+        },
+        "G3": "fail",
+        "G4": {
+          "result": "fail",
+          "status": "screened_on_host",
+          "p99_ms": 941.1359800007651,
+          "threshold_ms": 50.0,
+          "caveat": "G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"
+        },
+        "G5": {
+          "result": "pass",
+          "status": "estimated_from_structure",
+          "memory_estimate_mb": 8.096900939941406,
+          "available_ram_mb": 3277.0,
+          "peak_rss_mb_diagnostic": 224.84765625,
+          "note": "ước lượng từ bộ đếm cấu trúc dữ liệu nhân kích thước byte của hiện thực đích; pha sàng lọc là điều kiện cần — vượt ngân sách thì chắc chắn không vừa, không vượt thì chưa kết luận được điều ngược lại",
+          "target_implementation": "cpp_ros2",
+          "bytes_per_search_node": 40,
+          "peak_search_nodes": 0
+        },
+        "G6": "pass"
+      },
+      "cleared_gates": false,
+      "blocking_gates": [
+        "G3",
+        "G4"
+      ],
+      "n_distinct_episodes": 30,
+      "success_rate": 0.5333333333333333,
+      "pooled_p99_latency_ms": 941.1359800007651,
+      "replan_count": 291,
+      "episodes": [
+        {
+          "episode_context_id": "72737e7d6959",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.1546295169954467,
+          "travel_time_s": 40.29999999999985,
+          "p99_latency_ms": 11.676544000110876,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2367,
+          "replan_count": 7,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "e779a756fb25",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.13996349061464564,
+          "travel_time_s": 32.250000000000306,
+          "p99_latency_ms": 11.079314999869888,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2332,
+          "replan_count": 2,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "5223e909abb3",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.1129163889084418,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 2101.6333999996277,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2385,
+          "replan_count": 17,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "39afc83e3fa8",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.11285145953695863,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 2125.652100001389,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2349,
+          "replan_count": 17,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "770053242ce7",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.12208920924730071,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 2368.5970999995334,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2364,
+          "replan_count": 17,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "466819ab3f37",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.16304962773047316,
+          "travel_time_s": 40.94999999999981,
+          "p99_latency_ms": 10.392608000174711,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2378,
+          "replan_count": 7,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "13c82e950f42",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.13522951756688317,
+          "travel_time_s": 33.35000000000024,
+          "p99_latency_ms": 8.337881000243216,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2373,
+          "replan_count": 2,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "27bcb6e066e8",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.13741293760743833,
+          "travel_time_s": 31.550000000000313,
+          "p99_latency_ms": 6.56026000002383,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2355,
+          "replan_count": 2,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "207b99729aed",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.1527209341553939,
+          "travel_time_s": 41.1499999999998,
+          "p99_latency_ms": 14.19022000030052,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2357,
+          "replan_count": 7,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "705a89e38eff",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.1174367444589749,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 1054.4385000002876,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2337,
+          "replan_count": 17,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "e9217d0eff29",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.15443050352178134,
+          "travel_time_s": 40.04999999999986,
+          "p99_latency_ms": 11.904841999839858,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2363,
+          "replan_count": 6,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "305017e8348e",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.1429889127674363,
+          "travel_time_s": 30.950000000000305,
+          "p99_latency_ms": 6.900394000176674,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2373,
+          "replan_count": 2,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "32b902c98ab9",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.12266111124352308,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 1017.3959000003379,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2361,
+          "replan_count": 17,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "e3d90a17921a",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.1363480215398516,
+          "travel_time_s": 31.500000000000313,
+          "p99_latency_ms": 4.278029999659341,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2353,
+          "replan_count": 2,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "39df20c19ebb",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.1153697514904517,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 1032.4289999998655,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2351,
+          "replan_count": 17,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "33b5e10d49da",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.11058756054366647,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 993.9665000001696,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2335,
+          "replan_count": 17,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "0129bef895cc",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.12355212015314054,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 994.6591999996599,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2389,
+          "replan_count": 17,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "98eb6a5c1d9d",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.15535732979809924,
+          "travel_time_s": 44.79999999999959,
+          "p99_latency_ms": 6.3912719995278096,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2344,
+          "replan_count": 7,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "4eb2310db29c",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.1130435430587805,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 918.2330000003276,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2342,
+          "replan_count": 17,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "9c6a3ad6d27d",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.13080850385113607,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 974.6709000000919,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2337,
+          "replan_count": 17,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "5b51025768c4",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.11703597111890895,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 1036.0333000007813,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2354,
+          "replan_count": 13,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "80f77f418717",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.11745868222797506,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 1161.1564000004364,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2374,
+          "replan_count": 17,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "001f1a4516d7",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.12777409073619106,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 1057.1492999997645,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2349,
+          "replan_count": 17,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "f3906482098d",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.1391339937986954,
+          "travel_time_s": 32.20000000000031,
+          "p99_latency_ms": 9.336548000064784,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2342,
+          "replan_count": 2,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "48c6d6e082d9",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.13761179724891437,
+          "travel_time_s": 30.6500000000003,
+          "p99_latency_ms": 8.060178999612617,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2386,
+          "replan_count": 2,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "828f23c33c4a",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.12053127353963888,
+          "travel_time_s": 59.99999999999873,
+          "p99_latency_ms": 1166.7940000006638,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2356,
+          "replan_count": 17,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "3a909ecd4cac",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.1419942770743553,
+          "travel_time_s": 30.400000000000297,
+          "p99_latency_ms": 7.980263999816088,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2344,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "483ba490164a",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.139063301846314,
+          "travel_time_s": 30.850000000000303,
+          "p99_latency_ms": 8.583917999831112,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2369,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "525e8ba62b0c",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.15471914400315834,
+          "travel_time_s": 39.74999999999988,
+          "p99_latency_ms": 17.175880000786453,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2377,
+          "replan_count": 6,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "415de4aeeec4",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.13850887122831912,
+          "travel_time_s": 30.850000000000303,
+          "p99_latency_ms": 9.306564999724324,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2331,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        }
+      ],
+      "objectives": {
+        "U_R": 0.0,
+        "U_S": 0.25559478125719837,
+        "U_E": 0.4473485169537303,
+        "U_C": 0.5
+      },
+      "decision_utility": 0.3123966073641524,
+      "recommendation_eligible": false
+    }
+  ],
+  "measurement_environment": {
+    "benchmark_host": {
+      "cpu": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+      "cores_allocated": 20,
+      "threads": 1,
+      "cpu_affinity": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ],
+      "logical_cores": 20,
+      "affinity_source": null
+    },
+    "warning": "Đo trên toàn bộ 20 nhân, không ghim: G4 đọc độ trễ theo đồng hồ tường nên mọi tải khác trên máy đi thẳng vào con số. Cùng candidate đo được 59,30 ms không ghim và 16,10 ms khi ghim 2 nhân"
+  },
+  "run_uri": "file://e:\\VinAI\\RoboMind_project\\P-011\\artifacts\\runs\\2026-08-21\\sudden_stop_3_global_planner_selection_c9cf7ea4",
+  "run_checksum": "b3fdd3debae10ce1cc7958880ff245297df9d2ec18d0f55cf2cc4ff832f2280b",
+  "decision_card": null,
+  "manifest": null,
+  "gate_only_deployment": null,
+  "why_no_card": "chỉ 0/2 candidate qua đủ sáu cổng, nên không có ΔU để tính và không có Decision Card để viết. Đây là một KẾT QUẢ, không phải lỗi: bảng cổng đã trả lời ai bị loại ở đâu sau bao nhiêu lần chạy. Lối ra hợp lệ là ĐĂNG KÝ MỘT CANDIDATE MỚI, không phải nới deployment",
+  "checks": [
+    "all 2 candidates still in the run ran the same 30 episode contexts",
+    "all six gates reported for 2 candidates, with N",
+    "L_ref ≤ path_length + goal tolerance on all 46 successful episodes",
+    "peak_search_nodes ≤ costmap_cells on every episode"
+  ],
+  "case_packet": {
+    "packet": {
+      "header": {
+        "source_manifest_ref": "comparison_report.json",
+        "source_manifest_checksum": "b7c66e79b05421a968c834d998ef173214e10914cea7ee8f505787dd953dfc11",
+        "explanation_schema_version": "0.1.0",
+        "promotion_matrix_version": "0.1.0",
+        "detector_version": "0.1.0",
+        "knowledge_base_version": "v1.0.0",
+        "tool_catalog_version": "3.0.0"
+      },
+      "run_id": "sudden_stop_3_global_planner_selection_c9cf7ea4",
+      "task": {
+        "task_profile_id": "sudden_stop_3",
+        "robot": {
+          "radius_m": 0.26,
+          "inflation_margin_m": 0.0,
+          "required_passage_width_m": 0.52
+        },
+        "route": null
+      },
+      "candidates": [
+        {
+          "candidate_id": "e1251e42a20b",
+          "global_planner": "astar",
+          "local_controller": "dwa",
+          "local_controller_config": "dwa_coarse"
+        },
+        {
+          "candidate_id": "29cdf6266a44",
+          "global_planner": "rrtstar",
+          "local_controller": "dwa",
+          "local_controller_config": "dwa_coarse"
+        }
+      ],
+      "decision": {
+        "status": "NO_DECISION_CARD",
+        "waterfall": null,
+        "gates": {
+          "e1251e42a20b": {
+            "passed": false
+          },
+          "29cdf6266a44": {
+            "passed": false
+          }
+        }
+      },
+      "lattice": [
+        {
+          "detection_type": "detour",
+          "verdict": "insufficient_contrast",
+          "subject": null,
+          "pairs": [],
+          "reason": "the pattern appeared in no candidate that a swap could compare"
+        },
+        {
+          "detection_type": "stuck_cluster",
+          "verdict": "rules_out_component_specific_attribution",
+          "subject": "global_planner",
+          "pairs": [
+            [
+              "29cdf6266a44",
+              "e1251e42a20b"
+            ]
+          ],
+          "reason": "the pattern is present on both sides of a global_planner swap, so that component is not what produces it. This does not show that the component they share does: task geometry, the costmap, the shared providers and the interaction between layers all produce shared patterns"
+        },
+        {
+          "detection_type": "near_miss_cluster",
+          "verdict": "supports_component_specific_attribution",
+          "subject": "global_planner",
+          "pairs": [
+            [
+              "29cdf6266a44",
+              "e1251e42a20b"
+            ]
+          ],
+          "reason": "the pattern follows global_planner across every pair that changes only that component, it is the only component it follows, and every other part of the stack was held fixed"
+        },
+        {
+          "detection_type": "replan_storm",
+          "verdict": "supports_component_specific_attribution",
+          "subject": "global_planner",
+          "pairs": [
+            [
+              "29cdf6266a44",
+              "e1251e42a20b"
+            ]
+          ],
+          "reason": "the pattern follows global_planner across every pair that changes only that component, it is the only component it follows, and every other part of the stack was held fixed"
+        },
+        {
+          "detection_type": "oscillation",
+          "verdict": "insufficient_contrast",
+          "subject": null,
+          "pairs": [],
+          "reason": "the pattern appeared in no candidate that a swap could compare"
+        },
+        {
+          "detection_type": "latency_spike",
+          "verdict": "rules_out_component_specific_attribution",
+          "subject": "global_planner",
+          "pairs": [
+            [
+              "29cdf6266a44",
+              "e1251e42a20b"
+            ]
+          ],
+          "reason": "the pattern is present on both sides of a global_planner swap, so that component is not what produces it. This does not show that the component they share does: task geometry, the costmap, the shared providers and the interaction between layers all produce shared patterns"
+        },
+        {
+          "detection_type": "narrow_gap_refusal",
+          "verdict": "insufficient_contrast",
+          "subject": null,
+          "pairs": [],
+          "reason": "the pattern appeared in no candidate that a swap could compare"
+        }
+      ],
+      "observations": [
+        {
+          "type": "latency_spike",
+          "candidate_id": "29cdf6266a44",
+          "episodes_seen": 30,
+          "episodes_total": 30,
+          "typical": {
+            "peak_latency_ms": 1258.51319999947,
+            "ticks": 4.0
+          },
+          "worst_episode_context_id": "27bcb6e066e8"
+        },
+        {
+          "type": "near_miss_cluster",
+          "candidate_id": "29cdf6266a44",
+          "episodes_seen": 24,
+          "episodes_total": 30,
+          "typical": {
+            "min_clearance_m": 0.1256631054446658,
+            "samples": 156.5
+          },
+          "worst_episode_context_id": "33b5e10d49da"
+        },
+        {
+          "type": "replan_storm",
+          "candidate_id": "29cdf6266a44",
+          "episodes_seen": 20,
+          "episodes_total": 30,
+          "typical": {
+            "replans": 4.0
+          },
+          "worst_episode_context_id": "e9217d0eff29"
+        },
+        {
+          "type": "stuck_cluster",
+          "candidate_id": "29cdf6266a44",
+          "episodes_seen": 30,
+          "episodes_total": 30,
+          "typical": {
+            "stopped_seconds": 21.92500000000031,
+            "stops": 1.0
+          },
+          "worst_episode_context_id": "80f77f418717"
+        },
+        {
+          "type": "latency_spike",
+          "candidate_id": "e1251e42a20b",
+          "episodes_seen": 2,
+          "episodes_total": 30,
+          "typical": {
+            "peak_latency_ms": 112.46725000000879,
+            "ticks": 1.5
+          },
+          "worst_episode_context_id": "466819ab3f37"
+        },
+        {
+          "type": "stuck_cluster",
+          "candidate_id": "e1251e42a20b",
+          "episodes_seen": 30,
+          "episodes_total": 30,
+          "typical": {
+            "stopped_seconds": 3.800000000000045,
+            "stops": 1.0
+          },
+          "worst_episode_context_id": "f3906482098d"
+        }
+      ],
+      "representative_episodes": null,
+      "known_unknowns": [
+        {
+          "id": "latency_accounting_unavailable",
+          "blocks_claim_types": [
+            "candidate_latency_attribution",
+            "perception_attribution"
+          ],
+          "source": "h4_not_complete"
+        },
+        {
+          "id": "ppo_golden_runtime_missing",
+          "blocks_claim_types": [
+            "ppo_behavior_attribution"
+          ],
+          "source": "h0_debt"
+        }
+      ],
+      "evidence_class": "production"
+    },
+    "skipped_episodes": [],
+    "omissions": [
+      "decision.waterfall: this run ranked nobody, so there is no pair to decompose and no exemplar roles to fill. The sightings and the gate table are what this run has to say."
+    ]
+  }
+}

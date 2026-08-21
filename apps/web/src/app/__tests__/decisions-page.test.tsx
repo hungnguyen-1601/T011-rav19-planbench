@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import en from "../../lib/i18n/locales/en.json";
+import { comparisonRows } from "@/lib/candidateMetrics";
 import vi from "../../lib/i18n/locales/vi.json";
 import { NAV_SECTIONS } from "../../lib/navigation";
 
@@ -101,8 +102,23 @@ describe("the list shows every run, not only the ones that ranked", () => {
 
 describe("the detail page leads with the gate table", () => {
   it("renders the gate table above the outcome", () => {
-    expect(DETAIL.indexOf("<GateTable")).toBeGreaterThan(-1);
-    expect(DETAIL.indexOf("<GateTable")).toBeLessThan(DETAIL.indexOf("<Outcome"));
+    // There is no gate table any more. Every candidate has a card
+    // carrying G1–G6 and its blocking list, and the comparison table
+    // under the cards carries the numbers the table held — for all
+    // of them, not the first two.
+    expect(DETAIL).not.toContain("<GateTable");
+    // The metrics are one table inside the comparison section: names
+    // down a column, candidates across, so a comparison is a glance
+    // along a row. The cards above carry no metric rows — that overlap
+    // is what made an earlier version of this table redundant.
+    // One grid: a neutral gutter of metric names, then one tinted
+    // column per candidate carrying its identity, its values and its
+    // gate verdicts. No metric appears twice.
+    expect(DETAIL).toContain('className="comparison-grid"');
+    expect(DETAIL).toContain("comparison-gutter comparison-label");
+    expect(DETAIL).not.toContain("<MetricTable");
+    expect(DETAIL).not.toContain("metric-comparison-row");
+    expect(DETAIL.indexOf("<CandidateComparison")).toBeLessThan(DETAIL.indexOf("<Outcome"));
   });
 
   it("renders all six gates for every candidate, in contract order", () => {
@@ -115,8 +131,18 @@ describe("the detail page leads with the gate table", () => {
        hundred replays of one episode is one independent sample, and
        printing only the run count is how this project once published a
        3.0% upper bound off a single episode driven a hundred times. */
-    expect(DETAIL).toContain("n_distinct_episodes");
-    expect(DETAIL).toContain("decisions.gates.distinctNote");
+    // The gate table carried this in a tooltip; it is a row of the
+    // comparison table now, with the same point spelled out in the
+    // hint beside it rather than hidden on hover over a header.
+    // Asserted against the module that defines the row, not the page:
+    // the page interpolates `decisions.compare.${metric.key}`, so it
+    // never spells any metric name and a source scan of it would pass
+    // with the row deleted.
+    expect(
+      comparisonRows([]).map((row) => row.key),
+    ).toContain("distinctEpisodes");
+    expect(en).toHaveProperty("decisions.compare.distinctEpisodes");
+    expect((en as Record<string, string>)["decisions.compare.why.distinctEpisodes"]).toContain("once per seed");
   });
 
   it("carries each gate's evidence, not only its verdict", () => {
@@ -199,41 +225,49 @@ describe("a Decision Card is shown with its caveats attached", () => {
   });
 });
 
-describe("the conditions the measurement happened in travel with it", () => {
-  it("shows the noise amplitudes", () => {
-    /* `episode_context_id` does not hash them (HĐ-3.1): two runs at the
-       same seeds under different sigma have identical context ids and
-       are two different experiments. If this panel is wrong, nothing
-       downstream can tell. */
-    expect(DETAIL).toContain("sensor_noise");
+describe("what the removed panels took with them", () => {
+  /* An asked for three panels to go for now: the measurement
+     environment, the ids for rebuilding a run, and the journal of who
+     read it. Their tests go with them rather than being re-aimed at
+     nothing — the assertions were about markup that is no longer
+     rendered, and a test kept alive against a deleted feature is a test
+     that will be "fixed" by somebody who does not know why it existed.
+
+     Git holds the components. What follows is the one thing that could
+     not leave with them. */
+
+  it("keeps the unpinned-machine warning, above the number it qualifies", () => {
+    /* G4 reads wall-clock latency, so an unpinned run measured a machine
+       that was also doing something else — the same candidate came out
+       at 59.30 ms unpinned and 16.10 ms pinned to two cores. The
+       comparison grid shows pooled p99 against the deployment's limit,
+       and a figure that may be several times too high is worse company
+       for a limit than no figure would be. */
+    expect(DETAIL).toContain("<HostWarning run={run} />");
+    expect(DETAIL).toContain("measurement_environment?.warning");
   });
 
-  it("surfaces the unpinned-machine warning instead of leaving it in a log", () => {
-    expect(DETAIL).toContain("environment?.warning");
+  it("puts it with the other finding that qualifies the whole grid", () => {
+    const observation = DETAIL.indexOf("<ObservationNotice");
+    const host = DETAIL.indexOf("<HostWarning");
+    const grid = DETAIL.indexOf('className="comparison-grid"');
+    expect(host).toBeGreaterThan(observation);
+    expect(host).toBeLessThan(grid);
   });
 
-  it("shows the trace checksum beside the run URI", () => {
-    /* A URI alone cannot say the files behind it are still the ones this
-       result came from — that is what the checksum is for (D15). */
-    expect(DETAIL).toContain("run_uri");
-    expect(DETAIL).toContain("run_checksum");
+  it("renders the platform's sentence rather than one of its own", () => {
+    /* The platform writes this when it knows the run was not pinned. A
+       client that reworded it could water it down. */
+    expect(DETAIL).toContain("{warning}");
+  });
+
+  it("stops fetching the journal it no longer draws", () => {
+    /* A request whose response nothing reads is a request that keeps
+       working long after it stops meaning anything. */
+    expect(DETAIL).not.toContain("listDecisionEvents");
   });
 });
 
-describe("the audit trail", () => {
-  it("shows both ends of every change", () => {
-    /* "approved" alone does not say what it replaced. */
-    expect(DETAIL).toContain("previous_state");
-    expect(DETAIL).toContain("new_state");
-  });
-
-  it("orders by sequence, not by timestamp", () => {
-    /* Two acts can share a clock reading, and "who decided first" is
-       exactly what an audit trail is asked. The server orders by
-       sequence; the page must not re-sort. */
-    expect(DETAIL).not.toContain("sort(");
-  });
-});
 
 describe("the page is reachable and translated", () => {
   it("has a sidebar entry", () => {
@@ -654,16 +688,42 @@ describe("which episodes failed, and how", () => {
     expect(DETAIL).toContain('event.key === "Enter" || event.key === " "');
   });
 
-  it("uses the same episode state for the table, dropdown, and pair load", () => {
-    expect(DETAIL).toContain('const [episodeId, setEpisodeId]');
-    expect(DETAIL).toContain('selectedEpisode={episodeId}');
-    expect(DETAIL).toContain('value={episodeId}');
-    expect(DETAIL).toContain('void loadPair(episodeId)');
-    expect(DETAIL).not.toContain('const [candidateId, setCandidateId]');
+  it("drives every episode picker from one piece of state", () => {
+    // The dropdown is gone — it listed ids and nothing else, so picking
+    // from it was picking blind. What remains are the table rows, the
+    // exemplar chips and the pager, and they must all read and write
+    // the same selection or the canvases will show a different episode
+    // than the table highlights.
+    expect(DETAIL).toContain("const [episodeId, setEpisodeId]");
+    expect(DETAIL).toContain("selectedEpisode={episodeId}");
+    expect(DETAIL).toContain("void loadPair(episodeId)");
+    expect(DETAIL).not.toContain("const [candidateId, setCandidateId]");
+  });
+
+  it("no longer offers an id-only dropdown", () => {
+    const toolbar = DETAIL.slice(DETAIL.indexOf('className="episode-toolbar"'));
+    expect(toolbar.slice(0, 600)).not.toContain("<select");
+  });
+
+  it("pages the episode table instead of listing every row", () => {
+    // Three hundred episodes would otherwise make the table the page.
+    expect(DETAIL).toContain("<EpisodePager");
+    expect(DETAIL).toContain("pageSlice(shown, current)");
+    expect(DETAIL).toContain("clampPage(page, shown.length)");
+  });
+
+  it("follows the selection onto its page", () => {
+    // Exemplar chips move the episode from outside the table; leaving
+    // the strip where it was highlights nothing and reads as the pick
+    // not registering.
+    expect(DETAIL).toContain("setPage(pageOf(index))");
   });
 
   it("keeps candidate A left, candidate B right and tolerates one missing trace", () => {
-    expect(DETAIL).toContain('side={index === 0 ? "a" : "b"}');
+    // The pair colours still only cover two; past that the column is
+    // neutral rather than reusing candidate A's blue for candidate C.
+    expect(DETAIL).toContain('candidate-${SIDES[index] ?? "n"}');
+    expect(DETAIL).toContain('const SIDES = ["a", "b"] as const');
     expect(DETAIL).toContain('{ state: "missing" }');
     expect(DETAIL).toContain('slot.state === "ready"');
     expect(DETAIL).toContain('trace.missing');

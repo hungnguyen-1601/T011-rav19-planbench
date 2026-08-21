@@ -30,6 +30,19 @@ const MARKDOWN = readFileSync(
   "utf8",
 );
 
+// What an export *says* moved out of the Markdown renderer when Excel
+// became a second format: one module decides every value, and the two
+// renderers only decide where it sits. The assertions below are about
+// content, so they read that module.
+const EXPORT = readFileSync(
+  join(process.cwd(), "..", "api", "planbench_api", "decision_export.py"),
+  "utf8",
+);
+const WORKBOOK = readFileSync(
+  join(process.cwd(), "..", "api", "planbench_api", "decision_xlsx.py"),
+  "utf8",
+);
+
 describe("the export is a fetch, never a link", () => {
   it("sends the token in a header instead of in the URL", () => {
     /* A plain <a href> cannot send an Authorization header, so it would
@@ -47,7 +60,12 @@ describe("the export is a fetch, never a link", () => {
   });
 
   it("takes a path so the mechanism outlived the flow it was written for", () => {
-    expect(REPORTS).toContain("downloadReportMarkdown(path: string, fallbackName: string)");
+    // Renamed when it stopped being Markdown-only: a helper whose name
+    // says Markdown while it serves .xlsx is a lie nothing ever fails on.
+    expect(REPORTS).toContain("downloadReport(path: string, fallbackName: string)");
+    // The old name may still be named in a comment explaining the
+    // rename; what must be gone is the function.
+    expect(REPORTS).not.toContain("function downloadReportMarkdown");
     expect(REPORTS).toContain("export function downloadDecisionReport(");
   });
 });
@@ -69,7 +87,11 @@ describe("every run can be exported, not only the ranked ones", () => {
 
   it("renders the no-card case as a section rather than refusing", () => {
     expect(MARKDOWN).toContain("## No Decision Card");
-    expect(MARKDOWN).toContain("gate_only_deployment");
+    expect(EXPORT).toContain("gate_only_deployment");
+    // And the workbook too — a run that ranked nobody is the
+    // ordinary outcome, so it must not be the one that cannot be
+    // handed to a reviewer in either format.
+    expect(WORKBOOK).toContain("No Decision Card");
   });
 });
 
@@ -78,17 +100,21 @@ describe("the document keeps the caveats attached to the numbers", () => {
     /* HĐ-12 defines null that way, and a blank cell in a Markdown table
        reads as reassurance — worse on paper than on screen, because the
        reader cannot ask. */
-    expect(MARKDOWN).toContain('NOT_MEASURED = "not measured"');
+    expect(EXPORT).toContain('NOT_MEASURED = "not measured"');
+    // Sharper in a spreadsheet: a blank cell sorts to the top, sums
+    // as zero, and averages as though it had been measured.
+    expect(WORKBOOK).toContain("never as a blank");
     expect(MARKDOWN).toContain("None of the sensitivity margins were measured");
   });
 
   it("carries the recommendation's scope with the recommendation", () => {
     expect(MARKDOWN).toContain("HĐ-1.4");
+    expect(WORKBOOK).toContain("HĐ-1.4");
     expect(MARKDOWN).toContain("and to nothing else");
   });
 
   it("names every candidate retired early, with the sample it actually got", () => {
-    expect(MARKDOWN).toContain("def _stopped_early(");
+    expect(EXPORT).toContain("def retired_candidates(");
     expect(MARKDOWN).toContain("rest on fewer episodes");
   });
 

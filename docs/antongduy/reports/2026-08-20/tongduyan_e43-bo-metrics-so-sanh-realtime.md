@@ -665,3 +665,434 @@ chính khoá.
 Dọn kèm: 4 rule CSS chết, 1 khoá i18n chết.
 
 **Test:** 1214 passed (web), `tsc` sạch.
+
+---
+
+## 18. Mỗi gate một dấu hỏi: nó đang chặn cái gì
+
+An: cạnh mỗi gate G1–G6 một dấu `?` giải thích gate đó **đang chặn điều gì**.
+
+Chữ viết ra từ **docstring của chính từng gate** trong
+`packages/decision/planbench_decision/gates.py`, không viết theo trí nhớ. Điểm nhấn là
+"chặn cái gì" chứ không phải "đo cái gì" — một cột đề "G4" với ô đỏ bên dưới nói rằng
+candidate bị loại, mà **không nói bị loại vì gì**:
+
+| Gate | Chặn |
+|---|---|
+| G1 | planner quá thường xuyên **không tìm ra tuyến nào** — tách khỏi G3 vì không tìm được tuyến và tuyến không trụ nổi trước giao thông là hai việc, sửa ở hai tầng |
+| G2 | **mọi va chạm** — và cả bảng sạch dựa trên quá ít lần chạy *phân biệt*: 0 va chạm trong 10 lần vẫn tương thích với tỉ lệ 26% |
+| G3 | quá nhiều episode **không tới đích**, bất kể hỏng kiểu gì |
+| G4 | planner **trễ deadline điều khiển**; đo trên máy benchmark, không có hệ số quy đổi sang board đích |
+| G5 | stack **không vừa ngân sách RAM** của board; ước lượng từ cấu trúc dữ liệu ở kích thước bản cài đặt đích, không lấy RSS Python |
+| G6 | candidate **cần một loại quan sát deployment không cấp** — quyết trước khi chạy episode nào |
+
+Gắn ở cả hai chỗ bảng gate xuất hiện: header bảng đầy đủ và danh sách gọn trong thẻ
+candidate.
+
+**Test:** khoá được đúng thứ dễ trượt — key dựng lúc chạy từ id gate
+(`` `decisions.gates.blocks.${gate}` ``), nên **không có phép quét source nào bắt được
+thiếu một cái**; thiếu thì dấu `?` sẽ hiện ra chính cái key và đọc thành dữ liệu hỏng.
+Test duyệt `GATES` và đòi cả hai locale, cộng một test đòi câu chữ nói "blocks". 1227
+passed (web), `tsc` sạch.
+
+---
+
+## 19. Ghi chú vận hành: `dev_stack.sh restart` không chạy được trên Windows
+
+An yêu cầu từ nay xong thay đổi thì tự restart FE + BE. Lần đầu làm thì phát hiện:
+
+```
+$ bash scripts/dev_stack.sh restart
+Stopping PlanBench
+ERROR: setsid is missing inside WSL.
+```
+
+`setsid` là lệnh Linux; Git Bash trên Windows không có. Điều đáng nói không phải là nó
+lỗi, mà là **thứ tự**: `stop` chạy xong rồi `start` mới gãy, nên lệnh này để lại stack
+**đang tắt** — tệ hơn là không chạy gì.
+
+Thêm nữa, `stop` cũng chỉ dừng nửa vời: tiến trình web cũ vẫn giữ cổng 3000 và trả 500,
+khiến `next dev` mới nhảy sang 3001 — trình duyệt ở 3000 sẽ thấy một trang hỏng chứ
+không phải trang mới.
+
+Đã xử lý tay: kill PID giữ 3000 và 8000 cũ, khởi động lại
+`.venv/Scripts/python scripts/serve.py --reload` và `npm run dev`. Hiện API 8000 và web
+3000 đều trả 200.
+
+**Chưa sửa `dev_stack.sh`** — nằm ngoài phạm vi An giao và là script dùng chung. Nếu An
+muốn thì sửa được: thay `setsid` bằng nhánh dùng `start //b` trên Windows, và để `stop`
+chỉ chạy khi `start` chắc chắn có đường chạy.
+
+---
+
+## 20. Sắp lại trang, bỏ bảng gate, phân trang episode
+
+### 20.1 Thứ tự mới
+
+```
+SampleBanner → Comparison result → Watch an episode
+             → Explanation + Evidence → Gates → phần còn lại
+```
+
+Hai vị trí giữ nguyên vì là **lập luận chứ không phải sở thích**, và có test riêng:
+`SampleBanner` đứng đầu (nó phủ định mọi con số bên dưới), và `ExplanationHeader` **ngay
+trên** `EvidencePanel` — test cắt đoạn giữa hai component và đòi không có component nào
+chen vào, chứ không chỉ đòi "đứng trước".
+
+### 20.2 Bỏ bảng gate — nhưng nó mang hai thứ thẻ so sánh không có
+
+An: thẻ comparison đã liệt kê gate rồi. Đúng — thẻ có đủ G1–G6, danh sách gate chặn,
+success rate, p99, số run phân biệt, replan. Bảng lặp lại tất cả một lần nữa.
+
+Nhưng bỏ hẳn thì mất hai thứ:
+
+- **`ObservationNotice`** — cảnh báo hai candidate được cho xem thứ khác nhau. Đó là
+  một **phát hiện về tính công bằng**: ΔU khi đó đo đặc quyền chứ không đo planner. Đã
+  **chuyển sang đầu khối comparison**, không để nó rơi theo bảng mà nó tình cờ nằm trong.
+- **Candidate thứ 3 trở đi.** Thẻ comparison chỉ vẽ `candidates.slice(0, 2)`. Với run 3
+  candidate, bảng gate là **chỗ duy nhất** những cái còn lại xuất hiện — bỏ đi là mất
+  hẳn khỏi trang, không dấu vết.
+
+Nên: bảng chỉ còn render khi **> 2 candidate**. Lý do An đưa ra (thừa) đúng với 2
+candidate, và chỉ đúng với 2.
+
+### 20.3 Dấu `?` sát cạnh Gx
+
+Chip gate có `justify-content: space-between`, nên `Gx`, `?` và verdict bị đẩy xa nhau
+— dấu `?` rơi vào giữa ô trông như một cột thứ ba. Bọc `Gx` + `?` vào một span; verdict
+vẫn nằm phải.
+
+### 20.4 Phân trang episode
+
+5 episode một trang, dải tab để chuyển. **Dải tab cũng phải giới hạn**: 300 episode là
+60 trang, mà 60 tab là đúng cái vấn đề phân trang sinh ra để giải quyết, chỉ khoác một
+control khác. `pageWindow` cắt tối đa 7 tab và **giữ nguyên số tab ở hai đầu** — cửa sổ
+trượt đối xứng sẽ hiện 4 tab ở trang đầu và 7 ở giữa, tức control đổi bề rộng khi đi
+qua.
+
+Ba ca không nhìn ra được trên run 5 episode — tức mọi run đã xem tới giờ, và đúng lý do
+bảng này ban đầu không có phân trang:
+
+- **Lọc làm danh sách co lại dưới tay người đọc.** Bật "chỉ episode có bên hỏng" khi
+  đang ở trang 7/12 có thể còn 2 trang; trang 7 của 2 là bảng trắng, đọc thành "run
+  không có episode nào". Đã kẹp.
+- **Lựa chọn nằm ngoài trang.** Bấm exemplar nhảy tới episode có thể ở trang 9; để dải
+  tab đứng yên thì không có dòng nào sáng, đọc thành "bấm không ăn".
+- **Danh sách rỗng.** `pageCount(0) = 1`, không phải 0 — "trang 1/0" là control không
+  vẽ được.
+
+18 test cho `lib/episodePages.ts`.
+
+### 20.5 Bỏ dropdown chọn episode
+
+Nó liệt kê id và không gì khác, nên chọn từ đó là chọn mù. Bảng phía trên đã nói
+episode nào có bên hỏng và hai candidate bất đồng ở đâu — đó mới là thứ người ta chọn
+theo. Lối chọn còn lại: dòng bảng, chip exemplar, pager.
+
+Một ca biên: run **không có outcome từng episode** thì không vẽ được bảng, và dropdown
+từng là lối chọn **duy nhất**. Bỏ đi mà không làm gì là khoá người đọc vào episode đầu
+tiên. Đã cho pager một chế độ `bare`: vẫn 5 id một trang, cùng dải tab — đúng thứ
+dropdown từng cấp, không thêm dropdown nào về.
+
+**Test:** 1250 passed (web), `tsc` sạch. Không restart server (theo yêu cầu mới của An).
+
+---
+
+## 21. Comparison mở rộng theo số candidate, và bảng metric cuối
+
+### 21.1 Bỏ giới hạn hai candidate
+
+Lưới vẽ `candidates.slice(0, 2)`, nên run đăng ký thuật toán thứ ba sẽ vẽ hai thẻ và
+**bỏ rơi phần còn lại, không dấu vết nào trên trang**. Giờ map toàn bộ, lưới
+`repeat(auto-fit, minmax(260px, 1fr))` — thẻ thứ ba làm cột hẹp lại chứ không làm mất
+một cột. Nhãn A/B/C sinh từ chỉ số; màu cặp chỉ có hai nên từ C trở đi thẻ trung tính,
+không tái dùng màu xanh của A cho D.
+
+### 21.2 Bỏ hẳn bảng gate — và mang theo hai thứ nó giữ riêng
+
+Lượt trước tôi để bảng sống sót khi > 2 candidate. Giờ comparison đã lo được mọi
+candidate nên bảng thừa hoàn toàn. Xoá luôn cả `GateTable` và `CandidateRow`.
+
+Nhưng bảng có hai thứ **không** trùng với thẻ, và bỏ im lặng mới là cái giá thật của
+việc dọn:
+
+- **Candidate được cho xem gì.** `ObservationNotice` chỉ kêu khi các class **khác
+  nhau**. Một candidate đơn lẻ mà không ai khai input thì không sinh cảnh báo nào và
+  cũng không còn cột nào — tức đúng cái sự thật người kiểm tra tính công bằng tìm sẽ
+  biến mất. Đã đưa lên thẻ, kèm badge "không khai báo".
+- **Bị rút sớm.** Candidate dừng trước sẽ chạy ít episode hơn, nên **mọi con số trên
+  thẻ đó dựa trên mẫu nhỏ hơn**. Đã đưa lên thẻ.
+
+Câu `decisions.gates.note` (giải thích sáu gate là gì) mất chỗ bám khi tiêu đề bảng
+biến mất — đã gắn vào `?` cạnh danh sách gate trong thẻ.
+
+### 21.3 Bảng metric cuối: 10 hàng, đọc ngang
+
+`lib/candidateMetrics.ts`. **Gần như không tính gì.** Chỗ nào nền tảng đã ra số thì
+đọc thẳng từ **chính gate đã phán quyết dựa trên nó** — G1 no-path rate, G2 số va chạm
+và cận trên 95%, G4 p99 gộp, G5 ước lượng bộ nhớ. Tính lại trong browser là một định
+nghĩa thứ hai tự do trôi khỏi cái mà verdict dựa vào, và **trôi thì không nhìn ra**:
+cả hai đều render như cùng một đại lượng.
+
+| Hàng | Nguồn |
+|---|---|
+| Tỉ lệ thành công | candidate + ngưỡng từ G3 |
+| Số va chạm | G2 |
+| Cận trên 95% xác suất va chạm | G2 |
+| Tỉ lệ không tìm ra tuyến | G1 |
+| Clearance tệ nhất cả run | rút gọn từ cột episode |
+| Thời lượng episode trung vị | rút gọn từ cột episode |
+| p99 planner | candidate + ngưỡng từ G4 |
+| Ước lượng bộ nhớ | G5 + ngân sách RAM |
+| Số episode phân biệt | candidate |
+| Số replan | candidate, **không chấm ai dẫn** |
+
+**Không có hàng decision utility.** Card chỉ mang nó cho candidate được khuyến nghị;
+lấy trung bình `episode_decision_utility` ở đây chính là đường tính điểm thứ hai mà cả
+phiên này tôi đã tránh. ΔU và khoảng tin cậy đã nằm trên card.
+
+Hai hàng **là** phép rút gọn, và chúng mang tính mô tả chứ không phải chấm điểm:
+clearance tệ nhất (trung bình sẽ giấu mất một pha suýt va) và **trung vị** thời lượng
+(trung bình bị một lần timeout ở đúng mức trần kéo lệch hàng chục giây, rồi mô tả cái
+trần chứ không mô tả stack).
+
+`replans` **không có chiều tốt/xấu**: replan vốn đã bị tính tiền bằng thời gian và độ
+trễ, và deployment không khai ngân sách replan nào — tô xanh ở đây là tính tiền hai
+lần theo một luật không ai viết ra.
+
+`leaders()` trả về **một tập chỉ số**, không phải một người thắng: với ba candidate,
+hai bên có thể ngang nhau ở vị trí tốt nhất, và chọn bừa một trong hai là tung đồng xu
+rồi render ra như một kết quả. Mọi bên bằng nhau ⇒ không ai được tô.
+
+Mỗi hàng có `?` nói **vì sao chỉ số đó đáng so**, và ngưỡng của deployment nằm ngay
+dưới tên hàng — "17.89 ms" không có nghĩa gì nếu thiếu "50 ms".
+
+### 21.4 Hai lỗi tôi tự gây trong lúc dọn
+
+- Heuristic bắt cặp ngoặc để xoá hàm **ăn lẹm mất `ExportReport`** (nó nằm chung một
+  dải doc comment với hàm bên cạnh). Bắt được bằng `tsc`, khôi phục nguyên văn từ
+  `HEAD` rồi xoá `CandidateRow` bằng biên chính xác thay vì đoán.
+- Mười test đỏ sau khi bỏ bảng. **Không cái nào là test lỗi thời hết** — hai cái
+  (`observation-class`) chỉ ra đúng hai thứ tôi suýt làm rơi ở 21.2. Số còn lại đã
+  chỉnh hướng, mỗi cái ghi rõ điều nó khẳng định đã chuyển đi đâu.
+
+**Test:** 19 test `candidateMetrics`, tổng **1269 passed** (web), `tsc` sạch, en/vi
+cùng 1538 khoá, không lệch.
+
+### 21.5 Gộp bảng metric vào chính thẻ
+
+Bản đầu tôi để metric cuối thành **một bảng riêng dưới lưới thẻ**. Không đúng ý An, và
+xét lại thì cũng không đúng: cùng mười đại lượng xuất hiện ở hai chỗ trên một màn hình
+— bản tóm tắt bốn dòng trên thẻ và mười hàng của bảng — nên so hai stack thành việc
+nhìn hai hướng.
+
+Giờ mỗi thẻ mang đủ mười hàng. Vẫn đọc ngang được: các thẻ nằm chung một lưới và render
+**cùng thứ tự hàng**, nên hàng thứ ba của thẻ này thẳng hàng với hàng thứ ba của thẻ
+kia. Đặt `min-height` cho mỗi hàng để nhãn dài ngắn khác nhau không làm lệch lưới.
+
+`comparisonRows` tính **một lần cho cả lưới** rồi phát cho từng thẻ kèm chỉ số cột —
+`leaders()` so ngang giữa các candidate, nên một thẻ không thể tự biết nó có dẫn hay
+không.
+
+Một assertion tôi viết ra rồi phải sửa: nó tìm chuỗi `"distinctEpisodes"` trong source
+của trang. Nhưng trang nội suy `` t(`decisions.compare.${metric.key}`) `` nên **không
+bao giờ đánh vần tên metric nào** — test đó sẽ xanh kể cả khi hàng bị xoá. Đổi sang
+khẳng định trên `comparisonRows()`, tức đúng module định nghĩa hàng.
+
+**Test:** 1269 passed (web), `tsc` sạch.
+
+### 21.6 Cân lại tỉ lệ hàng metric
+
+An: chữ quá bé hoặc ô quá to.
+
+Cả hai. Hàng mang `min-height: 48px` từ hồi nó chỉ có bốn dòng và thừa chỗ; nhãn 11px,
+số 13px. Mười hàng như thế đọc thành chữ nhỏ bơ vơ trong hộp cao.
+
+- Bỏ `min-height`. **Nó chưa bao giờ là thứ căn hàng** — các thẻ thẳng hàng vì cùng
+  render một bộ nhãn theo cùng thứ tự, nên chiều cao tự nhiên đã bằng nhau. Cái tối
+  thiểu cố định chỉ làm tất cả cùng cao quá.
+- Nhãn 11 → 12.5px, số 13 → 14px, padding dọc 9 → 7px, `align-items: baseline` để nhãn
+  và số nằm cùng đường chữ.
+- `white-space: nowrap` cho số, để "2098.40 ms" không xuống dòng.
+
+Một lỗi CSS bắt được lúc sửa: selector `.metric-comparison-row span` có specificity
+**cao hơn** `.hint-mark`, nên nó áp cỡ chữ của nhãn lên dấu `?` nằm bên trong vòng tròn
+15px cố định. Đã thu về con trực tiếp `> span`.
+
+**Test:** 1269 passed (web).
+
+### 21.7 Hình dạng cuối: một cột nhãn, mỗi thuật toán một cột
+
+Bộ metric này đã qua ba hình dạng, và mỗi lần đổi đều vì một lý do thật:
+
+1. **Bảng riêng dưới lưới thẻ** — thẻ vẫn giữ bản tóm tắt bốn dòng, nên cùng một đại
+   lượng xuất hiện hai chỗ trên một màn hình.
+2. **Đưa hết vào trong thẻ** — hết trùng lặp, nhưng mỗi nhãn bị in lại một lần cho mỗi
+   candidate, và hai con số cần so lại nằm hai bên một đường viền thẻ.
+3. **Một bảng, nhãn một cột, mỗi candidate một cột** — so sánh trở thành liếc dọc một
+   hàng.
+
+Thẻ giờ chỉ giữ thứ **thật sự thuộc về từng candidate**: danh tính, nó được cho xem gì,
+có bị rút sớm không, và sáu verdict gate. Không có metric nào lặp lại ở đó — chính chỗ
+chồng lấn ấy là thứ làm hình dạng (1) thành thừa.
+
+Dọn kèm: `.candidate-result-metrics` và `.metric-comparison-row` giờ không style cho
+cái gì nữa, đã xoá.
+
+**Test:** 1269 passed (web), `tsc` sạch.
+
+### 21.8 Hình dạng thứ tư — và là hình dạng đúng
+
+An: giữ trong card, hai màu, chung với gate cũng được; thu hẹp vùng màu để chừa một cột
+cho tên metric.
+
+Bảng ở 21.7 tách được tên metric ra một cột — đúng phần đọc — nhưng **mất màu card**,
+nên hai candidate thôi phân biệt được bằng màu từ giữa mục trở xuống.
+
+Giờ là **một lưới duy nhất**: cột trái là máng trung tính chứa tên metric, mỗi cột sau
+là một candidate, **tô màu liền mạch** từ header xuống qua flags, giá trị, tới verdict
+gate. Bỏ hẳn `CandidateComparisonColumn` và `MetricTable`.
+
+Phát theo **hàng**, không theo thẻ. Một dãy thẻ không thể đảm bảo nhãn nằm ngang hàng
+với giá trị của nó; lưới thì đảm bảo được, và ở mười metric thì đúng cái căn hàng đó
+là toàn bộ khả năng đọc của nó.
+
+Màu chỉ có hai: candidate thứ ba nhận `candidate-n` trung tính, **không quay vòng về
+màu xanh của A** — đặt hai stack khác nhau vào một màu trên đúng cái trang có nhiệm vụ
+phân biệt chúng thì hỏng mục đích.
+
+### 21.9 Ba lần hỏng CSS liên tiếp — ghi lại vì cùng một nguyên nhân
+
+Xoá rule CSS cũ, tôi làm hỏng ba lần:
+
+1. **Lọc theo dòng** — để lại `.metric-table th,` cụt, tức một selector list bị cắt đôi.
+   CSS không báo lỗi; nó **nuốt luôn rule ngay sau đó**.
+2. **Regex `{...}`** — nối các rule vào chung một dòng và bỏ sót vài khối.
+3. Chỉ đến lần ba, cắt theo **khoảng dòng tường minh** kèm assert "đoạn này có đúng tên
+   rule không" và "số ngoặc có cân không", mới sạch.
+
+Nguyên nhân chung: CSS dễ dãi với khoảng trắng, nên cả hai bản hỏng đều tạo ra file mà
+trình duyệt **vẫn nhận**, chỉ âm thầm đánh rơi phần phía sau. Không có compiler nào bắt
+hộ — chỉ có assert tự viết.
+
+Dọn nốt bốn dòng chết trong `@media (max-width: 760px)` trỏ tới class đã biến mất.
+
+**Test:** 1269 passed (web), `tsc` sạch, ngoặc CSS cân.
+
+### 21.10 Tỉ lệ cột
+
+Máng nhãn 20%, mỗi cột giá trị ~40% với số dán mép phải — chỗ trống dồn hết vào giữa,
+trong khi nhãn dài phải xuống dòng.
+
+Đảo lại: `minmax(200px, 1.2fr)` cho máng, `minmax(170px, 1fr)` cho mỗi candidate. Dùng
+`fr` chứ không phải phần trăm để tỉ lệ tự giữ khi thêm candidate — hai bên thì máng 37%
+mỗi cột 31%; ba bên thì 29% và 24%. Hai mức `minmax` sàn giữ cho không bên nào sập
+trước khi breakpoint 900px xếp dọc.
+
+**Test:** 1269 passed (web).
+
+### 21.11 Cỡ chữ và căn lề trong lưới
+
+- Tên metric: 12.5 → **14.5px, in đậm**, và đổi từ màu muted sang màu chữ chính. Máng
+  trái là cột người đọc quét để tìm hàng cần, nên tên phải nặng hơn mức một dòng chú
+  thích mờ.
+- Giá trị: 14 → **16px**, và **căn giữa** thay vì dán mép phải.
+- Ngưỡng dưới tên: 11 → 12.5px nhưng **giữ nhạt và không đậm** — nó bổ nghĩa cho metric,
+  không phải một cái tên thứ hai.
+- Badge ở hàng flags: 11 → 12px cho đồng bộ.
+
+Ghi lại đánh đổi của việc căn giữa: chữ số vẫn thẳng nhau nhờ `tabular-nums`, cái mất
+là **dấu thập phân không còn thẳng hàng dọc cột**. Ở đây chấp nhận được vì mỗi hàng
+mang một đơn vị riêng, nên cột không được đọc như một đại lượng duy nhất — khác với
+bảng một đơn vị, nơi mất căn thập phân là mất khả năng so sánh bằng mắt.
+
+Ở breakpoint 900px (xếp dọc, nhãn nằm trên) giá trị vẫn căn trái: một con số căn giữa
+dưới một nhãn căn trái đọc thành lạc chỗ.
+
+**Test:** 1269 passed (web).
+
+---
+
+## 22. Bỏ ba panel cuối, và badge khuyến nghị thành tuỳ chọn
+
+### 22.1 Ba panel nào
+
+Ảnh An gửi có ba panel: **The world this was measured in** (`Conditions`), **Rebuilding
+this** (`Provenance`), **Who acted on this** (`AuditTrail`).
+
+Đáng nói: "Who acted on this" là `AuditTrail` — **nhật ký**, không phải `HumanActs`.
+`HumanActs` ("Read it, and decide on it") là panel *thực hiện* việc duyệt, nằm ngay
+trên và **vẫn giữ**. Nếu đọc lướt mà bỏ nhầm nó thì đã mất luôn khả năng approve một
+run khỏi UI. Giờ chỉ mất phần **hiển thị** nhật ký; bản ghi vẫn được viết như cũ.
+
+Bỏ luôn cả định nghĩa component chứ không để lại code không ai render. Cũng bỏ luôn
+`listDecisionEvents` khỏi `refresh` — một request mà không ai đọc kết quả là request
+sẽ tiếp tục chạy rất lâu sau khi nó hết ý nghĩa.
+
+### 22.2 Một câu không được đi theo panel
+
+`Conditions` có một thứ **không phải bối cảnh** mà là caveat cho một con số:
+
+> Đo trên toàn bộ 20 nhân, không ghim: G4 đọc độ trễ theo đồng hồ tường nên mọi tải
+> khác trên máy đi thẳng vào con số. Cùng candidate đo được **59,30 ms** không ghim và
+> **16,10 ms** khi ghim 2 nhân.
+
+Lưới so sánh giờ hiển thị **pooled p99 kèm `limit 50`** ngay giữa trang. Một con số có
+thể sai gấp 3,7 lần mà đứng cạnh một ngưỡng thì tệ hơn là không có số nào. Nên câu đó
+chuyển lên đầu khối comparison, cạnh `ObservationNotice` — cái finding còn lại cũng
+phủ định mọi con số bên dưới. Render nguyên văn: nền tảng viết câu này khi nó biết run
+không được ghim, client viết lại là client làm nhẹ nó đi.
+
+### 22.3 Badge "no recommendation" thành tuỳ chọn
+
+Chỉ hiện khi **có** khuyến nghị. Sự thật "run này không xếp hạng" vẫn được nói ở hai
+chỗ khác và cả hai đều hữu ích hơn: badge `unranked` trên header, và panel `Outcome`
+phía dưới — panel này còn phân biệt **ba tình huống no-card khác nhau** và nói nên làm
+gì tiếp. Badge bị bỏ là bản kém nhất trong ba bản của cùng một câu.
+
+### 22.4 Test
+
+Ba test thuộc panel đã bỏ (biên độ nhiễu, run URI + checksum, cặp before/after của
+nhật ký) — **bỏ theo panel**, không nhắm lại vào hư không. Một test kept-alive chống
+lại một tính năng đã xoá là test rồi sẽ bị ai đó "sửa cho xanh" mà không biết vì sao
+nó tồn tại.
+
+Test thứ tư ghim câu cảnh báo unpinned — **giữ và nhắm lại**, cộng ba test mới: nó nằm
+giữa `ObservationNotice` và lưới, nó render nguyên văn chuỗi của server, và
+`listDecisionEvents` đã thôi được gọi.
+
+**24 khoá i18n** của ba panel giờ không ai dùng. **Giữ nguyên, không xoá** — An nói
+"tạm thời", mà xoá đi thì lúc panel quay lại phải dịch lại từ đầu; một ít dữ liệu chết
+rẻ hơn thế.
+
+**Test:** 1268 passed (web), `tsc` sạch.
+
+---
+
+## 23. Tuyến plan đổi màu mỗi lần replan
+
+Bốn màu xoay vòng, `plannedRouteColour(attempt)` trong `lib/evidence.ts`.
+
+**Vì sao nó không chỉ là trang trí.** Với một màu duy nhất cho mọi kế hoạch, người xem
+kéo canvas **không phân biệt được "kế hoạch bị bẻ cong" với "kế hoạch bị vứt đi và vẽ
+lại"** — giữa chừng hai thứ đó trông y hệt nhau, mà chỉ một trong hai là replan.
+
+Bốn màu, xoay vòng: đủ để hai kế hoạch liên tiếp không bao giờ trùng màu, ít để còn
+phân biệt được. Run có năm lần replan thì dùng lại màu đầu — chấp nhận được, vì câu hỏi
+nó trả lời là "vừa đổi chưa", không phải "đây là attempt số mấy". An cũng nói không cần
+theo thứ tự.
+
+Chọn màu tránh những gì canvas đã tiêu: xanh dương và tím là đường đi của hai candidate,
+hổ phách là vật cản động, đỏ là sự kiện HĐ-5. Có test khoá điều đó — một kế hoạch trùng
+màu với một trong số đó sẽ bị đọc thành chính thứ kia. Vẫn giữ nét đứt và trong suốt:
+đây là ý định, không phải số đo.
+
+`attempt` không đọc được (NaN, 0, âm) thì lấy màu đầu — một chi tiết trang trí không
+được phép làm hỏng canvas.
+
+Sửa kèm `trace.colourNote`: bỏ chữ "dashed **grey**" vì gọi tên một màu giờ là mô tả
+đúng kế hoạch đầu tiên và sai với phần còn lại; thay bằng câu nói rõ **đổi màu nghĩa là
+replan** — không thì người đọc thấy bốn màu và hiểu thành bốn *loại* kế hoạch chứ không
+phải bốn kế hoạch.
+
+**Test:** 6 test cho bảng màu, 1274 passed (web), `tsc` sạch.

@@ -929,6 +929,35 @@ def decision_report_markdown(run_id: str, service: Runs) -> Response:
     )
 
 
+@router.get("/decisions/{run_id}/report.xlsx")
+def decision_report_xlsx(run_id: str, service: Runs) -> Response:
+    """The same run as a workbook, for a reader who works in a spreadsheet.
+
+    Same content as ``report.md`` — `decision_export` decides every
+    value and both renderers read it from there, so the two files cannot
+    quote different numbers for one run.
+
+    Exported for every run for the same reason the Markdown is: a run
+    that ranked nobody still has a gate table, and that is the whole
+    deliverable when fewer than two candidates cleared (HĐ-7).
+    """
+    from planbench_api.decision_xlsx import (
+        decision_workbook_filename,
+        render_decision_xlsx,
+    )
+
+    stored = service.get(run_id)
+    return Response(
+        content=render_decision_xlsx(stored),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{decision_workbook_filename(run_id)}"'
+            )
+        },
+    )
+
+
 @router.get("/decisions/{run_id}/approved_config.yaml", response_class=PlainTextResponse)
 def approved_config(run_id: str, service: Runs) -> str:
     """The deployable configuration — approved runs only (HĐ-14).

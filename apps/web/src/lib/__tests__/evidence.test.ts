@@ -16,9 +16,11 @@ import type {
   PacketWaterfall,
 } from "@/lib/decisions";
 import {
+  PLANNED_ROUTE_COLOURS,
   firedSightings,
   missingNotes,
   orderedFindings,
+  plannedRouteColour,
   routeAt,
   sightingsState,
   verdictTone,
@@ -211,5 +213,45 @@ describe("which plan the robot was following", () => {
 
   it("shows nothing before the first plan exists", () => {
     expect(routeAt([route(1, 5, [[0, 0], [1, 1]])], 2)).toBeNull();
+  });
+});
+
+describe("telling one plan from the next", () => {
+  it("gives consecutive attempts different colours", () => {
+    // The whole point. With one colour for every plan, a reader
+    // scrubbing the canvas cannot tell "the plan bent" from "the plan
+    // was thrown away and a new one drawn" — the two look the same, and
+    // only one of them is a replan.
+    const first = plannedRouteColour(1);
+    const second = plannedRouteColour(2);
+    const third = plannedRouteColour(3);
+    expect(new Set([first, second, third]).size).toBe(3);
+  });
+
+  it("gives the same attempt the same colour every frame", () => {
+    // Redrawn on every scrub tick; a colour that moved would read as a
+    // replan happening continuously.
+    expect(plannedRouteColour(2)).toBe(plannedRouteColour(2));
+  });
+
+  it("cycles rather than running out", () => {
+    expect(plannedRouteColour(5)).toBe(plannedRouteColour(1));
+  });
+
+  it("takes the first colour for an attempt number it cannot read", () => {
+    // A decoration must not be able to break a canvas.
+    expect(plannedRouteColour(Number.NaN)).toBe(PLANNED_ROUTE_COLOURS[0]);
+    expect(plannedRouteColour(0)).toBe(PLANNED_ROUTE_COLOURS[0]);
+    expect(plannedRouteColour(-3)).toBe(PLANNED_ROUTE_COLOURS[0]);
+  });
+
+  it("stays clear of the colours the canvas already spends", () => {
+    // Blue and purple are the two candidates' driven paths, amber the
+    // moving obstacles, red the HĐ-5 events. A plan sharing one of those
+    // would read as that thing.
+    const taken = ["#2563eb", "#7c3aed", "245, 158, 11", "220, 38, 38"];
+    for (const colour of PLANNED_ROUTE_COLOURS) {
+      for (const clash of taken) expect(colour).not.toContain(clash);
+    }
   });
 });

@@ -1,0 +1,318 @@
+{
+  "contracts_version": "6.9.0",
+  "git_sha": "99e518f437684beacb1fd34c4d4296fd90b151f0",
+  "docker_image_digest": null,
+  "task_profile_id": "sudden_stop_v5",
+  "anchor_config_version": "v1.2",
+  "preference_profile": "kho_ban_dem",
+  "decision_mode": "technical",
+  "travel_time_accounting": "efficiency",
+  "sensor_noise": {
+    "lidar_range_sigma_m": 0.02,
+    "wheel_slip_fraction": 0.02,
+    "localization_drift_m": 0.0,
+    "localization_jump_probability": 0.0,
+    "lidar_dropout_probability": 0.0,
+    "odometry_bias_fraction": 0.0,
+    "command_latency_steps": 0
+  },
+  "replanning": {
+    "enabled": true,
+    "max_replans": null
+  },
+  "v_obstacle_max": null,
+  "constraints": {
+    "success_rate_min": 0.95,
+    "collision_probability_max": 0.1,
+    "no_path_rate_max": 0.02,
+    "goal_tolerance_m": 0.2,
+    "goal_tolerance_rad": 3.1416,
+    "episode_timeout_s": 60.0,
+    "stuck_threshold_s": 3.0,
+    "clearance_warning_m": 0.35,
+    "cost_per_mission_max": null
+  },
+  "candidates": [
+    "3b18dfbfa9e7",
+    "e1251e42a20b"
+  ],
+  "episode_contexts": {
+    "evaluation": [
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 27,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "267a8beb7305"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 22,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "27bd33e37be2"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 10,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "3af08f28b488"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 15,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "41f77b9ac4e7"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 16,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "4a4b8e0075b1"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 5,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "4c42e983e362"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 11,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "4eb65f836f32"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 29,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "529b1773f8d3"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 7,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "5e85cac4f645"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 23,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "6465be9adb87"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 24,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "6baf7b539f33"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 28,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "7287861052b7"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 14,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "7a614abf022f"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 8,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "7bffe26b0ab2"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 1,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "83552bc429c8"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 21,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "87c79bbbae58"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 3,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "8fb66b282414"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 19,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "98f956b1f78a"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 17,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "9de2768b9edd"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 4,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "a237e138885d"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 12,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "bb20a44d8d72"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 25,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "c35afb02d67e"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 20,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "c58105e9eee4"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 13,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "cce1caa06159"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 9,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "e9217adfc409"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 0,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "eaf290c13a8e"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 2,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "ebe1904a6b22"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 18,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "ecd851daecae"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 26,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "f059a6068bb5"
+      },
+      {
+        "task_profile_id": "sudden_stop_v5",
+        "mission_id": "custom_route",
+        "seed": 6,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "f7563cd0c764"
+      }
+    ],
+    "neighborhood": []
+  },
+  "bootstrap": {
+    "seed": 0,
+    "n_resamples": 1000
+  },
+  "benchmark_host": {
+    "cpu": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+    "cores_allocated": 20,
+    "threads": 1,
+    "cpu_affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19
+    ],
+    "logical_cores": 20,
+    "affinity_source": null
+  },
+  "created_at": "2026-08-21T03:07:19.137178+00:00"
+}

@@ -14,10 +14,19 @@
  * which is the question HĐ-12 puts on a card in the first place.
  */
 
-import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { TraceViewer } from "@/components/TraceViewer";
+import { ConclusionPanel } from "@/components/ConclusionPanel";
 import { Hint } from "@/components/Hint";
+import { type MetricRow, comparisonRows, leaders } from "@/lib/candidateMetrics";
+import {
+  clampPage,
+  pageCount,
+  pageOf,
+  pageSlice,
+  pageWindow,
+} from "@/lib/episodePages";
 import { ProgressSync, type SyncSlot } from "@/components/ProgressSync";
 import { commonProgress, panelCandidates, sideProgress, sideTime } from "@/lib/replaySync";
 import { EvidencePanel } from "@/components/EvidencePanel";
@@ -35,7 +44,6 @@ import {
   getTrace,
   getReplaySync,
   getExemplars,
-  listDecisionEvents,
   noCardReason,
   reviewRun,
   gateEvidence,
@@ -45,7 +53,6 @@ import {
   type DecisionRun,
   type EpisodeOutcome,
   type GateVerdict,
-  type ReviewEvent,
   type RunCandidate,
   type TracePayload,
   type DivergencePoint,
@@ -54,21 +61,22 @@ import {
   type RunningSample,
   observationClasses,
 } from "@/lib/decisions";
-import { downloadDecisionReport } from "@/lib/reports";
+import { downloadDecisionReport, downloadDecisionWorkbook } from "@/lib/reports";
 import { initialPlayback, tick, type PlaybackState } from "@/lib/playback";
 
 export default function DecisionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { t } = useTranslation();
   const [run, setRun] = useState<DecisionRun | null>(null);
-  const [events, setEvents] = useState<ReviewEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [fetched, trail] = await Promise.all([getDecision(id), listDecisionEvents(id)]);
+      // The review journal is no longer drawn, so it is no longer
+      // fetched — a request whose response nothing reads is a request
+      // that will keep working long after it stops meaning anything.
+      const fetched = await getDecision(id);
       setRun(fetched);
-      setEvents(trail);
       setError(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -92,27 +100,47 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
           <Link href="/decisions">{t("decisions.backToList")}</Link>
         </p></div>
         <div className="decision-detail-badges"><span className={`badge ${run.ranked ? "ok" : "muted-badge"}`}>{run.ranked ? t("decisions.filter.ranked") : t("decisions.filter.unranked")}</span>
-        <ExportReport runId={run.id} />
         </div>
       </header>
 
+      {/* **The answer, then how it was reached, then who was allowed to
+          be in the running.** The page used to open on the gate table,
+          which is a list of eliminations — a reader arriving for the
+          result met six columns of pass/fail before anything told them
+          what the run concluded.
+
+          Two of these positions are arguments rather than taste, and
+          they survive any later reshuffle:
+
+          - `SampleBanner` stays first. It says the run was cut short or
+            ran fewer episodes than the declared risk allows, and that
+            qualifies *every* number below it.
+          - `ExplanationHeader` stays immediately above `EvidencePanel`.
+            It carries the evidence's caveats, and a qualifier under the
+            thing it qualifies has already been scrolled past. */}
       <SampleBanner run={run} />
-      <GateTable run={run} />
-      {/* The headline and its caveats sit immediately above the
-          evidence, which is what `ExplanationHeader` was written for:
-          a qualifier below the thing it qualifies has already been
-          scrolled past. When the evidence panel landed under the gate
-          table this header was left three sections down, still correct
-          and no longer doing its job. */}
-      <ExplanationHeader run={run} />
-      <EvidencePanel run={run} />
       <CandidateComparison run={run} />
       <TracePanel run={run} />
+      <ExplanationHeader run={run} />
+      <EvidencePanel run={run} />
+      {/* The marks come after the evidence that justifies them, and the
+          export buttons after the marks — that is the point at which a
+          reader knows whether this run is worth sending on. */}
+      <ConclusionPanel run={run} />
+      <ExportReport runId={run.id} />
+      {/* **No gate table.** Every candidate now has a card carrying
+          G1-G6 and its blocking list, and the table under the cards
+          carries the numbers the gate table used to hold - for all of
+          them, not the first two. What was left of it was the same
+          data a third time. */}
       <Outcome run={run} />
+      {/* `Conditions`, `Provenance` and the review journal are out for
+          now, at An's call — the measurement environment, the ids for
+          rebuilding a run and the list of who read it are not what this
+          page is being read for yet. `HumanActs` stays: it is what
+          *records* an approval, and only the display of that record
+          went. */}
       <HumanActs run={run} onDone={refresh} />
-      <Conditions run={run} />
-      <Provenance run={run} />
-      <AuditTrail events={events} />
     </section>
   );
 }
@@ -124,70 +152,190 @@ function CandidateComparison({ run }: { run: DecisionRun }) {
   const { t } = useTranslation();
   const candidates = run.report?.candidates ?? [];
   if (candidates.length === 0) return null;
+  // Computed once for the whole grid, not once per card: `leaders`
+  // compares across candidates, so a card cannot work out on its own
+  // whether it is ahead.
+  const rows = comparisonRows(candidates);
   return (
     <section className="panel comparison-results" aria-labelledby="comparison-results-title">
       <div className="comparison-results-head">
         <div><span className="decision-eyebrow">{t("decisions.detail.evidence")}</span><h3 id="comparison-results-title">{t("decisions.detail.results")}</h3></div>
-        {run.card ? <span className="badge ok"><Icon name="trophy" size={13} />{run.card.recommended.stack}</span> : <span className="badge muted-badge">{t("decisions.noCard.title")}</span>}
+        {/* Shown only when there *is* one. "No recommendation from this
+            run" said here as well as in the header badge and again in
+            the panel below, which spells out which of the three
+            no-card situations this is and what to do about it — three
+            copies of one fact, and the least useful of them was this. */}
+        {run.card ? <span className="badge ok"><Icon name="trophy" size={13} />{run.card.recommended.stack}</span> : null}
       </div>
-      <div className="candidate-comparison-grid">
-        {candidates.slice(0, 2).map((candidate, index) => (
-          <CandidateComparisonColumn key={candidate.candidate_id} candidate={candidate} side={index === 0 ? "a" : "b"} recommended={run.recommended_candidate_id === candidate.candidate_id} />
+      {/* Moved off the gate table, which is gone. This is a *finding* —
+          two candidates shown different things are answering different
+          questions, and ΔU would be measuring the privilege rather than
+          the planner — so it cannot leave the page with the table it
+          happened to sit in. */}
+      <ObservationNotice candidates={candidates} />
+      <HostWarning run={run} />
+      {/* **One grid: a neutral gutter, then a tinted column each.**
+          Metric names live in the gutter so they are written once and a
+          comparison is a glance along a row; the candidate columns keep
+          their card colours the whole way down, so the two stay told
+          apart past the header.
+
+          Emitted row by row rather than card by card. A column of cards
+          cannot guarantee that a label sits level with its values — the
+          grid can, and that alignment is the only reason the layout is
+          readable at ten metrics. */}
+      <div
+        className="comparison-grid"
+        // The gutter takes the larger share. Metric names are long
+        // sentences and the values are six characters right-aligned, so
+        // a gutter narrower than the value columns wrapped every label
+        // onto two lines while leaving a hand's width of empty tint
+        // between each number and its own label.
+        //
+        // `1.2fr` rather than a percentage so it keeps its proportion as
+        // candidates are added: at two the gutter is 37% and each column
+        // 31%; at three, 29% and 24%. The `minmax` floors stop either
+        // side collapsing on a narrow window before the 900px
+        // breakpoint stacks them.
+        style={{ gridTemplateColumns: `minmax(200px, 1.2fr) repeat(${candidates.length}, minmax(170px, 1fr))` }}
+      >
+        <div className="comparison-gutter comparison-grid-head" />
+        {candidates.map((candidate, index) => (
+          <div key={candidate.candidate_id} className={`comparison-cell comparison-grid-head candidate-${SIDES[index] ?? "n"}`}>
+            <span className="candidate-result-icon"><Icon name="cpu" size={17} /></span>
+            <div>
+              <small>Candidate {sideLabel(index)}</small>
+              <h4>{candidate.stack_label}</h4>
+              <code>{candidate.local_controller_config}</code>
+            </div>
+            {run.recommended_candidate_id === candidate.candidate_id ? (
+              <span className="badge ok"><Icon name="check" size={12} />{t("decisions.card.recommended")}</span>
+            ) : null}
+          </div>
+        ))}
+
+        <div className="comparison-gutter" />
+        {candidates.map((candidate, index) => (
+          <div key={candidate.candidate_id} className={`comparison-cell comparison-flags candidate-${SIDES[index] ?? "n"}`}>
+            {/* What this candidate was shown. Named rather than left
+                blank when undeclared: a stack whose inputs nobody wrote
+                down cannot be shown to have matched the others, and an
+                empty cell reads as "same as the rest". */}
+            {candidate.local_observation_class ? (
+              <span className="badge muted-badge">{candidate.local_observation_class}</span>
+            ) : (
+              <span className="badge warn" title={t("decisions.gates.observationUnknownNote")}>
+                {t("decisions.gates.observationUnknown")}
+              </span>
+            )}
+            {/* A retired candidate covered fewer episodes than the
+                others, so every number in its column rests on a smaller
+                sample. In the column, because that is where it is
+                read. */}
+            {candidate.stopped_early ? (
+              <span className="badge warn" title={`${candidate.stopped_early.gate}: ${candidate.stopped_early.rule}`}>
+                {t("decisions.gates.stoppedEarly", {
+                  run: String(candidate.stopped_early.episodes_run),
+                  planned: String(candidate.stopped_early.episodes_planned),
+                  gate: candidate.stopped_early.gate,
+                })}
+              </span>
+            ) : null}
+          </div>
+        ))}
+
+        {rows.map((metric) => {
+          const best = leaders(metric);
+          return (
+            <Fragment key={metric.key}>
+              <div className="comparison-gutter comparison-label">
+                {t(`decisions.compare.${metric.key}`)}{" "}
+                <Hint
+                  text={t(`decisions.compare.why.${metric.key}`)}
+                  label={t(`decisions.compare.${metric.key}`)}
+                />
+                {/* The deployment's own limit, under the metric it
+                    judges rather than beside a value — it belongs to the
+                    row, not to any one candidate. */}
+                {metric.threshold ? (
+                  <span className="comparison-limit">
+                    {t("decisions.compare.limit", { limit: metric.threshold })}
+                  </span>
+                ) : null}
+              </div>
+              {metric.text.map((cell, index) => (
+                <div
+                  key={candidates[index].candidate_id}
+                  className={`comparison-cell comparison-value candidate-${SIDES[index] ?? "n"}${best.includes(index) ? " is-best" : ""}`}
+                >
+                  {cell}
+                  {best.includes(index) ? <span className="sr-only"> ({t("running.leads")})</span> : null}
+                </div>
+              ))}
+            </Fragment>
+          );
+        })}
+
+        <div className="comparison-gutter comparison-label comparison-grid-foot">
+          {t("decisions.gates.title")}{" "}
+          <Hint text={t("decisions.gates.note")} label={t("decisions.gates.title")} />
+        </div>
+        {candidates.map((candidate, index) => (
+          <div key={candidate.candidate_id} className={`comparison-cell comparison-gates comparison-grid-foot candidate-${SIDES[index] ?? "n"}`}>
+            <span className={`badge ${candidate.cleared_gates ? "ok" : "err"}`}>
+              {candidate.cleared_gates ? t("decisions.gates.cleared") : candidate.blocking_gates.join(", ")}
+            </span>
+            <div className="comparison-gate-grid">
+              {GATES.map((gate) => (
+                <div key={gate}>
+                  <span className="candidate-gate-name">
+                    <code>{gate}</code>
+                    <Hint text={t(`decisions.gates.blocks.${gate}`)} label={gate} />
+                  </span>
+                  <GateCell verdict={candidate.gates?.[gate]} />
+                </div>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
     </section>
   );
 }
 
-function CandidateComparisonColumn({ candidate, side, recommended }: { candidate: RunCandidate; side: "a" | "b"; recommended: boolean }) {
-  const { t } = useTranslation();
-  const metrics = [
-    [t("decisions.gates.successRate"), `${Math.round(candidate.success_rate * 100)}%`],
-    [t("decisions.gates.p99"), `${candidate.pooled_p99_latency_ms.toFixed(2)} ms`],
-    [t("decisions.gates.runs"), String(candidate.n_distinct_episodes)],
-    [t("decisions.gates.replans"), candidate.replan_count === undefined ? "—" : String(candidate.replan_count)],
-  ];
-  return (
-    <article className={`candidate-result candidate-${side}${recommended ? " is-recommended" : ""}`}>
-      <header className="candidate-result-head">
-        <span className="candidate-result-icon"><Icon name="cpu" size={19} /></span>
-        <div><small>Candidate {side.toUpperCase()}</small><h4>{candidate.stack_label}</h4><code>{candidate.local_controller_config}</code></div>
-        {recommended ? <span className="badge ok"><Icon name="check" size={12} />{t("decisions.card.recommended")}</span> : null}
-      </header>
-      <div className="candidate-result-metrics">
-        {metrics.map(([label, value]) => <div className="metric-comparison-row" key={label}><span>{label}</span><strong>{value}</strong></div>)}
-      </div>
-      <details className="candidate-gates" open>
-        <summary><span>{t("decisions.gates.title")}</span><span className={`badge ${candidate.cleared_gates ? "ok" : "err"}`}>{candidate.cleared_gates ? t("decisions.gates.cleared") : candidate.blocking_gates.join(", ")}</span></summary>
-        <div>{GATES.map((gate) => <div key={gate}><code>{gate}</code><GateCell verdict={candidate.gates?.[gate]} /></div>)}</div>
-      </details>
-    </article>
-  );
+/** What the machine was doing while the latency was measured.
+ *
+ * **Not context — a caveat on a number two rows down.** G4 reads
+ * wall-clock latency, so a run measured on an unpinned host measured a
+ * machine that was also doing something else: the same candidate came
+ * out at 59.30 ms unpinned and 16.10 ms pinned to two cores.
+ *
+ * It used to sit in the panel describing the measurement environment.
+ * That panel is gone, and this could not go with it: the grid below
+ * shows pooled p99 against the deployment's limit, and a figure that may
+ * be several times too high is worse company for a limit than no figure
+ * would be.
+ *
+ * Rendered verbatim. The platform writes this sentence when it knows the
+ * run was not pinned; a client that reworded it could water it down.
+ */
+function HostWarning({ run }: { run: DecisionRun }) {
+  const warning = run.report?.measurement_environment?.warning;
+  if (!warning) return null;
+  return <div className="notice warn comparison-host-warning">{warning}</div>;
 }
 
-/** Look at the evidence the gate table was computed from.
+/** Column letters, and a tint that runs out on purpose.
  *
- * **Directly under the gate table, and that placement is the argument.**
- * A row saying "G3: fail, 70% success" is a claim about episodes; the
- * next thing a reader should be able to do is open one of them. Putting
- * the viewer below the recommendation instead would make the trajectory
- * an illustration of a conclusion rather than the thing the conclusion
- * came from.
- *
- * Loaded on demand. A run holds thirty to three hundred episodes per
- * candidate and each is a map plus a few hundred poses, so fetching them
- * all to show one would be paying for a hundred pictures nobody asked to
- * see.
+ * The pair colours cover two. A third candidate gets `candidate-n` —
+ * neutral — rather than looping back to candidate A's blue, which would
+ * put two different stacks in one colour on a page whose whole job is
+ * telling them apart.
  */
-/** What this run may be explained with, and the caveats that travel.
- *
- * The panel plan is read rather than decided here: three of the five
- * run outcomes have no paired comparison, and a page that worked that
- * out for itself would work it out differently from the platform.
- *
- * The caveats are rendered *above* the evidence, not under it. A
- * qualifier below the fold qualifies nothing.
- */
+const SIDES = ["a", "b"] as const;
+const sideLabel = (index: number) => String.fromCharCode(65 + index);
+
+
 function ExplanationHeader({ run }: { run: DecisionRun }) {
   const { t } = useTranslation();
   const plan = panelPlan(run);
@@ -404,19 +552,12 @@ function TracePanel({ run }: { run: DecisionRun }) {
         onPick={(episode) => chooseEpisode(episode, true)}
       />
 
+      {/* **No episode dropdown.** It listed ids and nothing else, so
+          choosing from it was choosing blind — the table above says
+          which episodes anyone failed and which two candidates
+          disagreed on, which is what a reader picks by. Rows and
+          exemplar chips are the pickers now. */}
       <div className="episode-toolbar">
-        <label className="field">
-          <span>{t("trace.episode")}</span>
-          <select value={episodeId} onChange={(event) => chooseEpisode(event.target.value)}>
-            {episodes.map((episode, index) => {
-              return (
-                <option key={episode} value={episode}>
-                  #{index + 1} · {episode.slice(0, 8)}
-                </option>
-              );
-            })}
-          </select>
-        </label>
         <div className="episode-view-toggle" role="group" aria-label={t("trace.viewMode")}>
           {(["flat", "raised"] as const).map((option) => <button key={option} type="button" className={mode === option ? "primary" : ""} aria-pressed={mode === option} onClick={() => setMode(option)}>{t(`mapView.${option}`)}</button>)}
         </div>
@@ -582,14 +723,40 @@ function EpisodeOutcomes({
 }) {
   const { t } = useTranslation();
   const [failuresOnly, setFailuresOnly] = useState(false);
+  const [page, setPage] = useState(0);
   const candidates = run.report?.candidates ?? [];
   const episodes = run.report?.sample?.episode_context_ids ?? [];
+
+  // **Follow the selection onto its page.** Exemplar chips and the
+  // viewer can move the episode from outside this table; leaving the
+  // strip where it was would highlight nothing and read as the pick not
+  // registering.
+  useEffect(() => {
+    const index = episodes.indexOf(selectedEpisode);
+    if (index >= 0) setPage(pageOf(index));
+  }, [episodes, selectedEpisode]);
 
   // Absent is "not recorded", never "all passed". Runs stored before the
   // field existed have no rows, and drawing them as a clean table would
   // report a measurement nobody made.
   if (!hasEpisodeOutcomes(run)) {
-    return <p className="muted">{t("decisions.episodes.notRecorded")}</p>;
+    // No verdicts to tabulate — but the reader still has to be able to
+    // reach an episode, and the dropdown that used to do that is gone.
+    // Ids and nothing else is what the dropdown offered too; here it is
+    // all the run recorded.
+    return (
+      <>
+        <p className="muted">{t("decisions.episodes.notRecorded")}</p>
+        <EpisodePager
+          episodes={episodes}
+          page={page}
+          onPage={setPage}
+          selected={selectedEpisode}
+          onPick={onPick}
+          bare
+        />
+      </>
+    );
   }
 
   const byCandidate = new Map(
@@ -606,6 +773,11 @@ function EpisodeOutcomes({
     ),
   );
   const shown = failuresOnly ? interesting : episodes;
+  // Clamped, not trusted: switching the filter on can leave two pages
+  // where there were twelve, and page 7 of two is a blank table that
+  // reads as a run with no episodes.
+  const current = clampPage(page, shown.length);
+  const visible = pageSlice(shown, current);
 
   return (
     <>
@@ -657,7 +829,7 @@ function EpisodeOutcomes({
               </tr>
             </thead>
             <tbody>
-              {shown.map((episode) => {
+              {visible.map((episode) => {
                 const outcomes = candidates.map((candidate) => byCandidate.get(candidate.candidate_id)?.get(episode));
                 const differs = outcomes.length > 1 && outcomes[0]?.success !== outcomes[1]?.success;
                 return (
@@ -684,7 +856,100 @@ function EpisodeOutcomes({
           </table>
         </div>
       )}
+      <EpisodePager
+        episodes={shown}
+        page={current}
+        onPage={setPage}
+        selected={selectedEpisode}
+        onPick={onPick}
+      />
     </>
+  );
+}
+
+/** Five episodes a window, and a strip of tabs to move between them.
+ *
+ * **The strip is windowed too.** A three-hundred-episode sweep is sixty
+ * pages, and sixty tabs is the problem the paging was added to solve
+ * wearing a different control — so `pageWindow` caps how many are
+ * offered and keeps that count constant at both ends, rather than
+ * shrinking as the reader reaches the edges.
+ *
+ * `bare` is the fallback for a run with no recorded per-episode
+ * outcomes: no table to page, just the ids, because that reader has to
+ * be able to reach an episode too.
+ */
+function EpisodePager({
+  episodes,
+  page,
+  onPage,
+  selected,
+  onPick,
+  bare = false,
+}: {
+  episodes: string[];
+  page: number;
+  onPage: (page: number) => void;
+  selected: string;
+  onPick: (episode: string) => void;
+  bare?: boolean;
+}) {
+  const { t } = useTranslation();
+  const total = pageCount(episodes.length);
+  const visible = bare ? pageSlice(episodes, page) : [];
+  if (total <= 1 && !bare) return null;
+  return (
+    <div className="episode-pager">
+      {bare ? (
+        <div className="episode-pager-ids">
+          {visible.map((episode) => (
+            <button
+              key={episode}
+              type="button"
+              className={`chip${episode === selected ? " primary" : ""}`}
+              onClick={() => onPick(episode)}
+            >
+              #{episodes.indexOf(episode) + 1} · {episode.slice(0, 8)}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {total > 1 ? (
+        <div className="episode-pager-tabs" role="tablist" aria-label={t("decisions.episodes.pages")}>
+          <button
+            type="button"
+            disabled={page === 0}
+            aria-label={t("decisions.episodes.prevPage")}
+            onClick={() => onPage(clampPage(page - 1, episodes.length))}
+          >
+            ‹
+          </button>
+          {pageWindow(page, episodes.length).map((number) => (
+            <button
+              key={number}
+              type="button"
+              role="tab"
+              aria-selected={number === page}
+              className={number === page ? "primary" : ""}
+              onClick={() => onPage(number)}
+            >
+              {number + 1}
+            </button>
+          ))}
+          <button
+            type="button"
+            disabled={page >= total - 1}
+            aria-label={t("decisions.episodes.nextPage")}
+            onClick={() => onPage(clampPage(page + 1, episodes.length))}
+          >
+            ›
+          </button>
+          <span className="muted">
+            {t("decisions.episodes.pageOf", { page: String(page + 1), total: String(total) })}
+          </span>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -912,54 +1177,6 @@ function SampleBanner({ run }: { run: DecisionRun }) {
   );
 }
 
-/** Six gates, every candidate, in contract order — first on the page.
- *
- * `n_distinct` sits beside the run count because the pair is what a
- * collision bound's denominator actually is: a hundred replays of one
- * episode is one independent sample, and printing only the run count is
- * how this project once published a 3.0% upper bound off a single
- * episode driven a hundred times.
- */
-function GateTable({ run }: { run: DecisionRun }) {
-  const { t } = useTranslation();
-  const candidates = run.report?.candidates ?? [];
-  if (candidates.length === 0) return null;
-
-  return (
-    <div className="panel decision-summary decision-summary--card">
-      <div className="panel-head">
-        <h3>{t("decisions.gates.title")} <Hint text={t("decisions.gates.note")} label={t("decisions.gates.title")} /></h3>
-      </div>
-      {/* Stays on the page: this one fires only when the candidates were
-          shown different things, and a warning behind a mark nobody
-          points at is a warning nobody reads. */}
-      <ObservationNotice candidates={candidates} />
-      <div className="table-scroll wide">
-        <table>
-          <thead>
-            <tr>
-              <th>{t("decisions.gates.candidate")}</th>
-              <th>{t("decisions.gates.observation")}</th>
-              <th>{t("decisions.gates.runs")}</th>
-              <th>{t("decisions.gates.successRate")}</th>
-              <th>{t("decisions.gates.p99")}</th>
-              <th title={t("decisions.gates.replanNote")}>{t("decisions.gates.replans")}</th>
-              {GATES.map((gate) => (
-                <th key={gate}>{gate}</th>
-              ))}
-              <th>{t("decisions.gates.verdict")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {candidates.map((candidate) => (
-              <CandidateRow key={candidate.candidate_id} candidate={candidate} />
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
 
 /** Say so when a comparison put unlike inputs side by side.
  *
@@ -979,6 +1196,7 @@ function GateTable({ run }: { run: DecisionRun }) {
  * component overruling a comparison the platform agreed to perform, and
  * the reader is the one who knows whether the difference was deliberate.
  */
+
 /** Hand the whole run to somebody who will not open this page.
  *
  * **Offered for every run, not only ranked ones.** Most produce no card
@@ -992,22 +1210,31 @@ function GateTable({ run }: { run: DecisionRun }) {
  */
 function ExportReport({ runId }: { runId: string }) {
   const { t } = useTranslation();
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"md" | "xlsx" | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
+
+  /** One handler, because the only difference is which document the API
+   *  builds — the fetch, the Blob and the failure path are identical,
+   *  and two copies of them would drift on the first fix. */
+  const save = (format: "md" | "xlsx") => {
+    setBusy(format);
+    setFailed(null);
+    const download = format === "md" ? downloadDecisionReport : downloadDecisionWorkbook;
+    void download(runId)
+      .catch((caught) => setFailed(caught instanceof Error ? caught.message : String(caught)))
+      .finally(() => setBusy(null));
+  };
+
   return (
-    <div>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => {
-          setBusy(true);
-          setFailed(null);
-          void downloadDecisionReport(runId)
-            .catch((caught) => setFailed(caught instanceof Error ? caught.message : String(caught)))
-            .finally(() => setBusy(false));
-        }}
-      >
-        {busy ? t("decisions.export.busy") : t("decisions.export.markdown")}
+    <div className="decision-export">
+      <button type="button" disabled={busy !== null} onClick={() => save("md")}>
+        {busy === "md" ? t("decisions.export.busy") : t("decisions.export.markdown")}
+      </button>
+      {/* Excel beside Markdown rather than replacing it: one goes in a
+          ticket, the other into a spreadsheet, and they are read by
+          different people. */}
+      <button type="button" disabled={busy !== null} onClick={() => save("xlsx")}>
+        {busy === "xlsx" ? t("decisions.export.busy") : t("decisions.export.excel")}
       </button>
       {failed ? <span className="error-text">{failed}</span> : null}
     </div>
@@ -1027,82 +1254,6 @@ function ObservationNotice({ candidates }: { candidates: RunCandidate[] }) {
   );
 }
 
-function CandidateRow({ candidate }: { candidate: RunCandidate }) {
-  const { t } = useTranslation();
-  return (
-    <tr>
-      <td>
-        <strong>{candidate.stack_label}</strong>
-        <br />
-        <span className="muted">{candidate.local_controller_config}</span>
-        <br />
-        <code className="muted">{candidate.candidate_id}</code>
-      </td>
-      {/* What this candidate was shown. Named rather than blank when
-          undeclared: a stack whose inputs nobody wrote down cannot be
-          shown to match the others, and a blank cell reads as "same as
-          the rest". */}
-      <td className="muted">
-        {candidate.local_observation_class ?? (
-          <span className="badge warn" title={t("decisions.gates.observationUnknownNote")}>
-            {t("decisions.gates.observationUnknown")}
-          </span>
-        )}
-      </td>
-      {/* Evidence, not a score. "Recovered on the first try" and
-          "replanned forty times and timed out" are different results and
-          a bare `timeout` says neither. Undeclared renders as an em dash
-          rather than 0: a run recorded before replanning was priced did
-          not measure this, and 0 would assert it did. */}
-      <td className="muted">{candidate.replan_count ?? "—"}</td>
-      <td title={t("decisions.gates.distinctNote")}>
-        {candidate.n_distinct_episodes}
-        {/* A retired candidate genuinely covered fewer episodes than the
-            others, so every number in this row rests on a smaller
-            sample. Said in the row rather than in a footnote, because
-            the row is where it is read. */}
-        {candidate.stopped_early ? (
-          <>
-            <br />
-            <span
-              className="badge warn"
-              title={`${candidate.stopped_early.gate}: ${candidate.stopped_early.rule}`}
-            >
-              {t("decisions.gates.stoppedEarly", {
-                run: String(candidate.stopped_early.episodes_run),
-                planned: String(candidate.stopped_early.episodes_planned),
-                gate: candidate.stopped_early.gate,
-              })}
-            </span>
-          </>
-        ) : null}
-      </td>
-      <td>{Math.round(candidate.success_rate * 100)}%</td>
-      <td>{candidate.pooled_p99_latency_ms.toFixed(2)} ms</td>
-      {GATES.map((gate) => (
-        <td key={gate}>
-          <GateCell verdict={candidate.gates?.[gate]} />
-        </td>
-      ))}
-      <td>
-        {candidate.cleared_gates ? (
-          <span className="badge ok">{t("decisions.gates.cleared")}</span>
-        ) : (
-          <span className="badge err" title={candidate.blocking_gates.join(", ")}>
-            {candidate.blocking_gates.join(", ")}
-          </span>
-        )}
-      </td>
-    </tr>
-  );
-}
-
-/** One gate's verdict, with its evidence in the tooltip.
- *
- * The evidence is not decoration: "G3: fail" without the numbers cannot
- * be argued with, and a verdict nobody can argue with is one people
- * learn to route around.
- */
 function GateCell({ verdict }: { verdict: GateVerdict | undefined }) {
   const result = gateResult(verdict);
   if (result === undefined) return <span className="muted">—</span>;
@@ -1216,156 +1367,6 @@ function CardPanel({ run }: { run: DecisionRun }) {
   );
 }
 
-/** The world this was measured in.
- *
- * `sensor_noise` is here rather than buried in provenance because
- * `episode_context_id` does not hash the amplitudes (HĐ-3.1): two runs
- * at the same seeds under different sigma are two different experiments
- * whose context ids are identical. If this panel is wrong, nothing
- * downstream can tell.
- */
-function Conditions({ run }: { run: DecisionRun }) {
-  const { t } = useTranslation();
-  const identity = run.report?.identity;
-  const environment = run.report?.measurement_environment;
-  if (!identity) return null;
-  const host = environment?.benchmark_host as Record<string, unknown> | undefined;
-
-  return (
-    <div className="panel">
-      <div className="panel-head">
-        <h3>{t("decisions.conditions.title")}</h3>
-      </div>
-      <div className="stat-grid">
-        <Figure
-          label={t("decisions.conditions.lidarSigma")}
-          value={`${identity.sensor_noise?.lidar_range_sigma_m ?? 0} m`}
-        />
-        <Figure
-          label={t("decisions.conditions.wheelSlip")}
-          value={`${((identity.sensor_noise?.wheel_slip_fraction ?? 0) * 100).toFixed(1)}%`}
-        />
-        {host?.cpu ? <Figure label={t("decisions.conditions.cpu")} value={String(host.cpu)} /> : null}
-        {host?.cores_allocated !== undefined ? (
-          <Figure
-            label={t("decisions.conditions.cores")}
-            value={`${String(host.cores_allocated)}/${String(host.logical_cores ?? "?")}`}
-          />
-        ) : null}
-      </div>
-      {/* G4 reads wall-clock latency, so an unpinned run measured a
-          machine that was also doing something else. The warning travels
-          with the result rather than living in a log nobody opens. */}
-      {environment?.warning ? (
-        <div className="notice" style={{ marginTop: 12 }}>
-          {environment.warning}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/** What somebody else needs to rebuild this (HĐ-13). */
-function Provenance({ run }: { run: DecisionRun }) {
-  const { t } = useTranslation();
-  const identity = run.report?.identity;
-  return (
-    <div className="panel">
-      <div className="panel-head">
-        <h3>{t("decisions.provenance.title")}</h3>
-      </div>
-      <dl className="stat-grid">
-        <dt>{t("decisions.provenance.runId")}</dt>
-        <dd>
-          <code>{run.id}</code>
-        </dd>
-        <dt>{t("decisions.provenance.contracts")}</dt>
-        <dd>{run.contracts_version}</dd>
-        <dt>{t("decisions.provenance.anchors")}</dt>
-        <dd>{identity?.anchor_config_version ?? "—"}</dd>
-        <dt>{t("decisions.provenance.gitSha")}</dt>
-        <dd>
-          <code>{identity?.git_sha?.slice(0, 12) ?? "—"}</code>
-        </dd>
-        <dt>{t("decisions.provenance.runUri")}</dt>
-        <dd>
-          <code>{run.report?.run_uri ?? "—"}</code>
-        </dd>
-        {/* A URI alone cannot say the files behind it are still the ones
-            this result came from — that is what the checksum is for
-            (D15), so the two are shown together or not at all. */}
-        <dt>{t("decisions.provenance.checksum")}</dt>
-        <dd>
-          <code>{run.report?.run_checksum?.slice(0, 16) ?? "—"}</code>
-        </dd>
-      </dl>
-      {run.report?.checks?.length ? (
-        <>
-          <h4>{t("decisions.provenance.checks")}</h4>
-          <ul>
-            {run.report.checks.map((line) => (
-              <li key={line} className="muted">
-                {line}
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-/** Append-only, oldest first (HĐ-14). Both ends of each change, because
- *  "approved" alone does not say what it replaced. */
-function AuditTrail({ events }: { events: ReviewEvent[] }) {
-  const { t } = useTranslation();
-  return (
-    <div className="panel">
-      <div className="panel-head">
-        <h3>{t("decisions.audit.title")}</h3>
-      </div>
-      {events.length === 0 ? (
-        <p className="muted">{t("decisions.audit.empty")}</p>
-      ) : (
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>{t("decisions.audit.action")}</th>
-                <th>{t("decisions.audit.who")}</th>
-                <th>{t("decisions.audit.change")}</th>
-                <th>{t("decisions.audit.comment")}</th>
-                <th>{t("decisions.audit.when")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {events.map((event) => (
-                <tr key={event.sequence}>
-                  <td>{event.sequence}</td>
-                  <td>{t(`decisions.audit.${event.action}`)}</td>
-                  <td>{event.username}</td>
-                  <td className="muted">
-                    {event.previous_state} → {event.new_state}
-                  </td>
-                  <td>{event.comment || "—"}</td>
-                  <td className="muted">{event.created_at.slice(0, 16).replace("T", " ")}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** One labelled number.
- *
- * `unknown` rather than a colour for "not measured": the word changes,
- * not just the shade, so the distinction survives a greyscale print and
- * a reader who does not know the palette.
- */
 function Figure({ label, value, unknown }: { label: string; value: string; unknown?: boolean }) {
   return (
     <div className="stat-card">

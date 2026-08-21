@@ -28,7 +28,12 @@ describe("the viewer sits with the evidence it explains", () => {
        a reader should be able to do is open one. Below the card instead,
        a trajectory becomes an illustration of a conclusion rather than
        the thing the conclusion came from. */
-    expect(DETAIL.indexOf("<TracePanel")).toBeGreaterThan(DETAIL.indexOf("<GateTable"));
+    // Second, right under the comparison result: a reader who has just
+    // been told which candidate won wants to see it drive. The gate
+    // table now sits below the evidence — it lists eliminations, which
+    // closes the argument rather than opening it.
+    expect(DETAIL.indexOf("<TracePanel")).toBeGreaterThan(DETAIL.indexOf("<CandidateComparison"));
+    expect(DETAIL.indexOf("<TracePanel")).toBeLessThan(DETAIL.indexOf("<EvidencePanel"));
     expect(DETAIL.indexOf("<TracePanel")).toBeLessThan(DETAIL.indexOf("<Outcome"));
   });
 

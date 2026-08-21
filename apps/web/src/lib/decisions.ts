@@ -127,6 +127,33 @@ export interface RunCandidate {
   /** Replans across every episode this candidate ran. See
    *  `EpisodeOutcome.replan_count` — evidence, not a score. */
   replan_count?: number;
+  /** The four objectives and the utility they add up to, for this
+   *  candidate alone (`w_R·U_R + w_S·U_S + w_E·U_E + w_C·U_C`).
+   *
+   *  Present for **every** candidate that produced episodes, including
+   *  ones that failed a gate — the platform scores the survivors for the
+   *  card and these separately for the page. Absent on runs stored
+   *  before that existed, and `null` where a candidate could not be
+   *  scored at all: an objective over an empty episode set is undefined,
+   *  not zero.
+   */
+  objectives?: { U_R: number; U_S: number; U_E: number; U_C: number } | null;
+  /** Two reductions over the episode column, taken once by the scoring
+   *  pass so the page and the export cannot differ about them. Absent on
+   *  runs stored before they existed; the page then falls back to
+   *  reducing the episode rows itself. */
+  worst_clearance_m?: number | null;
+  median_travel_time_s?: number | null;
+  decision_utility?: number | null;
+  /** Whether this candidate may be recommended at all.
+   *
+   *  Beside the numbers rather than left to be inferred from the gate
+   *  table, because "scored lower" and "was never in the running" are
+   *  different claims — and a gate failure may leave no mark on the
+   *  utility: collisions are excluded from `U_S` by contract (HĐ-6) and
+   *  no objective reflects a missing observation channel.
+   */
+  recommendation_eligible?: boolean;
   /** Per-episode outcomes, in the order the sweep ran them.
    *
    * **Absent is "not recorded", never "all passed".** Runs stored before
