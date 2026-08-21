@@ -4,6 +4,11 @@
  * a replay plays. These are what the sweep concluded, one value per
  * candidate, and the question is which stack behaved better.
  *
+ * Every value arrives as digits and a unit kept apart, because the grid
+ * aligns decimal points across rows and `ms` is wider than `m` is wider
+ * than `MB`. Absent values arrive as `null` and are worded by the
+ * component.
+ *
  * **Almost nothing here is computed.** Where the platform already
  * produced a number, it is read out of the gate payload rather than
  * derived again: G1 carries the no-path rate, G2 the collision count and
@@ -35,13 +40,15 @@ export interface MetricRow {
   /** One entry per candidate, in the order given. `null` where this run
    *  did not record it — never 0, which would read as a measurement. */
   values: (number | null)[];
-  /** Number and unit together, per candidate. Kept for callers that
-   *  render a metric as one string; the grid uses the two fields below
-   *  so it can line the decimal points up across rows. */
-  text: string[];
   /** The digits alone, already rounded for display. `null` where the run
    *  did not record the value — the wording for that is translated, so
-   *  it belongs to the component and not here. */
+   *  it belongs to the component and not here.
+   *
+   *  There is deliberately no field spelling the number and unit
+   *  together. One existed while the grid rendered a metric as a single
+   *  string; it survived the switch to two lanes as an unread field
+   *  whose only distinctive content was the `—` this row's absent case
+   *  no longer uses. Two ways to render one value is one too many. */
   numberText: (string | null)[];
   /** `undefined` for a bare count. The cell still renders the slot, so
    *  one unitless row does not shove its number out of the column. */
@@ -165,10 +172,6 @@ const metres: Format = { number: (value) => value.toFixed(3), unit: "m" };
 const megabytes: Format = { number: (value) => value.toFixed(1), unit: "MB" };
 const count: Format = { number: (value) => String(Math.round(value)), unit: "" };
 
-/** `number` and `unit` joined, for `text` and nothing else. */
-const spell = (format: Format, value: number) =>
-  format.unit ? `${format.number(value)} ${format.unit}` : format.number(value);
-
 /** The B−A difference, formatted on the display scale.
  *
  * A rate is stored as `0.7` and shown as `70.0 %`, so a raw difference
@@ -212,11 +215,9 @@ function row(
     key,
     direction,
     values,
-    // An em dash, not "0": a number the run did not record and a number
-    // that came out zero are opposite readings of the same cell.
-    text: values.map((value) => (value === null ? "—" : spell(format, value))),
-    // `null`, not a dash: the component decides how an absent value
-    // reads, because that wording is translated and this module has no
+    // `null`, not a dash: "did not record it" and "measured zero" are
+    // opposite readings, and one glyph served both. The component says
+    // which in words — the wording is translated, and this module has no
     // dictionary.
     numberText: values.map((value) => (value === null ? null : format.number(value))),
     unit: format.unit || undefined,

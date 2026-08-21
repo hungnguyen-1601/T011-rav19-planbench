@@ -270,3 +270,41 @@ describe("the collision bound carries the sample it rests on", () => {
     expect(row).not.toContain("not applicable");
   });
 });
+
+describe("an absent value says so in words", () => {
+  it("puts no em dash in any value cell, on any shape of run", () => {
+    /* The acceptance for this: `—` served both "the run did not record
+       it" and, to a hurried reader, "zero". They are opposite readings.
+       The words are also translated and searchable, which a glyph is
+       not. Checked across a full candidate and an empty one, since the
+       dash used to appear only on the empty side. */
+    for (const field of [
+      [candidate({ candidate_id: "a" }), candidate({ candidate_id: "b" })],
+      [
+        candidate({ candidate_id: "a" }),
+        candidate({ candidate_id: "b", gates: {}, episodes: undefined, replan_count: undefined } as Partial<RunCandidate>),
+      ],
+      [candidate({ candidate_id: "a", gates: {}, episodes: undefined } as Partial<RunCandidate>)],
+    ]) {
+      const html = renderToStaticMarkup(
+        <ComparisonGrid run={run} candidates={field as RunCandidate[]} />,
+      );
+      const cells = [...html.matchAll(/<td class="comparison-cell comparison-value[^"]*">(.*?)<\/td>/g)];
+      expect(cells.length).toBeGreaterThan(0);
+      for (const [, inner] of cells) expect(inner).not.toContain("—");
+    }
+  });
+
+  it("keeps a measured zero reading as zero", () => {
+    /* The other half. A test that only forbids the dash would pass on a
+       page that had quietly turned every zero into "not measured". */
+    const html = renderToStaticMarkup(
+      <ComparisonGrid run={run} candidates={[candidate({ candidate_id: "a" }), candidate({ candidate_id: "b" })]} />,
+    );
+    const collisions = [...html.matchAll(/<tr>(.*?)<\/tr>/gs)]
+      .map(([, inner]) => inner)
+      .find((inner) => inner.includes("Collisions observed"))!;
+    expect(collisions).toContain('<span class="num">0</span>');
+    expect(collisions).not.toContain("not measured");
+  });
+});

@@ -97,22 +97,35 @@ describe("where the numbers come from", () => {
 });
 
 describe("not recorded is not zero", () => {
-  it("renders an em dash where the run kept nothing", () => {
+  it("reports nothing at all where the run kept nothing", () => {
     // A run stored before episode rows existed has no clearance to
     // report. Rendering that as 0.000 m says the robot touched
     // something.
+    //
+    // `null` rather than a dash: this module has no dictionary, and
+    // "not measured" is translated. A glyph chosen here would be one
+    // the component could not translate and a reader could not search.
     const bare = candidate({ episodes: undefined, gates: {}, replan_count: undefined });
     const rows = comparisonRows([bare]);
-    expect(rowFor(rows, "worstClearance").values[0]).toBeNull();
-    expect(rowFor(rows, "worstClearance").text[0]).toBe("—");
-    expect(rowFor(rows, "collisions").text[0]).toBe("—");
-    expect(rowFor(rows, "replans").text[0]).toBe("—");
+    for (const key of ["worstClearance", "collisions", "replans"]) {
+      expect(rowFor(rows, key).values[0], key).toBeNull();
+      expect(rowFor(rows, key).numberText[0], key).toBeNull();
+    }
   });
 
   it("still reports a genuine zero as zero", () => {
     // The other half of the pair, so the test above cannot pass by
-    // everything rendering as a dash.
-    expect(rowFor(comparisonRows([candidate()]), "collisions").text[0]).toBe("0");
+    // everything coming out absent.
+    expect(rowFor(comparisonRows([candidate()]), "collisions").numberText[0]).toBe("0");
+  });
+
+  it("emits no em dash anywhere, for any candidate", () => {
+    // The glyph is gone from the module, not merely unused by the grid.
+    // Leaving it in an unread field is how it comes back.
+    for (const row of comparisonRows([candidate(), candidate({ gates: {} })])) {
+      for (const digits of row.numberText) expect(digits ?? "").not.toContain("—");
+      expect(row.deltaText ?? "").not.toContain("—");
+    }
   });
 });
 
@@ -218,7 +231,7 @@ describe("more than two candidates", () => {
     const rows = comparisonRows([candidate(), candidate(), candidate()]);
     for (const row of rows) {
       expect(row.values).toHaveLength(3);
-      expect(row.text).toHaveLength(3);
+      expect(row.numberText).toHaveLength(3);
     }
   });
 
@@ -254,19 +267,6 @@ describe("number and unit, kept apart", () => {
         if (digits === null) continue;
         expect(digits, row.key).not.toContain(row.unit);
       }
-    }
-  });
-
-  it("agrees with the string it also spells out", () => {
-    /* `text` and `numberText` come from one formatter; if they ever
-       disagree, one of them is a second definition of the same value. */
-    for (const row of comparisonRows([candidate(), candidate()])) {
-      row.numberText.forEach((digits, index) => {
-        if (digits === null) return;
-        expect(row.text[index], row.key).toBe(
-          row.unit ? `${digits} ${row.unit}` : digits,
-        );
-      });
     }
   });
 
