@@ -10,7 +10,7 @@ file thì đọc được cả mạch.
 |---|---|---|
 | **A2** thang token | ✅ xong 2026-08-21 | không |
 | **A3** tách `--candidate-a/b` | ✅ xong 2026-08-21 | **có** |
-| A4 biến thể `.notice` | chưa | không |
+| **A4** biến thể `.notice` | ✅ xong 2026-08-21 | không |
 | B0 nạp font | chưa | có |
 | B1–B8 | chưa | có |
 | C sidebar | chưa | có |
@@ -228,7 +228,79 @@ Test không kiểm được màu. Cần chụp **5 vùng × 5 trạng thái them
 Điều cần tìm: **không còn nền tím ngồi cạnh chữ teal** ở bất kỳ đâu, và panel phát
 lại không còn giữ xanh–tím sáng trên nền tối.
 
-### Ghi chú cho giai đoạn sau
+### An đã kiểm — đạt
 
-A4 (`.notice--*`) là zero-diff — chỉ thêm biến thể, `.notice` gốc không đổi.
-B0 (nạp font) mới là bước đổi hình tiếp theo.
+Chụp cả light lẫn dark. Cột A ra chàm, cột B ra teal, không còn nền tím cạnh chữ
+teal. Commit `7b287eb`.
+
+---
+
+## A4 — Ba biến thể `.notice` · 2026-08-21
+
+**Zero-diff.** Chỉ thêm ba selector; `.notice` gốc không đụng một dòng.
+
+### Vấn đề
+
+**Cả 27 `.notice` trên site đều vàng.** Cùng một màu cho *"lượt chạy này được chấm
+trước khi có tầng giải thích"* và *"mọi con số trên trang dựa trên cỡ mẫu dưới
+N_min đã khai"*. Một trang không phân biệt được ghi chú thường với thông điệp vô
+hiệu hoá số liệu bên dưới nó thì người đọc học cách lướt qua cả hai.
+
+### Đã thêm
+
+```css
+.notice.notice--info     { background: var(--panel-2);  border-color: var(--border); }
+.notice.notice--warn     { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+.notice.notice--critical { background: var(--err-soft);  border-color: var(--err); }
+```
+
+Ba mức, và luật dùng chúng: `--critical` **chỉ** cho loại thông điệp vô hiệu hoá
+mọi số bên dưới (`n` dưới N_min). Thêm loại thứ hai vào mức đó là nó hết nghĩa.
+
+`--warn` giữ nền của `.notice` gốc nhưng **viền nhạt hơn** (mix 35% thay vì
+`--warn` đặc): khi đã có biến thể trung tính, một cảnh báo không còn phải gào lên
+mới phân biệt được với ghi chú thường.
+
+### Một chi tiết ngoài chữ plan: `.notice.notice--x`, không phải `.notice--x`
+
+Plan viết selector đơn. Cả hai đều chạy **hôm nay** — biến thể nằm sau rule gốc
+nên cùng specificity thì thứ tự nguồn quyết định. Nhân đôi class biến điều đó
+thành tính chất của **selector** thay vì tính chất của **vị trí khối trong một
+file 3500 dòng**.
+
+Lý do đáng làm: dự án này đã ship **ba** lỗi CSS vô hình trong review (token chưa
+khai, comment-không-phải-rule, hex hard-code). Một rule ngừng hoạt động vì ai đó
+di chuyển nó sẽ là lỗi thứ tư cùng loại.
+
+### Vì sao không gán luôn cho 27 chỗ dùng
+
+Đó là việc của giai đoạn B, và nó là **một phán đoán cho từng chỗ**. Tách ra thì
+diff của B đọc được là *"notice này là cảnh báo, cái kia là critical"*, chứ không
+lẫn với thay đổi hình dạng của chúng.
+
+### Nghiệm thu
+
+So với `HEAD`, bóc comment, chuẩn hoá khoảng trắng, đối chiếu theo selector:
+
+```
+selectors added  : .notice.notice--info, .notice.notice--warn, .notice.notice--critical
+selectors removed: (không)
+bodies changed   : 5 — .decision-deployment-map, .decision-deployment-skeleton,
+                   .chat-history li:hover, .chat-history-delete:hover, .latency-playhead
+```
+
+Năm body đó là **Plan 1 T2b đang nằm trong working tree**, khớp đúng 4 hunk chưa
+commit; không thuộc lượt này.
+
+`grep 'notice--' src --include=*.tsx` → **0**. Không component nào mang class mới,
+nên không pixel nào dịch.
+
+Test: `tokens`, `running-comparison`, `hint`, `decisions-page` — **189 passed**.
+Bốn token `--panel-2` / `--warn-soft` / `--err-soft` / `--err` đều khai đủ ba
+đường theme.
+
+### Hết giai đoạn A
+
+Ba bước xong. Từ B0 trở đi mọi bước đều đổi hình, và B0 là bước đầu tiên cần
+**quyết định của An trước khi làm**: `next/font/local` với `.woff2` commit vào
+repo (đã chốt trong plan) đòi tải file font về và ghi manifest pin tag + SHA-256.

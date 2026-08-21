@@ -1220,6 +1220,57 @@ details summary {
   font-size: 13px;
 }
 
+/* Three severities, because right now there is one.
+   ===================================================================
+   Every `.notice` on the site is yellow — twenty-seven of them, from
+   "this run was scored before the explanation layer existed" to "every
+   figure on this page rests on a sample below the declared N_min".
+   A page where the routine note and the one that voids the numbers
+   under it wear the same colour has no way to say which is which, and
+   the reader learns to skim past both.
+
+   The base rule above is deliberately left alone. Reassigning the
+   twenty-seven call sites is phase B's job and it is a judgement per
+   site; landing the vocabulary separately keeps that diff readable as
+   "this notice is a warning, that one is critical" rather than mixing
+   it with a change in what any of them look like. Nothing carries these
+   classes yet, so nothing moves.
+
+   Written `.notice.notice--x` rather than `.notice--x`. Both would work
+   today — the variants sit after the base rule, so equal specificity
+   resolves in their favour by source order. Doubling the class makes
+   that a property of the selector instead of a property of where the
+   block happens to sit in a 3500-line file. This project has already
+   shipped three CSS failures that were invisible in review; a rule that
+   stops working because someone moved it would be a fourth of the same
+   kind. */
+
+/* Neutral. The default once phase B lands: a note that adds context
+   without claiming anything is wrong. */
+.notice.notice--info {
+  background: var(--panel-2);
+  border-color: var(--border);
+}
+
+/* Something is off, and it is bounded — one candidate retired early,
+   one measurement taken on an unpinned host. It qualifies part of the
+   page, not the page. */
+.notice.notice--warn {
+  background: var(--warn-soft);
+  /* Softer than the base rule's solid `--warn`: once the neutral
+     variant exists, a warning no longer has to shout to be told apart
+     from an ordinary note. */
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+}
+
+/* Reserved for the one class of message that voids every number below
+   it — `n` under the deployment's declared N_min. If a second kind of
+   message starts wearing this, it stops meaning anything. */
+.notice.notice--critical {
+  background: var(--err-soft);
+  border-color: var(--err);
+}
+
 /* The mark that carries a field's explanation — see components/Hint.
    Small and quiet: it sits beside every labelled number on the
    deployment form, and a row of loud icons would be its own kind of
