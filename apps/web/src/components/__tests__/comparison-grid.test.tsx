@@ -308,3 +308,43 @@ describe("an absent value says so in words", () => {
     expect(collisions).not.toContain("not measured");
   });
 });
+
+describe("a caveat sits with the number it qualifies", () => {
+  const withWarning = () =>
+    renderToStaticMarkup(
+      <ComparisonGrid
+        run={run}
+        candidates={[candidate({ candidate_id: "a" }), candidate({ candidate_id: "b" })]}
+        hostWarning={<span className="comparison-host-warning">unpinned host</span>}
+      />,
+    );
+
+  it("lands in the latency row and in no other", () => {
+    /* G4 reads wall-clock latency, so an unpinned machine muddies p99
+       and leaves worst clearance, success rate and memory exactly as
+       trustworthy as before. As a banner over the table it claimed all
+       of them. */
+    const rows = [...withWarning().matchAll(/<tr>(.*?)<\/tr>/gs)].map(([, inner]) => inner);
+    const carrying = rows.filter((inner) => inner.includes("unpinned host"));
+    expect(carrying).toHaveLength(1);
+    expect(carrying[0]).toContain("Planner latency, pooled p99");
+  });
+
+  it("sits in the label cell, not in a value cell", () => {
+    /* It qualifies the row, not one candidate's figure. */
+    const latency = [...withWarning().matchAll(/<tr>(.*?)<\/tr>/gs)]
+      .map(([, inner]) => inner)
+      .find((inner) => inner.includes("unpinned host"))!;
+    const label = latency.slice(0, latency.indexOf("</th>"));
+    expect(label).toContain("unpinned host");
+  });
+
+  it("draws nothing at all when the host was pinned", () => {
+    /* No empty wrapper left behind: a caveat with no text is a caveat
+       the reader looks for and does not find. */
+    const html = renderToStaticMarkup(
+      <ComparisonGrid run={run} candidates={[candidate({ candidate_id: "a" })]} />,
+    );
+    expect(html).not.toContain("comparison-host-warning");
+  });
+});

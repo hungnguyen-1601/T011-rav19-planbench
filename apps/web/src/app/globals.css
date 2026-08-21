@@ -3844,8 +3844,37 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
   .comparison-table td { padding-inline: var(--space-3); }
   .comparison-value { font-size: var(--fs-body); }
 }
-/* The unpinned-host caveat, above the numbers it qualifies. */
-.comparison-host-warning { margin: 0 16px 12px; font-size: 12.5px; }
+/* The unpinned-host caveat, inside the one row it qualifies.
+   ===================================================================
+   It was a `.notice` banner across the top of the table. Two things
+   were wrong with that. A box spanning everything reads as a caveat on
+   everything, and G4 measures wall-clock latency — so an unpinned
+   machine muddies p99 and leaves worst clearance, success rate and
+   memory exactly as trustworthy as before. And the warning outweighed
+   what it warned about: a bordered, filled box above a table of plain
+   numbers.
+
+   As a line under the metric name it sits with the figure it is about,
+   at the size of a caveat rather than of a finding. */
+.comparison-host-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 4px;
+  /* Wider than the gutter's text would otherwise wrap to, but capped:
+     a caveat that runs the full width of a wide screen becomes the
+     longest line on the page. */
+  max-width: 44ch;
+  color: var(--warn);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  line-height: 1.45;
+  /* The label cell is `white-space: nowrap` for the metric name; the
+     caveat is a sentence and has to wrap. */
+  white-space: normal;
+}
+.comparison-host-warning svg { flex: none; margin-top: 2px; }
 /* Two export formats, side by side. */
 .decision-export { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 

@@ -14,7 +14,7 @@
  * which is the question HĐ-12 puts on a card in the first place.
  */
 
-import { Fragment, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { TraceViewer } from "@/components/TraceViewer";
 import { ComparisonGrid } from "@/components/ComparisonGrid";
@@ -265,9 +265,15 @@ function HostWarning({ run }: { run: DecisionRun }) {
   const view = hostWarningView(run.report?.measurement_environment, locale);
   if (!view) return null;
   return (
-    <div className="notice warn comparison-host-warning">
-      {view.translated ? t(view.key, view.vars) : view.text}
-    </div>
+    // A line inside the p99 row's label, not a `.notice` box. It used to
+    // be a bordered banner over the whole table, which is a box shaped
+    // like a claim about everything under it; the caveat is about one
+    // row. The box also cannot sit in a table cell without looking like
+    // a panel that lost its way.
+    <span className="comparison-host-warning">
+      <Icon name="alert" size={12} />
+      <span>{view.translated ? t(view.key, view.vars) : view.text}</span>
+    </span>
   );
 }
 
@@ -279,7 +285,6 @@ function HostWarning({ run }: { run: DecisionRun }) {
  * telling them apart.
  */
 const SIDES = ["a", "b"] as const;
-const sideLabel = (index: number) => String.fromCharCode(65 + index);
 
 
 function ExplanationHeader({ run }: { run: DecisionRun }) {

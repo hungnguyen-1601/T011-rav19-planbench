@@ -1169,3 +1169,27 @@ describe("leading a metric stopped borrowing the gate colour", () => {
     expect(bestRule()).not.toMatch(/#[0-9a-fA-F]{3,6}/);
   });
 });
+
+describe("the host caveat stopped being a banner", () => {
+  it("is a line, not a notice box", () => {
+    /* A bordered, filled box across the top of a table of plain numbers
+       outweighed the thing it warned about, and its shape claimed every
+       row underneath. */
+    expect(DETAIL).not.toContain('className="notice warn comparison-host-warning"');
+    expect(DETAIL).toContain('<span className="comparison-host-warning">');
+    const rule = CSS.slice(
+      CSS.indexOf(".comparison-host-warning {"),
+      CSS.indexOf("}", CSS.indexOf(".comparison-host-warning {")),
+    );
+    expect(rule).toContain("color: var(--warn)");
+    expect(rule).not.toContain("border");
+    expect(rule).not.toContain("background");
+  });
+
+  it("is handed to the grid rather than placed above it", () => {
+    expect(DETAIL).toContain("hostWarning={<HostWarning run={run} />}");
+    /* And exactly once — the duplicate that appeared while the grid was
+       being extracted rendered the same caveat twice. */
+    expect(DETAIL.match(/<HostWarning run=\{run\} \/>/g)).toHaveLength(1);
+  });
+});
