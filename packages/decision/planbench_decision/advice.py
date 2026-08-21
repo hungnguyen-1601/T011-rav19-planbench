@@ -54,7 +54,7 @@ __all__ = [
 #: Which half of the lifecycle a piece of advice belongs to. Carried so a
 #: caller can render "before you spend the compute" separately from
 #: "now that you have the numbers" without parsing the code strings.
-AdviceKind = Literal["preflight", "diagnosis", "reproduction", "reporting"]
+AdviceKind = Literal["preflight", "diagnosis", "reproduction", "reporting", "recommendation"]
 
 #: Severity ordering used for display. `blocking` first, because a reader
 #: who stops after the first line should have read the one that changes

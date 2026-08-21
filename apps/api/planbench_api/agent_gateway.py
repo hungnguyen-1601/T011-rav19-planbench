@@ -13,6 +13,7 @@ it needs should already be in hand rather than retrofitted.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from planbench_agent.gateway import (
@@ -43,11 +44,16 @@ class ApiAgentGateway:
         candidates: CandidateService,
         runs: DecisionRunService,
         user: User,
+        map_root: Path | None = None,
     ) -> None:
         self._profiles = profiles
         self._candidates = candidates
         self._runs = runs
         self._user = user
+        #: Where a profile's relative map paths resolve. Optional because
+        #: only the recommendation tool reads it, and a gateway without
+        #: it degrades to mapless preflight rather than refusing to exist.
+        self._map_root = map_root
 
     # -- deployments -----------------------------------------------------
 
@@ -169,6 +175,67 @@ class ApiAgentGateway:
 
         report = self._lookup_run(run_id).report or {}
         return [item.model_dump(mode="json") for item in outcome_advice(build_outcome(report))]
+
+    def get_recommendation(self, task_profile_id: str | None = None) -> dict[str, Any]:
+        """Which algorithm this deployment should use, from stored runs.
+
+        Same floor as ``GET /task-profiles/{id}/recommendation``: the
+        deterministic rules run here and the model narrates on top in the
+        chat — it does not get to weigh the evidence itself.
+        """
+        from planbench_benchmark.recommendation import (
+            recommend_from_history,
+            recommendation_source,
+        )
+        from planbench_schemas.task_profile import TaskProfile
+
+        if task_profile_id is None:
+            stored_profiles = self._profiles.list()
+            if len(stored_profiles) != 1:
+                names = ", ".join(sorted(p.id for p in stored_profiles)) or "none declared"
+                raise GatewayError(
+                    f"several deployments exist ({names}); name the task_profile_id "
+                    "the recommendation is for"
+                )
+            task_profile_id = stored_profiles[0].id
+
+        stored = self._lookup_profile(task_profile_id)
+        try:
+            profile = TaskProfile.model_validate(stored.profile or {})
+        except Exception as exc:  # noqa: BLE001 — a stored-but-invalid profile is data
+            raise GatewayError(
+                f"deployment {task_profile_id} no longer validates against the current "
+                f"TaskProfile contract: {exc}"
+            ) from exc
+
+        source = recommendation_source(
+            profile,
+            [
+                {
+                    "run_id": run.id,
+                    "status": run.status,
+                    "card": run.card,
+                    "report": run.report,
+                    "created_at": run.created_at,
+                    "contracts_version": run.contracts_version,
+                }
+                for run in self._runs.list(task_profile_id=task_profile_id)
+            ],
+            map_base_dir=self._map_root,
+        )
+        found = recommend_from_history(source)
+        return {
+            "task_profile_id": task_profile_id,
+            "evidence_tier": source["evidence_tier"],
+            "runs_considered": [row["run_id"] for row in source["runs"]],
+            "cases": [
+                {"run_id": row["run_id"], **case}
+                for row in source["runs"]
+                if row.get("case_table") and row["case_table"].get("available")
+                for case in row["case_table"]["cases"]
+            ],
+            "advice": [item.model_dump(mode="json") for item in found],
+        }
 
     # -- lookups ---------------------------------------------------------
 

@@ -100,6 +100,7 @@ def get_agent_service(request: Request, user: CurrentUser) -> AgentService:
         candidates=get_candidate_service(request),
         runs=get_decision_run_service(request),
         user=user,
+        map_root=get_map_root(request),
     )
     return AgentService(
         provider=request.app.state.agent_provider,

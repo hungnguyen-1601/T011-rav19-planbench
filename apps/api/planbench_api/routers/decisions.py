@@ -54,6 +54,11 @@ from planbench_api.worker import Job, JobQueue
 from planbench_benchmark.candidates import offered_controller_configs
 from planbench_benchmark.outcome import OUTCOME_CODES, build_outcome, outcome_advice
 from planbench_benchmark.preflight import PREFLIGHT_CODES, build_draft, preflight
+from planbench_benchmark.recommendation import (
+    RECOMMENDATION_CODES,
+    recommend_from_history,
+    recommendation_source,
+)
 from planbench_benchmark.reproduction import (
     REPRODUCTION_CODES,
     build_comparison,
@@ -296,6 +301,50 @@ class AdviceListResource(BaseModel):
     #: Model additions dropped for citing a field that does not resolve.
     #: Published, not buried — it is how a reader tells a model that
     #: added judgement from one that added noise.
+    fabricated: int = 0
+    refused: str = ""
+
+
+class RecommendationCaseResource(BaseModel):
+    """One mission's verdict inside one run — the 'in which cases' row.
+
+    ``ci95`` is null exactly when ``status`` is ``INSUFFICIENT_EPISODES``:
+    a group too small to bootstrap is described, never concluded from,
+    and shipping a null instead of a made-up interval is the description.
+    """
+
+    run_id: str
+    mission_id: str
+    n_pairs: int
+    delta_mean: float
+    delta_median: float
+    ci95: tuple[float, float] | None
+    status: str
+    winner_stack: str | None
+    winner_candidate_id: str | None
+
+
+class RecommendationResource(BaseModel):
+    """Which algorithm this deployment should use, argued from stored runs.
+
+    ``evidence_tier`` says where the answer stands: 1 means measured on
+    this very profile, 3 means no comparable evidence exists and the
+    advice is "run this comparison" rather than "adopt this stack".
+    Tier 2 — transfer from a similar environment — is deliberately not
+    produced yet; a field that names its own gap is how a reader knows
+    the gap exists rather than assuming it was covered.
+    """
+
+    task_profile_id: str
+    evidence_tier: int
+    runs_considered: list[str]
+    cases: list[RecommendationCaseResource]
+    rules_applied: int
+    advice: list[AdviceResource]
+    blocking: int
+    material: int
+    disclosure: int
+    summary: str = ""
     fabricated: int = 0
     refused: str = ""
 
@@ -1089,6 +1138,99 @@ def decision_outcome(
     ]
     return AdviceListResource(
         **_advice_counts(items, len(OUTCOME_CODES)),
+        summary=advised.summary,
+        fabricated=advised.fabricated,
+        refused=advised.refused,
+    )
+
+
+@router.get("/task-profiles/{profile_id}/recommendation", response_model=RecommendationResource)
+def task_profile_recommendation(
+    profile_id: str,
+    service: Runs,
+    profiles: Profiles,
+    map_root: MapRoot,
+    request: Request,
+    user: CurrentUser,
+    use_model: Annotated[bool, Query()] = False,
+) -> RecommendationResource:
+    """Which algorithm should this deployment use, and in which cases.
+
+    Everything here is read from stored runs on **this** profile: the
+    card's verdict is repeated, never recomputed, and the per-mission
+    split reuses the same paired bootstrap one aggregation level down.
+    Feasibility on this profile trumps history — a stack preflight blocks
+    is excluded however it fared elsewhere — and when no comparable
+    history exists the honest answer is tier 3: "run this comparison",
+    with the feasible field named.
+
+    Read-only, like every advisory route. Adopting the recommendation is
+    still a human act with a second person's approval (HĐ-14); there is
+    no verb here that could do it.
+
+    ``use_model`` layers the LLM over the rules — rank and extend, never
+    remove, fabricated citations dropped and counted.
+    """
+    profile = profiles.load(profile_id)
+    stored_runs = service.list(task_profile_id=profile_id)
+    source = recommendation_source(
+        profile,
+        [
+            {
+                "run_id": stored.id,
+                "status": stored.status,
+                "card": stored.card,
+                "report": stored.report,
+                "created_at": stored.created_at,
+                "contracts_version": stored.contracts_version,
+            }
+            for stored in stored_runs
+        ],
+        map_base_dir=map_root,
+    )
+    found = recommend_from_history(source)
+
+    cases = [
+        RecommendationCaseResource(run_id=row["run_id"], **case)
+        for row in source["runs"]
+        if row.get("case_table") and row["case_table"].get("available")
+        for case in row["case_table"]["cases"]
+    ]
+    runs_considered = [row["run_id"] for row in source["runs"]]
+
+    if not use_model:
+        items = [AdviceResource(**a.model_dump()) for a in found]
+        return RecommendationResource(
+            task_profile_id=profile_id,
+            evidence_tier=source["evidence_tier"],
+            runs_considered=runs_considered,
+            cases=cases,
+            **_advice_counts(items, len(RECOMMENDATION_CODES)),
+        )
+
+    agent = get_agent_service(request, user)
+    advised = advise_with_model("recommendation", source, found, agent.provider)
+    items = [
+        AdviceResource(
+            code=a.code,
+            kind=a.kind,
+            severity=a.severity,
+            claim=a.claim,
+            ground=a.ground,
+            field_path=a.field_path,
+            do=a.do,
+            do_not=a.do_not,
+            subject=a.subject,
+            source=a.source,
+        )
+        for a in advised.advice
+    ]
+    return RecommendationResource(
+        task_profile_id=profile_id,
+        evidence_tier=source["evidence_tier"],
+        runs_considered=runs_considered,
+        cases=cases,
+        **_advice_counts(items, len(RECOMMENDATION_CODES)),
         summary=advised.summary,
         fabricated=advised.fabricated,
         refused=advised.refused,

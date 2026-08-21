@@ -19,10 +19,11 @@ phải tin suông.
 | 5c | Phản biện trước khi ký | 15 luật + LLM tối đa 3 phản biện | `GET /decisions/{id}/critique[?use_model=true]` | `test_self_check.py`, `test_agent_critique.py` |
 | 5d | Đối chiếu với paper | 6 luật: tham số nào paper nêu/khác/mặc-định-âm-thầm | `POST /candidates/{id}/reproduction` | `test_reproduction.py`, `test_api_advice.py` |
 | 5e | Trước khi viết báo cáo | 18 luật rào chắn: câu nào bằng chứng không cho phép viết | `GET /decisions/{id}/report-advice` | `test_report_advice.py` |
+| 5f | **Nên chọn thuật toán nào** | 12 luật đọc `decision_runs`: khả thi trên chính profile trước, card sau, tách ΔU theo từng mission; 3 bậc bằng chứng, bậc 3 là refusal kèm phép so nên chạy | `GET /task-profiles/{id}/recommendation[?use_model=true]` + tool chat `get_recommendation` | `test_recommendation.py`, `test_api_recommendation.py`, `test_agent_recommendation_tool.py` |
 | 6 | Ký duyệt | — (con người, HĐ-14) | — | — |
-| * | Hỏi đáp mọi lúc | 9 công cụ chỉ đọc trên database | `POST /agent/chat` | `test_api_agent.py` |
+| * | Hỏi đáp mọi lúc | 11 công cụ chỉ đọc trên database | `POST /agent/chat` | `test_api_agent.py` |
 
-Tổng: **64 luật cố vấn + 15 luật phản biện**, chung một kiểu `Advice`
+Tổng: **76 luật cố vấn + 15 luật phản biện**, chung một kiểu `Advice`
 (`packages/decision/planbench_decision/advice.py`).
 
 ## Paper-to-Plugin — luật của mentor
