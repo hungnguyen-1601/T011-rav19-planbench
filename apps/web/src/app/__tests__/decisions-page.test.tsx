@@ -1193,3 +1193,61 @@ describe("the host caveat stopped being a banner", () => {
     expect(DETAIL.match(/<HostWarning run=\{run\} \/>/g)).toHaveLength(1);
   });
 });
+
+describe("the detail header carries the id and drops the tile", () => {
+  it("no longer opens with an icon that named nothing", () => {
+    /* The same `benchmark` glyph on every decision: it distinguished
+       nothing and only took the width the title needed. The *list* page
+       keeps its own, which is why the rule survives. */
+    const header = DETAIL.slice(DETAIL.indexOf("decision-detail-head"), DETAIL.indexOf("</header>"));
+    expect(header).not.toContain("decision-page-icon");
+    expect(CSS).toContain(".decision-page-icon {");
+    expect(LIST).toContain("decision-page-icon");
+  });
+
+  it("gives the header two tracks now that the tile has gone", () => {
+    expect(CSS).toContain(
+      ".decision-detail-head { display: grid; grid-template-columns: minmax(0, 1fr) auto;",
+    );
+  });
+
+  it("keeps the id readable in every state of the button", () => {
+    /* The clipboard refuses outside a secure context and whenever the
+       permission is denied. A button that replaced the id with "Copy
+       failed" would leave the reader with nothing to copy by hand. */
+    expect(DETAIL).toContain("<code>{id}</code>");
+    const rule = CSS.slice(
+      CSS.indexOf(".decision-copy-id {"),
+      CSS.indexOf("}", CSS.indexOf(".decision-copy-id {")),
+    );
+    expect(rule).toContain("background: transparent");
+  });
+
+  it("declares its own class rather than a button variant that does not exist", () => {
+    /* There is no `.btn` in this stylesheet yet — the shared button
+       scale is a later plan's. Writing `btn btn--ghost` here would leave
+       an unstyled control until then. */
+    expect(DETAIL).toContain('className="decision-copy-id"');
+    expect(CSS).not.toContain(".btn--ghost");
+  });
+
+  it("announces the outcome instead of only recolouring", () => {
+    expect(DETAIL).toContain('aria-live="polite"');
+    expect(DETAIL).toContain('aria-label={t("decisions.detail.copyId", { id })}');
+    /* The icon changes too, so the state survives greyscale. */
+    expect(DETAIL).toContain('name={outcome === "copied" ? "check" : "copy"}');
+  });
+
+  it("clears its timer on unmount", () => {
+    /* Copy twice, then leave: without this the second timer fires into
+       a component that is gone. */
+    expect(DETAIL).toContain("if (timer.current) clearTimeout(timer.current);");
+    expect(DETAIL).toContain("useEffect(() => () => {");
+  });
+
+  it("does not assume the clipboard object exists", () => {
+    /* On an insecure origin `navigator.clipboard` is undefined, and
+       reading `.writeText` off it throws before the helper's catch. */
+    expect(DETAIL).toContain("navigator.clipboard?.writeText(text)");
+  });
+});

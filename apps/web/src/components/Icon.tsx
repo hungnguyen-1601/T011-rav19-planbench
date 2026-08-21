@@ -37,6 +37,7 @@ export type IconName =
   | "plus"
   | "refresh"
   | "check"
+  | "copy"
   | "alert";
 
 const PATHS: Record<IconName, React.ReactNode> = {
@@ -147,6 +148,12 @@ const PATHS: Record<IconName, React.ReactNode> = {
     </>
   ),
   check: <path d="m5 13 4 4L19 7" />,
+  copy: (
+    <>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3" />
+    </>
+  ),
   alert: (
     <>
       <path d="M12 3 2 20h20L12 3Z" />

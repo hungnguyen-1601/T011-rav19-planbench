@@ -37,6 +37,7 @@ import { Icon } from "@/components/Icon";
 import { useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import { BELOW_N_MIN, noticeKey, sampleLineFor, sampleNotice } from "@/lib/sample";
+import { COPY_FEEDBACK_MS, type CopyOutcome, copyDecisionId, copyStateKey } from "@/lib/copyId";
 import {
   GATES,
   approvedConfigUrl,
@@ -97,11 +98,14 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
   return (
     <section className="decision-page decision-detail-page">
       <header className="page-head decision-detail-head">
-        <span className="decision-page-icon"><Icon name="benchmark" size={21} /></span>
+        {/* No 40px icon tile. It was the same `benchmark` glyph on every
+            decision, so it distinguished nothing and named nothing —
+            it only took the width the title needed. */}
         <div><span className="decision-eyebrow">{t("decisions.detail.eyebrow")}</span><h1>{run.task_profile_id}</h1>
         <p className="muted">
           {run.experiment_scope ?? "—"} · {run.created_at.slice(0, 16).replace("T", " ")} ·{" "}
-          <Link href="/decisions">{t("decisions.backToList")}</Link>
+          <Link href="/decisions">{t("decisions.backToList")}</Link>{" "}
+          <CopyRunId id={run.id} />
         </p>
         <SampleLine run={run} /></div>
         <div className="decision-detail-badges"><span className={`badge ${run.ranked ? "ok" : "muted-badge"}`}>{run.ranked ? t("decisions.filter.ranked") : t("decisions.filter.unranked")}</span>
@@ -1094,6 +1098,64 @@ function HumanActs({ run, onDone }: { run: DecisionRun; onDone: () => Promise<vo
               : t("decisions.acts.configNote")}
       </p>
     </div>
+  );
+}
+
+/** The run's id, and a button that copies it.
+ *
+ * **The id stays legible in every state**, so the failure case is still
+ * usable: the reader selects it and copies by hand. That is not a
+ * nicety — the clipboard API refuses outside a secure context, when the
+ * document is not focused, and whenever the permission is denied, and a
+ * button that swallowed the id to show "Copy failed" would leave them
+ * with nothing.
+ *
+ * The decision itself is `lib/copyId`, which takes the write function as
+ * a parameter so both branches can be tested without a browser.
+ */
+function CopyRunId({ id }: { id: string }) {
+  const { t } = useTranslation();
+  const [outcome, setOutcome] = useState<CopyOutcome | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleared on unmount as well as before each new timer: copying twice
+  // and then leaving the page would otherwise set state on a component
+  // that is gone.
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+
+  const copy = async () => {
+    const result = await copyDecisionId(id, (text) =>
+      // Optional-chained rather than assumed: `navigator.clipboard` is
+      // absent entirely on an insecure origin, and reading `.writeText`
+      // off `undefined` would throw before the helper's catch.
+      navigator.clipboard?.writeText(text) ??
+      Promise.reject(new Error("clipboard unavailable")),
+    );
+    setOutcome(result);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setOutcome(null), COPY_FEEDBACK_MS);
+  };
+
+  const stateKey = copyStateKey(outcome);
+  return (
+    <button
+      type="button"
+      className="decision-copy-id"
+      data-state={outcome ?? undefined}
+      aria-label={t("decisions.detail.copyId", { id })}
+      onClick={() => void copy()}
+    >
+      <Icon name={outcome === "copied" ? "check" : "copy"} size={12} />
+      <code>{id}</code>
+      {/* Announced rather than only recoloured: the outcome is the whole
+          point of pressing this, and a colour change says nothing to a
+          screen reader. */}
+      <span className="copy-state" aria-live="polite">
+        {stateKey ? t(stateKey) : ""}
+      </span>
+    </button>
   );
 }
 

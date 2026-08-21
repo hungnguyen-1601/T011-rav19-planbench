@@ -2193,13 +2193,60 @@ a.stat-card:hover {
   min-width: 0;
 }
 
-.decision-page-head,
-.decision-detail-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; margin-bottom: 12px; }
+.decision-page-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; margin-bottom: 12px; }
+/* Two tracks: the title block, and the badge. The 40px icon tile that
+   opened this row is gone — it was the same `benchmark` glyph on every
+   decision, so it named nothing and only took the width the title
+   needed. `start` rather than `center` because the block below the
+   title now runs to three lines. */
+.decision-detail-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px; margin-bottom: 12px; }
+/* Still used — by the *list* page (`decisions/page.tsx`), which keeps
+   its icon because there it names the section rather than repeating on
+   every row. Only the detail header dropped it. Deleting the rule with
+   the detail page's markup would have left the list page's span
+   unstyled, which is the quiet kind of breakage: nothing throws, the
+   box simply stops being a box. */
+.decision-page-icon { display: grid; width: 40px; height: 40px; place-items: center; border: 1px solid var(--accent-soft-border); border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
 .decision-page-head h1,
 .decision-detail-head h1 { margin: 0; font-size: 22px; }
 .decision-page-head p,
 .decision-detail-head p { margin: 3px 0 0; }
-.decision-page-icon { display: grid; width: 40px; height: 40px; place-items: center; border: 1px solid var(--accent-soft-border); border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
+
+/* The run's id, and the button that copies it.
+   ===================================================================
+   Declared here rather than as a `.btn` variant because this stylesheet
+   has no `.btn` at all yet; the shared button scale is a later plan's
+   work, and writing a class that does not exist would leave an unstyled
+   control in the meantime.
+
+   Quiet by default. It sits in a line of metadata, and a filled button
+   there would outrank the run's own title two lines above it.
+
+   The id keeps its `<code>` face in every state — the failure case is
+   still usable, because the reader can select the text and copy by
+   hand, which is the whole reason the id is never replaced by a
+   status word. */
+.decision-copy-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font: 500 var(--fs-sm)/1.4 var(--font-sans);
+  cursor: pointer;
+  vertical-align: baseline;
+}
+.decision-copy-id:hover { background: var(--hover); color: var(--text); }
+.decision-copy-id code { font-family: var(--font-mono); font-size: var(--fs-sm); }
+/* Success and failure differ by more than colour: the icon changes to a
+   tick, and the state word is announced through `aria-live`. */
+.decision-copy-id[data-state="copied"] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
+.decision-copy-id[data-state="failed"] { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, var(--border)); }
+.decision-copy-id .copy-state:not(:empty) { margin-left: 2px; font-weight: 600; }
 
 /* How big the sample was, as one line under the run's name.
    ===================================================================
