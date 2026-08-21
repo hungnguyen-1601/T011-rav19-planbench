@@ -3689,6 +3689,43 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
 }
 /* Spans both slots — it is prose, not a quantity, so it has no unit to
    sit beside and no decimal point to line up. */
+/* A clause under the metric name, true of every column in the row —
+   `rule of three`, which qualifies the whole collision-bound row and
+   not any one candidate. */
+.comparison-sub {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+}
+/* The sample a cell's number rests on, under the number. For the
+   collision bound this is not decoration: `3/N` means a lower figure
+   comes from a larger evidence base, so without N the cell reads as the
+   opposite of what it says. */
+.comparison-cell-sub {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  text-align: right;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  font-weight: 400;
+  white-space: normal;
+}
+/* Collisions were observed, so the rule of three does not apply and the
+   platform publishes no bound. Not muted like `not measured` — this is
+   a finding, not a gap: the measurement exists and came out badly. */
+.comparison-value .not-applicable {
+  grid-column: 1 / -1;
+  text-align: right;
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--err);
+}
+
 .comparison-value .not-measured {
   grid-column: 1 / -1;
   text-align: right;

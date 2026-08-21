@@ -204,3 +204,69 @@ describe("which cell is marked as leading", () => {
     expect(replanRow).not.toContain("is-best");
   });
 });
+
+describe("the collision bound carries the sample it rests on", () => {
+  /** The collision-bound row's two cells, as text. */
+  const boundRow = (g2a: Record<string, unknown> | null, g2b: Record<string, unknown> | null) => {
+    const html = renderToStaticMarkup(
+      <ComparisonGrid
+        run={run}
+        candidates={[
+          candidate({ candidate_id: "a", gates: (g2a ? { G2: g2a } : {}) as RunCandidate["gates"] }),
+          candidate({ candidate_id: "b", gates: (g2b ? { G2: g2b } : {}) as RunCandidate["gates"] }),
+        ]}
+      />,
+    );
+    const row = [...html.matchAll(/<tr>(.*?)<\/tr>/gs)]
+      .map(([, inner]) => inner)
+      .find((inner) => inner.includes("Collision probability"))!;
+    return row.replace(/<[^>]+>/g, "|");
+  };
+
+  it("prints the denominator beside the bound, out of the tooltip", () => {
+    /* Run 5753d464c9f6. `≤ 10.0 %` alone reads as a measurement of the
+       robot; it is `3/N`, so a lower number means a bigger sample. */
+    const row = boundRow(
+      { observed: 0, upper_bound_95: 0.1, n_runs: 30, n_distinct_episodes: 30 },
+      { observed: 0, upper_bound_95: 0.1, n_runs: 30, n_distinct_episodes: 30 },
+    );
+    expect(row).toContain("≤ 10.0");
+    expect(row).toContain("0 / 30 distinct episodes");
+    /* And the clause that is true of the whole row sits in the label. */
+    expect(row).toContain("rule of three");
+  });
+
+  it("counts distinct episodes, never the row count", () => {
+    /* Run 98f6cdb257e7: 30 rows, one distinct episode, bound 3.0. Saying
+       `0 / 30` here claims thirty independent samples where there was
+       one — the gate's own comment names this as the mistake that
+       produced a card claiming 3.0% off a single replayed episode. */
+    const row = boundRow(
+      { observed: 0, upper_bound_95: 3.0, n_runs: 30, n_distinct_episodes: 1 },
+      { observed: 0, upper_bound_95: 3.0, n_runs: 30, n_distinct_episodes: 1 },
+    );
+    expect(row).toContain("0 / 1 distinct episodes");
+    expect(row).not.toContain("/ 30 distinct");
+    /* Unclamped: `3/1` is 300%, and the denominator beside it is what
+       makes that legible rather than a rendering fault. */
+    expect(row).toContain("≤ 300.0");
+  });
+
+  it("says the rule does not apply once a collision was seen", () => {
+    /* Run cb323e9d542b. Neither `≤` — there is no bound to quote — nor
+       "not measured", which would be false. */
+    const row = boundRow(
+      { observed: 0, upper_bound_95: 0.1, n_distinct_episodes: 30 },
+      { observed: 34, upper_bound_95: null, n_runs: 245, n_distinct_episodes: 85 },
+    );
+    expect(row).toContain("not applicable");
+    expect(row).toContain("34 collisions / 85 distinct episodes");
+    expect(row).not.toContain("not measured");
+  });
+
+  it("still says nothing when the run has no G2 payload", () => {
+    const row = boundRow(null, null);
+    expect(row).toContain("not measured");
+    expect(row).not.toContain("not applicable");
+  });
+});

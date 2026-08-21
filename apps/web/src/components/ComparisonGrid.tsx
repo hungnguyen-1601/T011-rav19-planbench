@@ -21,6 +21,7 @@ import { Hint } from "@/components/Hint";
 import { Icon } from "@/components/Icon";
 import { type MetricRow, comparisonRows, leaders } from "@/lib/candidateMetrics";
 import { candidateNames, headingField } from "@/lib/candidateHeading";
+import { collisionBoundCell } from "@/lib/collisionBound";
 import { gateVerdictBadge } from "@/lib/gateSummary";
 import type { DecisionRun, RunCandidate } from "@/lib/decisions";
 import { useTranslation } from "@/lib/i18n";
@@ -158,6 +159,10 @@ export function ComparisonGrid({
               candidates={candidates}
               hasDelta={hasDelta}
               extra={metric.key === "p99" ? hostWarning : null}
+              /* The bound is `3/N` under the simulated scenario
+                 distribution, so the sample it rests on is not context —
+                 it is what the number means. It was in a tooltip. */
+              sub={metric.key === "collisionBound" ? t("decisions.compare.sub.collisionBound") : null}
             />
           ))}
         </tbody>
@@ -171,11 +176,14 @@ function MetricLine({
   candidates,
   hasDelta,
   extra,
+  sub,
 }: {
   metric: MetricRow;
   candidates: RunCandidate[];
   hasDelta: boolean;
   extra?: React.ReactNode;
+  /** A clause under the metric name that is true of every column. */
+  sub?: React.ReactNode;
 }) {
   const { t } = useTranslation();
   const best = leaders(metric);
@@ -196,10 +204,19 @@ function MetricLine({
             {t("decisions.compare.limit", { limit: metric.threshold })}
           </span>
         ) : null}
+        {sub ? <span className="comparison-sub">{sub}</span> : null}
         {extra}
       </th>
 
-      {metric.numberText.map((digits, index) => (
+      {metric.key === "collisionBound"
+        ? candidates.map((candidate, index) => (
+            <CollisionBoundCell
+              key={candidate.candidate_id}
+              candidate={candidate}
+              side={sideOf(index)}
+            />
+          ))
+        : metric.numberText.map((digits, index) => (
         <td
           key={candidates[index].candidate_id}
           className={`comparison-cell comparison-value candidate-${sideOf(index)}${
@@ -228,5 +245,63 @@ function MetricLine({
 
       {hasDelta ? <td className="comparison-delta">{metric.deltaText ?? ""}</td> : null}
     </tr>
+  );
+}
+
+/** The collision-probability cell, with the sample it rests on.
+ *
+ * Two branches, and the second is the reason this cell is not an
+ * ordinary value:
+ *
+ * - **A bound exists.** `≤ 10.0 %`, and under it the denominator. The
+ *   number is `3/N`, so a lower one means a larger evidence base rather
+ *   than a safer stack — without the sample beside it the cell says the
+ *   opposite of what it means.
+ * - **A collision was seen.** The platform publishes no bound at all
+ *   (`gates.py:199`), so the cell prints neither `≤` — there is nothing
+ *   to quote — nor "not measured", which would be false: the
+ *   measurement exists and its result is unambiguous.
+ */
+function CollisionBoundCell({
+  candidate,
+  side,
+}: {
+  candidate: RunCandidate;
+  side: string;
+}) {
+  const { t } = useTranslation();
+  const cell = collisionBoundCell(candidate);
+
+  if (cell.kind === "unknown") {
+    return (
+      <td className={`comparison-cell comparison-value candidate-${side}`}>
+        <span className="not-measured">{t("common.notMeasured")}</span>
+      </td>
+    );
+  }
+
+  const sample =
+    cell.kind === "bound"
+      ? t("decisions.compare.cell.distinctEpisodes", {
+          observed: String(cell.observed),
+          distinct: String(cell.distinct),
+        })
+      : t("decisions.compare.cell.collisions", {
+          observed: String(cell.observed),
+          distinct: String(cell.distinct),
+        });
+
+  return (
+    <td className={`comparison-cell comparison-value candidate-${side}`}>
+      {cell.kind === "bound" ? (
+        <>
+          <span className="num">≤ {(cell.bound * 100).toFixed(1)}</span>
+          <span className="unit">%</span>
+        </>
+      ) : (
+        <span className="not-applicable">{t("decisions.compare.cell.notApplicable")}</span>
+      )}
+      <span className="comparison-cell-sub">{sample}</span>
+    </td>
   );
 }
