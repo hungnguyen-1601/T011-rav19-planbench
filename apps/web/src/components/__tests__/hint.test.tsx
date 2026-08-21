@@ -9,12 +9,31 @@
  *
  * No DOM here, so hovering is not exercised; what a pointer does is on
  * the manual checklist. First render, and the accessible name, are.
+ *
+ * The focus ring is read out of the stylesheet rather than measured. A
+ * rule that switches the ring off is a plain fact about the file, and
+ * reading the file is the only way this repository can catch it before
+ * somebody tabs into the page and finds nothing there.
  */
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { Hint } from "@/components/Hint";
+
+const CSS = readFileSync(join(process.cwd(), "src", "app", "globals.css"), "utf8")
+  .split("\r\n")
+  .join("\n");
+
+/** One rule as written, from its selector to the closing brace. */
+function rule(selector: string): string {
+  const start = CSS.indexOf(`\n${selector} {`);
+  if (start < 0) throw new Error(`no rule for ${selector} in globals.css`);
+  return CSS.slice(start, CSS.indexOf("}", start));
+}
 
 describe("the mark", () => {
   it("renders as something small and pointable", () => {
@@ -42,6 +61,25 @@ describe("the mark", () => {
     const html = renderToStaticMarkup(<Hint text="Anything." />);
     expect(html).toContain('tabindex="0"');
     expect(html).toContain('role="button"');
+  });
+
+  it("shows the keyboard where it landed", () => {
+    /* tabindex only decides that focus can land here; it says nothing
+       about whether anyone can see that it did. This rule used to be
+       shared with :hover, so an `outline: none` written for the mouse
+       reached the keyboard too and left a 15px circle whose entire
+       focus signal was a 1px border changing colour. */
+    const focus = rule(".hint-mark:focus-visible");
+    expect(focus).toMatch(/outline:\s*2px solid/);
+    expect(focus).not.toMatch(/outline:\s*none/);
+    expect(CSS).not.toContain([".hint-mark:hover,", ".hint-mark:focus-visible {"].join("\n"));
+  });
+
+  it("is still a circle while it is focused", () => {
+    /* The global :focus-visible rule sets border-radius: 4px, matches
+       this element, and is declared later at equal specificity — so the
+       mark squares off unless this rule restates the circle. */
+    expect(rule(".hint-mark:focus-visible")).toMatch(/border-radius:\s*50%/);
   });
 
   it("shows no bubble until it is pointed at", () => {

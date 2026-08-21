@@ -1156,11 +1156,25 @@ details summary {
   vertical-align: middle;
 }
 
-.hint-mark:hover,
+.hint-mark:hover {
+  color: var(--text);
+  border-color: var(--accent, #4c9aff);
+}
+
+/* Keyboard focus is its own state, not a synonym for hover. Sharing the
+   rule meant `outline: none` reached the keyboard too, leaving a 15px
+   circle whose only focus signal was a 1px border changing colour.
+
+   border-radius repeats here because the global :focus-visible rule sets
+   4px, matches this element, and is declared later at equal specificity —
+   without this line the circle turns into a rounded square the moment it
+   takes focus. */
 .hint-mark:focus-visible {
   color: var(--text);
   border-color: var(--accent, #4c9aff);
-  outline: none;
+  border-radius: 50%;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .hint-bubble {
