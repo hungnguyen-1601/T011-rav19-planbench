@@ -1121,7 +1121,9 @@ details summary {
 /* The mark that carries a field's explanation — see components/Hint.
    Small and quiet: it sits beside every labelled number on the
    deployment form, and a row of loud icons would be its own kind of
-   clutter, which is the thing this replaced. */
+   clutter, which is the thing this replaced. The weight stays under the
+   650 of .comparison-label so the mark never reads heavier than the
+   label it annotates. */
 .hint-mark {
   display: inline-flex;
   align-items: center;
@@ -1132,9 +1134,9 @@ details summary {
   border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--bg-elevated);
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1;
   cursor: help;
   user-select: none;
