@@ -9,7 +9,7 @@ file thì đọc được cả mạch.
 | Giai đoạn | Trạng thái | Đổi hình? |
 |---|---|---|
 | **A2** thang token | ✅ xong 2026-08-21 | không |
-| A3 tách `--candidate-a/b` | chưa | **có** |
+| **A3** tách `--candidate-a/b` | ✅ xong 2026-08-21 | **có** |
 | A4 biến thể `.notice` | chưa | không |
 | B0 nạp font | chưa | có |
 | B1–B8 | chưa | có |
@@ -132,8 +132,103 @@ luận zero-diff ở trên đã mạnh hơn một vòng chụp cho đúng loại
 token nào bị đổi giá trị, chỉ một phép thế tên bằng chuỗi y hệt). Nhưng nó không
 thay thế được việc An nhìn một lượt.
 
+---
+
+## A3 — Tách `--candidate-a/b` khỏi `--accent` · 2026-08-21
+
+**Bước đổi hình đầu tiên của Plan 3.** Không có lập luận zero-diff nào ở đây; thay
+vào đó là bảng giá trị giải ra bên dưới.
+
+### Vấn đề
+
+`--candidate-a` là `var(--accent)`. Một màu xanh nói hai điều: *"đây là link, bấm
+đi"* và *"cột này là ứng viên A"*. `--candidate-b` mượn `--purple`, thứ không
+trang nào trong khu vực này dùng vào việc gì khác.
+
+### Ba khối, không phải một
+
+Điều khiến A3 dễ làm hụt: sáu token **không** được khai ở `:root` — chúng bị **hai
+scope cục bộ ghi đè**, và scope cục bộ thắng `:root` bất kể thứ tự. Chỉ thêm màu
+vào theme block thì A3 **không đổi được gì**, mà bước vẫn trông như đã xong.
+
+| Khối | Trước |
+|---|---|
+| `.decision-page` | `--candidate-a: var(--accent)`, `--candidate-b: var(--purple)`, cùng `-soft` / `-border` |
+| `.episode-comparison` | hard-code `#2563eb` / `#7c3aed` |
+
+Đã **xoá hẳn** cả hai, không để lại alias — một alias `--candidate-a:
+var(--candidate-a)` đọc ra như thể trang vẫn còn lý do giữ ý kiến riêng.
+
+### Dẫn xuất, không hard-code
+
+```css
+:root {
+  --candidate-a: var(--indigo);
+  --candidate-a-soft: var(--indigo-soft);
+  --candidate-a-border: color-mix(in srgb, var(--indigo) 48%, var(--border));
+  --candidate-b: var(--teal);
+  --candidate-b-soft: var(--teal-soft);
+  --candidate-b-border: color-mix(in srgb, var(--teal) 48%, var(--border));
+}
+```
+
+Hai điều việc này mua được:
+
+1. **Đủ ba đường theme miễn phí.** `--indigo`/`--teal` đã có sẵn ở `:root`, ở
+   `[data-theme="light"]`, **và** ở khối `prefers-color-scheme` cho người chưa
+   chọn gì. Gõ tay hex vào hai theme block sẽ bỏ sót đúng đường thứ ba — đường mà
+   người mở link lần đầu thực sự rơi vào.
+2. **Không thể khai thiếu một nửa.** Viết tay dễ đúng `--candidate-b` mà quên
+   `--candidate-b-soft`, và cái đó không hỏng ồn ào: nó đặt nền tím cũ sau chữ
+   teal mới, ở một card, trên một trang.
+
+### Đổi những gì — giá trị giải ra
+
+| | Candidate A | A · soft | Candidate B | B · soft |
+|---|---|---|---|---|
+| **dark** | `#4c9aff` → `#8fa5ff` | `76,154,255` → `111,132,238` | `#b39df3` → `#50c7ad` | `163,132,238` → `54,184,156` |
+| **light** (chọn tay) | `#1f6feb` → `#5267c9` | `31,111,235` → `82,103,201` | `#7157b7` → `#087f6a` | `113,87,183` → `8,127,106` |
+| **light** (theo OS) | `#1f6feb` → `#5267c9` | `31,111,235` → `82,103,201` | `#7157b7` → `#087f6a` | `113,87,183` → `8,127,106` |
+
+Alpha giữ nguyên (`.14` trên dark, `.10` trên light), chỉ đổi sắc.
+
+**`.episode-comparison` là ca được lợi nhiều nhất.** Nó hard-code hex nên panel
+phát lại giữ nguyên xanh–tím của light theme **kể cả trên nền tối**, trong khi
+phần còn lại của trang đã đổi. Giờ nó theo theme.
+
+### Bề mặt bị ảnh hưởng — 18 rule, 5 vùng
+
+| Vùng | Rule |
+|---|---|
+| Thẻ candidate ở trang list | `globals.css:2134-2139` |
+| Chấm chú giải | `:3232-3233` |
+| Thẻ episode (panel phát lại) | `:3248-3256` |
+| Bảng mẫu episode (hàng chọn, header cột) | `:3313-3317` |
+| Lưới so sánh + icon candidate | `:3494-3495`, `:3514-3515` |
+
+Năm vùng này đọc token qua năm đường khác nhau, nên sót một chỗ **không** kéo bốn
+chỗ kia lộ ra — đó là lý do checklist mắt phải liệt kê cả năm.
+
+### Test
+
+`tokens.test.ts`, `running-comparison`, `hint`, `decisions-page` — **189 passed**.
+Dấu ngoặc cân (954 cặp). `--purple` / `--accent-soft-border` **không** thành mồ
+côi: còn 22 chỗ khác dùng.
+
+### Việc còn lại của A3 — thuộc về An
+
+Test không kiểm được màu. Cần chụp **5 vùng × 5 trạng thái theme**:
+
+- [ ] `data-theme="dark"`
+- [ ] `data-theme="light"`
+- [ ] không `data-theme`, OS **light**
+- [ ] không `data-theme`, OS **dark**
+- [ ] đặt `data-theme="dark"` khi OS đang light → phải ra dark (explicit thắng OS)
+
+Điều cần tìm: **không còn nền tím ngồi cạnh chữ teal** ở bất kỳ đâu, và panel phát
+lại không còn giữ xanh–tím sáng trên nền tối.
+
 ### Ghi chú cho giai đoạn sau
 
-**A3 KHÔNG zero-diff** — nó đổi màu candidate thật, và hai khối `.decision-page`
-(`:2046`) với `.episode-comparison` (`:3095`) đang **ghi đè** sáu token đó, nên
-phải xoá chúng thì A3 mới có tác dụng. Xem plan.
+A4 (`.notice--*`) là zero-diff — chỉ thêm biến thể, `.notice` gốc không đổi.
+B0 (nạp font) mới là bước đổi hình tiếp theo.

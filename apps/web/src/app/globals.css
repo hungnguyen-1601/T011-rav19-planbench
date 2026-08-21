@@ -149,6 +149,35 @@
   }
 }
 
+/* Which candidate a mark belongs to.
+   ===================================================================
+   Identity, not interaction. `--candidate-a` used to be `var(--accent)`,
+   so one blue meant both "this is a link, click it" and "this column is
+   candidate A"; `--candidate-b` borrowed `--purple`, which nothing else
+   on these pages uses for anything. Indigo and teal say only whose
+   column this is.
+
+   **Derived, and declared once.** `--indigo` and `--teal` are already
+   part of the palette on all three theme paths — `:root`, the explicit
+   `[data-theme="light"]`, and the `prefers-color-scheme` block for a
+   visitor who has chosen nothing. Reading them here means the six
+   candidate tokens follow the theme for free, including that third path
+   which is the one a first-time visitor actually lands on and the one
+   hand-written hex values in two theme blocks would have missed.
+
+   It also makes the six impossible to declare partially. Writing them
+   out by hand invites getting `--candidate-b` right and forgetting
+   `--candidate-b-soft`, which does not fail loudly: it puts the old
+   purple wash behind the new teal text, in one card, on one page. */
+:root {
+  --candidate-a: var(--indigo);
+  --candidate-a-soft: var(--indigo-soft);
+  --candidate-a-border: color-mix(in srgb, var(--indigo) 48%, var(--border));
+  --candidate-b: var(--teal);
+  --candidate-b-soft: var(--teal-soft);
+  --candidate-b-border: color-mix(in srgb, var(--teal) 48%, var(--border));
+}
+
 /* The scales. These sit outside the theme blocks above on purpose:
    neither a typeface nor a spacing step changes when the palette does,
    so declaring them in all three blocks would be three places to forget
@@ -2102,14 +2131,14 @@ a.stat-card:hover {
   .simulate-spinner { animation-duration: 1.5s; }
 }
 
-/* Decisions — scoped technical comparison workspace. */
+/* Decisions — scoped technical comparison workspace.
+
+   The six candidate tokens this block used to redeclare now live in
+   `:root`. They are removed rather than aliased: a local scope beats
+   `:root` regardless of order, so leaving even `--candidate-a:
+   var(--candidate-a)` here would read as though there were still a
+   reason for the page to have its own opinion. */
 .decision-page {
-  --candidate-a: var(--accent);
-  --candidate-a-soft: var(--accent-soft);
-  --candidate-a-border: var(--accent-soft-border);
-  --candidate-b: var(--purple);
-  --candidate-b-soft: var(--purple-soft);
-  --candidate-b-border: color-mix(in srgb, var(--purple) 34%, var(--border));
   min-width: 0;
 }
 
@@ -3151,15 +3180,12 @@ main.content.bare-page {
     opacity: 1;
   }
 }
-/* Paired trace evidence: one episode, two candidates, one playback clock. */
-.episode-comparison {
-  --candidate-a: #2563eb;
-  --candidate-a-soft: color-mix(in srgb, #2563eb 10%, var(--panel));
-  --candidate-a-border: color-mix(in srgb, #2563eb 48%, var(--border));
-  --candidate-b: #7c3aed;
-  --candidate-b-soft: color-mix(in srgb, #7c3aed 10%, var(--panel));
-  --candidate-b-border: color-mix(in srgb, #7c3aed 48%, var(--border));
-}
+/* Paired trace evidence: one episode, two candidates, one playback clock.
+
+   This block used to hard-code `#2563eb` and `#7c3aed` — literal hex, so
+   the replay panel kept light-theme blue and purple on a dark ground
+   while the rest of the page had moved on. The candidate tokens are read
+   from `:root` now, and they follow the theme. */
 
 
 .episode-toolbar,
