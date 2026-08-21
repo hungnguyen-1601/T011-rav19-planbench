@@ -19,6 +19,7 @@ import Link from "next/link";
 import { TraceViewer } from "@/components/TraceViewer";
 import { ComparisonGrid } from "@/components/ComparisonGrid";
 import { ConclusionPanel } from "@/components/ConclusionPanel";
+import { runBadge } from "@/lib/conclusion";
 import { Hint } from "@/components/Hint";
 import { type HeadingField, candidateNames, headingField } from "@/lib/candidateHeading";
 import { gateSummary } from "@/lib/gateSummary";
@@ -115,7 +116,15 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
           <CopyRunId id={run.id} />
         </p>
         <SampleLine run={run} /></div>
-        <div className="decision-detail-badges"><span className={`badge ${run.ranked ? "ok" : "muted-badge"}`}>{run.ranked ? t("decisions.filter.ranked") : t("decisions.filter.unranked")}</span>
+        {/* Not `decisions.filter.*`. Those are the list page's filter
+            options — "Produced a card" is what you ask for, not what a
+            run *is* — and reusing them here would tie a status badge to
+            copy that belongs to a dropdown. */}
+        <div className="decision-detail-badges">
+          {(() => {
+            const badge = runBadge(run);
+            return <span className={`badge ${badge.tone}`}>{t(badge.key)}</span>;
+          })()}
         </div>
       </header>
 

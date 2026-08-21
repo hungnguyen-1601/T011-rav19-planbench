@@ -118,6 +118,31 @@ export function verdictOf(run: DecisionRun): Verdict {
   };
 }
 
+/** What the header badge says about the run as a whole.
+ *
+ * **Three states, because `ranked` is two.** `ranked` is `card !== null`
+ * — its own docstring asks whether the run *supported* a recommendation,
+ * which is weaker than issuing one. Two of the six carded runs stored
+ * when this was written are `NEAR_EQUIVALENT`: they have a card, and it
+ * names no winner because the field could not be separated. Labelling
+ * those "Recommendation issued" states the opposite of the finding, and
+ * it does so in the one place a reader glances at before scrolling.
+ *
+ * The tone follows the same split the page keeps elsewhere: a run that
+ * named a stack is a result to act on; the other two are results to read
+ * rather than failures, so neither takes an error colour.
+ */
+export function runBadge(run: DecisionRun): { key: string; tone: string } {
+  switch (verdictOf(run).kind) {
+    case "recommended":
+      return { key: "decisions.detail.badge.recommended", tone: "ok" };
+    case "near-equivalent":
+      return { key: "decisions.detail.badge.nearEquivalent", tone: "muted-badge" };
+    default:
+      return { key: "decisions.detail.badge.noCard", tone: "muted-badge" };
+  }
+}
+
 /** Whether an interval straddles zero — "ahead, but not measurably".
  *
  * Rendered rather than hidden: a margin whose interval includes zero is

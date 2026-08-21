@@ -20,6 +20,7 @@ import {
   outOf100,
   standings,
   verdictOf,
+  runBadge,
 } from "@/lib/conclusion";
 
 function candidate(overrides: Partial<RunCandidate> = {}): RunCandidate {
@@ -217,5 +218,48 @@ describe("which of the two G2 failures happened", () => {
   it("says nothing when G2 is not what blocked it", () => {
     const other = blockedBy(["G4"], { G2: { observed: 0 } });
     expect(collisionGateReason(other.standing, other.payload)).toBeNull();
+  });
+});
+
+describe("the badge on the run's header", () => {
+  const runWith = (card: unknown) => ({ id: "r", card } as unknown as DecisionRun);
+
+  it("claims a recommendation only when one was issued", () => {
+    expect(
+      runBadge(runWith({ recommended: { candidate_id: "a" }, status: "CLEAR_RECOMMENDATION" })),
+    ).toEqual({ key: "decisions.detail.badge.recommended", tone: "ok" });
+  });
+
+  it("does not claim one for a card that separated nobody", () => {
+    /* `ranked` is `card !== null`, and two of the six carded runs stored
+       when this was written are NEAR_EQUIVALENT: a card exists and names
+       no winner. A two-state badge keyed on `ranked` would label those
+       "Recommendation issued" — the opposite of the finding, in the one
+       place a reader glances at before scrolling. */
+    const badge = runBadge(runWith({ recommended: { candidate_id: "a" }, status: "NEAR_EQUIVALENT" }));
+    expect(badge.key).toBe("decisions.detail.badge.nearEquivalent");
+    expect(badge.key).not.toBe("decisions.detail.badge.recommended");
+  });
+
+  it("says so plainly when there is no card", () => {
+    expect(runBadge(runWith(null)).key).toBe("decisions.detail.badge.noCard");
+  });
+
+  it("gives the three states three different words", () => {
+    const keys = [
+      runBadge(runWith({ recommended: { candidate_id: "a" }, status: "CLEAR_RECOMMENDATION" })).key,
+      runBadge(runWith({ recommended: { candidate_id: "a" }, status: "NEAR_EQUIVALENT" })).key,
+      runBadge(runWith(null)).key,
+    ];
+    expect(new Set(keys).size).toBe(3);
+  });
+
+  it("treats neither carded outcome as an error", () => {
+    /* A field the statistics could not separate, and a field where fewer
+       than two candidates cleared the gates, are results — not failures.
+       Four of five stored runs produce no card. */
+    for (const card of [null, { recommended: { candidate_id: "a" }, status: "NEAR_EQUIVALENT" }]) {
+      expect(runBadge(runWith(card)).tone).not.toBe("err");
+    }
   });
 });
