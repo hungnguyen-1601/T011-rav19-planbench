@@ -149,17 +149,73 @@
   }
 }
 
-/* Typography tokens sit outside the theme blocks above on purpose: a
-   typeface does not change when the palette does, so declaring the stack
-   in all three blocks would be three places to forget it.
+/* The scales. These sit outside the theme blocks above on purpose:
+   neither a typeface nor a spacing step changes when the palette does,
+   so declaring them in all three blocks would be three places to forget
+   one of them.
 
-   This is the public token every rule reads. A webfont will not replace
-   this declaration — next/font emits its own `--font-mono-loaded`, and
-   the value here becomes `var(--font-mono-loaded, <this stack>)`, so
-   anything reading `--font-mono` keeps rendering whether or not the font
-   finished loading. */
+   Nothing below is a new *look*. Every value here is a name for
+   something the stylesheet already does by hand in dozens of places;
+   routing those places through the names is the next phase's work, and
+   it is where the pixels actually move. Declaring the vocabulary first
+   keeps that phase reviewable as "this rule now reads a token" rather
+   than as "this rule changed and also its value changed". */
 :root {
+  /* ---- type -------------------------------------------------------
+     The public tokens every rule reads. A webfont will not replace
+     these declarations — next/font emits its own `--font-*-loaded`, and
+     the value here becomes `var(--font-*-loaded, <this stack>)`, so
+     anything reading them keeps rendering whether or not the font
+     finished loading.
+
+     `--font-sans` carries the stack `html, body` was already using,
+     character for character, `-apple-system` included. Two things it
+     must not do: prepend a face like Inter, which would change the
+     typeface on exactly those machines that happen to have it installed
+     and nowhere else; or drop `-apple-system`, which is the link that
+     picks San Francisco on Safari. Either one turns a declaration-only
+     step into a silent, partial redesign. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+
+  /* ---- spacing: a 4px scale, and nothing between its steps --------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* ---- radius: three steps ---------------------------------------- */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* ---- size: named by the job, not by the number, so a rule says
+     what it is showing rather than how big it wants to be ------------ */
+  --fs-caption: 11px;
+  --fs-sm: 12px;
+  --fs-body: 13px;
+  --fs-label: 14px;
+  --fs-value: 16px;
+  --fs-h3: 18px;
+  --fs-h1: 24px;
+
+  /* ---- elevation ---------------------------------------------------
+     Derived, never a literal. A hard-coded light-theme shadow with the
+     dark value written in a comment beside it is the failure this
+     project has already shipped twice: a comment is not a rule, so the
+     token keeps the light value on dark and draws a pale grey smudge on
+     a near-black ground — invisible, and invisible in review too.
+
+     `--shadow` is declared on all three theme paths (`:root`,
+     `[data-theme="light"]`, and the `prefers-color-scheme` block for
+     visitors who chose nothing), so deriving from it is correct on all
+     three for free. If popovers ever want a lighter shadow than panels,
+     the answer is a `--shadow-pop` of its own in all three of those
+     places — not one value here plus a note about the other. */
+  --shadow-pop: var(--shadow);
 }
 
 * {
@@ -172,7 +228,11 @@ body {
   padding: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Reads the token rather than repeating its stack. Identical value, so
+     no pixel moves — but leaving the stack written out here would mean
+     a webfont could change `--font-sans` and body text would carry on
+     in the system face until somebody noticed. One stack, one place. */
+  font-family: var(--font-sans);
   font-size: 14px;
 }
 
