@@ -1,7 +1,15 @@
 # Plan 2 — Redesign trang Decision Detail
 
-Ngày lập: 2026-08-21 · Trạng thái: **chờ An duyệt**
-Mock đã duyệt luật tô: [tongduyan_mock-decision-detail.html](../../notes/2026-08-21/tongduyan_mock-decision-detail.html)
+Ngày lập: 2026-08-21 · Trạng thái: **đã duyệt, verify lại 2026-08-21, sẵn sàng chạy**
+Mock: **[tongduyan_mock-decision-detail-v2.html](../../notes/2026-08-21/tongduyan_mock-decision-detail-v2.html)** — bản dựng *sau* sáu vòng review, khớp từng task dưới đây.
+
+> Hai mock cũ hơn giữ lại làm đối chiếu, **không** phải bản để dựng theo:
+> `tongduyan_mock-decision-detail.html` (v1) vẽ trước các vòng review nên còn
+> mang `badge--ok`, sidebar 16 mục, `height` cứng và **không có hàng flags**;
+> `tongduyan_mock-decision-evalframe.html` (v3) là một hướng thiết kế khác. An đã
+> chốt lấy **`<table>` của v3** cho T4 và giữ v2 cho phần còn lại — xem mục
+> "Quyết định về mock" ở cuối file.
+
 Nguồn: [note đánh giá](../../notes/2026-08-21/tongduyan_danh-gia-ui-trang-decision-detail.md) mục A và D.
 
 ## Mục tiêu
@@ -22,25 +30,25 @@ duyệt. Đây là màn hình mang đi demo, nên nó đi trước phần còn l
 | Cần trước | Vì sao |
 |---|---|
 | **Plan 1 toàn bộ** | T5 (i18n host warning) là điều kiện để đưa cảnh báo vào hàng p99 mà không dính chữ tiếng Việt trên trang EN |
-| **Plan 3 giai đoạn A2–A4** (thang token, candidate color, notice variant — **không gồm A1 nạp font**) | Cần `--space-*`, `--radius-*`, `--fs-*`, `--candidate-a/b`, `.notice--*` tồn tại. A1 (webfont) đổi mặt chữ toàn app nên KHÔNG được là điều kiện của plan này — Plan 3 đã chuyển A1 xuống giai đoạn B |
+| **Plan 3 giai đoạn A2–A4** (thang token, candidate color, notice variant — **không gồm B0 nạp font**) | Cần `--space-*`, `--radius-*`, `--fs-*`, `--candidate-a/b`, `.notice--*` tồn tại. B0 (webfont) đổi mặt chữ toàn app nên KHÔNG được là điều kiện của plan này — Plan 3 đã chuyển nó xuống giai đoạn B |
+| **`--font-sans` phải khai từ A2** | T5 dùng `font-family: var(--font-sans)` cho slot đơn vị. Nếu đợi tới B0 thì test token của Plan 1 T6 đỏ ngay lượt implement Plan 2. Không dùng `inherit` thay thế — slot đơn vị phải khác mặt chữ với cột số mono, đó là lý do nó tồn tại |
 
-**Đính chính: A2–A4 KHÔNG phải cả ba đều zero-pixel.** Bản trước ghi gộp "A2–A4
-thuần khai báo, zero pixel" — sai với A3.
+### Trạng thái phụ thuộc — đã kiểm 2026-08-21, **đủ hết**
 
-| | Zero-pixel? | Vì sao |
+| | Xong? | Ghi chú |
 |---|---|---|
-| **A2** thang spacing/radius/typography | ✅ | Thêm token mới, chưa chỗ nào dùng |
-| **A3** tách `--candidate-a/b` khỏi `--accent` | ❌ **đổi màu thật** | Hai token này **đang được dùng**: `globals.css:2074-2079` (nền + chữ candidate card), `3172-3173` (chấm chú giải), `3188`, `3193` (viền thẻ episode). A3 đổi `--candidate-b` từ tím `#7c3aed` sang xanh lục `#087f6a` — **đổi cả sắc**, không phải chỉnh sắc độ. Mọi bề mặt trên đổi màu ngay lượt đó |
-| **A4** biến thể `.notice` | ✅ | Chỉ thêm `.notice--*`, `.notice` gốc không đổi |
+| Plan 1 T1–T7 | ✅ | bảy report trong `reports/2026-08-21/` |
+| Plan 3 **A2** thang token | ✅ commit `4b4431e` | zero-diff, đã chứng minh trên stylesheet |
+| Plan 3 **A3** candidate color | ✅ commit `7b287eb` | **đổi màu thật**, An đã kiểm light + dark |
+| Plan 3 **A4** biến thể notice | ✅ commit `09265a3` | zero-diff, chưa component nào mang class |
 
-Hệ quả cho plan này: **A3 phải được chụp màn trước/sau như một thay đổi hình**,
-không được gộp vào lời hứa zero-diff của giai đoạn A. Và vì Plan 2 T2 bỏ nền tô
-cột candidate, thứ tự đúng là **A3 trước T2** — chạy ngược lại thì có một quãng
-cột candidate mang màu mới ở đúng chỗ sắp bị xoá, và ảnh chụp quãng đó vô nghĩa.
-| **Plan 3 A2 phải khai `--font-sans` ngay** (đã cập nhật A2) | T5 dùng `font-family: var(--font-sans)` cho slot đơn vị. Hiện `globals.css:162` chỉ khai `--font-mono`; `--font-sans` mãi tới **B0** mới có, mà B0 chạy **sau** plan này ⇒ test token của Plan 1 T6 sẽ đỏ ngay lượt implement Plan 2. Cách xử lý đúng hợp đồng font mà Plan 1 T6 đã chốt (*"token công khai luôn khai trong `globals.css`; Plan 3 chỉ sửa giá trị alias"*): **A2 khai `--font-sans` với stack fallback thuần**, B0 sau đó chỉ đổi giá trị sang `var(--font-sans-loaded, …)`. Không dùng `inherit` ở T5 — slot đơn vị phải khác mặt chữ với cột số mono, đó là lý do nó tồn tại |
+Mười token Plan 2 cần (`--space-4`, `--radius-md`, `--fs-caption/sm/body/label`,
+`--candidate-a/b`, `--font-sans`, `--font-mono`) đều đã khai, mỗi cái đúng một
+lần. Plan 3 **tạm dừng từ B0** để nhường lượt cho plan này.
 
-Nếu An muốn Plan 2 chạy trước Plan 3 A2–A4: được, nhưng phải hard-code giá trị
-rồi quay lại thay bằng token — thêm một lượt sửa. Không khuyến nghị.
+Một hệ quả về thứ tự vẫn còn giá trị: **A3 chạy trước T2** — T2 bỏ nền tô cột
+candidate, nên nếu làm ngược lại thì có một quãng cột mang màu mới ở đúng chỗ sắp
+bị xoá, và ảnh chụp quãng đó vô nghĩa. A3 đã xong trước, đúng thứ tự.
 
 ---
 
@@ -108,27 +116,68 @@ Test: bốn ca trên là bốn assertion trên hàm thuần `sampleLine()` /
 
 ---
 
-### T2 — Header cột: config làm tiêu đề, bỏ ô icon
+### T2 — Header cột: trường KHÁC NHAU làm tiêu đề, bỏ ô icon
 
 `page.tsx:203-215` · CSS `globals.css:3413-3425`
 
 Hiện `<h4>{candidate.stack_label}</h4>` 15px và `<code>{local_controller_config}</code>`
-10px muted. Cả hai cột đều `astar+dwa`, nên tiêu đề không phân biệt được gì.
+10px muted. Trên phép so local-controller cả hai cột đều `astar+dwa`, nên tiêu đề
+không phân biệt được gì.
+
+> **Đính chính — bản trước chốt sai và nó hỏng trên phần lớn dữ liệu thật.**
+> Bản trước viết "config làm tiêu đề" như một luật cố định, vì nó chỉ nhìn một
+> loại run. Kiểm 16 run đang có trong DB:
+>
+> | `experiment_scope` | Trường khác nhau | Trường giống nhau | Số run |
+> |---|---|---|---|
+> | `local_controller_selection` | `local_controller_config` | `stack_label` | 6 |
+> | `global_planner_selection` | **`stack_label`** | `local_controller_config` | **10** |
+>
+> Tương quan tuyệt đối, không ca lẫn — và đúng theo nghĩa của scope: scope khai
+> **thành phần nào đang bị hoán đổi**.
+>
+> Nên "config làm tiêu đề" sẽ in `dwa_coarse` / `dwa_coarse` làm hai tiêu đề
+> giống hệt nhau trên **10 trong 16 run** — đúng con bug T2 sinh ra để sửa, chỉ
+> là lộn ngược. Run `20750b0d9dbe` mà An vừa xem là một trong 10 run đó.
 
 **Sửa**:
 - `<span class="letter">Candidate A</span>` — `--fs-caption`, muted
-- `<span class="config">{local_controller_config}</span>` — `--fs-label`, 600, màu `--candidate-a/b`
-- `<span class="stack">{stack_label} · {local_observation_class}</span>` — `--fs-sm`, muted.
-  **`local_observation_class` là `string | null | undefined`** (`decisions.ts:117`)
-  và bản hiện tại đã xử lý ca thiếu (`page.tsx:225`). Không được ghép mù:
-  ```tsx
-  {candidate.local_observation_class
-    ? `${candidate.stack_label} · ${candidate.local_observation_class}`
-    : candidate.stack_label}
+- **Tiêu đề là trường thực sự khác nhau giữa các candidate** — `--fs-label`, 600,
+  màu `--candidate-a/b`:
+  ```ts
+  /** Trường phân biệt các candidate của run này.
+   *
+   * Suy từ DỮ LIỆU, không suy từ `experiment_scope`. Hai nguồn khớp nhau
+   * trên cả 16 run đang có, nhưng scope là một lời khai còn dữ liệu là
+   * thứ đang hiện trên màn hình — nếu chúng lệch nhau thì tiêu đề phải
+   * theo cái người đọc nhìn thấy.
+   */
+  export function headingField(candidates: RunCandidate[]): "stack" | "config" {
+    const stacks = new Set(candidates.map((c) => c.stack_label));
+    // Hoà (một candidate, hoặc cả hai trường đều khác) → stack, như cũ.
+    return stacks.size > 1 ? "stack" : "config";
+  }
   ```
-  Ghép mù cho ra `astar+dwa · null`, hoặc — vì JSX nuốt `null` — cho ra
-  `astar+dwa ·` cụt đuôi. Khi thiếu thì **chỉ in `stack_label`**, và badge
-  `observationUnknown` ở hàng flags là nơi nói ra chuyện thiếu
+  Hàm thuần, test được trong Node: ca `local_controller_selection` → `"config"`,
+  ca `global_planner_selection` → `"stack"`, ca một candidate → `"stack"`, ca cả
+  hai trường đều khác → `"stack"`.
+- Dòng phụ mang trường **còn lại** cộng `local_observation_class`, nên không
+  thông tin nào mất đi dù tiêu đề chọn bên nào
+- `<span class="stack">…</span>` — `--fs-sm`, muted. Nội dung là **trường không
+  được chọn làm tiêu đề**, rồi tới `local_observation_class`:
+  ```tsx
+  const secondary = heading === "stack"
+    ? candidate.local_controller_config
+    : candidate.stack_label;
+  const parts = [secondary, candidate.local_observation_class].filter(Boolean);
+  // → "dwa_coarse · lidar_only"  hoặc  "astar+dwa · lidar_only"
+  ```
+  **`local_observation_class` là `string | null | undefined`** (`decisions.ts:117`)
+  và bản hiện tại đã xử lý ca thiếu (`page.tsx:225`). `.filter(Boolean)` rồi
+  `.join(" · ")` là để không ghép mù: ghép mù cho ra `astar+dwa · null`, hoặc —
+  vì JSX nuốt `null` — cho ra `astar+dwa ·` cụt đuôi. Khi thiếu thì dòng phụ chỉ
+  còn một phần, và badge `observationUnknown` ở hàng flags là nơi nói ra chuyện
+  thiếu
 - Bỏ `.candidate-result-icon` (`page.tsx:205`, CSS `3423`) — cùng icon `cpu` trên hai thứ khác nhau
 - Bỏ nền tô cả cột (`.comparison-cell.candidate-a/b` ở `3405-3406`), thay bằng
   `border-top: 3px solid var(--candidate-a/b)` chỉ trên ô header
@@ -183,143 +232,128 @@ blocked`, badge đỏ, **không** ghi `cleared`.
 
 ---
 
-### T4 — Lưới: `--cols`, bỏ inline style, bỏ `!important`, thêm cột Δ
+### T4 — Lưới thành `<table>`, bỏ inline style, bỏ `!important`, thêm cột Δ
 
 `page.tsx:200` · CSS `globals.css:3402`, `3462`
 
-Hiện JSX set `style={{ gridTemplateColumns: ... }}` inline, buộc media query
-900px phải dùng `!important` để thắng.
+Hiện là một `display: grid` phẳng, `grid-template-columns` set inline trong JSX,
+buộc media query 900px phải dùng `!important` để thắng.
 
-**Sửa**:
+> **An đã chốt: lấy cấu trúc bảng của mock v3, giữ nguyên luật tô của v2.**
+> T6 (nền accent cho ô dẫn đầu), T3 (`.badge.ok` / `.badge.err`) và T13 (dòng
+> tóm tắt) **không đổi**. Chỉ T4 đổi.
+
+#### Vì sao bảng, không phải grid
+
+Bản plan trước dùng CSS grid và vì thế phải kèm **một luật** (mọi hàng logic phải
+phát đủ ô, hàng flags cần một ô Δ placeholder) và **một test** (đếm ô, chia hết
+cho 4, đúng một `.cmp-delta--empty`). Cả hai tồn tại chỉ để bù cho một sự thật:
+**grid phẳng không biết "hàng" là gì** — nó xếp con theo thứ tự, nên một hàng
+thiếu ô sẽ kéo lệch mọi hàng sau nó.
+
+`<table>` không có vấn đề đó. Một `<tr>` **là** một hàng. Hàng flags thiếu ô Δ thì
+chỉ hàng đó ngắn đi, không hàng nào khác nhúc nhích. Nên:
+
+| Bỏ được | Vì |
+|---|---|
+| luật `.comparison-delta--empty` | không còn chỗ để lệch |
+| test "đếm ô chia hết cho 4" | test cho một lỗi không tồn tại nữa |
+| `--cols` và `--delta-col` | số cột do `<th>`/`<td>` quyết định |
+| `!important` ở `globals.css:3462` | không còn inline style để thắng |
+
+**Hệ quả cho Plan 1 T6:** `JSX_PROVIDED = ["--cols", "--delta-col"]` trong
+`tokens.test.ts` trở thành hai mục chết. **Xoá chúng cùng lượt này.** Một
+allowlist có tên chỉ giữ được ý nghĩa khi mọi mục trong đó còn thật; để lại mục
+chết là dạy người sau rằng thêm vào đó không tốn gì.
+
+Bảng cũng là thứ đọc được bằng screen reader mà không phải dán `role="table"` lên
+một đống `div`, và cho phép `<th scope="col">` — cái mà grid phẳng không có cách
+nào diễn đạt.
+
+#### Cấu trúc
+
 ```tsx
-<div className="comparison-grid" style={{ "--cols": candidates.length } as CSSProperties}>
+<div className="comparison-scroll">          {/* overflow-x: auto */}
+  <table className="comparison-table">
+    <thead>
+      <tr>
+        <th scope="col" className="comparison-gutter">{/* nhãn metric */}</th>
+        {candidates.map((c, i) => (
+          <th scope="col" key={c.candidate_id} className={`comparison-head candidate-${SIDES[i]}`}>…</th>
+        ))}
+        {hasDelta ? <th scope="col" className="comparison-delta">Δ (B−A)</th> : null}
+      </tr>
+    </thead>
+    <tbody>
+      {/* hàng flags — chỉ render khi có candidate nào mang flag */}
+      {/* mười hàng metric */}
+    </tbody>
+  </table>
+</div>
 ```
+
+Hàng flags giờ là một `<tr>` bình thường và **không cần ô Δ**. Nếu muốn viền dưới
+liền mạch thì cho nó một `<td>` rỗng — nhưng đó là chuyện thẩm mỹ, không phải
+chuyện đúng sai, và bỏ quên nó không làm hỏng gì.
+
 ```css
-.comparison-grid {
-  display: grid;
-  grid-template-columns:
-    minmax(260px, 420px)
-    repeat(var(--cols, 2), minmax(150px, 260px))
-    var(--delta-col, 0px);
-  justify-content: start;
-}
+.comparison-scroll { overflow-x: auto; }
+.comparison-table  { width: 100%; border-collapse: collapse; min-width: 720px; }
+.comparison-table th,
+.comparison-table td { padding: 6px var(--space-4); border-bottom: 1px solid var(--border); }
+.comparison-gutter { text-align: left; }
 ```
-Media query 900px ghi đè bình thường, **xoá `!important`**.
 
-`--cols` và `--delta-col` là token do JSX cung cấp — **phải có mặt trong mảng
-`JSX_PROVIDED` của `tokens.test.ts`** (Plan 1 T6 đã khai sẵn cả hai). Nếu đặt
-tên khác lúc implement thì sửa mảng đó cùng lượt, không tắt test.
+`min-width` trên bảng cộng `overflow-x: auto` trên vỏ: dưới ngưỡng đó bảng cuộn
+ngang **bên trong khung của nó** thay vì đẩy cả trang cuộn ngang.
 
-**`--delta-col` phải được set từ JSX** — CSS chỉ có fallback `0px`, quên set là
-cột Δ tồn tại trong DOM nhưng rộng 0:
-```tsx
-style={{
-  "--cols": candidates.length,
-  "--delta-col": candidates.length === 2 ? "minmax(96px, 140px)" : "0px",
-} as CSSProperties}
+#### Cột Δ — chỉ khi đúng hai candidate
+
+```ts
+const hasDelta = candidates.length === 2;
 ```
-Header và cell Δ **chỉ render khi đúng hai candidate** — không render rồi giấu
-bằng width.
 
-**MỌI hàng logic phải phát ra cùng số phần tử, kể cả hàng không có Δ.** Lưới là
-`display: grid` phẳng — nó không biết "hàng", nó chỉ xếp con theo thứ tự. Với hai
-candidate mỗi hàng logic là **4 ô**: `gutter | A | B | Δ`. Header và hàng metric
-có ô Δ. Hàng `.comparison-flags` (`page.tsx:217-249`) thì **chỉ phát gutter + các
-candidate**. Hệ quả: ô gutter của hàng metric ngay sau nó trượt lên chiếm cột Δ
-của hàng flags, và **toàn bộ phần lưới còn lại lệch một cột** — hỏng đúng lúc có
-candidate `stopped_early` hoặc `observationUnknown`, tức là đúng lúc trang đang
-báo một finding.
+Tính **một lần** rồi truyền xuống; header và mọi `<td>` Δ đều đọc nó. Ba
+candidate → không có `<th>`/`<td>` Δ nào trong DOM, không phải render rồi giấu.
 
-Chốt cách một, không để implementer chọn:
-```tsx
-{hasDelta ? <div className="comparison-delta comparison-delta--empty" /> : null}
-```
-Placeholder phát ở **cuối mỗi hàng logic không có nội dung Δ** (hàng flags, và
-bất kỳ hàng nào thêm sau này). Cách hai — gán `grid-column` tường minh cho từng
-ô — cũng đúng về kết quả nhưng phải nhớ đánh số ở mọi chỗ render, hỏng âm thầm
-khi thêm hàng; placeholder thì hỏng ngay và thấy ngay.
-
-`hasDelta === (candidates.length === 2)` — cùng một biểu thức đã quyết định
-`--delta-col`, tính **một lần** rồi truyền xuống, không viết lại ở mỗi chỗ.
-
-**Muốn test được thì lưới phải tách thành component export được.**
-`CandidateComparison` hiện là function **không export** trong `page.tsx:152`, nên
-không import riêng được; còn render cả `DecisionDetailPage` thì không dùng được
-vì nó chạy qua route params, state và một `useEffect` fetch — first render của nó
-chỉ ra trạng thái loading.
-
-Chốt: **trích ra `ComparisonGrid` presentational**, đặt ở
-`apps/web/src/components/ComparisonGrid.tsx`:
-```tsx
-export function ComparisonGrid({ run, candidates }: { run: DecisionRun; candidates: RunCandidate[] }) { … }
-```
-Thuần props, không fetch, không route. `useTranslation()` bên trong vẫn chạy được
-ngoài provider — `LocaleContext` rơi về `DEFAULT_LOCALE` (`i18n/index.ts:69-70`),
-nên `renderToStaticMarkup(<ComparisonGrid … />)` ra HTML tiếng Anh thật, đúng
-khuôn mẫu 8 file test đang dùng (`shell.test.tsx`, `topbar.test.tsx`, …).
-
-Cách còn lại — hàm thuần `comparisonGridCells()` trả descriptor rồi component chỉ
-map — cũng test được, nhưng nó test **descriptor** chứ không test markup: một
-component map sai descriptor vẫn xanh. Trích component thì test đúng thứ đi ra
-trình duyệt, gồm cả placeholder Δ. Chọn cách trích.
-
-Test bắt buộc: dựng run **2 candidate, một trong hai có `stopped_early`**, render
-`ComparisonGrid` qua `renderToStaticMarkup` (không cần jsdom — đếm ô là chuyện
-của first render), rồi:
-- đếm ô **trong chuỗi markup của chính lưới đó**, không grep class trên cả trang
-  — `comparison-cell` còn xuất hiện ở panel khác, đếm toàn trang là đếm nhầm
-- khẳng định tổng số ô **chia hết cho 4**
-- khẳng định có đúng **một** `comparison-delta--empty` (hàng flags), tìm riêng
-  bằng tên class đó — nếu chỉ kiểm tổng chia hết cho 4 thì một hàng thừa một ô và
-  một hàng thiếu một ô sẽ triệt tiêu nhau và test vẫn xanh
-
-Không có test này thì lệch cột là lỗi chỉ mắt người mới thấy, và chỉ thấy trên
-run có finding.
-
-**Cột Δ** — chỉ khi `candidates.length === 2`:
 - Giá trị `Δ (B−A)`, `--font-mono`, `--fs-body`, muted, canh phải
-- Dùng dấu trừ U+2212 (`−`), không dùng hyphen
-- Tính từ `MetricRow.values` — **trường này ĐÃ tồn tại**
-  (`candidateMetrics.ts:36`, `values: (number | null)[]`). Không thêm trường
-  `raw` — sẽ thành hai nguồn dữ liệu trùng nhau. Không parse lại `text`.
-- Một trong hai `values` là `null` → ô Δ trống, không phải `0`
+- Dấu trừ **U+2212** (`−`), không phải hyphen
+- Tính từ `MetricRow.values` — trường này **đã tồn tại**
+  (`candidateMetrics.ts:36`). Không thêm trường `raw`, không parse lại `text`
+- Một trong hai `values` là `null` → ô Δ **trống**, không phải `0`
 - Metric `direction: "none"` (chỉ `replans` — lưu ý `distinctEpisodes` khai
-  `"higher"` ở `candidateMetrics.ts:162`, không phải "không hướng") vẫn hiện Δ,
-  chỉ là muted
-- Ẩn dưới 900px (`display: none`) — nó là cột duy nhất tái tạo được từ hai cột kia
+  `"higher"` ở `candidateMetrics.ts:162`) vẫn hiện Δ, chỉ là muted
+- Ẩn dưới 900px — nó là cột duy nhất tái tạo được từ hai cột kia
 
-**Δ phải format theo từng metric, không in `values` thô** — đây là phần việc
-thật của T4 thay cho trường `raw` đã bỏ:
+#### Δ phải format theo từng metric, không in `values` thô
+
+Đây là phần việc thật của T4:
+
 - Rate lưu `0.7` nhưng hiển thị `70.0 %` ⇒ Δ `0.02` phải in `+2.0 pp`
   (percentage point), không phải `+0.02`
 - Latency 2 chữ số thập phân · clearance 3 chữ số · count nguyên
 
-Cách làm: mở rộng `MetricRow` trong `candidateMetrics.ts` (module thuần, không
-i18n).
+#### `MetricRow` — thêm `numberText`, giữ `text`
 
-**Chỉ thêm `unit` là chưa đủ để T5 tách được số khỏi đơn vị.** `text` hiện mang
-**cả hai**: `asMs` trả `"17.89 ms"`, `asMetres` trả `"0.470 m"`, `asPercent` trả
+Chỉ thêm `unit` là chưa đủ để T5 tách được số khỏi đơn vị. `text` hiện mang **cả
+hai**: `asMs` trả `"17.89 ms"`, `asMetres` trả `"0.470 m"`, `asPercent` trả
 `"70.0 %"` (`candidateMetrics.ts:118-123`). T5 mà đổ `text` vào `.num` rồi render
 thêm `.unit` sẽ ra `17.89 ms ms`. Và **không được cắt phần số bằng cách parse
-`text`** — chính plan này cấm parse chuỗi đã format, cấm ở T4 thì không thể mở
-lại ở T5.
+`text`** — plan này cấm parse chuỗi đã format ở đây thì không thể mở lại ở T5.
 
-Nên phải có một trường **chỉ chứa phần số đã format**:
 ```ts
 interface MetricRow {
-  values: (number | null)[];       // raw, dùng để tính Δ và để phân biệt null
+  values: (number | null)[];       // raw, để tính Δ và phân biệt null
   text: string[];                  // số + đơn vị, GIỮ NGUYÊN cho consumer cũ
-  numberText: (string | null)[];   // chỉ phần số đã format, không đơn vị
+  numberText: (string | null)[];   // chỉ phần số đã format
   unit?: string;                   // "ms" | "m" | "s" | "%" | "MB" | undefined
-  deltaText?: string;              // Δ đã format đúng thang hiển thị, U+2212
+  deltaText?: string;              // Δ đã format, U+2212, dấu +/−
 }
 ```
-`text` **không đổi và không xoá** — rủi ro "Cao" ở bảng cuối plan nói đúng chỗ
-này. Component lưới mới dùng `numberText` + `unit`; mọi consumer cũ tiếp tục đọc
-`text`. Hai trường sinh ra từ **cùng một** helper format, không phải hai đường
-tính (`asMs` tách thành `msNumber(v) = v.toFixed(2)` rồi `asMs = v => msNumber(v) + " ms"`).
 
-`deltaText` tính trong cùng helper đó — mỗi kiểu format sẵn có thêm một nhánh delta.
+`text` **không đổi và không xoá** — rủi ro "Cao" ở bảng cuối plan nói đúng chỗ
+này. Hai trường sinh ra từ **cùng một** helper, không phải hai đường tính
+(`asMs` tách thành `msNumber(v) = v.toFixed(2)` rồi `asMs = v => msNumber(v) + " ms"`).
 
 **Test khoá đúng các ca này** (`candidate-metrics.test.ts`):
 
@@ -328,7 +362,7 @@ tính (`asMs` tách thành `msNumber(v) = v.toFixed(2)` rồi `asMs = v => msNum
 | rate `0.7` | `"70.0"` | `"%"` |
 | latency `17.891` | `"17.89"` | `"ms"` |
 | clearance `0.47` | `"0.470"` | `"m"` |
-| count `3` | `"3"` | `undefined` (slot rỗng, xem T5) |
+| count `3` | `"3"` | `undefined` |
 | `null` | `null` | không đổi |
 | Δ rate `0.02` | `deltaText === "+2.0 pp"` | — |
 
@@ -336,45 +370,63 @@ Thêm một assertion bắt lỗi ghép đôi: với mọi row có `unit`, khẳ
 `numberText[i]` **không chứa** `unit` — đó chính là bug `17.89 ms ms` viết thành
 test.
 
-**Nghiệm thu**: ở 1920 cột giá trị không vượt 260px. Ở 899px cột Δ biến mất, hai
-cột candidate còn đọc được. Run 3 candidate → không có header/cell Δ nào trong
-DOM. Δ của success rate in `pp`, không in số thô. `grep -n '!important'
-globals.css` giảm đúng 1 dòng.
+#### Trích `ComparisonGrid` ra component export được
 
-**Responsive <900px — THAY rule cũ, không chỉ xoá `!important`**: rule hiện tại
-(`globals.css:3462`) ép toàn lưới về **một cột** (xếp chồng candidate). Mock đã
-duyệt giữ gutter + các cột candidate cạnh nhau và chỉ bỏ Δ. Rule mới thay thế:
+`CandidateComparison` hiện là function **không export** trong `page.tsx:152`, nên
+test không import riêng được; render cả `DecisionDetailPage` thì không dùng được
+vì nó chạy qua route params, state và một `useEffect` fetch — first render của nó
+chỉ ra trạng thái loading.
+
+Đặt ở `apps/web/src/components/ComparisonGrid.tsx`:
+```tsx
+export function ComparisonGrid({ run, candidates }: { run: DecisionRun; candidates: RunCandidate[] }) { … }
+```
+Thuần props, không fetch, không route. `useTranslation()` bên trong vẫn chạy được
+ngoài provider — `LocaleContext` rơi về `DEFAULT_LOCALE` (`i18n/index.ts:69-70`),
+nên `renderToStaticMarkup(<ComparisonGrid … />)` ra HTML tiếng Anh thật, đúng
+khuôn mẫu 8 file test đang dùng.
+
+Việc này **vẫn cần** dù đã bỏ test đếm ô: nó là cách duy nhất khẳng định bằng
+markup thật rằng hàng `no route found` in `not measured` chứ không in `—`, rằng
+run 3 candidate không có `<th>` Δ nào, và rằng tiêu đề cột chọn đúng trường
+(T2 `headingField`).
+
+File test mới: `src/components/__tests__/comparison-grid.test.tsx`.
+
+#### Responsive
+
+Rule hiện tại (`globals.css:3462`) ép toàn lưới về **một cột** (xếp chồng
+candidate) bằng `!important`. Thay hẳn:
+
 ```css
 @media (max-width: 900px) {
-  .comparison-grid {
-    grid-template-columns: minmax(0, 1fr) repeat(var(--cols, 2), minmax(110px, 1fr));
-  }
-  .comparison-delta { display: none; }
+  /* Δ đi trước — nó là cột duy nhất người đọc dựng lại được từ hai cột kia */
+  .comparison-table .comparison-delta { display: none; }
+  .comparison-table { min-width: 560px; }
 }
-```
-Chỉ xoá `!important` mà giữ rule một-cột thì layout dưới 900px vẫn khác mock.
 
-**Và phải chép luôn phần `<620px` của mock** — checklist chụp màn ở 620/390 chỉ
-*phát hiện* thiếu, nó không *nói* phải thêm gì; để implementer tự suy ra từ ảnh
-là mời thêm một vòng sửa. Mock (`tongduyan_mock-decision-detail.html:464`) hạ
-sàn cột candidate xuống 84px và cho đơn vị xuống dòng:
-```css
 @media (max-width: 620px) {
-  .comparison-grid {
-    grid-template-columns: minmax(0, 1fr) repeat(var(--cols, 2), minmax(84px, 1fr));
-  }
-  .comparison-cell, .comparison-gutter { padding-inline: var(--space-3); }
+  .comparison-table th,
+  .comparison-table td { padding-inline: var(--space-3); }
+  .comparison-table { min-width: 460px; }
   .comparison-value { font-size: var(--fs-body); }
-  .comparison-value .unit { display: block; margin: 0; }   /* đơn vị xuống dòng dưới số */
 }
 ```
-Sàn 110px của rule 900px không lọt được 390px với hai cột + gutter, nên thiếu
-block này là config bị wrap gãy ở breakpoint hẹp nhất. Lưu ý `.unit` thành
-`display: block` **thay đổi luôn giả định của T5** (slot 2.5em nằm cạnh) — ở
-620px trở xuống cột số chiếm trọn bề ngang ô, và việc thẳng cột thập phân được
-giữ bởi `text-align: right` chứ không bởi slot.
 
----
+Trong bảng, `display: none` trên `<th>`/`<td>` là hợp lệ — hàng đơn giản còn ít ô
+hơn, không có gì để lệch. Dưới 620px bảng cuộn ngang trong vỏ của nó; đó là hành
+vi đúng cho một bảng số liệu trên màn hẹp, và tốt hơn hẳn việc bóp cột tới mức
+config bị wrap gãy.
+
+#### Nghiệm thu
+
+- Ở 1920 cột giá trị không vượt 260px
+- Ở 899px cột Δ biến mất, hai cột candidate còn đọc được
+- Run 3 candidate → không có `<th>`/`<td>` Δ nào trong DOM
+- Δ của success rate in `pp`, không in số thô
+- `grep -n '!important' globals.css` giảm đúng 1
+- `grep -n 'cols\|delta-col' apps/web/src/app/__tests__/tokens.test.ts` → rỗng
+- Trang **không** cuộn ngang ở bất kỳ breakpoint nào; chỉ bảng cuộn
 
 ### T5 — Giá trị canh phải, đơn vị tách khỏi số
 
@@ -681,7 +733,7 @@ Plan 3 A2 (gồm --font-sans) + A4      ← điều kiện, zero-pixel
 Plan 3 A3 (đổi màu candidate)         ← điều kiện, CÓ đổi hình; chụp riêng
                                          trước khi T2 xoá nền tô cột
 T4 (candidateMetrics: numberText + unit + deltaText;
-    trích ComparisonGrid ra components/; lưới, placeholder Δ)
+    trích ComparisonGrid ra components/; grid -> <table>)
   ├─ T5  giá trị canh phải + đơn vị   (cần numberText + unit)
   ├─ T8  bỏ em-dash                   (cần values)
   └─ T13 dòng tóm tắt                 (cần values)
@@ -720,7 +772,7 @@ thuần không `t()`, không React:
 | T1 | `sampleNotice(sample)` | `"critical" \| "belowNMinInterrupted" \| "warn" \| null` — luật precedence, đúng một kết quả |
 | T3 | `gateSummary(candidates)` | `{ key, tone: "ok" \| "err", cleared, total }` |
 | T4 | `comparisonRows()` mở rộng | `numberText`, `unit`, `deltaText` (đã có sẵn file test) |
-| T4 | `hasDeltaColumn(candidates)` | `boolean` — một nguồn cho cả `--delta-col` lẫn placeholder |
+| T4 | `hasDeltaColumn(candidates)` | `boolean` — một nguồn quyết định có render `<th>`/`<td>` Δ hay không |
 | T7 | `collisionBoundCell(g2)` | `{ kind: "bound", bound, observed, n } \| { kind: "notApplicable", observed, n }` |
 | T10 | `copyDecisionId(id, write)` | `Promise<"copied" \| "failed">` |
 | T13 | `comparisonSummary(rows)` | `{ a, b, ties, total } \| null` |
@@ -756,11 +808,16 @@ không cần mock global. Component chỉ còn một dòng
 `copyDecisionId(run.id, (t) => navigator.clipboard.writeText(t))` — và cái `catch`
 nuốt rejection nằm trong hàm đã được test, nên không còn unhandled rejection.
 
-**Test đếm ô lưới (T4) thì hợp lệ** — `renderToStaticMarkup` phủ **first render**,
-và số ô mỗi hàng là chuyện của first render, không phải của click. **Nhưng nó đòi
-lưới phải import được**, nên T4 kèm việc trích `ComparisonGrid` ra
-`components/ComparisonGrid.tsx`; chi tiết và cách đếm nằm trong T4. Đây là file
-test mới: `src/components/__tests__/comparison-grid.test.tsx`.
+**Khẳng định trên markup thật thì hợp lệ** — `renderToStaticMarkup` phủ **first
+render**, và cấu trúc bảng là chuyện của first render chứ không phải của click.
+Nhưng nó **đòi bảng phải import được**, nên T4 kèm việc trích `ComparisonGrid` ra
+`components/ComparisonGrid.tsx`. File test mới:
+`src/components/__tests__/comparison-grid.test.tsx`.
+
+Cái cần khẳng định ở đó, sau khi đổi sang `<table>`: hàng `no route found` in
+`not measured` chứ không in `—`; run 3 candidate không có `<th>` Δ nào; tiêu đề
+cột chọn đúng trường theo `headingField` (T2). **Test "đếm ô chia hết cho 4" của
+bản trước đã bỏ** — nó canh một lỗi chỉ tồn tại trong grid phẳng.
 
 ### Lệnh
 
@@ -817,7 +874,8 @@ nằm thành danh sách chứ không nằm trong đầu người implement:
 | Rủi ro | Mức | Xử lý |
 |---|---|---|
 | T4 đổi kiểu `MetricRow` — có test đang khẳng định `text: string[]` | **Cao** | Thêm `numberText`, giữ `text`. Không xoá field cũ trong cùng một lượt |
-| Hàng flags thiếu ô Δ ⇒ lệch toàn lưới, chỉ hiện khi có `stopped_early` | **Cao** | Placeholder bắt buộc + test đếm ô (T4). Test đòi trích `ComparisonGrid` ra `components/` — một thay đổi cấu trúc nằm trong T4, không phải việc phát sinh |
+| ~~Hàng flags thiếu ô Δ ⇒ lệch toàn lưới~~ | **đã triệt** | Không còn rủi ro: `<table>` có hàng thật, một `<tr>` ngắn không kéo hàng nào khác. Đây là lý do chính An chọn lấy bảng của v3 |
+| T2 chọn sai trường làm tiêu đề | **Cao** | `headingField()` suy từ dữ liệu; 4 ca test. Bản plan trước chốt cứng "config" và sai trên 10/16 run |
 | Trích `ComparisonGrid` khỏi `page.tsx` làm hỏng chỗ khác | Thấp | Thuần props, cắt nguyên khối; `page.tsx` chỉ còn dòng gọi. `npm.cmd run typecheck` bắt được ngay nếu thiếu prop |
 | Dùng class chưa tồn tại (`badge--ok`, `btn--ghost`, `--font-sans`) rồi chờ Plan 3 vá | **Cao** | Đã chốt từng cái: badge dùng `.badge.ok/.err`, nút dùng `.decision-copy-id` cục bộ, `--font-sans` đẩy lên Plan 3 A2 |
 | T3 giấu gate vào `<details>` bị đọc là "giấu thông tin" | Trung bình | Badge tổng hợp ở header cột luôn hiện, `<details>` chỉ chứa chi tiết 6 ô, và badge nói rõ tỉ lệ |
@@ -825,6 +883,43 @@ nằm thành danh sách chứ không nằm trong đầu người implement:
 | **Không có jsdom** ⇒ clipboard, timer, cleanup context không có test nào canh | **Cao** | Logic ra hàm thuần; phần còn lại thành checklist trình duyệt có tên, không để trong đầu ai. Rủi ro thật còn lại: checklist bị bỏ qua lúc vội |
 | A3 được tưởng là zero-pixel ⇒ đổi màu lọt vào giữa các thay đổi khác, không ai chụp riêng | Trung bình | Đã đính chính ở bảng Phụ thuộc và ở Plan 3; A3 chạy trước T2 và chụp riêng |
 | Mock chưa phủ các panel dưới ⇒ trang nửa mới nửa cũ | **Cao** | Chấp nhận cho demo. Plan 3 giai đoạn B kéo phần còn lại về cùng hệ |
+
+## Quyết định về mock — đã chốt 2026-08-21
+
+**An chọn: giữ v2, lấy `<table>` của v3.** Bảng dưới ghi lại cả ba lựa chọn đã
+cân, để lần sau không phải cân lại.
+
+| Task | v2 | v3 — EvalFrame | **Đã chốt** |
+|---|---|---|---|
+| **T4** lưới | CSS grid + luật placeholder Δ + test đếm ô | `<table>` | **v3** — xem T4 |
+| **T6** ô dẫn đầu | nền `--accent-soft` | đơn sắc + cột "Leads" | **v2** |
+| **T3** badge gate | `.badge.ok` / `.badge.err` | `.state.pass` / `.state.fail` | **v2** |
+| **T13** dòng tóm tắt | dòng dưới `panel-head` | pill cạnh tiêu đề | **v2** |
+
+Lý do lựa chọn này đứng vững: nó lấy đúng **phần cấu trúc** của v3 — thứ triệt
+được một lớp lỗi — mà không kéo theo phần **thẩm mỹ**, vốn sẽ đảo một quyết định
+An đã chốt và chốt sớm vài giá trị của Plan 3 giai đoạn B.
+
+Ghi chú gốc, giữ lại:
+
+| Task | v2 — plan hiện tại | v3 — EvalFrame |
+|---|---|---|
+| **T4** lưới | CSS grid `--cols` / `--delta-col`, cộng **luật placeholder Δ** và test đếm ô | `<table>`. Một `<tr>` là hàng thật nên hàng flags **không thể** làm lệch lưới — luật placeholder và test đếm ô **không còn cần** |
+| **T6** ô dẫn đầu | nền `--accent-soft` | đơn sắc: nền xám `--surface-2`, cộng một **cột "Leads"** ghi chữ `A` / `B` |
+| **T3** badge gate | `.badge.ok` / `.badge.err` | `.state.pass` / `.state.fail` — chấm + chữ hoa, không phải chip tô |
+| **T13** dòng tóm tắt | một dòng dưới `panel-head` | một `pill` bên phải tiêu đề mục |
+
+Ba điều đáng cân nhắc, không phải chuyện thẩm mỹ:
+
+1. **v3 đảo một quyết định An đã chốt.** T6 hiện ghi *"Luật tô giữ nguyên như hiện
+   tại (An đã chốt): tô mọi chênh lệch theo hướng metric"*. v3 bỏ hẳn việc tô theo
+   hướng — EvalFrame ghi rõ lý do: *"Neutral directional treatment keeps the UI
+   monochrome while preserving decision clarity."*
+2. **v3 giải quyết bug lệch lưới bằng cấu trúc**, không bằng luật. Đây là điểm
+   mạnh thật của nó, không phải chuyện nhìn.
+3. **v3 mang vài giá trị Plan 3 chưa chốt** — card bo `12px` trong khi A2 đã khai
+   thang `{4, 6, 8}`; badge đổi convention sang `.state`. Dựng v3 bây giờ là chốt
+   sớm mấy thứ đó thay cho Plan 3 giai đoạn B.
 
 ## Không commit
 
