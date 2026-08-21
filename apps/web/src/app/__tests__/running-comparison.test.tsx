@@ -227,10 +227,17 @@ describe("one frame, one kind of number", () => {
     expect(DETAIL).toContain("[side]: !current[side]");
   });
 
-  it("names each switch after its stack", () => {
+  it("names each switch after the field that tells the candidates apart", () => {
     // "Show final results" twice over is two controls a screen reader
     // cannot tell apart.
-    expect(DETAIL).toContain("candidate.stack_label}`}");
+    //
+    // This used to assert the *stack*, which fails its own reason on a
+    // local-controller comparison: both candidates are `astar+dwa`, so
+    // the reader heard the same label twice and the control it was
+    // meant to disambiguate stayed ambiguous. `names.heading` is
+    // whichever of stack or config actually differs on this run.
+    expect(DETAIL).toContain("names.heading}`}");
+    expect(DETAIL).not.toContain("candidate.stack_label}`}");
   });
 
   it("lets the reader go back to the live metrics", () => {

@@ -20,6 +20,7 @@ import { TraceViewer } from "@/components/TraceViewer";
 import { ConclusionPanel } from "@/components/ConclusionPanel";
 import { Hint } from "@/components/Hint";
 import { type MetricRow, comparisonRows, leaders } from "@/lib/candidateMetrics";
+import { type HeadingField, candidateNames, headingField } from "@/lib/candidateHeading";
 import {
   clampPage,
   pageCount,
@@ -34,10 +35,10 @@ import { panelPlan } from "@/lib/explainPanel";
 import { Icon } from "@/components/Icon";
 import { useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
+import { BELOW_N_MIN, noticeKey, sampleLineFor, sampleNotice } from "@/lib/sample";
 import {
   GATES,
   approvedConfigUrl,
-  coverage,
   decideConfig,
   withdrawConfig,
   getDecision,
@@ -100,7 +101,8 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
         <p className="muted">
           {run.experiment_scope ?? "—"} · {run.created_at.slice(0, 16).replace("T", " ")} ·{" "}
           <Link href="/decisions">{t("decisions.backToList")}</Link>
-        </p></div>
+        </p>
+        <SampleLine run={run} /></div>
         <div className="decision-detail-badges"><span className={`badge ${run.ranked ? "ok" : "muted-badge"}`}>{run.ranked ? t("decisions.filter.ranked") : t("decisions.filter.unranked")}</span>
         </div>
       </header>
@@ -114,13 +116,15 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
           Two of these positions are arguments rather than taste, and
           they survive any later reshuffle:
 
-          - `SampleBanner` stays first. It says the run was cut short or
+          - `SampleNotice` stays first. It says the run was cut short or
             ran fewer episodes than the declared risk allows, and that
-            qualifies *every* number below it.
+            qualifies *every* number below it. (The sample *size* moved
+            up into the page head as one line — a figure earns a card
+            only when it is abnormal.)
           - `ExplanationHeader` stays immediately above `EvidencePanel`.
             It carries the evidence's caveats, and a qualifier under the
             thing it qualifies has already been scrolled past. */}
-      <SampleBanner run={run} />
+      <SampleNotice run={run} />
       <CandidateComparison run={run} />
       <TracePanel run={run} />
       <ExplanationHeader run={run} />
@@ -158,6 +162,16 @@ function CandidateComparison({ run }: { run: DecisionRun }) {
   // compares across candidates, so a card cannot work out on its own
   // whether it is ahead.
   const rows = comparisonRows(candidates);
+  // One choice for the whole grid, not one per column: the heading is a
+  // statement about what this comparison varied, and two columns cannot
+  // disagree about that.
+  const heading = headingField(candidates);
+  // A row of empty bordered cells is not a finding. The flags row exists
+  // to carry two of them — an undeclared observation class and a
+  // candidate retired early — and renders only when one is present.
+  const hasFlags = candidates.some(
+    (candidate) => !candidate.local_observation_class || candidate.stopped_early,
+  );
   return (
     <section className="panel comparison-results" aria-labelledby="comparison-results-title">
       <div className="comparison-results-head">
@@ -202,30 +216,36 @@ function CandidateComparison({ run }: { run: DecisionRun }) {
         style={{ gridTemplateColumns: `minmax(200px, 1.2fr) repeat(${candidates.length}, minmax(170px, 1fr))` }}
       >
         <div className="comparison-gutter comparison-grid-head" />
-        {candidates.map((candidate, index) => (
-          <div key={candidate.candidate_id} className={`comparison-cell comparison-grid-head candidate-${SIDES[index] ?? "n"}`}>
-            <span className="candidate-result-icon"><Icon name="cpu" size={17} /></span>
-            <div>
-              <small>Candidate {sideLabel(index)}</small>
-              <h4>{candidate.stack_label}</h4>
-              <code>{candidate.local_controller_config}</code>
+        {candidates.map((candidate, index) => {
+          const names = candidateNames(candidate, heading);
+          return (
+            <div key={candidate.candidate_id} className={`comparison-cell comparison-grid-head candidate-${SIDES[index] ?? "n"}`}>
+              <div>
+                <span className="candidate-letter">Candidate {sideLabel(index)}</span>
+                {/* The field that actually differs, whichever it is.
+                    Hard-coding either one prints the same words down both
+                    columns on half the runs — see `lib/candidateHeading`. */}
+                <h4>{names.heading}</h4>
+                {/* Whichever field the heading did not take, then the
+                    observation class. Nothing is lost either way. */}
+                <span className="candidate-secondary">{names.secondary}</span>
+              </div>
+              {run.recommended_candidate_id === candidate.candidate_id ? (
+                <span className="badge ok"><Icon name="check" size={12} />{t("decisions.card.recommended")}</span>
+              ) : null}
             </div>
-            {run.recommended_candidate_id === candidate.candidate_id ? (
-              <span className="badge ok"><Icon name="check" size={12} />{t("decisions.card.recommended")}</span>
-            ) : null}
-          </div>
-        ))}
+          );
+        })}
 
-        <div className="comparison-gutter" />
-        {candidates.map((candidate, index) => (
+        {hasFlags ? <div className="comparison-gutter" /> : null}
+        {hasFlags ? candidates.map((candidate, index) => (
           <div key={candidate.candidate_id} className={`comparison-cell comparison-flags candidate-${SIDES[index] ?? "n"}`}>
-            {/* What this candidate was shown. Named rather than left
-                blank when undeclared: a stack whose inputs nobody wrote
-                down cannot be shown to have matched the others, and an
-                empty cell reads as "same as the rest". */}
-            {candidate.local_observation_class ? (
-              <span className="badge muted-badge">{candidate.local_observation_class}</span>
-            ) : (
+            {/* The observation class itself moved up to the sub-line
+                under the heading. What stays here is the *finding*: a
+                stack whose inputs nobody wrote down cannot be shown to
+                have matched the others, and an empty cell reads as "same
+                as the rest". */}
+            {candidate.local_observation_class ? null : (
               <span className="badge warn" title={t("decisions.gates.observationUnknownNote")}>
                 {t("decisions.gates.observationUnknown")}
               </span>
@@ -244,7 +264,7 @@ function CandidateComparison({ run }: { run: DecisionRun }) {
               </span>
             ) : null}
           </div>
-        ))}
+        )) : null}
 
         {rows.map((metric) => {
           const best = leaders(metric);
@@ -378,6 +398,11 @@ function TracePanel({ run }: { run: DecisionRun }) {
     () => panelCandidates(run, run.report?.candidates ?? []),
     [run],
   );
+  // From the **whole** report, not from `candidates` above: that list is
+  // reordered and can be shorter than the field, and a heading chosen
+  // from a subset could name a different field than the comparison grid
+  // did. One page must not call the same candidate two things.
+  const heading = headingField(run.report?.candidates ?? []);
   const episodes = run.report?.sample?.episode_context_ids ?? [];
   const [episodeId, setEpisodeId] = useState(episodes[0] ?? "");
   const [slots, setSlots] = useState<Record<string, TraceSlot>>({});
@@ -606,6 +631,9 @@ function TracePanel({ run }: { run: DecisionRun }) {
         )}
         <EpisodeLegend />
         <div className="episode-comparison-grid">
+          {/* The same choice the comparison grid made. Two panels on one
+              page naming a candidate by different fields is worse than
+              either choice on its own. */}
           {candidates.map((candidate, index) => {
             const side = index === 0 ? "a" : "b";
             // In progress-sync the two panels are at *different*
@@ -617,6 +645,7 @@ function TracePanel({ run }: { run: DecisionRun }) {
               <CandidateEpisode
                 key={candidate.candidate_id}
                 candidate={candidate}
+                heading={heading}
                 side={side}
                 episodeId={episodeId}
                 slot={slots[candidate.candidate_id] ?? { state: "loading" }}
@@ -675,15 +704,22 @@ function EpisodeLegend() {
   return <div className="episode-legend" aria-label={t("trace.legend.title")}><div className="episode-legend-keys">{items.map(([tone, label]) => <span key={tone}><i className={`legend-dot legend-dot--${tone}`} aria-hidden="true" />{label}</span>)}</div><Hint text={t("trace.colourNote")} label={t("trace.legend.title")} /></div>;
 }
 
-function CandidateEpisode({ candidate, side, episodeId, slot, mode, playbackTime, running, forceFinal, onToggleFinal, onSeek, isReferenceRuler, onRetry }: { candidate: RunCandidate; side: "a" | "b"; episodeId: string; slot: TraceSlot; mode: "flat" | "raised"; playbackTime: number; running: RunningSample[] | null; forceFinal: boolean; onToggleFinal: () => void; onSeek: (seconds: number) => void; isReferenceRuler: boolean; onRetry: () => void }) {
+function CandidateEpisode({ candidate, heading, side, episodeId, slot, mode, playbackTime, running, forceFinal, onToggleFinal, onSeek, isReferenceRuler, onRetry }: { candidate: RunCandidate; heading: HeadingField; side: "a" | "b"; episodeId: string; slot: TraceSlot; mode: "flat" | "raised"; playbackTime: number; running: RunningSample[] | null; forceFinal: boolean; onToggleFinal: () => void; onSeek: (seconds: number) => void; isReferenceRuler: boolean; onRetry: () => void }) {
   const { t } = useTranslation();
   const outcome = outcomesByEpisode(candidate).get(episodeId);
   const ready = slot.state === "ready" ? slot : null;
   const finalPanel = <EpisodeMetrics outcome={outcome} lastEvent={ready ? (ready.trace.events.at(-1)?.event ?? null) : null} />;
-  return <article className={`episode-candidate episode-candidate--${side}`}><header><div><span>Candidate {side.toUpperCase()}</span><h4>{candidate.stack_label}</h4><code>{candidate.local_controller_config}</code></div><div className="episode-candidate-actions"><span className={`badge ${outcomeTone(outcome)}`}>{outcomeLabel(outcome, t)}</span>{/* Named with the stack, because the page carries two of these
-        and "Show final results" twice over is two controls a screen
-        reader cannot tell apart. */}
-      <button type="button" className={forceFinal ? "primary" : ""} aria-pressed={forceFinal} aria-label={`${t(forceFinal ? "trace.metricsView.live" : "trace.metricsView.final")} — ${candidate.stack_label}`} title={t("trace.metricsView.hint")} onClick={onToggleFinal}>{t(forceFinal ? "trace.metricsView.live" : "trace.metricsView.final")}</button></div></header><div className="episode-map">{slot.state === "loading" ? <div className="episode-skeleton" role="status">{t("trace.loadingCandidate")}</div> : ready ? <TraceViewer trace={ready.trace} playbackTime={playbackTime} mode={mode} showControls={false} candidateSide={side} running={running} finalPanel={finalPanel} forceFinal={forceFinal} onSeek={onSeek} isReferenceRuler={isReferenceRuler} /> : slot.state === "missing" ? <div className="episode-empty" role="status">{t("trace.missing")}</div> : slot.state === "empty" ? <div className="episode-empty" role="status">{t("trace.emptyFrames")}</div> : <div className="episode-error" role="alert"><p>{t("trace.loadError")}</p><button type="button" onClick={onRetry}>{t("common.retry")}</button></div>}</div>{/* A candidate whose trace would not load has no replay to run, so
+  // Whichever field distinguishes this run's candidates — the same one
+  // the comparison grid uses. On a local-controller comparison the stack
+  // is identical on both sides, so naming the card by the stack labelled
+  // both cards `astar+dwa`, and so did the accessible name of each
+  // card's "Show final results" button.
+  const names = candidateNames(candidate, heading);
+  return <article className={`episode-candidate episode-candidate--${side}`}><header><div><span>Candidate {side.toUpperCase()}</span><h4>{names.heading}</h4><code>{names.secondary}</code></div><div className="episode-candidate-actions"><span className={`badge ${outcomeTone(outcome)}`}>{outcomeLabel(outcome, t)}</span>{/* Named with the field that differs, because the page carries
+        two of these and "Show final results" twice over is two controls
+        a screen reader cannot tell apart — which is exactly what the
+        stack gave it whenever the stack was the same on both sides. */}
+      <button type="button" className={forceFinal ? "primary" : ""} aria-pressed={forceFinal} aria-label={`${t(forceFinal ? "trace.metricsView.live" : "trace.metricsView.final")} — ${names.heading}`} title={t("trace.metricsView.hint")} onClick={onToggleFinal}>{t(forceFinal ? "trace.metricsView.live" : "trace.metricsView.final")}</button></div></header><div className="episode-map">{slot.state === "loading" ? <div className="episode-skeleton" role="status">{t("trace.loadingCandidate")}</div> : ready ? <TraceViewer trace={ready.trace} playbackTime={playbackTime} mode={mode} showControls={false} candidateSide={side} running={running} finalPanel={finalPanel} forceFinal={forceFinal} onSeek={onSeek} isReferenceRuler={isReferenceRuler} /> : slot.state === "missing" ? <div className="episode-empty" role="status">{t("trace.missing")}</div> : slot.state === "empty" ? <div className="episode-empty" role="status">{t("trace.emptyFrames")}</div> : <div className="episode-error" role="alert"><p>{t("trace.loadError")}</p><button type="button" onClick={onRetry}>{t("common.retry")}</button></div>}</div>{/* A candidate whose trace would not load has no replay to run, so
       there is no live row for the result to replace — and the result
       is still the answer to what happened. Shown outright rather than
       hidden behind a swap that has nothing to swap with. */}
@@ -1144,49 +1180,74 @@ function HumanActs({ run, onDone }: { run: DecisionRun; onDone: () => Promise<vo
   );
 }
 
-/** What was asked for, beside what was measured.
+/** One line saying how big the sample was, in the page head.
+ *
+ * This replaced three 26px figures — measured, requested, N_min — which
+ * on an ordinary run print the same number three times at the largest
+ * type on screen. A figure earns a card when it is abnormal; when it is
+ * fine it earns a clause.
+ *
+ * Every decision here is `lib/sample`, and the reason is the repo's, not
+ * taste: there is no jsdom, so a rule written inside JSX is a rule no
+ * test can reach. What is left is looking up keys and rendering.
+ */
+function SampleLine({ run }: { run: DecisionRun }) {
+  const { t } = useTranslation();
+  const line = sampleLineFor(run);
+  if (!line) return null;
+
+  return (
+    <p className="sample-line">
+      {/* Bold in the markup, not in the dictionary: `translate` returns a
+          plain string and React escapes it, so a `<b>` in a locale file
+          would render as four visible characters. */}
+      <b>{line.params.n}</b> {t("decisions.sample.line.measured")}
+      <span className="sep">·</span>
+      <span className={line.nMinKey === BELOW_N_MIN ? "sample-below" : undefined}>
+        {t(line.nMinKey, { n: String(line.params.n), min: String(line.params.min) })}
+      </span>
+      {line.ranFullRequest ? (
+        <>
+          <span className="sep">·</span>
+          {t("decisions.sample.line.full")}
+        </>
+      ) : null}
+      {line.coveragePercent !== null ? (
+        <>
+          <span className="sep">·</span>
+          {t("decisions.sample.line.coverage", { percent: String(line.coveragePercent) })}
+        </>
+      ) : null}
+    </p>
+  );
+}
+
+/** The one notice the sample earns, or nothing.
  *
  * Above everything, because it qualifies every number below it. A run
  * stopped at 245 of 300 is a valid, smaller comparison — but reading its
  * gate table as a 300-episode result is a different claim from the one
  * the data supports.
+ *
+ * **One notice, never a stack.** A run both short and interrupted used
+ * to draw two boxes, and two boxes of the same shape read as two
+ * problems of the same weight. Below N_min voids the numbers;
+ * interrupted explains how the run got there. The combined case has its
+ * own wording that says both in one box.
  */
-function SampleBanner({ run }: { run: DecisionRun }) {
+function SampleNotice({ run }: { run: DecisionRun }) {
   const { t } = useTranslation();
   const sample = run.report?.sample;
   if (!sample) return null;
-  const covered = coverage(run);
-  const short = sample.n_episodes < sample.n_min_required;
+  const notice = noticeKey(sampleNotice(sample));
+  if (!notice) return null;
 
   return (
-    <div className="panel decision-summary">
-      <div className="stat-grid">
-        <Figure label={t("decisions.sample.measured")} value={String(sample.n_episodes)} />
-        {sample.n_episodes_requested !== undefined ? (
-          <Figure
-            label={t("decisions.sample.requested")}
-            value={String(sample.n_episodes_requested)}
-          />
-        ) : null}
-        <Figure
-          label={t("decisions.sample.nMin")}
-          value={String(sample.n_min_required)}
-          unknown={short}
-        />
-        {covered !== undefined && covered < 1 ? (
-          <Figure label={t("decisions.sample.coverage")} value={`${Math.round(covered * 100)}%`} />
-        ) : null}
-      </div>
-      {sample.interrupted ? (
-        <div className="notice" style={{ marginTop: 12 }}>
-          {t("decisions.sample.interrupted")}
-        </div>
-      ) : null}
-      {short ? (
-        <div className="notice" style={{ marginTop: 12 }}>
-          {t("decisions.sample.belowNMin")}
-        </div>
-      ) : null}
+    <div className={`notice ${notice.variant}`}>
+      {t(notice.key, {
+        n: String(sample.n_episodes),
+        min: String(sample.n_min_required),
+      })}
     </div>
   );
 }

@@ -60,12 +60,17 @@ describe("where the evidence sits", () => {
     expect(between).not.toMatch(/<[A-Z]/);
   });
 
-  it("leaves the sample banner above everything it qualifies", () => {
+  it("leaves the sample notice above everything it qualifies", () => {
     // "This run was stopped before it finished" is true of every number
     // on the page, so it cannot sit below any of them.
-    const banner = DETAIL.indexOf("<SampleBanner run={run} />");
-    expect(banner).toBeGreaterThan(-1);
-    expect(banner).toBeLessThan(DETAIL.indexOf("<CandidateComparison run={run} />"));
+    //
+    // Was `<SampleBanner>`, which drew the notice *and* three figures
+    // for the sample size. The size moved into the page head as one
+    // line; only the notice still has to be positioned, and the reason
+    // it has to be positioned is unchanged.
+    const notice = DETAIL.indexOf("<SampleNotice run={run} />");
+    expect(notice).toBeGreaterThan(-1);
+    expect(notice).toBeLessThan(DETAIL.indexOf("<CandidateComparison run={run} />"));
   });
 });
 

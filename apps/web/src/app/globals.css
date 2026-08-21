@@ -2200,6 +2200,38 @@ a.stat-card:hover {
 .decision-page-head p,
 .decision-detail-head p { margin: 3px 0 0; }
 .decision-page-icon { display: grid; width: 40px; height: 40px; place-items: center; border: 1px solid var(--accent-soft-border); border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
+
+/* How big the sample was, as one line under the run's name.
+   ===================================================================
+   What it replaced: three 26px figures reading `30`, `30`, `30` — the
+   same number three times at the largest type on the page. A figure
+   earns a card when it is abnormal; when it is fine it earns a clause.
+
+   Wraps rather than truncates: on a narrow window the clauses stack,
+   and a clause that says the run fell below N_min is not one to hide
+   behind an ellipsis. */
+.sample-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.sample-line b {
+  color: var(--text);
+  font-weight: 600;
+  /* The episode count sits beside other figures on the page; tabular
+     digits keep them on one vertical rhythm. */
+  font-variant-numeric: tabular-nums;
+}
+.sample-line .sep { opacity: 0.45; }
+/* Below N_min is the one state on this line that changes what every
+   number under it is worth, so it is the one clause allowed a colour.
+   The notice underneath explains the consequence; this only has to make
+   the reader notice there is one. */
+.sample-line .sample-below { color: var(--err); font-weight: 600; }
 .decision-running-badge { display: inline-flex; align-items: center; gap: 7px; padding: 6px 9px; border: 1px solid var(--accent-soft-border); border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 700; }
 .decision-spinner { display: inline-block; width: 15px; height: 15px; border: 2px solid color-mix(in srgb, currentColor 28%, transparent); border-top-color: currentColor; border-radius: 50%; animation: decision-spin 700ms linear infinite; }
 @keyframes decision-spin { to { transform: rotate(360deg); } }
@@ -3568,28 +3600,39 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
 .comparison-grid { display: grid; align-items: stretch; }
 .comparison-gutter { padding: 8px 14px; border-bottom: 1px solid var(--border); }
 .comparison-cell { padding: 8px 14px; border-bottom: 1px solid var(--border); }
-.comparison-cell.candidate-a { background: var(--candidate-a-soft); }
-.comparison-cell.candidate-b { background: var(--candidate-b-soft); }
+/* **No column-wide tint.** A wash down the whole column swallows the
+   numbers it sits behind — it was the loudest thing on a table whose
+   entire job is the figures. The identity survives as a 3px cap on the
+   head and as the colour of the heading text, which is enough to tell
+   two columns apart and does not compete with a single value. */
 /* Past two, neutral. Reusing candidate A's blue for candidate C would
    put two stacks in one colour on a page whose job is telling them
    apart. */
-.comparison-cell.candidate-n { background: var(--panel-2); }
 .comparison-cell + .comparison-cell { border-left: 1px solid var(--border); }
 
 .comparison-grid-head {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  /* Two tracks, not three: the 34px `cpu` icon that used to open this
+     cell is gone. It was the same glyph on both candidates and on the
+     page header, so it distinguished nothing and said nothing — it just
+     took the width the heading needed. */
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding-top: 14px;
   padding-bottom: 14px;
+  border-top: 3px solid transparent;
 }
-.comparison-grid-head small { display: block; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-.comparison-grid-head h4 { margin: 2px 0; font-size: 15px; }
-.comparison-grid-head code { color: var(--muted); font-size: 10px; }
-.candidate-result-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 9px; background: var(--panel); }
-.candidate-a .candidate-result-icon { color: var(--candidate-a); }
-.candidate-b .candidate-result-icon { color: var(--candidate-b); }
+.comparison-grid-head.candidate-a { border-top-color: var(--candidate-a); }
+.comparison-grid-head.candidate-b { border-top-color: var(--candidate-b); }
+.candidate-letter { display: block; color: var(--muted); font-size: var(--fs-caption); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+/* The heading carries the candidate's colour. Whichever field it holds,
+   it is the one thing that differs between the columns, so it is the one
+   thing worth colouring. */
+.comparison-grid-head h4 { margin: 2px 0; font-size: var(--fs-label); font-weight: 600; letter-spacing: -.01em; }
+.comparison-grid-head.candidate-a h4 { color: var(--candidate-a); }
+.comparison-grid-head.candidate-b h4 { color: var(--candidate-b); }
+.candidate-secondary { display: block; color: var(--muted); font-size: var(--fs-sm); }
 
 .comparison-flags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .comparison-flags .badge { font-size: 12px; }

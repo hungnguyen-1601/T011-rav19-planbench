@@ -26,6 +26,10 @@ import { NAV_SECTIONS } from "../../lib/navigation";
 const APP = join(process.cwd(), "src", "app");
 const LIST = readFileSync(join(APP, "decisions", "page.tsx"), "utf8");
 const DETAIL = readFileSync(join(APP, "decisions", "[id]", "page.tsx"), "utf8");
+/* The stylesheet, for the rules this page depends on being absent as
+   much as present — a removed column tint leaves nothing to assert on
+   in the markup. */
+const CSS = readFileSync(join(APP, "globals.css"), "utf8");
 /* Read here because of one assertion below: the map editor is where
    people go looking for the start and the goal, and it has to send them
    to the page that actually has them. */
@@ -858,5 +862,152 @@ describe("the list is a catalogue, not a leaderboard", () => {
       expect(vi).toHaveProperty(`decisions.filter.${key}`);
     }
     expect(LIST).toContain("reviewFilter");
+  });
+});
+
+describe("the sample line replaced the row of figures", () => {
+  it("no longer draws three cards that read the same number", () => {
+    /* `30 measured`, `30 requested`, `30 N_min` — one number three
+       times, at the largest type on the page. A figure earns a card when
+       it is abnormal; when it is fine it earns a clause. */
+    expect(DETAIL).not.toContain("decisions.sample.measured");
+    expect(DETAIL).not.toContain("decisions.sample.requested");
+    expect(DETAIL).not.toContain("decisions.sample.nMin");
+    expect(DETAIL).not.toContain("SampleBanner");
+  });
+
+  it("puts the line in the page head and the notice above the panels", () => {
+    /* Order is the argument: a notice saying the sample is too small
+       qualifies every number under it, so it cannot sit below them. */
+    expect(DETAIL).toContain("<SampleLine run={run} />");
+    expect(DETAIL).toContain("<SampleNotice run={run} />");
+    expect(DETAIL.indexOf("<SampleNotice run={run} />")).toBeLessThan(
+      DETAIL.indexOf("<CandidateComparison run={run} />"),
+    );
+  });
+
+  it("decides nothing inside the component", () => {
+    /* No jsdom in this repo, so a rule written in JSX is a rule no test
+       can reach. Both components read their answer from `lib/sample`. */
+    expect(DETAIL).toContain('from "@/lib/sample"');
+    expect(DETAIL).toContain("sampleLineFor(run)");
+    expect(DETAIL).toContain("noticeKey(sampleNotice(sample))");
+  });
+
+  it("carries both N_min wordings, in both languages", () => {
+    for (const key of [
+      "decisions.sample.line.measured",
+      "decisions.sample.line.meetsNMin",
+      "decisions.sample.line.belowNMin",
+      "decisions.sample.line.full",
+      "decisions.sample.line.coverage",
+      "decisions.sample.belowNMinInterrupted",
+    ]) {
+      expect(en, key).toHaveProperty(key);
+      expect(vi, key).toHaveProperty(key);
+    }
+  });
+
+  it("prints both numbers in the below-N_min wording", () => {
+    /* `N_min required: 30` alone does not say how short the run fell. */
+    for (const dict of [en, vi] as Record<string, string>[]) {
+      const below = dict["decisions.sample.line.belowNMin"];
+      expect(below).toContain("{n}");
+      expect(below).toContain("{min}");
+    }
+  });
+
+  it("keeps HTML out of the dictionary", () => {
+    /* `translate` returns a plain string and React escapes it, so a
+       `<b>` in a locale file renders as four visible characters. The
+       emphasis lives in the markup instead. */
+    for (const dict of [en, vi] as Record<string, string>[]) {
+      expect(dict["decisions.sample.line.measured"]).not.toContain("<");
+    }
+    expect(DETAIL).toContain("<b>{line.params.n}</b>");
+  });
+});
+
+describe("the column head names what actually differs", () => {
+  it("does not hard-code either field", () => {
+    /* Both hard-codings produce the same bug — two heads reading the
+       same words. `stack_label` gives `astar+dwa` twice on a
+       local-controller comparison; `local_controller_config` gives
+       `dwa_coarse` twice on a global-planner one, which is the commoner
+       run. The choice is made from the data. */
+    expect(DETAIL).toContain("headingField(candidates)");
+    expect(DETAIL).toContain("candidateNames(candidate, heading)");
+    expect(DETAIL).not.toContain("<h4>{candidate.stack_label}</h4>");
+  });
+
+  it("chooses per panel, never per column", () => {
+    /* Two columns cannot disagree about what this comparison varied, so
+       the choice is made above the `.map` and passed down. The trace
+       panel makes it again — from the *whole* report, not from its own
+       reordered subset — so the two panels cannot name one candidate two
+       different things. */
+    expect(DETAIL).toContain("const heading = headingField(candidates);");
+    expect(DETAIL).toContain("const heading = headingField(run.report?.candidates ?? []);");
+    for (const call of DETAIL.match(/headingField\([^)]*\)/g) ?? []) {
+      expect(call).not.toContain("candidate.");
+    }
+  });
+
+  it("names the replay cards by the same field as the grid", () => {
+    /* Otherwise a local-controller run reads `dwa_coarse` / `dwa_balanced`
+       at the top of the page and `astar+dwa` twice further down. */
+    expect(DETAIL).toContain("heading={heading}");
+    expect(DETAIL).toContain("<h4>{names.heading}</h4>");
+  });
+
+  it("disambiguates the two final-results buttons by that field too", () => {
+    /* The accessible name used the stack, which is identical on both
+       sides of a local-controller comparison — so a screen reader heard
+       the same label twice. */
+    expect(DETAIL).toContain("} — ${names.heading}`}");
+    expect(DETAIL).not.toContain("} — ${candidate.stack_label}`}");
+  });
+
+  it("drops the icon that was the same glyph on both candidates", () => {
+    expect(DETAIL).not.toContain("candidate-result-icon");
+    expect(CSS).not.toContain(".candidate-result-icon");
+  });
+
+  it("keeps the observation finding after moving the class to the sub-line", () => {
+    /* The class itself is now under the heading. What stays in the flags
+       row is the case where nobody declared one — an empty cell there
+       would read as "same as the rest". */
+    expect(DETAIL).toContain("decisions.gates.observationUnknown");
+    expect(DETAIL).not.toContain('<span className="badge muted-badge">{candidate.local_observation_class}</span>');
+  });
+
+  it("does not draw a flags row when there is nothing to flag", () => {
+    /* A row of empty bordered cells is not a finding. */
+    expect(DETAIL).toContain("const hasFlags = candidates.some(");
+    expect(DETAIL).toContain("{hasFlags ?");
+  });
+});
+
+describe("the comparison grid stopped tinting whole columns", () => {
+  it("caps the head instead of washing the column", () => {
+    /* A wash down the column swallows the numbers it sits behind, on a
+       table whose entire job is the figures. */
+    expect(CSS).not.toContain(".comparison-cell.candidate-a {");
+    expect(CSS).not.toContain(".comparison-cell.candidate-b {");
+    expect(CSS).toContain(".comparison-grid-head.candidate-a { border-top-color: var(--candidate-a); }");
+  });
+
+  it("leaves no column tinted, including a third candidate", () => {
+    /* `candidate-n` is the fallback past B. Keeping its grey wash after
+       A and B lost theirs would tint exactly the column with no colour
+       of its own. */
+    expect(CSS).not.toContain(".comparison-cell.candidate-n");
+  });
+
+  it("colours the heading with a selector that reaches no further", () => {
+    /* The class sits on the head cell itself, so a descendant form would
+       reach into any `.candidate-a` container that later grows an h4. */
+    expect(CSS).not.toContain(".candidate-a .comparison-grid-head h4");
+    expect(CSS).toContain(".comparison-grid-head.candidate-a h4");
   });
 });
