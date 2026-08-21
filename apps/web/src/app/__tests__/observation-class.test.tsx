@@ -32,6 +32,12 @@ import type { RunCandidate } from "../../lib/decisions";
 const APP = join(process.cwd(), "src", "app");
 const CANDIDATES = readFileSync(join(APP, "candidates", "page.tsx"), "utf8");
 const DETAIL = readFileSync(join(APP, "decisions", "[id]", "page.tsx"), "utf8");
+/* The comparison table, extracted so tests can render it — a
+   function declared inside a fetching page cannot be imported. */
+const GRID = readFileSync(
+  join(process.cwd(), "src", "components", "ComparisonGrid.tsx"),
+  "utf8",
+);
 const EN = en as Record<string, string>;
 
 function candidate(local: string | null): RunCandidate {
@@ -76,9 +82,9 @@ describe("the report says what each candidate was shown", () => {
     // moving rather than go, because `ObservationNotice` fires only
     // when the classes *differ* — a lone undeclared stack raises no
     // warning at all.
-    expect(DETAIL).toContain("candidate.local_observation_class ?");
-    expect(DETAIL).toContain("decisions.gates.observationUnknown");
-    expect(DETAIL).toContain("comparison-flags");
+    expect(GRID).toContain("candidate.local_observation_class ?");
+    expect(GRID).toContain("decisions.gates.observationUnknown");
+    expect(GRID).toContain("comparison-flags");
     expect(EN["decisions.gates.observationUnknownNote"]).toContain("cannot be shown");
   });
 });
@@ -104,13 +110,12 @@ describe("mixing classes is a finding, and it is never silent", () => {
     // finding about the whole run, and leaving it to be deleted
     // along with the section it happened to live in would have been
     // the quiet way to lose it.
-    const comparison = DETAIL.slice(
-      DETAIL.indexOf("function CandidateComparison("),
-      DETAIL.indexOf("const SIDES"),
-    );
+    /* The grid moved into its own component, so the ordering claim is
+       now about the panel that wraps it. */
+    const comparison = DETAIL.slice(DETAIL.indexOf("function CandidateComparison("));
     expect(comparison).toContain("<ObservationNotice");
     expect(comparison.indexOf("<ObservationNotice")).toBeLessThan(
-      comparison.indexOf('className="comparison-grid"'),
+      comparison.indexOf("<ComparisonGrid"),
     );
   });
 

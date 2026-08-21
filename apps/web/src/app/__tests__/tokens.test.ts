@@ -30,7 +30,12 @@ import { describe, expect, it } from "vitest";
  * it is deliberately a list rather than a pattern: widening it is an
  * edit a reviewer sees.
  */
-const JSX_PROVIDED = ["--cols", "--delta-col"];
+/* Nothing at present. `--cols` and `--delta-col` lived here while the
+   comparison grid was a flat CSS grid fed its column count from an
+   inline style; it is a `<table>` now and sizes its own columns, so
+   the entries went with the thing that supplied them. An allowlist
+   keeps its meaning only while every entry in it is still real. */
+const JSX_PROVIDED: string[] = [];
 
 /** Emitted by `next/font` under the name given as its `variable:`.
  *

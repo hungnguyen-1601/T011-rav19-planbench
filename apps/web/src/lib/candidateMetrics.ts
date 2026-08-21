@@ -35,8 +35,21 @@ export interface MetricRow {
   /** One entry per candidate, in the order given. `null` where this run
    *  did not record it — never 0, which would read as a measurement. */
   values: (number | null)[];
-  /** Rendered text per candidate, so a count and a rate format alike. */
+  /** Number and unit together, per candidate. Kept for callers that
+   *  render a metric as one string; the grid uses the two fields below
+   *  so it can line the decimal points up across rows. */
   text: string[];
+  /** The digits alone, already rounded for display. `null` where the run
+   *  did not record the value — the wording for that is translated, so
+   *  it belongs to the component and not here. */
+  numberText: (string | null)[];
+  /** `undefined` for a bare count. The cell still renders the slot, so
+   *  one unitless row does not shove its number out of the column. */
+  unit?: string;
+  /** B−A on the display scale, signed, U+2212 for the minus.
+   *  `undefined` unless there are exactly two candidates and both
+   *  recorded the value. */
+  deltaText?: string;
   /** The deployment's own limit, when the gate declared one. */
   threshold?: string;
 }
@@ -115,19 +128,83 @@ export function failureBreakdown(candidate: RunCandidate): [string, number][] {
   return [...counts.entries()].sort((left, right) => right[1] - left[1]);
 }
 
-const asPercent = (value: number) => `${(value * 100).toFixed(1)} %`;
-const asMs = (value: number) => `${value.toFixed(2)} ms`;
-const asSeconds = (value: number) => `${value.toFixed(1)} s`;
-const asMetres = (value: number) => `${value.toFixed(3)} m`;
-const asMegabytes = (value: number) => `${value.toFixed(1)} MB`;
-const asCount = (value: number) => String(Math.round(value));
+/** A quantity's number and its unit, kept apart at the source.
+ *
+ * **The unit has to be a separate field, not something parsed back out
+ * of the rendered string.** The grid aligns decimal points across rows,
+ * which needs the unit in a column of its own; `ms` is wider than `m` is
+ * wider than `MB`, so right-aligning `17.89 ms` against `0.470 m` still
+ * leaves the decimals ragged. And splitting `text` on a space to
+ * recover the parts would be exactly the string-parsing this module
+ * exists to make unnecessary — it would also silently produce
+ * `17.89 ms ms` the first time a caller rendered both.
+ *
+ * `text` stays, unchanged, spelling both together. Older callers read
+ * it, and a formatter that had two ways to produce one string would be
+ * two things to keep in step.
+ */
+interface Format {
+  /** The digits alone. */
+  number: (value: number) => string;
+  /** Empty for a bare count, which has no unit to print. */
+  unit: string;
+  /** How a *difference* in this quantity reads. Not always the unit: a
+   *  gap between two percentages is percentage points, and calling it
+   *  `%` would say the gap was a proportion of a proportion. */
+  deltaUnit?: string;
+}
+
+const percent: Format = {
+  number: (value) => (value * 100).toFixed(1),
+  unit: "%",
+  deltaUnit: "pp",
+};
+const ms: Format = { number: (value) => value.toFixed(2), unit: "ms" };
+const seconds: Format = { number: (value) => value.toFixed(1), unit: "s" };
+const metres: Format = { number: (value) => value.toFixed(3), unit: "m" };
+const megabytes: Format = { number: (value) => value.toFixed(1), unit: "MB" };
+const count: Format = { number: (value) => String(Math.round(value)), unit: "" };
+
+/** `number` and `unit` joined, for `text` and nothing else. */
+const spell = (format: Format, value: number) =>
+  format.unit ? `${format.number(value)} ${format.unit}` : format.number(value);
+
+/** The B−A difference, formatted on the display scale.
+ *
+ * A rate is stored as `0.7` and shown as `70.0 %`, so a raw difference
+ * of `0.02` has to print as `+2.0 pp` — printing `+0.02` beside two
+ * numbers reading `70.0 %` and `72.0 %` is a third scale on one row.
+ *
+ * Signed always, with U+2212 for the minus: the hyphen-minus is
+ * narrower than the digits beside it and breaks the tabular column the
+ * rest of this file works to keep.
+ */
+function deltaText(format: Format, values: (number | null)[]): string | undefined {
+  if (values.length !== 2) return undefined;
+  const [first, second] = values;
+  // One side missing means there is no difference to state — not a
+  // difference of zero.
+  if (first === null || second === null) return undefined;
+  const unit = format.deltaUnit ?? format.unit;
+  const scaled = format.number(second - first);
+  // Sign only a real difference. `+0.00 ms` claims a direction the
+  // measurement does not have, and a value just under zero would round
+  // to `−0.00` — a minus sign on nothing.
+  const signed =
+    Number(scaled) === 0
+      ? scaled.replace("-", "")
+      : scaled.startsWith("-")
+        ? `−${scaled.slice(1)}`
+        : `+${scaled}`;
+  return unit ? `${signed} ${unit}` : signed;
+}
 
 function row(
   key: string,
   direction: Direction,
   candidates: RunCandidate[],
   read: (candidate: RunCandidate) => number | null,
-  render: (value: number) => string,
+  format: Format,
   threshold?: string,
 ): MetricRow {
   const values = candidates.map(read);
@@ -137,7 +214,13 @@ function row(
     values,
     // An em dash, not "0": a number the run did not record and a number
     // that came out zero are opposite readings of the same cell.
-    text: values.map((value) => (value === null ? "—" : render(value))),
+    text: values.map((value) => (value === null ? "—" : spell(format, value))),
+    // `null`, not a dash: the component decides how an absent value
+    // reads, because that wording is translated and this module has no
+    // dictionary.
+    numberText: values.map((value) => (value === null ? null : format.number(value))),
+    unit: format.unit || undefined,
+    deltaText: deltaText(format, values),
     threshold,
   };
 }
@@ -146,25 +229,25 @@ function row(
 export function comparisonRows(candidates: RunCandidate[]): MetricRow[] {
   const first = candidates[0];
   return [
-    row("successRate", "higher", candidates, (c) => c.success_rate, asPercent,
+    row("successRate", "higher", candidates, (c) => c.success_rate, percent,
       gateText(first, "G3", "threshold")),
-    row("collisions", "lower", candidates, (c) => gateField(c, "G2", "observed"), asCount),
+    row("collisions", "lower", candidates, (c) => gateField(c, "G2", "observed"), count),
     row("collisionBound", "lower", candidates,
-      (c) => gateField(c, "G2", "upper_bound_95"), asPercent),
-    row("noPathRate", "lower", candidates, (c) => gateField(c, "G1", "no_path_rate"), asPercent,
+      (c) => gateField(c, "G2", "upper_bound_95"), percent),
+    row("noPathRate", "lower", candidates, (c) => gateField(c, "G1", "no_path_rate"), percent,
       gateText(first, "G1", "threshold")),
-    row("worstClearance", "higher", candidates, worstClearance, asMetres),
-    row("medianTravel", "lower", candidates, medianTravelTime, asSeconds),
-    row("p99", "lower", candidates, (c) => c.pooled_p99_latency_ms, asMs,
+    row("worstClearance", "higher", candidates, worstClearance, metres),
+    row("medianTravel", "lower", candidates, medianTravelTime, seconds),
+    row("p99", "lower", candidates, (c) => c.pooled_p99_latency_ms, ms,
       gateText(first, "G4", "threshold_ms")),
     row("memory", "lower", candidates, (c) => gateField(c, "G5", "memory_estimate_mb"),
-      asMegabytes, gateText(first, "G5", "available_ram_mb")),
-    row("distinctEpisodes", "higher", candidates, (c) => c.n_distinct_episodes, asCount),
+      megabytes, gateText(first, "G5", "available_ram_mb")),
+    row("distinctEpisodes", "higher", candidates, (c) => c.n_distinct_episodes, count),
     // **No direction.** Replanning is already charged in travel time and
     // in latency, and the deployment declares no replan budget; marking
     // a winner here would price it twice and invent a rule nobody wrote
     // down. Shown because it is evidence about behaviour.
-    row("replans", "none", candidates, (c) => c.replan_count ?? null, asCount),
+    row("replans", "none", candidates, (c) => c.replan_count ?? null, count),
   ];
 }
 

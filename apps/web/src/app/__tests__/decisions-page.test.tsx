@@ -30,6 +30,13 @@ const DETAIL = readFileSync(join(APP, "decisions", "[id]", "page.tsx"), "utf8");
    much as present — a removed column tint leaves nothing to assert on
    in the markup. */
 const CSS = readFileSync(join(APP, "globals.css"), "utf8");
+/* The comparison table, extracted so tests can render it — a
+   function declared inside a fetching page cannot be imported. */
+const GRID = readFileSync(
+  join(process.cwd(), "src", "components", "ComparisonGrid.tsx"),
+  "utf8",
+);
+
 /* The modules the page delegates its decisions to. Asserting a key on
    the page would fail by design: the page renders `t(verdict.key)` and
    the key is chosen where the rule lives. */
@@ -122,8 +129,13 @@ describe("the detail page leads with the gate table", () => {
     // One grid: a neutral gutter of metric names, then one tinted
     // column per candidate carrying its identity, its values and its
     // gate verdicts. No metric appears twice.
-    expect(DETAIL).toContain('className="comparison-grid"');
-    expect(DETAIL).toContain("comparison-gutter comparison-label");
+    // Now a real `<table>`, not a flat grid. A `<tr>` is a row, so the
+    // flags row emitting one cell fewer can no longer shift every cell
+    // after it — the failure the old grid had exactly when a candidate
+    // carried a finding.
+    expect(GRID).toContain('<table className="comparison-table">');
+    expect(GRID).toContain("comparison-gutter comparison-label");
+    expect(GRID).toContain('<th scope="col"');
     expect(DETAIL).not.toContain("<MetricTable");
     expect(DETAIL).not.toContain("metric-comparison-row");
     expect(DETAIL.indexOf("<CandidateComparison")).toBeLessThan(DETAIL.indexOf("<Outcome"));
@@ -172,8 +184,8 @@ describe("the detail page leads with the gate table", () => {
   it("marks a candidate that was retired before the others", () => {
     /* Its row rests on fewer episodes than the rest of the table, which
        qualifies every number in it. */
-    expect(DETAIL).toContain("candidate.stopped_early");
-    expect(DETAIL).toContain("decisions.gates.stoppedEarly");
+    expect(GRID).toContain("candidate.stopped_early");
+    expect(GRID).toContain("decisions.gates.stoppedEarly");
   });
 });
 
@@ -256,11 +268,15 @@ describe("what the removed panels took with them", () => {
   });
 
   it("puts it with the other finding that qualifies the whole grid", () => {
-    const observation = DETAIL.indexOf("<ObservationNotice");
-    const host = DETAIL.indexOf("<HostWarning");
-    const grid = DETAIL.indexOf('className="comparison-grid"');
-    expect(host).toBeGreaterThan(observation);
-    expect(host).toBeLessThan(grid);
+    /* The host warning is no longer a banner over the table: G4 reads
+       wall-clock latency, so it qualifies the p99 row and nothing else,
+       and above the table it claimed more than the measurement supports.
+       It is passed into the grid and rendered in that row's label. */
+    expect(DETAIL).toContain("hostWarning={<HostWarning run={run} />}");
+    expect(DETAIL.indexOf("<ObservationNotice")).toBeLessThan(
+      DETAIL.indexOf("<ComparisonGrid"),
+    );
+    expect(GRID).toContain('metric.key === "p99" ? hostWarning : null');
   });
 
   it("never words the caveat itself, in either branch", () => {
@@ -940,7 +956,8 @@ describe("the column head names what actually differs", () => {
        `dwa_coarse` twice on a global-planner one, which is the commoner
        run. The choice is made from the data. */
     expect(DETAIL).toContain("headingField(candidates)");
-    expect(DETAIL).toContain("candidateNames(candidate, heading)");
+    expect(GRID).toContain("candidateNames(candidate, heading)");
+    expect(GRID).not.toContain("<h4>{candidate.stack_label}</h4>");
     expect(DETAIL).not.toContain("<h4>{candidate.stack_label}</h4>");
   });
 
@@ -961,7 +978,7 @@ describe("the column head names what actually differs", () => {
     /* Otherwise a local-controller run reads `dwa_coarse` / `dwa_balanced`
        at the top of the page and `astar+dwa` twice further down. */
     expect(DETAIL).toContain("heading={heading}");
-    expect(DETAIL).toContain("<h4>{names.heading}</h4>");
+    expect(GRID).toContain("<h4>{names.heading}</h4>");
   });
 
   it("disambiguates the two final-results buttons by that field too", () => {
@@ -987,8 +1004,8 @@ describe("the column head names what actually differs", () => {
 
   it("does not draw a flags row when there is nothing to flag", () => {
     /* A row of empty bordered cells is not a finding. */
-    expect(DETAIL).toContain("const hasFlags = candidates.some(");
-    expect(DETAIL).toContain("{hasFlags ?");
+    expect(GRID).toContain("const hasFlags = candidates.some(");
+    expect(GRID).toContain("{hasFlags ?");
   });
 });
 
@@ -1021,7 +1038,7 @@ describe("the gate verdict moved to the column head", () => {
     /* Six gates run before anything is scored (HĐ-7), so a candidate
        that failed one was never ranked at all. Reading that eleven
        metric rows down inverts the contract on screen. */
-    expect(DETAIL).toContain("gateVerdictBadge(candidate)");
+    expect(GRID).toContain("gateVerdictBadge(candidate)");
     expect(GATE_LIB).toContain("decisions.gates.badge.cleared");
     expect(GATE_LIB).toContain("decisions.gates.badge.blocked");
     for (const key of ["decisions.gates.badge.cleared", "decisions.gates.badge.blocked"]) {
@@ -1037,11 +1054,12 @@ describe("the gate verdict moved to the column head", () => {
     expect(CSS).toContain(".badge.ok");
     expect(CSS).toContain(".badge.err");
     expect(DETAIL).not.toContain("badge--");
+    expect(GRID).not.toContain("badge--");
   });
 
   it("collapses the six cells below the metric grid", () => {
     expect(DETAIL).toContain('<details className="comparison-gate-detail">');
-    expect(DETAIL).not.toContain("comparison-grid-foot");
+    expect(GRID).not.toContain("comparison-grid-foot");
     expect(CSS).not.toMatch(/^\.comparison-grid-foot\s*\{/m);
   });
 

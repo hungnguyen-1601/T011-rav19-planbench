@@ -226,3 +226,111 @@ describe("more than two candidates", () => {
     expect(comparisonRows([]).every((row) => row.values.length === 0)).toBe(true);
   });
 });
+
+describe("number and unit, kept apart", () => {
+  const rowFor = (key: string, over: Partial<RunCandidate>[] = [{}, {}]) =>
+    comparisonRows(over.map((o) => candidate(o))).find((r) => r.key === key)!;
+
+  it("splits each quantity into digits and a unit", () => {
+    const cases: [string, Partial<RunCandidate>, string, string | undefined][] = [
+      ["successRate", { success_rate: 0.7 }, "70.0", "%"],
+      ["p99", { pooled_p99_latency_ms: 17.891 }, "17.89", "ms"],
+      ["distinctEpisodes", { n_distinct_episodes: 3 }, "3", undefined],
+    ];
+    for (const [key, over, digits, unit] of cases) {
+      const row = rowFor(key, [over, over]);
+      expect(row.numberText[0], key).toBe(digits);
+      expect(row.unit, key).toBe(unit);
+    }
+  });
+
+  it("never repeats the unit inside the digits", () => {
+    /* This is `17.89 ms ms` written as a test: a caller that renders
+       `numberText` and then `unit` must not get the unit twice, which is
+       what happens the moment somebody feeds it `text` by mistake. */
+    for (const row of comparisonRows([candidate(), candidate()])) {
+      if (!row.unit) continue;
+      for (const digits of row.numberText) {
+        if (digits === null) continue;
+        expect(digits, row.key).not.toContain(row.unit);
+      }
+    }
+  });
+
+  it("agrees with the string it also spells out", () => {
+    /* `text` and `numberText` come from one formatter; if they ever
+       disagree, one of them is a second definition of the same value. */
+    for (const row of comparisonRows([candidate(), candidate()])) {
+      row.numberText.forEach((digits, index) => {
+        if (digits === null) return;
+        expect(row.text[index], row.key).toBe(
+          row.unit ? `${digits} ${row.unit}` : digits,
+        );
+      });
+    }
+  });
+
+  it("says nothing rather than a dash where the run recorded nothing", () => {
+    /* The wording for an absent value is translated, so the module
+       returns `null` and the component chooses the words. */
+    const row = rowFor("collisionBound", [{ gates: {} }, { gates: {} }]);
+    expect(row.numberText).toEqual([null, null]);
+  });
+});
+
+describe("the difference between two candidates", () => {
+  const twoRow = (key: string, a: Partial<RunCandidate>, b: Partial<RunCandidate>) =>
+    comparisonRows([candidate(a), candidate(b)]).find((r) => r.key === key)!;
+
+  it("states a rate gap in percentage points, not as a raw fraction", () => {
+    /* Stored `0.70` and `0.72`, shown `70.0 %` and `72.0 %`. Printing
+       `+0.02` beside them puts a third scale on one row. */
+    const row = twoRow("successRate", { success_rate: 0.7 }, { success_rate: 0.72 });
+    expect(row.deltaText).toBe("+2.0 pp");
+  });
+
+  it("uses a real minus sign, not a hyphen", () => {
+    /* The hyphen-minus is narrower than the digits beside it and breaks
+       the tabular column. */
+    const row = twoRow("p99", { pooled_p99_latency_ms: 17.2 }, { pooled_p99_latency_ms: 7.85 });
+    expect(row.deltaText).toBe("\u22129.35 ms");
+    expect(row.deltaText).not.toContain("-");
+  });
+
+  it("signs a positive difference too", () => {
+    expect(twoRow("p99", { pooled_p99_latency_ms: 7.85 }, { pooled_p99_latency_ms: 17.2 })
+      .deltaText).toBe("+9.35 ms");
+  });
+
+  it("leaves a zero difference unsigned", () => {
+    /* `+0.00 ms` claims a direction the measurement does not have. And
+       a value just under zero would round to `−0.00`, which is a minus
+       sign on nothing. */
+    const same = twoRow("p99", { pooled_p99_latency_ms: 7.85 }, { pooled_p99_latency_ms: 7.85 });
+    expect(same.deltaText).toBe("0.00 ms");
+    const rounds = twoRow("p99", { pooled_p99_latency_ms: 7.85 }, { pooled_p99_latency_ms: 7.8501 });
+    expect(rounds.deltaText).toBe("0.00 ms");
+    const under = twoRow("p99", { pooled_p99_latency_ms: 7.8501 }, { pooled_p99_latency_ms: 7.85 });
+    expect(under.deltaText).toBe("0.00 ms");
+  });
+
+  it("drops the unit only where the quantity has none", () => {
+    const row = twoRow("distinctEpisodes", { n_distinct_episodes: 30 }, { n_distinct_episodes: 12 });
+    expect(row.deltaText).toBe("\u221218");
+  });
+
+  it("states no difference when one side did not record the value", () => {
+    /* Absent is not a difference of zero. */
+    const row = twoRow("collisionBound", {}, { gates: {} });
+    expect(row.deltaText).toBeUndefined();
+  });
+
+  it("states no difference outside a two-candidate comparison", () => {
+    /* `Δ (B−A)` has no meaning with one candidate or with three. */
+    for (const field of [[candidate()], [candidate(), candidate(), candidate()]]) {
+      for (const row of comparisonRows(field)) {
+        expect(row.deltaText, row.key).toBeUndefined();
+      }
+    }
+  });
+});

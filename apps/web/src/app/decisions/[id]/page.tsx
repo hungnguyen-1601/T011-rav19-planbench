@@ -17,11 +17,11 @@
 import { Fragment, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { TraceViewer } from "@/components/TraceViewer";
+import { ComparisonGrid } from "@/components/ComparisonGrid";
 import { ConclusionPanel } from "@/components/ConclusionPanel";
 import { Hint } from "@/components/Hint";
-import { type MetricRow, comparisonRows, leaders } from "@/lib/candidateMetrics";
 import { type HeadingField, candidateNames, headingField } from "@/lib/candidateHeading";
-import { gateSummary, gateVerdictBadge } from "@/lib/gateSummary";
+import { gateSummary } from "@/lib/gateSummary";
 import {
   clampPage,
   pageCount,
@@ -159,21 +159,14 @@ function CandidateComparison({ run }: { run: DecisionRun }) {
   const { t } = useTranslation();
   const candidates = run.report?.candidates ?? [];
   if (candidates.length === 0) return null;
-  // Computed once for the whole grid, not once per card: `leaders`
-  // compares across candidates, so a card cannot work out on its own
-  // whether it is ahead.
-  const rows = comparisonRows(candidates);
-  // One choice for the whole grid, not one per column: the heading is a
-  // statement about what this comparison varied, and two columns cannot
-  // disagree about that.
+  // The table itself lives in `components/ComparisonGrid` — exported so
+  // tests can render it, which they cannot do with a function declared
+  // inside a page that fetches. What stays here is the panel around it.
+  //
+  // One choice of heading for the whole panel: the gate detail below
+  // names each candidate the same way its column does.
   const heading = headingField(candidates);
   const summary = gateSummary(candidates);
-  // A row of empty bordered cells is not a finding. The flags row exists
-  // to carry two of them — an undeclared observation class and a
-  // candidate retired early — and renders only when one is present.
-  const hasFlags = candidates.some(
-    (candidate) => !candidate.local_observation_class || candidate.stopped_early,
-  );
   return (
     <section className="panel comparison-results" aria-labelledby="comparison-results-title">
       <div className="comparison-results-head">
@@ -191,129 +184,11 @@ function CandidateComparison({ run }: { run: DecisionRun }) {
           the planner — so it cannot leave the page with the table it
           happened to sit in. */}
       <ObservationNotice candidates={candidates} />
-      <HostWarning run={run} />
-      {/* **One grid: a neutral gutter, then a tinted column each.**
-          Metric names live in the gutter so they are written once and a
-          comparison is a glance along a row; the candidate columns keep
-          their card colours the whole way down, so the two stay told
-          apart past the header.
-
-          Emitted row by row rather than card by card. A column of cards
-          cannot guarantee that a label sits level with its values — the
-          grid can, and that alignment is the only reason the layout is
-          readable at ten metrics. */}
-      <div
-        className="comparison-grid"
-        // The gutter takes the larger share. Metric names are long
-        // sentences and the values are six characters right-aligned, so
-        // a gutter narrower than the value columns wrapped every label
-        // onto two lines while leaving a hand's width of empty tint
-        // between each number and its own label.
-        //
-        // `1.2fr` rather than a percentage so it keeps its proportion as
-        // candidates are added: at two the gutter is 37% and each column
-        // 31%; at three, 29% and 24%. The `minmax` floors stop either
-        // side collapsing on a narrow window before the 900px
-        // breakpoint stacks them.
-        style={{ gridTemplateColumns: `minmax(200px, 1.2fr) repeat(${candidates.length}, minmax(170px, 1fr))` }}
-      >
-        <div className="comparison-gutter comparison-grid-head" />
-        {candidates.map((candidate, index) => {
-          const names = candidateNames(candidate, heading);
-          return (
-            <div key={candidate.candidate_id} className={`comparison-cell comparison-grid-head candidate-${SIDES[index] ?? "n"}`}>
-              <div>
-                <span className="candidate-letter">Candidate {sideLabel(index)}</span>
-                {/* The field that actually differs, whichever it is.
-                    Hard-coding either one prints the same words down both
-                    columns on half the runs — see `lib/candidateHeading`. */}
-                <h4>{names.heading}</h4>
-                {/* Whichever field the heading did not take, then the
-                    observation class. Nothing is lost either way. */}
-                <span className="candidate-secondary">{names.secondary}</span>
-              </div>
-              <span className="candidate-marks">
-                {run.recommended_candidate_id === candidate.candidate_id ? (
-                  <span className="badge ok"><Icon name="check" size={12} />{t("decisions.card.recommended")}</span>
-                ) : null}
-                {/* Six gates run *before* anything is scored (HĐ-7), so a
-                    candidate that failed one was never ranked at all. That
-                    belongs beside its name, not eleven metric rows down. */}
-                {(() => {
-                  const verdict = gateVerdictBadge(candidate);
-                  return (
-                    <span className={`badge ${verdict.tone}`}>
-                      {t(verdict.key, { gates: verdict.gates })}
-                    </span>
-                  );
-                })()}
-              </span>
-            </div>
-          );
-        })}
-
-        {hasFlags ? <div className="comparison-gutter" /> : null}
-        {hasFlags ? candidates.map((candidate, index) => (
-          <div key={candidate.candidate_id} className={`comparison-cell comparison-flags candidate-${SIDES[index] ?? "n"}`}>
-            {/* The observation class itself moved up to the sub-line
-                under the heading. What stays here is the *finding*: a
-                stack whose inputs nobody wrote down cannot be shown to
-                have matched the others, and an empty cell reads as "same
-                as the rest". */}
-            {candidate.local_observation_class ? null : (
-              <span className="badge warn" title={t("decisions.gates.observationUnknownNote")}>
-                {t("decisions.gates.observationUnknown")}
-              </span>
-            )}
-            {/* A retired candidate covered fewer episodes than the
-                others, so every number in its column rests on a smaller
-                sample. In the column, because that is where it is
-                read. */}
-            {candidate.stopped_early ? (
-              <span className="badge warn" title={`${candidate.stopped_early.gate}: ${candidate.stopped_early.rule}`}>
-                {t("decisions.gates.stoppedEarly", {
-                  run: String(candidate.stopped_early.episodes_run),
-                  planned: String(candidate.stopped_early.episodes_planned),
-                  gate: candidate.stopped_early.gate,
-                })}
-              </span>
-            ) : null}
-          </div>
-        )) : null}
-
-        {rows.map((metric) => {
-          const best = leaders(metric);
-          return (
-            <Fragment key={metric.key}>
-              <div className="comparison-gutter comparison-label">
-                {t(`decisions.compare.${metric.key}`)}{" "}
-                <Hint
-                  text={t(`decisions.compare.why.${metric.key}`)}
-                  label={t(`decisions.compare.${metric.key}`)}
-                />
-                {/* The deployment's own limit, under the metric it
-                    judges rather than beside a value — it belongs to the
-                    row, not to any one candidate. */}
-                {metric.threshold ? (
-                  <span className="comparison-limit">
-                    {t("decisions.compare.limit", { limit: metric.threshold })}
-                  </span>
-                ) : null}
-              </div>
-              {metric.text.map((cell, index) => (
-                <div
-                  key={candidates[index].candidate_id}
-                  className={`comparison-cell comparison-value candidate-${SIDES[index] ?? "n"}${best.includes(index) ? " is-best" : ""}`}
-                >
-                  {cell}
-                  {best.includes(index) ? <span className="sr-only"> ({t("running.leads")})</span> : null}
-                </div>
-              ))}
-            </Fragment>
-          );
-        })}
-
-      </div>
+      {/* The host warning is *not* a banner over the table. G4 reads
+          wall-clock latency, so an unpinned machine qualifies the p99 row
+          and nothing else; above the table it reads as a caveat on every
+          number, which is a wider claim than the measurement supports. */}
+      <ComparisonGrid run={run} candidates={candidates} hostWarning={<HostWarning run={run} />} />
 
       {/* **Collapsed, because the verdict is already on the column head.**
           Open, it is six cells per candidate — the *reason* behind a
