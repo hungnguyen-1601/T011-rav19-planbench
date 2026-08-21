@@ -1091,3 +1091,42 @@ describe("the gate verdict moved to the column head", () => {
     expect(DETAIL).toContain("candidateNames(candidate, heading).heading");
   });
 });
+
+describe("the value cell aligns its decimals", () => {
+  it("does not centre the numbers", () => {
+    /* `text-align: center` was declared in the same rule as
+       `font-variant-numeric: tabular-nums` and cancelled it: tabular
+       figures give every digit the same width, and centring then throws
+       that away by moving the whole string. `7.85 ms` and `17.89 ms`
+       ended up a character apart. */
+    const rule = CSS.slice(
+      CSS.indexOf(".comparison-value {"),
+      CSS.indexOf("}", CSS.indexOf(".comparison-value {")),
+    );
+    expect(rule).not.toContain("text-align: center");
+    expect(rule).toContain("font-variant-numeric: tabular-nums");
+    expect(rule).toContain("grid-template-columns");
+  });
+
+  it("gives the unit its own lane, in the sans face", () => {
+    /* Right-aligning the whole string is not enough — `ms` is wider than
+       `m` is wider than `MB`, so the unit pushes each number a different
+       distance from the edge. And the unit must not be mono: it would
+       then join the tabular grid the digits are keeping. */
+    expect(CSS).toContain(".comparison-value .num { text-align: right; }");
+    const unit = CSS.slice(
+      CSS.indexOf(".comparison-value .unit {"),
+      CSS.indexOf("}", CSS.indexOf(".comparison-value .unit {")),
+    );
+    expect(unit).toContain("font-family: var(--font-sans)");
+    expect(unit).not.toContain("--font-mono");
+  });
+
+  it("reads the split fields rather than the joined string", () => {
+    /* `metric.text` already contains the unit; rendering it into `.num`
+       and then adding `.unit` prints the unit twice. */
+    expect(GRID).toContain('<span className="num">{digits}</span>');
+    expect(GRID).toContain('<span className="unit">{metric.unit ?? ""}</span>');
+    expect(GRID).not.toContain("metric.text");
+  });
+});

@@ -334,3 +334,33 @@ describe("the difference between two candidates", () => {
     }
   });
 });
+
+describe("the unit fits the lane the stylesheet gives it", () => {
+  it("emits nothing longer than two characters", () => {
+    /* `.comparison-value` reserves a fixed `2.6em` lane so the digits
+       end at the same x on every row — that is the whole reason the
+       unit is a separate field. The lane is sized for the widest unit
+       this module emits, and nothing tells anyone when that changes:
+       adding `µs`, `MiB` or `deg/s` would overflow the lane or push the
+       digits, and the misalignment it causes looks like a design choice.
+       If this fails, widen the lane in the same change. */
+    const units = new Set(
+      comparisonRows([candidate(), candidate()])
+        .map((row) => row.unit)
+        .filter((unit): unit is string => Boolean(unit)),
+    );
+    expect(units.size).toBeGreaterThan(2);
+    for (const unit of units) expect(unit.length, unit).toBeLessThanOrEqual(2);
+  });
+
+  it("gives a bare count no unit at all rather than a space", () => {
+    /* `undefined`, not `" "`. The cell renders an empty lane either way,
+       but a unit made of whitespace would satisfy `if (row.unit)` and
+       start printing a separator for a quantity that has none. */
+    const counts = comparisonRows([candidate(), candidate()]).filter(
+      (row) => row.key === "distinctEpisodes" || row.key === "replans",
+    );
+    expect(counts).toHaveLength(2);
+    for (const row of counts) expect(row.unit).toBeUndefined();
+  });
+});
