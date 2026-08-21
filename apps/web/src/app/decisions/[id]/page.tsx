@@ -49,6 +49,8 @@ import {
   gateEvidence,
   gateResult,
   hasEpisodeOutcomes,
+  hostWarningView,
+  recommendedCandidateLabel,
   outcomesByEpisode,
   type DecisionRun,
   type EpisodeOutcome,
@@ -165,7 +167,7 @@ function CandidateComparison({ run }: { run: DecisionRun }) {
             the panel below, which spells out which of the three
             no-card situations this is and what to do about it — three
             copies of one fact, and the least useful of them was this. */}
-        {run.card ? <span className="badge ok"><Icon name="trophy" size={13} />{run.card.recommended.stack}</span> : null}
+        {run.card ? <span className="badge ok"><Icon name="trophy" size={13} />{recommendedCandidateLabel(run) ?? run.card.recommended.candidate_id}</span> : null}
       </div>
       {/* Moved off the gate table, which is gone. This is a *finding* —
           two candidates shown different things are answering different
@@ -316,13 +318,25 @@ function CandidateComparison({ run }: { run: DecisionRun }) {
  * be several times too high is worse company for a limit than no figure
  * would be.
  *
- * Rendered verbatim. The platform writes this sentence when it knows the
- * run was not pinned; a client that reworded it could water it down.
+ * **What may and may not be reinterpreted.** The rule used to be that
+ * the whole sentence was rendered verbatim, because a client that
+ * rewords a caveat can water it down. The rule was right about the
+ * wrong thing: what must survive intact is the **numbers**, and holding
+ * the language fixed too meant an English page showing a Vietnamese
+ * paragraph. So the platform now sends a code and its figures, and the
+ * wording is chosen here — while a run that predates that, or one
+ * carrying a code this build has never heard of, still renders the
+ * platform's own sentence untouched.
  */
 function HostWarning({ run }: { run: DecisionRun }) {
-  const warning = run.report?.measurement_environment?.warning;
-  if (!warning) return null;
-  return <div className="notice warn comparison-host-warning">{warning}</div>;
+  const { t, locale } = useTranslation();
+  const view = hostWarningView(run.report?.measurement_environment, locale);
+  if (!view) return null;
+  return (
+    <div className="notice warn comparison-host-warning">
+      {view.translated ? t(view.key, view.vars) : view.text}
+    </div>
+  );
 }
 
 /** Column letters, and a tint that runs out on purpose.
@@ -1318,7 +1332,10 @@ function CardPanel({ run }: { run: DecisionRun }) {
         <span className="badge ok">{card.status}</span>
       </div>
       <div className="stat-grid">
-        <Figure label={t("decisions.card.recommended")} value={card.recommended.stack} />
+        <Figure
+          label={t("decisions.card.recommended")}
+          value={recommendedCandidateLabel(run) ?? card.recommended.candidate_id}
+        />
         <Figure label={t("decisions.card.utility")} value={card.decision_utility.toFixed(6)} />
         <Figure
           label={t("decisions.card.deltaU")}

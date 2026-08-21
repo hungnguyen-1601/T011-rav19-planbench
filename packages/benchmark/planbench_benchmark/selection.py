@@ -44,7 +44,11 @@ from planbench_benchmark.candidates import (
     validate_control_rate,
 )
 from planbench_benchmark.contexts import build_evaluation_contexts
-from planbench_benchmark.hostinfo import detect_benchmark_host, unpinned_warning
+from planbench_benchmark.hostinfo import (
+    detect_benchmark_host,
+    measurement_environment,
+    unpinned_warning,
+)
 from planbench_benchmark.pipeline import (
     AcceptanceFailure,
     GateOnlyDeployment,
@@ -73,6 +77,7 @@ from planbench_decision.candidate import (
     validate_experiment_scope,
 )
 from planbench_decision.card import (
+    BenchmarkHost,
     DecisionCard,
     Manifest,
     Provenance,
@@ -577,7 +582,7 @@ def run_comparison(
             )
             if not contexts:
                 report = _interrupted_before_any_episode(
-                    profile, scope, requested, created_at, git_sha, host, warning
+                    profile, scope, requested, created_at, git_sha, host
                 )
                 _write_json(destination / "comparison_report.json", report)
                 say(f"written to:     {destination}")
@@ -815,10 +820,7 @@ def run_comparison(
             }
             for candidate, (_stack, local) in zip(candidates, candidate_specs, strict=True)
         ],
-        "measurement_environment": {
-            "benchmark_host": host.model_dump(),
-            "warning": warning,
-        },
+        "measurement_environment": measurement_environment(host),
     }
 
     # D15: the row keeps the card and the manifest; the Parquet traces
@@ -1143,8 +1145,7 @@ def _interrupted_before_any_episode(
     requested: int,
     created_at: datetime,
     git_sha: str | None,
-    host: object,
-    warning: str | None,
+    host: BenchmarkHost,
 ) -> dict[str, object]:
     """The report of a run that was stopped before one paired episode.
 
@@ -1173,10 +1174,7 @@ def _interrupted_before_any_episode(
             "episode_context_ids": [],
         },
         "candidates": [],
-        "measurement_environment": {
-            "benchmark_host": host.model_dump(),  # type: ignore[attr-defined]
-            "warning": warning,
-        },
+        "measurement_environment": measurement_environment(host),
         "run_uri": None,
         "run_checksum": None,
         "decision_card": None,

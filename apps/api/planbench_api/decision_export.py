@@ -37,6 +37,7 @@ __all__ = [
     "OUTCOME_COLUMNS",
     "Caveat",
     "NOT_MEASURED",
+    "NOT_RECORDED",
     "as_number",
     "as_ratio",
     "as_text",
@@ -50,6 +51,7 @@ __all__ = [
     "no_card_reason",
     "outcome_rows",
     "provenance_rows",
+    "recommended_config",
     "retired_candidates",
     "sample_rows",
     "scope_of",
@@ -254,8 +256,41 @@ def no_card_reason(report: dict[str, Any]) -> str | None:
     return as_text(reason) if reason else None
 
 
+#: What a row says when the artifact simply does not carry the answer.
+#: Distinct from ``NOT_MEASURED``: nothing was measured wrongly here, the
+#: field predates the export that wants it.
+NOT_RECORDED = "not recorded"
+
+
+def recommended_config(report: dict[str, Any], candidate_id: Any) -> str:
+    """Which local-controller config the recommendation actually names.
+
+    **The card cannot answer this.** ``card["recommended"]`` carries the
+    stack and the candidate id, and a stack does not identify a
+    recommendation: both sides of a local-controller comparison run
+    ``astar+dwa``, and only ``local_controller_config`` tells
+    ``dwa_coarse`` from ``dwa_balanced``. So the id is looked up among
+    the candidate rows, which is where the config lives.
+
+    Never the empty string. An older artifact whose candidate rows have
+    no config leaves the reader with a blank cell that reads as "no
+    config" rather than "this file does not say".
+    """
+    if not candidate_id:
+        return NOT_RECORDED
+    for candidate in report.get("candidates") or []:
+        if candidate.get("candidate_id") == candidate_id:
+            return as_text(candidate.get("local_controller_config") or NOT_RECORDED)
+    return NOT_RECORDED
+
+
 def card_rows(run: Any, report: dict[str, Any]) -> list[tuple[str, str]] | None:
-    """The recommendation, or ``None`` when the run produced no card."""
+    """The recommendation, or ``None`` when the run produced no card.
+
+    ``Recommended`` keeps saying exactly what it always said — an export
+    of an old run has to diff clean against the one somebody already
+    filed — and the config it was missing arrives as a row of its own.
+    """
     card = run.card or report.get("decision_card")
     if not card:
         return None
@@ -263,6 +298,7 @@ def card_rows(run: Any, report: dict[str, Any]) -> list[tuple[str, str]] | None:
     alternative = card.get("alternative") or {}
     return [
         ("Recommended", as_text(recommended.get("stack"))),
+        ("Recommended config", recommended_config(report, recommended.get("candidate_id"))),
         ("Candidate id", as_text(recommended.get("candidate_id"))),
         ("Alternative", as_text(alternative.get("stack"))),
         ("Status", as_text(card.get("status"))),

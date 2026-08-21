@@ -2237,10 +2237,10 @@ a.stat-card:hover {
 .decision-readonly-badge { padding: 4px 8px; border: 1px solid color-mix(in srgb, var(--info) 30%, var(--border)); border-radius: 999px; color: var(--info); background: var(--info-soft); font-size: 10px; font-weight: 750; }
 .decision-deployment-content { display: grid; grid-template-columns: minmax(0, 3fr) minmax(340px, 2fr); align-items: start; gap: 16px; padding: 0 13px 13px; }
 .decision-deployment-map-column, .decision-deployment-details { min-width: 0; }
-.decision-deployment-map { min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.decision-deployment-map { min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--canvas-bg); }
 .decision-deployment-map .map-view, .decision-deployment-map canvas, .decision-deployment-map svg { display: block; max-width: 100%; }
 .decision-deployment-map canvas, .decision-deployment-map svg { width: 100%; height: auto; }
-.decision-deployment-skeleton { display: grid; min-height: 240px; place-items: center; color: var(--muted); background: color-mix(in srgb, var(--panel) 75%, var(--surface)); }
+.decision-deployment-skeleton { display: grid; min-height: 240px; place-items: center; color: var(--muted); background: color-mix(in srgb, var(--panel) 75%, var(--canvas-bg)); }
 .decision-deployment-map-error { display: flex; min-height: 140px; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; padding: 18px; color: var(--muted); text-align: center; }
 .decision-deployment-map-error button:focus-visible, .decision-deployment-header a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .decision-deployment-legend { display: flex; flex-wrap: wrap; gap: 7px 14px; padding: 9px 2px 0; color: var(--muted); font-size: 10px; }
@@ -3132,7 +3132,7 @@ main.content.bare-page {
 
 .chat-history li:hover,
 .chat-history li.active {
-  background: var(--surface-2);
+  background: var(--panel-2);
 }
 
 .chat-history-open {
@@ -3187,8 +3187,8 @@ main.content.bare-page {
 }
 
 .chat-history-delete:hover {
-  color: var(--danger);
-  background: var(--surface-3);
+  color: var(--err);
+  background: var(--panel-3);
 }
 
 .chat-history-delete:disabled {
@@ -3523,7 +3523,7 @@ main.content.bare-page {
 /* The threshold reads as a limit, not as another series. */
 .latency-budget { stroke: var(--err, #b4483f); stroke-width: 1; stroke-dasharray: 5 4; }
 .latency-p99 { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; }
-.latency-playhead { stroke: var(--fg, #111827); stroke-width: 1; opacity: 0.45; }
+.latency-playhead { stroke: var(--text); stroke-width: 1; opacity: 0.45; }
 .latency-tick { fill: var(--muted); font-size: 10px; }
 .latency-chart-empty { margin-top: 12px; font-size: 12px; }
 

@@ -177,6 +177,33 @@ export interface RunSample {
   episode_context_ids: string[];
 }
 
+/** What machine the run got, and the caveat if nothing protected it.
+ *
+ * Built by one function on the platform side (`hostinfo.measurement_environment`)
+ * so that a ranked report, an interrupted one and `scripts/measure.py`
+ * cannot describe the same machine three different ways.
+ */
+export interface MeasurementEnvironment {
+  benchmark_host: Record<string, unknown>;
+  /** The platform's own sentence, in Vietnamese. Still the only form a
+   *  run recorded before `warning_code` existed carries, and still what
+   *  the export writes — see `decision_export.py`. */
+  warning: string | null;
+  /** What the platform decided, so a client can say it in the reader's
+   *  language without rewording the caveat itself. Optional: an older
+   *  stored run has neither this nor the params, and has to keep
+   *  rendering `warning` verbatim. */
+  warning_code?: string | null;
+  /** Named `reference_` deliberately: these are a historical measurement
+   *  of one stack on one machine, **not** this run's latency. A bare
+   *  `unpinned_ms` invites exactly that misreading. */
+  warning_params?: {
+    cores: number;
+    reference_unpinned_ms: number;
+    reference_pinned_ms: number;
+  } | null;
+}
+
 /** Which two candidates the paired comparison was about.
  *
  * Written by the scoring run from the recommendation itself. The card
@@ -202,10 +229,7 @@ export interface ComparisonReport {
   };
   sample: RunSample;
   candidates: RunCandidate[];
-  measurement_environment: {
-    benchmark_host: Record<string, unknown>;
-    warning: string | null;
-  };
+  measurement_environment: MeasurementEnvironment;
   /** Present and null on a ranked run, so a reader never has to know
    *  which branch produced the report. */
   decision_card: unknown | null;
@@ -873,19 +897,93 @@ export interface RunOutcome {
   total: number;
 }
 
+/** How to name the recommended candidate, everywhere it is named.
+ *
+ * **A stack alone does not identify a recommendation.** Both candidates
+ * of a local-controller comparison share one stack — `astar+dwa` — and
+ * what separates them is `local_controller_config` (`dwa_coarse` against
+ * `dwa_balanced`). A surface printing only the stack answers "which of
+ * these two won" with a string true of both, so the ambiguity is a
+ * defect in the information, not a matter of taste.
+ *
+ * **The card cannot answer this.** `card.recommended` carries
+ * `candidate_id`, `stack` and `params_ref` — no config. The config lives
+ * on the candidate row, so the name has to be resolved by looking the id
+ * up in `report.candidates`, which is what this does once for every
+ * caller instead of three times slightly differently.
+ *
+ * `null` only when the run recommended nobody. When it recommended
+ * somebody the report cannot describe — an artifact written before the
+ * candidate rows carried a config — it falls back to `stack · id` rather
+ * than going quiet: a hash is a poor name, and no name at all is worse.
+ */
+export function recommendedCandidateLabel(run: DecisionRun): string | null {
+  const id = run.card?.recommended?.candidate_id ?? run.recommended_candidate_id;
+  if (!id) return null;
+  const candidate = run.report?.candidates?.find((entry) => entry.candidate_id === id);
+  if (candidate) return `${candidate.stack_label} · ${candidate.local_controller_config}`;
+  const stack = run.card?.recommended?.stack;
+  return stack ? `${stack} · ${id}` : id;
+}
+
 export function runOutcome(run: DecisionRun): RunOutcome {
   const candidates = run.report?.candidates ?? [];
-  const recommended = candidates.find(
-    (candidate) => candidate.candidate_id === run.recommended_candidate_id,
-  );
   return {
-    winner: recommended
-      ? `${recommended.stack_label} · ${recommended.local_controller_config}`
-      : // The hash, only when the report cannot name the winner — better
-        // than an em dash on a run that did recommend somebody.
-        run.recommended_candidate_id,
+    winner: recommendedCandidateLabel(run),
     cleared: candidates.filter((candidate) => candidate.cleared_gates).length,
     total: candidates.length,
+  };
+}
+
+/** The unpinned-host caveat, in whichever form this run can support.
+ *
+ * `translated` when the platform classified the case and the figures all
+ * arrived intact; `verbatim` for everything else — a run stored before
+ * `warning_code` existed, an artifact naming a case this build cannot
+ * phrase, or a params object short a field. The fallback is not defensive
+ * clutter: it is the difference between a caveat the reader sees in
+ * their own language and a caveat that disappears because the payload
+ * changed shape.
+ *
+ * A function rather than a branch inside the component so that all four
+ * of those paths can be checked without a browser — there is no DOM in
+ * the test environment, and this is a decision, not a rendering.
+ */
+export type HostWarningView =
+  | { translated: true; key: string; vars: Record<string, string> }
+  | { translated: false; text: string }
+  | null;
+
+export function hostWarningView(
+  environment: MeasurementEnvironment | undefined,
+  locale: string,
+): HostWarningView {
+  const warning = environment?.warning;
+  const params = environment?.warning_params;
+  const usable =
+    environment?.warning_code === "unpinned_host" &&
+    typeof params?.cores === "number" &&
+    typeof params.reference_unpinned_ms === "number" &&
+    typeof params.reference_pinned_ms === "number";
+
+  if (!usable) return warning ? { translated: false, text: warning } : null;
+
+  /* `translate` stringifies vars with `String()`, which renders 59.30 as
+     "59.3" and loses the decimal this sentence has always carried. The
+     locale settles the separator with it: "59.30" in English, "59,30" in
+     Vietnamese, which is how the platform's own sentence already reads. */
+  const ms = new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return {
+    translated: true,
+    key: "decisions.env.unpinned",
+    vars: {
+      cores: String(params!.cores),
+      unpinned: ms.format(params!.reference_unpinned_ms),
+      pinned: ms.format(params!.reference_pinned_ms),
+    },
   };
 }
 

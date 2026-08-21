@@ -113,9 +113,18 @@ function Headline({
 
   const winner = candidates.find((entry) => entry.candidate_id === verdict.candidateId);
   const conclusive = marginIsConclusive(verdict.ci);
+  /* The stack alone does not say which candidate won: both sides of a
+     local-controller comparison run `astar+dwa`, and only the config
+     tells them apart. Composed here rather than in `Standing.label`,
+     which is rendered beside `<code>{standing.config}</code>` further
+     down — folding it in there would print the config twice in one row
+     and change the accessible name of the score bar with it. */
+  const winnerLabel = winner
+    ? `${winner.stack_label} · ${winner.local_controller_config}`
+    : verdict.candidateId;
   return (
     <div className="conclusion-headline">
-      <strong>{t("conclusion.headline.use", { stack: winner?.stack_label ?? verdict.candidateId })}</strong>
+      <strong>{t("conclusion.headline.use", { stack: winnerLabel })}</strong>
       {verdict.deltaU !== null ? (
         <span className="muted">
           {" "}

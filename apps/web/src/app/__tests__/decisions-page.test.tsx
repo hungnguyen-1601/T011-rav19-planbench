@@ -244,7 +244,7 @@ describe("what the removed panels took with them", () => {
        and a figure that may be several times too high is worse company
        for a limit than no figure would be. */
     expect(DETAIL).toContain("<HostWarning run={run} />");
-    expect(DETAIL).toContain("measurement_environment?.warning");
+    expect(DETAIL).toContain("run.report?.measurement_environment");
   });
 
   it("puts it with the other finding that qualifies the whole grid", () => {
@@ -255,10 +255,20 @@ describe("what the removed panels took with them", () => {
     expect(host).toBeLessThan(grid);
   });
 
-  it("renders the platform's sentence rather than one of its own", () => {
-    /* The platform writes this when it knows the run was not pinned. A
-       client that reworded it could water it down. */
-    expect(DETAIL).toContain("{warning}");
+  it("never words the caveat itself, in either branch", () => {
+    /* The old rule was that the platform's sentence is rendered
+       verbatim, because a client that rewords a caveat can water it
+       down. It was right about why and wrong about what: the *numbers*
+       must survive untouched, the language need not, and freezing both
+       put a Vietnamese paragraph on the English page.
+
+       So there are exactly two paths, and neither is the page composing
+       prose: a dictionary key whose text is reviewed like every other
+       string, or the platform's own sentence passed through. The choice
+       between them is `hostWarningView`, tested over all four payload
+       shapes in `lib/__tests__/decisions.test.ts`. */
+    expect(DETAIL).toContain("hostWarningView(");
+    expect(DETAIL).toContain("view.translated ? t(view.key, view.vars) : view.text");
   });
 
   it("stops fetching the journal it no longer draws", () => {

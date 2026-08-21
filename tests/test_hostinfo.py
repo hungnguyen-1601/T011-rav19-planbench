@@ -19,13 +19,17 @@ import os
 import pytest
 
 from planbench_benchmark.hostinfo import (
+    REFERENCE_PINNED_MS,
+    REFERENCE_UNPINNED_MS,
     PinningRefused,
     apply_pinning,
     cpu_affinity,
     cpu_name,
     detect_benchmark_host,
+    measurement_environment,
     pin_to_cores,
     unpinned_warning,
+    unpinned_warning_info,
 )
 from planbench_decision.card import BenchmarkHost
 
@@ -103,6 +107,86 @@ class TestPinnedVerdict:
         host = BenchmarkHost(cpu="x86", cores_allocated=1, threads=1)
         assert host.is_pinned is None
         assert unpinned_warning(host) is None
+
+
+UNPINNED = BenchmarkHost(
+    cpu="x86", cores_allocated=4, threads=1, cpu_affinity=(0, 1, 2, 3), logical_cores=4
+)
+PINNED = BenchmarkHost(
+    cpu="x86", cores_allocated=2, threads=1, cpu_affinity=(0, 1), logical_cores=4
+)
+UNRECORDED = BenchmarkHost(cpu="x86", cores_allocated=1, threads=1)
+
+
+class TestTheWarningAsDataRatherThanProse:
+    """The caveat in a form a client can render in its own language.
+
+    The sentence is Vietnamese, and the page that shows it is available
+    in English. Rewording it on the client was rejected for a good
+    reason — a client that rewords a caveat can water it down — but the
+    thing that must not be reinterpreted is the **numbers**, not the
+    language. So the platform keeps the classification and hands over the
+    figures, and the wording becomes the reader's business.
+    """
+
+    def test_it_says_nothing_when_the_run_was_protected(self) -> None:
+        assert unpinned_warning_info(PINNED) is None
+
+    def test_it_says_nothing_when_the_record_does_not_know(self) -> None:
+        """Same silence as ``unpinned_warning``: an older manifest that
+        never recorded the mask is a gap, and a warning would turn it
+        into a claim about the run."""
+        assert unpinned_warning_info(UNRECORDED) is None
+
+    def test_it_names_the_case_and_carries_its_numbers(self) -> None:
+        info = unpinned_warning_info(UNPINNED)
+        assert info is not None
+        assert info["code"] == "unpinned_host"
+        assert info["params"] == {
+            "cores": 4,
+            "reference_unpinned_ms": REFERENCE_UNPINNED_MS,
+            "reference_pinned_ms": REFERENCE_PINNED_MS,
+        }
+
+    def test_the_sentence_and_the_figures_cannot_drift_apart(self) -> None:
+        """The prose used to spell ``59,30`` out as digits of its own.
+        Two copies of a number are two numbers, and this is the test that
+        notices when only one of them is edited."""
+        sentence = unpinned_warning(UNPINNED)
+        assert sentence is not None
+        for value in (REFERENCE_UNPINNED_MS, REFERENCE_PINNED_MS):
+            assert f"{value:.2f}".replace(".", ",") in sentence
+
+
+class TestTheBlockEveryReportCarries:
+    """One builder, because there are three callers.
+
+    A ranked report, a report interrupted before the first episode, and
+    ``scripts/measure.py`` all describe the machine. When each built the
+    dict itself, a key added to one was a key missing from the other two
+    — and a caveat that reaches two readers out of three is worse than
+    one that reaches none, because nobody can tell which kind of run they
+    are looking at.
+    """
+
+    def test_it_carries_the_string_and_the_structured_form_together(self) -> None:
+        block = measurement_environment(UNPINNED)
+        assert block["warning"] == unpinned_warning(UNPINNED)
+        assert block["warning_code"] == "unpinned_host"
+        assert block["warning_params"] == unpinned_warning_info(UNPINNED)["params"]  # type: ignore[index]
+
+    def test_the_keys_exist_even_when_there_is_no_warning(self) -> None:
+        """Present and null rather than absent. A reader that has to tell
+        "no warning" from "an older run that could not say" needs the
+        difference to survive the round trip."""
+        block = measurement_environment(PINNED)
+        assert block["warning"] is None
+        assert block["warning_code"] is None
+        assert block["warning_params"] is None
+
+    def test_it_still_describes_the_machine(self) -> None:
+        """The oldest key here, and the one the export has always read."""
+        assert measurement_environment(PINNED)["benchmark_host"] == PINNED.model_dump()
 
 
 class TestPinning:

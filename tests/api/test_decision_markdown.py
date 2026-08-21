@@ -22,6 +22,7 @@ from __future__ import annotations
 import inspect
 from types import SimpleNamespace
 
+from planbench_api.decision_export import card_rows, recommended_config
 from planbench_api.decision_markdown import decision_report_filename, render_decision_markdown
 
 API = "/api/v1"
@@ -271,3 +272,53 @@ class TestOverHttp:
     def test_an_unknown_run_is_a_404(self, client) -> None:
         response = client.get(f"{API}/decisions/no_such_run/report.md")
         assert response.status_code == 404
+
+
+class TestTheRecommendationNamesAConfig:
+    """A stack does not identify a recommendation.
+
+    Both candidates of a local-controller comparison run ``astar+dwa``,
+    and the thing that separates them is ``local_controller_config``.
+    Every surface that printed only the stack was answering "which one
+    won" with a string true of both — an ambiguity in the information
+    rather than in its presentation, which is why the export carries the
+    config too.
+    """
+
+    CARD = {
+        "recommended": {"candidate_id": "c1", "stack": "astar+dwa", "params_ref": None},
+        "alternative": None,
+        "status": "provisional",
+        "contracts_version": "6.7.0",
+    }
+
+    def _rows(self, **overrides) -> dict[str, str]:
+        stored = run(card=self.CARD, **overrides)
+        return dict(card_rows(stored, stored.report) or [])
+
+    def test_it_reads_the_config_off_the_candidate_the_card_points_at(self) -> None:
+        assert self._rows()["Recommended config"] == "dwa_coarse"
+
+    def test_the_row_it_already_had_still_says_the_same_thing(self) -> None:
+        """An export of an old run has to diff clean against the copy
+        somebody already filed, so the config arrives beside the stack
+        rather than inside it."""
+        rows = self._rows()
+        assert rows["Recommended"] == "astar+dwa"
+        assert rows["Candidate id"] == "c1"
+
+    def test_an_artifact_whose_rows_predate_the_field_says_so(self) -> None:
+        """Blank would read as "no config" rather than "this file does
+        not say", and a spreadsheet treats the two identically."""
+        report = run().report
+        report["candidates"] = [{"candidate_id": "c1", "stack_label": "astar+dwa"}]
+        assert self._rows(report=report)["Recommended config"] == "not recorded"
+
+    def test_a_card_pointing_at_a_candidate_the_report_lost_says_so(self) -> None:
+        report = run().report
+        report["candidates"] = []
+        assert self._rows(report=report)["Recommended config"] == "not recorded"
+
+    def test_it_never_returns_an_empty_cell(self) -> None:
+        assert recommended_config({}, None) == "not recorded"
+        assert recommended_config({"candidates": None}, "c1") == "not recorded"

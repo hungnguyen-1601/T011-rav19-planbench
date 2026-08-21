@@ -182,4 +182,32 @@ describe("where the conclusion and the exports sit", () => {
     expect(panel).toContain("const { eligible, blocked } = standings(candidates)");
     expect(panel).toContain("is-separated");
   });
+
+  it("names a config in the headline, because a stack names both candidates", () => {
+    /* Both sides of a local-controller comparison run `astar+dwa`, so
+       "Use astar+dwa" is true of the winner and of the candidate it
+       beat. The sentence has to carry `local_controller_config`. */
+    const panel = readFileSync(join(SRC, "components", "ConclusionPanel.tsx"), "utf8");
+    expect(panel).toContain("winner.local_controller_config");
+    expect(panel).toContain("conclusion.headline.use\", { stack: winnerLabel }");
+  });
+
+  it("does not fold the config into the label the rows already print", () => {
+    /* `Standing.label` is rendered beside `<code>{standing.config}</code>`
+       and is the accessible name of the score bar. Composing the config
+       into it would print it twice in one row and reword the bar with
+       it, so the headline composes its own string instead. */
+    const panel = readFileSync(join(SRC, "components", "ConclusionPanel.tsx"), "utf8");
+    expect(panel).toContain("{standing.label} <code>{standing.config}</code>");
+    const conclusion = readFileSync(join(SRC, "lib", "conclusion.ts"), "utf8");
+    expect(conclusion).not.toContain("local_controller_config}`");
+  });
+
+  it("resolves the recommended candidate through one shared lookup", () => {
+    /* Four surfaces name the recommendation. Three of them are on the
+       detail page, and three separate `candidates.find(...)` calls are
+       how they start disagreeing about who won. */
+    expect(DETAIL).not.toContain("card.recommended.stack}");
+    expect((DETAIL.match(/recommendedCandidateLabel\(run\)/g) ?? []).length).toBe(2);
+  });
 });

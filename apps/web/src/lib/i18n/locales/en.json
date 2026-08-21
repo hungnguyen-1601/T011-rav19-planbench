@@ -1513,6 +1513,7 @@
   "decisions.episodes.prevPage": "Previous page",
   "decisions.episodes.nextPage": "Next page",
   "decisions.episodes.pageOf": "page {page} of {total}",
+  "decisions.env.unpinned": "Measured on all {cores} cores, unpinned: G4 reads latency by the wall clock, so every other load on the machine goes straight into the number. The same candidate measured {unpinned} ms unpinned and {pinned} ms pinned to 2 cores",
   "decisions.compare.title": "How they ended up",
   "decisions.compare.note": "The numbers the sweep concluded on, read across each row. Every value the gates already produced is taken from the gate that decided on it, so nothing here can disagree with a verdict above. Decision utility is not a row: the card carries it for the recommended candidate only, and a mean taken here would be a second scoring path.",
   "decisions.compare.metric": "Metric",

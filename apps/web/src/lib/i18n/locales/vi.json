@@ -1513,6 +1513,7 @@
   "decisions.episodes.prevPage": "Trang trước",
   "decisions.episodes.nextPage": "Trang sau",
   "decisions.episodes.pageOf": "trang {page}/{total}",
+  "decisions.env.unpinned": "Đo trên toàn bộ {cores} nhân, không ghim: G4 đọc độ trễ theo đồng hồ tường nên mọi tải khác trên máy đi thẳng vào con số. Cùng candidate đo được {unpinned} ms không ghim và {pinned} ms khi ghim 2 nhân",
   "decisions.compare.title": "Kết cục của từng bên",
   "decisions.compare.note": "Các con số sweep chốt lại, đọc ngang từng hàng. Giá trị nào gate đã tính thì lấy thẳng từ chính gate đã phán quyết dựa trên nó, nên không thể mâu thuẫn với verdict phía trên. Không có hàng decision utility: card chỉ mang nó cho candidate được khuyến nghị, và lấy trung bình ở đây sẽ là một đường tính điểm thứ hai.",
   "decisions.compare.metric": "Chỉ số",
