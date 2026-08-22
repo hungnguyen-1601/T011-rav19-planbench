@@ -340,13 +340,18 @@ describe("the stylesheet stays on its scales", () => {
        moving them is a per-region change that needs an eye on the result
        — a `10px` becoming `8px` or `12px` moves something. What this
        stops is the count going *up* while that work is outstanding.
-       Lower these numbers as regions are swept; never raise them. */
+       Lower these numbers as regions are swept; never raise them.
+
+       Swept so far: the shell and the sidebar — 21 declarations, all
+       now on the scale, taking the count from 330 to 309. The four
+       remaining regions are shared controls, the decision pages, the
+       deployment/simulate/canvas pages, and the dashboard. */
     const SCALE = new Set([0, 4, 8, 12, 16, 24, 32, 48]);
     const spacing = [...code.matchAll(
       /(?:padding|margin|gap|row-gap|column-gap)(?:-\w+)?: *([^;{}]+)/g,
     )].flatMap((m) => [...m[1].matchAll(/(-?[\d.]+)px/g)].map((v) => Math.abs(Number(v[1]))));
     const offScale = spacing.filter((value) => !SCALE.has(value));
-    expect(offScale.length, "off-scale spacing values").toBeLessThanOrEqual(330);
+    expect(offScale.length, "off-scale spacing values").toBeLessThanOrEqual(309);
 
     const RADII = new Set([4, 6, 8, 999]);
     const radii = [...code.matchAll(/border-radius: *([^;{}]+)/g)]
