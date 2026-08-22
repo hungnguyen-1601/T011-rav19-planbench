@@ -19,7 +19,8 @@
  * not more correct.
  */
 
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -121,5 +122,85 @@ describe("what the reader counts", () => {
     const css = ":root { --x: 1px; } .a { margin: var(--x); }";
     expect(declaredTokens(css)).toEqual(new Set(["--x"]));
     expect(referencedTokens(css)).toEqual(new Set(["--x"]));
+  });
+});
+
+describe("the font contract", () => {
+  /* Comments stripped, for the same reason the stylesheet's are: this
+     file's own prose names `next/font/google` and quotes `display:
+     "swap"` while explaining why they are or are not used, and an
+     assertion that matched documentation rather than code would pass or
+     fail on how the change was described. */
+  const stripComments = (source: string) =>
+    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(?<![:"'`])\/\/.*$/gm, "");
+  const LAYOUT = stripComments(
+    readFileSync(join(process.cwd(), "src", "app", "layout.tsx"), "utf8"),
+  );
+
+  it("loads the faces from files in the repo, not over the network", () => {
+    /* `next/font/google` fetches at *build* time. The runtime is
+       offline-safe either way because it self-hosts afterwards, but no
+       CSS fallback can rescue a build that produced no CSS — and a demo
+       build has to be reproducible on a machine with no network. */
+    expect(LAYOUT).toContain('from "next/font/local"');
+    expect(LAYOUT).not.toContain("next/font/google");
+  });
+
+  it("keeps the public tokens declared here, aliasing the loaded ones", () => {
+    /* The contract this test file has enforced since before the fonts
+       existed: `--font-sans` and `--font-mono` are always declared in
+       `globals.css`, and a webfont only changes their *value*. Nothing
+       had to loosen to land a typeface. */
+    const declared = declaredTokens(CSS);
+    expect(declared.has("--font-sans")).toBe(true);
+    expect(declared.has("--font-mono")).toBe(true);
+    for (const loaded of NEXT_FONT_PROVIDED) {
+      expect(CSS, loaded).toContain(`var(${loaded},`);
+      expect(LAYOUT, loaded).toContain(`variable: "${loaded}"`);
+    }
+  });
+
+  it("keeps a real fallback behind each alias", () => {
+    /* The face has to arrive over the wire even when self-hosted. With
+       no fallback the page paints in whatever the browser defaults to,
+       which on Windows is Times New Roman under a UI built for a
+       geometric sans. */
+    expect(CSS).toContain("var(--font-sans-loaded, ui-sans-serif, system-ui, -apple-system,");
+    expect(CSS).toContain("var(--font-mono-loaded, ui-monospace, SFMono-Regular,");
+  });
+
+  it("swaps rather than blocking on the font", () => {
+    /* `display: "block"` leaves a blank paragraph for as long as the
+       face takes — a page that looks broken rather than plain. */
+    expect(LAYOUT.match(/display: "swap"/g)).toHaveLength(2);
+  });
+
+  it("ships every weight it declares, and declares every weight it ships", () => {
+    /* A `src` entry pointing at a file nobody committed fails the build;
+       a committed file nobody references is weight the reader downloads
+       and never sees. */
+    const fonts = join(process.cwd(), "src", "app", "fonts");
+    const shipped = readdirSync(fonts).filter((name) => name.endsWith(".woff2")).sort();
+    const referenced = [...LAYOUT.matchAll(/\.\/fonts\/([\w-]+\.woff2)/g)]
+      .map((match) => match[1])
+      .sort();
+    expect(referenced).toEqual(shipped);
+    expect(shipped.length).toBeGreaterThan(0);
+  });
+
+  it("records where every binary came from", () => {
+    /* A font with no provenance is a file nobody dares replace: no way
+       to tell which release it is, whether it carries the Vietnamese
+       glyphs, or whether somebody swapped one. */
+    const readme = readFileSync(join(process.cwd(), "src", "app", "fonts", "README.md"), "utf8");
+    const fonts = join(process.cwd(), "src", "app", "fonts");
+    for (const name of readdirSync(fonts).filter((f) => f.endsWith(".woff2"))) {
+      expect(readme, name).toContain(name);
+      const hash = createHash("sha256")
+        .update(readFileSync(join(fonts, name)))
+        .digest("hex");
+      expect(readme, `${name}: manifest hash is stale`).toContain(hash);
+    }
+    expect(readme).toContain("OFL-1.1");
   });
 });

@@ -204,8 +204,8 @@
      and nowhere else; or drop `-apple-system`, which is the link that
      picks San Francisco on Safari. Either one turns a declaration-only
      step into a silent, partial redesign. */
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  --font-sans: var(--font-sans-loaded, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif);
+  --font-mono: var(--font-mono-loaded, ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace);
 
   /* ---- spacing: a 4px scale, and nothing between its steps --------- */
   --space-1: 4px;
