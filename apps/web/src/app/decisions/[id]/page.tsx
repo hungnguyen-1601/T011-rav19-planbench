@@ -36,7 +36,7 @@ import { EvidencePanel } from "@/components/EvidencePanel";
 import { panelPlan } from "@/lib/explainPanel";
 import { Icon } from "@/components/Icon";
 import { useSession } from "@/lib/auth";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, type Translator } from "@/lib/i18n";
 import { BELOW_N_MIN, noticeKey, sampleLineFor, sampleNotice } from "@/lib/sample";
 import { COPY_FEEDBACK_MS, type CopyOutcome, copyDecisionId, copyStateKey } from "@/lib/copyId";
 import { useNameThisCrumb } from "@/lib/crumbOverride";
@@ -69,6 +69,7 @@ import {
   observationClasses,
 } from "@/lib/decisions";
 import { downloadDecisionReport, downloadDecisionWorkbook } from "@/lib/reports";
+import { ShareReportDialog } from "@/components/ShareReportDialog";
 import { initialPlayback, tick, type PlaybackState } from "@/lib/playback";
 
 export default function DecisionDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -154,7 +155,7 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
           export buttons after the marks — that is the point at which a
           reader knows whether this run is worth sending on. */}
       <ConclusionPanel run={run} />
-      <ExportReport runId={run.id} />
+      <ExportReport run={run} />
       {/* **No gate table.** Every candidate now has a card carrying
           G1-G6 and its blocking list, and the table under the cards
           carries the numbers the gate table used to hold - for all of
@@ -1278,12 +1279,51 @@ function SampleNotice({ run }: { run: DecisionRun }) {
  * describes what was measured; reading it is the act approval follows
  * (HĐ-14), so gating it would invert the order.
  */
-function ExportReport({ runId }: { runId: string }) {
+/** What the share dialog opens with, before the sender edits it.
+ *
+ * **Prefilled, not fixed.** The commonest email about a run says the
+ * same four things, and typing them out is work nobody should repeat;
+ * but the sender knows their reader and the dialog does not, so every
+ * field stays editable.
+ *
+ * The unranked wording is a separate sentence rather than the ranked one
+ * with blanks: "recommended: not measured" reads as a broken template,
+ * and "nobody was ranked, here is why" is the actual result.
+ */
+function sharePrefill(run: DecisionRun, t: Translator["t"]): { subject: string; message: string } {
+  const deployment = run.task_profile_id;
+  const recommended = recommendedCandidateLabel(run);
+  const utility = run.card?.decision_utility;
+  if (!run.card || !recommended) {
+    return {
+      subject: t("share.subjectPrefillUnranked", { deployment }),
+      message: t("share.messagePrefillUnranked", {
+        runId: run.id,
+        deployment,
+        when: run.created_at,
+      }),
+    };
+  }
+  return {
+    subject: t("share.subjectPrefill", { deployment, recommended }),
+    message: t("share.messagePrefill", {
+      runId: run.id,
+      deployment,
+      when: run.created_at,
+      recommended,
+      utility: typeof utility === "number" ? utility.toFixed(4) : t("common.notMeasured"),
+    }),
+  };
+}
+
+function ExportReport({ run }: { run: DecisionRun }) {
+  const runId = run.id;
   /* `locale` as well as `t`: the document is written in the language the
      reader chose in the app, not the one the browser sends in a header
      — the two disagree often enough that guessing would hand somebody a
      file in a language they had already switched away from. */
   const { t, locale } = useTranslation();
+  const [sharing, setSharing] = useState(false);
   const [busy, setBusy] = useState<"md" | "xlsx" | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   /** The last file that actually reached the disk.
@@ -1335,6 +1375,21 @@ function ExportReport({ runId }: { runId: string }) {
       <button type="button" disabled={busy !== null} onClick={() => save("xlsx")}>
         {label("xlsx", t("decisions.export.excel"))}
       </button>
+      {/* Beside the export buttons rather than behind a menu: sending
+          the run on is the same kind of act as saving it, and at the
+          same moment — the reader has just decided the run is worth
+          passing to somebody. */}
+      <button type="button" onClick={() => setSharing(true)}>
+        {t("share.button")}
+      </button>
+      {sharing ? (
+        <ShareReportDialog
+          runId={runId}
+          subject={sharePrefill(run, t).subject}
+          message={sharePrefill(run, t).message}
+          onClose={() => setSharing(false)}
+        />
+      ) : null}
       {failed ? <span className="error-text">{failed}</span> : null}
       {saved ? (
         <span className="decision-export__saved">

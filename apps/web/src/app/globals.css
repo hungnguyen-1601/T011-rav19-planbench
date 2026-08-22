@@ -4141,6 +4141,75 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
    there to be checked against the Downloads folder, not celebrated. */
 .decision-export__saved { color: var(--muted); font-size: 12px; }
 
+/* Sending the run on. Wider than the default modal because a message
+   box three words wide invites a message three words long, and this one
+   is the covering note for a document somebody has to act on. */
+.share-modal { max-width: 560px; display: grid; gap: var(--space-3); }
+.share-modal textarea {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+}
+.share-field > span { display: block; margin-bottom: var(--space-1); }
+/* A row of committed addresses plus the one being typed, inside one
+   box, so the whole thing reads as a single field rather than as chips
+   sitting next to an input. */
+.share-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+.share-chips > input {
+  flex: 1 1 8rem;
+  min-width: 8rem;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  padding: var(--space-1);
+}
+.share-chips > input:focus { outline: none; }
+.share-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-1);
+  border-radius: 4px;
+  background: var(--panel-2);
+  font-size: 12px;
+}
+.share-chip > button {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+/* Red on the chip, not on the whole field: one bad address among five
+   good ones is one thing to fix, and marking the field would hide which. */
+.share-chip--invalid { background: var(--err-soft); color: var(--err); }
+.share-attachments {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: var(--space-2);
+  display: grid;
+  gap: var(--space-1);
+}
+.share-attachments label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: 13px;
+}
+.share-attachments .muted { font-size: 12px; }
+.share-mode { font-size: 12px; }
+
 /* Which stack to use. Two groups with a line between them: inside a
    group the mark ranks, across the line it does not compare — a gate
    failure the utility cannot see would otherwise crown the wrong
