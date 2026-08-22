@@ -43,7 +43,6 @@ export function LatencyChart({
   atTime,
   p99Ms,
   onSeek,
-  tFloorS,
 }: {
   times: readonly number[];
   latencies: readonly number[];
@@ -69,13 +68,9 @@ export function LatencyChart({
    * converting units where the alignment needs it — so the pair stays
    * comparable rather than one canvas jumping alone. */
   onSeek?: (seconds: number) => void;
-  /** The pair's longer episode, so the two charts share a time axis.
-   *  See `latencyPlot`: without it a 22 s run and a 38.8 s run are drawn
-   *  the same width and read as the same length. */
-  tFloorS?: number;
 }) {
   const { t } = useTranslation();
-  const plot = latencyPlot(times, latencies, controlPeriodS, step, tFloorS);
+  const plot = latencyPlot(times, latencies, controlPeriodS, step);
   if (!plot) {
     return (
       <p className="muted latency-chart-empty">{t("trace.latencyChart.noPlanning")}</p>

@@ -264,11 +264,23 @@ bộ lập luận mới thấy.
 
 Test viết lại kèm nguyên đoạn lý do này, không xoá lịch sử tranh luận.
 
-### T15 — chung scale chart
+### T15 — chung scale chart *(đã revert)*
 
-`latencyPlot` thêm tham số `tFloorS`; `duration` (max của cặp, đã có sẵn
-ở `TracePanel`) luồn xuống qua `CandidateEpisode` → `TraceViewer` →
-`LatencyChart`. Episode ngắn hơn giờ kết thúc giữa khung — đó là sự thật.
+Làm rồi, An dùng thử rồi báo sai, **đã gỡ**. Ghi lại vì đây là bài học
+chứ không phải một dòng đổi ý.
+
+Ý ban đầu: hai chart cạnh nhau dài bằng nhau nhưng 22.0 s và 38.8 s thì
+đọc thành cùng thời lượng, nên ép cả hai lên trục của episode dài hơn.
+
+Cái nó phá lớn hơn: chart này **là thanh seek** — `role="slider"`, có
+playhead kéo được. Trên trục dùng chung, run ngắn hơn có playhead nằm ở
+57% chiều rộng trong khi robot của nó đã đi 90% quãng đường trên canvas
+ngay phía trên. Một control mà thumb của nó không khớp với thứ nó điều
+khiển là control hỏng.
+
+Còn thời lượng — thứ trục dùng chung định truyền đạt — thì đã có sẵn
+bằng chữ ở nhãn cuối trục. Trả lại mỗi chart về clock của chính nó, và
+thêm test khoá kèm nguyên đoạn lý do để không ai làm lại vòng này.
 
 Nhãn trục y `54` đè `50`: `msMax` là budget + 8% headroom trên mọi run
 không spike, nên hai nhãn cách nhau vài pixel. Bỏ nhãn khung khi nó rơi

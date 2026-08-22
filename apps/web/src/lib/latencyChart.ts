@@ -63,17 +63,6 @@ export function latencyPlot(
    *  nothing on the decision page, where the chart is a live reading,
    *  and kept for a caller that wants the finished shape. */
   upto?: number,
-  /** Least value the time axis may end at, in seconds.
-   *
-   * **Two charts drawn side by side are read as one comparison.** Each
-   * one scaled to its own episode gives a 22.0 s run and a 38.8 s run
-   * exactly the same width, and the reader takes the two for the same
-   * length — the slower candidate's chart looks no busier, only
-   * steeper. Passing the pair's longer duration here leaves the shorter
-   * episode ending part-way across its frame, which is the fact.
-   *
-   * Omitted means this chart stands alone and scales to itself. */
-  tFloorS?: number,
 ): LatencyPlot | null {
   const budgetMs = controlPeriodS * 1000;
   const count = Math.min(times.length, latencies.length);
@@ -103,7 +92,18 @@ export function latencyPlot(
     segments,
     // The whole episode, not the part drawn: a time axis that grew with
     // the playhead would squash the shape as it went.
-    tMax: Math.max(times[count - 1] ?? 0, tFloorS ?? 0, 1e-6),
+    //
+    // **This episode's own clock, and never the pair's.** It briefly ran
+    // on the longer of the two, so that two charts drawn the same width
+    // would not read as the same duration. That traded a real defect for
+    // a worse one: this chart is a seek control — `role="slider"`, with
+    // a playhead a reader drags — and on a shared axis the playhead of
+    // the shorter run sat at 57% while its robot was 90% of the way to
+    // the goal on the canvas directly above. A control whose thumb
+    // disagrees with the thing it controls is broken, and the duration
+    // the shared axis was there to convey is already on the axis label
+    // in words.
+    tMax: Math.max(times[count - 1] ?? 0, 1e-6),
     // A running maximum over what has been drawn, and never below the
     // budget. Scaling to the data alone would drop the threshold off
     // the top of a healthy run; scaling to the whole episode would give

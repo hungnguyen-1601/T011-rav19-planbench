@@ -661,10 +661,6 @@ function TracePanel({ run }: { run: DecisionRun }) {
                 onSeek={(seconds) => seekFrom(side, seconds)}
                 isReferenceRuler={view?.reference_source_candidate_id === candidate.candidate_id}
                 onRetry={() => void loadPair(episodeId)}
-                /* The pair's longer episode. Two charts scaled to their
-                   own runs are drawn the same width, so a 22.0 s
-                   episode and a 38.8 s one read as the same length. */
-                pairDurationS={duration}
               />
             );
           })}
@@ -712,7 +708,7 @@ function EpisodeLegend() {
   return <div className="episode-legend" aria-label={t("trace.legend.title")}><div className="episode-legend-keys">{items.map(([tone, label]) => <span key={tone}><i className={`legend-dot legend-dot--${tone}`} aria-hidden="true" />{label}</span>)}</div><Hint text={t("trace.colourNote")} label={t("trace.legend.title")} /></div>;
 }
 
-function CandidateEpisode({ candidate, heading, side, episodeId, slot, mode, playbackTime, running, forceFinal, onToggleFinal, onSeek, isReferenceRuler, onRetry, pairDurationS }: { candidate: RunCandidate; heading: HeadingField; side: "a" | "b"; episodeId: string; slot: TraceSlot; mode: "flat" | "raised"; playbackTime: number; running: RunningSample[] | null; forceFinal: boolean; onToggleFinal: () => void; onSeek: (seconds: number) => void; isReferenceRuler: boolean; onRetry: () => void; pairDurationS: number }) {
+function CandidateEpisode({ candidate, heading, side, episodeId, slot, mode, playbackTime, running, forceFinal, onToggleFinal, onSeek, isReferenceRuler, onRetry }: { candidate: RunCandidate; heading: HeadingField; side: "a" | "b"; episodeId: string; slot: TraceSlot; mode: "flat" | "raised"; playbackTime: number; running: RunningSample[] | null; forceFinal: boolean; onToggleFinal: () => void; onSeek: (seconds: number) => void; isReferenceRuler: boolean; onRetry: () => void }) {
   const { t } = useTranslation();
   const outcome = outcomesByEpisode(candidate).get(episodeId);
   const ready = slot.state === "ready" ? slot : null;
@@ -727,7 +723,7 @@ function CandidateEpisode({ candidate, heading, side, episodeId, slot, mode, pla
         two of these and "Show final results" twice over is two controls
         a screen reader cannot tell apart — which is exactly what the
         stack gave it whenever the stack was the same on both sides. */}
-      <button type="button" className={forceFinal ? "primary" : ""} aria-pressed={forceFinal} aria-label={`${t(forceFinal ? "trace.metricsView.live" : "trace.metricsView.final")} — ${names.heading}`} title={t("trace.metricsView.hint")} onClick={onToggleFinal}>{t(forceFinal ? "trace.metricsView.live" : "trace.metricsView.final")}</button></div></header><div className="episode-map">{slot.state === "loading" ? <div className="episode-skeleton" role="status">{t("trace.loadingCandidate")}</div> : ready ? <TraceViewer trace={ready.trace} playbackTime={playbackTime} mode={mode} showControls={false} candidateSide={side} running={running} finalPanel={finalPanel} forceFinal={forceFinal} onSeek={onSeek} isReferenceRuler={isReferenceRuler} pairDurationS={pairDurationS} /> : slot.state === "missing" ? <div className="episode-empty" role="status">{t("trace.missing")}</div> : slot.state === "empty" ? <div className="episode-empty" role="status">{t("trace.emptyFrames")}</div> : <div className="episode-error" role="alert"><p>{t("trace.loadError")}</p><button type="button" onClick={onRetry}>{t("common.retry")}</button></div>}</div>{/* A candidate whose trace would not load has no replay to run, so
+      <button type="button" className={forceFinal ? "primary" : ""} aria-pressed={forceFinal} aria-label={`${t(forceFinal ? "trace.metricsView.live" : "trace.metricsView.final")} — ${names.heading}`} title={t("trace.metricsView.hint")} onClick={onToggleFinal}>{t(forceFinal ? "trace.metricsView.live" : "trace.metricsView.final")}</button></div></header><div className="episode-map">{slot.state === "loading" ? <div className="episode-skeleton" role="status">{t("trace.loadingCandidate")}</div> : ready ? <TraceViewer trace={ready.trace} playbackTime={playbackTime} mode={mode} showControls={false} candidateSide={side} running={running} finalPanel={finalPanel} forceFinal={forceFinal} onSeek={onSeek} isReferenceRuler={isReferenceRuler} /> : slot.state === "missing" ? <div className="episode-empty" role="status">{t("trace.missing")}</div> : slot.state === "empty" ? <div className="episode-empty" role="status">{t("trace.emptyFrames")}</div> : <div className="episode-error" role="alert"><p>{t("trace.loadError")}</p><button type="button" onClick={onRetry}>{t("common.retry")}</button></div>}</div>{/* A candidate whose trace would not load has no replay to run, so
       there is no live row for the result to replace — and the result
       is still the answer to what happened. Shown outright rather than
       hidden behind a swap that has nothing to swap with. */}

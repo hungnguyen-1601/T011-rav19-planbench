@@ -295,6 +295,24 @@ describe("tile translation keys", () => {
 });
 
 describe("the planner-latency chart", () => {
+  it("scales its time axis to its own episode, never to the pair's", () => {
+    /* **This briefly did the opposite, for a reason that was real and
+       not good enough.** Two charts drawn the same width read as the
+       same duration, so both were put on the longer of the two episodes.
+       What that broke is bigger: this chart is a seek control —
+       `role="slider"`, with a playhead a reader drags — and on a shared
+       axis the shorter run's playhead sat at 57% of the width while its
+       robot was 90% of the way to the goal on the canvas directly above.
+       A control whose thumb disagrees with the thing it controls is
+       broken, and the duration a shared axis was meant to convey is
+       already written on the axis label in seconds. */
+    expect(CHART).not.toContain("tFloorS");
+    expect(VIEWER).not.toContain("pairDurationS");
+    expect(DETAIL).not.toContain("pairDurationS");
+    // The end of *this* episode, stated rather than implied by width.
+    expect(CHART).toContain("{plot.tMax.toFixed(1)} s");
+  });
+
   it("sits under that candidate's metrics, one per algorithm", () => {
     // Latency is the one quantity here that a single number cannot
     // report: the tile reads "now" and the result panel reads p99, and
@@ -346,10 +364,7 @@ describe("the planner-latency chart", () => {
 
   it("fills in as the replay plays instead of showing the finished shape", () => {
     expect(VIEWER).toContain("step={visibleStep}");
-    // `tFloorS` last: the pair's longer episode, so two charts drawn
-    // side by side end their time axis at the same second instead of
-    // giving a 22.0 s run and a 38.8 s run the same width.
-    expect(CHART).toContain("latencyPlot(times, latencies, controlPeriodS, step, tFloorS)");
+    expect(CHART).toContain("latencyPlot(times, latencies, controlPeriodS, step)");
   });
 
   it("tracks the scrubber rather than standing still", () => {
