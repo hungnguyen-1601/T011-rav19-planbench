@@ -17,6 +17,13 @@ to `decision_export` when Excel became a second format. This module owns
 the layout and nothing else: every value below is read from there, and
 the two exports cannot disagree about a number because there is only one
 place that decides what the number is.
+
+**The words come from `decision_text`, the shape from here.** A document
+in a language the reader does not use is one whose caveats do not
+travel, which is the whole failure this export exists to avoid. English
+stays frozen byte for byte — `tests/golden/decision_report_en.md` is the
+guard — because this is a document people keep and diff against the copy
+already in the ticket.
 """
 
 from __future__ import annotations
@@ -24,18 +31,20 @@ from __future__ import annotations
 from typing import Any
 
 from planbench_api.decision_export import (
-    EPISODE_COLUMNS,
-    GATE_COLUMNS,
-    OUTCOME_COLUMNS,
+    DEFAULT_LOCALE,
+    Locale,
     as_text,
     card_rows,
     decision_evidence_rows,
     environment_warning,
+    episode_columns,
     episode_rows,
+    gate_columns,
     gate_rows,
     human_rows,
     mixed_observation,
     no_card_reason,
+    outcome_columns,
     outcome_rows,
     provenance_rows,
     retired_candidates,
@@ -43,6 +52,8 @@ from planbench_api.decision_export import (
     scope_of,
     sensitivity_rows,
 )
+from planbench_api.decision_text import lines as text_lines
+from planbench_api.decision_text import text
 
 __all__ = ["decision_report_filename", "render_decision_markdown"]
 
@@ -68,56 +79,73 @@ def _pairs(rows: list[tuple[str, str]]) -> list[str]:
     ]
 
 
-def render_decision_markdown(run: Any) -> str:
+def _quote(key: str, locale: Locale, **fields: object) -> list[str]:
+    """A paragraph as a blockquote, wrapped where the string wraps.
+
+    The line breaks belong to the text rather than to this function: the
+    spreadsheet joins the same paragraph with spaces, and a renderer
+    re-wrapping it would be a second opinion about where the sentence
+    should break.
+    """
+    return [f"> {line}" for line in text_lines(key, locale, **fields)]
+
+
+def render_decision_markdown(run: Any, locale: Locale = DEFAULT_LOCALE) -> str:
     """The whole run as Markdown: gates first, card second, caveats attached."""
     report: dict[str, Any] = run.report or {}
-    lines: list[str] = [f"# Selection run — {as_text(run.task_profile_id)}", ""]
-    lines += _provenance(run, report)
-    lines += _sample(report)
-    lines += _gates(report)
-    lines += _outcomes(report)
-    lines += _card(run, report)
-    lines += _episodes(report)
-    lines += _human_state(run)
+    heading = text("heading.document", locale, profile=as_text(run.task_profile_id, locale))
+    lines: list[str] = [f"# {heading}", ""]
+    lines += _provenance(run, report, locale)
+    lines += _sample(report, locale)
+    lines += _gates(report, locale)
+    lines += _outcomes(report, locale)
+    lines += _card(run, report, locale)
+    lines += _episodes(report, locale)
+    lines += _human_state(run, locale)
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _provenance(run: Any, report: dict[str, Any]) -> list[str]:
-    lines = ["## Provenance", ""] + _pairs(provenance_rows(run, report))
-    warning = environment_warning(report)
+def _provenance(run: Any, report: dict[str, Any], locale: Locale) -> list[str]:
+    lines = [f"## {text('heading.provenance', locale)}", ""] + _pairs(
+        provenance_rows(run, report, locale)
+    )
+    warning = environment_warning(report, locale)
     if warning:
-        lines += ["", f"> **Measurement environment:** {warning}"]
+        label = text("heading.measurement_environment", locale)
+        lines += ["", f"> **{label}:** {warning}"]
     return lines + [""]
 
 
-def _sample(report: dict[str, Any]) -> list[str]:
-    return ["## Sample", ""] + _pairs(sample_rows(report)) + [""]
+def _sample(report: dict[str, Any], locale: Locale) -> list[str]:
+    return [f"## {text('heading.sample', locale)}", ""] + _pairs(
+        sample_rows(report, locale)
+    ) + [""]
 
 
-def _gates(report: dict[str, Any]) -> list[str]:
+def _gates(report: dict[str, Any], locale: Locale) -> list[str]:
     candidates = report.get("candidates") or []
     if not candidates:
         return []
+    columns = gate_columns(locale)
     lines = [
-        "## Gates",
+        f"## {text('heading.gates', locale)}",
         "",
-        "Six feasibility gates run before anything is scored (HĐ-7). A candidate that",
-        "failed one was never ranked, which is a result rather than an error.",
+        *text_lines("prose.gates", locale),
         "",
-        "| " + " | ".join(GATE_COLUMNS) + " |",
-        "| " + " | ".join("---" for _ in GATE_COLUMNS) + " |",
+        "| " + " | ".join(columns) + " |",
+        "| " + " | ".join("---" for _ in columns) + " |",
     ]
-    for row in gate_rows(report):
+    for row in gate_rows(report, locale):
         lines.append("| " + " | ".join(_cell(value) for value in row) + " |")
 
-    mixed = mixed_observation(candidates)
+    mixed = mixed_observation(candidates, locale)
     if mixed:
         lines += ["", f"> **{mixed.lead}** {mixed.body[0]}"]
         lines += [f"> {line}" for line in mixed.body[1:]]
 
-    retired = retired_candidates(candidates)
+    retired = retired_candidates(candidates, locale)
     if retired:
-        lines += ["", "Retired before the sweep ended, so their rows rest on fewer episodes:", ""]
+        lines += ["", text("prose.retired", locale), ""]
         lines += [f"- **{label}** — {detail}" for label, detail in retired]
     return lines + [""]
 
@@ -129,101 +157,92 @@ def _table(columns: tuple[str, ...], rows: list[tuple[str, ...]]) -> list[str]:
     )
 
 
-def _outcomes(report: dict[str, Any]) -> list[str]:
+def _outcomes(report: dict[str, Any], locale: Locale) -> list[str]:
     """What the sweep concluded about each candidate.
 
     Separate from the gate table: that one says who was eliminated
     where, this one says how each behaved. Most of these columns never
     left the screen before.
+
+    **Kept wide here while the workbook transposed it.** A spreadsheet
+    reader compares down a column and wanted one row per metric; a
+    document is read top to bottom and a transposed table would put the
+    candidate names in a header nobody scrolls back to. The two formats
+    diverging in shape is not the two formats disagreeing — every value
+    still comes from `outcome_rows`.
     """
-    rows = outcome_rows(report)
+    rows = outcome_rows(report, locale)
     if not rows:
         return []
     return (
         [
-            "## Outcome by candidate",
+            f"## {text('heading.outcome', locale)}",
             "",
-            "`Eligible to recommend` is stated rather than left to be read off the gate",
-            "column: a gate failure can leave no mark on the utility at all — collisions are",
-            "excluded from `U_S` by contract (HĐ-6), so that they cannot be traded against",
-            "speed — and the mark alone therefore does not compare across that line.",
+            *text_lines("prose.eligible", locale),
             "",
         ]
-        + _table(OUTCOME_COLUMNS, rows)
+        + _table(outcome_columns(locale), rows)
         + [""]
     )
 
 
-def _episodes(report: dict[str, Any]) -> list[str]:
+def _episodes(report: dict[str, Any], locale: Locale) -> list[str]:
     """Every episode, because the aggregate was never the whole answer.
 
     `success_rate: 0.70` does not say *which* thirty per cent failed,
     nor whether they were collisions or timeouts, and those two ask for
     different work.
     """
-    rows = episode_rows(report)
+    rows = episode_rows(report, locale)
     if not rows:
         return []
-    return ["## Episodes", ""] + _table(EPISODE_COLUMNS, rows) + [""]
+    return (
+        [f"## {text('heading.episodes', locale)}", ""]
+        + _table(episode_columns(locale), rows)
+        + [""]
+    )
 
 
-def _card(run: Any, report: dict[str, Any]) -> list[str]:
-    rows = card_rows(run, report)
+def _card(run: Any, report: dict[str, Any], locale: Locale) -> list[str]:
+    rows = card_rows(run, report, locale)
     if rows is None:
-        lines = ["## No Decision Card", ""]
-        reason = no_card_reason(report)
+        lines = [f"## {text('heading.no_card', locale)}", ""]
+        reason = no_card_reason(report, locale)
         if reason:
             lines += [reason, ""]
-        lines += [
-            "Fewer than two candidates cleared the gates, so ΔU does not exist and no card",
-            "was produced. The gate table above is the result.",
-            "",
-        ]
+        lines += [*text_lines("prose.no_card", locale), ""]
         return lines
 
-    scope = scope_of(run, report)
-    lines = ["## Decision Card", ""] + _pairs(rows)
+    scope = scope_of(run, report, locale)
+    lines = [f"## {text('heading.card', locale)}", ""] + _pairs(rows)
+    scope_lines = text_lines("prose.scope", locale, scope=scope)
     lines += [
         "",
-        f"> **Scope:** this recommendation applies to `{scope}` and to nothing else",
-        "> (HĐ-1.4). Carrying it to another deployment is a claim this run did not make.",
+        f"> **{text('heading.scope', locale)}:** {scope_lines[0]}",
+        *[f"> {line}" for line in scope_lines[1:]],
         "",
     ]
 
-    evidence = decision_evidence_rows(run, report)
+    evidence = decision_evidence_rows(run, report, locale)
     if evidence:
-        lines += ["| The margin | |", "| --- | --- |"]
+        lines += [f"| {text('heading.margin', locale)} | |", "| --- | --- |"]
         lines += [f"| {_cell(label)} | {_cell(value)} |" for label, value in evidence]
-        lines += [
-            "",
-            "> ΔU is printed with its interval and never without it. A margin whose interval",
-            "> includes zero is consistent with the two candidates being equal.",
-            "",
-        ]
+        lines += ["", *_quote("prose.delta_u", locale), ""]
 
     card = run.card or report.get("decision_card") or {}
-    margins = sensitivity_rows(card.get("evidence") or {})
+    margins = sensitivity_rows(card.get("evidence") or {}, locale)
     if margins is None:
-        lines += [
-            "None of the sensitivity margins were measured. That is not the same as their",
-            "being wide (HĐ-12).",
-            "",
-        ]
+        lines += [*text_lines("prose.no_sensitivity", locale), ""]
     else:
-        lines += ["| Sensitivity | |", "| --- | --- |"]
+        lines += [f"| {text('heading.sensitivity', locale)} | |", "| --- | --- |"]
         lines += [f"| {_cell(label)} | {_cell(value)} |" for label, value in margins]
         lines += [""]
     return lines
 
 
-def _human_state(run: Any) -> list[str]:
+def _human_state(run: Any, locale: Locale) -> list[str]:
     return (
-        ["## Human record", ""]
-        + _pairs(human_rows(run))
-        + [
-            "",
-            "Reading the evidence and approving the configuration are separate acts (HĐ-14).",
-            "A run that was read and never approved is an ordinary state, not an omission.",
-            "",
-        ]
+        [f"## {text('heading.human', locale)}", ""]
+        + _pairs(human_rows(run, locale))
+        + ["", *text_lines("prose.two_acts", locale), ""]
     )

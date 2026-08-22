@@ -31,17 +31,21 @@ from __future__ import annotations
 
 from typing import Any, NamedTuple
 
+from planbench_api.decision_text import DEFAULT_LOCALE, Locale, text
+from planbench_api.decision_text import lines as text_lines
+
 __all__ = [
-    "EPISODE_COLUMNS",
-    "GATE_COLUMNS",
-    "OUTCOME_COLUMNS",
     "Caveat",
+    "Locale",
     "NOT_MEASURED",
     "NOT_RECORDED",
     "as_number",
     "as_ratio",
     "as_text",
     "card_rows",
+    "episode_columns",
+    "gate_columns",
+    "outcome_columns",
     "decision_evidence_rows",
     "environment_warning",
     "episode_rows",
@@ -58,12 +62,15 @@ __all__ = [
     "sensitivity_rows",
 ]
 
-#: What a missing number says. Spelled out rather than left blank
-#: because HĐ-12 makes null "not measured", which is a finding.
-NOT_MEASURED = "not measured"
+#: What a missing number says, in the default language. Read from the
+#: text table rather than written twice: a constant here and an entry
+#: there would be one wording per language plus one belonging to
+#: neither. Spelled out rather than left blank because HĐ-12 makes null
+#: "not measured", which is a finding.
+NOT_MEASURED = text("value.not_measured")
 
 
-def as_text(value: Any) -> str:
+def as_text(value: Any, locale: Locale = DEFAULT_LOCALE) -> str:
     """A value as a cell that never comes out empty.
 
     **No Markdown escaping here.** An earlier version escaped ``|`` at
@@ -73,42 +80,52 @@ def as_text(value: Any) -> str:
     needs it.
     """
     if value is None or value == "":
-        return NOT_MEASURED
+        return text("value.not_measured", locale)
     return str(value).replace("\n", " ")
 
 
-def as_number(value: Any, unit: str = "") -> str:
+def as_number(value: Any, unit: str = "", locale: Locale = DEFAULT_LOCALE) -> str:
     if value is None:
-        return NOT_MEASURED
+        return text("value.not_measured", locale)
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return f"{value:.3g}{(' ' + unit) if unit else ''}"
-    return as_text(value)
+    return as_text(value, locale)
 
 
-def as_ratio(value: Any) -> str:
+def as_ratio(value: Any, locale: Locale = DEFAULT_LOCALE) -> str:
     if value is None:
-        return NOT_MEASURED
+        return text("value.not_measured", locale)
     return f"{float(value) * 100:.1f}%"
 
 
-def provenance_rows(run: Any, report: dict[str, Any]) -> list[tuple[str, str]]:
+def provenance_rows(
+    run: Any, report: dict[str, Any], locale: Locale = DEFAULT_LOCALE
+) -> list[tuple[str, str]]:
     """Where this came from, in enough detail to rebuild it (HĐ-13)."""
     identity = report.get("identity") or {}
     return [
-        ("Run id", as_text(run.id)),
-        ("Deployment", as_text(run.task_profile_id)),
+        (text("label.run_id", locale), as_text(run.id, locale)),
+        (text("label.deployment", locale), as_text(run.task_profile_id, locale)),
         (
-            "Experiment scope",
-            as_text(identity.get("experiment_scope") or run.experiment_scope),
+            text("label.experiment_scope", locale),
+            as_text(identity.get("experiment_scope") or run.experiment_scope, locale),
         ),
-        ("Contracts version", as_text(run.contracts_version)),
-        ("Code version", as_text(identity.get("git_sha"))),
-        ("Anchor config", as_text(identity.get("anchor_config_version"))),
-        ("Run", as_text(identity.get("created_at") or run.created_at)),
+        (text("label.contracts_version", locale), as_text(run.contracts_version, locale)),
+        (text("label.code_version", locale), as_text(identity.get("git_sha"), locale)),
+        (
+            text("label.anchor_config", locale),
+            as_text(identity.get("anchor_config_version"), locale),
+        ),
+        (
+            text("label.run_at", locale),
+            as_text(identity.get("created_at") or run.created_at, locale),
+        ),
     ]
 
 
-def environment_warning(report: dict[str, Any]) -> str | None:
+def environment_warning(
+    report: dict[str, Any], locale: Locale = DEFAULT_LOCALE
+) -> str | None:
     """The unpinned-host caveat, when the platform wrote one.
 
     An unpinned host makes every latency number a measurement of that
@@ -116,10 +133,12 @@ def environment_warning(report: dict[str, Any]) -> str | None:
     rather than staying on the screen.
     """
     warning = (report.get("measurement_environment") or {}).get("warning")
-    return as_text(warning) if warning else None
+    return as_text(warning, locale) if warning else None
 
 
-def sample_rows(report: dict[str, Any]) -> list[tuple[str, str]]:
+def sample_rows(
+    report: dict[str, Any], locale: Locale = DEFAULT_LOCALE
+) -> list[tuple[str, str]]:
     """What was measured, and what was asked for.
 
     Both, because an interrupted run whose requested count is missing
@@ -129,29 +148,44 @@ def sample_rows(report: dict[str, Any]) -> list[tuple[str, str]]:
     sample = report.get("sample") or {}
     measured = sample.get("n_episodes")
     requested = sample.get("n_episodes_requested")
-    rows = [("Episodes measured", as_text(measured))]
+    rows = [(text("label.episodes_measured", locale), as_text(measured, locale))]
     if requested is not None and requested != measured:
-        rows.append(("Episodes requested", as_text(requested)))
-        rows.append(("Interrupted", "yes"))
-    rows.append(("Minimum required (HĐ-7.1)", as_text(sample.get("n_min_required"))))
+        rows.append((text("label.episodes_requested", locale), as_text(requested, locale)))
+        rows.append((text("label.interrupted", locale), text("value.yes", locale)))
+    rows.append(
+        (
+            text("label.minimum_required", locale),
+            as_text(sample.get("n_min_required"), locale),
+        )
+    )
     return rows
 
 
 #: ``Shown`` is a column because a comparison between candidates given
 #: different inputs is measuring the inputs.
-GATE_COLUMNS: tuple[str, ...] = (
-    "Candidate",
-    "Config",
-    "Shown",
-    "Distinct episodes",
-    "Success",
-    "p99 latency",
-    "Replans",
-    "Verdict",
+#: The keys, in order. A function rather than a tuple of strings
+#: because the header is one of the things a language changes, and a
+#: module-level constant would have been frozen at import in whichever
+#: language happened to be the default.
+_GATE_COLUMN_KEYS: tuple[str, ...] = (
+    "column.gate.candidate",
+    "column.gate.config",
+    "column.gate.shown",
+    "column.gate.distinct_episodes",
+    "column.gate.success",
+    "column.gate.p99",
+    "column.gate.replans",
+    "column.gate.verdict",
 )
 
 
-def gate_rows(report: dict[str, Any]) -> list[tuple[str, ...]]:
+def gate_columns(locale: Locale = DEFAULT_LOCALE) -> tuple[str, ...]:
+    return tuple(text(key, locale) for key in _GATE_COLUMN_KEYS)
+
+
+def gate_rows(
+    report: dict[str, Any], locale: Locale = DEFAULT_LOCALE
+) -> list[tuple[str, ...]]:
     """The gate table — a first-class section, not an appendix.
 
     Six feasibility gates run before anything is scored, so a candidate
@@ -160,20 +194,24 @@ def gate_rows(report: dict[str, Any]) -> list[tuple[str, ...]]:
     rows: list[tuple[str, ...]] = []
     for candidate in report.get("candidates") or []:
         blocking = candidate.get("blocking_gates") or []
-        verdict = "passed" if candidate.get("cleared_gates") else f"blocked: {', '.join(blocking)}"
+        verdict = (
+            text("value.passed", locale)
+            if candidate.get("cleared_gates")
+            else text("value.blocked", locale, gates=", ".join(blocking))
+        )
         rows.append(
             (
-                as_text(candidate.get("stack_label")),
-                as_text(candidate.get("local_controller_config")),
-                as_text(candidate.get("local_observation_class")),
-                as_text(candidate.get("n_distinct_episodes")),
-                as_ratio(candidate.get("success_rate")),
-                as_number(candidate.get("pooled_p99_latency_ms"), "ms"),
+                as_text(candidate.get("stack_label"), locale),
+                as_text(candidate.get("local_controller_config"), locale),
+                as_text(candidate.get("local_observation_class"), locale),
+                as_text(candidate.get("n_distinct_episodes"), locale),
+                as_ratio(candidate.get("success_rate"), locale),
+                as_number(candidate.get("pooled_p99_latency_ms"), "ms", locale),
                 # Evidence, not a score. On paper it matters more than on
                 # screen: "timeout" alone leaves a reader unable to tell a
                 # planner that never recovered from one that recovered
                 # forty times too slowly.
-                as_text(candidate.get("replan_count")),
+                as_text(candidate.get("replan_count"), locale),
                 verdict,
             )
         )
@@ -203,7 +241,9 @@ class Caveat(NamedTuple):
         return " ".join((self.lead, *self.body))
 
 
-def mixed_observation(candidates: list[dict[str, Any]]) -> Caveat | None:
+def mixed_observation(
+    candidates: list[dict[str, Any]], locale: Locale = DEFAULT_LOCALE
+) -> Caveat | None:
     """Say so when the field was not shown the same world.
 
     Two stacks reading different inputs answer different questions, so
@@ -213,18 +253,16 @@ def mixed_observation(candidates: list[dict[str, Any]]) -> Caveat | None:
     classes = {candidate.get("local_observation_class") for candidate in candidates}
     if len(classes) < 2:
         return None
-    named = ", ".join(sorted(as_text(entry) for entry in classes))
+    named = ", ".join(sorted(as_text(entry, locale) for entry in classes))
     return Caveat(
-        lead=f"These candidates were shown different things ({named}).",
-        body=(
-            "Most of the gap",
-            "between their numbers is the gap between their inputs, so any ranking below",
-            "is measuring the privilege as much as the planner.",
-        ),
+        lead=text("caveat.mixed.lead", locale, classes=named),
+        body=tuple(text_lines("caveat.mixed.body", locale)),
     )
 
 
-def retired_candidates(candidates: list[dict[str, Any]]) -> list[tuple[str, str]]:
+def retired_candidates(
+    candidates: list[dict[str, Any]], locale: Locale = DEFAULT_LOCALE
+) -> list[tuple[str, str]]:
     """Every retired candidate and the sample it actually got."""
     rows: list[tuple[str, str]] = []
     for entry in candidates:
@@ -233,16 +271,23 @@ def retired_candidates(candidates: list[dict[str, Any]]) -> list[tuple[str, str]
             continue
         rows.append(
             (
-                as_text(entry.get("stack_label")),
-                f"{as_text(stop.get('gate'))} after {as_text(stop.get('episodes_run'))} of "
-                f"{as_text(stop.get('episodes_planned'))} episodes "
-                f"({as_text(stop.get('rule'))})",
+                as_text(entry.get("stack_label"), locale),
+                text(
+                    "caveat.retired_detail",
+                    locale,
+                    gate=as_text(stop.get("gate"), locale),
+                    run=as_text(stop.get("episodes_run"), locale),
+                    planned=as_text(stop.get("episodes_planned"), locale),
+                    rule=as_text(stop.get("rule"), locale),
+                ),
             )
         )
     return rows
 
 
-def no_card_reason(report: dict[str, Any]) -> str | None:
+def no_card_reason(
+    report: dict[str, Any], locale: Locale = DEFAULT_LOCALE
+) -> str | None:
     """Why there is no recommendation, when the run recorded a reason.
 
     ``gate_only_deployment`` wins over ``why_no_card``: it is a property
@@ -251,18 +296,20 @@ def no_card_reason(report: dict[str, Any]) -> str | None:
     """
     gate_only = report.get("gate_only_deployment")
     if gate_only:
-        return f"This deployment cannot rank (HĐ-8.4): {as_text(gate_only)}"
+        return text("prose.gate_only_deployment", locale, reason=as_text(gate_only, locale))
     reason = report.get("why_no_card")
-    return as_text(reason) if reason else None
+    return as_text(reason, locale) if reason else None
 
 
 #: What a row says when the artifact simply does not carry the answer.
 #: Distinct from ``NOT_MEASURED``: nothing was measured wrongly here, the
 #: field predates the export that wants it.
-NOT_RECORDED = "not recorded"
+NOT_RECORDED = text("value.not_recorded")
 
 
-def recommended_config(report: dict[str, Any], candidate_id: Any) -> str:
+def recommended_config(
+    report: dict[str, Any], candidate_id: Any, locale: Locale = DEFAULT_LOCALE
+) -> str:
     """Which local-controller config the recommendation actually names.
 
     **The card cannot answer this.** ``card["recommended"]`` carries the
@@ -276,15 +323,18 @@ def recommended_config(report: dict[str, Any], candidate_id: Any) -> str:
     no config leaves the reader with a blank cell that reads as "no
     config" rather than "this file does not say".
     """
+    missing = text("value.not_recorded", locale)
     if not candidate_id:
-        return NOT_RECORDED
+        return missing
     for candidate in report.get("candidates") or []:
         if candidate.get("candidate_id") == candidate_id:
-            return as_text(candidate.get("local_controller_config") or NOT_RECORDED)
-    return NOT_RECORDED
+            return as_text(candidate.get("local_controller_config") or missing, locale)
+    return missing
 
 
-def card_rows(run: Any, report: dict[str, Any]) -> list[tuple[str, str]] | None:
+def card_rows(
+    run: Any, report: dict[str, Any], locale: Locale = DEFAULT_LOCALE
+) -> list[tuple[str, str]] | None:
     """The recommendation, or ``None`` when the run produced no card.
 
     ``Recommended`` keeps saying exactly what it always said — an export
@@ -297,24 +347,32 @@ def card_rows(run: Any, report: dict[str, Any]) -> list[tuple[str, str]] | None:
     recommended = card.get("recommended") or {}
     alternative = card.get("alternative") or {}
     return [
-        ("Recommended", as_text(recommended.get("stack"))),
-        ("Recommended config", recommended_config(report, recommended.get("candidate_id"))),
-        ("Candidate id", as_text(recommended.get("candidate_id"))),
-        ("Alternative", as_text(alternative.get("stack"))),
-        ("Status", as_text(card.get("status"))),
-        ("Contracts version", as_text(card.get("contracts_version"))),
+        (text("label.recommended", locale), as_text(recommended.get("stack"), locale)),
+        (
+            text("label.recommended_config", locale),
+            recommended_config(report, recommended.get("candidate_id"), locale),
+        ),
+        (text("label.candidate_id", locale), as_text(recommended.get("candidate_id"), locale)),
+        (text("label.alternative", locale), as_text(alternative.get("stack"), locale)),
+        (text("label.status", locale), as_text(card.get("status"), locale)),
+        (
+            text("label.contracts_version", locale),
+            as_text(card.get("contracts_version"), locale),
+        ),
     ]
 
 
-def scope_of(run: Any, report: dict[str, Any]) -> str | None:
+def scope_of(run: Any, report: dict[str, Any], locale: Locale = DEFAULT_LOCALE) -> str | None:
     """What the recommendation may be applied to, and nothing else."""
     card = run.card or report.get("decision_card")
     if not card:
         return None
-    return as_text(card.get("recommendation_scope") or run.task_profile_id)
+    return as_text(card.get("recommendation_scope") or run.task_profile_id, locale)
 
 
-def sensitivity_rows(evidence: dict[str, Any]) -> list[tuple[str, str]] | None:
+def sensitivity_rows(
+    evidence: dict[str, Any], locale: Locale = DEFAULT_LOCALE
+) -> list[tuple[str, str]] | None:
     """The three margins. ``None`` when not one of them was measured.
 
     HĐ-12 makes null "not measured". Rendered blank, a card that measured
@@ -323,24 +381,24 @@ def sensitivity_rows(evidence: dict[str, Any]) -> list[tuple[str, str]] | None:
     empty cells.
     """
     rows = [
-        ("Weight stability margin", evidence.get("weight_stability_margin")),
-        ("Anchor stability", evidence.get("anchor_stability")),
-        ("Robustness margin", evidence.get("robustness_margin")),
+        (text("label.weight_stability", locale), evidence.get("weight_stability_margin")),
+        (text("label.anchor_stability", locale), evidence.get("anchor_stability")),
+        (text("label.robustness_margin", locale), evidence.get("robustness_margin")),
     ]
     if all(value is None for _, value in rows):
         return None
-    return [(label, as_number(value)) for label, value in rows]
+    return [(label, as_number(value, "", locale)) for label, value in rows]
 
 
-def human_rows(run: Any) -> list[tuple[str, str]]:
+def human_rows(run: Any, locale: Locale = DEFAULT_LOCALE) -> list[tuple[str, str]]:
     """Who read it and who approved it — two acts, kept apart (HĐ-14)."""
     return [
-        ("Review state", as_text(run.review_state)),
-        ("Reviewed by", as_text(run.reviewed_by)),
-        ("Reviewed at", as_text(run.reviewed_at)),
-        ("Configuration decision", as_text(run.config_state)),
-        ("Decided by", as_text(run.config_decided_by)),
-        ("Decided at", as_text(run.config_decided_at)),
+        (text("label.review_state", locale), as_text(run.review_state, locale)),
+        (text("label.reviewed_by", locale), as_text(run.reviewed_by, locale)),
+        (text("label.reviewed_at", locale), as_text(run.reviewed_at, locale)),
+        (text("label.config_state", locale), as_text(run.config_state, locale)),
+        (text("label.decided_by", locale), as_text(run.config_decided_by, locale)),
+        (text("label.decided_at", locale), as_text(run.config_decided_at, locale)),
     ]
 
 
@@ -350,26 +408,30 @@ def human_rows(run: Any) -> list[tuple[str, str]]:
 #: questions — that one is "who was eliminated where", this one is "how
 #: did each behave". Several of these columns are what a reader compares
 #: stacks on, and until now none of them left the screen.
-OUTCOME_COLUMNS: tuple[str, ...] = (
-    "Candidate",
-    "Config",
-    "Utility /100",
-    "U_R",
-    "U_S",
-    "U_E",
-    "U_C",
-    "Success",
-    "Collisions",
-    "Collision bound 95%",
-    "No route found",
-    "Worst clearance",
-    "Median episode",
-    "p99 latency",
-    "Memory estimate",
-    "Distinct episodes",
-    "Replans",
-    "Eligible to recommend",
+_OUTCOME_COLUMN_KEYS: tuple[str, ...] = (
+    "column.outcome.candidate",
+    "column.outcome.config",
+    "column.outcome.utility",
+    "column.outcome.u_r",
+    "column.outcome.u_s",
+    "column.outcome.u_e",
+    "column.outcome.u_c",
+    "column.outcome.success",
+    "column.outcome.collisions",
+    "column.outcome.collision_bound",
+    "column.outcome.no_route",
+    "column.outcome.worst_clearance",
+    "column.outcome.median_episode",
+    "column.outcome.p99",
+    "column.outcome.memory",
+    "column.outcome.distinct_episodes",
+    "column.outcome.replans",
+    "column.outcome.eligible",
 )
+
+
+def outcome_columns(locale: Locale = DEFAULT_LOCALE) -> tuple[str, ...]:
+    return tuple(text(key, locale) for key in _OUTCOME_COLUMN_KEYS)
 
 
 def _gate_number(candidate: dict[str, Any], gate: str, field: str) -> Any:
@@ -379,7 +441,9 @@ def _gate_number(candidate: dict[str, Any], gate: str, field: str) -> Any:
     return verdict.get(field)
 
 
-def outcome_rows(report: dict[str, Any]) -> list[tuple[str, ...]]:
+def outcome_rows(
+    report: dict[str, Any], locale: Locale = DEFAULT_LOCALE
+) -> list[tuple[str, ...]]:
     """Every candidate's end-of-run numbers, in one table.
 
     Read out of the report rather than recomputed: the gate payloads
@@ -396,35 +460,39 @@ def outcome_rows(report: dict[str, Any]) -> list[tuple[str, ...]]:
         eligible = candidate.get("recommendation_eligible")
         rows.append(
             (
-                as_text(candidate.get("stack_label")),
-                as_text(candidate.get("local_controller_config")),
-                NOT_MEASURED if utility is None else f"{float(utility) * 100:.1f}",
-                as_number(objectives.get("U_R")),
-                as_number(objectives.get("U_S")),
-                as_number(objectives.get("U_E")),
-                as_number(objectives.get("U_C")),
-                as_ratio(candidate.get("success_rate")),
-                as_text(_gate_number(candidate, "G2", "observed")),
-                as_ratio(_gate_number(candidate, "G2", "upper_bound_95")),
-                as_ratio(_gate_number(candidate, "G1", "no_path_rate")),
-                as_number(candidate.get("worst_clearance_m"), "m"),
-                as_number(candidate.get("median_travel_time_s"), "s"),
-                as_number(candidate.get("pooled_p99_latency_ms"), "ms"),
-                as_number(_gate_number(candidate, "G5", "memory_estimate_mb"), "MB"),
-                as_text(candidate.get("n_distinct_episodes")),
-                as_text(candidate.get("replan_count")),
+                as_text(candidate.get("stack_label"), locale),
+                as_text(candidate.get("local_controller_config"), locale),
+                text("value.not_measured", locale)
+                if utility is None
+                else f"{float(utility) * 100:.1f}",
+                as_number(objectives.get("U_R"), "", locale),
+                as_number(objectives.get("U_S"), "", locale),
+                as_number(objectives.get("U_E"), "", locale),
+                as_number(objectives.get("U_C"), "", locale),
+                as_ratio(candidate.get("success_rate"), locale),
+                as_text(_gate_number(candidate, "G2", "observed"), locale),
+                as_ratio(_gate_number(candidate, "G2", "upper_bound_95"), locale),
+                as_ratio(_gate_number(candidate, "G1", "no_path_rate"), locale),
+                as_number(candidate.get("worst_clearance_m"), "m", locale),
+                as_number(candidate.get("median_travel_time_s"), "s", locale),
+                as_number(candidate.get("pooled_p99_latency_ms"), "ms", locale),
+                as_number(_gate_number(candidate, "G5", "memory_estimate_mb"), "MB", locale),
+                as_text(candidate.get("n_distinct_episodes"), locale),
+                as_text(candidate.get("replan_count"), locale),
                 # Spelled out rather than left to be inferred from the
                 # gate column: "scored lower" and "was never in the
                 # running" are different claims, and a gate failure can
                 # leave no mark on the utility at all — collisions are
                 # excluded from U_S by contract (HĐ-6).
-                "yes" if eligible else "no",
+                text("value.yes" if eligible else "value.no", locale),
             )
         )
     return rows
 
 
-def decision_evidence_rows(run: Any, report: dict[str, Any]) -> list[tuple[str, str]] | None:
+def decision_evidence_rows(
+    run: Any, report: dict[str, Any], locale: Locale = DEFAULT_LOCALE
+) -> list[tuple[str, str]] | None:
     """The margin between the top two, with the interval that qualifies it.
 
     ``None`` when the run produced no card. Printing ΔU without its
@@ -437,42 +505,65 @@ def decision_evidence_rows(run: Any, report: dict[str, Any]) -> list[tuple[str, 
     evidence = card.get("evidence") or {}
     interval = evidence.get("ci95")
     rows = [
-        ("Decision utility", as_number(card.get("decision_utility"))),
-        ("Pareto label", as_text(card.get("pareto_label"))),
-        ("Decision mode", as_text(card.get("decision_mode"))),
-        ("ΔU vs the runner-up", as_number(evidence.get("delta_u_vs_second"))),
-        ("ΔU mean", as_number(evidence.get("delta_u_mean"))),
         (
-            "ΔU 95% interval",
-            f"[{as_number(interval[0])}, {as_number(interval[1])}]"
-            if isinstance(interval, (list, tuple)) and len(interval) == 2
-            else NOT_MEASURED,
+            text("label.decision_utility", locale),
+            as_number(card.get("decision_utility"), "", locale),
         ),
-        ("Effect size", as_number(evidence.get("effect_size"))),
-        ("Episodes compared", as_text(evidence.get("n_episodes"))),
+        (text("label.pareto_label", locale), as_text(card.get("pareto_label"), locale)),
+        (text("label.decision_mode", locale), as_text(card.get("decision_mode"), locale)),
+        (
+            text("label.delta_u_vs_second", locale),
+            as_number(evidence.get("delta_u_vs_second"), "", locale),
+        ),
+        (
+            text("label.delta_u_mean", locale),
+            as_number(evidence.get("delta_u_mean"), "", locale),
+        ),
+        (
+            text("label.delta_u_ci", locale),
+            f"[{as_number(interval[0], '', locale)}, {as_number(interval[1], '', locale)}]"
+            if isinstance(interval, (list, tuple)) and len(interval) == 2
+            else text("value.not_measured", locale),
+        ),
+        (text("label.effect_size", locale), as_number(evidence.get("effect_size"), "", locale)),
+        (
+            text("label.episodes_compared", locale),
+            as_text(evidence.get("n_episodes"), locale),
+        ),
     ]
     objectives = card.get("objectives") or {}
-    rows += [(f"Objective {name}", as_number(objectives.get(name))) for name in
-             ("U_R", "U_S", "U_E", "U_C")]
+    rows += [
+        (
+            text("label.objective", locale, name=name),
+            as_number(objectives.get(name), "", locale),
+        )
+        for name in ("U_R", "U_S", "U_E", "U_C")
+    ]
     return rows
 
 
 #: One row per episode. Narrow on purpose — this is what the report
 #: stores, and the trace endpoint serves the episode itself.
-EPISODE_COLUMNS: tuple[str, ...] = (
-    "Candidate",
-    "Episode",
-    "Outcome",
-    "Collisions",
-    "Min clearance",
-    "Travel time",
-    "p99 latency",
-    "Replans",
-    "Episode utility",
+_EPISODE_COLUMN_KEYS: tuple[str, ...] = (
+    "column.episode.candidate",
+    "column.episode.episode",
+    "column.episode.outcome",
+    "column.episode.collisions",
+    "column.episode.min_clearance",
+    "column.episode.travel_time",
+    "column.episode.p99",
+    "column.episode.replans",
+    "column.episode.utility",
 )
 
 
-def episode_rows(report: dict[str, Any]) -> list[tuple[str, ...]]:
+def episode_columns(locale: Locale = DEFAULT_LOCALE) -> tuple[str, ...]:
+    return tuple(text(key, locale) for key in _EPISODE_COLUMN_KEYS)
+
+
+def episode_rows(
+    report: dict[str, Any], locale: Locale = DEFAULT_LOCALE
+) -> list[tuple[str, ...]]:
     """Every episode of every candidate.
 
     **The aggregate was never the whole answer.** `success_rate: 0.70`
@@ -485,23 +576,25 @@ def episode_rows(report: dict[str, Any]) -> list[tuple[str, ...]]:
     """
     rows: list[tuple[str, ...]] = []
     for candidate in report.get("candidates") or []:
-        label = as_text(candidate.get("stack_label"))
-        config = as_text(candidate.get("local_controller_config"))
+        label = as_text(candidate.get("stack_label"), locale)
+        config = as_text(candidate.get("local_controller_config"), locale)
         for episode in candidate.get("episodes") or []:
             outcome = (
-                "passed" if episode.get("success") else as_text(episode.get("failure_reason"))
+                text("value.passed", locale)
+                if episode.get("success")
+                else as_text(episode.get("failure_reason"), locale)
             )
             rows.append(
                 (
                     f"{label} / {config}",
-                    as_text(episode.get("episode_context_id")),
+                    as_text(episode.get("episode_context_id"), locale),
                     outcome,
-                    as_text(episode.get("collision_count")),
-                    as_number(episode.get("min_clearance"), "m"),
-                    as_number(episode.get("travel_time_s"), "s"),
-                    as_number(episode.get("p99_latency_ms"), "ms"),
-                    as_text(episode.get("replan_count")),
-                    as_number(episode.get("episode_decision_utility")),
+                    as_text(episode.get("collision_count"), locale),
+                    as_number(episode.get("min_clearance"), "m", locale),
+                    as_number(episode.get("travel_time_s"), "s", locale),
+                    as_number(episode.get("p99_latency_ms"), "ms", locale),
+                    as_text(episode.get("replan_count"), locale),
+                    as_number(episode.get("episode_decision_utility"), "", locale),
                 )
             )
     return rows
