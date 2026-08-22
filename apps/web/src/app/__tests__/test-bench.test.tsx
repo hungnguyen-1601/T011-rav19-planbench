@@ -186,8 +186,10 @@ describe("switching deployment clears what the last one drew", () => {
 
 describe("the page is reachable and translated", () => {
   it("sits with the things a reader is doing, not with the retiring flow", () => {
-    const doing = NAV_SECTIONS.find((section) => section.titleKey === "nav.section.doing");
-    expect(doing?.items.map((item) => item.href)).toContain("/simulate");
+    /* `nav.section.doing` is now `nav.section.workspace` — a label that
+       names a place rather than describing an activity. Same group. */
+    const workspace = NAV_SECTIONS.find((section) => section.titleKey === "nav.section.workspace");
+    expect(workspace?.items.map((item) => item.href)).toContain("/simulate");
   });
 
   it("is named for what it now is", () => {

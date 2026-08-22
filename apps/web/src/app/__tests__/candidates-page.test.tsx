@@ -123,11 +123,13 @@ describe("the launch panel stops asking people to type identifiers", () => {
 });
 
 describe("the page is reachable and translated", () => {
-  it("sits in the sidebar as a material, not as a thing being replaced", () => {
+  it("sits in the sidebar as a resource, not as a thing being replaced", () => {
     /* A candidate is what a comparison chooses *between* — an input, the
-       same kind of thing as a map. */
-    const materials = NAV_SECTIONS.find((section) => section.titleKey === "nav.section.materials");
-    expect(materials?.items.map((item) => item.href)).toContain("/candidates");
+       same kind of thing as a map. The heading it sits under was renamed
+       from `materials` to `resources` when the four groups became three;
+       the claim is the same one. */
+    const resources = NAV_SECTIONS.find((section) => section.titleKey === "nav.section.resources");
+    expect(resources?.items.map((item) => item.href)).toContain("/candidates");
   });
 
   it("is the only page left that shows the registry", () => {
