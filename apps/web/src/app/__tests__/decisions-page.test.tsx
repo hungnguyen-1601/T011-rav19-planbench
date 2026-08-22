@@ -1109,13 +1109,42 @@ describe("the column head names what actually differs", () => {
   });
 });
 
-describe("the comparison grid stopped tinting whole columns", () => {
-  it("caps the head instead of washing the column", () => {
-    /* A wash down the column swallows the numbers it sits behind, on a
-       table whose entire job is the figures. */
-    expect(CSS).not.toContain(".comparison-cell.candidate-a {");
-    expect(CSS).not.toContain(".comparison-cell.candidate-b {");
+describe("the comparison grid tints its columns without drowning them", () => {
+  it("washes the column from a token built for it, not from the badge tint", () => {
+    /* **This asserted there was no wash, and the reason it gave was
+       right about the wash it was describing.** `--candidate-*-soft` is
+       10-14% of a saturated hue, built to sit behind a badge; run down a
+       whole column it was the loudest thing on a table whose entire job
+       is the figures.
+
+       Removing it answered that and cost something else: the identity
+       then lived on a 3px cap and the heading text, which tells the
+       columns apart at the head and stops doing so eight rows down —
+       exactly where a reader tracking one candidate's numbers is. The
+       wash is back at a sixth of the strength, from its own token. */
+    expect(CSS).toContain(".comparison-cell.candidate-a { background: var(--candidate-a-wash); }");
+    expect(CSS).toContain(".comparison-cell.candidate-b { background: var(--candidate-b-wash); }");
+    expect(CSS).not.toContain(".comparison-cell.candidate-a { background: var(--candidate-a-soft)");
+    expect(CSS).not.toContain(".comparison-cell.candidate-b { background: var(--candidate-b-soft)");
     expect(CSS).toContain(".comparison-grid-head.candidate-a { border-top-color: var(--candidate-a); }");
+  });
+
+  it("mixes the wash into the panel rather than laying it over", () => {
+    /* Opaque, because the head cells are sticky and a translucent
+       sticky cell shows the rows sliding underneath it. */
+    expect(CSS).toContain("--candidate-a-wash: color-mix(in srgb, var(--indigo) 6%, var(--panel));");
+    expect(CSS).toContain("--candidate-b-wash: color-mix(in srgb, var(--purple) 10%, var(--panel));");
+    expect(CSS).toContain(".comparison-table thead th.candidate-b { background: var(--candidate-b-wash); }");
+  });
+
+  it("builds neither wash out of a colour that means an outcome", () => {
+    /* The wash has to stay quiet enough that `--ok` and `--err` are the
+       loudest thing in a cell. Building it *from* one of them would make
+       a whole column read as a verdict. */
+    for (const token of ["--ok", "--err", "--teal", "--warn"]) {
+      expect(CSS).not.toContain(`--candidate-a-wash: color-mix(in srgb, var(${token})`);
+      expect(CSS).not.toContain(`--candidate-b-wash: color-mix(in srgb, var(${token})`);
+    }
   });
 
   it("does not let the picker card's wash reach the table through a bare class", () => {
@@ -1142,10 +1171,10 @@ describe("the comparison grid stopped tinting whole columns", () => {
     }
   });
 
-  it("leaves no column tinted, including a third candidate", () => {
-    /* `candidate-n` is the fallback past B. Keeping its grey wash after
-       A and B lost theirs would tint exactly the column with no colour
-       of its own. */
+  it("gives a third candidate no wash at all", () => {
+    /* `candidate-n` is the fallback past B. Reusing A's blue would put
+       two stacks in one colour, and a third hue would have to come out
+       of the green or the red. No wash is the honest third answer. */
     expect(CSS).not.toContain(".comparison-cell.candidate-n");
   });
 

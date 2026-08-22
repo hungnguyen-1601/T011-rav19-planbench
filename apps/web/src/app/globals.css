@@ -190,6 +190,33 @@
   --candidate-b: var(--purple);
   --candidate-b-soft: var(--purple-soft);
   --candidate-b-border: color-mix(in srgb, var(--purple) 48%, var(--border));
+
+  /* The column wash, which is a third thing and not `-soft` weakened.
+     ===================================================================
+     `-soft` is 10–14% of a saturated hue and is built to sit behind a
+     badge — a small shape with its own text colour. Run it down a whole
+     column of a table and it competes with every figure in it, which is
+     why the table dropped it once already.
+
+     Two properties this needs that `-soft` does not have:
+
+     **Opaque.** These are mixed *into* `--panel` rather than laid over
+     it, so the head cells can be sticky. A translucent sticky cell shows
+     the rows sliding underneath it.
+
+     **Weak enough that `--ok` and `--err` still read as the loudest
+     thing in the cell.** Both stay above 5:1 on either wash, and the
+     figures are bold mono against body-weight labels, so the wash says
+     "same column" and the colour still says "better number".
+
+     **Why 6% against 10%.** Not a highlight: purple carries less
+     luminance contrast against a light panel than indigo does, so equal
+     percentages read as two different depths. These two land at the same
+     apparent weight. Blue and violet are also the only pair available —
+     teal reads as green and orange or magenta as red, and both of those
+     are spent on outcome. */
+  --candidate-a-wash: color-mix(in srgb, var(--indigo) 6%, var(--panel));
+  --candidate-b-wash: color-mix(in srgb, var(--purple) 10%, var(--panel));
 }
 
 /* The scales. These sit outside the theme blocks above on purpose:
@@ -3870,14 +3897,29 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
 }
 .comparison-gutter { padding: 8px 14px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
 .comparison-cell { padding: 8px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
-/* **No column-wide tint.** A wash down the whole column swallows the
-   numbers it sits behind — it was the loudest thing on a table whose
-   entire job is the figures. The identity survives as a 3px cap on the
-   head and as the colour of the heading text, which is enough to tell
-   two columns apart and does not compete with a single value. */
-/* Past two, neutral. Reusing candidate A's blue for candidate C would
-   put two stacks in one colour on a page whose job is telling them
-   apart. */
+/* **A column wash, at a sixth of the strength of the one that was
+   removed.**
+   ===================================================================
+   The wash that went was `--candidate-*-soft` — 10–14% of a saturated
+   hue, built for a badge — run down a whole column, where it was the
+   loudest thing on a table whose entire job is the figures. Removing it
+   left the identity on a 3px cap and the heading text, which tells the
+   two columns apart at the head and stops telling them apart eight rows
+   down, exactly where a reader tracking one candidate's numbers is.
+
+   So the wash is back and the objection is answered rather than
+   overruled: `--candidate-*-wash` is 6–10% mixed *into* the panel, weak
+   enough that `--ok` and `--err` stay the loudest thing in any cell they
+   land in, and opaque so the sticky head can carry it too. The hue pair
+   is blue and violet because those are the only two families left once
+   green and red are spent on outcome.
+
+   Past two, neutral: `candidate-n` takes no wash at all. Reusing
+   candidate A's blue for candidate C would put two stacks in one colour
+   on a page whose job is telling them apart, and inventing a third hue
+   would have to come out of the green or the red. */
+.comparison-cell.candidate-a { background: var(--candidate-a-wash); }
+.comparison-cell.candidate-b { background: var(--candidate-b-wash); }
 .comparison-cell + .comparison-cell { border-left: 1px solid var(--border); }
 
 /* **Nothing on a table cell may set `display`.**
@@ -4100,6 +4142,13 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
   z-index: 1;
   background: var(--panel);
 }
+/* The head keeps its column's wash, so the tint runs unbroken from the
+   candidate's name to its last figure. Declared after the rule above
+   because that one sets a flat panel on every head cell — and both are
+   opaque, which is what a sticky cell needs: a translucent one shows the
+   rows sliding under it. */
+.comparison-table thead th.candidate-a { background: var(--candidate-a-wash); }
+.comparison-table thead th.candidate-b { background: var(--candidate-b-wash); }
 
 /* The six-cell gate grid, now inside a collapsed <details> below the
    metric grid rather than as its last row.
