@@ -38,7 +38,7 @@ speed — and the mark alone therefore does not compare across that line.
 
 | Candidate | Config | Utility /100 | U_R | U_S | U_E | U_C | Success | Collisions | Collision bound 95% | No route found | Worst clearance | Median episode | p99 latency | Memory estimate | Distinct episodes | Replans | Eligible to recommend |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| astar+dwa | dwa_coarse | 87.7 | 1 | 0.912 | 0.568 | 0.958 | 100.0% | 0 | 10.0% | 0.0% | 0.494 m | 22.8 s | 7.35 ms | 412 MB | 30 | 30 | yes |
+| astar+dwa | dwa_coarse | 86.9 | 1 | 0.912 | 0.568 | 0.958 | 100.0% | 0 | 10.0% | 0.0% | 0.494 m | 22.8 s | 7.35 ms | 412 MB | 30 | 30 | yes |
 | rrtstar+dwa | dwa_balanced | not measured | not measured | not measured | not measured | not measured | 96.7% | 0 | 10.0% | 0.0% | 0.331 m | 25.4 s | 16.1 ms | 688 MB | 30 | 44 | no |
 
 ## No Decision Card

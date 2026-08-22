@@ -661,6 +661,26 @@ class Unit:
         """The digits alone, as the screen writes them."""
         return f"{value * self.display_scale:.{self.decimals}f}"
 
+    def as_delta(self) -> Unit:
+        """The same quantity, as a *difference* between two of them.
+
+        Only ratios differ. A rate is stored as 0.70 and read as 70.0 %,
+        so the gap between two of them has to print as 2.0 **pp** — and
+        Excel's ``%`` format would print `2.0%`, which says the gap is a
+        proportion of a proportion. The difference is therefore stored
+        already scaled, under a plain numeric format, and the column
+        beside it names the unit.
+        """
+        if self.display_scale == 1.0:
+            return self
+        places = f"0.{'0' * self.decimals}" if self.decimals else "0"
+        return Unit(
+            symbol=self.delta_symbol,
+            delta_symbol=self.delta_symbol,
+            decimals=self.decimals,
+            excel_format=places,
+        )
+
 
 PERCENT = Unit(symbol="%", delta_symbol="pp", decimals=1, excel_format="0.0%", display_scale=100.0)
 MILLISECONDS = Unit(symbol="ms", delta_symbol="ms", decimals=2, excel_format='0.00" ms"')
@@ -837,3 +857,506 @@ def summary_rows(
         ),
     ]
     return rows
+
+
+# --- The comparison, one row per metric ------------------------------------
+#
+# **The same ten rows the screen shows, in the same order.** The grid in
+# `apps/web/src/lib/candidateMetrics.ts` already decides which metrics a
+# reader compares stacks on, which way is better, what unit each is in,
+# and how close counts as level. A second opinion here would mean the
+# person looking at the page and the person opening the file are reading
+# two different comparisons of one run — and neither would know.
+#
+# The table is declared here and a test reads the TypeScript to prove the
+# two still agree, which is the cheap half of unifying them. The
+# expensive half — the report carrying this table so the page reads it
+# back — is worth doing later and is not worth blocking this on.
+
+#: Differences below this share of the row's scale are not called. The
+#: screen's value, not a new one: a row where the two are level should
+#: not name a winner on the page and a different one in the file.
+TIE_TOLERANCE = 1e-3
+
+
+def _gate_field(candidate: dict[str, Any], gate: str, field: str) -> Any:
+    """A number the gate already produced, read rather than recomputed.
+
+    G1 carries the no-path rate, G2 the collision count and the 95%
+    bound, G5 the memory estimate. Deriving any of them again here would
+    be a second definition free to disagree with the verdict printed two
+    sheets away — and the disagreement would be invisible, because both
+    would render as the same quantity.
+    """
+    verdict = (candidate.get("gates") or {}).get(gate)
+    return verdict.get(field) if isinstance(verdict, dict) else None
+
+
+@dataclass(frozen=True)
+class MetricSpec:
+    """One row of the comparison: what to read, and how to read it."""
+
+    #: The key the grid uses, so the parity test can line the two up.
+    key: str
+    unit: Unit
+    #: ``"higher"``, ``"lower"``, or ``"none"`` for a row that is
+    #: evidence rather than a score and therefore has no winner.
+    direction: str
+    #: How to get the value off one candidate.
+    read: Any
+    #: How to get the deployment's declared limit, if the gate set one.
+    #: Read off the first candidate: the limit belongs to the deployment,
+    #: not to the stack being measured against it.
+    limit: Any = None
+    #: Which weight this metric carries in the utility, given the run's
+    #: resolved preference weights — or ``None`` for the seven rows that
+    #: carry none. See the note on each for why.
+    weigh: Any = None
+
+    @property
+    def label_key(self) -> str:
+        return f"metric.{self.key}"
+
+    @property
+    def note_key(self) -> str:
+        return f"note.{self.key}"
+
+
+COMPARISON_METRICS: tuple[MetricSpec, ...] = (
+    MetricSpec(
+        key="successRate",
+        unit=PERCENT,
+        direction="higher",
+        read=lambda c: c.get("success_rate"),
+        limit=lambda c: _gate_field(c, "G3", "threshold"),
+        weigh=lambda w: w.w_r,
+    ),
+    MetricSpec(
+        key="collisions",
+        unit=COUNT,
+        direction="lower",
+        read=lambda c: _gate_field(c, "G2", "observed"),
+        # G2 demands exactly zero; the limit is the contract, not a
+        # number somebody tuned.
+        limit=lambda c: 0 if (c.get("gates") or {}).get("G2") else None,
+    ),
+    MetricSpec(
+        key="collisionBound",
+        unit=PERCENT,
+        direction="lower",
+        read=lambda c: _gate_field(c, "G2", "upper_bound_95"),
+    ),
+    MetricSpec(
+        key="noPathRate",
+        unit=PERCENT,
+        direction="lower",
+        read=lambda c: _gate_field(c, "G1", "no_path_rate"),
+        limit=lambda c: _gate_field(c, "G1", "threshold"),
+    ),
+    MetricSpec(
+        key="worstClearance",
+        unit=METRES,
+        direction="higher",
+        read=lambda c: c.get("worst_clearance_m"),
+    ),
+    MetricSpec(
+        key="medianTravel",
+        unit=SECONDS,
+        direction="lower",
+        read=lambda c: c.get("median_travel_time_s"),
+    ),
+    MetricSpec(
+        key="p99",
+        unit=MILLISECONDS,
+        direction="lower",
+        read=lambda c: c.get("pooled_p99_latency_ms"),
+        limit=lambda c: _gate_field(c, "G4", "threshold_ms"),
+        weigh=lambda w: None if w.beta is None else w.w_c * w.beta[0],
+    ),
+    MetricSpec(
+        key="memory",
+        unit=MEGABYTES,
+        direction="lower",
+        read=lambda c: _gate_field(c, "G5", "memory_estimate_mb"),
+        limit=lambda c: _gate_field(c, "G5", "available_ram_mb"),
+        weigh=lambda w: None if w.beta is None else w.w_c * w.beta[1],
+    ),
+    MetricSpec(
+        key="distinctEpisodes",
+        unit=COUNT,
+        direction="higher",
+        read=lambda c: c.get("n_distinct_episodes"),
+    ),
+    MetricSpec(
+        key="replans",
+        # **No direction.** Replanning is already charged in travel time
+        # and in latency, and the deployment declares no replan budget;
+        # marking a winner here would price it twice and invent a rule
+        # nobody wrote down. Shown because it is evidence about behaviour.
+        unit=COUNT,
+        direction="none",
+        read=lambda c: c.get("replan_count"),
+    ),
+)
+
+
+def leaders(values: list[Quantity], direction: str) -> list[int]:
+    """Which candidates lead a row, as indices into ``values``.
+
+    A *set*, not a winner: with three candidates two can be equally
+    best, and picking one of them would be a coin toss rendered as a
+    result.
+
+    Empty when the row has no direction, when fewer than two candidates
+    recorded it, and when every one of them ties — a row where nobody is
+    ahead should not paint somebody green.
+    """
+    if direction == "none":
+        return []
+    known = [(index, q.value) for index, q in enumerate(values) if q.value is not None]
+    if len(known) < 2:
+        return []
+    best = (max if direction == "higher" else min)(known, key=lambda entry: entry[1])[1]
+    scale = max([abs(value) for _, value in known] + [1.0])
+    ahead = [index for index, value in known if abs(value - best) <= TIE_TOLERANCE * scale]
+    return [] if len(ahead) == len(known) else ahead
+
+
+#: Weights print to three places. Distinct from `UTILITY` because a
+#: weight is a declared preference and a utility is a measurement, and
+#: showing 0.3000 for "thirty per cent" claims a precision nobody set.
+WEIGHT = Unit(symbol="", delta_symbol="", decimals=3, excel_format="0.000")
+
+
+@dataclass(frozen=True)
+class ResolvedWeights:
+    """The preference weights this run's card was actually scored under.
+
+    **Read off the run's own manifest, never defaulted.** A card computed
+    under ``benh_vien_gio_cao_diem`` (w_S = 0.50) exported with
+    ``kho_ban_dem``'s numbers (w_S = 0.10) would print contributions that
+    are all wrong and a total that still looks plausible, which is the
+    worst shape a mistake can take.
+    """
+
+    profile: str | None
+    w_r: float | None = None
+    w_s: float | None = None
+    w_e: float | None = None
+    w_c: float | None = None
+    beta: tuple[float, float, float, float] | None = None
+    #: Which of the ways there are none this is, so the sheet can say the
+    #: right one. ``None`` when the weights are known, or when the run
+    #: names no profile at all and there is nothing to explain.
+    reason: str | None = None
+
+    @property
+    def known(self) -> bool:
+        return self.w_r is not None
+
+
+def resolve_weights(run: Any, report: dict[str, Any]) -> ResolvedWeights:
+    """The run's weights, or an honest absence.
+
+    Three ways there are none, and each says something different:
+
+    - no manifest at all — the run produced no card, so nothing was
+      weighted and there is nothing to print;
+    - a *perturbed* profile — the HĐ-11.5 stability sweep replaces the
+      weights and does not record the replacements, so the numbers exist
+      and this file cannot know them. Guessing the named profile's would
+      attribute the card to weights it was not scored under;
+    - a profile name the table no longer has — a profile removed after
+      the run was filed. Naming it and printing nothing is the whole
+      answer.
+
+    A fourth is not about the run at all: the API can be deployed
+    without ``planbench_decision`` beside it, and then no run's weights
+    are resolvable. Kept apart from "unknown profile" because the two
+    ask different people to do different things — one is a data
+    question and one is a deployment one — and a sheet that said the
+    profile was unknown when the table simply had not loaded would send
+    the reader looking in the wrong place.
+    """
+    manifest = getattr(run, "manifest", None) or report.get("manifest") or {}
+    label = manifest.get("preference_profile")
+    if not label:
+        return ResolvedWeights(profile=None)
+    if label.endswith("(perturbed)"):
+        return ResolvedWeights(profile=label, reason="perturbed")
+    try:
+        from planbench_decision.objectives import PREFERENCE_PROFILES
+    except ImportError:  # pragma: no cover - the API can run without the sibling package
+        return ResolvedWeights(profile=label, reason="table_unavailable")
+    weights = PREFERENCE_PROFILES.get(label)
+    if weights is None:
+        return ResolvedWeights(profile=label, reason="unknown_profile")
+    return ResolvedWeights(
+        profile=label,
+        w_r=weights.w_r,
+        w_s=weights.w_s,
+        w_e=weights.w_e,
+        w_c=weights.w_c,
+        beta=tuple(weights.beta),
+    )
+
+
+@dataclass(frozen=True)
+class ComparisonRow:
+    """One metric across every candidate, with everything a cell needs."""
+
+    label: str
+    unit: str
+    values: list[Quantity]
+    delta: Quantity | None
+    delta_unit: str
+    winner: str
+    #: Indices into ``values``. Empty is not "everybody lost" — see
+    #: :func:`leaders`.
+    ahead: list[int]
+    #: Indices whose value falls the wrong side of the declared limit.
+    breaches: list[int]
+    limit: Quantity | None
+    weight: Quantity | None
+    note: str
+
+
+def _winner_text(
+    spec: MetricSpec, values: list[Quantity], ahead: list[int], labels: list[str], locale: Locale
+) -> str:
+    """Who leads, or why nobody does — three different absences.
+
+    "No direction", "tie" and "not measured" all render as no green
+    cell, and collapsing them into one word would tell a reader that a
+    row nobody measured is a row where the two were level.
+    """
+    if spec.direction == "none":
+        return text("value.no_direction", locale)
+    if len([q for q in values if q.value is not None]) < 2:
+        return text("value.not_measured", locale)
+    if not ahead:
+        return text("value.tie", locale)
+    return ", ".join(labels[index] for index in ahead)
+
+
+def _breaches(spec: MetricSpec, values: list[Quantity], limit: Quantity | None) -> list[int]:
+    """Which candidates fall the wrong side of the deployment's own bar.
+
+    Not "worse than the other candidate" — worse than the number the
+    customer declared. The two are different findings and only this one
+    is absolute.
+    """
+    if limit is None or limit.value is None or spec.direction == "none":
+        return []
+    return [
+        index
+        for index, q in enumerate(values)
+        if q.value is not None
+        and (q.value < limit.value if spec.direction == "higher" else q.value > limit.value)
+    ]
+
+
+def comparison_rows(
+    report: dict[str, Any], locale: Locale = DEFAULT_LOCALE, weights: ResolvedWeights | None = None
+) -> list[ComparisonRow]:
+    """The end-of-run comparison, one row per metric.
+
+    Transposed from the per-candidate table on purpose: a spreadsheet
+    reader compares *down* a column, and a metric per row is what lets
+    them put the delta, the winner and the deployment's limit beside the
+    two figures being compared.
+    """
+    candidates = list(report.get("candidates") or [])
+    if not candidates:
+        return []
+    labels = [as_text(entry.get("stack_label"), locale) for entry in candidates]
+    weights = weights or ResolvedWeights(profile=None)
+
+    rows: list[ComparisonRow] = []
+    for spec in COMPARISON_METRICS:
+        values = [quantity(spec.read(entry), spec.unit) for entry in candidates]
+        limit = quantity(spec.limit(candidates[0]), spec.unit) if spec.limit else None
+        if limit is not None and limit.missing:
+            limit = None
+        ahead = leaders(values, spec.direction)
+        # A delta only where there are exactly two candidates and both
+        # recorded it: "B minus A" has no meaning across three, and one
+        # side missing is not a difference of zero.
+        delta = None
+        if len(values) == 2 and not any(q.missing for q in values):
+            gap = (values[1].value - values[0].value) * spec.unit.display_scale  # type: ignore[operator]
+            delta = Quantity(gap, spec.unit.as_delta())
+        weight = None
+        if spec.weigh is not None and weights.known:
+            weight = quantity(spec.weigh(weights), WEIGHT)
+        rows.append(
+            ComparisonRow(
+                label=text(spec.label_key, locale),
+                unit=spec.unit.symbol,
+                values=values,
+                delta=delta,
+                delta_unit=spec.unit.delta_symbol,
+                winner=_winner_text(spec, values, ahead, labels, locale),
+                ahead=ahead,
+                breaches=_breaches(spec, values, limit),
+                limit=limit,
+                weight=weight,
+                note=text(spec.note_key, locale),
+            )
+        )
+    return rows
+
+
+# --- Where the decision was actually made ----------------------------------
+
+
+@dataclass(frozen=True)
+class ObjectiveRow:
+    """One weighted axis, or the total the axes add up to."""
+
+    label: str
+    weight: Quantity | None
+    values: list[Quantity]
+    delta: Quantity | None
+    #: ``weight × U`` per candidate. The column exists so a reader can
+    #: sum it and land on the card's own utility — the check a column of
+    #: strings never allowed.
+    contributions: list[Quantity]
+    note: str | None = None
+    #: The total row, which is a sum rather than a measurement and is
+    #: styled as one.
+    total: bool = False
+
+
+#: The four axes, and which key each reads off the candidate's
+#: ``objectives`` block.
+_OBJECTIVE_AXES: tuple[tuple[str, str, str], ...] = (
+    ("U_R", "w_r", "label.objective"),
+    ("U_S", "w_s", "label.objective"),
+    ("U_E", "w_e", "label.objective"),
+    ("U_C", "w_c", "label.objective"),
+)
+
+#: What U_C is made of, and in what proportion (HĐ-9.1). Only the first
+#: two have an input anywhere in the report; the other two are weighted
+#: and unmeasured, which is a finding rather than a blank.
+_COST_COMPONENTS: tuple[tuple[str, int, bool], ...] = (
+    ("metric.p99", 0, True),
+    ("metric.memory", 1, True),
+    ("objective.cpu_time", 2, False),
+    ("objective.engineering_cost", 3, False),
+)
+
+
+def objective_rows(
+    run: Any,
+    report: dict[str, Any],
+    locale: Locale = DEFAULT_LOCALE,
+    weights: ResolvedWeights | None = None,
+) -> list[ObjectiveRow] | None:
+    """The four objectives, their weights, and the total they make.
+
+    ``None`` when the run produced no card: nothing was weighted, so a
+    sheet of empty weights would be a page about an arithmetic that did
+    not happen.
+
+    **This is the only place the weight column means anything in full.**
+    Weights attach to objectives, not to the metrics a reader compares
+    on — three of the ten comparison rows carry one and seven do not,
+    and that is the contract rather than an omission.
+    """
+    card = run.card or report.get("decision_card")
+    if not card:
+        return None
+    candidates = list(report.get("candidates") or [])
+    if not candidates:
+        return None
+    weights = weights if weights is not None else resolve_weights(run, report)
+
+    def gap(values: list[Quantity]) -> Quantity | None:
+        if len(values) != 2 or any(q.missing for q in values):
+            return None
+        return Quantity(values[1].value - values[0].value, UTILITY)  # type: ignore[operator]
+
+    rows: list[ObjectiveRow] = []
+    for name, attribute, label_key in _OBJECTIVE_AXES:
+        weight = getattr(weights, attribute)
+        values = [
+            quantity((entry.get("objectives") or {}).get(name), UTILITY) for entry in candidates
+        ]
+        contributions = [
+            Quantity(None if q.missing or weight is None else q.value * weight, UTILITY)
+            for q in values
+        ]
+        rows.append(
+            ObjectiveRow(
+                label=text(label_key, locale, name=name),
+                weight=None if weight is None else Quantity(weight, WEIGHT),
+                values=values,
+                delta=gap(values),
+                contributions=contributions,
+            )
+        )
+
+    # The four pieces U_C is built from. Their weights are real and two
+    # of their inputs are not in the report at all — said in a note
+    # rather than left as an empty row somebody reads as zero.
+    for label_key, index, measured in _COST_COMPONENTS:
+        share = None
+        if weights.known and weights.beta is not None:
+            share = Quantity(weights.w_c * weights.beta[index], WEIGHT)  # type: ignore[operator]
+        rows.append(
+            ObjectiveRow(
+                label=f"  ↳ {text(label_key, locale)}",
+                weight=share,
+                values=[Quantity(None, UTILITY) for _ in candidates],
+                delta=None,
+                contributions=[Quantity(None, UTILITY) for _ in candidates],
+                note=text(
+                    "note.component_measured" if measured else "note.component_unmeasured",
+                    locale,
+                ),
+            )
+        )
+
+    totals = [quantity(entry.get("decision_utility"), UTILITY) for entry in candidates]
+    rows.append(
+        ObjectiveRow(
+            label=text("label.decision_utility", locale),
+            weight=Quantity(1.0, WEIGHT) if weights.known else None,
+            values=totals,
+            delta=gap(totals),
+            contributions=totals,
+            note=text("note.total_is_the_sum", locale),
+            total=True,
+        )
+    )
+    return rows
+
+
+def eligibility_row(
+    report: dict[str, Any], locale: Locale = DEFAULT_LOCALE
+) -> tuple[str, list[str]] | None:
+    """Whether each candidate was even allowed to be recommended.
+
+    **Stated rather than left to be read off the gate column.** A gate
+    failure can leave no mark on the utility at all — collisions are
+    excluded from U_S by contract (HĐ-6) so that they cannot be traded
+    against speed — so a reader comparing two utilities across that line
+    is comparing "scored lower" with "was never in the running", which
+    are different claims.
+
+    Text rather than a number, and therefore not part of the numeric
+    table it sits above: yes/no is a verdict, and a 1 or a 0 in a column
+    of utilities would be summed with them.
+    """
+    candidates = report.get("candidates") or []
+    if not candidates:
+        return None
+    return (
+        text("column.outcome.eligible", locale),
+        [
+            text("value.yes" if entry.get("recommendation_eligible") else "value.no", locale)
+            for entry in candidates
+        ],
+    )

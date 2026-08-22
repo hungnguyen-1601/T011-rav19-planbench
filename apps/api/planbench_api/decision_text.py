@@ -141,6 +141,241 @@ TEXT: Final[dict[str, dict[Locale, str]]] = {
     },
     "label.anchor_stability": {"en": "Anchor stability", "vi": "Độ ổn định của mốc chuẩn"},
     "label.robustness_margin": {"en": "Robustness margin", "vi": "Biên bền vững"},
+    # --- Detailed comparison ----------------------------------------------
+    "heading.comparison": {"en": "Detailed Comparison", "vi": "So sánh chi tiết"},
+    "column.compare.metric": {"en": "Metric", "vi": "Chỉ số"},
+    "column.compare.unit": {"en": "Unit", "vi": "Đơn vị"},
+    "column.compare.delta": {"en": "Delta", "vi": "Chênh lệch"},
+    "column.compare.delta_unit": {"en": "Delta unit", "vi": "Đơn vị chênh lệch"},
+    "column.compare.winner": {"en": "Winner", "vi": "Bên dẫn"},
+    "column.compare.limit": {"en": "Limit", "vi": "Ngưỡng khai báo"},
+    "column.compare.weight": {"en": "Weight", "vi": "Trọng số"},
+    "column.compare.note": {"en": "Note", "vi": "Ghi chú"},
+    "value.tie": {"en": "tie", "vi": "ngang nhau"},
+    "value.no_direction": {"en": "no direction", "vi": "không có chiều tốt"},
+    # --- The ten metrics, and why each is or is not scored ----------------
+    "metric.successRate": {"en": "Success rate", "vi": "Tỉ lệ thành công"},
+    "metric.collisions": {"en": "Collisions observed", "vi": "Số va chạm quan sát được"},
+    "metric.collisionBound": {
+        "en": "Collision probability, 95% upper bound",
+        "vi": "Xác suất va chạm, cận trên 95%",
+    },
+    "metric.noPathRate": {
+        "en": "Episodes with no route found",
+        "vi": "Số episode không tìm được lộ trình",
+    },
+    "metric.worstClearance": {
+        "en": "Worst clearance in the whole run",
+        "vi": "Khoảng hở tệ nhất trong cả lần chạy",
+    },
+    "metric.medianTravel": {"en": "Median episode duration", "vi": "Thời lượng episode trung vị"},
+    "metric.p99": {"en": "Planner latency, pooled p99", "vi": "Độ trễ bộ lập lộ trình, p99 gộp"},
+    "metric.memory": {
+        "en": "Memory estimate on the target board",
+        "vi": "Ước lượng bộ nhớ trên bo mạch đích",
+    },
+    "metric.distinctEpisodes": {"en": "Distinct episodes", "vi": "Số episode khác biệt"},
+    "metric.replans": {"en": "Replans across the run", "vi": "Số lần lập lại lộ trình cả lần chạy"},
+    "note.successRate": {
+        "en": (
+            "The share of episodes that reached the goal, however the rest failed. G3 judges "
+            "it against the deployment's declared floor, and U_R scores the margin over that "
+            "floor — which is why this row carries the reliability weight."
+        ),
+        "vi": (
+            "Tỉ lệ episode tới được đích, bất kể phần còn lại hỏng theo cách nào. G3 xét nó "
+            "với sàn mà điểm triển khai đã khai, và U_R chấm phần vượt sàn đó — vì vậy dòng "
+            "này mang trọng số độ tin cậy."
+        ),
+    },
+    "note.collisions": {
+        "en": (
+            "Taken from G2's own count. One collision ends the gate, so this is a "
+            "zero-or-eliminated column rather than a scale. No weight, and that is a "
+            "contract rather than an omission: HĐ-6 excludes collisions from U_S so they "
+            "cannot be traded against speed."
+        ),
+        "vi": (
+            "Lấy từ chính số đếm của G2. Một va chạm là kết thúc cổng, nên đây là cột "
+            "không-hoặc-bị-loại chứ không phải một thang đo. Không có trọng số, và đó là "
+            "hợp đồng chứ không phải thiếu sót: HĐ-6 loại va chạm khỏi U_S để chúng không "
+            "thể đem đổi lấy tốc độ."
+        ),
+    },
+    "note.collisionBound": {
+        "en": (
+            "What the clean record actually supports. Zero collisions in 10 distinct runs is "
+            "consistent with a 26% collision rate; the bound is 3/N, so a lower number here "
+            "means a larger evidence base, not a safer robot. A property of the sample, so "
+            "no weight."
+        ),
+        "vi": (
+            "Điều mà một hồ sơ sạch thực sự chống đỡ được. Không va chạm nào trong 10 lần "
+            "chạy khác biệt vẫn phù hợp với tỉ lệ va chạm 26%; cận trên là 3/N, nên số nhỏ "
+            "hơn ở đây nghĩa là nền bằng chứng lớn hơn, không phải robot an toàn hơn. Đây là "
+            "thuộc tính của cỡ mẫu, nên không có trọng số."
+        ),
+    },
+    "note.noPathRate": {
+        "en": (
+            "How often the global planner returned nothing at all. G1 keeps this apart from a "
+            "general failure rate because not finding a route and having a route not survive "
+            "traffic are fixed on different layers. Decided at the gate, so no weight."
+        ),
+        "vi": (
+            "Bộ lập lộ trình toàn cục trả về rỗng bao nhiêu lần. G1 tách nó khỏi tỉ lệ hỏng "
+            "chung vì không tìm ra lộ trình và có lộ trình nhưng không sống nổi qua giao "
+            "thông được sửa ở hai tầng khác nhau. Do cổng quyết, nên không có trọng số."
+        ),
+    },
+    "note.worstClearance": {
+        "en": (
+            "The closest the robot ever came to anything, across every episode. A run whose "
+            "typical clearance is comfortable can still hold one near miss, and an average "
+            "would hide it. No weight: U_S scores the *mean* clearance, which is a different "
+            "quantity from the worst one."
+        ),
+        "vi": (
+            "Khoảng cách gần nhất robot từng tới bất cứ vật gì, trên toàn bộ episode. Một lần "
+            "chạy có khoảng hở điển hình thoải mái vẫn có thể chứa một lần suýt va, và số "
+            "trung bình sẽ giấu nó đi. Không có trọng số: U_S chấm khoảng hở **trung bình**, "
+            "một đại lượng khác với khoảng hở tệ nhất."
+        ),
+    },
+    "note.medianTravel": {
+        "en": (
+            "How long a typical episode took. The median rather than the mean: one timeout "
+            "parked at the deployment's cap drags a mean by tens of seconds, and the number "
+            "then describes the cap rather than the stack. What U_E scores is time "
+            "efficiency, a different quantity, so this row carries no weight."
+        ),
+        "vi": (
+            "Một episode điển hình mất bao lâu. Trung vị chứ không phải trung bình: một lần "
+            "hết giờ nằm ở trần của điểm triển khai kéo số trung bình đi hàng chục giây, và "
+            "con số khi đó mô tả cái trần chứ không mô tả stack. Thứ U_E chấm là hiệu suất "
+            "thời gian, một đại lượng khác, nên dòng này không mang trọng số."
+        ),
+    },
+    "note.p99": {
+        "en": (
+            "The 99th percentile over every control step of the evaluation set, pooled. G4 "
+            "judges it against one control period and measures on the benchmark host — there "
+            "is no conversion factor to the target board. Weighted inside U_C."
+        ),
+        "vi": (
+            "Bách phân vị thứ 99 trên mọi bước điều khiển của tập đánh giá, gộp lại. G4 xét "
+            "nó với một chu kỳ điều khiển và đo trên máy chủ benchmark — không có hệ số quy "
+            "đổi sang bo mạch đích. Có trọng số bên trong U_C."
+        ),
+    },
+    "note.memory": {
+        "en": (
+            "G5's estimate from data-structure counts at the target implementation's byte "
+            "sizes, never the Python process's RSS. Under budget is an elimination test that "
+            "came out negative, not a certificate of fit. Weighted inside U_C."
+        ),
+        "vi": (
+            "Ước lượng của G5 từ số lượng cấu trúc dữ liệu theo kích thước byte của bản cài "
+            "đặt đích, không bao giờ là RSS của tiến trình Python. Dưới ngân sách là một phép "
+            "thử loại trừ cho kết quả âm tính, không phải giấy chứng nhận vừa vặn. Có trọng "
+            "số bên trong U_C."
+        ),
+    },
+    "note.distinctEpisodes": {
+        "en": (
+            "How many of the episodes were actually different from each other. A "
+            "deterministic stack on traffic that never crosses its route produces the same "
+            "episode once per seed, and a hundred copies bound a risk exactly as well as one "
+            "does. The evidence base, not an achievement, so no weight."
+        ),
+        "vi": (
+            "Bao nhiêu episode thực sự khác nhau. Một stack tất định trên dòng giao thông "
+            "không bao giờ cắt qua lộ trình của nó sinh ra cùng một episode mỗi seed, và một "
+            "trăm bản sao chặn rủi ro đúng bằng một bản. Đây là nền bằng chứng, không phải "
+            "thành tích, nên không có trọng số."
+        ),
+    },
+    "note.replans": {
+        "en": (
+            "Evidence, not a score — which is why no candidate is marked ahead on this row. "
+            "Replanning already costs travel time and latency, and both are charged; there is "
+            "no separate replan budget to come in under."
+        ),
+        "vi": (
+            "Bằng chứng, không phải điểm số — vì vậy không ứng viên nào được đánh dấu dẫn "
+            "trước ở dòng này. Việc lập lại lộ trình đã tốn thời gian di chuyển và độ trễ, cả "
+            "hai đều đã bị tính; không có ngân sách lập lại lộ trình riêng để mà đạt dưới."
+        ),
+    },
+    # --- Objective breakdown ----------------------------------------------
+    "heading.objectives": {"en": "Objective Breakdown", "vi": "Phân rã theo mục tiêu"},
+    "column.objective.name": {"en": "Objective", "vi": "Mục tiêu"},
+    "column.objective.contribution": {"en": "Contribution", "vi": "Đóng góp"},
+    "objective.cpu_time": {"en": "CPU time per mission", "vi": "Thời gian CPU mỗi nhiệm vụ"},
+    "objective.engineering_cost": {"en": "Engineering cost", "vi": "Chi phí kỹ thuật"},
+    "note.component_measured": {
+        "en": "Its input is on the comparison sheet.",
+        "vi": "Đầu vào của nó nằm trên sheet so sánh.",
+    },
+    "note.component_unmeasured": {
+        "en": (
+            "Weighted, but its input is not recorded in the report at any level — so this "
+            "share of U_C cannot be traced back to a measurement from this file."
+        ),
+        "vi": (
+            "Có trọng số, nhưng đầu vào của nó không được ghi trong report ở bất kỳ cấp nào "
+            "— nên phần này của U_C không thể truy ngược về một số đo nào từ file này."
+        ),
+    },
+    "note.total_is_the_sum": {
+        "en": (
+            "The sum of the Contribution column above. Add it up: it is the card's own "
+            "utility, and a total that does not match means one of the weights, one of the "
+            "objectives, or the mapping between them is wrong."
+        ),
+        "vi": (
+            "Tổng của cột Đóng góp phía trên. Hãy cộng lại: đó chính là điểm tổng của thẻ, "
+            "và một tổng không khớp nghĩa là một trong các trọng số, một trong các mục tiêu, "
+            "hoặc ánh xạ giữa chúng đang sai."
+        ),
+    },
+    "caveat.weights_perturbed": {
+        "en": (
+            "This run was scored under weights perturbed from {profile} for the HĐ-11.5 "
+            "stability sweep. The replacements are not recorded, so no weight is printed — the "
+            "named profile's numbers would attribute the card to weights it was not scored "
+            "under."
+        ),
+        "vi": (
+            "Lần chạy này được chấm dưới bộ trọng số đã nhiễu đi từ {profile} cho phép quét "
+            "ổn định HĐ-11.5. Bộ thay thế không được ghi lại, nên không trọng số nào được in "
+            "ra — in số của hồ sơ được nêu tên sẽ gán cho thẻ một bộ trọng số mà nó không "
+            "được chấm dưới đó."
+        ),
+    },
+    "caveat.weights_unknown_profile": {
+        "en": (
+            "The run names preference profile {profile}, which the weight table no longer "
+            "carries. The weights are therefore not printed rather than guessed."
+        ),
+        "vi": (
+            "Lần chạy nêu tên hồ sơ ưu tiên {profile}, thứ mà bảng trọng số không còn giữ. "
+            "Vì vậy các trọng số không được in ra thay vì đoán."
+        ),
+    },
+    "caveat.weights_table_unavailable": {
+        "en": (
+            "The weight table could not be loaded in this deployment, so the weights for "
+            "profile {profile} are unavailable here. This is a property of the build, not of "
+            "the run — the card was scored under real weights and this file cannot reach them."
+        ),
+        "vi": (
+            "Bảng trọng số không nạp được trong bản triển khai này, nên trọng số của hồ sơ "
+            "{profile} không lấy được ở đây. Đây là thuộc tính của bản dựng chứ không phải "
+            "của lần chạy — thẻ đã được chấm dưới trọng số thật và file này không với tới được."
+        ),
+    },
+    "heading.weights": {"en": "Weights", "vi": "Trọng số"},
     # --- Summary ----------------------------------------------------------
     "label.candidate_n": {"en": "Candidate {index}", "vi": "Ứng viên {index}"},
     "label.winner": {"en": "Winner", "vi": "Bên thắng"},

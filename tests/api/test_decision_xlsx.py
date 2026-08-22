@@ -31,7 +31,25 @@ MIRRORS_THE_MARKDOWN = (
     "Provenance",
     "Sample",
     "Gates",
-    "Outcome by candidate",
+    "Decision Card",
+    "Episodes",
+    "Human record",
+)
+
+#: Every sheet, in order. `Outcome by candidate` is deliberately absent:
+#: `Detailed Comparison` is the same ten figures transposed, with the
+#: delta, the winner and the deployment's limit beside them, and
+#: `Objective Breakdown` took the five utility columns. Keeping the old
+#: one would print one table twice in one file. The Markdown keeps its
+#: wide version — a document is read top to bottom and a transposed
+#: table would put the candidate names in a header nobody scrolls back to.
+ALL_SHEETS = (
+    "Summary",
+    "Provenance",
+    "Sample",
+    "Gates",
+    "Detailed Comparison",
+    "Objective Breakdown",
     "Decision Card",
     "Episodes",
     "Human record",
@@ -237,7 +255,7 @@ class TestWhatASpreadsheetGetsWrong:
 class TestTheFileItself:
     def test_it_is_a_workbook_a_reader_can_open(self) -> None:
         workbook = book(Run(report(), CARD))
-        assert workbook.sheetnames == ["Summary", *MIRRORS_THE_MARKDOWN]
+        assert workbook.sheetnames == list(ALL_SHEETS)
 
     def test_the_summary_comes_first(self) -> None:
         """A reader opening the file to check one number should not have
@@ -394,15 +412,21 @@ class TestWhatMakesItEvaluable:
         assert "timeout" in found  # not a bare "failed"
         assert "0.113 m" in found
 
-    def test_the_outcome_table_carries_what_the_page_compares_on(self) -> None:
+    def test_the_comparison_sheet_carries_what_the_page_compares_on(self) -> None:
         """Six of the ten metrics on the comparison grid never left the
-        screen before."""
-        found = cells(book(Run(report(), CARD))["Outcome by candidate"])
-        for column in (
-            "Utility /100", "Collisions", "Collision bound 95%", "No route found",
-            "Worst clearance", "Median episode", "Memory estimate",
+        screen before. Re-aimed at `Detailed Comparison`, which replaced
+        the per-candidate table: the same figures, transposed, with the
+        delta and the deployment's own limit beside them."""
+        found = cells(book(Run(report(), CARD))["Detailed Comparison"])
+        for row in (
+            "Collisions observed",
+            "Collision probability, 95% upper bound",
+            "Episodes with no route found",
+            "Worst clearance in the whole run",
+            "Median episode duration",
+            "Memory estimate on the target board",
         ):
-            assert column in found, column
+            assert row in found, row
 
     def test_eligibility_is_stated_rather_than_inferred(self) -> None:
         """A gate failure can leave no mark on the utility — collisions
@@ -410,7 +434,7 @@ class TestWhatMakesItEvaluable:
         never in the running" cannot be told apart from the mark."""
         body = report()
         body["candidates"][0]["recommendation_eligible"] = False
-        found = cells(book(Run(body, CARD))["Outcome by candidate"])
+        found = cells(book(Run(body, CARD))["Objective Breakdown"])
         assert "Eligible to recommend" in found
         assert "no" in found
         assert any("cannot be traded against speed" in value for value in found)

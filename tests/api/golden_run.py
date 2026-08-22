@@ -95,14 +95,19 @@ CARD: dict[str, Any] = {
     "status": "CLEAR_RECOMMENDATION",
     "contracts_version": "6.9.0",
     "recommendation_scope": "warehouse_a_v2",
-    "decision_utility": 0.8774,
+    # **The arithmetic is real.** 0.30·1.0 + 0.10·0.912 + 0.25·0.568 +
+    # 0.35·0.958 under `kho_ban_dem` — the profile the manifest below
+    # names. A fixture whose utility did not equal its own weighted sum
+    # would make the one assertion worth most here (the Contribution
+    # column adding up to the card) unwritable.
+    "decision_utility": 0.8685,
     "pareto_label": "DOMINANT",
     "decision_mode": "technical",
     "objectives": {"U_R": 1.0, "U_S": 0.912, "U_E": 0.568, "U_C": 0.958},
     "evidence": {
-        "delta_u_mean": 0.081,
-        "delta_u_vs_second": 0.081,
-        "ci95": [0.032, 0.129],
+        "delta_u_mean": 0.22735,
+        "delta_u_vs_second": 0.22735,
+        "ci95": [0.181, 0.274],
         "effect_size": 0.74,
         "n_episodes": 30,
         "weight_stability_margin": 1.0,
@@ -144,7 +149,7 @@ def report() -> dict[str, Any]:
                 clearance=0.494,
                 median_travel=22.8,
                 replans=30,
-                utility=0.8774,
+                utility=0.8685,
                 objectives={"U_R": 1.0, "U_S": 0.912, "U_E": 0.568, "U_C": 0.958},
             ),
             _candidate(
@@ -157,7 +162,7 @@ def report() -> dict[str, Any]:
                 clearance=0.331,
                 median_travel=25.4,
                 replans=44,
-                utility=0.7964,
+                utility=0.64115,
                 objectives={"U_R": 0.34, "U_S": 0.771, "U_E": 0.612, "U_C": 0.883},
             ),
         ],

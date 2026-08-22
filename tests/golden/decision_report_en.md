@@ -38,8 +38,8 @@ speed — and the mark alone therefore does not compare across that line.
 
 | Candidate | Config | Utility /100 | U_R | U_S | U_E | U_C | Success | Collisions | Collision bound 95% | No route found | Worst clearance | Median episode | p99 latency | Memory estimate | Distinct episodes | Replans | Eligible to recommend |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| astar+dwa | dwa_coarse | 87.7 | 1 | 0.912 | 0.568 | 0.958 | 100.0% | 0 | 10.0% | 0.0% | 0.494 m | 22.8 s | 7.35 ms | 412 MB | 30 | 30 | yes |
-| rrtstar+dwa | dwa_balanced | 79.6 | 0.34 | 0.771 | 0.612 | 0.883 | 96.7% | 0 | 10.0% | 0.0% | 0.331 m | 25.4 s | 16.1 ms | 688 MB | 30 | 44 | yes |
+| astar+dwa | dwa_coarse | 86.9 | 1 | 0.912 | 0.568 | 0.958 | 100.0% | 0 | 10.0% | 0.0% | 0.494 m | 22.8 s | 7.35 ms | 412 MB | 30 | 30 | yes |
+| rrtstar+dwa | dwa_balanced | 64.1 | 0.34 | 0.771 | 0.612 | 0.883 | 96.7% | 0 | 10.0% | 0.0% | 0.331 m | 25.4 s | 16.1 ms | 688 MB | 30 | 44 | yes |
 
 ## Decision Card
 
@@ -57,12 +57,12 @@ speed — and the mark alone therefore does not compare across that line.
 
 | The margin | |
 | --- | --- |
-| Decision utility | 0.877 |
+| Decision utility | 0.869 |
 | Pareto label | DOMINANT |
 | Decision mode | technical |
-| ΔU vs the runner-up | 0.081 |
-| ΔU mean | 0.081 |
-| ΔU 95% interval | [0.032, 0.129] |
+| ΔU vs the runner-up | 0.227 |
+| ΔU mean | 0.227 |
+| ΔU 95% interval | [0.181, 0.274] |
 | Effect size | 0.74 |
 | Episodes compared | 30 |
 | Objective U_R | 1 |

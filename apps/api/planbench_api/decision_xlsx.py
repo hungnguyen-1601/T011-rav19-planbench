@@ -31,12 +31,17 @@ from io import BytesIO
 from typing import Any
 
 from planbench_api.decision_export import (
+    COUNT,
     DEFAULT_LOCALE,
+    UTILITY,
+    WEIGHT,
     Locale,
     Quantity,
     as_text,
     card_rows,
+    comparison_rows,
     decision_evidence_rows,
+    eligibility_row,
     environment_warning,
     episode_columns,
     episode_rows,
@@ -45,9 +50,9 @@ from planbench_api.decision_export import (
     human_rows,
     mixed_observation,
     no_card_reason,
-    outcome_columns,
-    outcome_rows,
+    objective_rows,
     provenance_rows,
+    resolve_weights,
     retired_candidates,
     sample_rows,
     scope_of,
@@ -145,7 +150,7 @@ def _sheet_name(title: str) -> str:
 def render_decision_xlsx(run: Any, locale: Locale = DEFAULT_LOCALE) -> bytes:
     """The whole run as a workbook, one sheet per section."""
     from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font
+    from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
 
     report: dict[str, Any] = run.report or {}
@@ -154,6 +159,15 @@ def render_decision_xlsx(run: Any, locale: Locale = DEFAULT_LOCALE) -> bytes:
 
     bold = Font(bold=True)
     wrap = Alignment(wrap_text=True, vertical="top")
+    # Painted from the winner this module already computed, not from a
+    # threshold rule Excel would evaluate on its own. A second rule beside
+    # the `Winner` column could disagree with it, and a reader would have
+    # two verdicts on one row. `breach` is the exception and is genuinely
+    # a threshold: the deployment declared the number, so it is a fact
+    # about the value rather than about the comparison.
+    ahead_fill = PatternFill("solid", fgColor="DCF3E3")
+    behind_fill = PatternFill("solid", fgColor="FBE3E4")
+    breach_fill = PatternFill("solid", fgColor="FDEBD0")
 
     def sheet(key: str):
         """A sheet named from the text table.
@@ -294,19 +308,172 @@ def render_decision_xlsx(run: Any, locale: Locale = DEFAULT_LOCALE) -> bytes:
         for offset, width in enumerate(widths):
             target.column_dimensions[get_column_letter(offset + 1)].width = width
 
-    outcomes = outcome_rows(report, locale)
-    if outcomes:
-        sheet_outcomes = sheet("heading.outcome")
-        write_table(
-            sheet_outcomes, outcome_columns(locale), outcomes,
-            (22, 16) + (11,) * 5 + (12, 11, 18, 15, 15, 14, 13, 15, 16, 12, 20),
-        )
+    # --- Detailed comparison ----------------------------------------------
+    #
+    # **This replaced `Outcome by candidate`, it does not sit beside it.**
+    # That sheet was the same ten figures laid out one candidate per row,
+    # and every column it had is here or on `Objective Breakdown`. Keeping
+    # both would print one table twice in one file and leave a reader
+    # deciding which to trust.
+    #
+    # Transposed because a spreadsheet reader compares *down* a column: a
+    # metric per row is what makes room for the delta, the winner and the
+    # deployment's own limit beside the two figures being compared.
+    weights = resolve_weights(run, report)
+    comparison = comparison_rows(report, locale, weights)
+    if comparison:
+        labels = [
+            as_text(entry.get("stack_label"), locale) for entry in report.get("candidates") or []
+        ]
+        # The stacks by name. "Algorithm A" makes a reader who opened the
+        # file a week later go and look up which one A was.
+        header = [
+            text("column.compare.metric", locale),
+            text("column.compare.unit", locale),
+            *labels,
+        ]
+        has_delta = any(row.delta is not None for row in comparison)
+        if has_delta:
+            header += [
+                text("column.compare.delta", locale),
+                text("column.compare.delta_unit", locale),
+            ]
+        header += [
+            text("column.compare.winner", locale),
+            text("column.compare.limit", locale),
+            text("column.compare.weight", locale),
+            text("column.compare.note", locale),
+        ]
+        compare = sheet("heading.comparison")
+        for column, label in enumerate(header, start=1):
+            compare.cell(row=1, column=column, value=label).font = bold
+        compare.freeze_panes = "A2"
+
+        for index, row in enumerate(comparison, start=2):
+            compare.cell(row=index, column=1, value=row.label)
+            compare.cell(row=index, column=2, value=row.unit)
+            column = 3
+            for position, value in enumerate(row.values):
+                cell = write_value(compare, index, column, value)
+                # Only a candidate that really trails is marked. A cell
+                # nobody measured did not lose the comparison — there was
+                # no comparison — and a row where the two are level has no
+                # loser either.
+                if not value.missing and row.ahead:
+                    cell.fill = ahead_fill if position in row.ahead else behind_fill
+                if position in row.breaches:
+                    cell.fill = breach_fill
+                column += 1
+            if has_delta:
+                write_value(compare, index, column, row.delta or Quantity(None, COUNT))
+                compare.cell(row=index, column=column + 1, value=row.delta_unit)
+                column += 2
+            compare.cell(row=index, column=column, value=row.winner)
+            write_value(compare, index, column + 1, row.limit or Quantity(None, row.values[0].unit))
+            write_value(compare, index, column + 2, row.weight or Quantity(None, WEIGHT))
+            note = compare.cell(row=index, column=column + 3, value=row.note)
+            note.alignment = wrap
+            column += 4
+
+        widths = [34, 8] + [16] * len(labels)
+        if has_delta:
+            widths += [12, 12]
+        widths += [24, 14, 10, 80]
+        for offset, width in enumerate(widths):
+            compare.column_dimensions[get_column_letter(offset + 1)].width = width
         write_caveat(
-            sheet_outcomes,
+            compare,
+            text("heading.precision", locale),
+            text("prose.summary_precision", locale),
+            len(comparison) + 3,
+        )
+
+    # --- Objective breakdown ------------------------------------------------
+    #
+    # The only sheet where the weight column means anything in full.
+    # Weights attach to objectives, not to the metrics a reader compares
+    # on, which is why seven of the ten rows above carry none.
+    objectives = objective_rows(run, report, locale, weights)
+    if objectives:
+        labels = [
+            as_text(entry.get("stack_label"), locale) for entry in report.get("candidates") or []
+        ]
+        has_delta = any(row.delta is not None for row in objectives)
+        header = [
+            text("column.objective.name", locale),
+            text("column.compare.weight", locale),
+            *labels,
+        ]
+        if has_delta:
+            header.append(text("column.compare.delta", locale))
+        header += [
+            f"{text('column.objective.contribution', locale)} — {label}" for label in labels
+        ]
+        header.append(text("column.compare.note", locale))
+
+        axes = sheet("heading.objectives")
+        for column, label in enumerate(header, start=1):
+            axes.cell(row=1, column=column, value=label).font = bold
+        axes.freeze_panes = "A2"
+
+        # Eligibility leads, because it is the question the rest of the
+        # sheet presumes an answer to. Text, not a number: yes/no is a
+        # verdict, and a 1 or a 0 in a column of utilities would be
+        # summed with them.
+        eligible = eligibility_row(report, locale)
+        offset = 0
+        if eligible:
+            label, verdicts = eligible
+            axes.cell(row=2, column=1, value=label).font = bold
+            for position, verdict in enumerate(verdicts):
+                axes.cell(row=2, column=3 + position, value=verdict)
+            offset = 1
+
+        for index, row in enumerate(objectives, start=2 + offset):
+            name = axes.cell(row=index, column=1, value=row.label)
+            axes.cell(row=index, column=2).font = bold
+            write_value(axes, index, 2, row.weight or Quantity(None, WEIGHT))
+            column = 3
+            for value in row.values:
+                write_value(axes, index, column, value)
+                column += 1
+            if has_delta:
+                write_value(axes, index, column, row.delta or Quantity(None, UTILITY))
+                column += 1
+            for value in row.contributions:
+                cell = write_value(axes, index, column, value)
+                if row.total:
+                    cell.font = bold
+                column += 1
+            if row.note:
+                note = axes.cell(row=index, column=column, value=row.note)
+                note.alignment = wrap
+            if row.total:
+                name.font = bold
+
+        widths = [30, 10] + [14] * len(labels)
+        if has_delta:
+            widths.append(12)
+        widths += [20] * len(labels) + [80]
+        for offset, width in enumerate(widths):
+            axes.column_dimensions[get_column_letter(offset + 1)].width = width
+
+        # Why a weight is missing, when one is. Three different absences
+        # and only one of them is "this run had none".
+        at = len(objectives) + offset + 3
+        at = write_caveat(
+            axes,
             text("column.outcome.eligible", locale),
             text("prose.eligible_sheet", locale),
-            len(outcomes) + 3,
+            at,
         )
+        if weights.reason:
+            write_caveat(
+                axes,
+                text("heading.weights", locale),
+                text(f"caveat.weights_{weights.reason}", locale, profile=weights.profile),
+                at + 1,
+            )
 
     # --- The recommendation, or why there is none -------------------------
     decision = sheet("heading.card")
