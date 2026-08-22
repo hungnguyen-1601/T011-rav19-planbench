@@ -159,14 +159,30 @@ describe("where the conclusion and the exports sit", () => {
     expect(conclusion).toBeGreaterThan(evidence);
   });
 
-  it("puts the export buttons after the marks", () => {
-    // That is the point at which a reader knows whether this run is
-    // worth sending on. They used to sit in the page header, before
-    // anything had been read.
-    const conclusion = DETAIL.indexOf("<ConclusionPanel run={run} />");
+  it("puts the export buttons beside the conclusion, in the head", () => {
+    // **This asserted the opposite, and the argument for it was sound
+    // at the time.** The buttons had been in the head, and were moved
+    // below the marks so that a reader could not be invited to send a
+    // run on before reading what it concluded.
+    //
+    // The reorder dissolved that: what the run concluded is now the
+    // first panel on the page, directly under this head. "After the
+    // marks" and "in the head" used to be opposite ends of six screens
+    // and are now one glance apart, while the old position had costs
+    // the new one does not — the buttons carried no heading of their
+    // own and floated between two panels, so a reader who arrived to
+    // export something scrolled past the whole argument to find them.
+    const summary = DETAIL.indexOf("<DecisionSummary run={run} />");
     const exportButtons = DETAIL.indexOf("<ExportReport run={run} />");
-    expect(exportButtons).toBeGreaterThan(conclusion);
-    expect(DETAIL.indexOf("decision-detail-badges")).toBeLessThan(conclusion);
+    expect(exportButtons).toBeGreaterThan(-1);
+    expect(exportButtons).toBeLessThan(summary);
+    // In the head's own badge row, not loose above the page.
+    const badges = DETAIL.indexOf("decision-detail-badges");
+    expect(badges).toBeGreaterThan(-1);
+    expect(badges).toBeLessThan(exportButtons);
+    // And still only one of them: two export controls on one page is
+    // two ways to do one thing.
+    expect([...DETAIL.matchAll(/<ExportReport /g)]).toHaveLength(1);
   });
 
   it("never takes the headline from the top of the ranking", () => {

@@ -102,6 +102,9 @@ export interface TraceViewerProps {
    *  `path_efficiency` is then 1.00 by construction rather than by
    *  merit, and the tile has to say so. */
   isReferenceRuler?: boolean;
+  /** The longer of the pair's two episodes, so both latency charts end
+   *  their time axis at the same second. */
+  pairDurationS?: number;
 }
 
 export function TraceViewer({
@@ -115,6 +118,7 @@ export function TraceViewer({
   forceFinal = false,
   onSeek,
   isReferenceRuler = false,
+  pairDurationS,
 }: TraceViewerProps) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -486,6 +490,7 @@ export function TraceViewer({
             // `_percentile(...) / (T_cycle * 1000)`, not a second
             // percentile — one implementation, two units.
             p99Ms={live ? live.compute_budget * trace.control_period_s * 1000 : null}
+            tFloorS={pairDurationS}
             onSeek={onSeek}
           />
         </>

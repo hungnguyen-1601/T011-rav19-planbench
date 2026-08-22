@@ -346,7 +346,10 @@ describe("the planner-latency chart", () => {
 
   it("fills in as the replay plays instead of showing the finished shape", () => {
     expect(VIEWER).toContain("step={visibleStep}");
-    expect(CHART).toContain("latencyPlot(times, latencies, controlPeriodS, step)");
+    // `tFloorS` last: the pair's longer episode, so two charts drawn
+    // side by side end their time axis at the same second instead of
+    // giving a 22.0 s run and a 38.8 s run the same width.
+    expect(CHART).toContain("latencyPlot(times, latencies, controlPeriodS, step, tFloorS)");
   });
 
   it("tracks the scrubber rather than standing still", () => {
