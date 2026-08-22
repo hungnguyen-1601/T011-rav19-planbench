@@ -3650,6 +3650,21 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
    once carried `!important`, to beat an inline style. Neither is needed
    now: a table sizes its own columns and there is no inline style to
    outrank. */
+/* The count above the table. Quiet: it restates the tinting rather
+   than adding a finding, so it must not outweigh the figures it is
+   summarising. */
+.comparison-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: var(--fs-body);
+}
+.comparison-summary svg { flex: none; margin-top: 2px; }
+
 .comparison-scroll { overflow-x: auto; }
 .comparison-table {
   width: 100%;

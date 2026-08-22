@@ -1531,6 +1531,8 @@
   "decisions.compare.note": "The numbers the sweep concluded on, read across each row. Every value the gates already produced is taken from the gate that decided on it, so nothing here can disagree with a verdict above. Decision utility is not a row: the card carries it for the recommended candidate only, and a mean taken here would be a second scoring path.",
   "decisions.compare.metric": "Metric",
   "decisions.compare.limit": "limit {limit}",
+  "decisions.compare.summary": "{a} leads on {aWins} of {total} scored metrics, {b} on {bWins}",
+  "decisions.compare.summaryTies": "{ties} tied",
   "decisions.compare.successRate": "Success rate",
   "decisions.compare.collisions": "Collisions observed",
   "decisions.compare.collisionBound": "Collision probability, 95% upper bound",

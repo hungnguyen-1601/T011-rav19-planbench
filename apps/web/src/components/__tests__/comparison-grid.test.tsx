@@ -348,3 +348,85 @@ describe("a caveat sits with the number it qualifies", () => {
     expect(html).not.toContain("comparison-host-warning");
   });
 });
+
+describe("the sentence above the table", () => {
+  it("counts the marks the table actually made", () => {
+    /* Real run 20750b0d9dbe: astar+dwa leads success rate and latency,
+       rrtstar+dwa leads nothing, and the rows both sides recorded
+       identically are ties. The sentence must not disagree with the
+       cells directly under it. */
+    const html = renderToStaticMarkup(
+      <ComparisonGrid
+        run={run}
+        candidates={[
+          candidate({ candidate_id: "a", stack_label: "astar+dwa", success_rate: 1, pooled_p99_latency_ms: 7.85 }),
+          candidate({ candidate_id: "b", stack_label: "rrtstar+dwa", success_rate: 0.633, pooled_p99_latency_ms: 17.2 }),
+        ]}
+      />,
+    );
+    const sentence = html.slice(
+      html.indexOf('class="comparison-summary"'),
+      html.indexOf("</p>"),
+    );
+    const tinted = (html.match(/is-best/g) ?? []).length;
+    const claimed = [...sentence.matchAll(/leads on (\d+)|on (\d+)$|, \w[\w+]* on (\d+)/g)];
+    expect(sentence).toContain("astar+dwa leads on");
+    expect(sentence).toContain("rrtstar+dwa on");
+    /* The two win counts in the sentence sum to the tinted cells. */
+    const numbers = [...sentence.matchAll(/on (\d+)/g)].map((m) => Number(m[1]));
+    expect(numbers.length).toBeGreaterThanOrEqual(2);
+    expect(numbers[0] + numbers[1]).toBe(tinted);
+    expect(claimed.length).toBeGreaterThan(0);
+  });
+
+  it("drops the tie clause when nothing tied", () => {
+    /* Rather than making "0 tied" read in two languages. */
+    const html = renderToStaticMarkup(
+      <ComparisonGrid
+        run={run}
+        candidates={[
+          candidate({ candidate_id: "a", gates: {}, episodes: undefined } as Partial<RunCandidate>),
+          candidate({ candidate_id: "b", gates: {}, episodes: undefined, success_rate: 0.5 } as Partial<RunCandidate>),
+        ] as RunCandidate[]}
+      />,
+    );
+    expect(html).not.toContain("0 tied");
+  });
+
+  it("writes no sentence for a field it cannot describe", () => {
+    /* One candidate, and three: "A leads on four, B on two" has no room
+       for C. */
+    for (const field of [
+      [candidate({ candidate_id: "a" })],
+      [candidate({ candidate_id: "a" }), candidate({ candidate_id: "b" }), candidate({ candidate_id: "c" })],
+    ]) {
+      const html = renderToStaticMarkup(<ComparisonGrid run={run} candidates={field} />);
+      expect(html, `${field.length} candidates`).not.toContain("comparison-summary");
+    }
+  });
+});
+
+describe("when both candidates name to the same words", () => {
+  it("falls back to the letters", () => {
+    /* Neither the stack nor the config differs — a run measuring a
+       configuration against itself, which is a real thing to check
+       (run-to-run variance). The sentence would otherwise read
+       "astar+dwa leads on 2, astar+dwa on 0". */
+    const html = renderToStaticMarkup(
+      <ComparisonGrid
+        run={run}
+        candidates={[
+          candidate({ candidate_id: "a", success_rate: 1 }),
+          candidate({ candidate_id: "b", success_rate: 0.9 }),
+        ]}
+      />,
+    );
+    const sentence = html.slice(
+      html.indexOf('class="comparison-summary"'),
+      html.indexOf("</p>"),
+    );
+    expect(sentence).toContain("Candidate A leads on");
+    expect(sentence).toContain("Candidate B on");
+    expect(sentence).not.toContain("astar+dwa leads on");
+  });
+});

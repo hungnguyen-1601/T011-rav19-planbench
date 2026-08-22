@@ -1531,6 +1531,8 @@
   "decisions.compare.note": "Các con số sweep chốt lại, đọc ngang từng hàng. Giá trị nào gate đã tính thì lấy thẳng từ chính gate đã phán quyết dựa trên nó, nên không thể mâu thuẫn với verdict phía trên. Không có hàng decision utility: card chỉ mang nó cho candidate được khuyến nghị, và lấy trung bình ở đây sẽ là một đường tính điểm thứ hai.",
   "decisions.compare.metric": "Chỉ số",
   "decisions.compare.limit": "ngưỡng {limit}",
+  "decisions.compare.summary": "{a} dẫn {aWins} trên {total} chỉ số có hướng, {b} dẫn {bWins}",
+  "decisions.compare.summaryTies": "{ties} chỉ số hoà",
   "decisions.compare.successRate": "Tỉ lệ thành công",
   "decisions.compare.collisions": "Số va chạm quan sát được",
   "decisions.compare.collisionBound": "Xác suất va chạm, cận trên 95%",

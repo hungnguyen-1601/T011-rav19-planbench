@@ -20,8 +20,9 @@
 import { Hint } from "@/components/Hint";
 import { Icon } from "@/components/Icon";
 import { type MetricRow, comparisonRows, leaders } from "@/lib/candidateMetrics";
-import { candidateNames, headingField } from "@/lib/candidateHeading";
+import { type HeadingField, candidateNames, headingField } from "@/lib/candidateHeading";
 import { collisionBoundCell } from "@/lib/collisionBound";
+import { comparisonSummary } from "@/lib/comparisonSummary";
 import { gateVerdictBadge } from "@/lib/gateSummary";
 import type { DecisionRun, RunCandidate } from "@/lib/decisions";
 import { useTranslation } from "@/lib/i18n";
@@ -58,10 +59,40 @@ export function ComparisonGrid({
     (candidate) => !candidate.local_observation_class || candidate.stopped_early,
   );
 
+  // A count of what the tinting already says. Ten rows carry a pattern
+  // nobody reads off ten rows; every number comes from the same
+  // `leaders()` the cells do, so the sentence cannot disagree with them.
+  const summary = comparisonSummary(rows, candidates.length);
+
   return (
-    // The table keeps a minimum width and scrolls inside this wrapper.
-    // Letting it shrink instead pushes the whole page into a horizontal
-    // scroll, which moves the navigation as well as the numbers.
+    <>
+      {summary ? (
+        <p className="comparison-summary">
+          <Icon name="info" size={14} />
+          <span>
+            {t("decisions.compare.summary", {
+              // Letters when the two name to the same thing. That
+              // happens when neither the stack nor the config differs —
+              // a run comparing a configuration against itself, which is
+              // a real thing to measure (run-to-run variance) and would
+              // otherwise produce "X leads on 2, X on 0".
+              ...namesFor(candidates, heading),
+              aWins: String(summary.wins[0]),
+              bWins: String(summary.wins[1]),
+              total: String(summary.total),
+            })}
+            {/* Dropped when nothing tied, so neither language has to
+                make "0 are ties" read. */}
+            {summary.ties > 0
+              ? ` · ${t("decisions.compare.summaryTies", { ties: String(summary.ties) })}`
+              : ""}
+          </span>
+        </p>
+      ) : null}
+
+    {/* The table keeps a minimum width and scrolls inside this wrapper.
+        Letting it shrink instead pushes the whole page into a horizontal
+        scroll, which moves the navigation as well as the numbers. */}
     <div className="comparison-scroll">
       <table className="comparison-table">
         <thead>
@@ -168,7 +199,24 @@ export function ComparisonGrid({
         </tbody>
       </table>
     </div>
+    </>
   );
+}
+
+/** The two names the summary sentence uses.
+ *
+ * Normally the field that differs — the same words the column heads
+ * carry, so the sentence and the table agree. When both candidates name
+ * to the same string the sentence would read "X leads on 2, X on 0", so
+ * it falls back to the letters, which are the only thing that still
+ * tells them apart.
+ */
+function namesFor(candidates: RunCandidate[], heading: HeadingField): { a: string; b: string } {
+  const a = candidateNames(candidates[0], heading).heading;
+  const b = candidateNames(candidates[1], heading).heading;
+  return a === b
+    ? { a: `Candidate ${sideLabel(0)}`, b: `Candidate ${sideLabel(1)}` }
+    : { a, b };
 }
 
 function MetricLine({
