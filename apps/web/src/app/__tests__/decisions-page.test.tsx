@@ -413,6 +413,20 @@ describe("the export controls", () => {
     expect(save).toContain("setSaved(null)");
   });
 
+  it("asks for the document in the language the reader chose in the app", () => {
+    /* Not the browser's `Accept-Language`, which is a preference the
+       reader may already have switched away from inside the app. The
+       caveats are the part of these files that does the most work, and
+       one in a language the reader does not use does not travel. */
+    expect(DETAIL).toContain("const { t, locale } = useTranslation()");
+    expect(DETAIL).toContain("void download(runId, locale)");
+    const REPORTS = readFileSync(join(process.cwd(), "src", "lib", "reports.ts"), "utf8");
+    expect(REPORTS).toContain("?locale=${encodeURIComponent(locale)}");
+    /* English by default, so a caller written before the parameter
+       existed keeps receiving exactly the document it received. */
+    expect(REPORTS).toContain("locale: Locale = DEFAULT_LOCALE");
+  });
+
   it("styles the saved line off the palette rather than a literal colour", () => {
     expect(CSS).toContain(".decision-export__saved");
     const rule = CSS.slice(

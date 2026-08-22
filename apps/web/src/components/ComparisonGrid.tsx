@@ -19,7 +19,7 @@
 
 import { Hint } from "@/components/Hint";
 import { Icon } from "@/components/Icon";
-import { type MetricRow, comparisonRows, leaders } from "@/lib/candidateMetrics";
+import { type MetricRow, comparisonRows, standings } from "@/lib/candidateMetrics";
 import { type HeadingField, candidateNames, headingField } from "@/lib/candidateHeading";
 import { collisionBoundCell } from "@/lib/collisionBound";
 import { comparisonSummary } from "@/lib/comparisonSummary";
@@ -107,6 +107,13 @@ export function ComparisonGrid({
                   key={candidate.candidate_id}
                   className={`comparison-cell comparison-grid-head candidate-${sideOf(index)}`}
                 >
+                  {/* The layout lives on this wrapper, not on the `<th>`.
+                      A table cell given `display: grid` stops being a
+                      table cell, and the browser then wraps every
+                      consecutive non-cell child of the row into one
+                      anonymous cell — which puts both candidates in a
+                      single column, stacked. */}
+                  <div className="head-inner">
                   <div>
                     <span className="candidate-letter">Candidate {sideLabel(index)}</span>
                     {/* Whichever of stack or config actually differs on
@@ -130,6 +137,7 @@ export function ComparisonGrid({
                       {t(verdict.key, { gates: verdict.gates })}
                     </span>
                   </span>
+                  </div>
                 </th>
               );
             })}
@@ -148,8 +156,9 @@ export function ComparisonGrid({
               {candidates.map((candidate, index) => (
                 <td
                   key={candidate.candidate_id}
-                  className={`comparison-cell comparison-flags candidate-${sideOf(index)}`}
+                  className={`comparison-cell candidate-${sideOf(index)}`}
                 >
+                  <span className="comparison-flags">
                   {/* The class itself sits under the heading now. What
                       stays here is the *finding*: a stack whose inputs
                       nobody wrote down cannot be shown to have matched
@@ -175,6 +184,7 @@ export function ComparisonGrid({
                       })}
                     </span>
                   ) : null}
+                  </span>
                 </td>
               ))}
               {/* No Δ cell, and nothing has to stand in for one. In the
@@ -234,7 +244,11 @@ function MetricLine({
   sub?: React.ReactNode;
 }) {
   const { t } = useTranslation();
-  const best = leaders(metric);
+  // Ahead, behind, or neither — from the same `leaders()` the summary
+  // sentence counts, so a green cell and the sentence above it cannot
+  // disagree. "Neither" is a real third answer: a tie, an unrecorded
+  // value and a row with no direction all mark nobody.
+  const mark = standings(metric);
 
   return (
     <tr>
@@ -268,25 +282,35 @@ function MetricLine({
         <td
           key={candidates[index].candidate_id}
           className={`comparison-cell comparison-value candidate-${sideOf(index)}${
-            best.includes(index) ? " is-best" : ""
+            mark[index] === "lead" ? " is-best" : mark[index] === "trail" ? " is-worst" : ""
           }`}
         >
-          {digits === null ? (
-            // Not an em dash. "Zero" and "not recorded" are opposite
-            // readings, and one glyph for both loses the difference.
-            <span className="not-measured">{t("common.notMeasured")}</span>
-          ) : (
-            <>
-              <span className="num">{digits}</span>
-              {/* The slot renders even when the quantity has no unit:
-                  dropping it lets a unitless row's number slide right
-                  and breaks the decimal column the rest of the table
-                  keeps. */}
-              <span className="unit">{metric.unit ?? ""}</span>
-            </>
-          )}
-          {best.includes(index) ? (
-            <span className="sr-only"> ({t("running.leads")})</span>
+          {/* Two slots on an inner wrapper, never on the `<td>`: a table
+              cell that is a grid is no longer a table cell. */}
+          <span className="value-figure">
+            {digits === null ? (
+              // Not an em dash. "Zero" and "not recorded" are opposite
+              // readings, and one glyph for both loses the difference.
+              <span className="not-measured">{t("common.notMeasured")}</span>
+            ) : (
+              <>
+                <span className="num">{digits}</span>
+                {/* The slot renders even when the quantity has no unit:
+                    dropping it lets a unitless row's number slide right
+                    and breaks the decimal column the rest of the table
+                    keeps. */}
+                <span className="unit">{metric.unit ?? ""}</span>
+              </>
+            )}
+          </span>
+          {/* In words as well as in colour. Red and green alone reach
+              neither a colourblind reader nor a screen reader, and the
+              losing side would then carry no signal at all. */}
+          {mark[index] ? (
+            <span className="sr-only">
+              {" "}
+              ({t(mark[index] === "lead" ? "running.leads" : "running.trails")})
+            </span>
           ) : null}
         </td>
       ))}
@@ -323,7 +347,9 @@ function CollisionBoundCell({
   if (cell.kind === "unknown") {
     return (
       <td className={`comparison-cell comparison-value candidate-${side}`}>
-        <span className="not-measured">{t("common.notMeasured")}</span>
+        <span className="value-figure">
+          <span className="not-measured">{t("common.notMeasured")}</span>
+        </span>
       </td>
     );
   }
@@ -341,15 +367,17 @@ function CollisionBoundCell({
 
   return (
     <td className={`comparison-cell comparison-value candidate-${side}`}>
-      {cell.kind === "bound" ? (
-        <>
-          <span className="num">≤ {(cell.bound * 100).toFixed(1)}</span>
-          <span className="unit">%</span>
-        </>
-      ) : (
-        <span className="not-applicable">{t("decisions.compare.cell.notApplicable")}</span>
-      )}
-      <span className="comparison-cell-sub">{sample}</span>
+      <span className="value-figure">
+        {cell.kind === "bound" ? (
+          <>
+            <span className="num">≤ {(cell.bound * 100).toFixed(1)}</span>
+            <span className="unit">%</span>
+          </>
+        ) : (
+          <span className="not-applicable">{t("decisions.compare.cell.notApplicable")}</span>
+        )}
+        <span className="comparison-cell-sub">{sample}</span>
+      </span>
     </td>
   );
 }

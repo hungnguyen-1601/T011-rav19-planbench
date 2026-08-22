@@ -10,13 +10,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { EpisodeOutcome, RunCandidate } from "@/lib/decisions";
-import {
-  comparisonRows,
+import {type MetricRow, comparisonRows,
   failureBreakdown,
   leaders,
   medianTravelTime,
-  worstClearance,
-} from "@/lib/candidateMetrics";
+  worstClearance, standings } from "@/lib/candidateMetrics";
 
 function episode(overrides: Partial<EpisodeOutcome> = {}): EpisodeOutcome {
   return {
@@ -362,5 +360,51 @@ describe("the unit fits the lane the stylesheet gives it", () => {
     );
     expect(counts).toHaveLength(2);
     for (const row of counts) expect(row.unit).toBeUndefined();
+  });
+});
+
+describe("who is behind, and who merely is not ahead", () => {
+  const row = (over: Partial<MetricRow>): MetricRow => ({
+    key: "k", direction: "higher", values: [1, 2], numberText: ["1", "2"], text: [], ...over,
+  } as MetricRow);
+
+  it("marks the leader and the one it beat", () => {
+    expect(standings(row({ values: [1, 2] }))).toEqual(["trail", "lead"]);
+    expect(standings(row({ direction: "lower", values: [1, 2] }))).toEqual(["lead", "trail"]);
+  });
+
+  it("marks nobody when the two are level", () => {
+    /* A tie has no loser. Colouring one side red would invent a result
+       the numbers do not support. */
+    expect(standings(row({ values: [3, 3] }))).toEqual([null, null]);
+  });
+
+  it("does not call an unrecorded value a loss", () => {
+    /* The run did not keep the figure; the candidate did not lose the
+       comparison, because there was no comparison. Red there is the same
+       class of claim as rendering an absent value as zero. */
+    expect(standings(row({ values: [1, null] }))).toEqual([null, null]);
+  });
+
+  it("marks nobody on a row with no direction", () => {
+    /* `replans` is evidence, not a score — it is already charged in
+       travel time and in latency. */
+    expect(standings(row({ direction: "none", values: [30, 242] }))).toEqual([null, null]);
+  });
+
+  it("marks every candidate that is not ahead, past two", () => {
+    expect(standings(row({ values: [1, 5, 2] }))).toEqual(["trail", "lead", "trail"]);
+  });
+
+  it("agrees with leaders() on every real row", () => {
+    /* One source for both marks: if they ever disagreed, a cell could be
+       green in the table and absent from the sentence above it. */
+    for (const r of comparisonRows([candidate(), candidate({ success_rate: 0.5 })])) {
+      const ahead = leaders(r);
+      standings(r).forEach((mark, index) => {
+        if (mark === "lead") expect(ahead, r.key).toContain(index);
+        if (mark === "trail") expect(ahead, r.key).not.toContain(index);
+      });
+    }
   });
 });

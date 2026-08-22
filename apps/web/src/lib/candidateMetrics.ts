@@ -281,3 +281,31 @@ export function leaders(row: MetricRow): number[] {
   );
   return winners.length === known.length ? [] : winners.map((entry) => entry.index);
 }
+
+/** How each candidate stands on one row: ahead, behind, or neither.
+ *
+ * `leaders` answers half of it. This answers the other half, and the
+ * half needs care: **"not leading" is not the same as "behind".** A
+ * candidate that recorded nothing did not lose the comparison — there
+ * was no comparison. A row where everybody tied has no loser either, and
+ * a row with no direction has no winner to lose to.
+ *
+ * Marking those as behind would put a red number under a candidate that
+ * is level with the other, or under one whose run simply did not keep
+ * the figure — which is the same class of claim as rendering an absent
+ * value as zero.
+ */
+export type Standing = "lead" | "trail" | null;
+
+export function standings(row: MetricRow): Standing[] {
+  const ahead = leaders(row);
+  // `leaders` already returns nothing for a directionless row, a row
+  // with fewer than two recorded values, and a row where every side is
+  // level — so an empty result means there is nothing to mark either
+  // way, not that everybody lost.
+  if (ahead.length === 0) return row.values.map(() => null);
+  return row.values.map((value, index) => {
+    if (value === null) return null;
+    return ahead.includes(index) ? "lead" : "trail";
+  });
+}

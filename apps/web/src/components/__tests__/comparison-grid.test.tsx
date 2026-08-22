@@ -9,6 +9,9 @@
  * needed: the markup comes out in English.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
@@ -428,5 +431,111 @@ describe("when both candidates name to the same words", () => {
     expect(sentence).toContain("Candidate A leads on");
     expect(sentence).toContain("Candidate B on");
     expect(sentence).not.toContain("astar+dwa leads on");
+  });
+});
+
+describe("the table is still a table", () => {
+  /* The bug this guards: `.comparison-grid-head` and `.comparison-value`
+     kept `display: grid` from when they were `<div>`s in a CSS grid.
+     A table cell given a non-table display **stops being a cell**, and
+     the browser wraps every consecutive non-cell child of a row into one
+     anonymous cell — so both candidates rendered stacked inside a single
+     column. Nothing threw, every markup assertion still passed, and the
+     page looked like a two-column layout that had lost its second
+     candidate. Only a screenshot showed it. */
+  const SHEET = readFileSync(
+    join(process.cwd(), "src", "app", "globals.css"),
+    "utf8",
+  ).replace(/\r\n/g, "\n");
+  const CELL_CLASSES = [
+    "comparison-cell",
+    "comparison-gutter",
+    "comparison-grid-head",
+    "comparison-value",
+    "comparison-delta",
+  ];
+
+  it("gives no cell class a display of its own", () => {
+    const code = SHEET.replace(/\/\*[\s\S]*?\*\//g, "");
+    const offenders: string[] = [];
+    for (const [, selectors, body] of code.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const display = /(?<![-\w])display: *([\w-]+)/.exec(body)?.[1];
+      if (!display || display === "table-cell" || display === "none") continue;
+      for (const selector of selectors.split(",")) {
+        const last = selector.trim().split(/\s+/).pop() ?? "";
+        if (CELL_CLASSES.some((c) => last === `.${c}` || last.startsWith(`.${c}.`) || last.startsWith(`.${c}:`))) {
+          offenders.push(`${selector.trim()} → ${display}`);
+        }
+      }
+    }
+    expect(offenders, offenders.join(" | ")).toEqual([]);
+  });
+
+  it("puts every candidate's value in its own cell of the row", () => {
+    /* The rendered proof, not just the stylesheet's word for it: each
+       metric row must hold one value cell per candidate. Two candidates
+       collapsing into one cell is what the reader actually saw. */
+    const html = draw(pair());
+    const bodyRows = [...html.matchAll(/<tr>(.*?)<\/tr>/gs)]
+      .map(([, inner]) => inner)
+      .filter((inner) => inner.includes("comparison-value"));
+    expect(bodyRows.length).toBeGreaterThan(5);
+    for (const inner of bodyRows) {
+      expect((inner.match(/<td class="comparison-cell comparison-value/g) ?? []).length).toBe(2);
+    }
+  });
+
+  it("keeps the head's own layout off the header cell", () => {
+    /* The wrapper the grid moved onto. Without it the two column heads
+       stack, which is the same failure one row higher. */
+    const html = draw(pair());
+    expect((html.match(/class="head-inner"/g) ?? []).length).toBe(2);
+    expect(html).toContain('<span class="value-figure">');
+  });
+});
+
+describe("green for ahead, red for behind", () => {
+  it("colours the two sides of a decided row differently", () => {
+    const html = draw(pair());
+    const success = [...html.matchAll(/<tr>(.*?)<\/tr>/gs)]
+      .map(([, inner]) => inner)
+      .find((inner) => inner.includes("Success rate"))!;
+    expect(success).toContain("is-best");
+    expect(success).toContain("is-worst");
+    expect(success).toContain("(leads)");
+    expect(success).toContain("(trails)");
+  });
+
+  it("colours neither side of a tie", () => {
+    /* Both candidates recorded 30 distinct episodes. A tie has no
+       loser, and red there would invent a result. */
+    const tied = [...draw(pair()).matchAll(/<tr>(.*?)<\/tr>/gs)]
+      .map(([, inner]) => inner)
+      .find((inner) => inner.includes("Distinct episodes"))!;
+    expect(tied).not.toContain("is-best");
+    expect(tied).not.toContain("is-worst");
+  });
+
+  it("colours neither side when one recorded nothing", () => {
+    /* The candidate did not lose the comparison — there was none. */
+    const [first, second] = pair();
+    const html = draw([first, { ...second, gates: {} } as RunCandidate]);
+    const bound = [...html.matchAll(/<tr>(.*?)<\/tr>/gs)]
+      .map(([, inner]) => inner)
+      .find((inner) => inner.includes("Collision probability"))!;
+    expect(bound).not.toContain("is-worst");
+  });
+
+  it("colours neither side on the row that marks nobody", () => {
+    /* Replans is evidence, not a score. */
+    const html = draw([
+      candidate({ candidate_id: "a", replan_count: 30 }),
+      candidate({ candidate_id: "b", replan_count: 242 }),
+    ]);
+    const replans = [...html.matchAll(/<tr>(.*?)<\/tr>/gs)]
+      .map(([, inner]) => inner)
+      .find((inner) => inner.includes("Replans across the run"))!;
+    expect(replans).not.toContain("is-best");
+    expect(replans).not.toContain("is-worst");
   });
 });

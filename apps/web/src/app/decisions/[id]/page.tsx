@@ -1279,7 +1279,11 @@ function SampleNotice({ run }: { run: DecisionRun }) {
  * (HĐ-14), so gating it would invert the order.
  */
 function ExportReport({ runId }: { runId: string }) {
-  const { t } = useTranslation();
+  /* `locale` as well as `t`: the document is written in the language the
+     reader chose in the app, not the one the browser sends in a header
+     — the two disagree often enough that guessing would hand somebody a
+     file in a language they had already switched away from. */
+  const { t, locale } = useTranslation();
   const [busy, setBusy] = useState<"md" | "xlsx" | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   /** The last file that actually reached the disk.
@@ -1303,7 +1307,7 @@ function ExportReport({ runId }: { runId: string }) {
     // says the new one is already done.
     setSaved(null);
     const download = format === "md" ? downloadDecisionReport : downloadDecisionWorkbook;
-    void download(runId)
+    void download(runId, locale)
       .then((filename) => setSaved({ format, filename }))
       .catch((caught) => setFailed(caught instanceof Error ? caught.message : String(caught)))
       .finally(() => setBusy(null));

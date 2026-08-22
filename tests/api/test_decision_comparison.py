@@ -340,3 +340,96 @@ class TestItSurvivesAThinReport:
     def test_objectives_need_a_card(self) -> None:
         run = unranked_run()
         assert objective_rows(run, run.report) is None
+
+
+class TestTheLanguageIsTheReadersChoice:
+    """The export is bilingual over HTTP, and English stays the default.
+
+    The app is bilingual and these two documents were not: a reader
+    working in Vietnamese pressed Export and received English. The
+    caveats are the part of these files that does the most work, and one
+    in a language the reader does not use is one that does not travel.
+    """
+
+    def stored(self, app):
+        from planbench_api.decisions import StoredDecisionRun
+        from tests.api.golden_run import CARD, MANIFEST
+
+        run = golden_run()
+        return app.state.repos.decision_runs.create(
+            StoredDecisionRun(
+                id="run_locale",
+                task_profile_id=run.task_profile_id,
+                artifact_kind="decision_card",
+                experiment_scope=run.experiment_scope,
+                contracts_version=run.contracts_version,
+                created_at=run.created_at,
+                created_by=None,
+                report=run.report,
+                card=CARD,
+                manifest=MANIFEST,
+                recommended_candidate_id="c1",
+                status="CLEAR_RECOMMENDATION",
+            )
+        )
+
+    def test_no_locale_is_the_document_a_client_already_had(self, client, app, alice_headers):
+        """A client written before this parameter existed keeps
+        receiving exactly what it received before."""
+        self.stored(app)
+        bare = client.get("/api/v1/decisions/run_locale/report.md", headers=alice_headers)
+        english = client.get(
+            "/api/v1/decisions/run_locale/report.md?locale=en", headers=alice_headers
+        )
+        assert bare.status_code == 200, bare.text
+        assert bare.text == english.text
+
+    def test_vietnamese_reaches_the_markdown(self, client, app, alice_headers):
+        self.stored(app)
+        response = client.get(
+            "/api/v1/decisions/run_locale/report.md?locale=vi", headers=alice_headers
+        )
+        assert response.status_code == 200, response.text
+        assert "## Nguồn gốc" in response.text
+        assert "## Provenance" not in response.text
+
+    def test_vietnamese_reaches_the_workbook(self, client, app, alice_headers):
+        self.stored(app)
+        response = client.get(
+            "/api/v1/decisions/run_locale/report.xlsx?locale=vi", headers=alice_headers
+        )
+        assert response.status_code == 200, response.text
+        names = _workbook_names(response.content)
+        assert "So sánh chi tiết" in names
+
+    def test_a_language_nobody_built_is_refused_rather_than_substituted(
+        self, client, app, alice_headers
+    ):
+        """A caller asking for French should hear about it, not receive
+        English and take that for the only option."""
+        self.stored(app)
+        for path in ("report.md", "report.xlsx"):
+            response = client.get(
+                f"/api/v1/decisions/run_locale/{path}?locale=fr", headers=alice_headers
+            )
+            assert response.status_code == 422, (path, response.text)
+
+    def test_the_filename_does_not_change_with_the_language(self, client, app, alice_headers):
+        """One run, one name. The stem is built from ids that are ASCII
+        either way, and a reader with both languages in a folder should
+        see two copies of one document, not two documents."""
+        self.stored(app)
+        names = {
+            locale: client.get(
+                f"/api/v1/decisions/run_locale/report.xlsx?locale={locale}",
+                headers=alice_headers,
+            ).headers["content-disposition"]
+            for locale in ("en", "vi")
+        }
+        assert names["en"] == names["vi"]
+
+
+def _workbook_names(payload: bytes) -> list[str]:
+    import openpyxl
+
+    return openpyxl.load_workbook(io.BytesIO(payload)).sheetnames

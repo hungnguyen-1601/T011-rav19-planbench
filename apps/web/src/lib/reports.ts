@@ -19,6 +19,7 @@
 import { API_BASE } from "./api";
 import { clearSession, loadSession } from "./auth";
 import { filenameFromDisposition } from "./charts";
+import { DEFAULT_LOCALE, type Locale } from "./i18n/shared";
 
 /** Fetch a report and save it. Throws with the API's message.
  *
@@ -68,14 +69,28 @@ export async function downloadReport(path: string, fallbackName: string): Promis
   return filename;
 }
 
+/** The language the document is written in.
+ *
+ * Passed explicitly rather than read from the cookie here: this module
+ * has no React context and the server would otherwise be guessing from
+ * a header, which is the browser's preference and not the one the
+ * reader chose in the app.
+ */
+function localised(path: string, locale: Locale): string {
+  return `${path}?locale=${encodeURIComponent(locale)}`;
+}
+
 /** The selection run as Markdown — every run, ranked or not.
  *
  * Available before approval on purpose: this describes what was
  * measured, and reading it is the act approval follows (HĐ-14).
  */
-export function downloadDecisionReport(runId: string): Promise<string> {
+export function downloadDecisionReport(
+  runId: string,
+  locale: Locale = DEFAULT_LOCALE,
+): Promise<string> {
   return downloadReport(
-    `/decisions/${encodeURIComponent(runId)}/report.md`,
+    localised(`/decisions/${encodeURIComponent(runId)}/report.md`, locale),
     `decision-${runId}.md`,
   );
 }
@@ -85,9 +100,12 @@ export function downloadDecisionReport(runId: string): Promise<string> {
  * Same content as the Markdown — the API builds both from one module,
  * so the two files cannot quote different numbers for one run.
  */
-export function downloadDecisionWorkbook(runId: string): Promise<string> {
+export function downloadDecisionWorkbook(
+  runId: string,
+  locale: Locale = DEFAULT_LOCALE,
+): Promise<string> {
   return downloadReport(
-    `/decisions/${encodeURIComponent(runId)}/report.xlsx`,
+    localised(`/decisions/${encodeURIComponent(runId)}/report.xlsx`, locale),
     `decision-${runId}.xlsx`,
   );
 }
