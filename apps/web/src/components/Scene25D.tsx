@@ -25,6 +25,7 @@ import {
 } from "@/lib/scene25d";
 import { CAUTION_FILL, CAUTION_STROKE, KEEP_OUT_FILL, KEEP_OUT_STROKE } from "@/lib/keepOut";
 import type { MapData } from "@/lib/types";
+import { useTranslation } from "@/lib/i18n";
 
 export interface Scene25DProps extends SceneOptions {
   map: MapData;
@@ -33,8 +34,8 @@ export interface Scene25DProps extends SceneOptions {
   /** Degrees; the control strip writes these back. */
   azimuthDeg?: number;
   elevationDeg?: number;
-  /** Degrees about the world z axis — the control the strip calls
-   *  "Rotate", and the only one that turns the room. */
+  /** Degrees about the world z axis — the angle a drag across the canvas
+   *  sets, and the only one that turns the room. */
   yawDeg?: number;
   showControls?: boolean;
   /** **Lift the view out of this component.** Two of these sit side by
@@ -92,6 +93,7 @@ export function Scene25D({
   trajectory,
   obstacles,
 }: Scene25DProps) {
+  const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [azimuth] = useState(azimuthDeg);
   /* Controlled when the owner is listening, uncontrolled when it is
@@ -104,6 +106,17 @@ export function Scene25D({
   const yaw = onViewChange ? yawDeg : localYaw;
   const elevation = onViewChange ? elevationDeg : localElevation;
   const height3d = onViewChange ? wallHeight : localHeight;
+
+  /** Where the pointer went down, and the angles it went down at.
+   *
+   * **Accumulated from the grab, not from the last frame.** Adding each
+   * move's delta to the current angle looks identical and drifts: with
+   * the value controlled from above, a move that arrives before the
+   * parent has re-rendered reads a stale angle, and that error is kept.
+   * Measuring the whole gesture from where it started cannot drift, and
+   * it is also what makes releasing and re-grabbing feel like picking
+   * the same object back up. */
+  const grab = useRef<{ x: number; y: number; yaw: number; elevation: number } | null>(null);
 
   const emit = (next: Partial<{ yawDeg: number; elevationDeg: number; wallHeight: number }>) => {
     const view = { yawDeg: yaw, elevationDeg: elevation, wallHeight: height3d, ...next };
@@ -154,6 +167,80 @@ export function Scene25D({
     trajectory,
     obstacles,
   ]);
+
+  /** Turn the room by dragging it, the way a thing on a turntable turns.
+   *
+   * Across is yaw and down is tilt, which is the gesture every 3D viewer
+   * has trained readers on — and it is why the two rotation sliders are
+   * gone rather than sitting beside it. A slider and a drag doing one
+   * job is two controls for one thing, which this file already refused
+   * once when "Rotate" turned out to drive an azimuth that rotated
+   * nothing.
+   *
+   * **Degrees per pixel, chosen so one drag across the canvas is a bit
+   * over a full turn.** Faster and the room spins past the angle the
+   * reader wanted; slower and looking at the far side takes several
+   * strokes. */
+  const YAW_PER_PX = 0.5;
+  const TILT_PER_PX = 0.4;
+  /** Straight down is the useful end; past it the room turns inside out
+   *  and the floor paints over the walls. At 0 it is edge-on, where the
+   *  room collapses to a line. */
+  const clampTilt = (degrees: number) => Math.max(1, Math.min(89, degrees));
+  /** A yaw is an angle, not a range: 359° and 1° are two degrees apart,
+   *  so it wraps rather than stopping at an end. */
+  const wrapYaw = (degrees: number) => ((degrees % 360) + 360) % 360;
+
+  const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    // Primary button only. A right-drag is the context menu and a
+    // middle-drag is autoscroll; taking either is rude.
+    if (event.button !== 0) return;
+    grab.current = { x: event.clientX, y: event.clientY, yaw, elevation };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const from = grab.current;
+    if (!from) return;
+    emit({
+      yawDeg: wrapYaw(from.yaw + (event.clientX - from.x) * YAW_PER_PX),
+      elevationDeg: clampTilt(from.elevation - (event.clientY - from.y) * TILT_PER_PX),
+    });
+  };
+
+  const endDrag = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    grab.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  /** The same two axes for a reader who is not holding a mouse.
+   *
+   * **This is what let the sliders go.** A canvas nobody can focus is a
+   * canvas only a pointer can reach, and dropping the sliders without
+   * this would have traded one complaint for a worse one: the room
+   * would have become unturnable by keyboard entirely. */
+  const onKeyDown = (event: React.KeyboardEvent<HTMLCanvasElement>) => {
+    const step = event.shiftKey ? 15 : 5;
+    switch (event.key) {
+      case "ArrowLeft":
+        emit({ yawDeg: wrapYaw(yaw - step) });
+        break;
+      case "ArrowRight":
+        emit({ yawDeg: wrapYaw(yaw + step) });
+        break;
+      case "ArrowUp":
+        emit({ elevationDeg: clampTilt(elevation + step) });
+        break;
+      case "ArrowDown":
+        emit({ elevationDeg: clampTilt(elevation - step) });
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -274,41 +361,45 @@ export function Scene25D({
 
   return (
     <div className="scene25d">
-      <canvas ref={canvasRef} data-testid="scene-25d" />
+      <canvas
+        ref={canvasRef}
+        data-testid="scene-25d"
+        className="scene25d-canvas"
+        /* A group, not an image: it holds an orientation and changing
+           it is the point. `img` would tell a screen reader there is
+           nothing here to operate. */
+        role="group"
+        aria-label={`${t("scene25d.alt")} \u2014 ${t("scene25d.angles", {
+          yaw: String(Math.round(yaw)),
+          tilt: String(Math.round(elevation)),
+        })}`}
+        tabIndex={0}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onKeyDown={onKeyDown}
+      />
       {showControls ? (
         <div className="scene25d-controls">
-          {/* **"Rotate" now rotates.** It drove `azimuth`, which only
-              scales the horizontal half of a fixed dimetric fold — the
-              room stretched sideways and never turned. Same control,
-              same label, wired to the axis the label always implied.
-              `azimuth` stays at its default and is no longer a control:
-              a slider that widens a floor plan is not a viewing angle
-              anybody asked for, and two rotation sliders where one does
-              nothing is worse than one. */}
-          <label>
-            Rotate
-            <input
-              type="range"
-              min={0}
-              max={359}
-              value={yaw}
-              onChange={(event) => emit({ yawDeg: Number(event.target.value) })}
-            />
-            <span className="muted">{yaw}°</span>
-          </label>
-          <label>
-            Tilt
-            <input
-              type="range"
-              min={0}
-              max={89}
-              value={elevation}
-              onChange={(event) => emit({ elevationDeg: Number(event.target.value) })}
-            />
-            <span className="muted">
-              {elevation}°{elevation >= 88 ? " (top-down)" : ""}
-            </span>
-          </label>
+          {/* **No Rotate and Tilt sliders.** Both axes live on the
+              canvas now — drag it, or focus it and use the arrow keys —
+              and a slider beside a drag is two controls for one job.
+
+              What is left is the reading, so a reader can say which
+              angle they are looking from and come back to it, plus the
+              line that says the picture can be dragged at all. Wall
+              height keeps its slider: it is a property of the drawing
+              rather than of the camera, and there is no gesture for
+              it. */}
+          <span className="scene25d-readout">
+            {t("scene25d.angles", {
+              yaw: String(Math.round(yaw)),
+              tilt: String(Math.round(elevation)),
+            })}
+            {elevation >= 88 ? ` ${t("scene25d.topDown")}` : ""}
+          </span>
+          <span className="scene25d-hint">{t("scene25d.dragHint")}</span>
           <label>
             Wall height
             <input

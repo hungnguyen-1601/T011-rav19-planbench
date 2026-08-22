@@ -180,6 +180,7 @@ describe("the raised view draws the same room as the flat one", () => {
 
 describe("the two 2.5D panels are one camera", () => {
   const SCENE = readFileSync(join(SRC, "components", "Scene25D.tsx"), "utf8");
+  const CSS = readFileSync(join(SRC, "app", "globals.css"), "utf8");
 
   it("holds the angle where the pair is held, not inside each scene", () => {
     /* Each scene kept its own, so turning one panel to look behind a
@@ -198,19 +199,60 @@ describe("the two 2.5D panels are one camera", () => {
     expect(SCENE).toContain("const yaw = onViewChange ? yawDeg : localYaw;");
   });
 
-  it("wires Rotate to the axis its label always implied", () => {
-    /* It drove `azimuth`, which scales the horizontal half of a fixed
-       dimetric fold: the room stretched sideways and never turned. */
-    expect(SCENE).toContain("emit({ yawDeg: Number(event.target.value) })");
+  it("turns the room by dragging it, not by a slider beside it", () => {
+    /* **Two sliders have already been wrong here.** The first drove
+       `azimuth` and rotated nothing; the second drove the yaw correctly
+       and was still the wrong control — turning a thing to look behind
+       it is a grab, and reaching for a slider under the picture to do
+       it is the part that felt broken. Both axes are on the canvas now,
+       so neither slider survives. */
+    expect(SCENE).toContain("onPointerDown={onPointerDown}");
+    expect(SCENE).toContain("setPointerCapture(event.pointerId)");
     expect(SCENE).not.toContain("setAzimuth(");
+    // One slider left in the strip, and it is not a camera angle: wall
+    // height is a property of the drawing, and there is no gesture for
+    // it. Counted rather than name-matched, so a comment mentioning the
+    // controls that went cannot pass or fail this.
+    const strip = SCENE.slice(SCENE.indexOf("scene25d-controls"));
+    expect([...strip.matchAll(/type="range"/g)]).toHaveLength(1);
+    expect(strip).toContain("Wall height");
   });
 
-  it("turns the whole way round rather than through a quadrant", () => {
-    /* The old slider ran 5–85° because that was the range in which its
-       dimetric fold stayed sane. A yaw has no such limit, and stopping
-       at 85 would leave two of the room's four sides unreachable. */
-    const rotate = SCENE.slice(SCENE.indexOf("Rotate"), SCENE.indexOf("Tilt"));
-    expect(rotate).toContain("min={0}");
-    expect(rotate).toContain("max={359}");
+  it("stays reachable without a mouse", () => {
+    /* Dropping the sliders without this would have traded one complaint
+       for a worse one — the room would have become unturnable by
+       keyboard entirely. */
+    expect(SCENE).toContain("tabIndex={0}");
+    expect(SCENE).toContain("onKeyDown={onKeyDown}");
+    expect(SCENE).toContain('case "ArrowLeft"');
+    expect(SCENE).toContain('case "ArrowUp"');
+    expect(CSS).toContain(".scene25d-canvas:focus-visible");
+  });
+
+  it("measures a drag from where it was grabbed", () => {
+    /* Adding each move's delta to the current angle looks identical and
+       drifts: with the angle controlled from the parent, a move that
+       arrives before the re-render reads a stale value and keeps the
+       error. */
+    expect(SCENE).toContain("grab.current = { x: event.clientX, y: event.clientY, yaw, elevation }");
+    expect(SCENE).toContain("from.yaw + (event.clientX - from.x)");
+  });
+
+  it("wraps the yaw and clamps the tilt", () => {
+    /* A yaw is an angle, not a range — 359° and 1° are two degrees
+       apart. A tilt is a range: past straight down the room turns inside
+       out and the floor paints over the walls. */
+    expect(SCENE).toContain("((degrees % 360) + 360) % 360");
+    expect(SCENE).toContain("Math.max(1, Math.min(89, degrees))");
+  });
+
+  it("says the angle in words and says the picture can be dragged", () => {
+    /* A canvas gives no sign that it turns, and a reader who has spun
+       the room needs to be able to say where they are looking from. */
+    expect(SCENE).toContain("scene25d-readout");
+    expect(SCENE).toContain("scene25d.dragHint");
+    expect(CSS).toContain("cursor: grab;");
+    // The browser claims a one-finger drag for scrolling the page.
+    expect(CSS).toContain("touch-action: none;");
   });
 });

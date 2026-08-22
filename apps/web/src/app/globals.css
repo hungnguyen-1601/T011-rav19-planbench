@@ -1159,6 +1159,31 @@ label.inline {
   width: 130px;
 }
 
+/* The picture is the control.
+   ===================================================================
+   `grab`/`grabbing` is the whole affordance — a canvas gives no other
+   sign that it can be turned — and it is why the readout beside it
+   states the angle in words: a reader who has spun the room needs to be
+   able to say where they are looking from.
+
+   `touch-action: none` because the browser claims a one-finger drag for
+   scrolling the page, and a turntable that scrolls instead of turning
+   is worse than one that does not move. */
+.scene25d-canvas {
+  cursor: grab;
+  touch-action: none;
+}
+.scene25d-canvas:active { cursor: grabbing; }
+.scene25d-canvas:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.scene25d-readout {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.scene25d-hint { color: var(--muted); }
+
 .view-toggle {
   display: inline-flex;
   border: 1px solid var(--border);
