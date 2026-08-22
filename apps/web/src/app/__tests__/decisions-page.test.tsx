@@ -30,6 +30,13 @@ const DETAIL = readFileSync(join(APP, "decisions", "[id]", "page.tsx"), "utf8");
    much as present — a removed column tint leaves nothing to assert on
    in the markup. */
 const CSS = readFileSync(join(APP, "globals.css"), "utf8");
+/* The summary at the top of the page. The no-card message lives here
+   now: it was one branch of `Outcome` at the bottom, and moving it up
+   moved these assertions with it. */
+const SUMMARY = readFileSync(
+  join(process.cwd(), "src", "components", "DecisionSummary.tsx"),
+  "utf8",
+);
 /* The comparison table, extracted so tests can render it — a
    function declared inside a fetching page cannot be imported. */
 const GRID = readFileSync(
@@ -138,7 +145,14 @@ describe("the detail page leads with the gate table", () => {
     expect(GRID).toContain('<th scope="col"');
     expect(DETAIL).not.toContain("<MetricTable");
     expect(DETAIL).not.toContain("metric-comparison-row");
-    expect(DETAIL.indexOf("<CandidateComparison")).toBeLessThan(DETAIL.indexOf("<Outcome"));
+    // `Outcome` is gone. It was two components in one — the card's
+    // sensitivity table when a card existed, the no-card message when
+    // one did not — switching on the single condition the whole page
+    // turns on. The message is a branch of `DecisionSummary` at the top
+    // now, and `CardPanel` renders directly under the evidence.
+    expect(DETAIL).not.toContain("<Outcome run=");
+    expect(DETAIL.indexOf("<DecisionSummary")).toBeLessThan(DETAIL.indexOf("<CandidateComparison"));
+    expect(DETAIL.indexOf("<CandidateComparison")).toBeLessThan(DETAIL.indexOf("<CardPanel"));
   });
 
   it("renders all six gates for every candidate, in contract order", () => {
@@ -208,7 +222,16 @@ describe("a run with no card says which situation it is in", () => {
   });
 
   it("tells the reader what to do next rather than only what happened", () => {
-    expect(DETAIL).toContain("decisions.noCard.whatNext.");
+    expect(SUMMARY).toContain("decisions.noCard.whatNext.");
+  });
+
+  it("says it once, at the top, rather than four times down the page", () => {
+    /* Four panels each stated the missing recommendation in different
+       words, and one of them stated it wrongly. Four copies of one fact
+       force a reader to check them against each other; the fix is one
+       copy, above the evidence rather than below it. */
+    const uses = [...(DETAIL + SUMMARY).matchAll(/decisions\.noCard\.whatNext\./g)];
+    expect(uses.length, "places the next action is stated").toBe(1);
   });
 
   it("never calls it a failure", () => {
@@ -218,8 +241,12 @@ describe("a run with no card says which situation it is in", () => {
   });
 
   it("keeps the report's own words available rather than only a summary", () => {
-    expect(DETAIL).toContain("why_no_card");
-    expect(DETAIL).toContain("gate_only_deployment");
+    /* This client's reading of a reason code is a paraphrase. A reader
+       who disagrees with the reading needs the platform's own sentence,
+       so it travelled up with the message rather than being dropped
+       when the panel that held it went. */
+    expect(SUMMARY).toContain("why_no_card");
+    expect(SUMMARY).toContain("gate_only_deployment");
   });
 
   it("refuses to suggest loosening the deployment", () => {

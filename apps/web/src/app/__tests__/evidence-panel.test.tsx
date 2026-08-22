@@ -25,19 +25,22 @@ const CLIENT = readFileSync(join(SRC, "lib", "decisions.ts"), "utf8");
 const AUTH = readFileSync(join(SRC, "lib", "auth.ts"), "utf8");
 
 describe("where the evidence sits", () => {
-  it("comes after the result and the replay", () => {
-    // The page opens on what the run concluded and what it looked like;
-    // the evidence explains that, and the gate table — a list of
-    // eliminations — closes the argument rather than opening it.
+  it("comes after the result, and before the replay", () => {
+    // The page opens on what the run concluded; the evidence explains
+    // that. The replay used to sit between them and now sits after
+    // both: it is a drill-down opened to check a conclusion, so it
+    // cannot come before the conclusion it checks.
     //
     // This order is a product decision, not something derivable from
     // the code. What *is* derivable is the pair below it.
+    const summary = DETAIL.indexOf("<DecisionSummary run={run} />");
     const comparison = DETAIL.indexOf("<CandidateComparison run={run} />");
     const trace = DETAIL.indexOf("<TracePanel run={run} />");
     const evidence = DETAIL.indexOf("<EvidencePanel run={run} />");
-    expect(comparison).toBeGreaterThan(-1);
-    expect(trace).toBeGreaterThan(comparison);
-    expect(evidence).toBeGreaterThan(trace);
+    expect(summary).toBeGreaterThan(-1);
+    expect(comparison).toBeGreaterThan(summary);
+    expect(evidence).toBeGreaterThan(comparison);
+    expect(trace).toBeGreaterThan(evidence);
     // The gate table it used to precede is gone; the verdicts live
     // on the candidate cards at the top of the page now.
     expect(DETAIL).not.toContain("<GateTable");

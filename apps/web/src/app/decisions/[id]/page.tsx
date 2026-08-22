@@ -19,6 +19,8 @@ import Link from "next/link";
 import { TraceViewer } from "@/components/TraceViewer";
 import { ComparisonGrid } from "@/components/ComparisonGrid";
 import { ConclusionPanel } from "@/components/ConclusionPanel";
+import { DecisionSummary } from "@/components/DecisionSummary";
+import { DecisionAdvice } from "@/components/DecisionAdvice";
 import { runBadge } from "@/lib/conclusion";
 import { Hint } from "@/components/Hint";
 import { type HeadingField, candidateNames, headingField } from "@/lib/candidateHeading";
@@ -147,21 +149,38 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
             It carries the evidence's caveats, and a qualifier under the
             thing it qualifies has already been scrolled past. */}
       <SampleNotice run={run} />
+      {/* **The conclusion, then what to do with it, then the evidence.**
+          `DecisionSummary` is the only place the page states whether a
+          recommendation came back and why; `DecisionAdvice` answers the
+          question a reader actually arrives with, which is what to
+          deploy for their own use case, and answers it on blocked runs
+          too. Both used to be at the bottom, in four panels, in
+          different words. */}
+      <DecisionSummary run={run} />
+      <DecisionAdvice run={run} />
       <CandidateComparison run={run} />
-      <TracePanel run={run} />
       <ExplanationHeader run={run} />
       <EvidencePanel run={run} />
       {/* The marks come after the evidence that justifies them, and the
           export buttons after the marks — that is the point at which a
           reader knows whether this run is worth sending on. */}
       <ConclusionPanel run={run} />
+      {/* The card's sensitivity figures — weight stability, anchor
+          stability, robustness. They belong under the evidence rather
+          than beside the recommendation: they say how far the numbers
+          could move before the recommendation changes, which is a
+          question a reader asks second. `Outcome` used to wrap this and
+          the no-card message in one component; the message moved into
+          the summary, and what is left here is the table. */}
+      {run.card ? <CardPanel run={run} /> : null}
       <ExportReport run={run} />
-      {/* **No gate table.** Every candidate now has a card carrying
-          G1-G6 and its blocking list, and the table under the cards
-          carries the numbers the gate table used to hold - for all of
-          them, not the first two. What was left of it was the same
-          data a third time. */}
-      <Outcome run={run} />
+      {/* **The replay is a drill-down, and it is now placed as one.** It
+          was second on the page: a thirty-episode pager, two trajectory
+          canvases and fourteen tiles, ahead of everything that says what
+          the run decided. Nobody opens it before knowing the result —
+          they open it to check one, so it sits after the result and
+          starts closed. */}
+      <TracePanel run={run} />
       {/* `Conditions`, `Provenance` and the review journal are out for
           now, at An's call — the measurement environment, the ids for
           rebuilding a run and the list of who read it are not what this
@@ -518,10 +537,22 @@ function TracePanel({ run }: { run: DecisionRun }) {
   };
 
   return (
-    <div className="panel decision-sample-panel episode-comparison">
-      <div className="panel-head">
+    <details className="panel decision-sample-panel episode-comparison">
+      {/* **Closed until asked for.** Open, this is a thirty-episode
+          pager, two trajectory canvases, fourteen tiles and two charts —
+          four screens of drill-down under a heading that names exactly
+          one thing a reader might want. Nobody arrives at a comparison
+          to watch an episode; they watch one to check a result they have
+          already read, and closing it puts every conclusion above it
+          within one screen. The episode count sits on the summary so the
+          control says what opening it is worth. */}
+      <summary className="panel-head episode-comparison-summary">
+        <Icon name="chevronRight" size={14} />
         <h3>{t("trace.title")} <Hint text={t("trace.note")} label={t("trace.title")} /></h3>
-      </div>
+        <span className="badge muted-badge">
+          {t("trace.episodeCount", { count: String(episodes.length) })}
+        </span>
+      </summary>
 
       <EpisodeOutcomes
         run={run}
@@ -600,7 +631,7 @@ function TracePanel({ run }: { run: DecisionRun }) {
           })}
         </div>
       </div>
-    </div>
+    </details>
   );
 }
 
@@ -1430,39 +1461,14 @@ function GateCell({ verdict }: { verdict: GateVerdict | undefined }) {
   );
 }
 
-/** The recommendation when there is one, and what to do when there is not. */
-function Outcome({ run }: { run: DecisionRun }) {
-  const { t } = useTranslation();
-  if (run.card) return <CardPanel run={run} />;
-
-  const reason = noCardReason(run);
-  return (
-    <div className="panel">
-      <div className="panel-head">
-        <h3>{t("decisions.noCard.title")}</h3>
-      </div>
-      {/* The heading says "no recommendation", not "failed". Three
-          situations end up here and each asks for a different next
-          action; collapsing them into one message is what makes a gate
-          table read like a broken run. */}
-      <p>
-        <strong>{t(`decisions.reason.${reason}`)}</strong>
-      </p>
-      <p className="muted">{t(`decisions.noCard.whatNext.${reason}`)}</p>
-      {run.report?.gate_only_deployment ? (
-        <div className="notice" style={{ marginTop: 12 }}>
-          {run.report.gate_only_deployment}
-        </div>
-      ) : null}
-      {run.report?.why_no_card ? (
-        <details style={{ marginTop: 12 }}>
-          <summary className="muted">{t("decisions.noCard.verbatim")}</summary>
-          <p>{run.report.why_no_card}</p>
-        </details>
-      ) : null}
-    </div>
-  );
-}
+/* **`Outcome` is gone, and it was two things.** It rendered the card's
+   sensitivity table when a card existed and the no-card message when one
+   did not — a single component switching on the one condition the whole
+   page turns on. The message is now one branch of `DecisionSummary` at
+   the top, where a reader meets it before the evidence rather than after
+   it, and `CardPanel` is rendered directly below the evidence. Neither
+   half needed the other; keeping them in one function is what put the
+   conclusion six screens down. */
 
 function CardPanel({ run }: { run: DecisionRun }) {
   const { t } = useTranslation();

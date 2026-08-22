@@ -23,18 +23,26 @@ const VIEWER = readFileSync(join(SRC, "components", "TraceViewer.tsx"), "utf8");
 const DETAIL = readFileSync(join(SRC, "app", "decisions", "[id]", "page.tsx"), "utf8");
 
 describe("the viewer sits with the evidence it explains", () => {
-  it("is placed under the gate table, above the recommendation", () => {
-    /* A row saying "G3: fail" is a claim about episodes; the next thing
-       a reader should be able to do is open one. Below the card instead,
-       a trajectory becomes an illustration of a conclusion rather than
-       the thing the conclusion came from. */
-    // Second, right under the comparison result: a reader who has just
-    // been told which candidate won wants to see it drive. The gate
-    // table now sits below the evidence — it lists eliminations, which
-    // closes the argument rather than opening it.
+  it("is placed after the conclusion, as the drill-down it is", () => {
+    /* **This used to assert the opposite, and the argument for it was
+       about the source rather than the screen.** "A row saying G3: fail
+       is a claim about episodes, so the next thing a reader should be
+       able to do is open one" is true of a reader who has read the gate
+       row. Second on the page, this panel came before anything said what
+       the run decided: a thirty-episode pager, two canvases, fourteen
+       tiles and two charts, ahead of the result. Nobody opens a replay
+       before knowing the result — they open one to check a result, so it
+       sits after the conclusion and after the evidence. */
+    expect(DETAIL.indexOf("<TracePanel")).toBeGreaterThan(DETAIL.indexOf("<DecisionSummary"));
     expect(DETAIL.indexOf("<TracePanel")).toBeGreaterThan(DETAIL.indexOf("<CandidateComparison"));
-    expect(DETAIL.indexOf("<TracePanel")).toBeLessThan(DETAIL.indexOf("<EvidencePanel"));
-    expect(DETAIL.indexOf("<TracePanel")).toBeLessThan(DETAIL.indexOf("<Outcome"));
+    expect(DETAIL.indexOf("<TracePanel")).toBeGreaterThan(DETAIL.indexOf("<EvidencePanel"));
+  });
+
+  it("starts closed", () => {
+    /* Open, it is four screens of drill-down under one heading. Closed,
+       every conclusion above it is within one screen. */
+    expect(DETAIL).toContain('<details className="panel decision-sample-panel episode-comparison">');
+    expect(DETAIL).not.toContain('episode-comparison" open');
   });
 
   it("loads both candidate traces for only the selected episode", () => {
