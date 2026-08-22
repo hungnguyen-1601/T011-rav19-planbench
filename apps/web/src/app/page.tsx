@@ -89,7 +89,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      {data?.partial && data.online ? <div className="notice">{t("dashboard.stale")}</div> : null}
+      {data?.partial && data.online ? <div className="notice notice--warn">{t("dashboard.stale")}</div> : null}
 
       <div className="stat-grid dashboard-stat-grid">
         <StatCard

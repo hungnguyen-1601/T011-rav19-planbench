@@ -1349,29 +1349,33 @@ details summary {
 }
 
 .notice {
-  background: var(--warn-soft);
-  border: 1px solid var(--warn);
-  border-radius: 6px;
-  padding: 10px 12px;
-  margin-bottom: 12px;
-  font-size: 13px;
+  /* **Neutral by default.** Every notice on the site used to be yellow,
+     which made "you are signed out", "the deployment was filed" and
+     "this run measured fewer episodes than the declared risk allows"
+     the same colour — so the colour said nothing and the reader learned
+     to skim all three. The default is now information, and a notice
+     that means more than that says so. */
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+  font-size: var(--fs-body);
 }
 
-/* Three severities, because right now there is one.
+/* Three severities.
    ===================================================================
-   Every `.notice` on the site is yellow — twenty-seven of them, from
-   "this run was scored before the explanation layer existed" to "every
-   figure on this page rests on a sample below the declared N_min".
-   A page where the routine note and the one that voids the numbers
-   under it wear the same colour has no way to say which is which, and
-   the reader learns to skim past both.
+   The vocabulary landed first and the call sites were assigned after,
+   so the diff that decided which notice is which reads as that decision
+   rather than as a change in what any of them look like.
 
-   The base rule above is deliberately left alone. Reassigning the
-   twenty-seven call sites is phase B's job and it is a judgement per
-   site; landing the vocabulary separately keeps that diff readable as
-   "this notice is a warning, that one is critical" rather than mixing
-   it with a change in what any of them look like. Nothing carries these
-   classes yet, so nothing moves.
+   How the twenty-one sites came out: three are warnings, seven more
+   were *already* asking to be — they carried `className="notice warn"`,
+   and `.notice.warn` is not a rule this stylesheet has ever had, so the
+   class did nothing and the notice stayed the default yellow. Nobody
+   could see it because the default happened to be the colour they
+   wanted. The rest are information. Exactly one thing on the site is
+   `--critical`, and it is below.
 
    Written `.notice.notice--x` rather than `.notice--x`. Both would work
    today — the variants sit after the base rule, so equal specificity

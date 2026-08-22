@@ -475,3 +475,38 @@ describe("panels sit on the page rather than above it", () => {
     expect(SHEET).not.toContain("transform: translateY(-1px)");
   });
 });
+
+describe("notices say how much they matter", () => {
+  const rule = (selector: string) => {
+    const at = SHEET.indexOf(`\n${selector} {`);
+    expect(at, `${selector} is not declared at the start of a line`).toBeGreaterThan(-1);
+    return SHEET.slice(at, SHEET.indexOf("\n}", at)).replace(/\/\*[\s\S]*?\*\//g, "");
+  };
+
+  it("defaults to information, not to alarm", () => {
+    /* Every notice used to be yellow, so "you are signed out", "the
+       deployment was filed" and "this run measured fewer episodes than
+       the declared risk allows" wore one colour — which meant the colour
+       said nothing and the reader skimmed all three. */
+    expect(rule(".notice")).toContain("background: var(--panel-2)");
+    expect(rule(".notice")).not.toContain("var(--warn");
+  });
+
+  it("uses a class the stylesheet actually declares", () => {
+    /* Seven sites carried `className="notice warn"`, and `.notice.warn`
+       has never been a rule here — the class did nothing and the notice
+       stayed the default yellow, which happened to be the colour they
+       wanted, so nobody could see it was inert. */
+    expect(SHEET).not.toContain(".notice.warn ");
+    expect(SHEET).not.toContain(".notice.warn{");
+  });
+
+  it("reserves the critical variant for the one message that earns it", () => {
+    /* `--critical` is for a message that voids every number below it:
+       a sample under the deployment's declared N_min. A second kind of
+       message wearing it makes it mean nothing. */
+    const critical = [...SHEET.matchAll(/notice--critical/g)];
+    expect(critical.length).toBeGreaterThan(0);
+    expect(rule(".notice.notice--critical")).toContain("var(--err)");
+  });
+});

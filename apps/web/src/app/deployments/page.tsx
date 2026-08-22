@@ -404,7 +404,7 @@ function DeleteDeployment({ id, onDeleted }: { id: string; onDeleted: () => void
        destroys an audit trail is a speed bump, not a safeguard. */
     const permanent = (blocked.approved_ids?.length ?? 0) > 0;
     return (
-      <div className="notice warn">
+      <div className="notice notice--warn">
         <p>
           {permanent
             ? t("deployments.delete.approvedBlocked", { approved: String(blocked.approved) })

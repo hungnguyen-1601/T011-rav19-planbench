@@ -1834,7 +1834,7 @@ export function DeploymentForm({
           back from here with `valid: false`, and the author would have
           seen only traffic drawn as though nothing were wrong. */}
       {preview && !preview.valid ? (
-        <div className="notice warn">
+        <div className="notice notice--warn">
           <strong>{t("deployments.form.previewInvalid")}</strong>
           <ul>
             {preview.errors.map((reason) => (
@@ -1966,7 +1966,7 @@ export function DeploymentForm({
             under a heading that does not own it is a refusal the author
             will not find, and filing stays blocked meanwhile. */}
         {tally.unmapped.map((entry) => (
-          <p key={`${entry.path}:${entry.message}`} className="notice warn">
+          <p key={`${entry.path}:${entry.message}`} className="notice notice--warn">
             {entry.path}: {entry.message}
           </p>
         ))}

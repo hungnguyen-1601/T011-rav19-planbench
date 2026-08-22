@@ -204,7 +204,7 @@ export default function LibraryPage() {
               anything, and the fix is authoring scenarios, not editing the
               cache. */}
           {calibration.coverage.warnings.map((warning) => (
-            <div className="notice" key={warning}>
+            <div className="notice notice--warn" key={warning}>
               {warning}
             </div>
           ))}

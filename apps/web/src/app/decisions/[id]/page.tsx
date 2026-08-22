@@ -1316,7 +1316,7 @@ function ObservationNotice({ candidates }: { candidates: RunCandidate[] }) {
   const classes = observationClasses(candidates);
   if (classes.length < 2) return null;
   return (
-    <div className="notice warn">
+    <div className="notice notice--warn">
       {t("decisions.gates.mixedObservation", {
         classes: classes.map((name) => name ?? t("decisions.gates.observationUnknown")).join(", "),
       })}

@@ -572,7 +572,7 @@ export default function ScenarioEditorPage() {
           </div>
         )}
         {(draft.dynamic_obstacles ?? []).some((item) => (item.seed_time_offset ?? 0) <= 0) ? (
-          <div className="notice">{t("scenarios.zeroOffsetWarning")}</div>
+          <div className="notice notice--warn">{t("scenarios.zeroOffsetWarning")}</div>
         ) : null}
       </div>
 
