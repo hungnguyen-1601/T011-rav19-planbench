@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -23,15 +22,99 @@ class NotFoundError(Exception):
 
 
 class DomainValidationError(Exception):
-    """Domain-level validation failed (semantically invalid input)."""
+    """Domain-level validation failed (semantically invalid input).
 
-    def __init__(self, message: str, details: list[str] | None = None) -> None:
+    ``details`` is deliberately untyped past ``list``. It began as a list
+    of sentences, which is all a paste-a-YAML form can use; a form with
+    thirty fields needs to know *which* field each sentence is about, and
+    that is a mapping rather than a sentence. Both shapes travel in the
+    same list and both serialise, so widening it costs no caller a change
+    (see :func:`field_errors`).
+    """
+
+    def __init__(self, message: str, details: list[Any] | None = None) -> None:
         self.details = details or []
         super().__init__(message)
 
 
+def field_errors(error: Exception) -> list[dict[str, str]]:
+    """Pydantic's own complaints, each tagged with the field it is about.
+
+    **This copies no rule.** The server still decides what is valid; all
+    this does is keep the *address* pydantic already computed instead of
+    flattening it into prose. Without it a form can only print one blob
+    and leave the reader to work out that "goal_tolerance_rad = 0.35
+    constrains the arrival heading" refers to a field thirty rows down.
+
+    ``loc`` is joined with dots, so a nested failure reads
+    ``missions.0.start`` — the same path the profile YAML uses, which is
+    what makes it usable by both the form and the paste box.
+
+    Duck-typed rather than importing pydantic: the callers catch
+    ``Exception`` on purpose ("ValidationError and friends"), and an
+    error that turns out not to carry field locations should degrade to
+    an empty list rather than raise while reporting an error.
+    """
+    collect = getattr(error, "errors", None)
+    if not callable(collect):
+        return []
+    try:
+        raw = collect()
+    except Exception:  # noqa: BLE001 - never fail while reporting a failure
+        return []
+    entries: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        location = item.get("loc") or ()
+        entries.append(
+            {
+                # Empty for a whole-model failure, which is honest: the
+                # complaint is about the profile, not about one field.
+                "path": ".".join(str(part) for part in location),
+                "message": str(item.get("msg", "")),
+            }
+        )
+    return entries
+
+
 class InvalidStateError(Exception):
-    """Operation not allowed in the resource's current state."""
+    """Operation not allowed in the resource's current state.
+
+    ``details`` exists for the refusals a caller is expected to answer
+    rather than merely read. Deleting a deployment that has runs is the
+    case that introduced it: the dialog asking "delete seven runs, two of
+    them approved?" needs those numbers, and counting them again in the
+    browser would be a second answer free to disagree with the one the
+    server refused on.
+    """
+
+    def __init__(self, message: str, details: list[Any] | None = None) -> None:
+        self.details = details or []
+        super().__init__(message)
+
+
+def _safe_details(errors: Any) -> Any:
+    """Make a validation error safe to serialise, whatever is inside it.
+
+    Pydantic puts arbitrary Python objects into an error's ``ctx`` and
+    ``input``, and FastAPI's own encoder raises on some of them. A file
+    upload is the case that bites: a required ``File()`` parameter carries
+    the literal ``...`` as its default, and ``jsonable_encoder`` dies on
+    it with ``'ellipsis' object is not iterable``.
+
+    The handler then raises *while reporting an error*, so the 500 handler
+    takes over and a plain missing-field mistake reaches the client as an
+    opaque internal error. Anything not natively JSON is stringified here
+    instead — a slightly less precise message beats an unusable one.
+    """
+    if isinstance(errors, dict):
+        return {str(key): _safe_details(value) for key, value in errors.items()}
+    if isinstance(errors, (list, tuple)):
+        return [_safe_details(item) for item in errors]
+    if errors is None or isinstance(errors, (str, bool, int, float)):
+        return errors
+    return str(errors)
 
 
 def _error_body(code: str, message: str, details: Any = None) -> dict:
@@ -44,6 +127,7 @@ def _error_body(code: str, message: str, details: Any = None) -> dict:
 def register_error_handlers(app: FastAPI) -> None:
     # Imported here to keep this module free of auth/domain imports at
     # module scope (errors.py is imported very early).
+    from planbench_agent.paper import PdfUnavailable
     from planbench_agent.provider import ProviderError, ProviderUnavailable
     from planbench_api.accounts import AccountError
     from planbench_api.approval import PermissionDenied, TransitionError
@@ -63,6 +147,17 @@ def register_error_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=503,
             content=_error_body("provider_unavailable", str(exc)),
+        )
+
+    @app.exception_handler(PdfUnavailable)
+    async def pdf_unavailable(_: Request, exc: PdfUnavailable) -> JSONResponse:
+        # 503, not 400: the caller's PDF was fine, this deployment is not
+        # equipped to read it. The message carries the install command,
+        # because the person who can fix it is often the person reading.
+        logger.warning("pdf reader unavailable: %s", exc)
+        return JSONResponse(
+            status_code=503,
+            content=_error_body("pdf_unavailable", str(exc)),
         )
 
     @app.exception_handler(ProviderError)
@@ -148,15 +243,18 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(InvalidStateError)
     async def invalid_state(_: Request, exc: InvalidStateError) -> JSONResponse:
-        return JSONResponse(status_code=409, content=_error_body("invalid_state", str(exc)))
+        return JSONResponse(
+            status_code=409,
+            content=_error_body("invalid_state", str(exc), getattr(exc, "details", None)),
+        )
 
     @app.exception_handler(RequestValidationError)
     async def request_invalid(_: Request, exc: RequestValidationError) -> JSONResponse:
-        # errors() can contain raw exception objects in ctx -> encode safely.
-        details = jsonable_encoder(exc.errors(), custom_encoder={Exception: str})
         return JSONResponse(
             status_code=422,
-            content=_error_body("request_validation_error", "invalid request", details),
+            content=_error_body(
+                "request_validation_error", "invalid request", _safe_details(exc.errors())
+            ),
         )
 
     @app.exception_handler(Exception)

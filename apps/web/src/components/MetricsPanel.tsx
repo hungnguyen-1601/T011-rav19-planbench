@@ -1,6 +1,7 @@
 "use client";
 
 import { useTranslation } from "@/lib/i18n";
+import type { ReplanningConfig } from "@/lib/benchmarkTypes";
 import type { EpisodeMetrics, PlanResult } from "@/lib/types";
 
 function format(value: number | null | undefined, digits = 2, suffix = ""): string {
@@ -9,38 +10,64 @@ function format(value: number | null | undefined, digits = 2, suffix = ""): stri
 }
 
 export function MetricsPanel({
+  replanning,
   metrics,
   plan,
 }: {
+  /** The rule this run executed under, so the replan row can tell "off"
+   *  from "zero". Undefined means the caller does not know — a page that
+   *  cannot say must not answer. */
+  replanning?: Pick<ReplanningConfig, "enabled">;
   metrics: EpisodeMetrics | null;
   plan?: PlanResult | null;
 }) {
   const { t } = useTranslation();
   if (!metrics) {
     return (
-      <div className="panel">
+      <div className="panel metrics-panel metrics-panel--empty">
         <h3>{t("metrics.title")}</h3>
-        <p className="muted">{t("metrics.runFirst")}</p>
+        <div className="metrics-panel-empty"><span aria-hidden="true">∿</span><p>{t("metrics.runFirst")}</p></div>
       </div>
     );
   }
   const badge = metrics.success ? "ok" : metrics.collision ? "err" : "warn";
   return (
-    <div className="panel">
-      <h3>{t("metrics.title")}</h3>
-      <div style={{ marginBottom: 12 }}>
+    <div className="panel metrics-panel">
+      <div className="metrics-panel-head"><div><h3>{t("metrics.title")}</h3><p>{t("metrics.computedByBackend")}</p></div>
         <span className={`badge ${badge}`}>{metrics.status}</span>
       </div>
       <div className="metrics">
-        <Metric label={t("metrics.travelTime")} value={format(metrics.travel_time, 2, " s")} />
-        <Metric label={t("metrics.trajectoryLength")} value={format(metrics.trajectory_length, 2, " m")} />
-        <Metric label={t("metrics.pathEfficiency")} value={format(metrics.path_efficiency, 3)} />
-        <Metric label={t("metrics.averageSpeed")} value={format(metrics.average_speed, 2, " m/s")} />
-        <Metric label={t("metrics.maxSpeed")} value={format(metrics.max_speed, 2, " m/s")} />
-        <Metric label={t("metrics.smoothness")} value={format(metrics.smoothness, 3, " rad/m")} />
-        <Metric label={t("metrics.minClearance")} value={format(metrics.min_clearance, 3, " m")} />
-        <Metric label={t("metrics.meanClearance")} value={format(metrics.mean_clearance, 3, " m")} />
+        <Metric tone="efficiency" label={t("metrics.travelTime")} value={format(metrics.travel_time, 2, " s")} />
+        <Metric tone="efficiency" label={t("metrics.trajectoryLength")} value={format(metrics.trajectory_length, 2, " m")} />
+        <Metric tone="efficiency" label={t("metrics.pathEfficiency")} value={format(metrics.path_efficiency, 3)} />
+        <Metric tone="motion" label={t("metrics.averageSpeed")} value={format(metrics.average_speed, 2, " m/s")} />
+        <Metric tone="motion" label={t("metrics.maxSpeed")} value={format(metrics.max_speed, 2, " m/s")} />
+        <Metric tone="motion" label={t("metrics.smoothness")} value={format(metrics.smoothness, 3, " rad/m")} />
+        <Metric tone="safety" label={t("metrics.minClearance")} value={format(metrics.min_clearance, 3, " m")} />
+        <Metric tone="safety" label={t("metrics.meanClearance")} value={format(metrics.mean_clearance, 3, " m")} />
         <Metric label={t("metrics.steps")} value={String(metrics.steps)} />
+        {/* **Always shown, and that is a reversal.** It used to render
+            only when the count was truthy, on the reasoning that a column
+            of zeros on every non-replanning run says nothing and buries
+            the metrics that do. The reasoning was fine and the effect was
+            not: "replanned 0 times" and "this platform does not report
+            replans" became the same blank, so somebody who had switched
+            replanning on and watched a robot sit still had no way to tell
+            whether it never tried or the setting never arrived. That is
+            the exact question this row is for.
+
+            Three states, because there are three answers: off is not a
+            count, and 0 is not silence. */}
+        <Metric
+          label={t("metrics.replanCount")}
+          value={
+            replanning === undefined
+              ? t("metrics.replanUnknown")
+              : replanning.enabled
+                ? String(metrics.replan_count ?? 0)
+                : t("metrics.replanOff")
+          }
+        />
         {plan ? (
           <>
             <Metric label={t("metrics.plannedLength")} value={format(plan.path_length, 2, " m")} />
@@ -52,16 +79,13 @@ export function MetricsPanel({
           </>
         ) : null}
       </div>
-      <p className="muted" style={{ marginTop: 12, fontSize: 12 }}>
-        {t("metrics.computedByBackend")}
-      </p>
     </div>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value, tone = "result" }: { label: string; value: string; tone?: "efficiency" | "motion" | "safety" | "result" }) {
   return (
-    <div className="metric">
+    <div className={`metric metric--${tone}`}>
       <div className="label">{label}</div>
       <div className="value">{value}</div>
     </div>

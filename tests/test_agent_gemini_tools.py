@@ -133,7 +133,7 @@ def tool_call_turn(
     """An assistant turn asking for `list_benchmarks`, as Gemini sends it."""
     call = SdkToolCall(
         id="call_list_benchmarks_1",
-        function=SdkFunction(name="list_benchmarks", arguments=arguments),
+        function=SdkFunction(name="list_decision_runs", arguments=arguments),
     )
     if signature is not None:
         # Gemini attaches this to the function call itself. The adapter
@@ -151,7 +151,8 @@ def text_turn(text: str) -> SdkCompletion:
 @pytest.fixture
 def gateway() -> FakeGateway:
     fake = FakeGateway()
-    fake.add_benchmark("a1b2c3d4e5f6", state="accepted", with_report=True)
+    fake.add_deployment()
+    fake.add_run("a1b2c3d4e5f6")
     return fake
 
 
@@ -159,10 +160,10 @@ class TestCapture:
     def test_the_signature_reaches_the_response(self):
         provider, _ = gemini_with([tool_call_turn()])
         response = provider.complete(
-            LLMRequest(system="s", messages=(LLMMessage.user("list the benchmarks"),))
+            LLMRequest(system="s", messages=(LLMMessage.user("list the decision runs"),))
         )
         assert response.stop_reason is StopReason.TOOL_USE
-        assert response.tool_calls[0].name == "list_benchmarks"
+        assert response.tool_calls[0].name == "list_decision_runs"
 
         turn = response.provider_turn
         assert turn is not None
@@ -182,13 +183,13 @@ class TestReplay:
         provider, client = gemini_with([tool_call_turn(), text_turn("There is 1 benchmark.")])
 
         first = provider.complete(
-            LLMRequest(system="s", messages=(LLMMessage.user("list the benchmarks"),))
+            LLMRequest(system="s", messages=(LLMMessage.user("list the decision runs"),))
         )
         provider.complete(
             LLMRequest(
                 system="s",
                 messages=(
-                    LLMMessage.user("list the benchmarks"),
+                    LLMMessage.user("list the decision runs"),
                     LLMMessage.assistant(
                         first.text, first.tool_calls, provider_turn=first.provider_turn
                     ),
@@ -196,7 +197,7 @@ class TestReplay:
                         [
                             ToolResult(
                                 call_id="call_list_benchmarks_1",
-                                name="list_benchmarks",
+                                name="list_decision_runs",
                                 content="[]",
                             )
                         ]
@@ -306,10 +307,10 @@ class TestFullLoop:
         )
         service = AgentService(provider, gateway)
 
-        turn, messages = service.converse("list the benchmarks")
+        turn, messages = service.converse("list the decision runs")
 
         assert turn.text == "There is 1 benchmark: a1b2c3d4e5f6."
-        assert turn.tools_used == ("list_benchmarks",)
+        assert turn.tools_used == ("list_decision_runs",)
         assert turn.tool_errors == ()
         assert turn.iterations == 2
         assert turn.truncated is False
@@ -328,7 +329,7 @@ class TestFullLoop:
 
     def test_the_tool_actually_ran_and_its_result_was_sent(self, gateway):
         provider, client = gemini_with([tool_call_turn(), text_turn("done")])
-        AgentService(provider, gateway).converse("list the benchmarks")
+        AgentService(provider, gateway).converse("list the decision runs")
 
         tool_message = client.requests[1]["messages"][-1]
         payload = json.loads(tool_message["content"])
@@ -338,7 +339,7 @@ class TestFullLoop:
         # Not every OpenAI-compatible vendor signs its calls; the replay
         # path must not depend on the field existing.
         provider, client = gemini_with([tool_call_turn(signature=None), text_turn("done")])
-        turn, _ = AgentService(provider, gateway).converse("list the benchmarks")
+        turn, _ = AgentService(provider, gateway).converse("list the decision runs")
 
         assert turn.text == "done"
         assert "thought_signature" not in json.dumps(client.requests[1]["messages"])

@@ -34,6 +34,11 @@ from planbench_api.accounts import (
 )
 from planbench_api.approval import ApprovalRecord, BenchmarkState
 from planbench_api.artifacts import ArtifactStore
+from planbench_api.db.decision_repositories import (
+    SqlCandidateRepository,
+    SqlDecisionRunRepository,
+    SqlTaskProfileRepository,
+)
 from planbench_api.db.models import (
     ApprovalRow,
     BenchmarkRow,
@@ -46,7 +51,6 @@ from planbench_api.db.models import (
     UserRow,
 )
 from planbench_api.db.registry_repositories import (
-    SqlConversationRepository,
     SqlModelRepository,
     SqlRobotProfileRepository,
 )
@@ -67,6 +71,7 @@ from planbench_metrics import EpisodeMetrics
 from planbench_planning import PlanResult
 from planbench_schemas.episode import EpisodeResult
 from planbench_schemas.map import MapData
+from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
 from planbench_schemas.scenario import Scenario
 from planbench_simulator.nav_stack import StackRun
 
@@ -164,7 +169,12 @@ class SqlSimulationRepository:
         self._sessions = sessions
 
     def create(
-        self, map_id: str, scenario_id: str, algorithm: str, config: dict
+        self,
+        map_id: str,
+        scenario_id: str,
+        algorithm: str,
+        config: dict,
+        replanning: ReplanningConfig = NO_REPLANNING,
     ) -> StoredSimulation:
         row = SimulationRow(
             id=new_id(),
@@ -175,6 +185,7 @@ class SqlSimulationRepository:
             state="created",
             created_at=now_iso(),
             run=None,
+            replanning=replanning.model_dump(),
         )
         with self._sessions.begin() as session:
             session.add(row)
@@ -593,7 +604,9 @@ class SqlRepositoryHub:
         self.reviews = SqlReviewRepository(sessions)
         self.robot_profiles = SqlRobotProfileRepository(sessions)
         self.models = SqlModelRepository(sessions)
-        self.conversations = SqlConversationRepository(sessions)
+        self.task_profiles = SqlTaskProfileRepository(sessions)
+        self.candidates = SqlCandidateRepository(sessions)
+        self.decision_runs = SqlDecisionRunRepository(sessions)
 
 
 # -- row <-> domain ----------------------------------------------------
@@ -680,6 +693,12 @@ def _to_simulation(row: SimulationRow) -> StoredSimulation:
         created_at=row.created_at,
         state=row.state,
         run=_load_run(row.run) if row.run else None,
+        # NULL means the row predates the column, and those runs did not
+        # replan. Reading it as disabled is the recorded truth, not a
+        # fallback.
+        replanning=(
+            ReplanningConfig.model_validate(row.replanning) if row.replanning else NO_REPLANNING
+        ),
     )
 
 
@@ -736,16 +755,25 @@ def _dump_run(run: StackRun) -> dict:
         "plan": run.plan.model_dump(mode="json"),
         "result": run.result.model_dump(mode="json"),
         "metrics": run.metrics.model_dump(mode="json"),
+        "plans": [plan.model_dump(mode="json") for plan in run.plans],
     }
 
 
 def _load_run(payload: dict) -> StackRun:
-    """Rebuild a StackRun from the shape ``write_episode`` stores."""
+    """Rebuild a StackRun from the shape ``write_episode`` stores.
+
+    ``plans`` is absent from rows written before the field existed, and
+    those come back empty rather than as ``[plan]``. Filling it in would
+    claim an episode replanned once when the truth is that nobody
+    recorded it — the same distinction HĐ-12 draws between a null and a
+    zero.
+    """
     return StackRun(
         algorithm=payload["algorithm"],
         plan=PlanResult.model_validate(payload["plan"]),
         result=EpisodeResult.model_validate(payload["result"]),
         metrics=EpisodeMetrics.model_validate(payload["metrics"]),
+        plans=tuple(PlanResult.model_validate(item) for item in payload.get("plans", ())),
     )
 
 

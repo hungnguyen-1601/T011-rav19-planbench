@@ -99,7 +99,7 @@ def make_run(algorithm: str = "astar+dwa", status: EpisodeStatus = EpisodeStatus
         trajectory_length=3.0,
         average_speed=1.0,
         max_speed=1.0,
-        smoothness=0.05,
+        smoothness=0.017,
         min_clearance=0.4,
     )
     plan = PlanResult(

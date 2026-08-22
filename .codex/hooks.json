@@ -1,0 +1,4 @@
+{
+  "description": "AI logging is installed in the user Codex layer so every new VS Code session loads it reliably.",
+  "hooks": {}
+}

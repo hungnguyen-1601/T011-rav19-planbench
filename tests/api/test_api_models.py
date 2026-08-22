@@ -666,3 +666,52 @@ class TestRunningWithoutTheOptionalStack:
         # Beside the checkpoint, named after it: that is where the
         # loader looks when no explicit path is given.
         assert Path(service.internal_location(record)).with_suffix(".json").exists()
+
+
+class TestUploadErrorsStayReadable:
+    """A malformed upload must answer with a validation error, not a 500.
+
+    Regression: the 422 handler serialised Pydantic's raw error objects,
+    and a required `File()` parameter carries the literal `...` as its
+    default. `jsonable_encoder` raised `'ellipsis' object is not
+    iterable` *while reporting the error*, so the 500 handler took over
+    and a plain missing-field mistake reached the client as an opaque
+    internal error.
+    """
+
+    def test_a_missing_file_is_a_422_not_a_500(
+        self, client: TestClient, alice_headers, profile_id
+    ) -> None:
+        response = client.post(
+            "/api/v1/models/upload",
+            headers=alice_headers,
+            data={"name": "no-file", "version": "1", "robot_profile_id": profile_id},
+        )
+        assert response.status_code == 422, response.text
+        assert response.json()["error"]["code"] == "request_validation_error"
+
+    def test_a_missing_form_field_is_a_422_not_a_500(
+        self, client: TestClient, alice_headers
+    ) -> None:
+        # `robot_profile_id` omitted: the other required field.
+        response = client.post(
+            "/api/v1/models/upload",
+            headers=alice_headers,
+            files={"model_file": ("m.zip", checkpoint(), "application/zip")},
+            data={"name": "no-profile"},
+        )
+        assert response.status_code == 422, response.text
+
+    def test_the_details_survive_json_encoding(
+        self, client: TestClient, alice_headers, profile_id
+    ) -> None:
+        """The point of the fix: the body must be serialisable at all."""
+        response = client.post(
+            "/api/v1/models/upload",
+            headers=alice_headers,
+            data={"name": "no-file", "robot_profile_id": profile_id},
+        )
+        body = response.json()["error"]
+        assert body["message"] == "invalid request"
+        # Round-trips: no object in `details` defeats the encoder.
+        assert json.loads(json.dumps(body["details"])) == body["details"]

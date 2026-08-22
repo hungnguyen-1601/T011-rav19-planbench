@@ -1,0 +1,94 @@
+# Latency screening protocol v2 — plan Algorithm Host §5.9 luật 5, §13.
+#
+# ============================================================
+# VÌ SAO CÓ v2, VÀ VÌ SAO SỬA BÂY GIỜ LÀ HỢP LỆ
+# ============================================================
+# v1 (commit f15ee25, trước cả H0) khai `confidence_method: bootstrap_ci`
+# và **không nói resample đơn vị gì**. Một thước khai trước mà mơ hồ thì
+# không phải thước khai trước: hai người đọc v1 sẽ dựng hai phép đo khác
+# nhau và cả hai đều tuân thủ.
+#
+# Sửa hợp lệ **ngay bây giờ** vì chưa có một phép đo latency nào tồn tại.
+# Sửa sau con số đầu tiên là thay thước giữa chừng — đúng thứ kỷ luật P4
+# tồn tại để chặn. v1 **không bị xoá**: lịch sử phải giữ được cả bản mơ
+# hồ lẫn lý do nó bị thay.
+#
+# Ba thay đổi so với v1, tất cả về việc CI nói thật:
+#   1. resample đơn vị = EPISODE, không phải tick;
+#   2. sample size vào verdict record;
+#   3. N tối thiểu, dưới đó verdict là inconclusive bất kể CI.
+
+version: latency-screening-v2
+supersedes: latency-screening-v1
+
+# -- Điều kiện tải khai trước --------------------------------------------
+warmup_episodes: 3          # bỏ, không tính: JIT/cache/import lần đầu
+repetitions: 30             # số episode đo mỗi candidate, sau warmup
+core_affinity: []           # điền theo máy đo lúc calibration; rỗng = ghi
+                            # vào verdict record là "không pin core"
+worker_count: 1             # tuần tự, không song song với việc khác
+blas_threads: 1             # OMP_NUM_THREADS / MKL_NUM_THREADS = 1
+
+# -- Sentinel: phát hiện host đang nhiễu ---------------------------------
+# Đo sentinel TRƯỚC và SAU phiên đo. Drift giữa hai lần vượt ngưỡng ⇒
+# mọi verdict của phiên là NOT_MEASURED. Cấm đo lại liên tục tới khi ra
+# số đẹp: retry là quyết định có hồ sơ (ghi lý do), không phải vòng lặp.
+sentinel_candidate: astar+dwa
+sentinel_config: dwa_balanced
+sentinel_metric: p99_end_to_end_control_ms
+sentinel_drift_max_fraction: 0.15
+
+# -- Deadline và margin ---------------------------------------------------
+# Deadline lấy từ deployment tại thời điểm đo, không hardcode ở đây:
+# mỗi deployment một control_period, thước dùng chung.
+deadline_source: deployment.robot.control_period
+guard_band_ms: 5.0
+
+# -- Ước lượng khoảng tin cậy --------------------------------------------
+confidence_method: bootstrap_ci
+confidence_level: 0.95
+bootstrap_resamples: 10000
+bootstrap_seed: 20260817
+
+# **Đơn vị resample — điều v1 quên nói.**
+#
+# Tick trong cùng một episode KHÔNG độc lập: chúng chia sẻ bản đồ, seed,
+# quỹ đạo và trạng thái cache. Resample từng tick như mẫu độc lập sẽ cho
+# CI hẹp hơn sự thật — hẹp theo hệ số cỡ căn bậc hai của số tick mỗi
+# episode, tức một hai bậc — và một gate đọc CI hẹp giả sẽ tuyên bố
+# "đạt" từ dữ liệu không nói được điều đó.
+#
+# Nên resample **episode**: mỗi lần bootstrap lấy lại N episode có hoàn
+# lại, gộp toàn bộ tick của các episode được chọn, rồi tính LẠI p99 trên
+# tập gộp đó. p99 được tính lại trong từng resample chứ không phải trung
+# bình của các p99 từng episode — percentile của percentile là thống kê
+# của không cái gì.
+resample_unit: episode
+pooled_statistic: p99_end_to_end_control_ms
+
+# **N hiệu dụng, và sàn của nó.**
+#
+# Resample theo episode nghĩa là N quyết định độ rộng CI là **số
+# episode** (30), không phải hàng nghìn tick. Con số đó phải hiện ra
+# trong verdict record, không được ẩn sau một CI trông hẹp.
+#
+# Dưới sàn này verdict là `inconclusive` bất kể CI nằm đâu: một khoảng
+# tin cậy dựng từ 4 episode có thể rất hẹp và vẫn không nói gì về episode
+# thứ năm.
+min_episodes_for_verdict: 10
+# p99 cần đủ mẫu để là p99 chứ không phải "gần max". Dưới ngưỡng này số
+# gọi là p99 thực chất là thống kê đuôi của một nhúm điểm.
+min_ticks_for_percentile: 200
+
+# -- Verdict --------------------------------------------------------------
+# Tính trên p99(end_to_end_control_ms), pooled trong từng resample.
+verdicts:
+  pass: "ci_upper_bound < deadline_ms - guard_band_ms"
+  fail: "ci_lower_bound > deadline_ms + guard_band_ms"
+  otherwise: inconclusive
+
+# -- Tư cách logic --------------------------------------------------------
+# Giống G4: điều kiện cần, không phải chứng nhận. Transport đo được là
+# pickle/pipe của harness trên máy dev, không phải DDS/ROS của deployment;
+# CONTRACTS cấm hệ số quy đổi giữa hai máy, và luật đó áp nguyên ở đây.
+realtime_gate_status: screened_on_host

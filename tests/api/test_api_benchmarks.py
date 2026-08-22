@@ -230,6 +230,34 @@ class TestExecution:
         assert response.status_code == 200
         assert response.json()["report"]["runs"][0]["algorithm"] == "astar+dwa"
 
+    def test_report_carries_the_statistics_and_its_caveats(
+        self, client: TestClient, created_map, created_scenario, alice_headers
+    ) -> None:
+        """P04: the API must serialise the robust summaries and the seed caveat.
+
+        A four-seed run is deliberate: it is below the adequacy threshold
+        and below the minimum for a paired test, so this also pins down
+        what a small benchmark reports — numbers, and an honest refusal
+        to conclude from them.
+        """
+        benchmark = run_benchmark(
+            client, created_map, created_scenario, alice_headers, seeds=[1, 2, 3, 4]
+        )
+        report = client.get(
+            f"/api/v1/benchmarks/{benchmark['id']}/results", headers=alice_headers
+        ).json()["report"]
+
+        assert report["seed_count"] == 4
+        assert report["statistically_adequate"] is False
+
+        aggregate = report["aggregates"][0]
+        assert aggregate["ci95_success_rate"] is not None
+        # Old fields survive alongside the new ones.
+        assert "mean_travel_time_successful" in aggregate
+        if aggregate["success_rate"] > 0:
+            assert aggregate["median_travel_time_successful"] is not None
+            assert len(aggregate["iqr_travel_time_successful"]) == 2
+
 
 class TestEpisodesAndReplay:
     def test_episodes_are_stored_with_artifacts(

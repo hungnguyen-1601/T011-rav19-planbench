@@ -197,13 +197,78 @@ function sessionFrom(data: TokenResponse): Session {
   return session;
 }
 
-async function errorMessage(response: Response, fallback: string): Promise<string> {
+/** A refusal that says which fields it is about.
+ *
+ * The sentence is still the message, so every existing catcher keeps
+ * working unchanged. `details` is what a form needs on top of it: one
+ * blob saying "2 validation errors for TaskProfile" leaves the reader to
+ * find which two among thirty inputs.
+ */
+export class FieldError extends Error {
+  constructor(
+    message: string,
+    public details: { path: string; message: string }[],
+    /** Everything in `error.details` that was not field-shaped.
+     *
+     * The server's `details` is a list of *whatever the refusal needs a
+     * caller to act on* — sentences and field addresses for a form, and
+     * counts for a confirmation dialog ("delete 7 runs, 2 approved?").
+     * Filtering to the field shape and dropping the rest silently is
+     * what made the first version of the delete dialog have nothing to
+     * count with. Kept separate so `fieldErrorsOf` stays exactly as
+     * narrow as a form needs.
+     */
+    public raw: unknown[] = [],
+    /** The HTTP status the refusal arrived with.
+     *
+     * Present because some refusals are **states**, not faults: a 409
+     * says "this run is in a condition that has no answer", and a page
+     * that cannot tell it from a 500 renders a red box for something
+     * that is simply true about the data. Carried as a number rather
+     * than left to be recovered by matching the message, for the same
+     * reason a checker's failure code is typed: prose changes when
+     * somebody improves a sentence.
+     *
+     * ``0`` for a refusal that never reached the network.
+     */
+    public status: number = 0,
+  ) {
+    super(message);
+    this.name = "FieldError";
+  }
+}
+
+/** The addressed complaints on a thrown error, or none. */
+export function fieldErrorsOf(caught: unknown): { path: string; message: string }[] {
+  return caught instanceof FieldError ? caught.details : [];
+}
+
+async function errorBody(
+  response: Response,
+  fallback: string,
+): Promise<{
+  message: string;
+  details: { path: string; message: string }[];
+  raw: unknown[];
+}> {
   try {
     const body = await response.json();
-    return body?.error?.message ?? fallback;
+    const raw: unknown[] = Array.isArray(body?.error?.details) ? body.error.details : [];
+    const details = raw.filter(
+      (entry): entry is { path: string; message: string } =>
+        entry !== null &&
+        typeof entry === "object" &&
+        typeof (entry as { path?: unknown }).path === "string" &&
+        typeof (entry as { message?: unknown }).message === "string",
+    );
+    return { message: body?.error?.message ?? fallback, details, raw };
   } catch {
-    return fallback;
+    return { message: fallback, details: [], raw: [] };
   }
+}
+
+async function errorMessage(response: Response, fallback: string): Promise<string> {
+  return (await errorBody(response, fallback)).message;
 }
 
 /** Which sign-in methods the backend actually offers. */
@@ -252,19 +317,26 @@ export async function login(username: string, password: string): Promise<Session
 /** Authenticated request against /api/v1; throws on non-2xx. */
 export async function authFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const session = loadSession();
+  // A `FormData` body must set its own Content-Type, because only the
+  // browser knows the multipart boundary it generated. Naming JSON here
+  // would produce a request the server cannot parse.
+  const multipart = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const response = await fetch(`${API_BASE}/api/v1${path}`, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
+      ...(multipart ? {} : { "Content-Type": "application/json" }),
       ...(session ? { Authorization: `Bearer ${session.token}` } : {}),
       ...init?.headers,
     },
     cache: "no-store",
   });
   if (!response.ok) {
-    const message = await errorMessage(response, response.statusText);
+    const { message, details, raw } = await errorBody(response, response.statusText);
     if (response.status === 401) clearSession();
-    throw new Error(message);
+    // Always a `FieldError`, even with no details: one type of refusal
+    // is easier to reason about than two, and `details` being empty is
+    // the honest answer for an error nobody addressed.
+    throw new FieldError(message, details, raw, response.status);
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;

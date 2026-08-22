@@ -1,0 +1,210 @@
+"""What an episode was actually simulated under, as one hash.
+
+**The hole this closes, with the artefact that proved it.** A trace is
+addressed by ``(candidate_id, episode_context_id)`` and nothing else:
+``--reuse-traces`` checks that the file exists and skips the simulation,
+``--score-only`` looks the file up by the same two ids, and
+``TraceMetadata`` records neither the map nor the traffic nor the noise.
+Meanwhile HĐ-3.1 freezes ``episode_context_id`` at *(task profile,
+mission, variant, seed)* — the **environment is not in it**.
+
+So the two halves fit together badly. Re-running a deployment after
+changing its world produces episodes that hash to the same ids, and the
+machinery happily reuses the old ones. Measured, not feared: re-running
+``warehouse_crossing_v1`` after withdrawing ``v_obstacle_max`` left a
+``run_journal.jsonl`` with **120 records** — sixty ``stuck`` followed by
+sixty ``success``, under the *same* ``episode_context_id b408516ece7f``.
+Two different worlds, one identity, one file. A reader diffing that
+journal would conclude the episode was flaky.
+
+**Why this is derived from objects rather than from a list of fields.**
+The first draft of this was a hand-written list of profile fields to
+hash, and in a single sitting it managed both possible mistakes: it
+omitted ``clearance_preference``, which changes the planning grid and so
+the trajectory, and it included ``clearance_warning_m``, which only the
+Metrics Engine reads when scoring a trace that already exists. A list
+maintained beside the thing it describes drifts from it. So the payload
+here is built from **exactly the arguments the simulator is handed** —
+add a field to ``Scenario`` and it is covered without anybody
+remembering, and :func:`condition_arguments` states the rest so a test
+can check the set has not grown.
+
+The classification rule, for whoever extends this: **in, if changing it
+could change the trajectory or the contents of the trace; out, if it
+only changes how a finished trace is judged.** Gate thresholds,
+``hardware`` and the preference profile are all firmly out — a
+deployment may retune what counts as success without re-simulating
+anything.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from planbench_schemas.map import MapData
+from planbench_schemas.scenario import Scenario
+from planbench_schemas.task_profile import TaskProfile
+
+#: Scenario fields deliberately left out of the hash.
+#:
+#: ``name`` and ``description`` are labels — renaming a scenario does not
+#: change one metre of what happens in it. ``description`` is the subtler
+#: of the two and was missed on the first pass: ``scenario_for`` builds
+#: it as ``"<profile> · <mission> · seed <n>"``, so leaving it in
+#: smuggled the seed back into a hash that had deliberately excluded it,
+#: and every episode of one deployment came out with different
+#: conditions.
+#:
+#: ``random_seed`` is left out because the seed is already the ``s`` in
+#: ``episode_context_id``, which the trace path is keyed by: hashing it
+#: here would make the fingerprint say "different episode" when the ids
+#: beside it have said that already. The question this answers is
+#: narrower — *were the conditions the same?*
+_IGNORED_SCENARIO_FIELDS = frozenset({"name", "description", "random_seed"})
+
+#: Everything ``run_contract_episode`` hands the simulator that describes
+#: the **conditions** rather than the candidate or the plumbing.
+#:
+#: Named here so :mod:`tests.test_execution_fingerprint` can assert that
+#: ``run_stack`` has not quietly grown a sixth one. A condition the
+#: simulator reads and this module does not hash is a trace that can be
+#: reused across a change nobody sees.
+CONDITION_ARGUMENTS: tuple[str, ...] = (
+    "map_data",
+    "scenario",
+    "replanning",
+    "recovery",
+    "obstacle_speed",
+)
+
+
+def _canonical(value: Any) -> Any:
+    """A JSON-safe form with a stable ordering."""
+    if hasattr(value, "model_dump"):
+        return _canonical(value.model_dump(mode="json"))
+    if isinstance(value, dict):
+        return {key: _canonical(value[key]) for key in sorted(value)}
+    if isinstance(value, (list, tuple)):
+        return [_canonical(item) for item in value]
+    return value
+
+
+def scenario_payload(scenario: Scenario) -> dict:
+    """The scenario, minus the fields that name it rather than define it."""
+    dumped = scenario.model_dump(mode="json")
+    return _canonical(
+        {key: dumped[key] for key in sorted(dumped) if key not in _IGNORED_SCENARIO_FIELDS}
+    )
+
+
+class HostConditions(BaseModel):
+    """Execution conditions the **host** contributes (plan §5.9, §7.1).
+
+    This model exists so the Algorithm Host extends *this* hash rather
+    than growing a second one somewhere else — two places hashing two
+    ideas of "what this ran under" is how trace reuse and report lineage
+    drift apart, and §7.1 forbids it outright.
+
+    **What belongs here, and what deliberately does not.** The ownership
+    boundary decides:
+
+    * **deployment-owned providers** are conditions — the deployment
+      chose to run a tracker, and a candidate measured with one is not
+      comparable to the same candidate measured without. They go in.
+    * **oracle providers** likewise, and harder: an episode fed ground
+      truth is a different experiment, and the evidence class alone is
+      not enough, because two runs must also be *addressed* apart.
+    * **candidate-owned providers are excluded on purpose.** A provider
+      the candidate ships is part of the candidate; it changes
+      ``candidate_id``. Hashing it here as well would split one
+      candidate's episodes across two fingerprints for a change already
+      recorded in its identity.
+    * **the resolved runtime profile** goes in, and only became a
+      condition when the deadline gate started reading ``transport_ms``.
+      Before that a lane was bookkeeping; a lane that can change a
+      verdict is a condition, and comparing two candidates measured in
+      different lanes compares transports.
+
+    Absent — the legacy in-process path — this contributes **nothing at
+    all** to the payload, so every fingerprint recorded before the host
+    existed still describes the same conditions. That is checked against
+    the committed H0 value, not asserted.
+
+    Like the rest of this module the payload is derived from the object,
+    so a field added here is hashed without anybody remembering to add
+    it to a list.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    #: ``(capability, provider)`` pairs owned by the deployment or the
+    #: oracle lane. Sorted **here**, at the door, rather than by each
+    #: caller: a set written in two orders is one set, and the argument
+    #: is the same one ``canonical_observations`` makes — an identity
+    #: that depended on the order somebody listed things in would make
+    #: two spellings of one condition look like two conditions.
+    providers: tuple[tuple[str, str], ...] = ()
+    #: Action adapters between the plugin's output and the simulator's.
+    #: **Not** sorted: a chain is ordered by construction, and two
+    #: adapters applied in the other order are a different transform.
+    adapter_chain: tuple[str, ...] = ()
+    #: The runtime lane actually resolved, with its codec and deadline
+    #: policy — not merely the word "subprocess" (§5.9 rule 4).
+    runtime_profile: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("providers", mode="before")
+    @classmethod
+    def _canonical_providers(cls, value: object) -> object:
+        if isinstance(value, (list, tuple)):
+            return tuple(sorted({tuple(entry) for entry in value}))
+        return value
+
+    def is_empty(self) -> bool:
+        """True when the host adds no condition the legacy path lacked."""
+        return not (self.providers or self.adapter_chain or self.runtime_profile)
+
+
+def execution_conditions_fingerprint(
+    map_data: MapData,
+    scenario: Scenario,
+    profile: TaskProfile,
+    host: HostConditions | None = None,
+) -> str:
+    """SHA-256 over everything the episode was simulated under.
+
+    Two traces with the same fingerprint were produced by the same world
+    under the same rules and may be compared; two with different ones may
+    not, whatever their ids say.
+
+    ``host`` is omitted from the payload when it is absent or empty, so
+    the legacy path hashes exactly as it did before the Algorithm Host —
+    see :class:`HostConditions` for why that is a requirement rather than
+    a convenience.
+    """
+    payload: dict[str, Any] = {
+        "map": map_data.checksum(),
+        "scenario": scenario_payload(scenario),
+        "replanning": _canonical(profile.replanning),
+        "recovery": _canonical(profile.recovery),
+        "obstacle_speed": profile.environment.v_obstacle_max,
+    }
+    if profile.capability_grants:
+        # **Deployment-owned providers are conditions** (§7.1): a tracker
+        # the deployment runs, and the settings it runs it under, change
+        # what every candidate sees. Absent when none are granted — every
+        # profile written before H11 has none, and hashing an empty list
+        # would move the conditions hash of runs already recorded.
+        payload["capability_grants"] = _canonical(
+            sorted(
+                (grant.model_dump(mode="json") for grant in profile.capability_grants),
+                key=lambda entry: (entry["capability"], entry["provider_id"]),
+            )
+        )
+    if host is not None and not host.is_empty():
+        payload["host"] = _canonical(host)
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]

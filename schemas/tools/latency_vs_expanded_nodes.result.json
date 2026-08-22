@@ -1,0 +1,70 @@
+{
+  "$id": "schemas/tools/latency_vs_expanded_nodes.result.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "measurements": {
+      "additionalProperties": false,
+      "properties": {
+        "median_expanded_nodes": {
+          "description": "Median search size per episode.",
+          "type": "number",
+          "unit": "count"
+        },
+        "median_latency_ms": {
+          "description": "Median planner latency per episode.",
+          "type": "number",
+          "unit": "ms"
+        },
+        "n_episodes": {
+          "description": "Episodes the association was ranked over.",
+          "type": "number",
+          "unit": "count"
+        },
+        "spearman_rho": {
+          "description": "Rank correlation of expanded nodes with planner latency across episodes.",
+          "type": "number",
+          "unit": "correlation"
+        }
+      },
+      "required": [
+        "n_episodes",
+        "spearman_rho",
+        "median_expanded_nodes",
+        "median_latency_ms"
+      ],
+      "type": "object"
+    },
+    "references": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": []
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ref": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "measurements"
+  ],
+  "title": "latency_vs_expanded_nodes@2.0.0 output",
+  "type": "object"
+}

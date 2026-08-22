@@ -83,6 +83,12 @@ services:
       PLANBENCH_ADMIN_EMAILS: ${PLANBENCH_ADMIN_EMAILS:-}
       PLANBENCH_CORS_ORIGINS: '["http://localhost:3000"]'
       PLANBENCH_ARTIFACT_DIR: /data/artifacts
+      # Uploaded PPO checkpoints. Must be absolute and inside the volume:
+      # the default is the relative `artifacts/models`, which resolves
+      # against the working directory `/app` — owned by root, while the
+      # container runs as `planbench`. The API then dies at startup with
+      # `PermissionError: 'artifacts'` before serving a single request.
+      PLANBENCH_MODEL_DIR: /data/artifacts/models
       PLANBENCH_WORKER_CONCURRENCY: ${PLANBENCH_WORKER_CONCURRENCY:-2}
       # Agent provider. Unset keys leave the deterministic mock in place,
       # which is a working default rather than a failure.

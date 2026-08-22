@@ -79,6 +79,13 @@ export interface RobotProfile {
   footprint: string;
   max_linear_velocity: number;
   max_angular_velocity: number;
+  /** Null means the profile never declared it, which is not the same as
+   *  zero: zero would be a robot that cannot change speed. A deployment
+   *  needs both, so a form filling itself from a profile has to leave
+   *  these to their author rather than substitute a number nobody
+   *  checked. */
+  max_linear_acceleration: number | null;
+  max_angular_acceleration: number | null;
   lidar_beams: number;
   lidar_range: number;
   observation_type: string;

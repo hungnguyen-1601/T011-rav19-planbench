@@ -1,113 +1,225 @@
 "use client";
 
-/** Live simulation page: pick a map, set start/goal, run, watch, inspect. */
+/** The test bench — one episode of a deployment, watched.
+ *
+ * **The gap this fills.** The new flow could run three hundred episodes
+ * and replay a recorded trace, but it could not show you *one* episode
+ * live. Those are different questions: "what happened" against "let me
+ * try this configuration and see". Before spending two hours of machine
+ * time on a comparison, watching a single episode is the cheapest way to
+ * find a goal placed behind a shelf, a noise amplitude entered a decimal
+ * place out, or a robot radius that will not fit the doorway. Each of
+ * those costs the whole run and surfaces at the end as a uniform wall of
+ * `no_path` that reads like a platform fault.
+ *
+ * **What changed from the page this replaces.** It used to take a map, a
+ * start and a goal placed by clicking, and a scenario invented on the
+ * spot. It now takes a **deployment** and one of its missions, and every
+ * condition — timeout, tolerance, noise, traffic, physics step — comes
+ * from the contract. The clicking is gone on purpose: a start and goal
+ * you can drag would make what you are watching a different episode from
+ * the one about to be measured, which is exactly the false comfort a
+ * test bench must not offer.
+ *
+ * **The seed is typed, not drawn.** Two runs with the same seed are the
+ * same episode down to the obstacle trajectories and the noise draws, so
+ * "watch that one again, slower" means something. A seed picked for you
+ * would make the one episode worth re-watching the one you cannot get
+ * back.
+ *
+ * **Nothing here is evidence, and the page says so out loud.** No HĐ-5
+ * trace is written, so no gate, metric or Decision Card can see this run.
+ * That is the entire reason it may run beside a live evaluation (HĐ-7.4)
+ * and outside the context-outer order (HĐ-3.2) — and it is also why the
+ * numbers below are labelled as something to look at rather than
+ * something to conclude from.
+ */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+
+import { CandidatePicker, type CandidateSelection } from "@/components/CandidatePicker";
 import { EmptyState } from "@/components/EmptyState";
-import { MapCanvas } from "@/components/MapCanvas";
+import { Icon, type IconName } from "@/components/Icon";
+import { MapView } from "@/components/MapView";
 import { MetricsPanel } from "@/components/MetricsPanel";
 import { api } from "@/lib/api";
+import { authFetch, useSession } from "@/lib/auth";
+import {
+  listLocalControllers,
+  listTaskProfiles,
+  stageTestBenchEpisode,
+  type LocalControllerConfig,
+  type StagedEpisode,
+  type TaskProfileSummary,
+} from "@/lib/decisions";
+import { poseOf } from "@/lib/deployments";
 import { useTranslation } from "@/lib/i18n";
-import { defaultScenario } from "@/lib/demoMap";
 import { useEpisodeStream } from "@/lib/useEpisodeStream";
-import type { MapData, MapSummary, PlanResult, Point2D, Scenario } from "@/lib/types";
+import type { MapData, PlanResult, Point2D } from "@/lib/types";
+import type { AlgorithmInfo } from "@/lib/benchmarkTypes";
+import type { ProfileDraft } from "@/lib/deployments";
+import { safetyEnvelope } from "@/lib/keepOut";
+import { trafficOf } from "@/lib/traffic";
+import { overlayOf } from "@/lib/trafficOverlay";
 
-type PlaceMode = "start" | "goal" | "none";
+/** A mission as it comes off the wire.
+ *
+ * `start` and `goal` are `unknown` on purpose. HĐ-2's YAML form is
+ * `[x, y, theta]` and the dumped form is `{x, y, theta}`; both are legal
+ * and both are in the store, so a type claiming one of them would be a
+ * claim the data does not honour. `poseOf` is the one place that
+ * resolves it.
+ */
+interface Mission {
+  id: string;
+  start: unknown;
+  goal: unknown;
+  probability?: number;
+}
 
-export default function SimulatePage() {
+/** The parts of a stored deployment this page reads. */
+interface Deployment {
+  missions?: Mission[];
+  replanning?: { enabled?: boolean };
+  constraints?: { goal_tolerance_m?: number; episode_timeout_s?: number };
+  robot?: { radius?: number; max_linear_velocity?: number; control_period?: number };
+  environment?: { sensor_noise?: Record<string, number | boolean>; dynamic_obstacles?: unknown[] };
+}
+
+export default function TestBenchPage() {
   const { t } = useTranslation();
-  const [maps, setMaps] = useState<MapSummary[]>([]);
-  const [mapId, setMapId] = useState<string>("");
+  const session = useSession();
+
+  const [profiles, setProfiles] = useState<TaskProfileSummary[]>([]);
+  const [profileId, setProfileId] = useState("");
+  const [missionId, setMissionId] = useState("");
+  const [seed, setSeed] = useState(0);
+  const [choice, setChoice] = useState<CandidateSelection>({ stack: "", local_config: "" });
+  const [stacks, setStacks] = useState<AlgorithmInfo[]>([]);
+  const [configs, setConfigs] = useState<LocalControllerConfig[]>([]);
+
   const [map, setMap] = useState<MapData | null>(null);
-  const [scenario, setScenario] = useState<Scenario | null>(null);
-  const [placeMode, setPlaceMode] = useState<PlaceMode>("start");
+  const [staged, setStaged] = useState<StagedEpisode | null>(null);
   const [plan, setPlan] = useState<PlanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
   const [showPlan, setShowPlan] = useState(true);
   const [showTrajectory, setShowTrajectory] = useState(true);
+  const [conditionsExpanded, setConditionsExpanded] = useState(true);
 
   const stream = useEpisodeStream();
 
   useEffect(() => {
     (async () => {
       try {
-        const list = await api.listMaps();
-        setMaps(list);
-        if (list.length > 0) setMapId((current) => current || list[0].id);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        const [deployments, registry, named] = await Promise.all([
+          listTaskProfiles(),
+          authFetch<AlgorithmInfo[]>("/algorithms"),
+          listLocalControllers(),
+        ]);
+        setProfiles(deployments);
+        setStacks(registry);
+        setConfigs(named);
+        if (deployments.length > 0) setProfileId((current) => current || deployments[0].id);
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : String(caught));
       }
     })();
   }, []);
 
+  const deployment = useMemo<Deployment | null>(() => {
+    const found = profiles.find((entry) => entry.id === profileId);
+    return found ? (found.profile as Deployment) : null;
+  }, [profiles, profileId]);
+
+  const missions = deployment?.missions ?? [];
+  const mission = missions.find((entry) => entry.id === missionId) ?? missions[0] ?? null;
+  const start = poseOf(mission?.start);
+  const goal = poseOf(mission?.goal);
+
+  /* Switching deployment invalidates the mission, the staged episode and
+     everything on the canvas: they described a different world. Leaving
+     the old trajectory drawn under a new deployment's map would be the
+     most confusing possible screen. */
   useEffect(() => {
-    if (!mapId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const resource = await api.getMap(mapId);
-        if (cancelled) return;
-        setMap(resource.map_data);
-        setScenario(defaultScenario(resource.map_data));
-        setPlan(null);
-        stream.reset();
-        setError(null);
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // stream identity changes every render; only re-fetch when the map changes.
+    setMissionId(missions[0]?.id ?? "");
+    setStaged(null);
+    setPlan(null);
+    setMap(null);
+    stream.reset();
+    // `stream` is a new object every render; the deployment is the trigger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapId]);
+  }, [profileId, profiles]);
 
-  const placePose = useCallback(
-    (x: number, y: number) => {
-      if (placeMode === "none") return;
-      setScenario((current) => {
-        if (!current) return current;
-        const pose = { x: Number(x.toFixed(3)), y: Number(y.toFixed(3)), theta: 0 };
-        return placeMode === "start"
-          ? { ...current, start_pose: pose }
-          : { ...current, goal_pose: pose };
-      });
-    },
-    [placeMode],
-  );
+  /** Put the world on screen without running anything.
+   *
+   * **The map used to arrive only as a side effect of pressing Run.**
+   * Until it did there was no canvas at all, so the traffic a
+   * deployment declares — the whole reason somebody opens this page
+   * before committing to a 300-episode comparison — was invisible
+   * until after the episode it was supposed to inform. Staging is what
+   * resolves the deployment to a map, and it is the same call Run
+   * makes; doing it on its own costs one staged episode and answers
+   * "what am I about to measure" before the measuring.
+   */
+  const prepare = useCallback(async () => {
+    if (!profileId || !mission || !choice.stack || !choice.local_config) return null;
+    const episode = await stageTestBenchEpisode(profileId, {
+      mission_id: mission.id,
+      seed,
+      stack: choice.stack,
+      local_config: choice.local_config,
+    });
+    setStaged(episode);
+    const resource = await api.getMap(episode.map_id);
+    setMap(resource.map_data);
+    return episode;
+  }, [profileId, mission, choice, seed]);
 
-  const run = async () => {
-    if (!map || !scenario || !mapId) return;
+  const showTheWorld = useCallback(async () => {
     setBusy(true);
     setError(null);
     setPlan(null);
+    stream.reset();
     try {
-      const scenarioResource = await api.createScenario(mapId, {
-        ...scenario,
-        name: `${scenario.name}-${Date.now()}`,
-      });
-      const simulation = await api.createSimulation(mapId, scenarioResource.id);
-      const result = await api.runSimulation(simulation.id);
-      setPlan(result.plan);
-      if (result.result && result.result.trajectory.length > 0) {
-        stream.connect(simulation.id);
-      } else {
-        setError(
-          result.plan && !result.plan.success
-            ? `No global path: ${result.plan.failure_reason}`
-            : "Episode produced no trajectory",
-        );
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      await prepare();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setBusy(false);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prepare]);
+
+  const runOne = useCallback(async () => {
+    if (!profileId || !mission || !choice.stack || !choice.local_config) return;
+    setBusy(true);
+    setError(null);
+    setPlan(null);
+    stream.reset();
+    try {
+      const episode = await prepare();
+      if (!episode) return;
+      const result = await api.runSimulation(episode.simulation_id);
+      setPlan(result.plan);
+      if (result.result && result.result.trajectory.length > 0) {
+        stream.connect(episode.simulation_id);
+      } else {
+        setError(
+          result.plan && !result.plan.success
+            ? t("bench.noPath", { reason: result.plan.failure_reason ?? "" })
+            : t("bench.noTrajectory"),
+        );
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prepare, t]);
 
   const visibleTrajectory = useMemo(() => {
     if (!showTrajectory) return [];
@@ -115,236 +227,441 @@ export default function SimulatePage() {
     return upto.length > 0 ? upto : stream.frames.slice(0, 1);
   }, [stream.frames, stream.playhead, showTrajectory]);
 
+  /** The traffic at the instant on screen, not at t=0.
+   *
+   * Ground truth recorded by the engine and shown for replay only — no
+   * planner ever sees it (HĐ-4). Absent when the server predates the
+   * field, and an absent list is drawn as nothing rather than as an
+   * empty aisle: "we did not record it" and "it was clear" are different
+   * claims, and only the second is reassuring.
+   */
+  const traffic = useMemo(
+    () =>
+      (stream.currentFrame?.obstacles ?? []).map((entry) => ({
+        name: entry.name,
+        radius: entry.radius,
+        position: { x: entry.x, y: entry.y },
+      })),
+    [stream.currentFrame],
+  );
+
   const collisionPoint: Point2D | null =
     stream.status === "collision" && stream.frames.length > 0
-      ? { x: stream.frames[stream.frames.length - 1].x, y: stream.frames[stream.frames.length - 1].y }
+      ? {
+          x: stream.frames[stream.frames.length - 1].x,
+          y: stream.frames[stream.frames.length - 1].y,
+        }
       : null;
 
   const robotPose = stream.currentFrame
-    ? {
-        x: stream.currentFrame.x,
-        y: stream.currentFrame.y,
-        theta: stream.currentFrame.theta,
-      }
-    : (scenario?.start_pose ?? null);
+    ? { x: stream.currentFrame.x, y: stream.currentFrame.y, theta: stream.currentFrame.theta }
+    : start;
+
+  const ready = Boolean(profileId && mission && choice.stack && choice.local_config);
+  const episodeStatus = stream.status ?? (busy ? "running" : stream.frames.length > 0 ? "paused" : "ready");
+  const statusTone = episodeStatus === "success"
+    ? "success"
+    : episodeStatus === "collision" || episodeStatus === "failed"
+      ? "failed"
+      : episodeStatus === "timeout"
+        ? "timeout"
+        : episodeStatus === "running"
+          ? "running"
+          : episodeStatus === "paused"
+            ? "paused"
+            : "ready";
+  const runDisabledReason = session === null
+    ? t("bench.signedOut")
+    : !profileId
+      ? t("bench.disabled.deployment")
+      : !mission
+        ? t("bench.disabled.mission")
+        : !choice.stack || !choice.local_config
+          ? t("bench.disabled.candidate")
+          : null;
 
   return (
-    <>
-      <div className="page-head">
-        <div>
-          <h2>{t("simulate.title")}</h2>
-          <p>{t("simulate.subtitle")}</p>
+    <main className="simulate-page">
+      <header className="page-head simulate-page-head">
+        <span className="simulate-page-icon" aria-hidden="true"><Icon name="play" size={21} /></span>
+        <div className="simulate-page-heading">
+          <h2>{t("bench.title")}</h2>
+          <p>{t("bench.subtitle")}</p>
         </div>
-      </div>
-      {error ? <div className="error-box">{error}</div> : null}
-      {stream.error ? (
-        <div className="error-box">{t("simulate.stream", { message: stream.error })}</div>
-      ) : null}
-
-      {maps.length === 0 ? (
-        <div className="panel">
-          <EmptyState
-            icon="map"
-            title={t("maps.empty.title")}
-            body={t("simulate.noMaps")}
-            actionHref="/maps"
-            actionLabel={t("maps.create")}
-          />
-        </div>
-      ) : null}
-
-      <div className="toolbar">
-        <label className="inline">
-          {t("common.map")}:
-          <select value={mapId} onChange={(event) => setMapId(event.target.value)}>
-            {maps.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <span className="muted">|</span>
-        <span className="muted">{t("simulate.clickToPlace")}</span>
-        {(["start", "goal", "none"] as PlaceMode[]).map((mode) => (
-          <button
-            key={mode}
-            className={placeMode === mode ? "primary" : ""}
-            onClick={() => setPlaceMode(mode)}
-          >
-            {t(`simulate.place.${mode}`)}
-          </button>
-        ))}
-        <span className="muted">|</span>
-        <button className="primary" disabled={busy || !map} onClick={() => void run()}>
-          {busy ? t("simulate.running") : t("simulate.runSimulation")}
-        </button>
-      </div>
-
-      <div className="toolbar">
-        <button onClick={stream.play} disabled={stream.frames.length === 0 || stream.playing}>
-          {t("simulate.play")}
-        </button>
-        <button onClick={stream.pause} disabled={!stream.playing}>
-          {t("simulate.pause")}
-        </button>
-        <button onClick={stream.stop} disabled={stream.phase === "idle"}>
-          Stop
-        </button>
-        <button onClick={stream.reset} disabled={stream.frames.length === 0}>
-          Reset
-        </button>
-        <label className="inline">
-          Speed:
-          <select
-            value={stream.speed}
-            onChange={(event) => stream.setSpeed(Number(event.target.value))}
-          >
-            {[0.25, 0.5, 1, 2, 4, 8].map((value) => (
-              <option key={value} value={value}>
-                {value}×
-              </option>
-            ))}
-          </select>
-        </label>
-        <input
-          type="range"
-          min={0}
-          max={Math.max(stream.duration, 0.001)}
-          step={0.01}
-          value={stream.playhead}
-          onChange={(event) => stream.seek(Number(event.target.value))}
-          style={{ flex: 1, minWidth: 160 }}
-          aria-label={t("simulate.timeline")}
-        />
-        <span className="muted" style={{ fontVariantNumeric: "tabular-nums" }}>
-          {stream.playhead.toFixed(2)} / {stream.duration.toFixed(2)} s
+        <span className={`simulate-status simulate-status--${statusTone}`}>
+          <span className="simulate-status-dot" aria-hidden="true" />
+          {episodeStatus}
         </span>
-      </div>
+      </header>
 
-      <div className="toolbar">
-        <label className="inline">
-          <input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} />
-          {t("simulate.grid")}
-        </label>
-        <label className="inline">
-          <input type="checkbox" checked={showPlan} onChange={(e) => setShowPlan(e.target.checked)} />
-          {t("simulate.globalPath")}
-        </label>
-        <label className="inline">
-          <input
-            type="checkbox"
-            checked={showTrajectory}
-            onChange={(e) => setShowTrajectory(e.target.checked)}
+      {/* Stated before anything is run, not after. A reader who watches a
+          clean episode and then finds out it counted for nothing has been
+          told too late to have made a decision with it. */}
+      <details className="simulate-notice">
+        <summary>
+          <span className="simulate-notice-icon" aria-hidden="true"><Icon name="info" size={18} /></span>
+          <span><strong>{t("bench.noticeTitle")}</strong><small>{t("bench.noticeSummary")}</small></span>
+          <Icon name="chevronDown" size={16} />
+        </summary>
+        <p>{t("bench.notEvidence")}</p>
+      </details>
+
+      {error ? <div className="error-box simulate-error"><Icon name="alert" size={18} /><span>{error}</span></div> : null}
+      {stream.error ? (
+        <div className="error-box simulate-error"><Icon name="alert" size={18} /><span>{t("simulate.stream", { message: stream.error })}</span></div>
+      ) : null}
+
+      {profiles.length === 0 ? (
+        <div className="simulate-empty-banner">
+          <EmptyState
+            icon="cpu"
+            title={t("bench.empty.title")}
+            body={t("bench.empty.body")}
+            actionHref="/deployments"
+            actionLabel={t("bench.empty.action")}
           />
-          {t("simulate.trajectory")}
-        </label>
-        {stream.status ? (
-          <span className={`badge ${stream.status === "success" ? "ok" : "err"}`}>
-            {stream.status}
-          </span>
-        ) : null}
-        {stream.reason ? <span className="muted">{stream.reason}</span> : null}
-      </div>
+        </div>
+      ) : null}
 
-      <div className="row">
-        <div className="panel" style={{ flex: "1 1 auto" }}>
+      <section className="panel simulate-setup" aria-labelledby="simulate-setup-title">
+        <div className="simulate-section-head">
+          <span className="simulate-section-icon"><Icon name="cpu" size={18} /></span>
+          <div><h3 id="simulate-setup-title">{t("bench.setupTitle")}</h3><p>{t("bench.setupSubtitle")}</p></div>
+        </div>
+        <div className="simulate-setup-grid">
+          <fieldset className="simulate-setup-group simulate-setup-group--conditions">
+            <legend>{t("bench.group.conditions")}</legend>
+            <label className="field simulate-field">
+              <span>{t("bench.deployment")}</span>
+            <select value={profileId} onChange={(event) => setProfileId(event.target.value)}>
+              {profiles.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.id}
+                </option>
+              ))}
+            </select>
+              <small>{t("bench.help.deployment")}</small>
+            </label>
+
+            <label className="field simulate-field">
+              <span>{t("bench.mission")}</span>
+            <select
+              value={mission?.id ?? ""}
+              disabled={missions.length === 0}
+              onChange={(event) => setMissionId(event.target.value)}
+            >
+              {missions.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.id}
+                </option>
+              ))}
+            </select>
+              <small>{t("bench.help.mission")}</small>
+            </label>
+          </fieldset>
+
+          <fieldset className="simulate-setup-group simulate-setup-group--candidate">
+            <legend>{t("bench.group.candidate")}</legend>
+            <CandidatePicker
+              label={t("bench.candidate")}
+              value={choice}
+              onChange={setChoice}
+              stacks={stacks}
+              configs={configs}
+              disabled={busy}
+              detailed
+            />
+          </fieldset>
+
+          <fieldset className="simulate-setup-group simulate-setup-group--seed">
+            <legend>{t("bench.group.reproducibility")}</legend>
+            <label className="field simulate-field">
+              <span>{t("bench.seed")}</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={seed}
+                onChange={(event) => setSeed(Math.max(0, Math.trunc(Number(event.target.value))))}
+              />
+              <small>{t("bench.seedNote")}</small>
+            </label>
+          </fieldset>
+        </div>
+
+        <div className="simulate-run-actions">
+          <button
+            type="button"
+            className="primary simulate-run-button"
+            disabled={busy || !ready || session === null}
+            onClick={() => void runOne()}
+          >
+            {busy ? <span className="simulate-spinner" aria-hidden="true" /> : <Icon name="play" size={18} />}
+            {busy ? t("bench.running") : t("bench.run")}
+          </button>
+          {/* Answering "what am I about to measure" before measuring
+              it. The map and the declared traffic arrived only as a
+              side effect of running, which is the wrong way round for
+              a page whose job is to check a deployment before a
+              300-episode comparison commits to it. */}
+          <button className="simulate-world-button"
+            type="button"
+            disabled={busy || !ready || session === null}
+            onClick={() => void showTheWorld()}
+          >
+            <Icon name="map" size={17} />
+            {t("bench.showWorld")}
+          </button>
+          {runDisabledReason ? <p className="simulate-disabled-reason"><Icon name="info" size={15} />{runDisabledReason}</p> : null}
+        </div>
+      </section>
+
+      {/* What the deployment fixed, shown rather than editable. Every one
+          of these is a condition the comparison will run under, and a
+          field that let you nudge one "just for the preview" would make
+          this a different experiment. */}
+      {deployment ? (
+        <section className={`panel deployment-conditions${conditionsExpanded ? " is-expanded" : " is-collapsed"}`}>
+          <header className="deployment-conditions-header">
+            <span className="deployment-conditions-title-icon"><Icon name="check" size={18} /></span>
+            <div><h3>{t("bench.conditions")}</h3><p>{t("bench.conditionsNote")}</p></div>
+            <span className="deployment-conditions-lock" title={t("bench.conditionsLockedHint")}><Icon name="check" size={13} />{t("bench.conditionsLocked")}</span>
+            <button type="button" className="deployment-conditions-toggle" aria-expanded={conditionsExpanded} onClick={() => setConditionsExpanded((current) => !current)}>{conditionsExpanded ? t("bench.conditionsCollapse") : t("bench.conditionsExpand")}<Icon name="chevronDown" size={14} /></button>
+          </header>
+
+          {!conditionsExpanded ? (
+            <p className="deployment-conditions-summary">
+              {t("bench.conditionsSummary", {
+                start: start ? `${start.x.toFixed(2)}, ${start.y.toFixed(2)}` : "—",
+                goal: goal ? `${goal.x.toFixed(2)}, ${goal.y.toFixed(2)}` : "—",
+                radius: deployment.robot?.radius === undefined ? "—" : `${deployment.robot.radius} m`,
+                replanning: deployment.replanning?.enabled ? t("bench.on") : t("bench.off"),
+                traffic: String(deployment.environment?.dynamic_obstacles?.length ?? 0),
+              })}
+            </p>
+          ) : (
+            <div className="deployment-conditions-grid">
+              <ConditionGroup title={t("bench.conditionsMission")} icon="map" tone="mission" rows={[
+                [t("simulate.start"), start ? `${start.x.toFixed(2)}, ${start.y.toFixed(2)} m` : "—"],
+                [t("simulate.goal"), goal ? `${goal.x.toFixed(2)}, ${goal.y.toFixed(2)} m` : "—"],
+                [t("bench.tolerance"), formatCondition(deployment.constraints?.goal_tolerance_m, "m")],
+                [t("library.timeout"), formatCondition(deployment.constraints?.episode_timeout_s, "s")],
+              ]} />
+              <ConditionGroup title={t("bench.conditionsRobot")} icon="cpu" tone="robot" rows={[
+                [t("simulate.robotRadius"), formatCondition(deployment.robot?.radius, "m")],
+                [t("simulate.maxSpeed"), formatCondition(deployment.robot?.max_linear_velocity, "m/s")],
+                [t("bench.controlPeriod"), formatCondition(deployment.robot?.control_period, "s")],
+              ]} />
+              <section className="deployment-condition-group deployment-condition-group--environment">
+                <header><span><Icon name="sparkles" size={16} /></span><h4>{t("bench.conditionsEnvironment")}</h4></header>
+                <dl className="deployment-condition-list">
+                  <div className="deployment-condition-row"><dt>{t("bench.traffic")}</dt><dd>{deployment.environment?.dynamic_obstacles?.length ?? 0}</dd></div>
+                  <div className="deployment-condition-row"><dt>{t("bench.replanning")}</dt><dd><span className={`condition-status ${deployment.replanning?.enabled ? "is-on" : "is-off"}`}><Icon name={deployment.replanning?.enabled ? "check" : "close"} size={12} />{deployment.replanning?.enabled ? t("bench.on") : t("bench.off")}</span></dd></div>
+                  <div className="deployment-condition-row deployment-condition-row--noise"><dt>{t("bench.noise")}</dt><dd className="condition-noise-tags">{activeNoiseNames(deployment.environment?.sensor_noise).length > 0 ? activeNoiseNames(deployment.environment?.sensor_noise).map((name) => <span key={name} title={name}>{name}</span>) : <span className="condition-status is-off">{t("bench.noiseNone")}</span>}</dd></div>
+                </dl>
+              </section>
+            </div>
+          )}
+          {staged ? (
+            <footer className="deployment-condition-footer" title={staged.episode_context_id}><span>{t("bench.contextId")}</span><code>{shortContextId(staged.episode_context_id)}</code><span>{t("bench.contextIdNote")}</span></footer>
+          ) : null}
+        </section>
+      ) : null}
+
+      <section className="simulate-console" aria-label={t("bench.consoleTitle")}>
+        <div className="simulate-playback">
+          <div className="simulate-playback-buttons">
+            <button className="simulate-play" onClick={stream.play} disabled={stream.frames.length === 0 || stream.playing} aria-label={t("simulate.play")}>
+              <Icon name="play" size={17} /><span>{t("simulate.play")}</span>
+            </button>
+            <button onClick={stream.pause} disabled={!stream.playing} aria-label={t("simulate.pause")}>
+              <span className="simulate-pause-icon" aria-hidden="true" /><span>{t("simulate.pause")}</span>
+            </button>
+            <button onClick={stream.reset} disabled={stream.frames.length === 0} aria-label={t("bench.replay")}>
+              <Icon name="refresh" size={17} /><span>{t("bench.replay")}</span>
+            </button>
+          </div>
+          <label className="simulate-speed">
+            <span>{t("bench.speed")}</span>
+            <select value={stream.speed} onChange={(event) => stream.setSpeed(Number(event.target.value))}>
+              {[0.25, 0.5, 1, 2, 4, 8].map((value) => <option key={value} value={value}>{value}×</option>)}
+            </select>
+          </label>
+          <div className="simulate-timeline">
+            <input
+              type="range"
+              min={0}
+              max={Math.max(stream.duration, 0.001)}
+              step={0.01}
+              value={stream.playhead}
+              onChange={(event) => stream.seek(Number(event.target.value))}
+              aria-label={t("simulate.timeline")}
+              aria-valuetext={`${stream.playhead.toFixed(2)} / ${stream.duration.toFixed(2)} s`}
+            />
+            <span>{stream.playhead.toFixed(2)} / {stream.duration.toFixed(2)} s</span>
+          </div>
+          <span className={`simulate-status simulate-status--${statusTone}`}><span className="simulate-status-dot" aria-hidden="true" />{episodeStatus}</span>
+          {stream.reason ? <span className="simulate-stop-reason">{stream.reason}</span> : null}
+        </div>
+
+        <div className="simulate-layers" role="group" aria-label={t("bench.layersTitle")}>
+          <strong>{t("bench.layersTitle")}</strong>
+          <label className="simulate-layer simulate-layer--grid">
+            <input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} />
+            <span className="simulate-layer-swatch" aria-hidden="true" />{t("simulate.grid")}
+          </label>
+          <label className="simulate-layer simulate-layer--plan">
+            <input type="checkbox" checked={showPlan} onChange={(e) => setShowPlan(e.target.checked)} />
+            <span className="simulate-layer-swatch" aria-hidden="true" />{t("simulate.globalPath")}
+          </label>
+          <label className="simulate-layer simulate-layer--trajectory">
+            <input type="checkbox" checked={showTrajectory} onChange={(e) => setShowTrajectory(e.target.checked)} />
+            <span className="simulate-layer-swatch" aria-hidden="true" />{t("simulate.trajectory")}
+          </label>
+        </div>
+
+        <div className="simulate-workspace">
+          <div className="panel simulate-map-panel">
+            <div className="simulate-map-head">
+              <div><strong>{t("bench.worldTitle")}</strong><span>{staged ? `${profileId} · seed ${seed}` : t("bench.worldSubtitle")}</span></div>
+              <span className={`simulate-status simulate-status--${statusTone}`}><span className="simulate-status-dot" aria-hidden="true" />{episodeStatus}</span>
+            </div>
           {map ? (
-            <MapCanvas
+            <MapView
               map={map}
-              startPose={scenario?.start_pose}
-              goalPose={scenario?.goal_pose}
-              goalTolerance={scenario?.goal_tolerance}
-              robotRadius={scenario?.robot.radius}
+              startPose={start ?? undefined}
+              goalPose={goal ?? undefined}
+              goalTolerance={deployment?.constraints?.goal_tolerance_m}
+              robotRadius={deployment?.robot?.radius}
+              positionUncertainty={safetyEnvelope(deployment?.environment?.sensor_noise)}
               plannedPath={stream.planPath.length > 0 ? stream.planPath : plan?.path}
               trajectory={visibleTrajectory}
               robotPose={robotPose}
               collisionPoint={collisionPoint}
+              dynamicObstacles={traffic}
+              obstacleSnapshots={stream.currentFrame?.obstacles ?? []}
+              /* The routes the deployment declares, drawn from the
+                 document rather than from a run.
+               *
+               * Before this the only traffic on screen came out of the
+               * episode stream, so a deployment's obstacles did not
+               * exist until after it had been simulated — and an
+               * obstacle that starts parked at its stopping place
+               * looked like a stray circle rather than like a route
+               * somebody wrote. Teal says what was declared; the amber
+               * markers say where the engine actually had them. */
+              authoredTraffic={overlayOf(trafficOf(deployment as ProfileDraft | null), null)}
+              previewTime={stream.playhead}
               showGrid={showGrid}
               showPlan={showPlan}
               showTrajectory={showTrajectory}
-              onWorldClick={placePose}
             />
           ) : (
-            <p className="muted">{t("simulate.selectMap")}</p>
+            <div className="simulate-map-placeholder">
+              <span><Icon name="map" size={28} /></span>
+              <strong>{t("bench.worldEmptyTitle")}</strong>
+              <p>{t("bench.selectDeployment")}</p>
+            </div>
           )}
-        </div>
-
-        <div style={{ flex: "0 0 300px", minWidth: 280 }}>
-          <div className="panel">
-            <h3>{t("common.scenario")}</h3>
-            {scenario ? (
-              <table>
-                <tbody>
-                  <tr>
-                    <td className="muted">{t("simulate.start")}</td>
-                    <td>
-                      {scenario.start_pose.x.toFixed(2)}, {scenario.start_pose.y.toFixed(2)} m
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="muted">{t("simulate.goal")}</td>
-                    <td>
-                      {scenario.goal_pose.x.toFixed(2)}, {scenario.goal_pose.y.toFixed(2)} m
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="muted">{t("simulate.robotRadius")}</td>
-                    <td>{scenario.robot.radius} m</td>
-                  </tr>
-                  <tr>
-                    <td className="muted">{t("simulate.maxSpeed")}</td>
-                    <td>{scenario.robot.max_linear_velocity} m/s</td>
-                  </tr>
-                  <tr>
-                    <td className="muted">{t("library.timeout")}</td>
-                    <td>{scenario.timeout_seconds} s</td>
-                  </tr>
-                  <tr>
-                    <td className="muted">dt</td>
-                    <td>{scenario.simulation_dt} s</td>
-                  </tr>
-                </tbody>
-              </table>
-            ) : (
-              <p className="muted">—</p>
-            )}
           </div>
 
-          <div className="panel">
-            <h3>{t("simulate.robotState")}</h3>
+          <aside className="simulate-side-panel">
+          <div className={`panel simulate-status-panel simulate-status-panel--${statusTone}`}>
+            <div className="simulate-section-head simulate-section-head--compact"><span className="simulate-section-icon"><Icon name="cpu" size={17} /></span><div><h3>{t("simulate.robotState")}</h3><p>{t("bench.robotStateSubtitle")}</p></div></div>
             {stream.currentFrame ? (
-              <table>
-                <tbody>
-                  <tr>
-                    <td className="muted">t</td>
-                    <td>{stream.currentFrame.time.toFixed(2)} s</td>
-                  </tr>
-                  <tr>
-                    <td className="muted">pose</td>
-                    <td>
-                      {stream.currentFrame.x.toFixed(2)}, {stream.currentFrame.y.toFixed(2)},{" "}
-                      {stream.currentFrame.theta.toFixed(2)} rad
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="muted">v</td>
-                    <td>{stream.currentFrame.linear_velocity.toFixed(2)} m/s</td>
-                  </tr>
-                  <tr>
-                    <td className="muted">ω</td>
-                    <td>{stream.currentFrame.angular_velocity.toFixed(2)} rad/s</td>
-                  </tr>
-                </tbody>
-              </table>
+              <dl className="simulate-telemetry">
+                <div><dt>{t("bench.telemetry.time")}</dt><dd>{stream.currentFrame.time.toFixed(2)} <small>s</small></dd></div>
+                <div><dt>X</dt><dd>{stream.currentFrame.x.toFixed(2)} <small>m</small></dd></div>
+                <div><dt>Y</dt><dd>{stream.currentFrame.y.toFixed(2)} <small>m</small></dd></div>
+                <div><dt>θ</dt><dd>{stream.currentFrame.theta.toFixed(2)} <small>rad</small></dd></div>
+                <div><dt>{t("bench.telemetry.linear")}</dt><dd>{stream.currentFrame.linear_velocity.toFixed(2)} <small>m/s</small></dd></div>
+                <div><dt>{t("bench.telemetry.angular")}</dt><dd>{stream.currentFrame.angular_velocity.toFixed(2)} <small>rad/s</small></dd></div>
+                <div className="simulate-telemetry-status"><dt>{t("bench.telemetry.status")}</dt><dd><span className={`simulate-status simulate-status--${statusTone}`}>{episodeStatus}</span></dd></div>
+                {stream.reason ? <div className="simulate-telemetry-reason"><dt>{t("bench.telemetry.reason")}</dt><dd>{stream.reason}</dd></div> : null}
+              </dl>
             ) : (
-              <p className="muted">{t("simulate.noEpisode")}</p>
+              <div className="simulate-mini-empty"><Icon name="cpu" size={22} /><p>{t("simulate.noEpisode")}</p></div>
             )}
           </div>
-        </div>
-      </div>
 
-      <MetricsPanel metrics={stream.metrics} plan={plan} />
-    </>
+          <div className="panel simulate-next-card">
+            <span className="simulate-next-icon"><Icon name="benchmark" size={19} /></span>
+            <h3>{t("bench.nextTitle")}</h3>
+            <p className="muted">{t("bench.nextNote")}</p>
+            <Link href="/decisions" className={`button-link${stream.frames.length > 0 ? " primary" : ""}`}>
+              {t("bench.toComparison")}<Icon name="chevronRight" size={16} />
+            </Link>
+          </div>
+          </aside>
+        </div>
+      </section>
+
+      {/* Read off the run itself, not off a trace — so they are the right
+          numbers for "did that look sane" and the wrong ones for any
+          claim, which is what HĐ-5 means by the trace being the sole
+          input of the Metrics Engine. */}
+      <section className="simulate-metrics">
+        <MetricsPanel
+          metrics={stream.metrics}
+          plan={plan}
+          // Straight from the deployment rather than from the run: it is
+          // the same value the episode was staged with, and it is the one
+          // that answers "did the setting arrive at all".
+          replanning={deployment ? { enabled: Boolean(deployment.replanning?.enabled) } : undefined}
+        />
+        <p className="simulate-metrics-note"><Icon name="info" size={15} />{t("bench.metricsNote")}</p>
+      </section>
+    </main>
+  );
+}
+
+/** One line naming the noise that is switched on, or that none is.
+ *
+ * A count would be useless and the full table would drown the row that
+ * matters. Naming the active streams is what tells you at a glance that
+ * the episode you are about to watch is running under localisation drift
+ * you forgot you declared.
+ */
+function describeNoise(
+  noise: Record<string, number | boolean> | undefined,
+  t: (key: string) => string,
+): string {
+  const on = activeNoiseNames(noise);
+  return on.length > 0 ? on.join(", ") : t("bench.noiseNone");
+}
+
+function activeNoiseNames(noise: Record<string, number | boolean> | undefined): string[] {
+  if (!noise) return [];
+  return Object.entries(noise)
+    .filter(([key, value]) => key !== "active" && typeof value === "number" && value > 0)
+    .map(([key]) => key);
+}
+
+function formatCondition(value: number | undefined, unit: string): string {
+  return value === undefined || !Number.isFinite(value) ? "—" : `${value} ${unit}`;
+}
+
+function shortContextId(value: string): string {
+  return value.length <= 16 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
+}
+
+function ConditionGroup({
+  title,
+  icon,
+  tone,
+  rows,
+}: {
+  title: string;
+  icon: IconName;
+  tone: "mission" | "robot";
+  rows: [string, string][];
+}) {
+  return (
+    <section className={`deployment-condition-group deployment-condition-group--${tone}`}>
+      <header><span><Icon name={icon} size={16} /></span><h4>{title}</h4></header>
+      <dl className="deployment-condition-list">
+        {rows.map(([label, value]) => <div className="deployment-condition-row" key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+      </dl>
+    </section>
   );
 }

@@ -58,22 +58,31 @@ export function Sidebar({
             <p className="sidebar-section-title">{t(section.titleKey)}</p>
             {section.items.map((item) => {
               const label = t(item.labelKey);
+              const description = item.descriptionKey ? t(item.descriptionKey) : null;
               const active = isActive(pathname, item.href);
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   onClick={onNavigate}
-                  // Only when collapsed: with the label visible, a
-                  // tooltip repeating it is noise, and an aria-label
-                  // duplicating it is read twice.
+                  // Collapsed, the tooltip carries the description too —
+                  // it is the only surface left, and a rail of icons
+                  // with nothing but names is what the descriptions were
+                  // added to fix. Expanded, the label is already on
+                  // screen so repeating it in a tooltip is noise and
+                  // repeating it in an aria-label is read twice.
                   aria-label={collapsed ? label : undefined}
-                  data-tooltip={collapsed ? label : undefined}
+                  data-tooltip={
+                    collapsed ? (description ? `${label} — ${description}` : label) : undefined
+                  }
                   data-tooltip-side="right"
                   aria-current={active ? "page" : undefined}
                 >
                   <Icon name={item.icon as IconName} />
-                  <span className="sidebar-label">{label}</span>
+                  <span className="sidebar-label">
+                    {label}
+                    {description ? <span className="sidebar-desc">{description}</span> : null}
+                  </span>
                 </Link>
               );
             })}

@@ -9,6 +9,7 @@ import type {
   SimulationResource,
   SimulationResultResponse,
 } from "./types";
+import type { ReplanningConfig } from "./benchmarkTypes";
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -69,10 +70,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ map_id: mapId, scenario }),
     }),
-  createSimulation: (mapId: string, scenarioId: string) =>
+  createSimulation: (mapId: string, scenarioId: string, replanning?: ReplanningConfig) =>
     request<SimulationResource>("/simulations", {
       method: "POST",
-      body: JSON.stringify({ map_id: mapId, scenario_id: scenarioId }),
+      // Omitted rather than sent as disabled when the caller does not
+      // care: the server's default is off, and a payload that never
+      // mentions replanning cannot turn it on by accident.
+      body: JSON.stringify({
+        map_id: mapId,
+        scenario_id: scenarioId,
+        ...(replanning?.enabled ? { replanning } : {}),
+      }),
     }),
   listSimulations: () => request<SimulationResource[]>("/simulations"),
   getSimulation: (id: string) => request<SimulationResource>(`/simulations/${id}`),

@@ -102,7 +102,7 @@ Thuộc MVP (đã có mã nguồn và test trong repository):
 - Đăng nhập Google/GitHub, nickname, review tùy chọn.
 - AI đề xuất cấu hình và giải thích kết quả.
 - **PPO Model Registry** — tải model qua web, kiểm tra tương thích,
-  chọn model theo ID trong benchmark. Đã có mã nguồn và 50 test.
+  chọn model theo ID trong benchmark. Đã có mã nguồn và 53 test.
 
 Chưa thuộc MVP: huấn luyện PPO ngay trên web, tích hợp ROS2/Nav2 vào
 giao diện (mã nguồn có, mới chạy tay), triển khai production.

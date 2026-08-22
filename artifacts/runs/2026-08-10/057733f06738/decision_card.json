@@ -1,0 +1,113 @@
+{
+  "contracts_version": "4.2.0",
+  "recommendation_scope": "MISSION_LEVEL",
+  "experiment_scope": "global_planner_selection",
+  "decision_mode": "technical",
+  "decision_mode_label": "Khuyến nghị kỹ thuật — chỉ dựa trên số liệu đo được",
+  "status": "CLEAR_RECOMMENDATION",
+  "recommended": {
+    "candidate_id": "ac187ee7a77e",
+    "stack": "astar+dwa",
+    "params_ref": null
+  },
+  "alternative": {
+    "candidate_id": "2baaad3628e1",
+    "reason": "trên biên Pareto — không bị candidate nào lấn át, nên là lựa chọn hợp lệ dưới một bộ trọng số khác"
+  },
+  "gates": [
+    {
+      "candidate_id": "2baaad3628e1",
+      "G1": "pass",
+      "G2": {
+        "result": "pass",
+        "observed": 0,
+        "n_runs": 30,
+        "upper_bound_95": 0.1,
+        "n_min": 30,
+        "statement": "0 va chạm quan sát trong 30 lần chạy; cận trên 95% dưới phân phối kịch bản đã mô phỏng: 10.0%",
+        "note": "dưới phân phối kịch bản đã mô phỏng"
+      },
+      "G3": "pass",
+      "G4": {
+        "result": "pass",
+        "status": "screened_on_host",
+        "p99_ms": 59.301211999982094,
+        "threshold_ms": 100.0,
+        "caveat": "G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"
+      },
+      "G5": {
+        "result": "pass",
+        "status": "estimated_from_structure",
+        "memory_estimate_mb": 9.207389831542969,
+        "available_ram_mb": 3277.0,
+        "peak_rss_mb_diagnostic": 179.109375,
+        "note": "ước lượng từ bộ đếm cấu trúc dữ liệu nhân kích thước byte của hiện thực đích; pha sàng lọc là điều kiện cần — vượt ngân sách thì chắc chắn không vừa, không vượt thì chưa kết luận được điều ngược lại",
+        "target_implementation": "cpp_ros2",
+        "bytes_per_search_node": 40,
+        "peak_search_nodes": 0
+      },
+      "G6": "pass"
+    },
+    {
+      "candidate_id": "ac187ee7a77e",
+      "G1": "pass",
+      "G2": {
+        "result": "pass",
+        "observed": 0,
+        "n_runs": 30,
+        "upper_bound_95": 0.1,
+        "n_min": 30,
+        "statement": "0 va chạm quan sát trong 30 lần chạy; cận trên 95% dưới phân phối kịch bản đã mô phỏng: 10.0%",
+        "note": "dưới phân phối kịch bản đã mô phỏng"
+      },
+      "G3": "pass",
+      "G4": {
+        "result": "pass",
+        "status": "screened_on_host",
+        "p99_ms": 13.913803000150422,
+        "threshold_ms": 100.0,
+        "caveat": "G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"
+      },
+      "G5": {
+        "result": "pass",
+        "status": "estimated_from_structure",
+        "memory_estimate_mb": 13.540504455566406,
+        "available_ram_mb": 3277.0,
+        "peak_rss_mb_diagnostic": 181.68359375,
+        "note": "ước lượng từ bộ đếm cấu trúc dữ liệu nhân kích thước byte của hiện thực đích; pha sàng lọc là điều kiện cần — vượt ngân sách thì chắc chắn không vừa, không vượt thì chưa kết luận được điều ngược lại",
+        "target_implementation": "cpp_ros2",
+        "bytes_per_search_node": 40,
+        "peak_search_nodes": 115241
+      },
+      "G6": "pass"
+    }
+  ],
+  "objectives": {
+    "U_R": 1.0,
+    "U_S": 0.078999823654412,
+    "U_E": 0.9304716725761639,
+    "U_C": 0.8
+  },
+  "decision_utility": 0.8205179005094823,
+  "pareto_label": "PARETO_FRONTIER",
+  "evidence": {
+    "delta_u_vs_second": 0.02555142290484136,
+    "ci95": [
+      0.0052071680639268385,
+      0.0453149575037805
+    ],
+    "n_episodes": 30,
+    "effect_size": 0.4513314479729472,
+    "weight_stability_margin": 0.2606445312500001,
+    "anchor_stability": "unchanged_at_±10%",
+    "robustness_margin": null
+  },
+  "declared_assumptions": null,
+  "manifest_ref": "runs/2026-08-10/057733f06738/manifest.json",
+  "approval": {
+    "status": "PENDING",
+    "by": null,
+    "at": null,
+    "comment": null
+  }
+}

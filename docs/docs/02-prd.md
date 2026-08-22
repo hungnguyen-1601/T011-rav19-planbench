@@ -403,7 +403,6 @@ Ký hiệu: **US-xx**. Acceptance criteria viết theo Given/When/Then.
 - Hiển thị 2.5D.
 - MLflow tracking cho huấn luyện.
 - Trang System Information cho chẩn đoán kỹ thuật.
-- Lịch sử hội thoại với trợ lý (liệt kê, mở lại).
 
 ### Future
 
@@ -1108,15 +1107,21 @@ Bảy nguyên tắc bắt buộc:
 | Scenario Library | Completed | `packages/benchmark/planbench_benchmark/scenarios.py` (10 scenario), `apps/api/planbench_api/routers/library.py`, `apps/web/src/app/library/`, `tests/test_scenario_library.py` |
 | Live Simulation | Completed | `apps/web/src/app/simulate/`, `apps/api/planbench_api/routers/simulations.py`, `apps/api/planbench_api/routers/ws.py`, `services/simulator/planbench_simulator/engine.py`, `tests/test_engine.py` |
 | A\* + DWA | Completed | `packages/planning/planbench_planning/astar/`, `.../dwa/`, `packages/benchmark/planbench_benchmark/registry.py`, `tests/test_astar.py`, `tests/test_dwa.py` |
+| RRT\* global planner | Completed | `packages/planning/planbench_planning/rrtstar/`, `tests/test_rrtstar.py` |
+| Đọc map ROS `map_server` | Completed | `packages/schemas/planbench_schemas/map_io.py`, `tests/test_map_io.py` |
+| Độ khó scenario đo được | Completed | `packages/benchmark/planbench_benchmark/difficulty.py`, `tests/test_difficulty.py` |
+| Tuning siêu tham số (Optuna) | Completed | `packages/benchmark/planbench_benchmark/tuning.py`, `apps/api/planbench_api/routers/tuning.py` |
 | Pure Pursuit (tham chiếu) | Completed | `services/simulator/planbench_simulator/path_follower.py`, `.../nav_stack.py`, `tests/test_path_follower.py` |
 | Vật cản động | Completed | `packages/schemas/planbench_schemas/dynamic.py`, `tests/test_dynamic_obstacles.py` |
 | Benchmark engine + fairness checksum | Completed | `packages/benchmark/planbench_benchmark/spec.py`, `.../runner.py`, `apps/api/planbench_api/routers/benchmarks.py`, `tests/test_benchmark_engine.py`, `tests/api/test_api_benchmarks.py` |
 | Metrics | Completed | `packages/metrics/planbench_metrics/episode_metrics.py`, `tests/test_metrics.py` |
+| Thống kê so sánh (median/IQR, bootstrap CI, Wilcoxon) | Completed | `packages/metrics/planbench_metrics/statistics.py`, `tests/test_statistics.py` |
+| Xuất report Markdown | Completed | `apps/api/planbench_api/report_markdown.py`, `tests/test_report_markdown.py` |
 | Episode replay | Completed | `apps/api/planbench_api/routers/episodes.py`, `apps/api/planbench_api/artifacts.py`, `tests/test_artifacts.py` |
 | Failure analysis | Completed | `apps/api/planbench_api/routers/episodes.py` (`/failures`), `apps/web/src/components/FailureFindings.tsx`, `tests/test_failure_analysis.py` |
 | Leaderboard | Completed | `apps/api/planbench_api/leaderboard.py`, `apps/web/src/app/leaderboard/`, `tests/api/test_api_m5.py` |
 | PPO adapter | Completed | `ml/planbench_rl/policy.py`, `ml/planbench_rl/env.py`, `packages/benchmark/planbench_benchmark/registry.py` (`astar+ppo`), `tests/test_rl.py` |
-| PPO Model Registry | Completed | `apps/api/planbench_api/model_registry.py`, `.../model_storage.py`, `.../registry_service.py`, `.../routers/models.py`, `apps/web/src/app/models/`, `tests/api/test_api_models.py` (50 test) |
+| PPO Model Registry | Completed | `apps/api/planbench_api/model_registry.py`, `.../model_storage.py`, `.../registry_service.py`, `.../routers/models.py`, `apps/web/src/app/models/`, `tests/api/test_api_models.py` (53 test) |
 | Robot Profile | Completed | `apps/api/planbench_api/registry_service.py` (`RobotProfileService`), `alembic/versions/0003_model_registry.py` |
 | AI Chatbot | Completed | `apps/api/planbench_api/chat_service.py`, `.../routers/chat.py`, `apps/web/src/app/agent/page.tsx`, `tests/api/test_api_chat.py` (28 test) |
 | AI agent + RAG (luồng cũ) | Completed | `services/agent_service/planbench_agent/`, `tests/test_agent_*.py` |
@@ -1126,17 +1131,18 @@ Bảy nguyên tắc bắt buộc:
 | Optional Review | Completed | `apps/api/planbench_api/routers/reviews.py`, `apps/api/planbench_api/approval.py`, `apps/web/src/app/reviews/`, `tests/api/test_api_reviews.py` |
 | VI/EN + theme + responsive shell | Completed | `apps/web/src/lib/i18n/`, `apps/web/src/components/AppShell.tsx`, `.../ThemeSwitcher.tsx`, `apps/web/src/components/__tests__/shell.test.tsx` |
 | Hiển thị 2.5D | Completed | `apps/web/src/components/Scene25D.tsx` |
-| PostgreSQL + Alembic | In progress | `apps/api/planbench_api/db/`, `alembic/versions/` (3 migration), `tests/api/test_migrations.py` — **migration mới chạy trên SQLite, chưa chạy PostgreSQL thật** |
-| Deployment (Docker) | In progress | `docker/Dockerfile.api`, `docker/Dockerfile.web`, `docker-compose.yml`, `docs/DEPLOYMENT.md` — **chưa build image lần nào** |
+| PostgreSQL + Alembic | Completed | `apps/api/planbench_api/db/`, `alembic/versions/` (3 migration), `tests/api/test_migrations.py` — migration đã chạy trên PostgreSQL 17 trong Docker (`PostgresqlImpl`, 16 bảng) |
+| Deployment (Docker) | Completed | `docker/Dockerfile.api`, `docker/Dockerfile.web`, `docker-compose.yml` — image build được, cả 4 service chạy thật; dữ liệu sống sót khi xoá hẳn container API |
 | ROS2 / Nav2 | In progress | `ros2_ws/src/` (5 package), `docs/ROS2_INTEGRATION.md` — chạy tay, **chưa tích hợp vào giao diện web** |
 | MLflow tracking | In progress | `services/tracking/planbench_tracking/`, `tests/test_tracking.py` — có adapter, chưa dùng trong luồng web |
 | PPO training pipeline | In progress | `ml/planbench_rl/training.py`, `scripts/train_ppo.py` — chạy được bằng dòng lệnh, **không có giao diện web và không có job thật** |
-| Lịch sử hội thoại (UI) | In progress | Backend lưu và trả về đầy đủ (`chat_service.py`); giao diện mới có "Cuộc trò chuyện mới" |
+| Lịch sử hội thoại (UI) | Completed | `apps/web/src/app/agent/page.tsx` — liệt kê, mở lại, xoá; panel trượt dưới 900px |
 | Object storage S3/R2 | Planned | `apps/api/planbench_api/model_storage.py` có sẵn interface `ModelStorage`; mới cài đặt bản cục bộ |
 | Sandbox container cho model | Planned | Chưa có; ghi rõ ở `docs/KNOWN_LIMITATIONS.md` #77 |
 | Huấn luyện PPO trên web | Planned | Chưa có; sản phẩm nói rõ tính năng đang phát triển thay vì hiện nút giả |
 
-Kết quả kiểm thử thật: xem [TEST_REPORT.md](../TEST_REPORT.md).
+Kết quả kiểm thử thật (xem [TEST_REPORT.md](../TEST_REPORT.md)):
+`1195 passed, 3 skipped` ở backend, `274 passed` ở frontend.
 
 ---
 
@@ -1152,7 +1158,6 @@ song ngữ có theme.
 ### Giai đoạn 2 — Hoàn thiện gần nhất
 
 - Chạy migration trên **PostgreSQL thật** và build image Docker.
-- Giao diện lịch sử hội thoại.
 - Nạp một checkpoint PPO thật qua registry để xác nhận end-to-end.
 - Bổ sung deliverable **GitHub Repo AI Log Setup** của Gate G1.
 

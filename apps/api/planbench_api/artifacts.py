@@ -40,7 +40,15 @@ class ArtifactStore(ABC):
     def read(self, uri: str) -> dict: ...
 
     def write_episode(self, benchmark_id: str, episode_id: str, run: StackRun) -> ArtifactRef:
-        """Store one episode's plan, trajectory and events."""
+        """Store one episode's plans, trajectory and events.
+
+        ``plans`` carries every route the global planner returned, not
+        only the first. A replan is where a path outside the hard
+        feasible set would come from — it is planned from a *believed*
+        pose over a relaxed grid — so dropping them here would leave the
+        one artifact that could show it holding the one plan that never
+        could.
+        """
         return self.write(
             f"benchmarks/{benchmark_id}/episodes/{episode_id}.json",
             {
@@ -48,6 +56,7 @@ class ArtifactStore(ABC):
                 "plan": run.plan.model_dump(mode="json"),
                 "result": run.result.model_dump(mode="json"),
                 "metrics": run.metrics.model_dump(mode="json"),
+                "plans": [plan.model_dump(mode="json") for plan in run.plans],
             },
         )
 

@@ -50,6 +50,10 @@ class AStarPlanner(GlobalPlanner):
         self._config = config or AStarConfig()
 
     @property
+    def name(self) -> str:
+        return "astar"
+
+    @property
     def config(self) -> AStarConfig:
         return self._config
 
@@ -127,6 +131,23 @@ class AStarPlanner(GlobalPlanner):
 
         Diagonal moves are blocked when either adjacent cardinal cell is
         blocked (no corner cutting).
+
+        **Step cost is distance × the cell's traversal multiplier**, so a
+        step into the graded band beyond the hard boundary is passable
+        and expensive rather than forbidden. On an ungraded grid the
+        multiplier is ``1.0`` and this is byte-identical to the pure
+        distance it always was.
+
+        The multiplier belongs to the cell being *entered*: the step ends
+        there, and charging for where it started would let a path collect
+        the discount of open floor on its way into a squeeze.
+
+        Admissibility survives, which is the thing to check before
+        touching an A* cost. Multipliers are ``>= 1``, so every step
+        costs at least its distance and the plain Euclidean heuristic
+        still never overestimates. Had they been allowed below one, the
+        heuristic would have had to be divided by the smallest of them —
+        which is why the grid refuses to hold one.
         """
 
         def free(r: int, c: int) -> bool:
@@ -134,7 +155,11 @@ class AStarPlanner(GlobalPlanner):
 
         for delta_row, delta_col in _CARDINAL:
             if free(row + delta_row, col + delta_col):
-                yield delta_row, delta_col, 1.0
+                yield (
+                    delta_row,
+                    delta_col,
+                    grid.traversal_at(row + delta_row, col + delta_col),
+                )
         if self._config.connectivity == 8:
             for delta_row, delta_col in _DIAGONAL:
                 if (
@@ -142,7 +167,11 @@ class AStarPlanner(GlobalPlanner):
                     and free(row + delta_row, col)
                     and free(row, col + delta_col)
                 ):
-                    yield delta_row, delta_col, _SQRT2
+                    yield (
+                        delta_row,
+                        delta_col,
+                        _SQRT2 * grid.traversal_at(row + delta_row, col + delta_col),
+                    )
 
     def _make_heuristic(self, goal_cell: tuple[int, int]):
         goal_row, goal_col = goal_cell

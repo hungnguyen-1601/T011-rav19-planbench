@@ -84,6 +84,16 @@ async def stream_simulation(websocket: WebSocket, simulation_id: str) -> None:
                     "theta": point.theta,
                     "linear_velocity": point.linear_velocity,
                     "angular_velocity": point.angular_velocity,
+                    # Ground truth, and **replay only**. The engine records
+                    # where the traffic actually was at this sample; no
+                    # planner is ever handed it (HĐ-4). Dropping it here
+                    # was why a watched episode showed a robot swerving
+                    # around nothing — the one screen where seeing the
+                    # obstacle is the entire point.
+                    "obstacles": [
+                        {"name": o.name, "x": o.x, "y": o.y, "radius": o.radius}
+                        for o in point.obstacles
+                    ],
                 }
             )
         await websocket.send_json(

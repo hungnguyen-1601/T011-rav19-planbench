@@ -200,5 +200,36 @@ class TestLeaderboard:
         # With only success weighted, the score equals the success rate.
         assert entry["overall_score"] == entry["success_rate"]
 
+    def test_serialises_the_observation_declaration(
+        self, client: TestClient, alice_headers, carol_headers
+    ) -> None:
+        """P02: a published row says what the stack was allowed to see."""
+        benchmark = owned_benchmark(client, alice_headers, seeds=[1])
+        client.post(f"/api/v1/benchmarks/{benchmark['id']}/run", headers=alice_headers)
+        client.post(
+            f"/api/v1/benchmarks/{benchmark['id']}/accept-result",
+            json={},
+            headers=alice_headers,
+        )
+        group = client.get("/api/v1/leaderboard", headers=carol_headers).json()["groups"][0]
+        assert group["local_observation_class"] == "lidar_only"
+        assert group["cross_observation_class_warning"] is False
+        entry = group["entries"][0]
+        assert entry["global_observation_class"] == "full_static_map"
+        assert entry["local_observation_class"] == "lidar_only"
+        assert entry["requires_global_path"] is True
+
     def test_requires_authentication(self, client: TestClient) -> None:
         assert client.get("/api/v1/leaderboard").status_code == 401
+
+
+class TestAlgorithmMetadata:
+    def test_algorithms_endpoint_declares_observation_classes(
+        self, client: TestClient, carol_headers
+    ) -> None:
+        algorithms = client.get("/api/v1/algorithms", headers=carol_headers).json()
+        assert algorithms
+        for algorithm in algorithms:
+            assert algorithm["global_observation_class"] == "full_static_map"
+            assert algorithm["local_observation_class"] == "lidar_only"
+            assert algorithm["requires_global_path"] is True

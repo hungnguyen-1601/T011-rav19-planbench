@@ -20,7 +20,8 @@
  * so +z is up on screen, and a taller wall reaches further up.
  */
 
-import type { MapData, Point2D, Pose2D, TrajectoryPoint } from "./types";
+import { cautionRadius, keepOutRadius } from "./keepOut";
+import type { MapData, ObstacleSnapshot, Point2D, Pose2D, TrajectoryPoint } from "./types";
 
 export const OCCUPIED_VALUE = 100;
 export const UNKNOWN_VALUE = -1;
@@ -63,6 +64,20 @@ export interface Scene25D {
   start: ScreenPoint | null;
   goal: ScreenPoint | null;
   robot: RobotMarker | null;
+  /** Dynamic obstacles at this frame — see docs/KNOWN_LIMITATIONS.md:
+   * drawn after every facet, so they are never occluded by a wall. */
+  obstacles: ObstacleMarker[];
+  /** The planner's keep-out around each of those, as a flat footprint on
+   *  the ground plane.
+   *
+   * Flat rather than extruded on purpose: raising it would draw a
+   * cylinder, and a cylinder reads as a second object standing there.
+   * This is a margin the planner will not route through, not a thing
+   * the robot can hit — the controller drives through it every time it
+   * squeezes past something. */
+  keepOut: ObstacleMarker[];
+  /** The priced band beyond the boundary — passable, not forbidden. */
+  caution: ObstacleMarker[];
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
 }
 
@@ -74,6 +89,15 @@ export interface RobotMarker {
   /** Projected horizontal radius, in pixels. */
   radiusX: number;
   /** Projected vertical radius of the (foreshortened) footprint circle. */
+  radiusY: number;
+}
+
+/** Same projected footprint as RobotMarker, minus heading — obstacles
+ * carry no orientation. */
+export interface ObstacleMarker {
+  base: ScreenPoint;
+  top: ScreenPoint;
+  radiusX: number;
   radiusY: number;
 }
 
@@ -159,8 +183,11 @@ export interface SceneOptions {
   goalPose?: Pose2D;
   robotPose?: Pose2D | null;
   robotRadius?: number;
+  /** Safety envelope in metres, from `safetyEnvelope(sensor_noise)`. */
+  positionUncertainty?: number;
   plannedPath?: Point2D[];
   trajectory?: TrajectoryPoint[];
+  obstacles?: ObstacleSnapshot[];
 }
 
 /**
@@ -220,6 +247,30 @@ export function buildScene(
     robot: options.robotPose
       ? robotMarker(projection, options.robotPose, options.robotRadius ?? 0.3, robotHeight)
       : null,
+    obstacles: (options.obstacles ?? []).map((o) =>
+      obstacleMarker(projection, o.x, o.y, o.radius, robotHeight),
+    ),
+    // Same numbers the flat view quotes, from the same functions — two
+    // hand-typed copies of an inflation radius is how the controller's
+    // keep-out and the planner's came to differ by 0.30 m to begin with.
+    keepOut: (options.obstacles ?? []).flatMap((o) => {
+      const radius = keepOutRadius(o.radius, options.robotRadius, options.positionUncertainty);
+      return radius === null ? [] : [obstacleMarker(projection, o.x, o.y, radius, 0)];
+    }),
+    // The band beyond the boundary: passable, and charged for. A
+    // separate list rather than a wider `keepOut`, because the renderer
+    // has to be able to draw them differently — one is a refusal and the
+    // other is a price, and a reader who cannot tell them apart is back
+    // to the picture that made a stuck robot inexplicable.
+    caution: (options.obstacles ?? []).flatMap((o) => {
+      const radius = cautionRadius(
+        o.radius,
+        map.resolution,
+        options.robotRadius,
+        options.positionUncertainty,
+      );
+      return radius === null ? [] : [obstacleMarker(projection, o.x, o.y, radius, 0)];
+    }),
     bounds: sceneBounds(facets),
   };
 }
@@ -296,6 +347,25 @@ function robotMarker(
     base,
     top,
     heading,
+    radiusX: Math.hypot(edgeX.sx - top.sx, edgeX.sy - top.sy),
+    radiusY: Math.hypot(edgeY.sx - top.sx, edgeY.sy - top.sy),
+  };
+}
+
+function obstacleMarker(
+  projection: Projection,
+  x: number,
+  y: number,
+  radius: number,
+  height: number,
+): ObstacleMarker {
+  const base = project(projection, x, y, 0);
+  const top = project(projection, x, y, height);
+  const edgeX = project(projection, x + radius, y, height);
+  const edgeY = project(projection, x, y + radius, height);
+  return {
+    base,
+    top,
     radiusX: Math.hypot(edgeX.sx - top.sx, edgeX.sy - top.sy),
     radiusY: Math.hypot(edgeY.sx - top.sx, edgeY.sy - top.sy),
   };

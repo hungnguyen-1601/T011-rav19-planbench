@@ -20,6 +20,7 @@ from planbench_api.artifacts import ArtifactStore
 from planbench_api.errors import NotFoundError
 from planbench_benchmark import BenchmarkReport, BenchmarkSpec, RunRecord
 from planbench_schemas.map import MapData
+from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
 from planbench_schemas.scenario import Scenario
 from planbench_simulator.nav_stack import StackRun
 
@@ -61,6 +62,13 @@ class StoredSimulation:
     created_at: str
     state: str = "created"  # created | finished
     run: StackRun | None = None
+    #: The replanning rule this simulation runs under. Kept beside
+    #: ``config`` rather than inside it: ``config`` is the algorithm's own
+    #: parameters, and replanning is a rule imposed on the run. Folding it
+    #: in would put it exactly where a benchmark must never read it from.
+    #: Defaults to off, so a simulation stored before this field existed
+    #: describes precisely what it did.
+    replanning: ReplanningConfig = NO_REPLANNING
 
 
 @dataclass
@@ -185,7 +193,12 @@ class SimulationRepository:
         self._lock = threading.Lock()
 
     def create(
-        self, map_id: str, scenario_id: str, algorithm: str, config: dict
+        self,
+        map_id: str,
+        scenario_id: str,
+        algorithm: str,
+        config: dict,
+        replanning: ReplanningConfig = NO_REPLANNING,
     ) -> StoredSimulation:
         with self._lock:
             stored = StoredSimulation(
@@ -195,6 +208,7 @@ class SimulationRepository:
                 algorithm=algorithm,
                 config=config,
                 created_at=now_iso(),
+                replanning=replanning,
             )
             self._items[stored.id] = stored
             return stored
@@ -321,7 +335,6 @@ class RepositoryHub:
 
     def __init__(self, artifacts: ArtifactStore) -> None:
         from planbench_api.registry_store import (
-            InMemoryConversationRepository,
             InMemoryModelRepository,
             InMemoryRobotProfileRepository,
         )
@@ -337,4 +350,15 @@ class RepositoryHub:
         self.reviews = InMemoryReviewRepository()
         self.robot_profiles = InMemoryRobotProfileRepository()
         self.models = InMemoryModelRepository()
-        self.conversations = InMemoryConversationRepository()
+        # Decision layer (HĐ-1, HĐ-2, HĐ-12/13). Imported here rather
+        # than at module scope because `planbench_api.decisions` imports
+        # `new_id`/`now_iso` from this module.
+        from planbench_api.decisions import (
+            CandidateRepository,
+            DecisionRunRepository,
+            TaskProfileRepository,
+        )
+
+        self.task_profiles = TaskProfileRepository()
+        self.candidates = CandidateRepository()
+        self.decision_runs = DecisionRunRepository()

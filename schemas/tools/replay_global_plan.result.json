@@ -1,0 +1,69 @@
+{
+  "$id": "schemas/tools/replay_global_plan.result.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "measurements": {
+      "additionalProperties": false,
+      "properties": {
+        "attempts_recorded": {
+          "description": "Attempts the sidecar recorded; a mismatch with the replayed count is a refusal, not a rounding difference.",
+          "type": "number",
+          "unit": "count"
+        },
+        "attempts_replayed": {
+          "description": "Planning attempts re-run.",
+          "type": "number",
+          "unit": "count"
+        },
+        "path_length_m": {
+          "description": "Length of the replayed path, where one was found.",
+          "type": "number",
+          "unit": "m"
+        },
+        "paths_found": {
+          "description": "Replayed attempts that returned a path.",
+          "type": "number",
+          "unit": "count"
+        }
+      },
+      "required": [
+        "attempts_replayed",
+        "attempts_recorded",
+        "paths_found"
+      ],
+      "type": "object"
+    },
+    "references": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": []
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ref": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "measurements"
+  ],
+  "title": "replay_global_plan@1.0.0 output",
+  "type": "object"
+}

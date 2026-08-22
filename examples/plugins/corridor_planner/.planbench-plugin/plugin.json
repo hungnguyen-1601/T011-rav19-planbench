@@ -1,0 +1,30 @@
+{
+  "plugin_api": "1.1.0",
+  "id": "org.planbench.example.corridor",
+  "version": "0.1.0",
+  "role": "global",
+  "runtime": {
+    "supported_lanes": ["python_in_process"],
+    "production_lane": "python_in_process",
+    "profiles": {
+      "python_in_process": {
+        "protocol": "planbench-inproc/v1",
+        "codec": "python-object/v1",
+        "deadline_policy": "control-period",
+        "entry_point": "corridor_planner:CorridorPlanner"
+      }
+    }
+  },
+  "requirements": {
+    "all_of": ["planbench://channel/planning-grid@1"]
+  },
+  "supports": {
+    "action_types": ["global-path@1"],
+    "robot_dynamics": ["differential-drive@1"],
+    "execution_models": ["synchronous-step@1"]
+  },
+  "config_schema": {
+    "type": "object",
+    "properties": {"simplify": {"type": "boolean"}}
+  }
+}

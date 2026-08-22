@@ -150,6 +150,13 @@ class RobotProfileRow(Base):
     footprint: Mapped[str] = mapped_column(String(40), nullable=False, default="circle")
     max_linear_velocity: Mapped[float] = mapped_column(Float, nullable=False)
     max_angular_velocity: Mapped[float] = mapped_column(Float, nullable=False)
+    # Nullable because a profile written before these existed never
+    # declared them, and NULL is the recorded truth rather than a value
+    # waiting to be backfilled — the same reasoning as 0004's replanning
+    # column. Substituting a number would put a physical claim about
+    # somebody's vehicle into the database with nobody's name on it.
+    max_linear_acceleration: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_angular_acceleration: Mapped[float | None] = mapped_column(Float, nullable=True)
     lidar_beams: Mapped[int] = mapped_column(Integer, nullable=False, default=24)
     lidar_range: Mapped[float] = mapped_column(Float, nullable=False, default=6.0)
     observation_type: Mapped[str] = mapped_column(String(60), nullable=False)
@@ -338,6 +345,11 @@ class SimulationRow(Base):
     #: Full StackRun dump. Single simulations are one-off and small
     #: enough to keep inline; benchmark episodes are not (see EpisodeRow).
     run: Mapped[dict | None] = mapped_column(JsonColumn, nullable=True)
+    #: ``ReplanningConfig`` dump, or NULL on rows written before the rule
+    #: could be set here. NULL reads back as disabled, which is what
+    #: those runs actually did — a default of "enabled" would rewrite
+    #: history, and NOT NULL would break the upgrade.
+    replanning: Mapped[dict | None] = mapped_column(JsonColumn, nullable=True)
 
 
 class BenchmarkRow(Base):
@@ -469,9 +481,203 @@ class RefreshTokenRow(Base):
     __table_args__ = (Index("ix_refresh_tokens_user_id", "user_id"),)
 
 
+class TaskProfileRow(Base):
+    """One deployment as declared (HĐ-2).
+
+    The whole profile is stored as JSON rather than as columns. It is a
+    frozen Pydantic model that the decision layer validates on the way
+    in, and shredding it into columns would create a second definition of
+    HĐ-2 that drifts from the first — the failure §16 exists to prevent.
+    What *is* promoted to columns is what queries need: the id, the
+    environment, and who owns it.
+    """
+
+    __tablename__ = "task_profiles"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    environment: Mapped[str] = mapped_column(String(200), nullable=False)
+    owner_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+    profile: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
+
+    __table_args__ = (Index("ix_task_profiles_owner", "owner_user_id"),)
+
+
+class CandidateRow(Base):
+    """One registered candidate, keyed by its own content hash (HĐ-1.3).
+
+    ``candidate_id`` is the primary key, not a surrogate: it is a hash of
+    the planner, the controller, the parameters, the code version and the
+    observation requirements, so two rows with the same id are the same
+    configuration by construction and an autoincrement key would let the
+    same stack be registered twice under two names.
+
+    ``tuning`` is nullable because HĐ-1.6 lets a candidate decline to
+    declare its tuning cost — and the objectives layer charges it for
+    that (a profile weighting engineering cost refuses to score it),
+    which is the honest handling and not something the schema should
+    pre-empt.
+    """
+
+    __tablename__ = "candidates"
+
+    candidate_id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    type: Mapped[str] = mapped_column(String(20), nullable=False)
+    stack_label: Mapped[str] = mapped_column(String(200), nullable=False)
+    registered_by: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+    spec: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
+    #: HĐ-1.6's declaration, with its evidence log. NULL means undeclared.
+    tuning: Mapped[dict | None] = mapped_column(JsonColumn, nullable=True)
+
+    __table_args__ = (Index("ix_candidates_stack_label", "stack_label"),)
+
+
+class DecisionRunRow(Base):
+    """One evaluation run — and the card is something a run *sometimes*
+    produces (HĐ-12/13).
+
+    ``0005`` modelled this the other way round: a ``decision_cards`` table
+    whose ``card`` and ``recommended_candidate_id`` were NOT NULL. That
+    encodes the assumption the decision layer exists to refuse — that
+    every evaluation ends in a ranking — and the first MVP run disproved
+    it within a day: three comparisons out of three produced no card,
+    because a card needs *two* candidates through all six gates and only
+    one of four got there.
+
+    Those runs are results, not failures. Each carries a full gate table
+    answering "who was eliminated where, after how many runs", which is
+    the question HĐ-12 puts on a card in the first place. So:
+
+    * ``report`` is NOT NULL — a run always produces evidence;
+    * ``card``, ``manifest``, ``recommended_candidate_id`` and ``status``
+      are nullable — a run sometimes produces a recommendation.
+
+    Reading it the other way is what puts pressure on every run to be
+    rankable, and that pressure is what produced a card bounding a
+    collision probability off a single episode.
+
+    **The bodies stay JSON** for the same reason as ``TaskProfileRow``:
+    they are frozen Pydantic models the decision layer already validates,
+    and a second definition in DDL would drift from the first. Only what
+    a query needs is promoted — including ``artifact_kind``, because
+    "show me the runs that could not be ranked" is a question asked on
+    day one and it should not be a JSON scan.
+
+    ``approval_id`` is deliberately absent. HĐ-14's approvals are an
+    append-only trail keyed the other way round, and a single "approved
+    by" column would quietly reduce that trail to its last row.
+    """
+
+    __tablename__ = "decision_runs"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    task_profile_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("task_profiles.id", ondelete="RESTRICT"), nullable=False
+    )
+    #: ``decision_card`` | ``comparison`` | ``measurement``.
+    artifact_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    #: HĐ-1.4. NULL for a measurement: one candidate licenses no
+    #: layer-scoped claim, so there is no scope to declare.
+    experiment_scope: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    contracts_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+    created_by: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    #: The evidence, whatever the verdict.
+    report: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
+    #: The recommendation, when the run supported one.
+    card: Mapped[dict | None] = mapped_column(JsonColumn, nullable=True)
+    manifest: Mapped[dict | None] = mapped_column(JsonColumn, nullable=True)
+    recommended_candidate_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    #: Where the traces of this run live, and a checksum over them (D15).
+    run_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
+    run_checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # --- the two human acts, kept apart on purpose (HĐ-14) -------------
+    #
+    # One column would have been shorter and wrong. "Somebody read this"
+    # applies to every run; "this recommendation is the config we deploy"
+    # only exists where there *is* a recommendation. Collapsing them
+    # forces one of two bad answers: either an unranked run can be
+    # approved — turning "measured" into "endorsed" — or it cannot be
+    # marked read at all, which is how a run that eliminated four
+    # candidates becomes an artifact nobody ever looked at again.
+    #
+    # ``unreviewed`` | ``reviewed``.
+    review_state: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="unreviewed"
+    )
+    reviewed_by: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    reviewed_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+    #: ``not_applicable`` | ``pending`` | ``approved`` | ``rejected``.
+    #: NOT NULL with the safe default, so a row written by a path that
+    #: does not know about this column cannot land in an approvable state.
+    config_state: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="not_applicable"
+    )
+    config_decided_by: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    config_decided_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+
+    __table_args__ = (
+        Index("ix_decision_runs_task_profile", "task_profile_id"),
+        Index("ix_decision_runs_kind", "artifact_kind"),
+        Index("ix_decision_runs_recommended", "recommended_candidate_id"),
+        Index("ix_decision_runs_status", "status"),
+        # "Which runs is nobody watching?" and "what is cleared to
+        # deploy?" are both list screens, so neither should be a scan.
+        Index("ix_decision_runs_review_state", "review_state"),
+        Index("ix_decision_runs_config_state", "config_state"),
+    )
+
+
+class DecisionRunReviewRow(Base):
+    """One human act on one decision run. Append-only (HĐ-14).
+
+    A separate table from ``approvals`` rather than a widened one:
+    ``approvals.benchmark_id`` is a NOT NULL foreign key into
+    ``benchmarks``, and a decision run is not a benchmark. Making that
+    column nullable to fit both would leave every existing audit row
+    unable to say which of the two kinds it described.
+    """
+
+    __tablename__ = "decision_run_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("decision_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    #: Explicit order: two events can share a timestamp at whatever
+    #: resolution the clock has.
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: ``review`` | ``approve_config`` | ``reject_config``.
+    action: Mapped[str] = mapped_column(String(30), nullable=False)
+    actor_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    #: Nickname at the time of the act — readable after a rename.
+    username: Mapped[str] = mapped_column(String(100), nullable=False)
+    #: Both ends, because "approved" alone does not say what it replaced.
+    previous_state: Mapped[str] = mapped_column(String(20), nullable=False)
+    new_state: Mapped[str] = mapped_column(String(20), nullable=False)
+    comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+
+    __table_args__ = (Index("ix_decision_run_reviews_run", "run_id", "sequence"),)
+
+
+
 __all__ = [
     "ApprovalRow",
+    "ApprovalRow",
     "BenchmarkJobRow",
+    "RefreshTokenRow",
+    "TaskProfileRow",
+    "CandidateRow",
+    "DecisionRunRow",
+    "DecisionRunReviewRow",
+    "ConversationMessageRow",
+    "ConversationRow",
+    "ModelDocumentRow",
+
     "ConversationMessageRow",
     "ConversationRow",
     "ModelDocumentRow",

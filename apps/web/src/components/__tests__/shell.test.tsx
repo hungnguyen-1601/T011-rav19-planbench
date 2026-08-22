@@ -60,15 +60,44 @@ describe("Sidebar — expanded", () => {
     const html = sidebar();
     expect(html).toContain("PlanBench");
     expect(html).toContain("simulation only");
-    for (const label of ["Dashboard", "Maps", "Benchmarks", "Leaderboard", "Agent", "Reviews"]) {
+    for (const label of ["Dashboard", "Maps", "Candidates", "Decisions", "Agent", "Reviews"]) {
       expect(html).toContain(label);
     }
   });
 
   it("groups the menu into labelled sections", () => {
+    /* Grouped by what the reader is *doing*, not by which system
+       produced the screen. The previous split put the two flows inside
+       one heading, so a replacement sat beside the thing it replaced
+       with nothing saying which was which. */
     const html = sidebar();
-    expect(html).toContain("Workspace");
-    expect(html).toContain("Results");
+    expect(html).toContain("What you are doing");
+    expect(html).toContain("Materials");
+    expect(html).toContain("Being replaced");
+  });
+
+  it("says what every entry is for, not just its name", () => {
+    /* Twelve names and nothing else left a reader unable to tell that
+       Benchmarks and Decisions answer different questions. That was the
+       largest cost of running two flows at once, and none of it was in
+       the code. */
+    const html = sidebar();
+    expect(html).toContain("Declare a world to measure on");
+    expect(html).toContain("sidebar-desc");
+  });
+
+  it("says out loud which pages are being replaced", () => {
+    /* One entry is left in that group. `/benchmarks`, `/leaderboard` and
+       `/algorithms` were removed in P6, each only after the thing that
+       replaced it existed. `/scenarios` was kept on the same rule — the
+       deployment form could not draw obstacles, so removing it would
+       have taken a capability away rather than moved one. The form can
+       now, which makes retiring it a decision somebody has to take
+       rather than a thing to wait for; until then the sidebar says what
+       it is instead of implying it is still the only editor. */
+    const html = sidebar({ user: ALICE });
+    expect(html).toContain("Being replaced");
+    expect(html).toContain("The older editor");
   });
 
   it("offers a collapse control", () => {
@@ -84,8 +113,11 @@ describe("Sidebar — expanded", () => {
 
 describe("Sidebar — collapsed", () => {
   it("gives every icon a tooltip and an accessible name", () => {
+    /* Collapsed, the tooltip is the only surface left, so it carries the
+       description too — a rail of icons with nothing but names is what
+       the descriptions were added to fix. */
     const html = sidebar({ collapsed: true });
-    expect(html).toContain('data-tooltip="Maps"');
+    expect(html).toContain('data-tooltip="Maps — Draw the walls a deployment runs in"');
     expect(html).toContain('aria-label="Maps"');
   });
 
@@ -103,14 +135,14 @@ describe("Sidebar — collapsed", () => {
 
 describe("Sidebar — the active page", () => {
   it("marks the current section with aria-current, not colour alone", () => {
-    const html = sidebar({ pathname: "/benchmarks" });
+    const html = sidebar({ pathname: "/decisions" });
     expect(html).toContain('aria-current="page"');
     // Exactly one page is current.
     expect(html.match(/aria-current="page"/g)).toHaveLength(1);
   });
 
   it("keeps the section marked on a detail page", () => {
-    expect(sidebar({ pathname: "/benchmarks/ab12" })).toContain('aria-current="page"');
+    expect(sidebar({ pathname: "/decisions/ab12" })).toContain('aria-current="page"');
   });
 
   it("marks the dashboard only on the dashboard", () => {
@@ -163,7 +195,7 @@ describe("Sidebar — Vietnamese", () => {
     const html = sidebar({}, "vi");
     expect(html).toContain("Tổng quan");
     expect(html).toContain("Bản đồ");
-    expect(html).toContain("Bảng xếp hạng");
+    expect(html).toContain("Quyết định");
     expect(html).not.toContain(">Dashboard<");
   });
 

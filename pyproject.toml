@@ -12,10 +12,22 @@ requires-python = ">=3.12"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = [
+    # The repository root, so `src.*` (the T-011 scaffold) resolves, and
+    # `tests/`, so shared helpers like `agent_fakes` import as top-level
+    # modules. Both used to work by accident: pytest puts a test file's
+    # first non-package parent on sys.path, and `tests/` had no
+    # `__init__.py`. Adding one turned `tests/` into a package and broke
+    # every `import agent_fakes`. Naming the paths here makes it work
+    # either way.
+    ".",
+    "tests",
     "packages/schemas",
     "packages/planning",
     "packages/metrics",
     "packages/benchmark",
+    "packages/decision",
+    "packages/explanation",
+    "packages/plugin_sdk",
     "services/simulator",
     "services/tracking",
     "services/agent_service",
@@ -23,34 +35,11 @@ pythonpath = [
     "apps/api",
 ]
 
-[tool.ruff]
-line-length = 100
-target-version = "py312"
-
-[tool.ruff.lint]
-select = [
-    "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
-    "F",   # pyflakes
-    "I",   # isort
-    "B",   # flake8-bugbear
-    "UP",  # pyupgrade
-    "SIM", # flake8-simplify
-    "C4",  # flake8-comprehensions
-]
-
-[tool.ruff.lint.isort]
-known-first-party = [
-    "planbench_schemas",
-    "planbench_simulator",
-    "planbench_planning",
-    "planbench_metrics",
-    "planbench_benchmark",
-    "planbench_tracking",
-    "planbench_rl",
-    "planbench_agent",
-    "planbench_api",
-]
+# Ruff is configured in `ruff.toml` at the repository root, not here.
+# A root `ruff.toml` replaces `[tool.ruff]` outright instead of merging
+# with it, so keeping settings in both places means one copy is silently
+# dead — which is how CI ended up disagreeing with local runs about
+# import order. One file, one answer.
 
 [tool.coverage.run]
 branch = true

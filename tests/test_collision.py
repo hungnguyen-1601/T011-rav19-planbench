@@ -14,8 +14,10 @@ from pydantic import ValidationError
 from planbench_schemas.geometry import EPS, Point2D
 from planbench_schemas.scenario import CircleObstacle, RectangleObstacle
 from planbench_simulator.collision import (
+    DEFAULT_CLEARANCE_WINDOW_M,
     clearance_to_circle,
     clearance_to_grid,
+    clearance_to_grid_within,
     clearance_to_obstacle,
     clearance_to_obstacles,
     clearance_to_rectangle,
@@ -155,3 +157,119 @@ class TestClearance:
 
     def test_empty_obstacles_without_grid_is_infinite(self) -> None:
         assert clearance_to_obstacles(Point2D(x=0.0, y=0.0), 0.5, []) == math.inf
+
+
+class TestWindowedGridClearance:
+    """``clearance_to_grid_within`` — the per-sample variant (HĐ-5).
+
+    The exhaustive scan is a whole-map sweep, which is affordable once
+    per episode and ruinous once per control step. The windowed version
+    trades far-field precision for that, and the two properties below are
+    what make the trade safe.
+    """
+
+    def test_it_agrees_exactly_with_the_full_scan_near_obstacles(
+        self, mixed_grid: OccupancyGrid
+    ) -> None:
+        """Inside the window the answer is not an approximation — it is
+        the same number, because it is the same arithmetic over a subset
+        of cells that provably contains the nearest one."""
+        for x, y in ((2.5, 2.5), (1.9, 2.5), (2.5, 3.4), (0.4, 0.4)):
+            centre = Point2D(x=x, y=y)
+            assert clearance_to_grid_within(centre, 0.2, mixed_grid) == pytest.approx(
+                clearance_to_grid(centre, 0.2, mixed_grid)
+            )
+
+    def test_far_from_everything_it_reports_the_window_as_a_floor(self, map_factory) -> None:
+        """Not the true distance, and deliberately under it: reporting
+        less clearance than there is can only make a candidate look
+        worse, never wave one through."""
+        grid = OccupancyGrid(map_factory(200, 200))
+        centre = Point2D(x=10.0, y=10.0)
+        windowed = clearance_to_grid_within(centre, 0.2, grid)
+        assert windowed == pytest.approx(DEFAULT_CLEARANCE_WINDOW_M - 0.2)
+        assert windowed < clearance_to_grid(centre, 0.2, grid)
+
+    def test_a_non_positive_window_is_refused(self, empty_grid: OccupancyGrid) -> None:
+        with pytest.raises(ValueError, match="window must be positive"):
+            clearance_to_grid_within(Point2D(x=1.0, y=1.0), 0.2, empty_grid, window_m=0.0)
+
+
+class TestTheMetricPathDoesNotScanTheWholeMap:
+    """``clearance_to_obstacles`` windows the grid, and why that is safe.
+
+    **Measured, not assumed.** Its one grid-carrying caller is the legacy
+    ``EpisodeMetrics``, asked once per trajectory point. With the
+    exhaustive scan that was 153 600 cell visits per point, and on the
+    shipped hall it turned a 5-second episode into a 50-second one — 90%
+    of the wall clock spent on a number HĐ-5's Metrics Engine never
+    reads, because the trace is its single input. The trajectory is
+    byte-identical either way; only the bill changed.
+
+    HĐ-5's own ``clearance_m`` column already used the windowed variant,
+    so this makes the two paths agree rather than quietly differ.
+    """
+
+    def test_it_uses_the_windowed_scan(self, mixed_grid: OccupancyGrid) -> None:
+        """Asserted on the compiled names, not on the source text.
+
+        The docstring explains the choice and names both functions, so a
+        substring search would match its own explanation — the trap two
+        earlier guards in this repository fell into.
+        """
+        called = set(clearance_to_obstacles.__code__.co_names)
+        assert "clearance_to_grid_within" in called
+        assert "clearance_to_grid" not in called
+
+    def test_near_an_obstacle_the_answer_is_unchanged(self, mixed_grid: OccupancyGrid) -> None:
+        """Where the value can change a metric, it is still exact.
+
+        Both safety anchors saturate far below the window —
+        ``min_clearance`` is anchored at two robot radii, about 0.52 m —
+        so the window can only affect numbers that already score a flat
+        1.0.
+        """
+        for x, y in ((2.5, 2.5), (1.9, 2.5), (2.5, 3.4)):
+            centre = Point2D(x=x, y=y)
+            assert clearance_to_obstacles(centre, 0.2, (), mixed_grid) == pytest.approx(
+                clearance_to_grid(centre, 0.2, mixed_grid)
+            )
+
+    def test_far_from_everything_it_floors_rather_than_overstates(self, map_factory) -> None:
+        """The floor is the safe direction.
+
+        Reporting less room than there is can only make a candidate look
+        worse, never wave one through.
+        """
+        grid = OccupancyGrid(map_factory(200, 200))
+        centre = Point2D(x=10.0, y=10.0)
+        reported = clearance_to_obstacles(centre, 0.2, (), grid)
+        assert reported == pytest.approx(DEFAULT_CLEARANCE_WINDOW_M - 0.2)
+        assert reported < clearance_to_grid(centre, 0.2, grid)
+
+    def test_a_shape_obstacle_still_wins_when_it_is_nearer(self, mixed_grid: OccupancyGrid) -> None:
+        """Windowing the grid must not lose the other half of the answer.
+
+        (1.0, 1.0) has room: the nearest wall is the map boundary a metre
+        away, so the grid answer is 0.8 and a circle half a metre off
+        must beat it. (2.5, 2.5) would not do — it is the centre of the
+        blocked cell, where both answers are the same negative number and
+        the assertion would pass for the wrong reason.
+        """
+        centre = Point2D(x=1.0, y=1.0)
+        near = CircleObstacle(center=Point2D(x=1.5, y=1.0), radius=0.05)
+        grid_only = clearance_to_obstacles(centre, 0.2, (), mixed_grid)
+        both = clearance_to_obstacles(centre, 0.2, (near,), mixed_grid)
+        assert grid_only == pytest.approx(0.8)
+        assert both == pytest.approx(0.25)
+
+    def test_the_exact_scan_survives_as_the_reference(self) -> None:
+        """It is still exported, and the tests above are what it is for.
+
+        Deleting it would leave the windowed version with nothing to be
+        checked against, which is how an approximation stops being known
+        to be exact where it matters.
+        """
+        from planbench_simulator import clearance_to_grid as exported
+
+        assert exported is clearance_to_grid

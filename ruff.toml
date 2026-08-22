@@ -1,0 +1,63 @@
+# Ruff configuration — the single source of truth for this repository.
+#
+# A `ruff.toml` at the root **replaces** `[tool.ruff]` in pyproject.toml
+# rather than merging with it. When both existed, pyproject's settings
+# were silently ignored — including `known-first-party`, which is why CI
+# reported 36 import-sorting errors that never appeared locally. The
+# project's settings therefore live here, and pyproject.toml no longer
+# configures ruff at all.
+
+# Matches `requires-python = ">=3.12"` in pyproject.toml. Linting against
+# an older target would accept syntax the project does not claim to run.
+target-version = "py312"
+line-length = 100
+
+# `docs/` holds prose, including the T-011 programme's guide. Ruff would
+# reformat the Python snippets inside those Markdown files, which changes
+# what the guide teaches — not something a linter should decide.
+exclude = ["docs/"]
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "C4",  # flake8-comprehensions
+]
+
+ignore = [
+    # N818 wants every exception class to end in `Error`. This codebase
+    # names them after the condition instead (`PermissionDenied`,
+    # `ModelNotAllowed`, `DatabaseUnavailable`), and those names are used
+    # across the API layer, the tests and the docs. Renaming twelve
+    # classes to satisfy a naming convention would be a wide, risky
+    # change for no behavioural gain.
+    "N818",
+]
+
+[lint.isort]
+# Without this the `planbench_*` packages sort as third-party, which is
+# exactly what broke CI: every test file's import block was reported
+# unsorted.
+known-first-party = [
+    "planbench_schemas",
+    "planbench_simulator",
+    "planbench_planning",
+    "planbench_metrics",
+    "planbench_benchmark",
+    "planbench_decision",
+    "planbench_explanation",
+    "planbench_tracking",
+    "planbench_rl",
+    "planbench_agent",
+    "planbench_api",
+]
+
+[format]
+quote-style = "double"
+indent-style = "space"

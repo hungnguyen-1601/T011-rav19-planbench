@@ -19,8 +19,10 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
    nghiệm; cần distance-field cache nếu map lớn (theo dõi ở M5).
 6. **Pure-pursuit chỉ là adapter tạm** (D12) — không xuất hiện trong
    benchmark comparison; DWA thay thế ở M4.
-7. **LiDAR không có noise model** — sẽ thêm noise có seed khi cần
-   benchmark sensor robustness.
+7. ~~**LiDAR không có noise model**~~ — **đã có từ 2026-08-11**
+   (contract 6.3.0, HĐ-2.5). `environment.sensor_noise` khai σ tầm quét
+   và tỉ lệ trượt bánh, mặc định **0** nên mọi profile cũ giữ nguyên
+   hành vi. Xem mục "MVP v1" cuối tài liệu này.
 8. **Planning time là wall-clock** — không deterministic (chỉ dùng làm
    metric, không tham gia logic).
 
@@ -164,22 +166,58 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
 45. **2.5D không có occlusion culling.** Mọi ô đều được vẽ, kể cả ô bị
     tường trước che hoàn toàn. Với map hiện tại (48×36) không thấy chậm;
     map lớn hơn nhiều sẽ cần cắt bớt hoặc chuyển sang WebGL.
-46. **Replay chỉ hiện khung cuối, chưa có timeline scrub.** Trang
-    `/simulate` có playback theo thời gian thực; replay của episode đã
-    lưu thì vẽ toàn bộ trajectory cộng vị trí cuối.
-47. **Vật cản động không hiện trong 2.5D.** Snapshot vị trí vật cản có
-    trong `TrajectoryPoint.obstacles` nhưng renderer chưa dùng — hiện
-    chỉ vẽ map tĩnh, plan, trajectory và robot.
+46. ~~**Replay chỉ hiện khung cuối, chưa có timeline scrub.**~~ Đã xong
+    (F08, 2026-08-07): replay episode đã lưu có play/pause, scrubber,
+    tốc độ 0.25×–8×, robot chạy theo frame, trajectory vẽ tới playhead,
+    vật cản động vẽ theo snapshot từng frame (view 2D), điểm va chạm
+    đánh dấu trên timeline. Hook `useTrajectoryPlayback` tách riêng
+    khỏi stream WebSocket của `/simulate`.
+47. **Vật cản động trong 2.5D: vẽ được, nhưng chỉ ở nơi có người truyền
+    xuống.** `Scene25D` nhận `obstacles` và dựng cả footprint lẫn vành
+    keep-out (`lib/scene25d.ts`), và form deployment truyền snapshot từ
+    preview xuống nên traffic hiện ở cả khung phẳng lẫn 2.5D (2026-08-15,
+    Phase 2b). Phần **replay** thì chưa: `TrajectoryPoint.obstacles` có
+    sẵn dữ liệu nhưng trang replay chưa nối vào `obstacleSnapshots`, nên
+    xem lại một episode ở 2.5D vẫn thấy hành lang trống. Ngoài ra 2.5D
+    **chỉ hiển thị, không đặt điểm được** — traffic được vẽ trên khung
+    phẳng, và đó là chủ ý chứ không phải thiếu sót. Lớp **traffic đã
+    khai** thêm ở 2026-08-16 (lộ trình, điểm cầm được, vòng lang thang —
+    `lib/trafficOverlay`) cũng chỉ vẽ ở khung phẳng, cùng lý do: phép
+    chiếu 2.5D không có nghịch đảo, một pixel trên màn ứng với cả một tia
+    xuyên qua cảnh chứ không với một điểm.
 48. **Chưa có endpoint model registry.** `/algorithms` hiển thị registry
     stack (gồm `astar+ppo` và `model_path` nó đòi), nhưng danh sách
     checkpoint đã train thì chưa có API — metadata mới nằm ở file sidecar
     cạnh checkpoint.
 49. **Agent console không lưu hội thoại.** Mỗi lượt độc lập; `history`
     chưa được truyền lại. Cần bảng riêng khi có PostgreSQL.
-50. **Chưa có test render cho component.** Vitest phủ phần hình học
-    thuần (`scene25d`, `transform`, `playback`, `demoMap`); component
-    React kiểm chứng bằng `tsc`, `next build` và chạy thật, chưa có
-    jsdom + Testing Library.
+50. **Component test dừng ở lần render đầu; không có test cho thao tác
+    chuột.** Vitest phủ phần hình học thuần (`scene25d`, `transform`,
+    `playback`, `demoMap`, `trafficOverlay`, `canvasSize`), và một số
+    component được render thật bằng `renderToStaticMarkup` —
+    `Sidebar`/`StatCard`/`EmptyState` (`shell.test.tsx`),
+    `TrafficEditor` (2026-08-15), `Tabs` và **`DeploymentForm`** cả hai
+    từ 2026-08-16. Cách đó phủ **lần vẽ đầu tiên**: field nào hiện với
+    luật chuyển động nào, lỗi server rơi vào tab nào, panel ẩn có còn
+    trong DOM không, control có bị khoá không.
+
+    Cái nó **không** phủ được: click, kéo, và mọi thứ chỉ xảy ra sau một
+    lần tương tác — kéo waypoint, nhấn đúp để xoá, pointer capture khi
+    con trỏ rời canvas, ảnh preview vẽ đúng toạ độ, click rơi đúng chỗ
+    sau khi `ResizeObserver` đổi kích thước canvas, và các race giữa
+    nhiều request (sửa field trong lúc đang kiểm, chọn map A rồi map B).
+    Không có jsdom, không Testing Library, không playwright.
+
+    Phần *quyết định* sau mỗi click đã được tách thành hàm thuần và test
+    riêng — `lib/traffic`, `lib/trafficUi` (vòng đời candidate/committed
+    của một cú kéo), `lib/trafficOverlay` (hit-test và ý nghĩa của một
+    cú nhấn), `lib/pointerRouting`, `lib/sequencer`. Phần nối tới con
+    chuột hiện nghiệm thu **bằng tay** theo checklist ở
+    `docs/antongduy/reports/2026-08-16/tongduyan_map-truc-tiep-phase-4-va-tong-ket.md`
+    (thay cho checklist 2026-08-15, đã bị nó bao trùm).
+
+    Riêng canvas vẽ đúng pixel thì jsdom cũng không kiểm được — muốn
+    đóng hẳn phải là browser test thật.
 
 ## Persistence / Docker (M10)
 
@@ -391,6 +429,589 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
 89. **Lịch sử hội thoại chưa có UI liệt kê.** Backend lưu và trả về đầy
     đủ; giao diện hiện chỉ có "Cuộc trò chuyện mới".
 
+## Lưu trữ (kiểm chứng 2026-08-03)
+
+90. **Mặc định của một checkout mới là KHÔNG lưu gì.** `.env.example`
+    từng ship `PLANBENCH_DATABASE_URL=` rỗng, mà "đặt bằng rỗng" khác
+    "không đặt": nó chọn thẳng backend trong bộ nhớ, và không migration
+    nào chạy. Đã sửa — dòng đó nay để dạng chú thích, và `dev_stack.sh`
+    cảnh báo rõ khi rơi vào chế độ không lưu. Nhưng ai đã trót copy
+    `.env.example` cũ thì vẫn phải tự sửa `.env` của mình.
+
+91. **SQLite chỉ dùng được cho một tiến trình.** Đủ cho phát triển và
+    demo. Nhiều worker ghi song song sẽ gặp `database is locked`; triển
+    khai thật phải dùng PostgreSQL.
+
+92. ~~**Vẫn chưa chạy PostgreSQL thật.**~~ **Đã gỡ.** Hai lần chạy độc
+    lập, ghi lại ở đây vì chúng kiểm chứng hai thứ khác nhau:
+
+    - **2026-08-03** — migration 0001–0003 chạy trên PostgreSQL 17 trong
+      Docker (`PostgresqlImpl`, 16 bảng, `alembic_version = 0003`), toàn
+      bộ stack build và chạy thật. Kiểm chứng độ bền bằng cách **xóa hẳn
+      container API** rồi tạo lại: dữ liệu vẫn còn. Xem TEST_REPORT.md.
+    - **2026-08-05** — chạy lại từ `docker compose` sạch và thêm phần
+      end-to-end: một benchmark 2 stack × 5 seed chạy trọn trong
+      container, dữ liệu ghi xuống PostgreSQL. Xem
+      `docs/antongduy/reports/2026-08-05/tongduyan_docker-compose-chay-that.md`.
+      (Lần này đếm 10 bảng — khác con số 16 ở trên vì đếm ở thời điểm
+      khác và chưa đối chiếu; không quan trọng với kết luận, nhưng ghi ra
+      để không ai tưởng hai lần chạy mâu thuẫn nhau.)
+
+    Lần chạy đầu bắt được một lỗi mà không lần test nào phát hiện được:
+    `PLANBENCH_MODEL_DIR` mặc định là đường dẫn *tương đối*
+    (`artifacts/models`), giải ra `/app/artifacts` trong container — thư
+    mục của root, trong khi tiến trình chạy bằng user `planbench`. API
+    chết lúc khởi động với `PermissionError` trước khi phục vụ được
+    request nào. `docker-compose.yml` khai `PLANBENCH_ARTIFACT_DIR` từ
+    M10 nhưng chưa ai thêm `PLANBENCH_MODEL_DIR` khi M13 sinh ra nó. Đã
+    sửa.
+
+93. **Mất thư mục artifact là mất replay, dù database còn nguyên.**
+    Trajectory và report nằm ngoài database (quyết định D15); bảng chỉ
+    giữ URI + checksum. Phải backup `planbench.db` **và** `artifacts/`
+    cùng nhau.
+94. **RRT\* chỉ tái lập được khi biết cả hai seed.** Cây được sinh từ
+    `RRTStarConfig.seed` **trộn với seed episode**; chạy lại đúng cặp seed
+    đó ra đúng đường cũ, nhưng một `PlanResult` đứng riêng không nói được
+    nó thuộc cây nào. Muốn tái lập phải giữ nguyên cả spec lẫn seed list.
+95. **Một lần chạy RRT\* không kết luận được gì.** Nó là thuật toán ngẫu
+    nhiên: hai seed cho hai đường khác nhau, khác cả độ dài. Chỉ đọc qua
+    phân phối nhiều seed (P04 sẽ cho median/IQR/CI). UI đánh dấu stack
+    `stochastic_global_planner=true`, nhưng không cưỡng chế số seed tối
+    thiểu.
+96. **Config của global planner chưa vào `BenchmarkSpec`.** `AlgorithmSpec.config`
+    chỉ cấu hình local planner; RRT\* luôn chạy mặc định (3000 iteration,
+    step 0.5 m). Vì vậy `config_schema` trên `/algorithms` cũng chỉ là
+    schema của local planner. Hệ quả: chưa tune được RRT\* — đó là phần
+    việc của P01.
+97. **RRT\* đắt hơn A\* nhiều lần trên cùng bản đồ.** Nó chạy hết ngân
+    sách iteration kể cả khi đã tìm ra đường (đổi lấy tính tối ưu tiệm
+    cận), nên `global_planning_time` giữa hai stack lệch nhau theo bản
+    chất thuật toán, không phải do cấu hình bất công.
+
+## Docker Compose (kiểm chứng 2026-08-05)
+
+98. **`AUTH_SECRET` rỗng làm mọi người bị đăng xuất sau mỗi lần restart
+    API.** `docker-compose.yml` nói rõ điều này, nhưng `.env.example`
+    vẫn ship giá trị rỗng nên trạng thái mặc định của một máy mới là
+    "token chết sau mỗi `docker compose up --build api`". Trong lúc
+    kiểm chứng Đợt 0.2, mỗi lần rebuild `api` là phải đăng nhập lại.
+    Không phải lỗi, nhưng là cái bẫy chắc chắn gặp khi demo.
+
+99. **Vai trò cũ trong audit trail phải được giữ trong `Role` mãi mãi.**
+    Dữ liệu từ lần chạy Docker trước (2026-08-02) có `role='engineer'`
+    và `role='approver'` trong bảng `approvals`; enum `Role` sau refactor
+    không còn hai giá trị đó, nên **mọi** endpoint gọi
+    `repos.benchmarks.list()` (danh sách benchmark, leaderboard) trả 500.
+    Đã sửa bằng cách giữ lại hai giá trị legacy trong enum thay vì viết
+    migration ghi đè lịch sử. Hệ quả cần nhớ: đổi tên vai trò trong
+    tương lai **không được** xóa giá trị cũ khỏi enum.
+
+100. **Cấu hình đường dẫn tương đối trong container là bẫy quyền ghi.**
+    `model_dir` từng mặc định `"artifacts/models"` độc lập với
+    `artifact_dir`; trong image, `WORKDIR /app` thuộc root còn tiến
+    trình chạy dưới user `planbench`, nên `mkdir artifacts` ném
+    `PermissionError` **lúc import**, tức API chết ngay khi khởi động.
+    Đã sửa: `model_dir` rỗng nghĩa là `<artifact_dir>/models`. Bất kỳ
+    setting đường dẫn nào thêm sau này phải bám theo `artifact_dir`
+    hoặc được set tường minh trong compose.
+
+101. **Volume `planbench_db-data` và `planbench_artifacts` sống lâu hơn
+    `docker compose down`.** Chúng được tạo 2026-08-02 và vẫn còn nguyên
+    dữ liệu ở lần chạy 2026-08-05 — chính chỗ này để lộ lỗi #99. Muốn
+    kiểm chứng "máy sạch" phải `docker compose down -v`, và ngược lại,
+    dữ liệu benchmark cũ **không** mất khi rebuild image.
+
+## Cân bằng thông tin — P02 (2026-08-06)
+
+102. **Lớp quan sát là lời khai, không phải cơ chế cưỡng chế.**
+    `global_observation_class` / `local_observation_class` do registry
+    khai báo; nền tảng không chứng minh được một planner thật sự chỉ đọc
+    đúng chừng đó — planner là code tùy ý, nó có thể import thẳng
+    scenario. Cái nền tảng làm được: (a) `Observation` không mang vị trí
+    ground-truth của vật cản, (b) `LocalPlanner.compute()` chỉ nhận
+    `(state, observation)`, (c) hai test chống hồi quy khóa hai điều
+    trên lại, (d) leaderboard không xếp chung hai lớp khai báo khác
+    nhau. Khai sai vẫn qua được — đó là lý do phải review khi thêm stack.
+
+103. **Aggregate cũ (trước P02) không có bản chụp khai báo.** Ba trường
+    mới nullable. Leaderboard tra ngược registry cho stack còn tồn tại,
+    còn stack đã bị gỡ tên thì hiện "không rõ" và **không** được coi là
+    cùng lớp với bất cứ dòng nào. Cố đoán ở đây chính là thứ P02 sinh ra
+    để chặn.
+
+104. **Hiện mọi stack đều `full_static_map` + `lidar_only`,** nên việc
+    tách nhóm chưa đổi hình dạng leaderboard trên dữ liệu thật. Đường đi
+    tách nhóm được kiểm bằng test dựng aggregate lớp
+    `lidar+human_states`, chưa bằng một planner thật đọc human states —
+    sẽ chỉ kiểm được thật khi có stack như vậy.
+
+105. **`requires_global_path` hiện luôn `true`.** Trường tồn tại cho
+    policy end-to-end sau này; chưa có stack nào bỏ qua đường toàn cục
+    nên nhánh `false` chưa từng chạy trong production.
+
+## Thống kê đánh giá — P04 (2026-08-06)
+
+106. **Chỉ so trung vị của thuật toán dẫn đầu với từng thuật toán còn
+    lại, không phải mọi cặp.** Với 2–3 stack thì hai cách là một; khi có
+    nhiều stack hơn, bảng hiện tại không trả lời được "B so với C".
+    Schema `PairwiseComparison` là danh sách cặp độc lập nên mở rộng
+    được, nhưng **chưa** hiệu chỉnh đa so sánh (Bonferroni/Holm) — chạy
+    nhiều kiểm định trên cùng dữ liệu làm tăng xác suất dương tính giả.
+    Ai bật full pairwise phải quyết định hiệu chỉnh trước.
+
+107. **Ngưỡng "đủ dữ liệu" 30 seed là quy ước, không phải tính toán
+    power.** `ADEQUATE_SEED_COUNT = 30` không được suy ra từ effect size
+    mong muốn và độ lệch thực tế của từng scenario. Nó là ngưỡng cảnh
+    báo, không phải bảo đảm rằng 30 seed đủ cho mọi so sánh.
+
+108. **Dưới 5 cặp thì không chạy kiểm định.** `MIN_PAIRS_FOR_TEST = 5`:
+    với 3–4 cặp, p-value nhỏ nhất mà Wilcoxon có thể trả vẫn lớn hơn
+    0.05, nên "không có ý nghĩa thống kê" chỉ phản ánh cỡ mẫu. Hệ quả:
+    benchmark nhỏ trả `p_value=null` chứ không phải một con số.
+
+109. **Bootstrap dùng seed cố định 0.** Cùng dữ liệu cho cùng khoảng tin
+    cậy — điều kiện để hai người đọc cùng report trích cùng số. Đổi lại,
+    khoảng tin cậy này là **một** lần lấy mẫu chứ không phải trung bình
+    trên nhiều lần bootstrap; với n rất nhỏ, khoảng có thể hẹp một cách
+    lạc quan.
+
+110. **`travel_time` chỉ ghép cặp trên seed mà cả hai stack cùng về
+    đích.** Đây là lựa chọn có chủ ý (thời gian di chuyển vô nghĩa với
+    robot không tới nơi), nhưng nó tạo thiên lệch: stack chỉ thành công
+    ở các seed dễ sẽ được so trên đúng tập seed dễ đó. Số cặp và số seed
+    bị loại luôn đi kèm kết quả, nhưng **người đọc phải tự trừ hao** —
+    hệ thống không tự điều chỉnh.
+
+111. **`average_rank_score` chưa được nối vào leaderboard hay report.**
+    Hàm đã có, đã test, nhưng xếp hạng trung bình qua nhiều scenario cần
+    quyết định về cách chọn tập scenario — thuộc P03/P05, chưa làm.
+
+## Tập held-out và tổng quát hóa (P05)
+
+112. **Tập holdout do người chọn, chưa hiệu chuẩn thực nghiệm.**
+    `bidirectional_corridor`, `intersection`, `dynamic_warehouse` được
+    chọn vì đòi hỏi hành vi không scenario dev nào thưởng (nhường đường,
+    giao cắt vuông góc, nhiều vật cản khác mô hình chuyển động cùng lúc)
+    — lý do ghi trong `scenario_protocol.json`. Nhưng cả ba cũng nằm
+    cuối thang độ khó, nên **chưa loại trừ được** khả năng chênh lệch
+    dev/holdout phản ánh độ khó chứ không phải khả năng tổng quát hóa.
+    Chỉ P03 (hiệu chuẩn độ khó) mới tách được hai nguyên nhân này.
+
+113. **Chênh lệch tổng quát hóa là hiệu của hai trung bình, không phải
+    kiểm định.** Không có p-value, không có khoảng tin cậy cho chính
+    chênh lệch. Với 3 scenario mỗi phía, chưa đủ để nói chênh lệch bao
+    nhiêu là đáng kể. Số scenario mỗi phía và cờ đủ seed luôn hiện, và
+    coverage lệch bị cảnh báo, nhưng **người đọc phải tự trừ hao**.
+
+114. **Scenario có trọng số bằng nhau, không theo số episode.** Trung
+    bình trong từng scenario trước rồi mới trung bình qua các scenario.
+    Lựa chọn có chủ ý (chạy một scenario 10 lần không được lấn át), đổi
+    lại một scenario chạy 1 seed có cùng tiếng nói với scenario chạy 30
+    seed.
+
+115. **`generalization_gap` trên `BenchmarkReport` luôn `null`.** Một
+    benchmark chạy đúng một scenario nên thuộc trọn một split. Trường
+    tồn tại để benchmark nhiều scenario sau này không phải phá schema;
+    hiện tại chênh lệch chỉ có ở `GET /generalization`.
+
+116. **MVP không chặn việc chạy holdout nhiều lần.** UI cảnh báo trước
+    khi tạo, mỗi lần chạy được ghi log và liệt kê trong
+    `holdout_usage[]`, có cảnh báo khi đã chạy hơn một lần — nhưng không
+    có giới hạn cứng và không có "ngân sách lần xem". Tập held-out mòn
+    dần theo số lần được xem; hệ thống chỉ làm việc mòn đó **đếm được**,
+    không ngăn được.
+
+117. **Không có đường chuyển split trong ứng dụng.** Đổi phân loại phải
+    sửa `scenario_protocol.json` + review + deploy. Cố ý (không ai được
+    đổi split sau khi thấy kết quả), nhưng nghĩa là scenario tạo trong
+    app đứng mãi ở `unassigned` cho tới lần release sau, và kết quả trên
+    chúng không vào được chênh lệch tổng quát hóa.
+
+118. **Chỉ ba metric được so giữa hai split**: success rate, trung vị
+    thời gian di chuyển, trung vị hiệu quả đường đi. Clearance, độ mượt
+    và latency chưa có mặt.
+
+## Hiệu chuẩn độ khó (P03)
+
+119. **Thang độ khó hiện tại lưỡng cực, gần như không có khoảng giữa.**
+    Đo thật với `astar+dwa`, 30 seed, replanning tắt (calibration
+    `1.0.0`): 5 scenario ở 0.000, 1 scenario ở 0.267
+    (`crossing_obstacle`), 4 scenario ở 1.000 (`narrow_corridor`,
+    `sudden_stop`, `bidirectional_corridor`, `dynamic_warehouse`). Dải
+    trải 0.000–1.000 nhưng **rỗng ở giữa**: hầu như không có scenario nào
+    phân biệt được hai stack đều khá. Đây là việc của Scenario Editor
+    (Đợt 2.3) — tạo scenario lấp khoảng 0.2–0.8, **không** sửa tay cache.
+    Lưu ý: biên độ (`spread`) của bộ này là 1.000, tức điểm tối đa —
+    nên `difficulty_coverage()` phải kiểm thêm `midrange_count` (số
+    scenario trong `(0.2, 0.8)`, hiện là **1**) mới thấy được vấn đề.
+
+120. **Bốn scenario baseline chưa từng giải được** nên độ khó bị ghim ở
+    1.0 và **không xếp thứ tự với nhau được**: không nói được cái nào khó
+    hơn cái nào. Vì vậy `unsolved` là một band riêng, không gộp vào
+    `hard`. Cũng có nghĩa là thang đo đang bị chặn trên bởi năng lực của
+    baseline, chứ không phải bởi bản thân scenario.
+
+121. **Curriculum order và độ khó đo được lệch nhau rõ rệt.**
+    `intersection` (vị trí 8/10 trong curriculum, được viết như một
+    scenario khó) đo ra 0.033 — dễ; `narrow_corridor` (vị trí 3) và
+    `sudden_stop` (vị trí 6) đo ra 1.000. Curriculum order là **dự định
+    của người viết** và hiện chưa được cập nhật theo số đo; hai cột nằm
+    cạnh nhau trong UI đúng để chỗ lệch này nhìn thấy được. Thứ tự
+    curriculum của PPO vẫn đang dùng bản cũ.
+
+122. **Một baseline duy nhất định nghĩa toàn bộ thang.** Độ khó là
+    `1 - success_rate(astar+dwa)`, nên nó đo "khó với A*+DWA", không phải
+    "khó nói chung". Một scenario khó với DWA có thể dễ với planner
+    khác. Muốn thang đo ít phụ thuộc một stack thì cần nhiều baseline —
+    chưa làm, và sẽ là một calibration version khác.
+
+123. **Replanning tắt trong calibration `1.0.0`.** Khi replanning được
+    triển khai (Đợt 4), phần lớn scenario 1.000 có thể tụt xuống. Lúc đó
+    phải tạo calibration version mới, **không ghi đè** cache cũ, vì hai
+    thang đo dưới hai chế độ khác nhau không so được với nhau.
+
+124. **Cache chỉ phát hiện được scenario đổi, không tự đo lại.** Entry
+    lưu `map_checksum` + `scenario_checksum`; scenario đổi thì label trả
+    về `stale=true` và UI gắn cờ, nhưng số cũ vẫn hiện cho tới khi có
+    người chạy lại script. Đổi code planner hoặc simulator thì **không**
+    bị bắt — chỉ có `git_sha` trong baseline để đối chiếu bằng mắt.
+
+125. **Độ khó chưa nối vào leaderboard.** Từ 3.1 đã có đường cong
+    `success_rate(difficulty)` trên trang leaderboard và một dòng độ khó
+    trong report Markdown, nhưng **thứ hạng** vẫn không tính đến độ khó:
+    hai stack xếp cạnh nhau trong một nhóm có thể đã chạy các scenario
+    dễ khác nhau, và `overall_score` không biết điều đó.
+
+126. **Calibration chạy trên cả scenario holdout** (3 lần "nhìn" vào tập
+    held-out, script có in cảnh báo). Không tránh được — không đo thì
+    không biết tập holdout nằm ở đâu trên thang — nhưng đây là chi phí
+    thật, và nó **chưa** được ghi vào `holdout_usage[]` của
+    `GET /generalization` vì calibration không tạo benchmark lưu trữ.
+
+## Scenario Editor (2.3)
+
+127. **Engine chỉ trả lỗi hợp lệ đầu tiên.** `load_scenario` raise ngay
+    ở lỗi đầu, nên một scenario có cả start lẫn goal nằm trong tường chỉ
+    hiện một lỗi; sửa xong mới thấy lỗi tiếp theo. `errors[]` là danh
+    sách để sau này trả được nhiều lỗi, hiện tại luôn có 0 hoặc 1 phần
+    tử.
+
+128. **Form chỉ tạo được vật cản động kiểu `waypoint`.** Schema có thêm
+    `periodic`, `random_walk`, `sudden_stop`; scenario đã có các kiểu đó
+    (nhập từ thư viện) vẫn sửa được tên/bán kính/độ lệch seed và vẫn
+    preview đúng, nhưng **không đổi được quy luật chuyển động** trong
+    UI. Ô tốc độ bị khóa với các kiểu không phải waypoint.
+
+129. **Không kéo chuột để xoay heading.** Heading nhập bằng số (độ). Cố
+    ý cắt theo plan; hệ quả là đặt hướng chính xác thì được, mà cảm giác
+    trực quan thì không.
+
+130. **Không có version history cho scenario.** `PUT` ghi đè và tăng
+    `version`, không giữ bản cũ. Benchmark đã chạy vẫn an toàn (chúng
+    lưu snapshot điều kiện), nhưng **không hoàn tác được** một lần sửa.
+
+131. **Không có khóa khi hai người cùng sửa.** `PUT` cuối cùng thắng,
+    không cảnh báo. Chưa phải vấn đề ở quy mô hiện tại, sẽ là vấn đề khi
+    nhiều người cùng dùng.
+
+132. **Preview là một seed, một thời điểm.** Thanh trượt cho xem từng
+    thời điểm nhưng mỗi lần chỉ một seed; không có cách xem "vùng vật
+    cản có thể đi qua" trên toàn bộ tập seed. Người dùng dễ đặt start
+    tránh đúng một quỹ đạo mà quên các seed khác.
+
+133. **Mỗi lần kéo thanh trượt là một request.** Không debounce, không
+    cache. Chấp nhận được vì preview rẻ và chạy local, nhưng sẽ nặng khi
+    API ở xa.
+
+134. **Scenario tự tạo không tự vào thang độ khó.**
+    `scripts/calibrate_difficulty.py --scenario-file` nhận được bundle
+    `{map, scenario}` xuất từ API, nhưng đây là thao tác tay: không có
+    nút "hiệu chuẩn scenario này" trong app, và cache đang commit trong
+    repo chỉ chứa 10 scenario thư viện.
+
+135. **Không có đường đưa scenario tự tạo vào thư viện.** Nó sống trong
+    database, nên `CURRICULUM_ORDER`, PPO curriculum và cache độ khó mặc
+    định đều không thấy nó.
+
+## Biểu đồ và xuất báo cáo (3.1)
+
+136. **Đường cong độ khó chỉ vẽ được scenario đã hiệu chuẩn.** Scenario
+    có kết quả nhưng chưa đo độ khó thì không có toạ độ x nên vắng mặt
+    khỏi mọi đường; UI liệt kê tên chúng dưới biểu đồ, nhưng người đọc
+    vẫn phải tự trừ hao. Với cache hiện tại (10 scenario thư viện, rỗng
+    ở khoảng giữa — xem #125 và báo cáo P03), đường cong gần như chỉ có
+    hai cụm ở hai đầu.
+
+137. **Một điểm trên đường cong có thể là trung bình nhiều report.**
+    Cùng một (stack, scenario) chạy nhiều benchmark thì các report được
+    lấy trung bình **theo report**, không gộp theo episode. Tooltip ghi
+    số report và số episode, nhưng nhìn đường cong thì một điểm từ 1 lần
+    chạy và một điểm từ 5 lần chạy trông giống hệt nhau.
+
+138. **Biểu đồ trộn nhóm quan sát nếu người dùng bật trộn.** Đường cong
+    dựng từ chính leaderboard đang xem, nên khi
+    `group_by_observation_class=false` thì các stack nhìn thấy dữ liệu
+    khác nhau nằm chung một biểu đồ. Cảnh báo trộn nhóm hiện ở bảng phía
+    trên, **không** lặp lại trên biểu đồ.
+
+139. **Bộ lọc scenario không áp cho biểu đồ.** Đường cong và chênh lệch
+    dev/holdout luôn dựng từ dữ liệu không lọc — một scenario là một
+    điểm, không phải một đường cong — nên bảng và biểu đồ trên cùng một
+    trang có thể đang nói về hai tập dữ liệu khác nhau.
+
+140. **Clearance và latency không có biểu đồ phân phối.** Chúng được
+    tổng hợp thành worst/mean chứ không phải trung vị + khoảng, nên
+    không có gì để vẽ râu. Vẫn nằm trong bảng và trong report. Percentile
+    latency thuộc F05 (mục 3.2).
+
+141. **Report Markdown không nhúng biểu đồ.** Chỉ có bảng. Ai cần hình
+    phải mở web. PDF cũng chưa có — plan để ngoài MVP, tạm thời in trang
+    web hoặc Markdown ra PDF.
+
+142. **`git_sha` trong report là commit của tiến trình API đang chạy,
+    không phải commit lúc benchmark chạy.** Report cũ xuất lại hôm nay
+    sẽ mang SHA hôm nay. Chỉ đúng khi API không được deploy lại giữa lúc
+    chạy và lúc xuất; muốn chặt chẽ thì phải chụp SHA vào `report` lúc
+    chạy, và đó là thay đổi schema.
+
+143. **Độ khó và chênh lệch tổng quát hóa trong report đọc theo trạng
+    thái *hiện tại*, không phải lúc chạy.** Khác với `scenario_split` và
+    lớp quan sát (đã snapshot). Hiệu chuẩn lại rồi xuất report cũ sẽ ra
+    một con số độ khó khác. Report có ghi `calibration_version` nên
+    người đọc phân biệt được, nhưng bản thân tài liệu không tự cảnh báo.
+
+144. **Biểu đồ không có test render.** Môi trường test là Node, không có
+    jsdom, nên `recharts` không dựng được SVG để kiểm. Phần được test là
+    tầng dữ liệu (`lib/charts.ts` — cái quyết định điểm nào bị loại, giá
+    trị thiếu hiển thị ra sao) và phần nối dây ở mức source. Lỗi thuần
+    thị giác — trục sai nhãn, màu trùng nhau — sẽ không bị bắt.
+
+145. **`recharts` là dependency runtime đầu tiên ngoài Next/React.**
+    Bundle của `/leaderboard` và `/benchmarks/[id]` tăng lên ~262 kB
+    first-load (từ ~140 kB). Chấp nhận được cho trang phân tích, nhưng
+    đây là chi phí thật và nó nằm trên đường tải của mọi người xem
+    leaderboard.
+
+146. **Metric F05 mới chỉ có ở cấp episode, chưa có ở cấp aggregate.**
+    `smoothness_squared`, latency p50/p95/p99, `stop_and_go_count`,
+    `near_miss_count`, `time_to_first_collision` nằm trong
+    `EpisodeMetrics` của từng run (và bảng Runs của report Markdown),
+    nhưng `AlgorithmAggregate`, leaderboard và biểu đồ vẫn tổng hợp
+    trên các field cũ. Đưa metric mới lên aggregate đụng contract
+    leaderboard + charts, để đợt riêng. Overall score của leaderboard
+    vẫn dùng `mean_smoothness_successful` (công thức cũ, đã đánh dấu
+    deprecated) — chưa đổi sang `smoothness_squared` vì đổi trọng số
+    xếp hạng phải được review riêng.
+
+147. **`smoothness_squared` không chuẩn hóa theo chiều dài đường đi.**
+    Đúng công thức spec 8.2 `S = Σ(Δθ)²`, nhưng vì không chia cho L nên
+    chỉ so được giữa các trajectory trên cùng một scenario; so giữa hai
+    map khác kích thước sẽ thiên vị đường ngắn. Field cũ `smoothness`
+    (Σ|Δθ|/L — heading-change rate) vẫn được tính cho mục đích đó.
+
+148. **`stop_and_go_count` đo bằng ngưỡng tốc độ có hysteresis
+    (0.05/0.10 m/s, `MetricConfig` v1.0.0), không đo bằng lệnh dừng.**
+    Robot bò chậm dưới 0.05 m/s mà không hề "dừng" theo nghĩa điều khiển
+    vẫn bị đếm. Ngưỡng nằm trong `MetricConfig` versioned và được
+    snapshot vào từng `EpisodeMetrics` + ghi trong report, nên đổi
+    ngưỡng không làm số cũ đổi nghĩa âm thầm.
+
+149. **`near_miss_count` đếm theo frame, không theo sự kiện.** Robot cà
+    sát tường trong 40 frame liên tiếp được đếm 40, không phải 1 lần
+    near-miss kéo dài. So sánh giữa các thuật toán vẫn công bằng (cùng
+    cách đếm, cùng dt), nhưng con số tuyệt đối phải đọc là "số frame
+    dưới ngưỡng an toàn", không phải "số lần suýt va".
+
+150. **`time_to_first_collision` hiện luôn trùng thời điểm kết thúc
+    episode** vì engine chấm dứt episode ngay tại va chạm đầu tiên. Field
+    tồn tại để giữ nghĩa đúng khi có chế độ chạy tiếp sau va chạm
+    (multi-collision) trong tương lai; hôm nay nó không mang thêm thông
+    tin so với `elapsed_time` của episode va chạm.
+
+151. **Peak memory không đo.** Quyết định chủ ý theo plan 3.2: phụ thuộc
+    máy, có overhead, mâu thuẫn với tính tái lập nếu không ghi môi
+    trường đo. Không nằm trong leaderboard hay overall score.
+
+152. **Replanning chỉ kích hoạt sau khi engine đã kết luận STUCK hoặc
+    NO_PROGRESS.** Không có trigger sớm kiểu "LiDAR thấy đường bị chặn
+    thì replan ngay". Hệ quả: robot luôn phải đứng chờ hết
+    `stuck_time_window` (mặc định 5 s) trước khi được cấp đường mới, nên
+    `travel_time` của một run có replan gồm cả khoảng chờ đó. Đây là chủ
+    ý — một trigger nhạy hơn là một tham số, và tham số đó sẽ phải vào
+    chung vòng tune P01 để không thành lợi thế riêng của một thuật toán.
+
+153. **Khi replan, ô lưới chứa tâm robot được ép về FREE.** Robot bị
+    chặn thường đứng gần vật cản hơn bán kính inflate, nên ô của chính
+    nó bị coi là occupied và global planner trả "no path" — replan sẽ
+    không bao giờ chạy được đúng lúc cần nhất. Chỉ đúng **một ô** được
+    mở, và mở được vì engine đã chứng minh robot không va chạm (nếu va
+    chạm episode đã kết thúc). Các ô lân cận giữ nguyên inflation.
+
+154. **`replan_count` chưa lên `AlgorithmAggregate` và leaderboard.**
+    Số lần replan hiện chỉ có ở cấp episode (`runs[].metrics` và bảng
+    Runs của report Markdown, cột chỉ hiện khi replanning bật). Đưa lên
+    aggregate đụng contract leaderboard và overall score — cùng lý do
+    hoãn như #146.
+
+155. **`path_efficiency` của run có replan lấy đường của lần replan cuối
+    làm mốc**, còn `global_planning_time`/`expanded_nodes` là tổng cộng
+    dồn qua mọi lần plan. Vì vậy so `path_efficiency` giữa một run có
+    replan và một run không replan là so với hai mốc khác nhau. Cấu hình
+    replanning nằm trong `conditions_checksum` chính là để trong cùng
+    một phép so sánh, mọi thuật toán đều dùng cùng luật.
+
+156. ~~**Replanning chưa nối vào `/simulate`, và chưa có UI ở đâu cả.**~~
+    **Đã sửa ở Đợt B (2026-08-08).** `POST /simulations` nhận
+    `replanning`, `SimulationService.run` truyền xuống `run_stack()`,
+    `StoredSimulation` lưu lại (migration Alembic `0004`), và cả
+    `/simulate` lẫn form tạo benchmark có ô bật kèm cảnh báo. Giới hạn
+    còn lại của UI: xem #160.
+
+157. **Cache difficulty hiện tại (P03) đo với replanning tắt.** Bật
+    replanning làm scenario dễ đi, tức là một thang đo khác;
+    `scripts/calibrate_difficulty.py --max-replans N` bắt buộc phải kèm
+    `--calibration-version` riêng và không ghi đè cache cũ.
+
+158. **Replan đọc ground truth, và cái đã sửa là *nhãn*, không phải
+    nguồn dữ liệu.** `_replan()` lấy vị trí vật cản động qua
+    `engine.dynamic_obstacles_now()` — chính xác tuyệt đối, không nhiễu,
+    không che khuất, không cần cảm biến. Từ Đợt A, khi replanning bật,
+    `global_observation_class` được **suy ra lúc chạy** thành
+    `full_static_map+human_states` thay vì đọc cứng `full_static_map` từ
+    registry, nên báo cáo và leaderboard không còn dán nhãn sai. Nhưng
+    đây mới là khai báo trung thực về một đặc quyền, **chưa phải là bỏ
+    đặc quyền đó đi**. Lời giải thật là dựng lớp vật cản từ chính LiDAR
+    scan của robot (một `local_costmap` kiểu Nav2, tích luỹ theo thời
+    gian) — ước lượng ~3 ngày và cần plan riêng; xem "Lựa chọn 2" trong
+    `docs/antongduy/plans/2026-08-07/replanning-lien-tuc-va-noi-day-vao-simulate.md`.
+
+    Hệ quả trực tiếp: **run có replanning không so được với run không
+    replanning trong cùng một bảng xếp hạng** — chúng ở hai lớp quan sát
+    khác nhau. Ép xem chung thì leaderboard trả về
+    `cross_observation_class_warning = True`.
+
+159. **Việc nâng lớp quan sát là bảng tra cố định, không phải suy luận.**
+    `global_class_under_replanning()` ánh xạ từng giá trị `ObservationClass`
+    sang giá trị tương ứng khi replanning bật. Thêm một lớp quan sát mới
+    mà quên thêm vào bảng đó sẽ `KeyError` ngay — chủ ý, vì im lặng bịa ra
+    một tên lớp không ai nhận là đúng thứ P02 sinh ra để chặn. Có test
+    quét toàn bộ `OBSERVATION_CLASSES` để bắt trường hợp này.
+
+    Kèm theo: khóa nhóm của leaderboard giờ gồm **cả hai** lớp
+    (global + local), không chỉ local như trước. Dữ liệu cũ không đổi
+    nhóm — mọi aggregate cũ đều `full_static_map`.
+
+## Nối dây replanning vào `/simulate` và UI (Đợt B, 2026-08-08)
+
+160. **Lựa chọn replanning không được nhớ giữa các lần vào trang, và đó
+    là chủ ý.** Cả `/simulate` lẫn form benchmark khởi tạo về tắt mỗi lần
+    load, không đi qua `persisted.ts` như các tùy chọn khác. Lý do: bật
+    replanning là đổi lớp quan sát của global planner (#158), nên nó phải
+    là một hành động có ý thức mỗi lần, không phải một setting còn sót
+    lại từ phiên trước. Có test khóa tính chất này.
+
+161. **`/simulate` không vẽ marker replan trên timeline.** Marker đã có ở
+    replay của benchmark detail (đọc từ `result.events`), nhưng trang
+    `/simulate` dùng `useEpisodeStream` (WebSocket) chứ không dùng
+    `useTrajectoryPlayback`, và luồng WS hiện **không phát `events`** —
+    chỉ phát `start`, `state`, rồi `result` (`routers/ws.py`). Người dùng
+    vẫn thấy `Replans` ở `MetricsPanel` và thấy robot đi đường vòng,
+    nhưng không biết **thời điểm** đổi đường. Sửa đúng cách là cho WS
+    phát cả events, tức đụng contract của socket — để riêng, không nhét
+    vào Đợt B.
+
+163. **Đường toàn cục vẽ trên màn hình là đường của lần plan ĐẦU, kể cả
+    sau khi đã replan.** `StackRun.plan` giữ `plan` đầu tiên
+    (`nav_stack.py`), trong khi metrics dùng `plans[-1]`. Hệ quả nhìn
+    thấy được ở **cả hai** trang: robot rời khỏi đường đang được vẽ và đi
+    một lối khác, trông như bug của renderer. Ảnh hưởng đúng vào tính
+    năng vừa nối dây, nên phải nói rõ.
+
+    Không sửa trong Đợt B vì sửa đúng là đổi contract: cần
+    `StackRun.plans: tuple[PlanResult, ...]` (giữ cả chuỗi đường), kéo
+    theo payload WebSocket, `SimulationResultResponse`, artifact của
+    episode và bản đọc ngược cho dữ liệu cũ. Đổi `plan` thành đường cuối
+    thì rẻ nhưng sai: nó xoá mất đường ban đầu, và
+    `plan.path_length`/`expanded_nodes` của lần plan đầu là số đang được
+    dùng ở chỗ khác.
+
+162. **Trang `/simulate` tạo scenario mới cho mỗi lần chạy**
+    (`${scenario.name}-${Date.now()}`), nên bật/tắt replanning rồi chạy
+    lại sinh ra hai scenario row khác nhau. Không ảnh hưởng tính đúng —
+    nội dung scenario giống hệt và replanning không nằm trong scenario —
+    nhưng nghĩa là không so được hai lần chạy bằng `scenario_id`. Đây là
+    hành vi có từ trước Đợt B, ghi lại vì giờ nó dễ gặp hơn.
+
+## Replanning không giúp gì ở scenario va chạm (điều tra 2026-08-08)
+
+Hai mục dưới đây đến từ một quan sát của dev: bật replanning trên
+`bidirectional_corridor` với `max_replans=2` mà robot **vẫn va chạm**, và
+đường đi không đổi gì so với khi tắt. Điều tra cho thấy quan sát đó đúng
+và không phải lỗi báo cáo. Bằng chứng và số liệu đầy đủ:
+`docs/antongduy/notes/2026-08-08/tongduyan_dieu-tra-replanning-tren-corridor.md`.
+
+164. **`COLLISION` không nằm trong `_REPLANNABLE`, nên replanning vô dụng
+    ở mọi scenario mà robot *đâm* thay vì *kẹt*.**
+    `_REPLANNABLE = (STUCK, NO_PROGRESS)` (`nav_stack.py`). Đây là chủ ý
+    và không nên đổi: va chạm là kết luận của episode, cho một đường mới
+    xoá nó đi là để replanning mua một kết quả nó không kiếm được, và
+    `success_rate` mất nghĩa. Nhưng hệ quả phải nói thẳng:
+
+    ```text
+    bidirectional_corridor, astar+dwa, 5 seed
+      off    {collision: 5}  replans=[0,0,0,0,0]  t=[21.0, 20.9, 5.9, 5.8, 20.4]
+      on(2)  {collision: 5}  replans=[0,0,0,0,0]  t=[21.0, 20.9, 5.9, 5.8, 20.4]
+    ```
+
+    Trajectory **giống hệt từng con số** — nhánh replan không bao giờ
+    tới. `crossing_obstacle` cũng vậy.
+
+    Thêm một lý do độc lập ở đúng map này: hành lang đơn chỉ có **một**
+    route tôpô, nên global planner có replan bao nhiêu lần cũng trả về
+    cùng một đường. Né đối đầu là maneuver của **local** planner, không
+    phải việc của replanning.
+
+    **Scenario để demo/kiểm chứng replanning là `sudden_stop`**, nơi
+    robot bị kẹt chứ không đâm:
+
+    ```text
+    sudden_stop, astar+dwa, 5 seed
+      off    {stuck: 5}    replans=[0,0,0,0,0]  t=12.9
+      on(2)  {success: 5}  replans=[1,1,1,1,1]  t=23.3
+    ```
+
+165. **DWA coi vật cản động là đứng yên, nên không né được xe đi ngược
+    chiều.** `_rollout_batch` (`packages/planning/planbench_planning/dwa/planner.py`)
+    tính clearance của mọi ứng viên dựa trên **điểm LiDAR đóng băng** tại
+    vị trí vừa đo được. Vật cản chạy 0.6 m/s, horizon 1.5 s → 0.9 m sai
+    số không được mô hình hóa; controller tưởng an toàn khi thật ra
+    không. Cộng thêm: trọng số kéo về đường (`goal` 2.0 + `path` 1.4 +
+    `heading` 1.0 = 4.4) lấn át `clearance` (1.2, lại bão hòa ở
+    `clearance_cap` = 0.6), nên né sang bên trả giá ngay còn lợi ích chỉ
+    xuất hiện ở cuối horizon.
+
+    Đo được: trên `bidirectional_corridor`, `angular_velocity` **bằng 0
+    suốt cả episode** và tọa độ `y` của robot đứng nguyên ở tim hành lang
+    cho tới lúc va chạm. Nới hành lang từ 2.0 m lên **4.0 m** — thừa chỗ
+    né — vẫn va chạm 5/5. Nên đây **không** phải vấn đề hình học.
+
+    **Đây là kết quả benchmark hợp lệ, không phải bug cần vá gấp**: nền
+    tảng vừa đo được một giới hạn thật của DWA, và đó đúng là việc nó
+    sinh ra để làm. Nhưng con số va chạm trên các scenario có vật cản
+    động phải được đọc là **giới hạn của baseline**, không phải đặc tính
+    của scenario, và **không** được dùng làm bằng chứng rằng một planner
+    khác tốt hơn cho tới khi cả hai chạy dưới cùng ngân sách tinh chỉnh.
+
+    Lời giải đúng là một stack **mới** (`dwa_predictive`): ước lượng vận
+    tốc vật cản từ hai scan LiDAR liên tiếp rồi dịch điểm theo thời gian
+    trong rollout — đúng nhóm "Human Prediction-based" của đề bài, và
+    **không** đọc `dynamic_obstacles_now()`. Phải đăng ký như một stack
+    riêng với ngân sách riêng: luật P01 cấm nâng cấp kiến trúc của một
+    planner giữa chừng vì nó chạy kém (đó chính là lỗ hổng S2 mà đề bài
+    phê phán ở Alyassi et al.). Tune tay `weight_path`/`clearance_cap`
+    cho riêng DWA cũng vướng đúng luật đó.
+
 ## Môi trường
 
 - Test phải chạy với `PYTHONPATH=` do shell source ROS2 Jazzy (xem
@@ -398,3 +1019,684 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
 - Test frontend chạy ở môi trường Node (không jsdom); `vitest.config.ts`
   đặt `testTimeout: 20s` vì `auth.test.ts` reset module graph ở mỗi case
   và 15 file chạy song song có lúc vượt mốc 5s mặc định.
+
+## MVP v1 — Planner Selector (chốt 2026-08-11)
+
+Bản MVP đầu tiên của tầng quyết định. Nền tảng đo được, so được, và từ
+chối kết luận khi dữ liệu không đỡ. Các giới hạn dưới đây **không phải
+lỗi cần vá** — chúng là phạm vi mà mọi kết luận của bản này bị chặn
+trong, và mỗi cái có điều kiện gỡ rõ ràng.
+
+### L1. G4 và G5 mới xác nhận trên máy benchmark, **chưa trên bo mạch đích**
+
+Dự án **không có bo mạch đích** (Jetson Orin Nano hay board ARM nào). Nên
+theo bảo lưu HĐ-7.2/7.3:
+
+- `realtime_gate.status` **luôn** là `screened_on_host`; giá trị
+  `verified_on_target` không xuất hiện trên bất kỳ Decision Card nào của
+  dự án này, và `target_p99_ms` luôn null.
+- `memory_gate.status` chỉ nhận `estimated_from_structure` hoặc
+  `declared_by_author`. G5 **đếm** cấu trúc dữ liệu nhân kích thước byte
+  khai theo hiện thực đích, **không đo** RSS. `peak_rss_mb` là chẩn đoán,
+  và **không bao giờ** được đem so với `available_ram_mb`.
+
+**Suy luận nào còn hợp lệ:** đúng một chiều. Trượt trên máy benchmark
+nhanh ⇒ **chắc chắn** trượt trên bo mạch đích chậm hơn. Chiều ngược lại
+**không** suy được: qua G4 trên host **không** cho phép phát biểu
+candidate đạt thời gian thực trên bo mạch đích. Mọi card in nguyên văn
+*"G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"*.
+
+**Cấm dùng hệ số quy đổi giữa hai máy.** A\* (nặng truy cập bộ nhớ) và
+DWA (nặng tính toán) co giãn khác nhau giữa x86 và ARM; một hệ số dùng
+chung là con số bịa.
+
+Thêm một hệ quả đo được của lượt M4: `rrtstar+dwa` với lấy mẫu 20×40
+trượt G4 ở **50,28 ms** trên ngưỡng 50,00 ms — vượt 0,6%. Biên đó mỏng
+tới mức độ chính xác của phép đo bắt đầu quan trọng, nên phát biểu đúng
+là *"trượt theo số đo được"*, **không** phải *"chắc chắn trượt trên bo
+mạch đích"*. Lối ra hợp lệ là đăng ký candidate mới với lấy mẫu trung
+gian — **không** nới `control_period` (xem L4).
+
+**Gỡ khi:** có bo mạch đích, chạy pha P2 trên đúng board, gỡ bảo lưu
+HĐ-7.2/7.3 và tăng `contracts_version` MINOR.
+
+### L2. Chưa có adapter `MonolithicPolicy` — chỉ candidate `modular` chạy được
+
+HĐ-4 định nghĩa hai loại candidate: `modular` (global planner + local
+controller) và `monolithic` (policy end-to-end, không có global planner).
+Adapter cho loại thứ hai **chưa tồn tại**. `build_planners` từ chối một
+candidate `monolithic` bằng thông điệp nói rõ điều đó, và
+`test_only_modular_stacks_can_run_today` sẽ **đỏ** đúng ngày adapter
+được thêm.
+
+**Vì sao chốt chặn đó tồn tại, và đây là phần quan trọng:** ngày adapter
+chạy được, một bất cân xứng thông tin **đã biết** trở thành lỗi công bằng
+thật. Khi robot bị chặn, `nav_stack._replan` dựng lưới quy hoạch tạm với
+**vị trí thật** của vật cản động nung vào. Hôm nay công bằng vì mọi
+candidate đều là modular và nhận cùng lưới đó. Nhưng một policy
+end-to-end chỉ thấy `Observation`, còn global planner của stack modular
+thấy vật cản **thật sự ở đâu** — đúng đặc quyền mà G6 và P02 sinh ra để
+định giá, và nó sẽ ưu ái stack modular vì một lý do **không liên quan gì
+tới chất lượng điều hướng**.
+
+Luật đã ghi ở HĐ-4.1: phải gỡ đặc quyền này **trước** khi chấm bất kỳ
+candidate `monolithic` nào, và lời giải hợp lệ là **replan từ
+`Observation`** — không phải cấp ground truth cho cả hai bên (cấp cho cả
+hai chỉ đổi một phép so lệch thành hai phép đo sai).
+
+Hệ quả cho bản MVP này: mọi kết luận đều nằm trong họ **modular**, và
+tuyên bố *"nền tảng công bằng cho mọi thuật toán"* mới được chứng minh
+trên hai global planner cùng kiểu tìm đường trên lưới với một local
+controller. Phép thử thật của tuyên bố đó chưa được chạy.
+
+### L3. Bốn candidate, một qua cổng — chưa có Decision Card nào trên nền đã kiểm
+
+Trên `open_hall_v2` (30 episode ghép cặp, ghim 2 nhân, nhiễu σ = 2 cm /
+trượt 2%):
+
+| stack | local | success | p99 gộp | verdict |
+|---|---|---:|---:|---|
+| `astar+dwa` | `dwa_coarse` | 70% | 5,26 ms | fail G3 |
+| `astar+dwa` | `dwa_default` | 73% | 29,40 ms | fail G3 |
+| `rrtstar+dwa` | `dwa_coarse` | 100% | 6,06 ms | **pass** |
+| `rrtstar+dwa` | `dwa_default` | 100% | 50,28 ms | fail G4 |
+
+Không cặp nào có **hai** candidate cùng qua sáu cổng, nên không phép so
+nào ra được Decision Card. Đó là **kết quả**, không phải sự cố: bảng cổng
+trả lời "ai bị loại ở đâu sau bao nhiêu lần chạy", và
+`comparison_report.json` ghi lại đầy đủ.
+
+Một ràng buộc đọc kết quả: `open_hall_v2` khai `success_rate_min: 0.95`,
+và **con số đó vẫn chưa mang lập luận nào của riêng sảnh**. Nó được chép
+từ profile kho; ngày 08-11 đã đổi sang 1.00 kèm lý do, ngày 08-12 lùi lại
+vì hệ quả lên thang anchor — xem **L6**, việc còn để ngỏ. Nên *"A\* trượt
+G3 trên sảnh"* phải đọc là **A\* đạt 70% trên sảnh này**, và việc đó có
+phải thất bại hay không còn phụ thuộc một ngưỡng chưa được chốt cho
+deployment này.
+
+### L4. Bốn con số **không** được nới để có kết quả đẹp hơn
+
+Ghi ở đây vì cả bốn đã từng bị nới một lần và phải hoàn nguyên
+(2026-08-11):
+
+1. `robot.control_period` — là ngưỡng G4. Từng khai 10 Hz thay vì 20 Hz
+   vì DWA Python không kịp 50 ms, tức **nới cổng vì candidate không qua
+   nổi cổng**.
+2. `constraints.collision_probability_max` — là yêu cầu an toàn của hiện
+   trường, không phải núm vặn thời lượng chạy. Mũi tên chạy một chiều:
+   `rủi ro ⇒ N_min ⇒ số giờ`, không đọc ngược.
+3. Tham số DWA của candidate — đó là **thứ đang được đem đo**. Sửa nó
+   nghĩa là **đăng ký candidate mới**, không phải chỉnh tại chỗ.
+4. Map, mission, traffic — sửa chúng theo kết quả là đổi đề bài.
+
+Câu hỏi bắt buộc cho mọi hằng số mới trong profile (HĐ-15.3): *"con số
+này đến từ hiện trường, hay từ thứ máy/code của tôi chạy nổi?"* Vế sau
+thì nó thuộc mục bảo lưu của hợp đồng, không thuộc file profile.
+
+### L5. Vận hành
+
+- **Hai run đánh giá không được chạy song song trên cùng một máy.** Ghim
+  nhân là mặc định và luôn lấy `count` nhân **đầu**, nên hai tiến trình
+  cùng ghim sẽ giành đúng hai nhân đó: mỗi run thành tải nền của run
+  kia và G4 của cả hai đo một cái máy không tồn tại (HĐ-7.4). Chạy tuần
+  tự, hoặc `--no-pin` cộng `taskset` cấp mask rời nhau.
+- **Đổi `sensor_noise` phải đổi `task_profile_id`.** `episode_context_id`
+  không băm biên độ nhiễu (HĐ-3.1 đóng băng payload), nên sửa σ tại chỗ
+  sẽ khiến `--reuse-traces` phục vụ episode ghi trong một thế giới không
+  còn tồn tại — id khớp, không cảnh báo nào.
+- **`instance_difficulty` chưa nối** vào tầng quyết định; cache P03 khoá
+  theo `scenario_name` của thư viện cũ và không có entry cho profile nào
+  thời contract. **`robustness_margin` vẫn null** — cần Task Neighborhood
+  (pha 2).
+
+### L6. `success_rate_min` của sảnh: **nợ kỹ thuật, chưa giải quyết** (2026-08-12)
+
+`open_hall_v1` và `open_hall_v2` khai `success_rate_min: 0.95`. **Con số
+đó được biết là sai**, và nó ở đó như một biện pháp tạm.
+
+**Giá trị đúng theo lập luận là 1.00.** Sảnh là deployment nghiệm thu:
+dễ, đối xứng, chạy dưới nhiễu đã khai, không có gì đánh bại một stack
+bằng hình học. Nên một failure ở đây là **tín hiệu chẩn đoán**, không
+phải một thống kê để lấy trung bình — và 0.95 đang phát biểu rằng một
+lần hỏng trên hai mươi lần trên nhiệm vụ đối xứng dễ là chấp nhận được,
+điều không ai thực sự muốn nói. Ngày 2026-08-11 hai file đã chuyển sang
+1.00 đúng vì lý do này.
+
+**Vì sao lùi lại 0.95 (2026-08-12).** Luật 2 của HĐ-8.3 buộc `bad` của
+`success_rate` trỏ vào chính ngưỡng ấy, nên 1.00 làm `good == bad`, thang
+sập, và deployment mất khả năng xếp hạng (HĐ-8.4). Hệ quả kéo theo:
+`U_R` chết trên sảnh, `measure.py` không ra `decision_utility`, và tấm
+Decision Card duy nhất của dự án — dựng trên `open_hall_v2` — không tái
+lập được. Đưa sảnh ra khỏi vai xếp hạng là một quyết định lớn hơn cái
+đáng quyết trong lúc MVP còn dở, nên ngưỡng lùi về giá trị giữ cho mọi
+thứ chạy, và câu hỏi để lại đây.
+
+**Trạng thái hiện tại, nói rõ để không ai tưởng đã xong:**
+
+- Cơ chế **đã có**: HĐ-8.4 xử lý 1.00 tử tế — vẫn mô phỏng, vẫn ra sáu
+  phán quyết cổng, từ chối xếp hạng kèm lý do đọc được thay vì ném
+  `AnchorError`. Việc còn lại là **quyết định**, không phải hiện thực.
+- Cái chưa có: một lối để sảnh vừa giữ chuẩn nghiệm thu 1.00 vừa còn
+  thang cho `U_R`. Vài hướng chưa xét kỹ: tách `success_rate_min` (cổng)
+  khỏi neo `bad` của anchor (thang); cho anchor khai `bad` riêng khi
+  ngưỡng chạm trần; hoặc chấp nhận sảnh chỉ gác cổng và chuyển hẳn việc
+  xếp hạng sang một deployment khó-mà-đối-xứng (C2, chưa có).
+- **Không được coi 0.95 là câu trả lời.** Đọc *"A\* trượt G3 trên sảnh"*
+  vẫn phải đọc là **A\* đạt 70% trên sảnh này**; con số 0.95 hiện không
+  mang lập luận nào của riêng nó.
+
+Hẹn xử lý: sau khi MVP hoàn tất.
+
+---
+
+## Inflation theo bậc — RRT* trở thành biến thể cost-aware (2026-08-14)
+
+Lưới nhị phân được thay bằng **trường chi phí**: chỉ miền khả thi cứng
+(`hard_clearance` = footprint + safety envelope) là **cấm tuyệt đối**;
+dải quanh nó — vốn bị cấm hẳn — nay chỉ **đắt**. Cả hai global planner
+phải đọc trường đó, nếu không thì trường không có nghĩa.
+
+### Hạn chế 1 — bảo đảm tiệm cận tối ưu của RRT* **chưa được xác minh**
+
+Chi phí cạnh của RRT* giờ là **tích phân trường chi phí dọc cạnh**, thay
+vì độ dài Euclid. Bảo đảm tiệm cận tối ưu của RRT* (Karaman & Frazzoli)
+được chứng minh cho các phiếm hàm chi phí có tính chất liên tục và bị
+chặn nhất định; trường ở đây **hằng từng ô**, tức gián đoạn ở mọi cạnh ô.
+
+**Dev đã chốt (14-08): chấp nhận triển khai mà chưa xác minh.** Ghi ở
+đây và trong mô tả stack trên `/candidates`, không giấu trong comment.
+
+Từ nay, **"RRT\*" trong dự án này là một biến thể cost-aware**. Mọi so
+sánh — nhất là so với số liệu trong bài báo — phải đọc nó như thế.
+
+Cái **vẫn còn** và là thứ cơ chế rewire thực sự cần: chi phí cộng tính
+dọc đường, và đơn điệu theo khoảng cách (hệ số ≥ 1, nên khoảng cách
+đường thẳng là **chặn dưới** của mọi cạnh). Mọi bước cắt tỉa trong vòng
+lặp chỉ dựa vào đúng hai tính chất đó.
+
+### Hạn chế 2 — `clearance_preference` (λ) là số **do người chọn**
+
+Không suy ra được, khác với safety envelope hay `N_min`. Nên xử lý như
+mọi con số cùng loại: khai trên **deployment**, giống nhau cho mọi ứng
+viên, ghi vào manifest (HĐ-13). Mặc định `2.0` — một mét sát biên cứng
+đắt bằng ba mét chỗ trống, tức planner chịu đi vòng tới gấp ba quãng
+đường để khỏi cạo sát vật.
+
+Con số 2.0 **chưa được hiệu chuẩn theo dữ liệu**; nó là một lựa chọn hợp
+lý, không phải kết quả đo. Đổi nó **đổi mọi đường đi**, nên đổi nó là
+tạo deployment mới chứ không phải sửa cấu hình.
+
+### Hạn chế 3 — tích phân chi phí là **xấp xỉ lấy mẫu**
+
+`segment_cost` lấy mẫu mỗi 1/4 ô và cộng lại, không đi chính xác chuỗi ô
+mà đoạn thẳng cắt qua (Amanatides–Woo). Sai số bị chặn bởi 1/4 ô nhân
+một hệ số — dưới xa mức bất kỳ quyết định định tuyến nào phụ thuộc vào,
+và đúng bằng xấp xỉ mà `has_line_of_sight` vốn đã dùng.
+### Hạn chế 4 — vẫn phải nới lưới quanh robot, và bán kính cấm vẫn mang **nửa** đường chéo ô
+
+Lượng tử hoá là **hai phía**: vật cản nằm đâu đó trong ô của nó, robot
+nằm đâu đó trong ô của nó, nên khoảng cách tâm–tâm chỉ chặn khoảng cách
+thật trong phạm vi một đường chéo ô về **cả hai** hướng. Hệ quả: **không
+có bán kính inflation nào** khiến "controller nói tư thế này hợp lệ" kéo
+theo "lưới của planner đồng ý".
+
+Hai nửa được xử khác nhau:
+
+- **Nửa phía vật cản** (`√2/2 × resolution`) nằm trong `_hard_radius`.
+  Đây là **số học, không phải thận trọng**: ô OCCUPIED nghĩa là vật cản
+  chạm ô đó, không nói chạm ở đâu, nên bỏ nửa này ra thì lưới thành xấp
+  xỉ **lạc quan** của miền cứng — điều duy nhất nó không được phép là
+  thế. Đo trên phòng hai cửa ở ô 0.5 m, robot 0.3 m: inflate 0.30 m
+  **không đánh dấu thêm một ô nào**, vì tâm hai ô kề nhau cách 0.5 m; A*
+  trả về đường cạo sát tường, controller không lái được, và 40/43 lần
+  replan không tìm ra gì — đúng lỗi cũ, vào bằng cửa khác.
+- **Nửa phía robot** nằm trong `_caution_ramp` — chỉ tính tiền. Đường đi
+  là vật thể liên tục và được kiểm như thế: hàng rào L4 đo mọi đường
+  global theo **mét**, trên cả hai stack.
+
+`_with_standing_room` nới quanh robot **đúng phần thận trọng của lưới**:
+ô nào bị chặn trên lưới `_hard_radius` mà **tự do** trên lưới
+`_feasible_clearance` thì được mở, trong bán kính một `_caution_ramp`. Ô
+nằm trong miền cứng thật **không bao giờ** được mở.
+
+Riêng ô robot đang đứng thì mở **vô điều kiện**. Ô rộng 0.5 m: robot giữ
+khoảng cách 0.3 m với tường sẽ đặt LiDAR return gần nhất vào **chính ô
+chứa tâm nó**, nên luật có điều kiện từ chối đúng lúc cần nới nhất — đo
+được: "start is inside an obstacle" 43/44 lần replan. Nhưng robot **đang
+ở đó**, và engine kết thúc episode ngay khi robot chồng lên vật cản, nên
+sự hiện diện của nó chính là bằng chứng.
+
+**Vì sao đây không phải bong bóng B1 quay lại.** B1 mở mọi thứ mà
+*inflation* đã đánh dấu, tức trả lại **không gian trống thật**, và không
+gian trống có giá trị khác nhau với từng họ planner (đo trên
+`sudden_stop`: A* lấy hành lang rộng 0.59 m bằng 3 waypoint, RRT* cắt
+còn 0.13 m bằng 10 waypoint, có khúc quay 170° và 187° mà robot
+chỉ-tiến-không-lùi không lái nổi).
+
+Hai điểm khác: nới **dừng ở miền cứng** chứ không dừng ở vật cản thô,
+nên không bao giờ trả lại thứ bất hợp lệ; và mọi ô được mở **giữ nguyên
+hệ số chi phí cực đại**, nên cắt qua khe đó là **đắt** với bất kỳ ai làm
+thế — đó chính là câu trả lời của gradient cho thiên vị của B1.
+
+---
+
+## Bảo đảm phanh trước vật cản đang lại gần (P1, 2026-08-14)
+
+### L7. Deployment không khai `v_obstacle_max` **không có** bảo đảm phanh trước traffic
+
+Tiêu chuẩn vận tốc khả nhận chặn tốc độ theo lần quét **hiện tại**, tức
+nó phát biểu đúng một câu: *robot dừng kịp trước vật cản **đang đứng***.
+Với vật cản đang lại gần ở tốc độ `u`, khe hở co theo `(v + u)` trong khi
+robot chỉ dự trù `v`.
+
+Đo được, `astar+dwa` trên sảnh trống, xe đẩy lao thẳng, tắt hết nhiễu,
+robot mặc định (`v_max` 0.8, `a` 0.5):
+
+Tốc độ lúc chạm đo bằng **phép quét trong bước**, lấy vận tốc theo đúng
+mô hình bậc-không của engine (xem L10):
+
+| tốc độ xe đẩy | không khai | có khai |
+|---|---|---|
+| 0.20 m/s | 16 bước vượt biên, **va lúc còn chạy 0.350 m/s** | 0 bước, **0.000 m/s** |
+| 0.30 m/s | 12 bước, 0.378 m/s | 0 bước, 0.000 m/s |
+| 0.60 m/s | 9 bước, 0.440 m/s | 0 bước, 0.000 m/s |
+| 1.00 m/s | 8 bước, 0.575 m/s | 0 bước, 0.000 m/s |
+| 1.50 m/s | 6 bước, 0.638 m/s | 0 bước, 0.000 m/s |
+
+Với **trọng số đang ship**: cột không khai đọc 0.155–0.575 m/s, cột có
+khai bằng **0** ở mọi hàng.
+
+Lỗ hổng mở ra từ **0.15–0.20 m/s** — chậm hơn người đi bộ — và **trọng
+số đang ship cũng va chạm**, không riêng cấu hình đối kháng.
+
+`v_obstacle_max = null` là **mặc định** và mọi profile đang ship đều để
+trống, nên hôm nay **không deployment nào mang bảo đảm này**. Đó là chủ
+đích: sửa mặc định sẽ đổi hành vi của mọi lượt chạy đã lưu mà không đổi
+`task_profile_id`, đúng cái bẫy HĐ-3.1 sinh ra để chặn. Deployment muốn
+bảo đảm phải khai — và khai là tạo `task_profile_id` mới.
+
+Tái hiện: `tests/test_admissible_stopping.py`.
+
+### L8. `kinematics.py` giữ **một vận tốc cho cả bước** — độ trung thực, không phải lỗi công thức
+
+**Đây là bản viết lại. Bản trước của L8 nói biên phanh tính phí sai vì
+"robot chạy bước đó ở `v_current`". Điều đó *không đúng về engine* và đã
+bị rút.**
+
+`kinematics.step` giải vận tốc mới **trước** — kẹp theo giới hạn tốc độ,
+rồi kẹp theo **một bước gia tốc** — sau đó tích phân **toàn bộ `dt`**
+bằng vận tốc mới đó. Kiểm trên trace chứ không đọc docstring: quãng đi
+giữa hai mẫu bằng đúng `after.speed × dt` tới float cuối, ở mọi bước.
+
+Hệ quả: khi lệnh nằm trong tầm một bước gia tốc — mà cửa sổ động luôn
+bảo đảm, vì nó chỉ lấy mẫu trong `±a·T` quanh vận tốc hiện tại — số hạng
+phản ứng `v_candidate · T` **tính đúng bằng** quãng robot thật sự đi.
+Không có khoản thiếu nào.
+
+Phần còn dư, và nó nhỏ: khi `stopping_limit` tụt xuống dưới sàn ramp
+(`v_k − a·dt`), lệnh phát ra thấp hơn thứ engine với tới được trong một
+bước, nên robot đi bước đó nhanh hơn mức đã tính phí. Đo được: mức vượt
+lớn nhất là **0.0215–0.0248 m/s**, tức tới **99%** của một bước giảm tốc
+(`a·T` = 0.025) và **không bao giờ quá**. Nó **không** gây dừng muộn —
+xem bảng L7, tốc độ lúc chạm bằng 0 ở mọi tốc độ vật cản.
+
+**Hạn chế thật sự nằm ở chỗ khác, và nó thuộc simulator:** robot ngoài
+đời giảm tốc **liên tục trong bước**, engine thì giữ một vận tốc cho cả
+bước. Trong một bước phanh:
+
+```
+liên tục:  v_k·dt − ½·a·dt²
+engine:    (v_k − a·dt)·dt  =  v_k·dt − a·dt²
+```
+
+Engine đi **ít hơn `½·a·dt²`** mỗi bước — 0.625 mm với `a` = 0.5,
+`dt` = 0.05 — cộng dồn **≈ 20 mm** qua 32 bước cần để xả 0.8 m/s. Tức
+simulator **lạc quan** về quãng phanh, đúng chiều mà một phép đo an toàn
+không muốn sai.
+
+Đây là tính chất của `kinematics.py`, **áp cho mọi phép đo của nền tảng**
+— quãng phanh, khoảng hở nhỏ nhất, near-miss — không phải khuyết tật
+riêng của P1. Sửa nó là đổi tích phân của simulator, tức đổi mọi số đã
+lưu; nó là một pha riêng và phải được cân nhắc như một thay đổi độ trung
+thực (giống lần bật `sensor_noise`), không phải một bản vá.
+
+### L9. Bảo đảm này **không** hứa không va chạm
+
+Nó hứa robot luôn còn dừng được trước thứ nó nhìn thấy, và trong bảng L7
+nó làm được: tốc độ lúc chạm bằng **0** ở mọi tốc độ vật cản. Nhưng nó
+**không** hứa episode kết thúc mà không chạm — một xe đẩy lao xuống làn
+và đâm vào robot **đang đứng yên** vẫn là va chạm, và không giới hạn tốc
+độ nào với tới được chuyện đó. Chỉ tránh đường mới được, và đó là việc
+của tầng chi phí mềm.
+
+Trong bảng L7, mọi hàng từ 0.15 m/s trở lên **vẫn va chạm** sau khi khai
+biên; thứ đổi là tốc độ lúc bị chạm rơi từ 0.35–0.64 m/s xuống **0**.
+
+Đọc `collision_count` của một deployment có khai `v_obstacle_max` mà kỳ
+vọng nó về 0 là đang đọc một tuyên bố khác với tuyên bố đã được đo.
+
+### L10. Đo va chạm: quét trong bước, **và** đọc đúng vận tốc của bước
+
+Hai lỗi đọc chồng lên nhau, cả hai đều từng cho ra số sai trong report,
+và **cả hai đều làm test xanh**:
+
+1. **Lấy mẫu ở biên bước.** Bản đầu đọc tốc độ ở mẫu đầu tiên có
+   `gap ≤ 0`. Mẫu đó ở **cuối** bước, còn va chạm xảy ra **bên trong**
+   bước. Kết quả trông như dừng sạch ở mọi tốc độ.
+2. **Nội suy vận tốc qua bước.** Bản sửa thứ nhất tính
+   `before.v + s·(after.v − before.v)`, cho ra 5.8 mm/s và 5.0 mm/s ở
+   `u` = 1.0 và 1.5. Sai, vì engine **không** đổi vận tốc tuyến tính
+   trong bước — nó giữ `after.speed` cho cả bước. Vận tốc đúng tại mọi
+   thời điểm bên trong bước là **`after.speed`**, và ở bước xảy ra tiếp
+   xúc nó bằng **0**: robot không đi được milimét nào trong bước đó, xe
+   đẩy tự đi vào nó.
+
+Phép đo đúng, hai phần: **thời điểm** chạm là nghiệm đầu tiên trong
+`[0, 1]` của tam thức bậc hai `|d₀ + s·Δ|² = R²` giữa hai mẫu; **vận
+tốc** tại thời điểm đó là `after.speed`, hằng số.
+
+Luật rút ra cho mọi phép đo về sau: **quét trong bước để lấy thời điểm,
+và lấy vận tốc theo đúng mô hình tích phân của engine — đừng nội suy một
+đại lượng mà engine giữ bậc không.** Ghim bằng
+`TestTheStepModelIsZeroOrderHold`, đối chiếu thẳng với quãng đi trên
+trace chứ không với docstring: docstring là thứ ai đó *định* làm, mà lỗi
+đọc ở đây cũng là thứ ai đó định.
+
+### L11. P1 chỉ có hiệu lực trên luồng deployment, không trên luồng benchmark cũ
+
+`v_obstacle_max` đi từ `TaskProfile` xuống `run_stack`. Ba đường không
+mang nó, và cả ba đều đúng chứ không phải sót:
+
+| đường | vì sao |
+|---|---|
+| `run_benchmark` / `run_single` (`packages/benchmark/runner.py`) | nhận `Scenario` + `BenchmarkSpec`, **không có `TaskProfile`** — không có gì để truyền. Cùng tình trạng với `recovery`, cũng không đi qua đường này |
+| `/simulate` (`apps/api/services.py`) | chạy từ `StoredSimulation`, cũng không có profile. Sân thử, không phải chỗ đo deployment |
+| `tuning.py`, `calibrate_difficulty.py` | dùng `run_benchmark`, kế thừa như trên |
+
+Cả ba chạy với `obstacle_speed = None`, tức **hành vi cũ**. Nếu luồng
+benchmark cũ còn xuất hiện trên UI thì con số nó sinh ra **không** mang
+bảo đảm phanh trước vật cản đang lại gần, kể cả khi deployment có khai.
+
+### L12. `RandomWalkMotion` từng nhảy vị trí — **đã sửa 2026-08-15**
+
+Phát hiện lúc kiểm sai số mô hình từng cảnh cho cổng P4. Trên
+`dynamic_warehouse`, `wanderer` khai `speed = 0.5` m/s:
+
+```
+t=13.50  đi 1.4075 m trong MỘT bước 0.05 s  ->  28.15 m/s   (56x)
+t=19.15  đi 1.1025 m                        ->  22.05 m/s
+t= 4.10  đi 1.0750 m                        ->  21.50 m/s
+```
+
+**Gián đoạn, không phải nhiễu.** Phép phản xạ ở `max_radius` được quyết
+định từ **thời gian đã trôi *một phần*** của interval đang chạy:
+
+```python
+next_x = x + speed * cos(heading) * elapsed
+if hypot(next - origin) > max_radius:
+    next_x = x + speed * cos(toward) * elapsed   # hướng NGƯỢC LẠI
+```
+
+`elapsed` lớn dần từ 0 tới `change_interval`. Tới đúng lúc đường ngoại
+suy hướng ra vượt `max_radius`, nhánh **lật**, và vị trí nhảy giữa hai
+đường ngoại suy chỉ ngược chiều nhau — biên độ tới `2 · speed · elapsed`.
+
+**Đã sửa:** quyết định phản xạ lấy **một lần cho cả interval** (từ bước
+đầy đủ `change_interval`), rồi mới áp heading đã chọn với `elapsed`. Bên
+trong một interval vật cản đi theo **một** hướng với **đúng** `speed`,
+nên vị trí liên tục theo thời gian và cận trên là chính xác.
+
+Đo lại sau khi sửa: tốc độ thực hiện lớn nhất **0.500000 m/s** trên tốc
+độ khai 0.5 (tỉ số 1.0000), và vẫn ở trong `max_radius`.
+
+**Vì sao sửa motion chứ không bump contract.** HĐ-2.6 khai cận trên của
+luật này là `speed`, và điều đó đúng với **đặc tả** — tốc độ hằng, chỉ
+đổi hướng mỗi interval. Sai là ở **hiện thực**. Một lúc, `max_speed` đã
+được cho từ chối `random_walk` để tránh một tuyên bố an toàn sai; nhưng
+làm thế là **ghi một lỗi hiện thực vào ngữ nghĩa hợp đồng** và sẽ cần
+bump MAJOR. Sửa motion làm code khớp lại contract, **không** bump, không
+phải chạy lại lát cắt dọc. *(An chốt 15-08.)*
+
+**Hàng rào hồi quy:** `TestRandomWalkMotion::test_it_never_exceeds_its_own_declared_speed`
+— quét toàn bộ 30 s ở bước 0.01 s trên bốn seed và đòi không khoảng nào
+hàm ý tốc độ vượt `speed`. Cộng một test đối chiếu `max_speed` với
+`motion.speed` để hai con số không thể lệch nhau.
+
+**Đổi thế giới, và nó đổi ở đâu.** Quỹ đạo `wanderer` khác từ **t = 3.05 s**,
+lệch tối đa **1.38 m**. Nhưng golden fixture của P2 **vẫn xanh từng byte**,
+và đó không phải vì nó mù: trong ca `warehouse_three_movers` (cắt còn
+25 s) robot đi dọc `y = 6.0` còn `wanderer` quanh `(12, 2)`, cách **~9 m**
+— ngoài tầm LiDAR 6 m suốt cả episode, nên nó chưa bao giờ chạm vào một
+lệnh nào. Ghi ra vì nó có nghĩa là ca đó thực chất chỉ tập luyện **hai**
+vật cản động chứ không phải ba.
+
+Mọi số đã lưu ở cảnh có random walk mà robot **có** nhìn thấy vật cản đó
+thì phải đo lại. Không cảnh nào trong golden fixture rơi vào diện này.
+
+---
+
+## `dwa_predictive` — hạn chế của chính ứng viên (P6, 2026-08-15)
+
+### L13. Mô hình là **vận tốc hằng**, và nó sai ngay khi có gì đó rẽ hoặc dừng
+
+`dwa_predictive` ngoại suy vật cản bằng vận tốc hằng. `SuddenStopMotion`
+là **phản ví dụ hoàn hảo**: vật chạy đều rồi đứng phắt, còn dự đoán nói nó
+đi tiếp, nên robot lách vào chỗ nó **không hề tới**. `PeriodicMotion` là
+hình sin — sai số ngoại suy trung vị sau 1.5 s đo được là **0.949 m** trên
+`crossing_obstacle`.
+
+Đây **không** phải ca hiếm cần vá; nó là miền giả định của mô hình. Cảnh
+nằm ngoài miền đó đo **giới hạn** của mô hình, không đo **giá trị** của
+nó — lý do cổng P4 loại `sudden_stop` và `random_walk`.
+
+### L14. Ba nguồn **vận tốc ma**, không nguồn nào giải triệt để ở tri giác 2D
+
+1. **Tâm cụm trượt khi vật lộ dần** sau góc khuất — vật đứng yên "chạy"
+   tới nửa bề rộng của nó.
+2. **`lidar_dropout_probability`** làm cụm vỡ đôi rồi liền lại.
+3. **Hai vật đi ngang nhau** ⇒ ghép cặp chéo, hai vận tốc đảo chiều.
+
+Cộng một nguồn thứ tư mà plan không lường: **lượng tử hoá quét**. Tâm một
+cụm lấy mẫu bằng tia rời rạc dịch khi *tập tia chạm vào nó* đổi — xảy ra
+mỗi khi robot di chuyển, **với cảm biến hoàn hảo**.
+
+Đo được trên ba cảnh **hoàn toàn tĩnh**, tắt mọi nhiễu: vận tốc ma trung
+vị **0.28–0.41 m/s**, đỉnh **1.27 m/s** — cùng bậc với traffic thật
+(0.6–0.8 m/s). Sàn nhiễu chặn được **biên độ**, không chặn được hiện
+tượng.
+
+### L15. Vật cản **không** được giả định né robot
+
+Không dùng RVO/ORCA. Vật cản trong `dynamic.py` là hàm thuần của
+`(spec, time, seed)` và **không phản ứng gì**. Một mô hình tương hỗ ở đây
+sẽ đo một giả định sai.
+
+### L16. Tracker **không giành lại được** lợi ích của dự đoán ở cấu hình 72 tia
+
+Đo trên `intersection`, 120 seed ghép cặp (`scripts/diagnose_tracker.py`,
+commit `63c5d7d`):
+
+| | va chạm | thành công | tốt hơn `dwa` | tệ hơn |
+|---|---|---|---|---|
+| `dwa` | 9/120 | 107/120 | — | — |
+| oracle (tri giác hoàn hảo) | **2/120** | **112/120** | **11** | 0 |
+| tracker (LiDAR thật) | 9/120 | 107/120 | **0** | 0 |
+
+**11 cơ hội, tracker lấy 0.** Nút thắt là **tần suất phát hiện**, không
+phải độ chính xác: khi tracker có báo vận tốc thì sai số trung vị chỉ
+**0.119 m/s** trên 0.800 (15%), nhưng nó chỉ báo ở **1.6%** số bước vật
+cản nằm trong tầm. Vật cản 0.35 m ở 4 m rộng **2 tia** (72 tia ⇒ 5.00°),
+nên cụm lúc có lúc không, track chết trước khi tích đủ mẫu.
+
+Hệ quả cho người đọc Decision Card: trên deployment dùng LiDAR 72 tia,
+`dwa_predictive` **được kỳ vọng ngang `dwa`**, và một tấm card nói vậy là
+card đúng. Nó **không** nói mô hình dự đoán vô dụng — oracle đã bác điều
+đó. Nó nói **cảm biến này không đủ để ước lượng cái mô hình cần**.
+
+### L17. Chưa đo dưới nhiễu định vị — pha hệ toạ độ vẫn treo
+
+Rollout robot dùng **pose thật** (`state.pose`) còn đám mây điểm dùng
+**pose robot tin là** (`observation.pose`). Hai đại lượng bị trừ cho nhau,
+lệch nhau đúng bằng sai số định vị. Hôm nay chỉ làm khoảng hở lệch một
+hằng số; **với tracking nhiều khung thì nó thành vận tốc** — tường đứng
+yên sẽ có vận tốc dao động.
+
+Nên mọi phép so `dwa` vs `dwa_predictive` phải chạy với
+`localization_drift_m = 0` và `localization_jump_probability = 0` cho tới
+khi pha hệ toạ độ (mục 2c của plan) xong. Kết quả thu được **không nói gì**
+về độ bền trước nhiễu định vị.
+
+### L18. `v_obstacle_max` không dùng được trên bản đồ có vật cản tĩnh gần
+
+**Phát hiện ở P7, và nó làm tính năng của P1 gần như không dùng được ngoài
+sảnh trống.**
+
+Biên phanh áp lên `_nearest_obstacle_distance`, tức khoảng cách tới
+**return LiDAR gần nhất bất kể là gì** — kể cả **tường và kệ hàng**. Nên
+khai `v_obstacle_max = 0.8` là nói với controller: *anh chỉ được đi nhanh
+tới mức còn dừng kịp nếu cái kệ kia đang lao vào anh ở 0.8 m/s.*
+
+| khe hở | v cho phép (u=0) | v cho phép (u=0.8) |
+|---|---|---|
+| 0.3 m | 0.523 m/s | **0.145 m/s** |
+| 0.5 m | 0.683 m/s | **0.243 m/s** |
+| 1.0 m | 0.975 m/s | **0.456 m/s** |
+
+Đo được trên `warehouse_crossing_v1`, cùng episode, cùng seed:
+
+```
+v_obstacle_max = None  -> success  t = 65.2 s
+v_obstacle_max = 0.8   -> stuck    t = 26.1 s, dừng ở (5.4, 10.6)
+```
+
+Điểm dừng cách vật cản động **15 m** — nó bị chặn bởi **kệ hàng**, không
+phải bởi thứ đang chuyển động.
+
+**Vì sao P0/P1 không thấy:** cả hai đo trong **sảnh trống**, một xe đẩy
+lao thẳng, không có gì khác trong tầm. Đó đúng là hình học che giấu lỗi
+này.
+
+**Vì sao không sửa được bằng chỉnh tham số:** biên phải tính tốc độ khép
+**chỉ** với những thứ **có thể khép**. Phân biệt tĩnh/động chính là việc
+của tracker — mà P5 đo được là không đáng tin (L16). Nên đây là bài toán
+mở thật sự, không phải chuyện vặn số.
+
+**Hệ quả hôm nay:** không profile nào khai `v_obstacle_max`, nên **không
+deployment nào mang bảo đảm phanh trước vật cản đang lại gần** — L7 vẫn
+đúng nguyên văn. Lỗ hổng P0 đo được vẫn còn đó, và bản vá P1 chưa dùng
+được ở nơi có kệ hàng.
+
+### L19. `dwa_predictive` **rút khỏi tập candidate** — tri giác 2D không nuôi nổi mô hình
+
+**Rút ngày 2026-08-16.** Cả `astar+dwa_predictive` lẫn
+`rrtstar+dwa_predictive` chuyển `benchmarkable=False`, kèm trường
+`withdrawn` nói lý do. Implementation, oracle và diagnostics **giữ
+nguyên** để tái lập kết quả; chúng chỉ không còn được đề xuất.
+
+**Không phải mô hình sai.** P4 đã chứng minh ngược lại: đưa vận tốc thật
+vào, 11/11 cặp bất đồng nghiêng về nó, p = 0.0005. Cái hỏng là khâu ước
+lượng vận tốc từ LiDAR.
+
+**Bốn phép đo, cùng một kết luận:**
+
+| | đo được |
+|---|---|
+| P5 | tracker giành lại **0/11** cơ hội mà oracle giành được |
+| P7 | **29/30** episode quỹ đạo giống hệt `dwa`; card chọn `dwa` |
+| Q0 | độ phân giải **không** phải đòn bẩy — xem bảng dưới |
+| R1 | sàn vận tốc chỉ loại 2–5%; `coasting` loại 72–85% |
+
+Q0 (N = 20 seed, `artifacts/q0_resolution/`):
+
+```
+ tia   phát hiện thật   vận tốc ma (cảnh TĨNH)
+  72       0.9%              14.2%
+ 144       3.5%              78.6%
+ 271       4.1%              97.5%
+ 360       4.5%              99.2%
+```
+
+Tăng độ phân giải mua ×5 phát hiện thật kèm ×7 ảo giác. Ở 360 tia,
+tracker báo có vật đang chuyển động ở **99.2% số frame của một nhà kho
+đứng yên hoàn toàn**.
+
+**Cơ chế, truy đến tận điểm quét** (R1b, `artifacts/r1_phantom/`): một
+tia quét qua **góc vuông của hai mặt kệ** gom thành một cụm — ba điểm
+trên `y = 6.000`, hai điểm trên `x = 6.000` — vì bậc range lớn nhất qua
+góc là 0.55 m, dưới ngưỡng tách ≈1.05 m ở tầm đó. Centroid của cụm đó là
+điểm cân bằng giữa phần nhìn thấy của hai mặt; robot đi thì cân bằng dịch
+**trơn tru**, đo được **0.436 m/s off một góc đứng yên**.
+
+**Trơn tru là chỗ chết.** Ảo nhiễu thì lọc được; ảo này cho một fit
+least-squares sạch và tự tin, nên **không đại lượng nào tính từ vận tốc**
+— sàn, làm mượt, confidence — tách được nó khỏi vật thật đi 0.436 m/s.
+
+**Đã thử sửa và đã thu hồi.** Một bước tách cụm tại chỗ đổi hướng
+(Ramer–Douglas–Peucker + ngưỡng góc) được xây, đo, rồi gỡ: ở mật độ lấy
+mẫu này góc kệ và vật tròn không tách được bằng hình dạng — dải residual
+của hai loại chồng lên nhau. Xem
+`docs/antongduy/notes/2026-08-16/tongduyan_r1-nguon-van-toc-ma.md`.
+
+**Sai lầm ở tầng quy trình, ghi lại để không lặp:** tiền đề *"một
+candidate `lidar_only` ước lượng được vận tốc vật cản"* **chưa bao giờ
+được kiểm trước khi xây**. P4 kiểm mô hình *giả sử tri giác hoàn hảo*;
+không ai kiểm tri giác có khả thi không. Bốn pha sau đó là hoá đơn.
+
+**Hướng còn mở, nếu quay lại:** hỏi *"chỗ này trước đây có gì không"* —
+trừ nền tự dựng từ chính scan của robot — thay vì *"cụm này hình dạng có
+phải vật không"*. Hợp lệ với `lidar_only` (không đọc map ground truth),
+nhưng cần pose nhất quán giữa các khung, tức **phải trả L17 trước**.
+
+### L20. Hai nợ hạ tầng lộ ra khi làm plan tri giác — **đã sửa 2026-08-16**
+
+Cả hai không liên quan `dwa_predictive`; chúng chỉ tình cờ lộ ra khi
+làm plan đó. Giữ mục này sau khi sửa vì cả hai đều là **lỗi im lặng** —
+không có gì báo, và chỉ một tạo tác tình cờ mới lộ ra — nên cách chúng
+xảy ra đáng đọc hơn việc chúng đã hết.
+
+**(a) Trace của thế giới cũ được dùng lại âm thầm.** Trace được định địa
+chỉ chỉ bằng `(candidate_id, episode_context_id)`; `--reuse-traces` chỉ
+kiểm file có tồn tại (`pipeline.py:224`), `--score-only` cũng tra theo
+đúng hai id đó, và `TraceMetadata` không lưu điều kiện chạy. HĐ-3.1 đóng
+băng `episode_context_id` ở *(task profile, mission, variant, seed)* —
+**không** gồm environment. Bằng chứng thật: chạy lại
+`warehouse_crossing_v1` sau khi rút `v_obstacle_max` cho ra
+`run_journal.jsonl` **120 dòng** — 60 `stuck` rồi 60 `success`, **cùng**
+`episode_context_id b408516ece7f`. Hai thế giới, một id, một file.
+**Đã sửa.** `execution_conditions_fingerprint` băm từ **chính năm tham số
+điều kiện `run_stack` nhận** — không phải một danh sách field duy trì
+song song. Lý do chọn cách đó nằm ngay trong lịch sử của nó: bản liệt kê
+tay đầu tiên mắc cả hai chiều lỗi trong một lần viết — sót
+`clearance_preference` (đổi planning grid ⇒ đổi quỹ đạo) và đưa nhầm
+`clearance_warning_m` (chỉ Metrics Engine đọc lúc chấm).
+
+Bốn điểm chặn: fingerprint ghi vào `TraceMetadata`; `--reuse-traces` mô
+phỏng lại khi lệch; `--score-only` **từ chối** (`StaleTraceError`) vì
+chấm điểm không có đường mô phỏng lại, cắt ngắn im lặng sẽ trả report
+dựng một phần từ thế giới khác; `run_journal.jsonl` truncate mỗi sweep
+thay vì append.
+
+**Fail-closed:** fingerprint rỗng (trace cũ) đọc là *không biết*, không
+phải *khớp*. Giá là mô phỏng lại kho trace hiện có một lần.
+
+**Guard chống trôi:** `test_run_stack_has_not_grown_a_condition` so chữ
+ký `run_stack` với `CONDITION_ARGUMENTS`; thêm tham số điều kiện thứ sáu
+mà không quyết định nó có vào hash hay không ⇒ test đỏ.
+
+**(b) `angle_span ≠ 2π` làm hỏng MỌI candidate `lidar_only`.**
+`LidarConfig` cho khai `angle_span` bất kỳ và simulator tôn trọng nó
+(`lidar.py:89`), nhưng **cả** tracker (`tracking.py`) **lẫn**
+`dwa_core.obstacle_points` (`dwa_core.py:216`) hardcode `span = 2π`. Một
+deployment khai LiDAR 180° sẽ khiến `dwa` **thường** dựng đám mây điểm
+lệch một phép quay. Hôm nay chưa nổ vì `LidarConfig` không khai được từ
+profile — nó là default cứng `scenario.py:78`. Ngày nào cảm biến thành
+thứ deployment khai, đây là lỗi chờ sẵn.
+
+**Đã sửa bằng cách chặn ở chỗ khai báo**, không phải dạy consumer:
+validator trên `LidarConfig` từ chối mọi `angle_span ≠ 2π`, và thông
+điệp nói rõ **ai** sẽ sai (`dwa_core.obstacle_points`, tức `dwa`
+thường). Truyền đặc tả cảm biến xuống hai controller chạm planner
+protocol và golden trajectory của cả hai — đó là pha riêng. Trạng thái
+trung thực là trường này có **một** giá trị được hỗ trợ, và cách nói ra
+là từ chối các giá trị khác chứ không nhận rồi hành xử như chưa từng
+được hỏi.

@@ -69,22 +69,25 @@ function topbar(
 
 describe("TopBar — where you are", () => {
   it("names the current page", () => {
-    expect(topbar({ pathname: "/benchmarks" })).toContain("Benchmarks");
+    expect(topbar({ pathname: "/decisions" })).toContain("Decisions");
   });
 
   it("shows a breadcrumb on a detail page, with the id verbatim", () => {
-    const html = topbar({ pathname: "/benchmarks/ab12cd" });
+    const html = topbar({ pathname: "/decisions/ab12cd" });
     expect(html).toContain("ab12cd");
     expect(html).toContain('aria-label="Breadcrumb"');
   });
 
   it("shows no breadcrumb on a section page", () => {
-    expect(topbar({ pathname: "/benchmarks" })).not.toContain('aria-label="Breadcrumb"');
+    expect(topbar({ pathname: "/decisions" })).not.toContain('aria-label="Breadcrumb"');
   });
 
   it("names the page in Vietnamese", () => {
-    expect(topbar({ pathname: "/benchmarks" }, "vi")).toContain("Benchmark");
-    expect(topbar({ pathname: "/leaderboard" }, "vi")).toContain("Bảng xếp hạng");
+    expect(topbar({ pathname: "/decisions" }, "vi")).toContain("Quyết định");
+    /* `/candidates` was reading "Candidate" in the Vietnamese locale —
+       an English string sitting in a translated file, which a test
+       naming only one page would never have caught. */
+    expect(topbar({ pathname: "/candidates" }, "vi")).toContain("Phương án");
   });
 });
 

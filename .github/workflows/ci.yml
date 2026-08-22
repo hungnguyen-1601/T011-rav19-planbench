@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    # Both platforms, and the second one is not symmetry for its own sake.
+    #
+    # On 2026-08-12 a full run on Windows found `psutil` missing from
+    # every requirements file. Nothing was broken on Linux and nothing
+    # ever could be: `os.sched_setaffinity` is in the Linux stdlib, so
+    # `hostinfo.py` never reaches its psutil branch there. On Windows that
+    # branch is the only one, and without the package `pin_to_cores()`
+    # returns None — every run unpinned, which is the measurement
+    # protection HĐ-7.4 exists to provide. G4 reads wall-clock latency,
+    # and the same stack measures 59.30 ms unpinned against 16.10 ms
+    # pinned to two cores: further apart than the candidates are from each
+    # other.
+    #
+    # It survived because the developer machine happened to carry psutil
+    # in a conda base environment while a `.venv` built from the README
+    # did not. A green suite on one platform is not evidence about the
+    # other, and this job is what makes that statement checkable rather
+    # than remembered.
+    strategy:
+      # Not fail-fast: when one platform breaks, the useful question is
+      # immediately "and the other?" — cancelling the answer to save a few
+      # minutes is how a platform-specific failure gets read as a general
+      # one.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    # The suite simulates episodes, so it is minutes rather than seconds —
+    # around 17 on a fast developer machine and more on a hosted runner.
+    # A ceiling well above that turns a hung job into a failed one instead
+    # of an hour of billed minutes, without failing a merely slow run.
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          # pyproject.toml declares `requires-python = ">=3.12"`, and the
+          # ruff target is py312. Testing on 3.11 would exercise a version
+          # the project does not claim to support.
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        # requirements.txt is the core set. The optional extras (torch,
+        # Stable-Baselines3, MLflow, LLM providers) live in
+        # requirements-optional.txt and are deliberately not installed
+        # here: the suite must pass without them, and one test skips
+        # itself when they are absent.
+        #
+        # This file, and not docker/requirements-api.txt — that one builds
+        # the API image and carries no pytest, no ruff and no httpx. The
+        # same distinction is spelled out in README and in
+        # scripts/dev_stack.sh, which named the wrong one until 2026-08-12.
+        run: pip install -r requirements.txt
+
+      # Lint once, not twice. Formatting and lint rules are decided by
+      # ruff.toml and do not vary by platform, so a second run would cost
+      # minutes to reach a conclusion already reached.
+      - name: Check formatting
+        if: runner.os == 'Linux'
+        run: ruff format --check .
+
+      - name: Lint with ruff
+        if: runner.os == 'Linux'
+        run: ruff check .
+
+      # The whole suite on both, rather than a Windows subset of
+      # "platform-sensitive" tests. Picking that subset means predicting
+      # which tests a future undeclared dependency will break, and the
+      # psutil gap was invisible from the Python source: nothing in
+      # hostinfo.py imports psutil at module level, and the branch that
+      # does is unreachable on the platform CI ran. A subset chosen today
+      # guards today's known gap.
+      #
+      # One honest limit on what this job proves. The pinning tests skip
+      # themselves on a machine with fewer than three logical cores —
+      # correctly, since `pin_to_cores(2)` refuses to take a whole
+      # two-core machine (taking every core is not pinning). So on a
+      # small runner the psutil path is skipped rather than exercised,
+      # and this job would have gone green through the very gap it was
+      # added for. If GitHub's Windows image ever drops back to two
+      # cores, that coverage disappears silently — the skip is the only
+      # signal, so read the skip count, not just the colour.
+      - name: Run tests
+        run: pytest tests/ -v --tb=short

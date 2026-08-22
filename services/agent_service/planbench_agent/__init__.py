@@ -1,127 +1,115 @@
-"""Agentic layer: LLM provider abstraction, tool calling, evidence, RAG.
+"""Agentic layer: LLM provider abstraction, tool calling, paper reading, critique.
 
-Boundaries that hold everywhere in this package:
+The layer does three jobs and refuses the fourth.
 
-- no vendor name outside :mod:`planbench_agent.anthropic_provider`;
-- the agent reaches PlanBench only through
-  :class:`planbench_agent.gateway.AgentGateway`, so it has no path to the
-  simulator, ``/cmd_vel``, map editing, or the approval decision itself;
-- every generated claim carries a citation that is checked against
-  recorded data before the text is returned.
+**It answers questions about stored runs** (:mod:`workflow`), through a
+read-only tool surface (:mod:`tools`) over a narrow port
+(:mod:`gateway`). Every answer comes from the database. There is no
+documentation corpus behind it, deliberately: the team's own Markdown
+was the corpus, and a design note that has drifted from the code turns
+the agent from ignorant into confidently wrong.
+
+**It reads a paper the reader supplies** (:mod:`paper`) and recovers the
+configuration it reports, with each value tied to the sentence it came
+from. That is where outside knowledge enters — one document, chosen by a
+person, quoted verifiably.
+
+**It argues with a conclusion** (:mod:`critique`), on top of the
+deterministic rules in :mod:`planbench_decision.self_check` — which it
+may reorder and extend but never overrule.
+
+**It does not run experiments.** Launching a comparison, editing a
+deployment and approving a result are human acts on the decisions page.
+The agent has no method for any of them, which is a stronger guarantee
+than a policy flag: there is no code path to disable.
+
+Provider choice is configuration (:mod:`factory`). With no API key the
+layer falls back to a deterministic keyword responder and says so, so an
+offline run is honest about being offline rather than silently thinner.
 """
 
-from planbench_agent.evidence import (
-    Citation,
-    EvidenceBundle,
-    EvidenceItem,
-    InsufficientEvidence,
-    SourceKind,
-    collect_benchmark_evidence,
-    extract_citations,
+from planbench_agent.critique import (
+    CRITIQUE_MAX_TOKENS,
+    CRITIQUE_SYSTEM,
+    CritiqueResult,
+    ScoredFinding,
+    critique_schema,
+    critique_with_model,
 )
+from planbench_agent.deterministic import DeterministicResponder
 from planbench_agent.factory import (
     AUTO_ORDER,
     PROVIDERS,
     ProviderStatus,
+    ProviderUnavailable,
     build_provider,
-    describe_unavailable,
     provider_status,
 )
 from planbench_agent.gateway import (
     AgentGateway,
-    AlgorithmSummary,
-    ApprovalRequired,
-    BenchmarkSummary,
-    EpisodeSummary,
+    CandidateSummary,
+    DecisionRunSummary,
+    DeploymentSummary,
     GatewayError,
-    LeaderboardRow,
     ScenarioSummary,
 )
-from planbench_agent.openai_provider import PRESETS, OpenAICompatibleProvider
 from planbench_agent.provider import (
     LLMMessage,
     LLMProvider,
     LLMRequest,
     LLMResponse,
+    MessageRole,
     MockProvider,
-    ProviderError,
-    ProviderUnavailable,
     StopReason,
     ToolCall,
     ToolResult,
     ToolSpec,
 )
-from planbench_agent.rag import Chunk, KnowledgeBase, load_markdown_directory, split_markdown
-from planbench_agent.report import (
-    SAFETY_DISCLAIMER,
-    FabricatedCitation,
-    GeneratedReport,
-    generate_report,
-)
-from planbench_agent.specs import (
-    MissionDraft,
-    MissionRefusal,
-    mission_schema,
-    parse_mission_text,
-    parse_structured,
-    validate_draft,
-)
 from planbench_agent.tools import (
     FORBIDDEN_CAPABILITIES,
     Effect,
+    Tool,
     ToolPolicy,
     ToolRegistry,
     build_registry,
 )
 from planbench_agent.workflow import (
-    AgentEvent,
+    CHAT_SYSTEM,
+    MAX_TOOL_ITERATIONS,
     AgentService,
-    AgentSession,
-    AgentState,
     ChatTurn,
 )
 
 __all__ = [
     "AUTO_ORDER",
+    "CHAT_SYSTEM",
+    "CRITIQUE_MAX_TOKENS",
+    "CRITIQUE_SYSTEM",
     "FORBIDDEN_CAPABILITIES",
-    "PRESETS",
+    "MAX_TOOL_ITERATIONS",
     "PROVIDERS",
-    "SAFETY_DISCLAIMER",
-    "AgentEvent",
     "AgentGateway",
     "AgentService",
-    "AgentSession",
-    "AgentState",
-    "AlgorithmSummary",
-    "ApprovalRequired",
-    "BenchmarkSummary",
+    "CandidateSummary",
     "ChatTurn",
-    "Chunk",
-    "Citation",
+    "CritiqueResult",
+    "DecisionRunSummary",
+    "DeploymentSummary",
+    "DeterministicResponder",
     "Effect",
-    "EpisodeSummary",
-    "EvidenceBundle",
-    "EvidenceItem",
-    "FabricatedCitation",
     "GatewayError",
-    "GeneratedReport",
-    "InsufficientEvidence",
-    "KnowledgeBase",
     "LLMMessage",
     "LLMProvider",
     "LLMRequest",
     "LLMResponse",
-    "LeaderboardRow",
-    "MissionDraft",
-    "MissionRefusal",
+    "MessageRole",
     "MockProvider",
-    "OpenAICompatibleProvider",
-    "ProviderError",
     "ProviderStatus",
     "ProviderUnavailable",
     "ScenarioSummary",
-    "SourceKind",
+    "ScoredFinding",
     "StopReason",
+    "Tool",
     "ToolCall",
     "ToolPolicy",
     "ToolRegistry",
@@ -129,15 +117,7 @@ __all__ = [
     "ToolSpec",
     "build_provider",
     "build_registry",
-    "collect_benchmark_evidence",
-    "describe_unavailable",
-    "extract_citations",
-    "generate_report",
-    "load_markdown_directory",
-    "mission_schema",
-    "parse_mission_text",
-    "parse_structured",
+    "critique_schema",
+    "critique_with_model",
     "provider_status",
-    "split_markdown",
-    "validate_draft",
 ]

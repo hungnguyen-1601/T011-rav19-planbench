@@ -61,6 +61,319 @@ cài và đã chạy test.
   dependency gián tiếp từ một máy sạch.
 - **Chưa kiểm `npm install` từ đầu** trên `node_modules` trống.
 
+## Tiếp nhận công việc từ nhánh `tongduyan` — 2026-08-03
+
+Ba phần được đưa sang, chọn theo tiêu chí "phục vụ thẳng mục tiêu so
+sánh công bằng, không đụng mô hình phân quyền".
+
+### Đã nhận
+
+| Phần | Nội dung |
+|---|---|
+| `planbench_metrics.statistics` | Median/IQR, bootstrap CI, kiểm định Wilcoxon theo cặp, gộp hạng |
+| `smoothness` tách đôi | `smoothness` = Σ(Δθ)² theo spec; `smoothness_per_metre` = Σ\|Δθ\| / độ dài |
+| Latency p50/p95/p99, `stop_and_go_count` | Đi kèm `episode_metrics.py` |
+| `PairwiseComparison` | So sánh Wilcoxon giữa các stack, ghép vào `BenchmarkReport` |
+| CI 95% + median/IQR trong `AlgorithmAggregate` | 5 trường tùy chọn, tương thích ngược |
+| Xuất report Markdown | `GET /benchmarks/{id}/report.md` |
+
+### Không nhận
+
+**RBAC Engineer/Approver.** Mô hình hiện tại phân quyền theo quan hệ sở
+hữu benchmark (`OWNER`/`REVIEWER`/`ADMIN`), nên một người làm việc một
+mình đi hết được luồng và review là tùy chọn. Engineer/Approver là vai
+trò toàn cục: phải có người được cấp quyền Approver thì benchmark mới
+duyệt được — một nút thắt không có lợi ích tương ứng với nhóm 4 người.
+Toàn bộ tài liệu Gate G1 cũng đang mô tả mô hình member.
+
+### Chỗ phải sửa để không phá dữ liệu cũ
+
+`smoothness` bị **đổi định nghĩa**, không phải thêm mới. Leaderboard kẹp
+`mean_smoothness` vào [0, 1] để tính điểm; tổng bình phương chưa chuẩn
+hóa vượt 1 ở gần như mọi episode, nên nếu để nguyên thì mọi stack cùng
+được 0 ở trục đó và trọng số smoothness thành vô nghĩa.
+
+Cách xử lý: `runner.py` gộp cả hai trường, `leaderboard.py` chấm điểm
+bằng `mean_smoothness_per_metre_successful`, `spec.py` ghi rõ trường nào
+dùng ở đâu. `MetricsPanel` trước đây hiển thị `smoothness` kèm đơn vị
+"rad/m" — sai sau khi đổi công thức; nay hiện hai số với hai đơn vị.
+
+### Đợt hai — phần còn lại
+
+Sau đợt đầu (thống kê, smoothness, report Markdown), bốn phần còn lại
+cũng được đưa sang:
+
+| Phần | Nội dung |
+|---|---|
+| `difficulty.py` | Độ khó = `1 − success_rate` của stack tham chiếu qua 30 seed, cache sẵn |
+| `map_io.py` | Đọc định dạng ROS `map_server`: PGM + YAML sidecar |
+| RRT\* | Global planner thứ hai; registry có `global_planner_factory`, thêm `rrtstar+dwa` và `rrtstar+pure_pursuit` |
+| Optuna tuning | `GET /tuning` đọc cache; optuna chỉ cần khi chạy script |
+| 2.5D vật cản động | Vẽ vật cản trong khung nhìn 2.5D |
+
+Thay đổi kiến trúc đáng kể nhất: `run_stack()` không còn hardcode A*.
+Nó nhận một `GlobalPlanner` và dựng tên stack từ `planner.name`, nên
+`rrtstar+dwa` chạy đúng RRT* chứ không phải A* đội tên khác. `GlobalPlanner`
+được thêm thuộc tính trừu tượng `name`.
+
+Xác nhận registry sau khi ghép:
+
+```
+astar+dwa                benchmarkable=True   global=astar
+astar+ppo                benchmarkable=True   global=astar
+astar+pure_pursuit       benchmarkable=False  global=astar
+rrtstar+dwa              benchmarkable=True   global=rrtstar
+rrtstar+pure_pursuit     benchmarkable=False  global=rrtstar
+```
+
+### Kết quả
+
+```
+ruff format --check .    All checks passed
+ruff check .             All checks passed
+pytest tests/ -q         1195 passed, 3 skipped in 394.13s
+tsc --noEmit             không lỗi
+vitest run               274 passed (18 file)
+```
+
+76 test mới so với trước khi tiếp nhận: `test_statistics.py` (21),
+`test_map_io.py`, `test_difficulty.py`, `test_rrtstar.py`,
+`test_report_markdown.py`, `test_tuning.py`, `test_api_tuning.py` cùng
+các test metric bổ sung.
+
+Skip thứ ba là `test_tuning.py` — nó cần optuna, và optuna nằm ở
+`requirements-optional.txt` chứ không phải phụ thuộc lõi: API đọc
+`tuning_cache.json` tĩnh, không tính lại lúc request.
+
+## Checkpoint PPO thật qua Model Registry — 2026-08-03
+
+Tới hôm nay, mọi test của Model Registry đều dùng một zip **giả hình
+dạng** SB3 dựng trong bộ nhớ: đủ để kiểm lưu trữ, checksum và kiểm tra
+cấu trúc, nhưng không chứng minh được rằng một checkpoint thật nạp và
+chạy được. Đã kiểm chứng.
+
+### Huấn luyện
+
+```
+scripts/train_ppo.py --model-id registry-check --timesteps 30000 --seed 7
+
+training registry-check: 30000 timesteps, curriculum=['open_space'], seed=7
+metadata:   observation=v1 reward=v1 smoke=False
+
+deterministic evaluation
+  episodes        3
+  success_rate    1.00
+  collision_rate  0.00
+  mean_reward     301.5
+```
+
+Checkpoint 531 KB, các thành phần: `data`, `pytorch_variables.pth`,
+`policy.pth`, `policy.optimizer.pth`, `_stable_baselines3_version`,
+`system_info.txt`.
+
+### Toàn bộ chuỗi qua HTTP
+
+```
+robot profile : Default AMR (r=0.3, 24 tia)
+upload        : 201 -> structural
+checksum      : 4814d5e56b479295 | size: 543222 bytes
+duong dan noi bo lo ra?: False
+tuong thich   : compatible | loi: [] | canh bao: 0
+tao benchmark : 201
+chay          : 200 -> pending_review
+model_path lo ra?: False
+so episode    : 1
+  thuat toan  : astar+ppo
+  ket qua     : collision
+ghi nhan da dung: ['208a63dcc4f2']
+```
+
+Episode kết thúc `collision` — và đó là **kết quả**, không phải lỗi của
+chuỗi. Model chỉ huấn luyện 30 000 bước trên `open_space`, còn benchmark
+chạy trên map có tường bao; nó đâm vào tường là điều dự đoán được. Điều
+được chứng minh là: checkpoint thật nạp được, policy sinh ra lệnh điều
+khiển, simulator chạy tới cùng, metrics được ghi, và lượt dùng được ghi
+nhận vào `model_usages`.
+
+### Lỗi bắt được: 422 biến thành 500
+
+Lần chạy đầu, upload trả **HTTP 500**:
+
+```
+File "planbench_api/errors.py", line 156, in request_invalid
+  details = jsonable_encoder(exc.errors(), custom_encoder={Exception: str})
+ValueError: [TypeError("'ellipsis' object is not iterable"), ...]
+```
+
+Handler cho lỗi 422 **tự nó crash** khi tuần tự hóa chi tiết lỗi: một
+tham số `File()` bắt buộc mang giá trị mặc định là literal `...`, và
+`jsonable_encoder` chết trên đó. Handler 500 tiếp quản, nên một sai sót
+tầm thường (thiếu field) tới tay client dưới dạng "internal server
+error" — đúng thứ mà dự án đã đặt ra nguyên tắc phải tránh.
+
+Đã sửa bằng `_safe_details()`: chuyển mọi thứ không phải JSON nguyên
+thủy thành chuỗi. Thêm 3 test hồi quy trong `TestUploadErrorsStayReadable`.
+
+Lỗi này tồn tại từ M13 và không test nào bắt được, vì mọi test đều gửi
+request **đúng**. Chỉ khi gõ nhầm tên field mới lộ ra.
+
+## Docker + PostgreSQL — chạy thật lần đầu — 2026-08-03
+
+Từ M10 tới nay, `docker-compose.yml` và hai Dockerfile chỉ tồn tại dưới
+dạng mã nguồn: chưa ai build image, chưa ai chạy PostgreSQL. Hôm nay đã
+chạy thật.
+
+### Build và migration
+
+```
+docker compose build migrate
+ => naming to docker.io/library/planbench-migrate done
+ migrate  Built
+
+docker compose run --rm migrate
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001, ...
+INFO  [alembic.runtime.migration] Running upgrade 0001 -> 0002, ...
+INFO  [alembic.runtime.migration] Running upgrade 0002 -> 0003, ...
+```
+
+`PostgresqlImpl` — không còn là SQLite. 16 bảng, `alembic_version = 0003`.
+
+### Lỗi mà chỉ việc chạy thật mới lộ ra
+
+API vào vòng lặp khởi động lại:
+
+```
+File "/app/apps/api/planbench_api/model_storage.py", line 103, in __init__
+  self._root.mkdir(parents=True, exist_ok=True)
+PermissionError: [Errno 13] Permission denied: 'artifacts'
+```
+
+`PLANBENCH_MODEL_DIR` mặc định là đường dẫn **tương đối**
+`artifacts/models`, giải ra `/app/artifacts` trong container — thư mục
+của root, trong khi tiến trình chạy bằng user `planbench` (uid 10001).
+`docker-compose.yml` đã khai `PLANBENCH_ARTIFACT_DIR: /data/artifacts` từ
+M10, nhưng khi M13 sinh ra `PLANBENCH_MODEL_DIR` thì không ai thêm nó vào
+compose.
+
+Không test nào bắt được lỗi này: test chạy với thư mục tạm, và cả suite
+chưa từng chạy trong container. Đã sửa bằng cách khai
+`PLANBENCH_MODEL_DIR: /data/artifacts/models`.
+
+### Luồng đầy đủ trên PostgreSQL
+
+```
+dang nhap: OK
+tao map  : 785a3e2f6c84
+scenario : 775907cb5e00
+benchmark: fdb220df7865
+chay     : pending_review
+```
+
+Phép thử quyết định — **xóa hẳn container API** (không phải restart) rồi
+tạo lại từ đầu:
+
+```
+docker compose rm -sf api
+  Container planbench-api-1  Removed
+
+du lieu trong PostgreSQL luc khong con API:
+  benchmarks: 1
+  episodes  : 2
+
+sau khi tao lai container:
+  doc lai benchmark: pending_review
+  ten              : docker-postgres
+  seeds            : [1, 2]
+  episodes         : 2
+```
+
+Container web trả HTTP 200, API trả
+`{"status":"ok","app":"PlanBench API","version":"0.1.0"}`.
+
+Chạy trên cổng 8001/3001 để không đụng dev stack đang chạy ở 8000/3000.
+
+### Chưa được kiểm chứng
+
+- **Chưa chạy nhiều người dùng đồng thời** trên PostgreSQL.
+- **Chưa triển khai lên máy chủ thật**; mới chạy Docker cục bộ.
+
+## Persistence — kiểm chứng dữ liệu có thật sự được lưu — 2026-08-03
+
+Câu hỏi: benchmark của người dùng có sống sót qua một lần khởi động lại
+không? Trước hôm nay câu trả lời là **không**, và không ai biết.
+
+### Nguyên nhân
+
+`.env` chứa dòng `PLANBENCH_DATABASE_URL=` (rỗng). `scripts/dev_stack.sh`
+nạp `.env` bằng `set -a`, nên biến trở thành **đã đặt nhưng rỗng**. Điều
+kiện chọn mặc định SQLite là `[[ -z "${PLANBENCH_DATABASE_URL+x}" ]]` —
+chỉ đúng khi biến **chưa đặt**. Nên nó không kích hoạt, URL vẫn rỗng,
+`main.py` chọn repository trong bộ nhớ, và không migration nào chạy.
+
+`.env.example` tự mâu thuẫn: chú thích nói "để trống thì dev_stack tự
+dùng SQLite", trong khi chính nó ship dòng gán rỗng — thứ vô hiệu hóa
+đúng cái mặc định đó.
+
+### Migration
+
+```
+PLANBENCH_DATABASE_URL=sqlite:///./planbench.db .venv/bin/alembic upgrade head
+
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001, Initial schema: maps, scenarios, simulations, benchmarks, approvals, episodes.
+INFO  [alembic.runtime.migration] Running upgrade 0001 -> 0002, Accounts, OAuth links, review requests; benchmark ownership.
+INFO  [alembic.runtime.migration] Running upgrade 0002 -> 0003, Robot profiles, the model registry, and assistant conversations.
+```
+
+16 bảng được tạo (15 bảng nghiệp vụ + `alembic_version`), `alembic
+current` trả về `0003 (head)`.
+
+### Kiểm chứng bằng hai tiến trình riêng biệt
+
+Không dùng một tiến trình rồi tự tin là nó lưu được. Tiến trình 1 ghi
+rồi thoát hẳn; tiến trình 2 khởi động mới hoàn toàn, không chia sẻ bộ
+nhớ với tiến trình 1.
+
+```
+TIEN TRINH 1 (ghi)
+  tao benchmark: 201
+  benchmark id : 2c4a8b032e99
+  chay         : 200 -> pending_review
+
+TIEN TRINH 2 (doc lai sau khi "khoi dong lai")
+  benchmark    : 200 -> pending_review
+  ten          : kiem-chung-luu-tru
+  seeds        : [1, 2]
+  episodes     : 200 -> 2
+  map          : 200
+  so benchmark trong danh sach: 1
+```
+
+Log khởi động in `persistence: SQL` kèm `{"dialect": "sqlite"}` — nếu
+không thấy dòng này thì URL chưa vào tới ứng dụng.
+
+Trạng thái trên đĩa sau lượt chạy:
+
+```
+planbench.db 224K
+  users        1 ban ghi
+  maps         3 ban ghi
+  scenarios    2 ban ghi
+  benchmarks   1 ban ghi
+  episodes     2 ban ghi
+  approvals    3 ban ghi
+
+artifacts/benchmarks/2c4a8b032e99/report.json   (report nam ngoai DB — quyet dinh D15)
+```
+
+### Chưa được kiểm chứng
+
+- **Chưa chạy với PostgreSQL thật.** Migration mới chỉ chạy trên SQLite;
+  máy phát triển không có Docker daemon.
+- **SQLite chỉ hợp một tiến trình.** Nhiều worker ghi đồng thời sẽ gặp
+  khóa; triển khai thật phải dùng PostgreSQL.
+
 ## M13 — Model Registry + trợ lý hội thoại — 2026-08-01
 
 ### Backend

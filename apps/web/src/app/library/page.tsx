@@ -10,11 +10,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { DifficultyBadge } from "@/components/DifficultyBadge";
 import { EmptyState } from "@/components/EmptyState";
-import { Scene25D } from "@/components/Scene25D";
+import { MapView } from "@/components/MapView";
+import { SplitBadge } from "@/components/SplitBadge";
 import { authFetch, useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
-import type { ImportedScenario, LibraryEntry } from "@/lib/platformTypes";
+import type {
+  DifficultyCalibrationSummary,
+  ImportedScenario,
+  LibraryEntry,
+} from "@/lib/platformTypes";
 import type { MapResource, ScenarioResource } from "@/lib/types";
 
 interface Preview {
@@ -31,6 +37,7 @@ export default function LibraryPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [imported, setImported] = useState<ImportedScenario[]>([]);
+  const [calibration, setCalibration] = useState<DifficultyCalibrationSummary | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -38,6 +45,22 @@ export default function LibraryPage() {
         setEntries(await authFetch<LibraryEntry[]>("/scenario-library"));
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+      }
+    })();
+  }, []);
+
+  // Separate request, and a failure here is deliberately not surfaced as
+  // a page error: the difficulty scale is extra information about the
+  // library, and losing it must not stop anyone from importing a
+  // scenario.
+  useEffect(() => {
+    (async () => {
+      try {
+        setCalibration(
+          await authFetch<DifficultyCalibrationSummary>("/difficulty-calibration"),
+        );
+      } catch {
+        setCalibration(null);
       }
     })();
   }, []);
@@ -88,8 +111,10 @@ export default function LibraryPage() {
         <table>
           <thead>
             <tr>
-              <th>{t("library.difficulty")}</th>
+              <th title={t("library.curriculumHint")}>{t("library.curriculum")}</th>
               <th>{t("common.scenario")}</th>
+              <th title={t("difficulty.hint")}>{t("library.difficulty")}</th>
+              <th title={t("protocol.splitHint")}>{t("protocol.split")}</th>
               <th>{t("algorithms.description")}</th>
               <th>{t("maps.size")}</th>
               <th>{t("library.obstacles")}</th>
@@ -103,6 +128,12 @@ export default function LibraryPage() {
                 <td className="muted">{entry.curriculum_index}</td>
                 <td>
                   <code>{entry.name}</code>
+                </td>
+                <td>
+                  <DifficultyBadge difficulty={entry.difficulty} />
+                </td>
+                <td>
+                  <SplitBadge split={entry.split} notes={entry.split_notes} />
                 </td>
                 <td>{entry.description}</td>
                 <td className="muted">
@@ -140,12 +171,58 @@ export default function LibraryPage() {
         ) : null}
       </div>
 
+      {calibration ? (
+        <div className="panel">
+          <h3>{t("difficulty.calibrationTitle")}</h3>
+          {calibration.calibration_version && calibration.baseline ? (
+            <p className="muted">
+              {t("difficulty.calibrationMeta", {
+                version: calibration.calibration_version,
+                algorithm: calibration.baseline.algorithm,
+                seeds: String(calibration.baseline.seeds.length),
+                sha: calibration.baseline.git_sha.slice(0, 12),
+                replanning: calibration.baseline.replanning_enabled
+                  ? t("difficulty.replanningOn")
+                  : t("difficulty.replanningOff"),
+              })}
+            </p>
+          ) : (
+            <p className="muted">{t("difficulty.uncalibratedHint")}</p>
+          )}
+          {calibration.coverage.spread !== null ? (
+            <p className="muted">
+              {t("difficulty.range", {
+                min: (calibration.coverage.min_difficulty ?? 0).toFixed(2),
+                max: (calibration.coverage.max_difficulty ?? 0).toFixed(2),
+                spread: calibration.coverage.spread.toFixed(2),
+                count: String(calibration.coverage.scenario_count),
+              })}
+            </p>
+          ) : null}
+          {/* Coverage warnings are the point of this panel, not a footnote:
+              a difficulty scale everything sits at one end of cannot rank
+              anything, and the fix is authoring scenarios, not editing the
+              cache. */}
+          {calibration.coverage.warnings.map((warning) => (
+            <div className="notice" key={warning}>
+              {warning}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       {preview ? (
         <div className="panel">
           <h3>
             {preview.name} <span className="muted">{t("library.preview")}</span>
           </h3>
-          <Scene25D
+          {/* This preview was the one place in the app with a raised
+              view and no flat one — the mirror image of the gap
+              everywhere else. It opens raised because seeing the shape of
+              a scenario is why somebody previews it, but the top-down
+              view is now a click away, which is where its start and goal
+              coordinates are legible. */}
+          <MapView
             map={preview.map.map_data}
             width={720}
             height={460}
@@ -153,10 +230,12 @@ export default function LibraryPage() {
             goalPose={preview.scenario.scenario.goal_pose}
             robotPose={preview.scenario.scenario.start_pose}
             robotRadius={preview.scenario.scenario.robot.radius}
+            goalTolerance={preview.scenario.scenario.goal_tolerance}
+            initialMode="raised"
           />
           <p className="muted">
             {t("library.importedAs", { map: preview.map.id, scenario: preview.scenario.id })}{" "}
-            <Link href="/benchmarks">{t("library.openBenchmarks")}</Link>
+            <Link href="/decisions">{t("library.openDecisions")}</Link>
           </p>
         </div>
       ) : null}

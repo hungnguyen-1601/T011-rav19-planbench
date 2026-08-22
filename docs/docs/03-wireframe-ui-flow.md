@@ -692,5 +692,5 @@ Cột "gợi ý thị giác" là bổ sung cho chữ, không thay thế chữ.
 | Hiển thị 2.5D | Completed | `apps/web/src/components/Scene25D.tsx` |
 | Robot Profiles (màn hình riêng) | In progress | Quản lý trong `apps/web/src/app/models/page.tsx`; chưa tách thành route riêng |
 | Scenario Preview (màn hình riêng) | In progress | Xem trước nằm trong `apps/web/src/app/library/page.tsx`; chưa có route riêng |
-| Lịch sử hội thoại | In progress | Backend đầy đủ; giao diện mới có "Cuộc trò chuyện mới" |
+| Lịch sử hội thoại | Completed | `apps/web/src/app/agent/page.tsx` — cột danh sách, mở lại, xoá |
 | Trang huấn luyện PPO | Planned | Chưa có: không dựng giao diện huấn luyện khi chưa có job huấn luyện thật |

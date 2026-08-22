@@ -144,6 +144,49 @@ class TestRandomWalkMotion:
         obstacle = self.obstacle()
         assert position_at(obstacle, 3.0, 9) == position_at(obstacle, 3.0, 9)
 
+    @pytest.mark.parametrize("seed", [0, 1, 7, 42])
+    def test_it_never_exceeds_its_own_declared_speed(self, seed: int) -> None:
+        """**Regression, and it was a safety bug rather than a cosmetic one.**
+
+        The reflection at ``max_radius`` used to be decided from the
+        *partial* elapsed time of the interval in progress. As that time
+        grew the branch flipped, and the position jumped between two
+        extrapolations pointing opposite ways — up to ``2 · speed ·
+        elapsed`` in a single step.
+
+        Measured on ``dynamic_warehouse`` before the fix: an obstacle
+        declared at 0.5 m/s moved **1.4075 m in one 0.05 s step**, which
+        is 28 m/s and 56x its own figure. That made HĐ-2.6's closed-form
+        bound for this law — ``speed`` — simply false, so a deployment
+        declaring ``v_obstacle_max`` beside a random walk would have sized
+        its braking distance for traffic 56x slower than it met.
+
+        The bound is the contract's, so it is checked as the contract
+        states it: no interval of any length may imply a speed above
+        ``speed``.
+        """
+        obstacle = self.obstacle()
+        declared = obstacle.motion.speed
+        step = 0.01
+        time = step
+        while time < 30.0:
+            before = position_at(obstacle, time - step, seed)
+            after = position_at(obstacle, time, seed)
+            travelled = math.hypot(after.x - before.x, after.y - before.y)
+            assert travelled / step <= declared + 1e-9, (
+                f"moved {travelled:.4f} m in {step} s at t={time:.2f} "
+                f"({travelled / step:.2f} m/s against a declared {declared})"
+            )
+            time += step
+
+    def test_the_declared_bound_is_the_one_max_speed_reports(self) -> None:
+        """And the two must be the same number, or the validator is
+        checking something the world does not obey."""
+        from planbench_schemas.dynamic import max_speed
+
+        obstacle = self.obstacle()
+        assert max_speed(obstacle.motion) == obstacle.motion.speed
+
 
 class TestSuddenStopMotion:
     def test_moves_then_parks(self) -> None:
@@ -155,6 +198,88 @@ class TestSuddenStopMotion:
         assert position_at(obstacle, 1.0, 0).x == pytest.approx(2.0)
         assert position_at(obstacle, 3.0, 0).x == pytest.approx(6.0)
         assert position_at(obstacle, 50.0, 0).x == pytest.approx(6.0)  # parked
+
+
+class TestSuddenStopDeclaredByItsStoppingPlace:
+    """The second way to say the same motion.
+
+    An author clicking a spot on a map means "stop there". Making them
+    convert that into an angle and a duration by hand is arithmetic the
+    schema can do — so it does, while the document being validated still
+    holds only the one description the simulator reads.
+    """
+
+    def test_a_stop_point_becomes_a_heading_and_a_duration(self) -> None:
+        motion = SuddenStopMotion.model_validate(
+            {"start": {"x": 0.0, "y": 0.0}, "speed": 2.0, "stop_point": {"x": 6.0, "y": 0.0}}
+        )
+        assert motion.heading == pytest.approx(0.0)
+        assert motion.stop_time == pytest.approx(3.0)
+
+    def test_it_resolves_to_exactly_the_motion_written_the_other_way(self) -> None:
+        """Not merely equivalent — the identical model.
+
+        This is what keeps ``_scenario_checksum`` still, and with it the
+        calibration entry and every stored report for the shipped
+        ``sudden_stop`` scenario. A stored field would have added
+        ``stop_point: null`` to every scenario carrying one of these and
+        changed the checksum of a world nobody had touched.
+        """
+        by_point = SuddenStopMotion.model_validate(
+            {"start": {"x": 1.0, "y": 1.0}, "speed": 2.0, "stop_point": {"x": 1.0, "y": 5.0}}
+        )
+        by_angle = SuddenStopMotion(start=p(1, 1), heading=math.pi / 2, speed=2.0, stop_time=2.0)
+        assert by_point == by_angle
+        assert by_point.model_dump() == by_angle.model_dump()
+        assert "stop_point" not in by_point.model_dump()
+
+    def test_it_stops_where_it_was_told_to(self) -> None:
+        obstacle = DynamicObstacle(
+            name="brake",
+            radius=0.3,
+            seed_time_offset=4.0,
+            motion=SuddenStopMotion.model_validate(
+                {"start": {"x": 0.0, "y": 0.0}, "speed": 1.5, "stop_point": {"x": 3.0, "y": 4.0}}
+            ),
+        )
+        parked = position_at(obstacle, 1000.0, 0)
+        assert parked.x == pytest.approx(3.0)
+        assert parked.y == pytest.approx(4.0)
+
+    def test_both_descriptions_at_once_are_refused(self) -> None:
+        """Two statements free to disagree, and nothing to choose between
+        them when they do."""
+        with pytest.raises(ValidationError, match="not both"):
+            SuddenStopMotion.model_validate(
+                {
+                    "start": {"x": 0.0, "y": 0.0},
+                    "speed": 2.0,
+                    "heading": 1.0,
+                    "stop_point": {"x": 6.0, "y": 0.0},
+                }
+            )
+
+    def test_stopping_where_it_started_is_refused(self) -> None:
+        """No direction can be read from a zero-length step, and an
+        obstacle that never moves is not traffic."""
+        with pytest.raises(ValidationError, match="differ from start"):
+            SuddenStopMotion.model_validate(
+                {"start": {"x": 2.0, "y": 2.0}, "speed": 1.0, "stop_point": {"x": 2.0, "y": 2.0}}
+            )
+
+    def test_a_bad_speed_is_still_reported_as_a_bad_speed(self) -> None:
+        """The resolution needs a speed to divide by. When there is not
+        one, the complaint belongs to the field that owns it rather than
+        to a second message invented here."""
+        with pytest.raises(ValidationError, match="speed"):
+            SuddenStopMotion.model_validate(
+                {"start": {"x": 0.0, "y": 0.0}, "speed": 0.0, "stop_point": {"x": 1.0, "y": 0.0}}
+            )
+
+    def test_the_old_spelling_is_untouched(self) -> None:
+        motion = SuddenStopMotion(start=p(0, 0), heading=0.0, speed=2.0, stop_time=3.0)
+        assert motion.stop_time == 3.0
+        assert motion.model_dump()["heading"] == 0.0
 
 
 class TestValidation:

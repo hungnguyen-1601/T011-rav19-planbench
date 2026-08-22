@@ -1,4 +1,8 @@
-# Agentic AI + RAG (M8)
+# Agentic AI (M8)
+
+> Bản đồ đầy đủ "AI làm được gì, kiểm ở đâu" nằm ở
+> [`AI_CAPABILITIES.md`](AI_CAPABILITIES.md). Tài liệu này đi sâu kiến
+> trúc tầng agent.
 
 Tầng agent nằm ở `services/agent_service/planbench_agent/`. Nguyên tắc
 chi phối toàn bộ thiết kế: **LLM đề xuất, hệ thống quyết định**. Mọi câu
@@ -14,12 +18,10 @@ thay đổi trạng thái đều đi qua một cổng do code kiểm soát.
 | `openai_provider.py` | Adapter cho **mọi** provider nói giao thức OpenAI Chat Completions: OpenAI, Gemini, OpenRouter, Groq, DeepSeek, xAI, model local |
 | `deterministic.py` | Responder rule-based cho `MockProvider`: chạy được toàn bộ M8 khi không có API key. |
 | `factory.py` | Chọn provider + báo trạng thái sẵn sàng của từng cái |
-| `specs.py` | NL → `MissionDraft`, validate bằng Pydantic + registry thật |
 | `gateway.py` | Protocol `AgentGateway` — đúng bằng những gì agent được phép làm |
-| `tools.py` | Tool registry, phân loại `Effect.READ/WRITE`, policy, cổng approval |
-| `evidence.py` | Thu thập bằng chứng + citation `[kind:locator]` |
-| `rag.py` | Chunk theo heading Markdown + xếp hạng TF-IDF, tất định |
-| `report.py` | Sinh báo cáo có trích dẫn + kiểm tra bịa trích dẫn |
+| `tools.py` | Tool registry, phân loại `Effect.READ/WRITE`, policy |
+| `paper.py` | Đọc paper người dùng tải lên → candidate draft, mỗi giá trị kèm câu nguồn |
+| `critique.py` | Phản biện một decision run, chồng lên luật tất định của `planbench_decision.self_check` |
 | `workflow.py` | State machine phiên làm việc + vòng lặp tool |
 
 Adapter phía API: `apps/api/planbench_api/agent_gateway.py`.
@@ -195,20 +197,29 @@ Ba trường hợp đều là refusal, trả về như một giá trị chứ kh
 Endpoint `/agent/benchmarks/{id}/evidence` phơi bày bundle riêng, để
 reviewer audit được đầu vào của báo cáo mà không cần đọc báo cáo.
 
-## RAG
+## Không có kho tài liệu, và đó là thiết kế
 
-Không dùng vector database. Ba yêu cầu thực sự quan trọng ở đây là:
-mỗi chunk có source id ổn định, cùng query trả cùng kết quả, và chạy
-offline không cần model. TF-IDF trên các section chia theo heading
-Markdown thỏa cả ba; embedding index thì không, nếu không dựng thêm hạ
-tầng.
+Trước đây tầng này có một corpus TF-IDF trên `docs/` và `contracts/` —
+136 tài liệu, 3.023 chunk. Nó đã bị gỡ bỏ hoàn toàn.
 
-Chunk id là `<tên file>#<số section>`, ví dụ
-`[document:ROS2_INTEGRATION.md#3]` — reviewer mở đúng section đó.
+Lý do: hơn một nửa corpus là tài liệu nội bộ của team — nhật ký thiết
+kế, kế hoạch, ghi chú khoá học. Một tài liệu lệch khỏi code không làm
+agent dốt đi, nó làm agent **sai một cách tự tin**, và câu trả lời sai
+đó lại kèm citation id trông rất đáng tin. Chuyện này không phải giả
+định: một tài liệu kiến trúc trong `docs/` ghi bảy stack và một
+`dwa_predictive` chưa từng tồn tại.
 
-Corpus lấy từ `PLANBENCH_AGENT_KNOWLEDGE_DIRS` (mặc định `docs`), index
-một lần lúc khởi động: corpus tĩnh trong suốt vòng đời process, index
-lại theo request sẽ khiến kết quả retrieval phụ thuộc thời điểm.
+Agent giờ lấy thông tin từ đúng hai nguồn, cả hai đều kiểm chứng được:
+
+**Database.** Mười công cụ chỉ đọc (`list_*`, `get_*`) trả về deployment,
+candidate, scenario, decision run, decision card, bảng cổng và critique
+đã lưu. Không công cụ nào có động từ ghi, và `FORBIDDEN_CAPABILITIES`
+công bố danh sách cấm qua API để kiểm được thay vì phải tin.
+
+**Paper do người dùng cung cấp.** `paper.py` đọc một tài liệu, do một
+người chọn, và mỗi tham số trích ra **phải kèm câu nguồn có thật trong
+tài liệu đó**; câu không khớp thì giá trị bị loại và đếm vào `unquoted`,
+hiển thị công khai. Đó là hợp đồng khác hẳn một corpus không ai đọc lại.
 
 ## Endpoint
 

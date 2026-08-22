@@ -56,6 +56,12 @@ DEFAULT_PROFILE = RobotProfile(
     radius=0.3,
     max_linear_velocity=1.0,
     max_angular_velocity=2.0,
+    # Declared rather than left null: this profile is the platform's own
+    # invention, and these are the numbers the simulator's default robot
+    # has always been driven with. Leaving them absent would make the one
+    # profile nobody authored the one profile that cannot fill a form.
+    max_linear_acceleration=1.0,
+    max_angular_acceleration=3.0,
     lidar_beams=24,
     lidar_range=6.0,
 )

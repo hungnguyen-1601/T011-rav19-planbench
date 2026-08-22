@@ -1,0 +1,88 @@
+{
+  "$id": "schemas/tools/get_objective_decomposition.result.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "measurements": {
+      "additionalProperties": false,
+      "properties": {
+        "contribution_u_c": {
+          "description": "Weighted contribution of comfort.",
+          "type": "number",
+          "unit": "ratio"
+        },
+        "contribution_u_e": {
+          "description": "Weighted contribution of efficiency.",
+          "type": "number",
+          "unit": "ratio"
+        },
+        "contribution_u_r": {
+          "description": "Weighted contribution of reliability.",
+          "type": "number",
+          "unit": "ratio"
+        },
+        "contribution_u_s": {
+          "description": "Weighted contribution of safety.",
+          "type": "number",
+          "unit": "ratio"
+        },
+        "delta_utility_mean": {
+          "description": "Paired mean \u0394U over the episode set.",
+          "type": "number",
+          "unit": "ratio"
+        },
+        "delta_utility_median": {
+          "description": "Paired median \u0394U; not decomposable.",
+          "type": "number",
+          "unit": "ratio"
+        },
+        "n_episodes": {
+          "description": "Paired episodes the decomposition covers.",
+          "type": "number",
+          "unit": "count"
+        }
+      },
+      "required": [
+        "delta_utility_mean",
+        "delta_utility_median",
+        "n_episodes",
+        "contribution_u_r",
+        "contribution_u_s",
+        "contribution_u_e",
+        "contribution_u_c"
+      ],
+      "type": "object"
+    },
+    "references": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": []
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ref": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "measurements"
+  ],
+  "title": "get_objective_decomposition@1.0.0 output",
+  "type": "object"
+}

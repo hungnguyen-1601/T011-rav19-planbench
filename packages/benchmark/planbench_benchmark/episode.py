@@ -1,0 +1,290 @@
+"""Running one contract episode and writing its trace (HĐ-3, HĐ-4, HĐ-5).
+
+Everything above this module works on recorded data; everything below it
+works on a `Scenario`, the simulator's own episode schema. This is the
+join: given a deployment (`TaskProfile`), a set of conditions
+(`EpisodeContext`) and a candidate, run exactly one episode and leave one
+Parquet file behind.
+
+**The context decides the conditions, the candidate decides nothing about
+them.** Map, mission, robot, timeouts, tolerances and traffic all come
+from the profile; the seed comes from the context. A candidate that could
+influence any of these would be evaluated on an environment of its own
+choosing, which is the failure HĐ-3.1 exists to prevent — so the scenario
+is built before the planners are, from inputs the candidate never sees.
+
+**One row per control step, and the trace is the only output that
+matters.** Nothing here computes a metric: the return value is a path on
+disk (HĐ-5, HĐ-6). Anything the Metrics Engine needs and the file does
+not carry is a missing column, not a reason to pass a number sideways.
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+
+from planbench_benchmark.candidates import build_planners
+from planbench_benchmark.fingerprint import execution_conditions_fingerprint
+from planbench_decision.candidate import Candidate
+from planbench_decision.card import resolve_git_sha
+from planbench_explanation.sidecar_writer import PlanningInputRecorder
+from planbench_planning.common.base import PlanResult
+from planbench_schemas.episode_context import EpisodeContext
+from planbench_schemas.map import MapData
+from planbench_schemas.robot import RobotConfig
+from planbench_schemas.scenario import Scenario
+from planbench_schemas.task_profile import Mission, TaskProfile
+from planbench_simulator.nav_stack import StackRun, run_stack
+from planbench_simulator.trace import (
+    DEFAULT_TRACE_ROOT,
+    EpisodeTraceRecorder,
+    planning_inputs_path,
+)
+
+#: Coarsest physics step the bridge will use, in seconds. 20 Hz is the
+#: simulator's own default and the fidelity the engine's collision and
+#: kinematics tests were written against; a deployment that declares a
+#: slower control loop gets a slower *controller*, not a coarser world.
+MAX_SIMULATION_DT = 0.05
+
+__all__ = [
+    "MAX_SIMULATION_DT",
+    "EpisodeSetupError",
+    "mission_for",
+    "run_contract_episode",
+    "scenario_for",
+]
+
+
+class EpisodeSetupError(ValueError):
+    """The profile and the context do not describe a runnable episode."""
+
+
+def mission_for(profile: TaskProfile, context: EpisodeContext) -> Mission:
+    """The mission this context names, or a refusal.
+
+    A context whose mission is not in the profile is not a runnable
+    episode: it names conditions from a different deployment, and running
+    it would put two deployments' episodes under one paired comparison.
+    """
+    for mission in profile.missions:
+        if mission.id == context.mission_id:
+            return mission
+    raise EpisodeSetupError(
+        f"task profile {profile.id!r} has no mission {context.mission_id!r}; this context "
+        "was generated for a different profile"
+    )
+
+
+def scenario_for(profile: TaskProfile, context: EpisodeContext) -> Scenario:
+    """The simulator's episode schema, filled entirely from the contract.
+
+    Two choices here are worth stating rather than reading off the code.
+
+    ``simulation_dt`` is capped at the deployment's ``control_period``
+    but never coarser than :data:`MAX_SIMULATION_DT`. The two are
+    different things and were briefly conflated here: the control period
+    is a *requirement* — G4's threshold, how fast the loop must be on the
+    target board — while the simulation step is a fidelity choice about
+    how finely the physics is integrated. Tying them together meant a
+    deployment could not declare a relaxed real-time budget without also
+    asking for a robot simulated in half-second jumps, which is not the
+    same experiment.
+
+    The cap in the other direction is real, though: stepping the world
+    more coarsely than the controller acts would let the robot issue
+    commands it never gets to apply.
+
+    ``stuck_time_window`` is the profile's ``stuck_threshold_s``. It is a
+    threshold the deployment declared, so leaving the simulator's default
+    in place would judge every deployment by one number nobody agreed to
+    (HĐ-7's rule, applied one layer earlier).
+    """
+    mission = mission_for(profile, context)
+    return Scenario(
+        name=context.episode_context_id,
+        description=f"{profile.id} · {mission.id} · seed {context.seed}",
+        robot=_robot_config(profile),
+        start_pose=mission.start,
+        goal_pose=mission.goal,
+        goal_tolerance=profile.constraints.goal_tolerance_m,
+        timeout_seconds=profile.constraints.episode_timeout_s,
+        simulation_dt=min(MAX_SIMULATION_DT, profile.robot.control_period),
+        dynamic_obstacles=profile.environment.dynamic_obstacles,
+        # From the deployment, like everything else here. A candidate
+        # that could declare its own noise amplitude would be choosing
+        # its own exam.
+        sensor_noise=profile.environment.sensor_noise,
+        # Same reasoning, and the same trap avoided: a candidate that
+        # could set its own clearance preference would buy a shorter
+        # route by caring less than its rivals were made to.
+        clearance_preference=profile.clearance_preference,
+        random_seed=context.seed,
+        stuck_time_window=profile.constraints.stuck_threshold_s,
+    )
+
+
+@lru_cache(maxsize=1)
+def _build_reference() -> str:
+    """``git:<40 hex>`` of the code running this sweep.
+
+    Cached: it is the same for every episode of a run, and shelling out
+    to git a few thousand times would be a measurable share of a sweep.
+    Raises rather than substituting a placeholder — a sidecar whose
+    build reference says ``unknown`` looks complete and replays nothing,
+    and the replay admission checks this field before it checks anything
+    else.
+    """
+    return f"git:{resolve_git_sha()}"
+
+
+def run_contract_episode(
+    candidate: Candidate,
+    profile: TaskProfile,
+    context: EpisodeContext,
+    map_data: MapData,
+    *,
+    root: Path | str = DEFAULT_TRACE_ROOT,
+    evidence_class: str = "production",
+    record_planning_inputs: bool = True,
+) -> tuple[Path, StackRun]:
+    """Run one episode and write its HĐ-5 trace; return where it landed.
+
+    The ``StackRun`` comes back alongside the path for callers that want
+    to log progress, **not** as a source of metrics: HĐ-5 makes the file
+    the single input of the Metrics Engine, and a caller that reads
+    numbers off this object instead has quietly created a second one.
+
+    The recorder is a context manager, so an episode that raises halfway
+    still leaves the samples it collected. A partial trace is evidence; a
+    missing one is a hole in a paired comparison.
+
+    ``record_planning_inputs`` writes the E4.5 sidecar beside the trace:
+    one record per global planning attempt, the ones that found no path
+    included, each pointing at a snapshot a replay can load. **On by
+    default**, because the whole reason the writer exists is that the
+    costmap a planner was handed cannot be recovered afterwards — a
+    sweep that ran without it produces runs whose mechanisms can never
+    be verified above ``associated``, and nothing at the time says so.
+    The flag exists for the diagnostic scripts that do not want the
+    extra artifacts, not as a performance dial.
+    """
+    global_planner, local_planner = build_planners(candidate, episode_seed=context.seed)
+    scenario = scenario_for(profile, context)
+    fingerprint = execution_conditions_fingerprint(map_data, scenario, profile)
+
+    planning_recorder = None
+    if record_planning_inputs:
+        planning_recorder = PlanningInputRecorder.to_path(
+            planning_inputs_path(
+                candidate.candidate_id,
+                context.episode_context_id,
+                root=root,
+                evidence_class=evidence_class,  # type: ignore[arg-type]
+                execution_fingerprint=fingerprint,
+            ),
+            run_id=context.episode_context_id,
+            episode_context_id=context.episode_context_id,
+            candidate_id=candidate.candidate_id,
+            execution_environment_ref=_build_reference(),
+        )
+
+    with EpisodeTraceRecorder(
+        context,
+        candidate.candidate_id,
+        root=root,
+        costmap_cells=map_data.width * map_data.height,
+        # What this episode ran under, so a later run can tell whether
+        # the file on disk describes the same world. The two ids in the
+        # path cannot answer that — HĐ-3.1 leaves the environment out of
+        # ``episode_context_id`` — and the reuse paths trusted them.
+        execution_conditions_fingerprint=fingerprint,
+        # **What this episode's evidence is worth, carried to the writer.**
+        # H9A gave traces a per-class address and then left this
+        # parameter off, so a sweep told to run the oracle lane still
+        # wrote into ``production/``: the namespace was separated and
+        # nothing was routed into it. A guard nobody reaches is not a
+        # guard, and this is the one line that makes the address real.
+        evidence_class=evidence_class,
+    ) as recorder:
+        run = run_stack(
+            map_data,
+            scenario,
+            local_planner,
+            global_planner,
+            # From the deployment, like every other condition here. It
+            # took a while to arrive: replanning existed in the simulator
+            # but no profile could declare it, so every measured episode
+            # ran with it off and nothing said so. It is applied on the
+            # path every candidate goes through — one trigger, one budget
+            # for all of them — which is what stops it being a capability
+            # one stack has and another does not.
+            profile.replanning,
+            recorder=recorder,
+            legacy_metrics=False,
+            # Same argument, one rung further: a stack allowed to back up
+            # while its rival is not would be compared on its recovery.
+            recovery=profile.recovery,
+            # And once more, for the braking bound. A candidate that
+            # could pick the traffic speed it braked for would be
+            # choosing its own exam; worse, if only one stack braked
+            # correctly for closing traffic the comparison would be
+            # measuring safety rather than the layer it names.
+            obstacle_speed=profile.environment.v_obstacle_max,
+            planning_recorder=planning_recorder,
+        )
+        if planning_recorder is not None:
+            # The runner's own count, never the writer's: a validator
+            # handed its own input can only agree with it. One initial
+            # plan plus one per replan.
+            planning_recorder.close(expected_attempts=run.replan_attempts + 1)
+        recorder.close(
+            peak_search_nodes=_search_nodes(candidate, run.plan),
+            peak_tree_nodes=_tree_nodes(candidate, run.plan),
+            global_plan_length_m=run.plan.path_length if run.plan.success else None,
+            global_plan_time_ms=run.plan.planning_time_seconds * 1000.0,
+        )
+    return recorder.path, run
+
+
+def _robot_config(profile: TaskProfile) -> RobotConfig:
+    """``TaskRobotSpec`` narrowed to what the simulator's schema takes.
+
+    ``control_period`` is deliberately dropped: it is a deployment
+    requirement (G4's threshold), not a property of the robot's physics,
+    and it reaches the simulator as ``simulation_dt`` instead. Copying it
+    into ``Scenario`` as well would give two fields one meaning.
+    """
+    fields = {name: getattr(profile.robot, name) for name in RobotConfig.model_fields}
+    return RobotConfig.model_validate(fields)
+
+
+def _search_nodes(candidate: Candidate, plan: PlanResult) -> int:
+    """``peak_search_nodes`` — graph-search nodes only (HĐ-7.3).
+
+    Both planner families report their node count in
+    ``PlanResult.expanded_nodes``, but they are counting different
+    structures: A\\* holds an open and a closed set, RRT\\* holds a tree.
+    G5 multiplies each by its own declared byte size, so routing both
+    into one field would price a tree node as a search node — and the
+    two are only equal by coincidence.
+    """
+    return 0 if _is_sampling_planner(candidate) else plan.expanded_nodes
+
+
+def _tree_nodes(candidate: Candidate, plan: PlanResult) -> int:
+    """``peak_tree_nodes`` — the RRT\\*/tree side of the same split."""
+    return plan.expanded_nodes if _is_sampling_planner(candidate) else 0
+
+
+#: Global planners whose ``expanded_nodes`` counts a tree rather than a
+#: search frontier. Listed explicitly, so adding a planner forces the
+#: question "which structure does yours count?" rather than defaulting to
+#: the wrong byte size.
+_SAMPLING_PLANNERS = frozenset({"rrtstar", "rrt"})
+
+
+def _is_sampling_planner(candidate: Candidate) -> bool:
+    planner = candidate.global_planner
+    return planner is not None and planner.name in _SAMPLING_PLANNERS

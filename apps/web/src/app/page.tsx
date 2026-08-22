@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 
 import { EmptyState } from "@/components/EmptyState";
+import { Icon } from "@/components/Icon";
 import { QuickActions } from "@/components/QuickActions";
 import { StatCard } from "@/components/StatCard";
 import { StateBadge } from "@/components/StateBadge";
@@ -39,6 +40,8 @@ function shortTime(value: string): string {
 
 const NO_STATS = {
   benchmarks: null,
+  decisions: null,
+  ranked: null,
   accepted: null,
   pendingReviews: null,
   scenarios: null,
@@ -67,15 +70,15 @@ export default function DashboardPage() {
   }, [refresh, userId]);
 
   const stats = data ? summarise(data) : NO_STATS;
-  const benchmarks = data ? recentBenchmarks(data) : [];
+  const decisions = data?.decisions ?? [];
   const simulations = data ? recentSimulations(data) : [];
   const reviews = data ? pendingForMe(data) : [];
   const signedIn = session !== null;
   const first = loading && !data;
 
   return (
-    <>
-      <div className="page-head">
+    <div className="dashboard-page">
+      <div className="page-head dashboard-head">
         <div>
           <h2>{t("dashboard.title")}</h2>
           <p>{t("dashboard.subtitle")}</p>
@@ -88,14 +91,30 @@ export default function DashboardPage() {
 
       {data?.partial && data.online ? <div className="notice">{t("dashboard.stale")}</div> : null}
 
-      <div className="stat-grid">
+      <div className="stat-grid dashboard-stat-grid">
         <StatCard
           icon="benchmark"
-          label={t("dashboard.stats.benchmarks")}
-          hint={t("dashboard.stats.benchmarksHint")}
-          value={stats.benchmarks}
+          label={t("dashboard.stats.decisions")}
+          hint={t("dashboard.stats.decisionsHint")}
+          value={stats.decisions}
           loading={first}
-          href="/benchmarks"
+          href="/decisions"
+          variant="comparison"
+        />
+        {/* Ranked beside the total, never instead of it. Most runs
+            produce no card — fewer than two candidates through the gates
+            means no ΔU (HĐ-7) — so a lone "decisions" figure beside a
+            lone "accepted" one would make four runs in five read as
+            failures, which is the pressure that once produced a card
+            bounding a collision probability off a single episode. */}
+        <StatCard
+          icon="trophy"
+          label={t("dashboard.stats.ranked")}
+          hint={t("dashboard.stats.rankedHint")}
+          value={stats.ranked}
+          loading={first}
+          href="/decisions"
+          variant="ranked"
         />
         <StatCard
           icon="check"
@@ -103,7 +122,8 @@ export default function DashboardPage() {
           hint={t("dashboard.stats.acceptedHint")}
           value={stats.accepted}
           loading={first}
-          href="/leaderboard"
+          href="/decisions"
+          variant="accepted"
         />
         <StatCard
           icon="inbox"
@@ -112,6 +132,7 @@ export default function DashboardPage() {
           value={stats.pendingReviews}
           loading={first}
           href="/reviews"
+          variant="pending"
         />
         <StatCard
           icon="library"
@@ -120,14 +141,16 @@ export default function DashboardPage() {
           value={stats.scenarios}
           loading={first}
           href="/library"
+          variant="scenario"
         />
         <StatCard
           icon="cpu"
-          label={t("dashboard.stats.algorithms")}
-          hint={t("dashboard.stats.algorithmsHint")}
+          label={t("dashboard.stats.candidates")}
+          hint={t("dashboard.stats.candidatesHint")}
           value={stats.algorithms}
           loading={first}
-          href="/algorithms"
+          href="/candidates"
+          variant="candidate"
         />
         <StatCard
           icon="play"
@@ -136,16 +159,17 @@ export default function DashboardPage() {
           value={stats.simulations}
           loading={first}
           href="/simulate"
+          variant="simulation"
         />
       </div>
 
       <QuickActions signedIn={signedIn} />
 
-      <div className="dashboard-columns">
-        <section className="panel">
+      <div className="dashboard-columns dashboard-activity-grid">
+        <section className="panel dashboard-panel dashboard-panel--decisions">
           <div className="panel-head">
-            <h3>{t("dashboard.recentBenchmarks")}</h3>
-            <Link href="/benchmarks">{t("dashboard.viewAll")}</Link>
+            <h3><span className="panel-title-icon" aria-hidden="true"><Icon name="benchmark" size={17} /></span>{t("dashboard.recentDecisions")}</h3>
+            <Link className="panel-view-all" href="/decisions">{t("dashboard.viewAll")}</Link>
           </div>
           {!signedIn ? (
             <EmptyState
@@ -155,34 +179,40 @@ export default function DashboardPage() {
               actionHref="/login"
               actionLabel={t("topbar.signIn")}
             />
-          ) : benchmarks.length === 0 ? (
+          ) : decisions.length === 0 ? (
             <EmptyState
               icon="benchmark"
-              title={t("dashboard.empty.benchmarks.title")}
-              body={t("dashboard.empty.benchmarks.body")}
-              actionHref="/benchmarks"
-              actionLabel={t("dashboard.action.createBenchmark")}
+              title={t("dashboard.empty.decisions.title")}
+              body={t("dashboard.empty.decisions.body")}
+              actionHref="/decisions"
+              actionLabel={t("dashboard.action.startComparison")}
             />
           ) : (
             <div className="table-scroll">
               <table>
                 <thead>
                   <tr>
-                    <th>{t("common.name")}</th>
+                    <th>{t("dashboard.column.deployment")}</th>
                     <th>{t("common.status")}</th>
                     <th>{t("common.created")}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {benchmarks.map((benchmark) => (
-                    <tr key={benchmark.id}>
+                  {decisions.slice(0, 5).map((run) => (
+                    <tr key={run.id}>
                       <td>
-                        <Link href={`/benchmarks/${benchmark.id}`}>{benchmark.spec.name}</Link>
+                        <Link href={`/decisions/${run.id}`}>{run.task_profile_id}</Link>
                       </td>
                       <td>
-                        <StateBadge state={benchmark.state} />
+                        {/* "No card" is an outcome, not a fault, so it is
+                            never coloured as one. */}
+                        {run.ranked ? (
+                          <span className="badge ok">{t("dashboard.ranked")}</span>
+                        ) : (
+                          <span className="badge warn">{t("dashboard.noCard")}</span>
+                        )}
                       </td>
-                      <td className="muted">{shortTime(benchmark.created_at)}</td>
+                      <td className="muted">{shortTime(run.created_at)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -191,10 +221,10 @@ export default function DashboardPage() {
           )}
         </section>
 
-        <section className="panel">
+        <section className="panel dashboard-panel dashboard-panel--reviews">
           <div className="panel-head">
-            <h3>{t("dashboard.pendingRequests")}</h3>
-            <Link href="/reviews">{t("dashboard.viewAll")}</Link>
+            <h3><span className="panel-title-icon" aria-hidden="true"><Icon name="inbox" size={17} /></span>{t("dashboard.pendingRequests")}</h3>
+            <Link className="panel-view-all" href="/reviews">{t("dashboard.viewAll")}</Link>
           </div>
           {!signedIn ? (
             <EmptyState
@@ -224,9 +254,11 @@ export default function DashboardPage() {
                   {reviews.map((view) => (
                     <tr key={view.request.id}>
                       <td>
-                        <Link href={`/benchmarks/${view.request.benchmark_id}`}>
-                          {view.benchmark_name || view.request.benchmark_id}
-                        </Link>
+                        {/* Named, not linked: the benchmark page retired
+                            in P6 and a link to it would 404. The inbox
+                            still answers what it is for — what is waiting
+                            on somebody. */}
+                        {view.benchmark_name || view.request.benchmark_id}
                       </td>
                       <td>{view.requested_by?.nickname ?? "—"}</td>
                       <td>
@@ -244,10 +276,10 @@ export default function DashboardPage() {
           )}
         </section>
 
-        <section className="panel">
+        <section className="panel dashboard-panel dashboard-panel--simulations">
           <div className="panel-head">
-            <h3>{t("dashboard.recentSimulations")}</h3>
-            <Link href="/simulate">{t("dashboard.viewAll")}</Link>
+            <h3><span className="panel-title-icon" aria-hidden="true"><Icon name="play" size={17} /></span>{t("dashboard.recentSimulations")}</h3>
+            <Link className="panel-view-all" href="/simulate">{t("dashboard.viewAll")}</Link>
           </div>
           {simulations.length === 0 ? (
             <EmptyState
@@ -286,6 +318,6 @@ export default function DashboardPage() {
           )}
         </section>
       </div>
-    </>
+    </div>
   );
 }

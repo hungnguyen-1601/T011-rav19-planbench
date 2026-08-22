@@ -225,7 +225,7 @@ export default function ReviewsPage() {
             icon="inbox"
             title={tab === "inbox" ? t("reviews.empty.inbox.title") : t("reviews.empty.sent.title")}
             body={tab === "inbox" ? t("reviews.empty.inbox.body") : t("reviews.empty.sent.body")}
-            actionHref={tab === "inbox" ? undefined : "/benchmarks"}
+            actionHref={tab === "inbox" ? undefined : "/decisions"}
             actionLabel={tab === "inbox" ? undefined : t("nav.benchmarks")}
           />
         </div>

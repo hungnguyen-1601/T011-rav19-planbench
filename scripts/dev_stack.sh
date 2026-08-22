@@ -107,8 +107,20 @@ WEB_LOG="$RUN_DIR/web.log"
 API_PID="$RUN_DIR/api.pid"
 WEB_PID="$RUN_DIR/web.pid"
 
+# Must stay in step with `pythonpath` in pyproject.toml, minus the two
+# entries that are test-only ("." and "tests"). Nothing enforces that
+# today and the drift is not hypothetical: `packages/decision` was added
+# for pytest when the decision layer landed and never added here, so the
+# suite imported `planbench_decision` happily while the *server* could
+# not start at all — the API reaches it through
+# `planbench_benchmark.candidates`, which imports it at module level.
+# A green suite said nothing about it, because pytest supplies its own
+# path and never runs this script. `tests/test_dev_stack_pythonpath.py`
+# now compares the two lists.
 PY_PATH="$ROOT/packages/schemas:$ROOT/packages/planning:$ROOT/packages/metrics"
-PY_PATH="$PY_PATH:$ROOT/packages/benchmark:$ROOT/services/simulator"
+PY_PATH="$PY_PATH:$ROOT/packages/benchmark:$ROOT/packages/decision"
+PY_PATH="$PY_PATH:$ROOT/packages/explanation:$ROOT/packages/plugin_sdk"
+PY_PATH="$PY_PATH:$ROOT/services/simulator"
 PY_PATH="$PY_PATH:$ROOT/services/tracking:$ROOT/services/agent_service"
 PY_PATH="$PY_PATH:$ROOT/ml:$ROOT/apps/api"
 
@@ -177,7 +189,13 @@ check_prerequisites() {
     die "Python environment missing. Create it once:
   cd '$ROOT'
   python3 -m venv .venv
-  .venv/bin/pip install -r docker/requirements-api.txt"
+  .venv/bin/pip install -r requirements.txt
+
+requirements.txt, not docker/requirements-api.txt. The latter builds the
+API *image* and deliberately carries no pytest, no ruff and no httpx, so
+a .venv built from it runs the server and cannot run the suite. This
+message said the wrong file until 2026-08-12; README, CI and this script
+now all name the same one."
 
   [[ -f "$ROOT/apps/web/package.json" ]] ||
     die "Frontend package.json was not found:
@@ -201,7 +219,15 @@ check_prerequisites() {
 # migration that fails here says so once, plainly, and stops.
 run_migrations() {
   if [[ -z "$PLANBENCH_DATABASE_URL" ]]; then
-    info "database  in-memory (no migrations; nothing persists)"
+    # Reached when .env contains a bare `PLANBENCH_DATABASE_URL=`. That
+    # sets the variable to an empty string, so the default a few lines
+    # above never applies — a difference between "unset" and "set to
+    # nothing" that is easy to miss and costs a whole session's work.
+    warn "database  in-memory: maps, benchmarks and accounts are lost on restart."
+    warn "          PLANBENCH_DATABASE_URL is set to an empty string in .env."
+    warn "          To keep your data, put this in .env instead:"
+    warn "              PLANBENCH_DATABASE_URL=sqlite:///$ROOT/planbench.db"
+    warn "          then run:  .venv/bin/alembic upgrade head"
     return 0
   fi
 

@@ -62,7 +62,6 @@ def main() -> int:
         print(f"deterministic: {capabilities['deterministic']}")
         print(f"tools        : {', '.join(capabilities['tools'])}")
         print(f"forbidden    : {', '.join(capabilities['forbidden'])}")
-        print(f"indexed docs : {capabilities['knowledge_documents']}")
 
         section("mission the agent cannot parse -> refusal, nothing created")
         refused = client.post(

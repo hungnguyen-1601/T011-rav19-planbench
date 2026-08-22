@@ -23,6 +23,7 @@ import {
   type FacetKind,
   type SceneOptions,
 } from "@/lib/scene25d";
+import { CAUTION_FILL, CAUTION_STROKE, KEEP_OUT_FILL, KEEP_OUT_STROKE } from "@/lib/keepOut";
 import type { MapData } from "@/lib/types";
 
 export interface Scene25DProps extends SceneOptions {
@@ -53,6 +54,8 @@ const COLOR = {
   robotSide: "#9aa3b2",
   heading: "#f0b429",
   outline: "rgba(0,0,0,0.25)",
+  obstacle: "#ff6b6b",
+  obstacleSide: "#c0454a",
 };
 
 export function Scene25D({
@@ -71,8 +74,10 @@ export function Scene25D({
   goalPose,
   robotPose,
   robotRadius = 0.3,
+  positionUncertainty = 0,
   plannedPath,
   trajectory,
+  obstacles,
 }: Scene25DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [azimuth, setAzimuth] = useState(azimuthDeg);
@@ -93,8 +98,10 @@ export function Scene25D({
       goalPose,
       robotPose,
       robotRadius,
+      positionUncertainty,
       plannedPath,
       trajectory,
+      obstacles,
     });
   }, [
     map,
@@ -109,8 +116,10 @@ export function Scene25D({
     goalPose,
     robotPose,
     robotRadius,
+    positionUncertainty,
     plannedPath,
     trajectory,
+    obstacles,
   ]);
 
   useEffect(() => {
@@ -172,6 +181,61 @@ export function Scene25D({
       ctx.moveTo(top.sx, top.sy);
       ctx.lineTo(heading.sx, heading.sy);
       ctx.stroke();
+    }
+
+    // The planner's margins, on the floor and under everything else.
+    // They are context rather than objects, so neither gets a side wall:
+    // extruding one would draw a cylinder, and a cylinder reads as a
+    // second thing standing in the room. Faint enough that the obstacle
+    // they belong to stays the subject of the picture.
+    //
+    // Two of them, and the difference matters: the inner ring is
+    // forbidden, the outer band is merely expensive. Priced band first,
+    // so the forbidden ring lands on top of it.
+    const ellipse = (
+      ring: (typeof scene.keepOut)[number],
+      fill: string,
+      stroke: string,
+      dash: number[],
+    ) => {
+      ctx.beginPath();
+      ctx.ellipse(
+        ring.base.sx,
+        ring.base.sy,
+        Math.max(2, ring.radiusX),
+        Math.max(1.5, ring.radiusY),
+        0,
+        0,
+        Math.PI * 2,
+      );
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.setLineDash(dash);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = stroke;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    };
+    for (const ring of scene.caution) {
+      ellipse(ring, CAUTION_FILL, CAUTION_STROKE, [2, 3]);
+    }
+    for (const ring of scene.keepOut) {
+      ellipse(ring, KEEP_OUT_FILL, KEEP_OUT_STROKE, [4, 4]);
+    }
+
+    for (const obstacle of scene.obstacles) {
+      const { base, top, radiusX, radiusY } = obstacle;
+      ctx.strokeStyle = COLOR.obstacleSide;
+      ctx.lineWidth = Math.max(2, radiusX * 0.6);
+      ctx.beginPath();
+      ctx.moveTo(base.sx, base.sy);
+      ctx.lineTo(top.sx, top.sy);
+      ctx.stroke();
+
+      ctx.fillStyle = COLOR.obstacle;
+      ctx.beginPath();
+      ctx.ellipse(top.sx, top.sy, Math.max(2, radiusX), Math.max(1.5, radiusY), 0, 0, Math.PI * 2);
+      ctx.fill();
     }
   }, [scene, width, height, showPlan, showTrajectory]);
 

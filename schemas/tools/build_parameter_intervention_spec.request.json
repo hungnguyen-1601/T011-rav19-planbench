@@ -1,0 +1,21 @@
+{
+  "$id": "schemas/tools/build_parameter_intervention_spec.request.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "hypothesis_id": {
+      "description": "Which hypothesis the experiment would settle.",
+      "type": "string"
+    },
+    "parameter": {
+      "description": "The single parameter to vary.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "hypothesis_id",
+    "parameter"
+  ],
+  "title": "build_parameter_intervention_spec@1.0.0 arguments",
+  "type": "object"
+}

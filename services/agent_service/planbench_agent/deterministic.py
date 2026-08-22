@@ -31,11 +31,9 @@ from planbench_agent.provider import (
     StopReason,
     ToolCall,
 )
-from planbench_agent.specs import parse_mission_text
 
-_MISSION_KEYS = {"scenario", "algorithms", "seeds"}
+_CRITIQUE_KEYS = {"summary", "findings", "ranked_rule_codes"}
 _ID = re.compile(r"\b[0-9a-f]{8,32}\b")
-_EVIDENCE_LINE = re.compile(r"^\[([a-z_]+:[A-Za-z0-9_.\-+#]+)\]\s*(.+)$")
 
 MODEL_NAME = "deterministic-mock"
 
@@ -46,8 +44,6 @@ class DeterministicResponder:
     def __call__(self, request: LLMRequest) -> LLMResponse:
         if request.output_schema is not None:
             return self._structured(request)
-        if "INSUFFICIENT EVIDENCE" in request.system:
-            return self._report(request)
         if request.tools:
             return self._tool_turn(request)
         return _text(_last_user_text(request.messages) or "no input")
@@ -55,63 +51,26 @@ class DeterministicResponder:
     # -- structured output ---------------------------------------------
 
     def _structured(self, request: LLMRequest) -> LLMResponse:
+        """The only schema this responder fills is the critique one.
+
+        It answers with *no findings*, and that is the honest answer: an
+        offline keyword matcher has no judgement to add beyond what the
+        deterministic rules already found. Inventing an objection here
+        would put noise in the one place the system is trying to keep
+        clean, and a reader could not tell it apart from a model's.
+        """
         schema = request.output_schema or {}
         properties = set((schema.get("properties") or {}).keys())
-        text = _last_user_text(request.messages)
-        if not properties >= _MISSION_KEYS:
-            # Unknown schema: refuse rather than emit something shaped
-            # roughly right. A wrong object would be validated and
-            # rejected downstream anyway, but slower and less clearly.
+        if not properties >= _CRITIQUE_KEYS:
             return _text(
-                "This deterministic provider only produces benchmark mission objects.",
+                "This deterministic provider does not fill that schema.",
                 stop_reason=StopReason.REFUSAL,
             )
-        draft = parse_mission_text(text)
-        if draft is None:
-            return _text(
-                "Could not identify a scenario from the built-in library in that request.",
-            )
         return LLMResponse(
-            structured=draft.model_dump(mode="json"),
+            structured={"summary": "", "findings": [], "ranked_rule_codes": []},
             text="",
             model=MODEL_NAME,
         )
-
-    # -- report writing --------------------------------------------------
-
-    def _report(self, request: LLMRequest) -> LLMResponse:
-        """Compose a cited summary strictly from the evidence block.
-
-        Citations are copied out of the prompt, so this responder cannot
-        fabricate one — which also means the citation validator's
-        rejection path needs a scripted provider to test, not this one.
-        """
-        prompt = _last_user_text(request.messages)
-        evidence = _parse_evidence(prompt)
-        if not evidence:
-            return _text("INSUFFICIENT EVIDENCE — no evidence block was supplied.")
-
-        question = ""
-        for line in prompt.splitlines():
-            if line.startswith("Question:"):
-                question = line.removeprefix("Question:").strip()
-                break
-
-        lines: list[str] = []
-        if question:
-            lines.append(f"Question: {question}")
-        lines.append(
-            f"Summary of {len(evidence)} recorded evidence items, reported without interpretation:"
-        )
-        for citation_id, statement in evidence:
-            lines.append(f"- {statement} [{citation_id}]")
-        lines.append(
-            "Limitations: these are simulation results only, and comparisons hold "
-            "solely within one conditions_checksum."
-        )
-        return LLMResponse(text="\n".join(lines), model=MODEL_NAME)
-
-    # -- tool calling ----------------------------------------------------
 
     def _tool_turn(self, request: LLMRequest) -> LLMResponse:
         available = {tool.name for tool in request.tools}
@@ -133,31 +92,55 @@ class DeterministicResponder:
 def _plan(text: str, first: str) -> list[tuple[str, dict[str, Any]]]:
     """Which read-only tools the request plausibly needs, in order.
 
-    Only read-only tools: this responder never proposes or runs a
-    benchmark on its own initiative. Mutating steps are driven
-    explicitly by :mod:`planbench_agent.workflow`, where the human gate
-    is visible in the code path.
+    Keyword matching, deliberately shallow. Its job is to make the
+    offline path *do* something recognisable — retrieve the run the
+    question is about, then the documentation — not to imitate
+    judgement. Every tool it can reach only reads.
     """
     lowered = f"{first}\n{text}".lower()
     plan: list[tuple[str, dict[str, Any]]] = []
     identifiers = _ID.findall(lowered)
 
     if identifiers:
-        benchmark_id = identifiers[0]
-        plan.append(("get_benchmark", {"benchmark_id": benchmark_id}))
-        plan.append(("get_benchmark_report", {"benchmark_id": benchmark_id}))
-        if any(word in lowered for word in ("episode", "fail", "collision", "why")):
-            plan.append(("list_episodes", {"benchmark_id": benchmark_id}))
-    if "leaderboard" in lowered or "rank" in lowered or "best" in lowered:
-        plan.append(("get_leaderboard", {}))
+        run_id = identifiers[0]
+        plan.append(("get_decision_run", {"run_id": run_id}))
+        plan.append(("get_gate_table", {"run_id": run_id}))
+        if any(word in lowered for word in ("recommend", "winner", "card", "choose", "chose")):
+            plan.append(("get_decision_card", {"run_id": run_id}))
+        if any(word in lowered for word in ("wrong", "doubt", "object", "critique", "trust")):
+            plan.append(("get_critique", {"run_id": run_id}))
+    if any(
+        phrase in lowered
+        for phrase in (
+            "which algorithm",
+            "which stack",
+            "should i use",
+            "should we use",
+            "recommend",
+            "nên chọn",
+            "nên dùng",
+            "chọn thuật toán",
+        )
+    ):
+        # No id argument on purpose: the gateway resolves a lone
+        # deployment itself and *names* the candidates when there are
+        # several — an answer the summary can relay, where a guessed id
+        # would be an assertion nobody made.
+        plan.append(("get_recommendation", {}))
+    if any(word in lowered for word in ("run", "comparison", "compare", "decision")):
+        plan.append(("list_decision_runs", {}))
+    if any(word in lowered for word in ("deployment", "profile", "world", "robot")):
+        plan.append(("list_deployments", {}))
+    if any(word in lowered for word in ("candidate", "stack", "planner", "algorithm")):
+        plan.append(("list_candidates", {}))
     if "scenario" in lowered:
         plan.append(("list_scenarios", {}))
-    if "algorithm" in lowered or "stack" in lowered or "planner" in lowered:
-        plan.append(("list_algorithms", {}))
     if not plan:
-        plan.append(("search_knowledge", {"query": first or text}))
-    else:
-        plan.append(("search_knowledge", {"query": first or text}))
+        # A documentation search used to be the catch-all here, and it is
+        # gone. Listing the runs is the honest replacement: it answers
+        # nothing directly, but it answers from stored data, and the
+        # summary that follows says plainly that nothing was asserted.
+        plan.append(("list_decision_runs", {}))
     return plan
 
 
@@ -182,15 +165,6 @@ def _summarise(messages: Sequence[LLMMessage]) -> str:
 def _clip(text: str, limit: int = 400) -> str:
     collapsed = " ".join(text.split())
     return collapsed if len(collapsed) <= limit else collapsed[: limit - 1] + "…"
-
-
-def _parse_evidence(prompt: str) -> list[tuple[str, str]]:
-    found: list[tuple[str, str]] = []
-    for line in prompt.splitlines():
-        match = _EVIDENCE_LINE.match(line.strip())
-        if match:
-            found.append((match.group(1), match.group(2).strip()))
-    return found
 
 
 def _called_tools(messages: Sequence[LLMMessage]) -> set[str]:
