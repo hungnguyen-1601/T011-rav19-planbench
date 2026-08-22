@@ -1282,6 +1282,15 @@ function ExportReport({ runId }: { runId: string }) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState<"md" | "xlsx" | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
+  /** The last file that actually reached the disk.
+   *
+   * `downloadReport` has always returned the name the browser saved
+   * under — read off `Content-Disposition`, so it is what is really in
+   * the folder rather than what this page would have guessed — and this
+   * component was throwing it away. A download that leaves no trace on
+   * the page is one the reader has to go and look for to confirm.
+   */
+  const [saved, setSaved] = useState<{ format: "md" | "xlsx"; filename: string } | null>(null);
 
   /** One handler, because the only difference is which document the API
    *  builds — the fetch, the Blob and the failure path are identical,
@@ -1289,24 +1298,45 @@ function ExportReport({ runId }: { runId: string }) {
   const save = (format: "md" | "xlsx") => {
     setBusy(format);
     setFailed(null);
+    // Both cleared together: a fresh attempt has neither succeeded nor
+    // failed yet, and leaving last time's filename beside a spinner
+    // says the new one is already done.
+    setSaved(null);
     const download = format === "md" ? downloadDecisionReport : downloadDecisionWorkbook;
     void download(runId)
+      .then((filename) => setSaved({ format, filename }))
       .catch((caught) => setFailed(caught instanceof Error ? caught.message : String(caught)))
       .finally(() => setBusy(null));
   };
 
+  /** No fourth button for "download again". The button that produced
+   *  the file still works, so a second one beside it would be two
+   *  controls for one action — the saved line names what came out and
+   *  says the button is how to get it again. */
+  const label = (format: "md" | "xlsx", idle: string) =>
+    busy === format
+      ? t("decisions.export.busy")
+      : saved?.format === format
+        ? t("decisions.export.again")
+        : idle;
+
   return (
     <div className="decision-export">
       <button type="button" disabled={busy !== null} onClick={() => save("md")}>
-        {busy === "md" ? t("decisions.export.busy") : t("decisions.export.markdown")}
+        {label("md", t("decisions.export.markdown"))}
       </button>
       {/* Excel beside Markdown rather than replacing it: one goes in a
           ticket, the other into a spreadsheet, and they are read by
           different people. */}
       <button type="button" disabled={busy !== null} onClick={() => save("xlsx")}>
-        {busy === "xlsx" ? t("decisions.export.busy") : t("decisions.export.excel")}
+        {label("xlsx", t("decisions.export.excel"))}
       </button>
       {failed ? <span className="error-text">{failed}</span> : null}
+      {saved ? (
+        <span className="decision-export__saved">
+          {t("decisions.export.saved", { filename: saved.filename })}
+        </span>
+      ) : null}
     </div>
   );
 }

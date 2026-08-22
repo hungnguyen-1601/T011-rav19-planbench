@@ -3862,19 +3862,30 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
    apart. */
 .comparison-cell + .comparison-cell { border-left: 1px solid var(--border); }
 
+/* **Nothing on a table cell may set `display`.**
+   ===================================================================
+   These class names are on `<th>` and `<td>` now. A table cell given
+   `display: grid` stops being a table cell, and the browser then wraps
+   every consecutive non-cell child of the row into one *anonymous*
+   cell — so both candidates land in a single column, stacked, and the
+   table quietly becomes a two-column layout. Internal layout goes on a
+   wrapper inside the cell. */
 .comparison-grid-head {
-  display: grid;
   text-align: left;
-  /* Two tracks, not three: the 34px `cpu` icon that used to open this
-     cell is gone. It was the same glyph on both candidates and on the
-     page header, so it distinguished nothing and said nothing — it just
-     took the width the heading needed. */
+  vertical-align: bottom;
+  padding-top: var(--space-4);
+  padding-bottom: var(--space-4);
+  border-top: 3px solid transparent;
+}
+/* Two tracks, not three: the 34px `cpu` icon that used to open this cell
+   is gone. It was the same glyph on both candidates and on the page
+   header, so it distinguished nothing — it just took the width the
+   heading needed. */
+.comparison-grid-head .head-inner {
+  display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  padding-top: 14px;
-  padding-bottom: 14px;
-  border-top: 3px solid transparent;
+  gap: var(--space-3);
 }
 .comparison-grid-head.candidate-a { border-top-color: var(--candidate-a); }
 .comparison-grid-head.candidate-b { border-top-color: var(--candidate-b); }
@@ -3887,7 +3898,8 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
 .comparison-grid-head.candidate-b h4 { color: var(--candidate-b); }
 .candidate-secondary { display: block; color: var(--muted); font-size: var(--fs-sm); }
 
-.comparison-flags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* On the wrapper span inside the cell, never on the cell. */
+.comparison-flags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
 .comparison-flags .badge { font-size: 12px; }
 
 /* Bold and a size up: the gutter is the column a reader scans to
@@ -3908,12 +3920,16 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
    Centring, which this used to do, threw the alignment away entirely
    *and* cancelled the `tabular-nums` declared right beside it. */
 .comparison-value {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 2.6em;
-  align-items: baseline;
   font: 700 16px var(--font-mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+/* The two slots live on a wrapper inside the cell, for the reason set
+   out above the column-head rule: a cell that is a grid is not a cell. */
+.comparison-value .value-figure {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.6em;
+  align-items: baseline;
 }
 .comparison-value .num { text-align: right; }
 /* Rendered even when empty: dropping the slot for a unitless row lets
@@ -3985,27 +4001,32 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
   white-space: nowrap;
   color: var(--muted);
 }
-/* Leading a metric is a **background**, never a colour.
+/* Ahead in green, behind in red — An's call, and worth writing down
+   what it costs so a later reader does not "fix" it back.
    ===================================================================
-   This used to be `color: var(--ok)` — the same green as `.badge.ok`,
-   which on this very table means "cleared every gate". One colour was
-   saying two unrelated things, and after the gate verdict moved up to
-   the column head the two sat inches apart: a green badge above a
-   column of green numbers, where the badge means a candidate is
-   admissible and the numbers only mean it is 0.1 s quicker.
+   `--ok` is also the colour of the `G1–G6 cleared` badge at the top of
+   the same column, and `--err` of `blocked at G3`. So a green number
+   sits under a green badge meaning something else: the badge says the
+   candidate is *admissible*, the number says it is a tenth of a second
+   quicker. The colours are doing two jobs at once, and this table is
+   read for the comparison — which is the job An asked them to do here.
 
-   Green also overclaims. A gate verdict is pass or fail; leading a
-   metric is a comparison, and the margin can be a rounding error the
-   ΔU interval cannot separate. A tint says "this one is ahead here"
-   without borrowing the vocabulary of a safety verdict.
+   Two things keep that from overclaiming:
 
-   The old declaration also carried `var(--ok, #3f9a5a)` — a literal
-   fallback for a token that exists. That is the shape of the three
-   bugs `tokens.test.ts` was written for: a fallback makes a missing
-   token quieter, not more correct. */
+   - **Only a real comparison is marked.** A tie, an unrecorded value and
+     a row with no direction all stay uncoloured, so red never appears
+     under a candidate that merely failed to record something. That rule
+     lives in `standings()`, not here.
+   - **Colour is never the only signal.** The leader keeps its weight,
+     and both sides carry the word in an `sr-only` span — a red number is
+     nothing at all to a colourblind reader, and this change is what
+     makes the *losing* side depend on colour for the first time. */
 .comparison-value.is-best {
-  background: var(--accent-soft);
+  color: var(--ok);
   font-weight: 700;
+}
+.comparison-value.is-worst {
+  color: var(--err);
 }
 
 /* The six-cell gate grid, now inside a collapsed <details> below the
@@ -4115,6 +4136,10 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
 .comparison-host-warning svg { flex: none; margin-top: 2px; }
 /* Two export formats, side by side. */
 .decision-export { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* What actually reached the disk, named. Muted rather than a success
+   banner: the file arriving is the ordinary outcome, and the line is
+   there to be checked against the Downloads folder, not celebrated. */
+.decision-export__saved { color: var(--muted); font-size: 12px; }
 
 /* Which stack to use. Two groups with a line between them: inside a
    group the mark ranks, across the line it does not compare — a gate

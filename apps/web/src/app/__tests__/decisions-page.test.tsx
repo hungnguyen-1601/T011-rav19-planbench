@@ -375,6 +375,55 @@ describe("the two human acts sit below the evidence", () => {
   });
 });
 
+describe("the export controls", () => {
+  it("names both formats as an action rather than as a file extension", () => {
+    /* `Excel (.xlsx)` beside `Export Markdown` reads as two different
+       kinds of thing — one a verb, one a suffix. Both are the same
+       action on the same run. */
+    expect((en as Record<string, string>)["decisions.export.excel"]).toBe("Export Excel");
+    expect((vi as Record<string, string>)["decisions.export.excel"]).toBe("Xuất Excel");
+  });
+
+  it("keeps the filename the browser actually saved under", () => {
+    /* `downloadReport` reads it off `Content-Disposition`, so it is what
+       is really in the folder rather than what this page would guess.
+       The component used to discard it, which left a completed download
+       with no trace on the page at all. */
+    expect(DETAIL).toContain(".then((filename) => setSaved({ format, filename }))");
+    expect(DETAIL).toContain('t("decisions.export.saved", { filename: saved.filename })');
+  });
+
+  it("offers the second download through the button that made the first", () => {
+    /* Not a fourth control. The button still works; the saved line names
+       what came out and the label says the button is how to get it
+       again. */
+    expect(DETAIL).toContain('t("decisions.export.again")');
+    expect((en as Record<string, string>)["decisions.export.again"]).toBeTruthy();
+    expect((vi as Record<string, string>)["decisions.export.again"]).toBeTruthy();
+  });
+
+  it("clears the last filename when a new attempt starts", () => {
+    /* Last time's filename beside a spinner says the new one is already
+       done. Both the error and the saved line go together. */
+    const save = DETAIL.slice(
+      DETAIL.indexOf('const save = (format: "md" | "xlsx")'),
+      DETAIL.indexOf("const download = format ==="),
+    );
+    expect(save).toContain("setFailed(null)");
+    expect(save).toContain("setSaved(null)");
+  });
+
+  it("styles the saved line off the palette rather than a literal colour", () => {
+    expect(CSS).toContain(".decision-export__saved");
+    const rule = CSS.slice(
+      CSS.indexOf(".decision-export__saved"),
+      CSS.indexOf("}", CSS.indexOf(".decision-export__saved")),
+    );
+    expect(rule).toContain("var(--muted)");
+    expect(rule).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+  });
+});
+
 describe("starting a sweep from the page", () => {
   it("queues rather than running inside the request", () => {
     /* The episode count comes from the deployment's declared collision
@@ -1105,7 +1154,13 @@ describe("the value cell aligns its decimals", () => {
     );
     expect(rule).not.toContain("text-align: center");
     expect(rule).toContain("font-variant-numeric: tabular-nums");
-    expect(rule).toContain("grid-template-columns");
+    /* The two slots moved onto `.value-figure` inside the cell: these
+       class names sit on `<td>` now, and a table cell given a grid
+       display stops being a table cell — which collapsed both candidates
+       into one column. The claim is unchanged, the layout just cannot
+       live on the cell itself. */
+    expect(CSS).toContain(".comparison-value .value-figure {");
+    expect(CSS.slice(CSS.indexOf(".comparison-value .value-figure {"), CSS.indexOf("}", CSS.indexOf(".comparison-value .value-figure {")))).toContain("grid-template-columns");
   });
 
   it("gives the unit its own lane, in the sans face", () => {
@@ -1131,35 +1186,45 @@ describe("the value cell aligns its decimals", () => {
   });
 });
 
-describe("leading a metric stopped borrowing the gate colour", () => {
+describe("ahead in green, behind in red", () => {
   const bestRule = () => {
     const at = CSS.indexOf(".comparison-value.is-best {");
     return CSS.slice(at, CSS.indexOf("}", at));
   };
+  const worstRule = () => {
+    const at = CSS.indexOf(".comparison-value.is-worst {");
+    return CSS.slice(at, CSS.indexOf("}", at));
+  };
 
-  it("marks the leader with a background, not with green text", () => {
-    /* `color: var(--ok)` is the green `.badge.ok` uses for "cleared
-       every gate". After the gate verdict moved to the column head the
-       two sat inches apart in one table: a green badge above a column of
-       green numbers, where the badge means a candidate is admissible and
-       the numbers mean it is 0.1 s quicker. */
-    expect(bestRule()).not.toContain("color:");
-    expect(bestRule()).toContain("background: var(--accent-soft)");
+  it("colours both sides of a decided row", () => {
+    /* An's call, over an earlier version that used a neutral tint. The
+       cost is real and is written into the stylesheet beside the rule:
+       `--ok` is also the `G1–G6 cleared` badge at the top of the same
+       column, so a green number sits under a green badge that means
+       something else. This table is read for the comparison. */
+    expect(bestRule()).toContain("color: var(--ok)");
+    expect(worstRule()).toContain("color: var(--err)");
   });
 
-  it("keeps a signal that survives greyscale", () => {
-    /* A tint alone is a colour-only cue. The weight carries the same
-       claim without it, and the screen reader gets it in words. */
+  it("marks only a comparison that actually happened", () => {
+    /* A tie, an unrecorded value and a directionless row stay
+       uncoloured. Red under a candidate whose run merely did not keep a
+       figure would be the same class of claim as printing that figure
+       as zero. The rule lives in `standings()`. */
+    expect(GRID).toContain("standings(metric)");
+    expect(GRID).not.toContain("leaders(metric)");
+  });
+
+  it("never lets colour be the only signal", () => {
+    /* This change is what makes the *losing* side depend on colour for
+       the first time, so both sides carry the word. A red number is
+       nothing at all to a colourblind reader. */
     expect(bestRule()).toContain("font-weight: 700");
-    expect(GRID).toContain('<span className="sr-only"> ({t("running.leads")})</span>');
-  });
-
-  it("leaves green meaning exactly one thing", () => {
-    /* The gate badge keeps it — that is the meaning worth a state
-       colour, because a gate verdict is pass or fail rather than a
-       comparison whose margin may be a rounding error. */
-    const badge = CSS.slice(CSS.indexOf(".badge.ok {"), CSS.indexOf("}", CSS.indexOf(".badge.ok {")));
-    expect(badge).toContain("color: var(--ok)");
+    expect(GRID).toContain('t(mark[index] === "lead" ? "running.leads" : "running.trails")');
+    for (const dict of [en, vi] as Record<string, string>[]) {
+      expect(dict["running.leads"]).toBeTruthy();
+      expect(dict["running.trails"]).toBeTruthy();
+    }
   });
 
   it("does not carry a literal fallback for a token that exists", () => {
@@ -1167,6 +1232,7 @@ describe("leading a metric stopped borrowing the gate colour", () => {
        was written for: a fallback makes a missing token quieter, not
        more correct. */
     expect(bestRule()).not.toMatch(/#[0-9a-fA-F]{3,6}/);
+    expect(worstRule()).not.toMatch(/#[0-9a-fA-F]{3,6}/);
   });
 });
 
