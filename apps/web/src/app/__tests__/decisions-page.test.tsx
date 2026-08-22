@@ -190,11 +190,21 @@ describe("the detail page leads with the gate table", () => {
 });
 
 describe("a run with no card says which situation it is in", () => {
-  it("distinguishes all three, because each asks for a different action", () => {
-    for (const reason of ["interrupted", "gate_only", "no_survivors"]) {
+  it("distinguishes all four, because each asks for a different action", () => {
+    for (const reason of ["interrupted", "gate_only", "single_survivor", "no_survivors"]) {
+      expect(en).toHaveProperty(`decisions.reason.${reason}`);
+      expect(vi).toHaveProperty(`decisions.reason.${reason}`);
       expect(en).toHaveProperty(`decisions.noCard.whatNext.${reason}`);
       expect(vi).toHaveProperty(`decisions.noCard.whatNext.${reason}`);
     }
+  });
+
+  it("does not claim nobody cleared on the run where somebody did", () => {
+    /* The one-survivor sentence exists because the shared one said the
+       opposite of the gate column beside it. */
+    const sole = (en as Record<string, string>)["decisions.reason.single_survivor"];
+    expect(sole.toLowerCase()).toContain("one candidate");
+    expect(sole.toLowerCase()).not.toContain("no candidate");
   });
 
   it("tells the reader what to do next rather than only what happened", () => {

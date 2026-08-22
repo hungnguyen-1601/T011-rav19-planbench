@@ -841,22 +841,44 @@ export const GATES = ["G1", "G2", "G3", "G4", "G5", "G6"] as const;
 /** Why this run produced no card — reduced to the one thing a reader
  *  has to do about it.
  *
- * Three outcomes, three different next actions, and collapsing them into
+ * Four outcomes, four different next actions, and collapsing them into
  * "no card" is what makes a gate table read like a failure:
  *
  * - `interrupted` — the run stopped early; what it did measure is valid
  *   and smaller. Run the rest.
  * - `gate_only` — this *deployment* cannot rank at all. No candidate
  *   would ever change that; use one whose threshold leaves room above it.
- * - `no_survivors` — fewer than two candidates cleared the gates.
- *   Register a better candidate. Never a softer deployment.
+ * - `single_survivor` — exactly one candidate cleared every gate. There
+ *   is a working stack here; what is missing is something to compare it
+ *   against. Register a second candidate that clears.
+ * - `no_survivors` — nobody cleared. Register a better candidate. Never
+ *   a softer deployment.
+ *
+ * **The last two used to be one.** `no_survivors` covered "fewer than
+ * two cleared", and its copy says nobody did — which is the opposite of
+ * what the table says three rows up on a run where one candidate carries
+ * `G1-G6 all pass`. A reader who trusts the sentence and a reader who
+ * trusts the table reach different conclusions from the same screen, and
+ * one of them is wrong because of wording alone.
  */
-export type NoCardReason = "interrupted" | "gate_only" | "no_survivors" | null;
+export type NoCardReason =
+  | "interrupted"
+  | "gate_only"
+  | "single_survivor"
+  | "no_survivors"
+  | null;
 
 export function noCardReason(run: DecisionRun): NoCardReason {
   if (run.ranked) return null;
   if (run.report?.sample?.interrupted) return "interrupted";
   if (run.report?.gate_only_deployment) return "gate_only";
+  // `cleared_gates` is the candidate's own verdict on all six, already
+  // computed upstream — the same field `gateSummary` counts, so the
+  // sentence here and the badge over the gate detail cannot disagree.
+  const cleared = (run.report?.candidates ?? []).filter(
+    (candidate) => candidate.cleared_gates,
+  ).length;
+  if (cleared === 1) return "single_survivor";
   return "no_survivors";
 }
 

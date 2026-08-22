@@ -72,6 +72,7 @@ function summarise(runs: DecisionRun[]) {
 const REASON_TONE: Record<Exclude<NoCardReason, null>, string> = {
   interrupted: "warn",
   gate_only: "muted-badge",
+  single_survivor: "muted-badge",
   no_survivors: "muted-badge",
 };
 

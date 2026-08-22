@@ -123,7 +123,12 @@ export function runOutcome(run: DecisionRun): RunOutcome {
   const reason = noCardReason(run);
   if (reason === "interrupted") return "interrupted";
   if (reason === "gate_only") return "gate_only";
-  if (reason === "no_survivors") return "no_survivors";
+  // One survivor and none share this outcome, and deliberately so: the
+  // split `noCardReason` makes is about what the reader should *do*, and
+  // this taxonomy is about whether a comparison exists at all. Neither
+  // case has one. What differs between them is the sentence and the next
+  // action, and both of those are said by `Outcome`, not here.
+  if (reason === "no_survivors" || reason === "single_survivor") return "no_survivors";
   if (run.report?.sample?.interrupted) return "interrupted";
   const status = (run.card as { status?: string } | null)?.status;
   return status === "NEAR_EQUIVALENT" ? "near_equivalent" : "clear";

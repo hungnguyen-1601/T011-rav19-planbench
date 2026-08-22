@@ -112,7 +112,45 @@ describe("why a run produced no card", () => {
     delete (old.report.sample as { interrupted?: unknown }).interrupted;
     expect(noCardReason(old)).toBe("no_survivors");
   });
+
+  it("tells one survivor from none", () => {
+    /* The two used to share `no_survivors`, whose copy says nobody
+       cleared — which contradicts the table on the same screen when one
+       candidate carries G1-G6 all pass. */
+    const one = run();
+    one.report.candidates = [
+      cleared("astar+dwa", true),
+      cleared("rrtstar+dwa", false),
+    ] as typeof one.report.candidates;
+    expect(noCardReason(one)).toBe("single_survivor");
+  });
+
+  it("still reports no survivors when nobody cleared", () => {
+    const none = run();
+    none.report.candidates = [
+      cleared("astar+dwa", false),
+      cleared("rrtstar+dwa", false),
+    ] as typeof none.report.candidates;
+    expect(noCardReason(none)).toBe("no_survivors");
+  });
+
+  it("does not claim a single survivor when two cleared and no card came back", () => {
+    /* Two candidates through the gates and still no card is a different
+       story — a tie, a missing statistic — and it is not this function's
+       to tell. It must not borrow the one-survivor sentence for it. */
+    const two = run();
+    two.report.candidates = [
+      cleared("astar+dwa", true),
+      cleared("rrtstar+dwa", true),
+    ] as typeof two.report.candidates;
+    expect(noCardReason(two)).toBe("no_survivors");
+  });
 });
+
+/** The two fields `noCardReason` reads off a candidate, and nothing else. */
+function cleared(candidateId: string, clearedGates: boolean) {
+  return { candidate_id: candidateId, cleared_gates: clearedGates };
+}
 
 describe("how much of the requested run this covers", () => {
   it("is one when the run finished", () => {
