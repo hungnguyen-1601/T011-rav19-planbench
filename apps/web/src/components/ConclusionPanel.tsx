@@ -182,8 +182,12 @@ function Group({
                 {mark === null ? t("conclusion.unscored") : `${mark} / 100`}
               </span>
             </div>
+            {/* **Hatched when the gates removed it**, rather than
+                greyed. Grey reads as "scored low", and a blocked
+                candidate can hold the higher mark: the score never
+                entered into its elimination. */}
             <div
-              className="conclusion-bar"
+              className={`conclusion-bar${standing.eligible ? "" : " is-blocked"}`}
               role="img"
               aria-label={
                 mark === null
@@ -193,15 +197,23 @@ function Group({
             >
               <span style={{ width: `${(standing.utility ?? 0) * 100}%` }} />
             </div>
+            {/* **The four objectives, named.** `u_R 1.00  u_S 1.00  u_E
+                0.57  u_C 0.96` is four letters a reader has to hover
+                one at a time to decode, on the panel that explains the
+                mark above it. The symbol stays — it is what the
+                workbook, the packet and the contract all call these —
+                but the word goes first, because the word is what makes
+                the row readable without a tooltip. */}
             {standing.objectives ? (
               <div className="conclusion-objectives">
                 {OBJECTIVES.map((key) => (
                   <span key={key}>
                     <Hint
                       text={t(`conclusion.objective.${key}`)}
-                      label={key}
+                      label={t(`conclusion.objectiveName.${key}`)}
                     />
-                    <code>{key}</code> {standing.objectives![key].toFixed(2)}
+                    {t(`conclusion.objectiveName.${key}`)} <code>{key}</code>{" "}
+                    {standing.objectives![key].toFixed(2)}
                   </span>
                 ))}
               </div>

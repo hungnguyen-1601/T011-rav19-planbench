@@ -4442,3 +4442,67 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
   .decision-summary-body { grid-template-columns: minmax(0, 1fr); }
   .decision-advice-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* The reading of the table, and the picture of it.
+   ===================================================================
+   Ten metrics against two candidates is eighty digits, and every reader
+   was being asked to do the same diff by eye and arrive at the same
+   three sentences. The insights are that reading; the bars are the
+   shape a reader would otherwise have built in their head. */
+.tradeoff-panel { padding: 0; overflow: hidden; }
+.tradeoff-panel > .panel-head { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
+.tradeoff-list { margin: 0; padding: var(--space-3) var(--space-4) var(--space-3) var(--space-6); }
+.tradeoff-list li + li { margin-top: var(--space-2); }
+.tradeoff-list li { font-size: var(--fs-body); line-height: 1.5; }
+/* The rows an insight was read off, so every claim is checkable against
+   the table above rather than taken on trust. */
+.tradeoff-metrics { color: var(--muted); font-size: var(--fs-sm); }
+.tradeoff-tradeoff { font-weight: 600; }
+.tradeoff-unmeasured,
+.tradeoff-atLimit { color: var(--muted); }
+
+.tradeoff-bars { padding: 0 var(--space-4) var(--space-3); border-top: 1px solid var(--border); }
+.tradeoff-bar-row {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+.tradeoff-bar-label { color: var(--muted); font-size: var(--fs-sm); }
+.tradeoff-bar-pair { display: grid; gap: var(--space-1); }
+.tradeoff-bar-line {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) 96px;
+  align-items: center;
+  gap: var(--space-2);
+}
+.tradeoff-bar-name { overflow: hidden; color: var(--muted); font-size: var(--fs-caption); text-overflow: ellipsis; white-space: nowrap; }
+.tradeoff-bar-track { height: 8px; border-radius: 4px; background: var(--panel-2); }
+.tradeoff-bar-track.candidate-a { --bar: var(--candidate-a); }
+.tradeoff-bar-track.candidate-b { --bar: var(--candidate-b); }
+.tradeoff-bar-fill { display: block; height: 100%; border-radius: 4px; background: var(--bar, var(--muted)); }
+/* The leader keeps the candidate's own colour and gains weight. Painting
+   it green would put the identity colour and the outcome colour on the
+   same swatch, which is the collision the table below already refuses. */
+.tradeoff-bar-fill.is-lead { box-shadow: inset 0 0 0 1px var(--text); }
+.tradeoff-bar-value {
+  font: 600 var(--fs-sm) var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+/* A normalised bar with no scale beside it is the chart equivalent of a
+   percentage with no denominator. */
+.tradeoff-scale-note { margin: var(--space-2) 0 0; color: var(--muted); font-size: var(--fs-sm); }
+
+/* Blocked at the gates, on the score panel — same reading as the summary
+   at the top of the page, same reason for not using grey. */
+.conclusion-bar.is-blocked > span {
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+}
+
+@media (max-width: 1180px) {
+  .tradeoff-bar-row { grid-template-columns: minmax(0, 1fr); }
+  .tradeoff-bar-line { grid-template-columns: 96px minmax(0, 1fr) 80px; }
+}

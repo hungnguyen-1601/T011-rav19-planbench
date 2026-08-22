@@ -21,6 +21,7 @@ import { ComparisonGrid } from "@/components/ComparisonGrid";
 import { ConclusionPanel } from "@/components/ConclusionPanel";
 import { DecisionSummary } from "@/components/DecisionSummary";
 import { DecisionAdvice } from "@/components/DecisionAdvice";
+import { TradeoffInsights } from "@/components/TradeoffInsights";
 import { runBadge } from "@/lib/conclusion";
 import { Hint } from "@/components/Hint";
 import { type HeadingField, candidateNames, headingField } from "@/lib/candidateHeading";
@@ -159,6 +160,11 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
       <DecisionSummary run={run} />
       <DecisionAdvice run={run} />
       <CandidateComparison run={run} />
+      {/* Directly under the table it reads. Ten metrics against two
+          candidates is eighty digits, and every reader was being asked
+          to do the same diff by eye and reach the same three
+          sentences. */}
+      <TradeoffInsights run={run} />
       <ExplanationHeader run={run} />
       <EvidencePanel run={run} />
       {/* The marks come after the evidence that justifies them, and the
