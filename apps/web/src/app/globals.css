@@ -262,7 +262,23 @@ body {
      a webfont could change `--font-sans` and body text would carry on
      in the system face until somebody noticed. One stack, one place. */
   font-family: var(--font-sans);
-  font-size: 14px;
+  /* 13px, from 14. This is the "semi-compact" base — but read what it
+     actually reaches before expecting the whole app to shrink: 154 of
+     the 172 `font-size` declarations in this file are in `px` and pin
+     their own size, so what moves is *inherited* text (a paragraph, a
+     cell, a control that never named a size) and the three `rem` rules
+     near the episode panel. Making the rest compact is the later steps'
+     work, one component at a time. */
+  font-size: var(--fs-body);
+  /* **The change with the widest reach on this line.** There was no
+     global `line-height` at all, so body text ran at the browser
+     default — around 1.15–1.2 depending on the face's own metrics. At
+     that spacing Vietnamese stacked diacritics collide with the line
+     above: `ế`, `ữ` and `ộ` put a mark on top of a mark, and the tittle
+     of the upper line has nowhere to go. 1.5 is the floor for this
+     alphabet, not a taste. Inherited, so it reaches every element that
+     has not set its own — which is most of them. */
+  line-height: 1.5;
 }
 
 a {
@@ -3378,7 +3394,14 @@ main.content.bare-page {
   border: 1px solid var(--border);
   border-top: 0;
   color: var(--muted);
-  font-size: .78rem;
+  /* Was `.78rem`. Three `font-size` rules in this file were in `rem` and
+     so were the only ones that moved when the base dropped from 14px to
+     13 — and they moved the wrong way: this one from 10.9px to 10.1px,
+     and the header label below from 10.5px to 9.75px, under
+     `--fs-caption`, the smallest step the scale defines, on text that
+     carries Vietnamese diacritics. Pinned to the scale instead, where
+     every other size in this file already is. */
+  font-size: var(--fs-sm);
 }
 
 .episode-legend > span { display: inline-flex; align-items: center; gap: 6px; }
@@ -3419,7 +3442,7 @@ main.content.bare-page {
   border-bottom: 1px solid var(--border);
 }
 
-.episode-candidate > header span:first-child { font-size: 0.75rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.episode-candidate > header span:first-child { font-size: var(--fs-caption); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .episode-candidate > header h4 { margin: 4px 0; }
 
 .episode-map {
@@ -3462,7 +3485,7 @@ main.content.bare-page {
 }
 
 .episode-metrics > div { min-width: 0; padding: 12px 14px; background: var(--panel); }
-.episode-metrics dt { color: var(--muted); font-size: .78rem; }
+.episode-metrics dt { color: var(--muted); font-size: var(--fs-sm); }
 .episode-metrics dd { margin: 5px 0 0; font-weight: 750; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 
 .decision-sample-panel tbody tr[tabindex] { cursor: pointer; transition: background-color .15s ease; }

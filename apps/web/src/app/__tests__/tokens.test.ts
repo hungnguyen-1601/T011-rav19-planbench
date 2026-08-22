@@ -204,3 +204,42 @@ describe("the font contract", () => {
     expect(readme).toContain("OFL-1.1");
   });
 });
+
+describe("the base every unstyled element inherits", () => {
+  /* Line endings normalised first: this file is checked out with CRLF,
+     so an anchor written with `\n` finds nothing — and `slice(-1, …)`
+     then returns an empty string rather than throwing, so every
+     assertion below would pass against nothing at all. The guard is
+     there because that is exactly how it failed the first time. */
+  const base = () => {
+    const flat = CSS.replace(/\r\n/g, "\n");
+    const at = flat.indexOf("\nhtml,\nbody {");
+    expect(at, "the base rule is no longer where this test looks").toBeGreaterThan(-1);
+    return withoutComments(flat.slice(at, flat.indexOf("\n}", at)));
+  };
+
+  it("gives body text a line-height Vietnamese can live at", () => {
+    /* There was no global `line-height`, so body text ran at the
+       browser default — about 1.15–1.2 depending on the face's metrics.
+       At that spacing `ế`, `ữ` and `ộ` put a mark on top of a mark and
+       collide with the line above. This is a floor for the alphabet,
+       not a preference. */
+    expect(base()).toContain("line-height: 1.5");
+  });
+
+  it("takes its size from the scale rather than a loose number", () => {
+    expect(base()).toContain("font-size: var(--fs-body)");
+    expect(base()).not.toMatch(/font-size: *\d+px/);
+  });
+
+  it("leaves no font-size measured in rem", () => {
+    /* Those were the only declarations that moved when the base changed,
+       and they moved the wrong way: two of the three fell below
+       `--fs-caption`, the smallest step the scale defines, on text
+       carrying Vietnamese diacritics. Every size in this file is now
+       pinned, so changing the base cannot silently shrink one component
+       past the floor. */
+    expect(withoutComments(CSS)).not.toMatch(/font-size: *[\d.]+rem/);
+  });
+
+});
