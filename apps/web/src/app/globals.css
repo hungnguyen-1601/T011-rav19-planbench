@@ -823,14 +823,33 @@ button {
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  padding: 6px var(--space-3);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-body);
+  /* **`min-height`, not `height`.**
+     ===================================================================
+     There are 102 buttons in this app and they are not one shape: icon
+     buttons, a sidebar toggle, episode pagers, playback controls, the
+     20px id-copy chip in the decision header, and buttons carrying a
+     badge inside them. A fixed height does not make the short ones
+     taller — it clips the tall ones, and clipping is the failure that
+     looks like a design choice.
+
+     A floor gives the same rhythm everywhere it can and gets out of the
+     way where it cannot. Buttons centre their own content, so nothing
+     else is needed to make it sit right. */
+  min-height: 32px;
 }
 
+/* Tints on hover; does **not** recolour the border.
+   ===================================================================
+   This was `border-color: var(--accent)`, which is also what
+   `button.active` uses to say a toggle is on — so hover and on were
+   the same picture, and "what will my next click do" was answerable
+   only from the caption. The accent border now means one thing. */
 button:hover:not(:disabled) {
-  border-color: var(--accent);
+  background: var(--hover);
 }
 
 button:disabled {
@@ -844,6 +863,56 @@ button.primary {
   color: var(--accent-contrast);
   font-weight: 600;
 }
+
+/* Quiet: no fill, no border until it is pointed at. For controls that
+   sit inside a line of something else — a row of metadata, a toolbar —
+   where a filled button would outrank the thing it belongs to. */
+button.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+button.ghost:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* An action that takes something away. Outlined rather than filled: a
+   solid red button is the loudest thing on any page it appears on, and
+   these sit beside an ordinary confirm rather than replacing it. */
+button.danger {
+  color: var(--err);
+  border-color: color-mix(in srgb, var(--err) 45%, var(--border));
+}
+button.danger:hover:not(:disabled) {
+  background: var(--err-soft);
+}
+
+/* **The controls that are deliberately not 32px.**
+   ===================================================================
+   Each is a class, so each already outranks the element-level floor
+   above — this list exists so the exceptions are findable rather than
+   discovered one surprise at a time.
+
+   | `.icon-button`                  | 34px square. Kept at 34, not
+   |                                 | moved to 32: the size is argued
+   |                                 | for where it is declared — past
+   |                                 | the 24px touch minimum, and four
+   |                                 | still fit a 320px top bar.
+   | `.decision-copy-id`             | 20px. It sits inside a line of
+   |                                 | metadata; at 32 it would be the
+   |                                 | tallest thing on that line and
+   |                                 | outrank the run's own title.
+   | `.deployment-conditions-toggle` | 30px, pre-existing.
+   | any button with a badge inside  | taller than the floor, which is
+   |                                 | why the floor is a floor.
+*/
+
+/* Neither variant has a caller yet, on purpose — the same split as the
+   `.notice` variants: declaring the vocabulary is one change, deciding
+   which of the 102 buttons is which is another, and it is a judgement
+   per button. The destructive controls that exist (reject, withdraw an
+   approval) sit in `HumanActs`, which this pass does not touch. */
 
 /* A toggle that is currently on — the placement modes in the scenario
    editor and in the launch panel's map picker. Both already set this

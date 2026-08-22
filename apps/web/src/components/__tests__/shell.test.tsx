@@ -342,3 +342,50 @@ describe("the top bar is solid", () => {
     expect(topbar()).toContain("border-bottom: 1px solid var(--border)");
   });
 });
+
+describe("the button scale", () => {
+  /* Anchored to the start of a line. Searching for `button {` as a bare
+     substring finds `.icon-button {` first, and `button:hover:not(...)`
+     finds `.icon-button:hover:not(...)` — so the assertions read a
+     neighbouring rule and fail for a reason that has nothing to do with
+     what they are checking. */
+  const rule = (selector: string) => {
+    const at = SHEET.indexOf(`\n${selector} {`);
+    expect(at, `${selector} is not declared at the start of a line`).toBeGreaterThan(-1);
+    return SHEET.slice(at, SHEET.indexOf("\n}", at)).replace(/\/\*[\s\S]*?\*\//g, "");
+  };
+
+  it("sets a floor rather than a fixed height", () => {
+    /* 102 buttons, and they are not one shape: icon buttons, pagers,
+       playback controls, a 20px id chip, buttons carrying a badge. A
+       fixed height does not make the short ones taller — it clips the
+       tall ones, and clipping reads as a design choice. */
+    expect(rule("button")).toContain("min-height: 32px");
+    expect(rule("button")).not.toMatch(/(?<!min-)height: *\d+px/);
+  });
+
+  it("tints on hover instead of recolouring the border", () => {
+    /* The accent border is what `button.active` uses to say a toggle is
+       on. While hover used it too, hover and on were the same picture
+       and "what will my next click do" was answerable only from the
+       caption. */
+    expect(rule("button:hover:not(:disabled)")).toContain("background: var(--hover)");
+    expect(rule("button:hover:not(:disabled)")).not.toContain("border-color");
+    expect(rule("button.active")).toContain("border-color: var(--accent)");
+  });
+
+  it("does not declare a second focus ring", () => {
+    /* One already exists, global, with the same outline and offset. A
+       duplicate on `button` would be a second place to change it. */
+    expect(SHEET).toContain(":focus-visible {");
+    expect(SHEET).not.toContain("button:focus-visible {");
+  });
+
+  it("keeps the compact controls compact", () => {
+    /* Each is a class and so outranks the element-level floor. Pinned
+       because the floor landing on them is a silent regression: the id
+       chip would become the tallest thing on its line of metadata. */
+    expect(rule(".decision-copy-id")).toContain("min-height: 20px");
+    expect(rule(".icon-button")).toContain("height: 34px");
+  });
+});
