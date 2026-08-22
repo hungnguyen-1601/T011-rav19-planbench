@@ -33,7 +33,18 @@ export interface Scene25DProps extends SceneOptions {
   /** Degrees; the control strip writes these back. */
   azimuthDeg?: number;
   elevationDeg?: number;
+  /** Degrees about the world z axis — the control the strip calls
+   *  "Rotate", and the only one that turns the room. */
+  yawDeg?: number;
   showControls?: boolean;
+  /** **Lift the view out of this component.** Two of these sit side by
+   *  side showing the same episode, and a reader who turns one to look
+   *  behind a wall is comparing two rooms until they turn the other to
+   *  match by hand. Given this, the strip stops holding its own state
+   *  and reports every change to the owner of the pair. Omitted, the
+   *  scene keeps its own — the standalone viewer has nobody to sync
+   *  with. */
+  onViewChange?: (view: { yawDeg: number; elevationDeg: number; wallHeight: number }) => void;
   showPlan?: boolean;
   showTrajectory?: boolean;
 }
@@ -64,7 +75,9 @@ export function Scene25D({
   height = 520,
   azimuthDeg = 45,
   elevationDeg = 30,
+  yawDeg = 0,
   showControls = true,
+  onViewChange,
   showPlan = true,
   showTrajectory = true,
   wallHeight = 0.6,
@@ -80,12 +93,31 @@ export function Scene25D({
   obstacles,
 }: Scene25DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [azimuth, setAzimuth] = useState(azimuthDeg);
-  const [elevation, setElevation] = useState(elevationDeg);
-  const [height3d, setHeight3d] = useState(wallHeight);
+  const [azimuth] = useState(azimuthDeg);
+  /* Controlled when the owner is listening, uncontrolled when it is
+     not. The local copies are the fallback for the standalone viewer;
+     with an `onViewChange` the props win on every render, so the two
+     panels cannot drift apart even for a frame. */
+  const [localYaw, setLocalYaw] = useState(yawDeg);
+  const [localElevation, setLocalElevation] = useState(elevationDeg);
+  const [localHeight, setLocalHeight] = useState(wallHeight);
+  const yaw = onViewChange ? yawDeg : localYaw;
+  const elevation = onViewChange ? elevationDeg : localElevation;
+  const height3d = onViewChange ? wallHeight : localHeight;
+
+  const emit = (next: Partial<{ yawDeg: number; elevationDeg: number; wallHeight: number }>) => {
+    const view = { yawDeg: yaw, elevationDeg: elevation, wallHeight: height3d, ...next };
+    if (onViewChange) onViewChange(view);
+    else {
+      setLocalYaw(view.yawDeg);
+      setLocalElevation(view.elevationDeg);
+      setLocalHeight(view.wallHeight);
+    }
+  };
 
   const scene = useMemo(() => {
     const projection = fitProjection(map, width, height, {
+      yaw: (yaw * Math.PI) / 180,
       azimuth: (azimuth * Math.PI) / 180,
       elevation: (elevation * Math.PI) / 180,
       wallHeight: height3d,
@@ -107,6 +139,7 @@ export function Scene25D({
     map,
     width,
     height,
+    yaw,
     azimuth,
     elevation,
     height3d,
@@ -244,16 +277,24 @@ export function Scene25D({
       <canvas ref={canvasRef} data-testid="scene-25d" />
       {showControls ? (
         <div className="scene25d-controls">
+          {/* **"Rotate" now rotates.** It drove `azimuth`, which only
+              scales the horizontal half of a fixed dimetric fold — the
+              room stretched sideways and never turned. Same control,
+              same label, wired to the axis the label always implied.
+              `azimuth` stays at its default and is no longer a control:
+              a slider that widens a floor plan is not a viewing angle
+              anybody asked for, and two rotation sliders where one does
+              nothing is worse than one. */}
           <label>
             Rotate
             <input
               type="range"
-              min={5}
-              max={85}
-              value={azimuth}
-              onChange={(event) => setAzimuth(Number(event.target.value))}
+              min={0}
+              max={359}
+              value={yaw}
+              onChange={(event) => emit({ yawDeg: Number(event.target.value) })}
             />
-            <span className="muted">{azimuth}°</span>
+            <span className="muted">{yaw}°</span>
           </label>
           <label>
             Tilt
@@ -262,7 +303,7 @@ export function Scene25D({
               min={0}
               max={89}
               value={elevation}
-              onChange={(event) => setElevation(Number(event.target.value))}
+              onChange={(event) => emit({ elevationDeg: Number(event.target.value) })}
             />
             <span className="muted">
               {elevation}°{elevation >= 88 ? " (top-down)" : ""}
@@ -275,7 +316,7 @@ export function Scene25D({
               min={0}
               max={20}
               value={Math.round(height3d * 10)}
-              onChange={(event) => setHeight3d(Number(event.target.value) / 10)}
+              onChange={(event) => emit({ wallHeight: Number(event.target.value) / 10 })}
             />
             <span className="muted">{height3d.toFixed(1)} m</span>
           </label>

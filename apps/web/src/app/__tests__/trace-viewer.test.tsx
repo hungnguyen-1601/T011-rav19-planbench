@@ -177,3 +177,40 @@ describe("the raised view draws the same room as the flat one", () => {
     expect(VIEWER).toContain("radius: track.radius_m");
   });
 });
+
+describe("the two 2.5D panels are one camera", () => {
+  const SCENE = readFileSync(join(SRC, "components", "Scene25D.tsx"), "utf8");
+
+  it("holds the angle where the pair is held, not inside each scene", () => {
+    /* Each scene kept its own, so turning one panel to look behind a
+       wall left the reader comparing two rooms until they matched the
+       other by hand across three sliders — which nobody gets exactly
+       right. It belongs where the scrubber lives: it is a property of
+       the comparison, not of either candidate. */
+    expect(DETAIL).toContain("const [view25d, setView25d] = useState(");
+    expect(DETAIL).toContain("onView25dChange={setView25d}");
+    expect(VIEWER).toContain("onViewChange={onView25dChange}");
+  });
+
+  it("lets the scene keep its own angle when nobody is listening", () => {
+    /* The standalone viewer has no pair to sync with, and a control
+       that reports upward to nothing would freeze. */
+    expect(SCENE).toContain("const yaw = onViewChange ? yawDeg : localYaw;");
+  });
+
+  it("wires Rotate to the axis its label always implied", () => {
+    /* It drove `azimuth`, which scales the horizontal half of a fixed
+       dimetric fold: the room stretched sideways and never turned. */
+    expect(SCENE).toContain("emit({ yawDeg: Number(event.target.value) })");
+    expect(SCENE).not.toContain("setAzimuth(");
+  });
+
+  it("turns the whole way round rather than through a quadrant", () => {
+    /* The old slider ran 5–85° because that was the range in which its
+       dimetric fold stayed sane. A yaw has no such limit, and stopping
+       at 85 would leave two of the room's four sides unreachable. */
+    const rotate = SCENE.slice(SCENE.indexOf("Rotate"), SCENE.indexOf("Tilt"));
+    expect(rotate).toContain("min={0}");
+    expect(rotate).toContain("max={359}");
+  });
+});

@@ -102,6 +102,10 @@ export interface TraceViewerProps {
    *  `path_efficiency` is then 1.00 by construction rather than by
    *  merit, and the tile has to say so. */
   isReferenceRuler?: boolean;
+  /** The 2.5D camera, owned by whoever owns the pair. Both panels show
+   *  the same episode from the same angle or they are two rooms. */
+  view25d?: { yawDeg: number; elevationDeg: number; wallHeight: number };
+  onView25dChange?: (view: { yawDeg: number; elevationDeg: number; wallHeight: number }) => void;
 }
 
 export function TraceViewer({
@@ -115,6 +119,8 @@ export function TraceViewer({
   forceFinal = false,
   onSeek,
   isReferenceRuler = false,
+  view25d,
+  onView25dChange,
 }: TraceViewerProps) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -389,6 +395,10 @@ export function TraceViewer({
           map={mapData}
           width={760}
           height={480}
+          yawDeg={view25d?.yawDeg}
+          elevationDeg={view25d?.elevationDeg}
+          wallHeight={view25d?.wallHeight}
+          onViewChange={onView25dChange}
           robotRadius={trace.robot_radius_m}
           startPose={trace.missions[0] ? { ...trace.missions[0].start, theta: 0 } : undefined}
           goalPose={trace.missions[0] ? { ...trace.missions[0].goal, theta: 0 } : undefined}
