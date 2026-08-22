@@ -516,8 +516,20 @@ main.content--wide { max-width: none; }
   gap: 12px;
   height: var(--topbar-height);
   padding: 0 16px 0 20px;
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(8px);
+  /* **Opaque, and no blur.**
+     ===================================================================
+     This was `color-mix(--bg 88%, transparent)` over `backdrop-filter:
+     blur(8px)`. Twelve per cent of a light background showing through a
+     light page is not a glass effect — it is a faint smear of whatever
+     happens to be scrolling underneath, and on a table of numbers the
+     thing scrolling underneath is digits. The border below already does
+     the whole job of separating the bar from the page.
+
+     It also costs a compositing layer on a `position: sticky` element,
+     which is the one place that cost is paid on every frame of every
+     scroll rather than once. Paying it for an effect nobody can see is
+     the worst of both. */
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
 

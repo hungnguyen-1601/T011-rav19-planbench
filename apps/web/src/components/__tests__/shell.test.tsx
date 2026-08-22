@@ -272,26 +272,31 @@ describe("EmptyState", () => {
   });
 });
 
-describe("the content column is a measure, not a container", () => {
-  const CSS = readFileSync(
-    join(process.cwd(), "src", "app", "globals.css"),
-    "utf8",
-  ).replace(/\r\n/g, "\n");
-  const SHELL = readFileSync(
-    join(process.cwd(), "src", "components", "AppShell.tsx"),
-    "utf8",
-  );
+/* Read once, at module scope, and named `SHEET` rather than `CSS`.
+   Declared inside one `describe`, the name is out of scope in the next
+   — where `CSS` then resolves to the DOM global instead of failing, so
+   the mistake surfaces as `Property 'indexOf' does not exist on type
+   'typeof CSS'` rather than as "undefined variable". */
+const SHEET = readFileSync(
+  join(process.cwd(), "src", "app", "globals.css"),
+  "utf8",
+).replace(/\r\n/g, "\n");
+const SHELL = readFileSync(
+  join(process.cwd(), "src", "components", "AppShell.tsx"),
+  "utf8",
+);
 
+describe("the content column is a measure, not a container", () => {
   it("caps the width and centres what is left", () => {
     /* Without it the comparison table's value columns inflate to 480px
        around a six-character number on a 1920 monitor. */
-    const rule = CSS.slice(CSS.indexOf("main.content {"), CSS.indexOf("}", CSS.indexOf("main.content {")));
+    const rule = SHEET.slice(SHEET.indexOf("main.content {"), SHEET.indexOf("}", SHEET.indexOf("main.content {")));
     expect(rule).toContain("max-width: 1440px");
     expect(rule).toContain("margin-inline: auto");
   });
 
   it("gives the drawing surfaces a way out", () => {
-    expect(CSS).toContain("main.content--wide { max-width: none; }");
+    expect(SHEET).toContain("main.content--wide { max-width: none; }");
   });
 
   it("decides that in the shell, because a page cannot reach this element", () => {
@@ -307,6 +312,33 @@ describe("the content column is a measure, not a container", () => {
        it still wins — but it is worth pinning, because it is the one
        place `main.content` is not what the reader sees. */
     expect(SHELL).toContain('className="content bare-page"');
-    expect(CSS).toContain("main.content.bare-page {");
+    expect(SHEET).toContain("main.content.bare-page {");
+  });
+});
+
+describe("the top bar is solid", () => {
+  const topbar = () => {
+    const at = SHEET.indexOf(".topbar {");
+    expect(at, "the topbar rule moved").toBeGreaterThan(-1);
+    return SHEET.slice(at, SHEET.indexOf("\n}", at)).replace(/\/\*[\s\S]*?\*\//g, "");
+  };
+
+  it("paints an opaque background rather than a translucent one", () => {
+    /* Twelve per cent of a light background showing through a light page
+       is not a glass effect — it is a faint smear of whatever happens to
+       be scrolling underneath, which on this app is a table of digits. */
+    expect(topbar()).toContain("background: var(--bg)");
+    expect(topbar()).not.toContain("color-mix");
+  });
+
+  it("does not pay for a compositing layer on a sticky element", () => {
+    /* `backdrop-filter` on `position: sticky` is the one place that cost
+       lands on every frame of every scroll rather than once. */
+    expect(topbar()).toContain("position: sticky");
+    expect(topbar()).not.toContain("backdrop-filter");
+  });
+
+  it("keeps the border that was doing the separating anyway", () => {
+    expect(topbar()).toContain("border-bottom: 1px solid var(--border)");
   });
 });
