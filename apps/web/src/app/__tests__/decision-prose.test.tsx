@@ -164,7 +164,7 @@ describe("where the conclusion and the exports sit", () => {
     // worth sending on. They used to sit in the page header, before
     // anything had been read.
     const conclusion = DETAIL.indexOf("<ConclusionPanel run={run} />");
-    const exportButtons = DETAIL.indexOf("<ExportReport runId={run.id} />");
+    const exportButtons = DETAIL.indexOf("<ExportReport run={run} />");
     expect(exportButtons).toBeGreaterThan(conclusion);
     expect(DETAIL.indexOf("decision-detail-badges")).toBeLessThan(conclusion);
   });
@@ -208,6 +208,12 @@ describe("where the conclusion and the exports sit", () => {
        detail page, and three separate `candidates.find(...)` calls are
        how they start disagreeing about who won. */
     expect(DETAIL).not.toContain("card.recommended.stack}");
-    expect((DETAIL.match(/recommendedCandidateLabel\(run\)/g) ?? []).length).toBe(2);
+    /* Four surfaces named it when this was written and the share
+       dialog's covering note makes five. The number is not the claim —
+       every one of them going through the same function is — so what
+       this pins is that nothing on the page derives the label for
+       itself. */
+    expect((DETAIL.match(/recommendedCandidateLabel\(run\)/g) ?? []).length).toBeGreaterThan(1);
+    expect(DETAIL).not.toMatch(/candidates[?.]*\.find\([^)]*candidate_id/);
   });
 });

@@ -156,7 +156,15 @@ describe("the exported document carries it too", () => {
       join(process.cwd(), "..", "api", "planbench_api", "decision_xlsx.py"),
       "utf8",
     );
-    expect(shared).toContain('"Shown"');
+    const texts = readFileSync(
+      join(process.cwd(), "..", "api", "planbench_api", "decision_text.py"),
+      "utf8",
+    );
+    // The column header is a word, and words moved to the text table
+    // when the export became bilingual — the column itself is still
+    // declared beside the rows it heads.
+    expect(texts).toContain('"en": "Shown"');
+    expect(shared).toContain('"column.gate.shown"');
     expect(shared).toContain("def mixed_observation(");
     expect(workbook).toContain("mixed_observation");
   });
