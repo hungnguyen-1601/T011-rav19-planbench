@@ -16,6 +16,7 @@ import {
   isActive,
   matchRoute,
   pageTitleKey,
+  wideContent,
 } from "@/lib/navigation";
 import { DICTIONARIES } from "@/lib/i18n";
 
@@ -169,5 +170,46 @@ describe("a page naming its own last crumb", () => {
     /* An empty crumb is worse than an id: it looks like the breadcrumb
        broke. */
     expect(crumbLabel(path, 1, "")).toEqual({ label: "20750b0d9dbe" });
+  });
+});
+
+describe("which pages get the width cap lifted", () => {
+  it("lifts it for the drawing surfaces", () => {
+    /* A map editor, the simulator and the deployment form: there more
+       width is more of the thing the page is for. */
+    for (const path of ["/maps", "/simulate", "/deployments"]) {
+      expect(wideContent(path), path).toBe(true);
+    }
+  });
+
+  it("lifts it for their record pages too", () => {
+    /* `/maps/warehouse_a` is the same drawing surface as `/maps`. A
+       detail page that suddenly narrowed would be the odd one out, and
+       matching on equality rather than prefix is how that happens. */
+    expect(wideContent("/maps/warehouse_a")).toBe(true);
+    expect(wideContent("/deployments/sudden_stop_v5")).toBe(true);
+  });
+
+  it("keeps the cap everywhere text is read", () => {
+    /* A line running the full width of a 1920 monitor is a line the eye
+       cannot track back to the start of the next one. */
+    for (const path of ["/", "/decisions", "/decisions/20750b0d9dbe", "/system", "/agent", "/library"]) {
+      expect(wideContent(path), path).toBe(false);
+    }
+  });
+
+  it("does not match a route that merely starts with the same letters", () => {
+    /* `startsWith` without the separator would make `/mapsomething`
+       wide. `isActive` handles that; this pins it. */
+    expect(wideContent("/mapsomething")).toBe(false);
+    expect(wideContent("/simulate-archive")).toBe(false);
+  });
+
+  it("names every wide route in the navigation model", () => {
+    /* A path nobody can reach would be a rule nobody can see is dead. */
+    const hrefs = new Set(ALL_ROUTES.map((route) => route.href));
+    for (const path of ["/maps", "/simulate", "/deployments"]) {
+      expect(hrefs.has(path), path).toBe(true);
+    }
   });
 });

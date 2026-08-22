@@ -11,6 +11,9 @@
  * theme.test.ts). Recorded in docs/KNOWN_LIMITATIONS.md.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -266,5 +269,44 @@ describe("EmptyState", () => {
     const html = renderToStaticMarkup(<EmptyState title="Nothing to review" />);
     expect(html).toContain("Nothing to review");
     expect(html).not.toContain("quick-action");
+  });
+});
+
+describe("the content column is a measure, not a container", () => {
+  const CSS = readFileSync(
+    join(process.cwd(), "src", "app", "globals.css"),
+    "utf8",
+  ).replace(/\r\n/g, "\n");
+  const SHELL = readFileSync(
+    join(process.cwd(), "src", "components", "AppShell.tsx"),
+    "utf8",
+  );
+
+  it("caps the width and centres what is left", () => {
+    /* Without it the comparison table's value columns inflate to 480px
+       around a six-character number on a 1920 monitor. */
+    const rule = CSS.slice(CSS.indexOf("main.content {"), CSS.indexOf("}", CSS.indexOf("main.content {")));
+    expect(rule).toContain("max-width: 1440px");
+    expect(rule).toContain("margin-inline: auto");
+  });
+
+  it("gives the drawing surfaces a way out", () => {
+    expect(CSS).toContain("main.content--wide { max-width: none; }");
+  });
+
+  it("decides that in the shell, because a page cannot reach this element", () => {
+    /* `AppShell` owns `<main>` and the root layout mounts it above every
+       page, so there is no prop to hand upward. A class sprinkled
+       through each page could not work even if someone tried. */
+    expect(SHELL).toContain("wideContent(pathname)");
+    expect(SHELL).toContain('"content content--wide" : "content"');
+  });
+
+  it("leaves the signed-out shell alone", () => {
+    /* `bare-page` sets its own 460px measure and is two classes deep, so
+       it still wins — but it is worth pinning, because it is the one
+       place `main.content` is not what the reader sees. */
+    expect(SHELL).toContain('className="content bare-page"');
+    expect(CSS).toContain("main.content.bare-page {");
   });
 });

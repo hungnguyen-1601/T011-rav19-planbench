@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { wideContent } from "@/lib/navigation";
 
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
@@ -130,7 +131,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           pendingReviews={pending}
           onOpenSidebar={() => setDrawerOpen(true)}
         />
-        <main className="content" id="main-content">
+        {/* Capped everywhere except the drawing surfaces. `AppShell`
+            owns this element, so the choice cannot come from the page —
+            see `wideContent`. */}
+        <main
+          className={wideContent(pathname) ? "content content--wide" : "content"}
+          id="main-content"
+        >
           {children}
         </main>
       </div>

@@ -489,9 +489,21 @@ a:hover {
 
 main.content {
   flex: 1;
-  padding: 22px 26px 40px;
   min-width: 0;
+  /* **A measure, not a container.** Without this the value columns on a
+     1920 monitor inflate to 480px around a six-character number, and a
+     line of prose runs wider than an eye can track back to the start of
+     the next one. 1440 is where the comparison table stops growing and
+     starts being read. */
+  max-width: 1440px;
+  margin-inline: auto;
+  padding: var(--space-5) var(--space-6) var(--space-7);
 }
+/* Lifted for the drawing surfaces — a map editor, the simulator, the
+   deployment form. There more width is more of the thing the page is
+   for. Which routes those are is decided in `lib/navigation`, not here
+   and not in the pages. */
+main.content--wide { max-width: none; }
 
 /* ---------- Top bar ---------- */
 

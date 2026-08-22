@@ -195,6 +195,31 @@ export interface Crumb {
  * record id (`/benchmarks/ab12`) and shown verbatim: ids, checksums and
  * user-supplied names must never be run through a dictionary.
  */
+/** Pages whose content is a canvas rather than a column of text.
+ *
+ * A map editor, a simulator and a deployment form are drawing surfaces:
+ * more width is more of the thing the page is for. Everywhere else, a
+ * measure that runs the full width of a 1920 monitor is a measure
+ * nobody's eye can track back to the start of the next line — which is
+ * why `main.content` is capped at all.
+ *
+ * **The list lives here rather than on the pages.** `AppShell` owns
+ * `<main>`; the root layout mounts it above every page, so a page has
+ * nothing to pass upward. A named constant is also an edit a reviewer
+ * sees, where a class sprinkled through each page would not be.
+ */
+const WIDE_CONTENT_ROUTES = ["/maps", "/simulate", "/deployments"] as const;
+
+/** Whether this path wants the cap lifted.
+ *
+ * Matched with `isActive`, not with equality, so `/maps/warehouse_a` is
+ * as wide as `/maps` — the editor is the same drawing surface either
+ * way, and a detail page that suddenly narrowed would be the odd one.
+ */
+export function wideContent(pathname: string): boolean {
+  return WIDE_CONTENT_ROUTES.some((route) => isActive(pathname, route));
+}
+
 /**
  * What one crumb shows, given a name the page supplied for its own.
  *
