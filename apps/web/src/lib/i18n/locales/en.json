@@ -1511,7 +1511,7 @@
   "running.rulerArtefact": "This run recorded no plan, so this candidate's own path became the reference line — its efficiency is 1.00 by construction, not by merit.",
   "trace.running.progress": "Route covered",
   "trace.running.margin": "Worst clearance so far",
-  "trace.running.marginUnits": "Robot radii, converted at this robot's {radius} m radius. The comparison table above reports clearance in metres.",
+  "trace.running.marginUnits": "The platform records this in robot radii: {radii} r, converted here at this robot's {radius} m radius. The comparison table above reports clearance in metres, so the tile does too.",
   "trace.running.exposure": "Time inside warning distance",
   "trace.running.efficiency": "Progress per metre driven",
   "trace.running.replans": "Replans so far",

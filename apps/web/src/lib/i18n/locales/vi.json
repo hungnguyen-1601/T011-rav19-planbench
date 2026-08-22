@@ -1511,7 +1511,7 @@
   "running.rulerArtefact": "Run này không ghi kế hoạch, nên chính quỹ đạo của candidate này thành reference line — hiệu suất bằng 1,00 do định nghĩa, không phải do chạy tốt.",
   "trace.running.progress": "Đã đi được",
   "trace.running.margin": "Clearance tệ nhất tới giờ",
-  "trace.running.marginUnits": "Theo bán kính robot, quy đổi ở bán kính {radius} m của chính robot này. Bảng so sánh phía trên báo clearance theo mét.",
+  "trace.running.marginUnits": "Platform ghi số này theo bán kính robot: {radii} r, quy đổi ở đây theo bán kính {radius} m của chính robot này. Bảng so sánh phía trên báo clearance theo mét nên ô này cũng vậy.",
   "trace.running.exposure": "Thời gian trong khoảng cảnh báo",
   "trace.running.efficiency": "Tiến độ trên mỗi mét đã chạy",
   "trace.running.replans": "Replan tới giờ",

@@ -4555,3 +4555,40 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
   .tradeoff-bar-row { grid-template-columns: minmax(0, 1fr); }
   .tradeoff-bar-line { grid-template-columns: 96px minmax(0, 1fr) 80px; }
 }
+
+/* The replay's reading tiles, lined up.
+   ===================================================================
+   Seven tiles per candidate, fourteen across the pair, read by scanning
+   left to right and then across to the other panel. Two things were
+   stopping that from being a scan.
+
+   **The unit moved with the number.** `3.20 ms` and `11.66 ms` are
+   different lengths, so one panel's tile wrapped where the other's did
+   not, and the digits shifted every frame of the replay. The unit is now
+   in the label, where it belongs: it is a property of the metric and
+   does not change while the run does.
+
+   **The labels are one line or two, and the values followed them.**
+   `Replan tới giờ` is one line and `Thời gian trong khoảng cảnh báo` is
+   three, so the figures sat at three different heights across one row.
+   Grid rows already stretch the cards to a common height, so pushing the
+   value to the bottom of the card puts every figure in a row on one
+   baseline — which is also the arrangement that survives a label
+   changing length in another language. */
+.stat-grid--readings .stat-card-value { margin-top: auto; }
+/* Block, not the shared flex row: `.stat-card-head` is a flex container
+   with an 8px gap and centred items, which would hold the unit off at
+   arm's length and centre it against a label that has wrapped to three
+   lines. Here the unit is part of the sentence naming the metric, so it
+   flows at the end of it. */
+.stat-grid--readings .stat-card-head { display: block; line-height: 1.35; }
+/* Smaller and muted: it names the metric, it is not part of the reading.
+   Kept out of the figure entirely so nothing about it can change the
+   digits' position. */
+.stat-card-unit {
+  margin-left: var(--space-1);
+  color: var(--muted);
+  font-size: var(--fs-caption);
+  font-weight: 400;
+  white-space: nowrap;
+}

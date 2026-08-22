@@ -423,20 +423,30 @@ export function TraceViewer({
         finalPanel
       ) : (
         <>
-          <div className="stat-grid" style={{ marginTop: 12 }}>
+          {/* **Units in the label, numbers alone in the value.** With
+              the unit inside the figure, `3.20 ms` and `11.66 ms` are
+              different lengths, so the two panels' tiles wrapped at
+              different points and the digits moved as the replay ran —
+              on a row a reader is scanning across to compare. The unit
+              belongs to the metric, which does not change, so it belongs
+              to the label, which does not move. */}
+          <div className="stat-grid stat-grid--readings" style={{ marginTop: 12 }}>
             <Figure
               label={t("trace.clearance")}
-              value={Number.isFinite(clearance) ? `${clearance.toFixed(3)} m` : "—"}
+              unit="m"
+              value={Number.isFinite(clearance) ? clearance.toFixed(3) : "—"}
             />
             <Figure
               label={t("trace.latency")}
-              value={Number.isFinite(latency) ? `${latency.toFixed(2)} ms` : "—"}
+              unit="ms"
+              value={Number.isFinite(latency) ? latency.toFixed(2) : "—"}
             />
             {live ? (
               <>
                 <Figure
                   label={t("trace.running.progress")}
-                  value={`${(live.progress_fraction * 100).toFixed(1)} %`}
+                  unit="%"
+                  value={(live.progress_fraction * 100).toFixed(1)}
                 />
                 {/* **Both units, because the tile beside it uses the
                     other one.** `safety_margin` is in robot radii and
@@ -448,17 +458,30 @@ export function TraceViewer({
                     reader silently comparing `3.81` against `0.470`.
                     The radius is in the trace, so the metres are a
                     conversion rather than a second measurement. */}
+                {/* **Metres on the tile, radii in the note.** The
+                    underlying series is in robot radii, and printing
+                    both — `0.516 m · 1.99 r` — put two units in one
+                    figure, which wrapped onto two lines and left this
+                    tile taller than the six beside it. Metres wins the
+                    tile because the comparison table above reports
+                    clearance in metres; the radii figure the platform
+                    actually recorded is one hover away. */}
                 <Figure
                   label={t("trace.running.margin")}
-                  value={`${(live.safety_margin * trace.robot_radius_m).toFixed(3)} m · ${live.safety_margin.toFixed(2)} r`}
+                  unit="m"
+                  value={(live.safety_margin * trace.robot_radius_m).toFixed(3)}
                   note={t("trace.running.marginUnits", {
+                    radii: live.safety_margin.toFixed(2),
                     radius: trace.robot_radius_m.toFixed(3),
                   })}
                 />
                 <Figure
                   label={t("trace.running.exposure")}
-                  value={`${live.exposure_s.toFixed(1)} s`}
+                  unit="s"
+                  value={live.exposure_s.toFixed(1)}
                 />
+                {/* No unit: a ratio has none, and the slot stays empty
+                    rather than being filled with something plausible. */}
                 <Figure
                   label={t("trace.running.efficiency")}
                   value={`${live.path_efficiency.toFixed(3)}${isReferenceRuler ? " †" : ""}`}
@@ -500,10 +523,28 @@ export function TraceViewer({
   );
 }
 
-function Figure({ label, value, note }: { label: string; value: string; note?: string }) {
+function Figure({
+  label,
+  value,
+  unit,
+  note,
+}: {
+  label: string;
+  value: string;
+  /** Shown beside the metric's name, not beside its number. A unit is a
+   *  property of what is being measured and never changes while the
+   *  replay runs, so putting it in the figure made a fixed fact move
+   *  with a moving one — and took the digits with it. Omitted for a
+   *  ratio or a count, which have none. */
+  unit?: string;
+  note?: string;
+}) {
   return (
     <div className="stat-card" title={note}>
-      <span className="stat-card-head">{label}</span>
+      <span className="stat-card-head">
+        {label}
+        {unit ? <span className="stat-card-unit">({unit})</span> : null}
+      </span>
       <span className={note ? "stat-card-value muted" : "stat-card-value"}>{value}</span>
       {/* The dagger carries the caveat for a sighted reader; this
           carries it for everyone else. */}

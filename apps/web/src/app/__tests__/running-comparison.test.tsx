@@ -431,3 +431,44 @@ describe("the chart as the timeline", () => {
     expect(CHART).toContain('tabIndex={onSeek ? 0 : undefined}');
   });
 });
+
+describe("the reading tiles are a row a reader can scan", () => {
+  it("puts the unit in the label and leaves the value a bare number", () => {
+    /* With the unit inside the figure, `3.20 ms` and `11.66 ms` are
+       different lengths: one panel's tile wrapped where the other's did
+       not, and the digits moved every frame of the replay — on the row a
+       reader is scanning across to compare the two candidates. A unit is
+       a property of the metric and does not change while the run does. */
+    expect(VIEWER).toContain('unit="ms"');
+    expect(VIEWER).toContain('unit="m"');
+    expect(VIEWER).toContain('unit="%"');
+    expect(VIEWER).toContain('unit="s"');
+    expect(VIEWER).not.toContain("} ms`");
+    expect(VIEWER).not.toContain("} %`");
+  });
+
+  it("leaves the unit off a ratio and a count", () => {
+    /* The slot stays empty rather than being filled with something
+       plausible: `path_efficiency` and `replans` have no unit. */
+    expect(VIEWER).toMatch(/label=\{t\("trace\.running\.replans"\)\}\s+value=/);
+  });
+
+  it("shows worst clearance in one unit, with the recorded one in the note", () => {
+    /* `0.516 m · 1.99 r` was two units in one figure. It wrapped to two
+       lines and left this tile taller than the six beside it. Metres
+       wins the tile because the comparison table reports metres; the
+       radii the platform actually recorded stay one hover away. */
+    expect(VIEWER).not.toContain("} m · ${live.safety_margin");
+    expect(VIEWER).toContain("radii: live.safety_margin.toFixed(2)");
+    expect((en as Record<string, string>)["trace.running.marginUnits"]).toContain("{radii}");
+    expect((vi as Record<string, string>)["trace.running.marginUnits"]).toContain("{radii}");
+  });
+
+  it("drops every figure in a row onto one baseline", () => {
+    /* Labels are one line or three, and the values used to follow them,
+       so one row held figures at three different heights. Grid rows
+       already stretch the cards to a common height. */
+    expect(VIEWER).toContain('className="stat-grid stat-grid--readings"');
+    expect(CSS).toContain(".stat-grid--readings .stat-card-value { margin-top: auto; }");
+  });
+});
