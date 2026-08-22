@@ -806,10 +806,20 @@ h3 {
 
 .panel {
   background: var(--panel);
+  /* **A 1px border and no shadow**, which is already what this rule
+     said — worth stating rather than leaving as an absence, because a
+     panel is the one component where a shadow is always available and
+     never necessary. On a grey ground a hairline separates a card from
+     the page; a shadow lifts it off the page, and a screen of lifted
+     cards is a marketing layout wearing an instrument's data. */
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 16px;
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  /* 24px, from 16. The gap between two panels was the same as the gap
+     between a panel's border and its own contents, so a heading read as
+     belonging to whichever panel the eye reached first. Separation
+     between things has to beat separation within one. */
+  margin-bottom: var(--space-5);
 }
 
 .row {
@@ -1694,11 +1704,6 @@ a.stat-card:hover {
    Everything below is scoped to the dashboard so shared panels, tables,
    stat grids and quick actions keep their established behaviour elsewhere. */
 
-.dashboard-page {
-  --dashboard-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --dashboard-card-shadow-hover: 0 8px 20px rgba(0, 0, 0, 0.09);
-}
-
 .dashboard-head {
   align-items: center;
   margin-bottom: 20px;
@@ -1746,9 +1751,12 @@ a.stat-card:hover {
   gap: 8px;
   overflow: hidden;
   border-color: var(--border);
-  box-shadow: var(--dashboard-card-shadow);
-  transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease,
-    box-shadow 160ms ease;
+  /* No shadow, and no lift on hover. A tile that rises off the page
+     when pointed at is a marketing affordance: it says "this is
+     clickable and exciting" about a number that is neither. The border
+     already changes on hover, which is the part that answers "can I
+     click this". */
+  transition: border-color 160ms ease, background-color 160ms ease;
 }
 
 .dashboard-page .stat-card--ranked { --stat-color: var(--purple); --stat-soft: var(--purple-soft); }
@@ -1759,13 +1767,11 @@ a.stat-card:hover {
 .dashboard-page .stat-card--simulation { --stat-color: var(--teal); --stat-soft: var(--teal-soft); }
 
 .dashboard-page a.stat-card:hover {
-  transform: translateY(-2px);
   border-color: color-mix(in srgb, var(--stat-color) 42%, var(--border));
   background: color-mix(in srgb, var(--stat-soft) 42%, var(--panel));
-  box-shadow: var(--dashboard-card-shadow-hover);
 }
 
-.dashboard-page a.stat-card:active { transform: translateY(0); box-shadow: var(--dashboard-card-shadow); }
+/* Nothing to undo on `:active` now that nothing moved on `:hover`. */
 
 .dashboard-page .stat-card-head {
   align-items: center;
@@ -1838,15 +1844,13 @@ a.stat-card:hover {
 .dashboard-page .quick-action {
   min-height: 42px;
   justify-content: center;
-  border-radius: 8px;
-  box-shadow: var(--dashboard-card-shadow);
-  transition: transform 150ms ease, border-color 150ms ease, background-color 150ms ease,
-    box-shadow 150ms ease;
+  border-radius: var(--radius-lg);
+  /* Same argument as the tiles above: a button that rises when pointed
+     at, and a primary one wearing a coloured glow, were the two loudest
+     things on a page whose content is counts. The base button rule
+     already tints on hover. */
+  transition: border-color 150ms ease, background-color 150ms ease;
 }
-
-.dashboard-page .quick-action:hover { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(0, 0, 0, 0.08); }
-.dashboard-page .quick-action:active { transform: translateY(0); }
-.dashboard-page .quick-action.primary { box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 22%, transparent); }
 .dashboard-page .quick-action.primary .quick-action-icon { color: currentColor; }
 
 .dashboard-activity-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
@@ -1856,8 +1860,10 @@ a.stat-card:hover {
   margin-bottom: 0;
   padding: 0;
   overflow: hidden;
-  border-radius: 10px;
-  box-shadow: var(--dashboard-card-shadow);
+  /* A panel, so it looks like every other panel: a hairline on a grey
+     ground. Re-adding a shadow here made the dashboard the one page
+     where the rule did not hold. */
+  border-radius: var(--radius-lg);
 }
 
 .dashboard-panel--simulations { grid-column: 1 / -1; }

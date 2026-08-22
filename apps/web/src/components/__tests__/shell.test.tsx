@@ -431,3 +431,47 @@ describe("the badge scale", () => {
     expect(SHEET).not.toContain(".badge--");
   });
 });
+
+describe("panels sit on the page rather than above it", () => {
+  const rule = (selector: string) => {
+    const at = SHEET.indexOf(`\n${selector} {`);
+    expect(at, `${selector} is not declared at the start of a line`).toBeGreaterThan(-1);
+    return SHEET.slice(at, SHEET.indexOf("\n}", at)).replace(/\/\*[\s\S]*?\*\//g, "");
+  };
+
+  it("separates a panel with a hairline, never a shadow", () => {
+    /* On a grey ground a border separates a card from the page; a shadow
+       lifts it off the page, and a screen of lifted cards is a marketing
+       layout wearing an instrument's data. */
+    expect(rule(".panel")).toContain("border: 1px solid var(--border)");
+    expect(rule(".panel")).not.toContain("box-shadow");
+  });
+
+  it("leaves more air between panels than inside one", () => {
+    /* The gap between two panels used to equal the gap between a panel's
+       border and its own contents, so a heading read as belonging to
+       whichever panel the eye reached first. */
+    expect(rule(".panel")).toContain("margin-bottom: var(--space-5)");
+    expect(rule(".panel")).toContain("padding: var(--space-4)");
+  });
+
+  it("does not let the dashboard keep its own rule", () => {
+    /* `.dashboard-panel` is a panel. Re-adding a shadow there made the
+       dashboard the one page where the rule did not hold — and a rule
+       with one exception is a rule nobody trusts. */
+    expect(rule(".dashboard-panel")).not.toContain("box-shadow");
+    expect(SHEET).not.toContain("--dashboard-card-shadow");
+  });
+
+  it("stops the tiles rising when pointed at", () => {
+    /* A tile that lifts says "this is clickable and exciting" about a
+       number that is neither. The border already changes on hover, which
+       is the part that answers "can I click this". */
+    for (const selector of [".dashboard-page .stat-card", ".dashboard-page .quick-action"]) {
+      expect(rule(selector), selector).not.toContain("box-shadow");
+      expect(rule(selector), selector).not.toContain("transform");
+    }
+    expect(SHEET).not.toContain("transform: translateY(-2px)");
+    expect(SHEET).not.toContain("transform: translateY(-1px)");
+  });
+});
