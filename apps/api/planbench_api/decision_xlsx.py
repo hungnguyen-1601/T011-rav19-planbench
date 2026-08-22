@@ -33,6 +33,7 @@ from typing import Any
 from planbench_api.decision_export import (
     DEFAULT_LOCALE,
     Locale,
+    Quantity,
     as_text,
     card_rows,
     decision_evidence_rows,
@@ -51,6 +52,7 @@ from planbench_api.decision_export import (
     sample_rows,
     scope_of,
     sensitivity_rows,
+    summary_rows,
 )
 from planbench_api.decision_text import text
 
@@ -163,10 +165,30 @@ def render_decision_xlsx(run: Any, locale: Locale = DEFAULT_LOCALE) -> bytes:
         """
         return workbook.create_sheet(_sheet_name(text(key, locale)))
 
-    def write_pairs(target, rows: list[tuple[str, str]], start: int) -> int:
+    def write_value(target, row: int, column: int, value: str | Quantity):
+        """One cell, as a number where the value is one.
+
+        A :class:`Quantity` reaches the sheet as a float with a format,
+        not as the string a reader would see. That is what makes the
+        column sortable and summable — and it is why a missing value
+        leaves the cell genuinely **empty** rather than carrying the
+        words "not measured": text in a numeric column takes sorting
+        away from every other row in it, and 0 would be read as a
+        measurement.
+        """
+        cell = target.cell(row=row, column=column)
+        if isinstance(value, Quantity):
+            if not value.missing:
+                cell.value = value.value
+            cell.number_format = value.unit.excel_format
+        else:
+            cell.value = value
+        return cell
+
+    def write_pairs(target, rows, start: int) -> int:
         for offset, (label, value) in enumerate(rows):
             target.cell(row=start + offset, column=1, value=label).font = bold
-            target.cell(row=start + offset, column=2, value=value)
+            write_value(target, start + offset, 2, value)
         return start + len(rows)
 
     def write_caveat(target, label: str, body: str, at: int) -> int:
@@ -184,6 +206,25 @@ def render_decision_xlsx(run: Any, locale: Locale = DEFAULT_LOCALE) -> bytes:
         cell = target.cell(row=at, column=2, value=body)
         cell.alignment = wrap
         return at + 1
+
+    # --- Summary ----------------------------------------------------------
+    #
+    # First, and the only sheet that answers "what came out of this?"
+    # without the reader assembling it from three others: the run's
+    # identity was on `Provenance`, the winner and the margin on
+    # `Decision Card`, and which stacks were compared only on the tables
+    # underneath. A reader who opens the file to check one number should
+    # not have to know which tab it lives on.
+    summary = sheet("heading.summary")
+    cursor = write_pairs(summary, summary_rows(run, report, locale), 1)
+    write_caveat(
+        summary,
+        text("heading.precision", locale),
+        text("prose.summary_precision", locale),
+        cursor + 1,
+    )
+    summary.column_dimensions["A"].width = 26
+    summary.column_dimensions["B"].width = 82
 
     # --- Provenance -------------------------------------------------------
     provenance = sheet("heading.provenance")

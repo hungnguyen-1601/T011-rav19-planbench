@@ -35,6 +35,27 @@ from tests.api.golden_run import golden_run, unranked_run
 SHEET_NAME_LIMIT = 31
 
 
+def _workbook(payload: bytes):
+    import io
+
+    import openpyxl
+
+    return openpyxl.load_workbook(io.BytesIO(payload))
+
+
+def _contents(run, *locale):
+    """Every sheet name and every cell, as one comparable structure.
+
+    Takes the locale as a varargs so a call with none passes none
+    through — the whole point of the assertions below is what the
+    renderer does when nobody names a language.
+    """
+    book = _workbook(render_decision_xlsx(run, *locale))
+    return {
+        name: list(book[name].iter_rows(values_only=True)) for name in book.sheetnames
+    }
+
+
 class TestEveryStringHasEveryLanguage:
     def test_no_entry_is_missing_a_language(self) -> None:
         missing = [
@@ -92,7 +113,14 @@ class TestEnglishIsStillTheDefault:
 
     @pytest.mark.parametrize("build", [golden_run, unranked_run])
     def test_the_workbook_with_no_locale_equals_the_workbook_with_english(self, build) -> None:
-        assert render_decision_xlsx(build()) == render_decision_xlsx(build(), "en")
+        """Compared by contents, not by bytes.
+
+        A `.xlsx` is a zip, and a zip carries the moment each member was
+        written. Two renders a second apart differ in bytes while saying
+        exactly the same thing, so a byte comparison here would be a
+        test of the clock.
+        """
+        assert _contents(build()) == _contents(build(), "en")
 
 
 class TestVietnameseIsAWholeDocument:
@@ -136,30 +164,14 @@ class TestTheWorkbookSurvivesTheLongerLanguage:
         """Vietnamese runs longer than English, and Excel refuses the
         whole file over a 32-character sheet name — a failure that
         arrives at the reader, not here."""
-        import io
-
-        import openpyxl
-
-        workbook = openpyxl.load_workbook(io.BytesIO(render_decision_xlsx(build(), locale)))
-        for name in workbook.sheetnames:
+        for name in _contents(build(), locale):
             assert len(name) <= SHEET_NAME_LIMIT, name
             assert not set(name) & set("[]:*?/\\"), name
 
     def test_the_two_languages_produce_the_same_sheet_count(self) -> None:
         """Same document, different words. A language that lost a sheet
         would mean a branch reached through a translated string."""
-        import io
-
-        import openpyxl
-
-        counts = {
-            locale: len(
-                openpyxl.load_workbook(
-                    io.BytesIO(render_decision_xlsx(golden_run(), locale))
-                ).sheetnames
-            )
-            for locale in LOCALES
-        }
+        counts = {locale: len(_contents(golden_run(), locale)) for locale in LOCALES}
         assert len(set(counts.values())) == 1, counts
 
 

@@ -141,6 +141,47 @@ TEXT: Final[dict[str, dict[Locale, str]]] = {
     },
     "label.anchor_stability": {"en": "Anchor stability", "vi": "Độ ổn định của mốc chuẩn"},
     "label.robustness_margin": {"en": "Robustness margin", "vi": "Biên bền vững"},
+    # --- Summary ----------------------------------------------------------
+    "label.candidate_n": {"en": "Candidate {index}", "vi": "Ứng viên {index}"},
+    "label.winner": {"en": "Winner", "vi": "Bên thắng"},
+    "label.overall_score": {"en": "Overall score", "vi": "Điểm tổng"},
+    "label.confidence_low": {"en": "ΔU 95% lower bound", "vi": "Cận dưới 95% của ΔU"},
+    "label.confidence_high": {"en": "ΔU 95% upper bound", "vi": "Cận trên 95% của ΔU"},
+    "label.final_recommendation": {"en": "Final recommendation", "vi": "Khuyến nghị cuối cùng"},
+    "label.preference_profile": {"en": "Preference profile", "vi": "Hồ sơ ưu tiên"},
+    "heading.summary": {"en": "Summary", "vi": "Tóm tắt"},
+    "value.candidate_stack": {"en": "{stack} ({config})", "vi": "{stack} ({config})"},
+    "prose.final_recommendation": {
+        "en": "{stack} ({config}), for {scope} and for nothing else (HĐ-1.4).",
+        "vi": (
+            "{stack} ({config}), áp dụng cho {scope} và không cho bất cứ thứ gì khác (HĐ-1.4)."
+        ),
+    },
+    "prose.final_recommendation_none": {
+        "en": (
+            "None. Fewer than two candidates cleared the gates, so this run ranked nobody "
+            "and the gate sheet is the result."
+        ),
+        "vi": (
+            "Không có. Chưa tới hai ứng viên vượt qua các cổng, nên lần chạy này không xếp "
+            "hạng ai và bảng cổng chính là kết quả."
+        ),
+    },
+    "prose.summary_precision": {
+        "en": (
+            "Numbers on this sheet and the two after it are stored as values, not as text, "
+            "so they sort, sum and chart. They are shown to a fixed number of decimals — the "
+            "same the comparison grid on screen uses — which can differ from the Markdown "
+            "export's three significant digits. Click a cell for the full value."
+        ),
+        "vi": (
+            "Các con số trên sheet này và hai sheet kế tiếp được lưu dưới dạng giá trị chứ "
+            "không phải văn bản, nên có thể sắp xếp, cộng và vẽ biểu đồ. Chúng hiển thị với "
+            "số chữ số thập phân cố định — đúng bằng lưới so sánh trên màn hình — và có thể "
+            "khác với ba chữ số có nghĩa của bản Markdown. Bấm vào ô để thấy giá trị đầy đủ."
+        ),
+    },
+    "heading.precision": {"en": "Precision", "vi": "Độ chính xác hiển thị"},
     # --- Human record -----------------------------------------------------
     "label.review_state": {"en": "Review state", "vi": "Trạng thái duyệt đọc"},
     "label.reviewed_by": {"en": "Reviewed by", "vi": "Người đã đọc"},

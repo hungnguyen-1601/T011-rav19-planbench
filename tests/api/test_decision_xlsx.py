@@ -23,6 +23,20 @@ from planbench_api.decision_xlsx import decision_workbook_filename, render_decis
 
 ILLEGAL_SHEET_CHARACTERS = set("[]:*?/\\")
 
+#: The sheets whose cells are the strings the Markdown prints, character
+#: for character. The rest store raw values with a number format and are
+#: checked against the screen instead — see
+#: `test_neither_invents_a_number_the_other_lacks`.
+MIRRORS_THE_MARKDOWN = (
+    "Provenance",
+    "Sample",
+    "Gates",
+    "Outcome by candidate",
+    "Decision Card",
+    "Episodes",
+    "Human record",
+)
+
 
 class Run:
     """A stored run, in the shape both renderers read."""
@@ -97,6 +111,11 @@ CARD = {
     "status": "CLEAR_RECOMMENDATION",
     "contracts_version": "6.9.0",
     "recommendation_scope": "MISSION_LEVEL",
+    # The card's own score, which the summary reads. Carried by the
+    # default fixture rather than added per test: a card without it is
+    # the unusual case, and leaving it out here made every assertion
+    # about the score have to build its own card first.
+    "decision_utility": 0.8774,
     "evidence": {
         "weight_stability_margin": 1.0,
         "anchor_stability": "unchanged",
@@ -145,12 +164,21 @@ class TestTheTwoExportsAgree:
         assert any("HĐ-1.4" in value for value in cells(book(run)["Decision Card"]))
 
     def test_neither_invents_a_number_the_other_lacks(self) -> None:
-        """Crude but real: every numeric-looking cell in the workbook
-        has to be findable in the Markdown."""
+        """Crude but real: every numeric-looking cell on the sheets that
+        mirror the Markdown has to be findable in the Markdown.
+
+        **Scoped to those sheets on purpose.** The numeric sheets store
+        raw floats shown to a fixed number of decimals, while the
+        Markdown prints three significant digits — the same measurement,
+        a different number of digits, and no format string reproduces
+        `.3g`. Asserting character equality across that line would force
+        one of the two to give up what it exists for: the Markdown its
+        frozen output, or the new sheets their sortable columns.
+        """
         run = Run(report(), CARD)
         markdown = render_decision_markdown(run)
         workbook = book(run)
-        for name in workbook.sheetnames:
+        for name in MIRRORS_THE_MARKDOWN:
             for value in cells(workbook[name]):
                 if any(character.isdigit() for character in value) and len(value) < 40:
                     assert value in markdown, f"{name}: {value!r} is not in the Markdown"
@@ -209,15 +237,12 @@ class TestWhatASpreadsheetGetsWrong:
 class TestTheFileItself:
     def test_it_is_a_workbook_a_reader_can_open(self) -> None:
         workbook = book(Run(report(), CARD))
-        assert workbook.sheetnames == [
-            "Provenance",
-            "Sample",
-            "Gates",
-            "Outcome by candidate",
-            "Decision Card",
-            "Episodes",
-            "Human record",
-        ]
+        assert workbook.sheetnames == ["Summary", *MIRRORS_THE_MARKDOWN]
+
+    def test_the_summary_comes_first(self) -> None:
+        """A reader opening the file to check one number should not have
+        to know which of eight tabs it lives on."""
+        assert book(Run(report(), CARD)).sheetnames[0] == "Summary"
 
     def test_no_sheet_name_breaks_excel(self) -> None:
         """Past 31 characters, or carrying one of the reserved
@@ -389,3 +414,170 @@ class TestWhatMakesItEvaluable:
         assert "Eligible to recommend" in found
         assert "no" in found
         assert any("cannot be traded against speed" in value for value in found)
+
+
+class TestTheSummarySheet:
+    """The one sheet somebody reads if they read nothing else.
+
+    Before it existed the answer to "what came out of this run?" was
+    spread over three tabs: the identity on `Provenance`, the winner and
+    the margin on `Decision Card`, and which stacks were even compared
+    only on the tables underneath.
+    """
+
+    def sheet(self, run: Run):
+        return book(run)["Summary"]
+
+    def test_it_carries_what_a_reader_came_for(self) -> None:
+        found = cells(self.sheet(Run(report(), CARD)))
+        for label in (
+            "Run",
+            "Deployment",
+            "Anchor config",
+            "Contracts version",
+            "Code version",
+            "Winner",
+            "Overall score",
+            "Final recommendation",
+        ):
+            assert label in found, label
+
+    def test_it_names_the_candidates_rather_than_calling_them_a_and_b(self) -> None:
+        """"Algorithm A" makes a reader who opened the file a week later
+        go and look up which one A was."""
+        found = cells(self.sheet(Run(report(), CARD)))
+        assert any("astar+dwa (dwa_coarse)" in value for value in found)
+
+    def test_the_recommendation_carries_its_scope(self) -> None:
+        """A recommendation that arrives without its limit is one
+        somebody applies elsewhere (HĐ-1.4)."""
+        found = " ".join(cells(self.sheet(Run(report(), CARD))))
+        assert "MISSION_LEVEL" in found
+        assert "HĐ-1.4" in found
+
+    def test_a_run_with_no_card_still_gets_one(self) -> None:
+        """"Nobody was ranked, here is why" is an answer a reader needs
+        at the top, not four sheets in."""
+        run = Run(report(why_no_card="only one candidate cleared"), None)
+        found = " ".join(cells(self.sheet(run)))
+        assert "Final recommendation" in found
+        assert "ranked nobody" in found
+        assert "only one candidate cleared" in found
+
+    def test_it_names_the_preference_profile_when_the_run_recorded_one(self) -> None:
+        """The weights the utility was computed under are part of what
+        the score means, and two profiles rank the same candidates
+        differently."""
+        run = Run(report(manifest={"preference_profile": "benh_vien_gio_cao_diem"}), CARD)
+        found = cells(self.sheet(run))
+        assert "benh_vien_gio_cao_diem" in found
+
+    def test_it_says_nothing_about_weights_a_run_did_not_record(self) -> None:
+        """No manifest means no profile. Printing the default would be
+        naming weights this card may not have been scored under."""
+        assert "Preference profile" not in cells(self.sheet(Run(report(), CARD)))
+
+
+class TestTheNumbersAreNumbers:
+    """What a column of strings costs, and what buying it back costs.
+
+    A spreadsheet whose figures are text cannot sort, sum or chart —
+    which is most of the reason somebody asked for a spreadsheet. These
+    sheets store the raw value and let Excel format it.
+    """
+
+    def cell(self, label: str, run: Run | None = None):
+        sheet = book(run or Run(report(), CARD))["Summary"]
+        for row in sheet.iter_rows():
+            if row[0].value == label:
+                return row[1]
+        raise AssertionError(f"no row labelled {label!r}")
+
+    def test_the_overall_score_is_a_number(self) -> None:
+        cell = self.cell("Overall score")
+        assert isinstance(cell.value, float)
+        assert cell.number_format == "0.0000"
+
+    def test_the_interval_is_two_numbers_rather_than_one_string(self) -> None:
+        """A reader filtering for margins that clear zero needs the
+        bound to be a number — which is the reading the interval exists
+        to support."""
+        card = {**CARD, "evidence": {**CARD["evidence"], "ci95": [0.032, 0.129]}}
+        run = Run(report(), card)
+        for label, expected in (("ΔU 95% lower bound", 0.032), ("ΔU 95% upper bound", 0.129)):
+            cell = self.cell(label, run)
+            assert cell.value == pytest.approx(expected)
+
+    def test_a_missing_number_leaves_the_cell_empty_and_says_so_elsewhere(self) -> None:
+        """Not 0, which sums and sorts as a measurement, and not the
+        words "not measured", which would make the column text and take
+        sorting away from every other row in it."""
+        card = {**CARD, "decision_utility": None}
+        cell = self.cell("Overall score", Run(report(), card))
+        assert cell.value is None
+        assert cell.number_format == "0.0000"
+
+    def test_every_format_is_one_excel_accepts(self) -> None:
+        from openpyxl import Workbook
+
+        from planbench_api.decision_export import (
+            COUNT,
+            MEGABYTES,
+            METRES,
+            MILLISECONDS,
+            PERCENT,
+            SECONDS,
+            UTILITY,
+        )
+
+        sheet = Workbook().active
+        for index, unit in enumerate(
+            (PERCENT, MILLISECONDS, SECONDS, METRES, MEGABYTES, COUNT, UTILITY), start=1
+        ):
+            cell = sheet.cell(row=index, column=1, value=1.0)
+            cell.number_format = unit.excel_format
+            assert cell.number_format == unit.excel_format
+
+    def test_the_digits_match_what_the_screen_shows(self) -> None:
+        """The fixed decimal counts are the comparison grid's, not new
+        ones: the file and the page are the same comparison."""
+        from planbench_api.decision_export import (
+            COUNT,
+            MEGABYTES,
+            METRES,
+            MILLISECONDS,
+            PERCENT,
+            SECONDS,
+            quantity,
+        )
+
+        assert quantity(0.9667, PERCENT).display() == "96.7 %"
+        assert quantity(7.3479, MILLISECONDS).display() == "7.35 ms"
+        assert quantity(22.84, SECONDS).display() == "22.8 s"
+        assert quantity(0.4942, METRES).display() == "0.494 m"
+        assert quantity(412.53, MEGABYTES).display() == "412.5 MB"
+        assert quantity(30, COUNT).display() == "30"
+
+    def test_a_percentage_is_stored_raw_so_excels_own_format_scales_it(self) -> None:
+        """`0.0%` multiplies by 100 itself. Storing 96.67 beside it would
+        print 9667.0%."""
+        from planbench_api.decision_export import PERCENT
+
+        assert PERCENT.excel_format == "0.0%"
+        assert PERCENT.display_scale == 100.0
+
+    def test_a_difference_between_two_rates_is_points_not_per_cent(self) -> None:
+        """Calling the gap between 70.0% and 72.0% "+2.0 %" says the gap
+        is a proportion of a proportion."""
+        from planbench_api.decision_export import PERCENT
+
+        assert PERCENT.delta_symbol == "pp"
+
+    def test_a_value_the_artifact_stored_as_text_does_not_break_the_export(self) -> None:
+        """These come out of stored JSON. An older artifact with a
+        string where a float belongs is a reason to leave the cell
+        empty, not to fail the download."""
+        from planbench_api.decision_export import METRES, quantity
+
+        assert quantity("0.494", METRES).missing
+        assert quantity(True, METRES).missing

@@ -29,16 +29,26 @@ belong here now, because they are properties of the content:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, NamedTuple
 
 from planbench_api.decision_text import DEFAULT_LOCALE, Locale, text
 from planbench_api.decision_text import lines as text_lines
 
 __all__ = [
+    "COUNT",
+    "MEGABYTES",
+    "METRES",
+    "MILLISECONDS",
+    "PERCENT",
+    "SECONDS",
+    "UTILITY",
     "Caveat",
     "Locale",
     "NOT_MEASURED",
     "NOT_RECORDED",
+    "Quantity",
+    "Unit",
     "as_number",
     "as_ratio",
     "as_text",
@@ -163,10 +173,11 @@ def sample_rows(
 
 #: ``Shown`` is a column because a comparison between candidates given
 #: different inputs is measuring the inputs.
-#: The keys, in order. A function rather than a tuple of strings
-#: because the header is one of the things a language changes, and a
-#: module-level constant would have been frozen at import in whichever
-#: language happened to be the default.
+#:
+#: Keys rather than words, resolved by :func:`gate_columns`: a header is
+#: one of the things a language changes, and a module-level tuple of
+#: strings would have been frozen at import in whichever language
+#: happened to be the default.
 _GATE_COLUMN_KEYS: tuple[str, ...] = (
     "column.gate.candidate",
     "column.gate.config",
@@ -597,4 +608,232 @@ def episode_rows(
                     as_number(episode.get("episode_decision_utility"), "", locale),
                 )
             )
+    return rows
+
+
+# --- Quantities a spreadsheet can actually use -----------------------------
+#
+# **Why the older cells are strings and these are not.** `as_number` uses
+# `%.3g` — three significant digits, so the number of decimal places moves
+# with the magnitude. Excel's `number_format` has no notion of significant
+# digits, so there is no format string that reproduces `.3g`; a cell
+# written as a float and formatted to a fixed width would print a
+# different string from the Markdown, and the whole point of this module
+# is that the two documents never quote one measurement two ways.
+#
+# The sheets built on `Quantity` take the other trade instead. They use
+# the *fixed* decimal counts the comparison grid on screen already uses,
+# which do translate to Excel exactly, and they store the raw float. So:
+#
+# - the older sheets agree with the Markdown, character for character;
+# - the newer sheets agree with the screen, and can be sorted, summed and
+#   charted, which a column of strings cannot;
+# - and where the two disagree about how many digits to show, the newer
+#   one carries the full value in the cell, so the question is answerable
+#   by clicking it.
+
+
+@dataclass(frozen=True)
+class Unit:
+    """How one kind of quantity is written, in both places it is written.
+
+    ``excel_format`` and ``decimals`` are the same decision expressed
+    twice — once for Excel and once for the assertion that proves Excel
+    was told the right thing — so they live in one object rather than in
+    two tables that could drift.
+    """
+
+    #: What follows the digits on screen. Empty for a bare count.
+    symbol: str
+    #: How a *difference* in this quantity reads. Not always ``symbol``:
+    #: the gap between two percentages is percentage points, and calling
+    #: it ``%`` would say the gap was a proportion of a proportion.
+    delta_symbol: str
+    decimals: int
+    excel_format: str
+    #: What the stored value is multiplied by to reach the displayed
+    #: digits. Only ratios use it, and only because they are stored as
+    #: 0.942 and read as 94.2 — Excel's ``%`` format does the same
+    #: multiplication, which is why the raw ratio is what goes in the cell.
+    display_scale: float = 1.0
+
+    def digits(self, value: float) -> str:
+        """The digits alone, as the screen writes them."""
+        return f"{value * self.display_scale:.{self.decimals}f}"
+
+
+PERCENT = Unit(symbol="%", delta_symbol="pp", decimals=1, excel_format="0.0%", display_scale=100.0)
+MILLISECONDS = Unit(symbol="ms", delta_symbol="ms", decimals=2, excel_format='0.00" ms"')
+SECONDS = Unit(symbol="s", delta_symbol="s", decimals=1, excel_format='0.0" s"')
+METRES = Unit(symbol="m", delta_symbol="m", decimals=3, excel_format='0.000" m"')
+MEGABYTES = Unit(symbol="MB", delta_symbol="MB", decimals=1, excel_format='0.0" MB"')
+COUNT = Unit(symbol="", delta_symbol="", decimals=0, excel_format="0")
+#: Four places rather than three: the objective sheet adds `weight × U`
+#: down a column and asserts the total equals the card's own utility, and
+#: at three places the rounding shows up in the sixth decimal of the sum.
+UTILITY = Unit(symbol="", delta_symbol="", decimals=4, excel_format="0.0000")
+
+
+@dataclass(frozen=True)
+class Quantity:
+    """One measured value, or the absence of one, with its unit.
+
+    ``value is None`` means the run did not record it, and it must reach
+    the sheet as an **empty cell** — never 0, which sums and sorts as a
+    measurement, and never the words "not measured", which would make
+    the column text and take sorting away from every other row in it.
+    Whoever writes the row says "not measured" in a neighbouring cell
+    that is already text.
+    """
+
+    value: float | None
+    unit: Unit
+
+    @property
+    def missing(self) -> bool:
+        return self.value is None
+
+    def digits(self) -> str | None:
+        return None if self.value is None else self.unit.digits(self.value)
+
+    def display(self, locale: Locale = DEFAULT_LOCALE) -> str:
+        """The value as a reader sees it, for tests and for text cells.
+
+        Not called ``text``: that is the name of the translation
+        function this module imports, and a method shadowing it inside
+        the class would work right up until somebody needed both.
+        """
+        if self.value is None:
+            return text("value.not_measured", locale)
+        digits = self.unit.digits(self.value)
+        return f"{digits} {self.unit.symbol}" if self.unit.symbol else digits
+
+
+def quantity(value: Any, unit: Unit) -> Quantity:
+    """A reading, coerced once so every caller does not have to.
+
+    Anything that is not a real number becomes "not recorded" rather
+    than raising: these come out of stored JSON, and an artifact written
+    by an older version having a string where a float belongs is a
+    reason to leave the cell empty, not to fail the export.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return Quantity(None, unit)
+    return Quantity(float(value), unit)
+
+
+# --- The one sheet somebody reads if they read nothing else ----------------
+
+
+def summary_rows(
+    run: Any, report: dict[str, Any], locale: Locale = DEFAULT_LOCALE
+) -> list[tuple[str, str | Quantity]]:
+    """What was run, on what, and what came out — in one place.
+
+    **Built from the other row builders, not from the report.** Every
+    value here already exists on some sheet; reaching into the report a
+    second time to fetch it would be a second reading of the same field,
+    free to disagree with the first the day one of them changes.
+
+    A run with no card still gets a summary. It answers the same
+    question — what came out of this? — and the answer "nobody was
+    ranked, here is why" is one a reader needs at the top rather than
+    four sheets in.
+    """
+    card = run.card or report.get("decision_card")
+    identity = report.get("identity") or {}
+    candidates = report.get("candidates") or []
+    manifest = getattr(run, "manifest", None) or report.get("manifest") or {}
+
+    rows: list[tuple[str, str | Quantity]] = [
+        (
+            text("label.run_at", locale),
+            as_text(identity.get("created_at") or run.created_at, locale),
+        ),
+        (text("label.deployment", locale), as_text(run.task_profile_id, locale)),
+        (
+            text("label.experiment_scope", locale),
+            as_text(identity.get("experiment_scope") or run.experiment_scope, locale),
+        ),
+        (
+            text("label.anchor_config", locale),
+            as_text(identity.get("anchor_config_version"), locale),
+        ),
+        (text("label.contracts_version", locale), as_text(run.contracts_version, locale)),
+        (text("label.code_version", locale), as_text(identity.get("git_sha"), locale)),
+    ]
+    if manifest.get("preference_profile"):
+        rows.append(
+            (
+                text("label.preference_profile", locale),
+                as_text(manifest.get("preference_profile"), locale),
+            )
+        )
+
+    # The candidates by name, because "Algorithm A" makes a reader who
+    # opened the file a week later go and look up which one A was.
+    for index, candidate in enumerate(candidates, start=1):
+        rows.append(
+            (
+                text("label.candidate_n", locale, index=index),
+                text(
+                    "value.candidate_stack",
+                    locale,
+                    stack=as_text(candidate.get("stack_label"), locale),
+                    config=as_text(candidate.get("local_controller_config"), locale),
+                ),
+            )
+        )
+
+    if not card:
+        rows.append(
+            (
+                text("label.final_recommendation", locale),
+                text("prose.final_recommendation_none", locale),
+            )
+        )
+        reason = no_card_reason(report, locale)
+        if reason:
+            rows.append((text("heading.reason", locale), reason))
+        return rows
+
+    evidence = card.get("evidence") or {}
+    interval = evidence.get("ci95")
+    low, high = (
+        (interval[0], interval[1])
+        if isinstance(interval, (list, tuple)) and len(interval) == 2
+        else (None, None)
+    )
+    recommended = card.get("recommended") or {}
+    rows += [
+        (
+            text("label.episodes_compared", locale),
+            quantity(evidence.get("n_episodes"), COUNT),
+        ),
+        (text("label.winner", locale), as_text(recommended.get("stack"), locale)),
+        (
+            text("label.overall_score", locale),
+            quantity(card.get("decision_utility"), UTILITY),
+        ),
+        (text("label.delta_u_mean", locale), quantity(evidence.get("delta_u_mean"), UTILITY)),
+        # The interval as two cells rather than the string "[a, b]": a
+        # reader filtering for margins that clear zero needs the bound
+        # to be a number, and that is exactly the reading the interval
+        # exists to support.
+        (text("label.confidence_low", locale), quantity(low, UTILITY)),
+        (text("label.confidence_high", locale), quantity(high, UTILITY)),
+        (text("label.effect_size", locale), quantity(evidence.get("effect_size"), UTILITY)),
+        (text("label.decision_mode", locale), as_text(card.get("decision_mode"), locale)),
+        (text("label.pareto_label", locale), as_text(card.get("pareto_label"), locale)),
+        (
+            text("label.final_recommendation", locale),
+            text(
+                "prose.final_recommendation",
+                locale,
+                stack=as_text(recommended.get("stack"), locale),
+                config=recommended_config(report, recommended.get("candidate_id"), locale),
+                scope=scope_of(run, report, locale),
+            ),
+        ),
+    ]
     return rows
