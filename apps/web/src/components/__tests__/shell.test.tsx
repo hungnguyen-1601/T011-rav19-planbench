@@ -510,3 +510,39 @@ describe("notices say how much they matter", () => {
     expect(rule(".notice.notice--critical")).toContain("var(--err)");
   });
 });
+
+describe("fields and tabs", () => {
+  const rule = (selector: string) => {
+    const at = SHEET.indexOf(`\n${selector} {`);
+    expect(at, `${selector} is not declared at the start of a line`).toBeGreaterThan(-1);
+    return SHEET.slice(at, SHEET.indexOf("\n}", at)).replace(/\/\*[\s\S]*?\*\//g, "");
+  };
+
+  it("gives a focused field a ring, not just a recoloured hairline", () => {
+    /* On a form of twelve inputs, a 1px border changing colour is the
+       difference between knowing where the caret is and hunting for
+       it. */
+    const focus = rule("select:focus,\ninput:focus,\ntextarea:focus");
+    expect(focus).toContain("box-shadow: 0 0 0 3px var(--accent-soft)");
+  });
+
+  it("puts fields on the same floor as buttons", () => {
+    /* So a field and the button beside it sit on one line rather than
+       half a step apart. A floor, not a height — a textarea is a field
+       too and pinning it would make it one row tall forever. */
+    const field = rule("select,\ninput,\ntextarea");
+    expect(field).toContain("min-height: 32px");
+    expect(field).not.toMatch(/(?<!min-)height: *\d+px/);
+  });
+
+  it("underlines the selected tab instead of filling it", () => {
+    /* A filled container holding filled tabs is two nested pills, and
+       the selected one then competes with the primary button on the same
+       form. The underline uses the edge a tab already shares with the
+       panel it opens. */
+    const active = rule(".deployment-config-panel .tabs-list button.active");
+    expect(active).toContain("box-shadow: inset 0 -2px 0 var(--accent)");
+    expect(active).toContain("background: transparent");
+    expect(rule(".deployment-config-panel .tabs-list")).not.toContain("background: var(--panel-2)");
+  });
+});
