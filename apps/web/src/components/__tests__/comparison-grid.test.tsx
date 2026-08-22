@@ -539,3 +539,87 @@ describe("green for ahead, red for behind", () => {
     expect(replans).not.toContain("is-worst");
   });
 });
+
+describe("the winner column says in words what the colour says in colour", () => {
+  /** One `<tr>`'s inner HTML, found by the metric name it carries. */
+  const row = (html: string, name: string) =>
+    [...html.matchAll(/<tr>(.*?)<\/tr>/gs)]
+      .map(([, inner]) => inner)
+      .find((inner) => inner.includes(name))!;
+
+  it("names the leader by letter", () => {
+    /* A red number and a green number are the same number to a sighted
+       colourblind reader. The `sr-only` spans beside them reach a screen
+       reader and nobody else, so this column is that reader's copy. */
+    const success = row(draw(pair()), "Success rate");
+    expect(success).toContain('class="comparison-winner is-lead"');
+    expect(success).toMatch(/comparison-winner is-lead">A</);
+  });
+
+  it("says tie rather than naming a side", () => {
+    const tied = row(draw(pair()), "Distinct episodes");
+    expect(tied).toContain('class="comparison-winner is-tie"');
+    expect(tied).toContain(">tie<");
+  });
+
+  it("keeps a level row apart from one that was never a comparison", () => {
+    /* Two different facts. One glyph for both is the mistake the value
+       cells already refuse to make with `not measured` against `0`. */
+    const html = draw([
+      candidate({ candidate_id: "a", replan_count: 30 }),
+      candidate({ candidate_id: "b", replan_count: 242 }),
+    ]);
+    const replans = row(html, "Replans across the run");
+    expect(replans).toContain("is-uncompared");
+    expect(replans).not.toContain("is-tie");
+    expect(replans).not.toContain("is-lead");
+  });
+
+  it("marks nobody on a row where one side recorded nothing", () => {
+    const [first, second] = pair();
+    const html = draw([first, { ...second, gates: {} } as RunCandidate]);
+    expect(row(html, "Collision probability")).toContain("is-uncompared");
+  });
+
+  it("counts the same rows the summary sentence counts", () => {
+    /* Both read `leaders()`, and the winner cell repeats the summary's
+       own two conditions for "was this a comparison". If they drift, the
+       sentence claims a lead on five rows while five different rows
+       carry the letter. */
+    const html = draw(pair());
+    const leads = [...html.matchAll(/comparison-winner is-lead">([AB])</g)].map(([, l]) => l);
+    const aWins = leads.filter((letter) => letter === "A").length;
+    expect(html).toContain(`leads on ${aWins} of`);
+  });
+
+  it("marks which way is better on a row the smaller number wins", () => {
+    /* `+9.35 ms` in the delta column reads as an improvement to anyone
+       who has not worked out that latency is one of the six rows won by
+       the smaller number. */
+    const p99 = row(draw(pair()), "Planner latency");
+    expect(p99).toContain("comparison-direction--lower");
+    expect(p99).toContain("Lower is better");
+  });
+
+  it("claims no direction for the row that has none", () => {
+    const html = draw([
+      candidate({ candidate_id: "a", replan_count: 30 }),
+      candidate({ candidate_id: "b", replan_count: 242 }),
+    ]);
+    expect(row(html, "Replans across the run")).not.toContain("comparison-direction");
+  });
+
+  it("says why there is no weight column instead of leaving it missing", () => {
+    /* A reader arriving from a comparison template looks for one. Silence
+       reads as an omission rather than as the decision it is. */
+    const html = draw(pair());
+    expect(html).toContain("comparison-footnote");
+    expect(html).toContain("weights attach to the four objectives");
+  });
+
+  it("draws no winner column for a single candidate", () => {
+    /* One candidate is not a comparison, and a column of em dashes down
+       the whole table says nothing. */
+    expect(draw([candidate()])).not.toContain("comparison-winner");
+  });
+});

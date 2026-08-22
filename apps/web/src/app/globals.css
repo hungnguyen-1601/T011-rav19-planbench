@@ -154,11 +154,22 @@
 
 /* Which candidate a mark belongs to.
    ===================================================================
-   Identity, not interaction. `--candidate-a` used to be `var(--accent)`,
-   so one blue meant both "this is a link, click it" and "this column is
-   candidate A"; `--candidate-b` borrowed `--purple`, which nothing else
-   on these pages uses for anything. Indigo and teal say only whose
-   column this is.
+   Identity, not interaction, and identity not outcome. `--candidate-a`
+   used to be `var(--accent)`, so one blue meant both "this is a link,
+   click it" and "this column is candidate A". Indigo fixed that half.
+
+   **Teal had the same fault in the other direction.** `--teal` is
+   `#087f6a` against an `--ok` of `#1a7f37`: two greens, one meaning
+   "candidate B" and one meaning "the better number", side by side in a
+   table that paints both. On the run this was found in, candidate B was
+   the eliminated one and its whole column carried a green wash — the
+   colour said the opposite of the verdict on its own column head, and
+   nothing on the screen resolved which reading won.
+
+   So B is purple. Purple is in the palette on all three theme paths and
+   is used by nothing else on these pages, which is what makes it usable
+   as a name: green and red are now spent entirely on good and bad, and
+   neither candidate borrows them.
 
    **Derived, and declared once.** `--indigo` and `--teal` are already
    part of the palette on all three theme paths — `:root`, the explicit
@@ -176,9 +187,9 @@
   --candidate-a: var(--indigo);
   --candidate-a-soft: var(--indigo-soft);
   --candidate-a-border: color-mix(in srgb, var(--indigo) 48%, var(--border));
-  --candidate-b: var(--teal);
-  --candidate-b-soft: var(--teal-soft);
-  --candidate-b-border: color-mix(in srgb, var(--teal) 48%, var(--border));
+  --candidate-b: var(--purple);
+  --candidate-b-soft: var(--purple-soft);
+  --candidate-b-border: color-mix(in srgb, var(--purple) 48%, var(--border));
 }
 
 /* The scales. These sit outside the theme blocks above on purpose:
@@ -2441,8 +2452,15 @@ a.stat-card:hover {
 .comparison-common { display: grid; align-content: start; gap: 10px; min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2); }
 .comparison-common legend { padding-inline: 5px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
 .candidate-card { min-width: 0; padding: 12px; border: 1px solid; border-radius: 10px; }
-.candidate-a { border-color: var(--candidate-a-border); background: var(--candidate-a-soft); }
-.candidate-b { border-color: var(--candidate-b-border); background: var(--candidate-b-soft); }
+/* **Scoped to the card, because the class travels.** These two were
+   bare selectors, so they painted anything carrying `candidate-a` or
+   `candidate-b` — including every `<td>` in the comparison table, which
+   is where the column-wide wash came from that the rule further down
+   this file says does not exist. It said so honestly: nothing in the
+   table's own block sets a background. The tint arrived from up here,
+   1400 lines earlier, on a selector written for the picker cards. */
+.candidate-card.candidate-a { border-color: var(--candidate-a-border); background: var(--candidate-a-soft); }
+.candidate-card.candidate-b { border-color: var(--candidate-b-border); background: var(--candidate-b-soft); }
 .candidate-card-head { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid color-mix(in srgb, currentColor 18%, transparent); }
 .candidate-card-head > span { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 9px; background: var(--panel); }
 .candidate-a .candidate-card-head { color: var(--candidate-a); }
@@ -4027,6 +4045,60 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
 }
 .comparison-value.is-worst {
   color: var(--err);
+}
+
+/* Who led, in words — the second signal the rule above says colour must
+   never be without.
+   ===================================================================
+   `sr-only` beside each value reaches a screen reader and nobody else:
+   a sighted colourblind reader had green and red and nothing more. This
+   column is that reader's copy of the same fact, and it costs 96px.
+
+   Three states, three renderings, and the third is not the second. A
+   level row and a row that was never a comparison are different facts,
+   so `—` carries a title saying which one it is rather than standing in
+   for both. */
+.comparison-winner {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font: 700 var(--fs-body) var(--font-sans);
+  text-align: center;
+  white-space: nowrap;
+}
+.comparison-winner.is-lead { color: var(--ok); }
+.comparison-winner.is-tie { color: var(--muted); font-weight: 500; }
+.comparison-winner.is-uncompared { color: var(--border-strong); font-weight: 400; cursor: help; }
+
+/* Which way is better, beside the metric name. Muted and small: it
+   qualifies the row, it is not a value in it. */
+.comparison-direction {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  cursor: help;
+}
+
+/* Why there is no weight column. Sits under the table rather than in a
+   tooltip: a reader looking for a missing column is not hovering, they
+   are scanning for it. */
+.comparison-footnote {
+  margin: 0;
+  padding: 10px 16px 14px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+/* The head follows a long table down.
+   ===================================================================
+   Ten metric rows plus a flags row plus the gate detail below run past a
+   laptop viewport, and a number in the fourth column means nothing once
+   the column it belongs to has scrolled away. The `<thead>` cells carry
+   their own background because a sticky cell is transparent by default
+   and the rows would run underneath it. */
+.comparison-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
 }
 
 /* The six-cell gate grid, now inside a collapsed <details> below the

@@ -52,6 +52,13 @@ export function ComparisonGrid({
   // column is not rendered at all rather than rendered and hidden.
   const hasDelta = candidates.length === 2;
 
+  // **The word, beside the colour that already said it.** Ahead was
+  // green and behind was red, and for a sighted colourblind reader that
+  // was the whole signal — the `sr-only` span beside each value reaches
+  // a screen reader and nobody else. One comparison needs two
+  // candidates; past two the cell names every leader it finds.
+  const hasWinner = candidates.length >= 2;
+
   // A row of empty cells is not a finding. This one carries two — an
   // undeclared observation class, and a candidate retired early — and
   // appears only when a candidate has one.
@@ -146,6 +153,11 @@ export function ComparisonGrid({
                 <span className="candidate-letter">Δ (B−A)</span>
               </th>
             ) : null}
+            {hasWinner ? (
+              <th scope="col" className="comparison-cell comparison-winner">
+                <span className="candidate-letter">{t("decisions.compare.winner")}</span>
+              </th>
+            ) : null}
           </tr>
         </thead>
 
@@ -190,6 +202,7 @@ export function ComparisonGrid({
               {/* No Δ cell, and nothing has to stand in for one. In the
                   grid this row used to shift every cell after it. */}
               {hasDelta ? <td className="comparison-delta" /> : null}
+              {hasWinner ? <td className="comparison-winner" /> : null}
             </tr>
           ) : null}
 
@@ -199,6 +212,7 @@ export function ComparisonGrid({
               metric={metric}
               candidates={candidates}
               hasDelta={hasDelta}
+              hasWinner={hasWinner}
               extra={metric.key === "p99" ? hostWarning : null}
               /* The bound is `3/N` under the simulated scenario
                  distribution, so the sample it rests on is not context —
@@ -209,6 +223,14 @@ export function ComparisonGrid({
         </tbody>
       </table>
     </div>
+    {/* **Why there is no weight column, said out loud.** A reader
+        arriving from a comparison template looks for one and finds
+        nothing, and silence there reads as an omission rather than as
+        the decision it is: weights attach to the four objectives, not to
+        the metrics a reader compares on, so a weight beside `median
+        episode duration` would be a number invented for the column. The
+        real ones are under the scores, where they belong. */}
+    <p className="comparison-footnote">{t("decisions.compare.weightNote")}</p>
     </>
   );
 }
@@ -233,12 +255,14 @@ function MetricLine({
   metric,
   candidates,
   hasDelta,
+  hasWinner,
   extra,
   sub,
 }: {
   metric: MetricRow;
   candidates: RunCandidate[];
   hasDelta: boolean;
+  hasWinner: boolean;
   extra?: React.ReactNode;
   /** A clause under the metric name that is true of every column. */
   sub?: React.ReactNode;
@@ -254,6 +278,31 @@ function MetricLine({
     <tr>
       <th scope="row" className="comparison-gutter comparison-label">
         {t(`decisions.compare.${metric.key}`)}{" "}
+        {/* **Which way is better, on the row itself.** Six of these ten
+            rows are won by the smaller number, and `+9.35 ms` in the Δ
+            column reads as an improvement to anyone who has not yet
+            worked out that latency is one of them. The arrow is the
+            cheapest place to say so: beside the name, where the reader
+            already is when they meet the row. */}
+        {metric.direction === "none" ? null : (
+          <span
+            className={`comparison-direction comparison-direction--${metric.direction}`}
+            title={t(
+              metric.direction === "lower"
+                ? "decisions.compare.lowerIsBetter"
+                : "decisions.compare.higherIsBetter",
+            )}
+          >
+            <span aria-hidden="true">{metric.direction === "lower" ? "↓" : "↑"}</span>
+            <span className="sr-only">
+              {t(
+                metric.direction === "lower"
+                  ? "decisions.compare.lowerIsBetter"
+                  : "decisions.compare.higherIsBetter",
+              )}
+            </span>
+          </span>
+        )}{" "}
         <Hint
           text={t(`decisions.compare.why.${metric.key}`)}
           label={t(`decisions.compare.${metric.key}`)}
@@ -316,8 +365,48 @@ function MetricLine({
       ))}
 
       {hasDelta ? <td className="comparison-delta">{metric.deltaText ?? ""}</td> : null}
+      {hasWinner ? <WinnerCell metric={metric} mark={mark} /> : null}
     </tr>
   );
+}
+
+/** Who led this row, in words.
+ *
+ * **Three answers, and the third is not a blank.** A row can be won, or
+ * come out level, or never have been a comparison at all — a row with no
+ * direction (`replans` is evidence, not a score) and a row where some
+ * side recorded nothing are both the third. Printing an em dash for
+ * "level" and an em dash for "never compared" would fold two different
+ * facts into one glyph, which is the mistake the value cells already
+ * refuse to make with `not measured` against `0`.
+ *
+ * The test of "was this a comparison" is deliberately the same pair of
+ * conditions `comparisonSummary` uses to decide what to count. If they
+ * drift, the sentence above the table says one candidate leads on five
+ * rows while a different five rows carry its letter.
+ */
+function WinnerCell({ metric, mark }: { metric: MetricRow; mark: (string | null)[] }) {
+  const { t } = useTranslation();
+  const comparable =
+    metric.direction !== "none" && metric.values.every((value) => value !== null);
+
+  if (!comparable) {
+    return (
+      <td className="comparison-winner is-uncompared" title={t("decisions.compare.notCompared")}>
+        <span aria-hidden="true">—</span>
+        <span className="sr-only">{t("decisions.compare.notCompared")}</span>
+      </td>
+    );
+  }
+
+  const leaders = mark
+    .map((entry, index) => (entry === "lead" ? sideLabel(index) : null))
+    .filter((letter): letter is string => letter !== null);
+
+  if (leaders.length === 0) {
+    return <td className="comparison-winner is-tie">{t("decisions.compare.tie")}</td>;
+  }
+  return <td className="comparison-winner is-lead">{leaders.join(" · ")}</td>;
 }
 
 /** The collision-probability cell, with the sample it rests on.

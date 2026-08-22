@@ -1091,6 +1091,30 @@ describe("the comparison grid stopped tinting whole columns", () => {
     expect(CSS).toContain(".comparison-grid-head.candidate-a { border-top-color: var(--candidate-a); }");
   });
 
+  it("does not let the picker card's wash reach the table through a bare class", () => {
+    /* The two assertions above check selectors the table's own block
+       never had. The wash was real anyway: `.candidate-b { background }`
+       was written for the picker cards and matched every `<td>` carrying
+       the class. Scoping it to the card is what actually removes it, so
+       that is what is asserted. */
+    expect(CSS).not.toContain("\n.candidate-a {");
+    expect(CSS).not.toContain("\n.candidate-b {");
+    expect(CSS).toContain(".candidate-card.candidate-b {");
+  });
+
+  it("spends green and red on good and bad, never on whose column this is", () => {
+    /* `--teal` is #087f6a against an `--ok` of #1a7f37. On a run where
+       candidate B was the eliminated one, its green identity sat under a
+       red `blocked at G3` badge and over red numbers — the column colour
+       contradicting the verdict on its own head. */
+    expect(CSS).toContain("--candidate-b: var(--purple);");
+    expect(CSS).not.toContain("--candidate-b: var(--teal);");
+    for (const token of ["--ok", "--err", "--teal"]) {
+      expect(CSS).not.toContain(`--candidate-a: var(${token})`);
+      expect(CSS).not.toContain(`--candidate-b: var(${token})`);
+    }
+  });
+
   it("leaves no column tinted, including a third candidate", () => {
     /* `candidate-n` is the fallback past B. Keeping its grey wash after
        A and B lost theirs would tint exactly the column with no colour
