@@ -310,9 +310,20 @@ function HostWarning({ run }: { run: DecisionRun }) {
     // like a claim about everything under it; the caveat is about one
     // row. The box also cannot sit in a table cell without looking like
     // a panel that lost its way.
+    // **One line, with the rest behind the hint.** The full sentence is
+    // four lines of prose, and printed in the cell it made this row
+    // roughly three times the height of every other — the reader's eye
+    // loses the column it was scanning down, on the one table whose
+    // whole job is being scannable. What stays visible is the claim that
+    // changes how the number is read; what moves into the hint is the
+    // evidence for it, which is read once if at all.
     <span className="comparison-host-warning">
       <Icon name="alert" size={12} />
-      <span>{view.translated ? t(view.key, view.vars) : view.text}</span>
+      <span>{t("decisions.env.unpinnedShort")}</span>
+      <Hint
+        text={view.translated ? t(view.key, view.vars) : view.text}
+        label={t("decisions.env.unpinnedShort")}
+      />
     </span>
   );
 }

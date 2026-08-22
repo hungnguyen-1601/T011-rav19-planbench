@@ -434,9 +434,22 @@ export function TraceViewer({
                   label={t("trace.running.progress")}
                   value={`${(live.progress_fraction * 100).toFixed(1)} %`}
                 />
+                {/* **Both units, because the tile beside it uses the
+                    other one.** `safety_margin` is in robot radii and
+                    that is deliberate — a metre of room means something
+                    different to a robot of a different size. But the
+                    tile two along reads `0.990 m`, the comparison table
+                    above reads `0.470 m`, and one concept wearing two
+                    units on one screen with nothing saying so is a
+                    reader silently comparing `3.81` against `0.470`.
+                    The radius is in the trace, so the metres are a
+                    conversion rather than a second measurement. */}
                 <Figure
                   label={t("trace.running.margin")}
-                  value={`${live.safety_margin.toFixed(2)} r`}
+                  value={`${(live.safety_margin * trace.robot_radius_m).toFixed(3)} m · ${live.safety_margin.toFixed(2)} r`}
+                  note={t("trace.running.marginUnits", {
+                    radius: trace.robot_radius_m.toFixed(3),
+                  })}
                 />
                 <Figure
                   label={t("trace.running.exposure")}

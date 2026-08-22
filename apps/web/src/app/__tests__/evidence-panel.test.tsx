@@ -290,3 +290,55 @@ describe("planned routes on the canvas", () => {
     expect(vi["trace.colourNote"]).toContain("đổi màu mỗi lần replan");
   });
 });
+
+describe("the evidence panel speaks the reader's language", () => {
+  const VERDICTS = [
+    "supports_component_specific_attribution",
+    "rules_out_component_specific_attribution",
+    "insufficient_contrast",
+  ];
+
+  it("no longer prints the platform's English prose under a translated badge", () => {
+    /* A Vietnamese page carried `ủng hộ quy kết cho một component` over
+       four lines of English. The badge was keyed on `verdict` and the
+       sentence was the platform's `reason` string, rendered verbatim. */
+    expect(PANEL).not.toContain("{finding.reason}</p>");
+    expect(PANEL).toContain("latticeReason(finding)");
+  });
+
+  it("has both languages for every verdict it words itself", () => {
+    for (const verdict of VERDICTS) {
+      expect(en).toHaveProperty(`evidence.lattice.reason.${verdict}`);
+      expect(vi).toHaveProperty(`evidence.lattice.reason.${verdict}`);
+    }
+  });
+
+  it("carries the subject the sentence names", () => {
+    /* The claim is "the pattern follows *this component*". A sentence
+       that dropped it would be a different, weaker claim. */
+    for (const verdict of VERDICTS.slice(0, 2)) {
+      expect(en[`evidence.lattice.reason.${verdict}` as keyof typeof en]).toContain("{subject}");
+      expect(vi[`evidence.lattice.reason.${verdict}` as keyof typeof vi]).toContain("{subject}");
+    }
+  });
+
+  it("keeps the platform's own words where the payload cannot be reworded", () => {
+    /* `interaction_not_isolated` names the components the pattern moved
+       with, and that list exists nowhere in the payload except inside
+       the prose. Wording it here would drop the components or parse them
+       back out of a sentence. An unknown verdict falls the same way, so
+       a build meeting a verdict added after it shows the platform's
+       sentence rather than a blank. */
+    expect(en).not.toHaveProperty("evidence.lattice.reason.interaction_not_isolated");
+    expect(PANEL).toContain("reason.text");
+  });
+
+  it("names the candidate the detectors saw, not only its hash", () => {
+    /* `29cdf6266a44` appears on no other panel, so a reader who has
+       spent the page comparing `astar+dwa` against `rrtstar+dwa` has
+       nowhere to look it up. The hash stays beside the name: it is what
+       a trace path and a bug report are keyed on. */
+    expect(PANEL).toContain("candidate.stack_label");
+    expect(PANEL).toContain("evidence-sighting-id");
+  });
+});

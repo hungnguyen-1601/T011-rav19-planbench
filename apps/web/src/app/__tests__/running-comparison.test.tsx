@@ -279,7 +279,13 @@ describe("tile translation keys", () => {
   const keys = [...VIEWER.matchAll(/t\(\s*"(trace\.running\.[a-zA-Z0-9_.]+)"/g)].map((m) => m[1]);
 
   it("names a label for every dynamic tile", () => {
-    expect(new Set(keys).size).toBe(5);
+    /* Five tile labels and one note. The note is `marginUnits`: worst
+       clearance is reported in robot radii while the tile beside it and
+       the comparison table both report metres, and one concept wearing
+       two units on one screen with nothing saying so is a reader
+       comparing 3.81 against 0.470. */
+    expect(new Set(keys).size).toBe(6);
+    expect(keys).toContain("trace.running.marginUnits");
   });
 
   it.each([...new Set(keys)])("%s exists in both locales", (key) => {

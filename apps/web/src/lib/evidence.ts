@@ -37,6 +37,51 @@ export function verdictTone(verdict: string): string {
   return VERDICT_TONE[verdict] ?? "muted-badge";
 }
 
+/** How a lattice finding's reason should be worded.
+ *
+ * **The badge was translated and the sentence under it was not.** A
+ * Vietnamese page carried `ủng hộ quy kết cho một component` over four
+ * lines of English — the platform's `reason` string, rendered verbatim
+ * because that is what it was: prose composed in Python, with no code
+ * beside it a client could word for itself.
+ *
+ * The fix is the one `hostWarningView` already made for the measurement
+ * caveat, and it is worth stating why that shape and not a translation
+ * table keyed on the sentence. What must survive intact is the *claim*,
+ * and the claim here is carried by `verdict` and `subject`, both of
+ * which are codes. Given those two, this client can say the same thing
+ * in either language. Given only the sentence, it can only pattern-match
+ * on prose the platform is free to reword.
+ *
+ * **`interaction_not_isolated` keeps the platform's own sentence**, and
+ * that is not an oversight. Its reason names the components the pattern
+ * moved with, and that list exists nowhere else in the payload — it is
+ * assembled into the prose and never sent as data. Wording it here would
+ * mean either dropping the components, which is most of the finding, or
+ * parsing them back out of a sentence, which is worse than printing it.
+ * An unknown verdict falls through the same way, so a build that meets a
+ * verdict added after it still shows the platform's words rather than a
+ * blank.
+ */
+export type LatticeReason =
+  | { translated: true; key: string; subject: string | null }
+  | { translated: false; text: string };
+
+const WORDABLE = new Set([
+  "supports_component_specific_attribution",
+  "rules_out_component_specific_attribution",
+  "insufficient_contrast",
+]);
+
+export function latticeReason(finding: PacketLatticeFinding): LatticeReason {
+  if (!WORDABLE.has(finding.verdict)) return { translated: false, text: finding.reason };
+  return {
+    translated: true,
+    key: `evidence.lattice.reason.${finding.verdict}`,
+    subject: finding.subject ?? null,
+  };
+}
+
 /** Why there is no decomposition on screen.
  *
  * `"none"` means one is being drawn. The other two are different facts
