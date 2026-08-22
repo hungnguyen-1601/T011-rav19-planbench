@@ -132,16 +132,20 @@ episode trước tiên là sai. Sai ở chỗ: xem hai candidate chạy cạnh n
 **là cách An đọc run này**, không phải bước kiểm tra làm sau; đóng lại
 và đẩy xuống bốn màn hình thì đọc thành đã mất.
 
-Vị trí chốt: ngay dưới `TradeoffInsights`, tức ngay dưới bảng so sánh
-và phần đọc bảng đó — trước `ExplanationHeader`. Mở sẵn (`open`), vẫn
-là `<details>` nên xem xong gấp lại được, và số episode nằm trên summary
-để biết bên trong có gì khi đã gấp.
+Vị trí chốt: **một section riêng ngay dưới `CandidateComparison`**,
+trên `TradeoffInsights`. Lần đầu trả lại tôi để nó dưới
+`TradeoffInsights` để bảng và phần đọc bảng dính nhau — An bảo không,
+canvas là phần riêng và đứng trước. `TradeoffInsights` xuống dưới
+replay, và đọc hợp lý hơn ở đó: nó tóm tắt cả bảng lẫn hai canvas.
+
+Mở sẵn (`open`), vẫn là `<details>` nên xem xong gấp lại được, số
+episode nằm trên summary để biết bên trong có gì khi đã gấp.
 
 Thứ tự render hiện tại:
 
 ```
 SampleNotice · DecisionSummary · DecisionAdvice · CandidateComparison
-· TradeoffInsights · TracePanel(details, open) · ExplanationHeader
+· TracePanel(details, open) · TradeoffInsights · ExplanationHeader
 · EvidencePanel · ConclusionPanel · CardPanel · HumanActs
 ```
 

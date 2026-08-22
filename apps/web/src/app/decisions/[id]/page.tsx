@@ -168,18 +168,13 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
       <DecisionSummary run={run} />
       <DecisionAdvice run={run} />
       <CandidateComparison run={run} />
-      {/* Directly under the table it reads. Ten metrics against two
-          candidates is eighty digits, and every reader was being asked
-          to do the same diff by eye and reach the same three
-          sentences. */}
-      <TradeoffInsights run={run} />
-      {/* **Back under the comparison, at An's call.** It had been moved
-          below the evidence and closed, on the argument that a replay is
-          a drill-down nobody opens before knowing the result. That was
-          right about the *order* and wrong about this panel: the
-          side-by-side replay is how An reads two candidates against each
-          other, not a check performed afterwards, and folding it shut
-          four screens down read as having lost it.
+      {/* **Its own section under the comparison, at An's call.** It had
+          been moved below the evidence and closed, on the argument that
+          a replay is a drill-down nobody opens before knowing the
+          result. That was right about the *order* and wrong about this
+          panel: watching the two candidates drive is how a run gets read
+          here, not a check performed afterwards, and folded shut four
+          screens down it read as having gone missing.
 
           What the earlier move was actually for still holds and is kept:
           the conclusion and the advice come first, so the replay no
@@ -187,6 +182,12 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
           It stays a `<details>` — open, so it is there, and collapsible,
           so four screens of pager and canvas can be put away. */}
       <TracePanel run={run} />
+      {/* After the replay rather than immediately under the table,
+          because it reads *both*: ten metrics against two candidates is
+          eighty digits, and the sentences it draws out of them are the
+          ones a reader would otherwise assemble by eye from the table
+          and the two canvases together. */}
+      <TradeoffInsights run={run} />
       <ExplanationHeader run={run} />
       <EvidencePanel run={run} />
       {/* The marks come after the evidence that justifies them, and the
