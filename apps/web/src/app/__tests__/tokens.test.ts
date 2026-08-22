@@ -243,3 +243,50 @@ describe("the base every unstyled element inherits", () => {
   });
 
 });
+
+describe("what !important is still allowed to do", () => {
+  /* Not "there is none". Three rules need it and always will: inside a
+     `prefers-reduced-motion` block, `transition: none` has to beat the
+     transition each component declares for itself, and that override is
+     the entire mechanism. Deleting them hands the animation back to the
+     one reader who asked for it to stop, silently — nobody who sets that
+     preference is looking at a screenshot. */
+  const flat = CSS.replace(/\r\n/g, "\n");
+  const code = withoutComments(flat);
+
+  /** Every `@media (prefers-reduced-motion: reduce) { … }` block. */
+  const reducedMotion = () => {
+    const blocks: string[] = [];
+    const marker = "@media (prefers-reduced-motion: reduce)";
+    for (let at = code.indexOf(marker); at !== -1; at = code.indexOf(marker, at + 1)) {
+      let depth = 0;
+      let i = code.indexOf("{", at);
+      const start = i;
+      for (; i < code.length; i += 1) {
+        if (code[i] === "{") depth += 1;
+        else if (code[i] === "}") {
+          depth -= 1;
+          if (depth === 0) break;
+        }
+      }
+      blocks.push(code.slice(start, i));
+    }
+    return blocks;
+  };
+
+  it("allows it only where a reader asked for motion to stop", () => {
+    const total = (code.match(/!important/g) ?? []).length;
+    const inside = reducedMotion().reduce(
+      (count, block) => count + (block.match(/!important/g) ?? []).length,
+      0,
+    );
+    expect(total).toBeGreaterThan(0);
+    expect(inside, `${total - inside} outside a reduced-motion block`).toBe(total);
+  });
+
+  it("finds the blocks it claims to be reading", () => {
+    /* Without this the check above passes trivially the day the media
+       query is reworded and the matcher stops matching. */
+    expect(reducedMotion().length).toBeGreaterThanOrEqual(3);
+  });
+});

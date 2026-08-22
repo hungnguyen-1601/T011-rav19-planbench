@@ -2037,7 +2037,9 @@ a.stat-card:hover {
 .simulate-empty-banner .empty-icon { grid-row: 1 / 3; }
 .simulate-empty-banner .empty-state strong { grid-column: 2; grid-row: 1; align-self: end; }
 .simulate-empty-banner .empty-state p { grid-column: 2; grid-row: 2; align-self: start; margin: 1px 0 0; }
-.simulate-empty-banner .quick-action { grid-column: 3; grid-row: 1 / 3; margin: 0 !important; }
+/* No `!important`: `.quick-action` sets no margin of its own and
+   nothing else targets this element, so the flag was beating nothing. */
+.simulate-empty-banner .quick-action { grid-column: 3; grid-row: 1 / 3; margin: 0; }
 
 .simulate-setup { padding: 0; overflow: hidden; }
 .simulate-section-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; }
@@ -2318,6 +2320,14 @@ a.stat-card:hover {
   .simulate-metrics .metrics { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* **The `!important` here is load-bearing.** It has to beat the
+   `transition` each component declares for itself, and that is the only
+   mechanism by which this rule does anything. Removing it hands the
+   animation back to the one reader who asked for it to stop — and it
+   fails silently, because nobody who set the preference is looking at a
+   screenshot. Three rules carry it, all inside a
+   `prefers-reduced-motion` block; the test below allows it nowhere
+   else. */
 @media (prefers-reduced-motion: reduce) {
   .simulate-page * { scroll-behavior: auto !important; transition: none !important; }
   .simulate-spinner { animation-duration: 1.5s; }
@@ -2944,8 +2954,11 @@ a.stat-card:hover {
 .mission-pose--goal { border-left: 3px solid var(--goal); }
 .mission-pose .field { flex: 1 1 88px; }
 
+/* Also not needed. A child selector is `(0,2,0)` against `.row`'s
+   `(0,1,0)`, so it already won; `.grid` has no base rule in this file at
+   all, so there was never anything to beat. */
 .deployment-section-body > .row,
-.deployment-section-body > .grid { gap: 10px !important; }
+.deployment-section-body > .grid { gap: 10px; }
 
 .deployment-field { min-width: 150px; flex: 1 1 150px; }
 .deployment-field > span:first-child { color: var(--text); font-weight: 600; }
