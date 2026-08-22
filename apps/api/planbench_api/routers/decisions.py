@@ -952,7 +952,7 @@ def decision_report_xlsx(run_id: str, service: Runs) -> Response:
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
             "Content-Disposition": (
-                f'attachment; filename="{decision_workbook_filename(run_id)}"'
+                f'attachment; filename="{decision_workbook_filename(stored)}"'
             )
         },
     )

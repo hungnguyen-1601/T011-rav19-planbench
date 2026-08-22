@@ -230,8 +230,62 @@ class TestTheFileItself:
     def test_the_gate_header_stays_put_while_scrolling(self) -> None:
         assert book(Run(report(), CARD))["Gates"].freeze_panes == "A2"
 
-    def test_the_filename_names_the_run(self) -> None:
-        assert decision_workbook_filename("run_x") == "decision-run_x.xlsx"
+class TestTheFilenameSaysWhatTheFileIsAbout:
+    """`decision-8f3a1c.xlsx` is unambiguous and says nothing.
+
+    A reader with six downloads in a folder needs the deployment and the
+    pair being compared, and needs them without opening anything.
+    """
+
+    def test_it_names_the_project_the_comparison_and_when(self) -> None:
+        run = Run(
+            report(
+                identity={"created_at": "2026-08-21T14:30:00+00:00"},
+                candidates=[candidate(), candidate(stack_label="rrtstar+dwa")],
+            ),
+            CARD,
+        )
+        assert decision_workbook_filename(run) == (
+            "warehouse_a_v1_astar-dwa-vs-rrtstar-dwa_2026-08-21_14-30.xlsx"
+        )
+
+    def test_two_exports_of_one_run_produce_one_name(self) -> None:
+        """The timestamp is when the run happened, not when the button
+        was pressed — otherwise two downloads of one run land as two
+        files with no way to see they are the same document."""
+        run = Run(report(), CARD)
+        assert decision_workbook_filename(run) == decision_workbook_filename(run)
+
+    def test_more_than_two_candidates_are_counted_rather_than_listed(self) -> None:
+        """`a-vs-b-vs-c-vs-d` is a filename nobody reads to the end."""
+        run = Run(report(candidates=[candidate(stack_label=f"s{n}") for n in range(4)]), CARD)
+        assert "_4-candidates_" in decision_workbook_filename(run)
+
+    def test_a_run_with_no_candidates_still_names_itself(self) -> None:
+        run = Run(report(candidates=[]), None)
+        assert decision_workbook_filename(run).startswith("warehouse_a_v1_no-candidates")
+
+    def test_characters_a_filesystem_would_refuse_are_replaced(self) -> None:
+        """`astar+dwa` is a stack name, not a filename."""
+        run = Run(report(candidates=[candidate(stack_label="a*b/c:d")]), CARD)
+        name = decision_workbook_filename(run)
+        assert not set(name) & set('*/:\\?"<>|')
+
+    def test_an_unparseable_timestamp_drops_the_segment_rather_than_inventing_one(self) -> None:
+        """A name that states the wrong time is worse than one that
+        states no time, because only the first is believed."""
+        run = Run(
+            report(
+                identity={"created_at": "sometime last week"},
+                candidates=[candidate()],
+            ),
+            CARD,
+        )
+        assert decision_workbook_filename(run) == "warehouse_a_v1_astar-dwa.xlsx"
+
+    def test_it_stays_short_enough_to_save_on_windows(self) -> None:
+        run = Run(report(candidates=[candidate(stack_label="x" * 200)]), CARD)
+        assert len(decision_workbook_filename(run)) <= 125
 
 
 class TestOverHttp:
@@ -259,7 +313,9 @@ class TestOverHttp:
         assert response.headers["content-type"].startswith(
             "application/vnd.openxmlformats-officedocument"
         )
-        assert "decision-run_xlsx.xlsx" in response.headers["content-disposition"]
+        disposition = response.headers["content-disposition"]
+        assert "warehouse_a_v1_" in disposition
+        assert "_2026-08-20_10-00.xlsx" in disposition
         # A real workbook, not an error page wearing the right header.
         assert response.content[:2] == b"PK"
 

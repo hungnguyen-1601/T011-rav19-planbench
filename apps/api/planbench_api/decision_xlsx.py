@@ -26,6 +26,7 @@ the same value and a reader would have no way to know it.
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from io import BytesIO
 from typing import Any
 
@@ -58,9 +59,78 @@ __all__ = ["decision_workbook_filename", "render_decision_xlsx"]
 _ILLEGAL_IN_SHEET_NAME = re.compile(r"[\[\]:*?/\\]")
 _SHEET_NAME_LIMIT = 31
 
+#: Anything outside this becomes a hyphen. Deliberately narrower than
+#: what any one filesystem forbids: the file is downloaded by a browser,
+#: saved on whatever the reader runs, and mailed on from there, so the
+#: safe set is the intersection rather than the union.
+_UNSAFE_IN_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
 
-def decision_workbook_filename(run_id: str) -> str:
-    return f"decision-{run_id}.xlsx"
+#: Long enough for two stack names and a deployment, short enough that
+#: the whole path stays inside the Windows limit after it lands in a
+#: nested Downloads folder.
+_FILENAME_STEM_LIMIT = 120
+
+
+def _slug(value: Any) -> str:
+    """A filename-safe fragment, or the empty string when there is none."""
+    return _UNSAFE_IN_FILENAME.sub("-", str(value or "")).strip("-")
+
+
+def _comparison_slug(report: dict[str, Any]) -> str:
+    """What was compared, named in the filename.
+
+    Two candidates are named; more are counted. `a-vs-b-vs-c-vs-d` is a
+    filename nobody reads to the end, and the count is the part that
+    tells a reader which download this is.
+    """
+    labels = [_slug(entry.get("stack_label")) for entry in report.get("candidates") or []]
+    labels = [label for label in labels if label]
+    if not labels:
+        return "no-candidates"
+    if len(labels) > 2:
+        return f"{len(labels)}-candidates"
+    return "-vs-".join(labels)
+
+
+def _when(run: Any, report: dict[str, Any]) -> str:
+    """When the run happened, or nothing at all.
+
+    **Not the moment the button was pressed.** Two exports of one run
+    have to produce one filename, or a reader with both in a folder has
+    two files and no way to see they are the same document.
+
+    An unparseable timestamp drops the segment rather than substituting
+    now(): a name that states the wrong time is worse than one that
+    states no time, because only the first is believed.
+    """
+    identity = report.get("identity") or {}
+    raw = identity.get("created_at") or getattr(run, "created_at", None)
+    if not raw:
+        return ""
+    try:
+        stamp = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    return stamp.strftime("%Y-%m-%d_%H-%M")
+
+
+def decision_workbook_filename(run: Any) -> str:
+    """``<project>_<comparison>_<YYYY-MM-DD_HH-mm>.xlsx``.
+
+    Named for what the file is about rather than for the id it was
+    fetched by. `decision-8f3a1c.xlsx` is unambiguous and says nothing;
+    a reader with six of them in a Downloads folder needs the deployment
+    and the pair, and needs them without opening anything.
+    """
+    report: dict[str, Any] = getattr(run, "report", None) or {}
+    parts = [
+        _slug(getattr(run, "task_profile_id", None)) or "decision",
+        _comparison_slug(report),
+    ]
+    when = _when(run, report)
+    if when:
+        parts.append(when)
+    return f"{'_'.join(parts)[:_FILENAME_STEM_LIMIT]}.xlsx"
 
 
 def _sheet_name(title: str) -> str:
