@@ -342,3 +342,86 @@ describe("the evidence panel speaks the reader's language", () => {
     expect(PANEL).toContain("evidence-sighting-id");
   });
 });
+
+describe("the evidence panel can be read by somebody who did not build it", () => {
+  const DETECTORS = [
+    "detour",
+    "stuck_cluster",
+    "near_miss_cluster",
+    "replan_storm",
+    "oscillation",
+    "latency_spike",
+    "narrow_gap_refusal",
+  ];
+  const VERDICTS = [
+    "supports_component_specific_attribution",
+    "rules_out_component_specific_attribution",
+    "interaction_not_isolated",
+    "insufficient_contrast",
+  ];
+
+  it("names every detector in words, and says what made it fire", () => {
+    /* `near_miss_cluster` is precise and checkable and is also why a
+       reader outside this team could not tell whether the row was a
+       problem. Composed at runtime from the type, so no static scan of
+       the source would catch a missing one. */
+    for (const type of DETECTORS) {
+      expect(en).toHaveProperty(`evidence.detector.name.${type}`);
+      expect(vi).toHaveProperty(`evidence.detector.name.${type}`);
+      expect(en).toHaveProperty(`evidence.detector.what.${type}`);
+      expect(vi).toHaveProperty(`evidence.detector.what.${type}`);
+    }
+  });
+
+  it("keeps the code beside the name rather than instead of it", () => {
+    /* It is the id every report and trace path is keyed on. Dropping it
+       would trade one unreadable column for one nobody can cross-
+       reference. */
+    expect(PANEL).toContain("evidence-pattern-id");
+    expect(PANEL).toContain("{item.type}</code>");
+  });
+
+  it("quotes the detector's own thresholds in the explanation", () => {
+    /* A definition without its numbers is a definition a reader has to
+       take on trust — and these are the numbers that decide whether the
+       row appears at all. They are the defaults in
+       `packages/explanation/planbench_explanation/detectors.py`. */
+    const near = (en as Record<string, string>)["evidence.detector.what.near_miss_cluster"];
+    expect(near).toContain("0.15 m");
+    expect(near).toContain("ten seconds");
+    expect((en as Record<string, string>)["evidence.detector.what.latency_spike"]).toContain("100 ms");
+    expect((en as Record<string, string>)["evidence.detector.what.replan_storm"]).toContain("three or more");
+    expect((en as Record<string, string>)["evidence.detector.what.detour"]).toContain("15%");
+  });
+
+  it("states what each pattern can be blamed on, before the method", () => {
+    /* The verdict badge is a term of art and the sentence under it
+       described the experiment. Neither said the thing a reader came
+       for, which is whether the route planner is what makes the robot
+       stall. */
+    for (const verdict of VERDICTS) {
+      expect(en).toHaveProperty(`evidence.plain.${verdict}`);
+      expect(vi).toHaveProperty(`evidence.plain.${verdict}`);
+    }
+    expect(PANEL).toContain("<LatticeClaim finding={finding} />");
+    const claim = PANEL.indexOf("<LatticeClaim");
+    const method = PANEL.indexOf("evidence.lattice.method");
+    expect(claim).toBeLessThan(method);
+  });
+
+  it("keeps the method note rather than deleting it", () => {
+    /* A reader who disagrees with a claim needs to see how it was
+       reached; "trust us" is what this whole layer exists to avoid. */
+    expect(PANEL).toContain("evidence-method");
+    expect(PANEL).toContain("<LatticeReason finding={finding} />");
+  });
+
+  it("words the component instead of printing its code", () => {
+    /* A sentence naming `global_planner` in the middle of Vietnamese
+       prose is a sentence half-translated. */
+    expect(en).toHaveProperty("evidence.component.global_planner");
+    expect(vi).toHaveProperty("evidence.component.global_planner");
+    expect(vi["evidence.component.global_planner" as keyof typeof vi]).not.toContain("global_planner");
+    expect(PANEL).not.toContain("{finding.subject}</code>");
+  });
+});

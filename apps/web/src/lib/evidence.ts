@@ -37,6 +37,42 @@ export function verdictTone(verdict: string): string {
   return VERDICT_TONE[verdict] ?? "muted-badge";
 }
 
+/** The one sentence a finding amounts to, in the reader's own words.
+ *
+ * **The verdict badge was a term of art and the sentence under it was a
+ * method note.** "supports attributing to a component" over "the pattern
+ * follows global_planner across every pair that changes only that
+ * component" is two ways of describing the experiment, and neither of
+ * them says the thing a reader came for — which is whether the route
+ * planner is what makes the robot stall. That sentence exists; it was
+ * simply never written down, because the panel was built to be
+ * defensible rather than to be read.
+ *
+ * So both survive, in that order: the plain claim first, the method
+ * behind it still there for anyone checking the reasoning. What is *not*
+ * done is dropping the method note — a reader who disagrees with a claim
+ * needs to see how it was reached, and "trust us" is what this whole
+ * layer exists to avoid.
+ *
+ * The subject is a component code (`global_planner`), and it is worded
+ * here rather than printed: a sentence naming `global_planner` in the
+ * middle of Vietnamese prose is a sentence half-translated. */
+export interface LatticePlain {
+  key: string;
+  /** i18n key for the component, or `null` for the two verdicts that
+   *  name no component because they could not isolate one. */
+  componentKey: string | null;
+}
+
+export function latticePlain(finding: PacketLatticeFinding): LatticePlain {
+  const known =
+    finding.subject === "global_planner" || finding.subject === "local_controller";
+  return {
+    key: `evidence.plain.${finding.verdict}`,
+    componentKey: known ? `evidence.component.${finding.subject}` : null,
+  };
+}
+
 /** How a lattice finding's reason should be worded.
  *
  * **The badge was translated and the sentence under it was not.** A

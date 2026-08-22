@@ -4617,3 +4617,30 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
   font-weight: 400;
   white-space: nowrap;
 }
+
+/* The evidence panel, read by somebody who did not build the detectors.
+   ===================================================================
+   `near_miss_cluster` is precise, checkable against the replay, and the
+   id every report and trace path is keyed on. It is also the reason a
+   reader who is not on this team could not tell whether the row was a
+   problem. The plain name leads, the code follows it small enough to be
+   an identifier rather than a heading, and the claim under both is the
+   sentence the panel existed to produce and never wrote down. */
+.evidence-pattern {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-weight: 600;
+}
+.evidence-pattern-id {
+  margin-left: var(--space-2);
+  color: var(--muted);
+  font-size: var(--fs-caption);
+}
+.evidence-claim { margin: var(--space-1) 0 0; }
+/* The method note, which describes the experiment rather than the
+   result. Folded away rather than deleted: a reader who disagrees with
+   a claim needs to see how it was reached. */
+.evidence-method { margin-top: var(--space-1); }
+.evidence-method summary { cursor: pointer; }
+.evidence-lattice-note { margin: var(--space-1) 0 var(--space-3); }
