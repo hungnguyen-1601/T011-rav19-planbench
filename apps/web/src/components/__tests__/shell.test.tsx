@@ -59,10 +59,14 @@ function sidebar(
 }
 
 describe("Sidebar — expanded", () => {
-  it("shows the brand, the tagline and every menu name", () => {
+  it("shows the brand and every menu name", () => {
+    /* No tagline. "AMR/AGV planning benchmark — simulation only" is a
+       sentence about the product: read once, then read past forever,
+       from the top of the one surface used on every visit. It moved to
+       `/system`, which is the page opened to learn what this is. */
     const html = sidebar();
     expect(html).toContain("PlanBench");
-    expect(html).toContain("simulation only");
+    expect(html).not.toContain("simulation only");
     for (const label of ["Dashboard", "Maps", "Candidates", "Decisions", "Agent", "Reviews"]) {
       expect(html).toContain(label);
     }
@@ -74,22 +78,30 @@ describe("Sidebar — expanded", () => {
        one heading, so a replacement sat beside the thing it replaced
        with nothing saying which was which. */
     const html = sidebar();
-    expect(html).toContain("What you are doing");
-    expect(html).toContain("Materials");
-    expect(html).toContain("Being replaced");
+    expect(html).toContain("Workspace");
+    expect(html).toContain("Resources");
+    /* Three headings, not four. A heading is a claim about a set, and
+       `Being replaced` had come down to one member — so it cost a
+       heading to say what a chip says beside the name it is about. A
+       navigation label should name a place, not report on the project's
+       state, and that was the one here that did the second. */
+    expect(html).not.toContain("Being replaced");
+    expect(html.match(/sidebar-section-title/g)).toHaveLength(3);
   });
 
-  it("says what every entry is for, not just its name", () => {
-    /* Twelve names and nothing else left a reader unable to tell that
-       Benchmarks and Decisions answer different questions. That was the
-       largest cost of running two flows at once, and none of it was in
-       the code. */
+  it("still says what every entry is for, from the title attribute", () => {
+    /* The sentences stay — they are why a reader can tell that two
+       entries answer different questions. What changed is where they
+       are: twelve of them printed under twelve labels turned the rail
+       into a column of prose whose last item fell below the fold, and
+       each is read once and then never again. Nothing was deleted; the
+       keys and the strings are all still here. */
     const html = sidebar();
-    expect(html).toContain("Declare a world to measure on");
-    expect(html).toContain("sidebar-desc");
+    expect(html).toContain('title="Declare a world to measure on"');
+    expect(html).not.toContain("sidebar-desc");
   });
 
-  it("says out loud which pages are being replaced", () => {
+  it("still says out loud which page is being replaced", () => {
     /* One entry is left in that group. `/benchmarks`, `/leaderboard` and
        `/algorithms` were removed in P6, each only after the thing that
        replaced it existed. `/scenarios` was kept on the same rule — the
@@ -98,9 +110,14 @@ describe("Sidebar — expanded", () => {
        now, which makes retiring it a decision somebody has to take
        rather than a thing to wait for; until then the sidebar says what
        it is instead of implying it is still the only editor. */
+    /* One entry is left, and it keeps saying what it is — as a chip on
+       the row rather than as a heading over a set of one. The sentence
+       is still there too, in the title. */
     const html = sidebar({ user: ALICE });
-    expect(html).toContain("Being replaced");
+    expect(html).toContain("sidebar-legacy");
+    expect(html).toContain("Legacy");
     expect(html).toContain("The older editor");
+    expect(html.match(/sidebar-legacy/g)).toHaveLength(1);
   });
 
   it("offers a collapse control", () => {

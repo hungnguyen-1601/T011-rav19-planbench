@@ -54,7 +54,10 @@
   --hover: rgba(255, 255, 255, 0.06);
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 
-  --sidebar-width: 264px;
+  /* 232, from 264. The rail carried a sentence under every label; with
+     those gone the extra 32px was empty column beside twelve short
+     names, taken from the content that has numbers in it. */
+  --sidebar-width: 232px;
   --sidebar-width-collapsed: 68px;
   --topbar-height: 52px;
 }
@@ -358,13 +361,6 @@ a:hover {
   white-space: nowrap;
 }
 
-.sidebar-brand .tagline {
-  color: var(--muted);
-  font-size: 11px;
-  margin: 2px 0 0;
-  line-height: 1.3;
-}
-
 .sidebar-section {
   margin-top: 10px;
 }
@@ -417,27 +413,16 @@ a:hover {
   text-overflow: ellipsis;
 }
 
-/* The one line saying what a page is for. Stacked under the name rather
-   than beside it: a rail is narrow, and a description that competes with
-   the label for one line ends up truncating the label. */
-.sidebar-desc {
-  display: block;
-  font-size: 11px;
-  line-height: 1.3;
-  color: var(--muted);
-  white-space: normal;
-  margin-top: 1px;
-}
 
-/* Nothing here works less than the rest — these pages are still the only
-   way to do some things. The muted title says "a replacement exists",
-   which is more use to a reader than a sidebar that lists the
-   replacement silently beside the thing it replaces. */
-.sidebar-section:has(> .sidebar-section-title) a[href="/benchmarks"] .sidebar-label,
-.sidebar-section:has(> .sidebar-section-title) a[href="/leaderboard"] .sidebar-label,
-.sidebar-section:has(> .sidebar-section-title) a[href="/scenarios"] .sidebar-label {
-  opacity: 0.85;
-}
+/* The chip beside the name, where the section heading used to be.
+   ===================================================================
+   What this replaced was three hard-coded paths in the stylesheet
+   dimming their own labels — a rule that could not be found by anyone
+   reading the navigation model, and that kept dimming `/benchmarks`
+   and `/leaderboard` for months after both were removed from the rail.
+   The flag lives on the item now, so adding or clearing it is an edit
+   to the model rather than to a selector. */
+.sidebar-legacy { margin-left: auto; flex: none; }
 
 .sidebar-footer {
   margin-top: auto;
@@ -462,7 +447,6 @@ a:hover {
 }
 
 :root[data-sidebar="collapsed"] .sidebar-label,
-:root[data-sidebar="collapsed"] .sidebar-brand .tagline,
 :root[data-sidebar="collapsed"] .sidebar-brand h1,
 :root[data-sidebar="collapsed"] .sidebar-section-title,
 :root[data-sidebar="collapsed"] .sidebar-footer .session-card > div {
@@ -732,7 +716,6 @@ main.content--wide { max-width: none; }
 
   :root[data-sidebar="collapsed"] .sidebar-label,
   :root[data-sidebar="collapsed"] .sidebar-brand h1,
-  :root[data-sidebar="collapsed"] .sidebar-brand .tagline,
   :root[data-sidebar="collapsed"] .sidebar-section-title,
   :root[data-sidebar="collapsed"] .sidebar-footer .session-card > div {
     display: revert;

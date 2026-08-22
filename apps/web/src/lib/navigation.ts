@@ -30,6 +30,11 @@ export interface NavItem {
   hidden?: boolean;
   /** Requires a session; shown but marked when signed out. */
   session?: boolean;
+  /** On its way out, and still the only way to do something.
+   *
+   * A chip beside the name rather than a section of its own: a heading
+   * is a claim about a set, and this set has one member. */
+  legacy?: boolean;
 }
 
 export interface NavSection {
@@ -45,14 +50,26 @@ export interface NavSection {
  * heading — `Deployments` and `Decisions` sitting between `Benchmarks`
  * and `Leaderboard`, with nothing saying which was replacing which.
  *
- * `nav.section.retiring` is deliberately visible rather than tidied
- * away. Those pages still work and are still the only way to do some
- * things; saying so is more use to a reader than a sidebar that quietly
- * lists a replacement beside the thing it replaces.
+ * **The `Being replaced` group is gone, and that reverses an earlier
+ * decision rather than tidying one away.** It was kept visible on the
+ * argument that those pages still work and are still the only way to do
+ * some things, and saying so beats a sidebar that quietly lists a
+ * replacement beside the thing it replaces. That argument held while the
+ * group had four entries. It has one.
+ *
+ * A heading is a claim about a set. Spending one on a single item makes
+ * the reader parse a category to learn a fact about one row — and the
+ * fact travels better as a chip beside the name it is about, which is
+ * what `legacy` now is. The page keeps saying what it is; it stops
+ * needing its own section of the menu to say it.
+ *
+ * A navigation label should also name a place, not report on the
+ * project's state. `Being replaced` was the one entry here that did the
+ * second.
  */
 export const NAV_SECTIONS: readonly NavSection[] = [
   {
-    titleKey: "nav.section.doing",
+    titleKey: "nav.section.workspace",
     items: [
       {
         href: "/",
@@ -81,7 +98,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     ],
   },
   {
-    titleKey: "nav.section.materials",
+    titleKey: "nav.section.resources",
     items: [
       { href: "/maps", labelKey: "nav.maps", icon: "map", descriptionKey: "nav.desc.maps" },
       {
@@ -103,29 +120,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         session: true,
         descriptionKey: "nav.desc.models",
       },
-    ],
-  },
-  {
-    titleKey: "nav.section.retiring",
-    items: [
-      // `/benchmarks`, `/leaderboard` and `/algorithms` were removed in
-      // P6, each after the thing that replaced it existed: candidates and
-      // the registry moved to `/candidates`, the catalogue of results to
-      // `/decisions`, and watching one episode to `/simulate`. What did
-      // *not* move — the difficulty curve, the generalization gap over
-      // scenario splits, the split badges — was retired with them on
-      // purpose: they are claims across scenarios, and HĐ-1.4 scopes a
-      // recommendation to one deployment. See the P6 report.
-      //
-      // `/scenarios` stays. The deployment form still cannot draw
-      // obstacles, so this is the only place to build a scenario with
-      // them, and removing it would take away a capability rather than
-      // move one.
       {
         href: "/scenarios",
         labelKey: "nav.scenarios",
         icon: "map",
         session: true,
+        legacy: true,
         descriptionKey: "nav.desc.scenarios",
       },
     ],
