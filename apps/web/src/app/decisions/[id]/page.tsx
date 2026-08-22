@@ -173,6 +173,20 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
           to do the same diff by eye and reach the same three
           sentences. */}
       <TradeoffInsights run={run} />
+      {/* **Back under the comparison, at An's call.** It had been moved
+          below the evidence and closed, on the argument that a replay is
+          a drill-down nobody opens before knowing the result. That was
+          right about the *order* and wrong about this panel: the
+          side-by-side replay is how An reads two candidates against each
+          other, not a check performed afterwards, and folding it shut
+          four screens down read as having lost it.
+
+          What the earlier move was actually for still holds and is kept:
+          the conclusion and the advice come first, so the replay no
+          longer sits ahead of everything that says what the run decided.
+          It stays a `<details>` — open, so it is there, and collapsible,
+          so four screens of pager and canvas can be put away. */}
+      <TracePanel run={run} />
       <ExplanationHeader run={run} />
       <EvidencePanel run={run} />
       {/* The marks come after the evidence that justifies them, and the
@@ -187,13 +201,6 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
           the no-card message in one component; the message moved into
           the summary, and what is left here is the table. */}
       {run.card ? <CardPanel run={run} /> : null}
-      {/* **The replay is a drill-down, and it is now placed as one.** It
-          was second on the page: a thirty-episode pager, two trajectory
-          canvases and fourteen tiles, ahead of everything that says what
-          the run decided. Nobody opens it before knowing the result —
-          they open it to check one, so it sits after the result and
-          starts closed. */}
-      <TracePanel run={run} />
       {/* `Conditions`, `Provenance` and the review journal are out for
           now, at An's call — the measurement environment, the ids for
           rebuilding a run and the list of who read it are not what this
@@ -561,15 +568,18 @@ function TracePanel({ run }: { run: DecisionRun }) {
   };
 
   return (
-    <details className="panel decision-sample-panel episode-comparison">
-      {/* **Closed until asked for.** Open, this is a thirty-episode
-          pager, two trajectory canvases, fourteen tiles and two charts —
-          four screens of drill-down under a heading that names exactly
-          one thing a reader might want. Nobody arrives at a comparison
-          to watch an episode; they watch one to check a result they have
-          already read, and closing it puts every conclusion above it
-          within one screen. The episode count sits on the summary so the
-          control says what opening it is worth. */}
+    <details className="panel decision-sample-panel episode-comparison" open>
+      {/* **Open, and still collapsible.** This shipped closed for a
+          release, on the argument that four screens of pager, canvas and
+          tiles is a drill-down. The argument held for the *position* and
+          not for the default: watching the two candidates drive is how
+          this run gets read here, so a panel that has to be opened every
+          visit reads as a panel that went missing.
+
+          It stays `<details>` rather than reverting to a plain `<div>`:
+          the reader who has finished with the replay can still fold it
+          away, and the episode count on the summary says what is inside
+          when they have. */}
       <summary className="panel-head episode-comparison-summary">
         <Icon name="chevronRight" size={14} />
         <h3>{t("trace.title")} <Hint text={t("trace.note")} label={t("trace.title")} /></h3>

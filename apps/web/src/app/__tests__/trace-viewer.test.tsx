@@ -23,26 +23,27 @@ const VIEWER = readFileSync(join(SRC, "components", "TraceViewer.tsx"), "utf8");
 const DETAIL = readFileSync(join(SRC, "app", "decisions", "[id]", "page.tsx"), "utf8");
 
 describe("the viewer sits with the evidence it explains", () => {
-  it("is placed after the conclusion, as the drill-down it is", () => {
-    /* **This used to assert the opposite, and the argument for it was
-       about the source rather than the screen.** "A row saying G3: fail
-       is a claim about episodes, so the next thing a reader should be
-       able to do is open one" is true of a reader who has read the gate
-       row. Second on the page, this panel came before anything said what
-       the run decided: a thirty-episode pager, two canvases, fourteen
-       tiles and two charts, ahead of the result. Nobody opens a replay
-       before knowing the result — they open one to check a result, so it
-       sits after the conclusion and after the evidence. */
+  it("sits under the comparison it replays, after the conclusion", () => {
+    /* **Two positions have been wrong here, in opposite directions.**
+       It was second on the page, ahead of everything that said what the
+       run decided — a reader arriving for the result met a
+       thirty-episode pager first. It then went below the evidence, which
+       fixed that and broke something else: watching the two candidates
+       drive is how this run gets read, and four screens down it read as
+       having gone missing.
+
+       What survives from both: the conclusion and the advice come
+       first, and the replay sits directly under the table it replays. */
     expect(DETAIL.indexOf("<TracePanel")).toBeGreaterThan(DETAIL.indexOf("<DecisionSummary"));
     expect(DETAIL.indexOf("<TracePanel")).toBeGreaterThan(DETAIL.indexOf("<CandidateComparison"));
-    expect(DETAIL.indexOf("<TracePanel")).toBeGreaterThan(DETAIL.indexOf("<EvidencePanel"));
+    expect(DETAIL.indexOf("<TracePanel")).toBeLessThan(DETAIL.indexOf("<EvidencePanel"));
   });
 
-  it("starts closed", () => {
-    /* Open, it is four screens of drill-down under one heading. Closed,
-       every conclusion above it is within one screen. */
-    expect(DETAIL).toContain('<details className="panel decision-sample-panel episode-comparison">');
-    expect(DETAIL).not.toContain('episode-comparison" open');
+  it("is open, and can still be folded away", () => {
+    /* A panel that has to be opened every visit reads as one that went
+       missing. `<details>` rather than a plain div so the reader who has
+       finished with it keeps the choice. */
+    expect(DETAIL).toContain('className="panel decision-sample-panel episode-comparison" open');
   });
 
   it("loads both candidate traces for only the selected episode", () => {

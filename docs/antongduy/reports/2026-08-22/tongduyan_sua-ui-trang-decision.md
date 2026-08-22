@@ -121,17 +121,28 @@ Ba thẻ luôn có nội dung. Run `sudden_stop_v5` ra `sole`: thẻ chất lư�
 là `astar+dwa`, hai thẻ còn lại nói "Không có" kèm lý do và nêu đích
 danh `rrtstar+dwa (G3)`.
 
-### T4 — hạ replay
+### T4 — vị trí replay *(sửa lại sau khi An xem)*
 
-`TracePanel` thành `<details>` đóng sẵn, chuyển xuống sau
-`EvidencePanel`. Summary mang số episode để người đọc biết mở ra được gì.
+Ban đầu làm đúng plan: `<details>` đóng sẵn, chuyển xuống sau
+`EvidencePanel`. **An báo mất canvas so sánh realtime.** Đã trả lại.
+
+Lập luận cũ đúng một nửa. Đúng ở chỗ: replay không được đứng trước
+những panel nói run kết luận gì — người vào xem kết quả gặp bộ chọn 30
+episode trước tiên là sai. Sai ở chỗ: xem hai candidate chạy cạnh nhau
+**là cách An đọc run này**, không phải bước kiểm tra làm sau; đóng lại
+và đẩy xuống bốn màn hình thì đọc thành đã mất.
+
+Vị trí chốt: ngay dưới `TradeoffInsights`, tức ngay dưới bảng so sánh
+và phần đọc bảng đó — trước `ExplanationHeader`. Mở sẵn (`open`), vẫn
+là `<details>` nên xem xong gấp lại được, và số episode nằm trên summary
+để biết bên trong có gì khi đã gấp.
 
 Thứ tự render hiện tại:
 
 ```
 SampleNotice · DecisionSummary · DecisionAdvice · CandidateComparison
-· TradeoffInsights · ExplanationHeader · EvidencePanel · ConclusionPanel
-· CardPanel · TracePanel(details) · HumanActs
+· TradeoffInsights · TracePanel(details, open) · ExplanationHeader
+· EvidencePanel · ConclusionPanel · CardPanel · HumanActs
 ```
 
 Hai ràng buộc cũ giữ nguyên: `SampleNotice` đứng đầu, `ExplanationHeader`
@@ -310,7 +321,9 @@ Test web: **70 file, 1621 test, xanh hết.** Thêm mới trong đợt này:
 | `app/__tests__/evidence-panel.test.tsx` | +5 test localize + tên candidate |
 
 Test sửa vì tiền đề đổi, mỗi cái ghi lại lý do ngay trong test:
-`trace-viewer` (thứ tự replay), `evidence-panel` (thứ tự panel),
+`trace-viewer` (thứ tự replay — sửa hai lần, lần hai sau khi An báo mất
+canvas; test ghi cả hai lần sai theo hai hướng ngược nhau),
+`evidence-panel` (thứ tự panel),
 `decisions-page` (`Outcome` biến mất, no-card copy chuyển file),
 `decision-prose` (vị trí export), `running-comparison` (chữ ký
 `latencyPlot`, số key tile), `tokens` (không đổi — CSS mới viết đúng
