@@ -892,6 +892,7 @@
   "decisions.acts.whyDecided": "Already {state} by {who}. That decision stands — the way to change a recommendation is a new run, which leaves both records in place.",
   "decisions.acts.whyOwnRun": "You started this run, so you cannot approve its recommendation (HĐ-14). Whoever chose the candidates and the deployment is not an independent check on the answer.",
   "deployments.title": "Deployments",
+  "deployments.section.complete": "This section is complete",
   "deployments.countLabel": "deployments",
   "deployments.subtitle": "The question a selection answers: one map, one mission, one robot, declared noise, six thresholds.",
   "deployments.column.id": "Id",

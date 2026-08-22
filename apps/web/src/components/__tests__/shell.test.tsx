@@ -389,3 +389,45 @@ describe("the button scale", () => {
     expect(rule(".icon-button")).toContain("height: 34px");
   });
 });
+
+describe("the badge scale", () => {
+  const badge = () => {
+    const at = SHEET.indexOf("\n.badge {");
+    expect(at, "the badge rule moved").toBeGreaterThan(-1);
+    return SHEET.slice(at, SHEET.indexOf("\n}", at)).replace(/\/\*[\s\S]*?\*\//g, "");
+  };
+
+  it("is a small rectangle, not a pill", () => {
+    /* A 10px radius on a 20px box is exactly half the height, which is
+       what a pill is — and forty-five of them read as a page of tags
+       rather than a page of states. */
+    expect(badge()).toContain("border-radius: var(--radius-sm)");
+    expect(badge()).not.toContain("border-radius: 10px");
+  });
+
+  it("takes a floor rather than a fixed height, like the buttons", () => {
+    /* `blocked at G2, G3` and `1 of 2 candidates blocked` are badges
+       too. A fixed height clips the long ones instead of shortening
+       them — the same failure the button scale avoids. */
+    expect(badge()).toContain("min-height: 20px");
+    expect(badge()).not.toMatch(/(?<!min-)height: *\d+px/);
+  });
+
+  it("sizes from the scale, one step up from the floor", () => {
+    /* 11px is where Vietnamese stacked diacritics start to close up, and
+       a badge is where the short decisive words live. */
+    expect(badge()).toContain("font-size: var(--fs-sm)");
+    expect(badge()).not.toContain("font-size: 11px");
+  });
+
+  it("keeps all four variants under one convention", () => {
+    /* `.badge.<name>`, matching the classes that already existed. The
+       fourth is still called `muted-badge` rather than `neutral`: the
+       rename reaches 26 references across fifteen files including two
+       logic modules, which is a cleanup, not a styling change. */
+    for (const variant of ["ok", "err", "warn", "muted-badge"]) {
+      expect(SHEET, variant).toContain(`.badge.${variant} {`);
+    }
+    expect(SHEET).not.toContain(".badge--");
+  });
+});

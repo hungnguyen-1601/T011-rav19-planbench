@@ -892,6 +892,7 @@
   "decisions.acts.whyDecided": "Đã {state} bởi {who}. Quyết định đó đứng nguyên — muốn đổi khuyến nghị thì chạy một run mới, và cả hai bản ghi cùng còn.",
   "decisions.acts.whyOwnRun": "Bạn là người chạy run này nên không duyệt được khuyến nghị của nó (HĐ-14). Người chọn candidate và cấu hình triển khai không phải một bước kiểm độc lập với kết quả.",
   "deployments.title": "Các cấu hình triển khai",
+  "deployments.section.complete": "Phần này đã đủ",
   "deployments.countLabel": "cấu hình",
   "deployments.subtitle": "Câu hỏi mà một phép chọn trả lời: một map, một nhiệm vụ, một robot, nhiễu đã khai, sáu ngưỡng.",
   "deployments.column.id": "Mã",

@@ -977,11 +977,29 @@ th {
 }
 
 .badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 11px;
+  /* Flex, so a badge that carries an icon aligns it with the text
+     instead of sitting it on the baseline, and so the floor below
+     centres what is in the box. */
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px var(--space-2);
+  /* **4px, not 10.** On a 20px-tall box a 10px radius is exactly half
+     the height, which is the definition of a pill — and a page with
+     forty-five pills on it reads as a page of tags rather than a page
+     of states. A small radius still separates the badge from the text
+     around it without making it an ornament. */
+  border-radius: var(--radius-sm);
+  /* 12px, from 11. The badge sits at the bottom of the type scale
+     either way, but 11px is where Vietnamese stacked diacritics start
+     to close up — and a badge is where the short, decisive words live,
+     so it is the worst place to make the reader squint. */
+  font-size: var(--fs-sm);
   font-weight: 600;
+  /* A floor, for the same reason buttons have one: `blocked at G2, G3`
+     and `1 of 2 candidates blocked` are badges too, and a fixed height
+     clips the long ones rather than shortening them. */
+  min-height: 20px;
 }
 
 .badge.ok {

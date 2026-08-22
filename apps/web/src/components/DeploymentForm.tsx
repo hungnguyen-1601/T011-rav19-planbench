@@ -1860,7 +1860,7 @@ export function DeploymentForm({
       <div className="deployment-section-head">
         <span className="deployment-section-icon" aria-hidden="true"><Icon name="info" size={18} /></span>
         <h4>{t("deployments.form.identity")}</h4>
-        {identityErrors ? <span className="badge err"><Icon name="alert" size={12} />{identityErrors}</span> : null}
+        {identityErrors ? <span className="badge err">{identityErrors}</span> : null}
       </div>
       <div className="deployment-identity-grid">
         {field("id", t("deployments.form.id"), undefined, t("deployments.form.idNote"))}
@@ -2010,15 +2010,18 @@ function DeploymentSection({
   checked: boolean;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   return (
     <section className={`deployment-section deployment-section--${tone}`}>
       <div className="deployment-section-head">
         <span className="deployment-section-icon" aria-hidden="true"><Icon name={icon} size={18} /></span>
         <h4>{title}</h4>
         {errors ? (
-          <span className="badge err"><Icon name="alert" size={12} />{errors}</span>
+          <span className="badge err">{errors}</span>
         ) : checked ? (
-          <span className="badge ok"><Icon name="check" size={12} /></span>
+          <span className="badge ok" aria-label={t("deployments.section.complete")}>
+            <Icon name="check" size={12} />
+          </span>
         ) : (
           <span className="badge muted-badge">—</span>
         )}
