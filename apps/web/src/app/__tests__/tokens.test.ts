@@ -290,3 +290,68 @@ describe("what !important is still allowed to do", () => {
     expect(reducedMotion().length).toBeGreaterThanOrEqual(3);
   });
 });
+
+describe("the stylesheet stays on its scales", () => {
+  const code = withoutComments(CSS.replace(/\r\n/g, "\n"));
+
+  it("declares no font-size in fractions of a pixel", () => {
+    /* 14.5px and 12.5px are not steps of anything — they are what a
+       component reaches for when the scale has no step it wants, and
+       they leave two sizes that differ by half a pixel looking like a
+       rendering artefact rather than a decision. */
+    expect(code.match(/font-size: *\d+\.\d+px/g) ?? []).toEqual([]);
+  });
+
+  it("draws a shadow only where something genuinely floats", () => {
+    /* Three legitimate shapes and no fourth:
+       - `var(--shadow)` on a popover, tooltip, menu or toast, which are
+         the only things actually above the page;
+       - the focus ring, which is a ring rather than a lift;
+       - `inset`, which is a border drawn with a shadow — the active nav
+         bar, the active tab's underline, a selected row's edge.
+       Anything else is a panel pretending to hover, and the whole
+       hairline-not-shadow rule falls the moment one is allowed. */
+    const shadows = [...code.matchAll(/box-shadow: *([^;]+);/g)].map((m) => m[1].trim());
+    expect(shadows.length).toBeGreaterThan(5);
+    const stray = shadows.filter(
+      (value) =>
+        !value.startsWith("var(--shadow)") &&
+        !value.startsWith("inset") &&
+        !value.startsWith("0 0 0 3px var(--accent-soft)") &&
+        !value.startsWith("0 0 0 2px var(--warn-soft)"),
+    );
+    expect(stray, `raw shadows: ${stray.join(" | ")}`).toEqual([]);
+  });
+
+  it("keeps gradients to the two that are doing a job", () => {
+    /* `.progress-active` shows a bar in motion and `.skeleton` shows
+       content that has not arrived. Neither is decoration, and a blanket
+       ban would have taken both — which is a rule being used on the
+       wrong thing. */
+    const owners = [...code.matchAll(/([^{}]*)\{[^{}]*linear-gradient[^{}]*\}/g)].map((m) =>
+      m[1].trim().split("\n").pop()!.trim(),
+    );
+    expect(owners.sort()).toEqual([".progress-active", ".skeleton"]);
+  });
+
+  it("does not let the off-scale values grow back", () => {
+    /* A ratchet, not a clean bill of health. Three hundred and thirty
+       spacing values and fifty-eight radii still sit off the scale, and
+       moving them is a per-region change that needs an eye on the result
+       — a `10px` becoming `8px` or `12px` moves something. What this
+       stops is the count going *up* while that work is outstanding.
+       Lower these numbers as regions are swept; never raise them. */
+    const SCALE = new Set([0, 4, 8, 12, 16, 24, 32, 48]);
+    const spacing = [...code.matchAll(
+      /(?:padding|margin|gap|row-gap|column-gap)(?:-\w+)?: *([^;{}]+)/g,
+    )].flatMap((m) => [...m[1].matchAll(/(-?[\d.]+)px/g)].map((v) => Math.abs(Number(v[1]))));
+    const offScale = spacing.filter((value) => !SCALE.has(value));
+    expect(offScale.length, "off-scale spacing values").toBeLessThanOrEqual(330);
+
+    const RADII = new Set([4, 6, 8, 999]);
+    const radii = [...code.matchAll(/border-radius: *([^;{}]+)/g)]
+      .flatMap((m) => [...m[1].matchAll(/([\d.]+)px/g)].map((v) => Number(v[1])))
+      .filter((value) => !RADII.has(value));
+    expect(radii.length, "off-scale radii").toBeLessThanOrEqual(51);
+  });
+});

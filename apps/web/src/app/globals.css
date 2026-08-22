@@ -2194,7 +2194,7 @@ a.stat-card:hover {
 }
 .simulate-context-id { margin: 0; padding: 10px 16px; border-top: 1px solid var(--border); font-size: 11px; }
 
-.simulate-console { margin-top: 12px; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--bg-elevated); box-shadow: 0 10px 28px color-mix(in srgb, var(--overlay) 20%, transparent); }
+.simulate-console { margin-top: 12px; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--bg-elevated); }
 .simulate-playback { display: grid; grid-template-columns: auto auto minmax(200px, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
 .simulate-playback-buttons { display: flex; gap: 6px; }
 .simulate-playback button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; }
@@ -2662,7 +2662,6 @@ a.stat-card:hover {
 .deployment-list-panel,
 .deployment-file-panel {
   border-radius: 11px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .deployment-file-panel { padding: 0; overflow: visible; }
@@ -2747,7 +2746,6 @@ a.stat-card:hover {
   border-left: 3px solid color-mix(in srgb, var(--section-color) 70%, var(--border));
   border-radius: 10px;
   background: var(--panel);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .deployment-section--mission { --section-color: var(--cyan); }
@@ -2863,7 +2861,6 @@ a.stat-card:hover {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--panel);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .deployment-map-head {
@@ -3003,7 +3000,6 @@ a.stat-card:hover {
   padding: 11px 16px;
   border-top: 1px solid var(--border-strong);
   background: color-mix(in srgb, var(--panel) 94%, transparent);
-  box-shadow: 0 -8px 20px rgba(0, 0, 0, 0.08);
   backdrop-filter: blur(8px);
 }
 
@@ -3897,10 +3893,10 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
 /* Bold and a size up: the gutter is the column a reader scans to
    find the row they want, so the names have to carry more weight
    than the muted footnote they were set as. */
-.comparison-label { color: var(--text); font-size: 14.5px; font-weight: 650; line-height: 1.35; }
+.comparison-label { color: var(--text); font-size: var(--fs-label); font-weight: 650; line-height: 1.35; }
 /* The limit stays light and small — it qualifies the metric, it is
    not a second name for it. */
-.comparison-limit { display: block; margin-top: 2px; color: var(--muted); font-size: 12.5px; font-weight: 400; opacity: .9; }
+.comparison-limit { display: block; margin-top: 2px; color: var(--muted); font-size: var(--fs-sm); font-weight: 400; opacity: .9; }
 /* Two slots: the digits, then a fixed-width lane for the unit.
    ===================================================================
    Right-aligning the whole string is not enough. `ms` is wider than `m`
