@@ -133,6 +133,33 @@ export function TraceViewer({
     [trace.map.occupied_bits, trace.map.width, trace.map.height],
   );
 
+  /** Traffic at the frame on screen, as the 2.5D scene wants it.
+   *
+   * **The raised view was drawing a room with nothing in it.** The flat
+   * canvas has drawn moving obstacles since they arrived — it is what
+   * explains a route that bends around apparently empty floor — and the
+   * `Scene25D` call simply never passed them, so switching to 2.5D
+   * deleted the only thing on screen that accounted for the bend. The
+   * scene builder wanted them all along: it turns each one into a
+   * cylinder plus the keep-out and caution rings it derives from the
+   * same functions the flat view quotes.
+   *
+   * The step is clamped exactly the way the flat canvas clamps it. A
+   * track can be shorter than the trace — it stops being recorded when
+   * it leaves the scenario — and reading past its end would place an
+   * obstacle at `undefined`, which projects to the top-left corner of
+   * the room rather than to nowhere.
+   */
+  const obstaclesNow = useMemo(
+    () =>
+      (trace.dynamic_obstacles ?? []).flatMap((track) => {
+        const step = Math.min(visibleStep, track.x.length - 1);
+        if (step < 0) return [];
+        return [{ name: track.name, x: track.x[step], y: track.y[step], radius: track.radius_m }];
+      }),
+    [trace.dynamic_obstacles, visibleStep],
+  );
+
   // A new trace is a new episode: start showing the whole path again
   // rather than leaving the slider where the previous one ended.
   useEffect(() => {
@@ -366,6 +393,7 @@ export function TraceViewer({
           startPose={trace.missions[0] ? { ...trace.missions[0].start, theta: 0 } : undefined}
           goalPose={trace.missions[0] ? { ...trace.missions[0].goal, theta: 0 } : undefined}
           robotPose={{ x: trace.x[visibleStep], y: trace.y[visibleStep], theta: trace.theta[visibleStep] }}
+          obstacles={obstaclesNow}
           trajectory={trace.x.slice(0, visibleStep + 1).map((x, index) => ({
             time: trace.t[index] ?? 0,
             x,

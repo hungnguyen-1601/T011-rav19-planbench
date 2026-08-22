@@ -147,3 +147,33 @@ describe("translation", () => {
     }
   });
 });
+
+describe("the raised view draws the same room as the flat one", () => {
+  it("hands the moving obstacles to the 2.5D scene", () => {
+    /* **The raised view was drawing an empty room.** The flat canvas has
+       drawn traffic since it arrived — it is the only thing on screen
+       that explains a route bending around apparently empty floor — and
+       the `Scene25D` call never passed it, so switching to 2.5D deleted
+       exactly that. The scene builder wanted them all along: it turns
+       each into a cylinder plus the keep-out and caution rings it
+       derives from the same functions the flat view quotes. */
+    expect(VIEWER).toContain("obstacles={obstaclesNow}");
+    expect(VIEWER).toContain("trace.dynamic_obstacles ?? []");
+  });
+
+  it("reads each track at the frame on screen, clamped to its own end", () => {
+    /* A track is shorter than the trace once it leaves the scenario.
+       Reading past its end places an obstacle at `undefined`, which
+       projects to the corner of the room rather than to nowhere — the
+       same clamp the flat canvas already applies. */
+    const snapshot = VIEWER.slice(VIEWER.indexOf("const obstaclesNow"));
+    expect(snapshot).toContain("Math.min(visibleStep, track.x.length - 1)");
+    expect(snapshot).toContain("if (step < 0) return []");
+  });
+
+  it("takes the radius the track declares rather than a constant", () => {
+    /* Carts and pallets are not one size, and a fixed radius would draw
+       a keep-out ring the planner never had. */
+    expect(VIEWER).toContain("radius: track.radius_m");
+  });
+});
