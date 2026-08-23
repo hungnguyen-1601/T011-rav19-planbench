@@ -19,7 +19,7 @@
  * with no DOM: a reducer can be tested directly, a click cannot.
  */
 
-import { trafficAt } from "@/lib/previewPlayback";
+import { type PlayableTraffic, trafficAt } from "@/lib/previewPlayback";
 import type { ProfileDraft } from "./deployments";
 import type {
   DynamicObstacle,
@@ -678,7 +678,7 @@ export function previewRequestOf(options: {
  *  the request named: with playback running, a 2.5D view frozen at t=0
  *  beside a top-down view at t=12 is precisely those two worlds. */
 export function snapshotsOf(
-  preview: ScenarioPreview | null,
+  preview: PlayableTraffic | null,
   seconds = 0,
 ): ObstacleSnapshot[] {
   return trafficAt(preview, seconds).map((obstacle) => ({

@@ -692,11 +692,10 @@ describe("the preview request", () => {
 
 describe("the raised view", () => {
   it("takes snapshots where the flat one takes markers", () => {
+    /* Only the obstacles: `snapshotsOf` now takes `PlayableTraffic`,
+       which names the fields playback reads and nothing else. The
+       verdict this fixture used to carry was never looked at. */
     const snapshots = snapshotsOf({
-      time: 3,
-      seed: 0,
-      valid: true,
-      errors: [],
       dynamic_obstacles: [{ name: "cart", radius: 0.4, position: { x: 5, y: 6 } }],
     });
     expect(snapshots).toEqual([{ name: "cart", x: 5, y: 6, radius: 0.4 }]);

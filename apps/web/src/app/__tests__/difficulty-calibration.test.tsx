@@ -70,44 +70,36 @@ describe("caveats travel with the measurement", () => {
   });
 });
 
-describe("the library separates measurement from intention", () => {
-  it("keeps the curriculum position as its own column", () => {
+describe("the library no longer carries the difficulty scale", () => {
+  /* **The measurements are real; the place was wrong.** A difficulty is
+     a property of one baseline stack on one calibration run, and the
+     calibration panel existed to say which run. Both are facts about the
+     benchmark protocol, and this table is read to find out what a
+     scenario *does* — a question neither of them answers. The column and
+     its panel were also the two widest things on the row.
+
+     `DifficultyBadge` and the endpoint behind it are untouched: what
+     went is one page's use of them. */
+
+  it("shows no difficulty column", () => {
+    expect(LIBRARY).not.toContain("DifficultyBadge");
+    expect(LIBRARY).not.toContain("entry.difficulty");
+    expect(LIBRARY).not.toContain("difficulty.hint");
+  });
+
+  it("no longer fetches or renders the calibration summary", () => {
+    /* Fetching it to draw nothing would be a request per page load for a
+       panel that is gone. */
+    expect(LIBRARY).not.toContain("/difficulty-calibration");
+    expect(LIBRARY).not.toContain("difficulty.calibrationMeta");
+    expect(LIBRARY).not.toContain("coverage.warnings");
+  });
+
+  it("keeps the curriculum position, which is about the scenario", () => {
+    /* Where an entry sits in the teaching order is a property of the
+       entry itself, not of a baseline that was run against it. */
     expect(LIBRARY).toContain("library.curriculum");
     expect(LIBRARY).toContain("entry.curriculum_index");
-  });
-
-  it("shows the measured difficulty beside it", () => {
-    expect(LIBRARY).toContain("DifficultyBadge");
-    expect(LIBRARY).toContain("entry.difficulty");
-  });
-
-  it("explains how the difficulty was obtained", () => {
-    expect(LIBRARY).toContain("difficulty.hint");
-  });
-});
-
-describe("the coverage of the scale is shown, not logged", () => {
-  it("fetches the calibration summary", () => {
-    expect(LIBRARY).toContain("/difficulty-calibration");
-  });
-
-  it("states the baseline, the seed count and the commit", () => {
-    expect(LIBRARY).toContain("difficulty.calibrationMeta");
-    expect(LIBRARY).toContain("git_sha");
-    expect(LIBRARY).toContain("replanning_enabled");
-  });
-
-  it("renders every coverage warning", () => {
-    expect(LIBRARY).toContain("coverage.warnings.map");
-  });
-
-  it("prints the measured range", () => {
-    expect(LIBRARY).toContain("difficulty.range");
-    expect(LIBRARY).toContain("coverage.spread");
-  });
-
-  it("does not turn a missing calibration into a page error", () => {
-    expect(LIBRARY).toContain("setCalibration(null)");
   });
 });
 

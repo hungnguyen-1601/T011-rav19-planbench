@@ -2,7 +2,25 @@
 
 /** Built-in scenario library (M5), in curriculum order.
  *
- * Importing materialises the map and scenario server-side from
+ * **Two columns went, and a button arrived.** Measured difficulty and
+ * the evaluation split were the widest things on this table and neither
+ * answered the question a reader opens it with, which is what a scenario
+ * *does*. The difficulty number is a property of one baseline stack on
+ * one calibration run, and the split governs which scenarios a
+ * generalization report may quote — real facts, and both about the
+ * benchmark protocol rather than about the world being described.
+ *
+ * What replaced them is the answer: a preview, per row. Until now the
+ * only way to see a scenario move was to import it, build a deployment
+ * on it and open the test bench — three steps and two stored rows to
+ * look at a picture.
+ *
+ * **Preview stores nothing, and that is load-bearing.** The obvious
+ * implementation is to import and draw what comes back, which is exactly
+ * how one database reached 198 maps carrying 41 distinct checksums. The
+ * endpoint behind this builds the scenario and throws it away.
+ *
+ * Importing still materialises the map and scenario server-side from
  * `build_scenario()`. The browser never authors geometry: two clients
  * importing the same entry must get byte-identical maps, or benchmarks
  * built from them would not be comparable.
@@ -10,34 +28,29 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { DifficultyBadge } from "@/components/DifficultyBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { MapView } from "@/components/MapView";
-import { SplitBadge } from "@/components/SplitBadge";
 import { authFetch, useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
-import type {
-  DifficultyCalibrationSummary,
-  ImportedScenario,
-  LibraryEntry,
-} from "@/lib/platformTypes";
-import type { MapResource, ScenarioResource } from "@/lib/types";
-
-interface Preview {
-  name: string;
-  map: MapResource;
-  scenario: ScenarioResource;
-}
+import { advance, playableSeconds, trafficAt } from "@/lib/previewPlayback";
+import { snapshotsOf } from "@/lib/traffic";
+import type { ImportedScenario, LibraryEntry } from "@/lib/platformTypes";
+import type { LibraryPreview } from "@/lib/types";
 
 export default function LibraryPage() {
   const { t } = useTranslation();
   const session = useSession();
   const [entries, setEntries] = useState<LibraryEntry[]>([]);
-  const [preview, setPreview] = useState<Preview | null>(null);
+  const [preview, setPreview] = useState<LibraryPreview | null>(null);
+  const [previewing, setPreviewing] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [imported, setImported] = useState<ImportedScenario[]>([]);
-  const [calibration, setCalibration] = useState<DifficultyCalibrationSummary | null>(null);
+  /** Where the preview's playhead is, and whether it is running. Reset
+   *  by every new preview: leaving it at 30 s would open a scenario in
+   *  the middle of a route nobody has watched the start of. */
+  const [playhead, setPlayhead] = useState(0);
+  const [playing, setPlaying] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -49,20 +62,44 @@ export default function LibraryPage() {
     })();
   }, []);
 
-  // Separate request, and a failure here is deliberately not surfaced as
-  // a page error: the difficulty scale is extra information about the
-  // library, and losing it must not stop anyone from importing a
-  // scenario.
+  /* Real elapsed seconds rather than a fixed step per frame: a
+     backgrounded tab is throttled to one frame a second, and a constant
+     increment would crawl there and race on a 144 Hz screen. What is
+     being played back is seconds of a simulated episode. */
   useEffect(() => {
-    (async () => {
-      try {
-        setCalibration(
-          await authFetch<DifficultyCalibrationSummary>("/difficulty-calibration"),
-        );
-      } catch {
-        setCalibration(null);
-      }
-    })();
+    if (!playing) return;
+    const span = playableSeconds(preview);
+    if (span <= 0) return;
+    let frame = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const elapsed = (now - last) / 1000;
+      last = now;
+      setPlayhead((current) => {
+        const next = advance(current, elapsed, span);
+        if (!next.running) setPlaying(false);
+        return next.seconds;
+      });
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [playing, preview]);
+
+  const previewEntry = useCallback(async (name: string) => {
+    setPreviewing(name);
+    setError(null);
+    try {
+      const answer = await authFetch<LibraryPreview>(`/scenario-library/${name}/preview`);
+      setPreview(answer);
+      setPlayhead(0);
+      setPlaying(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setPreview(null);
+    } finally {
+      setPreviewing(null);
+    }
   }, []);
 
   const importEntry = useCallback(async (name: string) => {
@@ -73,12 +110,6 @@ export default function LibraryPage() {
         method: "POST",
       });
       setImported((current) => [...current, result]);
-      const [map, scenarios] = await Promise.all([
-        authFetch<MapResource>(`/maps/${result.map_id}`),
-        authFetch<ScenarioResource[]>("/scenarios"),
-      ]);
-      const scenario = scenarios.find((item) => item.id === result.scenario_id);
-      if (scenario) setPreview({ name, map, scenario });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -87,7 +118,7 @@ export default function LibraryPage() {
   }, []);
 
   // Browsing is public; importing writes to the shared library and so
-  // needs an account.
+  // needs an account. Previewing writes nothing, so it needs neither.
   const canImport = Boolean(session);
 
   return (
@@ -113,8 +144,6 @@ export default function LibraryPage() {
             <tr>
               <th title={t("library.curriculumHint")}>{t("library.curriculum")}</th>
               <th>{t("common.scenario")}</th>
-              <th title={t("difficulty.hint")}>{t("library.difficulty")}</th>
-              <th title={t("protocol.splitHint")}>{t("protocol.split")}</th>
               <th>{t("algorithms.description")}</th>
               <th>{t("maps.size")}</th>
               <th>{t("library.obstacles")}</th>
@@ -124,16 +153,10 @@ export default function LibraryPage() {
           </thead>
           <tbody>
             {entries.map((entry) => (
-              <tr key={entry.name}>
+              <tr key={entry.name} className={preview?.library_name === entry.name ? "is-previewing" : undefined}>
                 <td className="muted">{entry.curriculum_index}</td>
                 <td>
                   <code>{entry.name}</code>
-                </td>
-                <td>
-                  <DifficultyBadge difficulty={entry.difficulty} />
-                </td>
-                <td>
-                  <SplitBadge split={entry.split} notes={entry.split_notes} />
                 </td>
                 <td>{entry.description}</td>
                 <td className="muted">
@@ -147,11 +170,22 @@ export default function LibraryPage() {
                   )}
                 </td>
                 <td className="muted">{entry.timeout_seconds}s</td>
-                <td>
+                <td className="library-actions">
+                  {/* Preview first, and available signed out: looking at
+                      a scenario writes nothing, and making somebody sign
+                      in to look at a picture is a gate on the wrong
+                      side of the decision. */}
+                  <button
+                    type="button"
+                    disabled={previewing !== null}
+                    onClick={() => void previewEntry(entry.name)}
+                  >
+                    {previewing === entry.name ? t("common.loading") : t("library.preview")}
+                  </button>
                   <button
                     type="button"
                     disabled={!canImport || busy !== null}
-                    onClick={() => importEntry(entry.name)}
+                    onClick={() => void importEntry(entry.name)}
                   >
                     {busy === entry.name ? t("library.importing") : t("library.import")}
                   </button>
@@ -171,72 +205,73 @@ export default function LibraryPage() {
         ) : null}
       </div>
 
-      {calibration ? (
-        <div className="panel">
-          <h3>{t("difficulty.calibrationTitle")}</h3>
-          {calibration.calibration_version && calibration.baseline ? (
-            <p className="muted">
-              {t("difficulty.calibrationMeta", {
-                version: calibration.calibration_version,
-                algorithm: calibration.baseline.algorithm,
-                seeds: String(calibration.baseline.seeds.length),
-                sha: calibration.baseline.git_sha.slice(0, 12),
-                replanning: calibration.baseline.replanning_enabled
-                  ? t("difficulty.replanningOn")
-                  : t("difficulty.replanningOff"),
-              })}
-            </p>
-          ) : (
-            <p className="muted">{t("difficulty.uncalibratedHint")}</p>
-          )}
-          {calibration.coverage.spread !== null ? (
-            <p className="muted">
-              {t("difficulty.range", {
-                min: (calibration.coverage.min_difficulty ?? 0).toFixed(2),
-                max: (calibration.coverage.max_difficulty ?? 0).toFixed(2),
-                spread: calibration.coverage.spread.toFixed(2),
-                count: String(calibration.coverage.scenario_count),
-              })}
-            </p>
-          ) : null}
-          {/* Coverage warnings are the point of this panel, not a footnote:
-              a difficulty scale everything sits at one end of cannot rank
-              anything, and the fix is authoring scenarios, not editing the
-              cache. */}
-          {calibration.coverage.warnings.map((warning) => (
-            <div className="notice notice--warn" key={warning}>
-              {warning}
-            </div>
-          ))}
-        </div>
-      ) : null}
-
       {preview ? (
-        <div className="panel">
-          <h3>
-            {preview.name} <span className="muted">{t("library.preview")}</span>
-          </h3>
-          {/* This preview was the one place in the app with a raised
-              view and no flat one — the mirror image of the gap
-              everywhere else. It opens raised because seeing the shape of
-              a scenario is why somebody previews it, but the top-down
-              view is now a click away, which is where its start and goal
-              coordinates are legible. */}
+        <div className="panel library-preview">
+          <div className="panel-head">
+            <h3>
+              <code>{preview.library_name}</code>{" "}
+              <span className="muted">{t("library.preview")}</span>
+            </h3>
+            <span className="badge muted-badge">{t("library.previewStoresNothing")}</span>
+          </div>
+
+          {/* Opens raised because the shape of the space is why somebody
+              previews a scenario, and the top-down view — where start and
+              goal coordinates are legible — is one click away. */}
           <MapView
-            map={preview.map.map_data}
+            map={preview.map}
             width={720}
             height={460}
-            startPose={preview.scenario.scenario.start_pose}
-            goalPose={preview.scenario.scenario.goal_pose}
-            robotPose={preview.scenario.scenario.start_pose}
-            robotRadius={preview.scenario.scenario.robot.radius}
-            goalTolerance={preview.scenario.scenario.goal_tolerance}
+            startPose={preview.scenario.start_pose}
+            goalPose={preview.scenario.goal_pose}
+            robotPose={preview.scenario.start_pose}
+            robotRadius={preview.scenario.robot.radius}
+            goalTolerance={preview.scenario.goal_tolerance}
+            /* Both views read one playhead. Two canvases showing one
+               scenario at two instants would be two scenarios. */
+            dynamicObstacles={trafficAt(preview, playhead)}
+            obstacleSnapshots={snapshotsOf(preview, playhead)}
             initialMode="raised"
           />
-          <p className="muted">
-            {t("library.importedAs", { map: preview.map.id, scenario: preview.scenario.id })}{" "}
-            <Link href="/decisions">{t("library.openDecisions")}</Link>
-          </p>
+
+          {playableSeconds(preview) > 0 ? (
+            <div className="deployment-preview-transport">
+              <button
+                type="button"
+                onClick={() => {
+                  // Pressing play at the end replays rather than doing
+                  // nothing, which is what a live-looking button has to do.
+                  if (!playing && playhead >= playableSeconds(preview)) setPlayhead(0);
+                  setPlaying((current) => !current);
+                }}
+              >
+                {t(playing ? "deployments.form.previewPause" : "deployments.form.previewPlay")}
+              </button>
+              <input
+                type="range"
+                className="deployment-preview-scrub"
+                min={0}
+                max={playableSeconds(preview)}
+                step={preview.step || 0.2}
+                value={playhead}
+                aria-label={t("deployments.form.previewScrub")}
+                onChange={(event) => {
+                  // Dragging takes over from the timer, which would
+                  // otherwise spring the handle out from under the
+                  // pointer.
+                  setPlaying(false);
+                  setPlayhead(Number(event.target.value));
+                }}
+              />
+              <span className="deployment-preview-clock">
+                {playhead.toFixed(1)} / {playableSeconds(preview).toFixed(1)} s
+              </span>
+            </div>
+          ) : (
+            /* A scenario with no traffic is a thing to look at, not a
+               reason to show a scrubber that cannot move. */
+            <p className="muted library-preview-static">{t("library.previewNoTraffic")}</p>
+          )}
         </div>
       ) : null}
 

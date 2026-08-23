@@ -42,15 +42,17 @@ describe("the split badge distinguishes all three states", () => {
   });
 });
 
-describe("the library shows where each scenario sits", () => {
-  it("renders the split beside the scenario name", () => {
-    expect(LIBRARY).toContain("SplitBadge");
-    expect(LIBRARY).toContain("entry.split");
-    expect(LIBRARY).toContain("entry.split_notes");
-  });
+describe("the library no longer carries the split", () => {
+  /* The split governs which scenarios a generalization report may quote
+     — a rule about the benchmark protocol, not a description of the
+     world. It stays on the scenario editor, where somebody choosing
+     what to run against needs it, and left the library, which is read
+     to find out what a scenario does. */
 
-  it("explains what the column means", () => {
-    expect(LIBRARY).toContain("protocol.splitHint");
+  it("shows no split column", () => {
+    expect(LIBRARY).not.toContain("SplitBadge");
+    expect(LIBRARY).not.toContain("entry.split");
+    expect(LIBRARY).not.toContain("protocol.splitHint");
   });
 });
 

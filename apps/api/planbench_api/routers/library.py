@@ -27,7 +27,10 @@ from planbench_benchmark import (
     scenario_protocol_metadata,
 )
 from planbench_benchmark.difficulty import BaselineSpec
+from planbench_schemas.dynamic import position_at
+from planbench_schemas.map import MapData
 from planbench_schemas.scenario import Scenario
+from planbench_api.schemas import DynamicObstacleSnapshot
 
 router = APIRouter(tags=["library"])
 
@@ -68,6 +71,28 @@ class ImportedScenario(BaseModel):
     map_id: str
     scenario_id: str
     scenario: Scenario
+
+
+class LibraryPreview(BaseModel):
+    """A library entry drawn, without anything being stored.
+
+    **Read-only on purpose.** The obvious way to preview an entry is to
+    import it and look at the rows that come back, and that is how one
+    database reached 198 maps carrying 41 distinct checksums: opening a
+    form called the import endpoint, and every call stored a fresh map
+    and scenario. Looking at something must not write it down.
+
+    Carries the traffic already sampled, in the shape
+    `/scenarios/preview` returns, so the browser plays it back with the
+    code it already has and evaluates no motion law of its own.
+    """
+
+    library_name: str
+    map: MapData
+    scenario: Scenario
+    dynamic_obstacles: tuple[DynamicObstacleSnapshot, ...] = ()
+    duration: float = 0.0
+    step: float = 0.0
 
 
 @router.get("/scenario-library", response_model=list[LibraryEntry])
@@ -151,6 +176,56 @@ def list_scenario_protocol(
     if scenario_name is not None:
         return [scenario_protocol_metadata(scenario_name)]
     return [scenario_protocol_metadata(name) for name in CURRICULUM_ORDER]
+
+
+@router.get("/scenario-library/{name}/preview", response_model=LibraryPreview)
+def preview_library_scenario(
+    name: str,
+    seed: int = Query(default=0, ge=0),
+    step: float = Query(default=0.2, gt=0, le=5.0),
+) -> LibraryPreview:
+    """Show what a library entry actually does, storing nothing.
+
+    The answer to "does this scenario behave the way its one-line
+    description says" used to be: import it, build a deployment on it,
+    open the test bench. Three steps and two stored rows to look at a
+    picture.
+
+    The traffic is sampled here rather than in the browser for the reason
+    every other preview is: a second implementation of the motion laws
+    would drift from the simulator's, and a preview that disagrees with
+    the episode is worse than no preview.
+
+    The span is the scenario's own `timeout_seconds`, so what plays is
+    the length of episode this scenario declares rather than a number
+    chosen here.
+    """
+    from planbench_api.errors import DomainValidationError
+
+    try:
+        map_data, scenario = build_scenario(name)
+    except ValueError as exc:
+        raise DomainValidationError(str(exc)) from exc
+
+    duration = float(scenario.timeout_seconds)
+    count = int(duration / step) + 1
+    snapshots = tuple(
+        DynamicObstacleSnapshot(
+            name=obstacle.name,
+            radius=obstacle.radius,
+            position=position_at(obstacle, 0.0, seed),
+            track=tuple(position_at(obstacle, index * step, seed) for index in range(count)),
+        )
+        for obstacle in scenario.dynamic_obstacles
+    )
+    return LibraryPreview(
+        library_name=name,
+        map=map_data,
+        scenario=scenario,
+        dynamic_obstacles=snapshots,
+        duration=(count - 1) * step,
+        step=step,
+    )
 
 
 @router.post(

@@ -16,7 +16,26 @@
  * when the run happens.
  */
 
-import type { Point2D, ScenarioPreview } from "@/lib/types";
+import type { Point2D } from "@/lib/types";
+
+/** The part of a preview that can be played back.
+ *
+ * **Narrower than either reply that satisfies it, on purpose.** The
+ * scenario editor's preview carries a validation verdict and the library
+ * one carries the map it was built from; neither matters to "where is
+ * the traffic at t". Naming only the fields that do lets both feed these
+ * helpers without a cast, and stops a future field on one of them from
+ * looking like something playback depends on. */
+export interface PlayableTraffic {
+  dynamic_obstacles: {
+    name: string;
+    radius: number;
+    position: Point2D;
+    track?: Point2D[];
+  }[];
+  duration?: number;
+  step?: number;
+}
 
 /** Where an obstacle is at `seconds`, off its sampled track.
  *
@@ -58,7 +77,7 @@ export function obstacleAt(
 
 /** Every obstacle in a preview, at one moment. */
 export function trafficAt(
-  preview: ScenarioPreview | null,
+  preview: PlayableTraffic | null,
   seconds: number,
 ): { name: string; radius: number; position: Point2D }[] {
   if (!preview) return [];
@@ -74,7 +93,7 @@ export function trafficAt(
  * Zero when the reply carries no track, which is how the caller knows to
  * offer no scrubber rather than one that cannot move.
  */
-export function playableSeconds(preview: ScenarioPreview | null): number {
+export function playableSeconds(preview: PlayableTraffic | null): number {
   return preview?.duration ?? 0;
 }
 

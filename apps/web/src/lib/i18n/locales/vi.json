@@ -192,6 +192,8 @@
   "library.importing": "Đang import…",
   "library.imported": "Đã import",
   "library.preview": "Xem trước",
+  "library.previewStoresNothing": "Không lưu gì cả",
+  "library.previewNoTraffic": "Kịch bản này không khai vật cản động nào nên không có gì để chạy — những gì thấy trên hình là toàn bộ nó.",
   "library.obstacles": "Vật cản động",
   "library.timeout": "Thời gian tối đa",
   "library.curriculum": "Vị trí trong curriculum",

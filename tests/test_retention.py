@@ -305,3 +305,4 @@ class TestTheSocketSendsEveryPlannedRoute:
         """A success or a collision is a verdict, not a handover."""
         routes = self.routes([[(0, 0)], [(1, 1)]], [3.0])
         assert len(routes) == 2
+

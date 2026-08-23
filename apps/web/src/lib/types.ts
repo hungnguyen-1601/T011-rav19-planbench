@@ -366,6 +366,25 @@ export interface EpisodePlanRoute {
   points: Point2D[];
 }
 
+/** A library entry, built and drawn without being stored.
+ *
+ * Shaped so `trafficAt` and `playableSeconds` read it unchanged — the
+ * same fields `ScenarioPreview` carries — because a second way to say
+ * "where is the traffic at t" is a second answer. */
+export interface LibraryPreview {
+  library_name: string;
+  map: MapData;
+  scenario: Scenario;
+  dynamic_obstacles: {
+    name: string;
+    radius: number;
+    position: Point2D;
+    track?: Point2D[];
+  }[];
+  duration?: number;
+  step?: number;
+}
+
 export type WsMessage =
   | {
       type: "start";

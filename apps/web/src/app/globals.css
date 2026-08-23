@@ -4880,3 +4880,14 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
   font-size: var(--fs-sm);
   cursor: pointer;
 }
+
+/* Previewing a library entry, which stores nothing.
+   ===================================================================
+   The row being previewed is marked so a reader who has scrolled to the
+   panel below can find their way back to which entry it belongs to —
+   ten scenarios and one picture is otherwise a picture with no name on
+   the row it came from. */
+.library-actions { display: flex; gap: var(--space-2); white-space: nowrap; }
+.library-preview > .panel-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.library-preview-static { margin: var(--space-2) 0 0; }
+tr.is-previewing > td { background: var(--accent-soft); }

@@ -192,6 +192,8 @@
   "library.importing": "Importing…",
   "library.imported": "Imported",
   "library.preview": "Preview",
+  "library.previewStoresNothing": "Nothing is stored",
+  "library.previewNoTraffic": "This scenario declares no moving obstacles, so there is nothing to play — what you see is the whole of it.",
   "library.obstacles": "Dynamic obstacles",
   "library.timeout": "Timeout",
   "library.curriculum": "Curriculum position",
