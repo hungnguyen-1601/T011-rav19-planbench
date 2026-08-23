@@ -98,11 +98,28 @@ def preview_scenario(
     """
     stored_map = maps.get(request.map_id)
     errors = service.validate_against_map(stored_map.map_data, request.scenario)
+
+    # **Sampled here, never in the browser.** The reason the still frame
+    # was computed server-side applies with more force to a track: a
+    # second implementation of four motion laws would drift from the
+    # simulator's, and the drift would show up as an author placing a
+    # start clear of a cart that is somewhere else when the run happens.
+    # Sampling the same pure `position_at` cannot disagree with it.
+    duration = request.duration or 0.0
+    step = request.step
+    # `int()` truncates, so the last sample lands at or before the
+    # duration and never past it. The `+ 1` is the sample at t=0, which
+    # is a position and not a fencepost.
+    count = int(duration / step) + 1 if duration > 0 else 0
+
     snapshots = tuple(
         DynamicObstacleSnapshot(
             name=obstacle.name,
             radius=obstacle.radius,
             position=position_at(obstacle, request.time, request.seed),
+            track=tuple(
+                position_at(obstacle, index * step, request.seed) for index in range(count)
+            ),
         )
         for obstacle in request.scenario.dynamic_obstacles
     )
@@ -112,4 +129,6 @@ def preview_scenario(
         valid=not errors,
         errors=tuple(errors),
         dynamic_obstacles=snapshots,
+        duration=(count - 1) * step if count else 0.0,
+        step=step if count else 0.0,
     )

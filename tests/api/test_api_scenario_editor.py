@@ -220,6 +220,121 @@ class TestPreviewShowsWhatWillRun:
         assert body["time"] == 4.0
         assert body["seed"] == 7
 
+    def test_asking_for_a_duration_returns_the_whole_route(
+        self, client: TestClient, created_map: dict
+    ) -> None:
+        """**One call, not one per frame.**
+
+        A still frame answers "is the cart in my way at t = 12" and not
+        "where is it heading", which is the question an author placing a
+        start pose actually has. Animating by calling this endpoint per
+        frame would be a round trip every 40 ms; sampling the same pure
+        `position_at` here is one reply and cannot drift from it.
+        """
+        obstacle = _walker()
+        response = client.post(
+            "/api/v1/scenarios/preview",
+            json={
+                "map_id": created_map["id"],
+                "scenario": scenario_payload(dynamic_obstacles=[obstacle]),
+                "duration": 4.0,
+                "step": 1.0,
+                "seed": 7,
+            },
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        track = body["dynamic_obstacles"][0]["track"]
+        # t = 0, 1, 2, 3, 4: five positions, not four. The sample at zero
+        # is a position, not a fencepost.
+        assert len(track) == 5
+        assert body["duration"] == pytest.approx(4.0)
+        assert body["step"] == pytest.approx(1.0)
+
+    def test_every_sampled_point_is_the_simulators_own(
+        self, client: TestClient, created_map: dict
+    ) -> None:
+        """The track has to be the same law as the still frame, or the
+        preview animates one world and stops on another."""
+        obstacle = _walker()
+        response = client.post(
+            "/api/v1/scenarios/preview",
+            json={
+                "map_id": created_map["id"],
+                "scenario": scenario_payload(dynamic_obstacles=[obstacle]),
+                "duration": 3.0,
+                "step": 1.5,
+                "seed": 7,
+            },
+        )
+        track = response.json()["dynamic_obstacles"][0]["track"]
+        parsed = DynamicObstacle.model_validate(obstacle)
+        for index, point in enumerate(track):
+            expected = position_at(parsed, index * 1.5, 7)
+            assert point["x"] == pytest.approx(expected.x)
+            assert point["y"] == pytest.approx(expected.y)
+
+    def test_the_track_starts_at_zero_not_at_the_requested_instant(
+        self, client: TestClient, created_map: dict
+    ) -> None:
+        """`time` is where the scrubber is parked; the track is the whole
+        episode. Starting it at `time` would make a preview scrubbed to
+        t = 40 unable to show anything before t = 40."""
+        obstacle = _walker()
+        response = client.post(
+            "/api/v1/scenarios/preview",
+            json={
+                "map_id": created_map["id"],
+                "scenario": scenario_payload(dynamic_obstacles=[obstacle]),
+                "time": 4.0,
+                "duration": 2.0,
+                "step": 1.0,
+                "seed": 7,
+            },
+        )
+        track = response.json()["dynamic_obstacles"][0]["track"]
+        parsed = DynamicObstacle.model_validate(obstacle)
+        at_zero = position_at(parsed, 0.0, 7)
+        assert track[0]["x"] == pytest.approx(at_zero.x)
+        assert track[0]["y"] == pytest.approx(at_zero.y)
+
+    def test_no_duration_still_answers_with_one_frame(
+        self, client: TestClient, created_map: dict
+    ) -> None:
+        """The shape this endpoint had before playback existed. A caller
+        that wants one instant should not pay for a track."""
+        response = client.post(
+            "/api/v1/scenarios/preview",
+            json={
+                "map_id": created_map["id"],
+                "scenario": scenario_payload(dynamic_obstacles=[_walker()]),
+                "time": 2.0,
+                "seed": 7,
+            },
+        )
+        body = response.json()
+        assert body["dynamic_obstacles"][0]["track"] == []
+        assert body["duration"] == 0.0
+
+    def test_refuses_a_duration_long_enough_to_be_a_mistake(
+        self, client: TestClient, created_map: dict
+    ) -> None:
+        """Ten minutes at the finest step is a hundred and eighty
+        thousand points per obstacle. The cap is a refusal rather than a
+        silent clamp: a reply covering less than what was asked for,
+        with nothing saying so, is the same lie as a canvas labelled
+        t = 40 showing t = 0."""
+        response = client.post(
+            "/api/v1/scenarios/preview",
+            json={
+                "map_id": created_map["id"],
+                "scenario": scenario_payload(dynamic_obstacles=[_walker()]),
+                "duration": 6000.0,
+                "seed": 7,
+            },
+        )
+        assert response.status_code == 422
+
     def test_the_obstacle_actually_moves_between_instants(
         self, client: TestClient, created_map: dict
     ) -> None:
