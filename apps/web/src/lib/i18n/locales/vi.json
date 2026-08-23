@@ -69,8 +69,8 @@
   "nav.algorithms": "Thuật toán",
   "nav.agent": "Trợ lý AI",
   "agentDock.title": "Hỏi trợ lý",
-  "agentDock.subtitle": "Chưa nối",
-  "agentDock.placeholder": "Đây là chỗ trợ lý sẽ trả lời. Hiện chưa có gì nối vào nên nó chưa nhận được câu hỏi — ô bên dưới bị khoá thay vì im lặng, để một câu hỏi không tới đâu không bị hiểu nhầm là câu hỏi bị phớt lờ.",
+  "agentDock.subtitle": "Đọc những gì nền tảng đã ghi lại",
+  "agentDock.placeholder": "Hỏi về một lượt chạy, một deployment hay một ứng viên. Trợ lý tra cứu trong những gì đã ghi lại; nó không chạy được phép so và không duyệt được gì, và không câu nào bạn gõ ở đây được lưu lại.",
   "agentDock.inputPlaceholder": "Hỏi về một lượt chạy, một deployment hay một ứng viên…",
   "agentDock.send": "Gửi",
   "nav.reviews": "Duyệt",
@@ -1680,5 +1680,13 @@
   "conclusion.objective.U_R": "Tới đích — tỉ lệ episode về được đích.",
   "conclusion.objective.U_S": "An toàn, từ tỉ lệ suýt va và clearance tệ nhất. Va chạm cố ý không nằm ở đây: nó thuộc về gate G2 và không thuộc chỗ nào khác (HĐ-6).",
   "conclusion.objective.U_E": "Hiệu quả — quãng đường và thời gian so với tuyến map cho phép.",
-  "conclusion.objective.U_C": "Chi phí — độ trễ planner, ước lượng bộ nhớ, thời gian CPU."
+  "conclusion.objective.U_C": "Chi phí — độ trễ planner, ước lượng bộ nhớ, thời gian CPU.",
+  "agentDock.signedOut": "Đăng nhập để hỏi trợ lý.",
+  "agentDock.thinking": "Đang nghĩ…",
+  "agentDock.stop": "Dừng",
+  "agentDock.mock": "Trả lời ngoại tuyến theo từ khoá, không phải do model.",
+  "agentDock.truncated": "Hết lượt gọi công cụ trước khi có câu trả lời. Không khẳng định điều gì ở đây.",
+  "agentDock.toolsUsed": "Đã đọc: {tools}",
+  "agentDock.toolErrors": "Một lượt tra cứu hỏng: {errors}",
+  "agentDock.openFull": "Mở trang trợ lý đầy đủ — bài báo, bản nháp plugin, quyền hạn của nó"
 }

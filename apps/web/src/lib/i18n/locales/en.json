@@ -69,8 +69,8 @@
   "nav.algorithms": "Algorithms",
   "nav.agent": "Agent",
   "agentDock.title": "Ask the assistant",
-  "agentDock.subtitle": "Not connected yet",
-  "agentDock.placeholder": "This is where the assistant will answer. Nothing is wired to it yet, so it cannot take a question — the box below is disabled rather than silent, so a question that goes nowhere is never mistaken for one that was ignored.",
+  "agentDock.subtitle": "Reads what this platform recorded",
+  "agentDock.placeholder": "Ask about a run, a deployment or a candidate. The agent looks things up in what was recorded; it cannot start a comparison or approve anything, and nothing you type here is stored.",
   "agentDock.inputPlaceholder": "Ask about a run, a deployment or a candidate…",
   "agentDock.send": "Send",
   "nav.reviews": "Reviews",
@@ -1680,5 +1680,13 @@
   "conclusion.objective.U_R": "Reaching the goal — the share of episodes that arrived.",
   "conclusion.objective.U_S": "Safety, from near-miss rate and worst clearance. Collisions are deliberately absent: they live at gate G2 and nowhere else (HĐ-6).",
   "conclusion.objective.U_E": "Efficiency — path and time against the route the map allows.",
-  "conclusion.objective.U_C": "Cost — planner latency, memory estimate and CPU time."
+  "conclusion.objective.U_C": "Cost — planner latency, memory estimate and CPU time.",
+  "agentDock.signedOut": "Sign in to ask the agent.",
+  "agentDock.thinking": "Thinking…",
+  "agentDock.stop": "Stop",
+  "agentDock.mock": "Answered offline by keyword, not by a model.",
+  "agentDock.truncated": "The tool budget ran out before an answer. Nothing here is asserted.",
+  "agentDock.toolsUsed": "Read: {tools}",
+  "agentDock.toolErrors": "A lookup failed: {errors}",
+  "agentDock.openFull": "Open the full agent — papers, plugin drafts, what it may do"
 }

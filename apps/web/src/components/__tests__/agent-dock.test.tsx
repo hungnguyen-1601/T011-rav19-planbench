@@ -57,24 +57,83 @@ describe("it floats rather than docking", () => {
   });
 });
 
-describe("it says it is not connected", () => {
-  it("disables the composer rather than swallowing a question", () => {
-    /* A chat box that accepts a question and answers with silence leaves
-       somebody wondering whether their question was bad. */
-    expect(DOCK).toContain("<input\n              type=\"text\"\n              disabled");
-    expect(DOCK).toContain('<button type="submit" disabled>');
+describe("it is wired to the agent that exists", () => {
+  /* This dock spent its first version disabling its own composer, which
+     was honest while nothing was behind it. The agent was behind it the
+     whole time -- `POST /agent/chat`, reachable only from a tile on the
+     dashboard once the sidebar entry came off. These lock the join, so
+     the dead box cannot come back by accident. */
+
+  it("asks the same endpoint the full agent page asks", () => {
+    expect(DOCK).toContain('from "@/lib/agent"');
+    expect(DOCK).toContain("await askAgent(message, controller.signal)");
   });
 
-  it("says so in the panel and in the header", () => {
-    expect(en).toHaveProperty("agentDock.placeholder");
+  it("no longer describes itself as unconnected", () => {
+    const strings = en as Record<string, string>;
+    expect(strings["agentDock.subtitle"]).not.toContain("Not connected");
+    expect(strings["agentDock.placeholder"]).not.toContain("Nothing is wired");
     expect(vi).toHaveProperty("agentDock.placeholder");
-    expect((en as Record<string, string>)["agentDock.subtitle"]).toContain("Not connected");
   });
 
-  it("stops a stray Enter from reloading the page", () => {
-    /* There is nothing to submit to, so the browser's default would be a
-       navigation nobody asked for. */
+  it("takes a question only when there is a session to send it with", () => {
+    /* Signed out, the request comes back 401 after the reader has
+       already typed. */
+    expect(DOCK).toContain("disabled={!session}");
+    expect(DOCK).toContain('t("agentDock.signedOut")');
+  });
+
+  it("stops a stray Enter from reloading the page, then sends", () => {
+    /* The browser default is a navigation nobody asked for, and it would
+       take the transcript with it -- the thread lives in this component
+       because the server keeps none. */
     expect(DOCK).toContain("event.preventDefault();");
+    expect(DOCK).toContain("void ask();");
+  });
+});
+
+describe("what it says about an answer, beside the answer", () => {
+  it("marks an answer that no model produced", () => {
+    /* The offline keyword responder and a real model read alike. */
+    expect(DOCK).toContain("entry.deterministic");
+    expect(DOCK).toContain('t("agentDock.mock")');
+  });
+
+  it("says when the tool budget ran out first", () => {
+    /* A turn that stopped mid-thought reads as a finished one unless it
+       is named. */
+    expect(DOCK).toContain("entry.turn?.truncated");
+    expect(DOCK).toContain('t("agentDock.truncated")');
+  });
+
+  it("names the tools an answer was read from", () => {
+    expect(DOCK).toContain("entry.turn.tools_used");
+    expect(DOCK).toContain("entry.turn.tool_errors");
+  });
+});
+
+describe("a request outlives the panel", () => {
+  it("is not cancelled when the dock closes", () => {
+    /* Clicking away from a question is not withdrawing it, and only the
+       panel unmounts -- the transcript is state on the component, so an
+       answer that lands while it is shut is waiting on reopen. */
+    const closer = DOCK.slice(DOCK.indexOf("agent-dock-close"));
+    expect(closer.slice(0, closer.indexOf("</button>"))).not.toContain("abort()");
+    expect(DOCK).toContain("useDismiss(open, () => setOpen(false), dockRef)");
+  });
+
+  it("offers Stop as the way to withdraw one", () => {
+    expect(DOCK).toContain("inFlight.current?.abort()");
+    expect(DOCK).toContain('t("agentDock.stop")');
+  });
+});
+
+describe("it stays a shortcut, not a second agent", () => {
+  it("sends papers and plugin drafts to the full page", () => {
+    /* A 380px card is the wrong place to inspect what a model was
+       allowed to do, and a duplicate of that surface would drift. */
+    expect(DOCK).toContain('<Link href="/agent">');
+    expect(DOCK).not.toContain('type="file"');
   });
 });
 

@@ -5040,9 +5040,33 @@ tr.is-previewing > td { background: var(--accent-soft); }
 .agent-dock-close { margin-left: auto; padding: var(--space-1); }
 
 /* Scrolls on its own, so a long transcript never grows the panel past
-   the viewport and takes its own composer off screen. */
-.agent-dock-log { flex: 1; overflow-y: auto; padding: var(--space-3); }
+   the viewport and takes its own composer off screen.
+
+   A column rather than a block because the bubbles inside are the same
+   `.chat-bubble` the full agent page uses, and those place themselves
+   with `align-self` -- left for an answer, right for a question. In a
+   plain block both sit flush left and the thread stops reading as a
+   conversation. */
+.agent-dock-log {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-2);
+  overflow-y: auto;
+  padding: var(--space-3);
+}
 .agent-dock-log p { margin: 0; font-size: var(--fs-sm); line-height: 1.5; }
+/* A bubble holds its own lines: the answer, then what it was read from.
+   The gap above separates turns, not the parts of one. */
+.agent-dock-log .chat-bubble > p + p { margin-top: var(--space-1); }
+
+/* Sits under the composer rather than in the header: it is where the
+   conversation goes next, not what it is. */
+.agent-dock-more {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border);
+}
 
 .agent-dock-composer {
   display: flex;
