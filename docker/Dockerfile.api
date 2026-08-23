@@ -25,18 +25,19 @@ COPY apps/api/ /app/apps/api/
 COPY alembic/ /app/alembic/
 COPY alembic.ini /app/alembic.ini
 COPY docs/ /app/docs/
+COPY maps/ /app/maps/
+COPY profiles/ /app/profiles/
+COPY configs/ /app/configs/
+COPY ml/ /app/ml/
 
-ENV PYTHONPATH=/app/packages/schemas:/app/packages/planning:/app/packages/metrics:/app/packages/benchmark:/app/services/simulator:/app/services/tracking:/app/services/agent_service:/app/apps/api
+ENV PYTHONPATH=/app/packages/schemas:/app/packages/planning:/app/packages/metrics:/app/packages/benchmark:/app/packages/decision:/app/packages/explanation:/app/packages/plugin_sdk:/app/services/simulator:/app/services/tracking:/app/services/agent_service:/app/ml:/app/apps/api
 
 # Artifacts are written here; compose mounts a volume so they survive a
 # container rebuild (they are referenced by URI from the database).
 ENV PLANBENCH_ARTIFACT_DIR=/data/artifacts
-RUN mkdir -p /data/artifacts
-
-# Never run as root: a container that writes to a mounted volume as root
-# leaves files the host user cannot clean up.
-RUN useradd --create-home --uid 10001 planbench \
-    && chown -R planbench:planbench /data
+RUN mkdir -p /data/artifacts /app/maps/custom \
+    && useradd --create-home --uid 10001 planbench \
+    && chown -R planbench:planbench /app /data
 USER planbench
 
 EXPOSE 8000
