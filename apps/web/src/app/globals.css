@@ -4914,3 +4914,91 @@ tr.is-previewing > td { background: var(--accent-soft); }
 }
 .models-file--fixed p { margin: 0; }
 .models-file--fixed button { justify-self: start; }
+
+/* The floating assistant: a launcher and a panel over the page.
+   ===================================================================
+   Over the page rather than in the layout. Every canvas in this app is
+   sized in pixels rather than percentages — `MissionCanvas` maps a press
+   to world coordinates by assuming its surface and its CSS box match —
+   so a dock that took width from the content would move every click on
+   a map by however wide it happened to be.
+
+   Bottom-right because bottom-left already belongs to the framework's
+   own dev overlay, and two circles in one corner is one corner nobody
+   can use. */
+.agent-dock {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.agent-dock-launcher {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--accent-soft-border);
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  box-shadow: var(--shadow);
+}
+.agent-dock-launcher:hover { filter: brightness(1.06); }
+
+.agent-dock-panel {
+  display: flex;
+  width: min(380px, calc(100vw - var(--space-6)));
+  max-height: min(560px, calc(100vh - 120px));
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.agent-dock-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.agent-dock-head p { margin: 0; }
+.agent-dock-mark {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.agent-dock-close { margin-left: auto; padding: var(--space-1); }
+
+/* Scrolls on its own, so a long transcript never grows the panel past
+   the viewport and takes its own composer off screen. */
+.agent-dock-log { flex: 1; overflow-y: auto; padding: var(--space-3); }
+.agent-dock-log p { margin: 0; font-size: var(--fs-sm); line-height: 1.5; }
+
+.agent-dock-composer {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.agent-dock-composer input { flex: 1; min-width: 0; }
+
+/* On a phone the panel is the screen. A 380px card floating over a
+   360px viewport is a card with its own margins clipped. */
+@media (max-width: 560px) {
+  .agent-dock { right: var(--space-2); bottom: var(--space-2); left: var(--space-2); }
+  .agent-dock-panel { width: 100%; }
+}
