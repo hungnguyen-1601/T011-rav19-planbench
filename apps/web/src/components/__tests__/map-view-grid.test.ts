@@ -51,7 +51,7 @@ describe("every canvas can turn its grid off", () => {
        the decision preview all had a grid on with no way to reach it:
        `MapCanvas` defaults it true and nothing above them offered a
        control. */
-    expect(VIEW).toContain("const [ownGrid, setOwnGrid] = useState(true)");
+    expect(VIEW).toContain("const [ownGrid, setOwnGrid] = useState(false)");
     expect(VIEW).toContain('className="map-view-grid"');
   });
 
@@ -63,6 +63,17 @@ describe("every canvas can turn its grid off", () => {
     // The two pages that bring their own.
     expect(BENCH).toContain("showGrid={showGrid}");
     expect(FORM).toContain("showGrid={showGrid}");
+  });
+
+  it("starts off, in every canvas and at every layer", () => {
+    /* The grid is a measuring aid: useful while somebody is judging a
+       clearance in cells, noise the rest of the time, and it sat on top
+       of the one thing these canvases exist to show. Turning it on is a
+       thing a reader does now, not a thing they undo. */
+    expect(SCENE).toContain("showGrid = false,");
+    expect(VIEW).toContain("useState(false)");
+    expect(BENCH).toContain("const [showGrid, setShowGrid] = useState(false)");
+    expect(FORM).toContain("const [showGrid, setShowGrid] = useState(false)");
   });
 
   it("marks the switch as a view control, not a field", () => {

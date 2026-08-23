@@ -128,7 +128,7 @@ export default function TestBenchPage() {
   const [plan, setPlan] = useState<PlanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [showGrid, setShowGrid] = useState(true);
+  const [showGrid, setShowGrid] = useState(false);
   const [showPlan, setShowPlan] = useState(true);
   const [showTrajectory, setShowTrajectory] = useState(true);
   const [conditionsExpanded, setConditionsExpanded] = useState(true);

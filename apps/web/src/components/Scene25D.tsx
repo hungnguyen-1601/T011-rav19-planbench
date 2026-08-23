@@ -92,7 +92,7 @@ export function Scene25D({
   elevationDeg = 30,
   yawDeg = 0,
   showControls = true,
-  showGrid = true,
+  showGrid = false,
   onViewChange,
   showPlan = true,
   showTrajectory = true,

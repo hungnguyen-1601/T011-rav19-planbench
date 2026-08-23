@@ -69,6 +69,12 @@ export interface MapCanvasProps {
   /** The instant `dynamicObstacles` describes, in seconds, for the label.
    *  The editor passes the scrubber position; replay passes the playhead. */
   previewTime?: number;
+  /* **Off by default, everywhere.** The grid is a measuring aid: useful
+     when somebody is judging a clearance in cells, noise the rest of the
+     time, and it sat on top of the one thing these canvases exist to show.
+     Defaulting it on also meant four screens drew it with no control to
+     reach, which is how it went unnoticed for as long as it did. Turning
+     it on is now a thing a reader does, not a thing they undo. */
   showGrid?: boolean;
   showPlan?: boolean;
   showTrajectory?: boolean;
@@ -163,7 +169,7 @@ export function MapCanvas({
   dynamicObstacles,
   authoredTraffic,
   previewTime,
-  showGrid = true,
+  showGrid = false,
   showPlan = true,
   showTrajectory = true,
   onWorldClick,

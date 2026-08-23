@@ -71,7 +71,7 @@ export function MapView({
    * four pages means one switch to maintain, and it lands beside the
    * Top-down / 2.5D buttons, which is the other control that decides
    * what this canvas draws rather than what it contains. */
-  const [ownGrid, setOwnGrid] = useState(true);
+  const [ownGrid, setOwnGrid] = useState(false);
   const controlled = canvas.showGrid !== undefined;
   const showGrid = controlled ? canvas.showGrid !== false : ownGrid;
   const editable = canvas.onWorldClick !== undefined;

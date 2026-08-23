@@ -263,7 +263,7 @@ export function DeploymentForm({
    * other a replay being watched — and a preference shared between them
    * would mean turning the grid off to read a trajectory also turned it
    * off for the person placing a start pose on a different screen. */
-  const [showGrid, setShowGrid] = useState(true);
+  const [showGrid, setShowGrid] = useState(false);
   /** Which panel of controls is on top.
    *
    * Opens on the mission, because that is the tab whose controls the

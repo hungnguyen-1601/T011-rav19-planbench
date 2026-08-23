@@ -1162,10 +1162,10 @@ describe("the mission map has its own grid switch", () => {
        forwarded the prop, so this canvas had been drawing a grid since
        it existed — invisible only because the ink was white at 4% alpha
        against a floor that is near-white in the light theme. */
-    expect(CANVAS).toContain("showGrid = true");
+    expect(CANVAS).toContain("showGrid = false");
     expect(PLACER).toContain("showGrid?: boolean;");
     expect(PLACER).toContain("showGrid={showGrid}");
-    expect(FORM).toContain("const [showGrid, setShowGrid] = useState(true)");
+    expect(FORM).toContain("const [showGrid, setShowGrid] = useState(false)");
     expect(FORM).toContain("deployment-map-grid-toggle");
   });
 
@@ -1175,7 +1175,7 @@ describe("the mission map has its own grid switch", () => {
        the grid off to read a trajectory also turned it off for somebody
        placing a start pose on another screen. Both are plain local
        state; neither reads storage. */
-    expect(BENCH).toContain("const [showGrid, setShowGrid] = useState(true)");
+    expect(BENCH).toContain("const [showGrid, setShowGrid] = useState(false)");
     expect(FORM).not.toContain("localStorage");
     expect(BENCH).not.toContain("localStorage");
   });
