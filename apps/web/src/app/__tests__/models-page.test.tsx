@@ -135,3 +135,83 @@ describe("translation keys", () => {
     expect(vi).toHaveProperty(`models.status.${status}`);
   });
 });
+
+describe("the page carries two modes", () => {
+  const LIB = readFileSync(join(SRC, "lib", "models.ts"), "utf8");
+  const AUTH = readFileSync(join(SRC, "lib", "auth.ts"), "utf8");
+
+  it("drops the prose that answered a question asked once", () => {
+    /* Three paragraphs — what a PPO model is, what to upload, and that
+       training is not built yet — sat above the form on every visit.
+       What survives is the hint on the file picker, where the question
+       is actually asked. */
+    expect(PAGE).not.toContain("models.subtitle");
+    expect(PAGE).not.toContain("models.trainingNote");
+    expect(PAGE).toContain("models.fileHint");
+  });
+
+  it("is called Models rather than Model Registry", () => {
+    expect((en as Record<string, string>)["nav.models"]).toBe("Models");
+    expect((en as Record<string, string>)["models.title"]).toBe("Models");
+  });
+
+  it("separates filing a new artefact from editing one on the shelf", () => {
+    /* One form that sometimes creates and sometimes mutates depending on
+       a field set five fields ago is two behaviours wearing one button. */
+    expect(PAGE).toContain('id: "upload" as const');
+    expect(PAGE).toContain('id: "edit" as const');
+    expect(PAGE).toContain("function EditPanel(");
+  });
+
+  it("edits only the labels, never the artefact", () => {
+    /* `POST /models/{id}/documents` refuses a `model` kind outright, and
+       that refusal is the rule that also keeps a benchmarked model from
+       being deleted. */
+    expect(LIB).toContain("export interface ModelEdits");
+    expect(LIB).toContain('kind: "metadata" | "document"');
+    expect(LIB).not.toContain('kind: "model"');
+  });
+
+  it("says the zip is fixed instead of offering a picker that fails", () => {
+    /* A control that collects 200 MB and then reports that this was
+       never allowed is a worse answer than the sentence. */
+    expect(PAGE).toContain("models.edit.fileFixed");
+    expect(PAGE).toContain("models-file--fixed");
+    const fixed = PAGE.slice(PAGE.indexOf("models-file--fixed"));
+    expect(fixed.slice(0, fixed.indexOf("</div>"))).not.toContain('type="file"');
+  });
+
+  it("hands the labels to the upload form for a new version", () => {
+    /* Otherwise "upload as a new version" means retyping seven fields
+       that are already on screen. */
+    expect(PAGE).toContain("onNewVersion");
+    expect(PAGE).toContain("setPrefill(model)");
+    expect(PAGE).toContain("prefill?: ModelSummary | null;");
+  });
+
+  it("leaves the version for the author to bump", () => {
+    /* Filling it in would guess at a numbering scheme nobody
+       declared. */
+    const carried = PAGE.slice(PAGE.indexOf("if (!prefill) return;"));
+    expect(carried.slice(0, carried.indexOf("}, [prefill])"))).not.toContain("setVersion(");
+  });
+
+  it("offers only models this account owns", () => {
+    /* The server enforces it; a picker offering the rest would collect a
+       form and answer with a 403. */
+    expect(PAGE).toContain("models.filter((model) => model.is_owner)");
+  });
+
+  it("refollows the fields when the selection changes", () => {
+    /* Otherwise switching models leaves the previous one's name in the
+       box and the next save writes it onto the wrong record. */
+    expect(PAGE).toContain("}, [chosen?.id]);");
+  });
+
+  it("lets a multipart body set its own content type", () => {
+    /* The boundary is generated per request and only `fetch` knows it.
+       Declaring JSON over a FormData sends a body the server cannot
+       parse, and the failure reads as a rejected file. */
+    expect(AUTH).toContain("init?.body instanceof FormData");
+  });
+});

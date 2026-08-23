@@ -4891,3 +4891,26 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
 .library-preview > .panel-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 .library-preview-static { margin: var(--space-2) 0 0; }
 tr.is-previewing > td { background: var(--accent-soft); }
+
+/* Two modes on one page: filing a new artefact, and changing what is
+   written about one already on the shelf.
+   ===================================================================
+   The `.zip` slot is a sentence rather than a picker. The server refuses
+   to replace a model file — results are filed against the id, so
+   swapping the bytes underneath them turns a measurement into a record
+   of a file that no longer exists — and a control that collects 200 MB
+   before reporting that is a worse answer than saying so first. */
+.models-modes { padding: 0; overflow: hidden; }
+.models-modes .tabs-list { padding: var(--space-2) var(--space-4) 0; }
+.models-edit { display: grid; gap: var(--space-3); padding: var(--space-3) var(--space-4) var(--space-4); }
+.models-edit-empty { padding: var(--space-4); }
+.models-file--fixed {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+}
+.models-file--fixed p { margin: 0; }
+.models-file--fixed button { justify-self: start; }
