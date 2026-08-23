@@ -1012,3 +1012,34 @@ describe("replanning is declared by the deployment, and has no budget", () => {
     expect(EN_REPLAN["deployments.form.replanningNote"]).toContain("HĐ-3.1");
   });
 });
+
+describe("the page leads with filing, not with the list", () => {
+  it("puts the form above the deployments already on file", () => {
+    /* The list is a reference — read when somebody needs an id or wants
+       to check a threshold — while filing one is what people come here
+       to do. With ten rows above it the form started below the fold, and
+       the empty-state banner had to carry a jump link down to reach it
+       at all. */
+    const form = PAGE.indexOf('id="deployment-file-panel"');
+    const list = PAGE.indexOf('className="panel deployment-list-panel"');
+    expect(form).toBeGreaterThan(-1);
+    expect(list).toBeGreaterThan(form);
+  });
+
+  it("keeps the count on the head, where the list used to answer it", () => {
+    /* "How many are on file" was answered by the list being the first
+       thing on screen. It is not any more, so the badge is now the only
+       thing answering it. */
+    expect(PAGE).toContain("deployment-count-badge");
+    expect(PAGE.indexOf("deployment-count-badge")).toBeLessThan(
+      PAGE.indexOf('id="deployment-file-panel"'),
+    );
+  });
+
+  it("keeps the noise note with the table it qualifies", () => {
+    /* It is about the rows, not about the page: moving the table has to
+       move the sentence under it. */
+    const list = PAGE.indexOf('className="panel deployment-list-panel"');
+    expect(PAGE.indexOf("deployments.noiseNote")).toBeGreaterThan(list);
+  });
+});

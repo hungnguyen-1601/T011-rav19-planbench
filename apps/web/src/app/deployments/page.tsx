@@ -168,49 +168,15 @@ export default function DeploymentsPage() {
         <div className="notice">{t("deployments.filed", { id: filed })}</div>
       ) : null}
 
-      {loading ? (
-        <div className="deployment-loading"><span className="skeleton" />{t("common.loading")}</div>
-      ) : profiles.length === 0 ? (
-        <div className="deployment-empty-banner">
-          <span className="deployment-empty-icon" aria-hidden="true"><Icon name="map" size={24} /></span>
-          <div>
-            <strong>{t("deployments.empty.title")}</strong>
-            <p>{t("deployments.empty.body")}</p>
-          </div>
-          <a className="quick-action primary" href="#deployment-file-panel">
-            <Icon name="plus" size={16} />
-            {t("deployments.file.title")}
-          </a>
-        </div>
-      ) : (
-        <div className="panel deployment-list-panel">
-          <div className="table-scroll wide">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t("deployments.column.id")}</th>
-                  <th>{t("deployments.column.map")}</th>
-                  <th>{t("deployments.column.noise")}</th>
-                  <th>{t("deployments.column.successMin")}</th>
-                  <th>{t("deployments.column.risk")}</th>
-                  <th>{t("deployments.column.replanning")}</th>
-                  <th>{t("deployments.column.nMin")}</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {profiles.map((profile) => (
-                  <DeploymentRow key={profile.id} profile={profile} onDeleted={refresh} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="muted" style={{ marginTop: 12 }}>
-            {t("deployments.noiseNote")}
-          </p>
-        </div>
-      )}
-
+      {/* **The form first, the list last.** The list is a reference —
+          what is already on file, read when somebody needs an id or
+          wants to check a threshold — while filing a new deployment is
+          the thing people come to this page to *do*. With ten rows above
+          it the form was below the fold on arrival, and the empty-state
+          banner had to carry a jump link down to it to be reachable at
+          all. Putting the doing above the reading is also why the head's
+          count badge still exists: it answers "how many are on file"
+          without the list having to be the first thing on screen. */}
       <div className="panel deployment-file-panel" id="deployment-file-panel">
         <div className="panel-head">
           <h3><span className="panel-title-icon" aria-hidden="true"><Icon name="plus" size={17} /></span>{t("deployments.file.title")}</h3>
@@ -288,6 +254,49 @@ export default function DeploymentsPage() {
           </>
         )}
       </div>
+
+      {loading ? (
+        <div className="deployment-loading"><span className="skeleton" />{t("common.loading")}</div>
+      ) : profiles.length === 0 ? (
+        <div className="deployment-empty-banner">
+          <span className="deployment-empty-icon" aria-hidden="true"><Icon name="map" size={24} /></span>
+          <div>
+            <strong>{t("deployments.empty.title")}</strong>
+            <p>{t("deployments.empty.body")}</p>
+          </div>
+          <a className="quick-action primary" href="#deployment-file-panel">
+            <Icon name="plus" size={16} />
+            {t("deployments.file.title")}
+          </a>
+        </div>
+      ) : (
+        <div className="panel deployment-list-panel">
+          <div className="table-scroll wide">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t("deployments.column.id")}</th>
+                  <th>{t("deployments.column.map")}</th>
+                  <th>{t("deployments.column.noise")}</th>
+                  <th>{t("deployments.column.successMin")}</th>
+                  <th>{t("deployments.column.risk")}</th>
+                  <th>{t("deployments.column.replanning")}</th>
+                  <th>{t("deployments.column.nMin")}</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {profiles.map((profile) => (
+                  <DeploymentRow key={profile.id} profile={profile} onDeleted={refresh} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="muted" style={{ marginTop: 12 }}>
+            {t("deployments.noiseNote")}
+          </p>
+        </div>
+      )}
     </section>
   );
 }
