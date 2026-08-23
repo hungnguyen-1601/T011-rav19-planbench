@@ -434,12 +434,46 @@ a:hover {
   text-decoration: none;
 }
 
+/* **Filled, not tinted.** The current page was a 10% wash of the accent
+   with accent-coloured text and a 2px bar down its left edge — three
+   quiet signals that each had to be noticed. A solid block is one loud
+   one, and it is the treatment An asked for.
+
+   It also keeps the property the bar was there to provide, and keeps it
+   better. "Not colour alone" was the rule: a tint plus a bar survives
+   greyscale because of the bar. An inverted fill survives it because
+   the *lightness* inverts — the strongest signal available, and the one
+   that still reads at a glance across a rail of ten items where a 2px
+   edge does not.
+
+   `--text` on `--bg` rather than a hard-coded black. In the light theme
+   that is near-black on off-white; in the dark theme the same two tokens
+   invert on their own, so the item stays the filled one rather than
+   becoming a dark block on a dark rail. */
 .sidebar nav a[aria-current="page"] {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--text);
+  color: var(--bg);
   font-weight: 600;
-  /* Not colour alone: the bar survives greyscale and colour blindness. */
-  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* Hover must not lift the fill. `.sidebar nav a:hover` paints
+   `--panel-2`, which on the current item would replace the block with a
+   pale rectangle for as long as the pointer sits on it — the one item
+   that should never look unselected. */
+.sidebar nav a[aria-current="page"]:hover {
+  background: var(--text);
+  color: var(--bg);
+}
+
+/* The chip rides on the fill now, so it cannot keep the muted grey it
+   wears against the rail: grey on near-black is the pair this palette
+   spends its light-theme comment warning about. Drawn from the fill's
+   own foreground instead, so it stays legible in either theme without a
+   second colour entering the sidebar. */
+.sidebar nav a[aria-current="page"] .badge {
+  border-color: color-mix(in srgb, var(--bg) 40%, transparent);
+  background: color-mix(in srgb, var(--bg) 16%, transparent);
+  color: var(--bg);
 }
 
 .sidebar nav a svg {

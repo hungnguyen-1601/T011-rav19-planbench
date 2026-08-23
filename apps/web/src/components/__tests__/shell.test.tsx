@@ -563,3 +563,45 @@ describe("fields and tabs", () => {
     expect(rule(".deployment-config-panel .tabs-list")).not.toContain("background: var(--panel-2)");
   });
 });
+
+describe("the current page is filled, not tinted", () => {
+  const CSS = readFileSync(join(process.cwd(), "src", "app", "globals.css"), "utf8");
+  const rule = CSS.slice(
+    CSS.indexOf('.sidebar nav a[aria-current="page"] {'),
+    CSS.indexOf(".sidebar nav a svg"),
+  );
+
+  it("paints a solid block rather than a wash of the accent", () => {
+    /* It was a 10% accent tint, accent-coloured text and a 2px edge —
+       three quiet signals that each had to be noticed. A fill is one
+       loud one. */
+    expect(rule).toContain("background: var(--text);");
+    expect(rule).toContain("color: var(--bg);");
+    expect(rule).not.toContain("var(--accent-soft)");
+  });
+
+  it("needs no left bar, because lightness now carries the signal", () => {
+    /* "Not colour alone" was the rule the bar served. An inverted fill
+       serves it better: the lightness inverts, which survives greyscale
+       and reads across a rail of ten items where 2px does not. */
+    expect(rule).not.toContain("inset 2px 0 0");
+  });
+
+  it("does not let hover lift the fill off the current item", () => {
+    /* `.sidebar nav a:hover` paints `--panel-2`. Unhandled, the one item
+       that must never look unselected turns pale under the pointer. */
+    expect(rule).toContain('.sidebar nav a[aria-current="page"]:hover');
+  });
+
+  it("keeps the chip legible once it rides on the fill", () => {
+    /* Muted grey on near-black is the pair this palette's own comment
+       warns about. */
+    expect(rule).toContain('.sidebar nav a[aria-current="page"] .badge');
+  });
+
+  it("inverts with the theme instead of hard-coding black", () => {
+    /* A literal black block would stay black on a dark rail, which is
+       where a filled item stops being the filled one. */
+    expect(rule).not.toMatch(/background:\s*#[0-9a-fA-F]{3,6}/);
+  });
+});
