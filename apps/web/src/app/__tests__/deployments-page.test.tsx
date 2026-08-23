@@ -1128,3 +1128,26 @@ describe("the preview plays the traffic rather than freezing it", () => {
     expect(FORM).toContain("playableSeconds(preview) > 0 ?");
   });
 });
+
+describe("every hook in the form runs on every render", () => {
+  it("calls no hook below the loading guard", () => {
+    /* **The failure this locks down took the page out entirely.** The
+       playback timer was written next to the preview code it belongs
+       with, which is below `if (!draft) return`. On the render before
+       the draft arrived React counted one hook fewer than on the render
+       after, and it refuses to guess which one moved: "React has
+       detected a change in the order of Hooks called by
+       DeploymentForm".
+
+       Checked by position rather than by eye because the guard is a
+       thousand lines above the end of the component, and every future
+       hook added near the code it serves lands on the wrong side of it
+       by default. */
+    const form = FORM.slice(0, FORM.indexOf("function numberAt("));
+    const guard = form.indexOf("if (!draft) return");
+    expect(guard).toBeGreaterThan(-1);
+    const after = form.slice(guard);
+    const hooks = [...after.matchAll(/\buse(State|Effect|Memo|Callback|Ref|Context)\s*\(/g)];
+    expect(hooks.map((hit) => hit[0]), "hooks below the guard").toEqual([]);
+  });
+});

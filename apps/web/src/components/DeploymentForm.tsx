@@ -687,6 +687,40 @@ export function DeploymentForm({
    * this form asked for and clears on every edit — a filing refusal
    * belongs to the page and can outlive the document it was about, so it
    * must not win a `find` against a fresher answer. */
+  /* **Above the `!draft` guard, and that is not a preference.** This
+     hook sat below it, so on the render before the draft arrived React
+     saw one fewer hook than on the render after — which is the order
+     change it refuses to guess about, and it took the whole page down
+     with a Rules of Hooks error. Nothing here reads `draft`; it was
+     simply written next to the preview code it belongs with. */
+  /** Walk the playhead while it is running.
+   *
+   * `requestAnimationFrame` rather than an interval, and real elapsed
+   * time rather than a fixed increment per frame: a tab in the
+   * background is throttled to one frame a second, and adding a
+   * constant each time would make the traffic crawl there and race on a
+   * 144 Hz screen. What is being played back is seconds of a simulated
+   * episode, so seconds are what the clock has to count. */
+  useEffect(() => {
+    if (!playing) return;
+    const span = playableSeconds(preview);
+    if (span <= 0) return;
+    let frame = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const elapsed = (now - last) / 1000;
+      last = now;
+      setPlayhead((current) => {
+        const next = advance(current, elapsed, span);
+        if (!next.running) setPlaying(false);
+        return next.seconds;
+      });
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [playing, preview]);
+
   const shownErrors = useMemo(
     () => [...dryRunErrors, ...fieldErrors],
     [dryRunErrors, fieldErrors],
@@ -972,34 +1006,6 @@ export function DeploymentForm({
     setPlaying(false);
     setPlayhead(0);
   };
-
-  /** Walk the playhead while it is running.
-   *
-   * `requestAnimationFrame` rather than an interval, and real elapsed
-   * time rather than a fixed increment per frame: a tab in the
-   * background is throttled to one frame a second, and adding a
-   * constant each time would make the traffic crawl there and race on a
-   * 144 Hz screen. What is being played back is seconds of a simulated
-   * episode, so seconds are what the clock has to count. */
-  useEffect(() => {
-    if (!playing) return;
-    const span = playableSeconds(preview);
-    if (span <= 0) return;
-    let frame = 0;
-    let last = performance.now();
-    const tick = (now: number) => {
-      const elapsed = (now - last) / 1000;
-      last = now;
-      setPlayhead((current) => {
-        const next = advance(current, elapsed, span);
-        if (!next.running) setPlaying(false);
-        return next.seconds;
-      });
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [playing, preview]);
 
   /** The request this draft can currently support, or nothing.
    *
