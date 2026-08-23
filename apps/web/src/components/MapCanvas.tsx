@@ -49,6 +49,12 @@ export interface MapCanvasProps {
    * shows a scenario, and a scenario declares no localisation error. */
   positionUncertainty?: number;
   plannedPath?: Point2D[];
+  /** The dashed route's colour. Given by a caller that redraws the plan
+   *  as the episode replans: with one colour for every attempt, a reader
+   *  scrubbing the timeline cannot tell "the plan bent" from "the plan
+   *  was thrown away and a new one drawn", and only the second is a
+   *  replan. Omitted, it stays the one blue every other screen uses. */
+  plannedPathColour?: string;
   trajectory?: TrajectoryPoint[];
   robotPose?: Pose2D | null;
   collisionPoint?: Point2D | null;
@@ -162,6 +168,7 @@ export function MapCanvas({
   robotRadius = 0.3,
   positionUncertainty = 0,
   plannedPath,
+  plannedPathColour,
   trajectory,
   robotPose,
   collisionPoint,
@@ -450,7 +457,8 @@ export function MapCanvas({
     }
 
     if (showPlan && plannedPath && plannedPath.length > 1) {
-      ctx.strokeStyle = COLOR.plan;
+      const planInk = plannedPathColour ?? COLOR.plan;
+      ctx.strokeStyle = planInk;
       ctx.lineWidth = 2;
       ctx.setLineDash([6, 4]);
       ctx.beginPath();
@@ -461,7 +469,7 @@ export function MapCanvas({
       });
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = COLOR.plan;
+      ctx.fillStyle = planInk;
       for (const point of plannedPath) {
         const [x, y] = toCanvas(point.x, point.y);
         ctx.beginPath();

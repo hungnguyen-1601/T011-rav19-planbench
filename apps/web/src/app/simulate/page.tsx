@@ -55,6 +55,7 @@ import {
 } from "@/lib/decisions";
 import { poseOf } from "@/lib/deployments";
 import { Hint } from "@/components/Hint";
+import { plannedRouteColour } from "@/lib/evidence";
 import { useTranslation } from "@/lib/i18n";
 import { useEpisodeStream } from "@/lib/useEpisodeStream";
 import type { MapData, PlanResult, Point2D } from "@/lib/types";
@@ -152,6 +153,33 @@ export default function TestBenchPage() {
       }
     })();
   }, []);
+
+  /** Which planned route is on screen, given where the playhead is.
+   *
+   * **The same rule as the decisions canvas, on a different key.**
+   * `routeAt` there walks routes stamped with a step index, because a
+   * trace is a list of rows. This socket stamps them with seconds,
+   * because that is what the engine records against an event and what
+   * the frames carry — so the walk is the same and the comparison is
+   * `from_time` instead of `from_index`. Converting one to the other to
+   * share a function would put a clock conversion between two things
+   * that already agree.
+   *
+   * `plannedRouteColour` *is* shared, so an attempt that is orange on
+   * one screen is orange on the other.
+   */
+  const currentRoute = useMemo(() => {
+    if (stream.planRoutes.length === 0) return null;
+    const now = stream.currentFrame?.time ?? stream.playhead;
+    let current: (typeof stream.planRoutes)[number] | null = null;
+    for (const route of stream.planRoutes) {
+      if (route.from_time > now) break;
+      current = route;
+    }
+    // A refused attempt has no route. Recorded so the canvas can say the
+    // plan went away rather than silently keeping the previous one.
+    return current && current.points.length > 0 ? current : null;
+  }, [stream.planRoutes, stream.currentFrame, stream.playhead]);
 
   const deployment = useMemo<Deployment | null>(() => {
     const found = profiles.find((entry) => entry.id === profileId);
@@ -590,7 +618,20 @@ export default function TestBenchPage() {
               goalTolerance={deployment?.constraints?.goal_tolerance_m}
               robotRadius={deployment?.robot?.radius}
               positionUncertainty={safetyEnvelope(deployment?.environment?.sensor_noise)}
-              plannedPath={stream.planPath.length > 0 ? stream.planPath : plan?.path}
+              /* **The route in force at this instant, not the one the
+                 episode set out on.** The socket used to send one plan
+                 and nothing after it, so a replanning episode drew its
+                 opening route for the whole run — a dashed line sitting
+                 still while the robot drove somewhere else, which reads
+                 as a controller ignoring its plan rather than as a plan
+                 that was replaced.
+
+                 Falls back to `planPath` when the replans could not be
+                 placed or the server predates them: the opening route is
+                 still true, and drawing nothing would lose the plan
+                 entirely over a decoration. */
+              plannedPath={currentRoute?.points ?? (stream.planPath.length > 0 ? stream.planPath : plan?.path)}
+              plannedPathColour={currentRoute ? plannedRouteColour(currentRoute.attempt) : undefined}
               trajectory={visibleTrajectory}
               robotPose={robotPose}
               collisionPoint={collisionPoint}

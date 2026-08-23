@@ -156,3 +156,55 @@ describe("the conditions say what counts as a pass", () => {
     expect(CSS).toContain("repeat(auto-fit, minmax(210px, 1fr))");
   });
 });
+
+describe("the canvas follows the plan as it is replanned", () => {
+  const PAGE = readFileSync(join(process.cwd(), "src", "app", "simulate", "page.tsx"), "utf8");
+  const STREAM = readFileSync(
+    join(process.cwd(), "src", "lib", "useEpisodeStream.ts"),
+    "utf8",
+  );
+  const CANVAS = readFileSync(join(process.cwd(), "src", "components", "MapCanvas.tsx"), "utf8");
+
+  it("keeps every route the socket sent, not just the opening one", () => {
+    /* The socket used to send `plan_path` at `start` and nothing after
+       it, so a replanning episode drew its first route for the whole
+       run — a dashed line sitting still while the robot drove somewhere
+       else. */
+    expect(STREAM).toContain("setPlanRoutes(message.plans ?? [])");
+    expect(STREAM).toContain("planRoutes,");
+  });
+
+  it("draws the route in force at the playhead", () => {
+    expect(PAGE).toContain("const currentRoute = useMemo(");
+    expect(PAGE).toContain("route.from_time > now");
+    expect(PAGE).toContain("plannedPath={currentRoute?.points ??");
+  });
+
+  it("changes colour at every replan", () => {
+    /* With one colour for all of them a reader scrubbing the timeline
+       cannot tell "the plan bent" from "the plan was thrown away and a
+       new one drawn", and only the second is a replan. Shared with the
+       decisions canvas so an attempt is the same colour on both. */
+    expect(PAGE).toContain("plannedRouteColour(currentRoute.attempt)");
+    expect(CANVAS).toContain("plannedPathColour");
+  });
+
+  it("falls back to the opening plan rather than drawing nothing", () => {
+    /* A server that predates the field, and an episode whose replans
+       could not be placed, both arrive with no routes — and the first
+       plan is still true of the run. */
+    expect(PAGE).toContain("stream.planPath.length > 0 ? stream.planPath : plan?.path");
+  });
+
+  it("drops the line for a refused attempt instead of keeping the last", () => {
+    /* A refused replan has no route. Holding the previous one on screen
+       would say the planner still had a plan it had just lost. */
+    expect(PAGE).toContain("current.points.length > 0 ? current : null");
+  });
+
+  it("leaves the plan blue where no caller colours it", () => {
+    /* Every other screen draws one plan and has nothing to distinguish
+       it from. */
+    expect(CANVAS).toContain("plannedPathColour ?? COLOR.plan");
+  });
+});

@@ -355,8 +355,29 @@ export interface SimulationResultResponse {
   metrics: EpisodeMetrics | null;
 }
 
+/** One route the global planner returned, and when it took over.
+ *
+ * `from_time` rather than a step index: the events and the trajectory
+ * are stamped by one engine clock, so a replan's moment lands on the
+ * frames without arithmetic. */
+export interface EpisodePlanRoute {
+  attempt: number;
+  from_time: number;
+  points: Point2D[];
+}
+
 export type WsMessage =
-  | { type: "start"; simulation_id: string; steps: number; plan_path: Point2D[] }
+  | {
+      type: "start";
+      simulation_id: string;
+      steps: number;
+      plan_path: Point2D[];
+      /** Every route, first included. Absent from a server that predates
+       *  the field, and empty when the replans could not be placed —
+       *  both mean "draw the opening plan and nothing else", never "this
+       *  episode never replanned". */
+      plans?: EpisodePlanRoute[];
+    }
   | {
       type: "state";
       time: number;

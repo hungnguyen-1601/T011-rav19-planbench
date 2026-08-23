@@ -253,3 +253,55 @@ class TestTheImportStopsStoringCopies:
         repo._items[stored.id] = replace(stored, kept=True)
         edited = repo.update(stored.id, MapData(**{**grid.model_dump(), "name": "hall two"}))
         assert edited.kept is True
+
+
+class TestTheSocketSendsEveryPlannedRoute:
+    """The test bench drew one plan for a whole replanning episode.
+
+    The socket sent `plan_path` at `start` and nothing after it, so a
+    dashed line sat still while the robot drove somewhere else — which
+    reads as a controller ignoring its plan rather than as a plan that
+    was replaced.
+    """
+
+    def routes(self, plans, replan_times):
+        from types import SimpleNamespace
+
+        from planbench_api.routers.ws import _planned_routes
+
+        point = lambda x, y: SimpleNamespace(x=x, y=y)  # noqa: E731
+        run = SimpleNamespace(
+            plans=tuple(SimpleNamespace(path=[point(*p) for p in path]) for path in plans),
+            result=SimpleNamespace(
+                events=[
+                    SimpleNamespace(time=t, type="replan") for t in replan_times
+                ]
+                + [SimpleNamespace(time=99.0, type="success")],
+            ),
+        )
+        return _planned_routes(run)
+
+    def test_pairs_each_plan_with_the_replan_that_brought_it_in(self) -> None:
+        routes = self.routes([[(0, 0), (1, 1)], [(1, 1), (2, 2)]], [4.5])
+        assert [route["from_time"] for route in routes] == [0.0, 4.5]
+        assert [route["attempt"] for route in routes] == [1, 2]
+
+    def test_the_first_plan_is_in_force_from_zero(self) -> None:
+        """It is the route the episode set out on, not one that replaced
+        something."""
+        assert self.routes([[(0, 0), (1, 1)]], [])[0]["from_time"] == 0.0
+
+    def test_says_nothing_when_the_counts_do_not_line_up(self) -> None:
+        """A refused replan is an event with no plan behind it, and a
+        route drawn at the wrong moment is a picture of a decision nobody
+        made. The client keeps the opening plan instead."""
+        assert self.routes([[(0, 0), (1, 1)]], [4.5, 9.0]) == []
+
+    def test_says_nothing_for_an_episode_stored_before_plans_existed(self) -> None:
+        """Empty means not recorded, never 'it did not replan'."""
+        assert self.routes([], []) == []
+
+    def test_counts_only_replan_events(self) -> None:
+        """A success or a collision is a verdict, not a handover."""
+        routes = self.routes([[(0, 0)], [(1, 1)]], [3.0])
+        assert len(routes) == 2

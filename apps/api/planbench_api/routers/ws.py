@@ -64,7 +64,13 @@ async def stream_simulation(websocket: WebSocket, simulation_id: str) -> None:
                 "type": "start",
                 "simulation_id": stored.id,
                 "steps": run.result.steps,
+                # The route the episode set out on. Kept as its own field
+                # rather than folded into `plans`: a client that only
+                # wants the first plan should not have to understand the
+                # handover rule to find it, and every episode has one
+                # while only some have replans on record.
                 "plan_path": [{"x": p.x, "y": p.y} for p in run.plan.path],
+                "plans": _planned_routes(run),
             }
         )
         last_sent_time: float | None = None
@@ -108,3 +114,49 @@ async def stream_simulation(websocket: WebSocket, simulation_id: str) -> None:
         await websocket.close()
     except WebSocketDisconnect:
         return
+
+
+def _planned_routes(run) -> list[dict]:
+    """Every route the global planner returned, and when each took over.
+
+    **Why the test bench needed this at all.** The socket sent one
+    `plan_path` at `start` and nothing after it, so a replanning episode
+    drew the route it began with for its whole length — a dashed line
+    that stayed put while the robot drove somewhere else, which is the
+    picture that makes a replan look like a controller ignoring its
+    plan.
+
+    **Paired by time, and that is exact here rather than a conversion.**
+    `decision_service` refuses to place routes when the sidecar's tick
+    counter and the trace's control steps disagree, because those are two
+    clocks. This is not that case: the events and the trajectory are both
+    stamped by the engine from one `self._time`, so a replan's time lands
+    on the trajectory without arithmetic.
+
+    **Silent rather than wrong when the counts do not line up.** A
+    refused replan is an event with no plan behind it — `StackRun.plans`
+    documents that it holds no refusals — and an episode stored before
+    `plans` existed carries none at all. Either way the routes cannot be
+    placed, and a route drawn at the wrong moment is a picture of a
+    decision nobody made. The client keeps the opening plan and draws one
+    fewer thing.
+    """
+    plans = getattr(run, "plans", ()) or ()
+    if not plans:
+        return []
+    replan_times = [
+        float(event.time) for event in run.result.events if event.type == "replan"
+    ]
+    if len(plans) != len(replan_times) + 1:
+        return []
+    starts = [0.0, *replan_times]
+    return [
+        {
+            # 1-based, matching the sidecar's own numbering so the two
+            # screens colour the same attempt the same way.
+            "attempt": index + 1,
+            "from_time": start,
+            "points": [{"x": point.x, "y": point.y} for point in plan.path],
+        }
+        for index, (plan, start) in enumerate(zip(plans, starts, strict=True))
+    ]

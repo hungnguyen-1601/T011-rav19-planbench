@@ -10,7 +10,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { wsUrl } from "./api";
 import { frameIndexAt, trajectoryDuration } from "./playback";
-import type { EpisodeMetrics, Point2D, TrajectoryPoint, WsMessage } from "./types";
+import type {
+  EpisodeMetrics,
+  EpisodePlanRoute,
+  Point2D,
+  TrajectoryPoint,
+  WsMessage,
+} from "./types";
 
 export type StreamPhase = "idle" | "connecting" | "streaming" | "complete" | "error";
 
@@ -18,6 +24,10 @@ export interface EpisodeStream {
   phase: StreamPhase;
   frames: TrajectoryPoint[];
   planPath: Point2D[];
+  /** Every route the planner returned, in order. Empty on an episode
+   *  whose replans could not be placed — the caller then keeps drawing
+   *  `planPath`, which is still true of the opening plan. */
+  planRoutes: EpisodePlanRoute[];
   metrics: EpisodeMetrics | null;
   status: string | null;
   reason: string | null;
@@ -40,6 +50,7 @@ export function useEpisodeStream(): EpisodeStream {
   const [phase, setPhase] = useState<StreamPhase>("idle");
   const [frames, setFrames] = useState<TrajectoryPoint[]>([]);
   const [planPath, setPlanPath] = useState<Point2D[]>([]);
+  const [planRoutes, setPlanRoutes] = useState<EpisodePlanRoute[]>([]);
   const [metrics, setMetrics] = useState<EpisodeMetrics | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [reason, setReason] = useState<string | null>(null);
@@ -77,6 +88,7 @@ export function useEpisodeStream(): EpisodeStream {
       framesRef.current = [];
       setFrames([]);
       setPlanPath([]);
+      setPlanRoutes([]);
       setMetrics(null);
       setStatus(null);
       setReason(null);
@@ -93,6 +105,7 @@ export function useEpisodeStream(): EpisodeStream {
         switch (message.type) {
           case "start":
             setPlanPath(message.plan_path);
+            setPlanRoutes(message.plans ?? []);
             setPhase("streaming");
             setPlaying(true);
             lastTickRef.current = null;
@@ -177,6 +190,7 @@ export function useEpisodeStream(): EpisodeStream {
     phase,
     frames,
     planPath,
+    planRoutes,
     metrics,
     status,
     reason,
