@@ -90,3 +90,69 @@ describe("field notes sit in the mark beside the name", () => {
     expect(PICKER).toContain('label={t("candidates.pick.global")}');
   });
 });
+
+describe("the conditions say what counts as a pass", () => {
+  const PAGE = readFileSync(join(process.cwd(), "src", "app", "simulate", "page.tsx"), "utf8");
+  const CSS = readFileSync(join(process.cwd(), "src", "app", "globals.css"), "utf8");
+  const conditions = PAGE.slice(
+    PAGE.indexOf("deployment-conditions-grid"),
+    PAGE.indexOf("deployment-condition-footer"),
+  );
+
+  it("carries the gate thresholds, which no other card did", () => {
+    /* The other three say what the world *is* — where the robot starts,
+       how fast it may go, what traffic is in it. A run that reaches the
+       goal is not a run that cleared G3 unless the success floor is on
+       screen. */
+    for (const key of [
+      "success_rate_min",
+      "collision_probability_max",
+      "no_path_rate_max",
+      "clearance_warning_m",
+      "stuck_threshold_s",
+    ]) {
+      expect(conditions).toContain(key);
+    }
+  });
+
+  it("includes G5's threshold, which lives on the hardware block", () => {
+    /* An allocation decision about the target board rather than a limit
+       on the mission — and the one number here a reader cannot infer
+       from anything else on the page. */
+    expect(conditions).toContain("deployment.hardware?.available_ram_mb");
+  });
+
+  it("shows a rate as the percentage the gates are argued about", () => {
+    /* The contract stores them 0..1 and every screen that discusses
+       them says percent. Formatting at each call site is how one
+       threshold reads 0.95 here and 95% two screens away. */
+    expect(PAGE).toContain("function formatRate(");
+    expect(conditions).toContain("formatRate(deployment.constraints?.success_rate_min)");
+  });
+
+  it("keeps one decimal, so two thresholds do not print as one", () => {
+    /* `no_path_rate_max` defaults to 0.02; rounding to whole percent
+       would show 0.02 and 0.024 as the same 2%. */
+    expect(PAGE).toContain("(value * 100).toFixed(1)");
+  });
+
+  it("substitutes nothing for a field the profile never carried", () => {
+    /* A default here would put a threshold on screen that nobody
+       declared and the gates were never held to. */
+    expect(PAGE).toContain('!Number.isFinite(value)\n    ? "—"');
+  });
+
+  it("does not colour the card as a verdict", () => {
+    /* Thresholds are neither a good nor a bad reading — they are the
+       line a reading will be held to. */
+    expect(CSS).toContain("--condition-thresholds: var(--indigo);");
+    expect(CSS).not.toContain("--condition-thresholds: var(--ok)");
+    expect(CSS).not.toContain("--condition-thresholds: var(--err)");
+  });
+
+  it("lets the row hold four cards rather than stranding one", () => {
+    /* It was `repeat(3, …)`, which would have dropped the new card onto
+       a second row alone with three quarters of the width empty. */
+    expect(CSS).toContain("repeat(auto-fit, minmax(210px, 1fr))");
+  });
+});

@@ -1294,6 +1294,7 @@
   "bench.conditionsMission": "Nhiệm vụ",
   "bench.conditionsRobot": "Robot",
   "bench.conditionsEnvironment": "Môi trường và điều khiển",
+  "bench.conditionsThresholds": "Ngưỡng",
   "bench.conditionsSummary": "Start {start} → Goal {goal} · Robot {radius} · Replan {replanning} · {traffic} vật cản động",
   "bench.controlPeriod": "Chu kỳ điều khiển",
   "bench.on": "Bật",

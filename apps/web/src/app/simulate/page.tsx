@@ -80,11 +80,34 @@ interface Mission {
 }
 
 /** The parts of a stored deployment this page reads. */
+/** The parts of a task profile this page reads.
+ *
+ * Every field optional, and that is not laziness: the profile arrives as
+ * stored JSON, and a run filed before a field existed genuinely does not
+ * carry it. `formatCondition` and `formatRate` both render an em dash
+ * for that, which is the honest answer — a default substituted here
+ * would put a threshold on screen that nobody declared and the gates
+ * were never held to.
+ */
 interface Deployment {
   missions?: Mission[];
   replanning?: { enabled?: boolean };
-  constraints?: { goal_tolerance_m?: number; episode_timeout_s?: number };
+  constraints?: {
+    goal_tolerance_m?: number;
+    episode_timeout_s?: number;
+    /* The gate thresholds. Rates are 0..1 in the contract and shown as
+       percentages — see `formatRate`. */
+    success_rate_min?: number;
+    collision_probability_max?: number;
+    no_path_rate_max?: number;
+    clearance_warning_m?: number;
+    stuck_threshold_s?: number;
+  };
   robot?: { radius?: number; max_linear_velocity?: number; control_period?: number };
+  /** G5's threshold lives here rather than with the constraints: it is
+   *  an allocation decision about the target board, not a limit on the
+   *  mission. */
+  hardware?: { available_ram_mb?: number };
   environment?: { sensor_noise?: Record<string, number | boolean>; dynamic_obstacles?: unknown[] };
 }
 
@@ -459,6 +482,32 @@ export default function TestBenchPage() {
                 [t("simulate.maxSpeed"), formatCondition(deployment.robot?.max_linear_velocity, "m/s")],
                 [t("bench.controlPeriod"), formatCondition(deployment.robot?.control_period, "s")],
               ]} />
+              {/* **The numbers the episode will be judged against.**
+                  The other three cards say what the world *is* — where
+                  the robot starts, how fast it may go, what traffic is
+                  in it. None of them says what counts as a pass, and
+                  that is the half a reader watching one episode is
+                  actually checking it against: a run that reaches the
+                  goal is not a run that cleared G3 unless the success
+                  floor is known.
+
+                  Rates are declared 0..1 and shown as percentages,
+                  which is how the gates are argued about and how the
+                  deployment form asks for them. `formatRate` keeps that
+                  in one place so a threshold cannot read as 0.95 here
+                  and 95% two screens away. */}
+              <ConditionGroup title={t("bench.conditionsThresholds")} icon="benchmark" tone="thresholds" rows={[
+                [t("deployments.form.successMin"), formatRate(deployment.constraints?.success_rate_min)],
+                [t("deployments.form.risk"), formatRate(deployment.constraints?.collision_probability_max)],
+                [t("deployments.form.noPathMax"), formatRate(deployment.constraints?.no_path_rate_max)],
+                [t("deployments.form.clearanceWarning"), formatCondition(deployment.constraints?.clearance_warning_m, "m")],
+                [t("deployments.form.stuck"), formatCondition(deployment.constraints?.stuck_threshold_s, "s")],
+                /* G5's own threshold. It lives on the hardware block
+                   rather than the constraints, and it is the one number
+                   here a reader cannot infer from anything else on the
+                   page. */
+                [t("deployments.form.availableRam"), formatCondition(deployment.hardware?.available_ram_mb, "MB")],
+              ]} />
               <section className="deployment-condition-group deployment-condition-group--environment">
                 <header><span><Icon name="sparkles" size={16} /></span><h4>{t("bench.conditionsEnvironment")}</h4></header>
                 <dl className="deployment-condition-list">
@@ -648,6 +697,22 @@ function formatCondition(value: number | undefined, unit: string): string {
   return value === undefined || !Number.isFinite(value) ? "—" : `${value} ${unit}`;
 }
 
+/** A 0..1 rate as the percentage the gates are argued about.
+ *
+ * The contract stores these as fractions and every screen that discusses
+ * them — the deployment form, the comparison table, the gate detail —
+ * says percent. Formatting it at each call site is how one threshold
+ * ends up reading `0.95` on one page and `95%` on the next.
+ *
+ * One decimal, because `no_path_rate_max` defaults to 0.02 and rounding
+ * to whole percent would print two different thresholds as the same 2%.
+ */
+function formatRate(value: number | undefined): string {
+  return value === undefined || !Number.isFinite(value)
+    ? "—"
+    : `${(value * 100).toFixed(1)} %`;
+}
+
 function shortContextId(value: string): string {
   return value.length <= 16 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
 }
@@ -660,7 +725,7 @@ function ConditionGroup({
 }: {
   title: string;
   icon: IconName;
-  tone: "mission" | "robot";
+  tone: "mission" | "robot" | "thresholds";
   rows: [string, string][];
 }) {
   return (

@@ -1294,6 +1294,7 @@
   "bench.conditionsMission": "Mission",
   "bench.conditionsRobot": "Robot",
   "bench.conditionsEnvironment": "Environment and control",
+  "bench.conditionsThresholds": "Thresholds",
   "bench.conditionsSummary": "Start {start} → Goal {goal} · Robot {radius} · Replan {replanning} · {traffic} dynamic obstacles",
   "bench.controlPeriod": "Control period",
   "bench.on": "On",
