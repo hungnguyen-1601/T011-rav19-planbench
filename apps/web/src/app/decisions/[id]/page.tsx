@@ -16,6 +16,7 @@
 
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { AdviceListView } from "@/components/AdviceListView";
 import { TraceViewer } from "@/components/TraceViewer";
 import { ComparisonGrid } from "@/components/ComparisonGrid";
 import { ConclusionPanel } from "@/components/ConclusionPanel";
@@ -70,6 +71,14 @@ import {
   type ReplaySyncView,
   type RunningSample,
   observationClasses,
+  getCritique,
+  type Critique,
+  type CritiqueFinding,
+  getDecisionAdvice,
+  getOutcomeAdvice,
+  getTraceReview,
+  getReportAdvice,
+  type AdviceList,
 } from "@/lib/decisions";
 import { downloadDecisionReport, downloadDecisionWorkbook } from "@/lib/reports";
 import { ShareReportDialog } from "@/components/ShareReportDialog";
@@ -208,6 +217,29 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
           page is being read for yet. `HumanActs` stays: it is what
           *records* an approval, and only the display of that record
           went. */}
+
+      {/* **The advisory layer, from `origin/main`, and last on purpose.**
+          Four panels that read the stored report and say what to do
+          about it: why the run ended as it did, what each unmet gate
+          asks for, what a report may claim, and a critique. Every one is
+          rule-based — the endpoints run `gate_advice` over the stored
+          verdicts and re-decide nothing — with a model allowed to rank
+          and extend but never to overrule.
+
+          After the evidence rather than among it, for the reason the
+          marks are: advice is read once somebody knows what the run
+          found, and a panel that offers a remedy above the finding
+          invites acting before reading.
+
+          They render translation keys rather than prose today: the
+          sixteen `advice.*`, `outcome.*`, `critique.*` and
+          `reportAdvice.*` keys do not exist in either locale on
+          `origin/main`. That is upstream's to finish and is left
+          untouched here rather than guessed at. */}
+      <CritiquePanel runId={run.id} />
+      <OutcomePanel runId={run.id} />
+      <AdvicePanel runId={run.id} />
+      <ReportAdvicePanel runId={run.id} />
       <HumanActs run={run} onDone={refresh} />
     </section>
   );
@@ -1585,5 +1617,295 @@ function Figure({ label, value, unknown }: { label: string; value: string; unkno
       <span className="stat-card-head">{label}</span>
       <span className={`stat-card-value${unknown ? " unknown" : ""}`}>{value}</span>
     </div>
+  );
+}
+
+/** Objections to this run, before anyone signs it.
+ *
+ * **Above the two human acts, and that placement is the argument.** The
+ * next thing a reviewer does after reading the outcome is approve or
+ * reject it; anything meant to inform that decision has to sit between
+ * the two, not below them.
+ *
+ * Nothing loads until asked. The rules are cheap, but the model costs a
+ * call and several seconds, and a page that quietly spends both on every
+ * visit teaches people to stop reading it.
+ *
+ * The two buttons are deliberately separate rather than a toggle. They
+ * answer different questions — "what does the checklist say" and "what
+ * does a model make of this" — and the second is worth reaching for
+ * knowingly, because its answer does not reproduce.
+ */
+/** What to do about each gate this run did not clear.
+ *
+ * Loaded on demand rather than on mount: the gate table above answers
+ * "what happened", and this panel answers "so what do I do" — a question
+ * a reader asks after reading, not before. The model button layers an
+ * LLM over the rules; the rules' advice is the floor it may rank and
+ * extend but never remove, and additions citing a field that does not
+ * resolve are dropped and counted where the reader can see the count.
+ */
+/** Why one candidate won and the other lost.
+ *
+ * Two registers, both checkable: the stored numbers (which metric
+ * separated the field, whether the margin clears the noise) and the
+ * algorithms' natures (a sampling planner's latency tail is its textbook
+ * price; the same tail on a deterministic one is a surprise worth
+ * chasing). Two refusals are built in: a gate elimination is never
+ * called a defeat, and an interval containing zero never names a
+ * winner. The model button adds narrative on top; the rules stay.
+ */
+function OutcomePanel({ runId }: { runId: string }) {
+  const { t } = useTranslation();
+  const [result, setResult] = useState<AdviceList | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async (useModel: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      setResult(await getOutcomeAdvice(runId, useModel));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <h3>{t("outcome.title")}</h3>
+        <div className="toolbar">
+          <button type="button" disabled={busy} onClick={() => void load(false)}>
+            {busy ? t("advice.loading") : t("advice.load")}
+          </button>
+          <button type="button" disabled={busy} onClick={() => void load(true)}>
+            {t("advice.askModel")}
+          </button>
+        </div>
+      </div>
+      {error ? <div className="error-box">{error}</div> : null}
+      {result ? <AdviceListView result={result} /> : (
+        <p className="muted">{t("outcome.hint")}</p>
+      )}
+    </div>
+  );
+}
+
+function AdvicePanel({ runId }: { runId: string }) {
+  const { t } = useTranslation();
+  const [result, setResult] = useState<AdviceList | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async (useModel: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      setResult(await getDecisionAdvice(runId, useModel));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <h3>{t("advice.title")}</h3>
+        <div className="toolbar">
+          <button type="button" disabled={busy} onClick={() => void load(false)}>
+            {busy ? t("advice.loading") : t("advice.load")}
+          </button>
+          <button type="button" disabled={busy} onClick={() => void load(true)}>
+            {t("advice.askModel")}
+          </button>
+        </div>
+      </div>
+      {error ? <div className="error-box">{error}</div> : null}
+      {result ? <AdviceListView result={result} /> : (
+        <p className="muted">{t("advice.hint")}</p>
+      )}
+    </div>
+  );
+}
+
+/** What a report about this run may claim, and what it may not.
+ *
+ * `report.md` renders the tables; these are the sentences the evidence
+ * does not license — a NEAR_EQUIVALENT reported as a win, an interval
+ * containing zero quoted as a difference, a host screening called a
+ * real-time guarantee. Shown before the reader writes, because the
+ * wrong sentence is cheaper to prevent than to retract.
+ */
+function ReportAdvicePanel({ runId }: { runId: string }) {
+  const { t } = useTranslation();
+  const [result, setResult] = useState<AdviceList | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setResult(await getReportAdvice(runId));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <h3>{t("reportAdvice.title")}</h3>
+        <div className="toolbar">
+          <button type="button" disabled={busy} onClick={() => void load()}>
+            {busy ? t("advice.loading") : t("advice.load")}
+          </button>
+        </div>
+      </div>
+      {error ? <div className="error-box">{error}</div> : null}
+      {result ? <AdviceListView result={result} /> : (
+        <p className="muted">{t("reportAdvice.hint")}</p>
+      )}
+    </div>
+  );
+}
+
+function CritiquePanel({ runId }: { runId: string }) {
+  const { t } = useTranslation();
+  const [critique, setCritique] = useState<Critique | null>(null);
+  const [busy, setBusy] = useState<"" | "rules" | "model">("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function load(useModel: boolean) {
+    setBusy(useModel ? "model" : "rules");
+    setError(null);
+    try {
+      setCritique(await getCritique(runId, useModel));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <div className="panel">
+      <h3>{t("critique.title")}</h3>
+      <p className="muted">{t("critique.subtitle")}</p>
+
+      <div className="toolbar">
+        <button disabled={busy !== ""} onClick={() => void load(false)}>
+          {busy === "rules" ? t("critique.running") : t("critique.runRules")}
+        </button>
+        <button className="primary" disabled={busy !== ""} onClick={() => void load(true)}>
+          {busy === "model" ? t("critique.asking") : t("critique.runModel")}
+        </button>
+      </div>
+
+      {error ? <div className="error-box">{error}</div> : null}
+
+      {critique ? <CritiqueBody critique={critique} /> : null}
+    </div>
+  );
+}
+
+function CritiqueBody({ critique }: { critique: Critique }) {
+  const { t } = useTranslation();
+
+  return (
+    <>
+      {/* No vendor or model name: what a reader has to weigh is whether
+          each finding points at a field that exists, which is asserted
+          below and does not depend on who answered. The one exception is
+          a canned critique, which must not pass for a model's. */}
+      {critique.provider && critique.deterministic ? (
+        <p>
+          <span className="badge warn">{t("critique.mock")}</span>
+        </p>
+      ) : null}
+
+      {/* Published, not buried. A reader weighing the prose needs to know
+          how often this model pointed at a field that was not there. */}
+      {critique.fabricated > 0 ? (
+        <div className="notice">
+          {t("critique.fabricated", { count: String(critique.fabricated) })}
+        </div>
+      ) : null}
+      {critique.refused ? (
+        <div className="notice">
+          {t("critique.refused")}: {critique.refused}
+        </div>
+      ) : null}
+
+      {critique.summary ? <p>{critique.summary}</p> : null}
+
+      {critique.findings.length === 0 ? (
+        /* Zero findings is a result, and it only means something beside
+           the number of rules that produced it. */
+        <p className="muted">
+          {t("critique.clean", { rules: String(critique.rules_applied) })}
+        </p>
+      ) : (
+        <>
+          <p className="muted" style={{ fontSize: 12 }}>
+            {t("critique.counts", {
+              blocking: String(critique.blocking),
+              material: String(critique.material),
+              disclosure: String(critique.disclosure),
+              omissions: String(critique.omissions),
+              rules: String(critique.rules_applied),
+            })}
+          </p>
+          <ul className="findings">
+            {critique.findings.map((finding, index) => (
+              <FindingRow key={`${finding.code}-${index}`} finding={finding} />
+            ))}
+          </ul>
+        </>
+      )}
+    </>
+  );
+}
+
+const SEVERITY_BADGE: Record<CritiqueFinding["severity"], string> = {
+  blocking: "badge err",
+  material: "badge warn",
+  disclosure: "badge",
+};
+
+function FindingRow({ finding }: { finding: CritiqueFinding }) {
+  const { t } = useTranslation();
+  return (
+    <li>
+      <div className="toolbar" style={{ gap: 8, alignItems: "baseline" }}>
+        <span className={SEVERITY_BADGE[finding.severity]}>
+          {t(`critique.severity.${finding.severity}`)}
+        </span>
+        {/* Which half of the system said this. A reader gives different
+            weight to a rule that reproduces and a model that does not. */}
+        <span className={finding.source === "model" ? "badge warn" : "badge muted-badge"}>
+          {t(`critique.source.${finding.source}`)}
+        </span>
+        <code>{finding.code}</code>
+        {finding.kind === "omission" ? (
+          <span className="badge muted-badge">{t("critique.kind.omission")}</span>
+        ) : null}
+      </div>
+      <p style={{ marginBottom: 4 }}>{finding.ground}</p>
+      <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>
+        {t("critique.claim")}: {finding.claim} · {t("critique.evidence")}:{" "}
+        <code>{finding.field_path}</code>
+      </p>
+      <p className="muted" style={{ fontSize: 12 }}>
+        {t("critique.next")}: {finding.suggested_check}
+      </p>
+    </li>
   );
 }

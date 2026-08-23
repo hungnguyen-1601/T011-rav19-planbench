@@ -3491,10 +3491,66 @@ main.content.bare-page {
   background: var(--bg);
 }
 
-.chat-composer input {
+/* Everything except the hidden file picker. Written as an exclusion
+   rather than as `input[type="text"]`, because the message box declares
+   no type and a future one might: the rule that has to keep holding is
+   "the file input is not the message box". */
+.chat-composer input:not([type="file"]) {
   flex: 1;
   padding: 10px 12px;
   font-size: 14px;
+}
+
+/* The paperclip. Square and quiet: it sits beside the thing a person
+   came here to do, which is type. */
+.chat-attach {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+}
+
+.chat-attach:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--hover);
+}
+
+/* Above the input rather than inside it, so a long filename wraps
+   instead of squeezing the box being typed into. */
+.chat-attachment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  font-size: 13px;
+}
+
+.chat-attachment-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.chat-attachment-remove {
+  flex: 0 0 auto;
+  display: inline-flex;
+  padding: 2px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.chat-attachment-remove:hover {
+  color: var(--text);
 }
 
 @media (max-width: 560px) {
@@ -3560,7 +3616,7 @@ main.content.bare-page {
 
 .chat-history li:hover,
 .chat-history li.active {
-  background: var(--panel-2);
+  background: var(--hover);
 }
 
 .chat-history-open {
@@ -3616,7 +3672,7 @@ main.content.bare-page {
 
 .chat-history-delete:hover {
   color: var(--err);
-  background: var(--panel-3);
+  background: var(--err-soft);
 }
 
 .chat-history-delete:disabled {

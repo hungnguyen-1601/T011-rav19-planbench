@@ -321,7 +321,10 @@ export async function authFetch<T>(path: string, init?: RequestInit): Promise<T>
      generated per request and only `fetch` knows it; declaring
      `application/json` over a `FormData` sends a body the server cannot
      parse, and the failure reads as a rejected file rather than as a
-     header nobody meant to send. */
+     header nobody meant to send.
+
+     Both branches reached this independently and wrote it the same way;
+     only the wording differed. */
   const multipart = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const response = await fetch(`${API_BASE}/api/v1${path}`, {
     ...init,

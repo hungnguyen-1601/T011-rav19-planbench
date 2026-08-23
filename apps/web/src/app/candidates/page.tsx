@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { CandidatePicker, usableStacks, type CandidateSelection } from "@/components/CandidatePicker";
+import { FromPaperPanel } from "@/components/FromPaperPanel";
 import { Hint } from "@/components/Hint";
 import { Tabs } from "@/components/Tabs";
 import { type AlgorithmLayer, globalPlanners, localControllers } from "@/lib/algorithmLayers";
@@ -83,6 +84,7 @@ export default function CandidatesPage() {
         enabled={session !== null}
         onDone={refresh}
       />
+      <FromPaperPanel enabled={session !== null} />
       <RegisteredTable candidates={candidates} configs={configs} />
       {/* Above the stacks, because it answers the smaller question
           first: what algorithms exist at all. The table below then says
