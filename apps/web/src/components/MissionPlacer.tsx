@@ -195,6 +195,11 @@ export interface MissionCanvasProps
    *  else entirely. */
   width?: number;
   height?: number;
+  /** Draw the cell grid. Forwarded rather than defaulted here: the
+   *  canvas underneath defaults it to `true`, so a page that wants a
+   *  checkbox for it has to be able to say `false` — and until this
+   *  existed no caller of `MissionCanvas` could. */
+  showGrid?: boolean;
 }
 
 /** The map, and what a gesture on it means. No pose fields, no
@@ -222,6 +227,7 @@ export function MissionCanvas({
   obstacleSnapshots,
   authoredTraffic,
   previewTime,
+  showGrid,
 }: MissionCanvasProps) {
   const placing = mode;
   const setPlacing = onModeChange;
@@ -286,6 +292,7 @@ export function MissionCanvas({
           obstacleSnapshots={obstacleSnapshots}
           authoredTraffic={authoredTraffic}
           previewTime={previewTime}
+          showGrid={showGrid}
           {...(lifted
             ? {
                 /* The caller sees every press first and says whether it

@@ -4811,3 +4811,18 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
   flex-wrap: wrap;
   gap: var(--space-1) var(--space-2);
 }
+
+/* The grid checkbox, in the legend row it belongs to.
+   ===================================================================
+   The rest of that row says what the marks on the canvas mean; the grid
+   is one more of them, and putting it up beside the source tabs would
+   separate a layer switch from the layer legend. `margin-left: auto`
+   pushes it to the far end so it reads as a control rather than as a
+   fourth thing being explained. */
+.deployment-map-grid-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  cursor: pointer;
+}

@@ -1151,3 +1151,48 @@ describe("every hook in the form runs on every render", () => {
     expect(hooks.map((hit) => hit[0]), "hooks below the guard").toEqual([]);
   });
 });
+
+describe("the mission map has its own grid switch", () => {
+  const PLACER = readFileSync(join(process.cwd(), "src", "components", "MissionPlacer.tsx"), "utf8");
+  const CANVAS = readFileSync(join(process.cwd(), "src", "components", "MapCanvas.tsx"), "utf8");
+  const BENCH = readFileSync(join(process.cwd(), "src", "app", "simulate", "page.tsx"), "utf8");
+
+  it("can turn the grid off, which nothing here could before", () => {
+    /* `MapCanvas` defaults `showGrid` to true and `MissionCanvas` never
+       forwarded the prop, so this canvas had been drawing a grid since
+       it existed — invisible only because the ink was white at 4% alpha
+       against a floor that is near-white in the light theme. */
+    expect(CANVAS).toContain("showGrid = true");
+    expect(PLACER).toContain("showGrid?: boolean;");
+    expect(PLACER).toContain("showGrid={showGrid}");
+    expect(FORM).toContain("const [showGrid, setShowGrid] = useState(true)");
+    expect(FORM).toContain("deployment-map-grid-toggle");
+  });
+
+  it("keeps its switch separate from the test bench's", () => {
+    /* Two canvases doing different jobs — one a map being authored, one
+       a replay being watched. A shared preference would mean turning
+       the grid off to read a trajectory also turned it off for somebody
+       placing a start pose on another screen. Both are plain local
+       state; neither reads storage. */
+    expect(BENCH).toContain("const [showGrid, setShowGrid] = useState(true)");
+    expect(FORM).not.toContain("localStorage");
+    expect(BENCH).not.toContain("localStorage");
+  });
+
+  it("puts the switch in the legend, not beside the source tabs", () => {
+    /* The rest of that row says what the marks on the canvas mean, and
+       the grid is one more of them. */
+    const legend = FORM.indexOf("deployment-map-legend");
+    const toggle = FORM.indexOf("deployment-map-grid-toggle");
+    expect(legend).toBeGreaterThan(-1);
+    expect(toggle).toBeGreaterThan(legend);
+  });
+
+  it("declares the state above the loading guard", () => {
+    /* The hook-order rule this form has already been taken down by
+       once. */
+    const guard = FORM.indexOf("if (!draft) return");
+    expect(FORM.indexOf("const [showGrid, setShowGrid]")).toBeLessThan(guard);
+  });
+});

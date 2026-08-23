@@ -247,6 +247,23 @@ export function DeploymentForm({
    * asks a different question. */
   const [playhead, setPlayhead] = useState(0);
   const [playing, setPlaying] = useState(false);
+  /** Draw the cell grid on the mission map.
+   *
+   * **The grid was always on here and nobody could see it.**
+   * `MapCanvas` defaults `showGrid` to `true` and `MissionCanvas` never
+   * forwarded the prop, so this canvas has been drawing one since it
+   * existed — invisible only because the ink was white at 4% alpha
+   * against a floor that is near-white in the light theme. Fixing the
+   * ink made it appear, which is when it became clear this page had no
+   * way to turn it off.
+   *
+   * Its own state, not the test bench's. That page keeps an identical
+   * checkbox and the two are deliberately unconnected: they are two
+   * canvases doing different jobs — one is a map being authored, the
+   * other a replay being watched — and a preference shared between them
+   * would mean turning the grid off to read a trajectory also turned it
+   * off for the person placing a start pose on a different screen. */
+  const [showGrid, setShowGrid] = useState(true);
   /** Which panel of controls is on top.
    *
    * Opens on the mission, because that is the tab whose controls the
@@ -1816,11 +1833,26 @@ export function DeploymentForm({
              clicking into an empty map and hoping. */
           authoredTraffic={overlayOf(trafficOf(draft), trafficUi.selectedObstacleIndex)}
           previewTime={preview ? playhead : undefined}
+          showGrid={showGrid}
         />
         <div className="deployment-map-legend" aria-label={t("deployments.form.map")}>
           <span><i className="legend-start" />{t("decisions.map.start")}</span>
           <span><i className="legend-goal" />{t("decisions.map.goal")}</span>
           <span><i className="legend-traffic" />{t("deployments.form.tabs.traffic")}</span>
+          {/* In the legend rather than beside the source tabs: the rest
+              of this row says what the marks on the canvas mean, and the
+              grid is one more of them. `simulate.grid` is reused rather
+              than copied — this row already borrows its other three
+              labels across namespaces, and two keys for one word is how
+              "Grid" and "Lưới ô" end up on two screens. */}
+          <label className="deployment-map-grid-toggle">
+            <input
+              type="checkbox"
+              checked={showGrid}
+              onChange={(event) => setShowGrid(event.target.checked)}
+            />
+            {t("simulate.grid")}
+          </label>
         </div>
         </div>
       ) : (
