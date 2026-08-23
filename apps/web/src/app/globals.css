@@ -2169,7 +2169,31 @@ a.stat-card:hover {
 
 .simulate-setup-group legend { padding: 0 5px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
 .simulate-setup-group--conditions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.simulate-field { min-width: 0; gap: 5px; }
+/* **Every field in this panel puts its control on the same row.**
+   The three fieldsets lay out independently, and the fields inside them
+   did too: `.candidate-picker-field` is a grid whose rows stretch to the
+   height of its cell, so the one field with no hint under it —
+   Configuration — split the slack between its label and its select and
+   pushed the select 25px below its neighbours. The fields with a
+   two-line hint sat somewhere else again.
+
+   `auto auto 1fr` pins the label and the control to their natural
+   heights at the top and gives the leftover to the hint, which is the
+   part that is allowed to be a different length. `align-content: start`
+   stops the whole stack drifting when a cell is taller than its
+   contents. Applied to both kinds of field, because they sit in one row
+   and a rule for only one of them would align each group with itself. */
+/* `label.field` above sets `display: flex` and outranks a bare class,
+   so the element has to be named here or the template below is written
+   and never applied. */
+label.field.simulate-field,
+.candidate-picker--detailed .candidate-picker-field {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  align-content: start;
+  min-width: 0;
+  gap: var(--space-1);
+}
 .simulate-field > span,
 .candidate-picker--detailed .candidate-picker-field > span { color: var(--text); font-size: 12px; font-weight: 650; }
 .simulate-field small,
@@ -2179,7 +2203,7 @@ a.stat-card:hover {
 
 .candidate-picker--detailed { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .candidate-picker--detailed > .candidate-picker-label { display: none; }
-.candidate-picker-field { display: grid; min-width: 0; gap: 5px; }
+.candidate-picker-field { display: grid; min-width: 0; gap: var(--space-1); }
 .candidate-picker-field select { width: 100%; min-width: 0; }
 .candidate-picker--detailed > .muted { grid-column: 1 / -1; }
 
