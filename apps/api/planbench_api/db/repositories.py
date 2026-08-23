@@ -101,6 +101,30 @@ class SqlMapRepository:
         with self._sessions.begin() as session:
             return _to_map(_require(session, MapRow, map_id, "map"))
 
+    def find_by_checksum(self, checksum: str) -> StoredMap | None:
+        """The map already holding this content, oldest first.
+
+        `ix_maps_checksum` has been on this table since it was created,
+        for exactly this lookup, and nothing ever performed it — so
+        storing the same grid a second time cost one row and no warning.
+        One database reached 198 maps carrying 41 distinct checksums that
+        way, 117 of them the same one.
+
+        Oldest rather than newest, so that repeating a call returns the
+        same id every time. A newest-first tiebreak would hand back a
+        different map the moment anything else stored the same grid,
+        which is the kind of instability that only shows up in a user's
+        bookmark months later.
+        """
+        with self._sessions.begin() as session:
+            row = session.scalars(
+                select(MapRow)
+                .where(MapRow.checksum == checksum)
+                .order_by(MapRow.created_at, MapRow.id)
+                .limit(1)
+            ).first()
+            return _to_map(row) if row is not None else None
+
     def list(self) -> list[StoredMap]:
         with self._sessions.begin() as session:
             rows = session.scalars(select(MapRow).order_by(MapRow.created_at)).all()

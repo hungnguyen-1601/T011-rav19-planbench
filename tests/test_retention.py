@@ -8,7 +8,7 @@ the one line under fixtures.
 
 from __future__ import annotations
 
-from planbench_api.retention import StoreShape, shape_from_rows, sweep
+from planbench_api.retention import StoreShape, dedupe, shape_from_rows, sweep
 
 
 def shape(**over) -> StoreShape:
@@ -116,3 +116,140 @@ class TestAssemblingTheGraph:
             benchmark_scenario_ids=["s2"],
         )
         assert sweep(built).is_empty
+
+
+class TestKeepingOneOfEach:
+    """`dedupe`, which answers a different question from `sweep`.
+
+    `sweep` takes everything unreachable, and on a real store that meant
+    every copy of thirteen grids — correct for "delete what is unused"
+    and wrong for a person looking at a list who wants one row per map
+    rather than a hundred and seventeen.
+    """
+
+    def dup(self, **over) -> StoreShape:
+        base = dict(
+            map_ids=frozenset({"old", "new"}),
+            kept_map_ids=frozenset(),
+            scenario_maps={},
+            map_checksums={"old": "same", "new": "same"},
+            map_created_at={"old": "2026-01-01", "new": "2026-06-01"},
+        )
+        base.update(over)
+        return StoreShape(**base)
+
+    def test_keeps_one_copy_and_takes_the_rest(self) -> None:
+        assert dedupe(self.dup()).map_ids == ("new",)
+
+    def test_keeps_the_oldest_copy(self) -> None:
+        """Oldest, because its id has had the longest chance to be
+        written down somewhere this database cannot see."""
+        assert "old" not in dedupe(self.dup()).map_ids
+
+    def test_never_empties_a_checksum(self) -> None:
+        """The difference from `sweep` in one line: no copy of this grid
+        is reachable, and one still survives."""
+        result = dedupe(self.dup())
+        survivors = set(self.dup().map_ids) - set(result.map_ids)
+        assert survivors
+
+    def test_collapses_around_a_referenced_copy_rather_than_through_it(self) -> None:
+        """A benchmark pointing at a map other than the one it ran on is
+        the claim this platform exists to prevent, so a referenced copy
+        is never the one deleted — even when it is the newer."""
+        result = dedupe(self.dup(anchored_map_ids=frozenset({"new"})))
+        assert result.map_ids == ("old",)
+
+    def test_keeps_every_referenced_copy(self) -> None:
+        """Two runs on two copies of one grid. Neither id may stop
+        resolving, so neither row goes."""
+        assert dedupe(self.dup(anchored_map_ids=frozenset({"old", "new"}))).map_ids == ()
+
+    def test_a_pin_decides_which_copy_stands_in(self) -> None:
+        assert dedupe(self.dup(kept_map_ids=frozenset({"new"}))).map_ids == ("old",)
+
+    def test_a_live_scenario_protects_the_copy_it_names(self) -> None:
+        result = dedupe(
+            self.dup(
+                scenario_maps={"s1": "new"},
+                anchored_scenario_ids=frozenset({"s1"}),
+            )
+        )
+        assert result.map_ids == ("old",)
+
+    def test_leaves_distinct_grids_alone(self) -> None:
+        result = dedupe(self.dup(map_checksums={"old": "a", "new": "b"}))
+        assert result.map_ids == ()
+
+    def test_deletes_no_scenarios(self) -> None:
+        """Two scenarios on identical grids are not interchangeable the
+        way the grids are: the poses are an author's choice."""
+        result = dedupe(self.dup(scenario_maps={"s1": "old", "s2": "new"}))
+        assert result.scenario_ids == ()
+
+    def test_spares_a_row_whose_checksum_is_unknown(self) -> None:
+        """Guessing that an unlabelled row duplicates something would
+        delete a map on no evidence."""
+        result = dedupe(self.dup(map_checksums={"old": "same"}))
+        assert "new" not in result.map_ids
+
+
+class TestTheImportStopsStoringCopies:
+    """The source of the duplicates, and where it was fixed.
+
+    The deployment form calls `POST /scenario-library/{name}/import`
+    simply by *opening* — it needs a map to draw before anybody has
+    typed anything — and that endpoint stored a fresh map and scenario
+    on every call. The row counts were a usage histogram of a dropdown:
+    117 `static-obstacles`, the default it opens on, then 29
+    `sudden-stop`, 7 `crossing`, and so on down the library.
+    """
+
+    def test_adopting_the_same_grid_twice_stores_one_map(self) -> None:
+        from planbench_api.repositories import MapRepository
+        from planbench_schemas.map import MapData
+
+        repo = MapRepository()
+        grid = MapData(name="hall", width=2, height=2, resolution=0.5, origin={"x": 0.0, "y": 0.0}, cells=[0, 0, 0, 0])
+        first = repo.create(grid)
+        found = repo.find_by_checksum(grid.checksum())
+        assert found is not None
+        assert found.id == first.id
+
+    def test_a_different_grid_is_not_adopted(self) -> None:
+        from planbench_api.repositories import MapRepository
+        from planbench_schemas.map import MapData
+
+        repo = MapRepository()
+        repo.create(MapData(name="a", width=2, height=2, resolution=0.5, origin={"x": 0.0, "y": 0.0}, cells=[0, 0, 0, 0]))
+        other = MapData(name="b", width=2, height=2, resolution=0.5, origin={"x": 0.0, "y": 0.0}, cells=[0, 0, 0, 100])
+        assert repo.find_by_checksum(other.checksum()) is None
+
+    def test_the_lookup_is_stable_across_calls(self) -> None:
+        """Oldest-first, so a caller that repeats the import keeps
+        getting the same id. A newest-first tiebreak would hand back a
+        different map the moment anything else stored the same grid —
+        the kind of instability that surfaces months later in somebody's
+        bookmark."""
+        from planbench_api.repositories import MapRepository
+        from planbench_schemas.map import MapData
+
+        repo = MapRepository()
+        grid = MapData(name="hall", width=2, height=2, resolution=0.5, origin={"x": 0.0, "y": 0.0}, cells=[0, 0, 0, 0])
+        first = repo.create(grid)
+        repo.create(grid)
+        assert repo.find_by_checksum(grid.checksum()).id == first.id
+
+    def test_a_pin_survives_an_edit(self) -> None:
+        """A pin belongs to the map, not to a revision of it."""
+        from dataclasses import replace
+
+        from planbench_api.repositories import MapRepository
+        from planbench_schemas.map import MapData
+
+        repo = MapRepository()
+        grid = MapData(name="hall", width=2, height=2, resolution=0.5, origin={"x": 0.0, "y": 0.0}, cells=[0, 0, 0, 0])
+        stored = repo.create(grid)
+        repo._items[stored.id] = replace(stored, kept=True)
+        edited = repo.update(stored.id, MapData(**{**grid.model_dump(), "name": "hall two"}))
+        assert edited.kept is True

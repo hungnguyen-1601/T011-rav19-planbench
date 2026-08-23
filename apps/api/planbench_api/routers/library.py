@@ -168,8 +168,18 @@ def import_library_scenario(
         map_data, scenario = build_scenario(name)
     except ValueError as exc:
         raise DomainValidationError(str(exc)) from exc
-    stored_map = maps.create(map_data)
-    stored_scenario = scenarios.create(stored_map.id, scenario)
+    # **Adopt, do not create.** This endpoint is reached by the
+    # deployment form simply *opening* — it needs a map to draw before
+    # anybody has typed anything — and every call used to store a fresh
+    # map and scenario. The row counts were a usage histogram of a
+    # dropdown: 117 `static-obstacles`, the default the form opens on,
+    # then 29 `sudden-stop`, 7 `crossing`, and so on down the list.
+    #
+    # A read-shaped action was writing, and the fix belongs here rather
+    # than in the form: this endpoint has other callers, and the next one
+    # would have made the same mess.
+    stored_map = maps.adopt(map_data)
+    stored_scenario = scenarios.adopt(stored_map.id, scenario)
     return ImportedScenario(
         library_name=name,
         map_id=stored_map.id,
