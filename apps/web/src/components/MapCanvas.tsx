@@ -111,7 +111,21 @@ export interface WorldPointerInfo {
 const COLOR = {
   occupied: "#5b6c7f",
   unknown: "#33383f",
-  gridLine: "rgba(255,255,255,0.045)",
+  /* **Mid-grey, because the floor is not a fixed colour.** The canvas
+     is cleared to transparent and free cells are skipped, so the floor
+     is whatever `--canvas-bg` paints behind it: `#0b0d11` in the dark
+     theme and `#eef1f5` in the light one. This was white at 4.5% alpha
+     — correct on the dark floor it was written against, and literally
+     invisible on the light one, which is why the Grid checkbox appeared
+     to do nothing at all.
+
+     A mid-grey with a real alpha reads on both: it lands near `#c5cbd4`
+     over the light floor and near `#333a44` over the dark one. That is
+     the same trick `occupied` already uses to survive both themes, and
+     the reason every other colour here got away with being a constant
+     while this one did not — it was the only one parked at an extreme
+     of the lightness range. */
+  gridLine: "rgba(120,132,150,0.35)",
   plan: "#4c9aff",
   trajectory: "#3fb950",
   robot: "#e6e9ef",
