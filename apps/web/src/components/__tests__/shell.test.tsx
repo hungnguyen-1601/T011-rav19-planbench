@@ -19,6 +19,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { EmptyState } from "@/components/EmptyState";
 import { Sidebar } from "@/components/Sidebar";
+import { ALL_ROUTES } from "@/lib/navigation";
 import { StatCard } from "@/components/StatCard";
 import { DICTIONARIES, type Locale } from "@/lib/i18n";
 import { translate } from "@/lib/i18n";
@@ -67,9 +68,19 @@ describe("Sidebar — expanded", () => {
     const html = sidebar();
     expect(html).toContain("PlanBench");
     expect(html).not.toContain("simulation only");
-    for (const label of ["Dashboard", "Maps", "Candidates", "Decisions", "Agent", "Reviews"]) {
+    for (const label of ["Dashboard", "Maps", "Candidates", "Decisions", "Reviews"]) {
       expect(html).toContain(label);
     }
+  });
+
+  it("no longer carries an entry for the assistant", () => {
+    /* It is a floating dock on every page now, so a rail entry pointing
+       at a page for the same thing was two doors to one room — and the
+       one in the rail was the slower of them. The route survives with
+       its title, off the rail, so the top bar and the dashboard's quick
+       action still name it. */
+    expect(sidebar()).not.toContain(">Agent<");
+    expect(ALL_ROUTES.some((route) => route.href === "/agent")).toBe(true);
   });
 
   it("groups the menu into labelled sections", () => {

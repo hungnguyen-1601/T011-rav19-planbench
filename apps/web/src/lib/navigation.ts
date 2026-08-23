@@ -133,7 +133,6 @@ export const NAV_SECTIONS: readonly NavSection[] = [
   {
     titleKey: "nav.section.account",
     items: [
-      { href: "/agent", labelKey: "nav.agent", icon: "sparkles", descriptionKey: "nav.desc.agent" },
       {
         href: "/reviews",
         labelKey: "nav.reviews",
@@ -148,6 +147,13 @@ export const NAV_SECTIONS: readonly NavSection[] = [
 
 /** Routes that need a title but no sidebar entry. */
 const EXTRA_ROUTES: readonly NavItem[] = [
+  /* **Off the rail, still a route.** The assistant is a floating dock on
+     every page now, so a rail entry pointing at a page for the same
+     thing was two doors to one room — and the one in the rail was the
+     slower of them. The route keeps its title so the top bar and the
+     dashboard's quick action still name it; bringing it back is moving
+     this line, not rebuilding an entry. */
+  { href: "/agent", labelKey: "nav.agent", icon: "sparkles", hidden: true },
   { href: "/login", labelKey: "nav.login", icon: "user", hidden: true },
   { href: "/welcome", labelKey: "nav.welcome", icon: "user", hidden: true },
   { href: "/auth/callback", labelKey: "nav.login", icon: "user", hidden: true },
