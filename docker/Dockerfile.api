@@ -35,12 +35,9 @@ ENV PYTHONPATH=/app/packages/schemas:/app/packages/planning:/app/packages/metric
 # Artifacts are written here; compose mounts a volume so they survive a
 # container rebuild (they are referenced by URI from the database).
 ENV PLANBENCH_ARTIFACT_DIR=/data/artifacts
-RUN mkdir -p /data/artifacts
-
-# Never run as root: a container that writes to a mounted volume as root
-# leaves files the host user cannot clean up.
-RUN useradd --create-home --uid 10001 planbench \
-    && chown -R planbench:planbench /data
+RUN mkdir -p /data/artifacts /app/maps/custom \
+    && useradd --create-home --uid 10001 planbench \
+    && chown -R planbench:planbench /app /data
 USER planbench
 
 EXPOSE 8000
