@@ -41,6 +41,10 @@ class StoredMap:
     version: int
     created_at: str
     map_data: MapData
+    #: Pinned by hand against the orphan sweep. Defaults to `False` so a
+    #: caller building one of these in a test does not have to know the
+    #: field exists to get the ordinary case.
+    kept: bool = False
 
 
 @dataclass

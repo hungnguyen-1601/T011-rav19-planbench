@@ -672,6 +672,10 @@ def _to_map(row: MapRow) -> StoredMap:
         version=row.version,
         created_at=row.created_at,
         map_data=MapData.model_validate(row.payload),
+        # `or False` for rows read back through a schema that predates
+        # the column, which SQLite hands over as NULL rather than as the
+        # server default the migration declares.
+        kept=bool(row.kept or False),
     )
 
 
