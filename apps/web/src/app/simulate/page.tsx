@@ -54,6 +54,7 @@ import {
   type TaskProfileSummary,
 } from "@/lib/decisions";
 import { poseOf } from "@/lib/deployments";
+import { Hint } from "@/components/Hint";
 import { useTranslation } from "@/lib/i18n";
 import { useEpisodeStream } from "@/lib/useEpisodeStream";
 import type { MapData, PlanResult, Point2D } from "@/lib/types";
@@ -332,7 +333,10 @@ export default function TestBenchPage() {
           <fieldset className="simulate-setup-group simulate-setup-group--conditions">
             <legend>{t("bench.group.conditions")}</legend>
             <label className="field simulate-field">
-              <span>{t("bench.deployment")}</span>
+              <span>
+                {t("bench.deployment")}
+                <Hint text={t("bench.help.deployment")} label={t("bench.deployment")} />
+              </span>
             <select value={profileId} onChange={(event) => setProfileId(event.target.value)}>
               {profiles.map((entry) => (
                 <option key={entry.id} value={entry.id}>
@@ -340,11 +344,13 @@ export default function TestBenchPage() {
                 </option>
               ))}
             </select>
-              <small>{t("bench.help.deployment")}</small>
             </label>
 
             <label className="field simulate-field">
-              <span>{t("bench.mission")}</span>
+              <span>
+                {t("bench.mission")}
+                <Hint text={t("bench.help.mission")} label={t("bench.mission")} />
+              </span>
             <select
               value={mission?.id ?? ""}
               disabled={missions.length === 0}
@@ -356,7 +362,6 @@ export default function TestBenchPage() {
                 </option>
               ))}
             </select>
-              <small>{t("bench.help.mission")}</small>
             </label>
           </fieldset>
 
@@ -376,7 +381,10 @@ export default function TestBenchPage() {
           <fieldset className="simulate-setup-group simulate-setup-group--seed">
             <legend>{t("bench.group.reproducibility")}</legend>
             <label className="field simulate-field">
-              <span>{t("bench.seed")}</span>
+              <span>
+                {t("bench.seed")}
+                <Hint text={t("bench.seedNote")} label={t("bench.seed")} />
+              </span>
               <input
                 type="number"
                 min={0}
@@ -384,7 +392,6 @@ export default function TestBenchPage() {
                 value={seed}
                 onChange={(event) => setSeed(Math.max(0, Math.trunc(Number(event.target.value))))}
               />
-              <small>{t("bench.seedNote")}</small>
             </label>
           </fieldset>
         </div>

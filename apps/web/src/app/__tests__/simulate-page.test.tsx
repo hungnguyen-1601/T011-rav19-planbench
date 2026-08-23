@@ -48,3 +48,45 @@ describe("the episode setup keeps its controls on one line", () => {
     expect(CSS).toContain(".simulate-page input[type=\"number\"] { min-height: 38px; }");
   });
 });
+
+describe("field notes sit in the mark beside the name", () => {
+  const PAGE = readFileSync(join(process.cwd(), "src", "app", "simulate", "page.tsx"), "utf8");
+  const PICKER = readFileSync(
+    join(process.cwd(), "src", "components", "CandidatePicker.tsx"),
+    "utf8",
+  );
+  const setup = PAGE.slice(PAGE.indexOf("simulate-setup-grid"), PAGE.indexOf("simulate-run-actions"));
+
+  it("carries no prose under the controls", () => {
+    /* Three paragraphs of grey text under five dropdowns is most of the
+       panel's height spent on sentences a reader needs once. The rest of
+       the app puts them behind a mark; this row was the exception. */
+    expect(setup).not.toContain("<small>");
+    expect(PICKER).not.toContain("<small>");
+  });
+
+  it("keeps every note that existed, behind its own mark", () => {
+    /* Moved, not deleted: each one still names the key it always had. */
+    for (const key of ["bench.help.deployment", "bench.help.mission", "bench.seedNote"]) {
+      expect(setup).toContain(key);
+    }
+    for (const key of ["bench.help.global", "bench.help.local"]) {
+      expect(PICKER).toContain(key);
+    }
+    expect(setup.match(/<Hint /g) ?? []).toHaveLength(3);
+  });
+
+  it("invents no note for the field that never had one", () => {
+    /* Configuration carries no hint text anywhere in the app. Writing
+       one so three fields look alike would be copy filling a shape. */
+    expect(PICKER).not.toContain("bench.help.config");
+    const config = PICKER.slice(PICKER.indexOf("candidates.pick.config"));
+    expect(config.slice(0, config.indexOf("</label>"))).not.toContain("<Hint");
+  });
+
+  it("labels each mark, so a row of them is not a row of question marks", () => {
+    /* `Hint` takes the field's own name as its accessible label. */
+    expect(setup).toContain('label={t("bench.deployment")}');
+    expect(PICKER).toContain('label={t("candidates.pick.global")}');
+  });
+});
