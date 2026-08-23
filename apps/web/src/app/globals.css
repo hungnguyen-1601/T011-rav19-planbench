@@ -446,13 +446,19 @@ a:hover {
    that still reads at a glance across a rail of ten items where a 2px
    edge does not.
 
-   `--text` on `--bg` rather than a hard-coded black. In the light theme
-   that is near-black on off-white; in the dark theme the same two tokens
-   invert on their own, so the item stays the filled one rather than
-   becoming a dark block on a dark rail. */
+   `--accent` on `--accent-contrast` rather than a hard-coded blue. The
+   pair is declared per theme and is already the one every primary button
+   uses, so the rail cannot drift from the buttons — and in the dark
+   theme it inverts on its own: a light blue block with dark text, rather
+   than the same dark blue turning into a smudge on a dark rail.
+
+   The lightness argument above survives the change. `#1f6feb` against an
+   `#f6f7f9` rail and `#4c9aff` against `#0f1115` are both far apart in
+   lightness, so the block still reads in greyscale — which a mid-blue
+   chosen for its hue alone would not. */
 .sidebar nav a[aria-current="page"] {
-  background: var(--text);
-  color: var(--bg);
+  background: var(--accent);
+  color: var(--accent-contrast);
   font-weight: 600;
 }
 
@@ -461,19 +467,19 @@ a:hover {
    pale rectangle for as long as the pointer sits on it — the one item
    that should never look unselected. */
 .sidebar nav a[aria-current="page"]:hover {
-  background: var(--text);
-  color: var(--bg);
+  background: var(--accent);
+  color: var(--accent-contrast);
 }
 
 /* The chip rides on the fill now, so it cannot keep the muted grey it
    wears against the rail: grey on near-black is the pair this palette
    spends its light-theme comment warning about. Drawn from the fill's
    own foreground instead, so it stays legible in either theme without a
-   second colour entering the sidebar. */
+   third colour entering the sidebar. */
 .sidebar nav a[aria-current="page"] .badge {
-  border-color: color-mix(in srgb, var(--bg) 40%, transparent);
-  background: color-mix(in srgb, var(--bg) 16%, transparent);
-  color: var(--bg);
+  border-color: color-mix(in srgb, var(--accent-contrast) 40%, transparent);
+  background: color-mix(in srgb, var(--accent-contrast) 16%, transparent);
+  color: var(--accent-contrast);
 }
 
 .sidebar nav a svg {

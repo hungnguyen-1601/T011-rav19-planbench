@@ -575,9 +575,17 @@ describe("the current page is filled, not tinted", () => {
     /* It was a 10% accent tint, accent-coloured text and a 2px edge —
        three quiet signals that each had to be noticed. A fill is one
        loud one. */
-    expect(rule).toContain("background: var(--text);");
-    expect(rule).toContain("color: var(--bg);");
+    expect(rule).toContain("background: var(--accent);");
+    expect(rule).toContain("color: var(--accent-contrast);");
     expect(rule).not.toContain("var(--accent-soft)");
+  });
+
+  it("takes the pair the primary buttons already use", () => {
+    /* `--accent` / `--accent-contrast` is declared per theme, so the
+       rail cannot drift from the buttons and the block inverts on its
+       own in the dark theme instead of becoming a smudge. */
+    expect(rule).not.toContain("var(--text)");
+    expect(rule).not.toContain("background: var(--bg)");
   });
 
   it("needs no left bar, because lightness now carries the signal", () => {
@@ -600,8 +608,8 @@ describe("the current page is filled, not tinted", () => {
   });
 
   it("inverts with the theme instead of hard-coding black", () => {
-    /* A literal black block would stay black on a dark rail, which is
-       where a filled item stops being the filled one. */
+    /* A literal colour would stay itself on a dark rail, which is where
+       a filled item stops being the filled one. */
     expect(rule).not.toMatch(/background:\s*#[0-9a-fA-F]{3,6}/);
   });
 });
