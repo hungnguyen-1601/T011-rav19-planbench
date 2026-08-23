@@ -4706,3 +4706,51 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* The model registry.
+   ===================================================================
+   A row carries two independent verdicts — a decision somebody made
+   (`status`) and what the file turned out to be (`validation_status`) —
+   and `is-unusable` is the two of them read together. Dimmed rather
+   than hidden: a disabled model is still the one a past benchmark ran,
+   and hiding it would leave a reader unable to find what a result
+   refers to. */
+.models-page > * + * { margin-top: var(--space-4); }
+.models-note { margin: 0; font-size: var(--fs-sm); }
+.models-page tr.is-unusable td { opacity: 0.62; }
+.models-owner { margin-left: var(--space-2); }
+.models-shapes { margin-top: var(--space-1); }
+.models-actions { white-space: nowrap; }
+.models-actions button + button { margin-left: var(--space-2); }
+
+.models-upload { padding: 0; overflow: hidden; }
+.models-upload > .panel-head { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
+.models-upload-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) 0;
+}
+.models-upload-wide { grid-column: 1 / -1; }
+/* Three pickers, three meanings — the zip runs, the json is parsed, the
+   pdf is only ever read. Side by side so the difference is visible; one
+   "attachments" control would lose it. */
+.models-upload-files {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+.models-file input[type="file"] { font-size: var(--fs-sm); }
+.models-upload-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4);
+}
+.models-progress { flex: 1; max-width: 320px; }
+
+@media (max-width: 900px) {
+  .models-upload-grid,
+  .models-upload-files { grid-template-columns: minmax(0, 1fr); }
+}
