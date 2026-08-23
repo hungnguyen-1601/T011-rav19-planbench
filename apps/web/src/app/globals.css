@@ -4826,3 +4826,21 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
   margin-left: auto;
   cursor: pointer;
 }
+
+/* The grid switch that ships with the view itself.
+   ===================================================================
+   Beside the Top-down / 2.5D buttons because it is the same kind of
+   control: what the canvas *draws*, as against what it contains. Only
+   rendered when the page has not brought its own — the test bench and
+   the deployment form both keep one in a layer strip of their own, and
+   two checkboxes for one flag can disagree on screen while agreeing in
+   state. */
+.map-view-grid {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}

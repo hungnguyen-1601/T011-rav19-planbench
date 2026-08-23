@@ -38,6 +38,15 @@ export interface Scene25DProps extends SceneOptions {
    *  sets, and the only one that turns the room. */
   yawDeg?: number;
   showControls?: boolean;
+  /** Draw the cell edges on the floor.
+   *
+   * **The raised view had no grid and looked like it did.** The floor is
+   * one quad per free cell, filled and never stroked, so the faint
+   * lattice on it was the anti-aliased seam between neighbours — a
+   * rendering artefact that no switch could turn off because nothing
+   * had drawn it. Off now closes those seams; on strokes them
+   * deliberately, in ink chosen to be seen. */
+  showGrid?: boolean;
   /** **Lift the view out of this component.** Two of these sit side by
    *  side showing the same episode, and a reader who turns one to look
    *  behind a wall is comparing two rooms until they turn the other to
@@ -68,6 +77,11 @@ const COLOR = {
   outline: "rgba(0,0,0,0.25)",
   obstacle: "#ff6b6b",
   obstacleSide: "#c0454a",
+  /* The same mid-grey the flat canvas inks its grid with, and for the
+     same reason: it has to separate from whatever is behind it rather
+     than from one particular floor. Over this scene's `#1b2029` ground
+     it lands near `#4a5460`. */
+  gridLine: "rgba(120,132,150,0.35)",
 };
 
 export function Scene25D({
@@ -78,6 +92,7 @@ export function Scene25D({
   elevationDeg = 30,
   yawDeg = 0,
   showControls = true,
+  showGrid = true,
   onViewChange,
   showPlan = true,
   showTrajectory = true,
@@ -259,7 +274,7 @@ export function Scene25D({
     // Facets arrive back-to-front, so a plain sequential fill resolves
     // occlusion without a depth buffer.
     for (const facet of scene.facets) {
-      fillFacet(ctx, facet);
+      fillFacet(ctx, facet, showGrid);
     }
 
     if (showPlan && scene.plan.length > 1) {
@@ -357,7 +372,10 @@ export function Scene25D({
       ctx.ellipse(top.sx, top.sy, Math.max(2, radiusX), Math.max(1.5, radiusY), 0, 0, Math.PI * 2);
       ctx.fill();
     }
-  }, [scene, width, height, showPlan, showTrajectory]);
+  // The flags belong in this list or the canvas keeps whatever it last
+  // drew: `scene` is memoised on the projection, so toggling a layer
+  // changes nothing this effect watches unless the flag is named here.
+  }, [scene, width, height, showGrid, showPlan, showTrajectory]);
 
   return (
     <div className="scene25d">
@@ -417,8 +435,9 @@ export function Scene25D({
   );
 }
 
-function fillFacet(ctx: CanvasRenderingContext2D, facet: Facet): void {
-  ctx.fillStyle = FILL[facet.kind][facet.face];
+function fillFacet(ctx: CanvasRenderingContext2D, facet: Facet, showGrid: boolean): void {
+  const fill = FILL[facet.kind][facet.face];
+  ctx.fillStyle = fill;
   ctx.beginPath();
   facet.points.forEach((point, index) => {
     if (index === 0) ctx.moveTo(point.sx, point.sy);
@@ -426,12 +445,25 @@ function fillFacet(ctx: CanvasRenderingContext2D, facet: Facet): void {
   });
   ctx.closePath();
   ctx.fill();
+
   if (facet.kind === "occupied") {
     // Hairline seams stop adjacent walls from merging into one blob.
     ctx.strokeStyle = COLOR.outline;
     ctx.lineWidth = 0.5;
     ctx.stroke();
+    return;
   }
+
+  /* **The floor is always stroked; only the colour changes.**
+     Neighbouring quads share an edge, and filling them without a stroke
+     leaves an anti-aliased hairline between every pair — a lattice that
+     looks like a grid, cannot be switched off, and is not one. Stroking
+     in the fill's own colour closes it; stroking in the grid ink draws
+     the real thing. One code path, so "grid off" is a floor with no
+     lines on it rather than a floor with faint accidental ones. */
+  ctx.strokeStyle = showGrid ? COLOR.gridLine : fill;
+  ctx.lineWidth = showGrid ? 0.6 : 1;
+  ctx.stroke();
 }
 
 function strokePolyline(
