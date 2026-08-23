@@ -68,19 +68,23 @@ describe("Sidebar — expanded", () => {
     const html = sidebar();
     expect(html).toContain("PlanBench");
     expect(html).not.toContain("simulation only");
-    for (const label of ["Dashboard", "Maps", "Candidates", "Decisions", "Reviews"]) {
+    for (const label of ["Dashboard", "Maps", "Candidates", "Decisions", "Agent", "Reviews"]) {
       expect(html).toContain(label);
     }
   });
 
-  it("no longer carries an entry for the assistant", () => {
-    /* It is a floating dock on every page now, so a rail entry pointing
-       at a page for the same thing was two doors to one room — and the
-       one in the rail was the slower of them. The route survives with
-       its title, off the rail, so the top bar and the dashboard's quick
-       action still name it. */
-    expect(sidebar()).not.toContain(">Agent<");
-    expect(ALL_ROUTES.some((route) => route.href === "/agent")).toBe(true);
+  it("carries an entry for the assistant page", () => {
+    /* This entry came off when the floating dock arrived and went back
+       when it turned out the two are not the same room. The dock answers
+       a question from wherever the reader is standing; the page reads
+       papers, drafts plugins and publishes what the agent may do. With
+       the entry gone, the only door to the second was a tile on the
+       dashboard, which is a door you have to already be in a particular
+       room to see. */
+    expect(sidebar()).toContain(">Agent<");
+    const entry = ALL_ROUTES.find((route) => route.href === "/agent");
+    expect(entry).toBeDefined();
+    expect(entry?.hidden).toBeFalsy();
   });
 
   it("groups the menu into labelled sections", () => {
