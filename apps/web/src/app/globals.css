@@ -3413,6 +3413,267 @@ main.content.bare-page {
 }
 
 /* ===================================================================
+   The assistant page
+   ===================================================================
+   The shape people already know: a thread that fills the screen, a
+   composer pinned to the bottom of it. The reader's question is short
+   and sits in a bubble on the right; the answer is long -- prose, tool
+   evidence, sometimes a whole extracted paper -- and runs the full
+   width of the column rather than being folded into a bubble sized for
+   a chat message.
+   =================================================================== */
+
+.agent-page {
+  display: flex;
+  flex-direction: column;
+  /* Fill what is left under the top bar, so the composer sits at the
+     bottom of the screen and only the thread scrolls. */
+  height: calc(100vh - var(--topbar-height) - var(--space-6));
+  min-height: 420px;
+}
+
+.agent-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.agent-head-text { min-width: 0; }
+.agent-head-text h2 { margin: 0; }
+.agent-head-text p { margin: 0; font-size: var(--fs-body); }
+.agent-head-badge { margin-left: auto; }
+/* Without a badge to push it, the disclosure takes the slot itself. */
+.agent-head-badge + .agent-boundaries { margin-left: var(--space-3); }
+.agent-boundaries { margin-left: auto; position: relative; }
+.agent-boundaries summary { cursor: pointer; white-space: nowrap; }
+.agent-boundaries-body {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  width: min(360px, 80vw);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.agent-boundaries-body p { margin: 0 0 var(--space-2); }
+.agent-boundaries-body p:last-child { margin-bottom: 0; }
+
+.agent-thread {
+  flex: 1;
+  overflow-y: auto;
+  /* Room on the right so a scrollbar does not sit on the text. */
+  padding: var(--space-4) var(--space-2) var(--space-4) 0;
+}
+
+/* One column, centred, capped at a comfortable measure. A thread that
+   runs the full width of a 1440px screen is a thread nobody finishes a
+   line of. */
+.agent-thread-inner {
+  display: flex;
+  max-width: 46rem;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0 auto;
+}
+
+.agent-msg { display: flex; flex-direction: column; }
+
+/* The question, in a bubble, right-aligned: it is short, it is the
+   reader's own words, and it needs to be findable when scrolling back
+   through answers. */
+.agent-msg.user { align-items: flex-end; }
+.agent-msg.user .agent-msg-body {
+  max-width: 80%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--accent-soft-border);
+  border-radius: 8px;
+  background: var(--accent-soft);
+}
+
+.agent-msg-who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-2);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.agent-msg-body {
+  margin: 0;
+  font-size: var(--fs-label);
+  line-height: 1.6;
+  /* The model answers in paragraphs and lists. Collapsing its newlines
+     turns a four-step answer into one run-on sentence. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agent-msg-after { margin: var(--space-2) 0 0; }
+
+/* What the answer was read from. The no-tool case is a chip in this
+   same row rather than a quieter line under it: "read nothing" is the
+   most consequential thing the row can say. */
+.agent-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+.agent-evidence-label { color: var(--muted); font-size: var(--fs-sm); }
+.agent-tool {
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.agent-tool.warn {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.agent-copy {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.agent-copy:hover { border-color: var(--border); color: var(--text); }
+
+.agent-thinking { display: flex; align-items: center; gap: var(--space-2); margin: 0; }
+
+/* The first screen is a prompt, not an empty box. A chat that opens
+   blank asks the reader to guess what it knows. */
+.agent-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: auto 0;
+  text-align: center;
+}
+.agent-welcome h3 { margin: var(--space-3) 0 var(--space-2); }
+.agent-welcome p { margin: 0; max-width: 40rem; }
+.agent-welcome-mark {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.agent-suggestions {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+.agent-suggestion {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--fs-body);
+  text-align: left;
+}
+.agent-suggestion:hover { border-color: var(--accent-soft-border); background: var(--panel-2); }
+
+/* One box holding the attachment, the text and the controls, so the
+   whole thing reads as the field rather than as three widgets that
+   happen to be adjacent. */
+.agent-composer-wrap { padding-top: var(--space-3); }
+.agent-composer {
+  display: flex;
+  max-width: 46rem;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0 auto;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.agent-composer:focus-within { border-color: var(--accent-soft-border); }
+
+/* Borderless inside the box: the box is the field. Height is set in
+   script from the content, so `resize` would fight it. */
+.agent-input {
+  max-height: 200px;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-label);
+  line-height: 1.5;
+  resize: none;
+}
+.agent-input:focus { outline: none; }
+
+.agent-composer-tools { display: flex; align-items: center; gap: var(--space-2); }
+.agent-composer-hint { margin-right: auto; font-size: var(--fs-sm); }
+.agent-attach {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+}
+.agent-attach:hover:not(:disabled) { border-color: var(--border); color: var(--text); }
+
+/* Inside the box and above the text, so a long filename wraps across
+   the composer instead of squeezing the line being typed into a slot. */
+.agent-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel-2);
+  font-size: var(--fs-sm);
+}
+.agent-chip-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.agent-chip-remove {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.agent-chip-remove:hover { color: var(--text); }
+
+/* On a narrow screen the suggestion grid becomes a list: two cards side
+   by side at 360px are two cards of three words each. */
+@media (max-width: 560px) {
+  .agent-suggestions { grid-template-columns: minmax(0, 1fr); }
+  .agent-msg.user .agent-msg-body { max-width: 100%; }
+  .agent-composer-hint { display: none; }
+}
+
+/* ===================================================================
    Assistant chat
    =================================================================== */
 
