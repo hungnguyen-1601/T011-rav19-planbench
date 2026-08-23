@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { Hint } from "@/components/Hint";
 import { EmptyState } from "@/components/EmptyState";
 import { AdviceListView } from "@/components/AdviceListView";
 import { CandidatePicker } from "@/components/CandidatePicker";
@@ -73,6 +74,7 @@ function summarise(runs: DecisionRun[]) {
 const REASON_TONE: Record<Exclude<NoCardReason, null>, string> = {
   interrupted: "warn",
   gate_only: "muted-badge",
+  single_survivor: "muted-badge",
   no_survivors: "muted-badge",
 };
 
@@ -146,10 +148,10 @@ export default function DecisionsPage() {
           <Tally icon="check" tone="green" label={t("decisions.tally.approved")} value={totals.approved} />
         </div>
         {/* Counting is not ranking, and the distinction is the reason
-            this replaced a leaderboard rather than moving one. */}
-        <p className="muted decision-tally-note">
-          {t("decisions.tally.note")}
-        </p>
+            this replaced a leaderboard rather than moving one. Behind a
+            mark, because it explains the row of counts rather than
+            reporting anything. */}
+        <Hint text={t("decisions.tally.note")} label={t("decisions.tally.reviewed")} />
       </div>
 
       <div className="decision-filter-bar">
@@ -195,10 +197,10 @@ export default function DecisionsPage() {
         {/* Said out loud rather than left to be inferred from the row
             count: a reader who filters to "ranked" and sees one row
             should know the others still exist. */}
-        <span className="decision-result-count">{shown.length} {t("decisions.filter.results")}</span>
-        <p className="muted decision-filter-note">
-          {t("decisions.filter.note")}
-        </p>
+        <span className="decision-result-count">
+          {shown.length} {t("decisions.filter.results")}{" "}
+          <Hint text={t("decisions.filter.note")} label={t("decisions.filter.results")} />
+        </span>
       </div>
 
       {loading ? (
@@ -525,7 +527,10 @@ function LaunchPanel({
 
       <details className="comparison-explainer">
         <summary><Icon name="info" size={16} /><strong>{t("decisions.launch.howTitle")}</strong><Icon name="chevronDown" size={15} /></summary>
-        <p>{live.length > 0 ? t("decisions.launch.oneAtATime") : t("decisions.launch.note")} {" "}<Link href="/candidates">{t("decisions.launch.whatAreThese")}</Link></p>
+        {/* The queue warning stays on the page; the standing
+            explanation of what a launch costs goes behind the mark. One
+            is a fact about right now, the other is background. */}
+        <p>{live.length > 0 ? t("decisions.launch.oneAtATime") : <Hint text={t("decisions.launch.note")} label={t("decisions.launch.title")} />} {" "}<Link href="/candidates">{t("decisions.launch.whatAreThese")}</Link></p>
       </details>
 
       {jobs.length > 0 ? (
@@ -698,7 +703,14 @@ function MapChoice({
         <>
           <div className="row" style={{ alignItems: "flex-end", marginTop: 12 }}>
             <label className="field">
-              <span>{t("decisions.map.newId")}</span>
+              {/* Attached to the id field, which is the control the note
+                  is about: choosing a map files a *new* deployment
+                  rather than editing the chosen one, and this box is
+                  where its name goes. */}
+              <span>
+                {t("decisions.map.newId")}{" "}
+                <Hint text={t("decisions.map.note")} label={t("decisions.map.newId")} />
+              </span>
               <input
                 value={value.newProfileId}
                 disabled={disabled}
@@ -708,9 +720,7 @@ function MapChoice({
             </label>
           </div>
 
-          <p className="muted" style={{ marginTop: 8 }}>
-            {t("decisions.map.note")}
-          </p>
+
 
           {mapData ? (
             <MissionPlacer

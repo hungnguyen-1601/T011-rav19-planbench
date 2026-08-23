@@ -269,7 +269,14 @@ def _record_attempt(
         "seed": _planner_seed(planner),
     }
     if plan.success:
-        recorder.record(**common, outcome="path", output_plan_checksum=_plan_checksum(plan))
+        recorder.record(
+            **common,
+            outcome="path",
+            output_plan_checksum=_plan_checksum(plan),
+            # The route itself, not only its hash. A checksum settles
+            # whether two plans are the same; it cannot draw either.
+            output_path=[(point.x, point.y) for point in plan.path],
+        )
         return
     recorder.record(
         **common,

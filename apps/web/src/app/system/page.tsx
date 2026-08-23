@@ -75,6 +75,11 @@ export default function SystemPage() {
         <div>
           <h2>{t("system.title")}</h2>
           <p>{t("system.subtitle")}</p>
+          {/* What the tagline used to say from the top of the rail, on
+              every page, forever. It is a sentence about the product —
+              read once — so it belongs on the page a reader opens when
+              they want to know what the product is. */}
+          <p className="muted">{t("app.tagline")}</p>
         </div>
         <button type="button" className="icon-button" onClick={check} aria-label={t("common.refresh")} data-tooltip={t("common.refresh")}>
           <Icon name="refresh" />

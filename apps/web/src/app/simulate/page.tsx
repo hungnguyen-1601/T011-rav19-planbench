@@ -54,6 +54,8 @@ import {
   type TaskProfileSummary,
 } from "@/lib/decisions";
 import { poseOf } from "@/lib/deployments";
+import { Hint } from "@/components/Hint";
+import { plannedRouteColour } from "@/lib/evidence";
 import { useTranslation } from "@/lib/i18n";
 import { useEpisodeStream } from "@/lib/useEpisodeStream";
 import type { MapData, PlanResult, Point2D } from "@/lib/types";
@@ -79,11 +81,34 @@ interface Mission {
 }
 
 /** The parts of a stored deployment this page reads. */
+/** The parts of a task profile this page reads.
+ *
+ * Every field optional, and that is not laziness: the profile arrives as
+ * stored JSON, and a run filed before a field existed genuinely does not
+ * carry it. `formatCondition` and `formatRate` both render an em dash
+ * for that, which is the honest answer — a default substituted here
+ * would put a threshold on screen that nobody declared and the gates
+ * were never held to.
+ */
 interface Deployment {
   missions?: Mission[];
   replanning?: { enabled?: boolean };
-  constraints?: { goal_tolerance_m?: number; episode_timeout_s?: number };
+  constraints?: {
+    goal_tolerance_m?: number;
+    episode_timeout_s?: number;
+    /* The gate thresholds. Rates are 0..1 in the contract and shown as
+       percentages — see `formatRate`. */
+    success_rate_min?: number;
+    collision_probability_max?: number;
+    no_path_rate_max?: number;
+    clearance_warning_m?: number;
+    stuck_threshold_s?: number;
+  };
   robot?: { radius?: number; max_linear_velocity?: number; control_period?: number };
+  /** G5's threshold lives here rather than with the constraints: it is
+   *  an allocation decision about the target board, not a limit on the
+   *  mission. */
+  hardware?: { available_ram_mb?: number };
   environment?: { sensor_noise?: Record<string, number | boolean>; dynamic_obstacles?: unknown[] };
 }
 
@@ -104,7 +129,7 @@ export default function TestBenchPage() {
   const [plan, setPlan] = useState<PlanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [showGrid, setShowGrid] = useState(true);
+  const [showGrid, setShowGrid] = useState(false);
   const [showPlan, setShowPlan] = useState(true);
   const [showTrajectory, setShowTrajectory] = useState(true);
   const [conditionsExpanded, setConditionsExpanded] = useState(true);
@@ -128,6 +153,33 @@ export default function TestBenchPage() {
       }
     })();
   }, []);
+
+  /** Which planned route is on screen, given where the playhead is.
+   *
+   * **The same rule as the decisions canvas, on a different key.**
+   * `routeAt` there walks routes stamped with a step index, because a
+   * trace is a list of rows. This socket stamps them with seconds,
+   * because that is what the engine records against an event and what
+   * the frames carry — so the walk is the same and the comparison is
+   * `from_time` instead of `from_index`. Converting one to the other to
+   * share a function would put a clock conversion between two things
+   * that already agree.
+   *
+   * `plannedRouteColour` *is* shared, so an attempt that is orange on
+   * one screen is orange on the other.
+   */
+  const currentRoute = useMemo(() => {
+    if (stream.planRoutes.length === 0) return null;
+    const now = stream.currentFrame?.time ?? stream.playhead;
+    let current: (typeof stream.planRoutes)[number] | null = null;
+    for (const route of stream.planRoutes) {
+      if (route.from_time > now) break;
+      current = route;
+    }
+    // A refused attempt has no route. Recorded so the canvas can say the
+    // plan went away rather than silently keeping the previous one.
+    return current && current.points.length > 0 ? current : null;
+  }, [stream.planRoutes, stream.currentFrame, stream.playhead]);
 
   const deployment = useMemo<Deployment | null>(() => {
     const found = profiles.find((entry) => entry.id === profileId);
@@ -332,7 +384,10 @@ export default function TestBenchPage() {
           <fieldset className="simulate-setup-group simulate-setup-group--conditions">
             <legend>{t("bench.group.conditions")}</legend>
             <label className="field simulate-field">
-              <span>{t("bench.deployment")}</span>
+              <span>
+                {t("bench.deployment")}
+                <Hint text={t("bench.help.deployment")} label={t("bench.deployment")} />
+              </span>
             <select value={profileId} onChange={(event) => setProfileId(event.target.value)}>
               {profiles.map((entry) => (
                 <option key={entry.id} value={entry.id}>
@@ -340,11 +395,13 @@ export default function TestBenchPage() {
                 </option>
               ))}
             </select>
-              <small>{t("bench.help.deployment")}</small>
             </label>
 
             <label className="field simulate-field">
-              <span>{t("bench.mission")}</span>
+              <span>
+                {t("bench.mission")}
+                <Hint text={t("bench.help.mission")} label={t("bench.mission")} />
+              </span>
             <select
               value={mission?.id ?? ""}
               disabled={missions.length === 0}
@@ -356,7 +413,6 @@ export default function TestBenchPage() {
                 </option>
               ))}
             </select>
-              <small>{t("bench.help.mission")}</small>
             </label>
           </fieldset>
 
@@ -376,7 +432,10 @@ export default function TestBenchPage() {
           <fieldset className="simulate-setup-group simulate-setup-group--seed">
             <legend>{t("bench.group.reproducibility")}</legend>
             <label className="field simulate-field">
-              <span>{t("bench.seed")}</span>
+              <span>
+                {t("bench.seed")}
+                <Hint text={t("bench.seedNote")} label={t("bench.seed")} />
+              </span>
               <input
                 type="number"
                 min={0}
@@ -384,7 +443,6 @@ export default function TestBenchPage() {
                 value={seed}
                 onChange={(event) => setSeed(Math.max(0, Math.trunc(Number(event.target.value))))}
               />
-              <small>{t("bench.seedNote")}</small>
             </label>
           </fieldset>
         </div>
@@ -451,6 +509,32 @@ export default function TestBenchPage() {
                 [t("simulate.robotRadius"), formatCondition(deployment.robot?.radius, "m")],
                 [t("simulate.maxSpeed"), formatCondition(deployment.robot?.max_linear_velocity, "m/s")],
                 [t("bench.controlPeriod"), formatCondition(deployment.robot?.control_period, "s")],
+              ]} />
+              {/* **The numbers the episode will be judged against.**
+                  The other three cards say what the world *is* — where
+                  the robot starts, how fast it may go, what traffic is
+                  in it. None of them says what counts as a pass, and
+                  that is the half a reader watching one episode is
+                  actually checking it against: a run that reaches the
+                  goal is not a run that cleared G3 unless the success
+                  floor is known.
+
+                  Rates are declared 0..1 and shown as percentages,
+                  which is how the gates are argued about and how the
+                  deployment form asks for them. `formatRate` keeps that
+                  in one place so a threshold cannot read as 0.95 here
+                  and 95% two screens away. */}
+              <ConditionGroup title={t("bench.conditionsThresholds")} icon="benchmark" tone="thresholds" rows={[
+                [t("deployments.form.successMin"), formatRate(deployment.constraints?.success_rate_min)],
+                [t("deployments.form.risk"), formatRate(deployment.constraints?.collision_probability_max)],
+                [t("deployments.form.noPathMax"), formatRate(deployment.constraints?.no_path_rate_max)],
+                [t("deployments.form.clearanceWarning"), formatCondition(deployment.constraints?.clearance_warning_m, "m")],
+                [t("deployments.form.stuck"), formatCondition(deployment.constraints?.stuck_threshold_s, "s")],
+                /* G5's own threshold. It lives on the hardware block
+                   rather than the constraints, and it is the one number
+                   here a reader cannot infer from anything else on the
+                   page. */
+                [t("deployments.form.availableRam"), formatCondition(deployment.hardware?.available_ram_mb, "MB")],
               ]} />
               <section className="deployment-condition-group deployment-condition-group--environment">
                 <header><span><Icon name="sparkles" size={16} /></span><h4>{t("bench.conditionsEnvironment")}</h4></header>
@@ -534,7 +618,20 @@ export default function TestBenchPage() {
               goalTolerance={deployment?.constraints?.goal_tolerance_m}
               robotRadius={deployment?.robot?.radius}
               positionUncertainty={safetyEnvelope(deployment?.environment?.sensor_noise)}
-              plannedPath={stream.planPath.length > 0 ? stream.planPath : plan?.path}
+              /* **The route in force at this instant, not the one the
+                 episode set out on.** The socket used to send one plan
+                 and nothing after it, so a replanning episode drew its
+                 opening route for the whole run — a dashed line sitting
+                 still while the robot drove somewhere else, which reads
+                 as a controller ignoring its plan rather than as a plan
+                 that was replaced.
+
+                 Falls back to `planPath` when the replans could not be
+                 placed or the server predates them: the opening route is
+                 still true, and drawing nothing would lose the plan
+                 entirely over a decoration. */
+              plannedPath={currentRoute?.points ?? (stream.planPath.length > 0 ? stream.planPath : plan?.path)}
+              plannedPathColour={currentRoute ? plannedRouteColour(currentRoute.attempt) : undefined}
               trajectory={visibleTrajectory}
               robotPose={robotPose}
               collisionPoint={collisionPoint}
@@ -641,6 +738,22 @@ function formatCondition(value: number | undefined, unit: string): string {
   return value === undefined || !Number.isFinite(value) ? "—" : `${value} ${unit}`;
 }
 
+/** A 0..1 rate as the percentage the gates are argued about.
+ *
+ * The contract stores these as fractions and every screen that discusses
+ * them — the deployment form, the comparison table, the gate detail —
+ * says percent. Formatting it at each call site is how one threshold
+ * ends up reading `0.95` on one page and `95%` on the next.
+ *
+ * One decimal, because `no_path_rate_max` defaults to 0.02 and rounding
+ * to whole percent would print two different thresholds as the same 2%.
+ */
+function formatRate(value: number | undefined): string {
+  return value === undefined || !Number.isFinite(value)
+    ? "—"
+    : `${(value * 100).toFixed(1)} %`;
+}
+
 function shortContextId(value: string): string {
   return value.length <= 16 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
 }
@@ -653,7 +766,7 @@ function ConditionGroup({
 }: {
   title: string;
   icon: IconName;
-  tone: "mission" | "robot";
+  tone: "mission" | "robot" | "thresholds";
   rows: [string, string][];
 }) {
   return (

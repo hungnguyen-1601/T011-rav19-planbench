@@ -47,8 +47,11 @@ export function Sidebar({
           <Icon name="benchmark" size={17} />
         </span>
         <div style={{ minWidth: 0 }}>
+          {/* No tagline. "AMR/AGV planning benchmark — simulation only"
+              is a sentence about the product, read once and then read
+              past forever, sitting at the top of the one surface a
+              reader uses on every visit. It belongs on `/system`. */}
           <h1>{t("app.name")}</h1>
-          <p className="tagline">{t("app.tagline")}</p>
         </div>
       </div>
 
@@ -72,6 +75,10 @@ export function Sidebar({
                   // screen so repeating it in a tooltip is noise and
                   // repeating it in an aria-label is read twice.
                   aria-label={collapsed ? label : undefined}
+                  // Expanded, the description is the link's `title`;
+                  // collapsed, the tooltip carries both because the
+                  // label is not on screen either.
+                  title={collapsed ? undefined : (description ?? undefined)}
                   data-tooltip={
                     collapsed ? (description ? `${label} — ${description}` : label) : undefined
                   }
@@ -79,10 +86,16 @@ export function Sidebar({
                   aria-current={active ? "page" : undefined}
                 >
                   <Icon name={item.icon as IconName} />
-                  <span className="sidebar-label">
-                    {label}
-                    {description ? <span className="sidebar-desc">{description}</span> : null}
-                  </span>
+                  {/* The description moved into `title`. Twelve entries
+                      × a sentence each turned the rail into a column of
+                      prose whose last item fell below the fold; the
+                      sentences are read once and then never again, which
+                      is what a tooltip is for. Nothing is lost — the
+                      keys and the strings all stay. */}
+                  <span className="sidebar-label">{label}</span>
+                  {item.legacy ? (
+                    <span className="badge muted-badge sidebar-legacy">{t("nav.legacy")}</span>
+                  ) : null}
                 </Link>
               );
             })}

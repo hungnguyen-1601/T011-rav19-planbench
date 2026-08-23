@@ -135,3 +135,8 @@ ruff==0.16.0
 # không cần nó. Nhưng test thì cần — kiểm output bằng chính model Pydantic
 # đã sinh ra nó thì không chứng minh được gì, hợp đồng nằm ở file schema.
 jsonschema==4.26.0
+
+# Xuất kết quả selection run ra .xlsx. Markdown đã có từ trước; Excel là
+# thứ người ký duyệt mở được mà không cần cài gì, và là dạng họ dán vào
+# báo cáo. Không phải thứ runtime cần — chỉ đường export dùng nó.
+openpyxl==3.1.5

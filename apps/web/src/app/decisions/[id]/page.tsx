@@ -16,66 +16,78 @@
 
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AdviceListView } from "@/components/AdviceListView";
 import { TraceViewer } from "@/components/TraceViewer";
+import { ComparisonGrid } from "@/components/ComparisonGrid";
+import { ConclusionPanel } from "@/components/ConclusionPanel";
+import { DecisionSummary } from "@/components/DecisionSummary";
+import { DecisionAdvice } from "@/components/DecisionAdvice";
+import { TradeoffInsights } from "@/components/TradeoffInsights";
+import { runBadge } from "@/lib/conclusion";
+import { Hint } from "@/components/Hint";
+import { type HeadingField, candidateNames, headingField } from "@/lib/candidateHeading";
+import { gateSummary } from "@/lib/gateSummary";
+import {
+  clampPage,
+  pageCount,
+  pageOf,
+  pageSlice,
+  pageWindow,
+} from "@/lib/episodePages";
 import { ProgressSync, type SyncSlot } from "@/components/ProgressSync";
-import { commonProgress, panelCandidates, sideTime } from "@/lib/replaySync";
+import { commonProgress, panelCandidates, sideProgress, sideTime } from "@/lib/replaySync";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { panelPlan } from "@/lib/explainPanel";
 import { Icon } from "@/components/Icon";
 import { useSession } from "@/lib/auth";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, type Translator } from "@/lib/i18n";
+import { BELOW_N_MIN, noticeKey, sampleLineFor, sampleNotice } from "@/lib/sample";
+import { COPY_FEEDBACK_MS, type CopyOutcome, copyDecisionId, copyStateKey } from "@/lib/copyId";
+import { useNameThisCrumb } from "@/lib/crumbOverride";
 import {
   GATES,
   approvedConfigUrl,
-  coverage,
   decideConfig,
   withdrawConfig,
   getDecision,
   getTrace,
   getReplaySync,
   getExemplars,
-  listDecisionEvents,
   noCardReason,
   reviewRun,
   gateEvidence,
   gateResult,
   hasEpisodeOutcomes,
+  hostWarningView,
+  recommendedCandidateLabel,
   outcomesByEpisode,
   type DecisionRun,
   type EpisodeOutcome,
   type GateVerdict,
-  type ReviewEvent,
   type RunCandidate,
   type TracePayload,
   type DivergencePoint,
   type Exemplar,
   type ReplaySyncView,
+  type RunningSample,
   observationClasses,
-  getCritique,
-  type Critique,
-  type CritiqueFinding,
-  getDecisionAdvice,
-  getOutcomeAdvice,
-  getTraceReview,
-  getReportAdvice,
-  type AdviceList,
 } from "@/lib/decisions";
-import { downloadDecisionReport } from "@/lib/reports";
+import { downloadDecisionReport, downloadDecisionWorkbook } from "@/lib/reports";
+import { ShareReportDialog } from "@/components/ShareReportDialog";
 import { initialPlayback, tick, type PlaybackState } from "@/lib/playback";
 
 export default function DecisionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { t } = useTranslation();
   const [run, setRun] = useState<DecisionRun | null>(null);
-  const [events, setEvents] = useState<ReviewEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [fetched, trail] = await Promise.all([getDecision(id), listDecisionEvents(id)]);
+      // The review journal is no longer drawn, so it is no longer
+      // fetched — a request whose response nothing reads is a request
+      // that will keep working long after it stops meaning anything.
+      const fetched = await getDecision(id);
       setRun(fetched);
-      setEvents(trail);
       setError(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -86,44 +98,117 @@ export default function DecisionDetailPage({ params }: { params: Promise<{ id: s
     void refresh();
   }, [refresh]);
 
+  // The breadcrumb reads `20750b0d9dbe` off the path; the profile this
+  // run measured is what a reader recognises. `run.task_profile_id`, not
+  // `run.report.task_profile_id` — the latter is `undefined`, which
+  // falls back to the id and leaves the crumb silently unchanged.
+  useNameThisCrumb(run?.task_profile_id);
+
   if (error) return <div className="error-box">{error}</div>;
   if (!run) return <p className="muted">{t("common.loading")}</p>;
 
   return (
     <section className="decision-page decision-detail-page">
       <header className="page-head decision-detail-head">
-        <span className="decision-page-icon"><Icon name="benchmark" size={21} /></span>
+        {/* No 40px icon tile. It was the same `benchmark` glyph on every
+            decision, so it distinguished nothing and named nothing —
+            it only took the width the title needed. */}
         <div><span className="decision-eyebrow">{t("decisions.detail.eyebrow")}</span><h1>{run.task_profile_id}</h1>
         <p className="muted">
           {run.experiment_scope ?? "—"} · {run.created_at.slice(0, 16).replace("T", " ")} ·{" "}
-          <Link href="/decisions">{t("decisions.backToList")}</Link>
-        </p></div>
-        <div className="decision-detail-badges"><span className={`badge ${run.ranked ? "ok" : "muted-badge"}`}>{run.ranked ? t("decisions.filter.ranked") : t("decisions.filter.unranked")}</span>
-        <ExportReport runId={run.id} />
+          <Link href="/decisions">{t("decisions.backToList")}</Link>{" "}
+          <CopyRunId id={run.id} />
+        </p>
+        <SampleLine run={run} /></div>
+        {/* Not `decisions.filter.*`. Those are the list page's filter
+            options — "Produced a card" is what you ask for, not what a
+            run *is* — and reusing them here would tie a status badge to
+            copy that belongs to a dropdown. */}
+        {/* **Beside the status badge, not at the foot of the page.**
+            Saving a run and sending it on are things a reader decides to
+            do about a page rather than steps in reading one, and the
+            buttons had no heading of their own — they floated between
+            two panels four screens down, where a reader who had come to
+            export something had to scroll past the whole argument to
+            find them. */}
+        <div className="decision-detail-badges">
+          {(() => {
+            const badge = runBadge(run);
+            return <span className={`badge ${badge.tone}`}>{t(badge.key)}</span>;
+          })()}
+          <ExportReport run={run} />
         </div>
       </header>
 
-      <SampleBanner run={run} />
-      <GateTable run={run} />
-      {/* The headline and its caveats sit immediately above the
-          evidence, which is what `ExplanationHeader` was written for:
-          a qualifier below the thing it qualifies has already been
-          scrolled past. When the evidence panel landed under the gate
-          table this header was left three sections down, still correct
-          and no longer doing its job. */}
+      {/* **The answer, then how it was reached, then who was allowed to
+          be in the running.** The page used to open on the gate table,
+          which is a list of eliminations — a reader arriving for the
+          result met six columns of pass/fail before anything told them
+          what the run concluded.
+
+          Two of these positions are arguments rather than taste, and
+          they survive any later reshuffle:
+
+          - `SampleNotice` stays first. It says the run was cut short or
+            ran fewer episodes than the declared risk allows, and that
+            qualifies *every* number below it. (The sample *size* moved
+            up into the page head as one line — a figure earns a card
+            only when it is abnormal.)
+          - `ExplanationHeader` stays immediately above `EvidencePanel`.
+            It carries the evidence's caveats, and a qualifier under the
+            thing it qualifies has already been scrolled past. */}
+      <SampleNotice run={run} />
+      {/* **The conclusion, then what to do with it, then the evidence.**
+          `DecisionSummary` is the only place the page states whether a
+          recommendation came back and why; `DecisionAdvice` answers the
+          question a reader actually arrives with, which is what to
+          deploy for their own use case, and answers it on blocked runs
+          too. Both used to be at the bottom, in four panels, in
+          different words. */}
+      <DecisionSummary run={run} />
+      <DecisionAdvice run={run} />
+      <CandidateComparison run={run} />
+      {/* **Its own section under the comparison, at An's call.** It had
+          been moved below the evidence and closed, on the argument that
+          a replay is a drill-down nobody opens before knowing the
+          result. That was right about the *order* and wrong about this
+          panel: watching the two candidates drive is how a run gets read
+          here, not a check performed afterwards, and folded shut four
+          screens down it read as having gone missing.
+
+          What the earlier move was actually for still holds and is kept:
+          the conclusion and the advice come first, so the replay no
+          longer sits ahead of everything that says what the run decided.
+          It stays a `<details>` — open, so it is there, and collapsible,
+          so four screens of pager and canvas can be put away. */}
+      <TracePanel run={run} />
+      {/* After the replay rather than immediately under the table,
+          because it reads *both*: ten metrics against two candidates is
+          eighty digits, and the sentences it draws out of them are the
+          ones a reader would otherwise assemble by eye from the table
+          and the two canvases together. */}
+      <TradeoffInsights run={run} />
       <ExplanationHeader run={run} />
       <EvidencePanel run={run} />
-      <CandidateComparison run={run} />
-      <TracePanel run={run} />
-      <Outcome run={run} />
-      <CritiquePanel runId={run.id} />
-      <OutcomePanel runId={run.id} />
-      <AdvicePanel runId={run.id} />
-      <ReportAdvicePanel runId={run.id} />
+      {/* The marks come after the evidence that justifies them, and the
+          export buttons after the marks — that is the point at which a
+          reader knows whether this run is worth sending on. */}
+      <ConclusionPanel run={run} />
+      {/* The card's sensitivity figures — weight stability, anchor
+          stability, robustness. They belong under the evidence rather
+          than beside the recommendation: they say how far the numbers
+          could move before the recommendation changes, which is a
+          question a reader asks second. `Outcome` used to wrap this and
+          the no-card message in one component; the message moved into
+          the summary, and what is left here is the table. */}
+      {run.card ? <CardPanel run={run} /> : null}
+      {/* `Conditions`, `Provenance` and the review journal are out for
+          now, at An's call — the measurement environment, the ids for
+          rebuilding a run and the list of who read it are not what this
+          page is being read for yet. `HumanActs` stays: it is what
+          *records* an approval, and only the display of that record
+          went. */}
       <HumanActs run={run} onDone={refresh} />
-      <Conditions run={run} />
-      <Provenance run={run} />
-      <AuditTrail events={events} />
     </section>
   );
 }
@@ -135,70 +220,145 @@ function CandidateComparison({ run }: { run: DecisionRun }) {
   const { t } = useTranslation();
   const candidates = run.report?.candidates ?? [];
   if (candidates.length === 0) return null;
+  // The table itself lives in `components/ComparisonGrid` — exported so
+  // tests can render it, which they cannot do with a function declared
+  // inside a page that fetches. What stays here is the panel around it.
+  //
+  // One choice of heading for the whole panel: the gate detail below
+  // names each candidate the same way its column does.
+  const heading = headingField(candidates);
+  const summary = gateSummary(candidates);
   return (
     <section className="panel comparison-results" aria-labelledby="comparison-results-title">
       <div className="comparison-results-head">
         <div><span className="decision-eyebrow">{t("decisions.detail.evidence")}</span><h3 id="comparison-results-title">{t("decisions.detail.results")}</h3></div>
-        {run.card ? <span className="badge ok"><Icon name="trophy" size={13} />{run.card.recommended.stack}</span> : <span className="badge muted-badge">{t("decisions.noCard.title")}</span>}
+        {/* Shown only when there *is* one. "No recommendation from this
+            run" said here as well as in the header badge and again in
+            the panel below, which spells out which of the three
+            no-card situations this is and what to do about it — three
+            copies of one fact, and the least useful of them was this. */}
+        {run.card ? <span className="badge ok"><Icon name="trophy" size={13} />{recommendedCandidateLabel(run) ?? run.card.recommended.candidate_id}</span> : null}
       </div>
-      <div className="candidate-comparison-grid">
-        {candidates.slice(0, 2).map((candidate, index) => (
-          <CandidateComparisonColumn key={candidate.candidate_id} candidate={candidate} side={index === 0 ? "a" : "b"} recommended={run.recommended_candidate_id === candidate.candidate_id} />
-        ))}
-      </div>
+      {/* Moved off the gate table, which is gone. This is a *finding* —
+          two candidates shown different things are answering different
+          questions, and ΔU would be measuring the privilege rather than
+          the planner — so it cannot leave the page with the table it
+          happened to sit in. */}
+      <ObservationNotice candidates={candidates} />
+      {/* The host warning is *not* a banner over the table. G4 reads
+          wall-clock latency, so an unpinned machine qualifies the p99 row
+          and nothing else; above the table it reads as a caveat on every
+          number, which is a wider claim than the measurement supports. */}
+      <ComparisonGrid run={run} candidates={candidates} hostWarning={<HostWarning run={run} />} />
+
+      {/* **Collapsed, because the verdict is already on the column head.**
+          Open, it is six cells per candidate — the *reason* behind a
+          verdict the reader has already been given. Closed, its summary
+          still has to be true, which is why the badge states a ratio: it
+          sits on the control somebody uses to decide whether to open
+          this at all, so "cleared" over a field where one candidate was
+          eliminated is wrong at the point of maximum cost. */}
+      {summary ? (
+        <details className="comparison-gate-detail">
+          <summary>
+            <Icon name="chevronRight" size={14} />
+            <span>{t("decisions.gates.detail")}</span>
+            <Hint text={t("decisions.gates.note")} label={t("decisions.gates.detail")} />
+            <span className={`badge ${summary.tone}`}>
+              {t(summary.key, {
+                total: String(summary.total),
+                blocked: String(summary.blocked),
+                cleared: String(summary.cleared),
+              })}
+            </span>
+          </summary>
+          <div className="comparison-gate-detail-body">
+            {candidates.map((candidate, index) => (
+              <div key={candidate.candidate_id}>
+                <p className={`comparison-gate-owner candidate-${SIDES[index] ?? "n"}`}>
+                  {candidateNames(candidate, heading).heading}
+                </p>
+                <div className="comparison-gate-grid">
+                  {GATES.map((gate) => (
+                    <div key={gate}>
+                      <span className="candidate-gate-name">
+                        <code>{gate}</code>
+                        <Hint text={t(`decisions.gates.blocks.${gate}`)} label={gate} />
+                      </span>
+                      <GateCell verdict={candidate.gates?.[gate]} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
     </section>
   );
 }
 
-function CandidateComparisonColumn({ candidate, side, recommended }: { candidate: RunCandidate; side: "a" | "b"; recommended: boolean }) {
-  const { t } = useTranslation();
-  const metrics = [
-    [t("decisions.gates.successRate"), `${Math.round(candidate.success_rate * 100)}%`],
-    [t("decisions.gates.p99"), `${candidate.pooled_p99_latency_ms.toFixed(2)} ms`],
-    [t("decisions.gates.runs"), String(candidate.n_distinct_episodes)],
-    [t("decisions.gates.replans"), candidate.replan_count === undefined ? "—" : String(candidate.replan_count)],
-  ];
+/** What the machine was doing while the latency was measured.
+ *
+ * **Not context — a caveat on a number two rows down.** G4 reads
+ * wall-clock latency, so a run measured on an unpinned host measured a
+ * machine that was also doing something else: the same candidate came
+ * out at 59.30 ms unpinned and 16.10 ms pinned to two cores.
+ *
+ * It used to sit in the panel describing the measurement environment.
+ * That panel is gone, and this could not go with it: the grid below
+ * shows pooled p99 against the deployment's limit, and a figure that may
+ * be several times too high is worse company for a limit than no figure
+ * would be.
+ *
+ * **What may and may not be reinterpreted.** The rule used to be that
+ * the whole sentence was rendered verbatim, because a client that
+ * rewords a caveat can water it down. The rule was right about the
+ * wrong thing: what must survive intact is the **numbers**, and holding
+ * the language fixed too meant an English page showing a Vietnamese
+ * paragraph. So the platform now sends a code and its figures, and the
+ * wording is chosen here — while a run that predates that, or one
+ * carrying a code this build has never heard of, still renders the
+ * platform's own sentence untouched.
+ */
+function HostWarning({ run }: { run: DecisionRun }) {
+  const { t, locale } = useTranslation();
+  const view = hostWarningView(run.report?.measurement_environment, locale);
+  if (!view) return null;
   return (
-    <article className={`candidate-result candidate-${side}${recommended ? " is-recommended" : ""}`}>
-      <header className="candidate-result-head">
-        <span className="candidate-result-icon"><Icon name="cpu" size={19} /></span>
-        <div><small>Candidate {side.toUpperCase()}</small><h4>{candidate.stack_label}</h4><code>{candidate.local_controller_config}</code></div>
-        {recommended ? <span className="badge ok"><Icon name="check" size={12} />{t("decisions.card.recommended")}</span> : null}
-      </header>
-      <div className="candidate-result-metrics">
-        {metrics.map(([label, value]) => <div className="metric-comparison-row" key={label}><span>{label}</span><strong>{value}</strong></div>)}
-      </div>
-      <details className="candidate-gates" open>
-        <summary><span>{t("decisions.gates.title")}</span><span className={`badge ${candidate.cleared_gates ? "ok" : "err"}`}>{candidate.cleared_gates ? t("decisions.gates.cleared") : candidate.blocking_gates.join(", ")}</span></summary>
-        <div>{GATES.map((gate) => <div key={gate}><code>{gate}</code><GateCell verdict={candidate.gates?.[gate]} /></div>)}</div>
-      </details>
-    </article>
+    // A line inside the p99 row's label, not a `.notice` box. It used to
+    // be a bordered banner over the whole table, which is a box shaped
+    // like a claim about everything under it; the caveat is about one
+    // row. The box also cannot sit in a table cell without looking like
+    // a panel that lost its way.
+    // **One line, with the rest behind the hint.** The full sentence is
+    // four lines of prose, and printed in the cell it made this row
+    // roughly three times the height of every other — the reader's eye
+    // loses the column it was scanning down, on the one table whose
+    // whole job is being scannable. What stays visible is the claim that
+    // changes how the number is read; what moves into the hint is the
+    // evidence for it, which is read once if at all.
+    <span className="comparison-host-warning">
+      <Icon name="alert" size={12} />
+      <span>{t("decisions.env.unpinnedShort")}</span>
+      <Hint
+        text={view.translated ? t(view.key, view.vars) : view.text}
+        label={t("decisions.env.unpinnedShort")}
+      />
+    </span>
   );
 }
 
-/** Look at the evidence the gate table was computed from.
+/** Column letters, and a tint that runs out on purpose.
  *
- * **Directly under the gate table, and that placement is the argument.**
- * A row saying "G3: fail, 70% success" is a claim about episodes; the
- * next thing a reader should be able to do is open one of them. Putting
- * the viewer below the recommendation instead would make the trajectory
- * an illustration of a conclusion rather than the thing the conclusion
- * came from.
- *
- * Loaded on demand. A run holds thirty to three hundred episodes per
- * candidate and each is a map plus a few hundred poses, so fetching them
- * all to show one would be paying for a hundred pictures nobody asked to
- * see.
+ * The pair colours cover two. A third candidate gets `candidate-n` —
+ * neutral — rather than looping back to candidate A's blue, which would
+ * put two different stacks in one colour on a page whose whole job is
+ * telling them apart.
  */
-/** What this run may be explained with, and the caveats that travel.
- *
- * The panel plan is read rather than decided here: three of the five
- * run outcomes have no paired comparison, and a page that worked that
- * out for itself would work it out differently from the platform.
- *
- * The caveats are rendered *above* the evidence, not under it. A
- * qualifier below the fold qualifies nothing.
- */
+const SIDES = ["a", "b"] as const;
+
+
 function ExplanationHeader({ run }: { run: DecisionRun }) {
   const { t } = useTranslation();
   const plan = panelPlan(run);
@@ -227,14 +387,37 @@ function TracePanel({ run }: { run: DecisionRun }) {
     () => panelCandidates(run, run.report?.candidates ?? []),
     [run],
   );
+  // From the **whole** report, not from `candidates` above: that list is
+  // reordered and can be shorter than the field, and a heading chosen
+  // from a subset could name a different field than the comparison grid
+  // did. One page must not call the same candidate two things.
+  const heading = headingField(run.report?.candidates ?? []);
   const episodes = run.report?.sample?.episode_context_ids ?? [];
   const [episodeId, setEpisodeId] = useState(episodes[0] ?? "");
   const [slots, setSlots] = useState<Record<string, TraceSlot>>({});
   const [mode, setMode] = useState<"flat" | "raised">("flat");
+  /* **One camera for the pair.** Each `Scene25D` used to keep its own
+     angle, so turning one panel to look behind a wall left the reader
+     comparing two rooms until they turned the other to match by hand —
+     and matching by hand across two sliders is a thing nobody gets
+     exactly right. Held here for the same reason the scrubber is: it is
+     a property of the comparison, not of either candidate. */
+  const [view25d, setView25d] = useState({ yawDeg: 0, elevationDeg: 30, wallHeight: 0.6 });
   // Named `syncMode`, not `mode`: `mode` above is how the map is *drawn*
   // (2D or 2.5D). Two unrelated ideas under one name is how a later
   // reader concludes the page already had two sync modes.
   const [syncMode, setSyncMode] = useState<"time" | "progress">("time");
+  // **One switch per canvas.** The first version shared a single
+  // control, on the reasoning that two panels showing different kinds
+  // of number cannot be compared. That was already untrue of its own
+  // automatic behaviour — each replay flips to its result when *it*
+  // runs out, so a short run and a long one legitimately differ for
+  // half the episode — and it forbade the case a reader actually wants:
+  // reading one stack's results while the other is still driving.
+  //
+  // Unset means automatic: that replay switches when it reaches its own
+  // end.
+  const [finalFor, setFinalFor] = useState<{ a: boolean; b: boolean }>({ a: false, b: false });
   const [sync, setSync] = useState<SyncSlot>({ state: "idle" });
   /** Empty until the recipe answers, and empty for a run too old to
    *  carry per-episode utility — the plain list is the honest fallback,
@@ -304,8 +487,16 @@ function TracePanel({ run }: { run: DecisionRun }) {
   // Progress-sync is computed by the platform, not here: projecting in
   // the browser would put a second copy of the arc-length rules in
   // TypeScript, and the two would drift the first time either is fixed.
+  //
+  // **Fetched in both alignment modes**, not just the progress one. The
+  // same response carries the per-step series the tiles under each
+  // canvas read, and those are shown whichever way the two replays are
+  // aligned — the numbers are each candidate's own standing at its own
+  // current row, which does not depend on how the panels are paired.
+  // Not fetching it in time mode was the reason the metrics appeared
+  // only behind a toggle nobody had a reason to press.
   useEffect(() => {
-    if (syncMode !== "progress" || !episodeId || candidates.length < 2) return;
+    if (!episodeId || candidates.length < 2) return;
     let live = true;
     setSync({ state: "loading" });
     setScan(initialPlayback);
@@ -318,7 +509,7 @@ function TracePanel({ run }: { run: DecisionRun }) {
     return () => {
       live = false;
     };
-  }, [candidates, episodeId, run.id, syncMode]);
+  }, [candidates, episodeId, run.id]);
 
   const traces = candidates.flatMap((candidate) => {
     const slot = slots[candidate.candidate_id];
@@ -333,6 +524,36 @@ function TracePanel({ run }: { run: DecisionRun }) {
   }, [duration, playback.playing]);
 
   const view: ReplaySyncView | null = sync.state === "ready" ? sync.view : null;
+
+  /** A click on one candidate's latency chart, applied to **both**.
+   *
+   * The chart hands back a moment on that candidate's own clock, and
+   * what the pair does with it depends on the alignment:
+   *
+   * - by time, the two panels share a wall clock, so the seconds go
+   *   straight to the shared scrubber;
+   * - by progress, the scrubber is in **metres**, so the timestamp is
+   *   converted through the rows the view published — the same rows
+   *   `sideTime` reads forwards.
+   *
+   * Seeking only the canvas that was clicked would be the smaller
+   * change and would break the one thing this view is for: at any
+   * moment the two panels are supposed to be answering the same
+   * question.
+   */
+  const seekFrom = (side: "a" | "b", seconds: number) => {
+    // **Playback is left alone.** An earlier version paused on every
+    // seek, reasoning that a replay which keeps rolling walks away from
+    // the moment just asked for. In use that is backwards: clicking the
+    // chart is how you jump to the interesting part and *watch it*, and
+    // having to press play again every time makes the chart a worse
+    // scrubber than the scrubber.
+    if (syncMode === "time") {
+      setPlayback((current) => ({ ...current, time: Math.min(seconds, duration) }));
+      return;
+    }
+    setScan((current) => ({ ...current, time: sideProgress(view, seconds, side) }));
+  };
   const span = view ? commonProgress(view) : 0;
 
   useEffect(() => {
@@ -355,12 +576,25 @@ function TracePanel({ run }: { run: DecisionRun }) {
   };
 
   return (
-    <div className="panel decision-sample-panel episode-comparison">
-      <div className="panel-head">
-        <h3>{t("trace.title")}</h3>
-      </div>
-      <p className="muted">{t("trace.note")}</p>
-      <p className="episode-pick-note">{t("trace.pickEpisode")}</p>
+    <details className="panel decision-sample-panel episode-comparison" open>
+      {/* **Open, and still collapsible.** This shipped closed for a
+          release, on the argument that four screens of pager, canvas and
+          tiles is a drill-down. The argument held for the *position* and
+          not for the default: watching the two candidates drive is how
+          this run gets read here, so a panel that has to be opened every
+          visit reads as a panel that went missing.
+
+          It stays `<details>` rather than reverting to a plain `<div>`:
+          the reader who has finished with the replay can still fold it
+          away, and the episode count on the summary says what is inside
+          when they have. */}
+      <summary className="panel-head episode-comparison-summary">
+        <Icon name="chevronRight" size={14} />
+        <h3>{t("trace.title")} <Hint text={t("trace.note")} label={t("trace.title")} /></h3>
+        <span className="badge muted-badge">
+          {t("trace.episodeCount", { count: String(episodes.length) })}
+        </span>
+      </summary>
 
       <EpisodeOutcomes
         run={run}
@@ -368,19 +602,12 @@ function TracePanel({ run }: { run: DecisionRun }) {
         onPick={(episode) => chooseEpisode(episode, true)}
       />
 
+      {/* **No episode dropdown.** It listed ids and nothing else, so
+          choosing from it was choosing blind — the table above says
+          which episodes anyone failed and which two candidates
+          disagreed on, which is what a reader picks by. Rows and
+          exemplar chips are the pickers now. */}
       <div className="episode-toolbar">
-        <label className="field">
-          <span>{t("trace.episode")}</span>
-          <select value={episodeId} onChange={(event) => chooseEpisode(event.target.value)}>
-            {episodes.map((episode, index) => {
-              return (
-                <option key={episode} value={episode}>
-                  #{index + 1} · {episode.slice(0, 8)}
-                </option>
-              );
-            })}
-          </select>
-        </label>
         <div className="episode-view-toggle" role="group" aria-label={t("trace.viewMode")}>
           {(["flat", "raised"] as const).map((option) => <button key={option} type="button" className={mode === option ? "primary" : ""} aria-pressed={mode === option} onClick={() => setMode(option)}>{t(`mapView.${option}`)}</button>)}
         </div>
@@ -415,6 +642,9 @@ function TracePanel({ run }: { run: DecisionRun }) {
         )}
         <EpisodeLegend />
         <div className="episode-comparison-grid">
+          {/* The same choice the comparison grid made. Two panels on one
+              page naming a candidate by different fields is worse than
+              either choice on its own. */}
           {candidates.map((candidate, index) => {
             const side = index === 0 ? "a" : "b";
             // In progress-sync the two panels are at *different*
@@ -426,18 +656,26 @@ function TracePanel({ run }: { run: DecisionRun }) {
               <CandidateEpisode
                 key={candidate.candidate_id}
                 candidate={candidate}
+                heading={heading}
                 side={side}
                 episodeId={episodeId}
                 slot={slots[candidate.candidate_id] ?? { state: "loading" }}
                 mode={mode}
                 playbackTime={at}
+                running={view?.running?.by_step[side] ?? null}
+                forceFinal={finalFor[side]}
+                onToggleFinal={() => setFinalFor((current) => ({ ...current, [side]: !current[side] }))}
+                onSeek={(seconds) => seekFrom(side, seconds)}
+                isReferenceRuler={view?.reference_source_candidate_id === candidate.candidate_id}
                 onRetry={() => void loadPair(episodeId)}
+                view25d={view25d}
+                onView25dChange={setView25d}
               />
             );
           })}
         </div>
       </div>
-    </div>
+    </details>
   );
 }
 
@@ -472,18 +710,51 @@ function SharedPlayback({ playback, duration, onChange }: { playback: PlaybackSt
 function EpisodeLegend() {
   const { t } = useTranslation();
   const items = [["start", t("trace.legend.start")], ["goal", t("trace.legend.goal")], ["candidate-a", t("trace.legend.candidateA")], ["candidate-b", t("trace.legend.candidateB")], ["dynamic", t("trace.legend.dynamic")], ["collision", t("trace.legend.collision")]];
-  return <div className="episode-legend" aria-label={t("trace.legend.title")}>{items.map(([tone, label]) => <span key={tone}><i className={`legend-dot legend-dot--${tone}`} aria-hidden="true" />{label}</span>)}</div>;
+  // The colour note used to sit under each canvas — the same four
+  // sentences rendered twice, side by side. It describes how the canvas
+  // is drawn, which is one fact about the pair rather than one per
+  // candidate, so it belongs here with the legend it explains.
+  return <div className="episode-legend" aria-label={t("trace.legend.title")}><div className="episode-legend-keys">{items.map(([tone, label]) => <span key={tone}><i className={`legend-dot legend-dot--${tone}`} aria-hidden="true" />{label}</span>)}</div><Hint text={t("trace.colourNote")} label={t("trace.legend.title")} /></div>;
 }
 
-function CandidateEpisode({ candidate, side, episodeId, slot, mode, playbackTime, onRetry }: { candidate: RunCandidate; side: "a" | "b"; episodeId: string; slot: TraceSlot; mode: "flat" | "raised"; playbackTime: number; onRetry: () => void }) {
+function CandidateEpisode({ candidate, heading, side, episodeId, slot, mode, playbackTime, running, forceFinal, onToggleFinal, onSeek, isReferenceRuler, onRetry, view25d, onView25dChange }: { candidate: RunCandidate; heading: HeadingField; side: "a" | "b"; episodeId: string; slot: TraceSlot; mode: "flat" | "raised"; playbackTime: number; running: RunningSample[] | null; forceFinal: boolean; onToggleFinal: () => void; onSeek: (seconds: number) => void; isReferenceRuler: boolean; onRetry: () => void; view25d: { yawDeg: number; elevationDeg: number; wallHeight: number }; onView25dChange: (view: { yawDeg: number; elevationDeg: number; wallHeight: number }) => void }) {
   const { t } = useTranslation();
   const outcome = outcomesByEpisode(candidate).get(episodeId);
-  return <article className={`episode-candidate episode-candidate--${side}`}><header><div><span>Candidate {side.toUpperCase()}</span><h4>{candidate.stack_label}</h4><code>{candidate.local_controller_config}</code></div><span className={`badge ${outcomeTone(outcome)}`}>{outcomeLabel(outcome, t)}</span></header><div className="episode-map">{slot.state === "loading" ? <div className="episode-skeleton" role="status">{t("trace.loadingCandidate")}</div> : slot.state === "ready" ? <TraceViewer trace={slot.trace} playbackTime={playbackTime} mode={mode} showControls={false} candidateSide={side} /> : slot.state === "missing" ? <div className="episode-empty" role="status">{t("trace.missing")}</div> : slot.state === "empty" ? <div className="episode-empty" role="status">{t("trace.emptyFrames")}</div> : <div className="episode-error" role="alert"><p>{t("trace.loadError")}</p><button type="button" onClick={onRetry}>{t("common.retry")}</button></div>}</div><EpisodeMetrics outcome={outcome} /></article>;
+  const ready = slot.state === "ready" ? slot : null;
+  const finalPanel = <EpisodeMetrics outcome={outcome} lastEvent={ready ? (ready.trace.events.at(-1)?.event ?? null) : null} />;
+  // Whichever field distinguishes this run's candidates — the same one
+  // the comparison grid uses. On a local-controller comparison the stack
+  // is identical on both sides, so naming the card by the stack labelled
+  // both cards `astar+dwa`, and so did the accessible name of each
+  // card's "Show final results" button.
+  const names = candidateNames(candidate, heading);
+  return <article className={`episode-candidate episode-candidate--${side}`}><header><div><span>Candidate {side.toUpperCase()}</span><h4>{names.heading}</h4><code>{names.secondary}</code></div><div className="episode-candidate-actions"><span className={`badge ${outcomeTone(outcome)}`}>{outcomeLabel(outcome, t)}</span>{/* Named with the field that differs, because the page carries
+        two of these and "Show final results" twice over is two controls
+        a screen reader cannot tell apart — which is exactly what the
+        stack gave it whenever the stack was the same on both sides. */}
+      <button type="button" className={forceFinal ? "primary" : ""} aria-pressed={forceFinal} aria-label={`${t(forceFinal ? "trace.metricsView.live" : "trace.metricsView.final")} — ${names.heading}`} title={t("trace.metricsView.hint")} onClick={onToggleFinal}>{t(forceFinal ? "trace.metricsView.live" : "trace.metricsView.final")}</button></div></header><div className="episode-map">{slot.state === "loading" ? <div className="episode-skeleton" role="status">{t("trace.loadingCandidate")}</div> : ready ? <TraceViewer trace={ready.trace} playbackTime={playbackTime} mode={mode} showControls={false} candidateSide={side} running={running} finalPanel={finalPanel} forceFinal={forceFinal} onSeek={onSeek} isReferenceRuler={isReferenceRuler} view25d={view25d} onView25dChange={onView25dChange} /> : slot.state === "missing" ? <div className="episode-empty" role="status">{t("trace.missing")}</div> : slot.state === "empty" ? <div className="episode-empty" role="status">{t("trace.emptyFrames")}</div> : <div className="episode-error" role="alert"><p>{t("trace.loadError")}</p><button type="button" onClick={onRetry}>{t("common.retry")}</button></div>}</div>{/* A candidate whose trace would not load has no replay to run, so
+      there is no live row for the result to replace — and the result
+      is still the answer to what happened. Shown outright rather than
+      hidden behind a swap that has nothing to swap with. */}
+    {ready ? null : finalPanel}</article>;
 }
 
-function EpisodeMetrics({ outcome }: { outcome: EpisodeOutcome | undefined }) {
+/** What the episode came to, once. Nothing here moves with the scrubber.
+ *
+ * `Last event` sits here rather than beside the live readings because it
+ * is a fact about the end of the run, not about the moment on screen. It
+ * is kept **beside** `Result` rather than folded into it: `Result` is
+ * the gate's reading of the episode and `Last event` is HĐ-5's own final
+ * record, and the two are only usually the same sentence.
+ *
+ * There is no `Episode length` row to add — `Travel time` is that
+ * number, taken from the scored outcome instead of from the trace's last
+ * timestamp, so the tile that used to show it was a second reading of
+ * one quantity.
+ */
+function EpisodeMetrics({ outcome, lastEvent }: { outcome: EpisodeOutcome | undefined; lastEvent: string | null }) {
   const { t } = useTranslation();
-  const rows: [string, string, string][] = [[t("trace.result"), outcome ? outcomeLabel(outcome, t) : "—", t("trace.tip.result")], [t("metrics.travelTime"), outcome ? `${outcome.travel_time_s.toFixed(2)} s` : "—", t("trace.tip.time")], [t("metrics.minClearance"), outcome ? `${outcome.min_clearance.toFixed(3)} m` : "—", t("trace.tip.clearance")], [t("trace.p99Latency"), outcome ? `${outcome.p99_latency_ms.toFixed(2)} ms` : "—", t("trace.tip.latency")], [t("trace.collision"), outcome ? String(outcome.collision_count) : "—", t("trace.tip.collision")], [t("metrics.replanCount"), outcome?.replan_count === undefined ? "—" : String(outcome.replan_count), t("trace.tip.replan")]];
+  const rows: [string, string, string][] = [[t("trace.result"), outcome ? outcomeLabel(outcome, t) : "—", t("trace.tip.result")], [t("trace.outcome"), lastEvent ?? t("trace.noEvent"), t("trace.tip.lastEvent")], [t("metrics.travelTime"), outcome ? `${outcome.travel_time_s.toFixed(2)} s` : "—", t("trace.tip.time")], [t("metrics.minClearance"), outcome ? `${outcome.min_clearance.toFixed(3)} m` : "—", t("trace.tip.clearance")], [t("trace.p99Latency"), outcome ? `${outcome.p99_latency_ms.toFixed(2)} ms` : "—", t("trace.tip.latency")], [t("trace.collision"), outcome ? String(outcome.collision_count) : "—", t("trace.tip.collision")], [t("metrics.replanCount"), outcome?.replan_count === undefined ? "—" : String(outcome.replan_count), t("trace.tip.replan")]];
   return <dl className="episode-metrics">{rows.map(([label, value, tip]) => <div key={label} title={tip}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
 }
 
@@ -515,14 +786,40 @@ function EpisodeOutcomes({
 }) {
   const { t } = useTranslation();
   const [failuresOnly, setFailuresOnly] = useState(false);
+  const [page, setPage] = useState(0);
   const candidates = run.report?.candidates ?? [];
   const episodes = run.report?.sample?.episode_context_ids ?? [];
+
+  // **Follow the selection onto its page.** Exemplar chips and the
+  // viewer can move the episode from outside this table; leaving the
+  // strip where it was would highlight nothing and read as the pick not
+  // registering.
+  useEffect(() => {
+    const index = episodes.indexOf(selectedEpisode);
+    if (index >= 0) setPage(pageOf(index));
+  }, [episodes, selectedEpisode]);
 
   // Absent is "not recorded", never "all passed". Runs stored before the
   // field existed have no rows, and drawing them as a clean table would
   // report a measurement nobody made.
   if (!hasEpisodeOutcomes(run)) {
-    return <p className="muted">{t("decisions.episodes.notRecorded")}</p>;
+    // No verdicts to tabulate — but the reader still has to be able to
+    // reach an episode, and the dropdown that used to do that is gone.
+    // Ids and nothing else is what the dropdown offered too; here it is
+    // all the run recorded.
+    return (
+      <>
+        <p className="muted">{t("decisions.episodes.notRecorded")}</p>
+        <EpisodePager
+          episodes={episodes}
+          page={page}
+          onPage={setPage}
+          selected={selectedEpisode}
+          onPick={onPick}
+          bare
+        />
+      </>
+    );
   }
 
   const byCandidate = new Map(
@@ -539,6 +836,11 @@ function EpisodeOutcomes({
     ),
   );
   const shown = failuresOnly ? interesting : episodes;
+  // Clamped, not trusted: switching the filter on can leave two pages
+  // where there were twelve, and page 7 of two is a blank table that
+  // reads as a run with no episodes.
+  const current = clampPage(page, shown.length);
+  const visible = pageSlice(shown, current);
 
   return (
     <>
@@ -590,7 +892,7 @@ function EpisodeOutcomes({
               </tr>
             </thead>
             <tbody>
-              {shown.map((episode) => {
+              {visible.map((episode) => {
                 const outcomes = candidates.map((candidate) => byCandidate.get(candidate.candidate_id)?.get(episode));
                 const differs = outcomes.length > 1 && outcomes[0]?.success !== outcomes[1]?.success;
                 return (
@@ -617,7 +919,100 @@ function EpisodeOutcomes({
           </table>
         </div>
       )}
+      <EpisodePager
+        episodes={shown}
+        page={current}
+        onPage={setPage}
+        selected={selectedEpisode}
+        onPick={onPick}
+      />
     </>
+  );
+}
+
+/** Five episodes a window, and a strip of tabs to move between them.
+ *
+ * **The strip is windowed too.** A three-hundred-episode sweep is sixty
+ * pages, and sixty tabs is the problem the paging was added to solve
+ * wearing a different control — so `pageWindow` caps how many are
+ * offered and keeps that count constant at both ends, rather than
+ * shrinking as the reader reaches the edges.
+ *
+ * `bare` is the fallback for a run with no recorded per-episode
+ * outcomes: no table to page, just the ids, because that reader has to
+ * be able to reach an episode too.
+ */
+function EpisodePager({
+  episodes,
+  page,
+  onPage,
+  selected,
+  onPick,
+  bare = false,
+}: {
+  episodes: string[];
+  page: number;
+  onPage: (page: number) => void;
+  selected: string;
+  onPick: (episode: string) => void;
+  bare?: boolean;
+}) {
+  const { t } = useTranslation();
+  const total = pageCount(episodes.length);
+  const visible = bare ? pageSlice(episodes, page) : [];
+  if (total <= 1 && !bare) return null;
+  return (
+    <div className="episode-pager">
+      {bare ? (
+        <div className="episode-pager-ids">
+          {visible.map((episode) => (
+            <button
+              key={episode}
+              type="button"
+              className={`chip${episode === selected ? " primary" : ""}`}
+              onClick={() => onPick(episode)}
+            >
+              #{episodes.indexOf(episode) + 1} · {episode.slice(0, 8)}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {total > 1 ? (
+        <div className="episode-pager-tabs" role="tablist" aria-label={t("decisions.episodes.pages")}>
+          <button
+            type="button"
+            disabled={page === 0}
+            aria-label={t("decisions.episodes.prevPage")}
+            onClick={() => onPage(clampPage(page - 1, episodes.length))}
+          >
+            ‹
+          </button>
+          {pageWindow(page, episodes.length).map((number) => (
+            <button
+              key={number}
+              type="button"
+              role="tab"
+              aria-selected={number === page}
+              className={number === page ? "primary" : ""}
+              onClick={() => onPage(number)}
+            >
+              {number + 1}
+            </button>
+          ))}
+          <button
+            type="button"
+            disabled={page >= total - 1}
+            aria-label={t("decisions.episodes.nextPage")}
+            onClick={() => onPage(clampPage(page + 1, episodes.length))}
+          >
+            ›
+          </button>
+          <span className="muted">
+            {t("decisions.episodes.pageOf", { page: String(page + 1), total: String(total) })}
+          </span>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -798,99 +1193,136 @@ function HumanActs({ run, onDone }: { run: DecisionRun; onDone: () => Promise<vo
   );
 }
 
-/** What was asked for, beside what was measured.
+/** The run's id, and a button that copies it.
+ *
+ * **The id stays legible in every state**, so the failure case is still
+ * usable: the reader selects it and copies by hand. That is not a
+ * nicety — the clipboard API refuses outside a secure context, when the
+ * document is not focused, and whenever the permission is denied, and a
+ * button that swallowed the id to show "Copy failed" would leave them
+ * with nothing.
+ *
+ * The decision itself is `lib/copyId`, which takes the write function as
+ * a parameter so both branches can be tested without a browser.
+ */
+function CopyRunId({ id }: { id: string }) {
+  const { t } = useTranslation();
+  const [outcome, setOutcome] = useState<CopyOutcome | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleared on unmount as well as before each new timer: copying twice
+  // and then leaving the page would otherwise set state on a component
+  // that is gone.
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+
+  const copy = async () => {
+    const result = await copyDecisionId(id, (text) =>
+      // Optional-chained rather than assumed: `navigator.clipboard` is
+      // absent entirely on an insecure origin, and reading `.writeText`
+      // off `undefined` would throw before the helper's catch.
+      navigator.clipboard?.writeText(text) ??
+      Promise.reject(new Error("clipboard unavailable")),
+    );
+    setOutcome(result);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setOutcome(null), COPY_FEEDBACK_MS);
+  };
+
+  const stateKey = copyStateKey(outcome);
+  return (
+    <button
+      type="button"
+      className="decision-copy-id"
+      data-state={outcome ?? undefined}
+      aria-label={t("decisions.detail.copyId", { id })}
+      onClick={() => void copy()}
+    >
+      <Icon name={outcome === "copied" ? "check" : "copy"} size={12} />
+      <code>{id}</code>
+      {/* Announced rather than only recoloured: the outcome is the whole
+          point of pressing this, and a colour change says nothing to a
+          screen reader. */}
+      <span className="copy-state" aria-live="polite">
+        {stateKey ? t(stateKey) : ""}
+      </span>
+    </button>
+  );
+}
+
+/** One line saying how big the sample was, in the page head.
+ *
+ * This replaced three 26px figures — measured, requested, N_min — which
+ * on an ordinary run print the same number three times at the largest
+ * type on screen. A figure earns a card when it is abnormal; when it is
+ * fine it earns a clause.
+ *
+ * Every decision here is `lib/sample`, and the reason is the repo's, not
+ * taste: there is no jsdom, so a rule written inside JSX is a rule no
+ * test can reach. What is left is looking up keys and rendering.
+ */
+function SampleLine({ run }: { run: DecisionRun }) {
+  const { t } = useTranslation();
+  const line = sampleLineFor(run);
+  if (!line) return null;
+
+  return (
+    <p className="sample-line">
+      {/* Bold in the markup, not in the dictionary: `translate` returns a
+          plain string and React escapes it, so a `<b>` in a locale file
+          would render as four visible characters. */}
+      <b>{line.params.n}</b> {t("decisions.sample.line.measured")}
+      <span className="sep">·</span>
+      <span className={line.nMinKey === BELOW_N_MIN ? "sample-below" : undefined}>
+        {t(line.nMinKey, { n: String(line.params.n), min: String(line.params.min) })}
+      </span>
+      {line.ranFullRequest ? (
+        <>
+          <span className="sep">·</span>
+          {t("decisions.sample.line.full")}
+        </>
+      ) : null}
+      {line.coveragePercent !== null ? (
+        <>
+          <span className="sep">·</span>
+          {t("decisions.sample.line.coverage", { percent: String(line.coveragePercent) })}
+        </>
+      ) : null}
+    </p>
+  );
+}
+
+/** The one notice the sample earns, or nothing.
  *
  * Above everything, because it qualifies every number below it. A run
  * stopped at 245 of 300 is a valid, smaller comparison — but reading its
  * gate table as a 300-episode result is a different claim from the one
  * the data supports.
+ *
+ * **One notice, never a stack.** A run both short and interrupted used
+ * to draw two boxes, and two boxes of the same shape read as two
+ * problems of the same weight. Below N_min voids the numbers;
+ * interrupted explains how the run got there. The combined case has its
+ * own wording that says both in one box.
  */
-function SampleBanner({ run }: { run: DecisionRun }) {
+function SampleNotice({ run }: { run: DecisionRun }) {
   const { t } = useTranslation();
   const sample = run.report?.sample;
   if (!sample) return null;
-  const covered = coverage(run);
-  const short = sample.n_episodes < sample.n_min_required;
+  const notice = noticeKey(sampleNotice(sample));
+  if (!notice) return null;
 
   return (
-    <div className="panel decision-summary">
-      <div className="stat-grid">
-        <Figure label={t("decisions.sample.measured")} value={String(sample.n_episodes)} />
-        {sample.n_episodes_requested !== undefined ? (
-          <Figure
-            label={t("decisions.sample.requested")}
-            value={String(sample.n_episodes_requested)}
-          />
-        ) : null}
-        <Figure
-          label={t("decisions.sample.nMin")}
-          value={String(sample.n_min_required)}
-          unknown={short}
-        />
-        {covered !== undefined && covered < 1 ? (
-          <Figure label={t("decisions.sample.coverage")} value={`${Math.round(covered * 100)}%`} />
-        ) : null}
-      </div>
-      {sample.interrupted ? (
-        <div className="notice" style={{ marginTop: 12 }}>
-          {t("decisions.sample.interrupted")}
-        </div>
-      ) : null}
-      {short ? (
-        <div className="notice" style={{ marginTop: 12 }}>
-          {t("decisions.sample.belowNMin")}
-        </div>
-      ) : null}
+    <div className={`notice ${notice.variant}`}>
+      {t(notice.key, {
+        n: String(sample.n_episodes),
+        min: String(sample.n_min_required),
+      })}
     </div>
   );
 }
 
-/** Six gates, every candidate, in contract order — first on the page.
- *
- * `n_distinct` sits beside the run count because the pair is what a
- * collision bound's denominator actually is: a hundred replays of one
- * episode is one independent sample, and printing only the run count is
- * how this project once published a 3.0% upper bound off a single
- * episode driven a hundred times.
- */
-function GateTable({ run }: { run: DecisionRun }) {
-  const { t } = useTranslation();
-  const candidates = run.report?.candidates ?? [];
-  if (candidates.length === 0) return null;
-
-  return (
-    <div className="panel decision-summary decision-summary--card">
-      <div className="panel-head">
-        <h3>{t("decisions.gates.title")}</h3>
-      </div>
-      <p className="muted">{t("decisions.gates.note")}</p>
-      <ObservationNotice candidates={candidates} />
-      <div className="table-scroll wide">
-        <table>
-          <thead>
-            <tr>
-              <th>{t("decisions.gates.candidate")}</th>
-              <th>{t("decisions.gates.observation")}</th>
-              <th>{t("decisions.gates.runs")}</th>
-              <th>{t("decisions.gates.successRate")}</th>
-              <th>{t("decisions.gates.p99")}</th>
-              <th title={t("decisions.gates.replanNote")}>{t("decisions.gates.replans")}</th>
-              {GATES.map((gate) => (
-                <th key={gate}>{gate}</th>
-              ))}
-              <th>{t("decisions.gates.verdict")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {candidates.map((candidate) => (
-              <CandidateRow key={candidate.candidate_id} candidate={candidate} />
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
 
 /** Say so when a comparison put unlike inputs side by side.
  *
@@ -910,6 +1342,7 @@ function GateTable({ run }: { run: DecisionRun }) {
  * component overruling a comparison the platform agreed to perform, and
  * the reader is the one who knows whether the difference was deliberate.
  */
+
 /** Hand the whole run to somebody who will not open this page.
  *
  * **Offered for every run, not only ranked ones.** Most produce no card
@@ -921,26 +1354,123 @@ function GateTable({ run }: { run: DecisionRun }) {
  * describes what was measured; reading it is the act approval follows
  * (HĐ-14), so gating it would invert the order.
  */
-function ExportReport({ runId }: { runId: string }) {
-  const { t } = useTranslation();
-  const [busy, setBusy] = useState(false);
+/** What the share dialog opens with, before the sender edits it.
+ *
+ * **Prefilled, not fixed.** The commonest email about a run says the
+ * same four things, and typing them out is work nobody should repeat;
+ * but the sender knows their reader and the dialog does not, so every
+ * field stays editable.
+ *
+ * The unranked wording is a separate sentence rather than the ranked one
+ * with blanks: "recommended: not measured" reads as a broken template,
+ * and "nobody was ranked, here is why" is the actual result.
+ */
+function sharePrefill(run: DecisionRun, t: Translator["t"]): { subject: string; message: string } {
+  const deployment = run.task_profile_id;
+  const recommended = recommendedCandidateLabel(run);
+  const utility = run.card?.decision_utility;
+  if (!run.card || !recommended) {
+    return {
+      subject: t("share.subjectPrefillUnranked", { deployment }),
+      message: t("share.messagePrefillUnranked", {
+        runId: run.id,
+        deployment,
+        when: run.created_at,
+      }),
+    };
+  }
+  return {
+    subject: t("share.subjectPrefill", { deployment, recommended }),
+    message: t("share.messagePrefill", {
+      runId: run.id,
+      deployment,
+      when: run.created_at,
+      recommended,
+      utility: typeof utility === "number" ? utility.toFixed(4) : t("common.notMeasured"),
+    }),
+  };
+}
+
+function ExportReport({ run }: { run: DecisionRun }) {
+  const runId = run.id;
+  /* `locale` as well as `t`: the document is written in the language the
+     reader chose in the app, not the one the browser sends in a header
+     — the two disagree often enough that guessing would hand somebody a
+     file in a language they had already switched away from. */
+  const { t, locale } = useTranslation();
+  const [sharing, setSharing] = useState(false);
+  const [busy, setBusy] = useState<"md" | "xlsx" | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
+  /** The last file that actually reached the disk.
+   *
+   * `downloadReport` has always returned the name the browser saved
+   * under — read off `Content-Disposition`, so it is what is really in
+   * the folder rather than what this page would have guessed — and this
+   * component was throwing it away. A download that leaves no trace on
+   * the page is one the reader has to go and look for to confirm.
+   */
+  const [saved, setSaved] = useState<{ format: "md" | "xlsx"; filename: string } | null>(null);
+
+  /** One handler, because the only difference is which document the API
+   *  builds — the fetch, the Blob and the failure path are identical,
+   *  and two copies of them would drift on the first fix. */
+  const save = (format: "md" | "xlsx") => {
+    setBusy(format);
+    setFailed(null);
+    // Both cleared together: a fresh attempt has neither succeeded nor
+    // failed yet, and leaving last time's filename beside a spinner
+    // says the new one is already done.
+    setSaved(null);
+    const download = format === "md" ? downloadDecisionReport : downloadDecisionWorkbook;
+    void download(runId, locale)
+      .then((filename) => setSaved({ format, filename }))
+      .catch((caught) => setFailed(caught instanceof Error ? caught.message : String(caught)))
+      .finally(() => setBusy(null));
+  };
+
+  /** No fourth button for "download again". The button that produced
+   *  the file still works, so a second one beside it would be two
+   *  controls for one action — the saved line names what came out and
+   *  says the button is how to get it again. */
+  const label = (format: "md" | "xlsx", idle: string) =>
+    busy === format
+      ? t("decisions.export.busy")
+      : saved?.format === format
+        ? t("decisions.export.again")
+        : idle;
+
   return (
-    <div>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => {
-          setBusy(true);
-          setFailed(null);
-          void downloadDecisionReport(runId)
-            .catch((caught) => setFailed(caught instanceof Error ? caught.message : String(caught)))
-            .finally(() => setBusy(false));
-        }}
-      >
-        {busy ? t("decisions.export.busy") : t("decisions.export.markdown")}
+    <div className="decision-export">
+      <button type="button" disabled={busy !== null} onClick={() => save("md")}>
+        {label("md", t("decisions.export.markdown"))}
       </button>
+      {/* Excel beside Markdown rather than replacing it: one goes in a
+          ticket, the other into a spreadsheet, and they are read by
+          different people. */}
+      <button type="button" disabled={busy !== null} onClick={() => save("xlsx")}>
+        {label("xlsx", t("decisions.export.excel"))}
+      </button>
+      {/* Beside the export buttons rather than behind a menu: sending
+          the run on is the same kind of act as saving it, and at the
+          same moment — the reader has just decided the run is worth
+          passing to somebody. */}
+      <button type="button" onClick={() => setSharing(true)}>
+        {t("share.button")}
+      </button>
+      {sharing ? (
+        <ShareReportDialog
+          runId={runId}
+          subject={sharePrefill(run, t).subject}
+          message={sharePrefill(run, t).message}
+          onClose={() => setSharing(false)}
+        />
+      ) : null}
       {failed ? <span className="error-text">{failed}</span> : null}
+      {saved ? (
+        <span className="decision-export__saved">
+          {t("decisions.export.saved", { filename: saved.filename })}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -950,7 +1480,7 @@ function ObservationNotice({ candidates }: { candidates: RunCandidate[] }) {
   const classes = observationClasses(candidates);
   if (classes.length < 2) return null;
   return (
-    <div className="notice warn">
+    <div className="notice notice--warn">
       {t("decisions.gates.mixedObservation", {
         classes: classes.map((name) => name ?? t("decisions.gates.observationUnknown")).join(", "),
       })}
@@ -958,82 +1488,6 @@ function ObservationNotice({ candidates }: { candidates: RunCandidate[] }) {
   );
 }
 
-function CandidateRow({ candidate }: { candidate: RunCandidate }) {
-  const { t } = useTranslation();
-  return (
-    <tr>
-      <td>
-        <strong>{candidate.stack_label}</strong>
-        <br />
-        <span className="muted">{candidate.local_controller_config}</span>
-        <br />
-        <code className="muted">{candidate.candidate_id}</code>
-      </td>
-      {/* What this candidate was shown. Named rather than blank when
-          undeclared: a stack whose inputs nobody wrote down cannot be
-          shown to match the others, and a blank cell reads as "same as
-          the rest". */}
-      <td className="muted">
-        {candidate.local_observation_class ?? (
-          <span className="badge warn" title={t("decisions.gates.observationUnknownNote")}>
-            {t("decisions.gates.observationUnknown")}
-          </span>
-        )}
-      </td>
-      {/* Evidence, not a score. "Recovered on the first try" and
-          "replanned forty times and timed out" are different results and
-          a bare `timeout` says neither. Undeclared renders as an em dash
-          rather than 0: a run recorded before replanning was priced did
-          not measure this, and 0 would assert it did. */}
-      <td className="muted">{candidate.replan_count ?? "—"}</td>
-      <td title={t("decisions.gates.distinctNote")}>
-        {candidate.n_distinct_episodes}
-        {/* A retired candidate genuinely covered fewer episodes than the
-            others, so every number in this row rests on a smaller
-            sample. Said in the row rather than in a footnote, because
-            the row is where it is read. */}
-        {candidate.stopped_early ? (
-          <>
-            <br />
-            <span
-              className="badge warn"
-              title={`${candidate.stopped_early.gate}: ${candidate.stopped_early.rule}`}
-            >
-              {t("decisions.gates.stoppedEarly", {
-                run: String(candidate.stopped_early.episodes_run),
-                planned: String(candidate.stopped_early.episodes_planned),
-                gate: candidate.stopped_early.gate,
-              })}
-            </span>
-          </>
-        ) : null}
-      </td>
-      <td>{Math.round(candidate.success_rate * 100)}%</td>
-      <td>{candidate.pooled_p99_latency_ms.toFixed(2)} ms</td>
-      {GATES.map((gate) => (
-        <td key={gate}>
-          <GateCell verdict={candidate.gates?.[gate]} />
-        </td>
-      ))}
-      <td>
-        {candidate.cleared_gates ? (
-          <span className="badge ok">{t("decisions.gates.cleared")}</span>
-        ) : (
-          <span className="badge err" title={candidate.blocking_gates.join(", ")}>
-            {candidate.blocking_gates.join(", ")}
-          </span>
-        )}
-      </td>
-    </tr>
-  );
-}
-
-/** One gate's verdict, with its evidence in the tooltip.
- *
- * The evidence is not decoration: "G3: fail" without the numbers cannot
- * be argued with, and a verdict nobody can argue with is one people
- * learn to route around.
- */
 function GateCell({ verdict }: { verdict: GateVerdict | undefined }) {
   const result = gateResult(verdict);
   if (result === undefined) return <span className="muted">—</span>;
@@ -1051,39 +1505,14 @@ function GateCell({ verdict }: { verdict: GateVerdict | undefined }) {
   );
 }
 
-/** The recommendation when there is one, and what to do when there is not. */
-function Outcome({ run }: { run: DecisionRun }) {
-  const { t } = useTranslation();
-  if (run.card) return <CardPanel run={run} />;
-
-  const reason = noCardReason(run);
-  return (
-    <div className="panel">
-      <div className="panel-head">
-        <h3>{t("decisions.noCard.title")}</h3>
-      </div>
-      {/* The heading says "no recommendation", not "failed". Three
-          situations end up here and each asks for a different next
-          action; collapsing them into one message is what makes a gate
-          table read like a broken run. */}
-      <p>
-        <strong>{t(`decisions.reason.${reason}`)}</strong>
-      </p>
-      <p className="muted">{t(`decisions.noCard.whatNext.${reason}`)}</p>
-      {run.report?.gate_only_deployment ? (
-        <div className="notice" style={{ marginTop: 12 }}>
-          {run.report.gate_only_deployment}
-        </div>
-      ) : null}
-      {run.report?.why_no_card ? (
-        <details style={{ marginTop: 12 }}>
-          <summary className="muted">{t("decisions.noCard.verbatim")}</summary>
-          <p>{run.report.why_no_card}</p>
-        </details>
-      ) : null}
-    </div>
-  );
-}
+/* **`Outcome` is gone, and it was two things.** It rendered the card's
+   sensitivity table when a card existed and the no-card message when one
+   did not — a single component switching on the one condition the whole
+   page turns on. The message is now one branch of `DecisionSummary` at
+   the top, where a reader meets it before the evidence rather than after
+   it, and `CardPanel` is rendered directly below the evidence. Neither
+   half needed the other; keeping them in one function is what put the
+   conclusion six screens down. */
 
 function CardPanel({ run }: { run: DecisionRun }) {
   const { t } = useTranslation();
@@ -1094,11 +1523,14 @@ function CardPanel({ run }: { run: DecisionRun }) {
   return (
     <div className="panel">
       <div className="panel-head">
-        <h3>{t("decisions.card.title")}</h3>
+        <h3>{t("decisions.card.title")} <Hint text={t("decisions.card.scopeNote", { scope: card.experiment_scope })} label={t("decisions.card.title")} /></h3>
         <span className="badge ok">{card.status}</span>
       </div>
       <div className="stat-grid">
-        <Figure label={t("decisions.card.recommended")} value={card.recommended.stack} />
+        <Figure
+          label={t("decisions.card.recommended")}
+          value={recommendedCandidateLabel(run) ?? card.recommended.candidate_id}
+        />
         <Figure label={t("decisions.card.utility")} value={card.decision_utility.toFixed(6)} />
         <Figure
           label={t("decisions.card.deltaU")}
@@ -1142,458 +1574,16 @@ function CardPanel({ run }: { run: DecisionRun }) {
         />
       </div>
 
-      <p className="muted" style={{ marginTop: 12 }}>
-        {t("decisions.card.scopeNote", { scope: card.experiment_scope })}
-      </p>
+
     </div>
   );
 }
 
-/** The world this was measured in.
- *
- * `sensor_noise` is here rather than buried in provenance because
- * `episode_context_id` does not hash the amplitudes (HĐ-3.1): two runs
- * at the same seeds under different sigma are two different experiments
- * whose context ids are identical. If this panel is wrong, nothing
- * downstream can tell.
- */
-function Conditions({ run }: { run: DecisionRun }) {
-  const { t } = useTranslation();
-  const identity = run.report?.identity;
-  const environment = run.report?.measurement_environment;
-  if (!identity) return null;
-  const host = environment?.benchmark_host as Record<string, unknown> | undefined;
-
-  return (
-    <div className="panel">
-      <div className="panel-head">
-        <h3>{t("decisions.conditions.title")}</h3>
-      </div>
-      <div className="stat-grid">
-        <Figure
-          label={t("decisions.conditions.lidarSigma")}
-          value={`${identity.sensor_noise?.lidar_range_sigma_m ?? 0} m`}
-        />
-        <Figure
-          label={t("decisions.conditions.wheelSlip")}
-          value={`${((identity.sensor_noise?.wheel_slip_fraction ?? 0) * 100).toFixed(1)}%`}
-        />
-        {host?.cpu ? <Figure label={t("decisions.conditions.cpu")} value={String(host.cpu)} /> : null}
-        {host?.cores_allocated !== undefined ? (
-          <Figure
-            label={t("decisions.conditions.cores")}
-            value={`${String(host.cores_allocated)}/${String(host.logical_cores ?? "?")}`}
-          />
-        ) : null}
-      </div>
-      {/* G4 reads wall-clock latency, so an unpinned run measured a
-          machine that was also doing something else. The warning travels
-          with the result rather than living in a log nobody opens. */}
-      {environment?.warning ? (
-        <div className="notice" style={{ marginTop: 12 }}>
-          {environment.warning}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/** What somebody else needs to rebuild this (HĐ-13). */
-function Provenance({ run }: { run: DecisionRun }) {
-  const { t } = useTranslation();
-  const identity = run.report?.identity;
-  return (
-    <div className="panel">
-      <div className="panel-head">
-        <h3>{t("decisions.provenance.title")}</h3>
-      </div>
-      <dl className="stat-grid">
-        <dt>{t("decisions.provenance.runId")}</dt>
-        <dd>
-          <code>{run.id}</code>
-        </dd>
-        <dt>{t("decisions.provenance.contracts")}</dt>
-        <dd>{run.contracts_version}</dd>
-        <dt>{t("decisions.provenance.anchors")}</dt>
-        <dd>{identity?.anchor_config_version ?? "—"}</dd>
-        <dt>{t("decisions.provenance.gitSha")}</dt>
-        <dd>
-          <code>{identity?.git_sha?.slice(0, 12) ?? "—"}</code>
-        </dd>
-        <dt>{t("decisions.provenance.runUri")}</dt>
-        <dd>
-          <code>{run.report?.run_uri ?? "—"}</code>
-        </dd>
-        {/* A URI alone cannot say the files behind it are still the ones
-            this result came from — that is what the checksum is for
-            (D15), so the two are shown together or not at all. */}
-        <dt>{t("decisions.provenance.checksum")}</dt>
-        <dd>
-          <code>{run.report?.run_checksum?.slice(0, 16) ?? "—"}</code>
-        </dd>
-      </dl>
-      {run.report?.checks?.length ? (
-        <>
-          <h4>{t("decisions.provenance.checks")}</h4>
-          <ul>
-            {run.report.checks.map((line) => (
-              <li key={line} className="muted">
-                {line}
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-/** Append-only, oldest first (HĐ-14). Both ends of each change, because
- *  "approved" alone does not say what it replaced. */
-function AuditTrail({ events }: { events: ReviewEvent[] }) {
-  const { t } = useTranslation();
-  return (
-    <div className="panel">
-      <div className="panel-head">
-        <h3>{t("decisions.audit.title")}</h3>
-      </div>
-      {events.length === 0 ? (
-        <p className="muted">{t("decisions.audit.empty")}</p>
-      ) : (
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>{t("decisions.audit.action")}</th>
-                <th>{t("decisions.audit.who")}</th>
-                <th>{t("decisions.audit.change")}</th>
-                <th>{t("decisions.audit.comment")}</th>
-                <th>{t("decisions.audit.when")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {events.map((event) => (
-                <tr key={event.sequence}>
-                  <td>{event.sequence}</td>
-                  <td>{t(`decisions.audit.${event.action}`)}</td>
-                  <td>{event.username}</td>
-                  <td className="muted">
-                    {event.previous_state} → {event.new_state}
-                  </td>
-                  <td>{event.comment || "—"}</td>
-                  <td className="muted">{event.created_at.slice(0, 16).replace("T", " ")}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** One labelled number.
- *
- * `unknown` rather than a colour for "not measured": the word changes,
- * not just the shade, so the distinction survives a greyscale print and
- * a reader who does not know the palette.
- */
 function Figure({ label, value, unknown }: { label: string; value: string; unknown?: boolean }) {
   return (
     <div className="stat-card">
       <span className="stat-card-head">{label}</span>
       <span className={`stat-card-value${unknown ? " unknown" : ""}`}>{value}</span>
     </div>
-  );
-}
-
-/** Objections to this run, before anyone signs it.
- *
- * **Above the two human acts, and that placement is the argument.** The
- * next thing a reviewer does after reading the outcome is approve or
- * reject it; anything meant to inform that decision has to sit between
- * the two, not below them.
- *
- * Nothing loads until asked. The rules are cheap, but the model costs a
- * call and several seconds, and a page that quietly spends both on every
- * visit teaches people to stop reading it.
- *
- * The two buttons are deliberately separate rather than a toggle. They
- * answer different questions — "what does the checklist say" and "what
- * does a model make of this" — and the second is worth reaching for
- * knowingly, because its answer does not reproduce.
- */
-/** What to do about each gate this run did not clear.
- *
- * Loaded on demand rather than on mount: the gate table above answers
- * "what happened", and this panel answers "so what do I do" — a question
- * a reader asks after reading, not before. The model button layers an
- * LLM over the rules; the rules' advice is the floor it may rank and
- * extend but never remove, and additions citing a field that does not
- * resolve are dropped and counted where the reader can see the count.
- */
-/** Why one candidate won and the other lost.
- *
- * Two registers, both checkable: the stored numbers (which metric
- * separated the field, whether the margin clears the noise) and the
- * algorithms' natures (a sampling planner's latency tail is its textbook
- * price; the same tail on a deterministic one is a surprise worth
- * chasing). Two refusals are built in: a gate elimination is never
- * called a defeat, and an interval containing zero never names a
- * winner. The model button adds narrative on top; the rules stay.
- */
-function OutcomePanel({ runId }: { runId: string }) {
-  const { t } = useTranslation();
-  const [result, setResult] = useState<AdviceList | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = async (useModel: boolean) => {
-    setBusy(true);
-    setError(null);
-    try {
-      setResult(await getOutcomeAdvice(runId, useModel));
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="panel">
-      <div className="panel-head">
-        <h3>{t("outcome.title")}</h3>
-        <div className="toolbar">
-          <button type="button" disabled={busy} onClick={() => void load(false)}>
-            {busy ? t("advice.loading") : t("advice.load")}
-          </button>
-          <button type="button" disabled={busy} onClick={() => void load(true)}>
-            {t("advice.askModel")}
-          </button>
-        </div>
-      </div>
-      {error ? <div className="error-box">{error}</div> : null}
-      {result ? <AdviceListView result={result} /> : (
-        <p className="muted">{t("outcome.hint")}</p>
-      )}
-    </div>
-  );
-}
-
-function AdvicePanel({ runId }: { runId: string }) {
-  const { t } = useTranslation();
-  const [result, setResult] = useState<AdviceList | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = async (useModel: boolean) => {
-    setBusy(true);
-    setError(null);
-    try {
-      setResult(await getDecisionAdvice(runId, useModel));
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="panel">
-      <div className="panel-head">
-        <h3>{t("advice.title")}</h3>
-        <div className="toolbar">
-          <button type="button" disabled={busy} onClick={() => void load(false)}>
-            {busy ? t("advice.loading") : t("advice.load")}
-          </button>
-          <button type="button" disabled={busy} onClick={() => void load(true)}>
-            {t("advice.askModel")}
-          </button>
-        </div>
-      </div>
-      {error ? <div className="error-box">{error}</div> : null}
-      {result ? <AdviceListView result={result} /> : (
-        <p className="muted">{t("advice.hint")}</p>
-      )}
-    </div>
-  );
-}
-
-/** What a report about this run may claim, and what it may not.
- *
- * `report.md` renders the tables; these are the sentences the evidence
- * does not license — a NEAR_EQUIVALENT reported as a win, an interval
- * containing zero quoted as a difference, a host screening called a
- * real-time guarantee. Shown before the reader writes, because the
- * wrong sentence is cheaper to prevent than to retract.
- */
-function ReportAdvicePanel({ runId }: { runId: string }) {
-  const { t } = useTranslation();
-  const [result, setResult] = useState<AdviceList | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      setResult(await getReportAdvice(runId));
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="panel">
-      <div className="panel-head">
-        <h3>{t("reportAdvice.title")}</h3>
-        <div className="toolbar">
-          <button type="button" disabled={busy} onClick={() => void load()}>
-            {busy ? t("advice.loading") : t("advice.load")}
-          </button>
-        </div>
-      </div>
-      {error ? <div className="error-box">{error}</div> : null}
-      {result ? <AdviceListView result={result} /> : (
-        <p className="muted">{t("reportAdvice.hint")}</p>
-      )}
-    </div>
-  );
-}
-
-function CritiquePanel({ runId }: { runId: string }) {
-  const { t } = useTranslation();
-  const [critique, setCritique] = useState<Critique | null>(null);
-  const [busy, setBusy] = useState<"" | "rules" | "model">("");
-  const [error, setError] = useState<string | null>(null);
-
-  async function load(useModel: boolean) {
-    setBusy(useModel ? "model" : "rules");
-    setError(null);
-    try {
-      setCritique(await getCritique(runId, useModel));
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setBusy("");
-    }
-  }
-
-  return (
-    <div className="panel">
-      <h3>{t("critique.title")}</h3>
-      <p className="muted">{t("critique.subtitle")}</p>
-
-      <div className="toolbar">
-        <button disabled={busy !== ""} onClick={() => void load(false)}>
-          {busy === "rules" ? t("critique.running") : t("critique.runRules")}
-        </button>
-        <button className="primary" disabled={busy !== ""} onClick={() => void load(true)}>
-          {busy === "model" ? t("critique.asking") : t("critique.runModel")}
-        </button>
-      </div>
-
-      {error ? <div className="error-box">{error}</div> : null}
-
-      {critique ? <CritiqueBody critique={critique} /> : null}
-    </div>
-  );
-}
-
-function CritiqueBody({ critique }: { critique: Critique }) {
-  const { t } = useTranslation();
-
-  return (
-    <>
-      {/* No vendor or model name: what a reader has to weigh is whether
-          each finding points at a field that exists, which is asserted
-          below and does not depend on who answered. The one exception is
-          a canned critique, which must not pass for a model's. */}
-      {critique.provider && critique.deterministic ? (
-        <p>
-          <span className="badge warn">{t("critique.mock")}</span>
-        </p>
-      ) : null}
-
-      {/* Published, not buried. A reader weighing the prose needs to know
-          how often this model pointed at a field that was not there. */}
-      {critique.fabricated > 0 ? (
-        <div className="notice">
-          {t("critique.fabricated", { count: String(critique.fabricated) })}
-        </div>
-      ) : null}
-      {critique.refused ? (
-        <div className="notice">
-          {t("critique.refused")}: {critique.refused}
-        </div>
-      ) : null}
-
-      {critique.summary ? <p>{critique.summary}</p> : null}
-
-      {critique.findings.length === 0 ? (
-        /* Zero findings is a result, and it only means something beside
-           the number of rules that produced it. */
-        <p className="muted">
-          {t("critique.clean", { rules: String(critique.rules_applied) })}
-        </p>
-      ) : (
-        <>
-          <p className="muted" style={{ fontSize: 12 }}>
-            {t("critique.counts", {
-              blocking: String(critique.blocking),
-              material: String(critique.material),
-              disclosure: String(critique.disclosure),
-              omissions: String(critique.omissions),
-              rules: String(critique.rules_applied),
-            })}
-          </p>
-          <ul className="findings">
-            {critique.findings.map((finding, index) => (
-              <FindingRow key={`${finding.code}-${index}`} finding={finding} />
-            ))}
-          </ul>
-        </>
-      )}
-    </>
-  );
-}
-
-const SEVERITY_BADGE: Record<CritiqueFinding["severity"], string> = {
-  blocking: "badge err",
-  material: "badge warn",
-  disclosure: "badge",
-};
-
-function FindingRow({ finding }: { finding: CritiqueFinding }) {
-  const { t } = useTranslation();
-  return (
-    <li>
-      <div className="toolbar" style={{ gap: 8, alignItems: "baseline" }}>
-        <span className={SEVERITY_BADGE[finding.severity]}>
-          {t(`critique.severity.${finding.severity}`)}
-        </span>
-        {/* Which half of the system said this. A reader gives different
-            weight to a rule that reproduces and a model that does not. */}
-        <span className={finding.source === "model" ? "badge warn" : "badge muted-badge"}>
-          {t(`critique.source.${finding.source}`)}
-        </span>
-        <code>{finding.code}</code>
-        {finding.kind === "omission" ? (
-          <span className="badge muted-badge">{t("critique.kind.omission")}</span>
-        ) : null}
-      </div>
-      <p style={{ marginBottom: 4 }}>{finding.ground}</p>
-      <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>
-        {t("critique.claim")}: {finding.claim} · {t("critique.evidence")}:{" "}
-        <code>{finding.field_path}</code>
-      </p>
-      <p className="muted" style={{ fontSize: 12 }}>
-        {t("critique.next")}: {finding.suggested_check}
-      </p>
-    </li>
   );
 }

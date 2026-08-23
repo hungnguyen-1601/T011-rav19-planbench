@@ -313,6 +313,10 @@ class MapRow(Base):
     checksum: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
     payload: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
+    #: Pinned by hand against the orphan sweep. "Unreachable" and
+    #: "unwanted" are different claims, and a sweep that cannot tell them
+    #: apart is one nobody runs twice.
+    kept: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     __table_args__ = (Index("ix_maps_checksum", "checksum"),)
 

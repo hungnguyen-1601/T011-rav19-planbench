@@ -32,6 +32,29 @@ interface Anchor {
   y: number;
 }
 
+/** What a key pressed on the mark should do to the bubble.
+ *
+ *  A plain function rather than a branch inside the handler because
+ *  there is no DOM in the test environment (see `vitest.config.ts`), and
+ *  a handler body can only be read, not run. `role="button"` is a promise
+ *  that Enter and Space do what a click does; before this the mark
+ *  announced itself as a button and then answered neither key.
+ */
+export type HintKey = "close" | "toggle" | "ignore";
+
+export function hintKeyAction(key: string): HintKey {
+  if (key === "Escape") return "close";
+  if (key === "Enter" || key === " ") return "toggle";
+  return "ignore";
+}
+
+/** Where a bubble opens when no pointer chose the spot — off the mark's
+ *  own bottom-right corner. Keyboard and touch both land here. */
+const cornerOf = (mark: Element): Anchor => {
+  const box = mark.getBoundingClientRect();
+  return { x: box.right, y: box.bottom };
+};
+
 export interface HintProps {
   text: string;
   /** Screen-reader name for the mark itself, before the text it
@@ -70,13 +93,30 @@ export function Hint({ text, label }: HintProps) {
            opens at the mark itself. Without this the text would be
            reachable only by mouse, which is where it was before this
            component and the reason it needed one. */
-        onFocus={(event) => {
-          const box = event.currentTarget.getBoundingClientRect();
-          setAt({ x: box.right, y: box.bottom });
-        }}
+        onFocus={(event) => setAt(cornerOf(event.currentTarget))}
         onBlur={() => setAt(null)}
         onKeyDown={(event) => {
-          if (event.key === "Escape") setAt(null);
+          const action = hintKeyAction(event.key);
+          if (action === "ignore") return;
+          if (action === "close") {
+            setAt(null);
+            return;
+          }
+          /* Space scrolls the page unless this is here. */
+          event.preventDefault();
+          setAt(at ? null : cornerOf(event.currentTarget));
+        }}
+        /* Touch has no hover, so a tap has to be able to open the bubble
+           on its own. When it is already open the pointer put it there
+           and `onMouseMove` is still following — closing on this click
+           would fight that.
+           `preventDefault` is not about this element: the mark sits
+           inside a `<label>` that owns a checkbox or a number box at
+           several call sites, and a click allowed to reach the label
+           activates the control the label is for. */
+        onClick={(event) => {
+          event.preventDefault();
+          if (at === null) setAt(cornerOf(event.currentTarget));
         }}
       >
         ?

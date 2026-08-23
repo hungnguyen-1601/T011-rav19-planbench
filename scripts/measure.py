@@ -51,10 +51,15 @@ for _package in (
     "packages/schemas",
     "packages/benchmark",
     "packages/decision",
+    "packages/explanation",
+    "packages/plugin_sdk",
     "packages/metrics",
     "packages/planning",
     "services/simulator",
     "ml",
+    "services/tracking",
+    "services/agent_service",
+    "apps/api",
 ):
     sys.path.insert(0, str(REPO_ROOT / _package))
 
@@ -69,6 +74,7 @@ from planbench_benchmark.contexts import build_evaluation_contexts  # noqa: E402
 from planbench_benchmark.hostinfo import (  # noqa: E402
     apply_pinning,
     detect_benchmark_host,
+    measurement_environment,
     unpinned_warning,
 )
 from planbench_benchmark.pipeline import (  # noqa: E402
@@ -224,10 +230,7 @@ def build_report(
         # criterion changes object from the utility to the gate table,
         # that is precisely the line a reader needs to see.
         "checks": list(checks),
-        "measurement_environment": {
-            "benchmark_host": host.model_dump(),
-            "warning": unpinned_warning(host),
-        },
+        "measurement_environment": measurement_environment(host),
     }
 
 

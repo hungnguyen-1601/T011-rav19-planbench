@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
+import { Hint } from "@/components/Hint";
 import { MapView } from "@/components/MapView";
 import { api } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
@@ -109,11 +110,10 @@ export function DecisionDeploymentPreview({ deployment }: { deployment?: TaskPro
 
   return <section className="decision-deployment-preview" aria-labelledby="decision-deployment-title">
     <header className="decision-deployment-header">
-      <div><h4 id="decision-deployment-title">{t("decisions.preview.title")}</h4><code title={deployment.id}>{deployment.id}</code></div>
+      <div><h4 id="decision-deployment-title">{t("decisions.preview.title")} <Hint text={t("decisions.preview.sharedNotice")} label={t("decisions.preview.title")} /></h4><code title={deployment.id}>{deployment.id}</code></div>
       <span className="decision-readonly-badge" title={t("decisions.preview.readonlyTip")}>{t("decisions.preview.readonly")}</span>
       <Link href="/deployments">{t("decisions.preview.openDeployment")}</Link>
     </header>
-    <p className="decision-deployment-notice">{t("decisions.preview.sharedNotice")}</p>
     <div className="decision-deployment-content">
       <div className="decision-deployment-map-column">
         <div className="decision-deployment-map" role="img" aria-label={t("decisions.preview.mapLabel")}>

@@ -23,13 +23,27 @@ const VIEWER = readFileSync(join(SRC, "components", "TraceViewer.tsx"), "utf8");
 const DETAIL = readFileSync(join(SRC, "app", "decisions", "[id]", "page.tsx"), "utf8");
 
 describe("the viewer sits with the evidence it explains", () => {
-  it("is placed under the gate table, above the recommendation", () => {
-    /* A row saying "G3: fail" is a claim about episodes; the next thing
-       a reader should be able to do is open one. Below the card instead,
-       a trajectory becomes an illustration of a conclusion rather than
-       the thing the conclusion came from. */
-    expect(DETAIL.indexOf("<TracePanel")).toBeGreaterThan(DETAIL.indexOf("<GateTable"));
-    expect(DETAIL.indexOf("<TracePanel")).toBeLessThan(DETAIL.indexOf("<Outcome"));
+  it("sits under the comparison it replays, after the conclusion", () => {
+    /* **Two positions have been wrong here, in opposite directions.**
+       It was second on the page, ahead of everything that said what the
+       run decided — a reader arriving for the result met a
+       thirty-episode pager first. It then went below the evidence, which
+       fixed that and broke something else: watching the two candidates
+       drive is how this run gets read, and four screens down it read as
+       having gone missing.
+
+       What survives from both: the conclusion and the advice come
+       first, and the replay sits directly under the table it replays. */
+    expect(DETAIL.indexOf("<TracePanel")).toBeGreaterThan(DETAIL.indexOf("<DecisionSummary"));
+    expect(DETAIL.indexOf("<TracePanel")).toBeGreaterThan(DETAIL.indexOf("<CandidateComparison"));
+    expect(DETAIL.indexOf("<TracePanel")).toBeLessThan(DETAIL.indexOf("<EvidencePanel"));
+  });
+
+  it("is open, and can still be folded away", () => {
+    /* A panel that has to be opened every visit reads as one that went
+       missing. `<details>` rather than a plain div so the reader who has
+       finished with it keeps the choice. */
+    expect(DETAIL).toContain('className="panel decision-sample-panel episode-comparison" open');
   });
 
   it("loads both candidate traces for only the selected episode", () => {
@@ -131,5 +145,114 @@ describe("translation", () => {
       expect(en, `en is missing ${key}`).toHaveProperty(key);
       expect(vi, `vi is missing ${key}`).toHaveProperty(key);
     }
+  });
+});
+
+describe("the raised view draws the same room as the flat one", () => {
+  it("hands the moving obstacles to the 2.5D scene", () => {
+    /* **The raised view was drawing an empty room.** The flat canvas has
+       drawn traffic since it arrived — it is the only thing on screen
+       that explains a route bending around apparently empty floor — and
+       the `Scene25D` call never passed it, so switching to 2.5D deleted
+       exactly that. The scene builder wanted them all along: it turns
+       each into a cylinder plus the keep-out and caution rings it
+       derives from the same functions the flat view quotes. */
+    expect(VIEWER).toContain("obstacles={obstaclesNow}");
+    expect(VIEWER).toContain("trace.dynamic_obstacles ?? []");
+  });
+
+  it("reads each track at the frame on screen, clamped to its own end", () => {
+    /* A track is shorter than the trace once it leaves the scenario.
+       Reading past its end places an obstacle at `undefined`, which
+       projects to the corner of the room rather than to nowhere — the
+       same clamp the flat canvas already applies. */
+    const snapshot = VIEWER.slice(VIEWER.indexOf("const obstaclesNow"));
+    expect(snapshot).toContain("Math.min(visibleStep, track.x.length - 1)");
+    expect(snapshot).toContain("if (step < 0) return []");
+  });
+
+  it("takes the radius the track declares rather than a constant", () => {
+    /* Carts and pallets are not one size, and a fixed radius would draw
+       a keep-out ring the planner never had. */
+    expect(VIEWER).toContain("radius: track.radius_m");
+  });
+});
+
+describe("the two 2.5D panels are one camera", () => {
+  const SCENE = readFileSync(join(SRC, "components", "Scene25D.tsx"), "utf8");
+  const CSS = readFileSync(join(SRC, "app", "globals.css"), "utf8");
+
+  it("holds the angle where the pair is held, not inside each scene", () => {
+    /* Each scene kept its own, so turning one panel to look behind a
+       wall left the reader comparing two rooms until they matched the
+       other by hand across three sliders — which nobody gets exactly
+       right. It belongs where the scrubber lives: it is a property of
+       the comparison, not of either candidate. */
+    expect(DETAIL).toContain("const [view25d, setView25d] = useState(");
+    expect(DETAIL).toContain("onView25dChange={setView25d}");
+    expect(VIEWER).toContain("onViewChange={onView25dChange}");
+  });
+
+  it("lets the scene keep its own angle when nobody is listening", () => {
+    /* The standalone viewer has no pair to sync with, and a control
+       that reports upward to nothing would freeze. */
+    expect(SCENE).toContain("const yaw = onViewChange ? yawDeg : localYaw;");
+  });
+
+  it("turns the room by dragging it, not by a slider beside it", () => {
+    /* **Two sliders have already been wrong here.** The first drove
+       `azimuth` and rotated nothing; the second drove the yaw correctly
+       and was still the wrong control — turning a thing to look behind
+       it is a grab, and reaching for a slider under the picture to do
+       it is the part that felt broken. Both axes are on the canvas now,
+       so neither slider survives. */
+    expect(SCENE).toContain("onPointerDown={onPointerDown}");
+    expect(SCENE).toContain("setPointerCapture(event.pointerId)");
+    expect(SCENE).not.toContain("setAzimuth(");
+    // One slider left in the strip, and it is not a camera angle: wall
+    // height is a property of the drawing, and there is no gesture for
+    // it. Counted rather than name-matched, so a comment mentioning the
+    // controls that went cannot pass or fail this.
+    const strip = SCENE.slice(SCENE.indexOf("scene25d-controls"));
+    expect([...strip.matchAll(/type="range"/g)]).toHaveLength(1);
+    expect(strip).toContain("Wall height");
+  });
+
+  it("stays reachable without a mouse", () => {
+    /* Dropping the sliders without this would have traded one complaint
+       for a worse one — the room would have become unturnable by
+       keyboard entirely. */
+    expect(SCENE).toContain("tabIndex={0}");
+    expect(SCENE).toContain("onKeyDown={onKeyDown}");
+    expect(SCENE).toContain('case "ArrowLeft"');
+    expect(SCENE).toContain('case "ArrowUp"');
+    expect(CSS).toContain(".scene25d-canvas:focus-visible");
+  });
+
+  it("measures a drag from where it was grabbed", () => {
+    /* Adding each move's delta to the current angle looks identical and
+       drifts: with the angle controlled from the parent, a move that
+       arrives before the re-render reads a stale value and keeps the
+       error. */
+    expect(SCENE).toContain("grab.current = { x: event.clientX, y: event.clientY, yaw, elevation }");
+    expect(SCENE).toContain("from.yaw + (event.clientX - from.x)");
+  });
+
+  it("wraps the yaw and clamps the tilt", () => {
+    /* A yaw is an angle, not a range — 359° and 1° are two degrees
+       apart. A tilt is a range: past straight down the room turns inside
+       out and the floor paints over the walls. */
+    expect(SCENE).toContain("((degrees % 360) + 360) % 360");
+    expect(SCENE).toContain("Math.max(1, Math.min(89, degrees))");
+  });
+
+  it("says the angle in words and says the picture can be dragged", () => {
+    /* A canvas gives no sign that it turns, and a reader who has spun
+       the room needs to be able to say where they are looking from. */
+    expect(SCENE).toContain("scene25d-readout");
+    expect(SCENE).toContain("scene25d.dragHint");
+    expect(CSS).toContain("cursor: grab;");
+    // The browser claims a one-finger drag for scrolling the page.
+    expect(CSS).toContain("touch-action: none;");
   });
 });

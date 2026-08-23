@@ -171,6 +171,21 @@ def detect_benchmark_host(
     )
 
 
+#: The pair of measurements the warning cites. Historical, from the
+#: module docstring above — a property of ``rrtstar+dwa`` on one machine
+#: on one day, **not** of the run being read. Named ``reference_`` all
+#: the way out to the client for that reason: a bare ``unpinned_ms``
+#: invites a reader to take it for this run's own latency.
+REFERENCE_UNPINNED_MS = 59.30
+REFERENCE_PINNED_MS = 16.10
+
+
+def _vi_number(value: float) -> str:
+    """Two decimals, Vietnamese comma — the sentence has always read
+    ``59,30``, and deriving it beats a second copy of the digits."""
+    return f"{value:.2f}".replace(".", ",")
+
+
 def unpinned_warning(host: BenchmarkHost) -> str | None:
     """One sentence when the run held the whole machine, else ``None``.
 
@@ -178,11 +193,64 @@ def unpinned_warning(host: BenchmarkHost) -> str | None:
     busy machine is not — which of the two happened is not something the
     process can know. What it can do is stop the reader assuming the
     measurement was protected when nothing protected it.
+
+    Still a string, and still Vietnamese: the export reads this key and
+    so does every client written before ``warning_code`` existed. What
+    changed is that it is no longer the *only* form — see
+    :func:`unpinned_warning_info`.
     """
     if host.is_pinned is not False:
         return None
     return (
         f"Đo trên toàn bộ {host.logical_cores} nhân, không ghim: G4 đọc độ trễ theo "
         "đồng hồ tường nên mọi tải khác trên máy đi thẳng vào con số. Cùng candidate "
-        "đo được 59,30 ms không ghim và 16,10 ms khi ghim 2 nhân"
+        f"đo được {_vi_number(REFERENCE_UNPINNED_MS)} ms không ghim và "
+        f"{_vi_number(REFERENCE_PINNED_MS)} ms khi ghim 2 nhân"
     )
+
+
+def unpinned_warning_info(host: BenchmarkHost) -> dict[str, object] | None:
+    """The same warning as a code and its numbers, else ``None``.
+
+    The sentence above is written in one language, and a client that must
+    show it in another has only two bad options: reword it — which the
+    detail page comments rightly refuse, because a client that rewords a
+    caveat can water it down — or print Vietnamese on an English page.
+
+    Both are avoidable, because the thing that must not be reinterpreted
+    is the **numbers**, not the language. So this returns what the
+    platform decided (``code``) and what it measured (``params``), and
+    the wording becomes the client's business while the classification
+    stays here.
+    """
+    if host.is_pinned is not False:
+        return None
+    return {
+        "code": "unpinned_host",
+        "params": {
+            "cores": host.logical_cores,
+            "reference_unpinned_ms": REFERENCE_UNPINNED_MS,
+            "reference_pinned_ms": REFERENCE_PINNED_MS,
+        },
+    }
+
+
+def measurement_environment(host: BenchmarkHost) -> dict[str, object]:
+    """The block every report carries about the machine it ran on.
+
+    One function because there are three places that build it — a ranked
+    report, a report interrupted before the first episode, and
+    ``scripts/measure.py`` — and a caveat that reaches two of them is a
+    caveat the third silently drops.
+
+    ``warning`` stays first and stays a string. Removing it would break
+    the export and every stored run; the two keys beside it are additions
+    a reader may ignore.
+    """
+    info = unpinned_warning_info(host)
+    return {
+        "benchmark_host": host.model_dump(),
+        "warning": unpinned_warning(host),
+        "warning_code": info["code"] if info else None,
+        "warning_params": info["params"] if info else None,
+    }

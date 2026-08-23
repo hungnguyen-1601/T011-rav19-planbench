@@ -16,9 +16,12 @@ import type {
   PacketWaterfall,
 } from "@/lib/decisions";
 import {
+  PLANNED_ROUTE_COLOURS,
   firedSightings,
   missingNotes,
   orderedFindings,
+  plannedRouteColour,
+  routeAt,
   sightingsState,
   verdictTone,
   waterfallState,
@@ -157,5 +160,98 @@ describe("bar scaling", () => {
 
   it("scales by the widest bar in either direction", () => {
     expect(widestContribution(waterfall([0.02, -0.31, 0.05]))).toBeCloseTo(0.31);
+  });
+});
+
+describe("which plan the robot was following", () => {
+  function route(attempt: number, from_index: number, points: [number, number][]) {
+    return {
+      attempt,
+      from_index,
+      points: points.map(([x, y]) => ({ x, y })),
+    };
+  }
+
+  const initial = route(1, 0, [
+    [0, 0],
+    [5, 0],
+  ]);
+  const afterReplan = route(2, 40, [
+    [2, 0],
+    [2, 3],
+    [5, 3],
+  ]);
+
+  it("shows the initial plan before anything replaced it", () => {
+    expect(routeAt([initial, afterReplan], 10)?.attempt).toBe(1);
+  });
+
+  it("replaces the old plan with the new one, rather than drawing both", () => {
+    // A fan of every attempt at once is a set of paths the robot never
+    // had, and nothing on screen would say which one it was following.
+    expect(routeAt([initial, afterReplan], 40)?.attempt).toBe(2);
+    expect(routeAt([initial, afterReplan], 200)?.attempt).toBe(2);
+  });
+
+  it("takes over on the step the replan was recorded on, not the one after", () => {
+    expect(routeAt([initial, afterReplan], 39)?.attempt).toBe(1);
+  });
+
+  it("shows nothing when a replan found no path", () => {
+    // The robot had no route at that step. Leaving the previous one up
+    // would draw a plan that had already been abandoned.
+    const refused = route(2, 40, []);
+    expect(routeAt([initial, refused], 50)).toBeNull();
+    expect(routeAt([initial, refused], 39)?.attempt).toBe(1);
+  });
+
+  it("shows nothing for a run that kept no plans", () => {
+    // Recorded before the planning-input sidecar existed: the lengths
+    // were stored and the polylines thrown away.
+    expect(routeAt([], 10)).toBeNull();
+  });
+
+  it("shows nothing before the first plan exists", () => {
+    expect(routeAt([route(1, 5, [[0, 0], [1, 1]])], 2)).toBeNull();
+  });
+});
+
+describe("telling one plan from the next", () => {
+  it("gives consecutive attempts different colours", () => {
+    // The whole point. With one colour for every plan, a reader
+    // scrubbing the canvas cannot tell "the plan bent" from "the plan
+    // was thrown away and a new one drawn" — the two look the same, and
+    // only one of them is a replan.
+    const first = plannedRouteColour(1);
+    const second = plannedRouteColour(2);
+    const third = plannedRouteColour(3);
+    expect(new Set([first, second, third]).size).toBe(3);
+  });
+
+  it("gives the same attempt the same colour every frame", () => {
+    // Redrawn on every scrub tick; a colour that moved would read as a
+    // replan happening continuously.
+    expect(plannedRouteColour(2)).toBe(plannedRouteColour(2));
+  });
+
+  it("cycles rather than running out", () => {
+    expect(plannedRouteColour(5)).toBe(plannedRouteColour(1));
+  });
+
+  it("takes the first colour for an attempt number it cannot read", () => {
+    // A decoration must not be able to break a canvas.
+    expect(plannedRouteColour(Number.NaN)).toBe(PLANNED_ROUTE_COLOURS[0]);
+    expect(plannedRouteColour(0)).toBe(PLANNED_ROUTE_COLOURS[0]);
+    expect(plannedRouteColour(-3)).toBe(PLANNED_ROUTE_COLOURS[0]);
+  });
+
+  it("stays clear of the colours the canvas already spends", () => {
+    // Blue and purple are the two candidates' driven paths, amber the
+    // moving obstacles, red the HĐ-5 events. A plan sharing one of those
+    // would read as that thing.
+    const taken = ["#2563eb", "#7c3aed", "245, 158, 11", "220, 38, 38"];
+    for (const colour of PLANNED_ROUTE_COLOURS) {
+      for (const clash of taken) expect(colour).not.toContain(clash);
+    }
   });
 });

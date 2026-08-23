@@ -328,10 +328,18 @@ export function buildGapSeries(summary: GeneralizationSummary | null): GapSeries
  * owns the name — it is the side that knows the benchmark's name and has
  * already made it safe. The fallback exists for the case where a proxy
  * strips the header. */
-export function filenameFromDisposition(header: string | null, benchmarkId: string): string {
+export function filenameFromDisposition(header: string | null, fallback: string): string {
   const quoted = header?.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
   const name = quoted?.[1]?.trim();
-  if (!name) return `benchmark-${benchmarkId}.md`;
+  // **The caller supplies the whole fallback, extension included.** This
+  // used to append `.md` itself, which was true while Markdown was the
+  // only export and became a lie the moment a workbook could come down
+  // the same pipe — the file saved as `.md` and Excel refused it.
+  //
+  // The fallback is not rare, either: a browser withholds
+  // `Content-Disposition` from JavaScript across origins unless the
+  // server exposes it, and the app and the API sit on different ports.
+  if (!name) return fallback;
   // Never let a server-supplied name walk out of the download folder.
   return name.replace(/[\\/]/g, "-");
 }

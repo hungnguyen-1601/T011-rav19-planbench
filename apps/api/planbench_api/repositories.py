@@ -41,6 +41,10 @@ class StoredMap:
     version: int
     created_at: str
     map_data: MapData
+    #: Pinned by hand against the orphan sweep. Defaults to `False` so a
+    #: caller building one of these in a test does not have to know the
+    #: field exists to get the ordinary case.
+    kept: bool = False
 
 
 @dataclass
@@ -123,6 +127,17 @@ class MapRepository:
         except KeyError:
             raise NotFoundError("map", map_id) from None
 
+    def find_by_checksum(self, checksum: str) -> StoredMap | None:
+        """Oldest first, so repeating a call returns the same id.
+
+        The SQL repository sorts by `created_at, id` for the same
+        reason; `list()` here is already in that order.
+        """
+        for stored in self.list():
+            if stored.map_data.checksum() == checksum:
+                return stored
+        return None
+
     def list(self) -> list[StoredMap]:
         return sorted(self._items.values(), key=lambda m: m.created_at)
 
@@ -134,6 +149,8 @@ class MapRepository:
                 version=current.version + 1,
                 created_at=current.created_at,
                 map_data=map_data,
+                # A pin belongs to the map, not to a revision of it.
+                kept=current.kept,
             )
             self._items[map_id] = updated
             return updated

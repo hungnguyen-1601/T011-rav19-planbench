@@ -407,6 +407,7 @@ class PlanningInputRecorder:
         seed: int | None = None,
         outcome: PlanningOutcome,
         output_plan_checksum: str | None = None,
+        output_path: Sequence[tuple[float, float]] = (),
         failure_code: str | None = None,
         provider_revision_refs: Sequence[str] = (),
     ) -> PlanningInputEvidence:
@@ -461,6 +462,7 @@ class PlanningInputRecorder:
             execution_environment_ref=self.header.execution_environment_ref,
             outcome=outcome,
             output_plan_checksum=output_plan_checksum,
+            output_path=tuple(output_path),
             failure_code=failure_code,
         )
         self._records.append(record)

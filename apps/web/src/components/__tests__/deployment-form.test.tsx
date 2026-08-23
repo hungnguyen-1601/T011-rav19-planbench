@@ -124,14 +124,20 @@ describe("what the author sees first", () => {
     expect(render()).toMatch(/id="deployment-form-tab-mission"[^>]*aria-selected="true"/);
   });
 
-  it("puts the map in a full-width row after the two configuration columns", () => {
+  it("puts the map chooser in the identity panel and the map in the left column", () => {
+    /* Three headed blocks became two: identity and the choice of world
+       are one answer and now share a panel, while the canvas — which is
+       work rather than a sentence — takes the column beside the tabs
+       instead of a full-width row under them. */
     const html = render();
+    const identity = html.indexOf("deployment-section--identity");
     const selector = html.indexOf('class="deployment-map-selector"');
-    const config = html.indexOf('class="deployment-config-panel"');
     const map = html.indexOf('class="deployment-map-fullwidth"');
-    expect(selector).toBeGreaterThan(-1);
-    expect(config).toBeGreaterThan(selector);
-    expect(map).toBeGreaterThan(config);
+    const config = html.indexOf('class="deployment-config-panel"');
+    expect(identity).toBeGreaterThan(-1);
+    expect(selector).toBeGreaterThan(identity);
+    expect(map).toBeGreaterThan(selector);
+    expect(config).toBeGreaterThan(map);
   });
 });
 

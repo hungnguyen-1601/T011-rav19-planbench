@@ -89,6 +89,19 @@ MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
 router = APIRouter(tags=["decisions"])
 
+#: Which language an export is rendered in. A `Literal` rather than a
+#: free string so an unknown value is a 422 from FastAPI's own
+#: validation: a caller asking for a language nobody built should hear
+#: about it, rather than receive a document in a different one and take
+#: that for the only one available.
+ExportLocale = Annotated[
+    Literal["en", "vi"],
+    Query(description="Language of the exported document."),
+]
+#: English, so a client written before this parameter existed keeps
+#: receiving exactly the document it received before.
+DEFAULT_EXPORT_LOCALE: Literal["en", "vi"] = "en"
+
 Profiles = Annotated[TaskProfileService, Depends(get_task_profile_service)]
 Candidates = Annotated[CandidateService, Depends(get_candidate_service)]
 Runs = Annotated[DecisionRunService, Depends(get_decision_run_service)]
@@ -1857,7 +1870,9 @@ def withdraw_config(
 
 
 @router.get("/decisions/{run_id}/report.md", response_class=PlainTextResponse)
-def decision_report_markdown(run_id: str, service: Runs) -> Response:
+def decision_report_markdown(
+    run_id: str, service: Runs, locale: ExportLocale = DEFAULT_EXPORT_LOCALE
+) -> Response:
     """The whole run as one Markdown document, card or no card.
 
     **Exported for every run, not only ranked ones.** Fewer than two
@@ -1868,6 +1883,11 @@ def decision_report_markdown(run_id: str, service: Runs) -> Response:
     Unlike `approved_config.yaml` this is not gated on approval: it is a
     description of what was measured, and reading it is the act that
     approval follows.
+
+    ``locale`` defaults to English and a value outside the two languages
+    is a 422 rather than a quiet fall back: a caller asking for a
+    language nobody built should hear about it, not receive a document
+    in a different one and assume it is the only one available.
     """
     from planbench_api.decision_markdown import (
         decision_report_filename,
@@ -1876,10 +1896,41 @@ def decision_report_markdown(run_id: str, service: Runs) -> Response:
 
     stored = service.get(run_id)
     return Response(
-        content=render_decision_markdown(stored),
+        content=render_decision_markdown(stored, locale),
         media_type="text/markdown; charset=utf-8",
         headers={
             "Content-Disposition": f'attachment; filename="{decision_report_filename(run_id)}"'
+        },
+    )
+
+
+@router.get("/decisions/{run_id}/report.xlsx")
+def decision_report_xlsx(
+    run_id: str, service: Runs, locale: ExportLocale = DEFAULT_EXPORT_LOCALE
+) -> Response:
+    """The same run as a workbook, for a reader who works in a spreadsheet.
+
+    Same content as ``report.md`` — `decision_export` decides every
+    value and both renderers read it from there, so the two files cannot
+    quote different numbers for one run.
+
+    Exported for every run for the same reason the Markdown is: a run
+    that ranked nobody still has a gate table, and that is the whole
+    deliverable when fewer than two candidates cleared (HĐ-7).
+    """
+    from planbench_api.decision_xlsx import (
+        decision_workbook_filename,
+        render_decision_xlsx,
+    )
+
+    stored = service.get(run_id)
+    return Response(
+        content=render_decision_xlsx(stored, locale),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{decision_workbook_filename(stored)}"'
+            )
         },
     )
 

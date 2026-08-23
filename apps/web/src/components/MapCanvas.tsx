@@ -49,6 +49,12 @@ export interface MapCanvasProps {
    * shows a scenario, and a scenario declares no localisation error. */
   positionUncertainty?: number;
   plannedPath?: Point2D[];
+  /** The dashed route's colour. Given by a caller that redraws the plan
+   *  as the episode replans: with one colour for every attempt, a reader
+   *  scrubbing the timeline cannot tell "the plan bent" from "the plan
+   *  was thrown away and a new one drawn", and only the second is a
+   *  replan. Omitted, it stays the one blue every other screen uses. */
+  plannedPathColour?: string;
   trajectory?: TrajectoryPoint[];
   robotPose?: Pose2D | null;
   collisionPoint?: Point2D | null;
@@ -69,6 +75,12 @@ export interface MapCanvasProps {
   /** The instant `dynamicObstacles` describes, in seconds, for the label.
    *  The editor passes the scrubber position; replay passes the playhead. */
   previewTime?: number;
+  /* **Off by default, everywhere.** The grid is a measuring aid: useful
+     when somebody is judging a clearance in cells, noise the rest of the
+     time, and it sat on top of the one thing these canvases exist to show.
+     Defaulting it on also meant four screens drew it with no control to
+     reach, which is how it went unnoticed for as long as it did. Turning
+     it on is now a thing a reader does, not a thing they undo. */
   showGrid?: boolean;
   showPlan?: boolean;
   showTrajectory?: boolean;
@@ -111,7 +123,21 @@ export interface WorldPointerInfo {
 const COLOR = {
   occupied: "#5b6c7f",
   unknown: "#33383f",
-  gridLine: "rgba(255,255,255,0.045)",
+  /* **Mid-grey, because the floor is not a fixed colour.** The canvas
+     is cleared to transparent and free cells are skipped, so the floor
+     is whatever `--canvas-bg` paints behind it: `#0b0d11` in the dark
+     theme and `#eef1f5` in the light one. This was white at 4.5% alpha
+     — correct on the dark floor it was written against, and literally
+     invisible on the light one, which is why the Grid checkbox appeared
+     to do nothing at all.
+
+     A mid-grey with a real alpha reads on both: it lands near `#c5cbd4`
+     over the light floor and near `#333a44` over the dark one. That is
+     the same trick `occupied` already uses to survive both themes, and
+     the reason every other colour here got away with being a constant
+     while this one did not — it was the only one parked at an extreme
+     of the lightness range. */
+  gridLine: "rgba(120,132,150,0.35)",
   plan: "#4c9aff",
   trajectory: "#3fb950",
   robot: "#e6e9ef",
@@ -142,6 +168,7 @@ export function MapCanvas({
   robotRadius = 0.3,
   positionUncertainty = 0,
   plannedPath,
+  plannedPathColour,
   trajectory,
   robotPose,
   collisionPoint,
@@ -149,7 +176,7 @@ export function MapCanvas({
   dynamicObstacles,
   authoredTraffic,
   previewTime,
-  showGrid = true,
+  showGrid = false,
   showPlan = true,
   showTrajectory = true,
   onWorldClick,
@@ -430,7 +457,8 @@ export function MapCanvas({
     }
 
     if (showPlan && plannedPath && plannedPath.length > 1) {
-      ctx.strokeStyle = COLOR.plan;
+      const planInk = plannedPathColour ?? COLOR.plan;
+      ctx.strokeStyle = planInk;
       ctx.lineWidth = 2;
       ctx.setLineDash([6, 4]);
       ctx.beginPath();
@@ -441,7 +469,7 @@ export function MapCanvas({
       });
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = COLOR.plan;
+      ctx.fillStyle = planInk;
       for (const point of plannedPath) {
         const [x, y] = toCanvas(point.x, point.y);
         ctx.beginPath();

@@ -12,9 +12,9 @@
       "odometry_bias_fraction": 0.0,
       "command_latency_steps": 0
     },
-    "git_sha": "81e93b05fa2046d089eeb83b5d9eef9803354fbf",
+    "git_sha": "6a4c8ef4555856e46646e17bbaeb830bccd4f8a8",
     "anchor_config_version": "v1.2",
-    "created_at": "2026-08-19T13:41:29.046243+00:00"
+    "created_at": "2026-08-19T16:45:00.569789+00:00"
   },
   "sample": {
     "n_episodes": 5,
@@ -337,7 +337,7 @@
     "packet": {
       "header": {
         "source_manifest_ref": "comparison_report.json",
-        "source_manifest_checksum": "b07e67c770a1cce6c42e226a297d804089b8b49d86442fb561ab1ee708dbcf07",
+        "source_manifest_checksum": "95722f73142cd9d2421022dba0791bcc279e431574d4cc40dbd3b514dd97e37a",
         "explanation_schema_version": "0.1.0",
         "promotion_matrix_version": "0.1.0",
         "detector_version": "0.1.0",

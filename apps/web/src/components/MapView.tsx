@@ -57,6 +57,23 @@ export function MapView({
 }: MapViewProps) {
   const { t } = useTranslation();
   const [mode, setMode] = useState<MapViewMode>(initialMode);
+  /** The grid switch, for every caller that does not already have one.
+   *
+   * **Controlled when the page says so, owned here otherwise.** Two
+   * screens keep the grid in a layer strip of their own — the test bench
+   * beside its plan and trajectory checkboxes, the deployment form in
+   * its map legend — and they pass `showGrid` down. Four more canvases
+   * (the scenario library, the scenario editor, the map painter, the
+   * decision preview) had no way to turn it off at all, because
+   * `MapCanvas` defaults it on and nothing above them offered a control.
+   *
+   * Putting the fallback here rather than a checkbox on each of those
+   * four pages means one switch to maintain, and it lands beside the
+   * Top-down / 2.5D buttons, which is the other control that decides
+   * what this canvas draws rather than what it contains. */
+  const [ownGrid, setOwnGrid] = useState(false);
+  const controlled = canvas.showGrid !== undefined;
+  const showGrid = controlled ? canvas.showGrid !== false : ownGrid;
   const editable = canvas.onWorldClick !== undefined;
   const hasObstacles =
     (canvas.staticObstacles?.length ?? 0) > 0 ||
@@ -81,6 +98,23 @@ export function MapView({
           {mode === "raised" && editable ? (
             <span className="muted">{t("mapView.editInFlat")}</span>
           ) : null}
+          {/* Not rendered when the page controls the flag: a second
+              checkbox for one layer is two controls that can disagree
+              on screen while agreeing in state. */}
+          {controlled ? null : (
+            <label className="map-view-grid">
+              <input
+                type="checkbox"
+                /* Named so a reader — and the test that freezes every
+                   editing control — can tell a view switch from a field.
+                   It draws; it does not edit. */
+                className="map-view-control"
+                checked={showGrid}
+                onChange={(event) => setOwnGrid(event.target.checked)}
+              />
+              {t("simulate.grid")}
+            </label>
+          )}
         </div>
       ) : null}
 
@@ -99,17 +133,24 @@ export function MapView({
              one number, which is the failure this ring exists to make
              visible in the first place. */
           positionUncertainty={canvas.positionUncertainty}
-          /* `showPlan`/`showTrajectory` are the canvas's checkboxes, and
-             the raised view has to obey the same ones — a layer hidden in
-             one view and drawn in the other is two answers to one
-             question. It has no `showGrid`: raising the cells *is* the
-             grid. */
+          /* `showPlan`/`showTrajectory`/`showGrid` are the canvas's
+             checkboxes, and the raised view has to obey the same ones —
+             a layer hidden in one view and drawn in the other is two
+             answers to one question.
+
+             `showGrid` used to be withheld here, on the reasoning that
+             raising the cells *is* the grid. That was true of the walls
+             and never of the floor: the floor is flat quads, and the
+             faint lattice on it was the seam between them rather than
+             anything the scene had drawn. So the switch reaches this
+             view too, and now has something real to switch. */
+          showGrid={showGrid}
           plannedPath={canvas.showPlan === false ? [] : canvas.plannedPath}
           trajectory={canvas.showTrajectory === false ? [] : canvas.trajectory}
           obstacles={obstacleSnapshots}
         />
       ) : (
-        <MapCanvas {...canvas} />
+        <MapCanvas {...canvas} showGrid={showGrid} />
       )}
 
       {/* **Drawn without a word is worse than not drawn.** A faint ring

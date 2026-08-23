@@ -11,6 +11,7 @@
  * times.
  */
 
+import { RunningComparison } from "@/components/RunningComparison";
 import { useTranslation } from "@/lib/i18n";
 import type { DivergencePoint, ReplaySyncView, RunCandidate } from "@/lib/decisions";
 import type { PlaybackState } from "@/lib/playback";
@@ -92,6 +93,19 @@ export function ProgressSync({
           ))}
         </div>
       ) : null}
+      {/* Under the slider, because it reads the slider. The scrub
+          position on this panel is metres of progress, which is exactly
+          the ladder's own axis — so the rung on screen is the rung the
+          reader is standing on, with no second position to keep in
+          sync. */}
+      <RunningComparison
+        running={view.running?.ladder ?? null}
+        progress={scan.time}
+        candidateA={view.candidate_a}
+        candidateB={view.candidate_b}
+        candidates={candidates}
+        referenceSource={view.reference_source_candidate_id}
+      />
     </div>
   );
 }

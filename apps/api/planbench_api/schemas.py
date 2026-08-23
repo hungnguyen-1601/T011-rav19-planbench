@@ -66,13 +66,28 @@ class ValidationReport(BaseModel):
 
 
 class DynamicObstacleSnapshot(BaseModel):
-    """Where one moving obstacle is at a given instant."""
+    """Where one moving obstacle is at a given instant, and where it goes.
+
+    **`track` is the whole point of asking once.** A still frame at the
+    instant somebody typed answers "is the cart in my way at t = 12" and
+    not "where is it heading", which is the question an author placing a
+    start pose actually has. Animating it by calling this endpoint per
+    frame would be a round trip every 40 ms; sampling the same pure
+    `position_at` server-side is one call and cannot drift from it.
+
+    `position` stays, and stays first: it is the instant the request
+    named, and a caller that only wants the still frame should not have
+    to know the track exists.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     name: str
     radius: float
     position: Point2D
+    #: Positions from t=0 to the requested duration, one every `step`
+    #: seconds. Empty when no duration was asked for.
+    track: tuple[Point2D, ...] = ()
 
 
 class ScenarioPreviewRequest(BaseModel):
@@ -92,6 +107,16 @@ class ScenarioPreviewRequest(BaseModel):
     #: preview states which seed it is showing rather than implying the
     #: scenario looks like this for all of them.
     seed: int = 0
+    #: Seconds of motion to sample, from 0. `None` asks for the instant
+    #: alone — the shape this endpoint had before playback existed, kept
+    #: so a caller that wants one frame still gets one reply's worth of
+    #: work.
+    duration: float | None = Field(default=None, gt=0, le=600)
+    #: Seconds between samples. The client plays the track back at its
+    #: own rate, so this is resolution rather than frame rate: fine
+    #: enough that a cart's turn is a curve, coarse enough that a
+    #: ten-minute episode is not a hundred thousand points.
+    step: float = Field(default=0.2, gt=0, le=5.0)
 
 
 class ScenarioPreview(BaseModel):
@@ -109,6 +134,13 @@ class ScenarioPreview(BaseModel):
     valid: bool
     errors: tuple[str, ...] = ()
     dynamic_obstacles: tuple[DynamicObstacleSnapshot, ...] = ()
+    #: What the tracks span, echoed back. The client labels its scrubber
+    #: from these rather than from what it asked for: the two differ
+    #: whenever the request was clamped, and a scrubber that reads 600 s
+    #: over a 60 s track is the same lie as a canvas labelled t = 40
+    #: showing t = 0.
+    duration: float = 0.0
+    step: float = 0.0
 
 
 class SimulationCreateRequest(BaseModel):

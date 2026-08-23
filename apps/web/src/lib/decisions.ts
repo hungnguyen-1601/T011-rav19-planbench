@@ -127,6 +127,33 @@ export interface RunCandidate {
   /** Replans across every episode this candidate ran. See
    *  `EpisodeOutcome.replan_count` — evidence, not a score. */
   replan_count?: number;
+  /** The four objectives and the utility they add up to, for this
+   *  candidate alone (`w_R·U_R + w_S·U_S + w_E·U_E + w_C·U_C`).
+   *
+   *  Present for **every** candidate that produced episodes, including
+   *  ones that failed a gate — the platform scores the survivors for the
+   *  card and these separately for the page. Absent on runs stored
+   *  before that existed, and `null` where a candidate could not be
+   *  scored at all: an objective over an empty episode set is undefined,
+   *  not zero.
+   */
+  objectives?: { U_R: number; U_S: number; U_E: number; U_C: number } | null;
+  /** Two reductions over the episode column, taken once by the scoring
+   *  pass so the page and the export cannot differ about them. Absent on
+   *  runs stored before they existed; the page then falls back to
+   *  reducing the episode rows itself. */
+  worst_clearance_m?: number | null;
+  median_travel_time_s?: number | null;
+  decision_utility?: number | null;
+  /** Whether this candidate may be recommended at all.
+   *
+   *  Beside the numbers rather than left to be inferred from the gate
+   *  table, because "scored lower" and "was never in the running" are
+   *  different claims — and a gate failure may leave no mark on the
+   *  utility: collisions are excluded from `U_S` by contract (HĐ-6) and
+   *  no objective reflects a missing observation channel.
+   */
+  recommendation_eligible?: boolean;
   /** Per-episode outcomes, in the order the sweep ran them.
    *
    * **Absent is "not recorded", never "all passed".** Runs stored before
@@ -148,6 +175,33 @@ export interface RunSample {
   interrupted?: boolean;
   n_min_required: number;
   episode_context_ids: string[];
+}
+
+/** What machine the run got, and the caveat if nothing protected it.
+ *
+ * Built by one function on the platform side (`hostinfo.measurement_environment`)
+ * so that a ranked report, an interrupted one and `scripts/measure.py`
+ * cannot describe the same machine three different ways.
+ */
+export interface MeasurementEnvironment {
+  benchmark_host: Record<string, unknown>;
+  /** The platform's own sentence, in Vietnamese. Still the only form a
+   *  run recorded before `warning_code` existed carries, and still what
+   *  the export writes — see `decision_export.py`. */
+  warning: string | null;
+  /** What the platform decided, so a client can say it in the reader's
+   *  language without rewording the caveat itself. Optional: an older
+   *  stored run has neither this nor the params, and has to keep
+   *  rendering `warning` verbatim. */
+  warning_code?: string | null;
+  /** Named `reference_` deliberately: these are a historical measurement
+   *  of one stack on one machine, **not** this run's latency. A bare
+   *  `unpinned_ms` invites exactly that misreading. */
+  warning_params?: {
+    cores: number;
+    reference_unpinned_ms: number;
+    reference_pinned_ms: number;
+  } | null;
 }
 
 /** Which two candidates the paired comparison was about.
@@ -175,10 +229,7 @@ export interface ComparisonReport {
   };
   sample: RunSample;
   candidates: RunCandidate[];
-  measurement_environment: {
-    benchmark_host: Record<string, unknown>;
-    warning: string | null;
-  };
+  measurement_environment: MeasurementEnvironment;
   /** Present and null on a ranked run, so a reader never has to know
    *  which branch produced the report. */
   decision_card: unknown | null;
@@ -366,6 +417,40 @@ export function decideConfig(
  * few hundred rows into a few hundred objects would triple the payload
  * to say the same thing.
  */
+/** One dynamic obstacle's position at each of the trace's timestamps.
+ *
+ * **Sampled server-side.** `position_at` is the one implementation of
+ * these motion models — seed shift included — and a second copy in
+ * TypeScript would drift from it the first time either was fixed. The
+ * page receives coordinates and draws circles.
+ *
+ * Indexed in lockstep with `t`/`x`/`y`, so the obstacle and the robot on
+ * one canvas are always the same instant.
+ */
+export interface ObstacleTrack {
+  name: string;
+  radius_m: number;
+  x: number[];
+  y: number[];
+}
+
+/** One route the global planner returned, and the step it took over on.
+ *
+ * `from_index` is a row of this trace, placed server-side from the
+ * trace's own replan events — the sidecar counts simulation ticks and
+ * the trace counts control steps, and converting between them in the
+ * browser would be a third opinion about the episode's timeline.
+ *
+ * `points` is empty for an attempt that found nothing. That is a real
+ * state and not a gap: at that step the robot had no plan, and leaving
+ * the previous one on screen would show a route nobody was following.
+ */
+export interface PlannedRoute {
+  attempt: number;
+  from_index: number;
+  points: { x: number; y: number }[];
+}
+
 export interface TracePayload {
   candidate_id: string;
   episode_context_id: string;
@@ -381,6 +466,10 @@ export interface TracePayload {
     occupied_bits: string;
   };
   robot_radius_m: number;
+  /** G4's own budget. The latency chart draws its threshold from this
+   *  rather than from a constant, so a deployment that declares a
+   *  different control rate gets a different line. */
+  control_period_s: number;
   missions: { id: string; start: { x: number; y: number }; goal: { x: number; y: number } }[];
   t: number[];
   x: number[];
@@ -393,6 +482,14 @@ export interface TracePayload {
   /** Sparse — only the steps that carry one. A collision and an arrival
    *  are the same shape of curve; the event is what tells them apart. */
   events: { index: number; event: string }[];
+  /** What moved while the robot drove. Empty for a deployment with no
+   *  traffic, and empty when the episode context could not be rebuilt —
+   *  obstacles drawn at another seed's positions look like evidence. */
+  dynamic_obstacles: ObstacleTrack[];
+  /** Every route the global planner returned, in order. Empty for a run
+   *  recorded before the planning-input sidecar existed — such a run
+   *  kept its plans' lengths and threw the polylines away. */
+  planned_routes: PlannedRoute[];
 }
 
 /** Which line arc length was measured along — and how honest it is.
@@ -444,6 +541,64 @@ export interface ReplaySyncView {
   /** Whose driven path became the ruler, when one did. That candidate's
    *  cross-track offset is zero everywhere by construction. */
   reference_source_candidate_id: string | null;
+  /** The E4.3 numbers — E4.3.
+   *
+   *  `null`, never an empty structure, when they could not be made: the
+   *  composite is the deployment's own objective curves, and a run whose
+   *  anchors will not resolve has none. Empty would render as a panel
+   *  with no differences in it, which reads as "the two are identical" —
+   *  the opposite of "this could not be computed".
+   */
+  running: RunningBlock | null;
+}
+
+/** The same computation in the two shapes the page reads it in.
+ *
+ * Both come from one server-side pass over the same reference line, so
+ * a tile under a canvas and the table above it cannot disagree. The
+ * browser deriving the tiles from the trace columns it already holds
+ * would have been less code and a second implementation of "the running
+ * minimum clearance" — free to drift, and the drift invisible, because
+ * both would render as clearances.
+ */
+export interface RunningBlock {
+  /** Both candidates paired at each rung of the progress scale. */
+  ladder: RunningPoint[];
+  /** Each candidate's own series, one entry per row of its trace, so a
+   *  tile and the pose drawn beside it are the same instant. */
+  by_step: { a: RunningSample[]; b: RunningSample[] };
+}
+
+/** One candidate's standing at one rung of the ladder.
+ *
+ * Mirrors `planbench_explanation.running_metrics.RunningSample`. Every
+ * field is dimensionless or normalised to something the deployment
+ * declared, so the same row reads the same way in every episode and for
+ * every algorithm — and nothing here is a planner-specific counter,
+ * because A*, RRT*, and a learned policy share none.
+ */
+export interface RunningSample {
+  progress_fraction: number;
+  progress_rate: number;
+  elapsed_s: number;
+  safety_margin: number;
+  exposure_s: number;
+  compute_budget: number;
+  path_efficiency: number;
+  replans: number;
+}
+
+export interface RunningPoint {
+  progress_m: number;
+  a: RunningSample;
+  b: RunningSample;
+  /** The deployment's safety-versus-efficiency trade-off over the part
+   *  of the episode that has happened, as `A − B`. **Not ΔU**: `U_R` is
+   *  "did it reach the goal", which has no value halfway through. */
+  partial_advantage: number;
+  /** Which objectives went into `partial_advantage`, so a reader is
+   *  never left to assume it was all four. */
+  partial_objectives: string[];
 }
 
 export type ExemplarRole =
@@ -686,22 +841,44 @@ export const GATES = ["G1", "G2", "G3", "G4", "G5", "G6"] as const;
 /** Why this run produced no card — reduced to the one thing a reader
  *  has to do about it.
  *
- * Three outcomes, three different next actions, and collapsing them into
+ * Four outcomes, four different next actions, and collapsing them into
  * "no card" is what makes a gate table read like a failure:
  *
  * - `interrupted` — the run stopped early; what it did measure is valid
  *   and smaller. Run the rest.
  * - `gate_only` — this *deployment* cannot rank at all. No candidate
  *   would ever change that; use one whose threshold leaves room above it.
- * - `no_survivors` — fewer than two candidates cleared the gates.
- *   Register a better candidate. Never a softer deployment.
+ * - `single_survivor` — exactly one candidate cleared every gate. There
+ *   is a working stack here; what is missing is something to compare it
+ *   against. Register a second candidate that clears.
+ * - `no_survivors` — nobody cleared. Register a better candidate. Never
+ *   a softer deployment.
+ *
+ * **The last two used to be one.** `no_survivors` covered "fewer than
+ * two cleared", and its copy says nobody did — which is the opposite of
+ * what the table says three rows up on a run where one candidate carries
+ * `G1-G6 all pass`. A reader who trusts the sentence and a reader who
+ * trusts the table reach different conclusions from the same screen, and
+ * one of them is wrong because of wording alone.
  */
-export type NoCardReason = "interrupted" | "gate_only" | "no_survivors" | null;
+export type NoCardReason =
+  | "interrupted"
+  | "gate_only"
+  | "single_survivor"
+  | "no_survivors"
+  | null;
 
 export function noCardReason(run: DecisionRun): NoCardReason {
   if (run.ranked) return null;
   if (run.report?.sample?.interrupted) return "interrupted";
   if (run.report?.gate_only_deployment) return "gate_only";
+  // `cleared_gates` is the candidate's own verdict on all six, already
+  // computed upstream — the same field `gateSummary` counts, so the
+  // sentence here and the badge over the gate detail cannot disagree.
+  const cleared = (run.report?.candidates ?? []).filter(
+    (candidate) => candidate.cleared_gates,
+  ).length;
+  if (cleared === 1) return "single_survivor";
   return "no_survivors";
 }
 
@@ -742,19 +919,93 @@ export interface RunOutcome {
   total: number;
 }
 
+/** How to name the recommended candidate, everywhere it is named.
+ *
+ * **A stack alone does not identify a recommendation.** Both candidates
+ * of a local-controller comparison share one stack — `astar+dwa` — and
+ * what separates them is `local_controller_config` (`dwa_coarse` against
+ * `dwa_balanced`). A surface printing only the stack answers "which of
+ * these two won" with a string true of both, so the ambiguity is a
+ * defect in the information, not a matter of taste.
+ *
+ * **The card cannot answer this.** `card.recommended` carries
+ * `candidate_id`, `stack` and `params_ref` — no config. The config lives
+ * on the candidate row, so the name has to be resolved by looking the id
+ * up in `report.candidates`, which is what this does once for every
+ * caller instead of three times slightly differently.
+ *
+ * `null` only when the run recommended nobody. When it recommended
+ * somebody the report cannot describe — an artifact written before the
+ * candidate rows carried a config — it falls back to `stack · id` rather
+ * than going quiet: a hash is a poor name, and no name at all is worse.
+ */
+export function recommendedCandidateLabel(run: DecisionRun): string | null {
+  const id = run.card?.recommended?.candidate_id ?? run.recommended_candidate_id;
+  if (!id) return null;
+  const candidate = run.report?.candidates?.find((entry) => entry.candidate_id === id);
+  if (candidate) return `${candidate.stack_label} · ${candidate.local_controller_config}`;
+  const stack = run.card?.recommended?.stack;
+  return stack ? `${stack} · ${id}` : id;
+}
+
 export function runOutcome(run: DecisionRun): RunOutcome {
   const candidates = run.report?.candidates ?? [];
-  const recommended = candidates.find(
-    (candidate) => candidate.candidate_id === run.recommended_candidate_id,
-  );
   return {
-    winner: recommended
-      ? `${recommended.stack_label} · ${recommended.local_controller_config}`
-      : // The hash, only when the report cannot name the winner — better
-        // than an em dash on a run that did recommend somebody.
-        run.recommended_candidate_id,
+    winner: recommendedCandidateLabel(run),
     cleared: candidates.filter((candidate) => candidate.cleared_gates).length,
     total: candidates.length,
+  };
+}
+
+/** The unpinned-host caveat, in whichever form this run can support.
+ *
+ * `translated` when the platform classified the case and the figures all
+ * arrived intact; `verbatim` for everything else — a run stored before
+ * `warning_code` existed, an artifact naming a case this build cannot
+ * phrase, or a params object short a field. The fallback is not defensive
+ * clutter: it is the difference between a caveat the reader sees in
+ * their own language and a caveat that disappears because the payload
+ * changed shape.
+ *
+ * A function rather than a branch inside the component so that all four
+ * of those paths can be checked without a browser — there is no DOM in
+ * the test environment, and this is a decision, not a rendering.
+ */
+export type HostWarningView =
+  | { translated: true; key: string; vars: Record<string, string> }
+  | { translated: false; text: string }
+  | null;
+
+export function hostWarningView(
+  environment: MeasurementEnvironment | undefined,
+  locale: string,
+): HostWarningView {
+  const warning = environment?.warning;
+  const params = environment?.warning_params;
+  const usable =
+    environment?.warning_code === "unpinned_host" &&
+    typeof params?.cores === "number" &&
+    typeof params.reference_unpinned_ms === "number" &&
+    typeof params.reference_pinned_ms === "number";
+
+  if (!usable) return warning ? { translated: false, text: warning } : null;
+
+  /* `translate` stringifies vars with `String()`, which renders 59.30 as
+     "59.3" and loses the decimal this sentence has always carried. The
+     locale settles the separator with it: "59.30" in English, "59,30" in
+     Vietnamese, which is how the platform's own sentence already reads. */
+  const ms = new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return {
+    translated: true,
+    key: "decisions.env.unpinned",
+    vars: {
+      cores: String(params!.cores),
+      unpinned: ms.format(params!.reference_unpinned_ms),
+      pinned: ms.format(params!.reference_pinned_ms),
+    },
   };
 }
 

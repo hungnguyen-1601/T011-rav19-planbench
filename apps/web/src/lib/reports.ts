@@ -1,6 +1,6 @@
 "use client";
 
-/** Downloading the Markdown report (F09).
+/** Downloading a report the API has authenticated (F09).
  *
  * Not an `<a href>`. The export is authenticated like every other read
  * and the token lives in an `Authorization` header, which a plain link
@@ -19,15 +19,22 @@
 import { API_BASE } from "./api";
 import { clearSession, loadSession } from "./auth";
 import { filenameFromDisposition } from "./charts";
+import { DEFAULT_LOCALE, type Locale } from "./i18n/shared";
 
-/** Fetch a Markdown report and save it. Throws with the API's message.
+export interface FetchedReport {
+  blob: Blob;
+  /** What the browser would save it as, read off `Content-Disposition`. */
+  filename: string;
+}
+
+/** Fetch a report without saving it.
  *
- * Takes the path rather than an id: the mechanism — authenticated fetch,
- * Blob, synthetic anchor, revoked object URL — is the same wherever the
- * document comes from, and it was written once for benchmarks. That flow
- * retired; this did not.
+ * Split out because the share dialog needs the *size* of the file it is
+ * about to describe, and the only honest way to state a size is to have
+ * the bytes. Holding the blob also means the "download it" button in
+ * that dialog costs nothing: the file is already here.
  */
-export async function downloadReportMarkdown(path: string, fallbackName: string): Promise<string> {
+export async function fetchReport(path: string, fallbackName: string): Promise<FetchedReport> {
   const session = loadSession();
   const response = await fetch(`${API_BASE}/api/v1${path}`, {
     headers: session ? { Authorization: `Bearer ${session.token}` } : {},
@@ -45,11 +52,18 @@ export async function downloadReportMarkdown(path: string, fallbackName: string)
     }
     throw new Error(message);
   }
-  const filename = filenameFromDisposition(
-    response.headers.get("content-disposition"),
-    fallbackName,
-  );
-  const url = URL.createObjectURL(await response.blob());
+  return {
+    blob: await response.blob(),
+    filename: filenameFromDisposition(
+      response.headers.get("content-disposition"),
+      fallbackName,
+    ),
+  };
+}
+
+/** Save a blob under a name, driving the synthetic anchor. */
+export function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
   try {
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -60,7 +74,35 @@ export async function downloadReportMarkdown(path: string, fallbackName: string)
   } finally {
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
+}
+
+/** Fetch a report and save it. Throws with the API's message.
+ *
+ * Takes the path rather than an id: the mechanism — authenticated fetch,
+ * Blob, synthetic anchor, revoked object URL — is the same wherever the
+ * document comes from, and it was written once for benchmarks. That flow
+ * retired; this did not.
+ *
+ * **Format-agnostic, and named that way since the workbook arrived.** It
+ * was `downloadReportMarkdown` while Markdown was the only export; a
+ * helper whose name says Markdown while it serves `.xlsx` is a lie that
+ * survives for years because nothing ever fails because of it.
+ */
+export async function downloadReport(path: string, fallbackName: string): Promise<string> {
+  const { blob, filename } = await fetchReport(path, fallbackName);
+  saveBlob(blob, filename);
   return filename;
+}
+
+/** The language the document is written in.
+ *
+ * Passed explicitly rather than read from the cookie here: this module
+ * has no React context and the server would otherwise be guessing from
+ * a header, which is the browser's preference and not the one the
+ * reader chose in the app.
+ */
+function localised(path: string, locale: Locale): string {
+  return `${path}?locale=${encodeURIComponent(locale)}`;
 }
 
 /** The selection run as Markdown — every run, ranked or not.
@@ -68,6 +110,44 @@ export async function downloadReportMarkdown(path: string, fallbackName: string)
  * Available before approval on purpose: this describes what was
  * measured, and reading it is the act approval follows (HĐ-14).
  */
-export function downloadDecisionReport(runId: string): Promise<string> {
-  return downloadReportMarkdown(`/decisions/${encodeURIComponent(runId)}/report.md`, runId);
+export function downloadDecisionReport(
+  runId: string,
+  locale: Locale = DEFAULT_LOCALE,
+): Promise<string> {
+  return downloadReport(
+    localised(`/decisions/${encodeURIComponent(runId)}/report.md`, locale),
+    `decision-${runId}.md`,
+  );
+}
+
+/** The same run as a workbook, for a reader who works in a spreadsheet.
+ *
+ * Same content as the Markdown — the API builds both from one module,
+ * so the two files cannot quote different numbers for one run.
+ */
+export function downloadDecisionWorkbook(
+  runId: string,
+  locale: Locale = DEFAULT_LOCALE,
+): Promise<string> {
+  return downloadReport(
+    localised(`/decisions/${encodeURIComponent(runId)}/report.xlsx`, locale),
+    `decision-${runId}.xlsx`,
+  );
+}
+
+/** The workbook's bytes, without saving them.
+ *
+ * The share dialog needs the size of the file it is about to describe,
+ * and there is no honest way to state a size without the bytes. It then
+ * hands the same blob to the download button, so nothing is fetched
+ * twice.
+ */
+export function fetchDecisionWorkbook(
+  runId: string,
+  locale: Locale = DEFAULT_LOCALE,
+): Promise<FetchedReport> {
+  return fetchReport(
+    localised(`/decisions/${encodeURIComponent(runId)}/report.xlsx`, locale),
+    `decision-${runId}.xlsx`,
+  );
 }

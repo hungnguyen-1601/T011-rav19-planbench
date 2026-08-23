@@ -24,6 +24,7 @@
  * supplies its own id.
  */
 
+import { Hint } from "@/components/Hint";
 import { useTranslation } from "@/lib/i18n";
 import type { LocalControllerConfig } from "@/lib/decisions";
 import type { AlgorithmInfo } from "@/lib/benchmarkTypes";
@@ -155,7 +156,12 @@ export function CandidatePicker({
     <div className={`field${detailed ? " candidate-picker--detailed" : ""}`}>
       <span className="candidate-picker-label">{label}</span>
       <label className="candidate-picker-field">
-      {detailed ? <span>{t("candidates.pick.global")}</span> : null}
+      {detailed ? (
+        <span>
+          {t("candidates.pick.global")}
+          <Hint text={t("bench.help.global")} label={t("candidates.pick.global")} />
+        </span>
+      ) : null}
       <select
         value={chosenGlobal}
         disabled={disabled}
@@ -169,10 +175,14 @@ export function CandidatePicker({
           </option>
         ))}
       </select>
-      {detailed ? <small>{t("bench.help.global")}</small> : null}
       </label>
       <label className="candidate-picker-field">
-      {detailed ? <span>{t("candidates.pick.local")}</span> : null}
+      {detailed ? (
+        <span>
+          {t("candidates.pick.local")}
+          <Hint text={t("bench.help.local")} label={t("candidates.pick.local")} />
+        </span>
+      ) : null}
       <select
         value={chosenLocal}
         disabled={disabled || controllers.length === 0}
@@ -186,7 +196,6 @@ export function CandidatePicker({
           </option>
         ))}
       </select>
-      {detailed ? <small>{t("bench.help.local")}</small> : null}
       </label>
       <label className="candidate-picker-field">
       {detailed ? <span>{t("candidates.pick.config")}</span> : null}

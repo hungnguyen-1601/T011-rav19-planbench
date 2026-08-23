@@ -78,6 +78,7 @@ import { firstTabWithError, tallyErrors, type FormTab } from "@/lib/formTabs";
 import { useTranslation } from "@/lib/i18n";
 import { listRobotProfiles, type RobotProfile } from "@/lib/models";
 import type { LibraryEntry } from "@/lib/platformTypes";
+import { advance, playableSeconds, trafficAt } from "@/lib/previewPlayback";
 import type { MapData, MapSummary, Point2D, Pose2D, ScenarioPreview } from "@/lib/types";
 import { safetyEnvelope } from "@/lib/keepOut";
 
@@ -236,6 +237,33 @@ export function DeploymentForm({
   const [preview, setPreview] = useState<ScenarioPreview | null>(null);
   const [previewTime, setPreviewTime] = useState(0);
   const [previewSeed, setPreviewSeed] = useState(0);
+  /** Where the playhead is, and whether it is moving.
+   *
+   * Separate from `previewTime`, which is the instant the *request*
+   * named. Folding them together would make dragging the scrubber
+   * invalidate the reply it is scrubbing — `scrubPreview` clears the
+   * picture whenever the request's numbers change, and it has to keep
+   * doing that. The playhead moves inside one answer; `previewTime`
+   * asks a different question. */
+  const [playhead, setPlayhead] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  /** Draw the cell grid on the mission map.
+   *
+   * **The grid was always on here and nobody could see it.**
+   * `MapCanvas` defaults `showGrid` to `true` and `MissionCanvas` never
+   * forwarded the prop, so this canvas has been drawing one since it
+   * existed — invisible only because the ink was white at 4% alpha
+   * against a floor that is near-white in the light theme. Fixing the
+   * ink made it appear, which is when it became clear this page had no
+   * way to turn it off.
+   *
+   * Its own state, not the test bench's. That page keeps an identical
+   * checkbox and the two are deliberately unconnected: they are two
+   * canvases doing different jobs — one is a map being authored, the
+   * other a replay being watched — and a preference shared between them
+   * would mean turning the grid off to read a trajectory also turned it
+   * off for the person placing a start pose on a different screen. */
+  const [showGrid, setShowGrid] = useState(false);
   /** Which panel of controls is on top.
    *
    * Opens on the mission, because that is the tab whose controls the
@@ -676,6 +704,40 @@ export function DeploymentForm({
    * this form asked for and clears on every edit — a filing refusal
    * belongs to the page and can outlive the document it was about, so it
    * must not win a `find` against a fresher answer. */
+  /* **Above the `!draft` guard, and that is not a preference.** This
+     hook sat below it, so on the render before the draft arrived React
+     saw one fewer hook than on the render after — which is the order
+     change it refuses to guess about, and it took the whole page down
+     with a Rules of Hooks error. Nothing here reads `draft`; it was
+     simply written next to the preview code it belongs with. */
+  /** Walk the playhead while it is running.
+   *
+   * `requestAnimationFrame` rather than an interval, and real elapsed
+   * time rather than a fixed increment per frame: a tab in the
+   * background is throttled to one frame a second, and adding a
+   * constant each time would make the traffic crawl there and race on a
+   * 144 Hz screen. What is being played back is seconds of a simulated
+   * episode, so seconds are what the clock has to count. */
+  useEffect(() => {
+    if (!playing) return;
+    const span = playableSeconds(preview);
+    if (span <= 0) return;
+    let frame = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const elapsed = (now - last) / 1000;
+      last = now;
+      setPlayhead((current) => {
+        const next = advance(current, elapsed, span);
+        if (!next.running) setPlaying(false);
+        return next.seconds;
+      });
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [playing, preview]);
+
   const shownErrors = useMemo(
     () => [...dryRunErrors, ...fieldErrors],
     [dryRunErrors, fieldErrors],
@@ -956,6 +1018,10 @@ export function DeploymentForm({
   const scrubPreview = () => {
     previewSeq.supersede();
     setPreview(null);
+    // A timer left running over a cleared picture keeps counting
+    // seconds of a world that is no longer on screen.
+    setPlaying(false);
+    setPlayhead(0);
   };
 
   /** The request this draft can currently support, or nothing.
@@ -1000,7 +1066,14 @@ export function DeploymentForm({
       // Replies can overtake each other; only the newest request may
       // draw. Without this a slow answer about t = 0 lands after a quick
       // one about t = 40 and the canvas shows the older instant.
-      if (previewSeq.isCurrent(asked)) setPreview(answer);
+      if (previewSeq.isCurrent(asked)) {
+        setPreview(answer);
+        // A new answer is a new world; leaving the playhead at 30 s
+        // would show the middle of a route nobody has watched the start
+        // of, under a scrubber that had not moved.
+        setPlayhead(0);
+        setPlaying(false);
+      }
     } catch (caught) {
       if (!previewSeq.isCurrent(asked)) return;
       setPreview(null);
@@ -1152,11 +1225,22 @@ export function DeploymentForm({
    *  its own cap. The panel then takes the rest — so on a wide screen
    *  the spare room goes to the controls rather than becoming a gap
    *  between two things that are supposed to sit beside each other. */
-  // The map now owns a full-width row below the two configuration
-  // columns. Its drawing buffer follows the measured form width (minus
-  // the frame's margin, border and padding), so CSS never stretches the
-  // canvas away from the coordinate system pointer events use.
-  const roomForMap = Math.max(0, shellWidth - 44);
+  /* **The map is back in a column, at half the form's width.**
+     It had a full-width row of its own under both configuration
+     columns, which drew it as large as the form and left the tabs
+     beside a strip of empty floor. The room it gets is now the left
+     half: the form's width, less the gap between the columns, halved,
+     less the frame's own margin, border and padding.
+
+     Measured and passed down as a number rather than left to CSS.
+     `MissionCanvas` maps a press to world coordinates by assuming its
+     drawing surface and its CSS box are the same size, so stretching
+     the element while the prop stays put lands every click somewhere
+     other than the pointer — silently, because the map still looks
+     right. */
+  const roomForMap = twoColumns
+    ? Math.max(0, (shellWidth - COLUMN_GAP_PX) / 2 - 44)
+    : Math.max(0, shellWidth - 44);
   const canvas = canvasSize(roomForMap, mapAspect, roomForMap);
 
   const badgeFor = (tab: FormTab) => tally.byTab[tab] || undefined;
@@ -1737,23 +1821,38 @@ export function DeploymentForm({
           onPointerMoveWhileDown={dragTo}
           onPointerFinished={endDrag}
           onDoubleClickMap={removeWaypointUnder}
-          dynamicObstacles={(preview?.dynamic_obstacles ?? []).map((obstacle) => ({
-            name: obstacle.name,
-            radius: obstacle.radius,
-            position: obstacle.position,
-          }))}
-          obstacleSnapshots={snapshotsOf(preview)}
+          /* Read at the playhead rather than at the instant the request
+             named. With a track in hand these are the same thing only at
+             t = 0; without one, `trafficAt` falls back to the still
+             frame and this is exactly what it always was. */
+          dynamicObstacles={trafficAt(preview, playhead)}
+          obstacleSnapshots={snapshotsOf(preview, playhead)}
           /* The document's own traffic, drawn from the points it
              stores. Until this existed, placing waypoints drew nothing
              until somebody pressed Preview — so a route was authored by
              clicking into an empty map and hoping. */
           authoredTraffic={overlayOf(trafficOf(draft), trafficUi.selectedObstacleIndex)}
-          previewTime={preview?.time}
+          previewTime={preview ? playhead : undefined}
+          showGrid={showGrid}
         />
         <div className="deployment-map-legend" aria-label={t("deployments.form.map")}>
           <span><i className="legend-start" />{t("decisions.map.start")}</span>
           <span><i className="legend-goal" />{t("decisions.map.goal")}</span>
           <span><i className="legend-traffic" />{t("deployments.form.tabs.traffic")}</span>
+          {/* In the legend rather than beside the source tabs: the rest
+              of this row says what the marks on the canvas mean, and the
+              grid is one more of them. `simulate.grid` is reused rather
+              than copied — this row already borrows its other three
+              labels across namespaces, and two keys for one word is how
+              "Grid" and "Lưới ô" end up on two screens. */}
+          <label className="deployment-map-grid-toggle">
+            <input
+              type="checkbox"
+              checked={showGrid}
+              onChange={(event) => setShowGrid(event.target.checked)}
+            />
+            {t("simulate.grid")}
+          </label>
         </div>
         </div>
       ) : (
@@ -1825,6 +1924,60 @@ export function DeploymentForm({
         <Hint text={t("deployments.form.previewNote")} label={t("deployments.form.preview")} />
       </div>
 
+      {/* **The transport, and why it only exists once there is a track.**
+          A still frame answers "is the cart in my way at t = 12" and not
+          "where is it heading", which is the question somebody placing a
+          start pose actually has — and finding it out meant typing 0,
+          then 5, then 10, pressing the button each time and holding the
+          difference in their head.
+
+          It runs for the deployment's own `episode_timeout_s`, so what
+          plays is the length of episode this deployment will actually
+          run. A fixed sixty seconds would show traffic an episode that
+          gives up at twenty will never meet.
+
+          Stops at the end rather than looping: an author watching for
+          one moment — the instant a cart reaches the doorway — loses
+          track of whether they have seen it yet once the picture starts
+          over with no cue for where the repeat began. */}
+      {preview && playableSeconds(preview) > 0 ? (
+        <div className="deployment-preview-transport">
+          <button
+            type="button"
+            className="deployment-preview-play"
+            aria-pressed={playing}
+            onClick={() => {
+              // Pressing play at the end replays from the start rather
+              // than doing nothing, which is what a button that looks
+              // available has to do.
+              if (!playing && playhead >= playableSeconds(preview)) setPlayhead(0);
+              setPlaying((current) => !current);
+            }}
+          >
+            {t(playing ? "deployments.form.previewPause" : "deployments.form.previewPlay")}
+          </button>
+          <input
+            type="range"
+            className="deployment-preview-scrub"
+            min={0}
+            max={playableSeconds(preview)}
+            step={preview.step ?? 0.2}
+            value={playhead}
+            aria-label={t("deployments.form.previewScrub")}
+            onChange={(event) => {
+              // Dragging takes over from the timer. Leaving it running
+              // would fight the drag, and the handle would spring
+              // forward out from under the pointer.
+              setPlaying(false);
+              setPlayhead(Number(event.target.value));
+            }}
+          />
+          <span className="deployment-preview-clock">
+            {playhead.toFixed(1)} / {playableSeconds(preview).toFixed(1)} s
+          </span>
+        </div>
+      ) : null}
+
       {/* The preview endpoint answers two questions and the first
           version read only one of them. It runs the scenario against the
           *map* — a start pose inside a wall, an obstacle spawned in
@@ -1834,7 +1987,7 @@ export function DeploymentForm({
           back from here with `valid: false`, and the author would have
           seen only traffic drawn as though nothing were wrong. */}
       {preview && !preview.valid ? (
-        <div className="notice warn">
+        <div className="notice notice--warn">
           <strong>{t("deployments.form.previewInvalid")}</strong>
           <ul>
             {preview.errors.map((reason) => (
@@ -1860,7 +2013,7 @@ export function DeploymentForm({
       <div className="deployment-section-head">
         <span className="deployment-section-icon" aria-hidden="true"><Icon name="info" size={18} /></span>
         <h4>{t("deployments.form.identity")}</h4>
-        {identityErrors ? <span className="badge err"><Icon name="alert" size={12} />{identityErrors}</span> : null}
+        {identityErrors ? <span className="badge err">{identityErrors}</span> : null}
       </div>
       <div className="deployment-identity-grid">
         {field("id", t("deployments.form.id"), undefined, t("deployments.form.idNote"))}
@@ -1881,11 +2034,20 @@ export function DeploymentForm({
           error={errorFor("deployment_role")}
         />
       </div>
+      {mapSelector}
       </section>
 
-      {/* Select the world beside its configuration. The actual map is a
-          separate full-width row below, so both columns keep their job
-          without confining the drawing to the left half. */}
+      {/* **What the deployment is, in one panel.** The id, the claim
+          fields and the choice of world were three headed blocks in a
+          row — `Identity` above, `Map and mission` below and to the
+          left — and they are one answer: which world, held to which
+          claim, under which name. Splitting them put a panel border
+          through the middle of a single thought and cost a heading to
+          say so.
+
+          The canvas does not come with them. Choosing a map is a
+          sentence; placing a mission on it is work, and work wants the
+          room the row below gives it. */}
       <div
         className={`deployment-config-grid${twoColumns ? " is-two-column" : ""}`}
         style={{
@@ -1896,7 +2058,11 @@ export function DeploymentForm({
           marginTop: 12,
         }}
       >
-        {mapSelector}
+        {/* Left: the map, at half the form's width. It had a full-width
+            row of its own, which drew it as wide as the form and left
+            the tabs beside empty floor — and the tabs are what an author
+            is reading while they place a mission. */}
+        {mapArea}
         <div className="deployment-config-panel">
           <Tabs
             tabs={TABS}
@@ -1908,7 +2074,6 @@ export function DeploymentForm({
           />
         </div>
       </div>
-      {mapArea}
 
       {/* **Sticky inside the form, not fixed to the window.** Fixed
           would sit over whatever is at the bottom of the page and take
@@ -1966,7 +2131,7 @@ export function DeploymentForm({
             under a heading that does not own it is a refusal the author
             will not find, and filing stays blocked meanwhile. */}
         {tally.unmapped.map((entry) => (
-          <p key={`${entry.path}:${entry.message}`} className="notice warn">
+          <p key={`${entry.path}:${entry.message}`} className="notice notice--warn">
             {entry.path}: {entry.message}
           </p>
         ))}
@@ -2010,15 +2175,18 @@ function DeploymentSection({
   checked: boolean;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   return (
     <section className={`deployment-section deployment-section--${tone}`}>
       <div className="deployment-section-head">
         <span className="deployment-section-icon" aria-hidden="true"><Icon name={icon} size={18} /></span>
         <h4>{title}</h4>
         {errors ? (
-          <span className="badge err"><Icon name="alert" size={12} />{errors}</span>
+          <span className="badge err">{errors}</span>
         ) : checked ? (
-          <span className="badge ok"><Icon name="check" size={12} /></span>
+          <span className="badge ok" aria-label={t("deployments.section.complete")}>
+            <Icon name="check" size={12} />
+          </span>
         ) : (
           <span className="badge muted-badge">—</span>
         )}

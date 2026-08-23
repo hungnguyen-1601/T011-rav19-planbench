@@ -28,9 +28,12 @@ import {
   type PacketWaterfall,
   getExplanation,
 } from "@/lib/decisions";
+import { Hint } from "@/components/Hint";
 import { FieldError } from "@/lib/auth";
 import {
   firedSightings,
+  latticePlain,
+  latticeReason,
   missingNotes,
   orderedFindings,
   sightingsState,
@@ -117,7 +120,7 @@ export function EvidencePanel({ run }: { run: DecisionRun }) {
         </p>
       )}
 
-      <SightingsBlock observations={packet.observations} />
+      <SightingsBlock observations={packet.observations} run={run} />
       <LatticeBlock findings={packet.lattice} />
 
       {packet.known_unknowns.length > 0 ? (
@@ -226,8 +229,27 @@ function WaterfallBlock({ waterfall }: { waterfall: PacketWaterfall }) {
 }
 
 /** What the detectors saw, as a fraction of the episodes looked at. */
-function SightingsBlock({ observations }: { observations: PacketObservation[] }) {
+function SightingsBlock({
+  observations,
+  run,
+}: {
+  observations: PacketObservation[];
+  run: DecisionRun;
+}) {
   const { t } = useTranslation();
+  /* **The hash is an identity, not a name.** This column printed
+     `29cdf6266a44` and nothing else, and a reader who has spent the page
+     comparing `astar+dwa` against `rrtstar+dwa` has nowhere to look it
+     up: the ids appear on no other panel. Named from the run's own
+     candidate list, with the hash kept beside it — the hash is what a
+     trace path and a bug report are keyed on, so removing it would trade
+     one unusable column for another. */
+  const named = new Map(
+    (run.report?.candidates ?? []).map((candidate) => [
+      candidate.candidate_id,
+      `${candidate.stack_label} · ${candidate.local_controller_config}`,
+    ]),
+  );
   const state = sightingsState(observations);
   // "The detectors never ran" and "they ran and found nothing" both
   // render an empty table and mean opposite things.
@@ -248,8 +270,37 @@ function SightingsBlock({ observations }: { observations: PacketObservation[] })
         <tbody>
           {sightings.map((item) => (
             <tr key={`${item.type}:${item.candidate_id}`}>
-              <td><code>{item.type}</code></td>
-              <td><code>{item.candidate_id}</code></td>
+              {/* **The plain name leads and the code follows it.**
+                  `near_miss_cluster` is precise, checkable against the
+                  replay, and the id every report and trace path is keyed
+                  on — and it is also the reason a reader who is not on
+                  this team cannot tell whether the row is a problem. The
+                  name says what the robot did; the hint says what had to
+                  happen for the detector to fire, thresholds included,
+                  so the row can be argued with rather than believed. */}
+              <td>
+                <span className="evidence-pattern">
+                  {t(`evidence.detector.name.${item.type}`)}
+                  <Hint
+                    text={t(`evidence.detector.what.${item.type}`)}
+                    label={t(`evidence.detector.name.${item.type}`)}
+                  />
+                </span>
+                <code className="evidence-pattern-id">{item.type}</code>
+              </td>
+              <td>
+                {named.has(item.candidate_id) ? (
+                  <>
+                    {named.get(item.candidate_id)}{" "}
+                    <code className="evidence-sighting-id">{item.candidate_id}</code>
+                  </>
+                ) : (
+                  /* A run whose packet names a candidate its report does
+                     not. Printing the hash alone is the honest fallback:
+                     inventing a label would be worse than an opaque one. */
+                  <code>{item.candidate_id}</code>
+                )}
+              </td>
               {/* A fraction, never a percentage. "3%" hides that it was
                   one episode out of thirty. */}
               <td>
@@ -270,21 +321,65 @@ function LatticeBlock({ findings }: { findings: PacketLatticeFinding[] }) {
   return (
     <details className="evidence-lattice" open>
       <summary>
-        <span>{t("evidence.lattice.title")}</span>
+        <span>{t("evidence.lattice.plainTitle")}</span>
         <span className="badge muted-badge">{findings.length}</span>
       </summary>
+      {/* The rule the whole block runs on, said once at the top rather
+          than implied by seven verdict badges. */}
+      <p className="muted small evidence-lattice-note">{t("evidence.lattice.plainNote")}</p>
       <ul>
         {orderedFindings(findings).map((finding) => (
           <li key={finding.detection_type}>
-            <code>{finding.detection_type}</code>{" "}
+            <span className="evidence-pattern">
+              {t(`evidence.detector.name.${finding.detection_type}`)}
+              <Hint
+                text={t(`evidence.detector.what.${finding.detection_type}`)}
+                label={t(`evidence.detector.name.${finding.detection_type}`)}
+              />
+            </span>
             <span className={`badge ${verdictTone(finding.verdict)}`}>
               {t(`evidence.lattice.verdict.${finding.verdict}`)}
             </span>
-            {finding.subject ? <code className="evidence-subject">{finding.subject}</code> : null}
-            <p className="muted small">{finding.reason}</p>
+            <code className="evidence-pattern-id">{finding.detection_type}</code>
+            {/* The claim, then the method that reached it. The method
+                note used to be the only line here, and it describes the
+                experiment rather than the result. */}
+            <LatticeClaim finding={finding} />
+            <details className="evidence-method">
+              <summary className="muted small">{t("evidence.lattice.method")}</summary>
+              <LatticeReason finding={finding} />
+            </details>
           </li>
         ))}
       </ul>
     </details>
+  );
+}
+
+/** What the finding amounts to, in one sentence.
+ *
+ * Named components are worded; the two verdicts that isolate nothing
+ * name none, and their sentences do not have a slot for one. */
+function LatticeClaim({ finding }: { finding: PacketLatticeFinding }) {
+  const { t } = useTranslation();
+  const plain = latticePlain(finding);
+  return (
+    <p className="evidence-claim">
+      {t(plain.key, { component: plain.componentKey ? t(plain.componentKey) : "" })}
+    </p>
+  );
+}
+
+/** The finding's reason, in the reader's language where that is possible
+ *  and in the platform's own words where it is not. */
+function LatticeReason({ finding }: { finding: PacketLatticeFinding }) {
+  const { t } = useTranslation();
+  const reason = latticeReason(finding);
+  return (
+    <p className="muted small">
+      {reason.translated
+        ? t(reason.key, { subject: reason.subject ?? "" })
+        : reason.text}
+    </p>
   );
 }

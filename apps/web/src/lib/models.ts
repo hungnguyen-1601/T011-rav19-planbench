@@ -108,10 +108,49 @@ export function deleteModel(id: string): Promise<void> {
 }
 
 export function setModelStatus(id: string, status: ModelStatus): Promise<ModelSummary> {
+  return updateModel(id, { status });
+}
+
+/** What a registered model may have changed about it.
+ *
+ * **Not the file.** `POST /models/{id}/documents` refuses a `model`
+ * kind outright — "the model file is set at upload time; create a new
+ * version instead of replacing the bytes of an existing one" — and that
+ * refusal is the same rule that keeps a benchmarked model from being
+ * deleted: results are filed against this id, and swapping the bytes
+ * underneath them turns a measurement into a record of a file that no
+ * longer exists. Everything here is a label on the artefact rather than
+ * the artefact. */
+export interface ModelEdits {
+  name?: string;
+  description?: string;
+  version?: string;
+  status?: ModelStatus;
+  robot_profile_id?: string;
+}
+
+export function updateModel(id: string, edits: ModelEdits): Promise<ModelSummary> {
   return authFetch<ModelSummary>(`/models/${id}`, {
     method: "PATCH",
-    body: JSON.stringify({ status }),
+    body: JSON.stringify(edits),
   });
+}
+
+/** Attach or replace a sidecar.
+ *
+ * `metadata` is parsed and validated; `document` is prose and is never
+ * read as configuration. `model` is rejected by the server, which is why
+ * this signature cannot express it.
+ */
+export function attachDocument(
+  id: string,
+  kind: "metadata" | "document",
+  file: File,
+): Promise<{ id: string; kind: string; filename: string; size: number }> {
+  const body = new FormData();
+  body.append("kind", kind);
+  body.append("file", file);
+  return authFetch(`/models/${id}/documents`, { method: "POST", body });
 }
 
 export function revalidateModel(id: string): Promise<ModelSummary> {

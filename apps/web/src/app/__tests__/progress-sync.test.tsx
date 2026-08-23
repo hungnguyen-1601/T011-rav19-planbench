@@ -55,6 +55,7 @@ function view(overrides: Partial<ReplaySyncView> = {}): ReplaySyncView {
       ],
     },
     reference_source_candidate_id: "winner",
+    running: null,
     ...overrides,
   };
 }
