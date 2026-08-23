@@ -19,6 +19,9 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { CandidatePicker, usableStacks, type CandidateSelection } from "@/components/CandidatePicker";
+import { Hint } from "@/components/Hint";
+import { Tabs } from "@/components/Tabs";
+import { type AlgorithmLayer, globalPlanners, localControllers } from "@/lib/algorithmLayers";
 import { EmptyState } from "@/components/EmptyState";
 import { authFetch, useSession } from "@/lib/auth";
 import {
@@ -81,9 +84,139 @@ export default function CandidatesPage() {
         onDone={refresh}
       />
       <RegisteredTable candidates={candidates} configs={configs} />
+      {/* Above the stacks, because it answers the smaller question
+          first: what algorithms exist at all. The table below then says
+          which pairs of them are real, which is a different fact — the
+          registry is not a full cross product. */}
+      <LayerTable stacks={stacks} />
       <StackTable stacks={stacks} />
       <ConfigTable configs={configs} />
     </section>
+  );
+}
+
+/** Every algorithm in the system, split by the layer it runs at.
+ *
+ * **Two tabs rather than one table with a Kind column.** A global
+ * planner and a local controller are not two species of one thing: they
+ * are given different observations, judged on different rows of a
+ * comparison, and the flag that says "samples randomly" is meaningful
+ * for one of them and meaningless for the other. Sorting a shared table
+ * by Kind would put them next to each other under column headings that
+ * only half of the rows can answer.
+ *
+ * **Derived from the stacks, and this panel says so.** There is no
+ * endpoint listing the two layers on their own; the layers are the
+ * fields each stack declares. Splitting `astar+dwa` on the `+` instead
+ * would be reading a display convention as a fact.
+ */
+function LayerTable({ stacks }: { stacks: AlgorithmInfo[] }) {
+  const { t } = useTranslation();
+  const [tab, setTab] = useState<"global" | "local">("global");
+
+  const rows = tab === "global" ? globalPlanners(stacks) : localControllers(stacks);
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <h3>{t("candidates.layers.title")}</h3>
+        <span className="badge muted-badge">{rows.length}</span>
+      </div>
+      <p className="muted small layer-note">{t("candidates.layers.note")}</p>
+      <Tabs
+        tabs={[
+          {
+            id: "global" as const,
+            label: t("candidates.layers.global"),
+            content: <LayerRows rows={rows} showStochastic />,
+          },
+          {
+            id: "local" as const,
+            label: t("candidates.layers.local"),
+            /* `stochastic` describes the *global* planner's sampling.
+               A controller inheriting the flag from a stack it shares
+               would be labelled random for something it does not do. */
+            content: <LayerRows rows={rows} showStochastic={false} />,
+          },
+        ]}
+        active={tab}
+        onSelect={setTab}
+        idPrefix="candidate-layers"
+        ariaLabel={t("candidates.layers.title")}
+      />
+    </div>
+  );
+}
+
+function LayerRows({
+  rows,
+  showStochastic,
+}: {
+  rows: AlgorithmLayer[];
+  showStochastic: boolean;
+}) {
+  const { t } = useTranslation();
+  if (rows.length === 0) return <p className="muted">{t("candidates.layers.empty")}</p>;
+
+  return (
+    <div className="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>{t("candidates.layers.id")}</th>
+            <th>{t("candidates.layers.observation")}</th>
+            <th>{t("candidates.layers.usedIn")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id}>
+              <td>
+                <code>{row.id}</code>
+                {showStochastic && row.stochastic ? (
+                  <span className="badge warn layer-flag" title={t("candidates.stacks.stochasticNote")}>
+                    {t("candidates.stacks.stochastic")}
+                  </span>
+                ) : null}
+                {/* Said on the layer because a reader picking one needs
+                    to know it is machinery rather than a contender
+                    before they read the stacks it appears in. */}
+                {row.benchmarkable ? null : (
+                  <span className="badge muted-badge layer-flag">
+                    {t("candidates.layers.referenceOnly")}
+                    <Hint
+                      text={t("candidates.layers.referenceOnlyNote")}
+                      label={t("candidates.layers.referenceOnly")}
+                    />
+                  </span>
+                )}
+              </td>
+              <td>
+                {/* Null is an answer, not a gap: the stacks running this
+                    layer give it two different observations, and naming
+                    one of them would be a claim no stack makes. */}
+                {row.observation === null ? (
+                  <span className="muted">
+                    {t("candidates.layers.mixedObservation")}
+                    <Hint
+                      text={t("candidates.layers.mixedNote")}
+                      label={t("candidates.layers.mixedObservation")}
+                    />
+                  </span>
+                ) : (
+                  <code>{row.observation}</code>
+                )}
+              </td>
+              <td className="layer-stacks">
+                {row.stacks.map((id) => (
+                  <code key={id}>{id}</code>
+                ))}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

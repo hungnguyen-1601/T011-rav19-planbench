@@ -4754,3 +4754,20 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
   .models-upload-grid,
   .models-upload-files { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* The two layers a stack is made of, listed on their own.
+   ===================================================================
+   Above the stacks table because it answers the smaller question first
+   — what algorithms exist at all — and the table below then says which
+   pairs of them are real, which is a different fact: the registry is
+   not a full cross product. */
+.layer-note { margin: 0 0 var(--space-3); }
+.layer-flag { margin-left: var(--space-2); }
+/* The stacks a layer appears in, wrapped rather than run off the row: a
+   controller shared by four stacks is the interesting case, and it is
+   the one a nowrap cell would push out of view. */
+.layer-stacks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
