@@ -382,9 +382,15 @@ describe("the assistant takes a paper the way a chat client does", () => {
      comes back as the reply. */
 
   it("puts a paperclip in the composer, not a panel above the thread", () => {
-    expect(AGENT).toContain('className="chat-attach"');
+    /* The class was `chat-attach` until the page got its own styles;
+       the claim is unchanged and only the selector moved. */
+    expect(AGENT).toContain('className="agent-attach"');
     expect(AGENT).toContain('type="file"');
     expect(AGENT).not.toContain("<FromPaperPanel");
+    /* And inside the composer element, not merely somewhere on the
+       page: a paperclip beside the thread is the panel this replaced. */
+    const composer = AGENT.slice(AGENT.indexOf('className="agent-composer"'));
+    expect(composer.slice(0, composer.indexOf('</form>'))).toContain('className="agent-attach"');
   });
 
   it("holds the file until send rather than reading it on pick", () => {

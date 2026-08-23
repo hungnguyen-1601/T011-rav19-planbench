@@ -2,11 +2,13 @@
 
 /** Ask the model about what the platform recorded.
  *
- * What this replaced: a keyword matcher that drafted benchmarks for a
- * page that no longer exists. It never called a model, so a key in
- * `.env` changed nothing about it, and the drafts it produced pointed at
- * a 404. Deleting it was the honest move — a chat box that cannot use
- * the model it appears to be is worse than no chat box.
+ * **The shape is the one people already know.** A thread that fills the
+ * screen, a composer pinned to the bottom of it, the reader's own words
+ * on the right and the answer running the full width on the left. That
+ * is not fashion: an answer here is prose with tool evidence under it,
+ * sometimes a whole extracted paper, and a bubble sized to a chat
+ * message wraps that into a column too narrow to read. The question is
+ * short and stays in a bubble; the answer is long and does not.
  *
  * Three things on screen are load-bearing rather than decorative:
  *
@@ -16,27 +18,35 @@
  * - **The tools that ran.** They are the reason to believe an answer
  *   came from stored data. An answer with no tool calls is the model
  *   talking from memory, and the page shows that plainly instead of
- *   hiding it.
+ *   hiding it. It is a chip in the same row as the others rather than a
+ *   footnote, because "read nothing" is the most important thing that
+ *   row can say and it used to be the quietest.
  * - **What the agent cannot do**, published from the server's own list
  *   rather than written here, so the claim stays true when the list
  *   changes.
+ *
+ * What the redesign deliberately did **not** do: give the thread a
+ * history rail. The server keeps no conversation — `/agent/chat` is
+ * stateless — so a rail listing past chats would be listing something
+ * that does not exist, and building one means first deciding where a
+ * transcript lives and who may read it. That is a data question, not a
+ * layout one.
  */
 
-import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 
-import { EmptyState } from "@/components/EmptyState";
 import { MAX_PAPER_BYTES, PAPER_FILE_TYPES, PaperResult } from "@/components/FromPaperPanel";
 import { Icon } from "@/components/Icon";
-import { askAgent, getCapabilities, type Capabilities, type ChatTurn } from "@/lib/agent";
 import { PluginDraftView } from "@/components/PluginDraftView";
+import { askAgent, getCapabilities, type Capabilities, type ChatTurn } from "@/lib/agent";
+import { useSession } from "@/lib/auth";
 import {
   draftPluginFromPaperFile,
   extractCandidateFromPaperFile,
   type PaperExtraction,
   type PluginDraft,
 } from "@/lib/decisions";
-import { useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 
 interface Entry {
@@ -66,6 +76,13 @@ const QUICK_KEYS = [
   "agent.quick.critique",
 ] as const;
 
+/** How far the textarea may grow before it scrolls instead.
+ *
+ * Past this the composer is eating the thread it belongs to, and the
+ * reader loses sight of what they are replying to while replying to it.
+ */
+const COMPOSER_MAX_HEIGHT = 200;
+
 export default function AgentPage() {
   const { t } = useTranslation();
   const session = useSession();
@@ -76,6 +93,7 @@ export default function AgentPage() {
   const [error, setError] = useState<string | null>(null);
   const endOfThread = useRef<HTMLDivElement>(null);
   const inFlight = useRef<AbortController | null>(null);
+  const composer = useRef<HTMLTextAreaElement>(null);
   /* Held until send, the way every chat client does it: attaching is
      not asking. A file that read itself the moment it was picked would
      spend a model call on a mis-click. */
@@ -100,6 +118,17 @@ export default function AgentPage() {
   useEffect(() => {
     endOfThread.current?.scrollIntoView({ behavior: "smooth" });
   }, [entries, busy]);
+
+  /* Measured, not guessed. `rows` cannot express "as tall as the text"
+     and a fixed height either wastes three lines on a short question or
+     hides the top of a long one. Reset to `auto` first so the box can
+     shrink again when the text does. */
+  useEffect(() => {
+    const box = composer.current;
+    if (!box) return;
+    box.style.height = "auto";
+    box.style.height = `${Math.min(box.scrollHeight, COMPOSER_MAX_HEIGHT)}px`;
+  }, [draft, attached]);
 
   /** Send the attached paper, and let the answer land in the thread.
    *
@@ -149,19 +178,6 @@ export default function AgentPage() {
     }
   }
 
-  /** One press, both things, in the order a reader means them.
-   *
-   * The first version disabled the message box the moment a file was
-   * attached and sent only the file — so "does this paper mention
-   * clearance?", typed before clipping the PDF, was accepted keystroke
-   * by keystroke and then dropped. The box had no disabled styling
-   * either, so it looked live while swallowing input.
-   *
-   * The upload endpoint takes a file and nothing else, so the question
-   * cannot ride along with it. It goes as the next turn instead, which
-   * is the closest honest thing to a caption: the paper is read, then
-   * the question is asked, and both appear in the thread.
-   */
   /** Draft an Algorithm Host plugin from the last paper sent.
    *
    * A turn in the conversation, like the reading was: the request
@@ -178,9 +194,9 @@ export default function AgentPage() {
     const controller = new AbortController();
     inFlight.current = controller;
     try {
-      const draft = await draftPluginFromPaperFile(lastPaper, controller.signal);
+      const drafted = await draftPluginFromPaperFile(lastPaper, controller.signal);
       if (controller.signal.aborted) return;
-      setEntries((prev) => [...prev, { role: "agent", text: "", plugin: draft }]);
+      setEntries((prev) => [...prev, { role: "agent", text: "", plugin: drafted }]);
     } catch (caught) {
       if (!controller.signal.aborted) setError((caught as Error).message);
     } finally {
@@ -189,6 +205,18 @@ export default function AgentPage() {
     }
   }
 
+  /** One press, both things, in the order a reader means them.
+   *
+   * The first version disabled the message box the moment a file was
+   * attached and sent only the file — so "does this paper mention
+   * clearance?", typed before clipping the PDF, was accepted keystroke
+   * by keystroke and then dropped.
+   *
+   * The upload endpoint takes a file and nothing else, so the question
+   * cannot ride along with it. It goes as the next turn instead, which
+   * is the closest honest thing to a caption: the paper is read, then
+   * the question is asked, and both appear in the thread.
+   */
   async function submit() {
     if (!attached) {
       await ask(draft);
@@ -238,43 +266,34 @@ export default function AgentPage() {
     );
   }
 
+  const canSend = attached !== null || draft.trim().length > 0;
+
   return (
-    <div className="page">
-      <div className="page-head">
-        <div>
+    <div className="agent-page">
+      <header className="agent-head">
+        <span className="agent-avatar" aria-hidden="true">
+          <Icon name="sparkles" size={16} />
+        </span>
+        <div className="agent-head-text">
           <h2>{t("agent.title")}</h2>
-          <p>{t("agent.subtitle")}</p>
+          <p className="muted">{t("agent.subtitle")}</p>
         </div>
-        {capabilities?.deterministic ? <OfflineNotice /> : null}
-      </div>
+        {/* The badge belongs beside the name rather than over the
+            composer: it qualifies every answer in the thread, not the
+            next question. */}
+        {capabilities?.deterministic ? (
+          <span className="badge warn agent-head-badge">{t("agent.mock")}</span>
+        ) : null}
+        <Boundaries />
+      </header>
 
-      {error ? <div className="error-box">{error}</div> : null}
-
-      <div className="chat-main">
-        <div className="chat-thread" role="log" aria-live="polite">
+      <div className="agent-thread" role="log" aria-live="polite">
+        <div className="agent-thread-inner">
           {entries.length === 0 ? (
-            <div className="chat-welcome">
-              <EmptyState
-                icon="sparkles"
-                title={t("agent.empty.title")}
-                body={t("agent.empty.body")}
-              />
-              <div className="quick-actions" style={{ justifyContent: "center" }}>
-                {QUICK_KEYS.map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className="quick-action"
-                    onClick={() => void ask(t(key))}
-                  >
-                    {t(key)}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <Welcome onPick={(question) => void ask(question)} />
           ) : (
             entries.map((entry, index) => (
-              <Bubble
+              <Message
                 key={index}
                 entry={entry}
                 onBuildPlugin={
@@ -284,116 +303,157 @@ export default function AgentPage() {
             ))
           )}
           {busy ? (
-            <div className="chat-bubble assistant">
-              <span className="spinner" aria-hidden="true" /> {t("agent.thinking")}
+            <div className="agent-msg agent">
+              <Who />
+              <p className="muted agent-thinking">
+                <span className="spinner" aria-hidden="true" /> {t("agent.thinking")}
+              </p>
             </div>
           ) : null}
+          {/* In the thread rather than under the header, because it is
+              about the turn that just failed and reads as a line in the
+              conversation. */}
+          {error ? <div className="error-box">{error}</div> : null}
           <div ref={endOfThread} />
         </div>
+      </div>
 
-        {/* The attachment sits above the input rather than inside it, so
-            a long filename wraps instead of squeezing the box a person is
-            typing into. */}
-        {/* `role="status"` so the change is announced. Attaching alters
-            the send button's label and what the next press will do, and
-            a reader who cannot see the chip otherwise learns none of
-            that. */}
-        {attached ? (
-          <div className="chat-attachment" role="status" aria-live="polite">
-            <Icon name="paperclip" />
-            <span className="chat-attachment-name">{attached.name}</span>
-            <button
-              type="button"
-              className="chat-attachment-remove"
-              aria-label={t("agent.attachRemove")}
-              onClick={() => {
-                setAttached(null);
-                attachButton.current?.focus();
-              }}
-            >
-              <Icon name="close" />
-            </button>
-          </div>
-        ) : null}
-
+      <div className="agent-composer-wrap">
         <form
-          className="chat-composer"
+          className="agent-composer"
           onSubmit={(event) => {
             event.preventDefault();
             void submit();
           }}
         >
-          <input
-            ref={picker}
-            type="file"
-            accept={PAPER_FILE_TYPES}
-            style={{ display: "none" }}
-            data-testid="agent-paper-file"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              // Cleared so the same file can be picked again after a
-              // failure; an input that keeps its value fires no change.
-              event.target.value = "";
-              if (file) setAttached(file);
-            }}
-          />
-          <button
-            ref={attachButton}
-            type="button"
-            className="chat-attach"
-            title={t("agent.attach")}
-            aria-label={t("agent.attach")}
-            disabled={busy}
-            onClick={() => picker.current?.click()}
-          >
-            <Icon name="paperclip" />
-          </button>
-          <input
+          {/* Inside the box and above the text, so a long filename wraps
+              across the composer instead of squeezing the line being
+              typed into a slot. */}
+          {attached ? (
+            <div className="agent-chip" role="status" aria-live="polite">
+              <Icon name="paperclip" size={14} />
+              <span className="agent-chip-name">{attached.name}</span>
+              <button
+                type="button"
+                className="agent-chip-remove"
+                aria-label={t("agent.attachRemove")}
+                onClick={() => {
+                  setAttached(null);
+                  attachButton.current?.focus();
+                }}
+              >
+                <Icon name="close" size={13} />
+              </button>
+            </div>
+          ) : null}
+
+          <textarea
+            ref={composer}
+            className="agent-input"
+            rows={1}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              /* Enter sends, Shift+Enter writes a line. The old box was
+                 an `<input>`, which made the second impossible: a
+                 question with a pasted error message in it had to be
+                 flattened to one line before it could be asked. */
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                if (!busy && canSend) void submit();
+              }
+            }}
             placeholder={attached ? t("agent.attachedPlaceholder") : t("agent.placeholder")}
             aria-label={t("agent.placeholder")}
           />
-          {busy ? (
-            <button
-              type="button"
-              onClick={() => {
-                inFlight.current?.abort();
-                setBusy(false);
+
+          <div className="agent-composer-tools">
+            <input
+              ref={picker}
+              type="file"
+              accept={PAPER_FILE_TYPES}
+              className="sr-only"
+              data-testid="agent-paper-file"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                // Cleared so the same file can be picked again after a
+                // failure; an input that keeps its value fires no change.
+                event.target.value = "";
+                if (file) setAttached(file);
               }}
-            >
-              {t("agent.stop")}
-            </button>
-          ) : (
+            />
             <button
-              className="primary"
-              type="submit"
-              disabled={attached ? false : !draft.trim()}
+              ref={attachButton}
+              type="button"
+              className="agent-attach"
+              title={t("agent.attach")}
+              aria-label={t("agent.attach")}
+              disabled={busy}
+              onClick={() => picker.current?.click()}
             >
-              {attached ? t("agent.readPaper") : t("agent.send")}
+              <Icon name="paperclip" size={16} />
             </button>
-          )}
+            <span className="agent-composer-hint muted">{t("agent.enterHint")}</span>
+            {busy ? (
+              <button
+                type="button"
+                onClick={() => {
+                  inFlight.current?.abort();
+                  setBusy(false);
+                }}
+              >
+                {t("agent.stop")}
+              </button>
+            ) : (
+              <button className="primary" type="submit" disabled={!canSend}>
+                {attached ? t("agent.readPaper") : t("agent.send")}
+              </button>
+            )}
+          </div>
         </form>
-        <Boundaries />
       </div>
     </div>
   );
 }
 
-/** Shown only when no model is answering.
+/** The first screen, which is a prompt rather than an empty box.
  *
- * The vendor and model name are gone from this page: which provider
- * served a request is a deployment fact, and a reader judging an answer
- * has nothing to do with it. This is the one part that was not a
- * badge — a canned answer and a model's answer read alike, so a page
- * that let them look identical would be lying by omission.
+ * A chat that opens blank asks the reader to guess what it knows. These
+ * four are the questions its tools can actually answer, so the first
+ * click is a working demonstration of the thing rather than a coin
+ * toss.
  */
-function OfflineNotice() {
+function Welcome({ onPick }: { onPick: (question: string) => void }) {
   const { t } = useTranslation();
-  return <span className="badge warn">{t("agent.mock")}</span>;
+  return (
+    <div className="agent-welcome">
+      <span className="agent-welcome-mark" aria-hidden="true">
+        <Icon name="sparkles" size={22} />
+      </span>
+      <h3>{t("agent.empty.title")}</h3>
+      <p className="muted">{t("agent.empty.body")}</p>
+      <div className="agent-suggestions">
+        {QUICK_KEYS.map((key) => (
+          <button key={key} type="button" className="agent-suggestion" onClick={() => onPick(t(key))}>
+            {t(key)}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
-function Bubble({
+function Who() {
+  const { t } = useTranslation();
+  return (
+    <p className="agent-msg-who">
+      <Icon name="sparkles" size={13} />
+      {t("agent.name")}
+    </p>
+  );
+}
+
+function Message({
   entry,
   onBuildPlugin,
 }: {
@@ -402,9 +462,11 @@ function Bubble({
 }) {
   const { t } = useTranslation();
   const turn = entry.turn;
+  const isUser = entry.role === "user";
   return (
-    <div className={`chat-bubble ${entry.role === "user" ? "user" : "assistant"}`}>
-      {entry.text ? <div style={{ whiteSpace: "pre-wrap" }}>{entry.text}</div> : null}
+    <div className={`agent-msg ${isUser ? "user" : "agent"}`}>
+      {isUser ? null : <Who />}
+      {entry.text ? <div className="agent-msg-body">{entry.text}</div> : null}
       {/* Rendered by the candidates page's own component. A second
           rendering would be free to omit the uncomfortable parts — what
           the paper never stated, what cannot be expressed here, how many
@@ -413,7 +475,7 @@ function Bubble({
       {entry.paper ? (
         <>
           <PaperResult result={entry.paper} />
-          <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>
+          <p className="muted small agent-msg-after">
             <Link href="/candidates">{t("agent.paperRegister")}</Link>
             {onBuildPlugin ? (
               <>
@@ -427,48 +489,73 @@ function Bubble({
         </>
       ) : null}
       {entry.plugin ? <PluginDraftView draft={entry.plugin} /> : null}
-      {turn ? (
-        <>
-          {turn.tools_used.length > 0 ? (
-            <p className="muted" style={{ fontSize: 11, marginTop: 6, marginBottom: 0 }}>
-              {t("agent.toolsUsed")}:{" "}
-              {turn.tools_used.map((name, index) => (
-                <code key={`${name}-${index}`} style={{ marginRight: 6 }}>
-                  {name}
-                </code>
-              ))}
-            </p>
-          ) : (
-            /* No tool ran, so nothing here came from stored data. Saying
-               so is the difference between an answer and a guess. */
-            <p className="muted" style={{ fontSize: 11, marginTop: 6, marginBottom: 0 }}>
-              {t("agent.noTools")}
-            </p>
-          )}
-          {turn.tool_errors.length > 0 ? (
-            <p className="muted" style={{ fontSize: 11, marginBottom: 0 }}>
-              {t("agent.toolErrors")}: {turn.tool_errors.join("; ")}
-            </p>
-          ) : null}
-          {turn.truncated ? <div className="notice">{t("agent.truncated")}</div> : null}
-        </>
-      ) : null}
+      {turn ? <Evidence turn={turn} /> : null}
+      {isUser || !entry.text ? null : <CopyAnswer text={entry.text} />}
     </div>
   );
 }
 
-/** What the assistant can and cannot do, said in words first.
+/** What the answer was read from, as chips rather than a footnote.
  *
- * This used to be two rows of function names — `write_task_profile`,
- * `declare_safe` — which tell a reader nothing and made the one claim
- * worth making look like debug output. The claim is that this thing
- * cannot act: it reads stored data and returns sentences, and every
- * decision stays with a person.
- *
- * The raw names survive one level deeper, because the claim has to stay
- * checkable. A reviewer who wants to confirm the list matches the server
- * can open it; nobody else has to read it to understand the guarantee.
+ * The no-tool case is a chip in the same row and not a quieter line
+ * under it. It is the most consequential thing this row can say — the
+ * answer came from the model's memory, not from anything recorded — and
+ * as small grey prose it read like a disclaimer nobody finishes.
  */
+function Evidence({ turn }: { turn: ChatTurn }) {
+  const { t } = useTranslation();
+  return (
+    <div className="agent-evidence">
+      {turn.tools_used.length > 0 ? (
+        <>
+          <span className="agent-evidence-label">{t("agent.toolsUsed")}</span>
+          {turn.tools_used.map((name, index) => (
+            <code key={`${name}-${index}`} className="agent-tool">
+              {name}
+            </code>
+          ))}
+        </>
+      ) : (
+        <span className="agent-tool warn">{t("agent.noTools")}</span>
+      )}
+      {turn.tool_errors.length > 0 ? (
+        <span className="agent-tool warn">
+          {t("agent.toolErrors")}: {turn.tool_errors.join("; ")}
+        </span>
+      ) : null}
+      {turn.truncated ? <span className="agent-tool warn">{t("agent.truncated")}</span> : null}
+    </div>
+  );
+}
+
+/** Copy the answer, not the evidence around it.
+ *
+ * What people paste into a ticket is the sentences. The tool names and
+ * the truncation warning describe how much to trust them, which is the
+ * one part that must not travel without the page it was read on.
+ */
+function CopyAnswer({ text }: { text: string }) {
+  const { t } = useTranslation();
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!done) return;
+    const timer = setTimeout(() => setDone(false), 1600);
+    return () => clearTimeout(timer);
+  }, [done]);
+  return (
+    <button
+      type="button"
+      className="agent-copy"
+      onClick={() => {
+        void navigator.clipboard?.writeText(text).then(() => setDone(true));
+      }}
+    >
+      <Icon name={done ? "check" : "copy"} size={13} />
+      {done ? t("agent.copied") : t("agent.copy")}
+    </button>
+  );
+}
+
 /** What the assistant can and cannot do, in two sentences.
  *
  * No function names. They were kept one fold deeper for a while, for
@@ -476,21 +563,21 @@ function Bubble({
  * the sentences against the server reads `GET /agent/capabilities`,
  * which publishes the exact lists and is held to them by tests. The
  * page's job is the claim, not the audit trail.
+ *
+ * It sits in the header now rather than under the composer. At the foot
+ * of a thread that grows it was below the fold from the second answer
+ * onward — a statement about what this thing may do, placed where it is
+ * read last.
  */
 function Boundaries() {
   const { t } = useTranslation();
   return (
-    <details style={{ marginTop: 10 }}>
-      <summary className="muted" style={{ fontSize: 12, cursor: "pointer" }}>
-        {t("agent.boundaries")}
-      </summary>
-      <p className="muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 6 }}>
-        {t("agent.canReadPlain")}
-      </p>
-      <p className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
-        {t("agent.cannotPlain")}
-      </p>
+    <details className="agent-boundaries">
+      <summary className="muted small">{t("agent.boundaries")}</summary>
+      <div className="agent-boundaries-body">
+        <p className="muted small">{t("agent.canReadPlain")}</p>
+        <p className="muted small">{t("agent.cannotPlain")}</p>
+      </div>
     </details>
   );
 }
-
