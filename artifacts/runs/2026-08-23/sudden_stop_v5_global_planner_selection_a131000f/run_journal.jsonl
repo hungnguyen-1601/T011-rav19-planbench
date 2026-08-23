@@ -1,0 +1,5 @@
+{"index": 2, "total": 10, "candidate_id": "fddc6f9d4046", "stack_label": "rrtstar+dwa", "seed": 0, "episode_context_id": "eaf290c13a8e", "status": "success", "wall_clock_s": 9.124, "finished_at": "2026-08-23T13:36:46.790747+00:00"}
+{"index": 4, "total": 10, "candidate_id": "fddc6f9d4046", "stack_label": "rrtstar+dwa", "seed": 1, "episode_context_id": "83552bc429c8", "status": "success", "wall_clock_s": 11.167, "finished_at": "2026-08-23T13:36:57.960044+00:00"}
+{"index": 6, "total": 10, "candidate_id": "fddc6f9d4046", "stack_label": "rrtstar+dwa", "seed": 2, "episode_context_id": "ebe1904a6b22", "status": "success", "wall_clock_s": 11.191, "finished_at": "2026-08-23T13:37:09.153218+00:00"}
+{"index": 8, "total": 10, "candidate_id": "fddc6f9d4046", "stack_label": "rrtstar+dwa", "seed": 3, "episode_context_id": "8fb66b282414", "status": "success", "wall_clock_s": 8.748, "finished_at": "2026-08-23T13:37:17.903582+00:00"}
+{"index": 10, "total": 10, "candidate_id": "fddc6f9d4046", "stack_label": "rrtstar+dwa", "seed": 4, "episode_context_id": "a237e138885d", "status": "timeout", "wall_clock_s": 29.118, "finished_at": "2026-08-23T13:37:47.024669+00:00"}
