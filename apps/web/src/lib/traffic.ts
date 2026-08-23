@@ -19,6 +19,7 @@
  * with no DOM: a reducer can be tested directly, a click cannot.
  */
 
+import { trafficAt } from "@/lib/previewPlayback";
 import type { ProfileDraft } from "./deployments";
 import type {
   DynamicObstacle,
@@ -587,6 +588,15 @@ const MAX_SIMULATION_DT = 0.05;
  * exists to avoid, arriving by a different door. So the caller gets
  * nothing to send, and the button that would have sent it is disabled.
  */
+/** The longest span the preview endpoint will sample. Matches its own
+ *  validation, so a deployment with a very long timeout gets a shortened
+ *  preview rather than a 422. */
+export const MAX_PREVIEW_SECONDS = 600;
+/** How finely the route is sampled. Fine enough that a cart's turn is a
+ *  curve rather than a corner; coarse enough that a ten-minute episode
+ *  is three thousand points and not a hundred thousand. */
+export const PREVIEW_STEP_SECONDS = 0.2;
+
 export function previewRequestOf(options: {
   draft: ProfileDraft;
   start: Pose2D;
@@ -646,14 +656,32 @@ export function previewRequestOf(options: {
   if (noise) scenario.sensor_noise = noise as Scenario["sensor_noise"];
   const clearance = numberAt(draft, "clearance_preference");
   if (clearance !== undefined) scenario.clearance_preference = clearance;
-  return { map_id: mapId, scenario, time, seed };
+  /* **The playable span is the deployment's own episode timeout.**
+     Not a constant: a preview that runs for sixty seconds against a
+     deployment that gives up at twenty shows an author traffic their
+     episode will never meet, and one that stops at sixty against a
+     three-minute timeout hides the part they were worried about. The
+     number is already required above — `timeout` — because a scenario
+     cannot be built without it, so this costs nothing and cannot drift
+     from what the run will do.
+
+     Clamped to the endpoint's own ceiling, so a deployment declaring a
+     very long episode gets a preview rather than a refusal. */
+  const duration = Math.min(timeout, MAX_PREVIEW_SECONDS);
+  return { map_id: mapId, scenario, time, seed, duration, step: PREVIEW_STEP_SECONDS };
 }
 
 /** The raised view takes snapshots where the flat one takes markers.
  *  Both are fed from this one preview, because two views showing
- *  different worlds would be worse than one view. */
-export function snapshotsOf(preview: ScenarioPreview | null): ObstacleSnapshot[] {
-  return (preview?.dynamic_obstacles ?? []).map((obstacle) => ({
+ *  different worlds would be worse than one view — which is also why
+ *  `seconds` is threaded through here rather than left at the instant
+ *  the request named: with playback running, a 2.5D view frozen at t=0
+ *  beside a top-down view at t=12 is precisely those two worlds. */
+export function snapshotsOf(
+  preview: ScenarioPreview | null,
+  seconds = 0,
+): ObstacleSnapshot[] {
+  return trafficAt(preview, seconds).map((obstacle) => ({
     name: obstacle.name,
     x: obstacle.position.x,
     y: obstacle.position.y,

@@ -78,6 +78,7 @@ import { firstTabWithError, tallyErrors, type FormTab } from "@/lib/formTabs";
 import { useTranslation } from "@/lib/i18n";
 import { listRobotProfiles, type RobotProfile } from "@/lib/models";
 import type { LibraryEntry } from "@/lib/platformTypes";
+import { advance, playableSeconds, trafficAt } from "@/lib/previewPlayback";
 import type { MapData, MapSummary, Point2D, Pose2D, ScenarioPreview } from "@/lib/types";
 import { safetyEnvelope } from "@/lib/keepOut";
 
@@ -236,6 +237,16 @@ export function DeploymentForm({
   const [preview, setPreview] = useState<ScenarioPreview | null>(null);
   const [previewTime, setPreviewTime] = useState(0);
   const [previewSeed, setPreviewSeed] = useState(0);
+  /** Where the playhead is, and whether it is moving.
+   *
+   * Separate from `previewTime`, which is the instant the *request*
+   * named. Folding them together would make dragging the scrubber
+   * invalidate the reply it is scrubbing — `scrubPreview` clears the
+   * picture whenever the request's numbers change, and it has to keep
+   * doing that. The playhead moves inside one answer; `previewTime`
+   * asks a different question. */
+  const [playhead, setPlayhead] = useState(0);
+  const [playing, setPlaying] = useState(false);
   /** Which panel of controls is on top.
    *
    * Opens on the mission, because that is the tab whose controls the
@@ -956,7 +967,39 @@ export function DeploymentForm({
   const scrubPreview = () => {
     previewSeq.supersede();
     setPreview(null);
+    // A timer left running over a cleared picture keeps counting
+    // seconds of a world that is no longer on screen.
+    setPlaying(false);
+    setPlayhead(0);
   };
+
+  /** Walk the playhead while it is running.
+   *
+   * `requestAnimationFrame` rather than an interval, and real elapsed
+   * time rather than a fixed increment per frame: a tab in the
+   * background is throttled to one frame a second, and adding a
+   * constant each time would make the traffic crawl there and race on a
+   * 144 Hz screen. What is being played back is seconds of a simulated
+   * episode, so seconds are what the clock has to count. */
+  useEffect(() => {
+    if (!playing) return;
+    const span = playableSeconds(preview);
+    if (span <= 0) return;
+    let frame = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const elapsed = (now - last) / 1000;
+      last = now;
+      setPlayhead((current) => {
+        const next = advance(current, elapsed, span);
+        if (!next.running) setPlaying(false);
+        return next.seconds;
+      });
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [playing, preview]);
 
   /** The request this draft can currently support, or nothing.
    *
@@ -1000,7 +1043,14 @@ export function DeploymentForm({
       // Replies can overtake each other; only the newest request may
       // draw. Without this a slow answer about t = 0 lands after a quick
       // one about t = 40 and the canvas shows the older instant.
-      if (previewSeq.isCurrent(asked)) setPreview(answer);
+      if (previewSeq.isCurrent(asked)) {
+        setPreview(answer);
+        // A new answer is a new world; leaving the playhead at 30 s
+        // would show the middle of a route nobody has watched the start
+        // of, under a scrubber that had not moved.
+        setPlayhead(0);
+        setPlaying(false);
+      }
     } catch (caught) {
       if (!previewSeq.isCurrent(asked)) return;
       setPreview(null);
@@ -1748,18 +1798,18 @@ export function DeploymentForm({
           onPointerMoveWhileDown={dragTo}
           onPointerFinished={endDrag}
           onDoubleClickMap={removeWaypointUnder}
-          dynamicObstacles={(preview?.dynamic_obstacles ?? []).map((obstacle) => ({
-            name: obstacle.name,
-            radius: obstacle.radius,
-            position: obstacle.position,
-          }))}
-          obstacleSnapshots={snapshotsOf(preview)}
+          /* Read at the playhead rather than at the instant the request
+             named. With a track in hand these are the same thing only at
+             t = 0; without one, `trafficAt` falls back to the still
+             frame and this is exactly what it always was. */
+          dynamicObstacles={trafficAt(preview, playhead)}
+          obstacleSnapshots={snapshotsOf(preview, playhead)}
           /* The document's own traffic, drawn from the points it
              stores. Until this existed, placing waypoints drew nothing
              until somebody pressed Preview — so a route was authored by
              clicking into an empty map and hoping. */
           authoredTraffic={overlayOf(trafficOf(draft), trafficUi.selectedObstacleIndex)}
-          previewTime={preview?.time}
+          previewTime={preview ? playhead : undefined}
         />
         <div className="deployment-map-legend" aria-label={t("deployments.form.map")}>
           <span><i className="legend-start" />{t("decisions.map.start")}</span>
@@ -1835,6 +1885,60 @@ export function DeploymentForm({
         </button>
         <Hint text={t("deployments.form.previewNote")} label={t("deployments.form.preview")} />
       </div>
+
+      {/* **The transport, and why it only exists once there is a track.**
+          A still frame answers "is the cart in my way at t = 12" and not
+          "where is it heading", which is the question somebody placing a
+          start pose actually has — and finding it out meant typing 0,
+          then 5, then 10, pressing the button each time and holding the
+          difference in their head.
+
+          It runs for the deployment's own `episode_timeout_s`, so what
+          plays is the length of episode this deployment will actually
+          run. A fixed sixty seconds would show traffic an episode that
+          gives up at twenty will never meet.
+
+          Stops at the end rather than looping: an author watching for
+          one moment — the instant a cart reaches the doorway — loses
+          track of whether they have seen it yet once the picture starts
+          over with no cue for where the repeat began. */}
+      {preview && playableSeconds(preview) > 0 ? (
+        <div className="deployment-preview-transport">
+          <button
+            type="button"
+            className="deployment-preview-play"
+            aria-pressed={playing}
+            onClick={() => {
+              // Pressing play at the end replays from the start rather
+              // than doing nothing, which is what a button that looks
+              // available has to do.
+              if (!playing && playhead >= playableSeconds(preview)) setPlayhead(0);
+              setPlaying((current) => !current);
+            }}
+          >
+            {t(playing ? "deployments.form.previewPause" : "deployments.form.previewPlay")}
+          </button>
+          <input
+            type="range"
+            className="deployment-preview-scrub"
+            min={0}
+            max={playableSeconds(preview)}
+            step={preview.step ?? 0.2}
+            value={playhead}
+            aria-label={t("deployments.form.previewScrub")}
+            onChange={(event) => {
+              // Dragging takes over from the timer. Leaving it running
+              // would fight the drag, and the handle would spring
+              // forward out from under the pointer.
+              setPlaying(false);
+              setPlayhead(Number(event.target.value));
+            }}
+          />
+          <span className="deployment-preview-clock">
+            {playhead.toFixed(1)} / {playableSeconds(preview).toFixed(1)} s
+          </span>
+        </div>
+      ) : null}
 
       {/* The preview endpoint answers two questions and the first
           version read only one of them. It runs the scenario against the

@@ -27,6 +27,7 @@ const PAGE = readFileSync(join(APP, "deployments", "page.tsx"), "utf8");
 const DECISIONS = readFileSync(join(APP, "decisions", "page.tsx"), "utf8");
 const FORM = readFileSync(join(process.cwd(), "src", "components", "DeploymentForm.tsx"), "utf8");
 const LIB = readFileSync(join(process.cwd(), "src", "lib", "deployments.ts"), "utf8");
+const LIB2 = readFileSync(join(process.cwd(), "src", "lib", "traffic.ts"), "utf8");
 const TRAFFIC_UI = readFileSync(join(process.cwd(), "src", "components", "TrafficEditor.tsx"), "utf8");
 const TRAFFIC_LIB = readFileSync(join(process.cwd(), "src", "lib", "traffic.ts"), "utf8");
 
@@ -1062,5 +1063,68 @@ describe("the page leads with filing, not with the list", () => {
        move the sentence under it. */
     const list = PAGE.indexOf('className="panel deployment-list-panel"');
     expect(PAGE.indexOf("deployments.noiseNote")).toBeGreaterThan(list);
+  });
+});
+
+describe("the preview plays the traffic rather than freezing it", () => {
+  it("asks for a span of motion, not one instant", () => {
+    /* A still frame answers "is the cart in my way at t = 12" and not
+       "where is it heading", which is the question somebody placing a
+       start pose actually has. Finding out meant typing 0, then 5, then
+       10, pressing the button each time. */
+    expect(LIB2).toContain("duration");
+    expect(LIB2).toContain("PREVIEW_STEP_SECONDS");
+  });
+
+  it("plays for the deployment's own episode timeout", () => {
+    /* A fixed sixty seconds would show traffic an episode that gives up
+       at twenty will never meet, and would stop short of the part an
+       author was worried about on a three-minute one. The number is
+       already required to build the scenario, so it cannot drift from
+       what the run will do. */
+    expect(LIB2).toContain("Math.min(timeout, MAX_PREVIEW_SECONDS)");
+  });
+
+  it("samples on the server, never in the browser", () => {
+    /* The rule the still frame was already built on. A second
+       implementation of four motion laws would drift from the
+       simulator's, and the drift shows up as an author placing a start
+       clear of a cart that is somewhere else when the run happens. */
+    expect(FORM).not.toContain("position_at");
+    expect(FORM).toContain("trafficAt(preview, playhead)");
+  });
+
+  it("keeps the playhead apart from the instant the request named", () => {
+    /* Folding them together would make dragging the scrubber invalidate
+       the very reply it is scrubbing: changing the request's numbers
+       clears the picture, and it has to keep doing that. */
+    expect(FORM).toContain("const [playhead, setPlayhead] = useState(0)");
+    expect(FORM).toContain("setPreviewTime(Number(event.target.value))");
+  });
+
+  it("stops the timer when the picture is cleared", () => {
+    /* A timer left running over a cleared canvas keeps counting seconds
+       of a world nobody is looking at. */
+    const scrub = FORM.slice(FORM.indexOf("const scrubPreview"), FORM.indexOf("const previewRequest"));
+    expect(scrub).toContain("setPlaying(false)");
+    expect(scrub).toContain("setPlayhead(0)");
+  });
+
+  it("parks a fresh answer at the start", () => {
+    /* Leaving the playhead at 30 s would show the middle of a route
+       nobody has watched the start of, under a scrubber that had not
+       moved. */
+    expect(FORM).toContain("setPreview(answer);\n        // A new answer is a new world");
+  });
+
+  it("shows both views the same second", () => {
+    /* A 2.5D view frozen at t=0 beside a top-down view at t=12 is two
+       worlds, which is the thing `snapshotsOf` was written to avoid. */
+    expect(FORM).toContain("snapshotsOf(preview, playhead)");
+  });
+
+  it("offers no transport when there is nothing to play", () => {
+    /* A scrubber over a single frame is a control that cannot move. */
+    expect(FORM).toContain("playableSeconds(preview) > 0 ?");
   });
 });

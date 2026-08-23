@@ -204,6 +204,12 @@ export interface ScenarioPreviewRequest {
   /** Seeded traffic is timed off this, so a preview shows one seed
    *  rather than implying the scenario looks like this for all of them. */
   seed?: number;
+  /** Seconds of motion to sample, from 0. Absent asks for the instant
+   *  alone — the shape this had before playback existed. */
+  duration?: number;
+  /** Seconds between samples. Resolution, not frame rate: the client
+   *  plays the track back at its own pace. */
+  step?: number;
 }
 
 export interface ScenarioResource {
@@ -228,7 +234,21 @@ export interface ScenarioPreview {
   seed: number;
   valid: boolean;
   errors: string[];
-  dynamic_obstacles: { name: string; radius: number; position: Point2D }[];
+  dynamic_obstacles: {
+    name: string;
+    radius: number;
+    position: Point2D;
+    /** Where this obstacle goes, sampled every `step` seconds from 0.
+     *  Empty on a reply that was asked for one instant, and on one from
+     *  a server that predates playback. */
+    track?: Point2D[];
+  }[];
+  /** What the tracks span. Read from here rather than from what was
+   *  asked for: the two differ whenever a request was clamped, and a
+   *  scrubber labelled longer than its track is the same lie as a canvas
+   *  labelled t = 40 showing t = 0. */
+  duration?: number;
+  step?: number;
 }
 
 export interface SimulationResource {

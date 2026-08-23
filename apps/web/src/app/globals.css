@@ -4678,3 +4678,31 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
 .evidence-method { margin-top: var(--space-1); }
 .evidence-method summary { cursor: pointer; }
 .evidence-lattice-note { margin: var(--space-1) 0 var(--space-3); }
+
+/* The preview transport: play, scrub, and the clock that says where.
+   ===================================================================
+   It appears only once a reply carries a track. A still frame answers
+   "is the cart in my way at t = 12" and not "where is it heading", and
+   a scrubber over a single frame is a control that cannot move.
+
+   The clock is not decoration. The scrubber's own position is the only
+   other thing saying which second is drawn, and a slider handle is a
+   poor readout for the moment somebody is trying to name — "the cart
+   reaches the doorway at 12.4 s" is a sentence they will type into the
+   Time box afterwards. */
+.deployment-preview-transport {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding-inline: var(--space-3);
+}
+.deployment-preview-scrub { flex: 1; min-width: 0; }
+.deployment-preview-play { min-width: 72px; }
+.deployment-preview-clock {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
