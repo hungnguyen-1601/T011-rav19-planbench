@@ -2852,12 +2852,41 @@ a.stat-card:hover {
 
 .deployment-section-body { padding: 13px; }
 .deployment-section--identity { margin-bottom: 14px; }
+/* **The map chooser is part of this panel, not a card inside it.**
+   Which world, held to which claim, under which name is one answer, and
+   it used to be split across two headed blocks with a panel border
+   through the middle. Merged, the chooser keeps its heading — it is
+   still a distinct question — and loses the box: a bordered card inside
+   a bordered panel reads as a thing that wandered in.
+
+   Scoped to the identity section so the drawing stage below, which uses
+   the same class, keeps the frame it needs. */
+.deployment-section--identity .deployment-map-selector {
+  padding: 0 var(--space-3) var(--space-3);
+}
+.deployment-section--identity .deployment-map-workspace {
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+.deployment-section--identity .deployment-map-head {
+  padding-inline: 0;
+  background: transparent;
+}
+.deployment-section--identity .deployment-map-workspace > .field,
+.deployment-section--identity .deployment-map-workspace > .row,
+.deployment-section--identity .deployment-map-workspace > .muted,
+.deployment-section--identity .deployment-map-workspace > .notice { margin-inline: 0; }
 
 .deployment-identity-grid {
   display: grid;
   grid-template-columns: minmax(240px, 1.5fr) repeat(2, minmax(170px, 1fr));
-  gap: 12px;
-  padding: 13px;
+  gap: var(--space-3);
+  /* On the scale, and the map chooser below it now reads the same
+     token — the two share a left edge inside one panel, so they cannot
+     be a pixel apart by having been typed separately. */
+  padding: var(--space-3);
 }
 
 .deployment-config-grid,
@@ -2865,10 +2894,15 @@ a.stat-card:hover {
 .deployment-map-fullwidth,
 .deployment-config-panel { min-width: 0; }
 
+/* Named for the row it used to own. It is a grid column now — the left
+   half, beside the tabs — so it fills its cell and the grid's own gap
+   does the spacing that this margin used to. Kept at 100% because the
+   cell is what decides the width; the canvas inside is sized in pixels
+   from the same number, since CSS stretching it would move every click
+   away from the pointer. */
 .deployment-map-fullwidth {
   width: 100%;
   max-width: 100%;
-  margin-top: 16px;
   overflow: hidden;
 }
 

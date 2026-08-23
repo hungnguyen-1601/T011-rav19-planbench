@@ -1152,11 +1152,22 @@ export function DeploymentForm({
    *  its own cap. The panel then takes the rest — so on a wide screen
    *  the spare room goes to the controls rather than becoming a gap
    *  between two things that are supposed to sit beside each other. */
-  // The map now owns a full-width row below the two configuration
-  // columns. Its drawing buffer follows the measured form width (minus
-  // the frame's margin, border and padding), so CSS never stretches the
-  // canvas away from the coordinate system pointer events use.
-  const roomForMap = Math.max(0, shellWidth - 44);
+  /* **The map is back in a column, at half the form's width.**
+     It had a full-width row of its own under both configuration
+     columns, which drew it as large as the form and left the tabs
+     beside a strip of empty floor. The room it gets is now the left
+     half: the form's width, less the gap between the columns, halved,
+     less the frame's own margin, border and padding.
+
+     Measured and passed down as a number rather than left to CSS.
+     `MissionCanvas` maps a press to world coordinates by assuming its
+     drawing surface and its CSS box are the same size, so stretching
+     the element while the prop stays put lands every click somewhere
+     other than the pointer — silently, because the map still looks
+     right. */
+  const roomForMap = twoColumns
+    ? Math.max(0, (shellWidth - COLUMN_GAP_PX) / 2 - 44)
+    : Math.max(0, shellWidth - 44);
   const canvas = canvasSize(roomForMap, mapAspect, roomForMap);
 
   const badgeFor = (tab: FormTab) => tally.byTab[tab] || undefined;
@@ -1881,11 +1892,20 @@ export function DeploymentForm({
           error={errorFor("deployment_role")}
         />
       </div>
+      {mapSelector}
       </section>
 
-      {/* Select the world beside its configuration. The actual map is a
-          separate full-width row below, so both columns keep their job
-          without confining the drawing to the left half. */}
+      {/* **What the deployment is, in one panel.** The id, the claim
+          fields and the choice of world were three headed blocks in a
+          row — `Identity` above, `Map and mission` below and to the
+          left — and they are one answer: which world, held to which
+          claim, under which name. Splitting them put a panel border
+          through the middle of a single thought and cost a heading to
+          say so.
+
+          The canvas does not come with them. Choosing a map is a
+          sentence; placing a mission on it is work, and work wants the
+          room the row below gives it. */}
       <div
         className={`deployment-config-grid${twoColumns ? " is-two-column" : ""}`}
         style={{
@@ -1896,7 +1916,11 @@ export function DeploymentForm({
           marginTop: 12,
         }}
       >
-        {mapSelector}
+        {/* Left: the map, at half the form's width. It had a full-width
+            row of its own, which drew it as wide as the form and left
+            the tabs beside empty floor — and the tabs are what an author
+            is reading while they place a mission. */}
+        {mapArea}
         <div className="deployment-config-panel">
           <Tabs
             tabs={TABS}
@@ -1908,7 +1932,6 @@ export function DeploymentForm({
           />
         </div>
       </div>
-      {mapArea}
 
       {/* **Sticky inside the form, not fixed to the window.** Fixed
           would sit over whatever is at the bottom of the page and take

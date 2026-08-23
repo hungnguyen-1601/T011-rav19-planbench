@@ -551,20 +551,41 @@ describe("the traffic comes with the map it belongs to", () => {
     expect(FORM).not.toMatch(/flushDrag\(\s*(current\.)?pending/);
   });
 
-  it("keeps the configuration split above a full-width map", () => {
+  it("puts the map in the left column, beside the configuration", () => {
+    /* **The full-width row is gone.** It drew the map as wide as the
+       form and left the tabs beside empty floor — and the tabs are what
+       an author reads while placing a mission on it. */
     expect(FORM).toContain("gridTemplateColumns");
     expect(FORM).toContain("sideBySide(shellWidth)");
-    expect(FORM).toContain('className="deployment-map-selector"');
     expect(FORM).toContain('className="deployment-map-fullwidth"');
-    expect(FORM.indexOf("{mapArea}")).toBeGreaterThan(FORM.indexOf("deployment-config-panel"));
+    expect(FORM.indexOf("{mapArea}")).toBeLessThan(FORM.indexOf("deployment-config-panel"));
+    expect(FORM).toContain('"minmax(0, 1fr) minmax(0, 1fr)"');
     /* Measured, and passed down as a number. `MapCanvas` maps a press
        to world coordinates assuming its surface and its CSS box are the
        same size, so a `width: 100%` stretch would land every click away
        from the pointer while the map still looked right. */
     expect(FORM).toContain("canvasSize(roomForMap");
     expect(FORM).toContain("width={canvas.width}");
-    expect(FORM).toContain('"minmax(0, 1fr) minmax(0, 1fr)"');
+  });
+
+  it("sizes the canvas for the half it now occupies", () => {
+    /* Half the form, less the gap between the columns and the frame's
+       own margin, border and padding. Sized for a full-width row it
+       would overflow its column, and CSS clamping it back is exactly
+       the stretch that moves every click away from the pointer. */
+    expect(FORM).toContain("(shellWidth - COLUMN_GAP_PX) / 2 - 44");
     expect(FORM).toContain("canvasSize(roomForMap, mapAspect, roomForMap)");
+  });
+
+  it("keeps the map chooser inside the identity panel", () => {
+    /* Which world, held to which claim, under which name is one answer,
+       and it was split across two headed blocks with a panel border
+       through the middle. */
+    const identity = FORM.indexOf('id="deployment-identity"');
+    const selector = FORM.indexOf("{mapSelector}");
+    const close = FORM.indexOf("</section>", identity);
+    expect(selector).toBeGreaterThan(identity);
+    expect(selector).toBeLessThan(close);
   });
 
   it("says which tab a refusal is behind, and jumps there after a check", () => {
