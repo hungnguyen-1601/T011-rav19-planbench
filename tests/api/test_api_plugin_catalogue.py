@@ -152,6 +152,103 @@ class TestItActuallyDrivesAnEpisode:
         assert response.status_code == 422
 
 
+class TestFixingAPluginMakesADifferentCandidate:
+    """The loop this platform exists for: run it, see it is not good
+    enough, change it, import it again, run it again.
+
+    Each turn of that loop has to produce a **different** candidate id.
+    Otherwise the second run's numbers land on the first run's row and
+    the report says one controller changed its mind, when what happened
+    is that two controllers shared a name.
+    """
+
+    def candidate_for(self, client, headers):
+        from planbench_benchmark.candidates import candidate_from_stack
+
+        return candidate_from_stack(STACK_ID, params={})
+
+    def test_a_re_import_of_the_same_version_is_refused(self, client, admin):
+        """The first line of defence: you cannot silently replace what a
+        benchmark may already have run."""
+        assert import_probe(client, admin, WORKING_PLANNER).status_code == 201
+        again = import_probe(client, admin, WORKING_PLANNER, name="Same thing again")
+        assert again.status_code == 422
+        assert "already imported" in again.json()["error"]["message"]
+
+    def test_a_changed_plugin_at_a_new_version_is_a_new_candidate(self, client, admin):
+        """The second: bumping the version and changing the code moves
+        the candidate id, because the id follows the uploaded bytes."""
+        import_probe(client, admin, WORKING_PLANNER)
+        first = self.candidate_for(client, admin)
+
+        faster = WORKING_PLANNER.replace("cruise_speed: float = 0.4", "cruise_speed: float = 0.9")
+        assert faster != WORKING_PLANNER
+        # Retire the old one first: both would otherwise be runnable and
+        # the catalogue would hold two entries for one plugin id, which
+        # is the ambiguity `external_controller_version` cannot resolve.
+        old = client.get("/api/v1/algorithms/plugins", headers=admin).json()[0]["id"]
+        client.patch(
+            f"/api/v1/algorithms/plugins/{old}", json={"status": "disabled"}, headers=admin
+        )
+        manifest = probe_manifest(version="0.2.0")
+        assert import_probe(client, admin, faster, manifest=manifest).status_code == 201
+        second = self.candidate_for(client, admin)
+
+        assert first.candidate_id != second.candidate_id
+        assert first.local_controller.version != second.local_controller.version
+
+    def test_a_fix_imported_beside_the_version_it_fixes_is_the_one_that_runs(
+        self, client, admin
+    ):
+        """Two runnable versions share one stack id, so one of them has
+        to win. It must be the newer: importing a fix and then finding
+        the platform still running the code you replaced is a wrong
+        answer arriving quietly, which is the failure this repo keeps
+        writing down.
+        """
+        first = import_probe(client, admin, WORKING_PLANNER).json()
+        faster = WORKING_PLANNER.replace(
+            "cruise_speed: float = 0.4", "cruise_speed: float = 0.9"
+        )
+        second = import_probe(
+            client, admin, faster, manifest=probe_manifest(version="0.2.0")
+        ).json()
+
+        # Both left enabled on purpose: this is what somebody iterating
+        # actually does, and nothing asks them to retire the old row.
+        assert first["checksum"] != second["checksum"]
+        assert self.candidate_for(client, admin).local_controller.version == (
+            second["checksum"][:12]
+        )
+
+    def test_the_version_is_the_checksum_of_what_was_uploaded(self, client, admin):
+        """Not the manifest's version number. A number a person
+        maintains is a number a person forgets, and the failure would be
+        silent: two different bundles both labelled 0.1.0 would share an
+        identity."""
+        body = import_probe(client, admin, WORKING_PLANNER).json()
+        candidate = self.candidate_for(client, admin)
+        assert candidate.local_controller.version == body["checksum"][:12]
+
+    def test_it_no_longer_falls_back_to_v1(self, client, admin):
+        """The bug this test was written for. `controller_version` knows
+        the built-in controllers by name and returns `"v1"` for anything
+        else — so before the entry carried its own version, every
+        imported plugin was `v1` for ever."""
+        import_probe(client, admin, WORKING_PLANNER)
+        assert self.candidate_for(client, admin).local_controller.version != "v1"
+
+    def test_built_in_identities_are_untouched(self, client, admin):
+        """The change adds a lookup that returns nothing for a built-in,
+        so DWA's id must be exactly what it was — every stored result
+        depends on that."""
+        from planbench_benchmark.candidates import candidate_from_stack, controller_version
+
+        import_probe(client, admin, WORKING_PLANNER)
+        dwa = candidate_from_stack("astar+dwa", params={})
+        assert dwa.local_controller.version == controller_version("dwa")
+
+
 class TestTheTwoObservationTablesAgree:
     def test_the_inverse_mapping_matches_the_forward_one(self):
         """`plugin_stacks` states the requirements-to-class mapping in

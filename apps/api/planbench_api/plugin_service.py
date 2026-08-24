@@ -372,7 +372,16 @@ def sync_catalogue(bundles: Any, install_root: Path) -> list[str]:
 
     clear_external()
     registered: list[str] = []
-    for record in bundles.list():
+    # **Oldest first, so the newest wins.** Two runnable versions of one
+    # plugin share a stack id (`astar+<plugin id>`), so only one of them
+    # can be the thing that id resolves to — and the registry is a dict,
+    # so the last write decides which.
+    #
+    # `bundles.list()` is newest-first, which made the *oldest* version
+    # win: importing a fix while the version it fixed was still enabled
+    # left the platform quietly running the old code. Reversed here, with
+    # the reason, because the correct order is not the natural one.
+    for record in reversed(bundles.list()):
         if not record.usable or record.validation_status is not ValidationStatus.LOADED:
             continue
         try:
@@ -380,6 +389,10 @@ def sync_catalogue(bundles: Any, install_root: Path) -> list[str]:
                 record.manifest,
                 directory=bundle_directory(install_root, record),
                 description=record.description,
+                # The checksum of the archive, truncated the same way the
+                # built-in source checksum is. This is what makes a fixed
+                # and re-imported bundle a different candidate.
+                controller_version=record.checksum[:12],
             )
         except Exception:  # noqa: BLE001 - one bad bundle must not hide the rest
             continue

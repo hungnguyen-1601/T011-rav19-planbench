@@ -266,6 +266,16 @@ class _Entry(BaseModel):
     config_model: type[BaseModel]
     factory: Callable[[BaseModel], LocalPlanner]
     global_factory: Callable[[int], GlobalPlanner]
+    #: What identifies this controller's *code*, when the code did not
+    #: come from this repository.
+    #:
+    #: Empty for every built-in, and that is not an oversight: their
+    #: version is a checksum over their declared source modules
+    #: (``candidates.controller_version``), which is derivable here and
+    #: therefore should not be restated. An imported bundle has no source
+    #: modules to hash — its code arrived as bytes — so the checksum of
+    #: those bytes has to travel with the entry instead.
+    controller_version: str = ""
 
 
 def _astar(episode_seed: int) -> GlobalPlanner:  # noqa: ARG001 - A* ignores the seed
@@ -503,6 +513,22 @@ def register_external(entry: _Entry) -> str:
     """Add a stack the running process learned about. Returns its id."""
     EXTERNAL_ALGORITHMS[entry.info.id] = entry
     return entry.info.id
+
+
+def external_controller_version(controller: str) -> str:
+    """The code identity of an imported controller, or '' for a built-in.
+
+    **Deliberately not cached**, unlike its built-in counterpart. A
+    built-in's source cannot change while the process runs, so hashing it
+    once is safe; an imported bundle can be replaced by a new version at
+    any moment, and a cached answer would file the second import's runs
+    under the first import's identity — which is the exact confusion this
+    whole mechanism exists to prevent.
+    """
+    for entry in EXTERNAL_ALGORITHMS.values():
+        if entry.info.local_controller == controller and entry.controller_version:
+            return entry.controller_version
+    return ""
 
 
 def unregister_external(algorithm_id: str) -> None:

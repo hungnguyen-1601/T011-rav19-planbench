@@ -190,6 +190,7 @@ def build_plugin_entry(
     directory: Path,
     description: str = "",
     global_planner: str = "astar",
+    controller_version: str = "",
 ):
     """One registry entry for one imported plugin, paired with a global.
 
@@ -236,6 +237,12 @@ def build_plugin_entry(
         # other candidate ran, or the comparison is between two things
         # at once.
         global_factory=backing.global_factory,
+        # The uploaded bytes, so re-importing a fixed bundle produces a
+        # different candidate rather than overwriting the old one's
+        # identity. Falls back to the manifest's own version only when a
+        # caller has no checksum to give: a number a person maintains is
+        # a number a person forgets, and the failure is silent.
+        controller_version=controller_version or f"v{manifest.version}",
     )
 
 

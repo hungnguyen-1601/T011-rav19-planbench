@@ -212,7 +212,65 @@ Full suite **chưa chạy** — theo lệnh An, chỉ chạy phần vừa sửa.
   never happens inside the API process" — câu đó không đúng với đường PPO. Đã ghi
   vào threat model §3, chưa sửa docstring.
 
-## 7. Ghi chú
+## 7. Sửa sau báo cáo: định danh của bản import lại
 
-Chưa merge, chưa push. Nhánh `tongduyan_plugin-import-ui`, năm commit, `main`
-không bị đụng.
+An hỏi lại về vòng lặp "chạy → thấy chưa tối ưu → sửa → import lại → chạy tiếp",
+và câu hỏi đó lộ ra **hai lỗi**, cả hai đều nằm đúng trên vòng lặp đó.
+
+### 7.1 Tôi đã tuyên bố sai ở mục 3 (P3)
+
+Tổng kết P3 tôi viết: *"checksum bundle rơi đúng chỗ đó — identity không phải chế
+thêm gì"*. Sai. Tôi thiết kế theo hướng đó nhưng **chưa nối dây**.
+
+`candidate_from_stack` lấy version controller qua `controller_version(local_name)`,
+hàm này tra `_CONTROLLER_SOURCES` — bảng module nguồn của controller built-in.
+Một `plugin_id` không có trong bảng nên rơi vào fallback `"v1"`.
+
+Hệ quả: sửa thuật toán, bump version manifest, import lại ⇒ **hai bản code khác
+nhau ghi dưới cùng một `candidate_id`**. Đúng bằng lỗi mà docstring ngay phía
+trên chỗ đó nói nó tồn tại để chấm dứt: *"the id said two runs were the same
+candidate when the code had changed underneath them"* — lỗi cũ quay lại qua một
+cửa mới hơn nó.
+
+**Sửa:** `_Entry` mang thêm `controller_version`, để trống với mọi built-in (version
+của chúng suy được từ checksum source, khai lại là hai nguồn sự thật).
+`external_controller_version()` tra sống, **cố ý không cache** — built-in không đổi
+source lúc chạy nên hash một lần là an toàn, còn bundle import thì thay lúc nào
+cũng được, và một câu trả lời đã cache sẽ ghi run của bản thứ hai vào danh tính
+của bản thứ nhất. `candidate_from_stack` hỏi nó trước, rồi mới tới đường built-in.
+
+Giá trị dùng làm version là **checksum của archive**, cắt 12 ký tự giống hệt
+đường built-in — không dùng số version trong manifest, vì "một con số do người
+duy trì là một con số người sẽ quên, và lỗi thì im lặng" (đúng lý lẽ mà đường
+built-in đã ghi).
+
+### 7.2 Lỗi thứ hai, do chính test của bản sửa lộ ra
+
+Hai bản của cùng một plugin dùng **chung một stack id** (`astar+<plugin id>`), nên
+chỉ một bản là thứ id đó trỏ tới — registry là dict, lần ghi cuối quyết định.
+
+`sync_catalogue` duyệt `bundles.list()`, mà danh sách đó **mới nhất trước**. Nên
+bản ghi cuối cùng là bản **cũ nhất** ⇒ import một bản sửa trong khi bản bị sửa
+vẫn đang bật thì nền tảng **âm thầm tiếp tục chạy code cũ**.
+
+Không ai dính vì chưa ai import lần thứ hai. Sửa: duyệt ngược, mới nhất thắng,
+ghi lý do tại chỗ vì thứ tự đúng không phải thứ tự tự nhiên. Có test chạy đúng
+kịch bản người dùng thật làm — để cả hai bản bật, không ai bảo họ phải tắt bản cũ.
+
+### 7.3 Kiểm chứng
+
+| Kiểm | Kết quả |
+|---|---|
+| 6 test mới cho vòng lặp import lại | passed |
+| `test_candidate_identity.py`, `test_candidate.py`, `test_candidate_bridge.py` | passed — id của built-in **không đổi** |
+| Ba suite plugin (P1/P2/P3) | passed |
+
+Điểm quan trọng nhất của lần kiểm này: định danh built-in phải y nguyên. Bản sửa
+chỉ thêm một phép tra trả về rỗng cho built-in, nên mọi kết quả đã lưu vẫn trỏ
+đúng chỗ cũ.
+
+---
+
+## 8. Ghi chú
+
+Chưa merge, chưa push. Nhánh `tongduyan_plugin-import-ui`, `main` không bị đụng.
