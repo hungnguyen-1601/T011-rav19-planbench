@@ -19,6 +19,7 @@ still tells the uploader every problem at once.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,6 +42,8 @@ from planbench_api.plugin_registry import (
 )
 from planbench_api.plugin_runtime import install_bundle, run_conformance
 from planbench_api.repositories import new_id
+
+logger = logging.getLogger("planbench.api.plugins")
 
 
 @dataclass(frozen=True)
@@ -372,6 +375,29 @@ def sync_catalogue(bundles: Any, install_root: Path) -> list[str]:
 
     clear_external()
     registered: list[str] = []
+    try:
+        stored = bundles.list()
+    except Exception:  # noqa: BLE001 - the store, not a bundle
+        # **A catalogue that cannot be read must not take the API down.**
+        #
+        # This runs at startup, before anything has been served, so an
+        # exception here is not "imported algorithms are unavailable" —
+        # it is the whole process failing to start. A database one
+        # migration behind did exactly that: `plugin_bundles` did not
+        # exist, the query raised, and `create_app` died on import with a
+        # SQL traceback that named nothing a reader could act on.
+        #
+        # Logged rather than swallowed, and logged with the fix in it:
+        # this is almost always a schema that has not had `alembic
+        # upgrade head` run against it, and the operator needs that
+        # sentence rather than a stack trace.
+        logger.warning(
+            "imported algorithms are unavailable: the plugin_bundles table could not be "
+            "read. If this deployment has just taken an update, run 'alembic upgrade head'. "
+            "Everything else works; no imported algorithm will be offered until it does.",
+            exc_info=True,
+        )
+        return registered
     # **Oldest first, so the newest wins.** Two runnable versions of one
     # plugin share a stack id (`astar+<plugin id>`), so only one of them
     # can be the thing that id resolves to — and the registry is a dict,
@@ -381,7 +407,7 @@ def sync_catalogue(bundles: Any, install_root: Path) -> list[str]:
     # win: importing a fix while the version it fixed was still enabled
     # left the platform quietly running the old code. Reversed here, with
     # the reason, because the correct order is not the natural one.
-    for record in reversed(bundles.list()):
+    for record in reversed(stored):
         if not record.usable or record.validation_status is not ValidationStatus.LOADED:
             continue
         try:

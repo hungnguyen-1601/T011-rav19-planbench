@@ -17,6 +17,7 @@ from __future__ import annotations
 import io
 import json
 import zipfile
+from pathlib import Path
 
 import pytest
 from conftest import ADMIN, ALICE, auth_headers
@@ -392,6 +393,35 @@ class TestTheDuplicatedConstantsAgree:
         assert "global" not in SUPPORTED_ROLES
         assert not hasattr(SubprocessPlugin, "plan")
         assert all(hasattr(SubprocessPlugin, name) for name in ("reset", "step"))
+
+
+class TestAStaleSchemaDoesNotTakeTheApiDown:
+    def test_the_catalogue_sync_survives_a_missing_table(self, caplog):
+        """The failure this test was written for took the process down.
+
+        `create_app` publishes stored bundles into the runtime catalogue
+        at startup. Against a database one migration behind, the query
+        raised and the app died on import with a SQL traceback naming
+        nothing an operator could act on — no API at all, because
+        imported algorithms were unavailable.
+
+        A repository that cannot be read is a fact about the deployment,
+        not a reason to serve nothing.
+        """
+        import logging
+
+        from planbench_api.plugin_service import sync_catalogue
+
+        class Unreadable:
+            def list(self):
+                raise RuntimeError("no such table: plugin_bundles")
+
+        with caplog.at_level(logging.WARNING):
+            assert sync_catalogue(Unreadable(), Path("/nowhere")) == []
+        assert "alembic upgrade head" in caplog.text, (
+            "the warning has to carry the fix; a stack trace alone sends the reader "
+            "to the database rather than to the migration"
+        )
 
 
 class TestARefusedUploadLeavesNothingBehind:
