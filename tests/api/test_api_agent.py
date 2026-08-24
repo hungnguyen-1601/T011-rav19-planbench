@@ -89,6 +89,14 @@ class TestChat:
 
 
 class TestTheAgentCannotAct:
+    #: The agent router's prefix. Matched as a prefix rather than as a
+    #: substring, and the difference is not pedantry: `/settings/agent`
+    #: is the *settings* page saying which model to use, and it is a PUT
+    #: because saving a key is a write. Substring matching swept it in
+    #: here and failed a test about what the assistant may do, which
+    #: would have been read as "the agent gained a write verb".
+    AGENT_PREFIX = "/api/v1/agent"
+
     def test_no_agent_route_publishes_a_write_verb(self, client):
         """Asserted against the OpenAPI document, not against intent.
 
@@ -97,12 +105,30 @@ class TestTheAgentCannotAct:
         a body, not because it changes anything.
         """
         paths = client.get("/openapi.json").json()["paths"]
-        agent_paths = {path: ops for path, ops in paths.items() if "/agent" in path}
+        agent_paths = {
+            path: ops for path, ops in paths.items() if path.startswith(self.AGENT_PREFIX)
+        }
         assert agent_paths
         for path, operations in agent_paths.items():
             assert set(operations) <= {"get", "post"}, path
             for forbidden in ("run", "approve", "accept", "reject", "drive", "mission"):
                 assert forbidden not in path, path
+
+    def test_the_prefix_really_covers_the_whole_agent_router(self, client):
+        """The check above is only as good as what it selects.
+
+        If an agent route were ever mounted somewhere other than
+        `/api/v1/agent`, narrowing the filter to that prefix would have
+        quietly stopped covering it — so this asserts the router's own
+        routes all live there.
+        """
+        from planbench_api.routers import agent as agent_router
+
+        published = set(client.get("/openapi.json").json()["paths"])
+        for route in agent_router.router.routes:
+            full = f"/api/v1{route.path}"
+            assert full.startswith(self.AGENT_PREFIX), full
+            assert full in published, full
 
     def test_the_retired_benchmark_routes_are_gone(self, client):
         """P6 removed the pages; leaving the routes would describe a
