@@ -25,22 +25,23 @@ COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    PORT=7860 \
     PYTHONPATH=/app/packages/schemas:/app/packages/planning:/app/packages/metrics:/app/packages/benchmark:/app/packages/decision:/app/packages/explanation:/app/packages/plugin_sdk:/app/services/simulator:/app/services/tracking:/app/services/agent_service:/app/ml:/app/apps/api
 
-# Security: run as non-root user
-RUN useradd -m appuser
+# Security: Hugging Face Spaces expects non-root user UID 1000
+RUN useradd -m -u 1000 appuser
 
 # Copy application code
 COPY . .
 
 # Create data directory with correct ownership
-RUN mkdir -p /app/data /data/artifacts /app/maps/custom && chown -R appuser:appuser /app /data
+RUN mkdir -p /app/data /data/artifacts /app/maps/custom /tmp/planbench_maps && chown -R appuser:appuser /app /data /tmp/planbench_maps
 
 USER appuser
 
-EXPOSE 8000
+EXPOSE 7860
 
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:7860/api/v1/health')" || exit 1
 
-CMD ["uvicorn", "planbench_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn planbench_api.main:app --host 0.0.0.0 --port ${PORT:-7860}"]
