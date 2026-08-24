@@ -68,6 +68,11 @@ PLANBENCH_DATABASE_URL=sqlite:///{database}
 
 # Filled in by the Settings page. A key here is read at startup.
 # OPENAI_API_KEY=
+
+# A read-only, repository-scoped GitHub token. Without one this
+# installation never checks for updates, which is the right behaviour
+# for a machine that is meant to stay on the version it has.
+# PLANBENCH_UPDATE_TOKEN=
 PLANBENCH_AGENT_PROVIDER=auto
 PLANBENCH_AGENT_MODEL=o4-mini
 """
@@ -95,8 +100,15 @@ def _env_entries(env_path: Path) -> dict[str, str]:
     return entries
 
 
-def _export_for_alembic(env_path: Path) -> None:
-    """Put the database URL where Alembic will look for it.
+#: Read out of `.env` into the process environment by the launcher.
+#: Neither is a pydantic setting: the database URL is consumed by
+#: `alembic/env.py`, which reads the raw environment, and the update
+#: token is consumed by the updater before any setting object exists.
+LAUNCHER_VARS = ("PLANBENCH_DATABASE_URL", "PLANBENCH_UPDATE_TOKEN")
+
+
+def _export_launcher_vars(env_path: Path) -> None:
+    """Put the variables read outside pydantic-settings into the environment.
 
     `alembic/env.py` reads ``PLANBENCH_DATABASE_URL`` from the *process
     environment* and raises when it is unset. Everything else reads
@@ -105,14 +117,16 @@ def _export_for_alembic(env_path: Path) -> None:
     and the failure is at first launch, on the migration, before the
     window ever opens.
 
-    An existing value wins, matching :func:`load_provider_keys`: a URL
+    An existing value wins, matching :func:`load_provider_keys`: a value
     exported deliberately for one run should not be replaced by a file.
     """
-    if os.environ.get("PLANBENCH_DATABASE_URL"):
-        return
-    url = _env_entries(env_path).get("PLANBENCH_DATABASE_URL", "")
-    if url:
-        os.environ["PLANBENCH_DATABASE_URL"] = url
+    entries = _env_entries(env_path)
+    for name in LAUNCHER_VARS:
+        if os.environ.get(name):
+            continue
+        value = entries.get(name, "")
+        if value:
+            os.environ[name] = value
 
 
 def _read_seed_account(env_path: Path) -> tuple[str, str]:
@@ -190,9 +204,9 @@ def provision() -> Provisioned:
     # the previous one.
     os.environ["PLANBENCH_MAP_ROOT"] = str(root)
     os.environ["PLANBENCH_WEB_DIR"] = str(paths.web_root())
-    _export_for_alembic(env_path)
+    _export_launcher_vars(env_path)
 
     return Provisioned(root, first_run, nickname, credential)
 
 
-__all__ = ["DEFAULT_NICKNAME", "SEEDED_ASSETS", "Provisioned", "provision"]
+__all__ = ["DEFAULT_NICKNAME", "LAUNCHER_VARS", "SEEDED_ASSETS", "Provisioned", "provision"]

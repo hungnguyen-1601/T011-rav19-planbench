@@ -129,7 +129,7 @@ def _open_in_browser(url: str) -> None:
 def main() -> int:
     from_checkout = ensure_importable()
 
-    from planbench_desktop import migrate
+    from planbench_desktop import migrate, updater
     from planbench_desktop.provision import provision
 
     provisioned = provision()
@@ -149,6 +149,17 @@ def main() -> int:
             provisioned.nickname,
             provisioned.password,
         )
+
+    # Before the server starts, and before the window: the installer
+    # replaces the directory this process is running out of, so the
+    # update has to happen while as little as possible is open.
+    if updater.offer(
+        paths.version(),
+        provisioned.root / "updates",
+        [sys.executable, str(Path(__file__).resolve())],
+    ):
+        logger.info("closing for the installer")
+        return 0
 
     existing = running_instance(provisioned.root)
     if existing is not None:
