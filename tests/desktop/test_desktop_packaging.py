@@ -218,3 +218,54 @@ class TestTheIcon:
         """A checked-in binary nobody can rebuild is a dead end the first
         time it needs changing."""
         assert (INSTALL_ROOT / "scripts" / "desktop" / "make_icon.py").is_file()
+
+
+class TestTheWebRoot:
+    """Where the launcher looks for the exported UI.
+
+    Nothing else covers this: the checkout has no installed layout to
+    look at, so a path that is wrong only once packaged fails for the
+    first time on somebody's machine. It did — the first version looked
+    *inside* the app directory, and `web/` is its sibling.
+    """
+
+    def test_the_installed_layout_puts_web_beside_app_not_inside_it(self, tmp_path) -> None:
+        import planbench_desktop.paths as paths_module
+
+        install = tmp_path / "PlanBench"
+        (install / "app").mkdir(parents=True)
+        (install / "web").mkdir()
+        (install / "web" / "index.html").write_text("<html></html>", encoding="utf-8")
+
+        original = paths_module.INSTALL_ROOT
+        paths_module.INSTALL_ROOT = install / "app"
+        try:
+            assert paths_module.web_root() == install / "web"
+        finally:
+            paths_module.INSTALL_ROOT = original
+
+    def test_a_checkout_uses_the_next_build_output(self, tmp_path) -> None:
+        import planbench_desktop.paths as paths_module
+
+        repo = tmp_path / "repo"
+        out = repo / "apps" / "web" / "out"
+        out.mkdir(parents=True)
+        (out / "index.html").write_text("<html></html>", encoding="utf-8")
+
+        original = paths_module.INSTALL_ROOT
+        paths_module.INSTALL_ROOT = repo
+        try:
+            assert paths_module.web_root() == out
+        finally:
+            paths_module.INSTALL_ROOT = original
+
+    def test_with_no_export_anywhere_it_names_the_installed_path(self, tmp_path) -> None:
+        """So the API's warning tells an operator where to put it."""
+        import planbench_desktop.paths as paths_module
+
+        original = paths_module.INSTALL_ROOT
+        paths_module.INSTALL_ROOT = tmp_path / "nothing" / "app"
+        try:
+            assert paths_module.web_root() == tmp_path / "nothing" / "web"
+        finally:
+            paths_module.INSTALL_ROOT = original

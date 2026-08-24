@@ -54,22 +54,29 @@ def data_root() -> Path:
 def web_root() -> Path:
     """The exported web UI, served by the API process.
 
-    Two layouts, because there are two ways to run this. An installation
-    has the export at `web/` beside `app/`; a checkout has it wherever
-    `next build` left it, under `apps/web/out`. Falling back to the
-    second is what lets the launcher — and the packaging smoke test —
-    be rehearsed from a working tree instead of only after an install.
+    Two layouts, because there are two ways to run this.
 
-    When neither exists the packaged path is returned anyway, so the
-    warning the API logs names the place a *shipped* build would look.
+    **Installed**, `web/` is a *sibling* of `app/`, not a child of it —
+    `INSTALL_ROOT` points at `app/`, so the export is one level up. That
+    is not a detail: the first version of this looked inside
+    `INSTALL_ROOT` and would have shipped an application that could not
+    find its own interface, on a path no test covered because the
+    checkout has no `web/` at all.
+
+    **From a checkout**, it is wherever `next build` left it, under
+    `apps/web/out`. Supporting that is what lets the launcher and the
+    packaging smoke test be rehearsed from a working tree.
+
+    When neither exists the installed path is returned anyway, so the
+    warning the API logs names where a shipped build would look.
     """
-    packaged = INSTALL_ROOT / "web"
-    if packaged.is_dir():
-        return packaged
+    installed = INSTALL_ROOT.parent / "web"
+    if (installed / "index.html").is_file():
+        return installed
     from_checkout = INSTALL_ROOT / "apps" / "web" / "out"
-    if from_checkout.is_dir():
+    if (from_checkout / "index.html").is_file():
         return from_checkout
-    return packaged
+    return installed
 
 
 def version() -> str:

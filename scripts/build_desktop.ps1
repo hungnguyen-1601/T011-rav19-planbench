@@ -51,6 +51,65 @@ function Write-Step([string]$Message) {
     Write-Host "==> $Message" -ForegroundColor Cyan
 }
 
+function Get-BuildPython {
+    <#
+      A CPython 3.12 to run pip with — the SAME minor version the
+      installer ships, because pip builds C extensions for the
+      interpreter it runs on and a 3.13 here produces a numpy the
+      shipped 3.12 cannot import.
+
+      `py -3.12` is tried first and is not enough on its own: an
+      interpreter installed by `uv` is not registered with the py
+      launcher, so a machine that plainly has 3.12 answers "No suitable
+      Python runtime found". Hence the two fallbacks — the launcher's
+      own inventory, then uv's standard location.
+    #>
+    $probe = 'import sys; sys.exit(0 if sys.version_info[:2] == (3, 12) else 1)'
+
+    # `$ErrorActionPreference = 'Stop'` at the top of this script turns
+    # anything a native command writes to stderr into a terminating
+    # error — and probing for an interpreter that may not exist is
+    # exactly the case where writing to stderr is the correct answer.
+    # So the probes run with it relaxed, and it is put back either way.
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & py -3.12 -c $probe 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) { return @('py', '-3.12') }
+
+        $listed = (& py -0p 2>&1) -join "`n"
+        foreach ($line in $listed -split "`n") {
+            # `py -0p` prints "<tag><spaces><full path to python.exe>".
+            # Anchored on a drive letter rather than on "the last word":
+            # the active entry is marked with a leading `*`, which a
+            # looser pattern swallows into the path and then executes.
+            if ($line -match '(?<path>[A-Za-z]:\\S.*python\.exe)\s*$') {
+                $candidate = $Matches['path'].Trim()
+                if (-not (Test-Path -LiteralPath $candidate)) { continue }
+                & $candidate -c $probe 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) { return @($candidate) }
+            }
+        }
+
+        # uv installs interpreters the py launcher never learns about,
+        # so a machine that plainly has 3.12 can still answer "no
+        # suitable Python runtime found" to everything above.
+        $uv = Join-Path $env:APPDATA 'uv\python'
+        if (Test-Path $uv) {
+            foreach ($dir in Get-ChildItem $uv -Filter 'cpython-3.12.*' -Directory -ErrorAction SilentlyContinue) {
+                $candidate = Join-Path $dir.FullName 'python.exe'
+                if (-not (Test-Path -LiteralPath $candidate)) { continue }
+                & $candidate -c $probe 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) { return @($candidate) }
+            }
+        }
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+
+    throw 'no CPython 3.12 found. Install one (python.org, winget, or `uv python install 3.12`) — it must be 3.12 exactly, not 3.11 or 3.13.'
+}
+
 function Get-AppVersion {
     $stamp = Join-Path $RepoRoot 'apps\desktop\planbench_desktop\VERSION'
     if (-not (Test-Path $stamp)) { throw "missing version stamp: $stamp" }
@@ -62,7 +121,16 @@ Write-Step 'Preparing the stage'
 if (Test-Path $Stage) { Remove-Item $Stage -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $Stage, $Cache, $DistDir | Out-Null
 $Version = Get-AppVersion
+# `@(...)` because PowerShell unwraps a one-element array into a scalar
+# on return, and under StrictMode a scalar has no .Count. Splitting the
+# executable from its arguments here also avoids `1..0`, which is a
+# *descending* range rather than an empty one.
+$BuildPython = @(Get-BuildPython)
+$PyExe = $BuildPython[0]
+$PyArgs = @()
+if ($BuildPython.Count -gt 1) { $PyArgs = $BuildPython[1..($BuildPython.Count - 1)] }
 Write-Host "   version $Version"
+Write-Host "   build python: $($BuildPython -join ' ')"
 
 # ------------------------------------------------------------------ web
 $StageWeb = Join-Path $Stage 'web'
@@ -162,7 +230,7 @@ $SitePackages = Join-Path $Runtime 'Lib\site-packages'
 # --target rather than a virtualenv: the embedded interpreter reads its
 # path from the ._pth written below, and a venv's pyvenv.cfg would be
 # ignored entirely.
-py -3.12 -m pip install --disable-pip-version-check --no-compile `
+& $PyExe @PyArgs -m pip install --disable-pip-version-check --no-compile `
     --target $SitePackages -r (Join-Path $RepoRoot 'requirements.txt') pywebview
 if ($LASTEXITCODE -ne 0) { throw 'pip install failed' }
 
@@ -171,15 +239,27 @@ Write-Step 'Writing the interpreter path files'
 # hand-maintained copy of the source-root list is a fourth chance at the
 # drift that already cost this project a green suite over an API that
 # could not boot.
-py -3.12 (Join-Path $RepoRoot 'scripts\desktop\make_runtime_paths.py') `
+& $PyExe @PyArgs (Join-Path $RepoRoot 'scripts\desktop\make_runtime_paths.py') `
     $Runtime --python-tag $EmbedSpec.python_tag
 if ($LASTEXITCODE -ne 0) { throw 'failed to write the runtime path files' }
 
 # ------------------------------------------------------------ smoke gate
 Write-Step 'Smoke testing the stage (release gate)'
 $StagePython = Join-Path $Runtime 'python.exe'
-& $StagePython (Join-Path $App 'scripts\desktop\smoke_stage.py')
-if ($LASTEXITCODE -ne 0) {
+# Judged by exit code, not by whether anything reached stderr. Alembic
+# logs its migrations there at INFO, and with $ErrorActionPreference
+# set to Stop a *successful* run would abort the build on its own
+# progress output.
+$previous = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+    & $StagePython (Join-Path $App 'scripts\desktop\smoke_stage.py') 2>&1 |
+        ForEach-Object { Write-Host "   $_" }
+    $smoke = $LASTEXITCODE
+} finally {
+    $ErrorActionPreference = $previous
+}
+if ($smoke -ne 0) {
     throw 'the staged build failed its smoke test; refusing to package it'
 }
 
@@ -200,9 +280,16 @@ if (-not $Iscc) {
         throw 'Inno Setup 6 (iscc) is not on PATH; install it or pass -SkipInstaller'
     }
 }
-& $Iscc "/DAppVersion=$Version" "/DStageDir=$Stage" "/DOutputDir=$DistDir" `
-    (Join-Path $RepoRoot 'installer\planbench.iss')
-if ($LASTEXITCODE -ne 0) { throw 'Inno Setup failed' }
+$previous = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+    & $Iscc "/DAppVersion=$Version" "/DStageDir=$Stage" "/DOutputDir=$DistDir" `
+        (Join-Path $RepoRoot 'installer\planbench.iss') 2>&1 | Out-Null
+    $compiled = $LASTEXITCODE
+} finally {
+    $ErrorActionPreference = $previous
+}
+if ($compiled -ne 0) { throw 'Inno Setup failed' }
 
 Write-Step 'Done'
 Get-ChildItem $DistDir -Filter '*.exe' | ForEach-Object {
