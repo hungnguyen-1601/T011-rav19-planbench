@@ -489,6 +489,8 @@ class DecisionRunService:
                 job.total = total
                 job.message = what
 
+            ensure_profile_map_materialised(stored_profile.profile, self._repo_root, self._maps)
+
             report = run_comparison(
                 profile_path=profile_path,
                 candidate_specs=candidate_specs,
