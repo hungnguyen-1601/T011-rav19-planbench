@@ -52,11 +52,11 @@ def read_root():
         "ui": "/ui",
     }
 
+# Simple Gradio landing status page (named _ui to prevent supervisor auto-launch collision)
 try:
     import gradio as gr
 
-    # Simple Gradio landing status page
-    with gr.Blocks(title="PlanBench API") as demo:
+    with gr.Blocks(title="PlanBench API") as _ui:
         gr.Markdown(
             """
             # 🚀 PlanBench Backend API
@@ -70,6 +70,10 @@ try:
         )
 
     # Mount Gradio onto the FastAPI app at root
-    app = gr.mount_gradio_app(fastapi_app, demo, path="/")
+    app = gr.mount_gradio_app(fastapi_app, _ui, path="/")
 except ImportError:
     app = fastapi_app
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 7860))
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
