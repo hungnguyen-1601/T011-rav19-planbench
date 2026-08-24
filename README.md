@@ -1,356 +1,538 @@
 # Agentic AI PlanBench
 
-Nền tảng mô phỏng và benchmark path/motion planning cho robot di động
-AMR/AGV. Hệ thống cho phép so sánh công bằng các thuật toán điều hướng
-(A*, DWA, PPO, Nav2, ...) trên cùng map, scenario, seed và metric, với
-quy trình phê duyệt human-in-the-loop.
+Nền tảng mô phỏng và so sánh thuật toán điều hướng cho robot di động
+AMR/AGV - và, quan trọng hơn, một quy trình để **trả lời câu hỏi "nên
+triển khai thuật toán nào"** bằng bằng chứng người khác kiểm lại được.
 
-**Chỉ dùng cho mô phỏng — không điều khiển robot thật. Không dùng Gazebo.**
+**Dùng thử:** <https://planbench-web.onrender.com/>
 
-## Chạy nhanh
+**Chỉ mô phỏng - không điều khiển robot thật. Không dùng Gazebo.**
 
-**Cả stack** (API + web UI) — Linux, WSL, macOS, hoặc Git Bash trên Windows:
+---
+
+## 1. Bài toán
+
+Chọn thuật toán điều hướng cho một kho hàng cụ thể là một quyết định tốn
+kém và khó rút lại. Nhưng phần lớn cơ sở để chọn lại đến từ những thứ
+không so được với nhau: một con số trong paper chạy trên map khác, một
+lần demo may mắn, một bảng benchmark không nói nó chạy bao nhiêu lần.
+
+**Đo trên robot thật thì đắt, chậm, và không lặp lại được.**
+
+- Mỗi lượt chạy tốn hàng chục phút, và một phép so tử tế cần hàng chục
+  lượt. Vài ngày công cho một câu trả lời.
+- Cần robot rảnh, kho trống và người trực - ba thứ hiếm khi rảnh cùng lúc.
+- Một lần va chạm là hỏng cảm biến, hỏng hàng, hoặc tệ hơn. Thử một
+  thuật toán chưa biết trên sàn đang có người là rủi ro không ai muốn ký.
+- **Không dựng lại được tình huống đã hỏng.** Sàn hôm nay khác hôm qua,
+  có người đi ngang, pin yếu hơn. Cái lỗi vừa thấy không tái hiện được thì
+  cũng không sửa chắc được.
+- Chạy A tuần này, B tuần sau - thế giới đã đổi, và hiệu số giữa hai lần
+  đo không còn là hiệu số giữa hai thuật toán.
+
+**Và ngay cả khi đã đo, phép so vẫn hỏng theo ba cách:**
+
+- **Không cùng điều kiện.** Hai thuật toán chạy trên hai bộ seed khác
+  nhau, hai cấu hình LiDAR khác nhau, rồi hiệu số được đọc như thể nó đo
+  thuật toán.
+- **Không đủ số lần.** "Không va chạm lần nào" trên 5 lượt chạy không
+  phải một lời hứa về an toàn - nó là một quan sát trên 5 lượt chạy.
+- **Kết luận nghe mạnh hơn dữ liệu.** "A tốt hơn B" nói ra dễ hơn nhiều
+  so với "A hơn B 0,039 utility, khoảng tin cậy 95% [0,036; 0,042], trên
+  30 episode ghép cặp, dưới phân phối kịch bản đã mô phỏng".
+
+PlanBench tồn tại để câu thứ ba là câu duy nhất hệ thống cho phép nói.
+
+## 2. Tầm nhìn
+
+Một nơi mà **bất kỳ ai cũng cắm được thuật toán của mình vào**, chạy nó
+trên đúng thế giới mà đối thủ của nó đã chạy, và nhận về một kết luận
+**mang đi bảo vệ trước người khác được** - kèm đủ bằng chứng để người đó
+phản biện lại.
+
+Sáu hướng dựng nên nền tảng đó.
+
+### Công bằng phải đo được, không phải hứa
+
+Cùng map, cùng scenario, cùng seed, cùng cấu hình cảm biến, cùng vật cản
+động ở cùng thời điểm. Và mỗi điều kiện mang một checksum, để câu "hai
+bên chạy cùng điều kiện" là một thứ kiểm lại được chứ không phải một lời
+người chạy benchmark tự khai.
+
+Episode ghép cặp theo `episode_context`: hiệu số tính theo từng cặp, chứ
+không phải giữa hai trung bình rời nhau. Một chênh lệch ghép cặp loại bỏ
+được nhiễu do "hôm ấy map dễ hơn".
+
+### Kết luận không được vượt quá bằng chứng
+
+Mọi con số đi kèm khoảng tin cậy và số lần chạy đứng sau. Cổng khả thi
+tách hẳn khỏi điểm số - cái nào *được xét* và cái nào *tốt hơn* là hai
+câu hỏi, trộn chúng là cách một stack va chạm được cứu bằng việc nó nhanh.
+
+Và có những chữ hệ thống **không được phép** nói ra. "An toàn",
+"sẵn sàng production", "TCO" - không cạnh một con số nền tảng này sinh ra.
+Danh sách đó là một danh sách thật, có hàm kiểm và có test canh, chứ
+không phải một lời dặn trong tài liệu.
+
+### Nói được *vì sao*, không chỉ *ai thắng*
+
+Biết A hơn B 0,039 utility là biết một nửa. Nửa còn lại - *cơ chế nào
+tạo ra chênh lệch đó* - mới là thứ người đọc mang đi quyết định được:
+khe hành lang hẹp hơn footprint cộng inflation, ngân sách sampling cắt
+quá thấp, controller dao động trong khe hẹp.
+
+Hướng đi: một thang bằng chứng bốn mức (`observed` → `associated` →
+`mechanism_verified` → `intervention_supported`), một bộ checker tất định
+đóng dấu từng mức, và **không có mức thứ năm cho "không biết"** - thiếu
+bằng chứng nghĩa là không có claim, không phải một claim yếu.
+
+Vai của AI ở đây là **sinh giả thuyết**, vì không gian tổ hợp (cơ chế ×
+hình học bản đồ × cấu hình cụ thể) quá lớn cho một bộ luật cứng. Nhưng AI
+không bao giờ là nguồn của một con số, một dấu xác nhận, hay một kết luận
+nhân quả - nó đề xuất, tầng tất định kiểm chứng và đóng dấu.
+
+### Ai cũng cắm được thuật toán của mình vào
+
+Không chỉ so các stack có sẵn. Một nhóm mang global planner hoặc local
+controller của riêng họ tới, đăng ký qua SDK, và nó đi qua **đúng bộ cổng
+và đúng phép so** như mọi stack khác - không có đường tắt cho thuật toán
+nhà làm.
+
+Kèm theo là những thứ làm điều đó an toàn: lane subprocess cho code chưa
+tin được, CLI kiểm tính tuân thủ trước khi chạy thật, và một hệ thống quy
+trách nhiệm theo **thành phần** chứ không theo tên thuật toán - vì một
+ứng viên là cả một stack, và "A* thắng RRT*" thường là một câu sai địa
+chỉ.
+
+### Người quyết định, không phải hệ thống
+
+Nền tảng chạy phép so, dựng bằng chứng, và chỉ ra chỗ lập luận yếu. Nó
+**không** tự duyệt, không tự áp dụng, không tự đưa lên production. Việc
+chấp nhận một kết quả là một hành động của con người, và có thể nhờ người
+thứ hai review - trước khi chạy (spec) hoặc sau khi chạy (result).
+
+Cùng tinh thần đó ở tầng AI: model được xếp lại thứ tự lời khuyên và thêm
+ý mới, nhưng **không xoá được** thứ bộ luật đã nói.
+
+### Kết quả phải mang ra khỏi hệ thống được
+
+Một phép so chỉ có giá trị khi người không dùng nền tảng này đọc được nó.
+Xuất Markdown và Excel, hai thứ tiếng, mở đầu bằng một trang trả lời
+"run này ra cái gì" mà không bắt người đọc ghép từ ba tab. Trace và
+artifact lưu ngoài database kèm checksum, để một lượt chạy được **phát
+lại** chứ không chỉ được thuật lại.
+
+Đích xa: một đội robot mới, chưa biết gì về nền tảng, khai thế giới của
+họ trong một buổi chiều, cắm hai thuật toán vào, và ra về với một tài
+liệu mà quản lý của họ đọc hiểu được.
+
+## 3. MVP hiện tại - cái gì đang chạy được
+
+### 3.1. Khai một thế giới để đo - **Triển khai**
+
+Một *deployment* (task profile) là toàn bộ những gì cố định trong phép
+so: map, robot (kích thước, động học, chu kỳ điều khiển), cảm biến và
+nhiễu của nó, các mission, vật cản động, ngưỡng khả thi, và bộ trọng số
+mục tiêu.
+
+Mọi ngưỡng cổng đọc từ đây, **không một hằng số nào nằm trong code** -
+một ngưỡng viết cứng là một ngưỡng không ai đặt ra.
+
+### 3.2. Thử trước khi tốn hàng giờ - **Sân thử**
+
+Chạy một episode đơn, xem quỹ đạo, clearance, latency planner theo thời
+gian thực. Đây là chỗ phát hiện map thiếu tường bao hay mission bất khả
+thi, trước khi phóng một phép so 30 episode.
+
+### 3.3. Phép so ghép cặp - **Quyết định**
+
+Hai ứng viên chạy trên **cùng một tập `episode_context`**: cùng seed,
+cùng vị trí vật cản, cùng nhiễu cảm biến. Hiệu số được tính theo từng
+cặp, không phải giữa hai trung bình rời nhau.
+
+Stack đã đăng ký: `astar+dwa` · `astar+dwa_predictive` · `rrtstar+dwa` ·
+`rrtstar+dwa_predictive` · `astar+pure_pursuit` · `rrtstar+pure_pursuit` ·
+`astar+ppo`.
+
+### 3.4. Sáu cổng khả thi - G1 đến G6
+
+Cổng chạy **trước** mọi phép chấm điểm, và **một cổng không phải là một
+điểm số**: chấm điểm trả lời "cái nào tốt hơn", cổng trả lời "cái này có
+được xét đến không". Một stack va chạm không được cứu bằng việc nó nhanh.
+
+Bốn tính chất đáng nhớ:
+
+- **Cả sáu cổng luôn chạy.** Không dừng ở cổng hỏng đầu tiên - "bị loại
+  ở G2" mà không biết G4 có hỏng không là một chẩn đoán không hành động
+  được.
+- **Không va chạm là một chặn trên, không phải một chứng chỉ.** Quan sát
+  0 va chạm trong N lượt chỉ chặn xác suất ở mức ~3/N với độ tin cậy 95%,
+  và chỉ dưới phân phối kịch bản đã mô phỏng. G2 vì thế đòi thêm
+  `N ≥ N_min`, và câu chặn trên đi kèm mọi lần con số đó được nhắc.
+- **Sàng lọc trên host chỉ chứng minh một chiều.** Máy chạy benchmark
+  nhanh hơn bo mạch đích và chạy Python chứ không phải C++/ROS2. G4/G5
+  hỏng thì chắc chắn hỏng trên đích; G4/G5 đạt thì **không chứng minh
+  được gì** - và mọi kết quả G4 mang theo câu cảnh báo đó nguyên văn.
+- **Có những chữ hệ thống không được phép nói.** "An toàn" và "TCO" không
+  bao giờ xuất hiện cạnh một con số nền tảng này sinh ra; có hàm kiểm và
+  có test CI canh.
+
+### 3.5. Thẻ quyết định
+
+Khi cả hai ứng viên qua cổng: ΔU ghép cặp + khoảng tin cậy 95% bootstrap,
+phân rã theo từng mục tiêu, và số episode đứng sau. Khoảng tin cậy vắt
+qua 0 thì thẻ nói thẳng là run này **không** chứng minh được chênh lệch
+nó báo.
+
+Kèm theo: bảng so sánh từng metric, **Nên triển khai cái nào** theo ba
+tình huống (ưu tiên chất lượng / real-time, ít bộ nhớ / cần cả hai), và
+danh sách ứng viên bị loại kèm cổng đã loại chúng.
+
+### 3.6. Tầng giải thích - bằng chứng để phản biện
+
+- **Waterfall ΔU**: chênh lệch tổng phân rã thành từng mục tiêu, mỗi
+  thanh có khoảng tin cậy riêng; thanh vắt qua 0 hiển thị mờ.
+- **Phát lại hai canvas**: cùng một episode, hai stack, một playhead
+  chung theo thời gian tuyệt đối.
+- **Exemplar**: episode điển hình / thắng đậm nhất / thua đậm nhất /
+  nặng về an toàn nhất - chọn theo công thức cố định, không phải theo
+  thứ tự tình cờ.
+- **Detector**: `detour`, `stuck_cluster`, `replan_storm`, `oscillation`,
+  `latency_spike`, `near_miss_cluster` - hàm thuần của trace, test như
+  metric.
+- **Thang bằng chứng bốn mức** (`observed` → `associated` →
+  `mechanism_verified` → `intervention_supported`) và **không có mức thứ
+  năm cho "không biết"**: thiếu bằng chứng nghĩa là **không có claim**,
+  không phải một claim yếu.
+- **16 tool card + 4 mechanism checker** đã chạy được, và sidecar ghi lại
+  mọi lần planner được gọi - kể cả những lần nó trả `no_path`, vốn là ca
+  cần giải thích nhất.
+
+### 3.7. Lớp AI
+
+Hai thứ khác nhau, đừng nhầm:
+
+| | Trợ lý hội thoại | Lớp cố vấn |
+|---|---|---|
+| Ở đâu | dock nổi trên mọi trang + trang **Trợ lý AI** | nút *Hỏi thêm model* trên các panel advice |
+| Làm gì | đọc bản ghi bằng **11 tool chỉ-đọc** rồi trả lời | xếp lại thứ tự advice luật + thêm **tối đa 3** ý |
+| Ràng buộc | không chạy được phép so, không sửa deployment, không duyệt gì | không xoá được advice luật, mọi ý thêm phải trỏ vào một field có thật |
+
+Bốn luật của lớp cố vấn, mỗi luật có test và mỗi test đã được chứng minh
+là **bắt được lỗi thật** bằng cách tiêm lỗi vào rồi đòi nó đỏ:
+
+1. Tầng luật là sàn - model sắp lại được, bỏ bớt thì không.
+2. Citation trỏ vào field không tồn tại thì bị bỏ và **đếm công khai**.
+3. Model không đẩy được cảnh báo `blocking` xuống dưới `disclosure`.
+4. Provider chết thì mất phần văn, không mất tầng luật.
+
+Dock biết **run đang mở trên màn hình** - nó gửi kèm định danh, server tra
+lại qua đúng gateway mà tool đi qua, và chip trên khung chat nói rõ câu
+hỏi đang gắn với run nào (bấm một cái là gỡ).
+
+### 3.8. Cắm thuật toán của bạn vào
+
+**Algorithm Host** + plugin SDK: đăng ký global planner hoặc local
+controller của riêng bạn, chạy trong lane tin cậy hoặc lane subprocess,
+đi qua đúng bộ cổng và đúng phép so như stack có sẵn. Có CLI kiểm tính
+tuân thủ trước khi chạy thật.
+
+**Kho mô hình**: upload checkpoint PPO `.zip`, kiểm checksum và tương
+thích với robot profile. Không có nút xoá - một model là thứ một benchmark
+đã chạy, xoá dòng đó biến kết quả thành bản ghi của hư không.
+
+### 3.9. Xuất và chia sẻ
+
+Markdown và Excel, **hai thứ tiếng** (Việt/Anh), mở đầu bằng một trang
+Summary trả lời "run này ra cái gì" mà không bắt người đọc ghép từ ba tab.
+Có link chia sẻ báo cáo.
+
+### 3.10. Phần còn lại của nền tảng
+
+Đăng nhập Google/GitHub (hoặc dev login cục bộ) · quy trình duyệt **tùy
+chọn**, nhờ người khác review spec hoặc result · bản đồ vẽ tay · thư viện
+kịch bản dựng sẵn · giao diện Việt/Anh, sáng/tối/theo hệ thống · SQLite
+mặc định, PostgreSQL + Alembic khi cần · Docker Compose.
+
+## 4. Hướng dẫn sử dụng PlanBench
+
+Phần này nói **cách vận hành nền tảng**: đi từ chỗ chưa có gì tới một
+phép so đọc được. Cách khởi động ứng dụng nằm ở §5.
+
+Thứ tự dưới đây là thứ tự phụ thuộc - mỗi bước cần thứ bước trước tạo ra.
+Bỏ qua được những bước đã có sẵn dữ liệu: định dùng bản đồ và kịch bản
+dựng sẵn thì bắt đầu thẳng từ §4.3.
+
+### 4.1. Bản đồ - vẽ thế giới robot chạy trong đó
+
+Vào **Bản đồ**.
+
+- **Tạo bản đồ** - chọn *Bản đồ kho mới* (có sẵn kệ và lối đi) hoặc *Bản
+  đồ trống mới*, rồi đặt kích thước và độ phân giải.
+- **Nạp bản đồ mẫu** nếu chỉ muốn thử nhanh.
+- Bấm vào một bản đồ để mở **Trình sửa bản đồ**. Chọn bút *Vật cản* hoặc
+  *Trống*, rồi bấm và kéo để vẽ. Bấm **Lưu thay đổi**.
+
+Mỗi lần lưu tạo một **phiên bản mới** kèm checksum, không ghi đè bản cũ.
+Một run đã chạy trên bản đồ nào thì vẫn trỏ đúng vào bản đó.
+
+> Bản đồ **phải có tường bao kín**. Robot ra khỏi mép bản đồ là một tình
+> huống hệ thống không mô tả được.
+
+### 4.2. Kịch bản - mission và vật cản động
+
+Hai đường, chọn một.
+
+**Đường nhanh - Thư viện kịch bản.** Vào **Thư viện kịch bản**, xem trước
+một mục (*Xem trước* không lưu gì cả), rồi bấm **Import**. Một lần import
+tạo **cả bản đồ lẫn kịch bản** - đi đường này thì §4.1 không cần làm.
+
+**Đường tự khai.** Vật cản động và mission khai thẳng trong form cấu hình
+triển khai ở bước sau, không cần mở trình soạn kịch bản riêng.
+
+### 4.3. Cấu hình triển khai - khai thế giới cần đo
+
+Vào **Triển khai** → **Tạo cấu hình triển khai**. Hai chế độ, cùng kết
+quả:
+
+- **Điền ô** - form theo nhóm: *Danh tính* · *Robot* · *Ngưỡng* · *Nhiễu
+  đã khai* · *Vật cản động* · *Mission*. Mỗi ô có dấu **?** giải thích ô
+  đó dùng làm gì.
+- **Dán YAML** - dán thẳng một profile, hoặc copy một file từ thư mục
+  `profiles/` trong repo rồi sửa.
+
+Khai lần lượt:
+
+1. **Danh tính** - mã cấu hình, mức tuyên bố, vai trò.
+2. **Robot** - bán kính, tốc độ và gia tốc tối đa, chu kỳ điều khiển.
+3. **Ngưỡng** - thế nào là *đạt* trên thế giới này: tỷ lệ thành công tối
+   thiểu, rủi ro va chạm chấp nhận được, dung sai đích, giới hạn thời
+   gian một episode, ngưỡng kẹt, khoảng hở cảnh báo.
+4. **Nhiễu đã khai** - σ tầm LiDAR và tỷ lệ trượt bánh. Để trống nghĩa là
+   khai một thế giới không nhiễu, và giao diện hiển thị đúng như vậy.
+5. **Vật cản động** - thêm từng vật cản, đặt tuyến đi và tốc độ.
+6. **Mission** - điểm xuất phát và đích.
+
+Bấm **Nộp**. Form nói rõ phần nào đã đủ.
+
+> **Nộp lại cùng một mã với nội dung khác sẽ bị từ chối, không phải gộp.**
+> Mã cấu hình là danh tính của một thế giới; sửa nội dung dưới cùng cái
+> tên biến mọi kết quả cũ thành kết quả của một thứ khác.
+
+### 4.4. Ứng viên - cái đem ra so
+
+Vào **Ứng viên**. Trang này có ba phần:
+
+- **Thuật toán hiện có trong hệ thống** - các bộ lập kế hoạch toàn cục và
+  bộ điều khiển cục bộ, kèm loại quan sát mỗi cái cần.
+- **Stack trong registry** - các tổ hợp đã ghép sẵn.
+- **Đăng ký một ứng viên** - chọn stack, chọn cấu hình controller, khai
+  phần tinh chỉnh nếu có, rồi bấm **Đăng ký**.
+
+Không bắt buộc đăng ký trước: bước chạy phép so cũng chọn được stack và
+controller ngay tại chỗ. Đăng ký hữu ích khi muốn dùng lại đúng một cấu
+hình nhiều lần và có id để tra.
+
+Ứng viên là một **policy đã huấn luyện**: vào **Mô hình** → *Tải mô hình
+lên*, đính file `.zip`, khai tên, phiên bản và robot mà nó được huấn
+luyện cho. Model đã benchmark thì sửa được nhãn nhưng **không đổi được
+file** - id của nó phải tra ra được.
+
+### 4.5. Sân thử - chạy thử một episode
+
+Vào **Sân thử**. Đây là chỗ kiểm xem thế giới vừa khai có chạy được
+không, trước khi phóng một phép so dài.
+
+1. Chọn **bản đồ**, **kịch bản** và **thuật toán**.
+2. Bấm để đặt **điểm xuất phát** và **đích** ngay trên bản đồ.
+3. Bấm **Chạy mô phỏng**.
+
+Xem lại bằng **Phát / Tạm dừng / Chạy lại**, kéo **thanh thời gian** tới
+đúng khoảnh khắc cần xem, đổi **tốc độ** phát. Bật tắt từng lớp hiển thị:
+*Lưới*, *Đường toàn cục*, *Quỹ đạo thực tế*.
+
+Ba thứ đáng nhìn: robot có tới được đích không, đường toàn cục có hợp lý
+không, và quỹ đạo thực tế bám đường đó tới đâu.
+
+### 4.6. Quyết định - chạy phép so
+
+Vào **Quyết định** → **Chạy một phép so**.
+
+1. **Cấu hình triển khai** - chọn thế giới vừa khai.
+2. **Ứng viên A** và **Ứng viên B** - mỗi bên chọn bộ lập kế hoạch toàn
+   cục, bộ điều khiển cục bộ, và cấu hình của controller.
+3. **Số episode** - để trống thì dùng đúng số cấu hình triển khai yêu cầu.
+4. Bấm **Xếp hàng**.
+
+> **Đổi đúng một thành phần mỗi lần.** So `astar+dwa` với `rrtstar+dwa`
+> thì hiệu số quy được cho bộ lập kế hoạch toàn cục. Đổi cả hai tầng cùng
+> lúc thì kết quả không nói được thành phần nào tạo ra chênh lệch.
+
+Run chạy nền - đóng tab cũng không sao. Trang **Quyết định** liệt kê mọi
+run kèm trạng thái; lọc được theo cấu hình triển khai hoặc theo kết cục.
+
+Một run **không xếp hạng ai** vẫn là một kết quả, không phải một thất bại.
+Danh sách nói rõ lý do: chỉ một ứng viên qua đủ cổng, không ứng viên nào
+qua, cấu hình triển khai không xếp hạng được, hay run bị dừng giữa chừng.
+
+### 4.7. Đọc kết quả
+
+Mở một run. Trang đọc từ trên xuống theo đúng thứ tự nên đọc:
+
+| Mục | Trả lời câu gì |
+|---|---|
+| **Run này kết luận gì** | ai thắng, cách biệt bao nhiêu, khoảng tin cậy có vắt qua 0 không |
+| **Nên triển khai cái nào** | khuyến nghị theo ba tình huống ưu tiên khác nhau |
+| **Kết quả so sánh** | từng metric, bên nào dẫn, chênh bao nhiêu |
+| **Bảng cổng** | ai bị loại, ở cổng nào, với bằng chứng gì |
+| **Episode** | từng lượt chạy đạt hay trượt; lọc riêng những lượt có trượt |
+| **Phát lại** | hai canvas cùng một episode, một playhead chung |
+| **Phản biện** | chỗ nào trong lập luận này yếu |
+
+Ở mục **Phản biện**, bấm **Kiểm bằng luật** trước - nó chạy bộ luật tất
+định, không cần cấu hình gì. **Hỏi thêm model** là lớp AI phía trên, cần
+key (§5.4).
+
+Cuối trang là **Đọc, và quyết định**: ghi chú lại kết luận của bạn, đánh
+dấu đã đọc, và nếu muốn áp dụng thì **Duyệt làm cấu hình** rồi tải
+`approved_config.yaml`.
+
+### 4.8. Dùng AI
+
+Hai lớp AI, hai chỗ khác nhau, hai việc khác nhau.
+
+#### Trợ lý hội thoại
+
+Dock nổi góc phải màn hình, có mặt trên mọi trang; bản đầy đủ ở trang
+**Trợ lý AI**.
+
+Nó đọc những gì nền tảng đã ghi rồi trả lời. Hỏi được:
+
+- *"Cấu hình triển khai này có những run nào?"*
+- *"Run này kết luận gì? Ai thắng và cách biệt bao nhiêu?"*
+- *"Ứng viên nào bị loại ở cổng nào?"*
+- *"Nên chọn thuật toán nào cho cấu hình triển khai này?"*
+- *"Bản báo cáo có chỗ nào đáng nghi không?"*
+
+Mở dock trên trang một run thì nó **tự gắn với run đó** - chip trên khung
+chat nói rõ điều đó, và bấm một cái là gỡ để hỏi chuyện khác.
+
+Nó **không** chạy được phép so, không sửa được cấu hình triển khai, không
+duyệt được gì. Và nó chỉ nói những gì tool trả về - hỏi một thứ chưa được
+ghi lại thì nó nói là chưa có, chứ không đoán.
+
+#### Lớp cố vấn
+
+Nút *Hỏi thêm model* trên các panel lời khuyên trong trang một run.
+
+Không có ô nhập; bấm nút là chạy. Nó nhận danh sách lời khuyên bộ luật đã
+sinh, sắp lại theo cái nên xử lý trước, và thêm vài ý mà luật không nhìn
+thấy - mỗi ý phải trỏ vào một trường có thật trong dữ liệu.
+
+Kết quả hiển thị tách rõ ý nào của **luật**, ý nào của **model**, kèm số
+ý bị bỏ vì trỏ vào chỗ không tồn tại. Model không xoá được lời khuyên của
+luật, và không đẩy được một cảnh báo chặn xuống dưới một ghi chú.
+
+Chưa cấu hình key thì cả hai lớp chạy bằng bộ khớp từ khoá offline, và
+giao diện nói thẳng điều đó. Cách bật model thật: §5.4.
+
+### 4.9. Mang kết quả ra ngoài
+
+Trên trang một run:
+
+- **Xuất Markdown** - bản đọc được, hợp để dán vào tài liệu.
+- **Xuất Excel** - mở đầu bằng trang Summary, rồi tới bảng metric và phân
+  rã mục tiêu. Số là số chứ không phải chữ, nên sắp xếp và lọc được.
+- **Chia sẻ báo cáo** - link cho người không có tài khoản.
+
+Cả hai bản xuất theo đúng ngôn ngữ đang chọn trên giao diện.
+
+### 4.10. Nhờ người khác duyệt
+
+Không bắt buộc. Bấm *Gửi đi duyệt*, nhập nickname người cần xem, chọn
+duyệt **spec** (trước khi chạy) hay **result** (sau khi chạy).
+
+Khi đang chờ, **chính chủ không tự duyệt được** - đó là toàn bộ ý nghĩa
+của việc nhờ. Hủy yêu cầu lúc nào cũng được. Việc đang chờ bạn nằm ở
+trang **Duyệt**.
+
+## 5. Chạy PlanBench
+
+### 5.1. Web đã triển khai - không cần cài gì
+
+<https://planbench-web.onrender.com/>
+
+Đăng nhập rồi làm theo §4.
+
+### 5.2. Chạy cục bộ
+
+Lần đầu cần cài dependency - xem §6.
 
 ```bash
-./scripts/dev_stack.sh start      # http://localhost:3000
-./scripts/dev_stack.sh stop
-./scripts/dev_stack.sh status
-./scripts/dev_stack.sh logs
+bash scripts/dev_stack.sh start     # http://localhost:3000
+bash scripts/dev_stack.sh status
+bash scripts/dev_stack.sh logs
+bash scripts/dev_stack.sh stop
 ```
 
-Script tự chạy `alembic upgrade head` trước khi khởi động API và in ra
-phương thức đăng nhập nào đang bật. Migration lỗi thì nó dừng và báo rõ,
+Script chạy `alembic upgrade head` trước khi khởi động API, và in ra
+phương thức đăng nhập nào đang bật. Migration lỗi thì nó dừng và báo,
 không khởi động API với schema cũ.
 
-**Chỉ API** — mọi nền tảng, kể cả Windows thuần (PowerShell, cmd):
+**Windows thuần** (PowerShell/cmd), chỉ API:
 
 ```
 .venv\Scripts\python.exe scripts\serve.py --reload --migrate
 ```
 
 **Đừng gọi thẳng `python -m uvicorn planbench_api.main:app`.** Dự án
-không được cài đặt, nên mọi package dưới `packages/` và `services/` chỉ
-vào `sys.path` khi có thứ gì đó đặt chúng vào. Lệnh uvicorn trần hỏng
-ngay ở gói đầu tiên (`planbench_api`), và sửa tay từng cái sẽ dẫn qua
-mười traceback liên tiếp. `serve.py` đọc danh sách đường dẫn từ
-`pyproject.toml` — cùng một danh sách pytest dùng — rồi mới khởi động.
+không được cài đặt, nên các package dưới `packages/` và `services/` chỉ
+vào `sys.path` khi có thứ gì đó đặt chúng vào. `serve.py` đọc danh sách
+đường dẫn từ `pyproject.toml` - cùng danh sách pytest dùng - rồi mới khởi
+động.
 
-> Trước 2026-08-12 mục này bảo Windows nháy đúp `start.bat`. File đó bị
-> xoá nhầm ở commit `3c04cf2` và, ngay cả khi còn, nó chỉ forward sang
-> WSL bằng một đường dẫn cứng trỏ vào thư mục nhà của một máy khác. Tức
-> Windows thuần **chưa bao giờ** có đường chạy dùng được.
+### 5.3. Chạy qua API
 
-### Lưu dữ liệu
-
-Mặc định dữ liệu **được lưu vào SQLite** (`planbench.db` ở gốc repo), nên
-map, scenario, benchmark và tài khoản sống sót qua lần khởi động lại.
-
-Có một cái bẫy đáng biết: trong `.env`, viết `PLANBENCH_DATABASE_URL=`
-với vế phải để trống **không giống** việc bỏ hẳn dòng đó. Vế trái đặt
-biến thành chuỗi rỗng, và chuỗi rỗng chọn backend trong bộ nhớ — tắt
-server là mất sạch, không migration nào chạy.
-
-- **Muốn lưu:** để dòng đó ở dạng chú thích, hoặc ghi rõ
-  `PLANBENCH_DATABASE_URL=sqlite:///./planbench.db`
-- **Cố tình không lưu** (chạy thử rồi bỏ): đặt nó bằng rỗng
-
-Lúc khởi động, script in ra chế độ đang dùng. Thấy dòng
-`! database in-memory` nghĩa là dữ liệu sẽ không được giữ lại.
-
-Hai thứ phải backup **cùng nhau**: `planbench.db` và thư mục
-`artifacts/`. Trajectory với report nằm ngoài database (quyết định D15),
-bảng chỉ giữ URI và checksum — mất thư mục artifact thì database còn
-nguyên nhưng mọi lần phát lại đều báo thiếu file.
-
-### Đăng nhập
-
-Copy `.env.example` sang `.env` rồi điền **đúng năm biến** này:
-
-```
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GITHUB_CLIENT_ID=
-GITHUB_CLIENT_SECRET=
-AUTH_SECRET=
-```
-
-Callback URL cần đăng ký với provider (copy nguyên văn):
-
-| Provider | Callback URL |
-|---|---|
-| Google — [console](https://console.cloud.google.com/apis/credentials) | `http://localhost:8000/api/v1/auth/oauth/google/callback` |
-| GitHub — [settings](https://github.com/settings/developers) | `http://localhost:8000/api/v1/auth/oauth/github/callback` |
-
-Sinh `AUTH_SECRET`:
+Mở `http://localhost:8000/docs`, bấm **Authorize**, thử trực tiếp từ
+trình duyệt. Hoặc bằng `curl`:
 
 ```bash
-python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+curl -X POST http://localhost:8000/api/v1/decisions \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_profile_id": "open_hall_v2",
+    "candidates": [
+      {"stack": "astar+dwa", "local_config": "dwa_coarse"},
+      {"stack": "astar+dwa", "local_config": "dwa_balanced"}
+    ],
+    "episodes": 30
+  }'
 ```
 
-Điền xong chỉ cần khởi động lại stack — không sửa code, không lệnh phụ.
-
-Bỏ trống Google hoặc GitHub cũng được: nút đó không hiện, phần còn lại
-vẫn chạy. Bỏ trống cả hai cũng được — đặt
-`PLANBENCH_ENABLE_DEV_LOGIN=true` để dùng đăng nhập username/password
-cho phát triển cục bộ (mặc định tắt, không dùng cho production).
-
-Lần đăng nhập đầu tiên sẽ hỏi **nickname** (3–30 ký tự, chữ/số/`_`/`-`).
-Nickname là cách người khác gửi review cho bạn — không phải khóa phân
-quyền, phân quyền luôn dựa trên user ID.
-
-### Giao diện
-
-Thanh bên thu gọn được (nhớ trạng thái), và thành drawer trên màn hình
-nhỏ. Trên top bar có nút đổi **ngôn ngữ** (Tiếng Việt / English) và
-**giao diện** (Sáng / Tối / Theo hệ thống) — cả hai đều được nhớ, và đổi
-theme không bị nháy sai màu lúc tải trang.
-
-Thông tin kỹ thuật (phiên bản, địa chỉ API) nằm ở trang **Thông tin hệ
-thống**, không nằm trên Dashboard; địa chỉ API chỉ hiện khi chạy
-development.
-
-### Quy trình
-
-Một người làm được toàn bộ việc của mình: tạo map/scenario/benchmark →
-**Run** → **Accept results** → lên leaderboard. Không cần tài khoản thứ
-hai, không cần đổi tài khoản.
-
-Review là **tùy chọn**. Bấm *Send for review*, nhập nickname người khác,
-chọn *spec* (trước khi chạy) hoặc *result* (sau khi chạy). Khi đang chờ,
-chính chủ **không** tự duyệt được — đó là toàn bộ ý nghĩa của việc nhờ
-review. Có thể hủy yêu cầu bất cứ lúc nào.
-
-Ba thứ chạy ở chế độ giảm cho tới khi được cấu hình, không phải lỗi:
-
-| Mặc định | Hệ quả | Bật đầy đủ |
-|---|---|---|
-| Chưa cấu hình OAuth | trang login báo rõ, không có nút | điền 5 biến ở trên |
-| Agent dùng mock tất định | trả lời bằng khớp từ khóa, không phải model | dán API key, xem `.env.example` |
-| Chưa có model PPO đã train | stack `astar+ppo` không chạy được | tải model `.zip` lên qua trang **Kho mô hình** |
-
-## Trạng thái
-
-**M0–M13 đã hoàn thành.** Chi tiết:
-[docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) ·
-kết quả chạy thật: [docs/TEST_REPORT.md](docs/TEST_REPORT.md) ·
-**điều chưa kiểm chứng**: [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md)
-
-| Thành phần | Trạng thái |
-|---|---|
-| Schemas, occupancy grid, kinematics, collision, LiDAR | ✅ |
-| A*, DWA, pure-pursuit (adapter tham chiếu), SimulationEngine, metrics | ✅ |
-| Benchmark engine + fairness checksum + human-in-the-loop | ✅ |
-| FastAPI (91 endpoint), WebSocket, background worker | ✅ |
-| Next.js UI: map editor, 2.5D, leaderboard, failure analysis, agent console | ✅ |
-| Vật cản động, thư viện 10 scenario, MLflow | ✅ |
-| PPO (Gymnasium + SB3) | ✅ pipeline — chỉ có smoke model, chưa train thật |
-| ROS2 Jazzy + Nav2 closed-loop | ✅ 6/6 episode, chạy tay |
-| Agentic AI + RAG, 8 LLM provider | ✅ — chưa gọi provider ngoài lần nào |
-| PostgreSQL + Alembic + Docker Compose | ✅ — đã build image và chạy thật, migration verify trên PostgreSQL 17 |
-| Đăng nhập Google/GitHub, nickname, review tùy chọn | ✅ — không gọi OAuth thật trong test |
-| App shell: sidebar thu gọn, theme Light/Dark/System, VI/EN | ✅ |
-| **Model Registry**: upload PPO qua web, checksum, tương thích | ✅ — **nạp model chưa chạy trong sandbox**, xem KNOWN_LIMITATIONS #77 |
-| **Robot Profile** | ✅ |
-| **Trợ lý hội thoại** (đề xuất → bản nháp, không tự chạy) | ✅ |
-
-Xem [docs/architecture.md](docs/architecture.md) cho kiến trúc và các
-quyết định thiết kế.
-
-## Yêu cầu môi trường
-
-- Python 3.12, Node.js 20+
-
-Kiểm tra nhanh:
+Trả `201` kèm `id`. Đọc kết quả:
 
 ```bash
-python3 --version   # cần >= 3.12
-node --version      # cần >= 20
-npm --version
+curl -H "Authorization: Bearer <token>" \
+  http://localhost:8000/api/v1/decisions/<run_id>
 ```
 
-Trên Windows có hai lối, và **cả hai đều chạy được**:
+### 5.4. Bật model thật cho AI
 
-- **WSL hoặc Git Bash** — gõ nguyên văn các lệnh `bash` dưới đây, kể cả
-  `./scripts/dev_stack.sh`.
-- **PowerShell / cmd thuần** — thay `.venv/bin/<x>` bằng
-  `.venv\Scripts\<x>.exe`, và dùng `scripts/serve.py` thay cho
-  `dev_stack.sh` (script đó là bash). Test và ruff chạy bình thường:
-  `.venv\Scripts\python.exe -m pytest tests/`.
-
-## Cài đặt
-
-Từ đầu, sau khi `git clone`:
-
-```bash
-cd P-011           # tên thư mục bạn vừa clone về
-
-# 1. Python
-python3.12 -m venv .venv
-.venv/bin/pip install --upgrade pip
-.venv/bin/pip install -r requirements.txt
-
-# 2. Frontend
-cd apps/web && npm install && cd ../..
-
-# 3. Cấu hình (tùy chọn — bỏ qua cũng chạy được)
-cp .env.example .env
-```
-
-Xong. Chạy dự án:
-
-```bash
-./scripts/dev_stack.sh start      # Linux / WSL / macOS / Git Bash
-```
-
-hoặc, nếu chỉ cần API và đang ở Windows thuần:
+Trong `.env`:
 
 ```
-.venv\Scripts\python.exe scripts\serve.py --migrate
-```
-
-Cả hai đều chạy `alembic upgrade head` trước khi khởi động API — script
-thì tự động, `serve.py` thì khi có cờ `--migrate`.
-
-### Để đăng nhập được ngay lần đầu
-
-Clone sạch, chưa có `.env`, thì **chưa có cách đăng nhập nào** — trang
-login sẽ nói thẳng như vậy chứ không hỏng. Chọn một trong hai:
-
-**Cách nhanh (chỉ để phát triển cục bộ):** mở `.env` và đặt
-
-```
-PLANBENCH_ENABLE_DEV_LOGIN=true
-```
-
-Khởi động lại. Script in ra một tài khoản `developer` kèm mật khẩu sinh
-ngẫu nhiên. Muốn cố định tài khoản thì thêm:
-
-```
-PLANBENCH_SEED_USERS=alice:mat-khau-cua-ban,bob:mat-khau-khac
-```
-
-**Cách thật:** điền 5 biến OAuth ở mục [Đăng nhập](#đăng-nhập) phía trên.
-
-`PLANBENCH_ENABLE_DEV_LOGIN` mặc định `false` và **không được bật trong
-production** — khi tắt, endpoint đăng nhập bằng mật khẩu từ chối và tài
-khoản mật khẩu thậm chí không được tạo.
-
-### Ba file dependency, dùng cái nào
-
-| File | Dùng khi |
-|---|---|
-| **`requirements.txt`** | **Mặc định.** Clone về là cài cái này. Đủ để chạy API, simulator, benchmark, đăng nhập, SQLite, trợ lý AI ở chế độ mock, và **toàn bộ test suite**. |
-| `requirements-optional.txt` | Khi cần PostgreSQL, MLflow, PPO/RL, hoặc LLM thật. Đọc file — nó hướng dẫn cài **từng nhóm**, đừng cài cả file (nhóm PPO nặng vài GB). |
-| `docker/requirements-api.txt` | Chỉ dành cho image Docker của API. Không có công cụ test, không có gì thừa. Bạn không cần đụng tới nó khi làm việc cục bộ. |
-
-Bốn thứ **cố tình** không nằm trong `requirements.txt`, vì thiếu chúng
-thì tính năng giảm chế độ có kiểm soát và **báo rõ**, chứ không crash:
-
-| Thiếu | Chuyện gì xảy ra |
-|---|---|
-| `psycopg` | Local dùng SQLite (driver có sẵn trong Python). Chỉ cần khi trỏ `PLANBENCH_DATABASE_URL` vào PostgreSQL — thiếu thì API dừng lúc khởi động và nói rõ phải cài gì. |
-| `mlflow` | Không đặt `PLANBENCH_MLFLOW_TRACKING_URI` thì dùng null tracker. Benchmark vẫn chạy và vẫn ghi đủ kết quả. |
-| `torch` + `gymnasium` + `stable-baselines3` | Stack `astar+ppo` không chạy được; mọi stack khác bình thường. `tests/test_rl.py` tự **skip**. |
-| `openai` / `anthropic` | Trợ lý AI chạy bằng provider mock tất định — offline, khớp từ khóa — và **giao diện nói rõ điều đó** thay vì giả vờ là model viết. |
-
-### Sau mỗi lần `git pull`: cài lại dependency
-
-```bash
-.venv/bin/pip install -r requirements.txt     # Windows: .venv\Scripts\pip
-```
-
-Rẻ khi không có gì mới (pip bỏ qua những gói đã đúng phiên bản) và cần
-thiết khi có. Bỏ bước này thì triệu chứng đến **muộn và ở chỗ khác**:
-
-```
-ModuleNotFoundError: No module named 'pyarrow'
-```
-
-Đã xảy ra thật (12-08). `pyarrow` và `jsonschema` được thêm vào
-`requirements.txt` ở commit `fa9df8a`; `.venv` dựng trước đó không có
-chúng, và mọi test đụng tới Parquet trace đỏ — trong khi `requirements.txt`
-hoàn toàn đúng. Không phải xung đột môi trường, chỉ là một môi trường cũ.
-
-**Kiểm nhanh `.venv` có khớp không:**
-
-```bash
-.venv/bin/pip install --dry-run -r requirements.txt | grep -i "would install"
-```
-
-Không in gì nghĩa là khớp.
-
-**Và luôn gọi Python qua đường dẫn trong `.venv`.** Máy có sẵn một Python
-khác (conda base, Python hệ thống) là chuyện thường, và cái đó có thể
-tình cờ đủ gói để test xanh — nên `pytest` gõ trần có thể **xanh trên
-một môi trường không phải môi trường của dự án**. Đó là cách một thiếu
-hụt thật nằm im nhiều ngày.
-
-### Không có mạng khi cài?
-
-`pip install` và `npm install` đều cần mạng ở lần đầu. Sau đó dự án chạy
-hoàn toàn offline: mock provider không gọi mạng, SQLite là file cục bộ,
-và OAuth chỉ cần mạng khi bạn thật sự bấm đăng nhập.
-
-## Chạy kiểm thử
-
-```bash
-.venv/bin/ruff format --check .
-.venv/bin/ruff check .
-PYTHONPATH= .venv/bin/pytest tests/ -v \
-  --cov=planbench_schemas \
-  --cov=planbench_simulator \
-  --cov-report=term-missing
-```
-
-Lưu ý `PYTHONPATH=`: nếu shell đã source ROS2 (ví dụ trong
-`~/.bashrc`), `PYTHONPATH` chứa `/opt/ros/...` khiến pytest tự nạp
-plugin `launch_testing` của ROS và lỗi import. Xóa `PYTHONPATH` khi
-chạy test giữ cho `.venv` được cô lập; điều này không ảnh hưởng tới
-các giai đoạn ROS2 sau (chúng chạy trong môi trường ROS riêng).
-
-Ghi chú: ở giai đoạn này các package được import trực tiếp từ source
-qua cấu hình `pythonpath` của pytest (xem `pyproject.toml`), chưa cần
-`pip install -e`.
-
-Frontend:
-
-```bash
-cd apps/web
-npx tsc --noEmit     # type-check
-npx vitest run       # unit test
-npx next build       # build production
-```
-
-Nếu chỉ cài `requirements.txt`, `tests/test_rl.py` sẽ hiện **skipped** —
-đúng như thiết kế, vì nó cần nhóm PPO trong `requirements-optional.txt`.
-Mọi test còn lại vẫn chạy.
-
-## Biến môi trường
-
-Sao `.env.example` sang `.env` rồi điền. **Bỏ trống hết vẫn chạy được** —
-mỗi tính năng thiếu key sẽ giảm chế độ có báo, không crash.
-
-| Biến | Bắt buộc? | Để làm gì |
-|---|---|---|
-| `PLANBENCH_ENABLE_DEV_LOGIN` | nên bật khi dev | `true` thì trang đăng nhập có form user/mật khẩu, không cần OAuth |
-| `PLANBENCH_SEED_USERS` | đi kèm cái trên | `tên:mật_khẩu`, phân cách bằng dấu phẩy |
-| `AUTH_SECRET` | nên có | Ký token. Bỏ trống thì mỗi lần khởi động lại sinh secret mới, mọi người bị đăng xuất |
-| `PLANBENCH_AGENT_PROVIDER` | không | `auto` (mặc định), `gemini`, `anthropic`, `openai`, `mock`… |
-| `PLANBENCH_AGENT_MODEL` | **có, nếu dùng LLM** | Tên model. `auto` **bỏ qua** provider không có tên model — đây là lỗi hay gặp nhất |
-| `GEMINI_API_KEY` | nếu dùng Gemini | Key từ Google AI Studio |
-| `ANTHROPIC_API_KEY` | nếu dùng Claude | Provider này có model mặc định nên không cần `AGENT_MODEL` |
-| `PLANBENCH_DATABASE_URL` | không | Bỏ trống dùng SQLite cạnh repo. Ghi `=` rỗng thì thành in-memory, mất hết khi tắt |
-| `GOOGLE_CLIENT_ID` / `_SECRET` | không | Đăng nhập Google. Bỏ trống thì nút đó không hiện |
-
-Cấu hình LLM tối thiểu để chạy Gemini:
-
-```bash
 PLANBENCH_AGENT_PROVIDER=auto
-PLANBENCH_AGENT_MODEL=gemini-3-flash-preview
-GEMINI_API_KEY=<key cua ban>
+PLANBENCH_AGENT_MODEL=o4-mini
+OPENAI_API_KEY=<key cua ban>
 ```
 
-Kiểm tra provider có dùng được không **trước khi** chạy cả stack:
+**Hai biến, không phải một.** `auto` bỏ qua provider có key mà không có
+tên model - đây là lỗi cấu hình hay gặp nhất. Khởi động lại API; log in
+`provider keys read from .env: OPENAI_API_KEY`, và trang **Trợ lý AI**
+hiện tên model thay vì nhãn "không có model".
+
+Kiểm trước khi chạy cả stack:
 
 ```bash
 set -a; source .env; set +a
@@ -358,97 +540,149 @@ PYTHONPATH="services/agent_service:packages/schemas:packages/planning:packages/m
   .venv/bin/python scripts/check_agent_provider.py
 ```
 
-Nó in bảng provider nào sẵn sàng, còn thiếu gì, rồi gọi thật một request
-và thử structured output. `Determinist: False` nghĩa là đang chạy model
-thật; `True` nghĩa là đang rơi về mock tất định.
+`Determinist: False` nghĩa là đang chạy model thật.
 
-## Thử nhanh
+## 6. Cài đặt
 
-### Phản biện một phép so (không cần LLM, ~2 giây)
-
-Bộ luật chất vấn một kết quả đã lưu trước khi người ký duyệt:
+Từ đầu, sau khi `git clone`:
 
 ```bash
-PYTHONPATH="packages/decision:packages/schemas" .venv/bin/python -c "
-import json, glob
-from planbench_decision.self_check import critique
-for f in sorted(glob.glob('artifacts/runs/*/*/comparison_report.json')):
-    findings = critique(json.load(open(f)))
-    print(f'{f.split(\"/\")[-2][:44]:<46} {len(findings)} finding')
-    for x in findings:
-        print(f'   [{x.severity:<10}] {x.code}')
-"
+python3.12 -m venv .venv
+.venv/bin/pip install --upgrade pip
+.venv/bin/pip install -r requirements.txt
+cd apps/web && npm install && cd ../..
+cp .env.example .env          # tùy chọn - bỏ trống hết vẫn chạy
 ```
 
-### Phản biện có LLM (~30 giây)
+Cần Python 3.12 và Node 20+.
 
-```bash
-set -a; source .env; set +a
-PYTHONPATH="services/agent_service:packages/decision:packages/schemas:packages/benchmark:packages/planning:packages/metrics:services/simulator:apps/api:." \
-.venv/bin/python -c "
-import json, glob
-from planbench_agent.critique import critique_with_model
-from planbench_agent.factory import build_provider
-from planbench_api.config import get_settings
-s = get_settings()
-p = build_provider(s.agent_provider, model=s.agent_model or None)
-f = [x for x in glob.glob('artifacts/runs/*/*/comparison_report.json') if 'warehouse' in x][0]
-r = critique_with_model(json.load(open(f)), p)
-print(p.name, p.model)
-print(r.summary)
-print('fabricated:', r.fabricated)
-" 2>&1 | grep -v '^{'
-```
+Mọi chi tiết còn lại - ba file dependency dùng cái nào, lưu dữ liệu,
+đăng nhập, biến môi trường, chạy test - giữ nguyên như `README.md` hiện
+tại. *(Sẽ gộp vào đây khi bản nháp này được chốt.)*
 
-`fabricated: 0` nghĩa là model không trỏ vào trường nào không tồn tại.
-
-### Qua giao diện
-
-1. `bash scripts/dev_stack.sh start`
-2. Mở `http://localhost:3000`, đăng nhập
-3. **Deployment** → khai một thế giới, hoặc dùng cái có sẵn
-4. **Quyết định** → chạy phép so hai ứng viên
-5. Mở kết quả → mục **Phản biện** → bấm *Kiểm bằng luật*, rồi *Hỏi thêm model*
-
-### Qua API
-
-```bash
-curl -H "Authorization: Bearer <token>" \
-  "http://localhost:8000/api/v1/decisions/<run_id>/critique"
-
-curl -H "Authorization: Bearer <token>" \
-  "http://localhost:8000/api/v1/decisions/<run_id>/critique?use_model=true"
-```
-
-Hoặc mở `http://localhost:8000/docs`, bấm **Authorize**, rồi thử trực tiếp.
-
-## Cấu trúc thư mục
+## 7. Cấu trúc thư mục
 
 ```
-packages/            schemas, planning (A*/DWA), metrics, benchmark  — thư viện Python thuần
-services/simulator/  SimulationEngine, LiDAR, collision, nav_stack
-services/tracking/   MLflow adapter + null tracker
-services/agent_service/  Agentic AI: provider abstraction, tools, evidence, RAG
-apps/api/            FastAPI (thin adapter over the core) + db/ (SQLAlchemy)
-apps/web/            Next.js 15 + React 19
-ml/                  Gymnasium env, reward, PPO training
-ros2_ws/             5 ROS2 package (simulator node, Nav2 bringup, runner)
-alembic/             Migration schema
-docker/              Image API + web
-tests/               pytest — xem docs/TEST_REPORT.md cho số đã chạy thật
-scripts/             demo, kiểm tra provider, dev_stack.sh
-docs/                architecture, API contract, deployment, frontend, agent, ROS2
+packages/schemas      hợp đồng dữ liệu dùng chung
+packages/planning     A*, RRT*, DWA, DWA predictive
+packages/metrics      metric và anchor
+packages/benchmark    engine chạy episode, registry stack, outcome
+packages/decision     cổng G1–G6, thẻ quyết định, advice, self-check
+packages/explanation  tầng "vì sao": detector, waterfall, tool card, checker
+packages/plugin_sdk   SDK cắm thuật toán ngoài
+services/simulator    SimulationEngine, LiDAR, collision, algorithm host
+services/agent_service provider LLM, tool, advisor, critique
+services/tracking     MLflow adapter + null tracker
+apps/api              FastAPI + SQLAlchemy
+apps/web              Next.js 15 + React 19
+ml/                   Gymnasium env, reward, huấn luyện PPO
+ros2_ws/              5 package ROS2 (simulator node, Nav2 bringup, runner)
+alembic/              migration
+docker/               image API + web
+tests/                pytest
+docs/                 kiến trúc, hợp đồng API, giới hạn đã biết, báo cáo
 ```
 
-## Quy ước cốt lõi
+## 8. Quy ước cốt lõi
 
-- Đơn vị SI: mét, giây, radian; góc chuẩn hóa trong **(-π, π]**.
+- Đơn vị SI: mét, giây, radian; góc chuẩn hoá trong **(-π, π]**.
 - `EPS = 1e-9` dùng chung cho so sánh float.
-- Tiếp xúc biên **được tính là collision** (quy tắc bảo thủ về an toàn).
+- Tiếp xúc biên **được tính là va chạm** - quy tắc bảo thủ về an toàn.
 - Giá trị cell theo chuẩn ROS: FREE=0, OCCUPIED=100, UNKNOWN=-1.
-- Mọi thành phần deterministic với cùng input; không dùng global random state.
+- Mọi thành phần tất định với cùng input; không dùng global random state.
+- Không hằng số ngưỡng trong code - ngưỡng đọc từ deployment.
 
-- Cách chạy nhanh bằng 1 câu lệnh:
-bash scripts/dev_stack.sh start
-- Cách stop chương trình 
-bash scripts/dev_stack.sh stop
+## 9. Đang làm, chưa chạy tốt, và sẽ bổ sung
+
+Đặt ở cuối vì nó không thuộc phần giới thiệu - nhưng cố ý dài. Một README
+chỉ liệt kê thứ đã xong là một README nói dối bằng cách im lặng, và một
+người định dựa vào nền tảng này cần biết chỗ nào chưa đỡ được sức nặng.
+
+### 9.1. Phần "vì sao" - đang xây dở, đây là hạng mục lớn nhất
+
+Hệ hiện chỉ chỉ ra được **ai thắng**. Nó chưa nói được **vì sao**.
+
+Cụ thể: tầng contract phía nền tảng đã xong (16 tool card, 4 checker,
+promotion matrix, thang bằng chứng, sidecar). Nhưng **con agent đi tìm
+nguyên nhân thì chưa viết** - `services/analyst_service/` chưa tồn tại.
+
+Kèm theo đó:
+
+- **Bộ golden chỉ dựng được 3/6 họ.** Ba họ còn lại cần một sweep nhiều
+  context chứ không phải một episode. `OFFICIAL_GOLDEN_READY` vẫn là
+  `False`, và sẽ giữ như vậy cho tới khi đủ sáu.
+- **Cơ sở tri thức cơ chế: 5/5 entry còn ở trạng thái `draft`.** Chưa
+  entry nào được duyệt, nên chưa claim nào dựa vào nó được nâng mức.
+- **Sàn model-free (`reference_analyst`) crash trên packet thật** - một
+  lỗi che biến, đã ghi nhận, chưa sửa.
+
+Kế hoạch: `docs/antongduy/plans/2026-08-24/ai-analyst-duong-ngan.md`.
+
+### 9.2. Import thuật toán qua giao diện - chưa có đường vào
+
+§2 nói "ai cũng cắm được thuật toán của mình vào". Hôm nay câu đó **chỉ
+đúng nếu bạn là dev có quyền vào máy chạy benchmark**.
+
+Phần khó đã xong: SDK, algorithm host, lane subprocess có deadline thật
+và kill được khi treo, bộ kiểm tính tuân thủ, và discovery đọc manifest
+**không import code**. Phần thiếu là đường vào:
+
+- không có endpoint nhận bundle, không có chỗ lưu, không có bước giải nén
+  có kiểm;
+- **catalogue chỉ có một nguồn** - danh sách thuật toán đọc thẳng từ một
+  dict khai cứng trong mã, chưa có nguồn thứ hai cho plugin đã import;
+- không có UI.
+
+Hệ quả: một người dùng không phải dev vẫn phải nhờ người cài `planner.py`
+lên máy chủ. Đổi chỗ nút bấm thì không giải quyết được - một manifest chỉ
+**khai** entry point, nó không **chứa** code, nên import manifest cho một
+thuật toán chưa cài chỉ cho ra trạng thái "đã đăng ký nhưng thiếu runtime".
+
+
+### 9.3. Phát lại - mới xong một nửa
+
+Đồng bộ theo **thời gian tuyệt đối** đã chạy. Đồng bộ theo **quãng đường
+đi được** (để so hành vi tại cùng một vùng bản đồ) thì chưa: `TracePayload`
+chưa mang tuyến tham chiếu để chiếu lên. Có đường lui đã chốt - chiếu lên
+tuyến dự phòng và **khai rõ chất lượng chiếu bị giảm** - nhưng chưa làm.
+
+Cảnh báo bắt buộc đi kèm chế độ đó ("cùng chỗ ≠ cùng tình huống": vật cản
+động đã ở chỗ khác vì hai robot tới nơi ở hai thời điểm khác nhau) cũng
+chưa có.
+
+### 9.6. Trợ lý hội thoại - không có trí nhớ
+
+`/agent/chat` **không gửi lịch sử hội thoại**. Hỏi "còn ứng viên B thì
+sao?" là model không biết B nào. Đây là một quyết định thiết kế có lý do
+(không có ngữ cảnh ẩn mà người đọc không thấy được), nhưng cái giá của nó
+là hội thoại nhiều lượt không hoạt động.
+
+Và trợ lý **không phân tích cơ chế**. Hỏi "vì sao dwa_coarse thắng" thì nó
+đọc advice tất định rồi thuật lại - đó là thuật lại luật, không phải phân
+tích. Phân tích cơ chế là §9.1.
+
+### 9.7. Những thứ nhỏ hơn nhưng nên biết
+
+- **Chưa gọi model thật trong CI.** Toàn bộ test của lớp AI dùng provider
+  script sẵn. Chúng chứng minh cái khung đúng; chúng không nói gì về chất
+  lượng model viết. (Đã đo tay một lần trên 3 run × 2 model - kết quả ở
+  `docs/antongduy/notes/2026-08-24/`.)
+- **Vài test frontend đang đỏ**, đòi những khoá dịch chưa từng tồn tại.
+  Chưa dọn.
+- **Chưa có phép so nào giữa cách diễn đạt của template và của model.**
+  Nguyên tắc đã chốt: template là chuẩn vĩnh viễn, model không thắng rõ
+  thì không ship phần văn - phép so đó chưa chạy.
+- Danh sách đầy đủ, cập nhật liên tục: `docs/KNOWN_LIMITATIONS.md`.
+
+## 10. Tài liệu
+
+| File | Nội dung |
+|---|---|
+| `docs/architecture.md` | kiến trúc và các quyết định thiết kế |
+| `docs/KNOWN_LIMITATIONS.md` | **điều chưa kiểm chứng** - đọc trước khi trích số |
+| `docs/IMPLEMENTATION_STATUS.md` | trạng thái từng mốc |
+| `docs/TEST_REPORT.md` | kết quả chạy thật |
+| `docs/API_CONTRACT.md` | hợp đồng API |
+| `docs/plugin_author_guide.md` | cắm thuật toán của bạn vào |
+| `docs/ROS2_INTEGRATION.md` | ROS2 + Nav2 |
+| `docs/antongduy/` | ghi chép, kế hoạch và báo cáo theo ngày |

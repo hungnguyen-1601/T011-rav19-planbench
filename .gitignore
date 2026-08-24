@@ -191,3 +191,11 @@ CLAUDE.md
 # is ever adopted properly, generate the lockfile from those pins and drop
 # this rule in the same commit.
 uv.lock
+
+# ---------- README backup ----------
+# The README was rewritten 2026-08-24; the previous one is kept on disk
+# while the new one settles. Ignored rather than committed: two READMEs in
+# the tree is two answers to "what is this project", and a reader who finds
+# the stale one has no way to tell which is current. Delete it once nothing
+# is being copied back out of it.
+README.old.md
