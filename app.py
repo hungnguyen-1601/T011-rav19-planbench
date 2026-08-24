@@ -48,7 +48,12 @@ try:
 
     # Mount FastAPI application with Gradio
     app = gr.mount_gradio_app(fastapi_app, demo, path="/")
+    # Gradio SDK on HF Spaces runs app.py and expects demo.launch() to block.
+    # This must NOT be inside if __name__ == "__main__" because HF SDK imports
+    # the file directly and needs the server to stay running.
+    demo.launch(server_name="0.0.0.0", server_port=7860)
 except ImportError:
+    # Fallback: no Gradio installed, run FastAPI directly with uvicorn
+    import uvicorn
     app = fastapi_app
-
-
+    uvicorn.run(app, host="0.0.0.0", port=7860, log_level="info")
