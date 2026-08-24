@@ -28,7 +28,9 @@ if TYPE_CHECKING:
 __all__ = ["ensure_custom_map_files", "ensure_profile_map_materialised", "materialise_map"]
 
 
-def materialise_map(stored: StoredMap, map_root: Path) -> tuple[str, str]:
+def materialise_map(
+    stored: StoredMap, map_root: Path, *, stem: str | None = None
+) -> tuple[str, str]:
     """Write the pair, return the two paths **relative to the map root**.
 
     Relative, never absolute. A profile carrying an absolute path is a
@@ -45,8 +47,9 @@ def materialise_map(stored: StoredMap, map_root: Path) -> tuple[str, str]:
     bytes to the same path, so a caller that fails validation afterwards
     leaves nothing to clean up.
     """
-    safe_id = "".join(char if char.isalnum() or char in "-_" else "_" for char in stored.id)
-    stem = f"{safe_id}__v{stored.version}"
+    if stem is None:
+        safe_id = "".join(char if char.isalnum() or char in "-_" else "_" for char in stored.id)
+        stem = f"{safe_id}__v{stored.version}"
     directory = map_root / "maps" / "custom"
     directory.mkdir(parents=True, exist_ok=True)
 
@@ -97,15 +100,18 @@ def ensure_custom_map_files(
         )
         return False
 
-    # Extract map id from stem: e.g. "7d52494dc3b5__v1" -> "7d52494dc3b5"
-    stem = Path(map_rel_path).stem
-    map_id_candidate = stem.split("__v")[0] if "__v" in stem else stem
+    # Extract exact requested stem: e.g. "7d52494dc3b5__v1"
+    requested_stem = Path(map_rel_path).stem
+    map_id_candidate = requested_stem.split("__v")[0] if "__v" in requested_stem else requested_stem
 
     try:
         stored_map = map_repo.get(map_id_candidate)
+        # Materialise with the exact requested stem (e.g. v1) so the profile's expected file is created
+        materialise_map(stored_map, map_root, stem=requested_stem)
+        # Also materialise with current version (e.g. v2)
         materialise_map(stored_map, map_root)
         _log.warning("ensure_custom_map_files: recovered map %s from DB (direct id)", map_rel_path)
-        return True
+        return full_path.is_file()
     except Exception as exc:
         _log.debug("ensure_custom_map_files: direct get(%s) failed: %s", map_id_candidate, exc)
 
@@ -115,11 +121,12 @@ def ensure_custom_map_files(
                 char if char.isalnum() or char in "-_" else "_" for char in stored.id
             )
             if safe_id == map_id_candidate or stored.id == map_id_candidate:
+                materialise_map(stored, map_root, stem=requested_stem)
                 materialise_map(stored, map_root)
                 _log.warning(
                     "ensure_custom_map_files: recovered map %s from DB (list scan)", map_rel_path
                 )
-                return True
+                return full_path.is_file()
     except Exception as exc:
         _log.warning("ensure_custom_map_files: list scan failed: %s", exc)
 
