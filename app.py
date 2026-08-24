@@ -43,7 +43,33 @@ from planbench_api.main import create_app
 # 1. Create the PlanBench FastAPI application
 fastapi_app = create_app()
 
-# 2. Create Gradio Blocks
+# 2. Patch Gradio's create_app to inject an ASGI router middleware.
+# ZeroGPU spaces intercepts demo.launch() and creates its own Gradio ASGI app.
+# By patching create_app, we ensure our API routes take precedence without stripping prefixes.
+original_create_app = gr.routes.App.create_app
+
+class AsgiRouterMiddleware:
+    def __init__(self, gradio_app, fastapi_app):
+        self.gradio_app = gradio_app
+        self.fastapi_app = fastapi_app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            path = scope.get("path", "")
+            # Route specific API prefixes to FastAPI
+            if path.startswith("/api/") or path.startswith("/docs") or path.startswith("/openapi.json"):
+                await self.fastapi_app(scope, receive, send)
+                return
+        # Everything else goes to Gradio
+        await self.gradio_app(scope, receive, send)
+
+def patched_create_app(*args, **kwargs):
+    gradio_app = original_create_app(*args, **kwargs)
+    return AsgiRouterMiddleware(gradio_app, fastapi_app)
+
+gr.routes.App.create_app = patched_create_app
+
+# 3. Create Gradio Blocks
 with gr.Blocks(title="PlanBench API") as demo:
     gr.Markdown(
         """
@@ -57,12 +83,6 @@ with gr.Blocks(title="PlanBench API") as demo:
         """
     )
 
-# 3. Mount Gradio onto the FastAPI app (FastAPI becomes the ASGI host)
-app = gr.mount_gradio_app(fastapi_app, demo, path="/")
-
-# 4. Provide the host app back to Gradio so demo.launch() serves the FastAPI app
-demo.app = app
-
 if __name__ == "__main__":
-    # 5. Launch without hardcoding ports so Hugging Face ZeroGPU proxy can assign PORT automatically
+    # Launch without hardcoding ports so Hugging Face ZeroGPU proxy can assign PORT automatically
     demo.launch()
