@@ -26,6 +26,19 @@ for p in PACKAGE_PATHS:
 
 from planbench_api.main import create_app
 
+# ZeroGPU requirement: Hugging Face ZeroGPU checks for at least one @spaces.GPU function on startup
+try:
+    import spaces
+
+    @spaces.GPU
+    def gpu_compute(fn, *args, **kwargs):
+        """ZeroGPU executor for GPU-accelerated computing."""
+        return fn(*args, **kwargs)
+
+except (ImportError, Exception):
+    def gpu_compute(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
 # Create the PlanBench FastAPI application
 fastapi_app = create_app()
 
