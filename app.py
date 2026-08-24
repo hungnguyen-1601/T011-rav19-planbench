@@ -42,6 +42,16 @@ from planbench_api.main import create_app
 # Create the PlanBench FastAPI application
 fastapi_app = create_app()
 
+@fastapi_app.get("/")
+def read_root():
+    return {
+        "status": "online",
+        "service": "PlanBench API",
+        "health": "/api/v1/health",
+        "docs": "/docs",
+        "ui": "/ui",
+    }
+
 try:
     import gradio as gr
 
@@ -51,7 +61,7 @@ try:
             """
             # 🚀 PlanBench Backend API
 
-            The PlanBench FastAPI backend is active and running on Hugging Face Spaces.
+            The PlanBench FastAPI backend is active and running on Hugging Face Spaces (ZeroGPU).
 
             - **Health Check**: [`/api/v1/health`](/api/v1/health)
             - **Interactive API Docs**: [`/docs`](/docs)
@@ -59,11 +69,14 @@ try:
             """
         )
 
-    # Mount FastAPI application with Gradio UI at /ui
+    # Mount Gradio UI on the FastAPI app at /ui
     app = gr.mount_gradio_app(fastapi_app, demo, path="/ui")
+
+    # Launch server for Hugging Face Spaces
+    demo.launch(server_name="0.0.0.0", server_port=7860)
 except ImportError:
     app = fastapi_app
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 7860))
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+    if __name__ == "__main__":
+        port = int(os.environ.get("PORT", 7860))
+        uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
