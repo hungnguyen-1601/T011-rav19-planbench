@@ -58,6 +58,10 @@ try:
             """
         )
 
+    # Prevent Gradio background auto-launcher from spawning a duplicate server on port 7861
+    _blocks.is_running = True
+    _blocks._is_launched = True
+
     # Mount Gradio onto the FastAPI app at root
     app = gr.mount_gradio_app(fastapi_app, _blocks, path="/")
 except ImportError:
