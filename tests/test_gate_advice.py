@@ -42,7 +42,10 @@ PROFILE: dict[str, Any] = {
 def report() -> dict[str, Any]:
     if not STORED.exists():
         pytest.skip("stored run not present in this checkout")
-    return json.loads(STORED.read_text())
+    # Explicit encoding: the stored reports carry non-ASCII (a delta
+    # sign in a gate name), and Python falls back to the platform code
+    # page, which is cp1252 on Windows and cannot decode them.
+    return json.loads(STORED.read_text(encoding="utf-8"))
 
 
 @pytest.fixture

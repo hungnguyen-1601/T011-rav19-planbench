@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -262,15 +263,53 @@ class OpenAICompatibleProvider(LLMProvider):
 
     def complete(self, request: LLMRequest) -> LLMResponse:
         client = self._client()
+        payload = self._payload(request)
         try:
-            completion = client.chat.completions.create(**self._payload(request))
+            completion = client.chat.completions.create(**payload)
         except ProviderUnavailable:
             raise
         except Exception as exc:  # the SDK's hierarchy is vendor-specific
-            raise ProviderError(
-                f"{self.preset.name} request failed: {type(exc).__name__}: {exc}"
-            ) from exc
+            allowed = _completion_ceiling(str(exc))
+            if allowed is None:
+                raise ProviderError(
+                    f"{self.preset.name} request failed: {type(exc).__name__}: {exc}"
+                ) from exc
+            # A caller's ceiling is a budget, not a demand. Models differ
+            # in how much output they will emit, and a constant sized for
+            # one that thinks before answering is over the limit of one
+            # that does not — refusing the whole call over that costs the
+            # reader an answer the model was willing to give.
+            logger.warning(
+                "%s: %s caps completions at %d; retrying below the requested %d",
+                self.preset.name,
+                self.model_id,
+                allowed,
+                request.max_tokens,
+            )
+            payload[self.preset.max_tokens_field] = allowed
+            try:
+                completion = client.chat.completions.create(**payload)
+            except Exception as retry_exc:
+                raise ProviderError(
+                    f"{self.preset.name} request failed: {type(retry_exc).__name__}: {retry_exc}"
+                ) from retry_exc
         return _from_wire(completion, expect_structured=request.output_schema is not None)
+
+
+def _completion_ceiling(message: str) -> int | None:
+    """The model's own completion limit, when the API named it.
+
+    Read from the error text rather than a table of models: the table
+    would be wrong the week a model ships, and the API states the number
+    in the same breath as the refusal.
+    """
+    match = re.search(r"supports at most (\d[\d_,]*) completion tokens", message)
+    if match is None:
+        return None
+    try:
+        return int(match.group(1).replace(",", "").replace("_", ""))
+    except ValueError:  # pragma: no cover - the pattern only matches digits
+        return None
 
 
 def _function_spec(name: str, description: str, schema: dict[str, Any]) -> dict[str, Any]:
@@ -288,10 +327,35 @@ def _function_spec(name: str, description: str, schema: dict[str, Any]) -> dict[
 
 
 def _schema_is_strict(schema: Mapping[str, Any]) -> bool:
+    """Whether the API's strict-mode rules hold **all the way down**.
+
+    They apply to every object in the schema, not only the outermost
+    one. Checking the root alone claimed ``strict`` for a schema whose
+    nested object omitted one property from ``required``, and the whole
+    request came back 400 — a permanent failure that the caller then
+    reported as "the model added nothing", because a rejected request
+    and an unhelpful answer degrade to the same advice list.
+    """
+    if not isinstance(schema, Mapping):
+        return False
+    for branch in ("anyOf", "oneOf", "allOf"):
+        alternatives = schema.get(branch)
+        if isinstance(alternatives, Sequence) and not isinstance(alternatives, (str, bytes)):
+            if not all(_schema_is_strict(one) for one in alternatives):
+                return False
+    items = schema.get("items")
+    if items is not None and not _schema_is_strict(items):
+        return False
+    properties = schema.get("properties")
+    if properties is None:
+        # A leaf (string, number, enum...) carries no strict-mode rule of
+        # its own; only objects do.
+        return True
     if schema.get("additionalProperties") is not False:
         return False
-    properties = set((schema.get("properties") or {}).keys())
-    return properties == set(schema.get("required") or ())
+    if set(properties.keys()) != set(schema.get("required") or ()):
+        return False
+    return all(_schema_is_strict(child) for child in properties.values())
 
 
 def _to_wire(message: LLMMessage) -> list[dict[str, Any]]:

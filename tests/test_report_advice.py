@@ -53,7 +53,9 @@ TIED = RUNS / "2026-08-12/open_hall_2_global_planner_selection_ce26fe87/comparis
 def load(path: Path) -> dict[str, Any]:
     if not path.exists():
         pytest.skip(f"stored run {path.name} not present in this checkout")
-    return json.loads(path.read_text())
+    # Explicit encoding: see test_gate_advice.py. Without it these
+    # fixtures raise UnicodeDecodeError on Windows.
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 @pytest.fixture
