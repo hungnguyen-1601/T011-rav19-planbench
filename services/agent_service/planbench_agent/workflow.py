@@ -101,19 +101,38 @@ class AgentService:
     def provider(self) -> LLMProvider:
         return self._provider
 
+    @property
+    def gateway(self) -> AgentGateway:
+        """The same reader the tools go through.
+
+        Exposed so a caller resolving what the reader has on screen
+        checks it as this user, against the records this user may read,
+        rather than reaching past the agent to a service of its own.
+        """
+        return self._gateway
+
     def converse(
         self,
         message: str,
         history: Sequence[LLMMessage] = (),
         max_iterations: int = MAX_TOOL_ITERATIONS,
+        preamble: str = "",
     ) -> tuple[ChatTurn, tuple[LLMMessage, ...]]:
         """Run the model with tools until it answers or the budget runs out.
 
         Hitting the cap is reported as ``truncated`` rather than hidden,
         and the text says nothing is asserted — a truncated loop has an
         answer shaped like a conclusion and none of the work behind it.
+
+        ``preamble`` names the record the reader has open, so "why did
+        this one end that way" resolves without them pasting an id. It is
+        the caller's job to have verified those identifiers, and it goes
+        in the user turn rather than the system prompt: what the reader
+        happens to be looking at is a fact about the question, not one of
+        the rules the model answers under.
         """
-        messages: list[LLMMessage] = [*history, LLMMessage.user(message)]
+        opening = f"{preamble}\n\n{message}" if preamble else message
+        messages: list[LLMMessage] = [*history, LLMMessage.user(opening)]
         specs = self._registry.specs()
         used: list[str] = []
         errors: list[str] = []

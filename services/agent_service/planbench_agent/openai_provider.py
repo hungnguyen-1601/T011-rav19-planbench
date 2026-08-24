@@ -340,9 +340,12 @@ def _schema_is_strict(schema: Mapping[str, Any]) -> bool:
         return False
     for branch in ("anyOf", "oneOf", "allOf"):
         alternatives = schema.get(branch)
-        if isinstance(alternatives, Sequence) and not isinstance(alternatives, (str, bytes)):
-            if not all(_schema_is_strict(one) for one in alternatives):
-                return False
+        if (
+            isinstance(alternatives, Sequence)
+            and not isinstance(alternatives, (str, bytes))
+            and not all(_schema_is_strict(one) for one in alternatives)
+        ):
+            return False
     items = schema.get("items")
     if items is not None and not _schema_is_strict(items):
         return False

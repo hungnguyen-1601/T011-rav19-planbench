@@ -176,3 +176,50 @@ def oauth_redirect_uri(settings: Settings, provider: str) -> str:
     setup failure, and there is no reason for two sources of truth.
     """
     return f"{settings.api_public_url.rstrip('/')}/api/v1/auth/oauth/{provider}/callback"
+
+
+def load_provider_keys(env_file: str | Path = ".env") -> tuple[str, ...]:
+    """Put provider API keys from ``.env`` into the process environment.
+
+    Two rules were each right on their own and did not meet. Keys are
+    **never PlanBench settings** — that is why they are absent from
+    :class:`Settings`, and it keeps them out of every settings dump and
+    every log line that prints one. And ``.env`` is where the project
+    documents pasting them, next to ``PLANBENCH_AGENT_MODEL``.
+
+    The gap between the two was silent and total: pydantic-settings reads
+    ``.env`` into the *settings object*, while
+    :func:`~planbench_agent.factory.build_provider` reads
+    ``os.environ`` directly. So the model id arrived and the key never
+    did, `auto` found no provider ready, and the assistant answered from
+    the offline keyword responder — which is a legible sentence in the
+    UI and, to anyone who had just pasted a key, the wrong one.
+
+    This copies **only** the provider key variables, by the names the
+    factory itself publishes, so a ``.env`` cannot reach in and set an
+    arbitrary process variable. A value already in the environment wins:
+    the shell is the more deliberate of the two, and a key exported for
+    one run should not be overridden by a file.
+
+    Returns the names actually filled in, for the startup log.
+    """
+    import os
+
+    from dotenv import dotenv_values
+
+    from planbench_agent.factory import provider_status
+
+    path = Path(env_file)
+    if not path.exists():
+        return ()
+    values = dotenv_values(path)
+    wanted = {status.api_key_env for status in provider_status() if status.api_key_env}
+    filled: list[str] = []
+    for name in sorted(wanted):
+        if os.environ.get(name):
+            continue
+        value = values.get(name)
+        if value:
+            os.environ[name] = value
+            filled.append(name)
+    return tuple(filled)

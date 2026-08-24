@@ -37,10 +37,11 @@
  */
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "@/components/Icon";
-import { askAgent, type ChatTurn } from "@/lib/agent";
+import { askAgent, type ChatContext, type ChatTurn } from "@/lib/agent";
 import { useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import { useDismiss } from "@/lib/useDismiss";
@@ -52,6 +53,14 @@ interface Entry {
    *  out before one. Kept beside the text rather than folded into it,
    *  because it is evidence about the answer and not part of it. */
   turn?: ChatTurn;
+  /** A context was offered with this question. */
+  contextOffered?: boolean;
+  /** The server confirmed the record on screen and told the model about
+   *  it. Kept apart from `contextOffered` because "never attached" and
+   *  "attaching failed" are two different sentences, and only the second
+   *  misleads — the reader watched a chip say this question was about
+   *  the run in front of them. */
+  contextUsed?: boolean;
   /** The answer came from the offline keyword responder rather than a
    *  model. Read off the response instead of asking
    *  `/agent/capabilities` on open: the dock would pay for that request
@@ -61,9 +70,30 @@ interface Entry {
   deterministic?: boolean;
 }
 
+/** The run this page is about, or "" on a page that is about no run.
+ *
+ * Read from the route rather than passed down: the dock floats over
+ * every page from the shell, and threading a prop through every one of
+ * them to reach a component none of them render is a lot of edits for a
+ * fact the URL already carries. */
+function runOnScreen(pathname: string | null): string {
+  const match = /^\/decisions\/([^/]+)\/?$/.exec(pathname ?? "");
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
 export function AgentDock() {
   const { t } = useTranslation();
   const session = useSession();
+  const pathname = usePathname();
+  const runId = runOnScreen(pathname);
+  // Attached by default, because a question typed on a run's page is
+  // almost always about that run. Detaching is one click and it stays
+  // detached only until the page changes: the reader who walked to a
+  // different run means the new one.
+  const [attached, setAttached] = useState(true);
+  useEffect(() => {
+    setAttached(true);
+  }, [runId]);
   const [open, setOpen] = useState(false);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [draft, setDraft] = useState("");
@@ -97,12 +127,14 @@ export function AgentDock() {
     if (!message || busy) return;
     setDraft("");
     setError(null);
+    const context: ChatContext | undefined =
+      attached && runId ? { run_id: runId } : undefined;
     setEntries((prev) => [...prev, { role: "user", text: message }]);
     setBusy(true);
     const controller = new AbortController();
     inFlight.current = controller;
     try {
-      const response = await askAgent(message, controller.signal);
+      const response = await askAgent(message, controller.signal, context);
       if (controller.signal.aborted) return;
       setEntries((prev) => [
         ...prev,
@@ -110,6 +142,8 @@ export function AgentDock() {
           role: "agent",
           text: response.turn.text,
           turn: response.turn,
+          contextUsed: response.context_used,
+          contextOffered: Boolean(context),
           deterministic: response.deterministic,
         },
       ]);
@@ -150,6 +184,22 @@ export function AgentDock() {
             </button>
           </header>
 
+          {/* Declared, not silent. A question that quietly carried the
+              open run would be exactly the hidden context `/agent/chat`
+              was kept stateless to avoid — the reader has to be able to
+              see what their question was about, and say no. */}
+          {session && runId ? (
+            <div className="agent-dock-context">
+              <Icon name="paperclip" size={13} />
+              <span className="small">
+                {attached ? t("agentDock.contextOn") : t("agentDock.contextAttach")}
+              </span>
+              <button type="button" className="small" onClick={() => setAttached((on) => !on)}>
+                {attached ? t("agentDock.contextDetach") : t("agentDock.contextAttach")}
+              </button>
+            </div>
+          ) : null}
+
           <div className="agent-dock-log" role="log" aria-live="polite">
             {/* Signed out, the composer would take a question and get a
                 401 back. Saying so up front costs the reader nothing;
@@ -169,6 +219,13 @@ export function AgentDock() {
                   <p>{entry.text}</p>
                   {entry.deterministic ? (
                     <p className="muted small">{t("agentDock.mock")}</p>
+                  ) : null}
+                  {/* Offered and refused is a different fact from never
+                      offered, and only the first one misleads: the
+                      reader watched a chip say their question was about
+                      this run. */}
+                  {entry.contextOffered && entry.contextUsed === false ? (
+                    <p className="muted small">{t("agentDock.contextLost")}</p>
                   ) : null}
                   {/* An answer whose tool budget ran out has stopped
                       mid-thought. Left unsaid, it reads as a finished
