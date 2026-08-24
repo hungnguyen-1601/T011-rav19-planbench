@@ -157,6 +157,16 @@ class GraphBackedLocalPlanner(LocalPlanner):
         self._granted = granted
 
     @property
+    def channel_source(self):
+        """The seam this controller needs bound before it can step.
+
+        Exposed so a caller that only asked for a controller does not
+        also have to know that this one is channel-native. ``run_stack``
+        reads it when no source was passed explicitly.
+        """
+        return self._source
+
+    @property
     def name(self) -> str:
         return self._host.local_name
 

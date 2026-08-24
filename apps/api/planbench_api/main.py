@@ -29,6 +29,7 @@ from planbench_api.errors import register_error_handlers
 from planbench_api.logging_config import configure_logging
 from planbench_api.model_storage import LocalModelStorage
 from planbench_api.oauth import ExchangeCodes, OAuthClient
+from planbench_api.plugin_service import sync_catalogue as sync_plugin_catalogue
 from planbench_api.repositories import RepositoryHub
 from planbench_api.routers import (
     agent,
@@ -128,6 +129,11 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     )
     app.state.repos = _build_repositories(settings, artifacts, app)
     app.state.auth = AuthService(settings, app.state.repos.users)
+    # Republish imported algorithms into the runtime catalogue. The set
+    # lives in the benchmark registry for the life of the process, so a
+    # restart has to rebuild it from what was stored — otherwise a
+    # plugin imported yesterday silently stops being offerable today.
+    sync_plugin_catalogue(app.state.repos.plugin_bundles, app.state.plugin_install_root)
     # One-time codes and the provider HTTP client are app-scoped: the
     # codes must outlive a request, and the client is replaced wholesale
     # in tests so no OAuth test ever reaches the network.

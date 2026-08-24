@@ -244,7 +244,7 @@ class PluginBundleService:
                     }
                 )
             )
-        return self._bundles.save(
+        saved = self._bundles.save(
             record.model_copy(
                 update={
                     "validation_status": outcome.status,
@@ -252,6 +252,8 @@ class PluginBundleService:
                 }
             )
         )
+        self.sync_catalogue()
+        return saved
 
     def update(self, bundle_id: str, changes: dict[str, Any], user: User) -> PluginBundleRecord:
         """Rename, re-describe, enable or disable.
@@ -271,7 +273,15 @@ class PluginBundleService:
             changes = {**changes, "status": ModelStatus(changes["status"])}
         if "robot_profile_id" in changes:
             self._profiles.get(changes["robot_profile_id"])
-        return self._bundles.save(record.model_copy(update=changes))
+        saved = self._bundles.save(record.model_copy(update=changes))
+        # Disabling one is how a plugin is retired, so the catalogue has
+        # to hear about it here as well as at import.
+        self.sync_catalogue()
+        return saved
+
+    def sync_catalogue(self) -> list[str]:
+        """Publish every runnable bundle as a stack this process offers."""
+        return sync_catalogue(self._bundles, self._install_root)
 
     # -- reading -------------------------------------------------------
 
@@ -335,6 +345,46 @@ def host_compatibility(manifest_data: dict[str, Any]) -> HostCompatibility:
             capability for capability, _ in report.ownership.oracle_owned
         ),
     )
+
+
+def sync_catalogue(bundles: Any, install_root: Path) -> list[str]:
+    """Make the runtime catalogue match the stored bundles. Returns ids.
+
+    **Driven by writes, not by reads.** The set of offerable stacks
+    changes when somebody imports, re-validates or disables a bundle, and
+    at nothing else — so this is called from those three places plus
+    once at startup, rather than on every request that happens to list
+    algorithms. A read path that rebuilt the catalogue would make
+    "what does this platform offer?" depend on who asked last.
+
+    Rebuilt wholesale rather than patched: re-registering over a stale
+    entry would leave a disabled plugin still offerable under its old
+    factory, which is the one direction this must not fail in.
+
+    A bundle that cannot be turned into a stack is skipped rather than
+    raised on. It is already visible in the plugins tab with the reason
+    it cannot run; taking the whole catalogue down with it would hide
+    every other algorithm behind one bad import.
+    """
+    from planbench_api.plugin_runtime import install_root as bundle_directory
+    from planbench_benchmark.plugin_stacks import build_plugin_entry
+    from planbench_benchmark.registry import clear_external, register_external
+
+    clear_external()
+    registered: list[str] = []
+    for record in bundles.list():
+        if not record.usable or record.validation_status is not ValidationStatus.LOADED:
+            continue
+        try:
+            entry = build_plugin_entry(
+                record.manifest,
+                directory=bundle_directory(install_root, record),
+                description=record.description,
+            )
+        except Exception:  # noqa: BLE001 - one bad bundle must not hide the rest
+            continue
+        registered.append(register_external(entry))
+    return registered
 
 
 def _require_admin(user: User) -> None:
