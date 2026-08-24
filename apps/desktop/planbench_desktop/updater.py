@@ -179,7 +179,15 @@ def download(release: Release, credential: str, into: Path) -> Path:
     ever named `.exe` on disk — a half-written or substituted installer
     should not be something a stray double-click can run.
     """
-    manifest = json.loads(_request(release.manifest_url, credential, accept="application/json"))
+    # `application/octet-stream`, not `application/json`. Asking the
+    # asset endpoint for JSON returns the asset's *metadata* — name,
+    # size, uploader — which parses perfectly and contains no `sha256`,
+    # so the update failed with "carries no usable sha256" against a
+    # release whose manifest was correct all along. Only octet-stream
+    # returns the file's bytes.
+    manifest = json.loads(
+        _request(release.manifest_url, credential, accept="application/octet-stream")
+    )
     expected = str(manifest.get("sha256", "")).lower()
     if len(expected) != 64:
         raise UpdateError(f"release {release.tag} carries no usable sha256")

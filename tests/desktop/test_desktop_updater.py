@@ -33,10 +33,12 @@ def api(monkeypatch):
     responses: dict[str, bytes] = {}
     asked: list[str] = []
     credentials: list[str] = []
+    accepts: list[tuple[str, str]] = []
 
     def fake_request(url: str, token: str = "", *, accept: str) -> bytes:
         asked.append(url)
         credentials.append(token)
+        accepts.append((url, accept))
         for key, value in responses.items():
             if key in url:
                 return value
@@ -47,7 +49,12 @@ def api(monkeypatch):
     return type(
         "Api",
         (),
-        {"responses": responses, "asked": asked, "credentials": credentials},
+        {
+            "responses": responses,
+            "asked": asked,
+            "credentials": credentials,
+            "accepts": accepts,
+        },
     )()
 
 
@@ -169,6 +176,44 @@ class TestDownloading:
 
         with pytest.raises(updater.UpdateError, match="no usable sha256"):
             updater.download(self._release(), "token", tmp_path)
+
+    def test_both_assets_are_fetched_as_bytes_not_as_metadata(self, api, tmp_path) -> None:
+        """The header that broke a shipped release.
+
+        A release asset asked for as `application/json` answers with the
+        asset's *metadata* — id, name, size, uploader. That parses
+        cleanly and has no `sha256` in it, so every update refused
+        itself with "carries no usable sha256" while the published
+        manifest was correct the whole time. Only `octet-stream` returns
+        the file.
+        """
+        payload = b"installer"
+        api.responses["manifest"] = json.dumps(
+            {"version": "0.2.0", "sha256": hashlib.sha256(payload).hexdigest()}
+        ).encode()
+        api.responses["exe"] = payload
+
+        updater.download(self._release(), "token", tmp_path)
+
+        assert [accept for _, accept in api.accepts] == [
+            "application/octet-stream",
+            "application/octet-stream",
+        ]
+
+    def test_the_release_listing_is_still_asked_for_as_json(self, api) -> None:
+        """The listing is an API resource, not an asset — it really is
+        JSON, and asking for octet-stream there would be the mirror of
+        the same mistake."""
+        api.responses["/releases"] = json.dumps([]).encode()
+
+        updater.latest_release("0.1.0", "")
+
+        assert api.accepts == [
+            (
+                "https://api.github.com/repos/" + updater.REPOSITORY + "/releases?per_page=30",
+                "application/vnd.github+json",
+            )
+        ]
 
 
 class TestTheFlow:
