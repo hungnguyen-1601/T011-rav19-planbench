@@ -142,6 +142,14 @@ def ensure_profile_map_materialised(
     else:
         map_path = None
 
+    _log.warning(
+        "ensure_profile_map_materialised: map_path=%r starts_custom=%s map_root=%s",
+        map_path,
+        str(map_path).startswith("maps/custom/") if map_path else False,
+        map_root,
+    )
+
     if map_path and str(map_path).startswith("maps/custom/"):
         return ensure_custom_map_files(str(map_path), map_root, map_repo)
     return False
+
