@@ -20,7 +20,7 @@ import pytest
 
 from planbench_desktop import migrate, paths
 from planbench_desktop.bootstrap import source_roots
-from planbench_desktop.provision import DEFAULT_NICKNAME, provision
+from planbench_desktop.provision import DEFAULT_NICKNAME, DEFAULT_PASSWORD, provision
 
 
 @pytest.fixture
@@ -70,6 +70,38 @@ class TestFirstRun:
         assert values["PLANBENCH_ADMIN_NICKNAMES"] == DEFAULT_NICKNAME
         assert values["PLANBENCH_SEED_USERS"].startswith(f"{DEFAULT_NICKNAME}:")
         assert values["PLANBENCH_ENABLE_DEV_LOGIN"] == "true"
+
+    def test_the_credential_is_the_known_one_this_version_ships(self, data_root) -> None:
+        """Deliberate, temporary, and pinned so it cannot drift quietly.
+
+        A generated password made the first thing a new user did be
+        hunting through `.env` for a random string. The trade is bounded
+        by the API binding loopback only — reaching this account means
+        already being on the machine — and the next version replaces it
+        with a first-run screen or no login at all.
+
+        If this test is still here when that lands, it is the thing to
+        delete.
+        """
+        provisioned = provision()
+
+        assert (provisioned.nickname, provisioned.password) == (DEFAULT_NICKNAME, DEFAULT_PASSWORD)
+        assert _env_values(data_root)["PLANBENCH_SEED_USERS"] == "admin:admin"
+
+    def test_the_session_secret_is_still_generated_per_installation(self, data_root) -> None:
+        """The known password is not licence to weaken the token secret.
+
+        A predictable AUTH_SECRET would let anyone who knows it mint a
+        valid session for any account, which is a different and much
+        larger hole than a known password on a loopback-only server.
+        """
+        first = _env_values(data_root)["AUTH_SECRET"] if (data_root / ".env").exists() else None
+        provision()
+        secret = _env_values(data_root)["AUTH_SECRET"]
+
+        assert first is None
+        assert len(secret) >= 32
+        assert secret != DEFAULT_PASSWORD
 
     def test_the_session_secret_is_written_down_rather_than_generated_per_process(
         self, data_root

@@ -28,11 +28,17 @@ choose **More info → Run anyway**.
 
 ### First launch
 
-The app creates `%LOCALAPPDATA%\PlanBench` and writes a `.env` there
-holding a generated password for the local account. Sign in with the
-nickname `admin` and that password; both are printed in
-`%LOCALAPPDATA%\PlanBench\logs\planbench.log` on the first run and stored
-in `.env` beside it.
+Sign in with **`admin` / `admin`**.
+
+That is a known password and it is temporary — it exists because the
+generated one it replaced made the first thing a new user did be hunting
+through a file for a random string. What bounds it is where the server
+listens: the API binds `127.0.0.1` only, so reaching this account means
+already being on the machine as its owner. On a shared or remote-desktop
+machine that is not much of a bound, and the next version replaces this.
+
+To use a different password now, edit `PLANBENCH_SEED_USERS` in
+`%LOCALAPPDATA%\PlanBench\.env` while the app is closed.
 
 The `admin` account is created **once**, and it is the only account that
 may import an algorithm or set the API key — `PLANBENCH_ADMIN_NICKNAMES`
