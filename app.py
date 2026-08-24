@@ -35,38 +35,37 @@ try:
 except (ImportError, Exception):
     def gpu_compute(fn, *args, **kwargs):
         return fn(*args, **kwargs)
-
-import uvicorn
 import gradio as gr
 from planbench_api.main import create_app
 
-# Create the PlanBench FastAPI application
+# 1. Create the PlanBench FastAPI application
 fastapi_app = create_app()
 
-# Simple Gradio landing status page (named _blocks to prevent auto-launch supervisor collision)
-try:
-    with gr.Blocks(title="PlanBench API") as _blocks:
-        gr.Markdown(
-            """
-            # 🚀 PlanBench Backend API
+# 2. Create Gradio Blocks
+with gr.Blocks(title="PlanBench API") as demo:
+    gr.Markdown(
+        """
+        # 🚀 PlanBench Backend API
 
-            The PlanBench FastAPI backend is active and running on Hugging Face Spaces (ZeroGPU).
+        The PlanBench FastAPI backend is active and running on Hugging Face Spaces (ZeroGPU).
 
-            - **Health Check**: [`/api/v1/health`](/api/v1/health)
-            - **Interactive API Docs**: [`/docs`](/docs)
-            - **OpenAPI Schema**: [`/openapi.json`](/openapi.json)
-            """
-        )
+        - **Health Check**: [`/api/v1/health`](/api/v1/health)
+        - **Interactive API Docs**: [`/docs`](/docs)
+        - **OpenAPI Schema**: [`/openapi.json`](/openapi.json)
+        """
+    )
 
-    # Prevent Gradio background auto-launcher from spawning a duplicate server on port 7861
-    _blocks.is_running = True
-    _blocks._is_launched = True
+# 3. Create the underlying Gradio FastAPI app
+demo_app = gr.routes.App.create_app(demo)
 
-    # Mount Gradio onto the FastAPI app at root
-    app = gr.mount_gradio_app(fastapi_app, _blocks, path="/")
-except ImportError:
-    app = fastapi_app
+# 4. Copy state and prepend all FastAPI routes so they are matched before Gradio catch-all
+demo_app.state = fastapi_app.state
+for route in reversed(fastapi_app.routes):
+    demo_app.routes.insert(0, route)
 
+demo.app = demo_app
+app = demo_app
+
+# 5. Launch with Gradio's standard native launcher
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 7860))
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+    demo.launch(server_name="0.0.0.0", server_port=7860)
