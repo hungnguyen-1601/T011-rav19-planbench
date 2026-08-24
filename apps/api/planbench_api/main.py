@@ -108,7 +108,7 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     # temporary directory, every test re-simulated episodes another test
     # had already run.
     decision_root = Path(artifact_dir) if artifact_dir else Path(settings.artifact_dir)
-    app.state.decision_map_root = Path(settings.map_root)
+    app.state.decision_map_root = Path(settings.map_root).resolve()
     app.state.decision_trace_dir = (
         Path(settings.decision_trace_dir)
         if settings.decision_trace_dir
