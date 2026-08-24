@@ -41,7 +41,13 @@ PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64compatible
 ArchitecturesAllowed=x64compatible
 OutputDir={#OutputDir}
-OutputBaseFilename=PlanBench-Setup-{#AppVersion}
+; No version in the file name, deliberately. The download link people
+; are given is `/releases/latest/download/PlanBench-Setup.exe`, and that
+; URL only stays valid while the asset keeps one stable name — a
+; versioned name turns every release into a new link to hand out.
+; The version lives inside the build (apps/desktop/.../VERSION), is
+; reported on the System page, and is what the updater compares.
+OutputBaseFilename=PlanBench-Setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern

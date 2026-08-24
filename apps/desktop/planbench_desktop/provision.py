@@ -204,6 +204,13 @@ def provision() -> Provisioned:
     # the previous one.
     os.environ["PLANBENCH_MAP_ROOT"] = str(root)
     os.environ["PLANBENCH_WEB_DIR"] = str(paths.web_root())
+    # What the System page shows. `Settings.version` is a constant in
+    # config.py — right for the API as a service, wrong for an installed
+    # application, where "which build am I running?" is answered by the
+    # stamp the installer wrote. Since the installer no longer puts the
+    # version in the file name, this is the only place a person can read
+    # it.
+    os.environ["PLANBENCH_VERSION"] = paths.version()
     _export_launcher_vars(env_path)
 
     return Provisioned(root, first_run, nickname, credential)

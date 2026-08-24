@@ -270,3 +270,31 @@ class TestTheWebRoot:
             assert paths_module.web_root() == tmp_path / "nothing" / "web"
         finally:
             paths_module.INSTALL_ROOT = original
+
+
+class TestTheDownloadLinkStaysValid:
+    """The asset name is part of the URL people are given.
+
+    `/releases/latest/download/PlanBench-Setup.exe` resolves only while
+    every release publishes an asset under that exact name. Putting the
+    version back in the file name silently invalidates the link the day
+    the next version ships — and the person who finds out is whoever
+    clicked it.
+    """
+
+    def test_the_installer_is_named_without_a_version(self) -> None:
+        script = (INSTALLER / "planbench.iss").read_text(encoding="utf-8")
+
+        names = [ln for ln in script.splitlines() if ln.startswith("OutputBaseFilename")]
+
+        assert names == ["OutputBaseFilename=PlanBench-Setup"]
+
+    def test_the_version_is_still_reachable_from_inside_the_app(self) -> None:
+        """Dropping it from the file name is only safe because the build
+        reports it: the System page reads it from the API, which the
+        launcher sets from the stamp the installer wrote."""
+        provision = (
+            INSTALL_ROOT / "apps" / "desktop" / "planbench_desktop" / "provision.py"
+        ).read_text(encoding="utf-8")
+
+        assert 'os.environ["PLANBENCH_VERSION"] = paths.version()' in provision

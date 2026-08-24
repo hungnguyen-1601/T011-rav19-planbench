@@ -98,6 +98,7 @@ for _package in (
     "services/tracking",
     "services/agent_service",
     "apps/api",
+    "apps/desktop",
 ):
     sys.path.insert(0, str(REPO_ROOT / _package))
 

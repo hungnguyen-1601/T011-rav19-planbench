@@ -258,7 +258,12 @@ class TestTrafficIsAuthorable:
         could draw an obstacle. It is not any more, which turns retiring
         it into a decision somebody takes rather than something to wait
         for. Until that decision it keeps working."""
+        # `page.tsx` is a server wrapper carrying `generateStaticParams`
+        # for the static export; the editor itself is the client
+        # component beside it. Reading the wrapper would find no
+        # obstacles and call that a regression — which is exactly what
+        # happened when the export split landed.
         editor = (
-            REPO_ROOT / "apps" / "web" / "src" / "app" / "scenarios" / "[id]" / "page.tsx"
+            REPO_ROOT / "apps" / "web" / "src" / "app" / "scenarios" / "[id]" / "ScenarioEditor.tsx"
         ).read_text(encoding="utf-8")
         assert "dynamic_obstacles" in editor

@@ -3,8 +3,8 @@
 One installer, one machine, one person. No Docker, no Node, no Python to
 install first — the build carries its own interpreter.
 
-This document is for two readers: somebody who has been handed
-`PlanBench-Setup-x.y.z.exe`, and somebody who has to build the next one.
+This document is for two readers: somebody who has been sent the
+download link, and somebody who has to build the next release.
 
 ---
 
@@ -12,7 +12,15 @@ This document is for two readers: somebody who has been handed
 
 ### Installing
 
-Run `PlanBench-Setup-x.y.z.exe`. It installs under
+Download it here — one link, always the current version:
+
+**https://github.com/hungnguyen-1601/T011-rav19-planbench/releases/latest/download/PlanBench-Setup.exe**
+
+That URL keeps working because every release publishes its installer
+under the same name. The version is *not* in the file name on purpose;
+it lives inside the build and is shown on the **System** page.
+
+Run `PlanBench-Setup.exe`. It installs under
 `%LOCALAPPDATA%\Programs\PlanBench` and asks for no administrator
 rights. Windows SmartScreen will warn that the publisher is unknown —
 the installer is not code-signed (see [What is not done yet](#what-is-not-done-yet));
