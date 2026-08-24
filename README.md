@@ -1,3 +1,14 @@
+---
+title: PlanBench API
+emoji: 🚀
+colorFrom: blue
+colorTo: indigo
+sdk: gradio
+sdk_version: 5.16.0
+app_file: app.py
+pinned: false
+---
+
 # Agentic AI PlanBench
 
 Nền tảng mô phỏng và so sánh thuật toán điều hướng cho robot di động
