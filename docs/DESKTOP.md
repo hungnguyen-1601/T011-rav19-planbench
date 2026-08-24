@@ -107,12 +107,19 @@ there before anything else can fail, because the app runs under
 powershell -ExecutionPolicy Bypass -File scripts\build_desktop.ps1
 ```
 
-The first run stops with a message: `installer\python-embed.json` has no
-`sha256`. That is deliberate. Check the hash it prints against the one
-published beside the file on <https://www.python.org/downloads/windows/>,
-paste it in, and run again. An unpinned download is a supply chain owned
-by whoever can answer for the host, and a hash the build computed for
-itself would pin nothing at all.
+The interpreter is already pinned (3.12.10 — the last 3.12 that
+publishes an embeddable zip; `.11` and `.12` are source-only). If you
+ever change that version, `installer\python-embed.json` must get a new
+`sha256` and the build **refuses to run without one**: an unpinned
+download is a supply chain owned by whoever can answer for the host, and
+a hash the build computed for itself would pin nothing at all. The
+current value was established by matching the archive against the MD5
+python.org publishes on its release page.
+
+`py -3.12` is tried first for the pip step but is not required — the
+script also searches the launcher's inventory and uv's interpreters, so
+a 3.12 installed by `uv python install 3.12` is found even though the py
+launcher never learns about it.
 
 Useful switches: `-SkipWeb` reuses an existing export, `-SkipInstaller`
 stops after the smoke gate and leaves a runnable stage in `build\stage`.

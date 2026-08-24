@@ -10,14 +10,15 @@
 
 ## 1. Kết quả
 
-Làm xong **7/7 phase** đã duyệt. Cây cài đặt dựng được, cổng smoke xanh
-7/7 với web export thật, 8 commit theo đúng thứ tự phase.
+Làm xong **7/7 phase** đã duyệt, 11 commit theo đúng thứ tự phase.
 
-Một việc **chưa làm được và không thể làm ở đây**: chạy thật
-`build_desktop.ps1` để ra `setup.exe`. Máy này chưa có Inno Setup, chưa
-có CPython 3.12 riêng (venv đang là 3.13), và bản `sha256` của Python
-embeddable phải do người xác nhận với python.org — script cố ý dừng
-thay vì tự tin vào hash nó tự tính. Chi tiết ở mục 5.
+**Đã dựng được `setup.exe` thật trên máy này**:
+`dist/PlanBench-Setup-0.1.0.exe`, 79 MB, cổng smoke **7/7 chạy trên
+chính interpreter đóng gói** — gồm cả chạy plugin thật out-of-process và
+kiểm tra UI. Ban đầu tôi báo là không dựng được, và **báo sai**: Inno
+Setup có sẵn ở `C:\Program Files (x86)\Inno Setup 6\ISCC.exe`, máy cũng
+có CPython 3.12 do `uv` cài. Lỗi nằm ở script của tôi chứ không ở máy —
+chi tiết mục 5b.
 
 ## 2. Từng phase
 
@@ -109,8 +110,9 @@ Hai cơ chế then chốt:
   **bỏ qua** biến này, mà `subprocess_lane._environment()` dùng đúng nó
   để báo worker chỗ plugin nằm. Thiếu → worker chạy, không import được
   plugin, host đọc thành "thuật toán dừng robot".
-- `installer/python-embed.json` để `sha256` rỗng và build **từ chối chạy**
-  cho tới khi người xác nhận hash với python.org.
+- `installer/python-embed.json` ghim archive bằng `sha256`; build **từ
+  chối chạy** nếu ô đó rỗng, nên không bao giờ tin vào hash do chính nó
+  tính. Giá trị hiện tại lấy sau khi đối chiếu MD5 python.org công bố.
 - Inno Setup: per-user (không UAC), `AppId` cố định, `[InstallDelete]` dọn
   code cũ, uninstall **hỏi** trước khi xoá data (mặc định Không).
 - Icon sinh bằng script (`make_icon.py`), 6 kích thước, không phải binary chết.
@@ -180,16 +182,14 @@ nộp báo cáo này.
 
 ## 5. Việc còn lại
 
-**Cần máy có toolchain** (không làm được ở phiên này):
-1. Cài Inno Setup 6 + CPython 3.12, chạy `scripts\build_desktop.ps1`.
-2. Lần chạy đầu sẽ dừng và in hash Python embeddable — **đối chiếu với
-   python.org** rồi dán vào `installer/python-embed.json`.
-3. QA 10 bước trên VM sạch (Phase 6): cài, first-run, login admin, chạy
+**Còn lại (cần người ngồi trước máy):**
+1. QA 10 bước trên VM sạch (Phase 6): cài, first-run, login admin, chạy
    simulation có WebSocket, chạy decision run, **import plugin `.zip`**,
    export Excel, nhập key qua tab Cài đặt, đóng app kiểm Task Manager,
-   F5 tại `/decisions/<id>`.
-4. Tạo fine-grained PAT read-only, dựng một release thử để nghiệm thu
-   đường auto-update.
+   F5 tại `/decisions/<id>`. Cổng smoke đã phủ phần máy tự kiểm được;
+   phần còn lại phải nhìn bằng mắt.
+2. Tạo fine-grained PAT read-only và dựng một release thử để nghiệm thu
+   đường auto-update đầu-cuối.
 
 **Cần An quyết:**
 - `git stash drop stash@{0}` — stash do subagent tạo lúc dựng baseline,
@@ -207,11 +207,42 @@ một**, vì HĐ-7.4 cấm hai run đánh giá trên cùng máy — cả hai pin
 nhân và mỗi cái thành background load của cái kia. Đó là hợp đồng đo
 lường, không phải setting hiệu năng.
 
+## 5b. Dựng installer — ba lỗi chỉ tồn tại lúc đóng gói
+
+Chạy thật lộ ra ba lỗi mà không test nào bắt được:
+
+1. **`web_root()` tìm `app/web`, trong khi cây cài đặt để `web/` ngang
+   hàng `app/`.** Bản đó cài xong là một app không tìm thấy giao diện
+   của chính nó. Không test nào phủ vì checkout không có layout cài đặt
+   để mà nhìn — đã thêm `TestTheWebRoot` khoá cả ba trường hợp.
+2. **`py -3.12` không thấy Python do `uv` cài** (uv không đăng ký với py
+   launcher), nên máy rõ ràng có 3.12 vẫn báo "No suitable Python
+   runtime found". Script giờ dò thêm inventory của launcher và thư mục
+   uv.
+3. **`$ErrorActionPreference = 'Stop'` biến stderr thành lỗi chặn.**
+   Alembic log tiến trình migration ra stderr ở mức INFO, nên một lần
+   chạy *thành công* tự giết build bằng chính output của nó. Đã đổi sang
+   xét exit code.
+
+Cộng một lỗi PowerShell kinh điển: mảng một phần tử bị unwrap thành
+string (StrictMode: string không có `.Count`), và `1..0` là dải **giảm
+dần** chứ không phải dải rỗng.
+
+Phiên bản Python embeddable cũng sai: **3.12.11 không tồn tại** dưới
+dạng embeddable — CPython ngừng phát hành binary Windows cho 3.12 khi
+nhánh chuyển sang security-only, nên **3.12.10** là bản cuối có. Đã ghim
+sau khi đối chiếu MD5 python.org công bố cho đúng file đó.
+
 ## 6. Commit
 
-Nhánh `tongduyan_desktop-app`, 8 commit, chưa push:
+Nhánh `tongduyan_desktop-app`, 11 commit, chưa push. Ba commit cuối là
+việc sửa sau khi chạy build thật:
 
 ```
+(mới)    docs: ghi lại việc dựng được installer + 3 lỗi đóng gói
+4f6f6cb  sửa web_root, tìm python 3.12, xét exit code, ghim 3.12.10
+34442e4→ (đã gộp lại vào commit docs ở trên)
+1bd30df  report phase 0-7
 454eb06  web static export + shell cho deep link (Phase 2)
 a668bd2  siết guard write-verb + docs/DESKTOP.md
 a04b36a  CI release + auto-update (Phase 7)
