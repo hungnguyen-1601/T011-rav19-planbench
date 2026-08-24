@@ -27,11 +27,13 @@ from planbench_agent.openai_provider import (
     OpenAICompatibleProvider,
     _from_wire,
     _schema_is_strict,
+    _completion_ceiling,
     _to_wire,
 )
 from planbench_agent.provider import (
     LLMMessage,
     LLMRequest,
+    ProviderError,
     ProviderUnavailable,
     StopReason,
     ToolCall,
@@ -175,6 +177,46 @@ class TestPayload:
         assert response_format["type"] == "json_schema"
         assert response_format["json_schema"]["schema"] == schema
         assert response_format["json_schema"]["strict"] is True
+
+    def test_strict_is_judged_all_the_way_down(self):
+        """The rules apply to every object, not only the outermost one.
+
+        Judging the root alone claimed strict for the advisor schema,
+        whose nested object left one property out of ``required``, and
+        every advisory call came back 400 for months — read downstream as
+        "the model added nothing", because a rejected request and an
+        unhelpful answer both degrade to the rules.
+        """
+        nested_open = {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"a": {"type": "string"}, "b": {"type": "string"}},
+                        "required": ["a"],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "required": ["items"],
+            "additionalProperties": False,
+        }
+        assert _schema_is_strict(nested_open) is False
+        nested_open["properties"]["items"]["items"]["required"] = ["a", "b"]
+        assert _schema_is_strict(nested_open) is True
+
+    def test_the_real_advisor_schema_qualifies_for_strict_mode(self):
+        """The advisory routes' schema, held to the same bar as critique.
+
+        Every test of the advisor uses a scripted provider, so nothing
+        else in the suite would notice the API refusing this schema.
+        """
+        from planbench_agent.advisor import advisor_schema
+
+        payload = provider()._payload(request(output_schema=advisor_schema()))
+        assert payload["response_format"]["json_schema"]["strict"] is True
 
     def test_the_real_critique_schema_qualifies_for_strict_mode(self):
         """The one schema this project actually sends.
@@ -390,3 +432,67 @@ class TestStatusReporting:
     def test_require_provider_raises_with_the_fix(self, no_keys):
         with pytest.raises(ProviderUnavailable, match="set OPENAI_API_KEY"):
             require_provider("openai", model="m")
+
+
+class TestTheModelSOwnCompletionCeiling:
+    """A caller's token budget is a budget, not a demand.
+
+    ``ADVISOR_MAX_TOKENS`` is sized for models that spend output budget
+    reasoning before the first token of JSON. Sent unchanged to a model
+    whose own ceiling is lower, it made every call a 400 — the advisor
+    then degraded to the rules, which is indistinguishable from a model
+    with nothing to say.
+    """
+
+    def test_the_ceiling_is_read_out_of_the_refusal(self):
+        message = (
+            "Error code: 400 - max_tokens is too large: 32768. This model supports "
+            "at most 16384 completion tokens, whereas you provided 32768."
+        )
+        assert _completion_ceiling(message) == 16384
+
+    def test_an_unrelated_failure_names_no_ceiling(self):
+        assert _completion_ceiling("rate limit exceeded") is None
+
+    def test_the_call_is_retried_under_the_stated_ceiling(self, monkeypatch):
+        sent = []
+
+        class _Completions:
+            def create(self, **payload):
+                sent.append(payload)
+                if payload["max_completion_tokens"] > 16384:
+                    raise RuntimeError(
+                        "max_tokens is too large: 32768. This model supports at most "
+                        "16384 completion tokens, whereas you provided 32768."
+                    )
+                return SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            message=SimpleNamespace(content="{}", tool_calls=None),
+                            finish_reason="stop",
+                        )
+                    ],
+                    usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+                    model="test-model",
+                )
+
+        client = SimpleNamespace(chat=SimpleNamespace(completions=_Completions()))
+        under_test = provider()
+        monkeypatch.setattr(under_test, "_client", lambda: client)
+        under_test.complete(request(max_tokens=32768))
+        assert [p["max_completion_tokens"] for p in sent] == [32768, 16384]
+
+    def test_a_failure_with_no_ceiling_is_not_retried(self, monkeypatch):
+        calls = []
+
+        class _Completions:
+            def create(self, **payload):
+                calls.append(payload)
+                raise RuntimeError("connection reset")
+
+        client = SimpleNamespace(chat=SimpleNamespace(completions=_Completions()))
+        under_test = provider()
+        monkeypatch.setattr(under_test, "_client", lambda: client)
+        with pytest.raises(ProviderError):
+            under_test.complete(request())
+        assert len(calls) == 1

@@ -1,0 +1,192 @@
+name: "Guards of the AI explanation layer (E0-E6 + LLM advisor)"
+workdir: "E:/VinAI/RoboMind_project/P-011"
+gate: >-
+  E:/VinAI/RoboMind_project/P-011/.venv/Scripts/python.exe -m pytest
+  tests/test_explanation_contracts.py tests/test_explanation_promotion.py
+  tests/test_explanation_e5.py tests/test_explanation_gate.py
+  tests/test_advisor.py -q --no-header -p no:cacheprovider
+
+exclude:
+  - node_modules
+  - .next
+  - .ai-log
+  - artifacts
+  - maps
+  - docs
+  - presentation
+  - ros2_ws
+  - "*.db"
+  - .pytest_cache
+  - .ruff_cache
+  - .mypy_cache
+  - .codegraph
+  - .omc
+  - .tmp
+  - .omx
+  - .claude
+  - .idea
+  - .vscode
+
+clean:
+  exit: 0
+  output_contains: "passed"
+
+bites:
+  # ---- Evidence ladder --------------------------------------------------
+  - id: PHRASE_WHITELIST_OFF
+    mo_ta: "verb whitelist returns nothing — invented causality passes"
+    inject:
+      file: packages/explanation/planbench_explanation/levels.py
+      replace: "for phrase in self.forbidden_at(level)"
+      with: "for phrase in ()"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_causal_wording_is_refused_below_the_top_rung"
+
+  - id: CAUSAL_CEILING_OFF
+    mo_ta: "causal vocabulary no longer forbidden below intervention"
+    inject:
+      file: packages/explanation/planbench_explanation/levels.py
+      replace: 'if rank < level_rank("intervention_supported"):'
+      with: "if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "assert"
+
+  - id: WEAKEST_TAKES_MAX
+    mo_ta: "ceilings compose by max, so the strongest cap wins"
+    inject:
+      file: packages/explanation/planbench_explanation/levels.py
+      replace: "return min(levels, key=level_rank)"
+      with: "return max(levels, key=level_rank)"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "assert"
+
+  - id: INFERENCE_ONLY_ASSERTABLE
+    mo_ta: "over-readings such as universal_algorithm_superiority become claimable"
+    inject:
+      file: packages/explanation/planbench_explanation/propositions.py
+      replace: "if canonical in INFERENCE_ONLY_PROPOSITIONS:"
+      with: "if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "assert"
+
+  - id: PROVENANCE_MISSING_ACCEPTED
+    mo_ta: "missing inputs stop raising and quietly support a claim"
+    inject:
+      file: packages/explanation/planbench_explanation/provenance.py
+      replace: "return _PROVENANCE_CEILING[provenance]"
+      with: "return _PROVENANCE_CEILING.get(provenance, \"observed\")"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "MissingInputEvidence"
+
+  # ---- Gate / visibility ------------------------------------------------
+  - id: VISIBILITY_ALWAYS_ON
+    mo_ta: "an ungraded analyst is shown on the decision card anyway"
+    inject:
+      file: packages/explanation/planbench_explanation/bundle.py
+      replace: "return \"no gate decision exists for this analyst\""
+      with: "return None"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "assert"
+
+  - id: GOLDEN_DECLARED_READY
+    mo_ta: "unfinished golden suite declares itself official"
+    inject:
+      file: packages/explanation/planbench_explanation/golden.py
+      replace: "OFFICIAL_GOLDEN_READY = False"
+      with: "OFFICIAL_GOLDEN_READY = True"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "assert"
+
+  - id: GATE_SUITE_MISMATCH_IGNORED
+    mo_ta: "a decision may name a suite other than the one that ran"
+    inject:
+      file: packages/explanation/planbench_explanation/gate.py
+      replace: "if self.decision.hidden_suite_version != self.suite_version:"
+      with: "if False and self.decision.hidden_suite_version != self.suite_version:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_decision_naming_another_suite_is_refused"
+
+  # ---- LLM advisor constitution ----------------------------------------
+  - id: ADVISOR_DROPS_RULE_ADVICE
+    mo_ta: "model ordering silently drops the rule items it omitted"
+    inject:
+      file: services/agent_service/planbench_agent/advisor.py
+      replace: "        enumerate(rules),"
+      with: "        [p for p in enumerate(rules) if p[1].code in position],"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_forgotten_code_is_kept_at_the_end_not_dropped"
+
+  - id: ADVISOR_FABRICATION_UNCHECKED
+    mo_ta: "model additions citing a field that does not exist are published"
+    inject:
+      file: services/agent_service/planbench_agent/advisor.py
+      replace: "        if not exists(source, item.field_path):"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_citation_that_resolves_nowhere_is_dropped_and_counted"
+
+  - id: ADVISOR_NO_DEGRADE_ON_FAILURE
+    mo_ta: "a dead provider takes the deterministic floor down with it"
+    inject:
+      file: services/agent_service/planbench_agent/advisor.py
+      replace: '        return _refused(base, f"provider failed: {exc}", meta)'
+      with: "        raise"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_dead_provider_degrades_to_the_rules_alone"
+
+  - id: ADVISOR_ADDITION_CAP_OFF
+    mo_ta: "the cap on model additions is not enforced in code"
+    inject:
+      file: services/agent_service/planbench_agent/advisor.py
+      replace: "if len(additions) == MAX_MODEL_ADVICE:"
+      with: "if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_cap_holds_when_the_provider_ignores_the_schema"
+
+  # ---- Controls ---------------------------------------------------------
+  - id: META_EXIT_CODE_PROPAGATES
+    mo_ta: "META: prove the gate's own exit code reports a failing test"
+    inject:
+      file: tests/test_explanation_contracts.py
+      append: |
+
+        def test_bitekit_meta_probe() -> None:
+            assert False, "bitekit meta probe"
+    expect:
+      exit_not_zero: true
+      output_contains: "test_bitekit_meta_probe"
+
+  - id: NEG_BENIGN_EDIT
+    mo_ta: "control: a comment-only edit must NOT trip the gate"
+    inject:
+      file: packages/explanation/planbench_explanation/levels.py
+      append: |
+
+        # bitekit benign control edit
+    expect:
+      exit: 0
+      output_contains: "passed"

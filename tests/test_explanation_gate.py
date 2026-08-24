@@ -10,6 +10,7 @@ be re-checked against the bundle and bar it claims.
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from planbench_decision.objectives import PREFERENCE_PROFILES
 from planbench_explanation.bundle import (
@@ -358,3 +359,32 @@ def test_the_summary_reports_the_numbers_the_decision_was_made_on() -> None:
         recorded = next(item for item in run.decision.metrics if item.metric == name)
         assert row["value"] == recorded.value
         assert row["threshold"] == recorded.threshold
+
+
+# --------------------------------------------------------------------------
+# The record has to be about the run that produced it
+# --------------------------------------------------------------------------
+
+
+def test_a_decision_naming_another_bundle_is_refused() -> None:
+    """The two halves are assembled separately and stored together."""
+    from planbench_explanation.gate import GateRun
+
+    run = gate()
+    other = run.decision.model_copy(update={"bundle_identity_checksum": "f" * 64})
+    # Pydantic wraps a validator's refusal, so the type at the boundary
+    # is ValidationError carrying the GateRefusal message.
+    with pytest.raises(ValidationError, match="different bundle identity"):
+        GateRun(**{**run.model_dump(), "decision": other})
+
+
+def test_a_decision_naming_another_suite_is_refused() -> None:
+    """A score earned on one suite, filed against a different one, is a
+    number about a run nobody made. The check existed; nothing exercised
+    it, so removing it left every test in this file green."""
+    from planbench_explanation.gate import GateRun
+
+    run = gate()
+    other = run.decision.model_copy(update={"hidden_suite_version": "hidden-9.9.9"})
+    with pytest.raises(ValidationError, match="different suite"):
+        GateRun(**{**run.model_dump(), "decision": other})

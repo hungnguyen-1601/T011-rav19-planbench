@@ -5300,6 +5300,32 @@ tr.is-previewing > td { background: var(--accent-soft); }
 }
 .agent-dock-close { margin-left: auto; padding: var(--space-1); }
 
+/* What this question is attached to, said in the panel rather than
+   implied by the page behind it. The dock floats over every route, so a
+   reader who cannot see the chip cannot tell an answer about this run
+   from an answer about the last one they asked. Quiet by default -- it
+   is a statement of fact, not a control competing with the composer --
+   and the button beside it is the way to say no. */
+.agent-dock-context {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-soft);
+  color: var(--muted);
+}
+.agent-dock-context > span { flex: 1; min-width: 0; }
+.agent-dock-context button {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 /* Scrolls on its own, so a long transcript never grows the panel past
    the viewport and takes its own composer off screen.
 

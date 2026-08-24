@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from planbench_agent import build_provider
 from planbench_api.artifacts import FileSystemArtifactStore
 from planbench_api.auth import AuthService
-from planbench_api.config import get_settings
+from planbench_api.config import get_settings, load_provider_keys
 from planbench_api.db import (
     SessionFactory,
     SqlRepositoryHub,
@@ -141,6 +141,17 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     # else. Two queues, two different jobs, two different bounds.
     app.state.decision_jobs = JobQueue(1)
     app.state.tracker = build_tracker(settings.mlflow_tracking_uri, settings.mlflow_experiment)
+    # Before the provider is built, not after: `build_provider` decides
+    # which backend is reachable by reading os.environ, and the keys are
+    # documented as living in `.env` — which pydantic-settings reads into
+    # the settings object and nowhere else. Without this the model id
+    # arrives, the key does not, and `auto` falls to the offline
+    # responder while the configuration looks complete.
+    filled = load_provider_keys()
+    if filled:
+        logging.getLogger("planbench.api").info(
+            "provider keys read from .env: %s", ", ".join(filled)
+        )
     app.state.agent_provider = build_provider(
         settings.agent_provider,
         model=settings.agent_model or None,

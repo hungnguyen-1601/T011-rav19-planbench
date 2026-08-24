@@ -1,0 +1,346 @@
+[
+  {
+    "case": "gated",
+    "kind": "diagnosis",
+    "model": "gpt-4o-mini",
+    "rules_in": 3,
+    "rules_kept": 3,
+    "floor_intact": true,
+    "additions": 3,
+    "over_cap": false,
+    "fabricated": 0,
+    "severity_demoted": false,
+    "blocking_without_donot": [],
+    "invented_numbers_in_claims": [],
+    "invented_numbers_in_summary": [],
+    "banned_words_in_summary": [],
+    "refused": "",
+    "summary": "Address the failure of the astar+dwa candidate to meet the required success rate before proceeding with any adjustments. Register a new candidate to achieve a Decision Card, as existing candidates do not qualify for one due to insufficient clearance of gates. Ensure that the report distinguishes latency results that are achieved on a host from those expected on the target device for proper disclosure.",
+    "model_claims": [
+      "[blocking] The astar+dwa candidate does not meet the required success rate of 95%.  <- report.candidates[0].success_rate",
+      "[material] There is a need for a new candidate to clear all gates for a Decision Card to be produced.  <- report.why_no_card",
+      "[disclosure] Performance results on a host are not representative of real-time behavior on the target device.  <- report.candidates[0].gates.G4.status"
+    ],
+    "usage": {
+      "seconds": 8.7,
+      "in": 2909,
+      "out": 430,
+      "stop": "end_turn"
+    }
+  },
+  {
+    "case": "gated",
+    "kind": "outcome",
+    "model": "gpt-4o-mini",
+    "rules_in": 3,
+    "rules_kept": 3,
+    "floor_intact": true,
+    "additions": 0,
+    "over_cap": false,
+    "fabricated": 0,
+    "severity_demoted": false,
+    "blocking_without_donot": [],
+    "invented_numbers_in_claims": [],
+    "invented_numbers_in_summary": [],
+    "banned_words_in_summary": [],
+    "refused": "",
+    "summary": "Prioritize addressing the eliminated candidate's gate failure by examining the traces related to G3. Then investigate the success rate comparison between candidates; focus on the reasons for failure in the trailing candidate to understand the gap in performance. Finally, interpret the results within the experimental scope that isolates global planner differences.",
+    "model_claims": [],
+    "usage": {
+      "seconds": 2.7,
+      "in": 3276,
+      "out": 92,
+      "stop": "end_turn"
+    }
+  },
+  {
+    "case": "carded",
+    "kind": "diagnosis",
+    "model": "gpt-4o-mini",
+    "rules_in": 1,
+    "rules_kept": 1,
+    "floor_intact": true,
+    "additions": 0,
+    "over_cap": false,
+    "fabricated": 0,
+    "severity_demoted": false,
+    "blocking_without_donot": [],
+    "invented_numbers_in_claims": [],
+    "invented_numbers_in_summary": [],
+    "banned_words_in_summary": [],
+    "refused": "",
+    "summary": "Review the reports carefully and ensure that all candidates are presented with their host screening results accurately. Be cautious to avoid misrepresenting the latency results as guarantees for performance on the target robot. Communicate any necessary clarifications on the status of G4.",
+    "model_claims": [],
+    "usage": {
+      "seconds": 1.8,
+      "in": 5547,
+      "out": 72,
+      "stop": "end_turn"
+    }
+  },
+  {
+    "case": "carded",
+    "kind": "outcome",
+    "model": "gpt-4o-mini",
+    "rules_in": 2,
+    "rules_kept": 2,
+    "floor_intact": true,
+    "additions": 0,
+    "over_cap": false,
+    "fabricated": 0,
+    "severity_demoted": false,
+    "blocking_without_donot": [],
+    "invented_numbers_in_claims": [],
+    "invented_numbers_in_summary": [],
+    "banned_words_in_summary": [],
+    "refused": "",
+    "summary": "Prioritize adopting the `rrtstar+dwa` strategy with a `dwa_coarse` local controller based on the findings. Ensure that any tuning or assumptions made about performance take into account the inherent tail latency of sampling methods. Document the observed performance margin clearly and continue monitoring as the deployment progresses.",
+    "model_claims": [],
+    "usage": {
+      "seconds": 2.5,
+      "in": 6120,
+      "out": 86,
+      "stop": "end_turn"
+    }
+  },
+  {
+    "case": "tied",
+    "kind": "diagnosis",
+    "model": "gpt-4o-mini",
+    "rules_in": 2,
+    "rules_kept": 2,
+    "floor_intact": true,
+    "additions": 0,
+    "over_cap": false,
+    "fabricated": 0,
+    "severity_demoted": false,
+    "blocking_without_donot": [],
+    "invented_numbers_in_claims": [],
+    "invented_numbers_in_summary": [],
+    "banned_words_in_summary": [],
+    "refused": "",
+    "summary": "Re-run the tests for both candidates on dedicated cores to ensure accurate latency measurements, as the previous results may have been affected by host conditions. Clearly indicate in the report that results were obtained using a host screening, and do not represent real-time guarantees for the robots involved.",
+    "model_claims": [],
+    "usage": {
+      "seconds": 1.9,
+      "in": 10857,
+      "out": 79,
+      "stop": "end_turn"
+    }
+  },
+  {
+    "case": "tied",
+    "kind": "outcome",
+    "model": "gpt-4o-mini",
+    "rules_in": 2,
+    "rules_kept": 2,
+    "floor_intact": true,
+    "additions": 0,
+    "over_cap": false,
+    "fabricated": 0,
+    "severity_demoted": false,
+    "blocking_without_donot": [],
+    "invented_numbers_in_claims": [],
+    "invented_numbers_in_summary": [],
+    "banned_words_in_summary": [],
+    "refused": "",
+    "summary": "Based on the analysis of the robot-navigation benchmark, you should report that there is 'no established difference' between the two candidates since their performance metrics do not statistically favor one over the other. Ensure you clarify that this comparison is focused on planner differentiation since both candidates utilize the same local controller. Adjust any interpretations of the results accordingly, focusing discussions on the planners' effectiveness rather than attributing differences to the controller.",
+    "model_claims": [],
+    "usage": {
+      "seconds": 2.4,
+      "in": 11211,
+      "out": 108,
+      "stop": "end_turn"
+    }
+  },
+  {
+    "case": "gated",
+    "kind": "diagnosis",
+    "model": "o4-mini",
+    "rules_in": 3,
+    "rules_kept": 3,
+    "floor_intact": true,
+    "additions": 3,
+    "over_cap": false,
+    "fabricated": 0,
+    "severity_demoted": false,
+    "blocking_without_donot": [],
+    "invented_numbers_in_claims": [],
+    "invented_numbers_in_summary": [],
+    "banned_words_in_summary": [],
+    "refused": "",
+    "summary": "First, diagnose why the astar+dwa candidate fails G3 by breaking down its 30% failure cases into timeouts, geometry no-paths, or collisions. Next, register or test a second candidate that clears all six gates so you can generate a Decision Card. Finally, clarify that both latency (G4) and memory (G5) measurements must be validated on the target device rather than relying on host screenings or structural estimates.",
+    "model_claims": [
+      "[material] G3 failures are not broken down into specific failure modes  <- report.candidates[0].gates.G3",
+      "[disclosure] G5 memory usage is only estimated, not measured on the target device  <- report.candidates[0].gates.G5.status",
+      "[disclosure] rrtstar+dwa shows zero peak_search_nodes, suggesting an instrumentation issue  <- report.candidates[1].gates.G5.peak_search_nodes"
+    ],
+    "usage": {
+      "seconds": 14.0,
+      "in": 2904,
+      "out": 2009,
+      "stop": "end_turn"
+    }
+  },
+  {
+    "case": "gated",
+    "kind": "outcome",
+    "model": "o4-mini",
+    "rules_in": 3,
+    "rules_kept": 3,
+    "floor_intact": true,
+    "additions": 3,
+    "over_cap": false,
+    "fabricated": 0,
+    "severity_demoted": false,
+    "blocking_without_donot": [],
+    "invented_numbers_in_claims": [
+      "70"
+    ],
+    "invented_numbers_in_summary": [
+      "100"
+    ],
+    "banned_words_in_summary": [],
+    "refused": "",
+    "summary": "astar+dwa fails gate G3 and misses the 95% success threshold, so do not deploy it; inspect its G3 failures (stalls, timeouts) before attributing blame to the planner. rrtstar+dwa clears all gates and hits 100% success—focus next on reading its failed traces if any, then verify its memory instrumentation and confirm on-device p99 latencies before accepting it. If no other candidate can meet criteria, register a new candidate.",
+    "model_claims": [
+      "[blocking] astar+dwa’s 70% success rate is below the task’s 95% minimum, preventing acceptance  <- report.candidates[0].success_rate",
+      "[material] rrtstar’s G5 peak_search_nodes is reported as zero despite a non-zero memory estimate  <- report.candidates[1].gates.G5.peak_search_nodes",
+      "[disclosure] G4 p99 latency was screened on host but not confirmed on the target device  <- report.candidates[0].gates.G4.caveat"
+    ],
+    "usage": {
+      "seconds": 24.0,
+      "in": 3271,
+      "out": 3539,
+      "stop": "end_turn"
+    }
+  },
+  {
+    "case": "carded",
+    "kind": "diagnosis",
+    "model": "o4-mini",
+    "rules_in": 1,
+    "rules_kept": 1,
+    "floor_intact": true,
+    "additions": 3,
+    "over_cap": false,
+    "fabricated": 0,
+    "severity_demoted": false,
+    "blocking_without_donot": [],
+    "invented_numbers_in_claims": [],
+    "invented_numbers_in_summary": [],
+    "banned_words_in_summary": [],
+    "refused": "",
+    "summary": "Clarify in the report that both rrtstar+dwa configurations’ p99 latency values (G4) were measured on a development host, not on the Jetson Orin Nano, and must not be presented as real-time guarantees on the robot. Then apply GA_G4_HOST_ONLY advice. Additionally, validate memory usage (G5) and latency on the actual target device, and explicitly declare any assumptions about how host measurements map to on-device performance.",
+    "model_claims": [
+      "[disclosure] Memory usage estimates (G5) are derived from code structure and have not been measured on the target device.  <- report.candidates[0].gates.G5.status",
+      "[disclosure] There is no declared assumption that latencies measured on the host translate to the target device's performance.  <- report.decision_card.declared_assumptions",
+      "[material] The observed p99 latency difference between configurations is based on host-screened measurements and may not hold on the target device.  <- report.candidates[0].pooled_p99_latency_ms"
+    ],
+    "usage": {
+      "seconds": 14.4,
+      "in": 5542,
+      "out": 2121,
+      "stop": "end_turn"
+    }
+  },
+  {
+    "case": "carded",
+    "kind": "outcome",
+    "model": "o4-mini",
+    "rules_in": 2,
+    "rules_kept": 2,
+    "floor_intact": true,
+    "additions": 2,
+    "over_cap": false,
+    "fabricated": 0,
+    "severity_demoted": false,
+    "blocking_without_donot": [],
+    "invented_numbers_in_claims": [
+      "50"
+    ],
+    "invented_numbers_in_summary": [
+      "0.03179",
+      "0.03208",
+      "0.03703",
+      "19.30",
+      "6.06"
+    ],
+    "banned_words_in_summary": [],
+    "refused": "",
+    "summary": "Select the rrtstar+dwa candidate with dwa_coarse (db26440f6052). Report its performance margin against the alternative as ΔU = 0.03208 (95% CI [0.03179, 0.03703], n = 30) and highlight its p99 latency of 6.06 ms versus 19.30 ms. If mission deadlines are tighter than the inherent sampling‐planner tail, cap iterations to bound worst‐case latency.",
+    "model_claims": [
+      "[disclosure] Both candidates’ p99 latencies are well under the 50 ms threshold.  <- report.candidates[1].gates.G4.p99_ms",
+      "[material] All 30 episodes use a single mission (“through_hall”) in ‘nominal’ conditions.  <- report.manifest.episode_contexts.evaluation[0].environment_variant"
+    ],
+    "usage": {
+      "seconds": 12.9,
+      "in": 6115,
+      "out": 1983,
+      "stop": "end_turn"
+    }
+  },
+  {
+    "case": "tied",
+    "kind": "diagnosis",
+    "model": "o4-mini",
+    "rules_in": 2,
+    "rules_kept": 2,
+    "floor_intact": true,
+    "additions": 2,
+    "over_cap": false,
+    "fabricated": 1,
+    "severity_demoted": false,
+    "blocking_without_donot": [],
+    "invented_numbers_in_claims": [],
+    "invented_numbers_in_summary": [],
+    "banned_words_in_summary": [],
+    "refused": "",
+    "summary": "Re-run the latency measurements pinned to dedicated cores to replace the current host‐screened p99 numbers, and in your report clearly label all G4 results as host screenings rather than real‐time guarantees. Then perform on‐device profiling to confirm actual memory usage and search node counts—especially investigate the zero peak_search_nodes reported for rrtstar+dwa. Finally, document any assumptions about host‐load stability before comparing or quoting results.",
+    "model_claims": [
+      "[blocking] the peak search node count is zero for rrtstar+dwa, which is suspicious and may indicate a logging error  <- report.candidates[1].gates.G5.peak_search_nodes",
+      "[material] memory usage is only estimated from structure rather than measured on-device  <- report.candidates[0].gates.G5.status"
+    ],
+    "usage": {
+      "seconds": 19.1,
+      "in": 10852,
+      "out": 2505,
+      "stop": "end_turn"
+    }
+  },
+  {
+    "case": "tied",
+    "kind": "outcome",
+    "model": "o4-mini",
+    "rules_in": 2,
+    "rules_kept": 2,
+    "floor_intact": true,
+    "additions": 3,
+    "over_cap": false,
+    "fabricated": 0,
+    "severity_demoted": false,
+    "blocking_without_donot": [],
+    "invented_numbers_in_claims": [
+      "0.308",
+      "0.310"
+    ],
+    "invented_numbers_in_summary": [
+      "0.00433",
+      "0.00847"
+    ],
+    "banned_words_in_summary": [],
+    "refused": "",
+    "summary": "The 95% confidence interval for the difference in decision utility (CI95 [-0.00433, +0.00847]) includes zero, so do not declare a winner—treat the result as showing no established difference between astar+dwa and rrtstar+dwa. Since both candidates use the same local controller, read this strictly as a global-planner comparison and do not credit the controller for any observed gaps.",
+    "model_claims": [
+      "[disclosure] The RRT* candidate’s G5 report shows peak_search_nodes=0, suggesting the structural estimation did not capture any search nodes.  <- report.candidates[1].gates.G5.peak_search_nodes",
+      "[material] Both planners operate with minimum clearances around 0.308–0.310 m, below the warning threshold of 0.35 m.  <- report.manifest.constraints.clearance_warning_m",
+      "[disclosure] No assumptions are declared for this decision, which may hide untracked risks.  <- report.decision_card.declared_assumptions"
+    ],
+    "usage": {
+      "seconds": 19.3,
+      "in": 11206,
+      "out": 2672,
+      "stop": "end_turn"
+    }
+  }
+]
