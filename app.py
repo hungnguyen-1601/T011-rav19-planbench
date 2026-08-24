@@ -42,7 +42,7 @@ from planbench_api.main import create_app
 fastapi_app = create_app()
 
 # 2. Create Gradio Blocks
-with gr.Blocks(title="PlanBench API") as demo:
+with gr.Blocks(title="PlanBench API") as _ui:
     gr.Markdown(
         """
         # 🚀 PlanBench Backend API
@@ -55,16 +55,5 @@ with gr.Blocks(title="PlanBench API") as demo:
         """
     )
 
-# 3. Create the underlying Gradio FastAPI app
-demo_app = gr.routes.App.create_app(demo)
-
-# 4. Include all PlanBench FastAPI routes and application state into Gradio app
-demo_app.include_router(fastapi_app.router)
-demo_app.state = fastapi_app.state
-
-demo.app = demo_app
-app = demo_app
-
-# 5. Launch with Gradio's standard native launcher
-if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+# 3. Mount Gradio onto the FastAPI host application at /gradio
+app = gr.mount_gradio_app(fastapi_app, _ui, path="/gradio")
