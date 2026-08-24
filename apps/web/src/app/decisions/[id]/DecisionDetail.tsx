@@ -14,7 +14,7 @@
  * which is the question HĐ-12 puts on a card in the first place.
  */
 
-import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AdviceListView } from "@/components/AdviceListView";
 import { TraceViewer } from "@/components/TraceViewer";
@@ -44,6 +44,7 @@ import { useTranslation, type Translator } from "@/lib/i18n";
 import { BELOW_N_MIN, noticeKey, sampleLineFor, sampleNotice } from "@/lib/sample";
 import { COPY_FEEDBACK_MS, type CopyOutcome, copyDecisionId, copyStateKey } from "@/lib/copyId";
 import { useNameThisCrumb } from "@/lib/crumbOverride";
+import { useRouteId } from "@/lib/useRouteId";
 import {
   GATES,
   approvedConfigUrl,
@@ -84,13 +85,17 @@ import { downloadDecisionReport, downloadDecisionWorkbook } from "@/lib/reports"
 import { ShareReportDialog } from "@/components/ShareReportDialog";
 import { initialPlayback, tick, type PlaybackState } from "@/lib/playback";
 
-export default function DecisionDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export function DecisionDetail() {
+  const id = useRouteId();
   const { t } = useTranslation();
   const [run, setRun] = useState<DecisionRun | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    // Empty until `useRouteId` has read the address bar, which it does
+    // in an effect. Asking the API for a run with no id would 404 and
+    // paint an error over a page that is merely still resolving.
+    if (!id) return;
     try {
       // The review journal is no longer drawn, so it is no longer
       // fetched — a request whose response nothing reads is a request

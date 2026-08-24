@@ -31,7 +31,7 @@ import type { RunCandidate } from "../../lib/decisions";
 
 const APP = join(process.cwd(), "src", "app");
 const CANDIDATES = readFileSync(join(APP, "candidates", "page.tsx"), "utf8");
-const DETAIL = readFileSync(join(APP, "decisions", "[id]", "page.tsx"), "utf8");
+const DETAIL = readFileSync(join(APP, "decisions", "[id]", "DecisionDetail.tsx"), "utf8");
 /* The comparison table, extracted so tests can render it — a
    function declared inside a fetching page cannot be imported. */
 const GRID = readFileSync(

@@ -20,7 +20,7 @@ import vi from "../../lib/i18n/locales/vi.json";
 
 const SRC = join(process.cwd(), "src");
 const VIEWER = readFileSync(join(SRC, "components", "TraceViewer.tsx"), "utf8");
-const DETAIL = readFileSync(join(SRC, "app", "decisions", "[id]", "page.tsx"), "utf8");
+const DETAIL = readFileSync(join(SRC, "app", "decisions", "[id]", "DecisionDetail.tsx"), "utf8");
 
 describe("the viewer sits with the evidence it explains", () => {
   it("sits under the comparison it replays, after the conclusion", () => {

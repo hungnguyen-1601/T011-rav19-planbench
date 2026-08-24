@@ -67,8 +67,17 @@ class SpaStaticFiles(StaticFiles):
         return f"{route}/{SENTINEL}.html"
 
     async def get_response(self, path: str, scope: Scope):
+        """Serve the file, or the shell for a deep link into a record.
+
+        A miss arrives here in **two** shapes, and handling only one is
+        how this was wrong the first time. Without a `404.html` in the
+        export, `StaticFiles` raises. With one — and `next export`
+        writes one — it *returns* that page with status 404 instead, so
+        the exception branch never fires and every deep link answered
+        with the not-found page. Both shapes get the same treatment.
+        """
         try:
-            return await super().get_response(path, scope)
+            response = await super().get_response(path, scope)
         except HTTPException as exc:
             if exc.status_code != 404:
                 raise
@@ -76,6 +85,12 @@ class SpaStaticFiles(StaticFiles):
             if shell is None:
                 raise
             return await super().get_response(shell, scope)
+
+        if response.status_code == 404:
+            shell = self._shell_for(path)
+            if shell is not None:
+                return await super().get_response(shell, scope)
+        return response
 
 
 __all__ = ["DYNAMIC_ROUTES", "SENTINEL", "SpaStaticFiles"]

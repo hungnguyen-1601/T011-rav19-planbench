@@ -52,8 +52,24 @@ def data_root() -> Path:
 
 
 def web_root() -> Path:
-    """The exported web UI, served by the API process."""
-    return INSTALL_ROOT / "web"
+    """The exported web UI, served by the API process.
+
+    Two layouts, because there are two ways to run this. An installation
+    has the export at `web/` beside `app/`; a checkout has it wherever
+    `next build` left it, under `apps/web/out`. Falling back to the
+    second is what lets the launcher — and the packaging smoke test —
+    be rehearsed from a working tree instead of only after an install.
+
+    When neither exists the packaged path is returned anyway, so the
+    warning the API logs names the place a *shipped* build would look.
+    """
+    packaged = INSTALL_ROOT / "web"
+    if packaged.is_dir():
+        return packaged
+    from_checkout = INSTALL_ROOT / "apps" / "web" / "out"
+    if from_checkout.is_dir():
+        return from_checkout
+    return packaged
 
 
 def version() -> str:

@@ -21,7 +21,7 @@ import vi from "../../lib/i18n/locales/vi.json";
 const COMPONENTS = join(process.cwd(), "src", "components");
 const DIALOG = readFileSync(join(COMPONENTS, "ShareReportDialog.tsx"), "utf8");
 const DETAIL = readFileSync(
-  join(process.cwd(), "src", "app", "decisions", "[id]", "page.tsx"),
+  join(process.cwd(), "src", "app", "decisions", "[id]", "DecisionDetail.tsx"),
   "utf8",
 );
 const CSS = readFileSync(join(process.cwd(), "src", "app", "globals.css"), "utf8");

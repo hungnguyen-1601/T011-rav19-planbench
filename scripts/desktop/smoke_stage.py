@@ -63,9 +63,20 @@ def main() -> int:
     print(f"smoke test of {APP_ROOT}")
     print(f"interpreter: {sys.executable}")
 
-    @check("the API package imports")
+    @check("the API package resolves")
     def _() -> None:
-        import planbench_api.main  # noqa: F401
+        # Resolved, deliberately not imported. `planbench_api.main`
+        # builds the application at module scope, reading configuration
+        # as it goes — so importing it here, before the launcher check
+        # has provisioned anything, would freeze an app with no data
+        # root and no web directory, and the launcher check further down
+        # would then be handed that cached module rather than a fresh
+        # one. Finding the spec proves the path resolves, which is what
+        # this check is for.
+        import importlib.util
+
+        if importlib.util.find_spec("planbench_api.main") is None:
+            raise AssertionError("planbench_api.main is not on the interpreter's path")
 
     @check("every declared source root imports")
     def _() -> None:

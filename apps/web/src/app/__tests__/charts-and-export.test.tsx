@@ -24,7 +24,7 @@ import vi from "../../lib/i18n/locales/vi.json";
 
 const read = (...parts: string[]) => readFileSync(join(process.cwd(), "src", ...parts), "utf8");
 const REPORTS = read("lib", "reports.ts");
-const DETAIL = read("app", "decisions", "[id]", "page.tsx");
+const DETAIL = read("app", "decisions", "[id]", "DecisionDetail.tsx");
 const MARKDOWN = readFileSync(
   join(process.cwd(), "..", "api", "planbench_api", "decision_markdown.py"),
   "utf8",

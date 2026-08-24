@@ -29,7 +29,7 @@ import { GATES } from "@/lib/decisions";
 const SRC = join(process.cwd(), "src");
 const read = (...parts: string[]) => readFileSync(join(SRC, ...parts), "utf8");
 
-const DETAIL = read("app", "decisions", "[id]", "page.tsx");
+const DETAIL = read("app", "decisions", "[id]", "DecisionDetail.tsx");
 const LIST = read("app", "decisions", "page.tsx");
 const PREVIEW = read("components", "DecisionDeploymentPreview.tsx");
 const RUNNING = read("components", "RunningComparison.tsx");

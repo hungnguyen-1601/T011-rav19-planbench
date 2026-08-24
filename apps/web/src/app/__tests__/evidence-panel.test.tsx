@@ -20,7 +20,7 @@ import vi from "../../lib/i18n/locales/vi.json";
 
 const SRC = join(process.cwd(), "src");
 const PANEL = readFileSync(join(SRC, "components", "EvidencePanel.tsx"), "utf8");
-const DETAIL = readFileSync(join(SRC, "app", "decisions", "[id]", "page.tsx"), "utf8");
+const DETAIL = readFileSync(join(SRC, "app", "decisions", "[id]", "DecisionDetail.tsx"), "utf8");
 const CLIENT = readFileSync(join(SRC, "lib", "decisions.ts"), "utf8");
 const AUTH = readFileSync(join(SRC, "lib", "auth.ts"), "utf8");
 

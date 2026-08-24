@@ -24,7 +24,7 @@ const CSS = readFileSync(join(SRC, "app", "globals.css"), "utf8");
 const CHART = readFileSync(join(SRC, "components", "LatencyChart.tsx"), "utf8");
 const CLIENT = readFileSync(join(SRC, "lib", "decisions.ts"), "utf8");
 const VIEWER = readFileSync(join(SRC, "components", "TraceViewer.tsx"), "utf8");
-const DETAIL = readFileSync(join(SRC, "app", "decisions", "[id]", "page.tsx"), "utf8");
+const DETAIL = readFileSync(join(SRC, "app", "decisions", "[id]", "DecisionDetail.tsx"), "utf8");
 
 describe("where the panel sits", () => {
   it("is mounted inside the progress-synced panel, not beside it", () => {

@@ -912,7 +912,7 @@ describe("an approval can be taken back, and taking it back is itself recorded",
    * would be an approval nobody could rely on.
    */
   const DETAIL_PAGE = readFileSync(
-    join(process.cwd(), "src", "app", "decisions", "[id]", "page.tsx"),
+    join(process.cwd(), "src", "app", "decisions", "[id]", "DecisionDetail.tsx"),
     "utf8",
   );
 

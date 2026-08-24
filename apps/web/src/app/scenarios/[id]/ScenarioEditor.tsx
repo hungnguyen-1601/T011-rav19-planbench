@@ -22,7 +22,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { MapView } from "@/components/MapView";
 import type { ObstacleMarker } from "@/components/MapCanvas";
 import { authFetch, useSession } from "@/lib/auth";
@@ -37,6 +37,7 @@ import type {
   StaticObstacle,
   ValidationReport,
 } from "@/lib/types";
+import { useRouteId } from "@/lib/useRouteId";
 
 /** What a click on the map does. Explicit modes rather than modifier
  *  keys: the author has to be able to see what the next click will do. */
@@ -68,12 +69,15 @@ const degrees = (radians: number) => (radians * 180) / Math.PI;
 const radians = (deg: number) => (deg * Math.PI) / 180;
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
-export default function ScenarioEditorPage() {
+export function ScenarioEditor() {
   const { t } = useTranslation();
   const session = useSession();
   const router = useRouter();
-  const params = useParams<{ id: string }>();
-  const scenarioId = params?.id ?? "new";
+  // `""` while the hook is still resolving a hard-loaded URL. Treating
+  // that as "new" would show the author a blank scenario for a frame
+  // before the real one arrived, so it is neither: `isNew` stays false
+  // and every load below is guarded on the id being known.
+  const scenarioId = useRouteId();
   const isNew = scenarioId === "new";
 
   const [maps, setMaps] = useState<MapSummary[]>([]);
@@ -88,10 +92,19 @@ export default function ScenarioEditorPage() {
   const [previewTime, setPreviewTime] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [savedId, setSavedId] = useState<string | null>(isNew ? null : scenarioId);
+  // Not seeded from `scenarioId`: on a hard load that is still `""`
+  // for the first render, and a `savedId` frozen empty would make
+  // Save POST a second copy of a scenario that already exists. The
+  // load effect below fills it in as soon as the id is known.
+  const [savedId, setSavedId] = useState<string | null>(null);
   const [split, setSplit] = useState<string>("unassigned");
 
   useEffect(() => {
+    // `""` until `useRouteId` has read the address bar in its own
+    // effect. Running now would fetch `/scenarios/` and then fetch again
+    // a frame later with the real id.
+    if (!scenarioId) return;
+    setSavedId(isNew ? null : scenarioId);
     (async () => {
       try {
         const list = await authFetch<MapSummary[]>("/maps");

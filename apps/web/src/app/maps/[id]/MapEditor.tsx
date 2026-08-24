@@ -2,16 +2,17 @@
 
 /** Map editor: paint occupied/free/unknown cells and save a new version. */
 
-import { use, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { MapPainter } from "@/components/MapPainter";
 import { api } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
 import type { MapData } from "@/lib/types";
+import { useRouteId } from "@/lib/useRouteId";
 
-export default function MapEditorPage({ params }: { params: Promise<{ id: string }> }) {
+export function MapEditor() {
   const { t } = useTranslation();
-  const { id } = use(params);
+  const id = useRouteId();
   const [map, setMap] = useState<MapData | null>(null);
   const [version, setVersion] = useState<number>(0);
   const [dirty, setDirty] = useState(false);
@@ -19,6 +20,9 @@ export default function MapEditorPage({ params }: { params: Promise<{ id: string
   const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
+    // Empty until `useRouteId` has read the address bar in its own
+    // effect; there is no map called "".
+    if (!id) return;
     let cancelled = false;
     (async () => {
       try {

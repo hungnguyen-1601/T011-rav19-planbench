@@ -32,6 +32,13 @@ def web_root(tmp_path):
     (root / "decisions" / "_.html").write_text("<html>decision shell</html>", encoding="utf-8")
     (root / "maps" / "_.html").write_text("<html>map shell</html>", encoding="utf-8")
     (root / "_next" / "app.js").write_text("console.log(1)", encoding="utf-8")
+    # `next export` writes this, and its presence changes how a miss
+    # arrives: with a 404.html, StaticFiles *returns* it rather than
+    # raising, so a fallback that only catches the exception silently
+    # stops working. The first version of this fixture had no 404.html
+    # and the deep-link tests passed against a server that answered
+    # every deep link with the not-found page.
+    (root / "404.html").write_text("<html>not found</html>", encoding="utf-8")
     return root
 
 

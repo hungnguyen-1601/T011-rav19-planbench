@@ -25,7 +25,7 @@ import { NAV_SECTIONS } from "../../lib/navigation";
 
 const APP = join(process.cwd(), "src", "app");
 const LIST = readFileSync(join(APP, "decisions", "page.tsx"), "utf8");
-const DETAIL = readFileSync(join(APP, "decisions", "[id]", "page.tsx"), "utf8");
+const DETAIL = readFileSync(join(APP, "decisions", "[id]", "DecisionDetail.tsx"), "utf8");
 /* The stylesheet, for the rules this page depends on being absent as
    much as present — a removed column tint leaves nothing to assert on
    in the markup. */
@@ -51,7 +51,7 @@ const GATE_LIB = readFileSync(join(process.cwd(), "src", "lib", "gateSummary.ts"
 /* Read here because of one assertion below: the map editor is where
    people go looking for the start and the goal, and it has to send them
    to the page that actually has them. */
-const MAP_EDITOR = readFileSync(join(APP, "maps", "[id]", "page.tsx"), "utf8");
+const MAP_EDITOR = readFileSync(join(APP, "maps", "[id]", "MapEditor.tsx"), "utf8");
 /* Placing a start and a goal, and painting cells, are shared components:
    the launch panel and the deployment form both need them, and two
    copies would be two answers to the same question. The assertions below

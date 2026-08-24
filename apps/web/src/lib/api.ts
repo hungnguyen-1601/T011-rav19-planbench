@@ -11,11 +11,35 @@ import type {
 } from "./types";
 import type { ReplanningConfig } from "./benchmarkTypes";
 
+/**
+ * Where the backend is.
+ *
+ * `NEXT_PUBLIC_API_URL` still wins and is still baked in at build time —
+ * Docker passes it as a build arg, `scripts/dev_stack.sh` exports it,
+ * and `.env.development` sets it for `next dev`, so none of those change
+ * behaviour.
+ *
+ * The fallback is the page's own origin rather than a fixed port,
+ * because the desktop build has no fixed port: the API picks a free one
+ * at startup and serves the exported UI from the same process, so the
+ * origin the page was loaded from *is* the API. Falling back to a
+ * literal `localhost:8000` there would send every request to whatever
+ * happened to be on 8000, or to nothing.
+ *
+ * `window` is guarded because this module is also evaluated while the
+ * export is being prerendered, in Node, where there is no location — and
+ * nothing fetches during a prerender, so the value used there only has
+ * to be a legal URL.
+ */
 export const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_URL ??
+  (typeof window !== "undefined" ? window.location.origin : "http://localhost:8000");
 
 /** Socket URL. `pace=false` asks the server for every frame without
- *  server-side throttling — the client owns playback timing. */
+ *  server-side throttling — the client owns playback timing.
+ *
+ *  Derived from `API_BASE`, so `https://` origins give `wss://` and the
+ *  desktop build's own origin gives `ws://` on the port it picked. */
 export function wsUrl(simulationId: string, pace = false): string {
   const base = API_BASE.replace(/^http/, "ws");
   return `${base}/ws/simulations/${simulationId}?pace=${pace}`;
