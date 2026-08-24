@@ -475,7 +475,7 @@ def test_nothing_is_awaiting_the_sidecar_any_more() -> None:
     still answers ``checker_not_implemented``, and the next card added
     lands in exactly that situation.
     """
-    assert AWAITING_SIDECAR == frozenset()
+    assert frozenset() == AWAITING_SIDECAR
 
 
 def test_a_host_without_a_planner_cannot_replay_and_says_which_half_is_missing() -> None:

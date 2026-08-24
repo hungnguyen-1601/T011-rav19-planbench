@@ -168,6 +168,7 @@ def get_decision_run_service(request: Request) -> DecisionRunService:
         repo_root=state.decision_map_root,
         trace_root=state.decision_trace_dir,
         run_root=state.decision_run_dir,
+        maps=state.repos.maps,
     )
 
 

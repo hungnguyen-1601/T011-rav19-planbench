@@ -147,3 +147,28 @@ class TestTurningAStoredMapIntoTheTwoPathsAProfileNames:
     def test_an_unknown_map_is_a_404(self, client, alice_headers):
         response = client.post("/api/v1/maps/doesnotexist/materialise", headers=alice_headers)
         assert response.status_code == 404
+
+    def test_ensure_custom_map_files_recreates_missing_file(self, client, alice_headers, map_id):
+        """If ephemeral maps/custom/ files are purged after container restart,
+        ensure_custom_map_files automatically reconstructs them from database."""
+        from planbench_api.map_files import ensure_custom_map_files
+
+        resp = client.post(f"/api/v1/maps/{map_id}/materialise", headers=alice_headers).json()
+        map_path = REPO_ROOT / resp["map"]
+        yaml_path = REPO_ROOT / resp["map_yaml"]
+        assert map_path.is_file()
+        assert yaml_path.is_file()
+
+        # Simulate ephemeral file deletion (container restart / cache purge)
+        map_path.unlink()
+        yaml_path.unlink()
+        assert not map_path.is_file()
+
+        # Ensure auto materialisation works
+        app = client.app
+        map_repo = app.state.repos.maps
+        recreated = ensure_custom_map_files(resp["map"], REPO_ROOT, map_repo)
+        assert recreated is True
+        assert map_path.is_file()
+        assert yaml_path.is_file()
+

@@ -25,9 +25,9 @@ from planbench_agent.factory import (
 from planbench_agent.openai_provider import (
     PRESETS,
     OpenAICompatibleProvider,
+    _completion_ceiling,
     _from_wire,
     _schema_is_strict,
-    _completion_ceiling,
     _to_wire,
 )
 from planbench_agent.provider import (

@@ -11,12 +11,18 @@ and a form filing one from scratch.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from planbench_api.repositories import StoredMap
 from planbench_schemas.map_io import dump_map_server
 
-__all__ = ["materialise_map"]
+if TYPE_CHECKING:
+    from planbench_api.repository_ports import MapRepositoryPort
+    from planbench_schemas.task_profile import TaskProfile
+
+__all__ = ["ensure_custom_map_files", "ensure_profile_map_materialised", "materialise_map"]
 
 
 def materialise_map(stored: StoredMap, map_root: Path) -> tuple[str, str]:
@@ -45,3 +51,72 @@ def materialise_map(stored: StoredMap, map_root: Path) -> tuple[str, str]:
     (directory / f"{stem}.pgm").write_bytes(image_bytes)
     (directory / f"{stem}.yaml").write_text(sidecar, encoding="utf-8")
     return f"maps/custom/{stem}.pgm", f"maps/custom/{stem}.yaml"
+
+
+def ensure_custom_map_files(
+    map_rel_path: str,
+    map_root: Path,
+    map_repo: MapRepositoryPort | None = None,
+) -> bool:
+    """Ensure a custom map (maps/custom/<stem>.pgm) exists on disk.
+
+    If the file is missing on disk (e.g. after container restart or checkout),
+    retrieves the StoredMap from the repository by id and writes the pgm + yaml pair.
+    Returns True if the file exists or was successfully written, False otherwise.
+    """
+    if not map_rel_path or not str(map_rel_path).startswith("maps/custom/"):
+        return False
+
+    full_path = map_root / map_rel_path
+    if full_path.is_file():
+        return True
+
+    if map_repo is None:
+        return False
+
+    # Extract map id from stem: e.g. "7d52494dc3b5__v1" -> "7d52494dc3b5"
+    stem = Path(map_rel_path).stem
+    map_id_candidate = stem.split("__v")[0] if "__v" in stem else stem
+
+    try:
+        stored_map = map_repo.get(map_id_candidate)
+        materialise_map(stored_map, map_root)
+        return True
+    except Exception:
+        pass
+
+    try:
+        for stored in map_repo.list():
+            safe_id = "".join(
+                char if char.isalnum() or char in "-_" else "_" for char in stored.id
+            )
+            if safe_id == map_id_candidate or stored.id == map_id_candidate:
+                materialise_map(stored, map_root)
+                return True
+    except Exception:
+        pass
+
+    return False
+
+
+def ensure_profile_map_materialised(
+    profile_data: Mapping[str, Any] | TaskProfile | None,
+    map_root: Path,
+    map_repo: MapRepositoryPort | None = None,
+) -> bool:
+    """Check if profile uses a custom map and ensure its files exist on disk."""
+    if profile_data is None:
+        return False
+
+    if hasattr(profile_data, "environment"):
+        env = profile_data.environment
+        map_path = getattr(env, "map", None) if env else None
+    elif isinstance(profile_data, Mapping):
+        env = profile_data.get("environment") or {}
+        map_path = env.get("map") if isinstance(env, Mapping) else None
+    else:
+        map_path = None
+
+    if map_path and str(map_path).startswith("maps/custom/"):
+        return ensure_custom_map_files(str(map_path), map_root, map_repo)
+    return False

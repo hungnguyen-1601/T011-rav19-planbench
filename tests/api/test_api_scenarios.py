@@ -102,6 +102,7 @@ class TestPreviewingALibraryEntryStoresNothing:
         the simulator's, and a preview that disagrees with the episode is
         worse than no preview."""
         import pytest
+
         from planbench_schemas.dynamic import DynamicObstacle, position_at
 
         body = client.get("/api/v1/scenario-library/sudden_stop/preview?step=1.0").json()

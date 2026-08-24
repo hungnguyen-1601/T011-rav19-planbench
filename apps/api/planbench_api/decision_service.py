@@ -44,7 +44,7 @@ from planbench_api.errors import (
     NotFoundError,
     field_errors,
 )
-from planbench_api.map_files import materialise_map
+from planbench_api.map_files import ensure_profile_map_materialised, materialise_map
 from planbench_api.repositories import StoredMap, now_iso
 from planbench_api.repository_ports import MapRepositoryPort
 from planbench_api.worker import Job, JobQueue
@@ -119,7 +119,9 @@ class TaskProfileService:
         return self._repository.create(profile.model_dump(mode="json"), owner_user_id=owner_user_id)
 
     def get(self, profile_id: str) -> StoredTaskProfile:
-        return self._repository.get(profile_id)
+        stored = self._repository.get(profile_id)
+        ensure_profile_map_materialised(stored.profile, self._map_root, self._maps)
+        return stored
 
     def list(self) -> list[StoredTaskProfile]:
         return self._repository.list()
@@ -191,7 +193,9 @@ class TaskProfileService:
 
     def load(self, profile_id: str) -> TaskProfile:
         """The stored profile as the contract object the engine needs."""
-        return TaskProfile.model_validate(self._repository.get(profile_id).profile)
+        stored = self._repository.get(profile_id)
+        ensure_profile_map_materialised(stored.profile, self._map_root, self._maps)
+        return TaskProfile.model_validate(stored.profile)
 
     def derive(
         self,
@@ -403,9 +407,11 @@ class DecisionRunService:
         repo_root: Path,
         trace_root: Path,
         run_root: Path,
+        maps: MapRepositoryPort | None = None,
     ) -> None:
         self._runs = runs
         self._profiles = profiles
+        self._maps = maps or getattr(profiles, "_maps", None)
         self._repo_root = repo_root
         self._trace_root = trace_root
         self._run_root = run_root
@@ -987,6 +993,7 @@ class DecisionRunService:
     def _materialise(self, stored: StoredTaskProfile) -> Path:
         import yaml
 
+        ensure_profile_map_materialised(stored.profile, self._repo_root, self._maps)
         directory = self._run_root / "profiles"
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / f"{stored.id}.yaml"
@@ -1140,6 +1147,7 @@ class TestBenchService:
         from planbench_schemas.episode_context import EpisodeContext
 
         profile = TaskProfile.model_validate(self._profiles.get(task_profile_id).profile)
+        ensure_profile_map_materialised(profile, self._map_root, self._maps)
 
         params = LOCAL_CONTROLLER_CONFIGS.get(local_config)
         if params is None:

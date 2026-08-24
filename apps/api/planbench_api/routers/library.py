@@ -11,6 +11,7 @@ from planbench_api.auth import ActiveUser
 from planbench_api.dependencies import get_map_service, get_repos, get_scenario_service
 from planbench_api.generalization import build_generalization_summary
 from planbench_api.leaderboard import Leaderboard, ScoreWeights, build_leaderboard
+from planbench_api.schemas import DynamicObstacleSnapshot
 from planbench_api.services import MapService, ScenarioService
 from planbench_benchmark import (
     CURRICULUM_ORDER,
@@ -30,7 +31,6 @@ from planbench_benchmark.difficulty import BaselineSpec
 from planbench_schemas.dynamic import position_at
 from planbench_schemas.map import MapData
 from planbench_schemas.scenario import Scenario
-from planbench_api.schemas import DynamicObstacleSnapshot
 
 router = APIRouter(tags=["library"])
 

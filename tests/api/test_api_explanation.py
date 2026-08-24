@@ -313,8 +313,9 @@ class TestTheExplanationRoute:
         still a fact about this run, and the route serves it rather than
         answering 409 to the one question the run provoked.
         """
-        from planbench_explanation.packet_builder import packet_block
         from test_explanation_e41 import built
+
+        from planbench_explanation.packet_builder import packet_block
 
         seed_run(app, "run_no_pair", card=None, candidates=[])
         app.state.repos.decision_runs.get("run_no_pair").report["case_packet"] = packet_block(
