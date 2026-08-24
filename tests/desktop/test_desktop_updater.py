@@ -16,6 +16,7 @@ import hashlib
 import json
 
 import pytest
+
 from planbench_desktop import updater
 
 

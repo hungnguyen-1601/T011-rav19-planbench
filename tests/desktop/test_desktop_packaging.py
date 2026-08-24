@@ -20,6 +20,7 @@ import tomllib
 
 import pytest
 from make_runtime_paths import SITECUSTOMIZE, pth_contents, source_roots
+
 from planbench_desktop.paths import INSTALL_ROOT
 
 INSTALLER = INSTALL_ROOT / "installer"

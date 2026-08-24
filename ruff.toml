@@ -56,6 +56,16 @@ known-first-party = [
     "planbench_rl",
     "planbench_agent",
     "planbench_api",
+    # The desktop launcher. Added with the package: leaving a
+    # `planbench_*` package out of this list is what the comment above
+    # records as having broken CI once already, and the symptom is
+    # import blocks that sort correctly on one machine and not on
+    # another.
+    #
+    # `planbench_plugin_sdk` is still missing here. Adding it re-sorts
+    # sixteen files across `tests/` and `services/`, which is a wider
+    # change than the one it belongs to — noted rather than folded in.
+    "planbench_desktop",
 ]
 
 [format]

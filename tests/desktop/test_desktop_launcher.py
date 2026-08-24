@@ -17,6 +17,7 @@ import os
 import sqlite3
 
 import pytest
+
 from planbench_desktop import migrate, paths
 from planbench_desktop.bootstrap import source_roots
 from planbench_desktop.provision import DEFAULT_NICKNAME, provision
