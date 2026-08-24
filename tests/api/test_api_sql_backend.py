@@ -285,3 +285,44 @@ def test_a_benchmark_from_before_accounts_is_still_owned_by_its_creator(sql_clie
         403,
         409,
     )
+
+
+def test_a_schema_one_migration_behind_does_not_take_the_api_down(tmp_path, monkeypatch):
+    """A database without `plugin_bundles` must cost imported algorithms,
+    not the whole process.
+
+    This is a regression test for an outage, not a hypothetical. The
+    startup catalogue sync queried the table unguarded, so a checkout
+    that had taken the update without running `alembic upgrade head`
+    died inside `create_app` — before a single route was served, with a
+    SQL traceback naming nothing an operator could act on. Everything
+    unrelated to imported algorithms was working perfectly.
+
+    Built by creating the whole schema and then dropping the one table,
+    which is exactly the shape a pending migration leaves behind.
+    """
+    isolate_environment(monkeypatch)
+    database = tmp_path / "stale.db"
+    monkeypatch.setenv("PLANBENCH_DATABASE_URL", f"sqlite:///{database}")
+    monkeypatch.setenv("PLANBENCH_DB_CREATE_ALL", "true")
+    get_settings.cache_clear()
+    try:
+        warmed = create_app(artifact_dir=str(tmp_path / "artifacts"))
+        warmed.state.sessions.dispose()
+
+        import sqlite3
+
+        with sqlite3.connect(database) as connection:
+            connection.execute("DROP TABLE plugin_bundles")
+
+        # The assertion is that this line returns at all.
+        monkeypatch.setenv("PLANBENCH_DB_CREATE_ALL", "false")
+        get_settings.cache_clear()
+        application = create_app(artifact_dir=str(tmp_path / "artifacts"))
+        client = TestClient(application, raise_server_exceptions=False)
+        # Built-in algorithms are still offered; only imported ones are not.
+        listed = client.get("/api/v1/algorithms", headers=auth_headers(client, ALICE)).json()
+        assert any(row["id"] == "astar+dwa" for row in listed)
+        application.state.sessions.dispose()
+    finally:
+        get_settings.cache_clear()

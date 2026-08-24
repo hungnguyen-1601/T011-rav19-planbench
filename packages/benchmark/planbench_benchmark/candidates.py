@@ -37,6 +37,7 @@ from planbench_benchmark.registry import (
     algorithm_info,
     build_global_planner,
     build_local_planner,
+    external_controller_version,
     list_algorithms,
     validate_algorithm_config,
 )
@@ -272,7 +273,23 @@ def candidate_from_stack(
         global_planner=StackComponent(name=global_name, version=global_version),
         local_controller=StackComponent(
             name=local_name,
-            version=local_version or controller_version(local_name),
+            # An imported controller's identity comes from the bytes that
+            # were uploaded; a built-in's from the source it is compiled
+            # from. Asked in that order because only the first can change
+            # while the process is running.
+            #
+            # Without this an imported plugin fell through to
+            # ``controller_version``'s "unknown controller" fallback of
+            # ``"v1"`` — so a bundle fixed and re-imported produced the
+            # *same* candidate id as the version it replaced, and two
+            # different pieces of code shared one row of results. That is
+            # precisely the defect the source-checksum work above was
+            # written to end, reappearing through a door it predates.
+            version=(
+                local_version
+                or external_controller_version(local_name)
+                or controller_version(local_name)
+            ),
         ),
         params={local_name: validated.model_dump(mode="json")},
         observation_requirements=observation_requirements_for(info),

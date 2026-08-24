@@ -266,6 +266,16 @@ class _Entry(BaseModel):
     config_model: type[BaseModel]
     factory: Callable[[BaseModel], LocalPlanner]
     global_factory: Callable[[int], GlobalPlanner]
+    #: What identifies this controller's *code*, when the code did not
+    #: come from this repository.
+    #:
+    #: Empty for every built-in, and that is not an oversight: their
+    #: version is a checksum over their declared source modules
+    #: (``candidates.controller_version``), which is derivable here and
+    #: therefore should not be restated. An imported bundle has no source
+    #: modules to hash — its code arrived as bytes — so the checksum of
+    #: those bytes has to travel with the entry instead.
+    controller_version: str = ""
 
 
 def _astar(episode_seed: int) -> GlobalPlanner:  # noqa: ARG001 - A* ignores the seed
@@ -486,6 +496,66 @@ ALGORITHMS: dict[str, _Entry] = {
 }
 
 
+#: Stacks contributed at runtime rather than written here: imported
+#: plugin bundles, registered by whatever host process loaded them (see
+#: ``plugin_stacks``). Separate from ``ALGORITHMS`` on purpose — a
+#: catalogue that mixed source-defined stacks with process-lifetime ones
+#: would make "what does this platform offer?" depend on which requests
+#: had been served, with nothing saying so.
+#:
+#: Empty in every process nobody has registered into, which is every
+#: test that does not ask for a plugin, the CLI, and the whole benchmark
+#: package used as a library.
+EXTERNAL_ALGORITHMS: dict[str, _Entry] = {}
+
+
+def register_external(entry: _Entry) -> str:
+    """Add a stack the running process learned about. Returns its id."""
+    EXTERNAL_ALGORITHMS[entry.info.id] = entry
+    return entry.info.id
+
+
+def external_controller_version(controller: str) -> str:
+    """The code identity of an imported controller, or '' for a built-in.
+
+    **Deliberately not cached**, unlike its built-in counterpart. A
+    built-in's source cannot change while the process runs, so hashing it
+    once is safe; an imported bundle can be replaced by a new version at
+    any moment, and a cached answer would file the second import's runs
+    under the first import's identity — which is the exact confusion this
+    whole mechanism exists to prevent.
+    """
+    for entry in EXTERNAL_ALGORITHMS.values():
+        if entry.info.local_controller == controller and entry.controller_version:
+            return entry.controller_version
+    return ""
+
+
+def unregister_external(algorithm_id: str) -> None:
+    EXTERNAL_ALGORITHMS.pop(algorithm_id, None)
+
+
+def clear_external() -> None:
+    """Forget every runtime-registered stack.
+
+    Tests use it, and so does anything rebuilding the set from storage:
+    re-registering over a stale entry would leave a plugin that has been
+    disabled still offerable under its old factory.
+    """
+    EXTERNAL_ALGORITHMS.clear()
+
+
+def _all_entries() -> dict[str, _Entry]:
+    """Both sources, built-ins first.
+
+    Built-ins win a collision. An imported bundle cannot take over the
+    name of a stack whose results are already on the leaderboard, and the
+    id it would have to claim to try is one the manifest id pattern
+    cannot spell anyway.
+    """
+    return {**EXTERNAL_ALGORITHMS, **ALGORITHMS}
+
+
 def algorithm_info(algorithm_id: str) -> AlgorithmInfo | None:
     """The registry entry for ``algorithm_id``, or None if unregistered.
 
@@ -493,20 +563,21 @@ def algorithm_info(algorithm_id: str) -> AlgorithmInfo | None:
     an old stored report: a benchmark run before a stack was renamed (or
     removed) must still be displayable, just without its metadata.
     """
-    entry = ALGORITHMS.get(algorithm_id)
+    entry = _all_entries().get(algorithm_id)
     return entry.info if entry is not None else None
 
 
 def list_algorithms() -> list[AlgorithmInfo]:
-    return [entry.info for entry in sorted(ALGORITHMS.values(), key=lambda e: e.info.id)]
+    return [entry.info for entry in sorted(_all_entries().values(), key=lambda e: e.info.id)]
 
 
 def _entry(algorithm_id: str) -> _Entry:
+    entries = _all_entries()
     try:
-        return ALGORITHMS[algorithm_id]
+        return entries[algorithm_id]
     except KeyError:
         raise UnknownAlgorithmError(
-            f"unknown algorithm {algorithm_id!r}; registered: {sorted(ALGORITHMS)}"
+            f"unknown algorithm {algorithm_id!r}; registered: {sorted(entries)}"
         ) from None
 
 

@@ -137,7 +137,15 @@ mlartifacts/
 ml/checkpoints/
 ml/runs/
 ml/**/*.zip
-models/
+# Uploaded checkpoints, where the API's default puts them. **Anchored,
+# and the anchor is load-bearing**: a bare `models/` matches a directory
+# of that name at any depth, and it was silently swallowing
+# `apps/web/src/app/models/` — the entire Models page was untracked, and
+# `git status` was clean because ignored files do not appear in it.
+# Found on 2026-08-24 while adding the algorithm-import tab to that page.
+/models/
+/artifacts/models/
+/artifacts/plugins/
 *.pt
 *.pth
 *.ckpt

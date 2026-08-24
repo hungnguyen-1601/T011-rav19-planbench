@@ -69,8 +69,13 @@ class GraphChannelSource:
         self._grant_truth = grant_truth
         self._freshness = FreshnessFilter(freshness or FreshnessPolicy())
         self._view: ProviderRuntimeView | None = None
+        #: The seed of the episode about to run, kept because the plugin
+        #: is entitled to it and this is the only object on the plugin's
+        #: side of the seam that the loop hands it to.
+        self.episode_seed = 0
 
     def bind(self, engine: Any, planning_grid: Any, episode_seed: int) -> None:
+        self.episode_seed = episode_seed
         self._view = ProviderRuntimeView.over_engine(
             engine,
             planning_grid,
@@ -152,6 +157,16 @@ class GraphBackedLocalPlanner(LocalPlanner):
         self._granted = granted
 
     @property
+    def channel_source(self):
+        """The seam this controller needs bound before it can step.
+
+        Exposed so a caller that only asked for a controller does not
+        also have to know that this one is channel-native. ``run_stack``
+        reads it when no source was passed explicitly.
+        """
+        return self._source
+
+    @property
     def name(self) -> str:
         return self._host.local_name
 
@@ -181,6 +196,18 @@ class GraphBackedLocalPlanner(LocalPlanner):
                     "obstacle_speed": obstacle_speed,
                     "sensor_noise": sensor_noise,
                 },
+                # The seed the episode is actually running under.
+                #
+                # It was missing until 2026-08-24, and the omission was
+                # silent in the way that matters: `episode_seed` defaults
+                # to 0, so every plugin on this path drew from the same
+                # seed in every episode. A stochastic controller would
+                # not fail — it would repeat one sample across the whole
+                # sweep while the paired statistics went on assuming
+                # independent draws. `HostBackedLocalPlanner` passed it
+                # from the start; this facade did not, and nothing
+                # compared the two.
+                episode_seed=self._source.episode_seed,
             )
         )
 

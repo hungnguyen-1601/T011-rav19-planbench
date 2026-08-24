@@ -11,12 +11,14 @@ from planbench_agent import AgentService
 from planbench_agent.tools import ToolPolicy
 from planbench_api.agent_gateway import ApiAgentGateway
 from planbench_api.auth import CurrentUser
+from planbench_api.config import get_settings
 from planbench_api.decision_service import (
     CandidateService,
     DecisionRunService,
     TaskProfileService,
     TestBenchService,
 )
+from planbench_api.plugin_service import PluginBundleService, PluginLimits
 from planbench_api.registry_service import ModelRegistryService, RobotProfileService
 from planbench_api.repositories import RepositoryHub
 from planbench_api.review_service import ReviewService
@@ -54,6 +56,29 @@ def get_profile_service(request: Request) -> RobotProfileService:
 def get_model_service(request: Request) -> ModelRegistryService:
     repos = get_repos(request)
     return ModelRegistryService(repos.models, repos.robot_profiles, request.app.state.model_storage)
+
+
+def get_plugin_service(request: Request) -> PluginBundleService:
+    """Imported algorithm bundles, wired to this instance's ceilings.
+
+    Bundles share the model storage backend and nothing else: the two
+    live under different key prefixes, so one backend serves both without
+    either being able to read the other's directory by accident.
+    """
+    settings = get_settings()
+    repos = get_repos(request)
+    return PluginBundleService(
+        repos.plugin_bundles,
+        repos.robot_profiles,
+        request.app.state.model_storage,
+        limits=PluginLimits(
+            max_upload_bytes=settings.max_plugin_upload_mb * 1024 * 1024,
+            max_members=settings.max_plugin_members,
+            max_extracted_bytes=settings.max_plugin_extracted_mb * 1024 * 1024,
+            max_manifest_bytes=settings.max_plugin_manifest_kb * 1024,
+        ),
+        install_root=request.app.state.plugin_install_root,
+    )
 
 
 def get_review_service(request: Request) -> ReviewService:

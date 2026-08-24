@@ -16,6 +16,7 @@ from planbench_api.model_registry import (
     RegistryError,
     RobotProfile,
 )
+from planbench_api.plugin_registry import PluginBundleRecord
 from planbench_api.repositories import new_id
 
 
@@ -177,7 +178,81 @@ class InMemoryModelRepository:
         return seen
 
 
+class InMemoryPluginBundleRepository:
+    """Imported algorithm bundles, in memory.
+
+    No ``delete``. A bundle is what a benchmark *ran*: results are filed
+    against its id, and removing the row turns those measurements into
+    records of nothing. Disabling is the retirement path — the same rule
+    the models table follows, and the reason its delete button was never
+    wired up either.
+    """
+
+    def __init__(self) -> None:
+        self._items: dict[str, PluginBundleRecord] = {}
+        self._lock = threading.RLock()
+
+    def create(self, record: PluginBundleRecord) -> PluginBundleRecord:
+        with self._lock:
+            stamp = now_iso()
+            stored = record.model_copy(
+                update={
+                    "id": record.id or new_id(),
+                    "created_at": record.created_at or stamp,
+                    "updated_at": stamp,
+                }
+            )
+            self._require_unique(stored)
+            self._items[stored.id] = stored
+            return stored
+
+    def _require_unique(self, record: PluginBundleRecord) -> None:
+        """One plugin id, one plugin version, once.
+
+        Keyed on the **manifest's** identity rather than on the display
+        name: two uploads declaring `org.lab.vfh-plus@0.2.0` are two
+        claims to one candidate identity, and letting both in would make
+        "which code produced this result?" unanswerable however carefully
+        the display names differ.
+        """
+        for other in self._items.values():
+            if (
+                other.id != record.id
+                and other.plugin_id == record.plugin_id
+                and other.plugin_version == record.plugin_version
+            ):
+                raise RegistryError(
+                    f"{record.plugin_id!r} version {record.plugin_version!r} is already "
+                    "imported; publish a new version in the manifest rather than "
+                    "replacing what a benchmark may have run"
+                )
+
+    def get(self, bundle_id: str) -> PluginBundleRecord:
+        record = self._items.get(bundle_id)
+        if record is None:
+            raise NotFoundError("algorithm bundle", bundle_id)
+        return record
+
+    def save(self, record: PluginBundleRecord) -> PluginBundleRecord:
+        with self._lock:
+            self.get(record.id)
+            self._require_unique(record)
+            stored = record.model_copy(update={"updated_at": now_iso()})
+            self._items[stored.id] = stored
+            return stored
+
+    def list(self) -> list[PluginBundleRecord]:
+        return sorted(self._items.values(), key=lambda record: record.created_at, reverse=True)
+
+    def find_by_plugin(self, plugin_id: str, plugin_version: str) -> PluginBundleRecord | None:
+        for record in self._items.values():
+            if record.plugin_id == plugin_id and record.plugin_version == plugin_version:
+                return record
+        return None
+
+
 __all__ = [
     "InMemoryModelRepository",
+    "InMemoryPluginBundleRepository",
     "InMemoryRobotProfileRepository",
 ]

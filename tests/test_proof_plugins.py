@@ -209,6 +209,49 @@ class TestTheGlobalProofPlansForReal:
         assert run.result.steps > 0
 
 
+class TestTheSeedReachesAChannelNativePlugin:
+    def test_the_facade_forwards_the_episode_seed(self) -> None:
+        """`GraphBackedLocalPlanner` used to build a `LocalResetRequest`
+        without one, so the field took its default of 0 and every episode
+        handed the plugin the same seed.
+
+        Nothing failed when it did. A stochastic controller simply drew
+        the same sample in every episode while the paired statistics went
+        on treating the draws as independent — which is why this is a
+        test rather than a comment.
+        """
+        from planbench_schemas.robot import RobotConfig
+
+        recorded = {}
+
+        class Recorder:
+            name = "recorder"
+            control_period = None
+
+            def reset(self, request):
+                recorded["seed"] = request.episode_seed
+
+            def step(self, request):
+                raise AssertionError("not reached")
+
+        source = GraphChannelSource(_graph(oracle=False))
+        source.episode_seed = 4321
+        planner = GraphBackedLocalPlanner(
+            AlgorithmHost(local_plugin=Recorder()), source, granted=()
+        )
+        planner.reset(
+            (),
+            RobotConfig(
+                radius=0.3,
+                max_linear_velocity=1.0,
+                max_angular_velocity=1.0,
+                max_linear_acceleration=1.0,
+                max_angular_acceleration=1.0,
+            ),
+        )
+        assert recorded["seed"] == 4321
+
+
 class TestTheLocalProofRunsOnGrantedChannels:
     def test_it_drives_an_episode_through_the_provider_graph(self, discovered) -> None:
         graph = _graph(oracle=True)

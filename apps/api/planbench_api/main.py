@@ -29,6 +29,7 @@ from planbench_api.errors import register_error_handlers
 from planbench_api.logging_config import configure_logging
 from planbench_api.model_storage import LocalModelStorage
 from planbench_api.oauth import ExchangeCodes, OAuthClient
+from planbench_api.plugin_service import sync_catalogue as sync_plugin_catalogue
 from planbench_api.repositories import RepositoryHub
 from planbench_api.routers import (
     agent,
@@ -41,6 +42,7 @@ from planbench_api.routers import (
     library,
     maps,
     models,
+    plugins,
     reviews,
     scenarios,
     simulations,
@@ -91,6 +93,14 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     # Uploaded checkpoints. Separate from the artifact store because the
     # lifecycles differ: artifacts belong to a run, models outlive many.
     app.state.model_storage = LocalModelStorage(settings.model_dir)
+    # Where imported bundles are unpacked to be run. Follows the artifact
+    # root when a caller overrides it, so a test never unpacks somebody's
+    # uploaded code into the developer's checkout.
+    app.state.plugin_install_root = (
+        Path(settings.plugin_dir)
+        if settings.plugin_dir
+        else Path(artifact_dir or settings.artifact_dir) / "plugins"
+    )
     # Decision layer (Phase 6.2). The roots follow `artifact_dir` when a
     # caller overrides it — a test passing its own artifact root must not
     # have selection runs land in the developer's checkout — but an
@@ -119,6 +129,11 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     )
     app.state.repos = _build_repositories(settings, artifacts, app)
     app.state.auth = AuthService(settings, app.state.repos.users)
+    # Republish imported algorithms into the runtime catalogue. The set
+    # lives in the benchmark registry for the life of the process, so a
+    # restart has to rebuild it from what was stored — otherwise a
+    # plugin imported yesterday silently stops being offerable today.
+    sync_plugin_catalogue(app.state.repos.plugin_bundles, app.state.plugin_install_root)
     # One-time codes and the provider HTTP client are app-scoped: the
     # codes must outlive a request, and the client is replaced wholesale
     # in tests so no OAuth test ever reaches the network.
@@ -179,6 +194,13 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     app.include_router(reviews.router, prefix=API_PREFIX)
     app.include_router(maps.router, prefix=API_PREFIX)
     app.include_router(scenarios.router, prefix=API_PREFIX)
+    # Before `algorithms`, and the order is load-bearing: that router
+    # owns `/algorithms/{algorithm_id}`, which matches the literal path
+    # `/algorithms/plugins` too. FastAPI takes the first route that
+    # matches, so registering the catalogue first would answer every
+    # plugin request with "unknown algorithm 'plugins'". Pinned by
+    # test_the_plugin_routes_are_not_swallowed_by_the_catalogue.
+    app.include_router(plugins.router, prefix=API_PREFIX)
     app.include_router(algorithms.router, prefix=API_PREFIX)
     app.include_router(tuning.router, prefix=API_PREFIX)
     app.include_router(simulations.router, prefix=API_PREFIX)

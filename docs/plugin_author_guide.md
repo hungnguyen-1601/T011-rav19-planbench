@@ -108,6 +108,31 @@ class MyPlanner:
         return {"linear_velocity": 0.4, "angular_velocity": 0.0}
 ```
 
+**What `step` returns depends on your lane, and getting it wrong is
+silent.** In the **subprocess** lane return a plain mapping, as above:
+the worker converts it, and importing anything from the platform would
+defeat the point of a process that holds only your code. In the
+**in-process** lane the host requires a `LocalPlanResult`:
+
+```python
+def step(self, request):
+    from planbench_planning.common.local_base import LocalPlanResult
+    from planbench_schemas.robot import SimAction
+
+    return LocalPlanResult(action=SimAction(linear_velocity=0.4, angular_velocity=0.0))
+```
+
+A mapping returned in-process is not an error. The host records an
+invalid output and substitutes a **safe stop**, so the episode runs to
+its end with a robot that never moves and nothing raises anywhere. If
+your controller is mysteriously stationary, this is the first thing to
+check.
+
+So the in-process lane costs you a second dependency — `planbench_planning`
+for `LocalPlanResult`, `planbench_schemas` for `SimAction`. The "one
+dependency" promise at the top of this guide holds for the subprocess
+lane, which is the lane an imported bundle runs in.
+
 A monolithic plugin is identical except that `requires_global_path` is
 `false` and `request.global_path` is empty — the platform does not hand
 you a path you said you do not use.

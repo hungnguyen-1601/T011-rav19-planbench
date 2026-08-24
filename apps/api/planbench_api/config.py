@@ -86,6 +86,23 @@ class Settings(BaseSettings):
     max_model_upload_mb: int = 200
     max_document_upload_mb: int = 20
 
+    # Imported algorithm bundles. Deliberately generous for now and
+    # expected to come down once real bundles have been measured — see
+    # docs/plugin_import_security.md §6.
+    #
+    # `max_plugin_extracted_mb` is the one that matters and the one that
+    # is easy to leave out: a compressed size says nothing about what
+    # extraction writes, so the upload ceiling alone does not bound the
+    # disk a zip bomb can claim.
+    max_plugin_upload_mb: int = 50
+    max_plugin_members: int = 500
+    max_plugin_extracted_mb: int = 200
+    max_plugin_manifest_kb: int = 64
+    # Where bundles are unpacked to be run. Empty means
+    # "<artifact_dir>/plugins", for the same reason `model_dir` defaults
+    # that way: moving the artifact root has to move this with it.
+    plugin_dir: str = ""
+
     # Persistence (M10). Empty keeps everything in memory, which is what
     # development and the test suite use. A URL switches to SQL:
     #   postgresql://user:pass@host:5432/planbench   (production)

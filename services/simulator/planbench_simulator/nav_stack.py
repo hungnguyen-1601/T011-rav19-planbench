@@ -1173,6 +1173,18 @@ def run_stack(
     # deployment, not from the controller's own configuration, which is
     # what stops a candidate narrowing the set the planner used (L2).
     envelope = SafetyEnvelope.for_noise(scenario.sensor_noise)
+    # A controller may carry its own seam. Asked of the object rather
+    # than required of the caller, because the two call sites that build
+    # a controller — the simulation service and the benchmark runner —
+    # get one back from `build_local_planner` and have no way to know
+    # whether it needs channels: that is a property of the controller,
+    # and this is the controller answering for itself.
+    #
+    # Still one protocol and still no algorithm named. An explicit
+    # argument wins, so a caller wiring a source by hand is never
+    # overruled by one the planner happened to bring.
+    if channel_source is None:
+        channel_source = getattr(local_planner, "channel_source", None)
     if channel_source is not None:
         channel_source.bind(engine, raw_grid, scenario.random_seed)
     _reset_local(
