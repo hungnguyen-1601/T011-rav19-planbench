@@ -37,22 +37,32 @@ except (ImportError, Exception):
     def gpu_compute(fn, *args, **kwargs):
         return fn(*args, **kwargs)
 
-import uvicorn
+import gradio as gr
 from planbench_api.main import create_app
 
-# Create the PlanBench FastAPI application
-app = create_app()
+# 1. Create the PlanBench FastAPI application
+fastapi_app = create_app()
 
-@app.get("/")
-def read_root():
-    return {
-        "status": "online",
-        "service": "PlanBench API",
-        "health": "/api/v1/health",
-        "docs": "/docs",
-        "openapi": "/openapi.json",
-    }
+# 2. Create Gradio Blocks (MUST be named "demo" or "blocks" so HF ZeroGPU auto-launcher finds it)
+with gr.Blocks(title="PlanBench API") as demo:
+    gr.Markdown(
+        """
+        # 🚀 PlanBench Backend API
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 7860))
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+        The PlanBench FastAPI backend is active and running on Hugging Face Spaces (ZeroGPU).
+
+        - **Health Check**: [`/api/v1/health`](/api/v1/health)
+        - **Interactive API Docs**: [`/docs`](/docs)
+        - **OpenAPI Schema**: [`/openapi.json`](/openapi.json)
+        """
+    )
+
+# 3. Mount Gradio onto the FastAPI app (FastAPI will handle all API routes, Gradio handles /)
+app = gr.mount_gradio_app(fastapi_app, demo, path="/")
+
+# 4. Overwrite demo.app so that when HF ZeroGPU automatically calls demo.launch(), it uses our FastAPI app!
+demo.app = app
+
+# Note: DO NOT add `if __name__ == "__main__": demo.launch()`.
+# Hugging Face ZeroGPU runtime automatically finds the `demo` variable and launches it.
+# Adding it manually causes port 7860/7861 conflicts.
