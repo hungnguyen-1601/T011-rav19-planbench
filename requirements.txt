@@ -119,10 +119,9 @@ pyarrow==25.0.0
 psutil==7.2.2
 
 # ---------- Lưu trữ ----------
-# SQLite có sẵn trong Python, không cần driver. PostgreSQL cần psycopg —
-# xem requirements-optional.txt.
 SQLAlchemy==2.0.51
 alembic==1.18.5
+psycopg[binary]==3.2.10
 
 # ---------- Công cụ phát triển ----------
 # Ở đây chứ không ở file riêng: người mới clone về nên chạy được test
