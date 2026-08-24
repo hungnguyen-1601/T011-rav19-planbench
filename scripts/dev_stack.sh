@@ -122,7 +122,7 @@ PY_PATH="$PY_PATH:$ROOT/packages/benchmark:$ROOT/packages/decision"
 PY_PATH="$PY_PATH:$ROOT/packages/explanation:$ROOT/packages/plugin_sdk"
 PY_PATH="$PY_PATH:$ROOT/services/simulator"
 PY_PATH="$PY_PATH:$ROOT/services/tracking:$ROOT/services/agent_service"
-PY_PATH="$PY_PATH:$ROOT/ml:$ROOT/apps/api"
+PY_PATH="$PY_PATH:$ROOT/ml:$ROOT/apps/api:$ROOT/apps/desktop"
 
 # ================================================================
 # Utility functions
