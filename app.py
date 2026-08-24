@@ -69,14 +69,11 @@ try:
             """
         )
 
-    # Mount Gradio UI on the FastAPI app at /ui
-    app = gr.mount_gradio_app(fastapi_app, demo, path="/ui")
-
-    # Launch server for Hugging Face Spaces
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    # Mount Gradio onto the FastAPI app at root
+    app = gr.mount_gradio_app(fastapi_app, demo, path="/")
 except ImportError:
     app = fastapi_app
 
-    if __name__ == "__main__":
-        port = int(os.environ.get("PORT", 7860))
-        uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 7860))
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
