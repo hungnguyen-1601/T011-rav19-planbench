@@ -11,9 +11,12 @@ and a form filing one from scratch.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+_log = logging.getLogger("planbench.map_files")
 
 from planbench_api.repositories import StoredMap
 from planbench_schemas.map_io import dump_map_server
@@ -68,10 +71,22 @@ def ensure_custom_map_files(
         return False
 
     full_path = map_root / map_rel_path
+    _log.info(
+        "ensure_custom_map_files: checking map_root=%s rel=%s full_path=%s exists=%s repo=%s",
+        map_root,
+        map_rel_path,
+        full_path,
+        full_path.is_file(),
+        type(map_repo).__name__ if map_repo else None,
+    )
     if full_path.is_file():
         return True
 
     if map_repo is None:
+        _log.warning(
+            "ensure_custom_map_files: map file missing but no map_repo; cannot recover: %s",
+            full_path,
+        )
         return False
 
     # Extract map id from stem: e.g. "7d52494dc3b5__v1" -> "7d52494dc3b5"
@@ -81,9 +96,10 @@ def ensure_custom_map_files(
     try:
         stored_map = map_repo.get(map_id_candidate)
         materialise_map(stored_map, map_root)
+        _log.info("ensure_custom_map_files: recovered map %s from DB (direct id)", map_rel_path)
         return True
-    except Exception:
-        pass
+    except Exception as exc:
+        _log.debug("ensure_custom_map_files: direct get(%s) failed: %s", map_id_candidate, exc)
 
     try:
         for stored in map_repo.list():
@@ -92,10 +108,19 @@ def ensure_custom_map_files(
             )
             if safe_id == map_id_candidate or stored.id == map_id_candidate:
                 materialise_map(stored, map_root)
+                _log.info(
+                    "ensure_custom_map_files: recovered map %s from DB (list scan)", map_rel_path
+                )
                 return True
-    except Exception:
-        pass
+    except Exception as exc:
+        _log.warning("ensure_custom_map_files: list scan failed: %s", exc)
 
+    _log.error(
+        "ensure_custom_map_files: FAILED to recover map %s (map_root=%s, map_id=%s)",
+        map_rel_path,
+        map_root,
+        map_id_candidate,
+    )
     return False
 
 
