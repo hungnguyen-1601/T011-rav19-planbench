@@ -102,6 +102,18 @@ def get_plugin(bundle_id: str, plugins: Plugins, user: ActiveUser) -> PluginBund
     )
 
 
+@router.post("/{bundle_id}/validate", response_model=PluginBundleSummary)
+def validate_plugin(bundle_id: str, plugins: Plugins, user: ActiveUser) -> PluginBundleSummary:
+    """Unpack the bundle and run the conformance suite again.
+
+    Runs the uploader's code, so it is the import privilege rather than
+    the read one. Worth re-asking after a deployment changes: a bundle
+    left unchecked because a provider was missing is not a bundle that
+    failed.
+    """
+    return PluginBundleSummary.of(plugins.revalidate(bundle_id, user), user.id)
+
+
 @router.patch("/{bundle_id}", response_model=PluginBundleSummary)
 def update_plugin(
     bundle_id: str, payload: PluginUpdateRequest, plugins: Plugins, user: ActiveUser

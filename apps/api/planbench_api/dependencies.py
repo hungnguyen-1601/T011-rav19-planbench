@@ -77,6 +77,7 @@ def get_plugin_service(request: Request) -> PluginBundleService:
             max_extracted_bytes=settings.max_plugin_extracted_mb * 1024 * 1024,
             max_manifest_bytes=settings.max_plugin_manifest_kb * 1024,
         ),
+        install_root=request.app.state.plugin_install_root,
     )
 
 

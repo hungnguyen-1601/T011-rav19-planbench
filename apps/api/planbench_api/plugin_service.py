@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
@@ -38,6 +39,7 @@ from planbench_api.plugin_registry import (
     PluginNotAllowed,
     inspect_bundle,
 )
+from planbench_api.plugin_runtime import install_bundle, run_conformance
 from planbench_api.repositories import new_id
 
 
@@ -108,11 +110,13 @@ class PluginBundleService:
         storage: ModelStorage,
         *,
         limits: PluginLimits,
+        install_root: Path,
     ) -> None:
         self._bundles = bundles
         self._profiles = profiles
         self._storage = storage
         self._limits = limits
+        self._install_root = install_root
 
     # -- writing -------------------------------------------------------
 
@@ -191,12 +195,63 @@ class PluginBundleService:
                 validation_status=ValidationStatus.STRUCTURAL,
                 validation_message="the archive is a well-formed plugin bundle",
             )
-            return self._bundles.create(record)
+            created = self._bundles.create(record)
         except BaseException:
             # No orphaned bytes: a refused upload must not leave its file
             # behind consuming disk nobody can account for.
             self._storage.delete(key)
             raise
+        # Unpack and run it now rather than leaving that to a second
+        # click. An importer wants to know whether the thing works, and
+        # a registry full of rows nobody has ever run is a registry whose
+        # statuses mean "not looked at yet" — which is what `structural`
+        # already says without anybody being told to go and check.
+        return self.validate(created.id)
+
+    def revalidate(self, bundle_id: str, user: User) -> PluginBundleRecord:
+        """`validate`, asked for by a person.
+
+        Gated on the import privilege rather than the read one: this
+        starts the uploader's code, and who may do that is the question
+        §5 of the threat model answers.
+        """
+        _require_admin(user)
+        return self.validate(bundle_id)
+
+    def validate(self, bundle_id: str) -> PluginBundleRecord:
+        """Unpack the bundle and put the plugin through the suite.
+
+        Separate from `upload` and callable again on purpose: a bundle
+        that could not be checked when it arrived — because a dependency
+        was missing, or a provider was — is worth re-asking about once
+        the deployment has changed, and re-asking must not mean
+        re-uploading.
+        """
+        record = self._bundles.get(bundle_id)
+        profile = self._profiles.get(record.robot_profile_id)
+        try:
+            directory = install_bundle(record, self._storage, self._install_root)
+            outcome = run_conformance(record, profile, directory)
+        except RegistryError as error:
+            # Unpacking failed, which is a fact about the archive rather
+            # than about the plugin's behaviour — so it is `failed`, and
+            # it says which.
+            return self._bundles.save(
+                record.model_copy(
+                    update={
+                        "validation_status": ValidationStatus.FAILED,
+                        "validation_message": str(error),
+                    }
+                )
+            )
+        return self._bundles.save(
+            record.model_copy(
+                update={
+                    "validation_status": outcome.status,
+                    "validation_message": outcome.message,
+                }
+            )
+        )
 
     def update(self, bundle_id: str, changes: dict[str, Any], user: User) -> PluginBundleRecord:
         """Rename, re-describe, enable or disable.

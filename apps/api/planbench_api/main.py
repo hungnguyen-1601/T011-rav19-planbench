@@ -92,6 +92,14 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     # Uploaded checkpoints. Separate from the artifact store because the
     # lifecycles differ: artifacts belong to a run, models outlive many.
     app.state.model_storage = LocalModelStorage(settings.model_dir)
+    # Where imported bundles are unpacked to be run. Follows the artifact
+    # root when a caller overrides it, so a test never unpacks somebody's
+    # uploaded code into the developer's checkout.
+    app.state.plugin_install_root = (
+        Path(settings.plugin_dir)
+        if settings.plugin_dir
+        else Path(artifact_dir or settings.artifact_dir) / "plugins"
+    )
     # Decision layer (Phase 6.2). The roots follow `artifact_dir` when a
     # caller overrides it — a test passing its own artifact root must not
     # have selection runs land in the developer's checkout — but an

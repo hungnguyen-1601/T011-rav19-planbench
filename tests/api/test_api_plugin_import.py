@@ -50,7 +50,41 @@ GOOD_MANIFEST = {
     "requires_global_path": True,
 }
 
-PLANNER_SOURCE = "class VFHPlusPlanner:\n    pass\n"
+PLANNER_SOURCE = """import math
+
+
+class VFHPlusPlanner:
+    \"\"\"Enough of a controller to be checked: deterministic, and it
+    reads only the channel the manifest declares.\"\"\"
+
+    def __init__(self, cruise_speed: float = 0.4) -> None:
+        self._cruise = cruise_speed
+        self._path = ()
+
+    @property
+    def name(self):
+        return "vfh_plus"
+
+    @property
+    def control_period(self):
+        return None
+
+    def reset(self, request) -> None:
+        self._path = tuple(request.get("global_path", ()))
+
+    def step(self, request):
+        ranges = _payload(request, "lidar_2d")
+        nearest = min(ranges) if ranges else math.inf
+        speed = self._cruise if nearest > 1.0 else 0.0
+        return {"linear_velocity": speed, "angular_velocity": 0.0}
+
+
+def _payload(request, capability):
+    for envelope in request.get("channels", ()):
+        if envelope.get("capability") == capability:
+            return envelope.get("payload")
+    raise LookupError(capability + " was not granted")
+"""
 
 
 def bundle_zip(
@@ -243,12 +277,8 @@ class TestIdentityBelongsToTheManifest:
 
 
 class TestWhatRegistrationDoesAndDoesNotClaim:
-    def test_a_good_bundle_registers_as_structural_not_loaded(self, client, admin):
-        """`structural` is what reading an archive can conclude. Claiming
-        `loaded` here would be a structural check wearing a behavioural
-        check's name — the conformance run earns that word (P2)."""
+    def test_a_good_bundle_records_what_the_manifest_declared(self, client, admin):
         body = import_bundle(client, admin).json()
-        assert body["validation_status"] == "structural"
         assert body["plugin_id"] == "org.vinai.vfh-plus"
         assert body["role"] == "local"
         assert body["requirements"] == ["lidar_2d"]
