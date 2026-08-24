@@ -23,6 +23,7 @@ for p in PACKAGE_PATHS:
     p_str = str(p)
     if p_str not in sys.path:
         sys.path.insert(0, p_str)
+
 # ZeroGPU requirement: Hugging Face ZeroGPU checks for at least one @spaces.GPU function on startup
 try:
     import spaces
@@ -35,25 +36,23 @@ try:
 except (ImportError, Exception):
     def gpu_compute(fn, *args, **kwargs):
         return fn(*args, **kwargs)
-import gradio as gr
+
+import uvicorn
 from planbench_api.main import create_app
 
-# 1. Create the PlanBench FastAPI application
-fastapi_app = create_app()
+# Create the PlanBench FastAPI application
+app = create_app()
 
-# 2. Create Gradio Blocks
-with gr.Blocks(title="PlanBench API") as _ui:
-    gr.Markdown(
-        """
-        # 🚀 PlanBench Backend API
+@app.get("/")
+def read_root():
+    return {
+        "status": "online",
+        "service": "PlanBench API",
+        "health": "/api/v1/health",
+        "docs": "/docs",
+        "openapi": "/openapi.json",
+    }
 
-        The PlanBench FastAPI backend is active and running on Hugging Face Spaces (ZeroGPU).
-
-        - **Health Check**: [`/api/v1/health`](/api/v1/health)
-        - **Interactive API Docs**: [`/docs`](/docs)
-        - **OpenAPI Schema**: [`/openapi.json`](/openapi.json)
-        """
-    )
-
-# 3. Mount Gradio onto the FastAPI host application at /gradio
-app = gr.mount_gradio_app(fastapi_app, _ui, path="/gradio")
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 7860))
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
