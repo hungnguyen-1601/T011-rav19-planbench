@@ -23,9 +23,6 @@ for p in PACKAGE_PATHS:
     p_str = str(p)
     if p_str not in sys.path:
         sys.path.insert(0, p_str)
-
-from planbench_api.main import create_app
-
 # ZeroGPU requirement: Hugging Face ZeroGPU checks for at least one @spaces.GPU function on startup
 try:
     import spaces
@@ -38,6 +35,9 @@ try:
 except (ImportError, Exception):
     def gpu_compute(fn, *args, **kwargs):
         return fn(*args, **kwargs)
+
+import uvicorn
+from planbench_api.main import create_app
 
 # Create the PlanBench FastAPI application
 fastapi_app = create_app()
@@ -59,14 +59,11 @@ try:
             """
         )
 
-    # Mount FastAPI application with Gradio
-    app = gr.mount_gradio_app(fastapi_app, demo, path="/")
-    # Gradio SDK on HF Spaces runs app.py and expects demo.launch() to block.
-    # This must NOT be inside if __name__ == "__main__" because HF SDK imports
-    # the file directly and needs the server to stay running.
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    # Mount FastAPI application with Gradio UI at /ui
+    app = gr.mount_gradio_app(fastapi_app, demo, path="/ui")
 except ImportError:
-    # Fallback: no Gradio installed, run FastAPI directly with uvicorn
-    import uvicorn
     app = fastapi_app
-    uvicorn.run(app, host="0.0.0.0", port=7860, log_level="info")
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 7860))
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
