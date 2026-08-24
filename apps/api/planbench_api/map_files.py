@@ -51,8 +51,16 @@ def materialise_map(stored: StoredMap, map_root: Path) -> tuple[str, str]:
     directory.mkdir(parents=True, exist_ok=True)
 
     image_bytes, sidecar = dump_map_server(stored.map_data, image_name=f"{stem}.pgm")
-    (directory / f"{stem}.pgm").write_bytes(image_bytes)
-    (directory / f"{stem}.yaml").write_text(sidecar, encoding="utf-8")
+    pgm_path = directory / f"{stem}.pgm"
+    yaml_path = directory / f"{stem}.yaml"
+    pgm_path.write_bytes(image_bytes)
+    yaml_path.write_text(sidecar, encoding="utf-8")
+    _log.warning(
+        "materialise_map: wrote %s (exists=%s size=%s)",
+        pgm_path,
+        pgm_path.is_file(),
+        pgm_path.stat().st_size if pgm_path.is_file() else "N/A",
+    )
     return f"maps/custom/{stem}.pgm", f"maps/custom/{stem}.yaml"
 
 
