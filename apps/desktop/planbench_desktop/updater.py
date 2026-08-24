@@ -19,10 +19,14 @@ last one is the one that matters: everything else is convenience, and
 that is the check standing between a download and running an unknown
 executable with the user's privileges.
 
-The token exists because the repository is private. It is a read-only,
-repository-scoped credential in the data directory's `.env`; without one
-the updater does nothing at all and says so once in the log, which is
-the correct behaviour for a build somebody copied to an offline machine.
+The releases are public, so no credential is needed and none is asked
+for: an installation checks anonymously and updates itself. A token in
+the data directory's `.env` is honoured when present — it raises the
+anonymous rate limit, and it is what would keep this working if the
+repository were ever made private — but requiring one would have meant
+every person who installed the app had to paste a credential before it
+would ever notice a new version, which is the same as not having an
+updater at all.
 """
 
 from __future__ import annotations
@@ -91,10 +95,18 @@ def parse_version(text: str) -> tuple[int, ...]:
     return tuple(parts) or (0,)
 
 
-def _request(url: str, token: str, *, accept: str) -> bytes:
+def _request(url: str, token: str = "", *, accept: str) -> bytes:
+    """Fetch ``url``, signed only if there is a credential to sign with.
+
+    An empty `Authorization: Bearer` header is worse than no header:
+    GitHub rejects a malformed credential with 401 rather than falling
+    back to anonymous access, so sending one unconditionally would turn
+    "no token configured" into "updates are broken".
+    """
     request = urllib.request.Request(url)  # noqa: S310 - https, built from constants
     request.add_header("Accept", accept)
-    request.add_header("Authorization", f"Bearer {token}")
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
     request.add_header("X-GitHub-Api-Version", "2022-11-28")
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT_S) as answer:  # noqa: S310
@@ -106,7 +118,12 @@ def _request(url: str, token: str, *, accept: str) -> bytes:
 
 
 def token() -> str:
-    """The read-only credential, or empty when there is none."""
+    """An optional read-only credential. Empty is the normal case.
+
+    Worth setting on a machine that opens the app many times a day —
+    anonymous GitHub API access is capped per IP — and required only if
+    the repository stops being public.
+    """
     return os.environ.get(TOKEN_ENV, "").strip()
 
 
@@ -235,9 +252,10 @@ def offer(current: str, cache: Path, relaunch: list[str]) -> bool:
     version of it.
     """
     credential = token()
-    if not credential:
-        logger.info("no %s configured; not checking for updates", TOKEN_ENV)
-        return False
+    logger.info(
+        "checking for updates (%s)",
+        "signed in" if credential else "anonymously",
+    )
     try:
         release = latest_release(current, credential)
         if release is None:

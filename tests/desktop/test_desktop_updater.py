@@ -31,17 +31,23 @@ def api(monkeypatch):
     """Stand in for GitHub. Returns the recorder the test configures."""
     responses: dict[str, bytes] = {}
     asked: list[str] = []
+    credentials: list[str] = []
 
-    def fake_request(url: str, token: str, *, accept: str) -> bytes:
+    def fake_request(url: str, token: str = "", *, accept: str) -> bytes:
         asked.append(url)
+        credentials.append(token)
         for key, value in responses.items():
             if key in url:
                 return value
         raise updater.UpdateError(f"no stub for {url}")
 
     monkeypatch.setattr(updater, "_request", fake_request)
-    monkeypatch.setenv(updater.TOKEN_ENV, "test-token")
-    return type("Api", (), {"responses": responses, "asked": asked})()
+    monkeypatch.delenv(updater.TOKEN_ENV, raising=False)
+    return type(
+        "Api",
+        (),
+        {"responses": responses, "asked": asked, "credentials": credentials},
+    )()
 
 
 class TestVersionComparison:
@@ -165,16 +171,33 @@ class TestDownloading:
 
 
 class TestTheFlow:
-    def test_without_a_token_it_does_nothing_and_says_so(self, monkeypatch, tmp_path) -> None:
-        """The right behaviour for a machine deliberately kept offline."""
-        monkeypatch.delenv(updater.TOKEN_ENV, raising=False)
-        called: list[str] = []
-        monkeypatch.setattr(
-            updater, "latest_release", lambda *a, **k: called.append("checked") or None
-        )
+    def test_it_checks_without_a_token_because_the_releases_are_public(
+        self, api, monkeypatch, tmp_path
+    ) -> None:
+        """The default install has no credential, and must still update.
 
-        assert updater.offer("0.1.0", tmp_path, ["python"]) is False
-        assert called == []
+        Requiring one would mean every person who installed the app had
+        to paste a token before it would ever notice a new version —
+        indistinguishable, from their side, from having no updater.
+        """
+        monkeypatch.delenv(updater.TOKEN_ENV, raising=False)
+        api.responses["/releases"] = json.dumps([_release_payload("desktop-v0.9.0")]).encode()
+        monkeypatch.setattr(updater, "ask", lambda release: False)
+
+        updater.offer("0.1.0", tmp_path, ["python"])
+
+        assert any("/releases" in url for url in api.asked)
+        assert api.credentials == [""]
+
+    def test_a_token_is_used_when_one_is_configured(self, api, monkeypatch, tmp_path) -> None:
+        """Honoured, not required: it raises the anonymous rate limit and
+        is what would keep this working if the repository went private."""
+        monkeypatch.setenv(updater.TOKEN_ENV, "  configured-token  ")
+        api.responses["/releases"] = json.dumps([]).encode()
+
+        updater.offer("0.1.0", tmp_path, ["python"])
+
+        assert api.credentials == ["configured-token"]
 
     def test_a_network_failure_never_stops_the_app_opening(self, api, tmp_path) -> None:
         """An updater that can prevent the application from starting is a

@@ -69,17 +69,21 @@ again next time. Accepting downloads the installer, **verifies it
 against the hash the release publishes**, closes the app, installs, and
 reopens it.
 
-The repository is private, so the check needs a read-only GitHub token
-in `%LOCALAPPDATA%\PlanBench\.env`:
+Nothing to configure. Releases are public, so the check runs
+anonymously and every installation updates itself — you send the
+download link once, and later versions arrive on their own.
+
+A read-only GitHub token is honoured if you put one in
+`%LOCALAPPDATA%\PlanBench\.env`:
 
 ```
 PLANBENCH_UPDATE_TOKEN=github_pat_...
 ```
 
-A fine-grained token scoped to this repository with **Contents:
-read-only** is enough. Without one the app never checks and says so once
-in the log — which is the right behaviour for a machine deliberately
-kept off the network.
+It is worth doing only on a machine that opens the app many times a day
+— anonymous GitHub API access is capped per IP address — or if the
+repository ever stops being public. A machine with no network reaches
+neither; the check fails, one line goes to the log, and the app opens.
 
 ### When it does not open
 

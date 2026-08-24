@@ -69,9 +69,9 @@ PLANBENCH_DATABASE_URL=sqlite:///{database}
 # Filled in by the Settings page. A key here is read at startup.
 # OPENAI_API_KEY=
 
-# A read-only, repository-scoped GitHub token. Without one this
-# installation never checks for updates, which is the right behaviour
-# for a machine that is meant to stay on the version it has.
+# Updates are checked anonymously; releases are public and no
+# credential is needed. Setting a read-only GitHub token here only
+# raises the rate limit for a machine that opens the app very often.
 # PLANBENCH_UPDATE_TOKEN=
 PLANBENCH_AGENT_PROVIDER=auto
 PLANBENCH_AGENT_MODEL=o4-mini
