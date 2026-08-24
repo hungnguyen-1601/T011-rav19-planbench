@@ -43,7 +43,7 @@ from planbench_api.main import create_app
 # 1. Create the PlanBench FastAPI application
 fastapi_app = create_app()
 
-# 2. Create Gradio Blocks (MUST be named "demo" or "blocks" so HF ZeroGPU auto-launcher finds it)
+# 2. Create Gradio Blocks
 with gr.Blocks(title="PlanBench API") as demo:
     gr.Markdown(
         """
@@ -57,12 +57,12 @@ with gr.Blocks(title="PlanBench API") as demo:
         """
     )
 
-# 3. Mount Gradio onto the FastAPI app (FastAPI will handle all API routes, Gradio handles /)
+# 3. Mount Gradio onto the FastAPI app (FastAPI becomes the ASGI host)
 app = gr.mount_gradio_app(fastapi_app, demo, path="/")
 
-# 4. Overwrite demo.app so that when HF ZeroGPU automatically calls demo.launch(), it uses our FastAPI app!
+# 4. Provide the host app back to Gradio so demo.launch() serves the FastAPI app
 demo.app = app
 
-# Note: DO NOT add `if __name__ == "__main__": demo.launch()`.
-# Hugging Face ZeroGPU runtime automatically finds the `demo` variable and launches it.
-# Adding it manually causes port 7860/7861 conflicts.
+if __name__ == "__main__":
+    # 5. Launch without hardcoding ports so Hugging Face ZeroGPU proxy can assign PORT automatically
+    demo.launch()
