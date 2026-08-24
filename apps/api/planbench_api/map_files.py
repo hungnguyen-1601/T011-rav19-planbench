@@ -71,7 +71,7 @@ def ensure_custom_map_files(
         return False
 
     full_path = map_root / map_rel_path
-    _log.info(
+    _log.warning(
         "ensure_custom_map_files: checking map_root=%s rel=%s full_path=%s exists=%s repo=%s",
         map_root,
         map_rel_path,
@@ -96,7 +96,7 @@ def ensure_custom_map_files(
     try:
         stored_map = map_repo.get(map_id_candidate)
         materialise_map(stored_map, map_root)
-        _log.info("ensure_custom_map_files: recovered map %s from DB (direct id)", map_rel_path)
+        _log.warning("ensure_custom_map_files: recovered map %s from DB (direct id)", map_rel_path)
         return True
     except Exception as exc:
         _log.debug("ensure_custom_map_files: direct get(%s) failed: %s", map_id_candidate, exc)
@@ -108,7 +108,7 @@ def ensure_custom_map_files(
             )
             if safe_id == map_id_candidate or stored.id == map_id_candidate:
                 materialise_map(stored, map_root)
-                _log.info(
+                _log.warning(
                     "ensure_custom_map_files: recovered map %s from DB (list scan)", map_rel_path
                 )
                 return True
