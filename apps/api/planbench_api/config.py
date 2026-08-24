@@ -150,6 +150,15 @@ class Settings(BaseSettings):
     # API needs to be told where those files are, not guess.
     map_root: str = "."
 
+    # The built web UI, served by this process when set.
+    #
+    # Empty means "serve the API alone", which is what every deployment
+    # with a separate web container does and what the dev stack does.
+    # The desktop build sets it: one process, one origin, and therefore
+    # no CORS to configure, no second port to find free, and no API URL
+    # baked into the JavaScript at build time.
+    web_dir: str = ""
+
     # Trace and run roots for selections started through the API.
     #
     # **Empty means "follow the artifact root", and it is left empty on

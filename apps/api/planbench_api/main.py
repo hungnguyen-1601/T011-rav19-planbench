@@ -53,6 +53,7 @@ from planbench_api.routers import (
 from planbench_api.routers import (
     settings as settings_router,
 )
+from planbench_api.static_site import SpaStaticFiles
 from planbench_api.worker import JobQueue
 from planbench_tracking import build_tracker
 
@@ -134,7 +135,14 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
         app.state.decision_map_root = _map_root_candidate
     except OSError:
         import logging as _logging
-        _fallback = Path("/tmp/planbench_maps")
+        import tempfile
+
+        # `tempfile.gettempdir()`, not the literal "/tmp": on Windows
+        # that literal is a *relative* path once resolved against the
+        # drive of the working directory, so the fallback quietly created
+        # C:\tmp\ and the desktop build wrote its custom maps somewhere
+        # nobody would look for them.
+        _fallback = Path(tempfile.gettempdir()) / "planbench_maps"
         (_fallback / "maps" / "custom").mkdir(parents=True, exist_ok=True)
         _logging.getLogger("planbench.api").warning(
             "map_root %s is not writable; falling back to %s",
@@ -235,6 +243,20 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     app.include_router(agent.router, prefix=API_PREFIX)
     app.include_router(settings_router.router, prefix=API_PREFIX)
     app.include_router(ws.router)  # websockets are not under /api/v1
+    # Last, and the position is the whole of it: a mount at "/" matches
+    # every path, so registering it earlier would answer /api/v1 and
+    # /ws with the web UI's 404 page. Pinned by
+    # test_mounting_the_web_ui_does_not_swallow_the_api.
+    if settings.web_dir:
+        web_root = Path(settings.web_dir)
+        if web_root.is_dir():
+            app.mount("/", SpaStaticFiles(directory=web_root, html=True), name="web")
+        else:
+            logging.getLogger("planbench.api").warning(
+                "PLANBENCH_WEB_DIR is set to %s, which is not a directory; "
+                "serving the API without a web UI",
+                web_root,
+            )
     return app
 
 
