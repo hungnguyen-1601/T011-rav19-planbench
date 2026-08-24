@@ -118,7 +118,27 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     # temporary directory, every test re-simulated episodes another test
     # had already run.
     decision_root = Path(artifact_dir) if artifact_dir else Path(settings.artifact_dir)
-    app.state.decision_map_root = Path(settings.map_root)
+    _map_root_candidate = Path(settings.map_root).resolve()
+    # Verify the map root is writable (container filesystems like Render's
+    # can be read-only for /app while /tmp is always writable). Fall back
+    # to a well-known writable location so custom maps materialise correctly.
+    try:
+        _probe = _map_root_candidate / "maps" / "custom"
+        _probe.mkdir(parents=True, exist_ok=True)
+        _test_file = _probe / ".write_probe"
+        _test_file.write_text("ok", encoding="utf-8")
+        _test_file.unlink()
+        app.state.decision_map_root = _map_root_candidate
+    except OSError:
+        import logging as _logging
+        _fallback = Path("/tmp/planbench_maps")
+        (_fallback / "maps" / "custom").mkdir(parents=True, exist_ok=True)
+        _logging.getLogger("planbench.api").warning(
+            "map_root %s is not writable; falling back to %s",
+            _map_root_candidate,
+            _fallback,
+        )
+        app.state.decision_map_root = _fallback
     app.state.decision_trace_dir = (
         Path(settings.decision_trace_dir)
         if settings.decision_trace_dir

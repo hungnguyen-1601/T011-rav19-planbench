@@ -8,32 +8,35 @@
 # Exits 0 silently if no Python is found — hooks must never block the AI tool.
 set -u
 
-# The repo venv first, when it exists. Not a preference — the hooks read
-# `.env` through python-dotenv, which is installed there and nowhere
-# else. A system python3 imports nothing, `submit_log.py` falls through
-# its `except ImportError: pass`, and every log is skipped with a message
-# that names the missing *variable* rather than the missing package. That
-# is how 263 entries sat unsent while the hook printed a tidy reason.
-if [ -x "$(git rev-parse --show-toplevel 2>/dev/null)/.venv/bin/python" ]; then
-  PY="$(git rev-parse --show-toplevel)/.venv/bin/python"
-elif [ -x "$(git rev-parse --show-toplevel 2>/dev/null)/.venv/Scripts/python.exe" ]; then
-  PY="$(git rev-parse --show-toplevel)/.venv/Scripts/python.exe"
-elif command -v python3 >/dev/null 2>&1; then
+_test_py() {
+  [ -n "${1:-}" ] && "$@" -c "import sys" >/dev/null 2>&1
+}
+
+PY=""
+TOPLEVEL="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+
+if [ -n "$TOPLEVEL" ] && [ -x "$TOPLEVEL/.venv/bin/python" ] && _test_py "$TOPLEVEL/.venv/bin/python"; then
+  PY="$TOPLEVEL/.venv/bin/python"
+elif [ -n "$TOPLEVEL" ] && [ -x "$TOPLEVEL/.venv/Scripts/python.exe" ] && _test_py "$TOPLEVEL/.venv/Scripts/python.exe"; then
+  PY="$TOPLEVEL/.venv/Scripts/python.exe"
+elif command -v python3 >/dev/null 2>&1 && _test_py python3; then
   PY=python3
-elif command -v python >/dev/null 2>&1; then
+elif command -v python >/dev/null 2>&1 && _test_py python; then
   PY=python
-elif command -v py >/dev/null 2>&1; then
+elif command -v py >/dev/null 2>&1 && _test_py py -3; then
   PY="py -3"
 else
   # PATH lookup failed — probe standard Windows install locations.
-  PY=""
   shopt -s nullglob 2>/dev/null || true
   for cand in \
     /c/Users/*/AppData/Local/Programs/Python/Python*/python.exe \
     "/c/Program Files/Python"*/python.exe \
     "/c/Program Files (x86)/Python"*/python.exe \
     /c/Python*/python.exe; do
-    if [ -x "$cand" ]; then PY="$cand"; break; fi
+    if [ -x "$cand" ] && _test_py "$cand"; then
+      PY="$cand"
+      break
+    fi
   done
   shopt -u nullglob 2>/dev/null || true
   [ -n "$PY" ] || exit 0

@@ -35,6 +35,8 @@ COPY maps/ /app/maps/
 COPY profiles/ /app/profiles/
 COPY configs/ /app/configs/
 COPY ml/ /app/ml/
+COPY contracts/ /app/contracts/
+COPY schemas/ /app/schemas/
 
 ENV PYTHONPATH=/app/packages/schemas:/app/packages/planning:/app/packages/metrics:/app/packages/benchmark:/app/packages/decision:/app/packages/explanation:/app/packages/plugin_sdk:/app/services/simulator:/app/services/tracking:/app/services/agent_service:/app/ml:/app/apps/api
 
