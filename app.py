@@ -58,10 +58,10 @@ with gr.Blocks(title="PlanBench API") as demo:
 # 3. Create the underlying Gradio FastAPI app
 demo_app = gr.routes.App.create_app(demo)
 
-# 4. Copy state and prepend all FastAPI routes so they are matched before Gradio catch-all
+# 4. Mount PlanBench FastAPI application onto Gradio app
+demo_app.mount("/api/v1", fastapi_app)
+demo_app.mount("/api", fastapi_app)
 demo_app.state = fastapi_app.state
-for route in reversed(fastapi_app.routes):
-    demo_app.routes.insert(0, route)
 
 demo.app = demo_app
 app = demo_app
