@@ -207,3 +207,5 @@ uv.lock
 # the stale one has no way to tell which is current. Delete it once nothing
 # is being copied back out of it.
 README.old.md
+build/
+dist/

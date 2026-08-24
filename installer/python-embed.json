@@ -1,0 +1,24 @@
+{
+  "_comment": [
+    "The interpreter the desktop build ships. Pinned by hash, not by URL.",
+    "",
+    "`sha256` is empty until a person fills it in, and the build refuses to",
+    "continue while it is. That is deliberate: an unpinned download is a",
+    "supply chain that anybody who can answer for python.org owns, and a",
+    "hash the build computed for itself would pin nothing at all.",
+    "",
+    "To fill it in: run scripts/build_desktop.ps1, let it fail, and check",
+    "the hash it prints against the sha256 published beside the file on",
+    "https://www.python.org/downloads/windows/ before pasting it here.",
+    "",
+    "3.12 rather than 3.13: requires-python is >=3.12 and every wheel in",
+    "requirements.txt is pinned to a version tested there. The machine that",
+    "runs pip --target must be the same minor version — a mismatch installs",
+    "C extensions the shipped interpreter cannot load, and the error names",
+    "the module rather than the cause."
+  ],
+  "version": "3.12.11",
+  "python_tag": "python312",
+  "url": "https://www.python.org/ftp/python/3.12.11/python-3.12.11-embed-amd64.zip",
+  "sha256": ""
+}

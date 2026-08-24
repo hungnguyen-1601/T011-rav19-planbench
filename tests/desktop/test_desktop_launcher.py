@@ -127,6 +127,37 @@ class TestSubsequentRuns:
 
 
 class TestMigration:
+    def test_provisioning_alone_is_enough_to_migrate(self, data_root, monkeypatch) -> None:
+        """No `setenv` here, and that absence is the test.
+
+        `alembic/env.py` reads ``PLANBENCH_DATABASE_URL`` from the process
+        environment and raises when it is unset, while everything else in
+        the app reads `.env` through pydantic-settings. So writing the URL
+        to the file is *not* the same as setting it — and the first
+        version of this launcher wrote the file, passed a test that set
+        the variable by hand, and failed on a real first launch.
+        """
+        monkeypatch.delenv("PLANBENCH_DATABASE_URL", raising=False)
+        provisioned = provision()
+
+        assert os.environ["PLANBENCH_DATABASE_URL"].startswith("sqlite:///")
+        migrate.upgrade(paths.INSTALL_ROOT, provisioned.root / "planbench.db")
+
+        with sqlite3.connect(provisioned.root / "planbench.db") as connection:
+            names = {
+                row[0]
+                for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            }
+        assert "alembic_version" in names
+
+    def test_a_url_already_exported_wins_over_the_file(self, data_root, monkeypatch) -> None:
+        """Matching `load_provider_keys`: the shell is the deliberate one."""
+        monkeypatch.setenv("PLANBENCH_DATABASE_URL", "sqlite:///chosen-by-hand.db")
+
+        provision()
+
+        assert os.environ["PLANBENCH_DATABASE_URL"] == "sqlite:///chosen-by-hand.db"
+
     def test_a_fresh_database_reaches_head(self, data_root, monkeypatch) -> None:
         """The launcher runs Alembic itself; nothing else will.
 

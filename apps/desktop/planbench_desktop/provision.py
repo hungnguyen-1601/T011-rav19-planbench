@@ -83,16 +83,44 @@ class Provisioned:
         self.password = password
 
 
-def _read_seed_account(env_path: Path) -> tuple[str, str]:
-    """The nickname and password already in `.env`, if it has them."""
+def _env_entries(env_path: Path) -> dict[str, str]:
+    """The plain NAME=value lines of `.env`, comments and blanks skipped."""
+    entries: dict[str, str] = {}
     for line in env_path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
-        if not stripped.startswith("PLANBENCH_SEED_USERS="):
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
-        entry = stripped.split("=", 1)[1].split(",")[0]
-        if ":" in entry:
-            nickname, password = entry.split(":", 1)
-            return nickname.strip(), password.strip()
+        name, value = stripped.split("=", 1)
+        entries[name.strip()] = value.strip()
+    return entries
+
+
+def _export_for_alembic(env_path: Path) -> None:
+    """Put the database URL where Alembic will look for it.
+
+    `alembic/env.py` reads ``PLANBENCH_DATABASE_URL`` from the *process
+    environment* and raises when it is unset. Everything else reads
+    `.env` through pydantic-settings, so this one variable is the only
+    place where writing the file is not the same as setting the value —
+    and the failure is at first launch, on the migration, before the
+    window ever opens.
+
+    An existing value wins, matching :func:`load_provider_keys`: a URL
+    exported deliberately for one run should not be replaced by a file.
+    """
+    if os.environ.get("PLANBENCH_DATABASE_URL"):
+        return
+    url = _env_entries(env_path).get("PLANBENCH_DATABASE_URL", "")
+    if url:
+        os.environ["PLANBENCH_DATABASE_URL"] = url
+
+
+def _read_seed_account(env_path: Path) -> tuple[str, str]:
+    """The nickname and password already in `.env`, if it has them."""
+    entry = _env_entries(env_path).get("PLANBENCH_SEED_USERS", "").split(",")[0]
+    if ":" in entry:
+        nickname, password = entry.split(":", 1)
+        return nickname.strip(), password.strip()
     return DEFAULT_NICKNAME, ""
 
 
@@ -162,6 +190,7 @@ def provision() -> Provisioned:
     # the previous one.
     os.environ["PLANBENCH_MAP_ROOT"] = str(root)
     os.environ["PLANBENCH_WEB_DIR"] = str(paths.web_root())
+    _export_for_alembic(env_path)
 
     return Provisioned(root, first_run, nickname, credential)
 
