@@ -257,6 +257,56 @@ class ModelUsageRow(Base):
     )
 
 
+class PluginBundleRow(Base):
+    """One imported algorithm bundle.
+
+    A sibling of ``models`` rather than a row in it. The two share
+    storage and a status vocabulary and nothing else: a model is weights
+    for a controller the platform already has, a bundle is a controller
+    it has never seen, and the columns that describe one describe
+    nothing about the other.
+
+    The archive itself never lands here — only `storage_key` plus two
+    checksums. `manifest_checksum` identifies what the author declared,
+    `checksum` identifies the bytes they uploaded, and a candidate keyed
+    on the second is a candidate keyed on the code that actually ran.
+    """
+
+    __tablename__ = "plugin_bundles"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    version: Mapped[str] = mapped_column(String(40), nullable=False, default="1")
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    plugin_id: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    plugin_version: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="local")
+    entry_point: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    manifest: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
+    manifest_checksum: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    package_dir: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    storage_key: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    original_filename: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    uploaded_by_user_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False, default="")
+    robot_profile_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    validation_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    validation_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+
+    __table_args__ = (
+        Index("ix_plugin_bundles_owner", "uploaded_by_user_id"),
+        Index("ix_plugin_bundles_status", "status", "validation_status"),
+        # Identity is the manifest's, not the display name's: two uploads
+        # claiming one plugin version are two answers to "what produced
+        # this result?", however differently they are labelled.
+        UniqueConstraint("plugin_id", "plugin_version", name="uq_plugin_bundles_identity"),
+    )
+
+
 class ConversationRow(Base):
     """One chat with the assistant."""
 

@@ -21,6 +21,7 @@ from planbench_api.db.models import (
     ModelDocumentRow,
     ModelRow,
     ModelUsageRow,
+    PluginBundleRow,
     RobotProfileRow,
 )
 from planbench_api.db.session import SessionFactory
@@ -36,6 +37,7 @@ from planbench_api.model_registry import (
     RobotProfile,
     ValidationStatus,
 )
+from planbench_api.plugin_registry import PluginBundleRecord
 from planbench_api.repositories import new_id
 
 
@@ -344,7 +346,135 @@ def _to_document(row: ModelDocumentRow) -> ModelDocument:
     )
 
 
+class SqlPluginBundleRepository:
+    """Imported algorithm bundles, in SQL.
+
+    No ``delete``, matching the in-memory repository and for the same
+    reason: a bundle is what a benchmark ran, and deleting the row turns
+    those measurements into records of nothing.
+    """
+
+    def __init__(self, sessions: SessionFactory) -> None:
+        self._sessions = sessions
+
+    def _require_unique(self, session: Session, record: PluginBundleRecord) -> None:
+        """The readable half of the (plugin_id, plugin_version) rule.
+
+        The unique index is the guarantee; this is the explanation.
+        """
+        clash = session.scalars(
+            select(PluginBundleRow).where(
+                PluginBundleRow.plugin_id == record.plugin_id,
+                PluginBundleRow.plugin_version == record.plugin_version,
+                PluginBundleRow.id != record.id,
+            )
+        ).first()
+        if clash is not None:
+            raise RegistryError(
+                f"{record.plugin_id!r} version {record.plugin_version!r} is already "
+                "imported; publish a new version in the manifest rather than "
+                "replacing what a benchmark may have run"
+            )
+
+    def create(self, record: PluginBundleRecord) -> PluginBundleRecord:
+        stamp = now_iso()
+        bundle_id = record.id or new_id()
+        with self._sessions.begin() as session:
+            self._require_unique(session, record.model_copy(update={"id": bundle_id}))
+            row = PluginBundleRow(
+                id=bundle_id,
+                name=record.name,
+                version=record.version,
+                description=record.description,
+                plugin_id=record.plugin_id,
+                plugin_version=record.plugin_version,
+                role=record.role,
+                entry_point=record.entry_point,
+                manifest=record.manifest,
+                manifest_checksum=record.manifest_checksum,
+                package_dir=record.package_dir,
+                storage_key=record.storage_key,
+                original_filename=record.original_filename,
+                file_size=record.file_size,
+                checksum=record.checksum,
+                uploaded_by_user_id=record.uploaded_by_user_id,
+                robot_profile_id=record.robot_profile_id,
+                status=record.status.value,
+                validation_status=record.validation_status.value,
+                validation_message=record.validation_message,
+                created_at=record.created_at or stamp,
+                updated_at=stamp,
+            )
+            session.add(row)
+            session.flush()
+            return _to_bundle(row)
+
+    def get(self, bundle_id: str) -> PluginBundleRecord:
+        with self._sessions.begin() as session:
+            return _to_bundle(_require(session, PluginBundleRow, bundle_id, "algorithm bundle"))
+
+    def save(self, record: PluginBundleRecord) -> PluginBundleRecord:
+        with self._sessions.begin() as session:
+            row = _require(session, PluginBundleRow, record.id, "algorithm bundle")
+            self._require_unique(session, record)
+            row.name = record.name
+            row.version = record.version
+            row.description = record.description
+            row.robot_profile_id = record.robot_profile_id
+            row.status = record.status.value
+            row.validation_status = record.validation_status.value
+            row.validation_message = record.validation_message
+            row.updated_at = now_iso()
+            session.flush()
+            return _to_bundle(row)
+
+    def list(self) -> list[PluginBundleRecord]:
+        with self._sessions.begin() as session:
+            rows = session.scalars(
+                select(PluginBundleRow).order_by(PluginBundleRow.created_at.desc())
+            ).all()
+            return [_to_bundle(row) for row in rows]
+
+    def find_by_plugin(self, plugin_id: str, plugin_version: str) -> PluginBundleRecord | None:
+        with self._sessions.begin() as session:
+            row = session.scalars(
+                select(PluginBundleRow).where(
+                    PluginBundleRow.plugin_id == plugin_id,
+                    PluginBundleRow.plugin_version == plugin_version,
+                )
+            ).first()
+            return _to_bundle(row) if row is not None else None
+
+
+def _to_bundle(row: PluginBundleRow) -> PluginBundleRecord:
+    return PluginBundleRecord(
+        id=row.id,
+        name=row.name,
+        version=row.version,
+        description=row.description or "",
+        plugin_id=row.plugin_id or "",
+        plugin_version=row.plugin_version or "",
+        role=row.role or "local",
+        entry_point=row.entry_point or "",
+        manifest=row.manifest or {},
+        manifest_checksum=row.manifest_checksum or "",
+        package_dir=row.package_dir or "",
+        storage_key=row.storage_key or "",
+        original_filename=row.original_filename or "",
+        file_size=row.file_size,
+        checksum=row.checksum or "",
+        uploaded_by_user_id=row.uploaded_by_user_id or "",
+        robot_profile_id=row.robot_profile_id or "",
+        status=ModelStatus(row.status),
+        validation_status=ValidationStatus(row.validation_status),
+        validation_message=row.validation_message or "",
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
 __all__ = [
     "SqlModelRepository",
+    "SqlPluginBundleRepository",
     "SqlRobotProfileRepository",
 ]

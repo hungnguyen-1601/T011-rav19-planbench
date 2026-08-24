@@ -41,6 +41,7 @@ from planbench_api.routers import (
     library,
     maps,
     models,
+    plugins,
     reviews,
     scenarios,
     simulations,
@@ -179,6 +180,13 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     app.include_router(reviews.router, prefix=API_PREFIX)
     app.include_router(maps.router, prefix=API_PREFIX)
     app.include_router(scenarios.router, prefix=API_PREFIX)
+    # Before `algorithms`, and the order is load-bearing: that router
+    # owns `/algorithms/{algorithm_id}`, which matches the literal path
+    # `/algorithms/plugins` too. FastAPI takes the first route that
+    # matches, so registering the catalogue first would answer every
+    # plugin request with "unknown algorithm 'plugins'". Pinned by
+    # test_the_plugin_routes_are_not_swallowed_by_the_catalogue.
+    app.include_router(plugins.router, prefix=API_PREFIX)
     app.include_router(algorithms.router, prefix=API_PREFIX)
     app.include_router(tuning.router, prefix=API_PREFIX)
     app.include_router(simulations.router, prefix=API_PREFIX)
