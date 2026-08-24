@@ -23,6 +23,7 @@ export type IconName =
   | "sparkles"
   | "inbox"
   | "info"
+  | "settings"
   | "user"
   | "menu"
   | "close"
@@ -103,6 +104,12 @@ const PATHS: Record<IconName, React.ReactNode> = {
     <>
       <circle cx="12" cy="12" r="9" />
       <path d="M12 11v5M12 8h.01" />
+    </>
+  ),
+  settings: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2.5 13.4 5a7.6 7.6 0 0 1 2 .8l2.7-.7 1.8 3.1-1.8 2a7.6 7.6 0 0 1 0 1.6l1.8 2-1.8 3.1-2.7-.7a7.6 7.6 0 0 1-2 .8L12 21.5l-1.4-2.5a7.6 7.6 0 0 1-2-.8l-2.7.7-1.8-3.1 1.8-2a7.6 7.6 0 0 1 0-1.6l-1.8-2 1.8-3.1 2.7.7a7.6 7.6 0 0 1 2-.8Z" />
     </>
   ),
   user: (

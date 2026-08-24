@@ -5369,3 +5369,40 @@ tr.is-previewing > td { background: var(--accent-soft); }
   .agent-dock { right: var(--space-2); bottom: var(--space-2); left: var(--space-2); }
   .agent-dock-panel { width: 100%; }
 }
+
+/* ---------- Settings ---------- */
+
+/* The state line is a panel rather than a strip so it reads as a claim
+   of the same weight as the two panels below it. What is *answering*
+   and what is *configured* are equally load-bearing facts, and a thin
+   banner above the form would file the first as decoration. */
+.settings-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+.settings-status p { margin: 0; font-size: 12px; }
+
+/* Panels here carry a short note under each control. `.muted` gives it
+   the colour; this gives it the spacing, so the note sits with the
+   field it is about rather than floating between two of them. */
+.settings-note {
+  margin: var(--space-2) 0 0;
+  font-size: 12px;
+}
+
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* Beside the input, not above the form: this one is about the value
+   that was typed, and the reader has to see which field it means. */
+.settings-field-error {
+  margin: var(--space-2) 0 0;
+  font-size: 12px;
+  color: var(--err);
+}

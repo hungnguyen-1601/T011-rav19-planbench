@@ -18,9 +18,20 @@ import Link from "next/link";
 
 import { Avatar } from "./Avatar";
 import { Icon, type IconName } from "./Icon";
-import { NAV_SECTIONS, isActive } from "@/lib/navigation";
+import { NAV_SECTIONS, isActive, type NavItem } from "@/lib/navigation";
 import type { SessionUser } from "@/lib/auth";
 import type { Translator } from "@/lib/i18n";
+
+/** The entries this reader is offered.
+ *
+ * An `admin` entry is dropped for everyone else. Cosmetic and stated as
+ * such — the API refuses the write either way — but a rail that lists a
+ * page whose every control answers 403 is advertising a door most of
+ * the people reading it cannot open.
+ */
+function visible(items: readonly NavItem[], user: SessionUser | null): NavItem[] {
+  return items.filter((item) => !item.admin || user?.is_admin);
+}
 
 export function Sidebar({
   pathname,
@@ -59,7 +70,7 @@ export function Sidebar({
         {NAV_SECTIONS.map((section) => (
           <div className="sidebar-section" key={section.titleKey}>
             <p className="sidebar-section-title">{t(section.titleKey)}</p>
-            {section.items.map((item) => {
+            {visible(section.items, user).map((item) => {
               const label = t(item.labelKey);
               const description = item.descriptionKey ? t(item.descriptionKey) : null;
               const active = isActive(pathname, item.href);

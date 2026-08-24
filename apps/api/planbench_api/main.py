@@ -50,6 +50,9 @@ from planbench_api.routers import (
     users,
     ws,
 )
+from planbench_api.routers import (
+    settings as settings_router,
+)
 from planbench_api.worker import JobQueue
 from planbench_tracking import build_tracker
 
@@ -230,6 +233,7 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     app.include_router(models.router, prefix=API_PREFIX)
     app.include_router(decisions.router, prefix=API_PREFIX)
     app.include_router(agent.router, prefix=API_PREFIX)
+    app.include_router(settings_router.router, prefix=API_PREFIX)
     app.include_router(ws.router)  # websockets are not under /api/v1
     return app
 

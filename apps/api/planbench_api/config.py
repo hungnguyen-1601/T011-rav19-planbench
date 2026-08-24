@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
 
@@ -148,6 +149,7 @@ class Settings(BaseSettings):
     # storing the profile in a database did not move the `.pgm` — so the
     # API needs to be told where those files are, not guess.
     map_root: str = "."
+
     # Trace and run roots for selections started through the API.
     #
     # **Empty means "follow the artifact root", and it is left empty on
@@ -240,3 +242,81 @@ def load_provider_keys(env_file: str | Path = ".env") -> tuple[str, ...]:
             os.environ[name] = value
             filled.append(name)
     return tuple(filled)
+
+
+#: The only variables the settings endpoint may write into ``.env``.
+#: An allowlist rather than a filter: the file also holds the database
+#: URL and the session secret, and a request body that could name any
+#: variable would be a way to rewrite those over HTTP.
+WRITABLE_ENV_KEYS: frozenset[str] = frozenset(
+    {
+        "OPENAI_API_KEY",
+        "PLANBENCH_AGENT_PROVIDER",
+        "PLANBENCH_AGENT_MODEL",
+    }
+)
+
+
+def write_env_values(
+    values: Mapping[str, str],
+    env_file: str | Path = ".env",
+) -> tuple[str, ...]:
+    """Persist ``values`` into ``.env``, leaving every other line as it was.
+
+    Three properties this has to hold, and each one comes from a way the
+    obvious implementation goes wrong:
+
+    **Every occurrence is updated, not the first.** ``.env`` in this
+    repository declares ``OPENAI_API_KEY`` twice — once in a header
+    block, once among the provider keys — and ``dotenv_values`` takes the
+    *last* one. Rewriting only the first would leave a stale key winning,
+    and the caller would see the value they just saved having no effect.
+    Writing the same value to all of them makes which-one-wins stop
+    mattering.
+
+    **The rest of the file survives byte for byte.** Comments in this
+    file are the documentation for pasting keys; a writer that re-emitted
+    a parsed dictionary would delete them the first time anyone saved.
+
+    **The replace is atomic.** A crash mid-write would otherwise leave a
+    truncated ``.env``, which takes the database URL and the session
+    secret with it — losing the key would be the least of it.
+
+    Returns the names written, for the caller's log. Values are never
+    returned and never logged.
+    """
+    import os
+
+    unknown = sorted(set(values) - WRITABLE_ENV_KEYS)
+    if unknown:
+        raise ValueError(f"not writable through this endpoint: {', '.join(unknown)}")
+    for name, value in values.items():
+        if "\n" in value or "\r" in value:
+            raise ValueError(f"{name} may not contain a line break")
+
+    path = Path(env_file)
+    original = path.read_text(encoding="utf-8") if path.exists() else ""
+    lines = original.splitlines()
+    seen: set[str] = set()
+
+    for index, line in enumerate(lines):
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        name = stripped.split("=", 1)[0].strip()
+        if name in values:
+            lines[index] = f"{name}={values[name]}"
+            seen.add(name)
+
+    appended = sorted(set(values) - seen)
+    if appended:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.append("# Written by the settings page.")
+        lines.extend(f"{name}={values[name]}" for name in appended)
+
+    body = "\n".join(lines) + "\n"
+    tmp = path.with_name(f"{path.name}.tmp-{os.getpid()}")
+    tmp.write_text(body, encoding="utf-8")
+    os.replace(tmp, path)
+    return tuple(sorted(values))

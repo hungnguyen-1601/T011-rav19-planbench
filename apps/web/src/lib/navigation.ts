@@ -30,6 +30,12 @@ export interface NavItem {
   hidden?: boolean;
   /** Requires a session; shown but marked when signed out. */
   session?: boolean;
+  /** Only an admin can do anything here, so only an admin is offered it.
+   *
+   * Cosmetic and stated as such: the API refuses the write regardless.
+   * Hiding the entry keeps the rail from advertising a door that
+   * answers with a 403 to most of the people who read it. */
+  admin?: boolean;
   /** On its way out, and still the only way to do something.
    *
    * A chip beside the name rather than a section of its own: a heading
@@ -140,6 +146,14 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         icon: "inbox",
         session: true,
         descriptionKey: "nav.desc.reviews",
+      },
+      {
+        href: "/settings",
+        labelKey: "nav.settings",
+        icon: "settings",
+        session: true,
+        admin: true,
+        descriptionKey: "nav.desc.settings",
       },
       { href: "/system", labelKey: "nav.system", icon: "info", descriptionKey: "nav.desc.system" },
     ],
