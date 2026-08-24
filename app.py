@@ -73,7 +73,3 @@ try:
     app = gr.mount_gradio_app(fastapi_app, demo, path="/")
 except ImportError:
     app = fastapi_app
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 7860))
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
