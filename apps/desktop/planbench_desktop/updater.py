@@ -234,45 +234,71 @@ def ask(release: Release) -> bool:
 
 
 def apply(installer: Path, relaunch: list[str], log: Path | None = None) -> None:
-    """Run the installer, then reopen the app, then leave.
+    """Install the update and reopen the app, through a script on disk.
 
     The application has to **exit** for this to work: it is running out
-    of the directory the installer is about to replace, and Windows will
-    not overwrite a file a live process holds open. So the sequence is
-    handed to a detached shell and this process returns to shut down.
+    of the directory the installer replaces, and Windows will not
+    overwrite a file a live process holds open. So the work is handed to
+    a detached shell and this process returns to shut down.
 
-    Three details are what make that survivable rather than a race:
+    **A `.cmd` file rather than a command string**, and that is a
+    correction rather than a preference. The string version chained
+    three commands with `&` through `cmd /c`, and one of the three —
+    the installer — silently did not run: the app closed, reopened on
+    the version it started with, and left no installer log to explain
+    why, because the installer had never been reached. Quoting rules
+    across `subprocess` and `cmd /c` are where that went, and a file
+    removes the layer instead of guessing at it. It also leaves the
+    exact commands on disk, next to their log, for the next time
+    something does not add up.
 
-    **A pause before the installer starts.** Handing off and exiting are
-    not simultaneous — the interpreter still has to tear down — and the
-    file most in the way is `pythonw.exe`, which *is* this process. A
-    few seconds costs nothing and removes the overlap.
+    The steps, and why each is there:
 
-    **`/FORCECLOSEAPPLICATIONS`.** For whatever is still holding a file
-    when the installer looks. Without it, silent mode's answer to a
-    locked file is to give up, and `/SUPPRESSMSGBOXES` means giving up
-    looks exactly like succeeding.
-
-    **`&` rather than `&&` for the relaunch.** A failed install must
-    still bring the app back: leaving somebody with no window at all is
-    worse than leaving them on the version they had. Which one happened
-    is answered by the installer log and by the version on the System
-    page, not by guessing.
+    * a pause, because handing off and exiting are not simultaneous and
+      the file most in the way is this interpreter;
+    * `/FORCECLOSEAPPLICATIONS`, for whatever still holds a file — in
+      silent mode, giving up on a lock looks exactly like succeeding;
+    * the exit code recorded, so a failure leaves something to read;
+    * the relaunch **unconditional**, because leaving somebody with no
+      window at all is worse than leaving them on the version they had.
     """
-    quoted = " ".join(f'"{part}"' for part in relaunch)
-    log_option = f' /LOG="{log}"' if log is not None else ""
-    command = (
-        "timeout /t 4 /nobreak >nul & "
-        f'"{installer}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART '
-        f"/FORCECLOSEAPPLICATIONS{log_option}"
-        f' & start "" {quoted}'
+    script = installer.with_name("apply-update.cmd")
+    receipt = installer.with_name("apply-update.txt")
+    options = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /FORCECLOSEAPPLICATIONS"
+    if log is not None:
+        options += f' /LOG="{log}"'
+    relaunch_command = " ".join(f'"{part}"' for part in relaunch)
+    body = "\r\n".join(
+        [
+            "@echo off",
+            "rem Written by PlanBench's updater. Safe to delete.",
+            "timeout /t 4 /nobreak >nul",
+            # `call`, so control comes back. Without it a batch-file
+            # installer would take the rest of this script with it, and
+            # the app would never be restarted.
+            f'call "{installer}" {options}',
+            f'echo installer exit code: %ERRORLEVEL% > "{receipt}"',
+            f'start "" {relaunch_command}',
+            "",
+        ]
     )
-    subprocess.Popen(  # noqa: S602 - the command is built here, not supplied
-        ["cmd", "/c", command],
-        creationflags=getattr(subprocess, "DETACHED_PROCESS", 0),
+    # The console codepage, not UTF-8: `cmd` reads a batch file in the
+    # system encoding, and a user profile with a non-ASCII name would
+    # otherwise produce a path the shell cannot find.
+    script.write_text(body, encoding="mbcs", errors="replace")
+
+    subprocess.Popen(  # noqa: S602 - the script is written here, not supplied
+        ["cmd", "/c", str(script)],
+        creationflags=(
+            getattr(subprocess, "DETACHED_PROCESS", 0)
+            # Without this a console window opens over whatever the
+            # person was doing, sits there counting down, and gives no
+            # hint whether the app is updating or has crashed.
+            | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        ),
         close_fds=True,
     )
-    logger.info("handed off to the installer for %s", installer.name)
+    logger.info("handed off to %s", script)
     if log is not None:
         logger.info("the installer will write its own log to %s", log)
 

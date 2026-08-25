@@ -280,55 +280,91 @@ class TestTheFlow:
 
 
 class TestTheHandoff:
+    """What the update actually runs, and why it is a file.
+
+    The first version chained three commands with `&` through
+    `cmd /c`. On a real machine the middle one — the installer — did not
+    run: the app closed, reopened on the version it started with, and
+    left no installer log, because the installer was never reached.
+    A script on disk removes the quoting layer that swallowed it, and
+    leaves the exact commands beside their log.
+    """
+
     @staticmethod
-    def _command(monkeypatch, **kwargs) -> str:
-        recorded: list[list[str]] = []
+    def _script(tmp_path, **kwargs) -> str:
+        installer = tmp_path / "PlanBench-Setup.exe"
+        installer.write_bytes(b"")
+        updater.apply(installer, ["pythonw.exe", "main.py"], **kwargs)
+        return (tmp_path / "apply-update.cmd").read_text(encoding="mbcs")
+
+    def test_it_writes_a_script_rather_than_chaining_a_command_string(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        monkeypatch.setattr(updater.subprocess, "Popen", lambda *a, **k: None)
+
+        script = self._script(tmp_path)
+
+        assert (tmp_path / "apply-update.cmd").is_file()
+        assert "/VERYSILENT" in script
+        assert "pythonw.exe" in script
+
+    def test_the_installer_is_called_so_control_comes_back(self, monkeypatch, tmp_path) -> None:
+        """Without `call`, a batch-file installer takes the rest of the
+        script with it and the app is never restarted — measured, not
+        feared: a stand-in used while proving this out did exactly that.
+        """
+        monkeypatch.setattr(updater.subprocess, "Popen", lambda *a, **k: None)
+
+        assert "call " in self._script(tmp_path)
+
+    def test_it_waits_before_replacing_the_running_interpreter(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.setattr(updater.subprocess, "Popen", lambda *a, **k: None)
+
+        assert "timeout /t" in self._script(tmp_path)
+
+    def test_it_closes_whatever_still_holds_a_file(self, monkeypatch, tmp_path) -> None:
+        """In silent mode, giving up on a locked file looks like success."""
+        monkeypatch.setattr(updater.subprocess, "Popen", lambda *a, **k: None)
+
+        assert "/FORCECLOSEAPPLICATIONS" in self._script(tmp_path)
+
+    def test_the_exit_code_is_recorded(self, monkeypatch, tmp_path) -> None:
+        """The app is gone by the time the installer finishes, so this
+        line is the only thing that can report what happened."""
+        monkeypatch.setattr(updater.subprocess, "Popen", lambda *a, **k: None)
+
+        assert "%ERRORLEVEL%" in self._script(tmp_path)
+
+    def test_the_app_comes_back_even_if_the_install_failed(self, monkeypatch, tmp_path) -> None:
+        """No conditional between the installer and the relaunch: being
+        left with no window at all is worse than being left on the
+        version you had."""
+        script = self._script(tmp_path)
+        lines = [line for line in script.splitlines() if line.strip()]
+
+        assert lines[-1].startswith("start ")
+        assert "&&" not in script
+
+    def test_no_console_window_is_opened_over_the_person_using_it(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """A black window counting down, with the app gone, reads as a
+        crash rather than as an update."""
+        flags: list[int] = []
         monkeypatch.setattr(
             updater.subprocess,
             "Popen",
-            lambda command, **kw: recorded.append(command),
+            lambda *a, **k: flags.append(k.get("creationflags", 0)),
         )
-        updater.apply(updater.Path("C:/tmp/setup.exe"), ["pythonw.exe", "main.py"], **kwargs)
-        return " ".join(recorded[0])
 
-    def test_the_installer_runs_silently_and_relaunches_the_app(self, monkeypatch) -> None:
-        """Windows will not overwrite a file a live process holds open.
+        self._script(tmp_path)
 
-        So the sequence is handed to a detached shell — install, then
-        start the app again — and this process exits normally.
-        """
-        command = self._command(monkeypatch)
+        assert flags[0] & updater.subprocess.CREATE_NO_WINDOW
 
-        assert "/VERYSILENT" in command
-        assert "/SUPPRESSMSGBOXES" in command
-        assert "pythonw.exe" in command
+    def test_the_installer_is_asked_to_write_a_log_when_given_a_path(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        monkeypatch.setattr(updater.subprocess, "Popen", lambda *a, **k: None)
+        log = tmp_path / "installer.log"
 
-    def test_it_waits_before_replacing_the_running_interpreter(self, monkeypatch) -> None:
-        """`pythonw.exe` is both the file being replaced and the process
-        doing the replacing; handing off and exiting are not
-        simultaneous, and the overlap is what leaves the old build in
-        place with nothing reported."""
-        assert "timeout /t" in self._command(monkeypatch)
-
-    def test_it_closes_whatever_still_holds_a_file(self, monkeypatch) -> None:
-        """Silent mode's answer to a locked file is to give up, and with
-        message boxes suppressed, giving up looks like succeeding."""
-        assert "/FORCECLOSEAPPLICATIONS" in self._command(monkeypatch)
-
-    def test_the_app_comes_back_even_if_the_install_failed(self, monkeypatch) -> None:
-        """`&&` would leave somebody with no window at all — worse than
-        leaving them on the version they already had."""
-        command = self._command(monkeypatch)
-
-        assert "&&" not in command
-        assert command.index("&", command.index("setup.exe")) < command.index("start")
-
-    def test_the_installer_is_asked_to_write_a_log_when_given_a_path(self, monkeypatch) -> None:
-        """A silent installer that fails silently leaves nothing to read.
-
-        This is the only record of what the installer did, because the
-        app that started it is gone by the time it runs.
-        """
-        command = self._command(monkeypatch, log=updater.Path("C:/tmp/installer.log"))
-
-        assert f'/LOG="{updater.Path("C:/tmp/installer.log")}"' in command
+        assert f'/LOG="{log}"' in self._script(tmp_path, log=log)
