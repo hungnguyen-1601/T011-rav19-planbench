@@ -222,6 +222,19 @@ def main() -> int:
                 server.stop()
                 os.chdir(origin)
 
+    @check("a decision card could name the commit that produced it")
+    def _() -> None:
+        # The decision layer refuses to write a card whose manifest
+        # cannot say which code produced it, and an installation has no
+        # `.git` to ask. Without the stamped commit every selection run
+        # dies at the moment it writes its card — after doing all the
+        # work, which is the most expensive place to fail.
+        from planbench_decision.card import resolve_git_sha
+
+        sha = resolve_git_sha()
+        if len(sha) != 40 or not all(c in "0123456789abcdef" for c in sha):
+            raise AssertionError(f"resolved git sha is not a commit: {sha!r}")
+
     @check("pywebview imports (falls back to a browser window if not)")
     def _() -> None:
         try:

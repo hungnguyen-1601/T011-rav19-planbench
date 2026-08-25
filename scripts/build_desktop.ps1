@@ -219,6 +219,24 @@ foreach ($dir in $SourceDirs) {
 # generator both read the source-root list out of it at runtime.
 Copy-Item (Join-Path $RepoRoot 'pyproject.toml') $App
 Copy-Item (Join-Path $RepoRoot 'alembic.ini') $App
+# The commit this build was made from, stamped beside VERSION.
+# An installation has no `.git`, and the decision layer refuses to write
+# a card whose manifest cannot name the code that produced it — rightly.
+# Stamping keeps that guarantee instead of weakening it.
+$previous = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+    $commit = (& git -C $RepoRoot rev-parse HEAD 2>&1 | Select-Object -First 1).ToString().Trim()
+} finally {
+    $ErrorActionPreference = $previous
+}
+if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') {
+    throw "cannot read the commit to stamp into the build (got '$commit')"
+}
+Set-Content -Path (Join-Path $App 'apps\desktop\planbench_desktop\COMMIT') `
+    -Value $commit -NoNewline -Encoding ascii
+Write-Host "   commit: $commit"
+
 # At the stage root, not under app\: the shortcut points at it as
 # {app}\planbench.ico, and [InstallDelete] wipes app\ on every upgrade.
 Copy-Item (Join-Path $RepoRoot 'installer\planbench.ico') $Stage

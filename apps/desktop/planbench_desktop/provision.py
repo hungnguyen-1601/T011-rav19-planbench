@@ -228,6 +228,14 @@ def provision() -> Provisioned:
     # version in the file name, this is the only place a person can read
     # it.
     os.environ["PLANBENCH_VERSION"] = paths.version()
+    # What a decision card's manifest records as the code that produced
+    # it. `resolve_git_sha` already prefers this variable over shelling
+    # out, and shelling out is what fails here: an installation has no
+    # `.git`, so without this every selection run dies at the point of
+    # writing its card.
+    stamped = paths.commit()
+    if stamped:
+        os.environ.setdefault("PLANBENCH_GIT_SHA", stamped)
     _export_launcher_vars(env_path)
 
     return Provisioned(root, first_run, nickname, credential)

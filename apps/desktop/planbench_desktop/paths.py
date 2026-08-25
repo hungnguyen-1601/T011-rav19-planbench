@@ -79,6 +79,24 @@ def web_root() -> Path:
     return installed
 
 
+def commit() -> str:
+    """The commit this build was made from, or empty from a checkout.
+
+    An installation has no `.git` directory — it is a copied source
+    tree — and the decision layer refuses to write a card whose manifest
+    cannot name the code that produced it. That refusal is right and is
+    not what gets relaxed here: the sha is *stamped in at build time* and
+    handed back, so a card from an installed app names its commit as
+    exactly as one from a checkout does.
+
+    Empty from a checkout, where `git rev-parse` answers for itself.
+    """
+    stamp = Path(__file__).with_name("COMMIT")
+    if not stamp.exists():
+        return ""
+    return stamp.read_text(encoding="utf-8").strip().lower()
+
+
 def version() -> str:
     """The build's version, from the file the installer stamps.
 
@@ -93,4 +111,4 @@ def version() -> str:
     return stamp.read_text(encoding="utf-8").strip() or "0.0.0-dev"
 
 
-__all__ = ["DATA_ROOT_ENV", "INSTALL_ROOT", "data_root", "version", "web_root"]
+__all__ = ["DATA_ROOT_ENV", "INSTALL_ROOT", "commit", "data_root", "version", "web_root"]

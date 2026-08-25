@@ -134,6 +134,56 @@ class TestFirstRun:
         assert any((data_root / "maps").rglob("*.yaml"))
 
 
+class TestNamingTheCodeThatRan:
+    """A decision card's manifest has to name its commit, everywhere.
+
+    `resolve_git_sha` refuses to write `unknown` — a manifest that looks
+    complete and rebuilds nothing is worse than an error. That refusal is
+    right, and an installation cannot satisfy it by shelling out: there
+    is no `.git` in a copied source tree. So the build stamps the commit
+    in and the launcher hands it back, which keeps the guarantee rather
+    than relaxing it.
+
+    Found the expensive way — every selection run in the shipped app
+    failed at the moment it wrote its card, after doing all the work.
+    """
+
+    def test_a_stamped_build_publishes_its_commit(self, data_root, monkeypatch) -> None:
+        monkeypatch.delenv("PLANBENCH_GIT_SHA", raising=False)
+        sha = "a" * 40
+        monkeypatch.setattr(paths, "commit", lambda: sha)
+
+        provision()
+
+        assert os.environ["PLANBENCH_GIT_SHA"] == sha
+
+    def test_a_checkout_leaves_it_to_git(self, data_root, monkeypatch) -> None:
+        """No stamp there, and `git rev-parse` answers for itself."""
+        monkeypatch.delenv("PLANBENCH_GIT_SHA", raising=False)
+        monkeypatch.setattr(paths, "commit", lambda: "")
+
+        provision()
+
+        assert "PLANBENCH_GIT_SHA" not in os.environ
+
+    def test_an_explicit_value_wins(self, data_root, monkeypatch) -> None:
+        """Matching the database URL and the provider keys: a value
+        exported deliberately is the more considered of the two."""
+        monkeypatch.setenv("PLANBENCH_GIT_SHA", "b" * 40)
+        monkeypatch.setattr(paths, "commit", lambda: "c" * 40)
+
+        provision()
+
+        assert os.environ["PLANBENCH_GIT_SHA"] == "b" * 40
+
+    def test_the_build_stamps_the_commit_beside_the_version(self) -> None:
+        """Without this line in the build, the stamp never exists."""
+        build = (paths.INSTALL_ROOT / "scripts" / "build_desktop.ps1").read_text(encoding="utf-8")
+
+        assert "rev-parse HEAD" in build
+        assert r"planbench_desktop\COMMIT" in build or r"planbench_desktop\COMMIT'" in build
+
+
 class TestSubsequentRuns:
     def test_nothing_is_regenerated_and_the_secret_holds(self, data_root) -> None:
         """A new secret on the second launch is a sign-out on the second launch."""
