@@ -164,7 +164,14 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     # lives in the benchmark registry for the life of the process, so a
     # restart has to rebuild it from what was stored — otherwise a
     # plugin imported yesterday silently stops being offerable today.
-    sync_plugin_catalogue(app.state.repos.plugin_bundles, app.state.plugin_install_root)
+    # Storage as well as the root: a bundle whose directory this build
+    # no longer looks in — the identity change moved it — is unpacked
+    # again from the archive rather than offered with nothing behind it.
+    sync_plugin_catalogue(
+        app.state.repos.plugin_bundles,
+        app.state.plugin_install_root,
+        app.state.model_storage,
+    )
     # One-time codes and the provider HTTP client are app-scoped: the
     # codes must outlive a request, and the client is replaced wholesale
     # in tests so no OAuth test ever reaches the network.

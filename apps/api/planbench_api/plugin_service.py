@@ -304,7 +304,7 @@ class PluginBundleService:
 
     def sync_catalogue(self) -> list[str]:
         """Publish every runnable bundle as a stack this process offers."""
-        return sync_catalogue(self._bundles, self._install_root)
+        return sync_catalogue(self._bundles, self._install_root, self._storage)
 
     # -- reading -------------------------------------------------------
 
@@ -368,7 +368,11 @@ def host_compatibility(manifest_data: dict[str, Any]) -> HostCompatibility:
     )
 
 
-def sync_catalogue(bundles: Any, install_root: Path) -> list[str]:
+def sync_catalogue(
+    bundles: Any,
+    install_root: Path,
+    storage: ModelStorage | None = None,
+) -> list[str]:
     """Make the runtime catalogue match the stored bundles. Returns ids.
 
     **Driven by writes, not by reads.** The set of offerable stacks
@@ -387,7 +391,6 @@ def sync_catalogue(bundles: Any, install_root: Path) -> list[str]:
     it cannot run; taking the whole catalogue down with it would hide
     every other algorithm behind one bad import.
     """
-    from planbench_api.plugin_runtime import install_root as bundle_directory
     from planbench_benchmark.plugin_stacks import build_plugin_entries
     from planbench_benchmark.registry import clear_external, register_external
 
@@ -428,10 +431,13 @@ def sync_catalogue(bundles: Any, install_root: Path) -> list[str]:
     for record in reversed(stored):
         if not record.usable or record.validation_status is not ValidationStatus.LOADED:
             continue
+        directory = _unpacked_directory(record, install_root, storage)
+        if directory is None:
+            continue
         try:
             entries = build_plugin_entries(
                 record.manifest,
-                directory=bundle_directory(install_root, record),
+                directory=directory,
                 description=record.description,
                 # The checksum of the archive, truncated the same way the
                 # built-in source checksum is. This is what makes a fixed
@@ -445,6 +451,60 @@ def sync_catalogue(bundles: Any, install_root: Path) -> list[str]:
         # property of the pairing rather than of the plugin.
         registered.extend(register_external(entry) for entry in entries)
     return registered
+
+
+def _unpacked_directory(
+    record: PluginBundleRecord,
+    install_root: Path,
+    storage: ModelStorage | None,
+) -> Path | None:
+    """Where this bundle's code is, unpacking it again if it is not there.
+
+    **A bundle can be in the database with nothing on disk**, and until
+    this existed the platform offered it anyway: the manifest lives in
+    the row, so building a stack from it succeeded, and the failure
+    waited until a sweep was running and every episode died with a
+    Python traceback about a module nobody had heard of.
+
+    The way that happens is an upgrade. `install_root` keys the
+    directory on the archive's checksum; it used to key on the declared
+    version, so every bundle imported before that change sits under a
+    path this build no longer looks at. The row is fine, the archive is
+    fine, and the two have simply stopped agreeing about where the code
+    goes.
+
+    So: unpack it again from the archive that is already stored, which
+    `install_bundle` verifies against the checksum before it writes
+    anything. When that cannot be done — no storage to read from, or an
+    archive that no longer hashes as recorded — the bundle is **left out
+    of the catalogue** rather than offered, and the log says which and
+    why. Not offering it is the point: an algorithm missing from the
+    picker sends somebody to look, while one that fails per-episode
+    sends them to a traceback.
+    """
+    from planbench_api.plugin_runtime import INSTALLED_MARKER, install_bundle
+    from planbench_api.plugin_runtime import install_root as bundle_directory
+
+    directory = bundle_directory(install_root, record)
+    if (directory / INSTALLED_MARKER).is_file():
+        return directory
+    if storage is None:
+        logger.warning(
+            "imported algorithm %r is not unpacked and cannot be restored here; "
+            "it will not be offered. Import it again to restore it.",
+            record.plugin_id,
+        )
+        return None
+    try:
+        return install_bundle(record, storage, install_root)
+    except Exception:  # noqa: BLE001 - one bundle, not the catalogue
+        logger.warning(
+            "imported algorithm %r could not be unpacked from its stored archive; "
+            "it will not be offered. Import it again to restore it.",
+            record.plugin_id,
+            exc_info=True,
+        )
+        return None
 
 
 def _require_admin(user: User) -> None:
