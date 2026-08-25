@@ -306,9 +306,7 @@ def test_the_composite_measures_efficiency_against_the_replay_s_reference_line(a
     # Same trace, two deployments that disagree only about how long the
     # reference line is. The composite moves, which it could not do if
     # it were measuring against a property of the map.
-    short_line = partial_utility(
-        run, 10, deployment=DEPLOYMENT, settings=settings, anchors=anchors
-    )
+    short_line = partial_utility(run, 10, deployment=DEPLOYMENT, settings=settings, anchors=anchors)
     assert short_line > 0
 
     # Progress halved against the same driven distance: a route the

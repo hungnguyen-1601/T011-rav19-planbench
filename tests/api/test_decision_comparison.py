@@ -38,14 +38,7 @@ from planbench_api.decision_export import (
 from planbench_api.decision_xlsx import render_decision_xlsx
 from tests.api.golden_run import golden_run, report, unranked_run
 
-GRID = (
-    Path(__file__).resolve().parents[2]
-    / "apps"
-    / "web"
-    / "src"
-    / "lib"
-    / "candidateMetrics.ts"
-)
+GRID = Path(__file__).resolve().parents[2] / "apps" / "web" / "src" / "lib" / "candidateMetrics.ts"
 
 
 def book(run, locale="en"):
@@ -84,16 +77,12 @@ class TestTheFileAndThePageAreTheSameComparison:
         return re.findall(r'row\(\s*"(\w+)",\s*"(higher|lower|none)"', body)
 
     def test_the_same_metrics_in_the_same_order(self) -> None:
-        assert [key for key, _ in self.grid_rows()] == [
-            spec.key for spec in COMPARISON_METRICS
-        ]
+        assert [key for key, _ in self.grid_rows()] == [spec.key for spec in COMPARISON_METRICS]
 
     def test_the_same_direction_on_every_row(self) -> None:
         """A row the page calls "lower is better" and the file calls
         "higher" would crown opposite winners on one measurement."""
-        assert dict(self.grid_rows()) == {
-            spec.key: spec.direction for spec in COMPARISON_METRICS
-        }
+        assert dict(self.grid_rows()) == {spec.key: spec.direction for spec in COMPARISON_METRICS}
 
     def test_the_same_tie_tolerance(self) -> None:
         """A row where the two are level must not name a winner on the
@@ -169,9 +158,7 @@ class TestTheComparisonSheet:
         """Weights attach to objectives, not to metrics. Seven blanks
         here are the contract, not seven cells nobody filled in."""
         weighted = [
-            row[0].value
-            for row in list(self.sheet().iter_rows())[1:11]
-            if row[8].value is not None
+            row[0].value for row in list(self.sheet().iter_rows())[1:11] if row[8].value is not None
         ]
         assert weighted == [
             "Success rate",
@@ -198,7 +185,7 @@ class TestTheComparisonSheet:
         assert find(sheet, "Distinct episodes")[6].value == "tie"
 
     def test_a_metric_only_one_side_recorded_is_not_a_comparison(self) -> None:
-        """"Not leading" is not "behind". A candidate that recorded
+        """ "Not leading" is not "behind". A candidate that recorded
         nothing did not lose — there was no comparison."""
         thin = golden_run()
         thin.report["candidates"][1]["worst_clearance_m"] = None

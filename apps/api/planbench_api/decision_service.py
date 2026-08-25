@@ -851,10 +851,7 @@ class DecisionRunService:
         # of its own, a decimated series — would drift against the
         # scrubber, and the drift would look like the metric moving.
         by_step = {
-            side: [
-                sample.model_dump()
-                for sample in sample_series(slice_, deployment=deployment)
-            ]
+            side: [sample.model_dump() for sample in sample_series(slice_, deployment=deployment)]
             for side, slice_ in zip(("a", "b"), slices, strict=True)
         }
         return {"ladder": ladder, "by_step": by_step}
@@ -1321,9 +1318,7 @@ def _slice_for(payload: Mapping[str, Any], reference):  # type: ignore[no-untype
         x=tuple(float(value) for value in payload.get("x") or []),
         y=tuple(float(value) for value in payload.get("y") or []),
         clearance_m=tuple(float(value) for value in payload.get("clearance_m") or []),
-        planner_latency_ms=tuple(
-            float(value) for value in payload.get("planner_latency_ms") or []
-        ),
+        planner_latency_ms=tuple(float(value) for value in payload.get("planner_latency_ms") or []),
         progress_m=tuple(sample.progress_m for sample in projected.samples),
         replan_indices=replans,
     )

@@ -19,9 +19,35 @@ import struct
 import tomllib
 
 import pytest
-from make_runtime_paths import SITECUSTOMIZE, pth_contents, source_roots
 
 from planbench_desktop.paths import INSTALL_ROOT
+
+
+def _load_path_generator():
+    """Load `scripts/desktop/make_runtime_paths.py` without importing it.
+
+    `scripts/desktop/` is deliberately absent from every path list: it is
+    build tooling, and nothing the application runs should be able to
+    import it. Adding a `conftest.py` here to put it on `sys.path` had a
+    second cost that showed up immediately — `tests/api/` and
+    `tests/desktop/` are not packages, so pytest imports both files as
+    the top-level module `conftest`, and whichever loads first wins.
+    That broke every `from conftest import ...` in the API tests.
+    """
+    import importlib.util
+
+    source = INSTALL_ROOT / "scripts" / "desktop" / "make_runtime_paths.py"
+    spec = importlib.util.spec_from_file_location("planbench_make_runtime_paths", source)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_paths = _load_path_generator()
+SITECUSTOMIZE = _paths.SITECUSTOMIZE
+pth_contents = _paths.pth_contents
+source_roots = _paths.source_roots
+
 
 INSTALLER = INSTALL_ROOT / "installer"
 LAUNCHER = INSTALL_ROOT / "apps" / "desktop" / "planbench_desktop" / "main.py"

@@ -344,9 +344,7 @@ def host_compatibility(manifest_data: dict[str, Any]) -> HostCompatibility:
         undeclared_providers=report.undeclared_providers,
         graph_problems=report.graph_problems,
         provider_order=report.provider_order,
-        oracle_providers=tuple(
-            capability for capability, _ in report.ownership.oracle_owned
-        ),
+        oracle_providers=tuple(capability for capability, _ in report.ownership.oracle_owned),
     )
 
 

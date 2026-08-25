@@ -197,9 +197,7 @@ class TestWhatIsNotRunIsNotCalledPassing:
         the plugin a plausible-looking fake and reporting the result as
         evidence would be worse than not running: the honest answer is
         `structural` plus the capability that stopped it."""
-        manifest = probe_manifest(
-            requirements={"all_of": ["planbench://channel/static-costmap@1"]}
-        )
+        manifest = probe_manifest(requirements={"all_of": ["planbench://channel/static-costmap@1"]})
         body = import_probe(client, admin, WORKING_PLANNER, manifest=manifest).json()
         assert body["validation_status"] == "structural"
         assert "cannot synthesise" in body["validation_message"]
@@ -218,9 +216,7 @@ class TestRunningSomebodyElsesCodeIsTheImportPrivilege:
     def test_a_member_cannot_trigger_a_run(self, client, admin):
         bundle_id = import_probe(client, admin, WORKING_PLANNER).json()["id"]
         member = auth_headers(client, ALICE)
-        response = client.post(
-            f"/api/v1/algorithms/plugins/{bundle_id}/validate", headers=member
-        )
+        response = client.post(f"/api/v1/algorithms/plugins/{bundle_id}/validate", headers=member)
         assert response.status_code == 403
         assert "administrator" in message(response)
 

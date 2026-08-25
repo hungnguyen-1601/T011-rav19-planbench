@@ -79,9 +79,7 @@ class TestOnlyWhatEarnedItIsOffered:
         """`structural` means unverified, not verified-good. Offering it
         would put a candidate on the leaderboard on the strength of
         having been readable."""
-        manifest = probe_manifest(
-            requirements={"all_of": ["planbench://channel/static-costmap@1"]}
-        )
+        manifest = probe_manifest(requirements={"all_of": ["planbench://channel/static-costmap@1"]})
         body = import_probe(client, admin, WORKING_PLANNER, manifest=manifest).json()
         assert body["validation_status"] == "structural"
         assert STACK_ID not in algorithms(client, admin)
@@ -197,9 +195,7 @@ class TestFixingAPluginMakesADifferentCandidate:
         assert first.candidate_id != second.candidate_id
         assert first.local_controller.version != second.local_controller.version
 
-    def test_a_fix_imported_beside_the_version_it_fixes_is_the_one_that_runs(
-        self, client, admin
-    ):
+    def test_a_fix_imported_beside_the_version_it_fixes_is_the_one_that_runs(self, client, admin):
         """Two runnable versions share one stack id, so one of them has
         to win. It must be the newer: importing a fix and then finding
         the platform still running the code you replaced is a wrong
@@ -207,9 +203,7 @@ class TestFixingAPluginMakesADifferentCandidate:
         writing down.
         """
         first = import_probe(client, admin, WORKING_PLANNER).json()
-        faster = WORKING_PLANNER.replace(
-            "cruise_speed: float = 0.4", "cruise_speed: float = 0.9"
-        )
+        faster = WORKING_PLANNER.replace("cruise_speed: float = 0.4", "cruise_speed: float = 0.9")
         second = import_probe(
             client, admin, faster, manifest=probe_manifest(version="0.2.0")
         ).json()
@@ -217,8 +211,8 @@ class TestFixingAPluginMakesADifferentCandidate:
         # Both left enabled on purpose: this is what somebody iterating
         # actually does, and nothing asks them to retire the old row.
         assert first["checksum"] != second["checksum"]
-        assert self.candidate_for(client, admin).local_controller.version == (
-            second["checksum"][:12]
+        assert (
+            self.candidate_for(client, admin).local_controller.version == (second["checksum"][:12])
         )
 
     def test_the_version_is_the_checksum_of_what_was_uploaded(self, client, admin):

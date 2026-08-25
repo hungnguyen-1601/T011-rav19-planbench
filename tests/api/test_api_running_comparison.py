@@ -91,9 +91,7 @@ class TestProgressComesFromTheProjection:
         return exactly 1.0 here and would do so for every trace ever
         recorded.
         """
-        detour = payload(
-            [(0.0, 0.0), (2.0, 0.0), (2.0, 3.0), (4.0, 3.0), (4.0, 0.0), (6.0, 0.0)]
-        )
+        detour = payload([(0.0, 0.0), (2.0, 0.0), (2.0, 3.0), (4.0, 3.0), (4.0, 0.0), (6.0, 0.0)])
         slice_ = _slice_for(detour, STRAIGHT)
 
         assert slice_.progress_m[-1] == pytest.approx(6.0)

@@ -489,6 +489,14 @@ class SqlUserRepository:
             session.flush()
             return _to_user(row)
 
+    def set_password(self, user_id: str, password_hash: str) -> User:
+        with self._sessions.begin() as session:
+            row = _require(session, UserRow, user_id, "user")
+            row.password_hash = password_hash
+            row.updated_at = now_iso()
+            session.flush()
+            return _to_user(row)
+
     def list(self) -> list[User]:
         with self._sessions.begin() as session:
             rows = session.scalars(select(UserRow).order_by(UserRow.created_at)).all()

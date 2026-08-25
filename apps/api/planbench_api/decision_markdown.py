@@ -117,9 +117,7 @@ def _provenance(run: Any, report: dict[str, Any], locale: Locale) -> list[str]:
 
 
 def _sample(report: dict[str, Any], locale: Locale) -> list[str]:
-    return [f"## {text('heading.sample', locale)}", ""] + _pairs(
-        sample_rows(report, locale)
-    ) + [""]
+    return [f"## {text('heading.sample', locale)}", ""] + _pairs(sample_rows(report, locale)) + [""]
 
 
 def _gates(report: dict[str, Any], locale: Locale) -> list[str]:
@@ -151,10 +149,9 @@ def _gates(report: dict[str, Any], locale: Locale) -> list[str]:
 
 
 def _table(columns: tuple[str, ...], rows: list[tuple[str, ...]]) -> list[str]:
-    return (
-        ["| " + " | ".join(columns) + " |", "| " + " | ".join("---" for _ in columns) + " |"]
-        + ["| " + " | ".join(_cell(value) for value in row) + " |" for row in rows]
-    )
+    return ["| " + " | ".join(columns) + " |", "| " + " | ".join("---" for _ in columns) + " |"] + [
+        "| " + " | ".join(_cell(value) for value in row) + " |" for row in rows
+    ]
 
 
 def _outcomes(report: dict[str, Any], locale: Locale) -> list[str]:

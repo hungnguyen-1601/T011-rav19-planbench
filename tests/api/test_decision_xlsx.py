@@ -96,15 +96,25 @@ def candidate(**overrides) -> dict:
         # remembers to add rows.
         "episodes": [
             {
-                "episode_context_id": "ep00", "success": True, "failure_reason": None,
-                "collision_count": 0, "min_clearance": 0.494, "travel_time_s": 22.8,
-                "p99_latency_ms": 11.1, "replan_count": 1,
+                "episode_context_id": "ep00",
+                "success": True,
+                "failure_reason": None,
+                "collision_count": 0,
+                "min_clearance": 0.494,
+                "travel_time_s": 22.8,
+                "p99_latency_ms": 11.1,
+                "replan_count": 1,
                 "episode_decision_utility": 0.88,
             },
             {
-                "episode_context_id": "ep01", "success": False, "failure_reason": "timeout",
-                "collision_count": 0, "min_clearance": 0.113, "travel_time_s": 60.0,
-                "p99_latency_ms": 2098.4, "replan_count": 17,
+                "episode_context_id": "ep01",
+                "success": False,
+                "failure_reason": "timeout",
+                "collision_count": 0,
+                "min_clearance": 0.113,
+                "travel_time_s": 60.0,
+                "p99_latency_ms": 2098.4,
+                "replan_count": 17,
                 "episode_decision_utility": 0.31,
             },
         ],
@@ -223,9 +233,7 @@ class TestWhatASpreadsheetGetsWrong:
         """Beside the numbers it qualifies, not in a preamble somebody
         leaves behind when they copy one sheet into a slide."""
         run = Run(
-            report(
-                candidates=[candidate(), candidate(local_observation_class="full_static_map")]
-            ),
+            report(candidates=[candidate(), candidate(local_observation_class="full_static_map")]),
             CARD,
         )
         assert any("shown different things" in value for value in cells(book(run)["Gates"]))
@@ -272,6 +280,7 @@ class TestTheFileItself:
 
     def test_the_gate_header_stays_put_while_scrolling(self) -> None:
         assert book(Run(report(), CARD))["Gates"].freeze_panes == "A2"
+
 
 class TestTheFilenameSaysWhatTheFileIsAbout:
     """`decision-8f3a1c.xlsx` is unambiguous and says nothing.
@@ -393,9 +402,20 @@ class TestWhatMakesItEvaluable:
 
     def test_the_margin_travels_with_its_interval(self) -> None:
         """ΔU alone turns "ahead, but not measurably" into a result."""
-        run = Run(report(), {**CARD, "evidence": {**CARD["evidence"], "delta_u_mean": 0.039,
-                                                  "ci95": [0.036, 0.042], "effect_size": 5.07,
-                                                  "n_episodes": 30, "delta_u_vs_second": 0.036}})
+        run = Run(
+            report(),
+            {
+                **CARD,
+                "evidence": {
+                    **CARD["evidence"],
+                    "delta_u_mean": 0.039,
+                    "ci95": [0.036, 0.042],
+                    "effect_size": 5.07,
+                    "n_episodes": 30,
+                    "delta_u_vs_second": 0.036,
+                },
+            },
+        )
         found = cells(book(run)["Decision Card"])
         assert any("ΔU mean" in value for value in found)
         assert any("interval" in value for value in found)
@@ -467,7 +487,7 @@ class TestTheSummarySheet:
             assert label in found, label
 
     def test_it_names_the_candidates_rather_than_calling_them_a_and_b(self) -> None:
-        """"Algorithm A" makes a reader who opened the file a week later
+        """ "Algorithm A" makes a reader who opened the file a week later
         go and look up which one A was."""
         found = cells(self.sheet(Run(report(), CARD)))
         assert any("astar+dwa (dwa_coarse)" in value for value in found)
@@ -480,7 +500,7 @@ class TestTheSummarySheet:
         assert "HĐ-1.4" in found
 
     def test_a_run_with_no_card_still_gets_one(self) -> None:
-        """"Nobody was ranked, here is why" is an answer a reader needs
+        """ "Nobody was ranked, here is why" is an answer a reader needs
         at the top, not four sheets in."""
         run = Run(report(why_no_card="only one candidate cleared"), None)
         found = " ".join(cells(self.sheet(run)))

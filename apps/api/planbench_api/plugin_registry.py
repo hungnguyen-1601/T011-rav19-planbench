@@ -143,8 +143,7 @@ def _inspect_open(
     extracted = sum(info.file_size for info in infos)
     if extracted > max_extracted_bytes:
         problems.append(
-            f"the archive expands to {extracted} bytes, more than the "
-            f"{max_extracted_bytes} allowed"
+            f"the archive expands to {extracted} bytes, more than the {max_extracted_bytes} allowed"
         )
 
     if problems:

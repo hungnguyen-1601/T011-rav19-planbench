@@ -1928,9 +1928,7 @@ def decision_report_xlsx(
         content=render_decision_xlsx(stored, locale),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
-            "Content-Disposition": (
-                f'attachment; filename="{decision_workbook_filename(stored)}"'
-            )
+            "Content-Disposition": (f'attachment; filename="{decision_workbook_filename(stored)}"')
         },
     )
 

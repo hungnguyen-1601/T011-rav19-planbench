@@ -51,9 +51,7 @@ def _contents(run, *locale):
     renderer does when nobody names a language.
     """
     book = _workbook(render_decision_xlsx(run, *locale))
-    return {
-        name: list(book[name].iter_rows(values_only=True)) for name in book.sheetnames
-    }
+    return {name: list(book[name].iter_rows(values_only=True)) for name in book.sheetnames}
 
 
 class TestEveryStringHasEveryLanguage:

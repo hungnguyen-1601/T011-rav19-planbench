@@ -210,7 +210,14 @@ class TestTheImportStopsStoringCopies:
         from planbench_schemas.map import MapData
 
         repo = MapRepository()
-        grid = MapData(name="hall", width=2, height=2, resolution=0.5, origin={"x": 0.0, "y": 0.0}, cells=[0, 0, 0, 0])
+        grid = MapData(
+            name="hall",
+            width=2,
+            height=2,
+            resolution=0.5,
+            origin={"x": 0.0, "y": 0.0},
+            cells=[0, 0, 0, 0],
+        )
         first = repo.create(grid)
         found = repo.find_by_checksum(grid.checksum())
         assert found is not None
@@ -221,8 +228,24 @@ class TestTheImportStopsStoringCopies:
         from planbench_schemas.map import MapData
 
         repo = MapRepository()
-        repo.create(MapData(name="a", width=2, height=2, resolution=0.5, origin={"x": 0.0, "y": 0.0}, cells=[0, 0, 0, 0]))
-        other = MapData(name="b", width=2, height=2, resolution=0.5, origin={"x": 0.0, "y": 0.0}, cells=[0, 0, 0, 100])
+        repo.create(
+            MapData(
+                name="a",
+                width=2,
+                height=2,
+                resolution=0.5,
+                origin={"x": 0.0, "y": 0.0},
+                cells=[0, 0, 0, 0],
+            )
+        )
+        other = MapData(
+            name="b",
+            width=2,
+            height=2,
+            resolution=0.5,
+            origin={"x": 0.0, "y": 0.0},
+            cells=[0, 0, 0, 100],
+        )
         assert repo.find_by_checksum(other.checksum()) is None
 
     def test_the_lookup_is_stable_across_calls(self) -> None:
@@ -235,7 +258,14 @@ class TestTheImportStopsStoringCopies:
         from planbench_schemas.map import MapData
 
         repo = MapRepository()
-        grid = MapData(name="hall", width=2, height=2, resolution=0.5, origin={"x": 0.0, "y": 0.0}, cells=[0, 0, 0, 0])
+        grid = MapData(
+            name="hall",
+            width=2,
+            height=2,
+            resolution=0.5,
+            origin={"x": 0.0, "y": 0.0},
+            cells=[0, 0, 0, 0],
+        )
         first = repo.create(grid)
         repo.create(grid)
         assert repo.find_by_checksum(grid.checksum()).id == first.id
@@ -248,7 +278,14 @@ class TestTheImportStopsStoringCopies:
         from planbench_schemas.map import MapData
 
         repo = MapRepository()
-        grid = MapData(name="hall", width=2, height=2, resolution=0.5, origin={"x": 0.0, "y": 0.0}, cells=[0, 0, 0, 0])
+        grid = MapData(
+            name="hall",
+            width=2,
+            height=2,
+            resolution=0.5,
+            origin={"x": 0.0, "y": 0.0},
+            cells=[0, 0, 0, 0],
+        )
         stored = repo.create(grid)
         repo._items[stored.id] = replace(stored, kept=True)
         edited = repo.update(stored.id, MapData(**{**grid.model_dump(), "name": "hall two"}))
@@ -273,9 +310,7 @@ class TestTheSocketSendsEveryPlannedRoute:
         run = SimpleNamespace(
             plans=tuple(SimpleNamespace(path=[point(*p) for p in path]) for path in plans),
             result=SimpleNamespace(
-                events=[
-                    SimpleNamespace(time=t, type="replan") for t in replan_times
-                ]
+                events=[SimpleNamespace(time=t, type="replan") for t in replan_times]
                 + [SimpleNamespace(time=99.0, type="success")],
             ),
         )
@@ -305,4 +340,3 @@ class TestTheSocketSendsEveryPlannedRoute:
         """A success or a collision is a verdict, not a handover."""
         routes = self.routes([[(0, 0)], [(1, 1)]], [3.0])
         assert len(routes) == 2
-

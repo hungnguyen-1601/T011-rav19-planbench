@@ -117,9 +117,7 @@ def ensure_custom_map_files(
 
     try:
         for stored in map_repo.list():
-            safe_id = "".join(
-                char if char.isalnum() or char in "-_" else "_" for char in stored.id
-            )
+            safe_id = "".join(char if char.isalnum() or char in "-_" else "_" for char in stored.id)
             if safe_id == map_id_candidate or stored.id == map_id_candidate:
                 materialise_map(stored, map_root, stem=requested_stem)
                 materialise_map(stored, map_root)
@@ -167,4 +165,3 @@ def ensure_profile_map_materialised(
     if map_path and str(map_path).startswith("maps/custom/"):
         return ensure_custom_map_files(str(map_path), map_root, map_repo)
     return False
-

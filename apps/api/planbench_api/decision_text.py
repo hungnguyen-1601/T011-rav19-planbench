@@ -388,9 +388,7 @@ TEXT: Final[dict[str, dict[Locale, str]]] = {
     "value.candidate_stack": {"en": "{stack} ({config})", "vi": "{stack} ({config})"},
     "prose.final_recommendation": {
         "en": "{stack} ({config}), for {scope} and for nothing else (HĐ-1.4).",
-        "vi": (
-            "{stack} ({config}), áp dụng cho {scope} và không cho bất cứ thứ gì khác (HĐ-1.4)."
-        ),
+        "vi": ("{stack} ({config}), áp dụng cho {scope} và không cho bất cứ thứ gì khác (HĐ-1.4)."),
     },
     "prose.final_recommendation_none": {
         "en": (
@@ -461,9 +459,7 @@ TEXT: Final[dict[str, dict[Locale, str]]] = {
     },
     "prose.retired": {
         "en": "Retired before the sweep ended, so their rows rest on fewer episodes:",
-        "vi": (
-            "Bị loại trước khi đợt quét kết thúc, nên các dòng của họ dựa trên ít episode hơn:"
-        ),
+        "vi": ("Bị loại trước khi đợt quét kết thúc, nên các dòng của họ dựa trên ít episode hơn:"),
     },
     "prose.eligible": {
         "en": (
@@ -567,8 +563,7 @@ TEXT: Final[dict[str, dict[Locale, str]]] = {
             "being wide (HĐ-12)."
         ),
         "vi": (
-            "Không biên độ nhạy nào được đo. Điều đó không đồng nghĩa với việc chúng rộng\n"
-            "(HĐ-12)."
+            "Không biên độ nhạy nào được đo. Điều đó không đồng nghĩa với việc chúng rộng\n(HĐ-12)."
         ),
     },
     "prose.no_sensitivity_sheet": {
@@ -577,8 +572,7 @@ TEXT: Final[dict[str, dict[Locale, str]]] = {
             "being wide (HĐ-12)."
         ),
         "vi": (
-            "Không biên độ nhạy nào được đo. Điều đó không đồng nghĩa với việc chúng rộng "
-            "(HĐ-12)."
+            "Không biên độ nhạy nào được đo. Điều đó không đồng nghĩa với việc chúng rộng (HĐ-12)."
         ),
     },
     "prose.two_acts": {

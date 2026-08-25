@@ -37,8 +37,9 @@ listens: the API binds `127.0.0.1` only, so reaching this account means
 already being on the machine as its owner. On a shared or remote-desktop
 machine that is not much of a bound, and the next version replaces this.
 
-To use a different password now, edit `PLANBENCH_SEED_USERS` in
-`%LOCALAPPDATA%\PlanBench\.env` while the app is closed.
+To use a different password, edit `PLANBENCH_SEED_USERS` in
+`%LOCALAPPDATA%\PlanBench\.env` while the app is closed and reopen it —
+the account is brought back in step with that line on every launch.
 
 The `admin` account is created **once**, and it is the only account that
 may import an algorithm or set the API key — `PLANBENCH_ADMIN_NICKNAMES`

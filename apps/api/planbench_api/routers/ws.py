@@ -144,9 +144,7 @@ def _planned_routes(run) -> list[dict]:
     plans = getattr(run, "plans", ()) or ()
     if not plans:
         return []
-    replan_times = [
-        float(event.time) for event in run.result.events if event.type == "replan"
-    ]
+    replan_times = [float(event.time) for event in run.result.events if event.type == "replan"]
     if len(plans) != len(replan_times) + 1:
         return []
     starts = [0.0, *replan_times]

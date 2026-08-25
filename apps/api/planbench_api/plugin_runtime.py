@@ -185,9 +185,7 @@ def run_conformance(
     started: list[Any] = []
 
     def factory() -> Any:
-        plugin = runtime.load(
-            manifest, report, {}, control_period_s=CONFORMANCE_DEADLINE_S
-        )
+        plugin = runtime.load(manifest, report, {}, control_period_s=CONFORMANCE_DEADLINE_S)
         started.append(plugin)
         return plugin
 

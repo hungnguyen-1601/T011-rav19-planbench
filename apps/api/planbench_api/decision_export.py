@@ -133,9 +133,7 @@ def provenance_rows(
     ]
 
 
-def environment_warning(
-    report: dict[str, Any], locale: Locale = DEFAULT_LOCALE
-) -> str | None:
+def environment_warning(report: dict[str, Any], locale: Locale = DEFAULT_LOCALE) -> str | None:
     """The unpinned-host caveat, when the platform wrote one.
 
     An unpinned host makes every latency number a measurement of that
@@ -146,9 +144,7 @@ def environment_warning(
     return as_text(warning, locale) if warning else None
 
 
-def sample_rows(
-    report: dict[str, Any], locale: Locale = DEFAULT_LOCALE
-) -> list[tuple[str, str]]:
+def sample_rows(report: dict[str, Any], locale: Locale = DEFAULT_LOCALE) -> list[tuple[str, str]]:
     """What was measured, and what was asked for.
 
     Both, because an interrupted run whose requested count is missing
@@ -194,9 +190,7 @@ def gate_columns(locale: Locale = DEFAULT_LOCALE) -> tuple[str, ...]:
     return tuple(text(key, locale) for key in _GATE_COLUMN_KEYS)
 
 
-def gate_rows(
-    report: dict[str, Any], locale: Locale = DEFAULT_LOCALE
-) -> list[tuple[str, ...]]:
+def gate_rows(report: dict[str, Any], locale: Locale = DEFAULT_LOCALE) -> list[tuple[str, ...]]:
     """The gate table — a first-class section, not an appendix.
 
     Six feasibility gates run before anything is scored, so a candidate
@@ -296,9 +290,7 @@ def retired_candidates(
     return rows
 
 
-def no_card_reason(
-    report: dict[str, Any], locale: Locale = DEFAULT_LOCALE
-) -> str | None:
+def no_card_reason(report: dict[str, Any], locale: Locale = DEFAULT_LOCALE) -> str | None:
     """Why there is no recommendation, when the run recorded a reason.
 
     ``gate_only_deployment`` wins over ``why_no_card``: it is a property
@@ -452,9 +444,7 @@ def _gate_number(candidate: dict[str, Any], gate: str, field: str) -> Any:
     return verdict.get(field)
 
 
-def outcome_rows(
-    report: dict[str, Any], locale: Locale = DEFAULT_LOCALE
-) -> list[tuple[str, ...]]:
+def outcome_rows(report: dict[str, Any], locale: Locale = DEFAULT_LOCALE) -> list[tuple[str, ...]]:
     """Every candidate's end-of-run numbers, in one table.
 
     Read out of the report rather than recomputed: the gate payloads
@@ -572,9 +562,7 @@ def episode_columns(locale: Locale = DEFAULT_LOCALE) -> tuple[str, ...]:
     return tuple(text(key, locale) for key in _EPISODE_COLUMN_KEYS)
 
 
-def episode_rows(
-    report: dict[str, Any], locale: Locale = DEFAULT_LOCALE
-) -> list[tuple[str, ...]]:
+def episode_rows(report: dict[str, Any], locale: Locale = DEFAULT_LOCALE) -> list[tuple[str, ...]]:
     """Every episode of every candidate.
 
     **The aggregate was never the whole answer.** `success_rate: 0.70`

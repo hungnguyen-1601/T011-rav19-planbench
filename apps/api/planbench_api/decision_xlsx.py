@@ -245,9 +245,7 @@ def render_decision_xlsx(run: Any, locale: Locale = DEFAULT_LOCALE) -> bytes:
     heading = provenance.cell(
         row=1,
         column=1,
-        value=text(
-            "heading.document", locale, profile=as_text(run.task_profile_id, locale)
-        ),
+        value=text("heading.document", locale, profile=as_text(run.task_profile_id, locale)),
     )
     heading.font = bold
     cursor = write_pairs(provenance, provenance_rows(run, report, locale), 3)
@@ -406,9 +404,7 @@ def render_decision_xlsx(run: Any, locale: Locale = DEFAULT_LOCALE) -> bytes:
         ]
         if has_delta:
             header.append(text("column.compare.delta", locale))
-        header += [
-            f"{text('column.objective.contribution', locale)} — {label}" for label in labels
-        ]
+        header += [f"{text('column.objective.contribution', locale)} — {label}" for label in labels]
         header.append(text("column.compare.note", locale))
 
         axes = sheet("heading.objectives")
@@ -479,9 +475,7 @@ def render_decision_xlsx(run: Any, locale: Locale = DEFAULT_LOCALE) -> bytes:
     decision = sheet("heading.card")
     rows = card_rows(run, report, locale)
     if rows is None:
-        decision.cell(
-            row=1, column=1, value=text("heading.no_card", locale)
-        ).font = bold
+        decision.cell(row=1, column=1, value=text("heading.no_card", locale)).font = bold
         reason = no_card_reason(report, locale)
         at = 3
         if reason:
@@ -534,7 +528,9 @@ def render_decision_xlsx(run: Any, locale: Locale = DEFAULT_LOCALE) -> bytes:
     episodes = episode_rows(report, locale)
     if episodes:
         write_table(
-            sheet("heading.episodes"), episode_columns(locale), episodes,
+            sheet("heading.episodes"),
+            episode_columns(locale),
+            episodes,
             (30, 20, 16, 11, 14, 12, 13, 10, 15),
         )
 

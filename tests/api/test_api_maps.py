@@ -171,4 +171,3 @@ class TestTurningAStoredMapIntoTheTwoPathsAProfileNames:
         assert recreated is True
         assert map_path.is_file()
         assert yaml_path.is_file()
-
