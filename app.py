@@ -54,13 +54,24 @@ class AsgiRouterMiddleware:
         self.fastapi_app = fastapi_app
 
     async def __call__(self, scope, receive, send):
+        path = scope.get("path", "")
         if scope["type"] == "http":
-            path = scope.get("path", "")
-            # Route specific API prefixes to FastAPI
+            # Route API, docs and OpenAPI paths to FastAPI
             if path.startswith("/api/") or path.startswith("/docs") or path.startswith("/openapi.json"):
                 await self.fastapi_app(scope, receive, send)
                 return
-        # Everything else goes to Gradio
+        elif scope["type"] == "websocket":
+            # WebSocket connections for simulation streaming must reach
+            # FastAPI — the /ws/ prefix is registered on the FastAPI router
+            # (routers/ws.py), and Gradio has no WebSocket handler for it.
+            # Without this branch every "Run one episode" click on the Test
+            # Bench page silently fails with "WebSocket connection failed"
+            # because the connection is accepted by Gradio and immediately
+            # closed with no protocol handler.
+            if path.startswith("/ws/"):
+                await self.fastapi_app(scope, receive, send)
+                return
+        # Everything else (Gradio UI, static assets, lifespan) goes to Gradio
         await self.gradio_app(scope, receive, send)
 
 def patched_create_app(*args, **kwargs):
