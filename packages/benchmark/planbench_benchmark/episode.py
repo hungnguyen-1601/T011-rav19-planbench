@@ -207,6 +207,14 @@ def run_contract_episode(
         # nothing was routed into it. A guard nobody reaches is not a
         # guard, and this is the one line that makes the address real.
         evidence_class=evidence_class,
+        # **Asked of the controller, because only it knows.** A trace
+        # file has one schema, fixed before the first row, so this cannot
+        # be discovered from the rows as they arrive. The subprocess lane
+        # measures the six §5.9 layers and an in-process controller does
+        # not, and the recorder refuses a row carrying columns it was not
+        # built for — which is what an imported plugin met the moment it
+        # started producing real commands instead of safe stops.
+        latency_layers=bool(getattr(local_planner, "emits_latency_layers", False)),
     ) as recorder:
         run = run_stack(
             map_data,

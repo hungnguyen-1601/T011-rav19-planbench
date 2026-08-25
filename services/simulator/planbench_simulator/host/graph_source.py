@@ -157,6 +157,24 @@ class GraphBackedLocalPlanner(LocalPlanner):
         self._granted = granted
 
     @property
+    def emits_latency_layers(self) -> bool:
+        """Whether this controller's results carry the six §5.9 layers.
+
+        **Asked before the first tick, because a Parquet file has one
+        schema.** The recorder fixes its columns at construction and
+        refuses a row carrying layers it was not built for — correctly,
+        since it cannot grow a column after taking rows.
+
+        Only the subprocess lane measures them: it times encode, write,
+        wait, read and decode because a plugin behind a pipe pays a
+        transport cost an in-process one does not. So the answer is a
+        fact about the lane, and the lane is the thing asked.
+        """
+        from planbench_simulator.host.runtimes.subprocess_lane import SubprocessPlugin
+
+        return isinstance(getattr(self._host, "_local", None), SubprocessPlugin)
+
+    @property
     def channel_source(self):
         """The seam this controller needs bound before it can step.
 

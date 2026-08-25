@@ -119,6 +119,30 @@ def config_model_for(plugin_id: str, config_schema: dict[str, Any]) -> type[Base
     )
 
 
+def constructor_kwargs(config: BaseModel) -> dict[str, Any]:
+    """What to hand the plugin's own constructor.
+
+    **Absent means absent, and ``None`` is how absence survives a round
+    trip.** ``exclude_unset`` looks like the right filter and is not: a
+    candidate stores its parameters as ``model_dump(mode="json")``, which
+    materialises every optional field as ``null``. Replaying those makes
+    the fields *set* — to ``None`` — so the filter passes them through
+    and the plugin is constructed with ``mu_heading=None``. That is the
+    `TypeError: unsupported operand type(s) for +: 'NoneType' and
+    'NoneType'` a decision run died on: the controller ran fine from the
+    Test Bench, which does not round-trip through stored parameters, and
+    only failed once one did.
+
+    Filtering by value instead is not a workaround. A ``config_schema``
+    declares JSON types — number, integer, boolean, string — and none of
+    them has ``null`` as a meaningful value, so ``null`` can only mean
+    "not specified". The plugin's own default is then the right answer,
+    and it is the only place that default exists: reading it would mean
+    importing plugin code, which discovery may not do.
+    """
+    return {name: value for name, value in config.model_dump().items() if value is not None}
+
+
 def build_local_factory(manifest_data: dict[str, Any], directory: Path):
     """A factory that starts the plugin in a subprocess when called.
 
@@ -143,7 +167,7 @@ def build_local_factory(manifest_data: dict[str, Any], directory: Path):
         from planbench_simulator.host.runtimes.subprocess_lane import SubprocessRuntime
 
         manifest = parse_manifest(manifest_data, source=str(directory))
-        settings = config.model_dump(exclude_unset=True)
+        settings = constructor_kwargs(config)
         control_period = float(
             settings.pop("control_period", None) or DEFAULT_CONTROL_PERIOD_S
         )
@@ -215,6 +239,63 @@ def stack_id_for(plugin_id: str, global_planner: str) -> str:
     return f"{global_planner}+{plugin_id}"
 
 
+def offerable_global_planners() -> tuple[str, ...]:
+    """The global planners an imported controller can be paired with.
+
+    Read from the **built-in** registry rather than from
+    ``list_algorithms()``: the latter now includes imported stacks, and a
+    plugin whose own pairing widened the set it is being paired against
+    would be deciding its own catalogue.
+
+    A planner qualifies when some offerable built-in stack uses it *and*
+    that planner has a ``+dwa`` pairing to borrow the global half from —
+    the second condition is not pedantry, it is where the global factory
+    and the observation class come from.
+    """
+    from planbench_benchmark.registry import ALGORITHMS
+
+    planners = {
+        entry.info.global_planner
+        for entry in ALGORITHMS.values()
+        if entry.info.benchmarkable
+    }
+    return tuple(sorted(p for p in planners if f"{p}+dwa" in ALGORITHMS))
+
+
+def build_plugin_entries(
+    manifest_data: dict[str, Any],
+    *,
+    directory: Path,
+    description: str = "",
+    controller_version: str = "",
+) -> list:
+    """One entry per global planner this controller can be paired with.
+
+    **A local controller is not tied to a global planner, and the
+    manifest does not claim otherwise.** It declares
+    ``requires_global_path``, which says "I follow a path somebody
+    else planned" — not who planned it. Registering against one planner
+    was a default this module invented, and it showed: an imported
+    controller was absent from the picker the moment somebody chose
+    RRT*, with nothing on screen to say why.
+
+    Each pairing is its own stack and therefore its own candidate, which
+    is correct: the same controller behind A* and behind RRT* is two
+    experiments, and the platform has always modelled that by making
+    ``astar+dwa`` and ``rrtstar+dwa`` separate entries.
+    """
+    return [
+        build_plugin_entry(
+            manifest_data,
+            directory=directory,
+            description=description,
+            global_planner=planner,
+            controller_version=controller_version,
+        )
+        for planner in offerable_global_planners()
+    ]
+
+
 def build_plugin_entry(
     manifest_data: dict[str, Any],
     *,
@@ -284,9 +365,12 @@ __all__ = [
     "NEUTRAL_REQUIREMENTS",
     "PluginStackError",
     "build_local_factory",
+    "build_plugin_entries",
     "build_plugin_entry",
     "config_model_for",
+    "constructor_kwargs",
     "controller_configs_for",
     "observation_class_for",
+    "offerable_global_planners",
     "stack_id_for",
 ]

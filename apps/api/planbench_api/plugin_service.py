@@ -368,7 +368,7 @@ def sync_catalogue(bundles: Any, install_root: Path) -> list[str]:
     every other algorithm behind one bad import.
     """
     from planbench_api.plugin_runtime import install_root as bundle_directory
-    from planbench_benchmark.plugin_stacks import build_plugin_entry
+    from planbench_benchmark.plugin_stacks import build_plugin_entries
     from planbench_benchmark.registry import clear_external, register_external
 
     clear_external()
@@ -409,7 +409,7 @@ def sync_catalogue(bundles: Any, install_root: Path) -> list[str]:
         if not record.usable or record.validation_status is not ValidationStatus.LOADED:
             continue
         try:
-            entry = build_plugin_entry(
+            entries = build_plugin_entries(
                 record.manifest,
                 directory=bundle_directory(install_root, record),
                 description=record.description,
@@ -420,7 +420,10 @@ def sync_catalogue(bundles: Any, install_root: Path) -> list[str]:
             )
         except Exception:  # noqa: BLE001 - one bad bundle must not hide the rest
             continue
-        registered.append(register_external(entry))
+        # One stack per global planner: the controller is the same object
+        # either way, and which planner drew the path it follows is a
+        # property of the pairing rather than of the plugin.
+        registered.extend(register_external(entry) for entry in entries)
     return registered
 
 

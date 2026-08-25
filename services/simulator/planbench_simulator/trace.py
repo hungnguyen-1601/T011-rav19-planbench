@@ -126,6 +126,18 @@ LATENCY_LAYER_COLUMNS: tuple[str, ...] = (
 #: number somebody will read without it.
 COMPUTE_MEASURED_BY_COLUMN = "compute_measured_by"
 
+#: What the layer columns say on a tick the controller did not run.
+#:
+#: Recovery steps the loop drives itself, and the sample before the first
+#: control decision, are real motion with no controller measurement
+#: behind them. The columns are declared non-nullable, so the row cannot
+#: be left blank — and writing zeros alone would state that the
+#: controller answered in 0 ms and put that fiction into every
+#: percentile. This value is how the row says *nobody measured*, and it
+#: is the field a percentile must filter on before it reads the numbers
+#: beside it.
+NOT_MEASURED = "not-measured"
+
 _LATENCY_FIELDS = [
     *(pa.field(name, pa.float64(), nullable=False) for name in LATENCY_LAYER_COLUMNS),
     pa.field(COMPUTE_MEASURED_BY_COLUMN, pa.string(), nullable=False),
@@ -515,11 +527,16 @@ class EpisodeTraceRecorder:
                 )
             return
         if layers is None:
-            raise TraceError(
-                "this recorder writes latency layers, so every row needs them: a file "
-                "carrying them on some rows and not others makes any percentile over "
-                "them a percentile over an unstated subset"
-            )
+            # A tick the controller did not drive — a recovery step, or
+            # the sample taken before the first decision. Refusing it
+            # would drop real motion from the trace; writing zeros with
+            # no marker would claim a measurement that never happened.
+            # So the numbers are zero and the row says who measured them:
+            # nobody.
+            for name in LATENCY_LAYER_COLUMNS:
+                self._rows[name].append(0.0)
+            self._rows[COMPUTE_MEASURED_BY_COLUMN].append(NOT_MEASURED)
+            return
         for name in LATENCY_LAYER_COLUMNS:
             value = layers.get(name, 0.0)
             self._require_finite(name, value)

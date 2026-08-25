@@ -243,6 +243,59 @@ class TestFixingAPluginMakesADifferentCandidate:
         assert dwa.local_controller.version == controller_version("dwa")
 
 
+class TestAControllerIsNotTiedToOneGlobalPlanner:
+    """An imported controller pairs with every planner, not just A*.
+
+    It was registered against `astar` alone because this module picked a
+    default, and the effect was visible on the Decisions screen: choose
+    RRT* for one candidate and the imported controller vanished from the
+    picker, with nothing on screen to say why. The manifest never claimed
+    a planner — `requires_global_path` says "I follow a path somebody
+    else planned", not who planned it.
+    """
+
+    def test_it_is_offered_behind_every_offerable_planner(self, client, admin):
+        from planbench_benchmark.plugin_stacks import offerable_global_planners
+
+        import_probe(client, admin, WORKING_PLANNER)
+        catalogue = algorithms(client, admin)
+        for planner in offerable_global_planners():
+            assert f"{planner}+org.vinai.vfh-plus" in catalogue
+        assert "rrtstar+org.vinai.vfh-plus" in catalogue, "the pairing An could not select"
+
+    def test_a_withdrawn_planner_is_not_borrowed(self, client, admin):
+        """Only planners some offerable built-in stack still uses. A
+        pairing built on a withdrawn or reference-only stack would offer
+        a candidate the gates refuse."""
+        from planbench_benchmark.plugin_stacks import offerable_global_planners
+
+        assert set(offerable_global_planners()) == {"astar", "rrtstar"}
+
+    def test_each_pairing_is_its_own_candidate(self, client, admin):
+        """The same controller behind two planners is two experiments,
+        and the platform has always modelled that by making
+        `astar+dwa` and `rrtstar+dwa` separate entries."""
+        from planbench_benchmark.candidates import candidate_from_stack
+
+        import_probe(client, admin, WORKING_PLANNER)
+        behind_astar = candidate_from_stack("astar+org.vinai.vfh-plus", params={})
+        behind_rrt = candidate_from_stack("rrtstar+org.vinai.vfh-plus", params={})
+        assert behind_astar.candidate_id != behind_rrt.candidate_id
+        # Same code on both sides, so the controller half must match.
+        assert behind_astar.local_controller.version == behind_rrt.local_controller.version
+
+    def test_the_planner_half_is_the_built_in_one(self, client, admin):
+        """Borrowed unchanged: pairing an imported controller with RRT*
+        must measure the same RRT* every other candidate ran, or the
+        comparison is between two things at once."""
+        import_probe(client, admin, WORKING_PLANNER)
+        entry = algorithms(client, admin)["rrtstar+org.vinai.vfh-plus"]
+        builtin = algorithms(client, admin)["rrtstar+dwa"]
+        assert entry["global_planner"] == "rrtstar"
+        assert entry["stochastic_global_planner"] == builtin["stochastic_global_planner"]
+        assert entry["global_observation_class"] == builtin["global_observation_class"]
+
+
 class TestAnImportedControllerCanActuallyBeSelected:
     """Appearing in a dropdown is not the same as being runnable.
 
@@ -300,6 +353,77 @@ class TestAnImportedControllerCanActuallyBeSelected:
         import_probe(client, admin, WORKING_PLANNER)
         assert "dwa_balanced" in LOCAL_CONTROLLER_CONFIGS
         assert LOCAL_CONTROLLER_CONFIGS["dwa_balanced"]["control_period"] == 0.05
+
+
+class TestStoredParametersSurviveTheRoundTrip:
+    """A candidate stores its parameters and replays them later, and that
+    is where an imported controller died.
+
+    `candidate_from_stack` dumps the validated config with
+    `model_dump(mode="json")`, so every optional field is written out as
+    `null`. Replaying those makes the fields *set* — to `None` — and a
+    filter written as `exclude_unset` passes them straight through to the
+    plugin's constructor.
+
+    The Test Bench never noticed because it builds a planner directly
+    from an empty config and never stores anything. The Decisions page
+    does store, and it failed with
+    `TypeError: unsupported operand type(s) for +: 'NoneType' and
+    'NoneType'` inside the plugin, one layer past anything the platform
+    could explain.
+    """
+
+    def test_nulls_are_read_as_unspecified(self):
+        from planbench_benchmark.plugin_stacks import config_model_for, constructor_kwargs
+
+        schema = {
+            "type": "object",
+            "properties": {"mu_target": {"type": "number"}, "loud": {"type": "boolean"}},
+        }
+        model = config_model_for("org.test.p", schema)
+        replayed = model.model_validate({"mu_target": None, "loud": None, "control_period": 0.05})
+        assert constructor_kwargs(replayed) == {"control_period": 0.05}
+
+    def test_a_real_value_still_reaches_the_plugin(self):
+        from planbench_benchmark.plugin_stacks import config_model_for, constructor_kwargs
+
+        schema = {"type": "object", "properties": {"mu_target": {"type": "number"}}}
+        model = config_model_for("org.test.p", schema)
+        assert constructor_kwargs(model.model_validate({"mu_target": 7.0}))["mu_target"] == 7.0
+
+    def test_the_dump_a_candidate_stores_is_full_of_nulls(self):
+        """The condition that makes the filter necessary, asserted rather
+        than assumed: if `candidate_from_stack` ever stops writing nulls,
+        this fails and the filter can be reconsidered."""
+        from planbench_benchmark.plugin_stacks import config_model_for
+
+        model = config_model_for("org.test.p", {"properties": {"mu_target": {"type": "number"}}})
+        stored = model.model_validate({}).model_dump(mode="json")
+        assert stored["mu_target"] is None
+
+    def test_the_whole_path_from_a_stored_candidate(self, client, admin):
+        """End to end: register the candidate the way the Decisions page
+        does, then build the controller from what was stored.
+
+        The manifest has to declare a parameter for this to mean
+        anything. The first version of this test used the default probe,
+        whose `config_schema` declares no properties — so there were no
+        nulls to survive, it passed, and it was checking nothing. It now
+        asserts the trap exists before asserting the filter clears it.
+        """
+        from planbench_benchmark.candidates import candidate_from_stack
+        from planbench_benchmark.plugin_stacks import config_model_for, constructor_kwargs
+
+        schema = {"type": "object", "properties": {"cruise_speed": {"type": "number"}}}
+        import_probe(client, admin, WORKING_PLANNER, manifest=probe_manifest(config_schema=schema))
+        candidate = candidate_from_stack(STACK_ID, params={})
+        stored = candidate.params["org.vinai.vfh-plus"]
+        assert stored["cruise_speed"] is None, "the trap this filter exists for"
+
+        model = config_model_for("org.vinai.vfh-plus", schema)
+        kwargs = constructor_kwargs(model.model_validate(stored))
+        assert "cruise_speed" not in kwargs
+        assert all(value is not None for value in kwargs.values())
 
 
 class TestTheTwoObservationTablesAgree:
