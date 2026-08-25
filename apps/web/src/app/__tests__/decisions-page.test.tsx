@@ -526,6 +526,52 @@ describe("starting a sweep from the page", () => {
   });
 });
 
+describe("the scope a sweep is queued under", () => {
+  it("sends one, instead of letting the client default decide", () => {
+    /* The whole defect: `queueDecision` was called without `scope`, so
+       every run took the client default `global_planner_selection` —
+       and a reader swapping the local controller was refused for a
+       scope they had never chosen and could not reach. */
+    const call = LIST.slice(LIST.indexOf("await queueDecision({"));
+    expect(call.slice(0, call.indexOf("});"))).toMatch(/^\s*scope,\s*$/m);
+  });
+
+  it("derives it from the candidates rather than asking first", () => {
+    expect(LIST).toContain("inferExperimentScope(candidates)");
+    expect(LIST).toContain("scopeOverride ?? derivedScope");
+  });
+
+  it("lets the reader disagree with the derivation", () => {
+    /* Three options, defaulting to the derived one. `null` is what
+       "still following the candidates" is stored as, so changing a
+       picker keeps moving the scope with it. */
+    expect(LIST).toContain("EXPERIMENT_SCOPES.map(");
+    expect(LIST).toContain("useState<ExperimentScope | null>(null)");
+  });
+
+  it("warns about a contradiction on the form without disabling the launch", () => {
+    /* Advisory only: the server validates the scope again and is the
+       authority. What this buys is the hours between the click and the
+       refusal. */
+    expect(LIST).toContain("scopeConflict(scope, candidates)");
+    expect(LIST).toContain("CONFLICT_KEY[conflict]");
+    const disabled = LIST.slice(LIST.indexOf("comparison-launch-actions"));
+    expect(disabled.slice(0, disabled.indexOf("</div>"))).not.toContain("conflict");
+  });
+
+  it("translates a scope refusal and keeps the server's own words", () => {
+    /* The message arrives as "…requires an identical local layer
+       (component, version and parameters)…, found 2 variants across
+       ['e1251e…', 'e4d2c…']" — accurate, and addressed to whoever wrote
+       the validator. The reader needs one of two moves out of it. */
+    expect(LIST).toContain("readScopeViolation(message)");
+    expect(LIST).toContain("violationKey(violation)");
+    expect(LIST).toContain("decisions.scope.violation.detail");
+    /* Anything unrecognised is still shown verbatim. */
+    expect(LIST).toContain('if (!violation) return <div className="error-box">{message}</div>;');
+  });
+});
+
 describe("the list says what a run concluded, not which hash it picked", () => {
   it("names the winner by stack and controller", () => {
     /* `recommended_candidate_id` is the right identity for a trace path

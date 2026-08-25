@@ -144,6 +144,21 @@ describe("Sidebar — expanded", () => {
     // and an aria-label saying it is read twice.
     expect(sidebar()).not.toContain('data-tooltip="Maps"');
   });
+
+  it("keeps the collapse control off the custom tooltip", () => {
+    /* `[data-tooltip-side="right"]::after` is laid out 8px past the
+       button's right edge, and the button spans the full content width
+       of `.sidebar` — 12px of padding, and a scroll container, so both
+       axes clip. The bubble began 8px into that 12px gap and was cut
+       off 4px later: a hairline of its border against the rail's edge
+       on every hover, which is what the "stray frame" was. The native
+       tooltip is drawn by the browser and nothing clips it. */
+    const html = sidebar();
+    const toggle = html.slice(html.indexOf("sidebar-toggle"));
+    expect(toggle.slice(0, toggle.indexOf(">"))).not.toContain("data-tooltip");
+    // The accessible name and the focus ring are untouched by the fix.
+    expect(html).toContain('aria-label="Collapse sidebar"');
+  });
 });
 
 describe("Sidebar — collapsed", () => {
@@ -160,6 +175,10 @@ describe("Sidebar — collapsed", () => {
     const html = sidebar({ collapsed: true });
     expect(html).toContain('aria-label="Expand sidebar"');
     expect(html).not.toContain('aria-label="Collapse sidebar"');
+    /* With the label hidden, the button still says what it does —
+       through `title`, which the browser draws outside the clipped
+       rail. */
+    expect(html).toContain('title="Expand sidebar"');
   });
 
   it("still renders the labels, for CSS to hide", () => {

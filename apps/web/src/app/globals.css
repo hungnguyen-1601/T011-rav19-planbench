@@ -1127,6 +1127,11 @@ button.badge-button[aria-pressed="true"] {
   border-color: var(--accent);
 }
 
+/* The way back off the sign-in page, above its heading rather than
+   under the form: a reader who changed their mind has already stopped
+   reading downwards. */
+.login-back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+
 .error-box {
   background: var(--err-soft);
   border: 1px solid var(--err);
@@ -2579,6 +2584,20 @@ label.field.simulate-field,
 .comparison-setup-grid { display: grid; grid-template-columns: minmax(190px,.55fr) minmax(0,1fr) 34px minmax(0,1fr); align-items: stretch; gap: 10px; padding: 14px 16px; }
 .comparison-common { display: grid; align-content: start; gap: 10px; min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2); }
 .comparison-common legend { padding-inline: 5px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+/* The scope sits below the two candidate cards rather than beside the
+   deployment, because it is derived from them: reading downwards, the
+   pair is chosen and then what the pair can conclude is stated. */
+.comparison-scope { margin: 0 16px 14px; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2); }
+.comparison-scope legend { padding-inline: 5px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.comparison-scope-row { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
+.comparison-scope-row .field { min-width: min(320px, 100%); }
+.comparison-scope-note { margin: 8px 0 0; font-size: 12px; }
+/* The server's own wording, kept but folded away: evidence for a bug
+   report, not the first thing a reader has to parse. */
+.launch-error-headline { margin: 0; }
+.launch-error-detail { margin-top: 6px; font-size: 12px; }
+.launch-error-detail summary { cursor: pointer; }
+.launch-error-detail code { display: block; margin-top: 4px; overflow-wrap: anywhere; }
 .candidate-card { min-width: 0; padding: 12px; border: 1px solid; border-radius: 10px; }
 /* **Scoped to the card, because the class travels.** These two were
    bare selectors, so they painted anything carrying `candidate-a` or
@@ -5266,7 +5285,22 @@ tr.is-previewing > td { background: var(--accent-soft); }
   color: var(--accent-contrast);
   box-shadow: var(--shadow);
 }
-.agent-dock-launcher:hover { filter: brightness(1.06); }
+/* Hover **deepens** the button. `filter: brightness(1.06)` lightened it,
+   which is the wrong direction twice over: in the light theme it washed
+   a mid blue towards the page it sits on, and in the dark theme it
+   pushed an already-light accent further towards white — both make the
+   control harder to see at the moment the pointer is on it, which is
+   the moment it most has to look pressable.
+   A `color-mix` towards black rather than a filter, because a filter
+   applies to the glyph as well and darkening the icon along with its
+   background loses the contrast between them. Mixing the background
+   alone deepens it in either theme — `#1f6feb` and `#4c9aff` both stay
+   well clear of their own page — and leaves `--accent-contrast` where
+   it was. */
+.agent-dock-launcher:hover {
+  background: color-mix(in srgb, var(--accent) 82%, #000);
+  border-color: color-mix(in srgb, var(--accent) 70%, #000);
+}
 
 .agent-dock-panel {
   display: flex;

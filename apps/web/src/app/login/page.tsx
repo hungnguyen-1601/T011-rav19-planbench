@@ -10,6 +10,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Icon } from "@/components/Icon";
 import { fetchAuthProviders, login, oauthStartUrl, type AuthProviders } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 
@@ -80,8 +81,26 @@ function SignIn() {
   const nothingConfigured =
     providers && !providers.google && !providers.github && !providers.dev_login;
 
+  /* The way out.
+   *
+   * `router.back()` alone is not it: `/login` is reachable directly —
+   * a bookmark, a link in a message, a redirect that replaced the entry
+   * — and in a fresh tab there is nothing behind it, so `back()` either
+   * does nothing or leaves the app entirely. `history.length` is the
+   * one thing that separates the two, and it is read at click time
+   * rather than at render so the first paint cannot disagree with the
+   * server's. */
+  const leave = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) router.back();
+    else router.push("/");
+  };
+
   return (
     <>
+      <button type="button" className="ghost login-back" onClick={leave}>
+        <Icon name="chevronLeft" size={16} />
+        {t("login.back")}
+      </button>
       <h2>{t("login.title")}</h2>
       {error ? <div className="error-box">{error}</div> : null}
       {loadError ? (

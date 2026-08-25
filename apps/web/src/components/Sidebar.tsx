@@ -131,8 +131,28 @@ export function Sidebar({
           onClick={onToggleCollapse}
           aria-label={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
           aria-expanded={!collapsed}
-          data-tooltip={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
-          data-tooltip-side="right"
+          // The native tooltip, not `data-tooltip`, and the reason is
+          // that this button is the one place the custom one could not
+          // work. `[data-tooltip-side="right"]::after` is laid out 8px
+          // past the button's right edge; the button spans the full
+          // content width of `.sidebar`, whose padding is 12px and
+          // which is a scroll container (`overflow-y: auto`, so both
+          // axes clip). The bubble therefore began 8px into a 12px gap
+          // and was cut off 4px later — a hairline of its left border
+          // and background against the rail's edge, appearing on hover
+          // and reading as a stray frame rather than as a tooltip.
+          //
+          // The nav links get away with it because they only carry a
+          // tooltip while collapsed, where the same clipping applies —
+          // see the note in the report; here the button carried one in
+          // both states, so the sliver was on every hover.
+          //
+          // Nothing about keyboard access changes: `aria-label` is
+          // still the accessible name and the global `:focus-visible`
+          // outline is untouched. As with the links, the tooltip is
+          // dropped while expanded, where the label is already on
+          // screen.
+          title={collapsed ? t("sidebar.expand") : undefined}
         >
           <Icon name={collapsed ? "chevronRight" : "chevronLeft"} />
           <span className="sidebar-label">{t("sidebar.collapse")}</span>

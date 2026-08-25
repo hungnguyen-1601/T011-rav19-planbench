@@ -43,6 +43,17 @@ import {
   type NoCardReason,
   type TaskProfileSummary,
 } from "@/lib/decisions";
+import {
+  CONFLICT_KEY,
+  EXPERIMENT_SCOPES,
+  SCOPE_LABEL_KEY,
+  SCOPE_NOTE_KEY,
+  inferExperimentScope,
+  readScopeViolation,
+  scopeConflict,
+  violationKey,
+  type ExperimentScope,
+} from "@/lib/experimentScope";
 import type { AlgorithmInfo } from "@/lib/benchmarkTypes";
 import type { MapData, MapSummary, Pose2D } from "@/lib/types";
 
@@ -272,6 +283,12 @@ function LaunchPanel({
     local_config: "dwa_coarse",
   });
   const [episodes, setEpisodes] = useState("");
+  /* `null` means "whatever the candidates say", which is the state this
+     panel is in until somebody disagrees with the derivation — not a
+     scope value, so changing a candidate keeps moving the scope with
+     it. Storing the derived value here instead would freeze the first
+     derivation and quietly stop tracking the picker. */
+  const [scopeOverride, setScopeOverride] = useState<ExperimentScope | null>(null);
   const [jobs, setJobs] = useState<DecisionJob[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -281,6 +298,10 @@ function LaunchPanel({
 
   const live = jobs.filter(jobIsLive);
   const base = profiles.find((profile) => profile.id === profileId);
+  const candidates = [first, second];
+  const derivedScope = inferExperimentScope(candidates);
+  const scope = scopeOverride ?? derivedScope;
+  const conflict = scopeConflict(scope, candidates);
   const customReady =
     custom.mapId !== "" &&
     custom.newProfileId.trim() !== "" &&
@@ -399,7 +420,13 @@ function LaunchPanel({
         : profileId;
       await queueDecision({
         task_profile_id: target,
-        candidates: [first, second],
+        candidates,
+        // Sent, never left out. The client's default is
+        // `global_planner_selection`, so an omitted scope silently
+        // declared a global-planner conclusion over whatever pair was
+        // on the form — and every local-controller comparison, the
+        // commoner one, was refused for a scope nobody chose.
+        scope,
         // Omitted rather than sent as a number when blank: the default
         // is N_min from the deployment's declared risk, and inventing a
         // count here would quietly override the contract's arithmetic.
@@ -421,7 +448,7 @@ function LaunchPanel({
         <h3><Icon name="play" size={18} />{t("decisions.launch.title")}</h3>
       </div>
 
-      {error ? <div className="error-box">{error}</div> : null}
+      {error ? <LaunchError message={error} /> : null}
 
       <div className="comparison-setup-grid">
         <fieldset className="comparison-common">
@@ -471,6 +498,14 @@ function LaunchPanel({
         />
         </div>
       </div>
+
+      <ScopeField
+        scope={scope}
+        derived={derivedScope}
+        overridden={scopeOverride !== null}
+        conflict={conflict}
+        onChange={setScopeOverride}
+      />
 
       <DecisionDeploymentPreview deployment={base} />
 
@@ -542,6 +577,106 @@ function LaunchPanel({
           }}
         />
       ) : null}
+    </div>
+  );
+}
+
+/** What this comparison is allowed to conclude about.
+ *
+ * **Derived, shown, and still editable.** The derivation is right for
+ * every controlled swap — see `lib/experimentScope` — so the field opens
+ * on the answer the two candidates already imply and nobody has to learn
+ * the rule to queue a valid run. It stays editable because a reader may
+ * be asking a question the pair does not spell out, and because a page
+ * that silently decides on their behalf is how the old one shipped a
+ * default nobody could see.
+ *
+ * **The warning does not disable the button.** The server validates the
+ * scope again and is the authority; a client that refused first would be
+ * a second implementation of HĐ-1.4, free to drift from it. What this
+ * buys is the interval — the sweep is queued and runs for hours, so a
+ * refusal that arrives before the click costs a re-pick and one that
+ * arrives after costs an afternoon.
+ */
+function ScopeField({
+  scope,
+  derived,
+  overridden,
+  conflict,
+  onChange,
+}: {
+  scope: ExperimentScope;
+  derived: ExperimentScope;
+  overridden: boolean;
+  conflict: ReturnType<typeof scopeConflict>;
+  onChange: (next: ExperimentScope | null) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <fieldset className="comparison-scope">
+      <legend>{t("decisions.launch.scope")}</legend>
+      <div className="comparison-scope-row">
+        <label className="field">
+          <span>{t("decisions.launch.scope")}</span>
+          <select
+            value={scope}
+            onChange={(event) => onChange(event.target.value as ExperimentScope)}
+          >
+            {EXPERIMENT_SCOPES.map((one) => (
+              <option key={one} value={one}>
+                {t(SCOPE_LABEL_KEY[one])}
+              </option>
+            ))}
+          </select>
+        </label>
+        {overridden ? (
+          <button type="button" onClick={() => onChange(null)}>
+            {t("decisions.launch.scopeReset")}
+          </button>
+        ) : null}
+      </div>
+      {/* What this scope licenses a conclusion about — the whole reason
+          the choice matters, and a sentence nobody would go looking for
+          in the contract. */}
+      <p className="muted comparison-scope-note">{t(SCOPE_NOTE_KEY[scope])}</p>
+      <p className="muted comparison-scope-note">
+        {overridden
+          ? t("decisions.launch.scopeOverridden", { derived: t(SCOPE_LABEL_KEY[derived]) })
+          : t("decisions.launch.scopeDerived")}
+      </p>
+      {conflict ? (
+        <p className="notice notice--warn comparison-scope-note">{t(CONFLICT_KEY[conflict])}</p>
+      ) : null}
+    </fieldset>
+  );
+}
+
+/** A launch refusal, in a sentence that names the next move.
+ *
+ * The scope violations are the ones worth translating: they arrive as
+ * *"scope global_planner_selection requires an identical local layer
+ * (component, version and parameters) in every candidate, found 2
+ * variants across ['e1251e…', 'e4d2c…']"* — accurate, and addressed to
+ * whoever wrote the validator. The reader needs one of two moves out of
+ * it, and neither is in the sentence.
+ *
+ * **The server's own words stay, one fold down.** They carry the
+ * candidate ids and the variant count, which is what anybody reporting
+ * the problem needs, and a translation that turned out to be wrong
+ * would otherwise have destroyed the evidence. Anything unrecognised is
+ * shown verbatim: an error mistranslated is worse than one untranslated.
+ */
+function LaunchError({ message }: { message: string }) {
+  const { t } = useTranslation();
+  const violation = readScopeViolation(message);
+  if (!violation) return <div className="error-box">{message}</div>;
+  return (
+    <div className="error-box">
+      <p className="launch-error-headline">{t(violationKey(violation))}</p>
+      <details className="launch-error-detail">
+        <summary>{t("decisions.scope.violation.detail")}</summary>
+        <code>{message}</code>
+      </details>
     </div>
   );
 }

@@ -1,10 +1,18 @@
 "use client";
 
-/** System information — where the backend URL and versions went.
+/** System information — where the backend URL and the version went.
  *
  * They were on the dashboard, in a card larger than anything a user
  * could act on. Here they are one table, on a page nobody lands on by
  * accident.
+ *
+ * **One version, and it comes from the backend.** There used to be a
+ * second row holding a `FRONTEND_VERSION = "0.1.0"` constant, kept in
+ * step with `package.json` by hand and therefore not kept in step at
+ * all. The app ships as one desktop bundle whose launcher sets the
+ * version the API reports, so two numbers could only ever agree by
+ * accident and disagree by default — and a reader comparing them
+ * against a release note would not know which one to believe.
  *
  * The API base URL is shown **in development only**. In production it
  * tells a stranger which host to point a scanner at, and tells the
@@ -18,9 +26,6 @@ import { Icon } from "@/components/Icon";
 import { SystemStatus, type StatusValue } from "@/components/SystemStatus";
 import { API_BASE, api } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
-
-/** Kept in step with apps/web/package.json. */
-const FRONTEND_VERSION = "0.1.0";
 
 const IS_DEVELOPMENT = process.env.NODE_ENV !== "production";
 
@@ -46,7 +51,6 @@ export default function SystemPage() {
   useEffect(check, [check]);
 
   const rows: { label: string; value: React.ReactNode }[] = [
-    { label: t("system.frontendVersion"), value: <code>{FRONTEND_VERSION}</code> },
     {
       label: t("system.backendVersion"),
       value: health ? <code>{health.version}</code> : <span className="muted">—</span>,
