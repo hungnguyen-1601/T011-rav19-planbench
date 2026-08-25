@@ -87,8 +87,12 @@ jobs:
         shell: pwsh
         run: |
           $version = '${{ steps.version.outputs.version }}'
-          $installer = Get-ChildItem 'dist' -Filter '*.exe' | Select-Object -First 1
-          if (-not $installer) { throw 'the build produced no installer' }
+          # By name, not "the first .exe": a working tree that has built
+          # an older version still has its installer sitting in dist/,
+          # and publishing whichever one sorts first is how a release
+          # ends up carrying the wrong build.
+          $installer = Get-Item 'dist\PlanBench-Setup.exe' -ErrorAction SilentlyContinue
+          if (-not $installer) { throw 'the build produced no dist\PlanBench-Setup.exe' }
           $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLower()
           # The updater refuses any download that does not hash to this.
           # It is the only check between fetching a file and running it
@@ -122,6 +126,6 @@ jobs:
           # `latest.json` is an asset of the release it describes, not a
           # file at a fixed URL: a manifest that outlives its installer
           # is a hash mismatch waiting to happen.
-          gh release create $tag dist/*.exe dist/latest.json `
+          gh release create $tag dist/PlanBench-Setup.exe dist/latest.json `
             --title "PlanBench $($tag -replace '^desktop-v', '')" `
             --generate-notes

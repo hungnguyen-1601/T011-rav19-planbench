@@ -226,11 +226,17 @@ Copy-Item (Join-Path $RepoRoot 'alembic.ini') $App
 $previous = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 try {
-    $commit = (& git -C $RepoRoot rev-parse HEAD 2>&1 | Select-Object -First 1).ToString().Trim()
+    $commit = ((& git -C $RepoRoot rev-parse HEAD 2>&1) -join "`n").Trim()
 } finally {
     $ErrorActionPreference = $previous
 }
-if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') {
+# The value is the whole test. `$LASTEXITCODE` was in this condition and
+# was wrong twice over: it still held robocopy's result from the block
+# above — robocopy answers 1 for "files were copied" — and piping git
+# through `Select-Object -First 1` ends the pipeline before the exit
+# code lands. Forty hex characters is proof the command worked; an exit
+# code that can be somebody else's is not.
+if ($commit -notmatch '^[0-9a-f]{40}$') {
     throw "cannot read the commit to stamp into the build (got '$commit')"
 }
 Set-Content -Path (Join-Path $App 'apps\desktop\planbench_desktop\COMMIT') `
