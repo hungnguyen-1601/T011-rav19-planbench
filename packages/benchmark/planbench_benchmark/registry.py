@@ -276,6 +276,16 @@ class _Entry(BaseModel):
     #: modules to hash — its code arrived as bytes — so the checksum of
     #: those bytes has to travel with the entry instead.
     controller_version: str = ""
+    #: Named parameter sets this controller may be registered with,
+    #: ``{name: params}``. Empty for built-ins, whose configurations live
+    #: in ``candidates.CONTROLLER_CONFIGS`` — written there because a
+    #: name like ``dwa_coarse`` records a design decision somebody made.
+    #:
+    #: An imported controller has no such table and cannot get one
+    #: without an edit to this repository, which is the thing importing
+    #: exists to avoid. So its configurations travel with its entry,
+    #: derived from the manifest.
+    controller_configs: dict[str, dict] = Field(default_factory=dict)
 
 
 def _astar(episode_seed: int) -> GlobalPlanner:  # noqa: ARG001 - A* ignores the seed
@@ -529,6 +539,21 @@ def external_controller_version(controller: str) -> str:
         if entry.info.local_controller == controller and entry.controller_version:
             return entry.controller_version
     return ""
+
+
+def external_controller_configs() -> dict[str, dict[str, dict]]:
+    """``{controller: {config name: params}}`` for imported controllers.
+
+    Live, for the same reason :func:`external_controller_version` is: the
+    set of imported controllers changes while the process runs, and a
+    dropdown built from a cached answer would offer a configuration whose
+    plugin has since been disabled.
+    """
+    configs: dict[str, dict[str, dict]] = {}
+    for entry in EXTERNAL_ALGORITHMS.values():
+        if entry.controller_configs:
+            configs.setdefault(entry.info.local_controller, {}).update(entry.controller_configs)
+    return configs
 
 
 def unregister_external(algorithm_id: str) -> None:

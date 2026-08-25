@@ -173,6 +173,37 @@ def build_local_factory(manifest_data: dict[str, Any], directory: Path):
     return factory
 
 
+def controller_configs_for(plugin_id: str, config_schema: dict[str, Any]) -> dict[str, dict]:
+    """The one named configuration an imported controller starts with.
+
+    **A configuration has to exist or the controller cannot be run at
+    all.** Registration takes a *name*, not a parameter dict, because a
+    name is what a report quotes and what two runs are compared under —
+    so a controller with no named configuration is one the Test Bench
+    offers and then refuses to start, which is exactly what an imported
+    plugin did until this existed.
+
+    The name is prefixed with the plugin's id because names are unique
+    across controllers, not within them: two imported plugins would
+    otherwise both want to be called ``defaults``.
+
+    **The parameters are whatever the manifest declares as defaults, and
+    nothing more.** The real defaults live in the plugin's constructor,
+    and reading them would mean importing plugin code — the one thing
+    discovery may not do. So a schema that declares no ``default`` yields
+    an empty parameter set: honest, and it hashes as what it is. An
+    author who wants their parameters recorded in the report declares
+    them in ``config_schema``, which is the only surface the platform
+    reads.
+    """
+    declared = {
+        name: spec["default"]
+        for name, spec in (config_schema.get("properties") or {}).items()
+        if isinstance(spec, dict) and "default" in spec
+    }
+    return {f"{plugin_id}_defaults": declared}
+
+
 def stack_id_for(plugin_id: str, global_planner: str) -> str:
     """The id this pairing is measured and recorded under.
 
@@ -243,6 +274,7 @@ def build_plugin_entry(
         # caller has no checksum to give: a number a person maintains is
         # a number a person forgets, and the failure is silent.
         controller_version=controller_version or f"v{manifest.version}",
+        controller_configs=controller_configs_for(manifest.id, manifest.config_schema),
     )
 
 
@@ -254,6 +286,7 @@ __all__ = [
     "build_local_factory",
     "build_plugin_entry",
     "config_model_for",
+    "controller_configs_for",
     "observation_class_for",
     "stack_id_for",
 ]

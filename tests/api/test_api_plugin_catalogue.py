@@ -243,6 +243,65 @@ class TestFixingAPluginMakesADifferentCandidate:
         assert dwa.local_controller.version == controller_version("dwa")
 
 
+class TestAnImportedControllerCanActuallyBeSelected:
+    """Appearing in a dropdown is not the same as being runnable.
+
+    The Test Bench asks for three things — global planner, local
+    controller, configuration — and refuses to start without all three.
+    An imported plugin reached the second dropdown and stopped there: the
+    named configurations came from a table written in this repository,
+    which an imported controller cannot be in, so its configuration list
+    was empty and the run button stayed disabled with nothing to pick.
+
+    Found by using the feature, which is where this class of gap gets
+    found: every layer reported success and the screen still could not
+    run anything.
+    """
+
+    def test_it_is_offered_a_configuration(self, client, admin):
+        from planbench_benchmark.candidates import offered_controller_configs
+
+        import_probe(client, admin, WORKING_PLANNER)
+        offered = offered_controller_configs()
+        assert "org.vinai.vfh-plus" in offered
+        assert offered["org.vinai.vfh-plus"], "a controller with no configuration cannot be run"
+
+    def test_the_endpoint_the_picker_reads_lists_it(self, client, admin):
+        import_probe(client, admin, WORKING_PLANNER)
+        rows = client.get("/api/v1/local-controllers", headers=admin).json()
+        mine = [row for row in rows if row["controller"] == "org.vinai.vfh-plus"]
+        assert mine, "the configuration picker is served from here, so it has to appear"
+        assert mine[0]["name"].startswith("org.vinai.vfh-plus")
+
+    def test_the_configuration_is_accepted_where_it_is_spent(self, client, admin):
+        """Offering a name that registration would refuse is the drift
+        the served catalogue exists to prevent."""
+        from planbench_benchmark.candidates import (
+            offered_controller_configs,
+            validate_config_names,
+        )
+
+        import_probe(client, admin, WORKING_PLANNER)
+        name = next(iter(offered_controller_configs()["org.vinai.vfh-plus"]))
+        validate_config_names([(STACK_ID, name)])
+
+    def test_disabling_the_plugin_withdraws_its_configuration(self, client, admin):
+        from planbench_benchmark.candidates import offered_controller_configs
+
+        bundle_id = import_probe(client, admin, WORKING_PLANNER).json()["id"]
+        client.patch(
+            f"/api/v1/algorithms/plugins/{bundle_id}", json={"status": "disabled"}, headers=admin
+        )
+        assert "org.vinai.vfh-plus" not in offered_controller_configs()
+
+    def test_built_in_configurations_are_untouched(self, client, admin):
+        from planbench_benchmark.candidates import LOCAL_CONTROLLER_CONFIGS
+
+        import_probe(client, admin, WORKING_PLANNER)
+        assert "dwa_balanced" in LOCAL_CONTROLLER_CONFIGS
+        assert LOCAL_CONTROLLER_CONFIGS["dwa_balanced"]["control_period"] == 0.05
+
+
 class TestTheTwoObservationTablesAgree:
     def test_the_inverse_mapping_matches_the_forward_one(self):
         """`plugin_stacks` states the requirements-to-class mapping in

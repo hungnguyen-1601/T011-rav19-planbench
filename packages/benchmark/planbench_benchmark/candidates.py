@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from functools import cache
 from importlib import import_module
 from typing import Any
@@ -406,18 +406,75 @@ CONTROLLER_CONFIGS: dict[str, dict[str, dict[str, Any]]] = {
 #: Derived — never edited. Eight modules and a script look configs up by
 #: name and a stored report quotes that name, so the flat view has to
 #: keep existing; deriving it means the grouping cannot drift from it.
-LOCAL_CONTROLLER_CONFIGS: dict[str, dict[str, Any]] = {
-    name: params
-    for controller_configs in CONTROLLER_CONFIGS.values()
-    for name, params in controller_configs.items()
-}
+class _LiveConfigs(Mapping):
+    """Named configurations, flattened, from both sources.
+
+    **A mapping rather than a dict, because one of the sources changes
+    while the process runs.** ``CONTROLLER_CONFIGS`` is written in this
+    file and cannot move; an imported controller's configurations arrive
+    with its bundle and leave when it is disabled. A dict comprehension
+    evaluated at import time would have answered for the built-ins and
+    been permanently wrong about everything else — which is what left the
+    Test Bench's configuration dropdown empty for an imported plugin, and
+    its run button disabled with nothing to select.
+
+    Every consumer reads this the way it always did — ``in``, ``.get``,
+    ``[]``, ``sorted`` — so nothing above had to learn that there are two
+    sources now.
+    """
+
+    def _merged(self) -> dict[str, dict[str, Any]]:
+        from planbench_benchmark.registry import external_controller_configs
+
+        merged: dict[str, dict[str, Any]] = {
+            name: params
+            for controller_configs in CONTROLLER_CONFIGS.values()
+            for name, params in controller_configs.items()
+        }
+        for configs in external_controller_configs().values():
+            merged.update(configs)
+        return merged
+
+    def __getitem__(self, key: str) -> dict[str, Any]:
+        return self._merged()[key]
+
+    def __iter__(self):
+        return iter(self._merged())
+
+    def __len__(self) -> int:
+        return len(self._merged())
+
+
+class _LiveConfigOwners(Mapping):
+    """``{config name: the controller it belongs to}``, from both sources."""
+
+    def _merged(self) -> dict[str, str]:
+        from planbench_benchmark.registry import external_controller_configs
+
+        owners = {
+            name: controller
+            for controller, controller_configs in CONTROLLER_CONFIGS.items()
+            for name in controller_configs
+        }
+        for controller, configs in external_controller_configs().items():
+            for name in configs:
+                owners[name] = controller
+        return owners
+
+    def __getitem__(self, key: str) -> str:
+        return self._merged()[key]
+
+    def __iter__(self):
+        return iter(self._merged())
+
+    def __len__(self) -> int:
+        return len(self._merged())
+
+
+LOCAL_CONTROLLER_CONFIGS: Mapping[str, dict[str, Any]] = _LiveConfigs()
 
 #: Which controller each named configuration belongs to. Derived too.
-CONTROLLER_OF_CONFIG: dict[str, str] = {
-    name: controller
-    for controller, controller_configs in CONTROLLER_CONFIGS.items()
-    for name in controller_configs
-}
+CONTROLLER_OF_CONFIG: Mapping[str, str] = _LiveConfigOwners()
 
 #: ``dwa_balanced`` is a third point on a real design axis, not a knob
 #: turned until something passed. The two ends were measured first and
@@ -458,12 +515,22 @@ def offered_controller_configs() -> dict[str, dict[str, dict]]:
     prevent. Deriving it here means withdrawing a stack withdraws its
     configurations in the same move, with nobody having to remember.
     """
+    from planbench_benchmark.registry import external_controller_configs
+
     usable = {info.local_controller for info in list_algorithms() if info.benchmarkable}
-    return {
+    offered = {
         controller: configs
         for controller, configs in CONTROLLER_CONFIGS.items()
         if controller in usable
     }
+    # Imported controllers, whose configurations came in with the bundle
+    # rather than from the table above. Filtered by the same `usable`
+    # test, so disabling a plugin withdraws its configuration in the same
+    # move that withdraws its stack.
+    for controller, configs in external_controller_configs().items():
+        if controller in usable:
+            offered.setdefault(controller, {}).update(configs)
+    return offered
 
 
 def validate_config_names(specs: Sequence[tuple[str, str]]) -> None:
