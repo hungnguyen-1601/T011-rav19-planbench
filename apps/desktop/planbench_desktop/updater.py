@@ -233,23 +233,48 @@ def ask(release: Release) -> bool:
         return False
 
 
-def apply(installer: Path, relaunch: list[str]) -> None:
-    """Run the installer silently, then reopen the app, then leave.
+def apply(installer: Path, relaunch: list[str], log: Path | None = None) -> None:
+    """Run the installer, then reopen the app, then leave.
 
     The application has to **exit** for this to work: it is running out
     of the directory the installer is about to replace, and Windows will
-    not overwrite a file that a live process has open. So the chain is
-    handed to a detached shell — install, wait, relaunch — and this
-    process returns to its caller to shut down normally.
+    not overwrite a file a live process holds open. So the sequence is
+    handed to a detached shell and this process returns to shut down.
+
+    Three details are what make that survivable rather than a race:
+
+    **A pause before the installer starts.** Handing off and exiting are
+    not simultaneous — the interpreter still has to tear down — and the
+    file most in the way is `pythonw.exe`, which *is* this process. A
+    few seconds costs nothing and removes the overlap.
+
+    **`/FORCECLOSEAPPLICATIONS`.** For whatever is still holding a file
+    when the installer looks. Without it, silent mode's answer to a
+    locked file is to give up, and `/SUPPRESSMSGBOXES` means giving up
+    looks exactly like succeeding.
+
+    **`&` rather than `&&` for the relaunch.** A failed install must
+    still bring the app back: leaving somebody with no window at all is
+    worse than leaving them on the version they had. Which one happened
+    is answered by the installer log and by the version on the System
+    page, not by guessing.
     """
     quoted = " ".join(f'"{part}"' for part in relaunch)
-    command = f'"{installer}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART && start "" {quoted}'
+    log_option = f' /LOG="{log}"' if log is not None else ""
+    command = (
+        "timeout /t 4 /nobreak >nul & "
+        f'"{installer}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART '
+        f"/FORCECLOSEAPPLICATIONS{log_option}"
+        f' & start "" {quoted}'
+    )
     subprocess.Popen(  # noqa: S602 - the command is built here, not supplied
         ["cmd", "/c", command],
         creationflags=getattr(subprocess, "DETACHED_PROCESS", 0),
         close_fds=True,
     )
     logger.info("handed off to the installer for %s", installer.name)
+    if log is not None:
+        logger.info("the installer will write its own log to %s", log)
 
 
 def offer(current: str, cache: Path, relaunch: list[str]) -> bool:
@@ -273,7 +298,8 @@ def offer(current: str, cache: Path, relaunch: list[str]) -> bool:
         if not ask(release):
             logger.info("the update was declined")
             return False
-        apply(download(release, credential, cache), relaunch)
+        installer = download(release, credential, cache)
+        apply(installer, relaunch, log=cache / "installer.log")
     except UpdateError as exc:
         logger.warning("update check failed: %s", exc)
         return False

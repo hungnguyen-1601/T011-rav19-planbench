@@ -257,7 +257,7 @@ class TestTheFlow:
         api.responses["/releases"] = json.dumps([_release_payload("desktop-v0.9.0")]).encode()
         monkeypatch.setattr(updater, "ask", lambda release: False)
         applied: list[object] = []
-        monkeypatch.setattr(updater, "apply", lambda *a: applied.append(a))
+        monkeypatch.setattr(updater, "apply", lambda *a, **kw: applied.append(a))
 
         assert updater.offer("0.1.0", tmp_path, ["python"]) is False
         assert applied == []
@@ -271,7 +271,7 @@ class TestTheFlow:
         api.responses["exe"] = payload
         monkeypatch.setattr(updater, "ask", lambda release: True)
         handed: list[tuple] = []
-        monkeypatch.setattr(updater, "apply", lambda *a: handed.append(a))
+        monkeypatch.setattr(updater, "apply", lambda *a, **kw: handed.append(a))
 
         # True means "the app should now close": the installer is about
         # to replace the directory this process is running out of.
@@ -280,23 +280,55 @@ class TestTheFlow:
 
 
 class TestTheHandoff:
+    @staticmethod
+    def _command(monkeypatch, **kwargs) -> str:
+        recorded: list[list[str]] = []
+        monkeypatch.setattr(
+            updater.subprocess,
+            "Popen",
+            lambda command, **kw: recorded.append(command),
+        )
+        updater.apply(updater.Path("C:/tmp/setup.exe"), ["pythonw.exe", "main.py"], **kwargs)
+        return " ".join(recorded[0])
+
     def test_the_installer_runs_silently_and_relaunches_the_app(self, monkeypatch) -> None:
         """Windows will not overwrite a file a live process holds open.
 
         So the sequence is handed to a detached shell — install, then
         start the app again — and this process exits normally.
         """
-        recorded: list[list[str]] = []
-        monkeypatch.setattr(
-            updater.subprocess,
-            "Popen",
-            lambda command, **kwargs: recorded.append(command),
-        )
+        command = self._command(monkeypatch)
 
-        updater.apply(updater.Path("C:/tmp/setup.exe"), ["pythonw.exe", "main.py"])
-
-        command = " ".join(recorded[0])
         assert "/VERYSILENT" in command
         assert "/SUPPRESSMSGBOXES" in command
         assert "pythonw.exe" in command
-        assert "&&" in command  # the relaunch only happens if the install did
+
+    def test_it_waits_before_replacing_the_running_interpreter(self, monkeypatch) -> None:
+        """`pythonw.exe` is both the file being replaced and the process
+        doing the replacing; handing off and exiting are not
+        simultaneous, and the overlap is what leaves the old build in
+        place with nothing reported."""
+        assert "timeout /t" in self._command(monkeypatch)
+
+    def test_it_closes_whatever_still_holds_a_file(self, monkeypatch) -> None:
+        """Silent mode's answer to a locked file is to give up, and with
+        message boxes suppressed, giving up looks like succeeding."""
+        assert "/FORCECLOSEAPPLICATIONS" in self._command(monkeypatch)
+
+    def test_the_app_comes_back_even_if_the_install_failed(self, monkeypatch) -> None:
+        """`&&` would leave somebody with no window at all — worse than
+        leaving them on the version they already had."""
+        command = self._command(monkeypatch)
+
+        assert "&&" not in command
+        assert command.index("&", command.index("setup.exe")) < command.index("start")
+
+    def test_the_installer_is_asked_to_write_a_log_when_given_a_path(self, monkeypatch) -> None:
+        """A silent installer that fails silently leaves nothing to read.
+
+        This is the only record of what the installer did, because the
+        app that started it is gone by the time it runs.
+        """
+        command = self._command(monkeypatch, log=updater.Path("C:/tmp/installer.log"))
+
+        assert f'/LOG="{updater.Path("C:/tmp/installer.log")}"' in command
