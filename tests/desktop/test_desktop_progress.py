@@ -10,10 +10,12 @@ bar.
 
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 from planbench_desktop import updater
-from planbench_desktop.progress import Progress
+from planbench_desktop.progress import LOAD_TIMEOUT_S, Progress
 
 
 class TestTheWindowIsNeverWorthTheUpdate:
@@ -53,8 +55,66 @@ class TestTheWindowIsNeverWorthTheUpdate:
         screen.close()
 
 
+class TestTheDownloadIsNeverBlockedByTheWindow:
+    """The failure this module was rewritten for.
+
+    `evaluate_js` is synchronous — it waits for the window to answer.
+    Calling it from the download loop, once per chunk, meant the first
+    call went out before WebView2 had loaded the page, never returned,
+    and took the download with it: an hour on screen, nothing
+    transferred. So `update` records, and a painter thread does the
+    talking.
+    """
+
+    def test_update_never_calls_into_the_window(self) -> None:
+        """The one property that matters. `update` runs on the download
+        thread, so anything it waits on is something the download waits
+        on."""
+        called: list[str] = []
+        screen = Progress("t", "d")
+        screen._window = type("W", (), {"evaluate_js": lambda self, s: called.append(s)})()
+
+        screen.update("half way", 50.0)
+        screen.update("nearly", 90.0)
+
+        assert called == []
+
+    def test_update_keeps_only_the_latest_state(self) -> None:
+        """A download reports hundreds of times; the window is repainted
+        four times a second. Queueing every one would build a backlog
+        the painter could never drain."""
+        screen = Progress("t", "d")
+
+        screen.update("first", 10.0)
+        screen.update("second", 20.0)
+
+        assert screen._state == ("second", 20.0)
+
+    def test_a_window_that_stops_answering_does_not_stop_the_download(self) -> None:
+        """The painter gives up; the work carries on to the end."""
+        screen = Progress("t", "d")
+
+        class Deaf:
+            def evaluate_js(self, script: str) -> None:
+                raise RuntimeError("the bridge is gone")
+
+        screen._window = Deaf()
+        screen._loaded.set()
+        painter = threading.Thread(target=screen._paint, daemon=True)
+        painter.start()
+        screen.update("still going", 50.0)
+
+        painter.join(timeout=3)
+        assert not painter.is_alive(), "the painter should give up rather than spin"
+
+    def test_the_painter_does_not_wait_forever_for_a_page_that_never_loads(self) -> None:
+        """A window that never fires `loaded` must not hold the painter,
+        because the painter is what a person is looking at."""
+        assert LOAD_TIMEOUT_S <= 30
+
+
 class TestWhatTheWindowIsToldToShow:
-    """`update` builds a JavaScript call; these check what it builds."""
+    """`_draw` builds the JavaScript call; these check what it builds."""
 
     @staticmethod
     def _recording() -> tuple[Progress, list[str]]:
@@ -66,7 +126,7 @@ class TestWhatTheWindowIsToldToShow:
     def test_a_known_size_becomes_a_percentage(self) -> None:
         screen, sent = self._recording()
 
-        screen.update("Downloading… 41 of 82 MB", 50.0)
+        screen._draw("Downloading… 41 of 82 MB", 50.0)
 
         assert "50.0" in sent[0]
         assert "Downloading" in sent[0]
@@ -76,7 +136,7 @@ class TestWhatTheWindowIsToldToShow:
         by, and a bar computed from zero is a bar that lies."""
         screen, sent = self._recording()
 
-        screen.update("Downloading… 41 MB")
+        screen._draw("Downloading… 41 MB", None)
 
         assert "null" in sent[0]
 
@@ -85,8 +145,8 @@ class TestWhatTheWindowIsToldToShow:
         the bar past the end of its track."""
         screen, sent = self._recording()
 
-        screen.update("over", 140.0)
-        screen.update("under", -20.0)
+        screen._draw("over", 140.0)
+        screen._draw("under", -20.0)
 
         assert "100.0" in sent[0]
         assert "0.0" in sent[1]
@@ -96,9 +156,12 @@ class TestWhatTheWindowIsToldToShow:
         release published by somebody else."""
         screen, sent = self._recording()
 
-        screen.update("it's 'quoted'", 10.0)
+        screen._draw("it's 'quoted'", 10.0)
 
         assert (chr(92) + chr(39)) in sent[0]
+
+    def test_drawing_without_a_window_reports_failure_rather_than_raising(self) -> None:
+        assert Progress("t", "d")._draw("anything", 1.0) is False
 
 
 class TestTheInstallerSpeaksForItself:
