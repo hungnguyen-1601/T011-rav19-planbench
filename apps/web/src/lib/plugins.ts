@@ -95,6 +95,29 @@ export function setPluginStatus(
   });
 }
 
+/** Change what is *written about* a bundle, never what it is.
+ *
+ * The manifest and the archive are identity: a bundle whose code could
+ * be edited in place would let one `plugin_id` at one version mean two
+ * different controllers, and every result recorded against it would stop
+ * being attributable. The server refuses those fields; this only ever
+ * sends the four it accepts.
+ */
+export function updatePlugin(
+  bundleId: string,
+  changes: {
+    name?: string;
+    version?: string;
+    description?: string;
+    robot_profile_id?: string;
+  },
+): Promise<PluginBundleSummary> {
+  return authFetch<PluginBundleSummary>(`/algorithms/plugins/${bundleId}`, {
+    method: "PATCH",
+    body: JSON.stringify(changes),
+  });
+}
+
 export function revalidatePlugin(bundleId: string): Promise<PluginBundleSummary> {
   return authFetch<PluginBundleSummary>(`/algorithms/plugins/${bundleId}/validate`, {
     method: "POST",

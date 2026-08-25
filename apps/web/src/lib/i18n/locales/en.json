@@ -1769,5 +1769,8 @@
   "settings.status.offlineHint": "No working key has been read yet, so replies come from the built-in keyword responder rather than a model.",
   "settings.status.live": "Answering with {provider} · {model}",
   "settings.status.notReady": "Not configured yet",
-  "settings.readOnly": "Only an administrator can change these. Ask one to store a key for this deployment."
+  "settings.readOnly": "Only an administrator can change these. Ask one to store a key for this deployment.",
+  "models.edit.groupModels": "Trained models",
+  "models.edit.groupAlgorithms": "Imported algorithms",
+  "models.edit.pluginFixed": "The bundle and its manifest cannot be changed here: the archive is what results are recorded against, so editing it in place would make one plugin version mean two different controllers. To change the code, raise the version in plugin.json and import it again."
 }

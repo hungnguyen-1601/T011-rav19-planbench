@@ -1769,5 +1769,8 @@
   "settings.status.offlineHint": "Chưa đọc được khoá nào dùng được, nên câu trả lời đến từ bộ trả lời theo từ khoá sẵn có chứ không phải từ mô hình.",
   "settings.status.live": "Đang trả lời bằng {provider} · {model}",
   "settings.status.notReady": "Chưa cấu hình xong",
-  "settings.readOnly": "Chỉ quản trị viên mới đổi được các mục này. Hãy nhờ quản trị viên lưu khoá cho bản triển khai này."
+  "settings.readOnly": "Chỉ quản trị viên mới đổi được các mục này. Hãy nhờ quản trị viên lưu khoá cho bản triển khai này.",
+  "models.edit.groupModels": "Mô hình đã huấn luyện",
+  "models.edit.groupAlgorithms": "Thuật toán đã nhập",
+  "models.edit.pluginFixed": "Không sửa được gói và manifest ở đây: kết quả được ghi theo chính tệp lưu trữ đó, nên sửa tại chỗ sẽ khiến một phiên bản plugin mang hai controller khác nhau. Muốn đổi mã thì nâng version trong plugin.json rồi nhập lại."
 }

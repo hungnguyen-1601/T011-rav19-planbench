@@ -53,6 +53,7 @@ import {
   revalidatePlugin,
   setPluginStatus,
   stackIdFor,
+  updatePlugin,
 } from "@/lib/plugins";
 import { PluginImportPanel } from "@/components/PluginImportPanel";
 import { useTranslation } from "@/lib/i18n";
@@ -221,9 +222,15 @@ export default function ModelsPage() {
                 content: (
                   <EditPanel
                     models={models}
+                    plugins={plugins}
                     profiles={profiles}
                     onChanged={(next) =>
                       setModels((current) =>
+                        current.map((row) => (row.id === next.id ? next : row)),
+                      )
+                    }
+                    onPluginChanged={(next) =>
+                      setPlugins((current) =>
                         current.map((row) => (row.id === next.id ? next : row)),
                       )
                     }
@@ -249,7 +256,10 @@ export default function ModelsPage() {
 
       {loading ? (
         <p className="muted">{t("common.loading")}</p>
-      ) : models.length === 0 ? (
+      ) : models.length === 0 && plugins.length === 0 ? (
+        /* Only when the page really is empty. With an imported algorithm
+           in the table below, "there are no models yet" is a true
+           sentence that reads as a false one. */
         <EmptyState icon="library" title={t("models.empty.title")} body={t("models.empty.body")} />
       ) : (
         <div className="panel">
@@ -692,15 +702,35 @@ function UploadPanel({
  * upload form filled in, rather than offering a picker that would answer
  * with a 400 after the file had been chosen.
  */
+/** Editing what is *written about* an artefact, for both kinds.
+ *
+ * **Both, because the page has two kinds and the reader has one
+ * question.** This tab used to list models only. Once imported
+ * algorithms appeared beside them, somebody with an algorithm and no
+ * model opened it and was told there was nothing to edit — while their
+ * algorithm sat in a table further down the same screen. The sentence
+ * was true about models and false about the page, which is the worst
+ * kind of true.
+ *
+ * Neither kind can have its *file* replaced here, and for the same
+ * reason: the archive is the identity a result is recorded against. A
+ * model offers a new-version shortcut; a bundle's version lives in its
+ * manifest, so it says so instead of offering a button that cannot
+ * work.
+ */
 function EditPanel({
   models,
+  plugins,
   profiles,
   onChanged,
+  onPluginChanged,
   onNewVersion,
 }: {
   models: ModelSummary[];
+  plugins: PluginBundleSummary[];
   profiles: RobotProfile[];
   onChanged: (model: ModelSummary) => void;
+  onPluginChanged: (bundle: PluginBundleSummary) => void;
   onNewVersion: (model: ModelSummary) => void;
 }) {
   const { t } = useTranslation();
@@ -717,42 +747,55 @@ function EditPanel({
   // it, and a picker offering the rest would collect a form and answer
   // with a 403.
   const mine = models.filter((model) => model.is_owner);
-  const chosen = mine.find((model) => model.id === chosenId) ?? null;
+  const myPlugins = plugins.filter((bundle) => bundle.owned);
+  // Prefixed because the two kinds have their own id spaces, and a bare
+  // id in a shared picker would be a collision waiting for the day the
+  // two generators agree.
+  const entries = [
+    ...mine.map((model) => ({ key: `model:${model.id}`, kind: "model" as const, item: model })),
+    ...myPlugins.map((bundle) => ({
+      key: `plugin:${bundle.id}`,
+      kind: "plugin" as const,
+      item: bundle,
+    })),
+  ];
+  const selected = entries.find((entry) => entry.key === chosenId) ?? null;
+  const chosen = selected?.kind === "model" ? selected.item : null;
+  const chosenPlugin = selected?.kind === "plugin" ? selected.item : null;
 
   useEffect(() => {
-    if (!chosenId && mine.length > 0) setChosenId(mine[0].id);
-  }, [mine, chosenId]);
+    if (!chosenId && entries.length > 0) setChosenId(entries[0].key);
+  }, [entries, chosenId]);
 
   /* The fields follow the selection. Without this, switching models
      leaves the previous one's name in the box and the next save writes
      it onto the wrong record. */
   useEffect(() => {
-    if (!chosen) return;
-    setName(chosen.name);
-    setVersion(chosen.version);
-    setDescription(chosen.description);
-    setRobotProfileId(chosen.robot_profile_id);
+    const current = selected?.item;
+    if (!current) return;
+    setName(current.name);
+    setVersion(current.version);
+    setDescription(current.description);
+    setRobotProfileId(current.robot_profile_id);
     setNote(null);
     setRefusal(null);
-  }, [chosen?.id]);
+  }, [selected?.key]);
 
-  if (mine.length === 0) {
+  if (entries.length === 0) {
     return <p className="muted models-edit-empty">{t("models.edit.none")}</p>;
   }
 
   const save = async () => {
-    if (!chosen) return;
+    if (!selected) return;
     setBusy(true);
     setRefusal(null);
     try {
-      onChanged(
-        await updateModel(chosen.id, {
-          name,
-          version,
-          description,
-          robot_profile_id: robotProfileId,
-        }),
-      );
+      const changes = { name, version, description, robot_profile_id: robotProfileId };
+      if (chosenPlugin) {
+        onPluginChanged(await updatePlugin(chosenPlugin.id, changes));
+      } else if (chosen) {
+        onChanged(await updateModel(chosen.id, changes));
+      }
       setNote(t("models.edit.saved"));
     } catch (caught) {
       setRefusal(caught instanceof Error ? caught.message : String(caught));
@@ -789,15 +832,32 @@ function EditPanel({
       <label className="field">
         <span>{t("models.edit.pick")}</span>
         <select value={chosenId} onChange={(event) => setChosenId(event.target.value)}>
-          {mine.map((model) => (
-            <option key={model.id} value={model.id}>
-              {model.name} · v{model.version}
-            </option>
-          ))}
+          {/* Grouped, because a model and an imported algorithm are not
+              interchangeable: one is weights for a controller the
+              platform already has, the other is a controller it had
+              never seen. A flat list would invite editing the wrong one. */}
+          {mine.length > 0 ? (
+            <optgroup label={t("models.edit.groupModels")}>
+              {mine.map((model) => (
+                <option key={model.id} value={`model:${model.id}`}>
+                  {model.name} · v{model.version}
+                </option>
+              ))}
+            </optgroup>
+          ) : null}
+          {myPlugins.length > 0 ? (
+            <optgroup label={t("models.edit.groupAlgorithms")}>
+              {myPlugins.map((bundle) => (
+                <option key={bundle.id} value={`plugin:${bundle.id}`}>
+                  {bundle.name} · v{bundle.version} · {bundle.plugin_id}
+                </option>
+              ))}
+            </optgroup>
+          ) : null}
         </select>
       </label>
 
-      {chosen ? (
+      {selected ? (
         <>
           <div className="models-upload-grid">
             <label className="field">
@@ -830,6 +890,14 @@ function EditPanel({
             </label>
           </div>
 
+          {chosenPlugin ? (
+            <div className="notice">
+              <p className="muted small">{t("models.edit.pluginFixed")}</p>
+              <p className="muted small">
+                {t("plugins.stackId")}: <code>{stackIdFor(chosenPlugin)}</code>
+              </p>
+            </div>
+          ) : chosen ? (
           <div className="models-upload-files">
             <FilePicker
               label={t("models.edit.replaceMetadata")}
@@ -856,6 +924,7 @@ function EditPanel({
               </button>
             </div>
           </div>
+          ) : null}
 
           {refusal ? <div className="notice notice--warn">{refusal}</div> : null}
           {note && !refusal ? <p className="muted">{note}</p> : null}
