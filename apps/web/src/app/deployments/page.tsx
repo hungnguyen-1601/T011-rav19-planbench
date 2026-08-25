@@ -22,9 +22,17 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { DecisionTabs } from "@/components/DecisionTabs";
 import { DeploymentForm } from "@/components/DeploymentForm";
 import { Icon } from "@/components/Icon";
+import { Pager } from "@/components/Pager";
 import { fieldErrorsOf, useSession } from "@/lib/auth";
+import {
+  deploymentsTabStore,
+  useDeploymentsTab,
+  type DeploymentsTabId,
+} from "@/lib/deploymentsTabs";
+import { usePagination } from "@/lib/pagination";
 import {
   createTaskProfile,
   deleteTaskProfile,
@@ -71,6 +79,11 @@ export default function DeploymentsPage() {
   const [filed, setFiled] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const tab = useDeploymentsTab();
+  /* Ten a page. No filters on this page, so the reset key is constant —
+     the list only ever changes by something being filed or deleted, and
+     both of those already re-fetch. */
+  const paged = usePagination(profiles);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -176,127 +189,179 @@ export default function DeploymentsPage() {
           banner had to carry a jump link down to it to be reachable at
           all. Putting the doing above the reading is also why the head's
           count badge still exists: it answers "how many are on file"
-          without the list having to be the first thing on screen. */}
-      <div className="panel deployment-file-panel" id="deployment-file-panel">
-        <div className="panel-head">
-          <h3><span className="panel-title-icon" aria-hidden="true"><Icon name="plus" size={17} /></span>{t("deployments.file.title")}</h3>
-        </div>
-        {!session ? (
-          <p className="muted">{t("deployments.file.signedOut")}</p>
-        ) : (
-          <>
-            {/* Two ways in, one way out: both tabs build the same
-                document and both POST it to the same endpoint. The form
-                is the default because thirty labelled boxes are easier
-                to start from than a blank textarea; the YAML tab stays
-                because it is the only way to write the blocks the form
-                does not cover yet — traffic, most of all. */}
-            <div className="deployment-mode-bar">
-              <div className="deployment-mode-tabs" role="tablist" aria-label={t("deployments.file.title")}>
-              {(["form", "yaml"] as Mode[]).map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  disabled={busy}
-                  className={mode === option ? "active" : undefined}
-                  role="tab"
-                  aria-selected={mode === option}
-                  onClick={() => switchTo(option)}
-                >
-                  <Icon name={option === "form" ? "dashboard" : "library"} size={16} />
-                  {t(`deployments.mode.${option}`)}
-                </button>
-              ))}
-              </div>
-              <span className="deployment-mode-note"><Icon name="alert" size={15} />{t("deployments.mode.note")}</span>
-            </div>
+          without the list having to be the first thing on screen.
 
-            {mode === "form" ? (
-              <DeploymentForm
-                draft={formDraft}
-                onDraftChange={(next) => {
-                  setFormDraft(next);
-                  // A refusal from filing is about the document that was
-                  // filed. Keeping it on screen after an edit makes it
-                  // read as a refusal of what is there now, and the
-                  // author corrects a field the server never mentioned.
-                  setFieldErrors([]);
-                }}
-                onSubmit={file}
-                busy={busy}
-                fieldErrors={fieldErrors}
-              />
-            ) : (
-              <div className="deployment-yaml-mode">
-                <p className="muted">{t("deployments.file.note")}</p>
-                <textarea
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                  placeholder={t("deployments.file.placeholder")}
-                  rows={18}
-                  spellCheck={false}
-                  disabled={busy}
-                  className="deployment-yaml-editor"
-                />
-                <div className="deployment-yaml-actions">
-                  <button
-                    type="button"
-                    className="primary"
-                    disabled={busy || !draft.trim()}
-                    onClick={() => void fileYaml()}
-                  >
-                    {t("deployments.file.submit")}
-                  </button>
-                  <span className="muted">{t("deployments.file.idRule")}</span>
+          The strip takes the scrolling out of the same arrangement: the
+          form is still first and still the default, but the list is now
+          one click rather than a page-length of form away. What stays
+          *above* the strip is what qualifies both halves — the title,
+          the count, the refusal from the last filing and the error from
+          the list fetch. That error is the only thing that says the page
+          failed to load, so filing it under one tab would hide it from
+          whoever is standing in the other.
+
+          **Hidden, never unmounted** — `DecisionTabs` rather than a
+          ternary, and here the stakes are higher than on `/decisions`.
+          `DeploymentForm` holds a start and a goal pose drawn by hand, a
+          loaded map, an undo/redo history, its own open sub-tab, a
+          playing traffic preview and a set of field errors, none of it
+          persisted anywhere. Unmounting it to look at the table would
+          throw all of that away and hand back only `draft`, which lives
+          up here. */}
+      <DecisionTabs
+        labelKey="deployments.tabs.label"
+        active={tab}
+        onSelect={(id) => deploymentsTabStore.set(id as DeploymentsTabId)}
+        tabs={[
+          {
+            id: "create",
+            labelKey: "deployments.tabs.create",
+            content: (
+              <div className="panel deployment-file-panel" id="deployment-file-panel">
+                <div className="panel-head">
+                  <h3><span className="panel-title-icon" aria-hidden="true"><Icon name="plus" size={17} /></span>{t("deployments.file.title")}</h3>
                 </div>
-              </div>
-            )}
-          </>
-        )}
-      </div>
+                {!session ? (
+                  <p className="muted">{t("deployments.file.signedOut")}</p>
+                ) : (
+                  <>
+                    {/* Two ways in, one way out: both tabs build the same
+                        document and both POST it to the same endpoint. The form
+                        is the default because thirty labelled boxes are easier
+                        to start from than a blank textarea; the YAML tab stays
+                        because it is the only way to write the blocks the form
+                        does not cover yet — traffic, most of all. */}
+                    <div className="deployment-mode-bar">
+                      <div className="deployment-mode-tabs" role="tablist" aria-label={t("deployments.file.title")}>
+                      {(["form", "yaml"] as Mode[]).map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          disabled={busy}
+                          className={mode === option ? "active" : undefined}
+                          role="tab"
+                          aria-selected={mode === option}
+                          onClick={() => switchTo(option)}
+                        >
+                          <Icon name={option === "form" ? "dashboard" : "library"} size={16} />
+                          {t(`deployments.mode.${option}`)}
+                        </button>
+                      ))}
+                      </div>
+                      <span className="deployment-mode-note"><Icon name="alert" size={15} />{t("deployments.mode.note")}</span>
+                    </div>
 
-      {loading ? (
-        <div className="deployment-loading"><span className="skeleton" />{t("common.loading")}</div>
-      ) : profiles.length === 0 ? (
-        <div className="deployment-empty-banner">
-          <span className="deployment-empty-icon" aria-hidden="true"><Icon name="map" size={24} /></span>
-          <div>
-            <strong>{t("deployments.empty.title")}</strong>
-            <p>{t("deployments.empty.body")}</p>
-          </div>
-          <a className="quick-action primary" href="#deployment-file-panel">
-            <Icon name="plus" size={16} />
-            {t("deployments.file.title")}
-          </a>
-        </div>
-      ) : (
-        <div className="panel deployment-list-panel">
-          <div className="table-scroll wide">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t("deployments.column.id")}</th>
-                  <th>{t("deployments.column.map")}</th>
-                  <th>{t("deployments.column.noise")}</th>
-                  <th>{t("deployments.column.successMin")}</th>
-                  <th>{t("deployments.column.risk")}</th>
-                  <th>{t("deployments.column.replanning")}</th>
-                  <th>{t("deployments.column.nMin")}</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {profiles.map((profile) => (
-                  <DeploymentRow key={profile.id} profile={profile} onDeleted={refresh} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="muted" style={{ marginTop: 12 }}>
-            {t("deployments.noiseNote")}
-          </p>
-        </div>
-      )}
+                    {mode === "form" ? (
+                      <DeploymentForm
+                        draft={formDraft}
+                        onDraftChange={(next) => {
+                          setFormDraft(next);
+                          // A refusal from filing is about the document that was
+                          // filed. Keeping it on screen after an edit makes it
+                          // read as a refusal of what is there now, and the
+                          // author corrects a field the server never mentioned.
+                          setFieldErrors([]);
+                        }}
+                        onSubmit={file}
+                        busy={busy}
+                        fieldErrors={fieldErrors}
+                      />
+                    ) : (
+                      <div className="deployment-yaml-mode">
+                        <p className="muted">{t("deployments.file.note")}</p>
+                        <textarea
+                          value={draft}
+                          onChange={(event) => setDraft(event.target.value)}
+                          placeholder={t("deployments.file.placeholder")}
+                          rows={18}
+                          spellCheck={false}
+                          disabled={busy}
+                          className="deployment-yaml-editor"
+                        />
+                        <div className="deployment-yaml-actions">
+                          <button
+                            type="button"
+                            className="primary"
+                            disabled={busy || !draft.trim()}
+                            onClick={() => void fileYaml()}
+                          >
+                            {t("deployments.file.submit")}
+                          </button>
+                          <span className="muted">{t("deployments.file.idRule")}</span>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            ),
+          },
+          {
+            id: "list",
+            labelKey: "deployments.tabs.list",
+            content: (
+              <>
+                {loading ? (
+                  <div className="deployment-loading"><span className="skeleton" />{t("common.loading")}</div>
+                ) : profiles.length === 0 ? (
+                  <div className="deployment-empty-banner">
+                    <span className="deployment-empty-icon" aria-hidden="true"><Icon name="map" size={24} /></span>
+                    <div>
+                      <strong>{t("deployments.empty.title")}</strong>
+                      <p>{t("deployments.empty.body")}</p>
+                    </div>
+                    {/* A button, not the `#deployment-file-panel` anchor it used
+                        to be: the form is in the other panel now, and that panel
+                        carries `hidden` — an in-page link to a hidden element
+                        scrolls nowhere and reads as a dead button. */}
+                    <button
+                      type="button"
+                      className="quick-action primary"
+                      onClick={() => deploymentsTabStore.set("create")}
+                    >
+                      <Icon name="plus" size={16} />
+                      {t("deployments.file.title")}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="panel deployment-list-panel">
+                    <div className="table-scroll wide">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>{t("deployments.column.id")}</th>
+                            <th>{t("deployments.column.map")}</th>
+                            <th>{t("deployments.column.noise")}</th>
+                            <th>{t("deployments.column.successMin")}</th>
+                            <th>{t("deployments.column.risk")}</th>
+                            <th>{t("deployments.column.replanning")}</th>
+                            <th>{t("deployments.column.nMin")}</th>
+                            <th />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paged.visible.map((profile) => (
+                            <DeploymentRow key={profile.id} profile={profile} onDeleted={refresh} />
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <Pager
+                      page={paged.page}
+                      pageCount={paged.pageCount}
+                      onPage={paged.setPage}
+                      labelKey="deployments.pager.label"
+                    />
+                    <p className="muted" style={{ marginTop: 12 }}>
+                      {t("deployments.noiseNote")}
+                    </p>
+                  </div>
+                )}
+              </>
+            ),
+          },
+        ]}
+      />
     </section>
   );
 }

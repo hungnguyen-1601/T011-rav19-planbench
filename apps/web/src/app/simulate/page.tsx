@@ -80,6 +80,16 @@ interface Mission {
   probability?: number;
 }
 
+/** Which of the page's two screens is on.
+ *
+ * `setup` prepares an episode — deployment, mission, candidate, seed,
+ * and the world those resolve to. `results` shows the episode being run
+ * in it. They are two questions asked minutes apart, and one column
+ * holding both meant the reader scrolled past the form they had finished
+ * with to reach the canvas they were waiting on.
+ */
+type BenchStage = "setup" | "results";
+
 /** The parts of a stored deployment this page reads. */
 /** The parts of a task profile this page reads.
  *
@@ -133,6 +143,22 @@ export default function TestBenchPage() {
   const [showPlan, setShowPlan] = useState(true);
   const [showTrajectory, setShowTrajectory] = useState(true);
   const [conditionsExpanded, setConditionsExpanded] = useState(true);
+
+  /** Which screen is on — held as its own state rather than read off the
+   *  data, which is the whole point.
+   *
+   * Three values look like they answer "is there a result yet", and each
+   * answers a different question. `map` is set by Show world too, so it
+   * says "a world is on screen", not "an episode ran". `plan` arrives
+   * only after the server replies, so it is blank for the entire run —
+   * the minute the reader most wants to be watching. `stream.frames` is
+   * non-empty only when the robot actually moved, so an episode that
+   * planned nothing (`no_path`) never sets it, and a screen chosen by
+   * that value would strand exactly the reader who needs to be told why.
+   *
+   * The switch is a fact about the click, not about what came back.
+   */
+  const [stage, setStage] = useState<BenchStage>("setup");
 
   const stream = useEpisodeStream();
 
@@ -200,6 +226,12 @@ export default function TestBenchPage() {
     setStaged(null);
     setPlan(null);
     setMap(null);
+    /* The deployment picker only exists on the setup screen, so today
+       this cannot fire from the results screen. Stated anyway, because
+       it is the same decision as clearing the map: a results screen kept
+       up after its deployment was swapped would be describing a run that
+       nothing on the page still refers to. */
+    setStage("setup");
     stream.reset();
     // `stream` is a new object every render; the deployment is the trigger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -230,6 +262,12 @@ export default function TestBenchPage() {
     return episode;
   }, [profileId, mission, choice, seed]);
 
+  /* Deliberately leaves the stage alone. Looking at the world is part of
+     preparing an episode, not of watching one: the reader who presses
+     this is still deciding whether the deployment is the one they meant,
+     and moving them to a results screen with no result on it would
+     answer a question they have not asked yet. The map appears where
+     they are, under the form. */
   const showTheWorld = useCallback(async () => {
     setBusy(true);
     setError(null);
@@ -247,6 +285,12 @@ export default function TestBenchPage() {
 
   const runOne = useCallback(async () => {
     if (!profileId || !mission || !choice.stack || !choice.local_config) return;
+    /* Before the first await, not after the last one. The reader pressed
+       Run to watch something happen, so the screen that shows it has to
+       be up while it is happening — and it has to be up even when
+       nothing moves, because "the planner refused" is a result too and
+       the setup form is not where it is reported. */
+    setStage("results");
     setBusy(true);
     setError(null);
     setPlan(null);
@@ -272,6 +316,35 @@ export default function TestBenchPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prepare, t]);
+
+  /** Back to the setup screen, with every field exactly as it was left.
+   *
+   * **Nothing is cleared.** Deployment, mission, candidate and seed are
+   * why the reader is here: they came back to change *one* of them and
+   * run again, and a blank form would make them retype the three they
+   * were happy with. The staged world stays up for the same reason — it
+   * is the world they are about to edit the conditions of.
+   *
+   * **The frames are left where they are, and that is deliberate.**
+   * `stream.reset()` rewinds the playhead and stops the clock; it cannot
+   * drop the frames, because only `connect` does that
+   * (`useEpisodeStream.ts`) and calling it would mean running another
+   * episode. So the previous trajectory is still held by the hook while
+   * the setup screen is up. It is never drawn there: the setup screen's
+   * canvas is fed the deployment's world and none of the stream, and the
+   * console that draws a run is hidden. The next Run clears them through
+   * `connect` before the first new frame arrives. A reader who comes
+   * back and then runs nothing keeps a trajectory in memory that nothing
+   * on screen claims belongs to what they are looking at.
+   */
+  const anotherBench = () => {
+    setStage("setup");
+    // The failure belonged to the run being left. Left standing over a
+    // form the reader is now editing, it reads as a complaint about the
+    // edit.
+    setError(null);
+    stream.reset();
+  };
 
   const visibleTrajectory = useMemo(() => {
     if (!showTrajectory) return [];
@@ -309,6 +382,7 @@ export default function TestBenchPage() {
     ? { x: stream.currentFrame.x, y: stream.currentFrame.y, theta: stream.currentFrame.theta }
     : start;
 
+  const showingRun = stage === "results";
   const ready = Boolean(profileId && mission && choice.stack && choice.local_config);
   const episodeStatus = stream.status ?? (busy ? "running" : stream.frames.length > 0 ? "paused" : "ready");
   const statusTone = episodeStatus === "success"
@@ -340,7 +414,11 @@ export default function TestBenchPage() {
           <h2>{t("bench.title")}</h2>
           <p>{t("bench.subtitle")}</p>
         </div>
-        <span className={`simulate-status simulate-status--${statusTone}`}>
+        {/* An episode's status, so it belongs to the screen that shows
+            one. On the setup screen it would either say `ready`, which
+            is not news, or still be reporting the run the reader has
+            just stepped away from. */}
+        <span className={`simulate-status simulate-status--${statusTone}`} hidden={!showingRun}>
           <span className="simulate-status-dot" aria-hidden="true" />
           {episodeStatus}
         </span>
@@ -375,7 +453,12 @@ export default function TestBenchPage() {
         </div>
       ) : null}
 
-      <section className="panel simulate-setup" aria-labelledby="simulate-setup-title">
+      {/* ---- The setup screen. ----
+          Hidden rather than unmounted, like `DecisionTabs` does it: every
+          field on it is a choice the reader made, and the way back from
+          the results screen is meant to land them on the form they left
+          rather than on an empty one. */}
+      <section className="panel simulate-setup" aria-labelledby="simulate-setup-title" hidden={showingRun}>
         <div className="simulate-section-head">
           <span className="simulate-section-icon"><Icon name="cpu" size={18} /></span>
           <div><h3 id="simulate-setup-title">{t("bench.setupTitle")}</h3><p>{t("bench.setupSubtitle")}</p></div>
@@ -474,12 +557,52 @@ export default function TestBenchPage() {
         </div>
       </section>
 
+      {/* The world, on the screen that is choosing it.
+       *
+       * Show world stages a map without running anything, so its answer
+       * has to arrive where the reader pressed it. The console's canvas
+       * is the *episode*, and it is on the other screen now — sending
+       * somebody there to look at a map would make previewing
+       * indistinguishable from running, which is the one distinction
+       * that button exists to draw.
+       *
+       * A second `MapView` rather than the console's, and it is a
+       * smaller thing: the deployment's map, the mission's poses, the
+       * traffic the document declares. Nothing from the stream, so the
+       * frames the hook is still holding from a previous run cannot
+       * surface here — and mounted only while there is a world, so the
+       * setup form is not sitting under an empty frame. It carries no
+       * state worth preserving across the switch, which is why this one
+       * is a conditional and the panels below are `hidden`.
+       */}
+      {!showingRun && map ? (
+        <section className="panel simulate-preview" aria-label={t("bench.previewTitle")}>
+          <div className="simulate-map-head">
+            <div>
+              <strong>{t("bench.previewTitle")}</strong>
+              <span>{staged ? `${profileId} · seed ${seed}` : t("bench.previewSubtitle")}</span>
+            </div>
+          </div>
+          <MapView
+            map={map}
+            startPose={start ?? undefined}
+            goalPose={goal ?? undefined}
+            goalTolerance={deployment?.constraints?.goal_tolerance_m}
+            robotRadius={deployment?.robot?.radius}
+            positionUncertainty={safetyEnvelope(deployment?.environment?.sensor_noise)}
+            robotPose={start}
+            authoredTraffic={overlayOf(trafficOf(deployment as ProfileDraft | null), null)}
+            showGrid={showGrid}
+          />
+        </section>
+      ) : null}
+
       {/* What the deployment fixed, shown rather than editable. Every one
           of these is a condition the comparison will run under, and a
           field that let you nudge one "just for the preview" would make
           this a different experiment. */}
       {deployment ? (
-        <section className={`panel deployment-conditions${conditionsExpanded ? " is-expanded" : " is-collapsed"}`}>
+        <section className={`panel deployment-conditions${conditionsExpanded ? " is-expanded" : " is-collapsed"}`} hidden={showingRun}>
           <header className="deployment-conditions-header">
             <span className="deployment-conditions-title-icon"><Icon name="check" size={18} /></span>
             <div><h3>{t("bench.conditions")}</h3><p>{t("bench.conditionsNote")}</p></div>
@@ -552,7 +675,19 @@ export default function TestBenchPage() {
         </section>
       ) : null}
 
-      <section className="simulate-console" aria-label={t("bench.consoleTitle")}>
+      {/* ---- The results screen. ----
+          The way back sits above it, because the reader arrives at the
+          top of it and the thing they want after "that was not it" is
+          the form, not another scroll. */}
+      <div className="simulate-stage-bar" hidden={!showingRun}>
+        <button type="button" className="simulate-another-button" onClick={anotherBench}>
+          <Icon name="refresh" size={16} />
+          {t("bench.another")}
+        </button>
+        <p><Icon name="info" size={14} />{t("bench.anotherNote")}</p>
+      </div>
+
+      <section className="simulate-console" aria-label={t("bench.consoleTitle")} hidden={!showingRun}>
         <div className="simulate-playback">
           <div className="simulate-playback-buttons">
             <button className="simulate-play" onClick={stream.play} disabled={stream.frames.length === 0 || stream.playing} aria-label={t("simulate.play")}>
@@ -697,7 +832,7 @@ export default function TestBenchPage() {
           numbers for "did that look sane" and the wrong ones for any
           claim, which is what HĐ-5 means by the trace being the sole
           input of the Metrics Engine. */}
-      <section className="simulate-metrics">
+      <section className="simulate-metrics" hidden={!showingRun}>
         <MetricsPanel
           metrics={stream.metrics}
           plan={plan}

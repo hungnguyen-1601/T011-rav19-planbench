@@ -18,7 +18,22 @@
  * - **The window at the edges.** A window that slides symmetrically
  *   shows fewer pages near the ends, so the strip changes width as you
  *   move through it.
+ *
+ * **The arithmetic itself now lives in `lib/pagination`**, which the two
+ * list pages also use. What is left here is the one thing that is
+ * specific to episodes — that a page of them is five — and the names the
+ * detail page already calls. Two copies of "which page holds row *n*"
+ * are two copies free to disagree about the empty case, which is the
+ * case that produces the blank table above.
  */
+
+import {
+  clampPage as clampToPage,
+  pageCount as countPages,
+  pageOf as pageHolding,
+  pageSlice as sliceOfPage,
+  pageWindow as windowOfPages,
+} from "./pagination";
 
 /** Rows per page. Fixed rather than a preference: the point is that the
  *  table stops growing with the run. */
@@ -27,21 +42,20 @@ export const EPISODES_PER_PAGE = 5;
 /** Page numbers are 0-based. Always at least one page, so an empty list
  *  is "page 1 of 1 with nothing on it" rather than "page 1 of 0". */
 export function pageCount(total: number): number {
-  return Math.max(1, Math.ceil(total / EPISODES_PER_PAGE));
+  return countPages(total, EPISODES_PER_PAGE);
 }
 
 /** Which page holds the row at `index`. */
 export function pageOf(index: number): number {
-  return index < 0 ? 0 : Math.floor(index / EPISODES_PER_PAGE);
+  return pageHolding(index, EPISODES_PER_PAGE);
 }
 
 export function clampPage(page: number, total: number): number {
-  return Math.max(0, Math.min(page, pageCount(total) - 1));
+  return clampToPage(page, total, EPISODES_PER_PAGE);
 }
 
 export function pageSlice<T>(items: readonly T[], page: number): T[] {
-  const start = clampPage(page, items.length) * EPISODES_PER_PAGE;
-  return items.slice(start, start + EPISODES_PER_PAGE);
+  return sliceOfPage(items, page, EPISODES_PER_PAGE);
 }
 
 /** The page numbers the strip should offer, at most `span` of them.
@@ -51,9 +65,5 @@ export function pageSlice<T>(items: readonly T[], page: number): T[] {
  * change size as the reader moves through it.
  */
 export function pageWindow(page: number, total: number, span = 7): number[] {
-  const count = pageCount(total);
-  const width = Math.min(span, count);
-  const current = clampPage(page, total);
-  const first = Math.max(0, Math.min(current - Math.floor(width / 2), count - width));
-  return Array.from({ length: width }, (_, offset) => first + offset);
+  return windowOfPages(page, total, EPISODES_PER_PAGE, span);
 }

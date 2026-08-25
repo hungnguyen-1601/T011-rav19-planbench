@@ -2338,6 +2338,41 @@ label.field.simulate-field,
 }
 .simulate-context-id { margin: 0; padding: 10px 16px; border-top: 1px solid var(--border); font-size: 11px; }
 
+/* ---------- The two screens ---------- */
+
+/* The page is a setup form and then an episode, and only one of them is
+   up at a time. Both stay mounted — the form so the way back lands on
+   the choices the reader made, the console so the socket, the frames and
+   the playhead survive the switch — so the `hidden` attribute is what
+   separates them.
+
+   Every element it is put on is named here, because the UA rule
+   (`[hidden] { display: none }`) loses to any author `display`, and the
+   two that carry one would otherwise stay on screen with nothing saying
+   why. The same trap `.decision-tabpanel[hidden]` documents. */
+.simulate-setup[hidden],
+.deployment-conditions[hidden],
+.simulate-stage-bar[hidden],
+.simulate-console[hidden],
+.simulate-metrics[hidden],
+.simulate-status[hidden] { display: none; }
+
+/* The world before it is run in: what Show world puts up, on the screen
+   that pressed it. Shorter than the console's canvas, which is watched;
+   this one is checked and then left. */
+.simulate-preview { padding: 0; overflow: hidden; }
+.simulate-preview .map-view { margin: 0; border: 0; border-radius: 0; background: var(--canvas-bg); }
+.simulate-preview .map-view-switch { margin: 0; border-inline: 0; border-top: 0; border-radius: 0; }
+.simulate-preview canvas { display: block; max-width: 100%; height: auto; margin-inline: auto; }
+
+/* The way back out of the results screen. A quiet button: the reader is
+   looking at an episode, and the loudest thing on the screen should not
+   be the one that takes it away. */
+.simulate-stage-bar { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+.simulate-another-button { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; }
+.simulate-stage-bar p { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 11px; }
+.simulate-stage-bar p svg { flex: none; color: var(--info); }
+
 .simulate-console { margin-top: 12px; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--bg-elevated); }
 .simulate-playback { display: grid; grid-template-columns: auto auto minmax(200px, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
 .simulate-playback-buttons { display: flex; gap: 6px; }
@@ -4328,6 +4363,27 @@ h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
 .episode-pager-tabs button[disabled] { opacity: .4; cursor: default; }
 .episode-pager-tabs > .muted { margin-left: 4px; font-size: 11px; }
 
+/* The shared list pager, used by `/decisions` and `/deployments`.
+   Separate from `.episode-pager` above rather than a variant of it: that
+   one offers numbered pages because an exemplar episode can be on page 9
+   and has to be jumpable to, while nothing in a list of runs or
+   deployments is addressed by page number. Right-aligned under the
+   table, where the last row ends. */
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.pager-step { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; font-size: 12px; }
+/* Dimmed at the ends rather than removed: a control that disappears at
+   page 1 moves the one beside it, so "next" lands where "previous" was. */
+.pager-step[disabled] { opacity: .4; cursor: default; }
+.pager-position { font-size: 12px; color: var(--muted); }
+
 /* **The comparison, as one grid.** A neutral gutter on the left holds
    each metric's name — written once, so a comparison is a glance along
    a row — and every column after it is one candidate, tinted from its
@@ -5505,6 +5561,15 @@ tr.is-previewing > td { background: var(--accent-soft); }
 }
 
 .decision-tabpanel[hidden] { display: none; }
+
+/* A strip inside another strip's panel — the `/decisions` overview's
+   "finished" and "episode runs" views. Same control, quieter: two
+   strips of equal weight stacked read as one strip that has wrapped,
+   and the reader loses which one they are steering. No `display` here
+   either, for the reason stated above the block. */
+.decision-tabpanel .decision-tabs { gap: var(--space-3); }
+.decision-tabpanel .decision-tablist { border-bottom-style: dashed; }
+.decision-tabpanel .decision-tab { padding: var(--space-1) var(--space-2); font-size: 12px; }
 
 /* On a phone four labels do not fit across, and a wrapped strip is
    taller than the panel it labels. Scrolled sideways instead — the

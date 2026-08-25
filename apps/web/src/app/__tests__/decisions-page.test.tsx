@@ -1014,10 +1014,30 @@ describe("the list is a catalogue, not a leaderboard", () => {
     expect((en as Record<string, string>)["decisions.tally.note"]).toContain("HĐ-1.4");
   });
 
-  it("never sorts the rows itself", () => {
-    /* The server returns them in one order. A client-side sort by any
-       score column is how a catalogue becomes a ranking by accident. */
-    expect(LIST).not.toContain(".sort(");
+  it("orders the rows by recency, and never by a score", () => {
+    /* This used to read "never sorts the rows itself", and forbade
+       `.sort(` outright. The accident it was aimed at is specific: a
+       client-side sort by `decision_utility` or any other measured
+       column turns a catalogue into a ranking across deployments, which
+       HĐ-1.4 forbids and which is the one thing this page exists to not
+       do. Recency is not a ranking of candidates — the newest
+       comparison is not the best one — so what is asserted now is
+       *what* the page sorts on rather than whether it sorts at all.
+
+       Sorted here rather than by flipping the endpoint's `order_by`:
+       the dashboard reads the same call and takes `slice(0, 5)` off the
+       front, so a `desc()` on the server would quietly turn its "the
+       first five comparisons" into "the latest five" — a change nobody
+       asked for, on a page nobody was looking at. */
+    const sorts = [...LIST.matchAll(/\.sort\(\([^)]*\) =>([^\n]*)/g)];
+    expect(sorts).toHaveLength(1);
+    const comparator = sorts[0][1];
+    expect(comparator).toContain("created_at");
+    /* Descending: `b` first is what puts the newest run at the top. */
+    expect(comparator).toMatch(/b\.created_at.*a\.created_at/);
+    for (const scored of ["decision_utility", "success", "latency", "collision", "ranked"]) {
+      expect(comparator).not.toContain(scored);
+    }
   });
 
   it("filters by what a human has done with a run", () => {

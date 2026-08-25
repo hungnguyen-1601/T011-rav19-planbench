@@ -18,10 +18,18 @@ import { EmptyState } from "@/components/EmptyState";
 import { AdviceListView } from "@/components/AdviceListView";
 import { CandidatePicker } from "@/components/CandidatePicker";
 import { DecisionDeploymentPreview } from "@/components/DecisionDeploymentPreview";
+import { DecisionTabs } from "@/components/DecisionTabs";
 import { Icon, type IconName } from "@/components/Icon";
 import { MissionPlacer } from "@/components/MissionPlacer";
+import { Pager } from "@/components/Pager";
 import { api } from "@/lib/api";
+import { usePagination } from "@/lib/pagination";
 import { authFetch, useSession } from "@/lib/auth";
+import {
+  decisionsListTabStore,
+  useDecisionsListTab,
+  type DecisionsListTabId,
+} from "@/lib/decisionsListTabs";
 import { useTranslation } from "@/lib/i18n";
 import {
   cancelDecisionJob,
@@ -59,6 +67,9 @@ import type { MapData, MapSummary, Pose2D } from "@/lib/types";
 
 type RankedFilter = "all" | "ranked" | "unranked";
 type ReviewFilter = "all" | "unreviewed" | "reviewed" | "approved";
+/** The two halves of the overview tab: what has finished, and what is
+ *  running right now. */
+type RunsTabId = "results" | "jobs";
 
 /** What has been measured, in four numbers.
  *
@@ -98,6 +109,27 @@ export default function DecisionsPage() {
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>("all");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const tab = useDecisionsListTab();
+  const [runsTab, setRunsTab] = useState<RunsTabId>("results");
+  /* The sweep queue, held **here** rather than inside `LaunchPanel`.
+     ============================================================
+     The queue is started in one tab ("Run a comparison") and read in
+     another ("Episode runs", under the overview), and one poll has to
+     serve both. Leaving the `setInterval` in the launch panel would
+     have worked — every panel of a `DecisionTabs` strip stays mounted,
+     so a hidden panel's effects keep running — but the `jobs` array it
+     produced would have been trapped in the panel that is not the one
+     rendering the table.
+
+     The two alternatives were worse. Polling in both places is two
+     requests every two seconds for one answer, and two answers free to
+     disagree by one tick. Passing a setter *down* into the launch panel
+     and letting it keep the interval leaves the page's list refresh —
+     the thing that must happen when the last job finishes — depending
+     on a child that a future edit could stop rendering. So the state
+     and the timer sit at the page, and the launch panel is handed the
+     array plus a way to say "I just queued one, re-read it". */
+  const [jobs, setJobs] = useState<DecisionJob[]>([]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -123,14 +155,74 @@ export default function DecisionsPage() {
     void refresh();
   }, [refresh]);
 
-  const shown = runs.filter((run) =>
-    reviewFilter === "all"
-      ? true
-      : reviewFilter === "approved"
-        ? run.config_state === "approved"
-        : run.review_state === reviewFilter,
-  );
+  // Poll only while something is live. A page that keeps asking after
+  // everything finished is a page that keeps a laptop awake.
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const fetched = await listDecisionJobs();
+        if (cancelled) return;
+        const wasLive = jobs.some(jobIsLive);
+        setJobs(fetched);
+        if (wasLive && !fetched.some(jobIsLive)) await refresh();
+      } catch {
+        // A failed poll is not worth a red banner: the next one may
+        // succeed, and the launch button reports its own errors.
+      }
+    };
+    void tick();
+    if (!jobs.some(jobIsLive)) return;
+    const timer = setInterval(() => void tick(), 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs.some(jobIsLive)]);
+
+  /* Re-read rather than patch the row locally: cancelling is a request
+     the server may answer differently from what the button assumed —
+     a job that finished in the same second cancels into `succeeded`. */
+  const cancelJob = useCallback(async (jobId: string) => {
+    await cancelDecisionJob(jobId);
+    setJobs(await listDecisionJobs());
+  }, []);
+
+  const shown = runs
+    .filter((run) =>
+      reviewFilter === "all"
+        ? true
+        : reviewFilter === "approved"
+          ? run.config_state === "approved"
+          : run.review_state === reviewFilter,
+    )
+    /* Newest first, **sorted here and not in the API**. The endpoint
+       orders ascending, and flipping it would be the smaller edit — but
+       the dashboard reads the same call and takes `slice(0, 5)` off the
+       front, so a `desc()` on the server would silently turn its "the
+       first five comparisons" into "the latest five". A change nobody
+       asked for, on a page nobody was looking at while making it.
+
+       `localeCompare` on the raw strings rather than `Date.parse`:
+       these are ISO-8601 timestamps, which sort chronologically as
+       text, and parsing would only add a way to produce `NaN`. */
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  /* **Filter first, then page.** The tallies and the result count both
+     read `shown` — every run that survived the filters — and never the
+     page. A five-row page of a forty-run list must not report "5
+     results" or tally five runs; that number is the answer to "how much
+     is there", and scoping it to the window would make it the answer to
+     "how much is on screen", which the reader can already see.
+
+     The page returns to the first one whenever a filter changes, which
+     is what `resetKey` is: standing on page 4 and narrowing to one
+     deployment otherwise leaves a blank table that reads as "no runs
+     for this deployment". */
   const totals = summarise(shown);
+  const paged = usePagination(shown, {
+    resetKey: `${profileId}|${rankedFilter}|${reviewFilter}`,
+  });
   // The utility column appears only once the list is one deployment.
   // `decision_utility` is comparable **within** a deployment and
   // meaningless across them (HĐ-1.4), and a sortable column of it over a
@@ -148,104 +240,207 @@ export default function DecisionsPage() {
 
       {error ? <div className="error-box">{error}</div> : null}
 
-      <LaunchPanel profiles={profiles} onFinished={refresh} />
+      {/* Two jobs, one page, and the reading one goes first.
+          ===============================================================
+          What is above the strip qualifies both halves: the title, and
+          the error from the list fetch — which is also the only thing
+          that says the page failed to load, so filing it under one tab
+          would hide it from whoever is on the other.
 
-      <div className="decision-tally-panel">
-        <div className="stat-grid decision-tallies">
-          <Tally icon="benchmark" tone="blue" label={t("decisions.tally.runs")} value={totals.runs} />
-          <Tally icon="map" tone="cyan" label={t("decisions.tally.deployments")} value={totals.deployments} />
-          <Tally icon="trophy" tone="purple" label={t("decisions.tally.ranked")} value={totals.ranked} />
-          <Tally icon="info" tone="orange" label={t("decisions.tally.reviewed")} value={totals.reviewed} />
-          <Tally icon="check" tone="green" label={t("decisions.tally.approved")} value={totals.approved} />
-        </div>
-        {/* Counting is not ranking, and the distinction is the reason
-            this replaced a leaderboard rather than moving one. Behind a
-            mark, because it explains the row of counts rather than
-            reporting anything. */}
-        <Hint text={t("decisions.tally.note")} label={t("decisions.tally.reviewed")} />
-      </div>
+          **The launch form is second, and that reverses the old
+          column.** It sat on top because it was added on top, and the
+          result was that arriving to read the table meant scrolling
+          past two candidate pickers, a scope, a map and a queue every
+          time. The source order below follows the strip rather than the
+          old page, because a tab is a window onto a column and the
+          column now reads: what happened, then start another.
 
-      <div className="decision-filter-bar">
-        <div className="decision-filter-fields">
-          <label className="field">
-            <span>{t("decisions.filter.deployment")}</span>
-            <select value={profileId} onChange={(event) => setProfileId(event.target.value)}>
-              <option value="">{t("decisions.filter.allDeployments")}</option>
-              {profiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.id}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>{t("decisions.filter.outcome")}</span>
-            <select
-              value={rankedFilter}
-              onChange={(event) => setRankedFilter(event.target.value as RankedFilter)}
-            >
-              <option value="all">{t("decisions.filter.all")}</option>
-              <option value="ranked">{t("decisions.filter.ranked")}</option>
-              <option value="unranked">{t("decisions.filter.unranked")}</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>{t("decisions.filter.humanState")}</span>
-            {/* Filtered here rather than on the server: both states are
-                already on every row, and an endpoint parameter for them
-                would be a second way to ask one question. */}
-            <select
-              value={reviewFilter}
-              onChange={(event) => setReviewFilter(event.target.value as ReviewFilter)}
-            >
-              <option value="all">{t("decisions.filter.all")}</option>
-              <option value="unreviewed">{t("decisions.filter.unreviewed")}</option>
-              <option value="reviewed">{t("decisions.filter.reviewed")}</option>
-              <option value="approved">{t("decisions.filter.approved")}</option>
-            </select>
-          </label>
-        </div>
-        {/* Said out loud rather than left to be inferred from the row
-            count: a reader who filters to "ranked" and sees one row
-            should know the others still exist. */}
-        <span className="decision-result-count">
-          {shown.length} {t("decisions.filter.results")}{" "}
-          <Hint text={t("decisions.filter.note")} label={t("decisions.filter.results")} />
-        </span>
-      </div>
+          **Hidden, never unmounted** — the reason `DecisionTabs`
+          exists. The launch form holds a half-filled choice of
+          candidates, a scope override, an episode count and a drawn
+          start/goal pose; the overview holds three filter selections and
+          a fetched list. A ternary here would throw one of those away
+          every time the reader looked at the other. */}
+      <DecisionTabs
+        labelKey="decisions.list.tabs.label"
+        active={tab}
+        onSelect={(id) => decisionsListTabStore.set(id as DecisionsListTabId)}
+        tabs={[
+          {
+            id: "overview",
+            labelKey: "decisions.list.tabs.overview",
+            /* Two sub-tabs under "Comparisons run", because the queue
+               belongs with the runs it is producing rather than with the
+               form that started it.
+               ---------------------------------------------------------
+               "Episode runs" used to sit at the bottom of the launch
+               panel, which reads well for the ten seconds after a click
+               and badly for the two hours after that: a sweep outlives
+               the form, and somebody coming back to ask "is it still
+               going" had to open the tab for *starting* a comparison to
+               find out. Under the overview it is where the reader
+               already is — one strip, two questions: what finished, and
+               what is running.
 
-      {loading ? (
-        <p className="muted">{t("common.loading")}</p>
-      ) : shown.length === 0 ? (
-        <EmptyState
-          icon="benchmark"
-          title={t("decisions.empty.title")}
-          body={t("decisions.empty.body")}
-        />
-      ) : (
-        <div className="panel decision-table-panel">
-          <div className="table-scroll">
-            <table>
-            <thead>
-              <tr>
-                <th>{t("decisions.column.deployment")}</th>
-                <th>{t("decisions.column.scope")}</th>
-                <th>{t("decisions.column.episodes")}</th>
-                <th>{t("decisions.column.outcome")}</th>
-                {oneDeployment ? <th>{t("decisions.column.utility")}</th> : null}
-                <th>{t("decisions.column.review")}</th>
-                <th>{t("decisions.column.created")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((run) => (
-                <DecisionRow key={run.id} run={run} withUtility={oneDeployment} />
-              ))}
-            </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+               The sub-tab is not remembered across reloads, unlike the
+               strip above it. "What has finished" is the answer to the
+               question the page exists for; a reader who last looked at
+               a job that has since ended should not come back to a table
+               of it. */
+            content: (
+              <DecisionTabs
+                labelKey="decisions.list.runs.tabs.label"
+                active={runsTab}
+                onSelect={(id) => setRunsTab(id as RunsTabId)}
+                tabs={[
+                  {
+                    id: "results",
+                    labelKey: "decisions.list.runs.tabs.results",
+                    content: (
+                      <>
+                        <div className="decision-tally-panel">
+                          <div className="stat-grid decision-tallies">
+                            <Tally icon="benchmark" tone="blue" label={t("decisions.tally.runs")} value={totals.runs} />
+                            <Tally icon="map" tone="cyan" label={t("decisions.tally.deployments")} value={totals.deployments} />
+                            <Tally icon="trophy" tone="purple" label={t("decisions.tally.ranked")} value={totals.ranked} />
+                            <Tally icon="info" tone="orange" label={t("decisions.tally.reviewed")} value={totals.reviewed} />
+                            <Tally icon="check" tone="green" label={t("decisions.tally.approved")} value={totals.approved} />
+                          </div>
+                          {/* Counting is not ranking, and the distinction is the reason
+                              this replaced a leaderboard rather than moving one. Behind a
+                              mark, because it explains the row of counts rather than
+                              reporting anything. */}
+                          <Hint text={t("decisions.tally.note")} label={t("decisions.tally.reviewed")} />
+                        </div>
+
+                        <div className="decision-filter-bar">
+                          <div className="decision-filter-fields">
+                            <label className="field">
+                              <span>{t("decisions.filter.deployment")}</span>
+                              <select value={profileId} onChange={(event) => setProfileId(event.target.value)}>
+                                <option value="">{t("decisions.filter.allDeployments")}</option>
+                                {profiles.map((profile) => (
+                                  <option key={profile.id} value={profile.id}>
+                                    {profile.id}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="field">
+                              <span>{t("decisions.filter.outcome")}</span>
+                              <select
+                                value={rankedFilter}
+                                onChange={(event) => setRankedFilter(event.target.value as RankedFilter)}
+                              >
+                                <option value="all">{t("decisions.filter.all")}</option>
+                                <option value="ranked">{t("decisions.filter.ranked")}</option>
+                                <option value="unranked">{t("decisions.filter.unranked")}</option>
+                              </select>
+                            </label>
+                            <label className="field">
+                              <span>{t("decisions.filter.humanState")}</span>
+                              {/* Filtered here rather than on the server: both states are
+                                  already on every row, and an endpoint parameter for them
+                                  would be a second way to ask one question. */}
+                              <select
+                                value={reviewFilter}
+                                onChange={(event) => setReviewFilter(event.target.value as ReviewFilter)}
+                              >
+                                <option value="all">{t("decisions.filter.all")}</option>
+                                <option value="unreviewed">{t("decisions.filter.unreviewed")}</option>
+                                <option value="reviewed">{t("decisions.filter.reviewed")}</option>
+                                <option value="approved">{t("decisions.filter.approved")}</option>
+                              </select>
+                            </label>
+                          </div>
+                          {/* Said out loud rather than left to be inferred from the row
+                              count: a reader who filters to "ranked" and sees one row
+                              should know the others still exist. */}
+                          <span className="decision-result-count">
+                            {shown.length} {t("decisions.filter.results")}{" "}
+                            <Hint text={t("decisions.filter.note")} label={t("decisions.filter.results")} />
+                          </span>
+                        </div>
+
+                        {loading ? (
+                          <p className="muted">{t("common.loading")}</p>
+                        ) : shown.length === 0 ? (
+                          <EmptyState
+                            icon="benchmark"
+                            title={t("decisions.empty.title")}
+                            body={t("decisions.empty.body")}
+                          />
+                        ) : (
+                          <div className="panel decision-table-panel">
+                            <div className="table-scroll">
+                              <table>
+                              <thead>
+                                <tr>
+                                  <th>{t("decisions.column.deployment")}</th>
+                                  <th>{t("decisions.column.scope")}</th>
+                                  <th>{t("decisions.column.episodes")}</th>
+                                  <th>{t("decisions.column.outcome")}</th>
+                                  {oneDeployment ? <th>{t("decisions.column.utility")}</th> : null}
+                                  <th>{t("decisions.column.review")}</th>
+                                  <th>{t("decisions.column.created")}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {paged.visible.map((run) => (
+                                  <DecisionRow key={run.id} run={run} withUtility={oneDeployment} />
+                                ))}
+                              </tbody>
+                              </table>
+                            </div>
+                            <Pager
+                              page={paged.page}
+                              pageCount={paged.pageCount}
+                              onPage={paged.setPage}
+                              labelKey="decisions.list.pager.label"
+                            />
+                          </div>
+                        )}
+                      </>
+                    ),
+                  },
+                  {
+                    id: "jobs",
+                    labelKey: "decisions.list.runs.tabs.jobs",
+                    /* Moved whole, running and finished alike. A queue
+                       that dropped its finished rows would answer "is
+                       anything running" and lose "did the one I started
+                       an hour ago fail", which is the same table's other
+                       job — and the failed row is the one carrying the
+                       error message. */
+                    content:
+                      jobs.length > 0 ? (
+                        <JobList jobs={jobs} onCancel={cancelJob} />
+                      ) : (
+                        <EmptyState
+                          icon="play"
+                          title={t("decisions.job.empty.title")}
+                          body={t("decisions.job.empty.body")}
+                        />
+                      ),
+                  },
+                ]}
+              />
+            ),
+          },
+          {
+            id: "launch",
+            labelKey: "decisions.list.tabs.launch",
+            /* The launch flow only: the candidate pickers, the scope,
+               the map and the preflight. The queue it produces has moved
+               under the overview — a sweep runs for hours and outlives
+               the form, so "is it still going" is a question about the
+               runs, not about the button. */
+            content: (
+              <LaunchPanel profiles={profiles} jobs={jobs} onJobsChange={setJobs} />
+            ),
+          },
+        ]}
+      />
     </section>
   );
 }
@@ -266,10 +461,17 @@ export default function DecisionsPage() {
  */
 function LaunchPanel({
   profiles,
-  onFinished,
+  jobs,
+  onJobsChange,
 }: {
   profiles: TaskProfileSummary[];
-  onFinished: () => Promise<void>;
+  /** The queue, owned by the page. Read here only to refuse a second
+   *  launch while one is live; drawn in the overview's "Episode runs"
+   *  sub-tab, which is where a sweep that outlives this form belongs. */
+  jobs: DecisionJob[];
+  /** "I just queued one — re-read it." The page holds the polling
+   *  timer, so this is the one moment the queue changes without it. */
+  onJobsChange: (jobs: DecisionJob[]) => void;
 }) {
   const { t } = useTranslation();
   const session = useSession();
@@ -289,7 +491,6 @@ function LaunchPanel({
      it. Storing the derived value here instead would freeze the first
      derivation and quietly stop tracking the picker. */
   const [scopeOverride, setScopeOverride] = useState<ExperimentScope | null>(null);
-  const [jobs, setJobs] = useState<DecisionJob[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [custom, setCustom] = useState<CustomMap>(NO_CUSTOM_MAP);
@@ -331,32 +532,6 @@ function LaunchPanel({
       cancelled = true;
     };
   }, []);
-
-  // Poll only while something is live. A page that keeps asking after
-  // everything finished is a page that keeps a laptop awake.
-  useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      try {
-        const fetched = await listDecisionJobs();
-        if (cancelled) return;
-        const wasLive = jobs.some(jobIsLive);
-        setJobs(fetched);
-        if (wasLive && !fetched.some(jobIsLive)) await onFinished();
-      } catch {
-        // A failed poll is not worth a red banner: the next one may
-        // succeed, and the launch button reports its own errors.
-      }
-    };
-    void tick();
-    if (!jobs.some(jobIsLive)) return;
-    const timer = setInterval(() => void tick(), 2000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobs.some(jobIsLive)]);
 
   const [preflight, setPreflight] = useState<import("@/lib/decisions").PreflightResult | null>(
     null,
@@ -432,7 +607,7 @@ function LaunchPanel({
         // count here would quietly override the contract's arithmetic.
         ...(Number.isFinite(parsed) && parsed > 0 ? { episodes: parsed } : {}),
       });
-      setJobs(await listDecisionJobs());
+      onJobsChange(await listDecisionJobs());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -567,16 +742,6 @@ function LaunchPanel({
             is a fact about right now, the other is background. */}
         <p>{live.length > 0 ? t("decisions.launch.oneAtATime") : <Hint text={t("decisions.launch.note")} label={t("decisions.launch.title")} />} {" "}<Link href="/candidates">{t("decisions.launch.whatAreThese")}</Link></p>
       </details>
-
-      {jobs.length > 0 ? (
-        <JobList
-          jobs={jobs}
-          onCancel={async (jobId) => {
-            await cancelDecisionJob(jobId);
-            setJobs(await listDecisionJobs());
-          }}
-        />
-      ) : null}
     </div>
   );
 }
