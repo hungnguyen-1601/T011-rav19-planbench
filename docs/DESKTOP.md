@@ -80,9 +80,17 @@ point at nothing.
 
 On launch the app asks GitHub whether a newer desktop release exists. If
 one does, it offers it once; declining is a real answer and it will ask
-again next time. Accepting downloads the installer, **verifies it
-against the hash the release publishes**, closes the app, installs, and
-reopens it.
+again next time.
+
+Accepting shows a small window with a progress bar while the installer
+downloads, **verifies it against the hash the release publishes**, then
+closes the app. The installer takes over from there with a progress bar
+of its own — the app is gone by then, so it has to speak for itself.
+The app reopens when it finishes.
+
+Nothing to click through: no wizard pages, no message boxes. The two
+progress bars exist because an update with nothing on screen is
+indistinguishable from a crash.
 
 Nothing to configure. Releases are public, so the check runs
 anonymously and every installation updates itself — you send the

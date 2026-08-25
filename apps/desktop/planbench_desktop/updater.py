@@ -39,6 +39,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -63,6 +64,10 @@ TOKEN_ENV = "PLANBENCH_UPDATE_TOKEN"
 
 API = "https://api.github.com"
 TIMEOUT_S = 10.0
+
+#: Read size while streaming the installer. Small enough that the
+#: progress bar moves, large enough not to make a syscall per pixel.
+CHUNK = 256 * 1024
 
 
 class UpdateError(RuntimeError):
@@ -95,7 +100,13 @@ def parse_version(text: str) -> tuple[int, ...]:
     return tuple(parts) or (0,)
 
 
-def _request(url: str, token: str = "", *, accept: str) -> bytes:
+def _request(
+    url: str,
+    token: str = "",
+    *,
+    accept: str,
+    on_progress: Callable[[int, int | None], None] | None = None,
+) -> bytes:
     """Fetch ``url``, signed only if there is a credential to sign with.
 
     An empty `Authorization: Bearer` header is worse than no header:
@@ -110,7 +121,24 @@ def _request(url: str, token: str = "", *, accept: str) -> bytes:
     request.add_header("X-GitHub-Api-Version", "2022-11-28")
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT_S) as answer:  # noqa: S310
-            return answer.read()
+            if on_progress is None:
+                return answer.read()
+            # Read in chunks so the caller can say how far along it is.
+            # `Content-Length` is absent often enough that None has to
+            # mean "no total" rather than zero — a bar computed from a
+            # zero total is a bar that lies.
+            declared = answer.headers.get("Content-Length")
+            total = int(declared) if declared and declared.isdigit() else None
+            chunks: list[bytes] = []
+            read = 0
+            while True:
+                chunk = answer.read(CHUNK)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                read += len(chunk)
+                on_progress(read, total)
+            return b"".join(chunks)
     except urllib.error.HTTPError as exc:
         raise UpdateError(f"{url} answered {exc.code}") from exc
     except (urllib.error.URLError, OSError, TimeoutError) as exc:
@@ -171,7 +199,12 @@ def latest_release(current: str, credential: str) -> Release | None:
     return best
 
 
-def download(release: Release, credential: str, into: Path) -> Path:
+def download(
+    release: Release,
+    credential: str,
+    into: Path,
+    on_progress: Callable[[int, int | None], None] | None = None,
+) -> Path:
     """Fetch the installer and refuse it unless it hashes as promised.
 
     The hash comes from the release's own manifest rather than from
@@ -194,7 +227,12 @@ def download(release: Release, credential: str, into: Path) -> Path:
     if manifest.get("version") and manifest["version"] != release.version:
         raise UpdateError(f"release {release.tag} contains a manifest for {manifest['version']}")
 
-    payload = _request(release.installer_url, credential, accept="application/octet-stream")
+    payload = _request(
+        release.installer_url,
+        credential,
+        accept="application/octet-stream",
+        on_progress=on_progress,
+    )
     actual = hashlib.sha256(payload).hexdigest()
     if actual != expected:
         raise UpdateError(
@@ -264,7 +302,11 @@ def apply(installer: Path, relaunch: list[str], log: Path | None = None) -> None
     """
     script = installer.with_name("apply-update.cmd")
     receipt = installer.with_name("apply-update.txt")
-    options = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /FORCECLOSEAPPLICATIONS"
+    # `/SILENT`, not `/VERYSILENT`: the difference is a progress bar.
+    # This runs after the app has exited, so it is the only thing on
+    # screen — and with nothing on screen, an update and a crash look
+    # exactly alike from the outside. No wizard pages either way.
+    options = "/SILENT /SUPPRESSMSGBOXES /NORESTART /FORCECLOSEAPPLICATIONS"
     if log is not None:
         options += f' /LOG="{log}"'
     relaunch_command = " ".join(f'"{part}"' for part in relaunch)
@@ -303,6 +345,42 @@ def apply(installer: Path, relaunch: list[str], log: Path | None = None) -> None
         logger.info("the installer will write its own log to %s", log)
 
 
+def _download_visibly(release: Release, credential: str, cache: Path) -> Path:
+    """Fetch the installer with a window saying so.
+
+    The window is the whole point and is also the part allowed to fail:
+    `Progress.run` falls back to running the work plainly when no
+    toolkit will start, so a machine that cannot draw still updates.
+    """
+    from planbench_desktop.progress import Progress
+
+    screen = Progress(
+        f"Updating PlanBench to {release.version}",
+        "Starting the download…",
+    )
+    result: dict[str, Path] = {}
+
+    def work(view: Progress) -> None:
+        def report(read: int, total: int | None) -> None:
+            done = read / 1e6
+            if total:
+                view.update(
+                    f"Downloading… {done:.0f} of {total / 1e6:.0f} MB",
+                    100.0 * read / total,
+                )
+            else:
+                view.update(f"Downloading… {done:.0f} MB")
+
+        result["installer"] = download(release, credential, cache, report)
+        # Hashing eighty megabytes is not instant, and a bar that sits
+        # at 100% while something unnamed happens is the gap this whole
+        # window exists to close.
+        view.update("Checking the download…", 100.0)
+
+    screen.run(work)
+    return result["installer"]
+
+
 def offer(current: str, cache: Path, relaunch: list[str]) -> bool:
     """The whole flow. Returns whether the app should now close.
 
@@ -324,7 +402,7 @@ def offer(current: str, cache: Path, relaunch: list[str]) -> bool:
         if not ask(release):
             logger.info("the update was declined")
             return False
-        installer = download(release, credential, cache)
+        installer = _download_visibly(release, credential, cache)
         apply(installer, relaunch, log=cache / "installer.log")
     except UpdateError as exc:
         logger.warning("update check failed: %s", exc)

@@ -34,11 +34,14 @@ def api(monkeypatch):
     asked: list[str] = []
     credentials: list[str] = []
     accepts: list[tuple[str, str]] = []
+    reported: list[object] = []
 
-    def fake_request(url: str, token: str = "", *, accept: str) -> bytes:
+    def fake_request(url: str, token: str = "", *, accept: str, on_progress=None) -> bytes:
         asked.append(url)
         credentials.append(token)
         accepts.append((url, accept))
+        if on_progress is not None:
+            reported.append(on_progress)
         for key, value in responses.items():
             if key in url:
                 return value
@@ -54,6 +57,7 @@ def api(monkeypatch):
             "asked": asked,
             "credentials": credentials,
             "accepts": accepts,
+            "reported": reported,
         },
     )()
 
@@ -305,7 +309,7 @@ class TestTheHandoff:
         script = self._script(tmp_path)
 
         assert (tmp_path / "apply-update.cmd").is_file()
-        assert "/VERYSILENT" in script
+        assert "/SILENT" in script
         assert "pythonw.exe" in script
 
     def test_the_installer_is_called_so_control_comes_back(self, monkeypatch, tmp_path) -> None:
