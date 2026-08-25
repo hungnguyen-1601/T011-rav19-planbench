@@ -20,6 +20,8 @@ import { AdviceListView } from "@/components/AdviceListView";
 import { TraceViewer } from "@/components/TraceViewer";
 import { ComparisonGrid } from "@/components/ComparisonGrid";
 import { ConclusionPanel } from "@/components/ConclusionPanel";
+import { DecisionTabs } from "@/components/DecisionTabs";
+import { decisionTabStore, useDecisionTab, type DecisionTabId } from "@/lib/decisionTabs";
 import { DecisionSummary } from "@/components/DecisionSummary";
 import { DecisionAdvice } from "@/components/DecisionAdvice";
 import { TradeoffInsights } from "@/components/TradeoffInsights";
@@ -88,6 +90,12 @@ import { initialPlayback, tick, type PlaybackState } from "@/lib/playback";
 export function DecisionDetail() {
   const id = useRouteId();
   const { t } = useTranslation();
+  // Read before the two early returns below, because a hook cannot sit
+  // after one. On the server and during hydration this is the store's
+  // fallback — `useSyncExternalStore` swaps in the remembered value on
+  // the first client render, which is how the theme and the sidebar
+  // already work.
+  const tab = useDecisionTab();
   const [run, setRun] = useState<DecisionRun | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -172,80 +180,135 @@ export function DecisionDetail() {
             It carries the evidence's caveats, and a qualifier under the
             thing it qualifies has already been scrolled past. */}
       <SampleNotice run={run} />
-      {/* **The conclusion, then what to do with it, then the evidence.**
-          `DecisionSummary` is the only place the page states whether a
-          recommendation came back and why; `DecisionAdvice` answers the
-          question a reader actually arrives with, which is what to
-          deploy for their own use case, and answers it on blocked runs
-          too. Both used to be at the bottom, in four panels, in
-          different words. */}
-      <DecisionSummary run={run} />
-      <DecisionAdvice run={run} />
-      <CandidateComparison run={run} />
-      {/* **Its own section under the comparison, at An's call.** It had
-          been moved below the evidence and closed, on the argument that
-          a replay is a drill-down nobody opens before knowing the
-          result. That was right about the *order* and wrong about this
-          panel: watching the two candidates drive is how a run gets read
-          here, not a check performed afterwards, and folded shut four
-          screens down it read as having gone missing.
 
-          What the earlier move was actually for still holds and is kept:
-          the conclusion and the advice come first, so the replay no
-          longer sits ahead of everything that says what the run decided.
-          It stays a `<details>` — open, so it is there, and collapsible,
-          so four screens of pager and canvas can be put away. */}
-      <TracePanel run={run} />
-      {/* After the replay rather than immediately under the table,
-          because it reads *both*: ten metrics against two candidates is
-          eighty digits, and the sentences it draws out of them are the
-          ones a reader would otherwise assemble by eye from the table
-          and the two canvases together. */}
-      <TradeoffInsights run={run} />
-      <ExplanationHeader run={run} />
-      <EvidencePanel run={run} />
-      {/* The marks come after the evidence that justifies them, and the
-          export buttons after the marks — that is the point at which a
-          reader knows whether this run is worth sending on. */}
-      <ConclusionPanel run={run} />
-      {/* The card's sensitivity figures — weight stability, anchor
-          stability, robustness. They belong under the evidence rather
-          than beside the recommendation: they say how far the numbers
-          could move before the recommendation changes, which is a
-          question a reader asks second. `Outcome` used to wrap this and
-          the no-card message in one component; the message moved into
-          the summary, and what is left here is the table. */}
-      {run.card ? <CardPanel run={run} /> : null}
-      {/* `Conditions`, `Provenance` and the review journal are out for
-          now, at An's call — the measurement environment, the ids for
-          rebuilding a run and the list of who read it are not what this
-          page is being read for yet. `HumanActs` stays: it is what
-          *records* an approval, and only the display of that record
-          went. */}
+      {/* **Four tabs, and the order above is what they are cut from.**
+          The page still argues in the same sequence — conclusion, then
+          the replay, then why, then everything a reader reaches for
+          second — but a dozen panels in one column is a dozen screens,
+          and the reader who came for one of them scrolled past the rest
+          to reach it.
 
-      {/* **The advisory layer, from `origin/main`, and last on purpose.**
-          Four panels that read the stored report and say what to do
-          about it: why the run ended as it did, what each unmet gate
-          asks for, what a report may claim, and a critique. Every one is
-          rule-based — the endpoints run `gate_advice` over the stored
-          verdicts and re-decide nothing — with a model allowed to rank
-          and extend but never to overrule.
+          The panels are unchanged, and so is the source order below:
+          every ordering argument written here still holds, because a
+          tab is a window onto the same column rather than a reshuffle
+          of it. */}
+      <DecisionTabs
+        labelKey="decisions.detail.tabs.label"
+        active={tab}
+        onSelect={(id) => decisionTabStore.set(id as DecisionTabId)}
+        tabs={[
+          {
+            id: "conclusion",
+            labelKey: "decisions.detail.tabs.conclusion",
+            content: (
+              <>
+                {/* **The conclusion, then what to do with it, then the
+                    evidence.** `DecisionSummary` is the only place the
+                    page states whether a recommendation came back and
+                    why; `DecisionAdvice` answers the question a reader
+                    actually arrives with, which is what to deploy for
+                    their own use case, and answers it on blocked runs
+                    too. Both used to be at the bottom, in four panels,
+                    in different words. */}
+                <DecisionSummary run={run} />
+                <DecisionAdvice run={run} />
+                <CandidateComparison run={run} />
+              </>
+            ),
+          },
+          {
+            id: "episode",
+            labelKey: "decisions.detail.tabs.episode",
+            /* **Its own tab, at An's call.** It had been moved below the
+               evidence and closed, on the argument that a replay is a
+               drill-down nobody opens before knowing the result. That was
+               right about the *order* and wrong about the panel: watching
+               the two candidates drive is how a run gets read here, not a
+               check performed afterwards, and folded shut four screens
+               down it read as having gone missing. A tab of its own is
+               what that argument was reaching for — second in the strip,
+               so the conclusion is still met first, and one click away
+               rather than four screens.
 
-          After the evidence rather than among it, for the reason the
-          marks are: advice is read once somebody knows what the run
-          found, and a panel that offers a remedy above the finding
-          invites acting before reading.
+               It stays a `<details>`, open: the reader who has finished
+               with the replay can still fold the canvases away without
+               leaving the tab. */
+            content: <TracePanel run={run} />,
+          },
+          {
+            id: "reasoning",
+            labelKey: "decisions.detail.tabs.reasoning",
+            content: (
+              <>
+                <ExplanationHeader run={run} />
+                <EvidencePanel run={run} />
+              </>
+            ),
+          },
+          {
+            id: "more",
+            labelKey: "decisions.detail.tabs.more",
+            content: (
+              <>
+                {/* After the replay rather than immediately under the
+                    table, because it reads *both*: ten metrics against
+                    two candidates is eighty digits, and the sentences it
+                    draws out of them are the ones a reader would
+                    otherwise assemble by eye from the table and the two
+                    canvases together. */}
+                <TradeoffInsights run={run} />
+                {/* The marks come after the evidence that justifies
+                    them — that is the point at which a reader knows
+                    whether this run is worth sending on. */}
+                <ConclusionPanel run={run} />
+                {/* The card's sensitivity figures — weight stability,
+                    anchor stability, robustness. They belong under the
+                    evidence rather than beside the recommendation: they
+                    say how far the numbers could move before the
+                    recommendation changes, which is a question a reader
+                    asks second. `Outcome` used to wrap this and the
+                    no-card message in one component; the message moved
+                    into the summary, and what is left here is the
+                    table. */}
+                {run.card ? <CardPanel run={run} /> : null}
+                {/* `Conditions`, `Provenance` and the review journal are
+                    out for now, at An's call — the measurement
+                    environment, the ids for rebuilding a run and the
+                    list of who read it are not what this page is being
+                    read for yet. `HumanActs` stays: it is what *records*
+                    an approval, and only the display of that record
+                    went. */}
 
-          They render translation keys rather than prose today: the
-          sixteen `advice.*`, `outcome.*`, `critique.*` and
-          `reportAdvice.*` keys do not exist in either locale on
-          `origin/main`. That is upstream's to finish and is left
-          untouched here rather than guessed at. */}
-      <CritiquePanel runId={run.id} />
-      <OutcomePanel runId={run.id} />
-      <AdvicePanel runId={run.id} />
-      <ReportAdvicePanel runId={run.id} />
-      <HumanActs run={run} onDone={refresh} />
+                {/* **The advisory layer, from `origin/main`, and last on
+                    purpose.** Four panels that read the stored report
+                    and say what to do about it: why the run ended as it
+                    did, what each unmet gate asks for, what a report may
+                    claim, and a critique. Every one is rule-based — the
+                    endpoints run `gate_advice` over the stored verdicts
+                    and re-decide nothing — with a model allowed to rank
+                    and extend but never to overrule.
+
+                    After the evidence rather than among it, for the
+                    reason the marks are: advice is read once somebody
+                    knows what the run found, and a panel that offers a
+                    remedy above the finding invites acting before
+                    reading.
+
+                    They render translation keys rather than prose today:
+                    the sixteen `advice.*`, `outcome.*`, `critique.*` and
+                    `reportAdvice.*` keys do not exist in either locale
+                    on `origin/main`. That is upstream's to finish and is
+                    left untouched here rather than guessed at. */}
+                <CritiquePanel runId={run.id} />
+                <OutcomePanel runId={run.id} />
+                <AdvicePanel runId={run.id} />
+                <ReportAdvicePanel runId={run.id} />
+                <HumanActs run={run} onDone={refresh} />
+              </>
+            ),
+          },
+        ]}
+      />
     </section>
   );
 }
