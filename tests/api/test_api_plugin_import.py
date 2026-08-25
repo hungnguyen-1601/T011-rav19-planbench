@@ -264,7 +264,13 @@ class TestTheManifestMustSuitThisDoor:
 
 
 class TestIdentityBelongsToTheManifest:
-    def test_the_same_plugin_version_cannot_be_imported_twice(self, client, admin):
+    def test_the_same_archive_cannot_be_imported_twice(self, client, admin):
+        """Byte-identical, so there is nothing new to measure.
+
+        Named for the bytes, not the version: identity moved to the
+        archive's checksum, and this test kept passing under its old name
+        only because uploading the same file twice happens to be both.
+        """
         assert import_bundle(client, admin, name="VFH+").status_code == 201
         again = import_bundle(client, admin, name="A completely different label")
         assert again.status_code == 422

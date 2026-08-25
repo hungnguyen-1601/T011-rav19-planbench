@@ -69,13 +69,16 @@ class ConformanceOutcome:
 def install_root(root: Path, record: PluginBundleRecord) -> Path:
     """Where this bundle's code lives once unpacked.
 
-    Keyed by the manifest's identity rather than by the row id: two rows
-    for one `plugin_id@version` cannot exist (the registry refuses them),
-    so this path is unique, and it is the path a stored candidate id can
-    still be resolved against later.
+    **Keyed by the archive's checksum**, which is what makes two uploads
+    of one plugin two directories. Keying on the manifest's version put
+    changed code on top of the code it replaced the moment an author
+    forgot to bump it — the old files still on disk, the new row pointing
+    at them, and nothing anywhere saying which was running.
+
+    The checksum is also what a stored candidate id hashes on, so this
+    path can still be resolved from a result recorded months ago.
     """
-    safe_version = record.plugin_version.replace("/", "_").replace("\\", "_") or "0"
-    return root / record.plugin_id / safe_version
+    return root / record.plugin_id / (record.checksum[:16] or "unknown")
 
 
 def install_bundle(record: PluginBundleRecord, storage: ModelStorage, root: Path) -> Path:

@@ -207,25 +207,39 @@ class InMemoryPluginBundleRepository:
             return stored
 
     def _require_unique(self, record: PluginBundleRecord) -> None:
-        """One plugin id, one plugin version, once.
+        """One plugin, one archive, once.
 
-        Keyed on the **manifest's** identity rather than on the display
-        name: two uploads declaring `org.lab.vfh-plus@0.2.0` are two
-        claims to one candidate identity, and letting both in would make
-        "which code produced this result?" unanswerable however carefully
-        the display names differ.
+        **Keyed on the bytes, not on the label.** A candidate hashes on
+        this checksum, so two rows carrying the same archive would be two
+        names for one piece of code. Two rows carrying *different*
+        archives are different controllers whatever their manifests call
+        themselves — which is why re-uploading changed code is accepted
+        even when the author left the manifest version alone.
         """
         for other in self._items.values():
             if (
                 other.id != record.id
                 and other.plugin_id == record.plugin_id
-                and other.plugin_version == record.plugin_version
+                and other.checksum == record.checksum
             ):
                 raise RegistryError(
-                    f"{record.plugin_id!r} version {record.plugin_version!r} is already "
-                    "imported; publish a new version in the manifest rather than "
-                    "replacing what a benchmark may have run"
+                    f"this exact bundle is already imported as {other.label!r} "
+                    f"(revision {other.revision}). Nothing in it has changed, so there "
+                    "is nothing new to measure; change the code and upload again"
                 )
+
+    def next_revision(self, plugin_id: str) -> int:
+        """Which upload of this plugin the next one will be."""
+        seen = [r.revision for r in self._items.values() if r.plugin_id == plugin_id]
+        return max(seen, default=0) + 1
+
+    def others_of(self, plugin_id: str, exclude_id: str) -> list[PluginBundleRecord]:
+        """Every other upload of the same plugin, newest first."""
+        return [
+            record
+            for record in self.list()
+            if record.plugin_id == plugin_id and record.id != exclude_id
+        ]
 
     def get(self, bundle_id: str) -> PluginBundleRecord:
         record = self._items.get(bundle_id)

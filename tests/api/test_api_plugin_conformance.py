@@ -151,10 +151,21 @@ class TestAPluginThatBehavesIsRecordedAsHavingRun:
         assert "subprocess" in body["validation_message"]
 
     def test_the_bundle_is_unpacked_where_the_lane_can_import_it(self, client, admin, tmp_path):
+        """The package directory has to land somewhere importable.
+
+        **Not asserted against a literal path.** The directory used to be
+        keyed on the manifest's declared version, which meant two uploads
+        of a plugin whose author had not bumped that number wrote over
+        each other; it is keyed on the archive's checksum now. Pinning
+        the old spelling here would have made this test the reason not to
+        fix that, so it checks the property instead: the plugin's files
+        are unpacked, once, under the plugin's own directory.
+        """
         import_probe(client, admin, WORKING_PLANNER)
-        unpacked = tmp_path / "artifacts" / "plugins" / "org.vinai.vfh-plus" / "0.1.0"
-        assert (unpacked / "vfh_plus" / "planner.py").is_file()
-        assert (unpacked / "vfh_plus" / ".planbench-plugin" / "plugin.json").is_file()
+        root = tmp_path / "artifacts" / "plugins" / "org.vinai.vfh-plus"
+        unpacked = list(root.rglob("vfh_plus/planner.py"))
+        assert len(unpacked) == 1, f"expected exactly one unpacked copy, found {unpacked}"
+        assert (unpacked[0].parent / ".planbench-plugin" / "plugin.json").is_file()
 
     def test_unpacking_the_same_bytes_twice_is_not_a_second_extraction(self, client, admin):
         """Re-validating must be cheap and must not half-rewrite a

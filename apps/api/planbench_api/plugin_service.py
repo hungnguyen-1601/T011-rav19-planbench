@@ -180,6 +180,7 @@ class PluginBundleService:
                 description=description.strip(),
                 plugin_id=manifest.id,
                 plugin_version=manifest.version,
+                revision=self._bundles.next_revision(manifest.id),
                 role=manifest.role,
                 entry_point=profile_spec.entry_point if profile_spec else "",
                 manifest=inspection.manifest,
@@ -255,8 +256,27 @@ class PluginBundleService:
                 }
             )
         )
+        if saved.usable:
+            self._retire_previous(saved)
         self.sync_catalogue()
         return saved
+
+    def _retire_previous(self, current: PluginBundleRecord) -> None:
+        """Disable the uploads this one replaces.
+
+        Only one upload of a plugin can be what `astar+<plugin id>`
+        resolves to, so leaving the others enabled shows several rows as
+        active while one of them is what actually runs — a screen that
+        disagrees with the platform.
+
+        Disabled rather than deleted, and that is the whole point of
+        having a status: every result recorded against an earlier upload
+        still resolves to the bundle that produced it. What changes is
+        only what may be picked for new work.
+        """
+        for other in self._bundles.others_of(current.plugin_id, current.id):
+            if other.status is ModelStatus.ACTIVE:
+                self._bundles.save(other.model_copy(update={"status": ModelStatus.DISABLED}))
 
     def update(self, bundle_id: str, changes: dict[str, Any], user: User) -> PluginBundleRecord:
         """Rename, re-describe, enable or disable.

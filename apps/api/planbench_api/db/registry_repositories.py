@@ -365,15 +365,15 @@ class SqlPluginBundleRepository:
         clash = session.scalars(
             select(PluginBundleRow).where(
                 PluginBundleRow.plugin_id == record.plugin_id,
-                PluginBundleRow.plugin_version == record.plugin_version,
+                PluginBundleRow.checksum == record.checksum,
                 PluginBundleRow.id != record.id,
             )
         ).first()
         if clash is not None:
             raise RegistryError(
-                f"{record.plugin_id!r} version {record.plugin_version!r} is already "
-                "imported; publish a new version in the manifest rather than "
-                "replacing what a benchmark may have run"
+                f"this exact bundle is already imported as {clash.name!r} v{clash.version} "
+                f"(revision {clash.revision}). Nothing in it has changed, so there is "
+                "nothing new to measure; change the code and upload again"
             )
 
     def create(self, record: PluginBundleRecord) -> PluginBundleRecord:
@@ -388,6 +388,7 @@ class SqlPluginBundleRepository:
                 description=record.description,
                 plugin_id=record.plugin_id,
                 plugin_version=record.plugin_version,
+                revision=record.revision,
                 role=record.role,
                 entry_point=record.entry_point,
                 manifest=record.manifest,
@@ -408,6 +409,24 @@ class SqlPluginBundleRepository:
             session.add(row)
             session.flush()
             return _to_bundle(row)
+
+    def next_revision(self, plugin_id: str) -> int:
+        """Which upload of this plugin the next one will be."""
+        with self._sessions.begin() as session:
+            rows = session.scalars(
+                select(PluginBundleRow).where(PluginBundleRow.plugin_id == plugin_id)
+            ).all()
+            return max((row.revision or 1 for row in rows), default=0) + 1
+
+    def others_of(self, plugin_id: str, exclude_id: str) -> list[PluginBundleRecord]:
+        """Every other upload of the same plugin, newest first."""
+        with self._sessions.begin() as session:
+            rows = session.scalars(
+                select(PluginBundleRow)
+                .where(PluginBundleRow.plugin_id == plugin_id, PluginBundleRow.id != exclude_id)
+                .order_by(PluginBundleRow.created_at.desc())
+            ).all()
+            return [_to_bundle(row) for row in rows]
 
     def get(self, bundle_id: str) -> PluginBundleRecord:
         with self._sessions.begin() as session:
@@ -454,6 +473,7 @@ def _to_bundle(row: PluginBundleRow) -> PluginBundleRecord:
         description=row.description or "",
         plugin_id=row.plugin_id or "",
         plugin_version=row.plugin_version or "",
+        revision=row.revision or 1,
         role=row.role or "local",
         entry_point=row.entry_point or "",
         manifest=row.manifest or {},

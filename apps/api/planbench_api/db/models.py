@@ -280,6 +280,7 @@ class PluginBundleRow(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     plugin_id: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     plugin_version: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="local")
     entry_point: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     manifest: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
@@ -300,10 +301,14 @@ class PluginBundleRow(Base):
     __table_args__ = (
         Index("ix_plugin_bundles_owner", "uploaded_by_user_id"),
         Index("ix_plugin_bundles_status", "status", "validation_status"),
-        # Identity is the manifest's, not the display name's: two uploads
-        # claiming one plugin version are two answers to "what produced
-        # this result?", however differently they are labelled.
-        UniqueConstraint("plugin_id", "plugin_version", name="uq_plugin_bundles_identity"),
+        # **Identity is the archive, not the label.** A candidate hashes
+        # on this checksum, so two rows carrying the same bytes would be
+        # two names for one piece of code — while two rows carrying
+        # different bytes are genuinely different controllers whatever
+        # their manifests call themselves. Keying on the declared version
+        # instead made an author edit a number by hand before every
+        # upload, and refused a real change that forgot to.
+        UniqueConstraint("plugin_id", "checksum", name="uq_plugin_bundles_identity"),
     )
 
 

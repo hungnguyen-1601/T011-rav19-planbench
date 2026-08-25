@@ -132,15 +132,16 @@ MANIFEST = {
 }
 
 
+INIT_PY = "from wall_follower.planner import WallFollower\n"
+
+
 def bundle(manifest: dict | None = None) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
         archive.writestr(
             "wall_follower/.planbench-plugin/plugin.json", json.dumps(manifest or MANIFEST)
         )
-        archive.writestr(
-            "wall_follower/__init__.py", "from wall_follower.planner import WallFollower\n"
-        )
+        archive.writestr("wall_follower/__init__.py", INIT_PY)
         archive.writestr("wall_follower/planner.py", PLANNER)
     return buffer.getvalue()
 
@@ -485,6 +486,81 @@ class TestTheSecondVersionOfIt:
         assert response.status_code == 201, response.text
         second = candidate_from_stack(f"astar+{PLUGIN_ID}", params={})
         assert first.candidate_id != second.candidate_id
+
+
+class TestReplacingItWithChangedCode:
+    """Change the code, upload it again, done — no editing the manifest.
+
+    The loop this platform exists for, and the one the first identity
+    rule made awkward: keying on the manifest's declared version meant an
+    author had to open `plugin.json` and bump a number before every
+    upload, and an author who forgot was told their changed controller
+    was already imported. The number was doing no work — a candidate
+    hashes on the archive's checksum — so it was a hand-maintained field
+    whose only effect was to refuse real changes.
+    """
+
+    def upload(self, client, admin, planner: str, name: str = "Wall follower"):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("wall_follower/.planbench-plugin/plugin.json", json.dumps(MANIFEST))
+            archive.writestr("wall_follower/__init__.py", INIT_PY)
+            archive.writestr("wall_follower/planner.py", planner)
+        return client.post(
+            "/api/v1/algorithms/plugins",
+            data={
+                "name": name,
+                "version": "1",
+                "robot_profile_id": default_profile(client, admin),
+            },
+            files={"bundle": ("wf.zip", io.BytesIO(buffer.getvalue()), "application/zip")},
+            headers=admin,
+        )
+
+    def test_changed_code_is_accepted_without_touching_the_manifest(
+        self, client, admin, imported
+    ):
+        faster = PLANNER.replace("cruise_speed=0.35", "cruise_speed=0.75")
+        assert faster != PLANNER
+        response = self.upload(client, admin, faster)
+        assert response.status_code == 201, response.text
+        assert response.json()["plugin_version"] == MANIFEST["version"], "the label did not move"
+        assert response.json()["revision"] == 2, "the platform counted the upload instead"
+
+    def test_the_same_bytes_are_refused_and_the_message_says_why(self, client, admin, imported):
+        response = self.upload(client, admin, PLANNER)
+        assert response.status_code == 422
+        assert "Nothing in it has changed" in response.json()["error"]["message"]
+
+    def test_the_upload_it_replaces_is_retired(self, client, admin, imported):
+        """Only one upload can be what the stack id resolves to, so
+        leaving the others enabled shows a screen that disagrees with the
+        platform. Disabled, never deleted: results recorded against the
+        earlier upload still resolve to the bundle that produced them."""
+        self.upload(client, admin, PLANNER.replace("cruise_speed=0.35", "cruise_speed=0.75"))
+        rows = client.get("/api/v1/algorithms/plugins", headers=admin).json()
+        by_revision = {row["revision"]: row["status"] for row in rows}
+        assert by_revision == {1: "disabled", 2: "active"}
+
+    def test_the_new_upload_is_the_one_that_runs(self, client, admin, imported):
+        from planbench_benchmark.candidates import candidate_from_stack
+
+        response = self.upload(
+            client, admin, PLANNER.replace("cruise_speed=0.35", "cruise_speed=0.75")
+        )
+        candidate = candidate_from_stack(f"astar+{PLUGIN_ID}", params={})
+        assert candidate.local_controller.version == response.json()["checksum"][:12]
+
+    def test_the_two_uploads_do_not_share_a_directory(self, client, admin, imported, tmp_path):
+        """Keyed on the checksum, because keying on the declared version
+        put changed code on top of the code it replaced the moment an
+        author forgot to bump it."""
+        from planbench_api.plugin_registry import PluginBundleRecord
+        from planbench_api.plugin_runtime import install_root
+
+        first = PluginBundleRecord(id="a", name="x", plugin_id=PLUGIN_ID, checksum="a" * 64)
+        second = PluginBundleRecord(id="b", name="x", plugin_id=PLUGIN_ID, checksum="b" * 64)
+        assert install_root(tmp_path, first) != install_root(tmp_path, second)
 
 
 class TestSomebodyElseCannotImportIt:

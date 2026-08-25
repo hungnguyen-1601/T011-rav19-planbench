@@ -292,7 +292,20 @@ class PluginBundleRecord(BaseModel):
     version: str = "1"
     description: str = ""
     plugin_id: str = ""
+    #: What the manifest calls itself. A label the author maintains, not
+    #: an identity: two bundles may declare the same one, and the earlier
+    #: rule that they could not made an author hand-edit a number before
+    #: every upload — the kind of number a person forgets, failing
+    #: silently when they do.
     plugin_version: str = ""
+    #: Which upload of this plugin this is, counted by the platform.
+    #:
+    #: **Assigned, not declared.** The author changes code; the platform
+    #: says which turn of that loop it is looking at. Nothing hashes on
+    #: it — candidate identity follows the archive's checksum — so it is
+    #: free to be the readable thing the manifest version was being asked
+    #: to be and kept failing at.
+    revision: int = 1
     role: str = "local"
     entry_point: str = ""
     manifest: dict[str, Any] = Field(default_factory=dict)
@@ -350,6 +363,7 @@ class PluginBundleSummary(BaseModel):
     description: str
     plugin_id: str
     plugin_version: str
+    revision: int
     role: str
     requirements: tuple[str, ...]
     robot_profile_id: str
@@ -372,6 +386,7 @@ class PluginBundleSummary(BaseModel):
             description=record.description,
             plugin_id=record.plugin_id,
             plugin_version=record.plugin_version,
+            revision=record.revision,
             role=record.role,
             requirements=record.requirements,
             robot_profile_id=record.robot_profile_id,
