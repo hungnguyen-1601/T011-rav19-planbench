@@ -180,7 +180,12 @@ desktop.ini
 
 # ---------- Claude Code local state ----------
 .claude/settings.local.json
-CLAUDE.md
+# CLAUDE.md was here, as local scratch. It is now the opposite: the
+# rules an agent needs before it touches this repository, and the one
+# that matters most - that a push has to reach two remotes - was living
+# only in one person's machine-local memory, which does not load for a
+# teammate, a different checkout, or a different tool. Tracked on
+# purpose; do not put anything machine-specific or secret in it.
 
 # Local dev stack: PID files and server logs (scripts/dev_stack.sh)
 .run/
