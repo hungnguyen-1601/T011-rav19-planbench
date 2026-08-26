@@ -20,7 +20,8 @@ phase đó.
 | A4-iv wire + gateway + restricted | **xong** | `2353305` |
 | M1 metrics cuối cùng vào packet | **xong** | `382ca5d` |
 | M2 metrics realtime theo episode | **xong** | `40bd527` |
-| M3 bảng traits trong DB | **xong** | (xem §M3) |
+| M3 bảng traits trong DB | **xong** | `da29e94` |
+| A5 knowledge provider (AI2) | **xong** | (xem §A5) |
 | A4 seam + lane + gateway | chưa | |
 | A5 knowledge provider | chưa | |
 | A6 dev calibration + harness | chưa | |
@@ -994,6 +995,76 @@ hình sau khi chuyển tầng lưu trữ.
   seed đã có, nên nối là một hàm đọc; để lại chờ nhánh UI merge xong.
 - Chưa ai **ký** hàng nào. Mọi trait vẫn `draft`, nên chưa trait nào promote được
   claim — đúng như KB v1, và đúng quyết định của An ở plan bản 8 §0.
+
+---
+
+## A5 — Knowledge provider (AI2)
+
+### Đã làm gì
+
+**1. Retrieval trả về KHOÁ, không trả về nội dung.**
+
+`MechanismReferenceCandidate` không có field cho cơ chế, nguồn, hay review
+status, và `extra="forbid"` biến một lần cố thêm vào thành lỗi ngay ở biên. Hợp
+đồng này được dựng **trước** khi có retrieval nào, và A5 chỉ việc không phá nó:
+một retriever trả về được nội dung là một retriever mà độ tự tin của nó quyết
+định cái gì được claim.
+
+**2. Không lọc theo `review_status` ở đây.** Entry chưa duyệt được offer y hệt
+entry đã duyệt; `resolve_candidates` của platform là chỗ trả lời "cái này có back
+được claim không". Lọc ở retrieval là **chuyển luật promotion vào một chỗ không
+ai nhìn thấy nó**.
+
+**3. Lexical, có chủ đích.** 5 entry KB + 6 hàng trait không cần embedding index;
+chúng cần khớp detection type, subject và tên component — đúng thứ ngôn ngữ mà
+activation conditions đã viết bằng. Một vector index ở đây là **một thứ thứ hai
+phải giữ đồng bộ với KB** để đổi lấy một cái lợi chưa ai đo. A6 là chỗ phải đo
+trước khi nó đáng có.
+
+`retrieval_score` chỉ xếp thứ tự trong một vòng; **không gì đọc nó về sau**. Một
+lần retrieve rất tự tin vào entry sai đúng là failure mà tầng tách này tồn tại vì nó.
+
+**4. Traits (M3) thành thứ trích dẫn được.** `trait_offers()` chỉ trả tính chất
+của **những thuật toán packet này thật sự chạy** — bảng đầy đủ sẽ nhét sáu đoạn
+văn về controller không ai chạy vào một prompt có trả tiền.
+
+`build_packet_view(..., traits=...)` index chúng thành fact
+`trait:<algorithm_id>#weakness:<i>`, **mang subject** (`global` ⟶ `global_planner`,
+`local` ⟶ `local_controller`) nên **luật 6 của guard bắt được** một tính chất về
+global planner đem đỡ cho claim về controller. Review status nằm trong `label` để
+người đọc thấy.
+
+Thuật toán **không có hàng nào** ⟶ **không offer nào**, chứ không phải một offer
+rỗng: "chưa ai mô tả" thuộc về phần khai gap của packet, không phải một citation
+analyst có thể tựa vào.
+
+Traits là **opt-in**: view dựng không có trait source thì không nói gì về tính
+chất, thay vì lặng lẽ khẳng định là không có.
+
+### Bằng chứng
+
+| Phép kiểm | Kết quả |
+|---|---|
+| `pytest` 14 suite | **375 passed** |
+| `ruff check` | sạch |
+
+17 test mới: query mang feature chứ không mang narrative · cơ chế đã loại không
+được offer lại · offer không chở được nội dung (`extra="forbid"`) · detection
+không ai index ⟶ không offer · trần số offer · kết quả khai đúng KB version và
+retrieval version · retrieval **không** lọc review status · platform mới là bên
+nói draft không promote được · trả lời về KB version khác ⟶ từ chối **cả kết
+quả** · chỉ thuật toán trong packet được offer · thuật toán import không mô tả ⟶
+không offer · draft trích dẫn được nhưng không promote · approved thì promote
+được · trait trích dẫn được bằng ref trong view · trait mang đúng component ·
+view không traits thì rỗng · review status hiện trong label.
+
+### Còn nợ sau A5
+
+- `runner.py` chưa **tự** gọi retrieval trong vòng: `query_for`/`retrieve` là
+  hàm dùng được, còn ghép chúng vào prompt là việc của A6 khi đo được rằng
+  retrieval có thêm gì không. Nói rõ để không ai đọc "A5 xong" thành "analyst
+  đang dùng KB".
+- Reader từ bảng DB sang `TraitSource` vẫn treo như ghi ở M3.
 
 ---
 

@@ -36,6 +36,7 @@ PHASES_LANDED = [
     "cache",
     "guard",
     "identity",
+    "knowledge_provider",
     "model_gateway",
     "packet_view",
     "prompts",

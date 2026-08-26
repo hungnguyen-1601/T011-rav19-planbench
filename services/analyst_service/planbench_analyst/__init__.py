@@ -54,6 +54,13 @@ from planbench_analyst.identity import (
     source_manifest_hash,
     validate_generation_config,
 )
+from planbench_analyst.knowledge_provider import (
+    RETRIEVAL_VERSION,
+    TraitOffer,
+    query_for,
+    retrieve,
+    trait_offers,
+)
 from planbench_analyst.model_gateway import GatewayRefusal, ModelGateway
 from planbench_analyst.packet_view import (
     Fact,
@@ -85,6 +92,7 @@ from planbench_analyst.stdio_protocol import (
 
 __all__ = [
     "ANALYST_SYSTEM",
+    "RETRIEVAL_VERSION",
     "SOURCE_GLOBS",
     "PROMPT_VERSION",
     "Aliases",
@@ -109,6 +117,7 @@ __all__ = [
     "RoundCost",
     "RoundHostProtocol",
     "RoundOutcome",
+    "TraitOffer",
     "RoundReport",
     "analyst_schema",
     "build_packet_view",
@@ -125,6 +134,9 @@ __all__ = [
     "is_suspicious",
     "label_components",
     "prompt_checksum",
+    "query_for",
+    "retrieve",
+    "trait_offers",
     "public_error",
     "propose",
     "quantities_in",

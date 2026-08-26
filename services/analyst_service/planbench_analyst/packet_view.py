@@ -36,7 +36,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from planbench_analyst.knowledge_provider import trait_offers
 from planbench_analyst.sanitize import Aliases, label_components
+from planbench_benchmark.traits_store import TraitSource
 from planbench_explanation.case_packet import CasePacket
 from planbench_explanation.detectors import DETECTOR_VERSION
 from planbench_explanation.knowledge import KNOWLEDGE_BASE_VERSION
@@ -304,7 +306,11 @@ def _scalar_facts(
 
 
 def build_packet_view(
-    packet: CasePacket, *, tool_catalog_version: str, aliases: Aliases | None = None
+    packet: CasePacket,
+    *,
+    tool_catalog_version: str,
+    aliases: Aliases | None = None,
+    traits: TraitSource | None = None,
 ) -> PacketView:
     """Index one packet, or refuse to read it.
 
@@ -574,6 +580,31 @@ def build_packet_view(
                     kind="trace_window",
                     candidate_id=timeline.candidate_id,
                     label_prefix=f"{timeline.role} episode at {point.clock} {point.mark:g} ",
+                )
+            )
+
+    # The natures of the algorithms this packet ran (M3/A5). Indexed so
+    # a statement can cite one — ``trait:rrtstar#weakness:1`` — and so
+    # rule 6 can catch a nature about the global planner being used to
+    # support a claim about the controller. Whether an unapproved row
+    # may *promote* anything is the promotion matrix's answer, not this
+    # index's; the review status rides in the label so a reader sees it.
+    if traits is not None:
+        for offer in trait_offers(packet, traits):
+            facts.append(
+                Fact(
+                    ref=offer.ref,
+                    kind="knowledge_entry" if "@" in offer.ref else "fact",
+                    label=f"{offer.algorithm_id} nature ({offer.review_status}): {offer.text}",
+                    value=offer.text,
+                    subject=(
+                        "global_planner"
+                        if offer.kind == "global"
+                        else "local_controller"
+                        if offer.kind == "local"
+                        else None
+                    ),
+                    scope=f"algorithm:{offer.algorithm_id}",
                 )
             )
 
