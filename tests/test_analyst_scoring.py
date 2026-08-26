@@ -67,9 +67,32 @@ def test_a_final_statement_with_the_planted_mechanism_scores_correct() -> None:
 def test_a_draft_is_not_scored() -> None:
     """A CheckPlan statement exists only because the host binds evidence
     to a declared hypothesis; scoring it would score a sentence written
-    before its evidence arrived."""
-    result, outcome = scored(answer(hypothesis()))
-    assert any(item.startswith("draft:") for item in outcome.events)
+    before its evidence arrived.
+
+    The round has to **end** holding a draft for this to test anything —
+    three turns, each asking for a different check, so the last one is
+    still a draft when the revisions run out. An earlier version of this
+    let the provider run dry, which ended the round abstaining and made
+    the assertion pass for the wrong reason.
+    """
+    turns = [
+        answer(
+            hypothesis(
+                requested_check={
+                    "tool_id": "gap_vs_footprint",
+                    "arguments": [
+                        {"name": "candidate_id", "value": "cand_a"},
+                        {"name": "region_id", "value": f"aisle_B{index}"},
+                    ],
+                }
+            )
+        )
+        for index in range(1, 5)
+    ]
+    outcome = run_round(prepared(), scripted(*turns))
+    assert outcome.stopped_because == "revisions_exhausted"
+    assert any(proposal.requested_checks for proposal in outcome.response.proposals)
+    result = score_repeat("case-1", outcome, label(), view())
     assert not result.mechanism_correct
 
 
@@ -130,7 +153,7 @@ def test_a_case_is_correct_only_when_every_repeat_was() -> None:
 
 
 def test_a_case_that_disagreed_with_itself_is_marked_unstable() -> None:
-    """"Wrong every time" and "right once out of three" are different
+    """ "Wrong every time" and "right once out of three" are different
     problems, and only the second is a reliability problem."""
     good, _ = scored(answer(final()))
     bad, _ = scored(answer(abstained=True, reason="not enough"))

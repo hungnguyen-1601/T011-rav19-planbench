@@ -149,6 +149,29 @@ def test_the_route_fills_only_arguments_the_card_sources_from_the_packet() -> No
     assert route.arguments["candidate_id"] == "cand_a"
 
 
+def test_an_analyst_argument_is_left_out_rather_than_defaulted() -> None:
+    """``budget_multiplier`` is the analyst's choice of experiment. A
+    router that filled it would be the platform choosing how hard to
+    look and then grading what it found."""
+    sidecar = TYPICAL_AVAILABLE_EVIDENCE | {
+        "planning_inputs",
+        "seed_set",
+        "planner_parameters",
+        "planner_implementation_version",
+    }
+    route, reason = route_for(
+        proposal(
+            proposition_type="sampling_budget_insufficiency", proposed_subject="global_planner"
+        ),
+        catalog=TOOL_CATALOG,
+        packet=built(),
+        available_evidence=frozenset(sidecar),
+    )
+    assert reason == ""
+    assert route is not None
+    assert "budget_multiplier" not in route.arguments
+
+
 def test_a_mechanism_with_no_check_is_declined_by_name() -> None:
     route, reason = route_for(
         proposal(proposition_type="perception_attribution", proposed_subject="perception_provider"),
