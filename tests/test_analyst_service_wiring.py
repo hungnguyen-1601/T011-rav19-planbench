@@ -51,6 +51,7 @@ PHASES_LANDED = [
     "sanitize",
     "stdio_lane",
     "stdio_protocol",
+    "traits_snapshot",
 ]
 
 

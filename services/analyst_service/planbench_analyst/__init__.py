@@ -126,8 +126,24 @@ from planbench_analyst.stdio_protocol import (
     FrameSession,
     ProtocolViolation,
 )
+from planbench_analyst.traits_snapshot import (
+    SnapshotRefusal,
+    TraitsSnapshot,
+    delete_snapshot,
+    read_snapshot,
+    snapshot_from,
+    verify_snapshot,
+    write_snapshot,
+)
 
 __all__ = [
+    "TraitsSnapshot",
+    "SnapshotRefusal",
+    "snapshot_from",
+    "read_snapshot",
+    "write_snapshot",
+    "delete_snapshot",
+    "verify_snapshot",
     "RoundFeatures",
     "FeatureRefusal",
     "wilson_interval",

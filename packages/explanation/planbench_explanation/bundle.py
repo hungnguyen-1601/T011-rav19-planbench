@@ -134,9 +134,43 @@ class AnalystBundle(BaseModel):
     requested_budget: AnalysisBudget
     created_at: str = Field(pattern=TIMESTAMP_PATTERN)
 
+    #: Which revision of the algorithm-trait catalog this bundle was
+    #: graded against, and where the document is. **Three fields, not
+    #: one** (W1.8): a checksum alone pins a value nobody can produce a
+    #: document for once the table's current pointer has moved, which
+    #: reads as pinned and cannot be replayed. Empty on a bundle that
+    #: was graded with the traits input off — absent rather than blank,
+    #: since "no traits" and "traits nobody recorded" differ.
+    traits_revision_id: str = ""
+    traits_snapshot_checksum: str = ""
+    #: Content-addressed: the checksum is in the path, so an artifact
+    #: edited in place stops being findable instead of quietly standing
+    #: in for the one that was graded.
+    traits_snapshot_ref: str = ""
+
     @model_validator(mode="after")
     def _check(self) -> AnalystBundle:
         validate_code_ref(self.agent_code_digest, field="agent_code_digest")
+        triple = (
+            self.traits_revision_id,
+            self.traits_snapshot_checksum,
+            self.traits_snapshot_ref,
+        )
+        if any(triple) and not all(triple):
+            raise BundleRefusal(
+                "a trait snapshot is a revision id, a content checksum and a ref, "
+                f"and this bundle carries {sum(1 for item in triple if item)} of the "
+                "three. Each one alone can be true while the pair is wrong: a ref "
+                "that resolves to another revision, a checksum matching a document "
+                "the bundle does not name, an id that was reused."
+            )
+        if self.traits_snapshot_checksum and not re.fullmatch(
+            CHECKSUM_PATTERN, self.traits_snapshot_checksum
+        ):
+            raise BundleRefusal(
+                f"traits_snapshot_checksum {self.traits_snapshot_checksum!r} is not a "
+                "sha-256 hex digest"
+            )
         return self
 
     @property
@@ -160,6 +194,12 @@ class AnalystBundle(BaseModel):
             "generation_parameters": self.generation_parameters,
             "runner_protocol_version": self.runner_protocol_version,
             "requested_budget": self.requested_budget.checksum,
+            # All three, because the gate checks all three. A bundle
+            # that pinned only the checksum would be replayable exactly
+            # as long as nobody edited the table.
+            "traits_revision_id": self.traits_revision_id,
+            "traits_snapshot_checksum": self.traits_snapshot_checksum,
+            "traits_snapshot_ref": self.traits_snapshot_ref,
         }
 
     @property

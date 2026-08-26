@@ -170,6 +170,7 @@ def runtime_config_checksum(
     source_manifest_hash: str,
     retrieval_config: Mapping[str, Any] | None = None,
     features: RoundFeatures | None = None,
+    traits_snapshot: tuple[str, str, str] | None = None,
 ) -> str:
     """Identity of everything except the packet.
 
@@ -189,5 +190,9 @@ def runtime_config_checksum(
             # two systems, and without this they would share a checksum
             # — the second reading would look like model variance.
             "features": (features or RoundFeatures()).as_config,
+            # The snapshot triple (W1.8), in the dev key for the reason
+            # it is in the bundle's: a round run against one revision of
+            # the natures and replayed against another is two systems.
+            "traits_snapshot": list(traits_snapshot or ()),
         }
     )
