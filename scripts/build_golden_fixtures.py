@@ -67,9 +67,6 @@ from planbench_explanation.detectors import (  # noqa: E402
     DETECTOR_VERSION,
     DetectorSettings,
 )
-from planbench_explanation.detectors import (  # noqa: E402
-    read_trace as read_trace_view,
-)
 from planbench_explanation.knowledge import KNOWLEDGE_BASE_VERSION  # noqa: E402
 from planbench_explanation.map_features import MapFeatureRefusal, measure_route  # noqa: E402
 from planbench_explanation.packet_artifact import (  # noqa: E402
@@ -81,7 +78,6 @@ from planbench_explanation.packet_builder import (  # noqa: E402
     observations_from_traces,
     timeline_from_trace,
 )
-from planbench_explanation.replay_sync import choose_reference, project  # noqa: E402
 from planbench_explanation.running_metrics import Deployment  # noqa: E402
 from planbench_explanation.sidecar_writer import (  # noqa: E402
     PlanningInputRecorder,
@@ -213,34 +209,6 @@ def _measured(candidate_id: str, run, trace) -> CandidateMeasurements:  # type: 
     # report, and a zero would read as "scored nothing" rather than as
     # "was never scored".
     return CandidateMeasurements(candidate_id=candidate_id, **fields)
-
-
-def _with_progress(trace: EpisodeTrace) -> EpisodeTrace:
-    """The same episode with its arc length along the reference line.
-
-    The recorder writes where the robot was; how far along the task that
-    is depends on the line it is measured against, so it is computed
-    here through the platform's own projection — the one the detectors
-    already run — rather than by a second rule that would place the
-    half-way mark somewhere else.
-    """
-    payload = dict(trace.columns)
-    payload.setdefault("candidate_id", trace.candidate_id)
-    payload.setdefault("episode_context_id", trace.episode_context_id)
-    view = read_trace_view(payload)
-    reference = choose_reference(
-        planned_path=trace.planned_path,
-        candidate_path=[(point.x, point.y) for point in view.track],
-    )
-    projected = project(view.track, reference)
-    return trace.model_copy(
-        update={
-            "columns": {
-                **trace.columns,
-                "progress_m": [sample.progress_m for sample in projected.samples],
-            }
-        }
-    )
 
 
 def _deployment(world: PlantedWorld, reference_length_m: float) -> Deployment:
@@ -409,7 +377,7 @@ def build(
             )
             continue
         timeline = timeline_from_trace(
-            _with_progress(trace),
+            trace,
             role="safety_critical" if trace.candidate_id == closest else "typical",
             deployment=_deployment(world, length),
         )

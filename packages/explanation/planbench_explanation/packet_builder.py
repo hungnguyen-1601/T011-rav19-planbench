@@ -86,7 +86,7 @@ from planbench_explanation.exemplars import (
     select_exemplars_from_report,
 )
 from planbench_explanation.map_features import RouteFeatures
-from planbench_explanation.replay_sync import ReplaySyncRefusal, choose_reference
+from planbench_explanation.replay_sync import ReplaySyncRefusal, choose_reference, project
 from planbench_explanation.running_metrics import Deployment, TraceSlice, sample_series
 from planbench_explanation.versioning import ExplanationArtifactHeader
 from planbench_explanation.waterfall import Waterfall
@@ -367,6 +367,75 @@ def _slice_from(trace: EpisodeTrace) -> TraceSlice | None:
     return TraceSlice(candidate_id=trace.candidate_id, **values)  # type: ignore[arg-type]
 
 
+class DeploymentThresholds(BaseModel):
+    """The profile's half of a :class:`Deployment` — W1.3.
+
+    Everything the running metrics normalise against **except** the
+    reference length, which is not the deployment's to state: it is the
+    length of the line *this episode* was measured along, and one number
+    shared across a run would put a robot halfway down the map at 100%
+    of a shorter neighbour's route. The scoring pass holds the profile;
+    the episode holds its line; this is the join.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
+
+    robot_radius_m: float = Field(gt=0)
+    control_period_s: float = Field(gt=0)
+    clearance_warning_m: float = Field(ge=0)
+    max_linear_velocity: float = Field(gt=0)
+
+    def for_length(self, reference_length_m: float) -> Deployment:
+        return Deployment(
+            robot_radius_m=self.robot_radius_m,
+            control_period_s=self.control_period_s,
+            clearance_warning_m=self.clearance_warning_m,
+            max_linear_velocity=self.max_linear_velocity,
+            reference_length_m=reference_length_m,
+        )
+
+
+def project_progress(trace: EpisodeTrace) -> tuple[EpisodeTrace, float] | None:
+    """The same episode with its arc length along the reference line.
+
+    The recorder writes **where** the robot was; how far along the task
+    that is depends on the line it is measured against, so it is derived
+    here through the platform's own projection — the one the detectors
+    already run — rather than by a second rule free to place the
+    half-way mark somewhere else.
+
+    Returns the trace and the line's length. A trace that already
+    carries ``progress_m`` is returned untouched with a length of 0.0:
+    somebody upstream measured it against a line this function cannot
+    see, and recomputing would be the second rule. ``None`` when the
+    projection refuses — the caller then says so rather than placing
+    points on a line that could not be built.
+    """
+    if trace.columns.get("progress_m") is not None:
+        return trace, 0.0
+    payload = dict(trace.columns)
+    payload.setdefault("candidate_id", trace.candidate_id)
+    payload.setdefault("episode_context_id", trace.episode_context_id)
+    try:
+        view = read_trace(payload)
+        reference = choose_reference(
+            planned_path=trace.planned_path,
+            candidate_path=[(point.x, point.y) for point in view.track],
+        )
+        projected = project(view.track, reference)
+    except (DetectorRefusal, ReplaySyncRefusal, ValueError):
+        return None
+    updated = trace.model_copy(
+        update={
+            "columns": {
+                **trace.columns,
+                "progress_m": [sample.progress_m for sample in projected.samples],
+            }
+        }
+    )
+    return updated, reference.length_m
+
+
 def timeline_from_trace(
     trace: EpisodeTrace, *, role: str, deployment: Deployment
 ) -> EpisodeTimeline | None:
@@ -383,6 +452,14 @@ def timeline_from_trace(
     caller says so; a half-built slice would report a different moment
     of the episode than the one asked for.
     """
+    projected = project_progress(trace)
+    if projected is None:
+        return None
+    trace, reference_length_m = projected
+    if reference_length_m > 0:
+        # This episode's own line. A length carried over from another
+        # episode would report a fraction of the wrong route.
+        deployment = deployment.model_copy(update={"reference_length_m": reference_length_m})
     sliced = _slice_from(trace)
     if sliced is None:
         return None
@@ -441,6 +518,8 @@ def timelines_from_traces(
     traces: Sequence[EpisodeTrace],
     exemplars: ExemplarSet | None,
     deployment: Deployment | None,
+    *,
+    thresholds: DeploymentThresholds | None = None,
 ) -> tuple[tuple[EpisodeTimeline, ...], tuple[str, ...]]:
     """A few marks of the exemplar episodes, on both clocks.
 
@@ -448,6 +527,11 @@ def timelines_from_traces(
     asking why an explanation is thin is owed the reason, and an empty
     tuple with no account reads as "the recipe found nothing".
     """
+    if thresholds is not None and deployment is None:
+        # A length that every episode overrides on its own line. Stated
+        # rather than left implicit: ``Deployment`` requires one, and
+        # this is the value no episode keeps.
+        deployment = thresholds.for_length(1.0)
     if exemplars is None or deployment is None:
         return (), ("timelines: no exemplar set or no deployment thresholds for this run",)
 
@@ -499,6 +583,7 @@ def build_scoring_packet(
     route_features: Mapping[str, RouteFeatures] | None = None,
     gates: Mapping[str, Mapping[str, object]] | None = None,
     deployment: Deployment | None = None,
+    deployment_thresholds: DeploymentThresholds | None = None,
 ) -> PacketBuildReport:
     """Assemble one run's case packet from what the scoring pass holds.
 
@@ -552,7 +637,9 @@ def build_scoring_packet(
         except (ExemplarRefusal, ReportExemplarRefusal) as refusal:
             omissions.append(f"representative_episodes: {refusal}")
 
-    timelines, timeline_omissions = timelines_from_traces(traces, exemplars, deployment)
+    timelines, timeline_omissions = timelines_from_traces(
+        traces, exemplars, deployment, thresholds=deployment_thresholds
+    )
     omissions.extend(timeline_omissions)
 
     measurements = measurements_from_report(report)
