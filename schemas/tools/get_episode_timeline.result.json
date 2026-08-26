@@ -1,0 +1,72 @@
+{
+  "$id": "schemas/tools/get_episode_timeline.result.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "measurements": {
+      "additionalProperties": false,
+      "properties": {
+        "compute_budget": {
+          "description": "p99 planner latency so far over the control period.",
+          "type": "number",
+          "unit": "ratio"
+        },
+        "n_points": {
+          "description": "Marks this episode was sampled at.",
+          "type": "number",
+          "unit": "count"
+        },
+        "path_efficiency": {
+          "description": "Progress over distance driven. 1.0 is a straight line.",
+          "type": "number",
+          "unit": "ratio"
+        },
+        "progress_fraction": {
+          "description": "Fraction of the reference line covered at the last mark.",
+          "type": "number",
+          "unit": "ratio"
+        },
+        "safety_margin": {
+          "description": "Worst clearance so far, in robot radii.",
+          "type": "number",
+          "unit": "ratio"
+        }
+      },
+      "required": [
+        "n_points"
+      ],
+      "type": "object"
+    },
+    "references": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": []
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ref": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "measurements"
+  ],
+  "title": "get_episode_timeline@1.0.0 output",
+  "type": "object"
+}

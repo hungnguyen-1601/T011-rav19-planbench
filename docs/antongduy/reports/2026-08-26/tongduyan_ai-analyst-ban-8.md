@@ -18,7 +18,8 @@ phase đó.
 | A4-ii RFC gate + bundle | **xong** | `3dba01b` |
 | A4-iii seam + runner | **xong** | `3f7f85b` |
 | A4-iv wire + gateway + restricted | **xong** | `2353305` |
-| M1 metrics cuối cùng vào packet | **xong** | (xem §M1) |
+| M1 metrics cuối cùng vào packet | **xong** | `382ca5d` |
+| M2 metrics realtime theo episode | **xong** | (xem §M2) |
 | A4 seam + lane + gateway | chưa | |
 | A5 knowledge provider | chưa | |
 | A6 dev calibration + harness | chưa | |
@@ -853,6 +854,73 @@ có một `ref` để analyst trích dẫn.
   `ToolHost`: analyst đọc số qua fact index được ngay; gọi tool thì host trả
   `tool_unavailable`. Nối handler nằm ở A5/A6 khi host được mở rộng, ghi ra để
   không ai đọc "card đã có" thành "tool chạy được".
+
+---
+
+## M2 — Metrics realtime theo episode
+
+### Đã làm gì
+
+**1. `EpisodeTimeline` + `TimelinePoint` — và đồng hồ nằm trong object.**
+
+`clock` là một field, không phải quy ước theo vị trí. "Ai đang dẫn" và "ai làm
+cùng khối lượng việc tốt hơn" là **hai câu hỏi** đội một cái tên: ở cùng mốc
+đồng hồ tường, hai robot đang ở hai chỗ khác nhau trên nhiệm vụ; ở cùng mốc tiến
+độ, chúng ở cùng chỗ nhưng tốn thời gian khác nhau. So clearance ở **cùng thời
+điểm** là so hai phần khác nhau của bản đồ, và con số rơi ra không nói về bên nào.
+
+Đồng hồ cũng nằm **trong ref**: `episode:<id>/at_time/<mốc>.<metric>` và
+`episode:<id>/at_progress/<mốc>.<metric>`. Một trích dẫn không khai mốc nào là
+một trích dẫn không đọc được.
+
+**2. Dùng lại `sample_series` của E4.3, không viết lại.** Tám con số đó đã có
+đúng một implementation, và hai implementation của "clearance nhỏ nhất tới giờ"
+là hai định nghĩa tự do trôi khỏi nhau — trôi mà **không nhìn thấy được**, vì cả
+hai đều render ra thứ trông như clearance.
+
+**3. Chỉ 2 vai × 3 mốc, và đó là một quyết định về giá.**
+
+`TIMELINE_ROLES = ("typical", "safety_critical")` — hai cực ΔU đã được waterfall
+mô tả rồi; thứ timeline thêm vào mà phân rã không có là **hình dạng** của một
+episode đại diện và của cái suýt chạm gì đó.
+
+Đo thật, in ra chứ không ước lượng:
+
+| | trước M2 | sau M2 |
+|---|---|---|
+| fact mỗi packet | 41 | **101** |
+| byte serialize | 7.500 | **21.000** |
+
+Gấp 2,8 lần. Đây là chi phí prompt **mỗi vòng phải trả**, và là lý do giới hạn ở
+2 vai × 3 mốc chứ không phải 4 vai × mọi trace row. A6 sẽ so chất lượng **và**
+chi phí, không chỉ chất lượng.
+
+**4. Thiếu cột thì bỏ qua và nói rõ.** `_slice_from` trả `None` khi trace thiếu
+một cột — dựng slice từ nửa số cột là báo cáo một thời điểm khác cái được hỏi.
+Mọi lần bỏ đều thành một dòng `omissions`, vì người đọc hỏi "sao giải thích mỏng
+thế" xứng đáng có lý do.
+
+**5. Card `get_episode_timeline`** (`fact_query`, đòi `trace` + `reference_line`),
+`TOOL_CATALOG_VERSION` 3.1.0 ⟶ **3.2.0**, 36 schema xuất lại.
+
+### Bằng chứng
+
+| Phép kiểm | Kết quả |
+|---|---|
+| `pytest` 8 suite analyst + 6 suite explanation | **427 passed** |
+| Bộ răng | **32/32 CẮN** |
+| Đo chi phí packet | 41 ⟶ 101 fact; 7.500 ⟶ 21.000 byte |
+| `ruff check` | sạch |
+
+### Còn nợ sau M2
+
+- `build_scoring_packet` nay nhận `deployment` (optional). Caller trong
+  `apps/api` chưa truyền — không truyền thì packet không có timeline và
+  `omissions` nói rõ vì sao. Nối caller là một dòng ở phía API, để lại vì nó
+  nằm ngoài phạm vi file An đang sửa song song.
+- Handler cho `get_episode_timeline` trong `ToolHost` chưa có, cùng tình trạng
+  với `get_candidate_measurements` ở M1 — đọc qua fact index thì được, gọi tool
+  thì `tool_unavailable`.
 
 ---
 

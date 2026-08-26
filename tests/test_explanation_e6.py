@@ -702,7 +702,7 @@ def test_the_checksum_on_a_result_is_of_what_was_stored(tmp_path) -> None:  # ty
 
 def test_the_catalog_version_moved_with_the_contract() -> None:
     """A bundle frozen against the old wire contract must stop matching."""
-    assert TOOL_CATALOG_VERSION == "3.1.0"
+    assert TOOL_CATALOG_VERSION == "3.2.0"
     assert TOOL_CATALOG.card("latency_vs_expanded_nodes", "2.0.0").tool_version == "2.0.0"
     assert TOOL_CATALOG.card("gap_vs_footprint", "2.0.0").tool_version == "2.0.0"
     assert TOOL_CATALOG.card("rrt_convergence", "2.0.0").tool_version == "2.0.0"

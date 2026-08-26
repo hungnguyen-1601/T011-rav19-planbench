@@ -587,6 +587,8 @@ __all__ = [
     "find_divergence",
     "AnalysisBudget",
     "CandidateMeasurements",
+    "EpisodeTimeline",
+    "TimelinePoint",
     "GateOutcome",
     "MeasuredValue",
     "PacketArtifact",

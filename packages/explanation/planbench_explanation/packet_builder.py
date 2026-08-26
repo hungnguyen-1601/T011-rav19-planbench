@@ -55,10 +55,12 @@ from planbench_explanation.case_packet import (
     CasePacket,
     CasePacketRefusal,
     DecisionFacts,
+    EpisodeTimeline,
     GateOutcome,
     MeasuredValue,
     RobotFacts,
     TaskFacts,
+    TimelinePoint,
     build_case_packet,
 )
 from planbench_explanation.contrast import (
@@ -85,6 +87,7 @@ from planbench_explanation.exemplars import (
 )
 from planbench_explanation.map_features import RouteFeatures
 from planbench_explanation.replay_sync import ReplaySyncRefusal, choose_reference
+from planbench_explanation.running_metrics import Deployment, TraceSlice, sample_series
 from planbench_explanation.versioning import ExplanationArtifactHeader
 from planbench_explanation.waterfall import Waterfall
 
@@ -331,6 +334,118 @@ def gate_rows_from_report(report: Mapping[str, object]) -> tuple[GateOutcome, ..
     return tuple(rows)
 
 
+#: Which exemplar roles get a timeline, and at which marks.
+#:
+#: Two roles rather than four, and three marks rather than every trace
+#: row, because a packet is a prompt somebody pays for on every case.
+#: The two ΔU extremes are already described by the waterfall — what a
+#: timeline adds that the decomposition cannot is the *shape* of a
+#: representative episode and of the one that came closest to something.
+#: Measured: this is about 50 facts per packet, against 15–54 before M2.
+TIMELINE_ROLES: tuple[str, ...] = ("typical", "safety_critical")
+TIMELINE_MARKS: tuple[float, ...] = (0.25, 0.5, 1.0)
+
+
+def _slice_from(trace: EpisodeTrace) -> TraceSlice | None:
+    """The columns these metrics need, or ``None`` if the run lacks one.
+
+    Absent columns come back as empty rather than as an error, so a
+    trace that cannot be measured is skipped and said so — building a
+    slice out of half the columns would report a different moment of the
+    episode than the one asked for.
+    """
+    columns = trace.columns
+    needed = ("t", "x", "y", "clearance_m", "planner_latency_ms", "progress_m")
+    values: dict[str, tuple[float, ...]] = {}
+    for name in needed:
+        column = columns.get(name)
+        if column is None:
+            return None
+        values[name] = tuple(float(item) for item in column)
+    if not values["t"] or len({len(column) for column in values.values()}) > 1:
+        return None
+    return TraceSlice(candidate_id=trace.candidate_id, **values)  # type: ignore[arg-type]
+
+
+def timelines_from_traces(
+    traces: Sequence[EpisodeTrace],
+    exemplars: ExemplarSet | None,
+    deployment: Deployment | None,
+) -> tuple[tuple[EpisodeTimeline, ...], tuple[str, ...]]:
+    """A few marks of the exemplar episodes, on both clocks.
+
+    Returns the timelines and the reasons any were left out. A reader
+    asking why an explanation is thin is owed the reason, and an empty
+    tuple with no account reads as "the recipe found nothing".
+    """
+    if exemplars is None or deployment is None:
+        return (), ("timelines: no exemplar set or no deployment thresholds for this run",)
+
+    wanted = {
+        item.episode_context_id: item.role
+        for item in exemplars.exemplars
+        if item.role in TIMELINE_ROLES
+    }
+    built: list[EpisodeTimeline] = []
+    omissions: list[str] = []
+    for trace in traces:
+        role = wanted.get(trace.episode_context_id)
+        if role is None:
+            continue
+        sliced = _slice_from(trace)
+        if sliced is None:
+            omissions.append(
+                f"timeline {trace.episode_context_id}: the trace is missing a column "
+                "these metrics read, so no point on it can be placed"
+            )
+            continue
+        series = sample_series(sliced, deployment=deployment)
+        points: list[TimelinePoint] = []
+        for fraction in TIMELINE_MARKS:
+            at_time = series[min(int(len(series) * fraction), len(series) - 1)]
+            points.append(
+                TimelinePoint(
+                    clock="at_time",
+                    mark=round(at_time.elapsed_s, 3),
+                    progress_fraction=at_time.progress_fraction,
+                    safety_margin=at_time.safety_margin,
+                    compute_budget=at_time.compute_budget,
+                    path_efficiency=at_time.path_efficiency,
+                    elapsed_s=at_time.elapsed_s,
+                    replans=at_time.replans,
+                )
+            )
+            reached = next(
+                (row for row in series if row.progress_fraction >= fraction), series[-1]
+            )
+            points.append(
+                TimelinePoint(
+                    clock="at_progress",
+                    mark=fraction,
+                    progress_fraction=reached.progress_fraction,
+                    safety_margin=reached.safety_margin,
+                    compute_budget=reached.compute_budget,
+                    path_efficiency=reached.path_efficiency,
+                    elapsed_s=reached.elapsed_s,
+                    replans=reached.replans,
+                )
+            )
+        built.append(
+            EpisodeTimeline(
+                episode_context_id=trace.episode_context_id,
+                candidate_id=trace.candidate_id,
+                role=role,
+                points=tuple(points),
+            )
+        )
+    if not built and not omissions:
+        omissions.append(
+            "timelines: no trace was available for the exemplar episodes, so the "
+            "packet says what each episode scored and not how it went"
+        )
+    return tuple(built), tuple(omissions)
+
+
 def build_scoring_packet(
     *,
     run_id: str,
@@ -351,6 +466,7 @@ def build_scoring_packet(
     detector_settings: DetectorSettings | None = None,
     route_features: Mapping[str, RouteFeatures] | None = None,
     gates: Mapping[str, Mapping[str, object]] | None = None,
+    deployment: Deployment | None = None,
 ) -> PacketBuildReport:
     """Assemble one run's case packet from what the scoring pass holds.
 
@@ -404,6 +520,9 @@ def build_scoring_packet(
         except (ExemplarRefusal, ReportExemplarRefusal) as refusal:
             omissions.append(f"representative_episodes: {refusal}")
 
+    timelines, timeline_omissions = timelines_from_traces(traces, exemplars, deployment)
+    omissions.extend(timeline_omissions)
+
     measurements = measurements_from_report(report)
     if not measurements:
         omissions.append(
@@ -439,6 +558,7 @@ def build_scoring_packet(
         lattice=lattice,
         observations=observations,
         measurements=measurements,
+        timelines=timelines,
         representative_episodes=exemplars,
         evidence_class=evidence_class,
     )

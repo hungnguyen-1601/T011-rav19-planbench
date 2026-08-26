@@ -550,6 +550,33 @@ def build_packet_view(
                 )
             )
 
+    # How the exemplar episodes went while they were going. The clock
+    # is **in the ref**, not implied by position: "who is ahead" and
+    # "who did the same work better" are two questions, and a citation
+    # that did not say which one it meant would be unreadable.
+    for timeline in packet.timelines:
+        for point in timeline.points:
+            base = (
+                f"episode:{timeline.episode_context_id}/{point.clock}/"
+                f"{point.mark:g}"
+            )
+            facts.extend(
+                _scalar_facts(
+                    f"{base}.",
+                    f"episode:{timeline.episode_context_id}",
+                    {
+                        "progress_fraction": point.progress_fraction,
+                        "safety_margin": point.safety_margin,
+                        "compute_budget": point.compute_budget,
+                        "path_efficiency": point.path_efficiency,
+                        "replans": point.replans,
+                    },
+                    kind="trace_window",
+                    candidate_id=timeline.candidate_id,
+                    label_prefix=f"{timeline.role} episode at {point.clock} {point.mark:g} ",
+                )
+            )
+
     for unknown in packet.known_unknowns:
         facts.append(
             Fact(

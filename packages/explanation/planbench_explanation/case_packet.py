@@ -176,6 +176,59 @@ class CandidateMeasurements(BaseModel):
         }
 
 
+class TimelinePoint(BaseModel):
+    """One candidate's standing at one mark of one episode.
+
+    The **clock is in the object**, not implied by position, because
+    "who is ahead" and "who did the same work better" are two questions
+    wearing one label. At equal wall-clock time the two robots are at
+    different places on the task; at equal progress they are at the same
+    place having taken different amounts of time. Comparing worst
+    clearance at equal *time* compares two different parts of the map,
+    and the number that comes out is about neither candidate.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
+
+    clock: Literal["at_time", "at_progress"]
+    #: Seconds for ``at_time``, fraction of the reference line for
+    #: ``at_progress``. The unit follows the clock, which is why they
+    #: are never mixed in one row.
+    mark: float = Field(ge=0.0)
+    progress_fraction: float = Field(ge=0.0)
+    #: Worst clearance **so far**, in robot radii. A running minimum: a
+    #: number that recovers after a near miss forgets the near miss.
+    safety_margin: float
+    #: p99 planner latency so far as a fraction of the control period.
+    #: 1.0 sits at the gate's threshold.
+    compute_budget: float = Field(ge=0.0)
+    #: Progress over distance actually driven. 1.0 is a straight line.
+    path_efficiency: float = Field(ge=0.0, le=1.0)
+    elapsed_s: float = Field(ge=0.0)
+    replans: int = Field(ge=0)
+
+
+class EpisodeTimeline(BaseModel):
+    """What one episode looked like while it was happening.
+
+    Carried only for the exemplar episodes, and only for a few marks of
+    each. Thirty episodes at every trace row would be a packet nobody
+    can read and a prompt nobody should pay for; what a reader wants
+    from "why did this one win" is the shape of the episodes the
+    platform already chose as representative.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
+
+    episode_context_id: str = Field(min_length=1)
+    candidate_id: str = Field(min_length=1)
+    #: Why this episode is in the packet — ``typical``,
+    #: ``safety_critical``. A reader weighs a worst-case episode
+    #: differently from a representative one.
+    role: str = Field(min_length=1)
+    points: tuple[TimelinePoint, ...] = ()
+
+
 class GateOutcome(BaseModel):
     """One gate, and the number it was decided on.
 
@@ -285,6 +338,9 @@ class CasePacket(BaseModel):
     #: a packet recorded before M1 — and the fact index says so rather
     #: than serving an empty table as though nothing was measured.
     measurements: tuple[CandidateMeasurements, ...] = ()
+    #: How the exemplar episodes went while they were going. Empty when
+    #: the run has no trace to read, which is most old runs.
+    timelines: tuple[EpisodeTimeline, ...] = ()
     representative_episodes: ExemplarSet | None = None
     known_unknowns: tuple[KnownUnknown, ...]
     #: The fairness lane this evidence came from (§5.10). A research-lane
@@ -378,6 +434,7 @@ def build_case_packet(
     lattice: Sequence[ContrastFinding] = (),
     observations: Sequence[Observation] = (),
     measurements: Sequence[CandidateMeasurements] = (),
+    timelines: Sequence[EpisodeTimeline] = (),
     representative_episodes: ExemplarSet | None = None,
     extra_unknowns: Sequence[KnownUnknown] = (),
     evidence_class: str = "production",
@@ -428,6 +485,7 @@ def build_case_packet(
         lattice=tuple(lattice),
         observations=tuple(observations),
         measurements=tuple(measurements),
+        timelines=tuple(timelines),
         representative_episodes=representative_episodes,
         known_unknowns=tuple(unknowns),
         evidence_class=evidence_class,

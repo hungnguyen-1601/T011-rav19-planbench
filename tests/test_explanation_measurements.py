@@ -13,10 +13,16 @@ its verdict and no invented numbers.
 
 from __future__ import annotations
 
+from planbench_explanation.exemplars import Exemplar, ExemplarSet
 from planbench_explanation.packet_builder import (
+    TIMELINE_MARKS,
+    TIMELINE_ROLES,
+    EpisodeTrace,
     gate_rows_from_report,
     measurements_from_report,
+    timelines_from_traces,
 )
+from planbench_explanation.running_metrics import Deployment
 
 
 def report(**overrides):  # type: ignore[no-untyped-def]
@@ -142,3 +148,107 @@ def test_a_failing_gate_reads_as_failing() -> None:
     assert row.passed is False
     assert row.direction == "at_least"
     assert row.value == 5.0
+
+
+# --------------------------------------------------------------------------
+# M2 — how the exemplar episodes went while they were going
+# --------------------------------------------------------------------------
+
+
+def deployment() -> Deployment:
+    return Deployment(
+        robot_radius_m=0.26,
+        control_period_s=0.05,
+        clearance_warning_m=0.35,
+        max_linear_velocity=0.8,
+        reference_length_m=12.0,
+    )
+
+
+def trace(episode_context_id: str = "ep-001", *, columns=None) -> EpisodeTrace:
+    rows = 20
+    default = {
+        "t": [index * 0.1 for index in range(rows)],
+        "x": [index * 0.5 for index in range(rows)],
+        "y": [0.0] * rows,
+        "clearance_m": [0.6 - index * 0.02 for index in range(rows)],
+        "planner_latency_ms": [10.0 + index for index in range(rows)],
+        "progress_m": [index * 0.6 for index in range(rows)],
+    }
+    return EpisodeTrace(
+        candidate_id="cand_a",
+        episode_context_id=episode_context_id,
+        columns=columns if columns is not None else default,
+    )
+
+
+def exemplar_set(*episode_ids: str) -> ExemplarSet:
+    roles = ("typical", "strongest_for_winner", "strongest_for_runnerup", "safety_critical")
+    chosen = list(episode_ids) + [f"ep-{index:03d}" for index in range(len(episode_ids), 4)]
+    return ExemplarSet(
+        candidate_a="cand_a",
+        candidate_b="cand_b",
+        n_episodes=30,
+        exemplars=tuple(
+            Exemplar(role=role, episode_context_id=episode_id, delta_utility=0.0, criterion=0.0)
+            for role, episode_id in zip(roles, chosen, strict=True)
+        ),
+    )
+
+
+def test_an_exemplar_episode_gets_a_timeline_on_both_clocks() -> None:
+    built, omissions = timelines_from_traces(
+        [trace("ep-001")], exemplar_set("ep-001"), deployment()
+    )
+    assert omissions == ()
+    (timeline,) = built
+    assert timeline.role == "typical"
+    clocks = {point.clock for point in timeline.points}
+    assert clocks == {"at_time", "at_progress"}
+
+
+def test_only_two_roles_are_carried() -> None:
+    """The two ΔU extremes are already described by the waterfall; what a
+    timeline adds is the shape of a representative episode and of the
+    one that came closest to something."""
+    built, _ = timelines_from_traces(
+        [trace("ep-001"), trace("ep-002"), trace("ep-003")],
+        exemplar_set("ep-001", "ep-002", "ep-003"),
+        deployment(),
+    )
+    carried = {item.role for item in built}
+    assert carried <= set(TIMELINE_ROLES)
+    assert "strongest_for_winner" not in carried
+    assert "strongest_for_runnerup" not in carried
+
+
+def test_an_episode_nobody_chose_gets_no_timeline() -> None:
+    built, _ = timelines_from_traces([trace("ep-999")], exemplar_set("ep-001"), deployment())
+    assert built == ()
+
+
+def test_a_trace_missing_a_column_is_skipped_and_said_so() -> None:
+    """Building a slice out of half the columns would report a different
+    moment of the episode than the one asked for."""
+    broken = trace("ep-001", columns={"t": [0.0, 0.1], "x": [0.0, 0.5]})
+    built, omissions = timelines_from_traces([broken], exemplar_set("ep-001"), deployment())
+    assert built == ()
+    assert any("missing a column" in item for item in omissions)
+
+
+def test_a_run_with_no_deployment_thresholds_says_why_it_has_no_timeline() -> None:
+    built, omissions = timelines_from_traces([trace()], exemplar_set("ep-001"), None)
+    assert built == ()
+    assert omissions
+
+
+def test_the_two_clocks_are_never_the_same_row() -> None:
+    """At equal wall-clock time the robots are at different places on the
+    task; at equal progress they are at the same place having taken
+    different times."""
+    built, _ = timelines_from_traces([trace("ep-001")], exemplar_set("ep-001"), deployment())
+    (timeline,) = built
+    at_time = [point for point in timeline.points if point.clock == "at_time"]
+    at_progress = [point for point in timeline.points if point.clock == "at_progress"]
+    assert len(at_time) == len(at_progress) == len(TIMELINE_MARKS)
+    assert [point.mark for point in at_progress] == list(TIMELINE_MARKS)

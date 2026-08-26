@@ -109,6 +109,9 @@ def _points_at(kind: str, description: str, *, required: bool = True) -> Referen
 #: ``gap_vs_footprint`` also moved to 2.0.0: it now compares a width
 #: against a width, which changes the measurement names it returns.
 #:
+#: **3.2.0** — M2 adds ``get_episode_timeline``: the exemplar
+#: episodes as they happened, on two clocks that are never mixed.
+#:
 #: **3.1.0** — M1 adds ``get_candidate_measurements``: what a
 #: candidate scored, which until now lived in the report and never
 #: reached an analyst. A card added is a menu changed, so the version
@@ -119,7 +122,7 @@ def _points_at(kind: str, description: str, *, required: bool = True) -> Referen
 #: small" from "the corridor is not there": both look like a low number.
 #: Different measurement names, so a different wire contract, so a
 #: different version.
-TOOL_CATALOG_VERSION = "3.1.0"
+TOOL_CATALOG_VERSION = "3.2.0"
 
 _RECORDED = EvidencePolicy(allowed_input_provenance=("recorded",))
 _RECORDED_OR_VERIFIED = EvidencePolicy(
@@ -399,6 +402,69 @@ CANDIDATE_MEASUREMENTS = ToolCard(
         ),
     ),
     failure_modes=("candidate_not_in_packet", "measurements_not_recorded"),
+)
+
+EPISODE_TIMELINE = ToolCard(
+    tool_id="get_episode_timeline",
+    tool_version="1.0.0",
+    title="Read how an exemplar episode went while it was going",
+    tool_class="fact_query",
+    purpose=ToolPurpose(
+        notes=(
+            "Two clocks, never mixed. At equal wall-clock time the robots are at "
+            "different places on the task; at equal progress they are at the same "
+            "place having taken different times. A clearance compared at equal time "
+            "compares two different parts of the map.",
+            "Exemplar episodes only. Thirty episodes at every trace row is a packet "
+            "nobody reads and a prompt somebody pays for on every case.",
+        ),
+    ),
+    proposition_policy=PropositionPolicy(maximum_claim_level="observed"),
+    evidence_policy=_RECORDED,
+    required_evidence=("trace", "reference_line"),
+    io=ToolIO(
+        arguments=(
+            ArgumentSpec(
+                name="episode_context_id",
+                kind="string",
+                description="Which exemplar episode to read.",
+            ),
+            ArgumentSpec(
+                name="clock",
+                kind="string",
+                description="'at_time' for who is ahead, 'at_progress' for who did "
+                "the same work better. The two are never mixed in one row.",
+            ),
+        ),
+        measurements=(
+            _measure("n_points", "count", "Marks this episode was sampled at."),
+            _measure(
+                "progress_fraction",
+                "ratio",
+                "Fraction of the reference line covered at the last mark.",
+                required=False,
+            ),
+            _measure(
+                "safety_margin",
+                "ratio",
+                "Worst clearance so far, in robot radii.",
+                required=False,
+            ),
+            _measure(
+                "compute_budget",
+                "ratio",
+                "p99 planner latency so far over the control period.",
+                required=False,
+            ),
+            _measure(
+                "path_efficiency",
+                "ratio",
+                "Progress over distance driven. 1.0 is a straight line.",
+                required=False,
+            ),
+        ),
+    ),
+    failure_modes=("episode_not_an_exemplar", "timeline_not_recorded"),
 )
 
 KNOWN_UNKNOWNS = ToolCard(
@@ -960,6 +1026,7 @@ TOOL_CATALOG = ToolCatalog(
         CANDIDATE_CONTRAST,
         MAP_REGION_FEATURES,
         CANDIDATE_MEASUREMENTS,
+        EPISODE_TIMELINE,
         KNOWN_UNKNOWNS,
         FIND_EXEMPLARS,
         REPLAY_WINDOW,
