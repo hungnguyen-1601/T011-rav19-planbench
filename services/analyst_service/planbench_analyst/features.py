@@ -57,6 +57,12 @@ class RoundFeatures:
     knowledge: bool = False
     #: M3: the natures of the algorithms this packet ran.
     traits: bool = False
+    #: W2: show the platform's shortlist of mechanisms.
+    candidate_shortlist: bool = False
+    #: W2: and, separately, how each one could be checked. Separate
+    #: because E4a measures the prior and E4b the hint, and bundled, a
+    #: gain in either would be reported as a gain in both.
+    verification_options: bool = False
     #: W3: hide tools whose evidence this run cannot serve.
     filter_tool_menu: bool = False
     #: W3: route to a checker deterministically after the model declares.

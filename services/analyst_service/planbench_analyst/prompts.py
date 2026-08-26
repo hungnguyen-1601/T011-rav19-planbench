@@ -25,6 +25,8 @@ from planbench_explanation.versioning import artifact_checksum
 __all__ = [
     "ANALYST_SYSTEM",
     "PROMPT_VERSION",
+    "CANDIDATE_PREFACE",
+    "CANDIDATE_SUFFIX",
     "REVISION_PREFACE",
     "analyst_schema",
     "build_user_turn",
@@ -35,7 +37,7 @@ __all__ = [
 #: already catches that; the version is what a human reads in a report
 #: when two runs disagree, because "the prompt changed" is a sentence
 #: somebody has to be able to say without diffing two hex digests.
-PROMPT_VERSION = "a2.0.0"
+PROMPT_VERSION = "a3.0.0"
 
 ANALYST_SYSTEM = """You are proposing mechanisms for why one robot \
 navigation stack scored differently from another, for a platform that \
@@ -97,6 +99,23 @@ CATALOG_PREFACE = (
 )
 
 CATALOG_SUFFIX = "\nCATALOG"
+
+#: W2. Shown only when the shortlist is on, and worded so the list reads
+#: as a **prior and not an answer**: the platform is saying which
+#: mechanisms it can argue about, not which one happened. ``unknown`` is
+#: on every list for the same reason a menu has an exit — a shortlist
+#: with no way to decline is a forced choice, and a forced choice is what
+#: makes an analyst confidently wrong.
+CANDIDATE_PREFACE = (
+    "\n\nThe block below is a shortlist of mechanisms this platform can argue "
+    "about for this case, with what raised each one and which checks could test "
+    "it. It is a starting point and not a finding: choose among them, choose "
+    "'unknown' if none of them fits, and pick your own evidence out of the "
+    "packet - no reference here is attached to a candidate for you.\n"
+    "<<<CANDIDATES\n"
+)
+
+CANDIDATE_SUFFIX = "\nCANDIDATES"
 
 #: What a revision turn is told. A constant, and inside
 #: :func:`prompt_checksum`, because the second turn is part of the same
@@ -206,9 +225,10 @@ def analyst_schema() -> dict[str, object]:
     }
 
 
-def build_user_turn(packet_text: str, catalog_text: str) -> str:
-    """The user turn: the packet, then the catalog, each in its own block."""
-    return (
+def build_user_turn(packet_text: str, catalog_text: str, candidates_text: str = "") -> str:
+    """The user turn: the packet, the catalog, and — when W2's shortlist
+    is on — the candidates, each in its own block."""
+    turn = (
         PACKET_PREFACE
         + packet_text
         + PACKET_SUFFIX
@@ -216,6 +236,9 @@ def build_user_turn(packet_text: str, catalog_text: str) -> str:
         + catalog_text
         + CATALOG_SUFFIX
     )
+    if candidates_text:
+        turn += CANDIDATE_PREFACE + candidates_text + CANDIDATE_SUFFIX
+    return turn
 
 
 def prompt_checksum() -> str:
@@ -234,6 +257,8 @@ def prompt_checksum() -> str:
             "packet_suffix": PACKET_SUFFIX,
             "catalog_preface": CATALOG_PREFACE,
             "catalog_suffix": CATALOG_SUFFIX,
+            "candidate_preface": CANDIDATE_PREFACE,
+            "candidate_suffix": CANDIDATE_SUFFIX,
             "revision_preface": REVISION_PREFACE,
             "schema": analyst_schema(),
         }

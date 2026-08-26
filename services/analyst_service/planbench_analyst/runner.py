@@ -45,6 +45,11 @@ from planbench_analyst.analyst import (
     RoundReport,
     propose,
 )
+from planbench_analyst.candidates import (
+    MechanismCandidate,
+    generate_candidates,
+    render_candidates,
+)
 from planbench_analyst.features import FeatureRefusal, RoundFeatures
 from planbench_analyst.guard import GuardResult, guard
 from planbench_analyst.knowledge_provider import query_for, retrieve, trait_offers
@@ -83,6 +88,12 @@ class RoundOutcome:
     #: The audit trail. Exactly one ``finalize`` event, whichever way
     #: the round ended.
     events: tuple[str, ...]
+    #: W2's shortlist **as the generator produced it**, before the model
+    #: saw it and before any harness touched it. ``generator_recall@K``
+    #: is scored here: a recall read off the model's answer measures the
+    #: pair, and a recall read after distractors were injected measures
+    #: the harness. Empty when the shortlist was not offered.
+    shortlist: tuple[MechanismCandidate, ...] = ()
 
     @property
     def rejections(self) -> tuple[str, ...]:
@@ -169,6 +180,24 @@ def run_round(
         features=features,
     )
 
+    # W2. The platform proposes the space; the model chooses inside it.
+    # Built from the same three sources the view was, so the shortlist
+    # and the facts behind it cannot disagree — and rendered only when
+    # the flag says so, because a prior nobody declared would be part of
+    # the baseline it is supposed to be measured against.
+    shortlist: tuple[MechanismCandidate, ...] = ()
+    candidates_text = ""
+    if features.candidate_shortlist:
+        shortlist = generate_candidates(
+            analysis.packet,
+            catalog=analysis.catalog,
+            available_evidence=analysis.available_evidence,
+            knowledge=offered,
+            traits=trait_offers(analysis.packet, traits) if features.traits and traits else (),
+            verification_options=features.verification_options,
+        )
+        candidates_text = render_candidates(shortlist)
+
     started = time.monotonic()
     events: list[str] = [f"start:{analysis.analysis_run_id}"]
     if features.knowledge:
@@ -178,6 +207,12 @@ def run_round(
         events.append(f"knowledge:{len(offered)}/{len(offered) + rejected_offers}")
     if features.traits and traits is not None:
         events.append(f"traits:{len(trait_offers(analysis.packet, traits))}")
+    if features.candidate_shortlist:
+        # The shortlist as it left the generator, before the model saw
+        # it: ``generator_recall@K`` is scored on this and not on what
+        # came back, and a count in the transcript is what makes the two
+        # separable afterwards.
+        events.append(f"candidates:{len(shortlist)}")
     reports: list[RoundReport] = []
     results: list[ToolResult] = []
     feedback: list[CheckFeedback] = []
@@ -199,7 +234,12 @@ def run_round(
 
         try:
             report = propose(
-                analysis, view, provider, feedback=tuple(feedback), timeout_s=timeout_s
+                analysis,
+                view,
+                provider,
+                feedback=tuple(feedback),
+                candidates_text=candidates_text,
+                timeout_s=timeout_s,
             )
         except AnalystRefusal as refused:
             events.append(f"model_failed:{refused}")
@@ -314,4 +354,5 @@ def run_round(
         cost=spent,
         stopped_because=stopped,
         events=tuple(events),
+        shortlist=shortlist,
     )

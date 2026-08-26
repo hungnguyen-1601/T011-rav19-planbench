@@ -404,6 +404,7 @@ def propose(
     provider: LLMProvider,
     *,
     feedback: Sequence[CheckFeedback] = (),
+    candidates_text: str = "",
     max_tokens: int = DEFAULT_MAX_TOKENS,
     timeout_s: float = DEFAULT_TIMEOUT_S,
 ) -> RoundReport:
@@ -415,7 +416,7 @@ def propose(
     module could not use comes back in :attr:`RoundReport.dropped`,
     because a proposal that disappeared reads as one that was never made.
     """
-    turn = build_user_turn(view.serialize(), catalog_text(analysis.catalog))
+    turn = build_user_turn(view.serialize(), catalog_text(analysis.catalog), candidates_text)
     if feedback:
         turn += "\n\n" + REVISION_PREFACE + "\n".join(item.render() for item in feedback)
     request = LLMRequest(

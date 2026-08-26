@@ -51,6 +51,15 @@ from planbench_analyst.bundle_builder import (
     freeze_bundle,
 )
 from planbench_analyst.cache import CacheStats, ResponseCache, cache_key
+from planbench_analyst.candidates import (
+    CandidateRefusal,
+    MechanismCandidate,
+    VerificationOption,
+    generate_candidates,
+    generator_recall_at_k,
+    inject_distractors,
+    render_candidates,
+)
 from planbench_analyst.eval_spec import (
     CaseLabels,
     EvalSpec,
@@ -137,6 +146,13 @@ from planbench_analyst.traits_snapshot import (
 )
 
 __all__ = [
+    "MechanismCandidate",
+    "VerificationOption",
+    "CandidateRefusal",
+    "generate_candidates",
+    "generator_recall_at_k",
+    "inject_distractors",
+    "render_candidates",
     "TraitsSnapshot",
     "SnapshotRefusal",
     "snapshot_from",
