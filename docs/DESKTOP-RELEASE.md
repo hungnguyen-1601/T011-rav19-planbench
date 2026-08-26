@@ -14,9 +14,6 @@ one.
 
 ## The short version
 
-Run this in the **private** repository. The release appears in the
-public one — see [Two repositories](#two-repositories-where-you-tag-and-where-the-release-appears).
-
 ```powershell
 # 1. Bump the stamp. The tag and this file MUST agree or CI refuses.
 #    apps\desktop\planbench_desktop\VERSION   ->  0.1.9
@@ -37,55 +34,68 @@ Watch it **at one-minute intervals or slower** — see [Rate limit](#the-rate-li
 
 ---
 
-## Two repositories: where you tag, and where the release appears
+## Two remotes, and every push goes to both
 
-Development lives in the **private organisation repository**
-`AI20K-Build-Phase-Cohort-3/P-011`. Releases are published to the
-**public repository** `hungnguyen-1601/T011-rav19-planbench`, which no
-longer receives code.
+**Read this before your first push in a session.** `git push` alone is
+not enough here, and the way it is not enough is silent.
 
-| | Repository |
-|---|---|
-| You push the tag here | `AI20K-Build-Phase-Cohort-3/P-011` (private) |
-| CI builds here | same — it is where the source is |
-| The release appears here | `hungnguyen-1601/T011-rav19-planbench` (public) |
-| People download from here | the public one |
+```
+origin  https://github.com/hungnguyen-1601/T011-rav19-planbench   (public)
+org     https://github.com/AI20K-Build-Phase-Cohort-3/P-011       (private)
+```
 
-**Why the split is this way round, and not the other.** The permanent
-download link *is* the public repository's path, and that same path is
-compiled into every installed copy of the app as `updater.REPOSITORY` —
-a constant that is deliberately not configurable. Publishing somewhere
-else would break the link people were already sent, and would leave
-every existing install checking a repository that had stopped
-publishing, silently, forever. Distribution cannot move. Source can, and
-did.
+| Remote | What it is for | Releases run here? |
+|---|---|---|
+| `origin` | where the code lives and where CI builds | **yes, only here** |
+| `org` | the organisers' repository, where the work is submitted | no |
 
-**What makes it work:** one guard and one secret.
+So a session that finishes a piece of work does this:
 
-- `.github/workflows/desktop-release.yml` carries
-  `if: github.repository == 'AI20K-Build-Phase-Cohort-3/P-011'`. The
-  file exists in both repositories — it arrived in the public one with
-  the copied history — and the guard is what stops a tag pushed there
-  from building a second installer off a frozen tree and publishing it
-  over the real one. One file with a guard rather than two files,
-  because two copies drift and the drift surfaces at a release.
-- `secrets.PUBLISH_TOKEN` in the private repository: a fine-grained PAT
-  with `contents: write` on the public repository and nothing else. The
-  automatic `github.token` cannot be used — it is scoped to the
-  repository the job runs in.
+```powershell
+git push origin main                    # the working repository
+git push org main:refs/heads/<a-branch> # the submission copy, then open a PR
+```
 
-**Two consequences worth knowing before you go looking for them:**
+The `org` side goes to a branch and then a **pull request merged with
+"Create a merge commit"** — never "Squash and merge", which would
+collapse hundreds of commits into one and erase the contribution counts
+that are the point of submitting there. There is a longer account of
+that in `docs/antongduy/reports/2026-08-26/`.
 
-1. The tag in the public repository is created by `gh release create
-   --target main`, so it points at that repository's frozen `main`, not
-   at the commit that built the installer. Provenance is the identically
-   named tag in the private repository, and the SHA the installer stamps
-   into its System page — which will not resolve in the public
-   repository.
-2. The release body is a fixed sentence, not `--generate-notes`.
-   Generated notes summarise commits of the repository the build ran in,
-   which is the private one. Publishing its commit subjects on a public
-   release page is a leak with no upside.
+### Why it is this way round
+
+Two constraints meet, and only this arrangement satisfies both.
+
+**Distribution cannot move off `origin`.** The permanent download link
+*is* that repository's path, and the same path is compiled into every
+installed copy of the app as `updater.REPOSITORY` — a constant that is
+deliberately not configurable, because an updater that can be pointed at
+another repository is a way to install anything. Publishing elsewhere
+would break links already sent to people and leave every existing
+install checking a repository that had stopped publishing, silently and
+permanently.
+
+**CI cannot move to `org`.** Building there and publishing to `origin`
+would need a token stored as an Actions secret in `org`, and adding a
+secret needs admin on that repository. Measured, not assumed:
+
+```
+hungnguyen-1601/T011-rav19-planbench   private=False  admin=False  push=True
+AI20K-Build-Phase-Cohort-3/P-011       private=True   admin=False  push=True
+```
+
+Nobody on this side is an admin of either. So the build stays where it
+already works, and `org` receives a copy of the history rather than
+becoming the source of truth.
+
+### What this means when you are tempted to tidy it up
+
+A future session will notice the duplication and want to consolidate.
+Before doing that, know the cost: moving releases breaks the download
+link and every installed app; moving CI needs a repository admin who is
+not available. If the arrangement ever does change, the bridging step is
+to publish one release from **both** repositories, because every install
+older than the change looks only at the old one.
 
 ---
 
