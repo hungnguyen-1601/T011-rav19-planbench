@@ -97,7 +97,14 @@ TRAITS: dict[str, dict[str, Any]] = {
             "see past become stalls",
             "oscillation-prone in tight spaces — competing rollouts flip the turn direction",
         ),
-        "anchor": "velocity-sampling controller; horizon and weights are its whole world",
+        # Names the code, not the reputation. W1.6 refuses an anchor a
+        # reader cannot go to: "velocity-sampling controller; horizon
+        # and weights are its whole world" described the algorithm and
+        # pointed nowhere, so the row could never have been approved.
+        "anchor": (
+            "planbench_planning.dwa: the rollout scoring loop, whose horizon and "
+            "weights are its whole world"
+        ),
     },
     "ppo": {
         "kind": "local",
