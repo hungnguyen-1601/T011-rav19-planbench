@@ -82,7 +82,7 @@ from planbench_explanation.checkers import (
 )
 from planbench_explanation.ledger import PropositionOutcome
 from planbench_explanation.map_features import RouteFeatures
-from planbench_explanation.packet_facts import serve_from_packet
+from planbench_explanation.packet_facts import FactRefusal, serve_from_packet
 from planbench_explanation.protocol import (
     HOST_FAILURE_CODES,
     AnalysisRequest,
@@ -684,7 +684,9 @@ class ToolHost:
             return self._replay(card, request)
         if card.tool_id == "rrt_convergence":
             return self._convergence(card, request)
-        served = serve_from_packet(card, self.analysis.packet)
+        served = serve_from_packet(card, self.analysis.packet, request.arguments)
+        if isinstance(served, FactRefusal):
+            return self._unavailable(card, request, served.code)
         if served is not None:
             return self._from_packet(card, request, *served)
         return self._unavailable(card, request, "tool_unavailable")

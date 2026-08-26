@@ -109,6 +109,13 @@ def _points_at(kind: str, description: str, *, required: bool = True) -> Referen
 #: ``gap_vs_footprint`` also moved to 2.0.0: it now compares a width
 #: against a width, which changes the measurement names it returns.
 #:
+#: **3.3.0** — W1.1 corrects what ``get_candidate_measurements``
+#: requires: ``candidate_measurements``, the block it actually reads,
+#: rather than ``episode_decision_utility``, which it never touched.
+#: Same arguments and same measurements, but a different admission
+#: rule is a different wire contract, and a bundle frozen against
+#: 3.2.0 was graded on a menu where this tool could not be called.
+#:
 #: **3.2.0** — M2 adds ``get_episode_timeline``: the exemplar
 #: episodes as they happened, on two clocks that are never mixed.
 #:
@@ -122,7 +129,7 @@ def _points_at(kind: str, description: str, *, required: bool = True) -> Referen
 #: small" from "the corridor is not there": both look like a low number.
 #: Different measurement names, so a different wire contract, so a
 #: different version.
-TOOL_CATALOG_VERSION = "3.2.0"
+TOOL_CATALOG_VERSION = "3.3.0"
 
 _RECORDED = EvidencePolicy(allowed_input_provenance=("recorded",))
 _RECORDED_OR_VERIFIED = EvidencePolicy(
@@ -376,7 +383,15 @@ CANDIDATE_MEASUREMENTS = ToolCard(
     ),
     proposition_policy=PropositionPolicy(maximum_claim_level="observed"),
     evidence_policy=_RECORDED,
-    required_evidence=("episode_decision_utility",),
+    # What this card reads is the packet's measurement block, which M1
+    # put there. It asked for ``episode_decision_utility`` until W1.1 —
+    # written before M1 landed, when the only per-candidate number in
+    # reach was the one the waterfall was built from. The consequence
+    # was silent and total: a gate-only run ranks nobody, so the seam
+    # withheld that evidence, so this tool was refused at admission on
+    # every packet that had measurements and no ranking. A card that
+    # names evidence it does not read is a card nobody can call.
+    required_evidence=("candidate_measurements",),
     io=ToolIO(
         arguments=(
             ArgumentSpec(

@@ -173,6 +173,14 @@ def evidence_for(packet: CasePacket, *, sidecar_present: bool) -> RoundEvidence:
         # Nobody was ranked, so there is no pair and no per-episode
         # utility to decompose.
         available -= {"comparison_pair", "episode_decision_utility"}
+    if not packet.measurements:
+        # M1's block is absent, so there is nothing for
+        # ``get_candidate_measurements`` to read. Derived from the
+        # packet like every other token here: a run that recorded no
+        # measurements and a run whose measurements nobody attached look
+        # the same to an analyst, and both should be refused at
+        # admission rather than answered with an empty result.
+        available -= {"candidate_measurements"}
     return RoundEvidence(
         packet=packet,
         available_evidence=frozenset(available),

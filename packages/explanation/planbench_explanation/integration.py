@@ -32,12 +32,12 @@ platform environment (E6). These are integration fixtures.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 
 from planbench_explanation.catalog import TOOL_CATALOG
 from planbench_explanation.detectors import Observation
 from planbench_explanation.ledger import EvidenceRef, HypothesisProposal, RequestedCheck
-from planbench_explanation.packet_facts import serve_from_packet
+from planbench_explanation.packet_facts import FactRefusal, serve_from_packet
 from planbench_explanation.propositions import PropositionType
 from planbench_explanation.protocol import (
     AnalysisRequest,
@@ -137,6 +137,7 @@ TYPICAL_AVAILABLE_EVIDENCE = frozenset(
     {
         "comparison_pair",
         "episode_decision_utility",
+        "candidate_measurements",
         "preference_profile",
         "candidate_components",
         "map_checksum",
@@ -186,7 +187,19 @@ class MockToolHost:
                 input_provenance="missing",
                 failure_code="checker_not_implemented",
             )
-        served = self._serve(card)
+        served = self._serve(card, request.arguments)
+        if isinstance(served, FactRefusal):
+            # The packet was asked something it could not answer *about
+            # this argument*. The card's own code says which, and saying
+            # "unavailable" instead would hide a mistyped candidate id
+            # behind a missing feature.
+            return stamped_result(
+                card,
+                request,
+                execution_status="not_checkable",
+                input_provenance="missing",
+                failure_code=served.code,
+            )
         if served is None:
             # The honest answer for a tool whose data the packet does not
             # carry. Returning zeros with a completed status would be a
@@ -220,8 +233,8 @@ class MockToolHost:
         )
 
     def _serve(
-        self, card: ToolCard
-    ) -> tuple[dict[str, float], tuple[EvidenceReference, ...]] | None:
+        self, card: ToolCard, arguments: Mapping[str, object]
+    ) -> tuple[dict[str, float], tuple[EvidenceReference, ...]] | FactRefusal | None:
         """What the packet can actually answer, or ``None``.
 
         The reading itself moved to
@@ -231,7 +244,7 @@ class MockToolHost:
         stays here is the *stamping*: a mock implementation ref and a
         ``mock://`` artifact, so a transcript still says which host ran.
         """
-        return serve_from_packet(card, self.analysis.packet)
+        return serve_from_packet(card, self.analysis.packet, arguments)
 
 
 def _card_named(catalog, tool_id: str):  # type: ignore[no-untyped-def]

@@ -22,21 +22,47 @@ one a reader of a transcript needs to see.
 it is not zero: the card says which measurements a completed result
 owes, and a reader that cannot produce them says so rather than filling
 them in.
+
+W1.1 adds a third answer. ``None`` became too coarse once a query took
+an argument: "this platform serves no such tool" and "you asked about a
+candidate this packet does not compare" are different facts, and both
+would have been stamped ``tool_unavailable`` — a reader of the
+transcript could not tell a missing feature from a mistyped id. A
+:class:`FactRefusal` carries the card's **own** declared failure code,
+which is also the only kind the session accepts.
 """
 
 from __future__ import annotations
 
-from planbench_explanation.case_packet import CasePacket
+from collections.abc import Mapping
+from dataclasses import dataclass
+from types import MappingProxyType
+
+from planbench_explanation.case_packet import CandidateMeasurements, CasePacket
 from planbench_explanation.protocol import EvidenceReference
 from planbench_explanation.tools import ToolCard
 
-__all__ = ["serve_from_packet"]
+__all__ = ["FactRefusal", "serve_from_packet"]
+
+_NO_ARGUMENTS: Mapping[str, object] = MappingProxyType({})
+
+
+@dataclass(frozen=True)
+class FactRefusal:
+    """The query was understood and the packet cannot answer it.
+
+    ``code`` must be one the card declares in ``failure_modes``. A host
+    that returns an undeclared code is rejected by its own session,
+    which ends the analysis over one word — E6b found that the hard way.
+    """
+
+    code: str
 
 
 def serve_from_packet(
-    card: ToolCard, packet: CasePacket
-) -> tuple[dict[str, float], tuple[EvidenceReference, ...]] | None:
-    """The packet's answer to one fact query, or ``None``."""
+    card: ToolCard, packet: CasePacket, arguments: Mapping[str, object] = _NO_ARGUMENTS
+) -> tuple[dict[str, float], tuple[EvidenceReference, ...]] | FactRefusal | None:
+    """The packet's answer to one fact query, a refusal, or ``None``."""
     if card.tool_id == "get_objective_decomposition":
         waterfall = packet.decision.waterfall
         if waterfall is None:
@@ -103,6 +129,8 @@ def serve_from_packet(
             },
             episodes,
         )
+    if card.tool_id == "get_candidate_measurements":
+        return _measurements(packet, str(arguments.get("candidate_id", "")))
     if card.tool_id == "find_exemplar_episodes":
         chosen = packet.representative_episodes
         if chosen is None or not chosen.exemplars:
@@ -119,3 +147,46 @@ def serve_from_packet(
             ),
         )
     return None
+
+
+def _measurements(
+    packet: CasePacket, candidate_id: str
+) -> tuple[dict[str, float], tuple[EvidenceReference, ...]] | FactRefusal:
+    """What one candidate scored, as the card asks for it — W1.1.
+
+    Two refusals rather than one silence. A candidate the packet does
+    not compare is the analyst's mistake and is worth telling it about;
+    a candidate that is in the packet with nothing recorded is the
+    **run's** gap, and the difference decides whether asking again with
+    a different id could work.
+
+    ``n_episodes`` is required by the card and is read from the
+    denominators the packet carries, never assumed: every rate in this
+    platform arrives with the number it was computed over, and a
+    measurement set that lost its denominator is one this reader
+    declines rather than reports over an invented one. Where the
+    denominators disagree — different measurements over different
+    episode counts — the smallest is reported, because it is the one
+    every number here is at least true of.
+    """
+    known = {candidate.candidate_id for candidate in packet.candidates}
+    if candidate_id not in known:
+        return FactRefusal("candidate_not_in_packet")
+    row: CandidateMeasurements | None = next(
+        (item for item in packet.measurements if item.candidate_id == candidate_id), None
+    )
+    if row is None:
+        return FactRefusal("measurements_not_recorded")
+    recorded = row.recorded
+    denominators = [
+        value.denominator for value in recorded.values() if value.denominator is not None
+    ]
+    if not recorded or not denominators:
+        return FactRefusal("measurements_not_recorded")
+    measurements = {name: float(value.value) for name, value in recorded.items()}
+    measurements["n_episodes"] = float(min(denominators))
+    # No reference. The card declares none, and the session rejects a
+    # result carrying a kind its card does not name — rightly: a
+    # reference is a pointer into evidence a reader can open, and the
+    # candidate id is already in the request the transcript recorded.
+    return (measurements, ())

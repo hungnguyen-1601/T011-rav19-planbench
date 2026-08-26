@@ -53,7 +53,9 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from plant_golden_runs import WORLDS, PlantedWorld, build_reference  # noqa: E402
 
 from planbench_explanation.case_packet import (  # noqa: E402
+    CandidateMeasurements,
     DecisionFacts,
+    MeasuredValue,
     RobotFacts,
     TaskFacts,
     build_case_packet,
@@ -147,6 +149,62 @@ def _trace_from_parquet(path: Path, candidate_id: str, episode_context_id: str, 
     )
 
 
+def _percentile(values: list[float], fraction: float) -> float:
+    """Nearest-rank percentile over a short series."""
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, max(0, round(fraction * (len(ordered) - 1))))
+    return ordered[index]
+
+
+def _measured(candidate_id: str, run, trace) -> CandidateMeasurements:  # type: ignore[no-untyped-def]
+    """What this candidate scored, read back off what it left on disk — W1.1.
+
+    One episode per candidate on a planted world, so every denominator
+    here is 1 and says so. That is not a formality: a success rate over
+    one episode and one over thirty are different claims wearing one
+    number, and the packet carries the figure that tells them apart
+    rather than leaving a reader to assume the larger.
+
+    Latency and clearance come from the **trace columns** rather than
+    from the in-memory result, for the reason the observations do: what
+    a checker reads later is what the recorder wrote.
+    """
+    latencies = [value for value in trace.columns["planner_latency_ms"] if value is not None]
+    clearances = [value for value in trace.columns["clearance_m"] if value is not None]
+    xs, ys = trace.columns["x"], trace.columns["y"]
+    driven = sum(
+        ((xs[index] - xs[index - 1]) ** 2 + (ys[index] - ys[index - 1]) ** 2) ** 0.5
+        for index in range(1, len(xs))
+    )
+    fields: dict[str, MeasuredValue | None] = {
+        "success_rate": MeasuredValue(
+            value=1.0 if run.result.status == "success" else 0.0,
+            unit="ratio",
+            denominator=1,
+        ),
+        "collisions": MeasuredValue(
+            value=1.0 if run.result.status == "collision" else 0.0,
+            unit="count",
+            denominator=1,
+        ),
+        "path_length_m": MeasuredValue(value=float(driven), unit="m", denominator=1),
+    }
+    if latencies:
+        fields["latency_p99_ms"] = MeasuredValue(
+            value=_percentile(latencies, 0.99), unit="ms", denominator=1
+        )
+        fields["latency_median_ms"] = MeasuredValue(
+            value=_percentile(latencies, 0.5), unit="ms", denominator=1
+        )
+    if clearances:
+        fields["min_clearance_m"] = MeasuredValue(value=min(clearances), unit="m", denominator=1)
+    # ``decision_utility`` stays absent. These worlds are GATE_ONLY: no
+    # preference profile ranked anybody, so there is no utility to
+    # report, and a zero would read as "scored nothing" rather than as
+    # "was never scored".
+    return CandidateMeasurements(candidate_id=candidate_id, **fields)
+
+
 def build(
     world: PlantedWorld, root: Path, trace_root: Path, reference: str
 ) -> tuple[Path, int, list[str]]:
@@ -168,6 +226,7 @@ def build(
     folder = root / world.case_id
     folder.mkdir(parents=True, exist_ok=True)
     traces: list[EpisodeTrace] = []
+    measurements: list[CandidateMeasurements] = []
     candidates: list[CandidateComponents] = []
     notes: list[str] = []
     routes: dict[str, object] = {}
@@ -260,6 +319,7 @@ def build(
         traces.append(
             _trace_from_parquet(recorder.path, candidate_id, episode_context_id, reference_line)
         )
+        measurements.append(_measured(candidate_id, run, traces[-1]))
         if not planned:
             notes.append(
                 f"{candidate_id}: the planner refused at the start pose; the trace is "
@@ -300,6 +360,7 @@ def build(
         candidates=candidates,
         decision=DecisionFacts(status="GATE_ONLY"),
         observations=observations,
+        measurements=measurements,
         evidence_class="research",
     )
 
