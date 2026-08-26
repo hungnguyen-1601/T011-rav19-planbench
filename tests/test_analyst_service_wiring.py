@@ -27,28 +27,36 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 ENTRY = "services/analyst_service"
 
 
+#: The phases that have landed, as the modules they brought. Edited when
+#: a phase lands and never otherwise — the test below reads it as the
+#: claim "this is all there is", and a module on disk that nobody
+#: exports is a stub left behind.
+PHASES_LANDED = ["packet_view"]
+
+
 def test_the_analyst_package_imports() -> None:
     import planbench_analyst
 
-    assert planbench_analyst.__all__ == ()
+    assert planbench_analyst.__all__
 
 
-def test_the_package_exports_nothing_it_has_not_built_yet() -> None:
-    """An empty ``__all__`` is the honest state at A0.
-
-    The modules arrive with their phases. A name published before the
-    thing behind it exists is the promise this layer is built to refuse,
-    and it is the cheapest kind of fake completion to leave lying around
-    — an import that succeeds and a function that returns ``None``.
-    """
+def test_the_package_exports_what_it_has_built_and_nothing_more() -> None:
+    """The cheapest fake completion in a plan this long is a module that
+    imports, exports nothing, and returns ``None`` — from outside it
+    looks exactly like a phase that landed."""
     import planbench_analyst
 
     module_dir = Path(planbench_analyst.__file__).parent
     built = sorted(path.stem for path in module_dir.glob("*.py") if path.stem != "__init__")
-    assert built == [], (
-        f"{built} exist but are not exported; either export them or say why here. "
-        "This assertion is meant to be edited as the phases land, not deleted."
+    assert built == PHASES_LANDED, (
+        f"modules on disk are {built} and PHASES_LANDED says {PHASES_LANDED}. "
+        "This list is meant to be edited as the phases land, not deleted."
     )
+
+    exported = [getattr(planbench_analyst, name) for name in planbench_analyst.__all__]
+    covered = {getattr(item, "__module__", "").rsplit(".", 1)[-1] for item in exported}
+    orphans = [module for module in built if module not in covered]
+    assert not orphans, f"{orphans} are on disk but contribute no exported name"
 
 
 def test_the_analyst_service_is_on_every_path_list() -> None:

@@ -9,8 +9,8 @@ phase đó.
 | Phase | Trạng thái | Commit |
 |---|---|---|
 | A-1 vá sàn model-free | **xong** | `5932779` |
-| A0 skeleton + hạ tầng | **xong** | (xem §A0) |
-| A1 packet view + fact index | chưa | |
+| A0 skeleton + hạ tầng | **xong** | `df1743a` |
+| A1 packet view + fact index | **xong** | (xem §A1) |
 | A2 hypothesis engine | chưa | |
 | A3 guard + critic + biên vào | chưa | |
 | A4 seam + lane + gateway | chưa | |
@@ -161,3 +161,98 @@ trông như đã xong A2.
 
 `docker/Dockerfile.analyst` là việc của A7 (freeze + container), không phải A0 —
 plan bản 7 xếp nó ở đó và không có lý do kéo lên sớm: chưa có gì để đóng gói.
+
+---
+
+## A1 — Packet view + fact index
+
+### Đã làm gì
+
+`services/analyst_service/planbench_analyst/packet_view.py` — 3 lớp công khai
+(`Fact`, `PacketView`, `PacketViewRefusal`) + `build_packet_view()`.
+
+**1. Mỗi con số trong packet có một cái tên để trỏ vào.**
+
+`Fact` mang `{ref, kind, label, value, unit, subject, candidate_id, scope}`.
+Vốn từ `ref` **nối tiếp** vốn từ đang dùng chứ không dựng cái mới:
+`obs:<type>:<candidate>` và `episode:<id>` là hai ref mà `reference_analyst`
+đã phát ra từ trước, nên một index chỉ chấp nhận ref kiểu mới sẽ chấm sàn là
+bịa đặt. Đo phần này bằng test riêng (§Bằng chứng, dòng cuối).
+
+Thêm vào đó: `obs:<type>:<cand>/<measurement>` cho từng số trong `typical`,
+`fact:robot.*`, `fact:route.*`, `fact:waterfall.*`, `bar:<objective>[/…]`,
+`fact:gate:<id>.*`, `contrast:<detection_type>`, `unknown:<id>`.
+
+**2. `subject` là câu trả lời cho "citation này có ủng hộ claim không".**
+
+Ca A15 hôm 24-08 (model dẫn một field **có thật**, giá trị **đúng**, nhưng câu
+kèm theo nói chuyện khác) là lý do trường này tồn tại. Luật quan trọng và đã
+viết vào docstring: **một measurement không tự khai component chịu trách
+nhiệm** — `subject=None`. Chỉ lattice (`ContrastFinding.subject`), hình học
+robot (`costmap_inflation`) và hình học tuyến (`task_geometry`) mới mang
+subject, vì đó là những chỗ packet **thật sự** quy trách nhiệm.
+
+Nghĩa là guard luật 6 ở A3 sẽ là **phép kiểm mâu thuẫn**, không phải phép kiểm
+liên quan: fact có subject mà khác `proposed_subject` ⇒ chặn; fact không khai
+subject ⇒ không kết luận gì. Nói rõ giới hạn này ở đây để sau không ai đọc luật
+6 mạnh hơn nó thật sự là.
+
+**3. `null` được đánh index, không bị bỏ.**
+
+`inflation_margin_m` bằng `null` là packet nói "run này không ghi lại". Bỏ nó
+khỏi index thì analyst chỉ còn hai đường: đoán, hoặc im lặng về đúng cái nó
+biết là thiếu. Cùng lý do đó với `unknown:<id>`.
+
+**4. Serialize tất định + checksum.**
+
+Sắp theo `ref`, đi qua `canonical_json` của `planbench_schemas.identity` (cùng
+hàm mà `artifact_checksum` dùng), nên cùng packet ⟶ cùng chuỗi ⟶ cùng checksum
+trên mọi máy. Đây là vật liệu cho `runtime_config_checksum` ở A2.
+
+**5. `identifiers` — vật liệu cho luật cấm số.**
+
+`B7`, `ep-004`, `open_hall_v2` là **tên**; `0.74` là **số đo**. Luật 2 của guard
+phải phân biệt được, và cách trung thực duy nhất là một danh sách tên mà chính
+packet này dùng. `PacketView.identifiers` trả tập đó.
+
+**6. Từ chối packet của build khác.**
+
+Năm version trong header đối chiếu với hằng số code (`EXPLANATION_SCHEMA_VERSION`,
+`PROMOTION_MATRIX_VERSION`, `DETECTOR_VERSION`, `KNOWLEDGE_BASE_VERSION`) và với
+**catalog version do caller truyền vào** — không đọc từ module catalog, vì
+bundle mới là thứ khai catalog mà vòng chấm chạy trên; đọc từ module thì check
+này tự đồng ý với chính nó trong khi lệch với bundle đang bị chấm. Refusal nêu
+**mọi** field lệch cùng lúc, không dừng ở field đầu.
+
+**7. Một episode hai vai không tranh nhau `ref`.**
+
+Episode tệ nhất về utility thường cũng là episode tệ nhất về clearance. Ref đặt
+theo episode (đúng vốn từ cũ), nên hai vai gộp vào một fact và `label` liệt kê
+cả hai — thay vì `PacketViewRefusal` vì trùng ref.
+
+**8. Cổng chống fake completion của A0 đã cắn ngay lần đầu.**
+
+Test `test_the_package_exports_nothing_it_has_not_built_yet` (viết ở A0) đỏ ngay
+khi `packet_view.py` xuất hiện mà `__init__` chưa export. Sửa thành
+`PHASES_LANDED = ["packet_view"]` + một phép kiểm mới: **mọi module trên đĩa
+phải đóng góp ít nhất một tên trong `__all__`** (đối chiếu `__module__` của
+từng object được export). Module import được nhưng không export gì chính là
+hình dạng của một stub bị bỏ lại.
+
+### Bằng chứng
+
+| Phép kiểm | Kết quả |
+|---|---|
+| `pytest tests/test_analyst_packet_view.py tests/test_analyst_service_wiring.py` | **20 passed** |
+| Dựng view trên **17 packet thật** | 17/17 dựng được; 15 / 39 / 54 fact mỗi packet (min/trung vị/max) |
+| Mọi ref sàn `reference_analyst` trích trên 17 packet thật | **32 ref, 0 không resolve** |
+| `ruff check` services + hai file test | sạch |
+
+### Còn nợ sau A1
+
+- `fact:gate:*` chỉ lấy scalar một tầng; gate verdict lồng sâu hơn bị bỏ qua có
+  chủ đích (một dict render thành ref là một con số không ai định vị được trong
+  packet). Nếu A6 cho thấy analyst cần chúng thì đó là một RFC, không phải một
+  dòng sửa.
+- Chưa có `PacketArtifact` loader (validate checksum + provenance) — plan bản 7
+  xếp ở A6, giữ nguyên.

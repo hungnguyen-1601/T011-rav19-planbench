@@ -24,12 +24,27 @@ exactly like a module that is working:
    are the whole world; a Parquet file opened here would be evidence
    nobody could re-derive from the artifact the gate holds.
 
-Nothing is exported yet: the modules arrive with their phases (A1 packet
-view, A2 engine, A3 guard, A4 runner and lane, A5 knowledge, A6 harness,
-A7 bundle builder), and a name published before the thing behind it
-exists is the sort of promise the rest of this layer is built to refuse.
+The modules arrive with their phases (A1 packet view, A2 engine, A3
+guard, A4 runner and lane, A5 knowledge, A6 harness, A7 bundle builder),
+and each one is exported as it lands. A name published before the thing
+behind it exists is the sort of promise the rest of this layer is built
+to refuse, and ``tests/test_analyst_service_wiring.py`` holds the two
+halves together: a module on disk that nothing here exports is a stub
+somebody left behind.
 """
 
 from __future__ import annotations
 
-__all__: tuple[str, ...] = ()
+from planbench_analyst.packet_view import (
+    Fact,
+    PacketView,
+    PacketViewRefusal,
+    build_packet_view,
+)
+
+__all__ = [
+    "Fact",
+    "PacketView",
+    "PacketViewRefusal",
+    "build_packet_view",
+]
