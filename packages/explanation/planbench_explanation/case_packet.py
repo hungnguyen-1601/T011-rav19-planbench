@@ -30,6 +30,7 @@ the promotion matrix is for after it.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -102,6 +103,107 @@ class RobotFacts(BaseModel):
         return 2.0 * (self.radius_m + self.inflation_margin_m)
 
 
+class MeasuredValue(BaseModel):
+    """One number the run measured, with what it takes to read it.
+
+    A rate without its denominator is the sentence this platform refuses
+    everywhere else — "100% success" over five episodes and over three
+    hundred are different claims wearing one number — so ``denominator``
+    is required whenever ``unit`` is ``ratio``. A packet that cannot
+    supply it is a packet that must not carry the rate.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
+
+    value: float
+    unit: Literal["ratio", "count", "m", "s", "ms", "utility"]
+    #: How many episodes the value was computed over. Required for a
+    #: rate; carried for everything else because "median over 30" and
+    #: "median over 3" are read differently by anybody careful.
+    denominator: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _check(self) -> MeasuredValue:
+        if self.unit == "ratio" and self.denominator is None:
+            raise CasePacketRefusal(
+                "a rate with no denominator is the sentence this platform exists to "
+                "refuse: 100% over five episodes and over three hundred are different "
+                "claims wearing one number"
+            )
+        return self
+
+
+class CandidateMeasurements(BaseModel):
+    """What one candidate actually scored, as the reader would quote it.
+
+    The waterfall says how a **pair** differed and by how much; it does
+    not say what either of them did. A reader asking "why did this one
+    win" reaches first for the success rate and the latency tail, and
+    until M1 those lived in the report and never reached the analyst —
+    which is why an analyst could only ever talk about ΔU.
+
+    Every field is optional because runs differ in what they recorded,
+    and a missing measurement must read as *missing* rather than as
+    zero. What is absent is absent; the fact index carries the null.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
+
+    candidate_id: str = Field(min_length=1)
+    success_rate: MeasuredValue | None = None
+    collisions: MeasuredValue | None = None
+    latency_p99_ms: MeasuredValue | None = None
+    latency_median_ms: MeasuredValue | None = None
+    path_length_m: MeasuredValue | None = None
+    min_clearance_m: MeasuredValue | None = None
+    decision_utility: MeasuredValue | None = None
+
+    @property
+    def recorded(self) -> dict[str, MeasuredValue]:
+        """Only the measurements this run actually has."""
+        return {
+            name: value
+            for name, value in (
+                ("success_rate", self.success_rate),
+                ("collisions", self.collisions),
+                ("latency_p99_ms", self.latency_p99_ms),
+                ("latency_median_ms", self.latency_median_ms),
+                ("path_length_m", self.path_length_m),
+                ("min_clearance_m", self.min_clearance_m),
+                ("decision_utility", self.decision_utility),
+            )
+            if value is not None
+        }
+
+
+class GateOutcome(BaseModel):
+    """One gate, and the number it was decided on.
+
+    ``{"passed": false}`` — what a packet carried before M1 — says a
+    candidate was eliminated and refuses to say by how much or against
+    what. An analyst reading it can report the elimination and can say
+    nothing about whether it was close, which is the first thing anybody
+    asks.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
+
+    gate_id: str = Field(min_length=1)
+    #: Whose gate this was. A gate table is per candidate, and a row
+    #: that did not say which one would be a verdict about nobody.
+    candidate_id: str = ""
+    passed: bool
+    #: ``None`` on a gate that is a rule rather than a threshold, and on
+    #: a run recorded before M1. Absent rather than zero.
+    threshold: float | None = None
+    value: float | None = None
+    unit: str = ""
+    #: Which way the comparison runs. Spelled out for the reason
+    #: ``MetricResult.direction`` is: a bare number and a name is a
+    #: direction somebody has to remember.
+    direction: Literal["at_least", "at_most", ""] = ""
+
+
 class TaskFacts(BaseModel):
     """The world both candidates drove in."""
 
@@ -136,7 +238,29 @@ class DecisionFacts(BaseModel):
     #: facts about this run, and they are what is left to look at.
     waterfall: Waterfall | None = None
     #: Gate verdicts as the report holds them: who was eliminated where.
+    #: Kept as it was so packets recorded before M1 still read.
     gates: dict[str, dict[str, object]] = Field(default_factory=dict)
+    #: The same verdicts with the number behind them, when the run
+    #: recorded one. Empty on a pre-M1 packet, and empty is not zero:
+    #: :attr:`gate_outcomes` is what a reader consults, and a packet
+    #: with none says so rather than implying every gate was a rule.
+    gate_rows: tuple[GateOutcome, ...] = ()
+
+    @property
+    def gate_outcomes(self) -> tuple[GateOutcome, ...]:
+        """Typed rows, falling back to the bare pass/fail of an old packet.
+
+        The fallback carries no threshold and no value, which is the
+        honest reading: the old shape recorded whether a candidate was
+        eliminated and nothing about how close it was.
+        """
+        if self.gate_rows:
+            return self.gate_rows
+        return tuple(
+            GateOutcome(gate_id=gate_id, passed=bool(verdict.get("passed")))
+            for gate_id, verdict in sorted(self.gates.items())
+            if isinstance(verdict, dict)
+        )
 
 
 class CasePacket(BaseModel):
@@ -157,6 +281,10 @@ class CasePacket(BaseModel):
     #: may propose before it proposes anything.
     lattice: tuple[ContrastFinding, ...] = ()
     observations: tuple[Observation, ...] = ()
+    #: What each candidate scored, as a reader would quote it. Empty on
+    #: a packet recorded before M1 — and the fact index says so rather
+    #: than serving an empty table as though nothing was measured.
+    measurements: tuple[CandidateMeasurements, ...] = ()
     representative_episodes: ExemplarSet | None = None
     known_unknowns: tuple[KnownUnknown, ...]
     #: The fairness lane this evidence came from (§5.10). A research-lane
@@ -249,6 +377,7 @@ def build_case_packet(
     decision: DecisionFacts,
     lattice: Sequence[ContrastFinding] = (),
     observations: Sequence[Observation] = (),
+    measurements: Sequence[CandidateMeasurements] = (),
     representative_episodes: ExemplarSet | None = None,
     extra_unknowns: Sequence[KnownUnknown] = (),
     evidence_class: str = "production",
@@ -298,6 +427,7 @@ def build_case_packet(
         decision=decision,
         lattice=tuple(lattice),
         observations=tuple(observations),
+        measurements=tuple(measurements),
         representative_episodes=representative_episodes,
         known_unknowns=tuple(unknowns),
         evidence_class=evidence_class,

@@ -382,6 +382,38 @@ def build_packet_view(
             )
         )
 
+    # What each candidate scored. The decomposition says how a pair
+    # differed; this says what either of them did, and it is the first
+    # thing a reader asking "why did this one win" reaches for.
+    for measured in packet.measurements:
+        for name, value in sorted(measured.recorded.items()):
+            facts.append(
+                Fact(
+                    ref=f"fact:metric:{measured.candidate_id}.{name}",
+                    kind="fact",
+                    label=f"{measured.candidate_id} {name.replace('_', ' ')}",
+                    value=value.value,
+                    unit=value.unit,
+                    candidate_id=measured.candidate_id,
+                    scope=f"candidate:{measured.candidate_id}",
+                )
+            )
+            if value.denominator is not None:
+                # The denominator is a fact of its own so a statement can
+                # cite it: "over thirty episodes" is the half of a rate
+                # that keeps it from being read as a promise.
+                facts.append(
+                    Fact(
+                        ref=f"fact:metric:{measured.candidate_id}.{name}.denominator",
+                        kind="fact",
+                        label=f"episodes behind {measured.candidate_id} {name}",
+                        value=value.denominator,
+                        unit="episodes",
+                        candidate_id=measured.candidate_id,
+                        scope=f"candidate:{measured.candidate_id}",
+                    )
+                )
+
     facts.append(
         Fact(
             ref="fact:decision.status",
@@ -391,16 +423,24 @@ def build_packet_view(
             scope="run",
         )
     )
-    for gate_id, verdict in sorted(packet.decision.gates.items()):
-        if isinstance(verdict, Mapping):
-            facts.extend(
-                _scalar_facts(
-                    f"fact:gate:{gate_id}.",
-                    f"gate:{gate_id}",
-                    verdict,
-                    label_prefix=f"gate {gate_id} ",
-                )
+    for row in packet.decision.gate_outcomes:
+        # ``{"passed": false}`` says a candidate was eliminated and
+        # refuses to say by how much. Where the run recorded the number
+        # and the threshold, both are facts a statement can cite; where
+        # it did not, the null says "not recorded" rather than zero.
+        facts.extend(
+            _scalar_facts(
+                f"fact:gate:{row.gate_id}.",
+                f"gate:{row.gate_id}",
+                {
+                    "passed": row.passed,
+                    "threshold": row.threshold,
+                    "value": row.value,
+                    "direction": row.direction or None,
+                },
+                label_prefix=f"gate {row.gate_id} ",
             )
+        )
 
     waterfall = packet.decision.waterfall
     if waterfall is not None:

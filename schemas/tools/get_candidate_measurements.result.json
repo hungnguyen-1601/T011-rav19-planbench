@@ -1,0 +1,88 @@
+{
+  "$id": "schemas/tools/get_candidate_measurements.result.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "measurements": {
+      "additionalProperties": false,
+      "properties": {
+        "collisions": {
+          "description": "Episodes that ended in contact.",
+          "type": "number",
+          "unit": "count"
+        },
+        "decision_utility": {
+          "description": "Set-level decision utility, as the card holds it.",
+          "type": "number",
+          "unit": "ratio"
+        },
+        "latency_median_ms": {
+          "description": "Typical planning latency.",
+          "type": "number",
+          "unit": "ms"
+        },
+        "latency_p99_ms": {
+          "description": "Tail planning latency.",
+          "type": "number",
+          "unit": "ms"
+        },
+        "min_clearance_m": {
+          "description": "Smallest clearance observed.",
+          "type": "number",
+          "unit": "m"
+        },
+        "n_episodes": {
+          "description": "The denominator of every rate reported here.",
+          "type": "number",
+          "unit": "count"
+        },
+        "path_length_m": {
+          "description": "Median path length driven.",
+          "type": "number",
+          "unit": "m"
+        },
+        "success_rate": {
+          "description": "Episodes that reached the goal, over episodes run.",
+          "type": "number",
+          "unit": "ratio"
+        }
+      },
+      "required": [
+        "success_rate",
+        "n_episodes"
+      ],
+      "type": "object"
+    },
+    "references": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": []
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ref": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "measurements"
+  ],
+  "title": "get_candidate_measurements@1.0.0 output",
+  "type": "object"
+}

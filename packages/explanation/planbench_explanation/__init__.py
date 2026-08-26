@@ -39,9 +39,12 @@ from planbench_explanation.bundle import (
 )
 from planbench_explanation.case_packet import (
     STANDING_UNKNOWNS,
+    CandidateMeasurements,
     CasePacket,
     CasePacketRefusal,
     DecisionFacts,
+    GateOutcome,
+    MeasuredValue,
     RobotFacts,
     TaskFacts,
     build_case_packet,
@@ -583,6 +586,9 @@ __all__ = [
     "file_checksum",
     "find_divergence",
     "AnalysisBudget",
+    "CandidateMeasurements",
+    "GateOutcome",
+    "MeasuredValue",
     "PacketArtifact",
     "PacketArtifactRefusal",
     "PacketProvenance",

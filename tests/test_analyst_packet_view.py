@@ -12,11 +12,16 @@ disagreed with the floor would score the floor as fabricating.
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from planbench_analyst.packet_view import Fact, PacketViewRefusal, build_packet_view
 from planbench_decision.objectives import PREFERENCE_PROFILES
 from planbench_explanation.case_packet import (
+    CandidateMeasurements,
+    CasePacketRefusal,
     DecisionFacts,
+    GateOutcome,
+    MeasuredValue,
     RobotFacts,
     TaskFacts,
     build_case_packet,
@@ -343,3 +348,85 @@ def test_a_fact_is_frozen() -> None:
     fact = Fact(ref="fact:x", kind="fact", label="x", value=1.0, scope="run")
     with pytest.raises(ValueError, match="frozen"):
         fact.ref = "fact:y"  # type: ignore[misc]
+
+
+# --------------------------------------------------------------------------
+# M1 — what each candidate scored, and what each gate decided against
+# --------------------------------------------------------------------------
+
+
+def measured(candidate_id: str = "cand_a", **overrides):  # type: ignore[no-untyped-def]
+    fields = {
+        "candidate_id": candidate_id,
+        "success_rate": MeasuredValue(value=0.7, unit="ratio", denominator=30),
+        "latency_p99_ms": MeasuredValue(value=19.3, unit="ms", denominator=30),
+        "min_clearance_m": MeasuredValue(value=0.2617, unit="m", denominator=30),
+    }
+    fields.update(overrides)
+    return CandidateMeasurements(**fields)  # type: ignore[arg-type]
+
+
+def test_a_rate_without_its_denominator_is_refused() -> None:
+    """100% over five episodes and over three hundred are different
+    claims wearing one number."""
+    with pytest.raises((CasePacketRefusal, ValidationError), match="denominator"):
+        MeasuredValue(value=1.0, unit="ratio")
+
+
+def test_what_a_candidate_scored_is_reachable_by_ref() -> None:
+    indexed = view(measurements=[measured()])
+    rate = indexed.fact("fact:metric:cand_a.success_rate")
+    assert rate is not None
+    assert rate.value == pytest.approx(0.7)
+    assert rate.unit == "ratio"
+    assert rate.candidate_id == "cand_a"
+
+
+def test_the_denominator_is_a_fact_of_its_own() -> None:
+    """"Over thirty episodes" is the half of a rate that keeps it from
+    being read as a promise, so a statement has to be able to cite it."""
+    fact = view(measurements=[measured()]).fact("fact:metric:cand_a.success_rate.denominator")
+    assert fact is not None
+    assert fact.value == 30
+
+
+def test_a_measurement_the_run_did_not_record_is_simply_absent() -> None:
+    """Absent must not read as zero: an unmeasured collision count and a
+    clean run are different sentences."""
+    indexed = view(measurements=[measured(collisions=None)])
+    assert indexed.fact("fact:metric:cand_a.collisions") is None
+    assert "fact:metric:cand_a.success_rate" in indexed
+
+
+def test_a_packet_recorded_before_m1_carries_no_measurement_facts() -> None:
+    indexed = view()
+    assert not [fact for fact in indexed.facts if fact.ref.startswith("fact:metric:")]
+
+
+def test_a_gate_carries_the_number_it_was_decided_on() -> None:
+    gated = DecisionFacts(
+        status="GATE_ONLY",
+        gate_rows=(
+            GateOutcome(
+                gate_id="G1_success",
+                passed=False,
+                threshold=0.95,
+                value=0.7,
+                unit="ratio",
+                direction="at_least",
+            ),
+        ),
+    )
+    indexed = view(decision=gated)
+    assert indexed.fact("fact:gate:G1_success.threshold").value == pytest.approx(0.95)  # type: ignore[union-attr]
+    assert indexed.fact("fact:gate:G1_success.value").value == pytest.approx(0.7)  # type: ignore[union-attr]
+    assert indexed.fact("fact:gate:G1_success.direction").value == "at_least"  # type: ignore[union-attr]
+
+
+def test_an_old_gate_row_reads_as_pass_or_fail_and_says_nothing_more() -> None:
+    """The old shape recorded whether a candidate was eliminated and
+    nothing about how close it was; the null is that, said plainly."""
+    legacy = DecisionFacts(status="GATE_ONLY", gates={"e1251e42a20b": {"passed": False}})
+    indexed = view(decision=legacy)
+    assert indexed.fact("fact:gate:e1251e42a20b.passed").value == "false"  # type: ignore[union-attr]
+    assert indexed.fact("fact:gate:e1251e42a20b.threshold").value is None  # type: ignore[union-attr]

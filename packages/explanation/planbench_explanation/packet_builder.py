@@ -51,9 +51,12 @@ from collections.abc import Mapping, Sequence
 from pydantic import BaseModel, ConfigDict, Field
 
 from planbench_explanation.case_packet import (
+    CandidateMeasurements,
     CasePacket,
     CasePacketRefusal,
     DecisionFacts,
+    GateOutcome,
+    MeasuredValue,
     RobotFacts,
     TaskFacts,
     build_case_packet,
@@ -220,6 +223,114 @@ def lattice_from(
     return tuple(findings), tuple(refused)
 
 
+#: Gate payload keys this builder knows how to read as "the number and
+#: the bar". Deliberately short: a gate whose shape nobody wrote down
+#: here contributes its verdict and no numbers, which is the honest
+#: reading — inventing a threshold from an unfamiliar key would put a
+#: number in the packet that the run never compared anything against.
+_GATE_NUMBERS: tuple[tuple[str, str, str, str], ...] = (
+    ("p99_ms", "threshold_ms", "ms", "at_most"),
+    ("n_distinct_episodes", "n_min", "count", "at_least"),
+)
+
+
+def _gate_row(candidate_id: str, gate_id: str, verdict: object) -> GateOutcome:
+    """One gate's verdict, with its number when the run recorded one."""
+    if isinstance(verdict, str):
+        return GateOutcome(gate_id=gate_id, candidate_id=candidate_id, passed=verdict == "pass")
+    if not isinstance(verdict, Mapping):
+        return GateOutcome(gate_id=gate_id, candidate_id=candidate_id, passed=False)
+    passed = str(verdict.get("result", "")) == "pass"
+    for value_key, threshold_key, unit, direction in _GATE_NUMBERS:
+        value = verdict.get(value_key)
+        threshold = verdict.get(threshold_key)
+        if isinstance(value, int | float) and isinstance(threshold, int | float):
+            return GateOutcome(
+                gate_id=gate_id,
+                candidate_id=candidate_id,
+                passed=passed,
+                threshold=float(threshold),
+                value=float(value),
+                unit=unit,
+                direction=direction,  # type: ignore[arg-type]
+            )
+    return GateOutcome(gate_id=gate_id, candidate_id=candidate_id, passed=passed)
+
+
+def measurements_from_report(report: Mapping[str, object]) -> tuple[CandidateMeasurements, ...]:
+    """What each candidate scored, read off the stored report.
+
+    Only what the run actually recorded. A field the report does not
+    carry stays ``None``, because a zero here would be read as a
+    measurement — "no collisions" and "nobody counted collisions" are
+    different sentences and the packet must not merge them.
+    """
+    rows: list[CandidateMeasurements] = []
+    for candidate in report.get("candidates", ()) or ():
+        if not isinstance(candidate, Mapping):
+            continue
+        episodes = [
+            item for item in candidate.get("episodes", ()) or () if isinstance(item, Mapping)
+        ]
+        denominator = candidate.get("n_distinct_episodes") or candidate.get("n_episodes")
+        denominator = int(denominator) if isinstance(denominator, int | float) else None
+        fields: dict[str, MeasuredValue | None] = {}
+        rate = candidate.get("success_rate")
+        if isinstance(rate, int | float) and denominator:
+            fields["success_rate"] = MeasuredValue(
+                value=float(rate), unit="ratio", denominator=denominator
+            )
+        latency = candidate.get("pooled_p99_latency_ms")
+        if isinstance(latency, int | float):
+            fields["latency_p99_ms"] = MeasuredValue(
+                value=float(latency), unit="ms", denominator=denominator
+            )
+        utility = candidate.get("decision_utility")
+        if isinstance(utility, int | float) and denominator:
+            fields["decision_utility"] = MeasuredValue(
+                value=float(utility), unit="ratio", denominator=denominator
+            )
+        collisions = [
+            item["collision_count"]
+            for item in episodes
+            if isinstance(item.get("collision_count"), int | float)
+        ]
+        if collisions:
+            fields["collisions"] = MeasuredValue(
+                value=float(sum(collisions)), unit="count", denominator=len(collisions)
+            )
+        clearances = [
+            item["min_clearance"]
+            for item in episodes
+            if isinstance(item.get("min_clearance"), int | float)
+        ]
+        if clearances:
+            fields["min_clearance_m"] = MeasuredValue(
+                value=float(min(clearances)), unit="m", denominator=len(clearances)
+            )
+        rows.append(
+            CandidateMeasurements(candidate_id=str(candidate.get("candidate_id", "")), **fields)
+        )
+    return tuple(row for row in rows if row.candidate_id)
+
+
+def gate_rows_from_report(report: Mapping[str, object]) -> tuple[GateOutcome, ...]:
+    """Every gate verdict in the report, with its number where there is one."""
+    rows: list[GateOutcome] = []
+    for candidate in report.get("candidates", ()) or ():
+        if not isinstance(candidate, Mapping):
+            continue
+        candidate_id = str(candidate.get("candidate_id", ""))
+        table = candidate.get("gates")
+        if not isinstance(table, Mapping):
+            continue
+        for gate_id, verdict in sorted(table.items()):
+            if gate_id == "candidate_id":
+                continue
+            rows.append(_gate_row(candidate_id, gate_id, verdict))
+    return tuple(rows)
+
+
 def build_scoring_packet(
     *,
     run_id: str,
@@ -293,6 +404,14 @@ def build_scoring_packet(
         except (ExemplarRefusal, ReportExemplarRefusal) as refusal:
             omissions.append(f"representative_episodes: {refusal}")
 
+    measurements = measurements_from_report(report)
+    if not measurements:
+        omissions.append(
+            "measurements: the report carries no per-candidate metrics, so the packet "
+            "carries none. An analyst can talk about the decomposition and not about "
+            "what either candidate scored."
+        )
+
     packet = build_case_packet(
         run_id=run_id,
         header=ExplanationArtifactHeader.for_current_code(
@@ -315,9 +434,11 @@ def build_scoring_packet(
             status=decision_status,
             waterfall=waterfall,
             gates={name: dict(row) for name, row in (gates or {}).items()},
+            gate_rows=gate_rows_from_report(report),
         ),
         lattice=lattice,
         observations=observations,
+        measurements=measurements,
         representative_episodes=exemplars,
         evidence_class=evidence_class,
     )

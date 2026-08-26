@@ -109,12 +109,17 @@ def _points_at(kind: str, description: str, *, required: bool = True) -> Referen
 #: ``gap_vs_footprint`` also moved to 2.0.0: it now compares a width
 #: against a width, which changes the measurement names it returns.
 #:
+#: **3.1.0** — M1 adds ``get_candidate_measurements``: what a
+#: candidate scored, which until now lived in the report and never
+#: reached an analyst. A card added is a menu changed, so the version
+#: moves and every bundle frozen against 3.0.0 needs a new gate.
+#:
 #: **3.0.0** — ``rrt_convergence`` reports a rate at **two** budgets
 #: rather than one, because one rate cannot tell "the budget is too
 #: small" from "the corridor is not there": both look like a low number.
 #: Different measurement names, so a different wire contract, so a
 #: different version.
-TOOL_CATALOG_VERSION = "3.0.0"
+TOOL_CATALOG_VERSION = "3.1.0"
 
 _RECORDED = EvidencePolicy(allowed_input_provenance=("recorded",))
 _RECORDED_OR_VERIFIED = EvidencePolicy(
@@ -350,6 +355,50 @@ MAP_REGION_FEATURES = ToolCard(
         ),
     ),
     failure_modes=("region_not_resolved", "map_coverage_insufficient"),
+)
+
+CANDIDATE_MEASUREMENTS = ToolCard(
+    tool_id="get_candidate_measurements",
+    tool_version="1.0.0",
+    title="Read what one candidate actually scored",
+    tool_class="fact_query",
+    purpose=ToolPurpose(
+        notes=(
+            "The decomposition says how a pair differed; this says what either of "
+            "them did. Until M1 these numbers lived in the report and never reached "
+            "an analyst, so the only thing it could talk about was ΔU.",
+            "Every rate arrives with its denominator. A success rate without one is "
+            "the sentence this platform exists to refuse.",
+        ),
+    ),
+    proposition_policy=PropositionPolicy(maximum_claim_level="observed"),
+    evidence_policy=_RECORDED,
+    required_evidence=("episode_decision_utility",),
+    io=ToolIO(
+        arguments=(
+            ArgumentSpec(
+                name="candidate_id",
+                kind="string",
+                description="Which candidate's measurements to read.",
+            ),
+        ),
+        measurements=(
+            _measure("success_rate", "ratio", "Episodes that reached the goal, over episodes run."),
+            _measure("n_episodes", "count", "The denominator of every rate reported here."),
+            _measure("collisions", "count", "Episodes that ended in contact.", required=False),
+            _measure("latency_p99_ms", "ms", "Tail planning latency.", required=False),
+            _measure("latency_median_ms", "ms", "Typical planning latency.", required=False),
+            _measure("path_length_m", "m", "Median path length driven.", required=False),
+            _measure("min_clearance_m", "m", "Smallest clearance observed.", required=False),
+            _measure(
+                "decision_utility",
+                "ratio",
+                "Set-level decision utility, as the card holds it.",
+                required=False,
+            ),
+        ),
+    ),
+    failure_modes=("candidate_not_in_packet", "measurements_not_recorded"),
 )
 
 KNOWN_UNKNOWNS = ToolCard(
@@ -910,6 +959,7 @@ TOOL_CATALOG = ToolCatalog(
         EPISODE_OBSERVATIONS,
         CANDIDATE_CONTRAST,
         MAP_REGION_FEATURES,
+        CANDIDATE_MEASUREMENTS,
         KNOWN_UNKNOWNS,
         FIND_EXEMPLARS,
         REPLAY_WINDOW,

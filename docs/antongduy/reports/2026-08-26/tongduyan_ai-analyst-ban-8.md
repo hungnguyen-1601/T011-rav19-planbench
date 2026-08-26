@@ -17,7 +17,8 @@ phase đó.
 | A4-i budget + packet artifact | **xong** | `5ea1a31` |
 | A4-ii RFC gate + bundle | **xong** | `3dba01b` |
 | A4-iii seam + runner | **xong** | `3f7f85b` |
-| A4-iv wire + gateway + restricted | **xong** | (xem §A4-iv) |
+| A4-iv wire + gateway + restricted | **xong** | `2353305` |
+| M1 metrics cuối cùng vào packet | **xong** | (xem §M1) |
 | A4 seam + lane + gateway | chưa | |
 | A5 knowledge provider | chưa | |
 | A6 dev calibration + harness | chưa | |
@@ -778,6 +779,80 @@ răng, và một răng không cắn phải được đọc là "chưa biết", k
   Hợp đồng — frame, phase, trần, gateway, restricted — đã đủ và đã có răng; phần
   còn lại là ống dẫn process, viết cùng lúc với image thay vì viết mù bây giờ.
 - Ghi rõ vì đây là **một hạng mục hoãn có tên**, không phải một phần bị quên.
+
+---
+
+## M1 — Metrics cuối cùng vào packet
+
+Phase đầu của plan bản 9. An chốt: analyst phải đọc được metrics cuối cùng.
+
+### Đã làm gì
+
+**1. `CandidateMeasurements` — cái mỗi candidate thật sự đạt được.**
+
+Waterfall nói **một cặp** khác nhau bao nhiêu; nó không nói bên nào làm được gì.
+Người đọc hỏi "vì sao bên này thắng" với tay tới success rate và đuôi latency
+trước tiên, mà tới trước M1 hai số đó nằm trong report và **không bao giờ** tới
+analyst — nên thứ duy nhất analyst nói được là ΔU.
+
+Bảy trường, **tất cả optional**: run khác nhau ghi khác nhau, và một phép đo
+thiếu phải đọc ra là **thiếu**, không phải bằng 0.
+
+**2. `MeasuredValue` — và luật mẫu số.**
+
+`unit="ratio"` mà không có `denominator` ⟶ **từ chối dựng packet**. "100% trên
+năm episode" và "trên ba trăm episode" là hai claim khác nhau đội cùng một con
+số, và đó đúng là câu nền tảng này tồn tại để chặn. Mẫu số cũng là **một fact
+riêng** (`fact:metric:<cand>.success_rate.denominator`) để một câu có thể trích
+dẫn nó.
+
+**3. `GateOutcome` — cổng có ngưỡng và giá trị.**
+
+`{"passed": false}` nói một candidate bị loại và **từ chối nói** loại cách bao xa
+hay so với cái gì. Nay mỗi hàng mang `threshold`, `value`, `unit`, `direction`,
+và `candidate_id` (bảng cổng là theo candidate; hàng không khai của ai là phán
+quyết về không ai cả).
+
+`gate_outcomes` đọc hàng mới, **lùi về** pass/fail trần cho packet cũ — và lùi về
+với `threshold=None`, đúng nghĩa "run này chỉ ghi lại việc bị loại".
+
+**4. Đọc từ report, không đoán.** `measurements_from_report` /
+`gate_rows_from_report` chỉ lấy thứ report thật sự có. Cổng nào có hình dạng
+**không nằm trong bảng `_GATE_NUMBERS`** thì đóng góp verdict và **không con số
+nào** — bịa một ngưỡng từ một khoá lạ là đặt vào packet một con số mà run chưa
+từng so với cái gì.
+
+**5. Hai version bump, vì hợp đồng đổi thật.**
+
+- `EXPLANATION_SCHEMA_VERSION` 0.1.0 ⟶ **0.2.0** (packet đổi hình).
+- `TOOL_CATALOG_VERSION` 3.0.0 ⟶ **3.1.0** (thêm card `get_candidate_measurements`).
+- 34 file schema xuất lại; test pin version cập nhật.
+
+Hệ quả đã cảnh báo trong plan bản 9 và nay thành thật: **17 packet cũ trong
+`artifacts/runs/` sẽ bị `build_packet_view` từ chối** — đúng luật, vì header khai
+0.1.0. Muốn dùng lại thì dựng lại packet cho run đó.
+
+### Bằng chứng
+
+| Phép kiểm | Kết quả |
+|---|---|
+| `pytest` 8 suite analyst + 6 suite explanation | **421 passed** |
+| Bộ răng | **32/32 CẮN** |
+| Chạy trích xuất trên report thật | **30/30 report sinh được measurements**; ví dụ `success_rate = 0.7 ratio over 30`, `latency_p99_ms = 5.259 ms over 30`; 12 gate row mỗi run, 4 hàng có số |
+| `ruff check` | sạch |
+
+Đây là lần đầu con số An mô tả ("70% so với 95%", "p99 19,3 ms so với 6,06 ms")
+có một `ref` để analyst trích dẫn.
+
+### Còn nợ sau M1
+
+- `path_length_m` và `latency_median_ms` chưa có nguồn trong report (report ghi
+  `travel_time_s` chứ không ghi quãng đường). Để `None` chứ **không** suy từ
+  travel time — hai đại lượng khác nhau.
+- Card `get_candidate_measurements` mới có **card**, chưa có handler trong
+  `ToolHost`: analyst đọc số qua fact index được ngay; gọi tool thì host trả
+  `tool_unavailable`. Nối handler nằm ở A5/A6 khi host được mở rộng, ghi ra để
+  không ai đọc "card đã có" thành "tool chạy được".
 
 ---
 
