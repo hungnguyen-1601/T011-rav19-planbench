@@ -95,6 +95,19 @@ ARMS: dict[str, RoundFeatures] = {
     "e5b_auto_route": RoundFeatures(
         measurements=True, timelines=True, filter_tool_menu=True, auto_route_checker=True
     ),
+    # E6 asks whether making the model commit to a branch first is worth
+    # what it costs. The control arm is the shape the answer had before
+    # W4: one object carrying both kinds of statement.
+    "e6_free_schema": RoundFeatures(
+        measurements=True, timelines=True, discriminated_union=False
+    ),
+    # E7 asks whether the deterministic critic earns its place. Off is
+    # the comparison; a critic nobody has measured is a habit.
+    "e7_no_critic": RoundFeatures(measurements=True, timelines=True, critic=False),
+    # E8 changes the model and nothing else — the arm vector is the one
+    # every other reading of "the pipeline" uses, so what moves between
+    # two runs of this arm is the model and not the configuration.
+    "e8_model": RoundFeatures(measurements=True, timelines=True),
 }
 
 

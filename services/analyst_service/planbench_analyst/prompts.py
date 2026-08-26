@@ -128,7 +128,7 @@ REVISION_PREFACE = (
 )
 
 
-def analyst_schema() -> dict[str, object]:
+def analyst_schema(*, discriminated_union: bool = True) -> dict[str, object]:
     """The only shape an answer may take.
 
     Two things are deliberately **absent** from the properties: an id
@@ -176,8 +176,14 @@ def analyst_schema() -> dict[str, object]:
                         # statement so the model commits to a branch and
                         # then writes for it: a statement written first
                         # and labelled afterwards is a conclusion looking
-                        # for a category.
-                        "decision": {"type": "string", "enum": ["no_check", "check"]},
+                        # for a category. E6's control arm drops it, and
+                        # then the shape carries both kinds of statement
+                        # again — which is what E6 is measuring.
+                        **(
+                            {"decision": {"type": "string", "enum": ["no_check", "check"]}}
+                            if discriminated_union
+                            else {}
+                        ),
                         "statement": {"type": "string", "maxLength": 400},
                         "proposition_type": {
                             "type": "string",
@@ -227,7 +233,7 @@ def analyst_schema() -> dict[str, object]:
                         },
                     },
                     "required": [
-                        "decision",
+                        *(["decision"] if discriminated_union else []),
                         "statement",
                         "proposition_type",
                         "subject",
@@ -281,6 +287,10 @@ def prompt_checksum() -> str:
             "candidate_preface": CANDIDATE_PREFACE,
             "candidate_suffix": CANDIDATE_SUFFIX,
             "revision_preface": REVISION_PREFACE,
+            # Both shapes, because the arm that runs decides which one
+            # the model was asked for and a checksum over one of them
+            # would call two systems one.
             "schema": analyst_schema(),
+            "schema_free": analyst_schema(discriminated_union=False),
         }
     )

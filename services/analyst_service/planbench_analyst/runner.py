@@ -291,6 +291,7 @@ def run_round(
                 feedback=tuple(feedback),
                 candidates_text=candidates_text,
                 menu=menu,
+                discriminated_union=features.discriminated_union,
                 timeout_s=timeout_s,
             )
         except AnalystRefusal as refused:
@@ -343,7 +344,9 @@ def run_round(
         )
         events.append(f"proposed:{len(report.response.proposals)}")
 
-        guarded = guard(report.response, view, catalog=analysis.catalog)
+        guarded = guard(
+            report.response, view, catalog=analysis.catalog, critic=features.critic
+        )
         events.extend(f"blocked:{item.rule}" for item in guarded.blocked)
 
         # Declare before any request. The host binds evidence to the

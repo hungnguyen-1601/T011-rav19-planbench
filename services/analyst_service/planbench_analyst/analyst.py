@@ -278,7 +278,9 @@ def _string_list(value: Any, *, limit: int) -> tuple[str, ...]:
     return tuple(item.strip() for item in value if isinstance(item, str) and item.strip())[:limit]
 
 
-def _drafts(payload: Mapping[str, Any]) -> tuple[list[_Draft], list[str]]:
+def _drafts(
+    payload: Mapping[str, Any], *, discriminated_union: bool = True
+) -> tuple[list[_Draft], list[str]]:
     drafts: list[_Draft] = []
     dropped: list[str] = []
     raw = payload.get("hypotheses")
@@ -296,7 +298,7 @@ def _drafts(payload: Mapping[str, Any]) -> tuple[list[_Draft], list[str]]:
             dropped.append(f"hypothesis {index}: statement, proposition_type or subject missing")
             continue
         decision = item.get("decision")
-        if decision not in ("no_check", "check"):
+        if discriminated_union and decision not in ("no_check", "check"):
             dropped.append(f"hypothesis {index}: decision is neither no_check nor check")
             continue
         check = item.get("requested_check")
@@ -317,6 +319,12 @@ def _drafts(payload: Mapping[str, Any]) -> tuple[list[_Draft], list[str]]:
         # that asked for no check and then asked for one, or promised a
         # check and named no tool, is a malformed answer with a name —
         # and a named failure is one a single repair turn can fix.
+        if not discriminated_union:
+            # E6's control arm: no branch was asked for, so the shape is
+            # read back the way it was before W4 — a statement, and a
+            # check if one came with it. Derived rather than absent, so
+            # everything downstream still knows which kind it has.
+            decision = "check" if tool_id else "no_check"
         if decision == "no_check" and tool_id:
             dropped.append(
                 f"hypothesis {index}: decision=no_check carries a requested_check; "
@@ -433,6 +441,7 @@ def propose(
     feedback: Sequence[CheckFeedback] = (),
     candidates_text: str = "",
     menu: ToolCatalog | None = None,
+    discriminated_union: bool = True,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     timeout_s: float = DEFAULT_TIMEOUT_S,
 ) -> RoundReport:
@@ -456,7 +465,7 @@ def propose(
     request = LLMRequest(
         system=ANALYST_SYSTEM,
         messages=(LLMMessage.user(turn),),
-        output_schema=analyst_schema(),
+        output_schema=analyst_schema(discriminated_union=discriminated_union),
         max_tokens=max_tokens,
     )
     try:
@@ -473,7 +482,7 @@ def propose(
     )
     payload = _payload(response)
     response_checksum = artifact_checksum(canonical_json(dict(payload)))
-    drafts, dropped = _drafts(payload)
+    drafts, dropped = _drafts(payload, discriminated_union=discriminated_union)
     checks_refused: list[str] = []
     unresolved: list[str] = []
     proposals: list[HypothesisProposal] = []

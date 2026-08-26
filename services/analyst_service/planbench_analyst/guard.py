@@ -196,7 +196,11 @@ def _subject_conflict(proposal: HypothesisProposal, view: PacketView) -> tuple[s
 
 
 def guard(
-    response: AnalysisResponse, view: PacketView, *, catalog: ToolCatalog
+    response: AnalysisResponse,
+    view: PacketView,
+    *,
+    catalog: ToolCatalog,
+    critic: bool = True,
 ) -> GuardResult:
     """Apply the seven rules, and say what each drop cost.
 
@@ -290,7 +294,12 @@ def guard(
         )
         return GuardResult(response=answer, blocked=tuple(blocked))
 
-    ranking, flags = critique(tuple(kept), view)
+    # E7's arm. The critic ranks what survived and says what looks
+    # thin; with it off the proposals come back in the order the model
+    # sent them and nothing is flagged, which is what E7 compares
+    # against — a critic nobody has shown is worth its place is a habit
+    # rather than a component.
+    ranking, flags = critique(tuple(kept), view) if critic else ((), ())
     answer = AnalysisResponse(
         analysis_run_id=response.analysis_run_id,
         analyst_bundle_id=response.analyst_bundle_id,

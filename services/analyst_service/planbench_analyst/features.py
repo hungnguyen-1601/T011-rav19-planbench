@@ -63,6 +63,16 @@ class RoundFeatures:
     #: because E4a measures the prior and E4b the hint, and bundled, a
     #: gain in either would be reported as a gain in both.
     verification_options: bool = False
+    #: W4's discriminated union. Off is the shape the answer had before
+    #: W4: one object carrying both a final statement and a statement
+    #: written before its check. E6 measures whether asking the model to
+    #: commit to a branch first is worth what it costs to read.
+    discriminated_union: bool = True
+    #: A3's deterministic critic — the ranking and the "this looks thin"
+    #: flags. Off is the arm E7 compares against, because a critic that
+    #: nobody has shown is worth its place is a habit rather than a
+    #: component.
+    critic: bool = True
     #: W3: hide tools whose evidence this run cannot serve.
     filter_tool_menu: bool = False
     #: W3: route to a checker deterministically after the model declares.
