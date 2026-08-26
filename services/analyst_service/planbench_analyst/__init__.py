@@ -35,16 +35,58 @@ somebody left behind.
 
 from __future__ import annotations
 
+from planbench_analyst.analyst import (
+    AnalystRefusal,
+    RoundCost,
+    RoundReport,
+    catalog_text,
+    propose,
+)
+from planbench_analyst.cache import CacheStats, ResponseCache, cache_key
+from planbench_analyst.identity import (
+    SOURCE_GLOBS,
+    ConfigRefusal,
+    effective_generation_config,
+    flatten_config,
+    runtime_config_checksum,
+    source_manifest_hash,
+    validate_generation_config,
+)
 from planbench_analyst.packet_view import (
     Fact,
     PacketView,
     PacketViewRefusal,
     build_packet_view,
 )
+from planbench_analyst.prompts import (
+    ANALYST_SYSTEM,
+    PROMPT_VERSION,
+    analyst_schema,
+    prompt_checksum,
+)
 
 __all__ = [
+    "ANALYST_SYSTEM",
+    "SOURCE_GLOBS",
+    "PROMPT_VERSION",
+    "AnalystRefusal",
+    "CacheStats",
+    "ConfigRefusal",
     "Fact",
     "PacketView",
     "PacketViewRefusal",
+    "ResponseCache",
+    "RoundCost",
+    "RoundReport",
+    "analyst_schema",
     "build_packet_view",
+    "cache_key",
+    "catalog_text",
+    "effective_generation_config",
+    "flatten_config",
+    "prompt_checksum",
+    "propose",
+    "runtime_config_checksum",
+    "source_manifest_hash",
+    "validate_generation_config",
 ]

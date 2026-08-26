@@ -3,15 +3,16 @@
 **Plan:** `plans/2026-08-26/ai-analyst-ban-8.md` · **Verify nền:**
 `notes/2026-08-26/tongduyan_verify-plan-ai-analyst.md`
 **Nhánh:** `tongduyan_ai-analyst-ban-8`, tách từ `main` tại `738ee1f`
+**Worktree:** `../P-011-analyst` từ 2026-08-26 — xem §Ghi chú vận hành cuối file.
 **Quy ước:** một file cho cả plan; mỗi phase một mục, viết ngay sau khi commit
 phase đó.
 
 | Phase | Trạng thái | Commit |
 |---|---|---|
-| A-1 vá sàn model-free | **xong** | `5932779` |
+| A-1 vá sàn model-free | **xong** | `2293615` |
 | A0 skeleton + hạ tầng | **xong** | `df1743a` |
-| A1 packet view + fact index | **xong** | (xem §A1) |
-| A2 hypothesis engine | chưa | |
+| A1 packet view + fact index | **xong** | `5e6bf41` |
+| A2 hypothesis engine | **xong** | (xem §A2) |
 | A3 guard + critic + biên vào | chưa | |
 | A4 seam + lane + gateway | chưa | |
 | A5 knowledge provider | chưa | |
@@ -256,3 +257,138 @@ hình dạng của một stub bị bỏ lại.
   dòng sửa.
 - Chưa có `PacketArtifact` loader (validate checksum + provenance) — plan bản 7
   xếp ở A6, giữ nguyên.
+
+---
+
+## A2 — Hypothesis engine (AI1 lõi)
+
+### Đã làm gì
+
+Bốn module mới: `prompts.py` · `analyst.py` · `identity.py` · `cache.py`.
+
+**1. `prompts.py` — mọi chữ model đọc là hằng số.**
+
+Không f-string dựng lúc gọi: `prompt_checksum()` đi vào bundle ở A7, và một
+prompt ráp từ mảnh mà ai đó đổi được lúc chạy là prompt mà bundle không thật sự
+định danh. Checksum phủ **cả schema** — hai lượt cùng chữ khác tập field bắt
+buộc không phải cùng một yêu cầu.
+
+Schema đầu ra cố tình **thiếu hai thứ**: không có `id` (hệ sinh, xem dưới) và
+không có field nào chở được confidence (`HypothesisProposal` cấm extra, nên một
+schema mời chào confidence chỉ để tạo ra thứ bước parse sẽ vứt đi).
+
+`arguments` là **danh sách cặp name/value dạng chuỗi**, không phải object mở:
+strict schema đòi khai mọi property, mà property khác nhau theo từng card. Kiểu
+được khôi phục ở một chỗ duy nhất (`_coerced`), nơi giá trị không đổi được kiểu
+thành một vấn đề **có tên**, thay vì thành một string đem so với float ba tầng
+bên dưới.
+
+**2. `analyst.py` — engine sở hữu định danh và chi phí, không sở hữu phán xét.**
+
+- `hypothesis_id` = hash nội dung (statement + type + subject + refs + **cả
+  requested check**). Cùng nội dung ⟶ cùng tên ⟶ dedupe được. Id do model đặt
+  thì cùng một giả thuyết đến hai lần dưới hai tên và cổng trùng-id của protocol
+  vẫy cả hai qua. Hai giả thuyết **khác nhau** mà đụng digest ⟶ **refuse cả
+  vòng**, không đổi tên: một id nhấn nhá được thì không phải id.
+- **Chi phí đi cùng vòng** (`RoundCost`): token vào/ra, số model call. A4 mới
+  cộng `tool_requests`. Đây là phần bản 8 thêm so với bản 7 — budget mà chỉ biết
+  lúc đã vượt thì không trả lời được câu "một vòng tốn bao nhiêu".
+- **Ref không có trong index vẫn được giữ**, và đếm vào `refs_not_in_index`.
+  Lọc ở đây là lấy mất lỗi khỏi guard — nơi các cú drop được đếm — và làm số của
+  guard nói rằng model chưa từng mắc lỗi đó.
+- Tách `dropped` (mất cả giả thuyết) khỏi `checks_refused` (chỉ mất cái check):
+  "model không đề xuất được gì dùng được" và "model đề xuất được nhưng xin nhầm
+  tool" là hai loại lỗi, A6 đếm vào hai metric khác nhau.
+
+**3. Timeout cho từng call — và một lần suýt làm sai.**
+
+Bản đầu dùng `ThreadPoolExecutor`. Test đo: stall 2 s với deadline 0,2 s vẫn
+tốn **đủ 2 s**, vì `with` gọi `shutdown(wait=True)` — tức deadline không hoạt
+động. Đổi sang **daemon thread + `Event.wait()`**: vòng chạy tiếp sau 0,2 s và
+process không bị thread treo giữ lại. Ghi rõ trong docstring rằng call bị bỏ có
+thể vẫn đang bay — đó là giá thật của một deadline ở tầng này, và rẻ hơn hẳn cái
+giá kia: provider ngừng trả lời thì mất cả run, và checkpoint đáng lẽ cho phép
+chạy tiếp không bao giờ được ghi.
+
+**4. `identity.py` — flatten bằng JSON Pointer, hash nguồn theo byte.**
+
+- `{"thinking.type": ...}` và `{"thinking": {"type": ...}}` flatten kiểu dotted
+  cho ra **cùng một chuỗi**; bằng JSON Pointer (escape `~0`/`~1` theo RFC 6901)
+  thì khác nhau. Có test đúng cặp đó. Thứ tự list cũng là một setting.
+- `validate_generation_config` từ chối **trước khi gọi**: knob bị model bỏ qua
+  làm bản ghi config nói dối, còn knob gây 400 thì từ ngoài nhìn y hệt "model
+  hôm nay không thêm được gì" — đúng cái đã ngốn của Lane 1 một ngày.
+- `source_manifest_hash` đọc **bytes**, không đọc mtime, không hỏi git: "cây
+  tại commit này" không nói gì về một working copy đang có sửa đổi, mà
+  calibration thì chạy đúng trong loại cây đó. `touch` không đổi hash; sửa một
+  byte thì đổi; đổi tên file cũng đổi (path nằm trong hash).
+- File chưa tồn tại **không phải lỗi**: `docker/Dockerfile.analyst` tới ở A7, và
+  việc nó xuất hiện là một lần đổi định danh, đúng như phải thế.
+
+**5. `cache.py` — hai điều một cache trên model không được phép làm.**
+
+- **Không phục vụ vòng đã chấm.** Key mang định danh runtime lúc ghi; trước A7
+  là checksum dev, từ A7 là identity của bundle. Khác chuỗi thì không đọc được
+  của nhau.
+- **Hit không được đọc thành "model lặp lại".** `CacheStats.hits` công khai để
+  harness A6/A7 **assert bằng 0** khi đang đo model. `root=None` là cache không
+  lưu gì — đúng hình dạng vòng chấm dùng, để nhánh "bỏ qua cache" không phải
+  nhánh chỉ tồn tại lúc chấm (và do đó chỉ hỏng lúc chấm).
+
+### Bằng chứng
+
+| Phép kiểm | Kết quả |
+|---|---|
+| `pytest tests/test_analyst_*.py` (4 file) | **60 passed** |
+| Deadline: stall 2 s, `timeout_s=0.2` | vòng hỏng sau <1,5 s, có mã lý do — trước khi sửa là 2,0 s |
+| `ruff check` 4 module + 4 file test | sạch |
+
+Bao gồm: id từ nội dung (cùng câu ⟶ cùng id; đổi check ⟶ khác id); dedupe trong
+một vòng; `universal_algorithm_superiority` bị chặn **kể cả khi model bỏ qua
+enum**; ref bịa được giữ + đếm; coercion `budget_multiplier="2.5"` ⟶ `2.5`
+float; `"as high as it takes"` ⟶ mất check, giữ giả thuyết; prose thay vì object
+⟶ refuse; JSON trong `text` vẫn đọc được; prompt_checksum đổi khi đổi một chữ
+trong system message.
+
+### Đã đổi kế hoạch một điểm
+
+Plan §A2 xếp `generation_parameters` capability-aware vào phase này **kèm hai
+adapter provider**. Phần **hợp đồng** (merge theo precedence, flatten, validate)
+đã xong ở `identity.py`. Phần **adapter** (OpenAI/Anthropic thật sự nhận config
+và khai capability của model) chưa — `LLMRequest` hiện chưa có field
+generation config, nên đó là một RFC vào `planbench_agent.provider` chạm cả Lane
+1 đang chạy production. Xếp vào **A4**, cùng chỗ với RFC platform khác
+(`gate.py`, `bundle.py`), để mọi thay đổi hợp đồng đi trong một diff có test —
+thay vì sửa provider hai lần.
+
+### Còn nợ sau A2
+
+- Adapter generation config (xem trên) — A4.
+- Chưa gọi model thật lần nào: toàn bộ A2 chạy trên `MockProvider` có script.
+  Đúng thiết kế ở phase này, và **A6 là chỗ chịu trách nhiệm** cho câu "model
+  thật nói có đúng không". Nói trước để không ai đọc 60 test xanh thành một
+  tuyên bố về chất lượng model.
+
+---
+
+## Ghi chú vận hành — vì sao có worktree thứ hai
+
+Giữa A2, working tree chung bị chuyển về `main` (An commit phần test-bench và
+log của phiên). Ba commit A-1/A0/A1 vẫn nguyên trên nhánh, nhưng hai file A2
+đang viết dở nằm ngoài git thì suýt mất, và việc chuyển nhánh qua lại giữa hai
+người trong **một** working tree sẽ còn lặp lại.
+
+Từ 2026-08-26, nhánh này chạy trong worktree riêng:
+
+```
+git worktree add ../P-011-analyst tongduyan_ai-analyst-ban-8
+```
+
+`../P-011-analyst` dùng chung `.git`, nên commit vẫn về đúng nhánh và An giữ
+`main` trong thư mục gốc. Xong plan thì `git worktree remove ../P-011-analyst`.
+
+**Một hệ quả cần biết:** worktree chỉ có file **đã track**. `artifacts/runs/`
+có 86 file được track (13 packet thật), còn 4 run ngày 25-08 chưa commit thì
+worktree không thấy — nên phép đo "17/17 packet thật" ở §A-1/§A1 chạy trong cây
+gốc, còn cùng phép đo chạy trong worktree sẽ là 13/13. Khi A6 cần đủ 17, hoặc
+An commit 4 run đó, hoặc phép đo chạy ở cây gốc và ghi rõ.
