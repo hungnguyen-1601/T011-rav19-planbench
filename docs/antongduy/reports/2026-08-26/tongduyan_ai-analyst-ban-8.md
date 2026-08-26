@@ -24,7 +24,8 @@ phase đó.
 | A5 knowledge provider (AI2) | **xong** | `4d7c15e` |
 | A6 harness + calibration dev | **xong** | `721758d` |
 | A6.5 ba họ golden | **xong** | `9d278dd` |
-| A7 freeze + container + calibration | **xong** | (xem §A7) |
+| A7 freeze + container + calibration | **xong** | `5af4aba` |
+| Chạy thật (o4-mini + 2 model local) | **xong** | xem `notes/2026-08-26/tongduyan_chay-that-analyst-o4mini-va-local.md` |
 | A4 seam + lane + gateway | chưa | |
 | A5 knowledge provider | chưa | |
 | A6 dev calibration + harness | chưa | |
