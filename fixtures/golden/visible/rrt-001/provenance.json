@@ -1,0 +1,1 @@
+{"packet_checksum": "30e76eeedd468c346c9a6382439e4f1ed249184ace053062c870cbcbd46073dc", "packet_ref": "fixtures/golden/visible/rrt-001/packet.json", "provenance_checksum": "cd8fc5e9d164ff0cd0aa72341482a92bba4e123c5ca8ef1cd0f238e51de0c81f", "recorded_at": "2026-08-26T00:00:00Z", "run_id": "rrt-001", "sidecar_present": true, "source": "planted_run"}

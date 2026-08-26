@@ -22,7 +22,8 @@ phase đó.
 | M2 metrics realtime theo episode | **xong** | `40bd527` |
 | M3 bảng traits trong DB | **xong** | `da29e94` |
 | A5 knowledge provider (AI2) | **xong** | `4d7c15e` |
-| A6 harness + calibration dev | **xong** | (xem §A6) |
+| A6 harness + calibration dev | **xong** | `721758d` |
+| A6.5 ba họ golden | **xong** | (xem §A6.5) |
 | A4 seam + lane + gateway | chưa | |
 | A5 knowledge provider | chưa | |
 | A6 dev calibration + harness | chưa | |
@@ -1149,6 +1150,66 @@ sàn cũng đi qua guard · mỗi repeat dựng round mới (host mang session).
   đọc "harness xong" thành "đã đo model thật".
 - Ablation critic (bật/tắt, leave-one-out) chưa chạy: nó cần cùng bộ packet mới,
   nên đi cùng A6.5.
+
+---
+
+## A6.5 — Ba họ golden, và một luật hợp đồng chặn đúng chỗ
+
+### Đã làm gì
+
+**1. Trồng ba run có sidecar.** `plant_golden_runs.py` chạy thật: `inflation-001`
+(1 attempt), `rrt-001` (1), `dwa-001` (2 attempt — có replan). Ba họ còn lại vẫn
+`CANNOT_STAGE_YET`, lý do có tên.
+
+**2. `scripts/build_golden_fixtures.py` (mới) biến run thành packet.** Trồng được
+run **chưa phải** là có case: mọi `packet_ref` của `VISIBLE_SUITE` trỏ tới
+`fixtures/golden/visible/<case_id>/packet.json`, và tới trước phase này **không
+file nào tồn tại** — suite khai 12 case mà không ai chấm được cái nào.
+
+**3. Hợp đồng chặn đúng một chỗ, và nó đúng.** Lần dựng đầu bị `CasePacket` từ
+chối: *"a packet explains a comparison, and a comparison needs two candidates"*.
+`plant_golden_runs.py` trồng **một** candidate mỗi world vì việc của nó là trồng
+một **cơ chế**. Không nới luật — luật đúng: giải thích vì sao một stack thắng là
+một câu về một **cặp**. Sửa ở script: chạy mỗi world với **cả hai** stack
+(`astar+dwa`, `rrtstar+dwa`) trên **cùng world, cùng scenario** — đúng luật công
+bằng của nền tảng.
+
+**4. Thiếu cột thì nói ra, không bịa.** Fixture không có `clearance_m` và
+`planner_latency_ms` (trace recorder thật ghi chúng; script này không tái tạo),
+nên detector đọc hai cột đó **không thể nổ**. In ra từng case kèm câu "đây là
+tính chất của fixture, không phải của analyst".
+
+`inflation-001` có **0 observation**: cả hai stack **không di chuyển** — đúng cơ
+chế được trồng. Không chèn một dòng trajectory giả để detector có cái chạy.
+
+### Bằng chứng
+
+| Phép kiểm | Kết quả |
+|---|---|
+| `plant_golden_runs.py` | 3 run, sidecar đọc lại validate được |
+| `build_golden_fixtures.py` | 3 packet + 3 provenance, 15 KB |
+| `load_packet_artifact` cả ba | **3/3 `fixture_kind=recorded`**, checksum tính lại khớp |
+| `VISIBLE_SUITE` | **3/12 case nay load được**; 9 case còn lại vẫn không có fixture |
+| Fact mỗi packet | 12 / 17 / 23 |
+| Harness end-to-end trên ba fixture | chạy được; `MockProvider` mặc định không trả JSON ⟶ **3/3 crash**, harness đếm đúng là crash chứ không phải abstention |
+| Sàn model-free trên cùng ba packet | abstain 1/3, đề xuất 2/3 ⟶ **discordant = 2, p = 0,5, `underpowered = True`** |
+| `pytest` 4 suite liên quan | 169 passed |
+
+Dòng áp chót là điểm đáng giá nhất: phép so **chạy được**, và nó **tự khai** rằng
+hai ca bất đồng không kết luận được gì. Đúng câu trả lời trung thực ở quy mô này,
+và đúng lý do plan bản 9 nói macro trên 3/6 họ không so được với bar đặt cho 6 họ.
+
+`OFFICIAL_GOLDEN_READY` vẫn `False`.
+
+### Còn nợ sau A6.5
+
+- 9/12 case của suite vẫn không có fixture: mỗi họ cần 2 biến thể, và ba họ
+  `CANNOT_STAGE_YET` cần sweep nhiều context (`expansion_latency`), gap do packet
+  builder khai (`insufficient_evidence`), hoặc cặp ΔU vắt qua 0
+  (`negative_control`).
+- Chưa có precision/recall: cần model **thật** chạy trên fixture có đáp án.
+  Fixture đã có; chạy model thật cần API key và là quyết định chi phí của An.
+- Ablation critic treo cùng lý do.
 
 ---
 

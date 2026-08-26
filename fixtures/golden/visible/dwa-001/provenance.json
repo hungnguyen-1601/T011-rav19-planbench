@@ -1,0 +1,1 @@
+{"packet_checksum": "b177bfe850d12c2f2e60d676bb12c68fe1a38117b0ca95c0d59394acbedcb3bf", "packet_ref": "fixtures/golden/visible/dwa-001/packet.json", "provenance_checksum": "0d605350013674aea8960b11c82c0a2868f1a90f6c9943ab63f38265d27753a5", "recorded_at": "2026-08-26T00:00:00Z", "run_id": "dwa-001", "sidecar_present": true, "source": "planted_run"}

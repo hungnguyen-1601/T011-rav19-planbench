@@ -1,0 +1,1 @@
+{"packet_checksum": "a9dd0a760232c716ca3f26ecd44b0990f98ff8870b82f6d2a8e54cee97dd0b4a", "packet_ref": "fixtures/golden/visible/inflation-001/packet.json", "provenance_checksum": "0a26636e73164a2d7cc24f0a593dff121ac1882eab129284d3cabaa5147c13f9", "recorded_at": "2026-08-26T00:00:00Z", "run_id": "inflation-001", "sidecar_present": true, "source": "planted_run"}
