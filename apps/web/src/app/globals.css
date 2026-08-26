@@ -2463,7 +2463,7 @@ label.field.simulate-field,
 .simulate-layer--trajectory .simulate-layer-swatch { background: var(--trajectory); }
 
 .simulate-workspace { display: grid; grid-template-columns: minmax(0, 3fr) minmax(260px, 1fr); min-height: 540px; }
-.simulate-map-panel { display: flex; min-width: 0; min-height: 540px; margin: 0; padding: 0; flex-direction: column; border: 0; border-radius: 0; background: var(--canvas-bg); }
+.simulate-map-panel { position: relative; display: flex; min-width: 0; min-height: 540px; margin: 0; padding: 0; flex-direction: column; border: 0; border-radius: 0; background: var(--canvas-bg); }
 .simulate-map-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
 .simulate-map-head > div { display: grid; gap: 2px; }
 .simulate-map-head strong { font-size: 12px; }
@@ -5420,9 +5420,21 @@ tr.is-previewing > td { background: var(--accent-soft); }
    alone deepens it in either theme — `#1f6feb` and `#4c9aff` both stay
    well clear of their own page — and leaves `--accent-contrast` where
    it was. */
-.agent-dock-launcher:hover {
-  background: color-mix(in srgb, var(--accent) 82%, #000);
-  border-color: color-mix(in srgb, var(--accent) 70%, #000);
+/* Hover **inverts** the button: pale ground, deep mark.
+
+   Deepening the background alone left the mark itself `--accent-contrast`
+   — white on darker blue — so the thing the pointer is aimed at was the
+   one part that did not change, and it read as washed out rather than
+   as reachable. Swapping ground and figure moves the mark from the
+   lightest colour on the button to the darkest, which is the direction
+   asked for and the one that survives both themes: the pale ground is
+   mixed from `--accent` rather than from plain white, so it stays a
+   blue in the dark theme instead of flaring. */
+.agent-dock-launcher:hover,
+.agent-dock-launcher:focus-visible {
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: color-mix(in srgb, var(--accent) 78%, #000);
 }
 
 .agent-dock-panel {
@@ -5647,4 +5659,67 @@ tr.is-previewing > td { background: var(--accent-soft); }
     overflow-x: auto;
   }
   .decision-tab { font-size: 12px; padding: var(--space-2); }
+}
+
+/* -- the test bench, while an episode is being computed ------------- */
+
+/* `runOne` awaits the whole simulation before the socket opens, so the
+   press is followed by a wait with nothing moving. The overlay below is
+   the only thing on screen that says the wait is work rather than a
+   stall. It anchors on `.simulate-map-panel`, which carries
+   `position: relative` at its own declaration above — an absolutely
+   positioned child with no positioned ancestor escapes to the page and
+   covers whatever it lands on. */
+
+.simulate-map-busy {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  border-radius: inherit;
+  /* Translucent, not opaque: the map underneath still answers "did it
+     take the deployment I chose", and covering that to say "working"
+     would trade an answer for a noise. */
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.simulate-map-busy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.simulate-map-busy-spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: simulate-map-busy-spin 0.8s linear infinite;
+}
+
+@keyframes simulate-map-busy-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Everything beside the canvas recedes while the canvas is the subject.
+   `pointer-events: none` as well as the fade: a control that looks
+   unavailable and still takes a click is worse than one that only looks
+   it. The canvas panel itself is excluded — it carries the overlay. */
+.simulate-workspace.is-simulating > *:not(.simulate-map-panel) {
+  opacity: 0.45;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+/* A spinner that never stops is a poor companion for anyone who asked
+   the system not to animate. The label still says what is happening. */
+@media (prefers-reduced-motion: reduce) {
+  .simulate-map-busy-spinner { animation-duration: 2.4s; }
+  .simulate-workspace.is-simulating > *:not(.simulate-map-panel) { transition: none; }
 }

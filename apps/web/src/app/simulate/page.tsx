@@ -723,7 +723,7 @@ export default function TestBenchPage() {
           </label>
         </div>
 
-        <div className="simulate-workspace">
+        <div className={`simulate-workspace${busy ? " is-simulating" : ""}`}>
           <div className="panel simulate-map-panel">
             <div className="simulate-map-head">
               <div><strong>{t("bench.worldTitle")}</strong><span>{staged ? `${profileId} · seed ${seed}` : t("bench.worldSubtitle")}</span></div>
@@ -779,6 +779,24 @@ export default function TestBenchPage() {
               <p>{t("bench.selectDeployment")}</p>
             </div>
           )}
+          {/* **The wait has a face now.** `runOne` awaits the whole
+              episode before the socket opens, so between the press and
+              the first frame the canvas sits there holding the world as
+              it was — indistinguishable from an app that has stopped.
+              The overlay covers the canvas rather than replacing it: the
+              map underneath is still the answer to "did it take my
+              deployment", and blanking it would throw that away to say
+              something the spinner already says.
+
+              `aria-live="polite"` because a screen reader gets nothing
+              from a spinner; `role="status"` announces the line once
+              when it appears and once when it goes. */}
+          {busy ? (
+            <div className="simulate-map-busy" role="status" aria-live="polite">
+              <span className="simulate-map-busy-spinner" aria-hidden="true" />
+              <p>{t("bench.simulating")}</p>
+            </div>
+          ) : null}
           </div>
 
           <aside className="simulate-side-panel">

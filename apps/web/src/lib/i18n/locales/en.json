@@ -1282,6 +1282,7 @@
   "bench.candidate": "Candidate",
   "bench.run": "Run one episode",
   "bench.running": "Running…",
+  "bench.simulating": "Simulating…",
   "bench.replay": "Replay",
   "bench.speed": "Speed:",
   "bench.signedOut": "Sign in to run an episode.",

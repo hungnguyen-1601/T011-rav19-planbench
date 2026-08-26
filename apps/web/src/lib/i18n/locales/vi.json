@@ -1282,6 +1282,7 @@
   "bench.candidate": "Ứng viên",
   "bench.run": "Chạy một episode",
   "bench.running": "Đang chạy…",
+  "bench.simulating": "Đang mô phỏng…",
   "bench.replay": "Xem lại",
   "bench.speed": "Tốc độ:",
   "bench.signedOut": "Đăng nhập để chạy một episode.",
