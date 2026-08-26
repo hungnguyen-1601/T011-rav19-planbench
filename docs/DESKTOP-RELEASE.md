@@ -14,6 +14,9 @@ one.
 
 ## The short version
 
+Run this in the **private** repository. The release appears in the
+public one — see [Two repositories](#two-repositories-where-you-tag-and-where-the-release-appears).
+
 ```powershell
 # 1. Bump the stamp. The tag and this file MUST agree or CI refuses.
 #    apps\desktop\planbench_desktop\VERSION   ->  0.1.9
@@ -31,6 +34,58 @@ gate, and publishes the installer plus `latest.json`. Nothing else to
 do; nothing to upload by hand.
 
 Watch it **at one-minute intervals or slower** — see [Rate limit](#the-rate-limit-is-shared-with-the-running-app).
+
+---
+
+## Two repositories: where you tag, and where the release appears
+
+Development lives in the **private organisation repository**
+`AI20K-Build-Phase-Cohort-3/P-011`. Releases are published to the
+**public repository** `hungnguyen-1601/T011-rav19-planbench`, which no
+longer receives code.
+
+| | Repository |
+|---|---|
+| You push the tag here | `AI20K-Build-Phase-Cohort-3/P-011` (private) |
+| CI builds here | same — it is where the source is |
+| The release appears here | `hungnguyen-1601/T011-rav19-planbench` (public) |
+| People download from here | the public one |
+
+**Why the split is this way round, and not the other.** The permanent
+download link *is* the public repository's path, and that same path is
+compiled into every installed copy of the app as `updater.REPOSITORY` —
+a constant that is deliberately not configurable. Publishing somewhere
+else would break the link people were already sent, and would leave
+every existing install checking a repository that had stopped
+publishing, silently, forever. Distribution cannot move. Source can, and
+did.
+
+**What makes it work:** one guard and one secret.
+
+- `.github/workflows/desktop-release.yml` carries
+  `if: github.repository == 'AI20K-Build-Phase-Cohort-3/P-011'`. The
+  file exists in both repositories — it arrived in the public one with
+  the copied history — and the guard is what stops a tag pushed there
+  from building a second installer off a frozen tree and publishing it
+  over the real one. One file with a guard rather than two files,
+  because two copies drift and the drift surfaces at a release.
+- `secrets.PUBLISH_TOKEN` in the private repository: a fine-grained PAT
+  with `contents: write` on the public repository and nothing else. The
+  automatic `github.token` cannot be used — it is scoped to the
+  repository the job runs in.
+
+**Two consequences worth knowing before you go looking for them:**
+
+1. The tag in the public repository is created by `gh release create
+   --target main`, so it points at that repository's frozen `main`, not
+   at the commit that built the installer. Provenance is the identically
+   named tag in the private repository, and the SHA the installer stamps
+   into its System page — which will not resolve in the public
+   repository.
+2. The release body is a fixed sentence, not `--generate-notes`.
+   Generated notes summarise commits of the repository the build ran in,
+   which is the private one. Publishing its commit subjects on a public
+   release page is a leak with no upside.
 
 ---
 

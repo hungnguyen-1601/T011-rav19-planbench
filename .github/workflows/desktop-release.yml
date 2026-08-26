@@ -13,6 +13,18 @@
 # when pytest runs from a checkout.
 #
 #   git tag desktop-v0.2.0 && git push origin desktop-v0.2.0
+#
+# **Source and distribution live in different repositories**, and this
+# file runs in the one that has the source. Development moved to the
+# private organisation repository; the public repository it came from
+# keeps its releases, because the permanent download link is that
+# repository's path and every installed copy of the app has the same
+# path compiled into `updater.REPOSITORY`. Moving distribution would
+# have broken the link somebody sent a colleague last month and left
+# every install checking a repository that had stopped publishing.
+#
+# So the build happens here and the release is created *there*, with a
+# credential that only exists here. See PUBLISH_REPOSITORY below.
 
 name: desktop release
 
@@ -30,9 +42,29 @@ on:
 permissions:
   contents: write
 
+env:
+  #: Where releases are published, which is not where this runs. The
+  #: path is load-bearing rather than cosmetic: it is the permanent
+  #: download link, and it is compiled into every installed copy of the
+  #: app as `updater.REPOSITORY`.
+  PUBLISH_REPOSITORY: hungnguyen-1601/T011-rav19-planbench
+
+  #: Where the source lives, and so where an installer may be built.
+  #: The guard on the job below reads this.
+  SOURCE_REPOSITORY: AI20K-Build-Phase-Cohort-3/P-011
+
 jobs:
   build:
     runs-on: windows-latest
+    # **One file, two repositories, and it must only build in one of
+    # them.** This workflow is present in the distribution repository
+    # too — it arrived with the history that was copied there — and
+    # without this guard a tag pushed to that repository would build a
+    # second installer from a frozen tree and publish it over the real
+    # one. Reading the repository name rather than maintaining two
+    # copies of the file: two copies drift, and the drift would be
+    # discovered at a release.
+    if: github.repository == 'AI20K-Build-Phase-Cohort-3/P-011'
     steps:
       - uses: actions/checkout@v4
 
@@ -120,12 +152,32 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') || inputs.publish
         shell: pwsh
         env:
-          GH_TOKEN: ${{ github.token }}
+          # **Not `github.token`.** The automatic token is scoped to the
+          # repository the job runs in, and the release has to be created
+          # in another one. This is a fine-grained token with `contents:
+          # write` on the distribution repository and nothing else, held
+          # as a secret here.
+          GH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
         run: |
           $tag = '${{ steps.version.outputs.tag }}'
           # `latest.json` is an asset of the release it describes, not a
           # file at a fixed URL: a manifest that outlives its installer
           # is a hash mismatch waiting to happen.
+          #
+          # `--target` names the branch the tag is created on, because
+          # the tag does not exist in the distribution repository — the
+          # commit it was pushed against lives here, in the private one.
+          # The tag there is a label on a frozen tree; the build's real
+          # provenance is the identically named tag in this repository,
+          # and the SHA the installer stamps into its System page.
+          #
+          # **No `--generate-notes`.** It would summarise commits — of
+          # this repository, which is private. Publishing its commit
+          # subjects on a public release page is a leak with no upside,
+          # so the body says what shipped and nothing about how.
+          $version = '${{ steps.version.outputs.version }}'
           gh release create $tag dist/PlanBench-Setup.exe dist/latest.json `
-            --title "PlanBench $($tag -replace '^desktop-v', '')" `
-            --generate-notes
+            --repo $env:PUBLISH_REPOSITORY `
+            --target main `
+            --title "PlanBench $version" `
+            --notes "PlanBench desktop $version for Windows. Install or update from ``PlanBench-Setup.exe`` below; an installed copy offers this version on its next launch."
