@@ -34,6 +34,71 @@ Watch it **at one-minute intervals or slower** — see [Rate limit](#the-rate-li
 
 ---
 
+## Two remotes, and every push goes to both
+
+**Read this before your first push in a session.** `git push` alone is
+not enough here, and the way it is not enough is silent.
+
+```
+origin  https://github.com/hungnguyen-1601/T011-rav19-planbench   (public)
+org     https://github.com/AI20K-Build-Phase-Cohort-3/P-011       (private)
+```
+
+| Remote | What it is for | Releases run here? |
+|---|---|---|
+| `origin` | where the code lives and where CI builds | **yes, only here** |
+| `org` | the organisers' repository, where the work is submitted | no |
+
+So a session that finishes a piece of work does this:
+
+```powershell
+git push origin main                    # the working repository
+git push org main:refs/heads/<a-branch> # the submission copy, then open a PR
+```
+
+The `org` side goes to a branch and then a **pull request merged with
+"Create a merge commit"** — never "Squash and merge", which would
+collapse hundreds of commits into one and erase the contribution counts
+that are the point of submitting there. There is a longer account of
+that in `docs/antongduy/reports/2026-08-26/`.
+
+### Why it is this way round
+
+Two constraints meet, and only this arrangement satisfies both.
+
+**Distribution cannot move off `origin`.** The permanent download link
+*is* that repository's path, and the same path is compiled into every
+installed copy of the app as `updater.REPOSITORY` — a constant that is
+deliberately not configurable, because an updater that can be pointed at
+another repository is a way to install anything. Publishing elsewhere
+would break links already sent to people and leave every existing
+install checking a repository that had stopped publishing, silently and
+permanently.
+
+**CI cannot move to `org`.** Building there and publishing to `origin`
+would need a token stored as an Actions secret in `org`, and adding a
+secret needs admin on that repository. Measured, not assumed:
+
+```
+hungnguyen-1601/T011-rav19-planbench   private=False  admin=False  push=True
+AI20K-Build-Phase-Cohort-3/P-011       private=True   admin=False  push=True
+```
+
+Nobody on this side is an admin of either. So the build stays where it
+already works, and `org` receives a copy of the history rather than
+becoming the source of truth.
+
+### What this means when you are tempted to tidy it up
+
+A future session will notice the duplication and want to consolidate.
+Before doing that, know the cost: moving releases breaks the download
+link and every installed app; moving CI needs a repository admin who is
+not available. If the arrangement ever does change, the bridging step is
+to publish one release from **both** repositories, because every install
+older than the change looks only at the old one.
+
+---
+
 ## What makes this project's deployment unusual
 
 Six things differ from an ordinary web deployment, and each one has bitten:
