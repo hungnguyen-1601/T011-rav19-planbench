@@ -136,6 +136,7 @@ from planbench_analyst.routing import (
 )
 from planbench_analyst.runner import RoundOutcome, run_round
 from planbench_analyst.sanitize import Aliases, canonical, is_suspicious, label_components
+from planbench_analyst.scoring import CaseScore, RepeatScore, score_case, score_repeat
 from planbench_analyst.stdio_lane import FrameHost, FrameProvider, FrameStream
 from planbench_analyst.stdio_protocol import (
     Frame,
@@ -153,6 +154,10 @@ from planbench_analyst.traits_snapshot import (
 )
 
 __all__ = [
+    "CaseScore",
+    "RepeatScore",
+    "score_case",
+    "score_repeat",
     "ROUTING_FAILURES",
     "RouteRequest",
     "effective_menu",

@@ -209,3 +209,4 @@ uv.lock
 README.old.md
 build/
 dist/
+artifacts/analyst-experiments/

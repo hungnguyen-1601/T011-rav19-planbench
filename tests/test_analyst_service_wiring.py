@@ -51,6 +51,7 @@ PHASES_LANDED = [
     "routing",
     "runner",
     "sanitize",
+    "scoring",
     "stdio_lane",
     "stdio_protocol",
     "traits_snapshot",
