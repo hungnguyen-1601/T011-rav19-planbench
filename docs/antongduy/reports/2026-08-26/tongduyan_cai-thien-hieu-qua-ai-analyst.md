@@ -20,8 +20,8 @@ phase đó. Không chạy full suite cho tới khi xong plan — chỉ suite ch�
 | W1.6 cơ chế duyệt traits | **xong** (chờ người duyệt) | `3375b13` |
 | W1.7 feature flags | **xong** | `bd8f752` |
 | W1.8 snapshot bộ ba | **xong** | `6df43a4` |
-| B1 baseline real-host | **chặn** — cần ngân sách model | |
-| E1–E3 input ablation | **chặn** — sau B1 | |
+| B1 baseline real-host | **xong** | `4301df8` |
+| E1–E5b, 8 arm, o4-mini + local | **xong** | `651c069` |
 | W2 hybrid candidate generator | **xong** | `077319d` |
 | W3 tool routing | **xong** | `66f327f` |
 | W4 discriminated union + repair | **xong** | `30ecd57` |
@@ -675,3 +675,79 @@ Nhắc lại một điều đã ghi trong preregistration: chưa có holdout (3/
 `OFFICIAL_GOLDEN_READY=False`) nên **mọi kết quả E là exploratory**, không đủ
 cho quyết định deployment. Nếu muốn kết luận deployment thì phải dựng nốt 3 họ
 còn lại trước — đó cũng là một quyết định của An.
+
+---
+
+## B1 + E1-E5b - baseline và tám arm, chạy thật
+
+**Model:** `o4-mini` (An duyệt) và `qwen3:8b` local · 3 fixture × 3 repeat,
+bypass cache · Số chi tiết: `notes/2026-08-26/tongduyan_b1-va-tam-arm-do-that.md`
+
+### Hạ tầng đo (commit `4301df8`)
+
+- `services/analyst_service/planbench_analyst/scoring.py` - chấm một vòng thành
+  các endpoint preregistration đã nêu. Case đúng khi **mọi** repeat đúng (2/3
+  không phải 2/3 của một case; reliability là endpoint khác); mechanism không
+  kèm component không tính là đúng; abstain chấm theo nhãn chứ không theo việc
+  câu trả lời có đúng không; **không chấm draft**; case mất nhãn chấm 0 chứ
+  không pass.
+- `scripts/run_analyst_experiments.py` - một arm một lượt, mọi số ghi ra đĩa
+  kèm `runtime_config_checksum` + `eval_spec_checksum` + `prompt_version`.
+  Nhãn nạp **sau** khi vòng chạy xong; cache bị từ chối.
+
+### Kết quả (exploratory - 3/6 họ, không holdout)
+
+| Arm | Case | Repeat | Guard drop | Token TB |
+|---|---|---|---|---|
+| Sàn model-free | **2/3** | - | 0 | 0 |
+| `b1` | 1/3 | 3/9 | 8 | 9 399 |
+| `e1_measurements` | 0/3 | 3/9 | 9 | 16 781 |
+| `e2_timelines` | 0/3 | 0/9 | 8 | 17 395 |
+| `e3_knowledge` | 0/3 | **5/9** | 5 | 21 925 |
+| `e4a_shortlist` | 1/3 | 4/9 | **4** | 14 859 |
+| `e4b_options` | 0/3 | 2/9 | 7 | 15 600 |
+| `e5a_filtered_menu` | 0/3 | 0/9 | 10 | 23 863 |
+| `e5b_auto_route` | 0/3 | 0/9 | 10 | 25 178 |
+| `b1` trên qwen3:8b | 0/3 | 0/9 | 4 | 2 122 |
+
+Ba câu đọc được, và không hơn:
+
+1. **Không arm nào thắng sàn** trên ba fixture này.
+2. **Shortlist (W2)** là thay đổi duy nhất vừa giảm guard drop (8 → 4) vừa tăng
+   abstain đúng (4/9 → 7/9). **Knowledge (A5)** cho nhiều repeat đúng nhất
+   (5/9) với giá gấp 2,3 lần baseline.
+3. **Thêm block vào packet không trả công** ở cấu hình này: M1 giữ nguyên chất
+   lượng và gần gấp đôi token; M2 kéo xuống 0/9.
+
+Ba case × ba repeat **không đủ để so arm với arm** - đúng điều preregistration
+đã chốt trước (dưới 12 case chỉ báo counts). Đây là quan sát, không phải kết
+luận.
+
+### Cổng mới có răng (commit `651c069`)
+
+`notes/2026-08-26/tongduyan_analyst-bites-w0-w4.yaml`: **28 răng, tất cả cắn**,
+kèm đối chứng dương. Ba răng nhắm vào chính scorer (case pass theo repeat tốt
+nhất; nhãn mất mà vẫn báo điểm; draft bị chấm).
+
+Viết bộ răng này **bắt được một lỗi thật trong test của tôi**:
+`test_a_draft_is_not_scored` đang xanh vì lý do sai - provider hết script nên
+vòng kết thúc bằng abstention, draft chưa bao giờ tới scorer. Đã sửa để vòng
+thật sự kết thúc khi còn giữ draft (`revisions_exhausted`).
+
+---
+
+## Trạng thái cuối phiên
+
+**Xong:** W0, W1.0-W1.8 (trừ hành vi duyệt của người), W2, W3, W4, hạ tầng đo,
+B1 + 8 arm trên o4-mini, B1 trên local, 28 răng.
+
+**Chờ An:**
+
+1. **Duyệt traits** - `python scripts/review_algorithm_traits.py list` rồi
+   `approve <id> --by "An Tong"`. 6/6 row đang draft; anchor cả sáu đều
+   checkable.
+2. **Dựng nốt 3 họ golden còn thiếu** hay chấp nhận mọi kết quả là
+   exploratory - đây là trần cứng của mọi so sánh ở trên.
+3. **Có chạy tiếp E6-E10 + W5 (cascade/model selection) không**, và với ngân
+   sách nào. Đợt vừa rồi: 8 arm × 9 lượt o4-mini ≈ 1,4 triệu token vào + 0,3
+   triệu ra.
