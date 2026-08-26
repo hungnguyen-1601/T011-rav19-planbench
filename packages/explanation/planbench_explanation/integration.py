@@ -365,9 +365,18 @@ def reference_analyst(analysis: AnalysisRequest) -> AnalysisResponse:
             continue
         arguments = _arguments_for(card, observation)
         gaps = sorted(set(card.required_evidence) - analysis.available_evidence)
-        blocked = BLOCKED_BY_ARGUMENT.get(detection_type)
-        if blocked is not None:
-            gaps.append(f"{blocked[1]} for {blocked[0]}")
+        # Named apart from ``blocked`` above, and it has to stay that
+        # way: this line used to assign to that name, so the second
+        # detection in a packet compared its proposition against
+        # whatever the first one left behind. For most types that was
+        # ``None`` and the floor died with a TypeError; for
+        # ``narrow_gap_refusal`` it was a two-string tuple, the
+        # comparison quietly went on matching nothing, and the
+        # blocked-claim gate was off for every detection after the
+        # first — which is the leak the suite counts, arriving silently.
+        short_of = BLOCKED_BY_ARGUMENT.get(detection_type)
+        if short_of is not None:
+            gaps.append(f"{short_of[1]} for {short_of[0]}")
         if arguments is None:
             gaps.append(f"arguments for {card.tool_id}")
         proposals.append(

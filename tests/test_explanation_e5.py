@@ -1225,6 +1225,51 @@ def test_a_declared_gap_stops_the_proposal_it_blocks() -> None:
     assert response.abstained
 
 
+def test_the_blocked_claim_gate_is_still_on_for_the_second_detection() -> None:
+    """Two mapped detections, the second one blocked by a declared gap.
+
+    Eleven of the thirteen real packets carry three or four mapped
+    detection types and not one of the twelve golden fixtures carries
+    two, so the loop's second pass ran against nothing in a suite that
+    was entirely green. It compared the proposition against a name the
+    first pass had reassigned — here a pair of tool-argument strings —
+    so the comparison matched nothing and the blocked claim was
+    proposed anyway. A gate that is off says the same thing as a gate
+    that let something through, which is why this is checked by what
+    survives rather than by an exception.
+    """
+    leaky = packet(
+        observations=[observation(), observation("latency_spike")],
+        extra_unknowns=[
+            KnownUnknown(
+                id="latency_split",
+                blocks_claim_types=("expansion_latency_association",),
+                source="H4",
+            )
+        ],
+    )
+    response = reference_analyst(analysis(packet=leaky))
+    assert [item.proposition_type for item in response.proposals] == ["geometric_infeasibility"]
+
+
+def test_several_mapped_detections_do_not_kill_the_floor() -> None:
+    """The same reassignment, on the pair where it raised instead.
+
+    ``BLOCKED_BY_ARGUMENT`` holds one entry, so for every other
+    detection the second pass was comparing against ``None``. The floor
+    is what a real analyst is measured against; a floor that raises on
+    eleven of thirteen real packets is not a comparison anybody can run.
+    """
+    busy = packet(
+        observations=[observation("latency_spike"), observation("stuck_cluster")],
+    )
+    response = reference_analyst(analysis(packet=busy))
+    assert [item.proposition_type for item in response.proposals] == [
+        "expansion_latency_association",
+        "local_minimum_entrapment",
+    ]
+
+
 def test_a_mechanism_check_comes_back_not_checkable_rather_than_empty() -> None:
     """The stub is honest, and the shape is one production produces too."""
     live = analysis(packet=packet(observations=[observation("latency_spike")]))
