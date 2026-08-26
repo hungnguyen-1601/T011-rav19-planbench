@@ -10,7 +10,7 @@ be sitting on a full trace while every request dies at
 "the platform has nothing", which is a sentence about the platform that
 is not true.
 
-So nothing here builds a request. An :class:`EvidenceSource` is built
+So nothing here builds a request. A :class:`RoundEvidence` is built
 first, the available set is **derived** from it, and the request and the
 host are both handed that same object. They cannot disagree, because
 neither of them was asked.
@@ -24,17 +24,26 @@ which one it is holding.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+from types import MappingProxyType
 from typing import Protocol
 
+from planbench_analyst.identity import source_manifest_hash
 from planbench_explanation.budget import PLATFORM_BUDGET_CAP, AnalysisBudget
 from planbench_explanation.bundle import AnalystBundle
 from planbench_explanation.case_packet import CasePacket
+from planbench_explanation.host import (
+    EvidenceSink,
+    InMemoryEvidenceSink,
+    ReportEvidence,
+    ToolHost,
+)
 from planbench_explanation.integration import (
     PRE_SIDECAR_AVAILABLE_EVIDENCE,
     TYPICAL_AVAILABLE_EVIDENCE,
-    MockToolHost,
 )
 from planbench_explanation.packet_artifact import PacketArtifact
 from planbench_explanation.protocol import (
@@ -44,17 +53,43 @@ from planbench_explanation.protocol import (
     ToolResult,
     ToolSession,
 )
+from planbench_explanation.replay import ReplayPlanner
 from planbench_explanation.tools import ToolCatalog
 from planbench_explanation.versioning import artifact_checksum
 
 __all__ = [
-    "EvidenceSource",
+    "SIDECAR_EVIDENCE",
+    "platform_implementation_ref",
+    "InProcessHost",
+    "RoundEvidence",
     "PreparedRound",
     "RoundHostProtocol",
     "RoundSource",
     "evidence_for",
     "in_process_round",
 ]
+
+
+#: Where the checker code this host runs actually lives. Resolved once
+#: per process: hashing the tree is cheap but not free, and the tree does
+#: not change under a running round.
+_IMPLEMENTATION_GLOBS: tuple[str, ...] = (
+    "packages/explanation/planbench_explanation/*.py",
+)
+
+
+@lru_cache(maxsize=1)
+def platform_implementation_ref() -> str:
+    """A ref for the build whose checkers signed a result.
+
+    Content, not a version string somebody remembers to bump: a result
+    says which code produced it, and ``MockToolHost``'s answer to that
+    question was sixty-four zeros. Falls back to naming the absence
+    rather than to a placeholder that reads like a real build.
+    """
+    root = Path(__file__).resolve().parents[3]
+    digest = source_manifest_hash(root, globs=_IMPLEMENTATION_GLOBS)
+    return f"sha256:{digest[7:]}" if digest.startswith("sha256:") else f"sha256:{digest}"
 
 
 class RoundHostProtocol(Protocol):
@@ -71,7 +106,7 @@ class RoundHostProtocol(Protocol):
 
 
 @dataclass(frozen=True)
-class EvidenceSource:
+class RoundEvidence:
     """What this run recorded, as one object both halves are built from."""
 
     packet: CasePacket
@@ -93,7 +128,21 @@ class EvidenceSource:
         )
 
 
-def evidence_for(packet: CasePacket, *, sidecar_present: bool) -> EvidenceSource:
+#: The evidence a planning-input sidecar carries, in the cards' own
+#: vocabulary. Named here because the seam is where "this run recorded
+#: it" is decided; the host still answers ``planning_inputs_missing``
+#: when the file for a particular episode is not there.
+SIDECAR_EVIDENCE: frozenset[str] = frozenset(
+    {
+        "planning_inputs",
+        "planner_parameters",
+        "planner_implementation_version",
+        "seed_set",
+    }
+)
+
+
+def evidence_for(packet: CasePacket, *, sidecar_present: bool) -> RoundEvidence:
     """Derive the available set rather than accept one.
 
     A caller that passes its own set is a caller that can widen it, and
@@ -105,6 +154,15 @@ def evidence_for(packet: CasePacket, *, sidecar_present: bool) -> EvidenceSource
     available = set(
         TYPICAL_AVAILABLE_EVIDENCE if sidecar_present else PRE_SIDECAR_AVAILABLE_EVIDENCE
     )
+    if sidecar_present:
+        # What the sidecar is: the query the planner was handed, the
+        # configuration it ran under, the build that ran it and the seed
+        # it drew from. The typical set never named them, so the two
+        # replay checks were refused at admission on every run whether or
+        # not the file existed — a menu that offered a check nothing
+        # could reach, which reads to an analyst as the platform having
+        # no answer rather than as the analyst not asking.
+        available |= SIDECAR_EVIDENCE
     if packet.task.route is None:
         # No route was measured against the map, so the geometry a
         # clearance check needs does not exist for this run.
@@ -115,7 +173,7 @@ def evidence_for(packet: CasePacket, *, sidecar_present: bool) -> EvidenceSource
         # Nobody was ranked, so there is no pair and no per-episode
         # utility to decompose.
         available -= {"comparison_pair", "episode_decision_utility"}
-    return EvidenceSource(
+    return RoundEvidence(
         packet=packet,
         available_evidence=frozenset(available),
         sidecar_present=sidecar_present,
@@ -146,14 +204,42 @@ RoundSource = Callable[[PacketArtifact | CasePacket, AnalystBundle], PreparedRou
 class InProcessHost:
     """The dev lane: the platform's own host, called directly.
 
-    Wraps :class:`~planbench_explanation.integration.MockToolHost`
-    rather than reimplementing admission, because two implementations of
-    "may this tool run" is two answers waiting to disagree — and the one
-    that would be wrong is the one nobody graded against.
+    Wraps :class:`~planbench_explanation.host.ToolHost` — the real one,
+    with the four mechanism checkers behind it — rather than the stub
+    that answered ``checker_not_implemented`` to every check. A lane
+    measured against a stub measures whether the analyst *asks* for
+    verification, never whether asking gets it, and the two numbers were
+    being read as one.
+
+    Admission is still the host's :class:`ToolSession`. Two
+    implementations of "may this tool run" is two answers waiting to
+    disagree, and the one that would be wrong is the one nobody graded
+    against.
+
+    ``replay_planner`` stays an argument. The planner that re-runs a
+    recorded query lives in the simulator, and this module ships inside
+    the analyst image: importing it here would put the whole simulator
+    behind an import the container cannot satisfy. A host built without
+    one answers ``checker_not_implemented`` for the two replay checks,
+    which is what it is.
     """
 
-    def __init__(self, analysis: AnalysisRequest) -> None:
-        self._host = MockToolHost(analysis)
+    def __init__(
+        self,
+        analysis: AnalysisRequest,
+        evidence: ReportEvidence,
+        *,
+        implementation_ref: str,
+        sink: EvidenceSink | None = None,
+        replay_planner: ReplayPlanner | None = None,
+    ) -> None:
+        self._host = ToolHost(
+            analysis,
+            evidence,
+            implementation_ref=implementation_ref,
+            sink=sink or InMemoryEvidenceSink(),
+            replay_planner=replay_planner,
+        )
 
     @property
     def session(self) -> ToolSession:
@@ -173,6 +259,11 @@ def in_process_round(
     catalog: ToolCatalog,
     analysis_run_id: str,
     budget_cap: AnalysisBudget = PLATFORM_BUDGET_CAP,
+    implementation_ref: str | None = None,
+    sink: EvidenceSink | None = None,
+    sidecar_directory: Path | None = None,
+    sidecar_directories: Mapping[str, Path] = MappingProxyType({}),
+    replay_planner: ReplayPlanner | None = None,
 ) -> PreparedRound:
     """Prepare one round in this process, from one evidence source.
 
@@ -189,6 +280,14 @@ def in_process_round(
         sidecar = False
 
     source = evidence_for(packet, sidecar_present=sidecar)
+    # Built from the same packet the request is built from, and pointed
+    # at the same run's sidecars. A second packet here would be a host
+    # answering about a different run in the analyst's own round.
+    evidence = ReportEvidence.from_packet(
+        source.packet,
+        sidecar_directory=sidecar_directory,
+        sidecar_directories=sidecar_directories,
+    )
     analysis = AnalysisRequest(
         analysis_run_id=analysis_run_id,
         analyst_bundle_id=bundle.bundle_id,
@@ -200,7 +299,13 @@ def in_process_round(
     effective = bundle.requested_budget.capped_by(budget_cap)
     return PreparedRound(
         analysis=analysis,
-        host=InProcessHost(analysis),
+        host=InProcessHost(
+            analysis,
+            evidence,
+            implementation_ref=implementation_ref or platform_implementation_ref(),
+            sink=sink,
+            replay_planner=replay_planner,
+        ),
         effective_budget=effective,
         requested_budget_checksum=bundle.requested_budget.checksum,
         effective_budget_checksum=effective.checksum,

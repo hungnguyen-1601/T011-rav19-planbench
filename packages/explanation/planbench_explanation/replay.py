@@ -361,7 +361,7 @@ def check_rrt_convergence(evidence: ConvergenceEvidence, *, planner: ReplayPlann
     """
     if len(evidence.seeds) < MINIMUM_SEEDS_FOR_CONVERGENCE:
         raise CheckerRefusal(
-            "insufficient_seeds",
+            "seed_set_too_small",
             f"{len(evidence.seeds)} seed(s); a success rate needs at least "
             f"{MINIMUM_SEEDS_FOR_CONVERGENCE} draws to be a rate rather than an "
             "anecdote about the draws that happened",

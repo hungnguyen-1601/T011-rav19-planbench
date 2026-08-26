@@ -50,7 +50,7 @@ for package in ("schemas", "planning", "metrics", "benchmark", "decision", "expl
 sys.path.insert(0, str(ROOT / "services" / "simulator"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from plant_golden_runs import WORLDS, PlantedWorld  # noqa: E402
+from plant_golden_runs import WORLDS, PlantedWorld, build_reference  # noqa: E402
 
 from planbench_explanation.case_packet import (  # noqa: E402
     DecisionFacts,
@@ -70,6 +70,12 @@ from planbench_explanation.packet_artifact import (  # noqa: E402
 from planbench_explanation.packet_builder import (  # noqa: E402
     EpisodeTrace,
     observations_from_traces,
+)
+from planbench_explanation.sidecar_writer import (  # noqa: E402
+    PlanningInputRecorder,
+    read_sidecar,
+    snapshot_for,
+    validate_episode_attempts,
 )
 from planbench_explanation.versioning import (  # noqa: E402
     ExplanationArtifactHeader,
@@ -141,21 +147,46 @@ def _trace_from_parquet(path: Path, candidate_id: str, episode_context_id: str, 
     )
 
 
-def build(world: PlantedWorld, root: Path, trace_root: Path) -> tuple[Path, int, list[str]]:
-    """Run one staged world with both stacks and write its packet."""
+def build(
+    world: PlantedWorld, root: Path, trace_root: Path, reference: str
+) -> tuple[Path, int, list[str]]:
+    """Run one staged world with both stacks and write its packet.
+
+    The planning-input sidecar is written **beside the packet**, one
+    directory per candidate. Both candidates run the same conditions, so
+    they share an ``episode_context_id`` — that is what the id is, a hash
+    of the conditions — and one flat directory would have the second
+    stack's sidecar overwrite the first's under the same name. Per
+    candidate is also how the trace layout files them in production.
+
+    Without the sidecar the two replay checks have nothing to read, and
+    ``rrt_convergence`` is exactly the check that separates a sampling
+    planner running out of budget from a corridor that was never open.
+    A fixture for that family with no sidecar is a case whose mechanism
+    cannot be verified, however good the analyst is.
+    """
+    folder = root / world.case_id
+    folder.mkdir(parents=True, exist_ok=True)
     traces: list[EpisodeTrace] = []
     candidates: list[CandidateComponents] = []
     notes: list[str] = []
     routes: dict[str, object] = {}
+    sidecars: dict[str, Path] = {}
 
     radius = world.scenario.robot.radius
     inflation_margin = _hard_radius(world.map_data, world.scenario) - radius
     start = (world.scenario.start_pose.x, world.scenario.start_pose.y)
     goal = (world.scenario.goal_pose.x, world.scenario.goal_pose.y)
 
+    context = _context(world)
+    # The platform's own id: a hash of task profile, mission, variant and
+    # seed. The first draft of this script wrote "<case>:<candidate>",
+    # which is not what a run produces and is not a filename a sidecar
+    # can live under on Windows.
+    episode_context_id = context.episode_context_id
+
     for name in STACKS:
         candidate_id = f"{name}+dwa"
-        episode_context_id = f"{world.case_id}:{candidate_id}"
         candidates.append(
             CandidateComponents(
                 candidate_id=candidate_id,
@@ -164,23 +195,46 @@ def build(world: PlantedWorld, root: Path, trace_root: Path) -> tuple[Path, int,
                 local_controller_config="dwa_default",
             )
         )
+        sidecar_path = (
+            folder / "sidecar" / candidate_id / f"{episode_context_id}.planning_inputs.jsonl"
+        )
+        planning = PlanningInputRecorder.to_path(
+            sidecar_path,
+            run_id=world.case_id,
+            episode_context_id=episode_context_id,
+            candidate_id=candidate_id,
+            execution_environment_ref=reference,
+        )
+        sidecars[candidate_id] = sidecar_path.parent
         recorder = EpisodeTraceRecorder(
-            _context(world),
+            context,
             candidate_id,
             root=trace_root,
             # The recorder's vocabulary, not the packet's: a planted world is
             # a reference run, and the trace address says so.
             evidence_class="reference",
         )
-        with recorder:
-            run = run_stack(
-                world.map_data,
-                world.scenario,
-                DWAPlanner(),
-                _planner(name),
-                ReplanningConfig(enabled=True, max_replans=2),
-                recorder=recorder,
-            )
+        try:
+            with recorder:
+                run = run_stack(
+                    world.map_data,
+                    world.scenario,
+                    DWAPlanner(),
+                    _planner(name),
+                    ReplanningConfig(enabled=True, max_replans=2),
+                    recorder=recorder,
+                    planning_recorder=planning,
+                )
+        except Exception:
+            planning.abandon()
+            raise
+        written = planning.close(expected_attempts=run.replan_attempts + 1)
+        # Read it back the way a checker will, so a sidecar nothing can
+        # consume fails here rather than inside a graded round.
+        _header, reloaded = read_sidecar(sidecar_path)
+        validate_episode_attempts(reloaded, expected_attempts=len(written))
+        for record in reloaded:
+            snapshot_for(sidecar_path, record)
         planned = tuple((point.x, point.y) for point in run.plan.path) or None
         # Geometry along the route the stack set out on — or, when the
         # planner refused and there is no route, along the straight line
@@ -202,9 +256,9 @@ def build(world: PlantedWorld, root: Path, trace_root: Path) -> tuple[Path, int,
         # task's own start-to-goal line stands in as the reference — the
         # corridor the refusal is about — and the note says so, because a
         # reference nobody drove is a different thing from a plan.
-        reference = planned or (start, goal)
+        reference_line = planned or (start, goal)
         traces.append(
-            _trace_from_parquet(recorder.path, candidate_id, episode_context_id, reference)
+            _trace_from_parquet(recorder.path, candidate_id, episode_context_id, reference_line)
         )
         if not planned:
             notes.append(
@@ -249,8 +303,6 @@ def build(world: PlantedWorld, root: Path, trace_root: Path) -> tuple[Path, int,
         evidence_class="research",
     )
 
-    folder = root / world.case_id
-    folder.mkdir(parents=True, exist_ok=True)
     provenance = PacketProvenance(
         packet_ref=f"fixtures/golden/visible/{world.case_id}/packet.json",
         packet_checksum=packet_checksum(packet),
@@ -271,6 +323,9 @@ def build(world: PlantedWorld, root: Path, trace_root: Path) -> tuple[Path, int,
         ),
         encoding="utf-8",
     )
+    notes.append(
+        "sidecars: " + ", ".join(f"{name} -> {path.name}" for name, path in sidecars.items())
+    )
     return folder, len(observations), notes
 
 
@@ -281,9 +336,10 @@ def main() -> int:
 
     print(f"{len(WORLDS)} of 6 families are staged; the other 3 are not, and no macro")
     print("average over these is comparable with a bar agreed for six.")
+    reference = build_reference()
     with tempfile.TemporaryDirectory(prefix="golden-traces-") as scratch:
         for world in WORLDS:
-            folder, sightings, notes = build(world, args.root, Path(scratch))
+            folder, sightings, notes = build(world, args.root, Path(scratch), reference)
             for note in notes:
                 print(f"    note: {note}")
             print(f"  built  {world.case_id:16} {sightings} observation(s)  {folder.name}")

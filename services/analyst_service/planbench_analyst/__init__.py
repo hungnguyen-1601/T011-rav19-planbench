@@ -109,11 +109,13 @@ from planbench_analyst.prompts import (
 )
 from planbench_analyst.restricted import RestrictedArtifact, case_token, public_error
 from planbench_analyst.round_host import (
-    EvidenceSource,
+    InProcessHost,
     PreparedRound,
+    RoundEvidence,
     RoundHostProtocol,
     evidence_for,
     in_process_round,
+    platform_implementation_ref,
 )
 from planbench_analyst.runner import RoundOutcome, run_round
 from planbench_analyst.sanitize import Aliases, canonical, is_suspicious, label_components
@@ -145,7 +147,9 @@ __all__ = [
     "AnalystRefusal",
     "CheckFeedback",
     "Blocked",
-    "EvidenceSource",
+    "InProcessHost",
+    "RoundEvidence",
+    "platform_implementation_ref",
     "Frame",
     "FrameHost",
     "FrameProvider",

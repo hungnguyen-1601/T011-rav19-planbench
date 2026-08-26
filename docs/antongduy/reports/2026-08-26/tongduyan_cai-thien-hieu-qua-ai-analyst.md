@@ -10,8 +10,8 @@ phase đó. Không chạy full suite cho tới khi xong plan — chỉ suite ch�
 
 | Phase | Trạng thái | Commit |
 |---|---|---|
-| W0 nền đánh giá + preregistration | **xong** | xem git log — dòng `Lay the evaluation foundation…` |
-| W1.0 ToolHost thật vào InProcessHost | đang làm | |
+| W0 nền đánh giá + preregistration | **xong** | `8299a61` |
+| W1.0 ToolHost thật vào InProcessHost | **xong** | `d25914a` |
 | W1.1–W1.8 | chưa | |
 | B1 baseline real-host | chưa | |
 | E1–E3 input ablation | chưa | |
@@ -126,3 +126,129 @@ test_analyst_service_wiring + test_explanation_e5 + test_explanation_e6` —
   (`evidence_identity_checksum` không đổi); đổi tên
   `round_host.EvidenceSource` → `RoundEvidence` để hết đụng tên với protocol
   `host.EvidenceSource`.
+
+---
+
+## W1.0 — `ToolHost` thật vào `InProcessHost`
+
+### Đã làm gì
+
+**1. Lane dev chạy host thật của platform.**
+
+`round_host.InProcessHost` bọc `MockToolHost` (admission thật, execution
+stub, mọi mechanism check trả `checker_not_implemented`). Đo trên đó chỉ đo
+**analyst có xin verify hay không**, không đo xin thì có được gì — hai số
+đang bị đọc thành một. Nay bọc `planbench_explanation.host.ToolHost`, có 4
+checker thật phía sau; admission vẫn là `ToolSession` của host (một cách trả
+lời "tool này được chạy không", không phải hai).
+
+`replay_planner` là tham số, không import: `SimulatorReplayPlanner` nằm ở
+`services/simulator`, mà `round_host` được COPY vào image analyst — import
+thẳng là kéo cả simulator vào một image không thể cài nó.
+
+Đổi tên `round_host.EvidenceSource` → `RoundEvidence` (đụng tên với protocol
+`host.EvidenceSource`).
+
+**2. Fact query không bị mất khi đổi host.**
+
+`MockToolHost._serve` là chỗ duy nhất đọc packet cho 5 fact/navigation tool;
+`ToolHost` trả `tool_unavailable` cho tất cả. Đổi host mà không chuyển phần
+đọc thì một vòng vừa verify được mechanism vừa báo "known unknowns của chính
+packet không có sẵn". Tách ra
+`packages/explanation/planbench_explanation/packet_facts.py::serve_from_packet`,
+**cả hai host cùng gọi**; khác nhau ở chữ ký: stub đóng dấu ref toàn số 0 và
+`mock://`, host thật lưu qua sink và ký bằng build
+(`platform_implementation_ref()` = hash nội dung code checker).
+
+**3. Nguồn bằng chứng thật cho fixture.**
+
+`ReportEvidence.from_packet(packet, sidecar_directory/-ies)`: route trong
+`task.route` đăng ký cho mọi candidate dưới một region id
+(`host.ROUTE_REGION_ID = "route"`), nên `gap_vs_footprint` có hình học để so
+— đúng hình học analyst được xem. Fixture không có scoring report nên
+`latency_vs_expanded_nodes` trả `not_checkable` (W1.1 sẽ đưa candidate
+measurements vào packet, không phải bịa dòng ở đây).
+
+**4. Sidecar theo từng candidate, và fixture giờ có sidecar.**
+
+`ReportEvidence` nhận thêm `sidecar_directories: Mapping[candidate_id, Path]`.
+Hai candidate của một world chạy **cùng điều kiện** nên chung
+`episode_context_id` (id là hash của điều kiện) — một thư mục phẳng thì file
+thứ hai đè tên file thứ nhất.
+
+`build_golden_fixtures.py` giờ (a) dùng `episode_context_id` **thật** của
+platform thay cho `"<case>:<candidate>"` tự chế — chuỗi cũ còn chứa `:`, không
+đặt được tên file trên Windows; (b) bật `planning_recorder` khi `run_stack`,
+ghi sidecar + snapshots vào
+`fixtures/golden/visible/<case>/sidecar/<candidate>/`, đọc lại và validate
+ngay lúc build.
+
+**5. Seam công nhận bằng chứng sidecar.**
+
+`TYPICAL_AVAILABLE_EVIDENCE` chưa bao giờ có `planning_inputs`,
+`planner_parameters`, `planner_implementation_version`, `seed_set` ⟹
+`rrt_convergence` và `replay_global_plan` **bị từ chối ngay ở admission trên
+mọi run**, có sidecar hay không. Menu chào một check không ai với tới được,
+và analyst đọc đó là "platform không có câu trả lời". Thêm
+`round_host.SIDECAR_EVIDENCE`, cộng vào available set khi `sidecar_present`.
+
+### Ba lỗi platform lộ ra khi chạy đường thật
+
+1. **`ReportEvidence` mất hai method.** `replay_evidence` và
+   `convergence_evidence` (host.py cũ, ~695–762) bị thụt vào **trong thân
+   `_positive`** — code chết từ commit E6b `a87a9af`, không thuộc class nào.
+   Chưa ai thấy vì `_replay`/`_convergence` return sớm khi `replay_planner is
+   None`, và không test nào dựng `ToolHost` với planner thật. Đưa lại vào
+   class.
+2. **Hai từ vựng cho một refusal.** Checker raise `insufficient_seeds`, card
+   khai `seed_set_too_small` ⟹ `session.record` ném `ProtocolRejection:
+   unknown_failure_code` và **giết cả vòng**. Card là contract trên dây, nên
+   đổi mã trong checker cho khớp card.
+3. **Còn nhiều mã chưa khai.** `replay_did_not_reproduce`,
+   `replay_inputs_mismatched`, `replay_harness_incomplete`,
+   `seed_counted_twice`, `budget_parameter_not_recorded`, và các mã
+   `ReplayUnavailable` đều **không** nằm trong `failure_modes` của hai card
+   replay. `ToolHost._declared` giờ hạ mã lạ xuống `host_internal_error` (mã
+   host hợp lệ) thay vì để cả analysis chết vì một chữ. Sửa gốc = card khai
+   đủ + bump `TOOL_CATALOG_VERSION` — **đổi contract trên dây, để cùng đợt W3**.
+
+### Test
+
+`tests/test_analyst_real_host.py` (mới, 12 test):
+
+- **Đường chính:** proposal → `gap_vs_footprint` thật → `supported`
+  (0.25 m so với 0.66 m cần) → `promote()` ra claim. Đây là DoD smoke của W1.0.
+- Result ký bằng build thật, artifact không phải `mock://`.
+- Region packet không mang ⟹ `region_not_resolved`, không đo bừa.
+- Fact query (`get_known_unknowns`) vẫn trả lời trên host thật.
+- Request và host cùng một packet; packet khác ⟹ `EvidenceMismatch` lúc dựng.
+- Có sidecar ⟹ `rrt_convergence` **được nhận** và checker từ chối bằng lý do
+  của chính nó (`seed_set_too_small`: 1 episode = 1 seed); không sidecar ⟹
+  không được chào.
+- Mỗi candidate đọc sidecar của mình; candidate không có thư mục ⟹ không có
+  bằng chứng.
+- **Replay dựng lại đúng câu trả lời**: `check_replay_global_plan` trên sidecar
+  rrt-001 cho `supported`, `attempts_replayed == attempts_recorded`.
+- Mã refusal card không khai ⟹ `host_internal_error`, vòng còn sống.
+
+Chạy: 13 suite chạm tới (analyst real_host/runner/eval_spec/harness/bundle/
+wiring/knowledge/identity + explanation e5/e6/e6b/contracts/promotion) —
+**363 passed**. Thêm `test_explanation_gate` + `test_analyst_budget_artifact`
+xanh.
+
+**`tests/test_host_parity_golden.py` fail 5 test — có sẵn, không do W1.0.**
+Đã `git stash` toàn bộ thay đổi và chạy lại: vẫn fail y hệt. Lệch chữ số cuối
+của float (`…915` vs `…916`) giữa máy này và máy sinh fixture; không đụng gì
+tới simulator/planning trong phase này.
+
+### Nợ ghi lại
+
+- `rrt_convergence` chưa verify được family của nó: cần ≥8 seed, fixture mới
+  có 1 episode ⟹ 1 seed. Cần một planted run nhiều seed cho
+  `rrt_sample_starvation`.
+- Sidecar ghi `execution_environment_ref` = build lúc plant (`git:8299a61…`).
+  Replay từ build khác sẽ `replay_did_not_reproduce` — đúng thiết kế, nhưng
+  nghĩa là fixture phải rebuild khi muốn dùng replay ở build mới.
+- `get_map_region_features` vẫn `tool_unavailable`: card đòi `samples_taken`,
+  `RouteFeatures` không giữ số này. Thêm field là đổi schema packet.
+- Card replay khai thiếu failure mode (điểm 3 ở trên) — W3.

@@ -37,6 +37,7 @@ from collections.abc import Callable, Iterable
 from planbench_explanation.catalog import TOOL_CATALOG
 from planbench_explanation.detectors import Observation
 from planbench_explanation.ledger import EvidenceRef, HypothesisProposal, RequestedCheck
+from planbench_explanation.packet_facts import serve_from_packet
 from planbench_explanation.propositions import PropositionType
 from planbench_explanation.protocol import (
     AnalysisRequest,
@@ -223,90 +224,14 @@ class MockToolHost:
     ) -> tuple[dict[str, float], tuple[EvidenceReference, ...]] | None:
         """What the packet can actually answer, or ``None``.
 
-        ``None`` where the packet does not hold the data — the trace
-        tools, mostly. The card says which measurements a completed
-        result owes, and a stub that cannot produce them says so rather
-        than filling in zeros.
+        The reading itself moved to
+        :func:`~planbench_explanation.packet_facts.serve_from_packet` at
+        W1.0, because the real host needs the same answers and two
+        readings of one packet is two answers waiting to disagree. What
+        stays here is the *stamping*: a mock implementation ref and a
+        ``mock://`` artifact, so a transcript still says which host ran.
         """
-        packet = self.analysis.packet
-        if card.tool_id == "get_objective_decomposition":
-            waterfall = packet.decision.waterfall
-            contributions = {
-                f"contribution_{bar.objective.lower()}": bar.contribution for bar in waterfall.bars
-            }
-            return (
-                {
-                    "delta_utility_mean": waterfall.delta_utility_mean,
-                    "delta_utility_median": waterfall.delta_utility_median,
-                    "n_episodes": float(waterfall.n_episodes),
-                    **contributions,
-                },
-                (),
-            )
-        if card.tool_id == "get_candidate_contrast":
-            # The lattice names a component only in the two verdicts that
-            # are about one; the refusals name none, and counting them as
-            # an axis would report attribution where the reading declined
-            # to attribute.
-            axes = {finding.subject for finding in packet.lattice if finding.subject is not None}
-            return (
-                {
-                    "n_findings": float(len(packet.lattice)),
-                    "n_differing_axes": float(len(axes)),
-                },
-                (),
-            )
-        if card.tool_id == "get_known_unknowns":
-            blocked = {
-                kind for unknown in packet.known_unknowns for kind in unknown.blocks_claim_types
-            }
-            return (
-                {
-                    "n_known_unknowns": float(len(packet.known_unknowns)),
-                    "n_blocked_claim_types": float(len(blocked)),
-                },
-                (),
-            )
-        if card.tool_id == "get_episode_observations":
-            if not packet.observations:
-                return None
-            first = packet.observations[0]
-            episodes = tuple(
-                EvidenceReference(
-                    kind="episode",
-                    ref=f"episode:{observation.worst_episode_context_id}",
-                    label=f"worst {observation.type}",
-                )
-                for observation in packet.observations
-                if observation.worst_episode_context_id is not None
-            )
-            if not episodes:
-                return None
-            return (
-                {
-                    "n_observations": float(len(packet.observations)),
-                    "episodes_seen": float(first.episodes_seen),
-                    "episodes_total": float(first.episodes_total),
-                    "prevalence": first.prevalence,
-                },
-                episodes,
-            )
-        if card.tool_id == "find_exemplar_episodes":
-            chosen = packet.representative_episodes
-            if chosen is None or not chosen.exemplars:
-                return None
-            return (
-                {"n_exemplars": float(len(chosen.exemplars))},
-                tuple(
-                    EvidenceReference(
-                        kind="episode",
-                        ref=f"episode:{exemplar.episode_context_id}",
-                        label=exemplar.role,
-                    )
-                    for exemplar in chosen.exemplars
-                ),
-            )
-        return None
+        return serve_from_packet(card, self.analysis.packet)
 
 
 def _card_named(catalog, tool_id: str):  # type: ignore[no-untyped-def]
