@@ -46,14 +46,33 @@ người khác chết và mọi bản đã cài mất cập nhật, im lặng. C
 
 ---
 
-## 2. Commit
+## 2. Nhánh
+
+**Trước khi bắt đầu một feature, tạo nhánh mới. Tuyệt đối không làm việc
+trên `main`, ở bất kỳ repo nào.**
+
+```powershell
+git switch -c tongduyan_<mô-tả-ngắn>    # trước dòng code đầu tiên, không phải trước commit đầu tiên
+```
+
+Đây là luật về **nơi làm việc**, không phải luật cấm chạm `main`. Việc
+đã xong vẫn về `main` bằng merge rồi push, và release vẫn cần tag trên
+`main` — xem `docs/DESKTOP-RELEASE.md`. Cái bị cấm là checkout `main`
+rồi sửa code ngay trên đó.
+
+Nếu phát hiện mình đang đứng trên `main` mà đã có thay đổi chưa commit:
+tạo nhánh từ đúng chỗ đang đứng (`git switch -c <tên>`) — thay đổi đi
+theo, không mất gì — rồi mới commit.
+
+---
+
+## 3. Commit
 
 - Tiền tố `TongDuyAn - `, **đúng một dòng**, **tiếng Anh**. Chi tiết để
   trong report, không nhồi vào commit message.
 - **Không tự ý commit.** Chỉ commit khi An bảo. Xong việc thì dừng và
   báo cáo.
-- Khi được bảo commit: làm trên **nhánh riêng**, và tách theo từng việc
-  thay vì gom một cục.
+- Khi được bảo commit: tách theo từng việc thay vì gom một cục.
 - **Chỉ stage đúng file thuộc việc đang làm.** An thường làm song song
   một mảng khác trong cùng cây; quét `git add -A` là cách chắc chắn nhất
   để cuốn nhầm việc của An vào commit của mình.
@@ -67,7 +86,7 @@ mình không tạo ra.
 
 ---
 
-## 3. Secret
+## 4. Secret
 
 Hook `.ai-log` ghi lại **tool call nguyên văn**, nên mọi credential xuất
 hiện trong phiên đều rơi vào đó và đi thẳng vào commit. GitHub push
@@ -84,7 +103,7 @@ protection đã chặn push vì lý do này hai lần trong một buổi.
 
 ---
 
-## 4. Docs — `docs/antongduy/`
+## 5. Docs — `docs/antongduy/`
 
 Thư mục này **được commit** (ngoại lệ so với thói quen gitignore), vì cả
 team đọc.
@@ -106,9 +125,13 @@ Hai phiên lập kế hoạch khác nhau ⇒ **hai file plan riêng**, dù cùng
 
 ---
 
-## 5. Test
+## 6. Test
 
 - **Không chạy full suite** trừ khi An bảo. Chỉ chạy phần vừa sửa.
+- **Làm theo plan thì không full suite cho tới khi plan xong.** Từng
+  phase chỉ chạy test của phần vừa sửa. Full suite là việc của lúc hết
+  plan, và khi chạy thì cho chạy nền rồi trả báo cáo ngay chứ không ngồi
+  đợi.
 - Test ở repo này chủ yếu **đọc source và pin quyết định**, kèm văn xuôi
   giải thích *vì sao* quyết định đó tồn tại. Giữ nguyên lối đó.
 - **Đừng pin thứ không phải hành vi.** Assertion bám vào thụt đầu dòng,
@@ -122,7 +145,7 @@ Hai phiên lập kế hoạch khác nhau ⇒ **hai file plan riêng**, dù cùng
 
 ---
 
-## 6. Chạy và deploy
+## 7. Chạy và deploy
 
 - **Không tự restart server.** An tự chạy; đừng bật `next dev` thứ hai,
   nó xoá `.next` của An.
@@ -139,7 +162,7 @@ Hai phiên lập kế hoạch khác nhau ⇒ **hai file plan riêng**, dù cùng
 
 ---
 
-## 7. Bất biến nghiệp vụ dễ phá
+## 8. Bất biến nghiệp vụ dễ phá
 
 Những thứ này đã bị phá ít nhất một lần và mỗi lần đều tốn một buổi:
 
@@ -163,9 +186,26 @@ Những thứ này đã bị phá ít nhất một lần và mỗi lần đều 
 
 ---
 
-## 8. Công cụ
+## 9. Công cụ
+
+**Được phép dùng tool, skill và subagent bất cứ lúc nào thấy nhanh hơn —
+đứng cho phép thường trực, không phải xin từng lần.** An đã nói rõ điều
+này nhiều lần; hỏi lại mỗi lần chỉ tốn một lượt.
+
+Lúc đáng dùng nhất là khi việc **rộng theo bề ngang**: quét nhiều file
+tìm một pattern, khảo sát một vùng chưa quen, chạy nhiều nhánh sửa độc
+lập song song. Việc hẹp và đã biết rõ file nào thì làm thẳng nhanh hơn.
+
+Hai thứ vẫn phải tự giữ dù giao cho ai:
+
+- Kết quả subagent trả về là **báo cáo, không phải bằng chứng**. Khẳng
+  định nào quan trọng thì tự kiểm lại — chạy test, đọc file, gọi API —
+  trước khi báo cho An là xong.
+- Luật ở file này áp cho cả subagent: nhánh riêng, không tự commit,
+  không stage file ngoài phạm vi việc đang làm.
 
 CodeGraph MCP (`codegraph_*`) đã index sẵn toàn bộ symbol và edge. Dùng
 nó cho câu hỏi **cấu trúc** (ai gọi gì, sửa cái này vỡ cái nào, X định
 nghĩa ở đâu); dùng grep cho câu hỏi **văn bản** (nội dung chuỗi, comment,
-log message).
+log message). Với câu hỏi cấu trúc, codegraph rẻ hơn hẳn việc mở một
+subagent đi đọc file — nó chính là bản index đã dựng sẵn.
