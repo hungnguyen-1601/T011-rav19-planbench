@@ -60,6 +60,7 @@ from planbench_analyst.eval_spec import (
     load_eval_spec,
     refs_satisfy,
 )
+from planbench_analyst.features import FeatureRefusal, RoundFeatures
 from planbench_analyst.guard import Blocked, GuardResult, critique, guard, quantities_in
 from planbench_analyst.harness import (
     CaseResult,
@@ -127,6 +128,8 @@ from planbench_analyst.stdio_protocol import (
 )
 
 __all__ = [
+    "RoundFeatures",
+    "FeatureRefusal",
     "wilson_interval",
     "refs_satisfy",
     "quality_pass_hat_k",

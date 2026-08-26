@@ -45,6 +45,7 @@ from planbench_analyst.analyst import (
     RoundReport,
     propose,
 )
+from planbench_analyst.features import FeatureRefusal, RoundFeatures
 from planbench_analyst.guard import GuardResult, guard
 from planbench_analyst.knowledge_provider import query_for, retrieve, trait_offers
 from planbench_analyst.packet_view import build_packet_view
@@ -124,7 +125,7 @@ def run_round(
     *,
     max_revisions: int = DEFAULT_MAX_REVISIONS,
     timeout_s: float = DEFAULT_TIMEOUT_S,
-    knowledge: bool = False,
+    features: RoundFeatures | None = None,
     traits: TraitSource | None = None,
 ) -> RoundOutcome:
     """Drive one analysis round to one of its four endings.
@@ -145,10 +146,17 @@ def run_round(
     """
     analysis = prepared.analysis
     budget = prepared.effective_budget
+    features = features or RoundFeatures()
+    if traits is not None and not features.traits:
+        raise FeatureRefusal(
+            "a trait source was handed to a round whose feature vector does not "
+            "declare traits. Refused rather than used: the checksum would say the "
+            "arm was off while the prompt carried the natures."
+        )
 
     offered: tuple[ResolvedReference, ...] = ()
     rejected_offers = 0
-    if knowledge:
+    if features.knowledge:
         outcome = resolve_candidates(retrieve(query_for(analysis.packet)))
         offered = outcome.resolved
         rejected_offers = len(outcome.rejected)
@@ -156,18 +164,19 @@ def run_round(
     view = build_packet_view(
         analysis.packet,
         tool_catalog_version=analysis.catalog.catalog_version,
-        traits=traits,
+        traits=traits if features.traits else None,
         knowledge=offered,
+        features=features,
     )
 
     started = time.monotonic()
     events: list[str] = [f"start:{analysis.analysis_run_id}"]
-    if knowledge:
+    if features.knowledge:
         # Counted in the transcript, both halves. "Nothing was offered"
         # and "five things were offered and none resolved" are different
         # runs, and only one of them is a retrieval problem.
         events.append(f"knowledge:{len(offered)}/{len(offered) + rejected_offers}")
-    if traits is not None:
+    if features.traits and traits is not None:
         events.append(f"traits:{len(trait_offers(analysis.packet, traits))}")
     reports: list[RoundReport] = []
     results: list[ToolResult] = []

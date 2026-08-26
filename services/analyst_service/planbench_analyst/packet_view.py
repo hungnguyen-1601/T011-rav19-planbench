@@ -36,6 +36,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from planbench_analyst.features import RoundFeatures
 from planbench_analyst.knowledge_provider import trait_offers
 from planbench_analyst.sanitize import Aliases, label_components
 from planbench_benchmark.traits_store import TraitSource
@@ -313,6 +314,7 @@ def build_packet_view(
     aliases: Aliases | None = None,
     traits: TraitSource | None = None,
     knowledge: Sequence[ResolvedReference] = (),
+    features: RoundFeatures | None = None,
 ) -> PacketView:
     """Index one packet, or refuse to read it.
 
@@ -321,6 +323,7 @@ def build_packet_view(
     view that read the version from the catalog module would agree with
     itself while disagreeing with the bundle being graded.
     """
+    features = features or RoundFeatures()
     mismatches = _header_mismatches(packet, tool_catalog_version=tool_catalog_version)
     if mismatches:
         raise PacketViewRefusal(
@@ -393,7 +396,7 @@ def build_packet_view(
     # What each candidate scored. The decomposition says how a pair
     # differed; this says what either of them did, and it is the first
     # thing a reader asking "why did this one win" reaches for.
-    for measured in packet.measurements:
+    for measured in packet.measurements if features.measurements else ():
         for name, value in sorted(measured.recorded.items()):
             facts.append(
                 Fact(
@@ -568,7 +571,7 @@ def build_packet_view(
     # candidate named two values as soon as a packet held both their
     # timelines — which W1.2's fixtures do. The index refuses a
     # duplicate ref outright, so the whole view was unbuildable.
-    for timeline in packet.timelines:
+    for timeline in packet.timelines if features.timelines else ():
         for point in timeline.points:
             base = (
                 f"episode:{timeline.episode_context_id}/{timeline.candidate_id}/"

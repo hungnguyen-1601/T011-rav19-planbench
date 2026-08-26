@@ -21,6 +21,7 @@ import pytest
 from test_analyst_packet_view import observation, packet
 from test_analyst_runner import MEASURED_TASK, answer, hypothesis, prepared, scripted
 
+from planbench_analyst.features import RoundFeatures
 from planbench_analyst.knowledge_provider import query_for, retrieve
 from planbench_analyst.packet_view import build_packet_view
 from planbench_analyst.runner import run_round
@@ -61,7 +62,9 @@ def test_a_round_offers_nothing_unless_it_was_asked_to() -> None:
 
 
 def test_asking_for_knowledge_puts_the_count_in_the_transcript() -> None:
-    outcome = run_round(prepared(), scripted(answer(hypothesis())), knowledge=True)
+    outcome = run_round(
+        prepared(), scripted(answer(hypothesis())), features=RoundFeatures(knowledge=True)
+    )
     (event,) = [item for item in outcome.events if item.startswith("knowledge:")]
     resolved, offered = event.removeprefix("knowledge:").split("/")
     assert int(offered) >= int(resolved) >= 1
@@ -70,14 +73,19 @@ def test_asking_for_knowledge_puts_the_count_in_the_transcript() -> None:
 def test_the_transcript_separates_nothing_offered_from_nothing_resolved() -> None:
     """ "No entry matched" and "five matched and none resolved" are
     different runs, and only one of them is a retrieval problem."""
-    outcome = run_round(prepared(), scripted(answer(hypothesis())), knowledge=True)
+    outcome = run_round(
+        prepared(), scripted(answer(hypothesis())), features=RoundFeatures(knowledge=True)
+    )
     (event,) = [item for item in outcome.events if item.startswith("knowledge:")]
     assert "/" in event
 
 
 def test_asking_for_traits_counts_the_natures_this_packet_could_use() -> None:
     outcome = run_round(
-        prepared(), scripted(answer(hypothesis())), traits=traits_for("dwa")
+        prepared(),
+        scripted(answer(hypothesis())),
+        features=RoundFeatures(traits=True),
+        traits=traits_for("dwa"),
     )
     assert any(event.startswith("traits:") for event in outcome.events)
 
@@ -154,7 +162,7 @@ def test_each_input_can_be_switched_without_the_other(knowledge: bool, traits: b
     outcome = run_round(
         prepared(),
         scripted(answer(hypothesis())),
-        knowledge=knowledge,
+        features=RoundFeatures(knowledge=knowledge, traits=traits),
         traits=traits_for("dwa") if traits else None,
     )
     assert any(item.startswith("knowledge:") for item in outcome.events) is knowledge

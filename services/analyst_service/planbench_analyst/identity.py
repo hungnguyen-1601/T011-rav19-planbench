@@ -31,6 +31,7 @@ from collections.abc import Collection, Mapping
 from pathlib import Path
 from typing import Any
 
+from planbench_analyst.features import RoundFeatures
 from planbench_explanation.versioning import artifact_checksum
 
 __all__ = [
@@ -168,6 +169,7 @@ def runtime_config_checksum(
     catalog_version: str,
     source_manifest_hash: str,
     retrieval_config: Mapping[str, Any] | None = None,
+    features: RoundFeatures | None = None,
 ) -> str:
     """Identity of everything except the packet.
 
@@ -183,5 +185,9 @@ def runtime_config_checksum(
             "retrieval": flatten_config(retrieval_config or {}),
             "catalog_version": catalog_version,
             "source": source_manifest_hash,
+            # W1.7. Two rounds shown different halves of one packet are
+            # two systems, and without this they would share a checksum
+            # — the second reading would look like model variance.
+            "features": (features or RoundFeatures()).as_config,
         }
     )

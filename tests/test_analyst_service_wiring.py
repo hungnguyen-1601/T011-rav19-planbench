@@ -36,6 +36,7 @@ PHASES_LANDED = [
     "bundle_builder",
     "cache",
     "eval_spec",
+    "features",
     "guard",
     "harness",
     "identity",
