@@ -11,8 +11,11 @@ phase đó. Không chạy full suite cho tới khi xong plan — chỉ suite ch�
 | Phase | Trạng thái | Commit |
 |---|---|---|
 | W0 nền đánh giá + preregistration | **xong** | `8299a61` |
-| W1.0 ToolHost thật vào InProcessHost | **xong** | `d25914a` |
-| W1.1–W1.8 | chưa | |
+| W1.0 ToolHost thật vào InProcessHost | **xong** | `73be097` |
+| W1.1 handler measurements | **xong** | `35c73b7` |
+| W1.2 handler timeline | **xong** | `81030a4` |
+| W1.3 timeline vào packet runtime | **xong** | `23aba5c` |
+| W1.4–W1.8 | chưa | |
 | B1 baseline real-host | chưa | |
 | E1–E3 input ablation | chưa | |
 | W2 hybrid candidate generator | chưa | |
@@ -252,3 +255,137 @@ tới simulator/planning trong phase này.
 - `get_map_region_features` vẫn `tool_unavailable`: card đòi `samples_taken`,
   `RouteFeatures` không giữ số này. Thêm field là đổi schema packet.
 - Card replay khai thiếu failure mode (điểm 3 ở trên) — W3.
+
+---
+
+## W1.1 — Handler `get_candidate_measurements`
+
+### Đã làm gì
+
+**Card đòi bằng chứng nó không đọc ⟹ không ai gọi được.**
+`get_candidate_measurements` khai `required_evidence=("episode_decision_utility",)`
+— viết trước khi M1 có block measurements. Mọi planted world là `GATE_ONLY`,
+không xếp hạng ai, nên `evidence_for` gỡ token đó ⟹ tool bị từ chối ngay ở
+admission trên **mọi** packet có measurements mà không có ranking. Block nằm
+trong packet, card nằm trên menu, giữa chúng không có đường.
+
+- `catalog.py`: `required_evidence=("candidate_measurements",)`; token mới vào
+  `TYPICAL_AVAILABLE_EVIDENCE`; `TOOL_CATALOG_VERSION` 3.2.0 → **3.3.0** (đổi
+  luật admission = đổi wire contract; bundle freeze ở 3.2.0 đã được chấm trên
+  một menu mà tool này không gọi được).
+- `round_host.evidence_for`: gỡ `candidate_measurements` khi
+  `packet.measurements` rỗng — suy từ packet như mọi token khác.
+- `packet_facts.serve_from_packet(card, packet, arguments)`: thêm tham số
+  arguments và kiểu trả về thứ ba **`FactRefusal(code)`**. `None` = "platform
+  không phục vụ tool này"; refusal = "hiểu câu hỏi, packet không trả lời được",
+  và code phải là code **card tự khai** (session từ chối code lạ — E6b).
+  - `candidate_not_in_packet`: lỗi của analyst, hỏi lại id khác có thể được.
+  - `measurements_not_recorded`: lỗi của run, hỏi lại vô nghĩa.
+- `n_episodes` lấy từ denominator nhỏ nhất trong các MeasuredValue, không bịa.
+  Không trả `EvidenceReference` — card không khai kind nào, session sẽ từ chối.
+- `scripts/build_golden_fixtures.py`: mỗi candidate có measurements thật đọc
+  ngược từ trace trên đĩa (success_rate, collisions, path_length,
+  latency p99/median, min_clearance), denominator = 1 và nói rõ.
+  `decision_utility` vắng — không ai xếp hạng, số 0 sẽ đọc thành "được chấm 0".
+
+### Test
+
+`tests/test_analyst_measurements.py` (16 test): contract; hai refusal phân
+biệt; thiếu argument không đoán; host thật ký bằng build, stub ký `mock://`,
+cùng một câu trả lời; packet không measurements ⟹ từ chối ở admission.
+
+Chạy: 10 suite chạm tới — **282 passed**.
+
+**Commit:** `35c73b7`
+
+---
+
+## W1.2 — Handler `get_episode_timeline`
+
+### Đã làm gì
+
+Cùng một hình lỗi như W1.1: card đòi `("trace", "reference_line")` — thứ M2
+**dựng ra** các điểm timeline **từ đó**, không phải thứ nó đọc. Run không có
+sidecar thì seam gỡ `trace` ⟹ packet đang mang block vẫn bị trả lời
+"unavailable".
+
+- `catalog.py`: `required_evidence=("episode_timeline",)`; thêm argument
+  **`candidate_id` (không bắt buộc)**; failure modes thêm
+  `clock_not_recognised`, `candidate_required_for_episode`;
+  `TOOL_CATALOG_VERSION` → **3.4.0**; `schemas/tools/*` sinh lại.
+- `packet_facts._timeline`: clock là argument, sai clock thì **từ chối** chứ
+  không tự chọn (hai clock là hai câu hỏi khác nhau). `episode_context_id` là
+  hash của **điều kiện** nên hai candidate của một so sánh dùng chung — nếu cả
+  hai đều có timeline mà không nói candidate nào thì từ chối, câu trả lời không
+  nói của ai là câu trả lời về không ai.
+- `packet_builder.timeline_from_trace(...)` tách ra từ `timelines_from_traces`
+  để fixture builder (không có ΔU để chọn exemplar) đi cùng một phép tính.
+- Fixture: timeline thật cho cả hai candidate, role gán theo dữ liệu
+  (clearance thấp nhất → `safety_critical`, còn lại → `typical`); `Deployment`
+  lấy từ world, `clearance_warning_m` mượn ngưỡng near-miss của detector và nói
+  rõ vì sao (planted world không có task profile; `clearance_preference` là
+  trọng số cost, không phải mét).
+
+### Hai lỗi thật do chạy trên fixture thật mà ra
+
+Fact index của analyst **từ chối ref trùng**, và trùng thì đổ cả view chứ không
+chỉ một citation:
+
+1. `packet_view` đặt ref timeline không có candidate ⟹ hai candidate cùng
+   episode sinh hai fact cùng ref. Ref nay là
+   `episode:<id>/<candidate>/<clock>/<mark>`.
+2. Trace một hàng (planner từ chối ngay tại start pose) đẩy cả ba mark
+   `at_time` về t=0 ⟹ ba bản sao của một khoảnh khắc. `timeline_from_trace` khử
+   trùng theo `(clock, mark)`.
+
+### Test
+
+`tests/test_analyst_timeline.py` (16 test) + suite chạm tới — **391 passed**.
+
+**Commit:** `81030a4`
+
+---
+
+## W1.3 — Timeline từ runtime/API vào packet, đo byte
+
+### Đã làm gì
+
+`build_scoring_packet` dựng timeline **chỉ khi** có `deployment`, mà
+`_explanation_packet` trong `selection.py` chưa bao giờ truyền — nên guard
+clause trả về sớm kèm một omission không ai đọc, và **mọi packet production
+mang `timelines: []`** trong khi fixture mang đầy. Ablation đầu vào này lẽ ra
+đo fixture với chính nó.
+
+- `packet_builder.DeploymentThresholds`: bốn số **profile** khai (radius,
+  control period, clearance warning, vmax). Số thứ năm — reference length —
+  **không** ở đây: nó là chiều dài đường của **từng episode**, một số dùng
+  chung cho cả run sẽ đọc robot đi được nửa bản đồ thành đã xong.
+- `packet_builder.project_progress(trace)`: sinh `progress_m` bằng chính phép
+  chiếu detector đang dùng, trả kèm chiều dài đường. Trace đã có `progress_m`
+  thì trả nguyên — ai đó phía trên đã đo theo một đường mà hàm này không thấy.
+- `timeline_from_trace` tự chiếu khi thiếu cột và ghi đè `reference_length_m`
+  bằng đường của chính episode đó.
+- `selection.py`: dựng `DeploymentThresholds` từ profile và truyền vào
+  `build_scoring_packet(deployment_thresholds=...)`.
+- `build_golden_fixtures.py` bỏ bản sao `_with_progress` của nó.
+
+### Chi phí đo được (không ước lượng)
+
+| Fixture | Packet đầy đủ | Bỏ timelines | Block timeline | ~token | Tỷ trọng |
+|---|---|---|---|---|---|
+| inflation-001 | 4 924 B | 3 158 B | 1 766 B | ~441 | 35.9% |
+| rrt-001 | 5 099 B | 2 770 B | 2 329 B | ~582 | 45.7% |
+| dwa-001 | 5 694 B | 3 306 B | 2 388 B | ~597 | 41.9% |
+| **tổng** | 15 717 B | 9 234 B | **6 483 B** | ~1 620 | 41.2% |
+
+Đây là con số E2 sẽ cân: gain của timeline phải bù ~1.6k token/3 packet. Test
+chốt trần 4 kB cho hai episode để một hồi quy "mang cả trace" là test đỏ chứ
+không phải hoá đơn prompt.
+
+### Test
+
+`tests/test_explanation_timeline_runtime.py` (9 test) + suite chạm tới
+(297 passed) + `test_explanation_report_wiring` và `test_vertical_slice`
+(23 passed, 2m46s).
+
+**Commit:** `23aba5c`
