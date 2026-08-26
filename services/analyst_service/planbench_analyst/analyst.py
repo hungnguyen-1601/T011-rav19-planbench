@@ -405,6 +405,7 @@ def propose(
     *,
     feedback: Sequence[CheckFeedback] = (),
     candidates_text: str = "",
+    menu: ToolCatalog | None = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     timeout_s: float = DEFAULT_TIMEOUT_S,
 ) -> RoundReport:
@@ -416,7 +417,13 @@ def propose(
     module could not use comes back in :attr:`RoundReport.dropped`,
     because a proposal that disappeared reads as one that was never made.
     """
-    turn = build_user_turn(view.serialize(), catalog_text(analysis.catalog), candidates_text)
+    # The menu the model is *shown* may be narrower than the catalog
+    # the round was opened against (W3): admission still runs against
+    # the full catalog, so filtering is a presentation change and never
+    # a permission one.
+    turn = build_user_turn(
+        view.serialize(), catalog_text(menu or analysis.catalog), candidates_text
+    )
     if feedback:
         turn += "\n\n" + REVISION_PREFACE + "\n".join(item.render() for item in feedback)
     request = LLMRequest(

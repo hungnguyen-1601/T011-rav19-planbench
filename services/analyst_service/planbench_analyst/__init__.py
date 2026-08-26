@@ -127,6 +127,13 @@ from planbench_analyst.round_host import (
     in_process_round,
     platform_implementation_ref,
 )
+from planbench_analyst.routing import (
+    ROUTING_FAILURES,
+    RouteRequest,
+    effective_menu,
+    menu_recall,
+    route_for,
+)
 from planbench_analyst.runner import RoundOutcome, run_round
 from planbench_analyst.sanitize import Aliases, canonical, is_suspicious, label_components
 from planbench_analyst.stdio_lane import FrameHost, FrameProvider, FrameStream
@@ -146,6 +153,11 @@ from planbench_analyst.traits_snapshot import (
 )
 
 __all__ = [
+    "ROUTING_FAILURES",
+    "RouteRequest",
+    "effective_menu",
+    "menu_recall",
+    "route_for",
     "MechanismCandidate",
     "VerificationOption",
     "CandidateRefusal",

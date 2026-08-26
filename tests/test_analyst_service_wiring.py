@@ -48,6 +48,7 @@ PHASES_LANDED = [
     "prompts",
     "restricted",
     "round_host",
+    "routing",
     "runner",
     "sanitize",
     "stdio_lane",

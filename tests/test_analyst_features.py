@@ -158,9 +158,14 @@ def test_hiding_one_block_leaves_the_other_alone() -> None:
 
 
 @pytest.mark.parametrize("flag", ["filter_tool_menu", "auto_route_checker"])
-def test_a_w3_flag_refuses_rather_than_reporting_an_arm_that_never_ran(flag: str) -> None:
-    with pytest.raises(FeatureRefusal, match=flag):
-        RoundFeatures(**{flag: True})  # type: ignore[arg-type]
+def test_the_w3_flags_landed_and_are_still_off_by_default(flag: str) -> None:
+    """They refused ``True`` while W3 was unbuilt — an arm reported as
+    run that never ran is the one failure nothing downstream detects.
+    Now they are implemented, and still off: turning one on is an arm
+    somebody declares."""
+    assert getattr(RoundFeatures(), flag) is False
+    assert getattr(RoundFeatures(**{flag: True}), flag) is True  # type: ignore[arg-type]
+    assert checksum(RoundFeatures(**{flag: True})) != checksum()  # type: ignore[arg-type]
 
 
 def test_the_w3_flags_are_still_in_the_checksum_while_off() -> None:

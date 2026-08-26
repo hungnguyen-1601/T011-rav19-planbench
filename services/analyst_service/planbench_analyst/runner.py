@@ -55,6 +55,7 @@ from planbench_analyst.guard import GuardResult, guard
 from planbench_analyst.knowledge_provider import query_for, retrieve, trait_offers
 from planbench_analyst.packet_view import build_packet_view
 from planbench_analyst.round_host import PreparedRound
+from planbench_analyst.routing import RouteRequest, effective_menu, route_for
 from planbench_benchmark.traits_store import TraitSource
 from planbench_explanation.knowledge_contract import ResolvedReference, resolve_candidates
 from planbench_explanation.protocol import (
@@ -101,6 +102,30 @@ class RoundOutcome:
         return tuple(
             event.split("rejected:", 1)[1] for event in self.events if "rejected:" in event
         )
+
+
+@dataclass(frozen=True)
+class _RoutedCheck:
+    """A code-chosen check, in the shape the request loop already takes.
+
+    A small adapter rather than a second request path: one loop builds
+    every ``ToolRequest``, so budget accounting, the repeat guard and the
+    transcript cannot drift between a model-chosen call and a routed one.
+    """
+
+    route: RouteRequest
+
+    @property
+    def tool_id(self) -> str:
+        return self.route.tool_id
+
+    @property
+    def tool_version(self) -> str:
+        return self.route.tool_version
+
+    @property
+    def arguments(self) -> dict[str, object]:
+        return dict(self.route.arguments)
 
 
 def _request_key(hypothesis_id: str, check) -> tuple[str, str, tuple[tuple[str, str], ...]]:  # type: ignore[no-untyped-def]
@@ -165,6 +190,9 @@ def run_round(
             "arm was off while the prompt carried the natures."
         )
 
+    started = time.monotonic()
+    events: list[str] = [f"start:{analysis.analysis_run_id}"]
+
     offered: tuple[ResolvedReference, ...] = ()
     rejected_offers = 0
     if features.knowledge:
@@ -198,8 +226,20 @@ def run_round(
         )
         candidates_text = render_candidates(shortlist)
 
-    started = time.monotonic()
-    events: list[str] = [f"start:{analysis.analysis_run_id}"]
+    # W3. The menu the model is shown, after the cards this run could
+    # never serve are taken out. A tool refused at admission reads to a
+    # model as a broken platform, and it spends the next turn working
+    # around a wall that was never there.
+    menu = analysis.catalog
+    if features.filter_tool_menu:
+        menu = effective_menu(
+            analysis.catalog,
+            available_evidence=analysis.available_evidence,
+            mechanisms=[item.mechanism_id for item in shortlist],
+        )
+        events.append(f"menu:{len(menu.cards)}/{len(analysis.catalog.cards)}")
+
+
     if features.knowledge:
         # Counted in the transcript, both halves. "Nothing was offered"
         # and "five things were offered and none resolved" are different
@@ -218,6 +258,9 @@ def run_round(
     feedback: list[CheckFeedback] = []
     spent = RoundCost()
     seen: set[tuple[str, str, tuple[tuple[str, str], ...]]] = set()
+    #: What the code route has already asked, so a second turn does not
+    #: re-ask a question whose verdict is in hand.
+    routed_keys: set[tuple[str, str, tuple[tuple[str, str], ...]]] = set()
     sequence = 0
     guarded: GuardResult | None = None
     stopped = "final"
@@ -239,6 +282,7 @@ def run_round(
                 provider,
                 feedback=tuple(feedback),
                 candidates_text=candidates_text,
+                menu=menu,
                 timeout_s=timeout_s,
             )
         except AnalystRefusal as refused:
@@ -282,6 +326,44 @@ def run_round(
             for proposal in guarded.response.proposals
             for check in proposal.requested_checks
         ]
+
+        # W3. The code picks the checker, **after** declare and
+        # admission: the host binds evidence to the hypothesis it was
+        # gathered for, so a request routed before the declaration is
+        # refused as unknown_hypothesis and the refusal reads as a
+        # broken platform rather than a router running early.
+        #
+        # This is the one flag in this layer that changes what a metric
+        # *means*: with it on, ``checker_selection`` is the code's
+        # choice and not the model's, and the report has to say which.
+        if features.auto_route_checker:
+            for proposal in guarded.response.proposals:
+                if proposal.requested_checks:
+                    continue
+                answered = tuple(
+                    (tool, arguments) for _hypothesis, tool, arguments in routed_keys
+                )
+                route, reason = route_for(
+                    proposal,
+                    catalog=analysis.catalog,
+                    packet=analysis.packet,
+                    available_evidence=analysis.available_evidence,
+                    answered=answered,
+                )
+                if route is None:
+                    # Four failures, counted apart: a menu that hid the
+                    # tool, a run that never recorded the evidence, an
+                    # argument nobody could fill, and a question already
+                    # answered. One number for all four would point at
+                    # no fix.
+                    events.append(f"route_declined:{reason}")
+                    continue
+                shaped = tuple(
+                    sorted((name, str(value)) for name, value in route.arguments.items())
+                )
+                routed_keys.add((proposal.hypothesis_id, route.tool_id, shaped))
+                wanted.append((proposal.hypothesis_id, _RoutedCheck(route)))
+                events.append(f"routed:{route.tool_id}:{route.chosen_by}")
         fresh = [item for item in wanted if _request_key(*item) not in seen]
         if wanted and not fresh:
             # The checkers are deterministic. Asking again buys the

@@ -14,13 +14,13 @@ one of them is independent. A pair that only moves together is one arm
 wearing two names, and E3's two-by-two would have two cells nobody could
 fill.
 
-**Two flags here are declared and not yet implemented**, and they refuse
-rather than doing nothing. ``filter_tool_menu`` and ``auto_route_checker``
-are W3's, named now because W3 changes what ``checker_selection`` means
-and a preregistration written against a checksum that could not express
-the change would have to be rewritten after the fact. A flag that
-accepted ``True`` and quietly changed nothing would be worse than its
-absence: the arm would report as run.
+``filter_tool_menu`` and ``auto_route_checker`` landed at W3 and are
+still off by default. The second one is the only flag here that changes
+what a *metric means* rather than what the model is shown:
+``checker_selection`` stops being "did the model pick the right check"
+and becomes "did the code". The report separates the two, which is why
+the flag has to be inside the checksum — a run cannot be graded under
+one reading and replayed under the other.
 """
 
 from __future__ import annotations
@@ -67,19 +67,6 @@ class RoundFeatures:
     filter_tool_menu: bool = False
     #: W3: route to a checker deterministically after the model declares.
     auto_route_checker: bool = False
-
-    def __post_init__(self) -> None:
-        pending = [
-            name
-            for name in ("filter_tool_menu", "auto_route_checker")
-            if getattr(self, name)
-        ]
-        if pending:
-            raise FeatureRefusal(
-                f"{sorted(pending)} is declared for W3 and not implemented in this "
-                "build. Refused rather than ignored: a flag that accepts True and "
-                "changes nothing reports an arm as run that was never run."
-            )
 
     @property
     def as_config(self) -> dict[str, bool]:

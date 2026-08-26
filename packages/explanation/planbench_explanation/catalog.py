@@ -56,26 +56,55 @@ from planbench_explanation.tools import (
 )
 
 
-def _argument(name: str, kind: str, description: str, *, required: bool = True) -> ArgumentSpec:
+def _argument(
+    name: str,
+    kind: str,
+    description: str,
+    *,
+    required: bool = True,
+    source: str = "analyst",
+) -> ArgumentSpec:
     return ArgumentSpec(
         name=name,
         kind=kind,  # type: ignore[arg-type]
         required=required,
         description=description,
+        source=source,  # type: ignore[arg-type]
     )
 
 
-_CANDIDATE = _argument("candidate_id", "string", "Which candidate's data to read.")
+_CANDIDATE = _argument(
+    "candidate_id",
+    "string",
+    "Which candidate's data to read.",
+    source="packet_candidate",
+)
 _PAIR = (
-    _argument("candidate_a", "string", "First candidate of the compared pair."),
-    _argument("candidate_b", "string", "Second candidate of the compared pair."),
+    _argument(
+        "candidate_a",
+        "string",
+        "First candidate of the compared pair.",
+        source="packet_pair",
+    ),
+    _argument(
+        "candidate_b",
+        "string",
+        "Second candidate of the compared pair.",
+        source="packet_pair",
+    ),
 )
 _EPISODE = _argument(
     "episode_context_id",
     "string",
     "The paired episode context, the identity both candidates share.",
+    source="packet_episode",
 )
-_REGION = _argument("region_id", "string", "A named region of the task map.")
+_REGION = _argument(
+    "region_id",
+    "string",
+    "A named region of the task map.",
+    source="packet_region",
+)
 
 
 def _measure(name: str, unit: str, description: str, *, required: bool = True) -> MeasurementSpec:
