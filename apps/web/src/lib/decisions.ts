@@ -939,11 +939,30 @@ export interface RunOutcome {
  * candidate rows carried a config — it falls back to `stack · id` rather
  * than going quiet: a hash is a poor name, and no name at all is worse.
  */
+/** One candidate, named the way a reader names it.
+ *
+ *  The stack alone is not enough: a `local_controller_selection` run
+ *  compares two tunings of the same stack, and two rows reading
+ *  `astar+dwa` twice would say the run compared a thing with itself.
+ *  The config is what tells those two apart. */
+export function candidateLabel(candidate: RunCandidate): string {
+  return `${candidate.stack_label} · ${candidate.local_controller_config}`;
+}
+
+/** Everything this run put against everything else, in report order.
+ *
+ *  Empty for a run whose report never arrived — a queued or failed
+ *  sweep — and the caller says so rather than drawing an empty cell
+ *  that looks like a run which compared nothing. */
+export function comparedCandidates(run: DecisionRun): string[] {
+  return (run.report?.candidates ?? []).map(candidateLabel);
+}
+
 export function recommendedCandidateLabel(run: DecisionRun): string | null {
   const id = run.card?.recommended?.candidate_id ?? run.recommended_candidate_id;
   if (!id) return null;
   const candidate = run.report?.candidates?.find((entry) => entry.candidate_id === id);
-  if (candidate) return `${candidate.stack_label} · ${candidate.local_controller_config}`;
+  if (candidate) return candidateLabel(candidate);
   const stack = run.card?.recommended?.stack;
   return stack ? `${stack} · ${id}` : id;
 }

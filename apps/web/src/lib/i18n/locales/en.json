@@ -769,7 +769,7 @@
   "decisions.filter.unranked": "No card",
   "decisions.filter.note": "Most runs produce no Decision Card. That is the expected outcome when fewer than two candidates clear all six gates, and the gate table is then the whole result.",
   "decisions.column.deployment": "Deployment",
-  "decisions.column.scope": "Scope",
+  "decisions.column.candidates": "Compared",
   "decisions.column.episodes": "Episodes",
   "decisions.column.outcome": "Outcome",
   "decisions.column.review": "Status",

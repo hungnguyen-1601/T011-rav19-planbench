@@ -769,7 +769,7 @@
   "decisions.filter.unranked": "Không có card",
   "decisions.filter.note": "Phần lớn run không sinh ra Decision Card. Đó là kết cục bình thường khi chưa đủ hai ứng viên qua cả sáu cổng, và khi đó bảng cổng chính là toàn bộ kết quả.",
   "decisions.column.deployment": "Cấu hình",
-  "decisions.column.scope": "Phạm vi",
+  "decisions.column.candidates": "So sánh",
   "decisions.column.episodes": "Episode",
   "decisions.column.outcome": "Kết cục",
   "decisions.column.review": "Trạng thái",

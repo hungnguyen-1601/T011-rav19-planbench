@@ -33,6 +33,7 @@ import {
 import { useTranslation } from "@/lib/i18n";
 import {
   cancelDecisionJob,
+  comparedCandidates,
   coverage,
   deriveTaskProfile,
   jobIsLive,
@@ -306,11 +307,6 @@ export default function DecisionsPage() {
                             <Tally icon="info" tone="orange" label={t("decisions.tally.reviewed")} value={totals.reviewed} />
                             <Tally icon="check" tone="green" label={t("decisions.tally.approved")} value={totals.approved} />
                           </div>
-                          {/* Counting is not ranking, and the distinction is the reason
-                              this replaced a leaderboard rather than moving one. Behind a
-                              mark, because it explains the row of counts rather than
-                              reporting anything. */}
-                          <Hint text={t("decisions.tally.note")} label={t("decisions.tally.reviewed")} />
                         </div>
 
                         <div className="decision-filter-bar">
@@ -377,7 +373,7 @@ export default function DecisionsPage() {
                               <thead>
                                 <tr>
                                   <th>{t("decisions.column.deployment")}</th>
-                                  <th>{t("decisions.column.scope")}</th>
+                                  <th>{t("decisions.column.candidates")}</th>
                                   <th>{t("decisions.column.episodes")}</th>
                                   <th>{t("decisions.column.outcome")}</th>
                                   {oneDeployment ? <th>{t("decisions.column.utility")}</th> : null}
@@ -1152,13 +1148,28 @@ function DecisionRow({ run, withUtility }: { run: DecisionRun; withUtility: bool
   const covered = coverage(run);
   const requested = run.report?.sample?.n_episodes_requested;
   const measured = run.report?.sample?.n_episodes ?? 0;
+  const compared = comparedCandidates(run);
 
   return (
     <tr>
       <td>
         <Link href={`/decisions/${run.id}`}>{run.task_profile_id}</Link>
       </td>
-      <td className="muted">{run.experiment_scope ?? "—"}</td>
+      <td>
+        {/* What was actually put against what. The scope name stood
+            here and named the *rule* the pair was chosen under, which
+            is a thing a reader can look up once; which two algorithms
+            ran is the thing they are scanning the list for. */}
+        {compared.length > 0 ? (
+          <ul className="decision-candidate-list">
+            {compared.map((label) => (
+              <li key={label}>{label}</li>
+            ))}
+          </ul>
+        ) : (
+          <span className="muted">—</span>
+        )}
+      </td>
       <td>
         {/* Both counts when they differ. "245" alone reads as a
             deliberate 245-episode run, which is a different claim from

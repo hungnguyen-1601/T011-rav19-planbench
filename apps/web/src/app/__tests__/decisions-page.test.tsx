@@ -340,6 +340,35 @@ describe("what the removed panels took with them", () => {
 });
 
 
+describe("the list says what each run compared and where", () => {
+  it("names the algorithms rather than the rule they were picked under", () => {
+    /* `experiment_scope` stood in this column. It is the *rule* a pair
+       was chosen under — a thing a reader looks up once — and it was
+       occupying the place they were scanning for which two algorithms
+       actually ran. Nineteen rows reading `global_planner_selection`
+       distinguish nothing. */
+    expect(LIST).toContain('t("decisions.column.candidates")');
+    expect(LIST).toContain("comparedCandidates(run)");
+    expect(LIST).not.toContain('t("decisions.column.scope")');
+    expect(LIST).not.toContain("run.experiment_scope ??");
+  });
+
+
+  it("keeps the column heading in both locales", () => {
+    for (const key of ["decisions.column.candidates"]) {
+      expect(en).toHaveProperty(key);
+      expect(vi).toHaveProperty(key);
+    }
+  });
+
+  it("drops the lone mark that sat on a row of its own", () => {
+    /* A hint with nothing beside it reads as a control, and a reader
+       clicks it to find out what it is. The counts above it are five
+       labelled cards and do not need a footnote under them. */
+    expect(LIST).not.toContain('t("decisions.tally.note")');
+  });
+});
+
 describe("the page is reachable and translated", () => {
   it("has a sidebar entry", () => {
     const hrefs = NAV_SECTIONS.flatMap((section) => section.items).map((item) => item.href);
