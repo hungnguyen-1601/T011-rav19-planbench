@@ -96,13 +96,27 @@ describe("the assistant button on hover", () => {
     expect(CSS).toContain(".agent-dock-launcher:focus-visible");
   });
 
-  it("mixes the pale ground from the accent, not from plain white", () => {
-    // A white ground would flare in the dark theme, where the panel is
-    // near black and the button would become the brightest thing on the
-    // page.
+  it("gives the pale ground enough accent to be a colour", () => {
+    // At 12% of `--panel` the ground was the page, and the button read
+    // as having gone see-through rather than as pale — the reader said
+    // so. The accent share is what stops it.
     const hover = CSS.slice(CSS.indexOf(".agent-dock-launcher:hover"));
     const block = hover.slice(0, hover.indexOf("}"));
-    expect(block).toContain("var(--panel)");
-    expect(block).not.toContain("#fff");
+    expect(block).toContain("var(--accent) 32%");
+    expect(block).not.toContain("var(--panel)");
   });
-});
+
+  it("draws the ring at full strength, so the button has an edge", () => {
+    // A 55%-transparent border over the page is half of what made it
+    // look see-through.
+    const hover = CSS.slice(CSS.indexOf(".agent-dock-launcher:hover"));
+    const block = hover.slice(0, hover.indexOf("}"));
+    expect(block).toContain("border-color: var(--accent);");
+  });
+
+  it("thickens the mark, which is strokes rather than a filled shape", () => {
+    // `Icon` draws `fill=none stroke=currentColor`, so on a pale ground
+    // the whole button is four thin lines.
+    expect(CSS).toContain(".agent-dock-launcher:hover svg");
+    expect(CSS).toContain("stroke-width: 2.4;");
+  });});

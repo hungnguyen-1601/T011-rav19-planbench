@@ -5429,13 +5429,36 @@ tr.is-previewing > td { background: var(--accent-soft); }
    lightest colour on the button to the darkest, which is the direction
    asked for and the one that survives both themes: the pale ground is
    mixed from `--accent` rather than from plain white, so it stays a
-   blue in the dark theme instead of flaring. */
+   blue in the dark theme instead of flaring.
+
+   The first inversion mixed that ground at 12% of `--panel` and drew
+   a 55%-transparent border around it. On screen that did not read as
+   a pale button — it read as the button having gone *see-through*,
+   which is worse than the washed-out mark it was meant to fix. Three
+   things make it definite now: enough accent in the ground to be a
+   colour rather than the page, a border at full strength so the ring
+   has an edge, and a heavier stroke on the mark.
+
+   The two anchors are literal `#fff` and `#000` rather than theme
+   tokens, and that is the point: `--panel` and `--accent-contrast`
+   invert between the themes, so mixing towards either gives a pale
+   ground in one theme and a dark one in the other — and the mark,
+   which has to contrast with it, cannot follow both. Pale ground and
+   deep mark, mixed from `--accent` in both directions, means the
+   button holds its contrast whichever theme it is drawn in, and it is
+   still a blue rather than a white chip because the accent share does
+   the colouring. */
 .agent-dock-launcher:hover,
 .agent-dock-launcher:focus-visible {
-  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
-  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
-  color: color-mix(in srgb, var(--accent) 78%, #000);
+  background: color-mix(in srgb, var(--accent) 32%, #fff);
+  border-color: var(--accent);
+  color: color-mix(in srgb, var(--accent) 45%, #000);
 }
+/* The mark is drawn in strokes, not filled, so on a pale ground the
+   whole button is four thin lines and reads as an empty ring. Thicker
+   on hover, which is the state that asked for the pale ground. */
+.agent-dock-launcher:hover svg,
+.agent-dock-launcher:focus-visible svg { stroke-width: 2.4; }
 
 .agent-dock-panel {
   display: flex;
