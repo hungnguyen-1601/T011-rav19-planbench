@@ -19,7 +19,8 @@ phase đó.
 | A4-iii seam + runner | **xong** | `3f7f85b` |
 | A4-iv wire + gateway + restricted | **xong** | `2353305` |
 | M1 metrics cuối cùng vào packet | **xong** | `382ca5d` |
-| M2 metrics realtime theo episode | **xong** | (xem §M2) |
+| M2 metrics realtime theo episode | **xong** | `40bd527` |
+| M3 bảng traits trong DB | **xong** | (xem §M3) |
 | A4 seam + lane + gateway | chưa | |
 | A5 knowledge provider | chưa | |
 | A6 dev calibration + harness | chưa | |
@@ -921,6 +922,78 @@ thế" xứng đáng có lý do.
 - Handler cho `get_episode_timeline` trong `ToolHost` chưa có, cùng tình trạng
   với `get_candidate_measurements` ở M1 — đọc qua fact index thì được, gọi tool
   thì `tool_unavailable`.
+
+---
+
+## M3 — Bảng ưu/nhược thuật toán, trong DB
+
+### Đã làm gì
+
+**1. Migration `0012_algorithm_traits` + seed từ chính dict đang có.**
+
+Bảng `algorithm_traits`: `algorithm_id` (PK) · `kind` · `strengths` · `weaknesses`
+· **`anchor` NOT NULL** · `review_status` · `reviewed_by` · `updated_at`, kèm hai
+CHECK constraint (review_status thuộc tập đóng; `length(anchor) > 0`).
+
+Seed **import từ `planbench_benchmark.outcome.TRAITS`** chứ không chép lại: một
+migration chép bảng ra là **danh sách tính chất thứ hai**, tự do lệch khỏi cái mà
+luật đang đọc trên bất kỳ máy nào chưa chạy migration.
+
+Chạy thật trên SQLite: `0011 → 0012`, **6 hàng seed**, không hàng nào anchor rỗng.
+
+**2. Vì sao bảng, không phải dict.** Dict viết cho các thuật toán platform ship
+kèm. Từ khi có import, platform chạy thuật toán **không ai ở đây từng nghe** — và
+một tính chất chỉ thêm được bằng cách sửa Python rồi deploy lại là tính chất mà
+thuật toán import sẽ **không bao giờ có**. Luật outcome khi đó ghép một con số
+thật với một tính chất rỗng và không nói gì.
+
+**3. `anchor` bắt buộc, ở tầng ghi.** Tính chất không có chỗ kiểm là folklore, và
+folklore nằm trong một cột đọc ra **y hệt một phép đo**. Từ chối ở lúc ghi, không
+phải lúc đọc.
+
+**4. Chưa duyệt ≠ vắng mặt; vắng mặt ≠ "không có nhược điểm".**
+`review_status` seed là **`draft`**, không phải `approved`: bảng ship được dự án
+này viết và được người merge review, **không phải** là ai đó ký nó như một trait
+row. Chỉ hàng `approved` mới back được claim đã promote — đúng luật KB đang chạy.
+Và thuật toán **không có hàng nào** đọc ra là `review_status="undescribed"` kèm
+một câu nói rõ, chứ không phải một dict rỗng.
+
+**5. Một nguồn, hai bên đọc.** `build_outcome(report, profile, *, traits=...)`
+nhận nguồn tiêm vào, mặc định `SHIPPED_TRAITS` (chính là seed). Lane 1 và Lane 2
+sẽ đọc **cùng bảng**; hai bảng tính chất sẽ bất đồng, và bất đồng đó hiện ra
+thành hai lời giải thích khác nhau cho một run.
+
+Chỗ nối Lane 2 (`trait:<algorithm_id>#weakness:<i>` thành nguồn knowledge) là
+**A5**, phase kế tiếp.
+
+### Vá kèm
+
+`tests/test_outcome.py` đọc fixture bằng `read_text()` không encoding — **8 test
+lỗi trên Windows**, cùng lớp lỗi B3 mà An đã vá ở `test_gate_advice` và
+`test_report_advice` nhưng file này bị bỏ sót. Một dòng. Nay 20/20 xanh, nên
+tầng luật mà M3 vừa đụng vào có kiểm chứng thật trên máy An.
+
+### Bằng chứng
+
+| Phép kiểm | Kết quả |
+|---|---|
+| `pytest` 14 suite (analyst + explanation + outcome + traits) | **400 passed** |
+| `alembic upgrade head` trên SQLite sạch | `0011 → 0012`, 6 hàng seed, 0 anchor rỗng |
+| `ruff check` | sạch |
+
+13 test mới: anchor rỗng bị từ chối · approved không người ký bị từ chối ·
+approved mà rỗng nội dung bị từ chối · draft đọc được nhưng không promote được ·
+thuật toán import đọc ra `undescribed` trong source của luật outcome · mô tả rồi
+thì tới được luật · dict và rows cùng một tập thuật toán · citation không đổi
+hình sau khi chuyển tầng lưu trữ.
+
+### Còn nợ sau M3
+
+- Reader từ DB (`AlgorithmTraitRow` ⟶ `TraitSource`) và endpoint sửa hàng: cần
+  một chỗ trong `apps/api`, mà đó là vùng An đang sửa song song. Model + bảng +
+  seed đã có, nên nối là một hàm đọc; để lại chờ nhánh UI merge xong.
+- Chưa ai **ký** hàng nào. Mọi trait vẫn `draft`, nên chưa trait nào promote được
+  claim — đúng như KB v1, và đúng quyết định của An ở plan bản 8 §0.
 
 ---
 

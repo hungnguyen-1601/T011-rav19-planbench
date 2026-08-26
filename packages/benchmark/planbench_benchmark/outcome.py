@@ -32,10 +32,12 @@ from collections.abc import Mapping
 from typing import Any
 
 from planbench_benchmark.registry import algorithm_info
+from planbench_benchmark.traits_store import TraitSource, entries_from_mapping
 from planbench_decision.advice import Advice, keep_resolvable, order
 
 __all__ = [
     "OUTCOME_CODES",
+    "SHIPPED_TRAITS",
     "TRAITS",
     "build_outcome",
     "outcome_advice",
@@ -139,6 +141,12 @@ TRAITS: dict[str, dict[str, Any]] = {
 }
 
 
+#: The shipped table as rows. This is what the migration seeds and what
+#: a caller with no database reads, so "the dict" and "the table" are
+#: one list of natures rather than two.
+SHIPPED_TRAITS = TraitSource(entries_from_mapping(TRAITS))
+
+
 def _components(stack_label: str) -> tuple[str, str]:
     """``astar+dwa`` → its two component names, from the registry when it
     knows the stack, from the label's own shape when it does not."""
@@ -150,7 +158,10 @@ def _components(stack_label: str) -> tuple[str, str]:
 
 
 def build_outcome(
-    report: Mapping[str, Any], profile: Mapping[str, Any] | None = None
+    report: Mapping[str, Any],
+    profile: Mapping[str, Any] | None = None,
+    *,
+    traits: TraitSource | None = None,
 ) -> dict[str, Any]:
     """One dict: the report, each candidate's traits, and the deployment.
 
@@ -159,7 +170,15 @@ def build_outcome(
     its diff: each rule cites a path into the structure the caller can
     render, and a citation into a table the reader cannot see would be
     advice they cannot check.
+
+    ``traits`` is injected so the rows can come from the database that
+    an imported algorithm can actually be described in (M3). It defaults
+    to the shipped table, which is what a test or a script that has no
+    database still gets — and the shipped table is the migration's seed,
+    so the two are the same rows rather than two lists of natures free
+    to disagree.
     """
+    source = traits or SHIPPED_TRAITS
     candidates = []
     for entry in report.get("candidates") or []:
         stack = str(entry.get("stack_label") or "")
@@ -170,8 +189,8 @@ def build_outcome(
                 "global_planner": global_name,
                 "local_controller": local_name,
                 "traits": {
-                    "global": TRAITS.get(global_name, {}),
-                    "local": TRAITS.get(local_name, {}),
+                    "global": source.block(global_name),
+                    "local": source.block(local_name),
                 },
             }
         )

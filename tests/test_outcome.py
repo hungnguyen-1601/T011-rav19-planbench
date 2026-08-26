@@ -35,7 +35,7 @@ STORED = (
 def stored_report() -> dict[str, Any]:
     if not STORED.exists():
         pytest.skip("stored run not present in this checkout")
-    return json.loads(STORED.read_text())
+    return json.loads(STORED.read_text(encoding="utf-8"))
 
 
 def codes(source: dict[str, Any]) -> set[str]:
