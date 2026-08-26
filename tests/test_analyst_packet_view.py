@@ -253,7 +253,12 @@ def test_the_lattice_reading_is_reachable_by_the_component_it_names() -> None:
         reason="only the stacks carrying this controller show the pattern",
     )
     indexed = view(lattice=[finding], observations=[observation("stuck_cluster")])
-    assert indexed.refs_for_subject("local_controller") == ("contrast:stuck_cluster",)
+    reachable = indexed.refs_for_subject("local_controller")
+    assert "contrast:stuck_cluster" in reachable
+    # The stack fields are attributed to their component too (A3),
+    # which is what lets rule 6 catch a claim about one component
+    # leaning on a fact about another.
+    assert "fact:candidate:cand_a.local_controller" in reachable
 
 
 def test_a_measurement_the_packet_does_not_attribute_names_no_component() -> None:

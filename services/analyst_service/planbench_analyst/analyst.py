@@ -124,6 +124,12 @@ class RoundReport:
     #: Refs the model cited that this packet does not hold. Kept, not
     #: filtered — see the module docstring.
     refs_not_in_index: tuple[str, ...] = ()
+    #: ``label -> what it tripped`` for third-party strings that read
+    #: like an instruction rather than a name. Counted, never a reason
+    #: to refuse the round: the label already made the string inert, and
+    #: a platform that would not analyse a run because a plugin had a
+    #: rude name is a platform denying service over a string.
+    injection_suspected: tuple[tuple[str, tuple[str, ...]], ...] = ()
     notes: tuple[str, ...] = ()
 
 
@@ -488,6 +494,7 @@ def propose(
         response_checksum=response_checksum,
         dropped=tuple(dropped),
         checks_refused=tuple(checks_refused),
+        injection_suspected=tuple(sorted(view.aliases.suspicious.items())),
         refs_not_in_index=tuple(unresolved),
         notes=(f"model={response.model or provider.model}", f"provider={provider.name}"),
     )

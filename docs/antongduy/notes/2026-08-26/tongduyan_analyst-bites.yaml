@@ -1,0 +1,190 @@
+name: "Rails of the analyst service (A1-A3)"
+workdir: "E:/VinAI/RoboMind_project/P-011-analyst"
+gate: >-
+  python -m pytest tests/test_analyst_guard.py tests/test_analyst_engine.py
+  tests/test_analyst_packet_view.py tests/test_analyst_identity.py
+  tests/test_analyst_service_wiring.py -q --no-header -p no:cacheprovider
+
+exclude:
+  - node_modules
+  - .next
+  - .ai-log
+  - artifacts
+  - maps
+  - docs
+  - presentation
+  - ros2_ws
+  - "*.db"
+  - .pytest_cache
+  - .ruff_cache
+  - .mypy_cache
+  - .codegraph
+  - .omc
+  - .venv
+  - .tmp
+  - .claude
+
+clean:
+  exit: 0
+  output_contains: "passed"
+
+bites:
+  # ---- Guard: the seven rules -------------------------------------------
+  - id: GUARD_QUANTITY_RULE_OFF
+    mo_ta: "a statement may carry its own number"
+    inject:
+      file: services/analyst_service/planbench_analyst/guard.py
+      replace: "        if quantities:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_statement_carrying_a_number_is_dropped"
+
+  - id: GUARD_NUMBER_WORDS_OFF
+    mo_ta: "numbers spelled as words stop counting as numbers"
+    inject:
+      file: services/analyst_service/planbench_analyst/guard.py
+      replace: "    for phrase in NUMBER_WORDS:"
+      with: "    for phrase in ():"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_statement_carrying_a_number_is_dropped"
+
+  - id: GUARD_BLOCKED_CLAIM_OFF
+    mo_ta: "a claim the packet's declared gap blocks is proposed anyway"
+    inject:
+      file: services/analyst_service/planbench_analyst/guard.py
+      replace: "        if proposal.proposition_type in blocked_types:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_claim_the_packet_blocks_is_dropped"
+
+  - id: GUARD_SUBJECT_CONFLICT_OFF
+    mo_ta: "rule 6: a citation about another component supports the claim"
+    inject:
+      file: services/analyst_service/planbench_analyst/guard.py
+      replace: "        if conflict is not None:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_citation_about_another_component_is_dropped"
+
+  - id: GUARD_NO_CITATION_ALLOWED
+    mo_ta: "rule 7: a proposal with nothing to lean on is submitted"
+    inject:
+      file: services/analyst_service/planbench_analyst/guard.py
+      replace: "        if not proposal.supports and not proposal.contradicts:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_proposal_with_no_citation_is_dropped"
+
+  - id: GUARD_WORDING_CEILING_OFF
+    mo_ta: "causal wording passes at proposal time"
+    inject:
+      file: services/analyst_service/planbench_analyst/guard.py
+      replace: "        if wording:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_wording_above_associated_is_dropped"
+
+  - id: GUARD_DROPS_ARE_SILENT
+    mo_ta: "blocked proposals stop being recorded, so no rule can be counted"
+    inject:
+      file: services/analyst_service/planbench_analyst/guard.py
+      replace: "    return GuardResult(response=answer, blocked=tuple(blocked), ranking=ranking, flags=flags)"
+      with: "    return GuardResult(response=answer, ranking=ranking, flags=flags)"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_one_bad_proposal_does_not_cost_a_good_one"
+
+  # ---- The critic may not delete ----------------------------------------
+  - id: CRITIC_CAN_DELETE
+    mo_ta: "the critic drops what it flagged instead of flagging it"
+    inject:
+      file: services/analyst_service/planbench_analyst/guard.py
+      replace: "    ranking, flags = critique(tuple(kept), view)"
+      with: "    ranking, flags = critique(tuple(kept), view)\n    kept = [p for p in kept if p.hypothesis_id not in {f[0] for f in flags}]"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_critic_orders_and_flags_without_removing_anything"
+
+  # ---- The input boundary ----------------------------------------------
+  - id: SANITIZE_LABELS_OFF
+    mo_ta: "component names reach the prompt as the third party wrote them"
+    inject:
+      file: services/analyst_service/planbench_analyst/sanitize.py
+      replace: "        return self.by_value.get(value, value)"
+      with: "        return value"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_component_name_never_reaches_the_model"
+
+  - id: SANITIZE_NORMALISER_OFF
+    mo_ta: "the detector matches raw text, so an obfuscated name reads as a name"
+    inject:
+      file: services/analyst_service/planbench_analyst/sanitize.py
+      replace: "    text = canonical(value)"
+      with: "    text = value"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_detector_sees_what_a_reader_would_see"
+
+  # ---- The engine ------------------------------------------------------
+  - id: ENGINE_ID_IGNORES_THE_CHECK
+    mo_ta: "the requested check drops out of the id, so two pieces of work share one name"
+    inject:
+      file: services/analyst_service/planbench_analyst/analyst.py
+      replace: "                \"arguments\": {name: str(value) for name, value in sorted(draft.arguments.items())},"
+      with: ""
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_same_sentence_asking_for_a_different_check_is_not_the_same_work"
+
+  - id: ENGINE_DEADLINE_OFF
+    mo_ta: "a call that never returns is waited on forever"
+    inject:
+      file: services/analyst_service/planbench_analyst/analyst.py
+      replace: "    if not finished.wait(timeout_s):"
+      with: "    if not finished.wait(60.0):"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_call_that_does_not_come_back_ends_the_round_at_a_known_time"
+
+  # ---- Controls ---------------------------------------------------------
+  - id: META_EXIT_CODE_PROPAGATES
+    mo_ta: "META: prove the gate's own exit code reports a failing test"
+    inject:
+      file: tests/test_analyst_guard.py
+      append: |
+
+        def test_bitekit_meta_probe() -> None:
+            assert False, "bitekit meta probe"
+    expect:
+      exit_not_zero: true
+      output_contains: "test_bitekit_meta_probe"
+
+  - id: NEG_BENIGN_EDIT
+    mo_ta: "control: a comment-only edit must NOT trip the gate"
+    inject:
+      file: services/analyst_service/planbench_analyst/guard.py
+      append: |
+
+        # bitekit benign control edit
+    expect:
+      exit: 0
+      output_contains: "passed"

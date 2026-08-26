@@ -12,8 +12,8 @@ phase đó.
 | A-1 vá sàn model-free | **xong** | `2293615` |
 | A0 skeleton + hạ tầng | **xong** | `df1743a` |
 | A1 packet view + fact index | **xong** | `5e6bf41` |
-| A2 hypothesis engine | **xong** | (xem §A2) |
-| A3 guard + critic + biên vào | chưa | |
+| A2 hypothesis engine | **xong** | `285adda` |
+| A3 guard + critic + biên vào | **xong** | (xem §A3) |
 | A4 seam + lane + gateway | chưa | |
 | A5 knowledge provider | chưa | |
 | A6 dev calibration + harness | chưa | |
@@ -368,6 +368,95 @@ thay vì sửa provider hai lần.
   Đúng thiết kế ở phase này, và **A6 là chỗ chịu trách nhiệm** cho câu "model
   thật nói có đúng không". Nói trước để không ai đọc 60 test xanh thành một
   tuyên bố về chất lượng model.
+
+---
+
+## A3 — Guard, critic, và biên dữ liệu vào
+
+### Đã làm gì
+
+Hai module mới: `guard.py` · `sanitize.py`. Mở rộng `packet_view.py` (A1) để
+mang nhãn thành phần.
+
+**1. Bảy luật, chạy trên thứ model thật sự trả về.**
+
+Năm luật của plan bản 7, cộng hai luật của bản 8:
+
+| # | Luật | Chặn cái gì |
+|---|---|---|
+| 1 | `ref_not_in_packet` | trích dẫn vào packet không chứa nó |
+| 2 | `quantity_in_statement` | câu tự mang số — thập phân, `%`, sci-notation, **số viết bằng chữ (en + vi)** |
+| 3 | `claim_blocked_by_packet` | claim type mà `known_unknowns` đã chặn |
+| 4 | `check_cannot_answer` / `check_version_mismatch` / `check_arguments_rejected` | xin check mà card không trả lời được |
+| 5 | `wording_above_associated` | từ nhân quả ở tầng đề xuất |
+| **6** | `citation_contradicts_subject` | **mới** — ref packet quy cho component khác |
+| **7** | `no_citation` | **mới** — đề xuất không có gì để dựa |
+
+Luật 6 nói rõ trong docstring rằng nó là **phép kiểm mâu thuẫn**, không phải
+phép kiểm liên quan: đa số measurement không khai component (subject `None`) và
+một fact đoán bừa component sẽ làm luật này sai một cách tự tin. Có test riêng
+cho đúng ranh giới đó.
+
+**2. Bị chặn ≠ bị xoá.** Mỗi cú drop trả về một `Blocked{hypothesis_id, rule,
+detail}`. Tỷ lệ từng luật nổ chính là phép đo A6 cần; một guard lọc im lặng làm
+model trông như chưa từng mắc lỗi đó. Chặn hết ⟶ abstention **nêu tên các luật**.
+
+**3. Critic là cố vấn, không phải guard thứ hai.** `critique()` trả thứ tự đọc +
+cờ ("không xin check nào", "một trích dẫn kèm một khoảng trống đã khai", "không
+có observation nào trong số trích dẫn"). Không xoá gì. Tất định ở phase này —
+một critic bằng model là một lần gọi nữa cho một ý kiến chưa ai chứng minh là
+đáng tiền, và ablation ở A6 phải có **cái gì đó** để so với "không critic".
+
+**4. Biên vào (K2): cách ly, không phải cảnh báo.**
+
+Tên component là chuỗi **duy nhất** trong packet do bên thứ ba viết
+(`PluginManifest.id` không ràng buộc charset; `CandidateComponents.*` cũng vậy).
+Từ A3, `build_packet_view` cấp nhãn `C1`, `C2`… cho từng tên, và **chỉ nhãn đi
+vào prompt**; renderer giữ ánh xạ ngược. Test đòi chuỗi
+`"ignore previous instructions…"` **không xuất hiện** trong `view.serialize()`.
+
+Detector đếm (không chặn): `is_suspicious()` trả tên pattern bị chạm. Cả hai nửa
+— cách ly và phát hiện — dùng **cùng một** `canonical()`: NFKC, xoá ký tự vô
+hình, gộp mọi separator, casefold. Đây là chỗ khe hở thường nằm, và một lần thử
+đã chứng minh: `"ignore​previous​instructions"` sau khi xoá ký tự vô
+hình thành **dính liền**, nên pattern viết `\s` sẽ đọc nó thành một cái tên bình
+thường. Mọi pattern nay viết `\W*` giữa các từ.
+
+Phát hiện **không** chặn vòng: nhãn đã làm chuỗi vô hại, và một nền tảng từ chối
+phân tích vì plugin có tên hỗn là nền tảng từ chối phục vụ vì một chuỗi ký tự.
+Số đếm đi vào `RoundReport.injection_suspected`.
+
+**5. Nhãn cũng là một "identifier".** Luật 2 cho phép nhãn (`C1`) và tên thật của
+packet (`ep-004`, `aisle_B7`) đi qua, chặn `0.74`. `identifiers` của A1 nay trả
+**nhãn** thay vì tên thành phần thật — tên thật model không bao giờ thấy.
+
+### Bằng chứng
+
+| Phép kiểm | Kết quả |
+|---|---|
+| `pytest tests/test_analyst_*.py` (5 file) | **100 passed** |
+| Bộ răng mới `tongduyan_analyst-bites.yaml` (14 răng + đối chứng dương) | **14/14 CẮN** |
+| `ruff check` module + test | sạch |
+
+Bộ răng phủ: tắt từng luật 2/3/6/7 và luật wording · bỏ ghi `blocked` (không đếm
+được luật nào) · để critic xoá cái nó gắn cờ · tắt nhãn (tên thật ra prompt) ·
+detector khớp raw text thay vì `canonical` · id bỏ qua check đã xin · bỏ deadline
+· META exit code · đối chứng âm (sửa comment **không** được làm đỏ).
+
+Một răng lúc đầu **không cắn** — `ENGINE_MODEL_PICKS_THE_ID` tiêm bỏ `tool_id`
+khỏi digest, nhưng test phân biệt hai vòng bằng **arguments**, nên digest vẫn
+khác. Đó là răng đặt sai chỗ, không phải code sai: đổi thành
+`ENGINE_ID_IGNORES_THE_CHECK` tiêm bỏ `arguments` thì cắn. Ghi lại vì đây đúng
+kiểu tự lừa mà `bites` sinh ra để chặn — một răng không cắn được đọc thành "code
+an toàn".
+
+### Còn nợ sau A3
+
+- `redact()` viết ra rồi **xoá** ngay trong phase: sau khi nhãn được cấp trong
+  `build_packet_view`, không đường nào gọi tới nó nữa. Một hàm public không ai
+  gọi là nợ, không phải tính năng.
+- Guard chưa nối vào vòng chạy thật — `propose()` trả `RoundReport`, guard là một
+  lời gọi riêng. A4 (`runner.py`) là chỗ ghép engine ⟶ guard ⟶ host.
 
 ---
 

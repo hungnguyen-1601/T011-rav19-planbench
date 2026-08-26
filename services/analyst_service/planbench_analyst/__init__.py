@@ -43,6 +43,7 @@ from planbench_analyst.analyst import (
     propose,
 )
 from planbench_analyst.cache import CacheStats, ResponseCache, cache_key
+from planbench_analyst.guard import Blocked, GuardResult, critique, guard, quantities_in
 from planbench_analyst.identity import (
     SOURCE_GLOBS,
     ConfigRefusal,
@@ -64,15 +65,19 @@ from planbench_analyst.prompts import (
     analyst_schema,
     prompt_checksum,
 )
+from planbench_analyst.sanitize import Aliases, canonical, is_suspicious, label_components
 
 __all__ = [
     "ANALYST_SYSTEM",
     "SOURCE_GLOBS",
     "PROMPT_VERSION",
+    "Aliases",
     "AnalystRefusal",
+    "Blocked",
     "CacheStats",
     "ConfigRefusal",
     "Fact",
+    "GuardResult",
     "PacketView",
     "PacketViewRefusal",
     "ResponseCache",
@@ -81,11 +86,17 @@ __all__ = [
     "analyst_schema",
     "build_packet_view",
     "cache_key",
+    "canonical",
     "catalog_text",
+    "critique",
     "effective_generation_config",
     "flatten_config",
+    "guard",
+    "is_suspicious",
+    "label_components",
     "prompt_checksum",
     "propose",
+    "quantities_in",
     "runtime_config_checksum",
     "source_manifest_hash",
     "validate_generation_config",

@@ -36,6 +36,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from planbench_analyst.sanitize import Aliases, label_components
 from planbench_explanation.case_packet import CasePacket
 from planbench_explanation.detectors import DETECTOR_VERSION
 from planbench_explanation.knowledge import KNOWLEDGE_BASE_VERSION
@@ -118,8 +119,11 @@ class Fact(BaseModel):
 class PacketView:
     """A packet plus its fact index. Immutable, and deterministic."""
 
-    def __init__(self, packet: CasePacket, facts: tuple[Fact, ...]) -> None:
+    def __init__(
+        self, packet: CasePacket, facts: tuple[Fact, ...], aliases: Aliases | None = None
+    ) -> None:
         self._packet = packet
+        self._aliases = aliases or Aliases()
         self._facts = tuple(sorted(facts, key=lambda fact: fact.ref))
         seen: dict[str, Fact] = {}
         for fact in self._facts:
@@ -134,6 +138,16 @@ class PacketView:
     @property
     def packet(self) -> CasePacket:
         return self._packet
+
+    @property
+    def aliases(self) -> Aliases:
+        """Labels standing in for strings a third party wrote.
+
+        The model is shown ``C1``; the renderer holds what ``C1`` is.
+        See :mod:`planbench_analyst.sanitize` for why the isolation and
+        not the warning in the prompt is what holds.
+        """
+        return self._aliases
 
     @property
     def facts(self) -> tuple[Fact, ...]:
@@ -166,14 +180,11 @@ class PacketView:
         packet = self._packet
         names: set[str] = {packet.run_id, packet.task.task_profile_id}
         for candidate in packet.candidates:
-            names.update(
-                {
-                    candidate.candidate_id,
-                    candidate.global_planner,
-                    candidate.local_controller,
-                    candidate.local_controller_config,
-                }
-            )
+            # The candidate id is the platform's; the three component
+            # names are whatever the uploader called them, so what a
+            # statement may legitimately contain is the **label**.
+            names.add(candidate.candidate_id)
+        names.update(self._aliases.by_label)
         for observation in packet.observations:
             names.add(observation.type)
             if observation.worst_episode_context_id is not None:
@@ -292,7 +303,9 @@ def _scalar_facts(
     return facts
 
 
-def build_packet_view(packet: CasePacket, *, tool_catalog_version: str) -> PacketView:
+def build_packet_view(
+    packet: CasePacket, *, tool_catalog_version: str, aliases: Aliases | None = None
+) -> PacketView:
     """Index one packet, or refuse to read it.
 
     ``tool_catalog_version`` is passed in rather than imported: the
@@ -308,7 +321,41 @@ def build_packet_view(packet: CasePacket, *, tool_catalog_version: str) -> Packe
             + ". Reading it would answer about fields that may have moved."
         )
 
+    if aliases is None:
+        aliases = label_components(
+            name
+            for candidate in packet.candidates
+            for name in (
+                candidate.global_planner,
+                candidate.local_controller,
+                candidate.local_controller_config,
+            )
+        )
+
     facts: list[Fact] = []
+
+    # The stack each candidate ran, as labels. A component name is the
+    # one string in this packet a third party wrote — see
+    # :mod:`planbench_analyst.sanitize`. The label is what the model
+    # reasons with and what a statement may name; the renderer holds
+    # what it stands for.
+    for candidate in packet.candidates:
+        for field_name, subject in (
+            ("global_planner", "global_planner"),
+            ("local_controller", "local_controller"),
+            ("local_controller_config", "local_controller"),
+        ):
+            facts.append(
+                Fact(
+                    ref=f"fact:candidate:{candidate.candidate_id}.{field_name}",
+                    kind="fact",
+                    label=f"{candidate.candidate_id} {field_name.replace('_', ' ')}",
+                    value=aliases.label_for(getattr(candidate, field_name)),
+                    subject=subject,  # type: ignore[arg-type]
+                    candidate_id=candidate.candidate_id,
+                    scope=f"candidate:{candidate.candidate_id}",
+                )
+            )
 
     robot = packet.task.robot
     facts.extend(
@@ -474,4 +521,4 @@ def build_packet_view(packet: CasePacket, *, tool_catalog_version: str) -> Packe
             )
         )
 
-    return PacketView(packet, tuple(facts))
+    return PacketView(packet, tuple(facts), aliases)
