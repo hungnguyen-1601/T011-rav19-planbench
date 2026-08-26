@@ -20,11 +20,11 @@ phase đó. Không chạy full suite cho tới khi xong plan — chỉ suite ch�
 | W1.6 cơ chế duyệt traits | **xong** (chờ người duyệt) | `3375b13` |
 | W1.7 feature flags | **xong** | `bd8f752` |
 | W1.8 snapshot bộ ba | **xong** | `6df43a4` |
-| B1 baseline real-host | chưa | |
-| E1–E3 input ablation | chưa | |
-| W2 hybrid candidate generator | chưa | |
-| W3 tool routing | chưa | |
-| W4 discriminated union + repair | chưa | |
+| B1 baseline real-host | **chặn** — cần ngân sách model | |
+| E1–E3 input ablation | **chặn** — sau B1 | |
+| W2 hybrid candidate generator | **xong** | `077319d` |
+| W3 tool routing | **xong** | `66f327f` |
+| W4 discriminated union + repair | **xong** | `30ecd57` |
 | E4–E7 | chưa | |
 | W5 | chưa | |
 | E8–E10, freeze, confirmatory | chưa | |
@@ -529,3 +529,149 @@ Nhìn thì "đã pin", thực tế không replay được: đúng thứ frozen b
 
 **Test:** `tests/test_analyst_traits_snapshot.py` (20) + bundle/gate/identity -
 127 passed. **Commit:** `6df43a4`
+
+---
+
+## W2 - Candidate generator hybrid
+
+`services/analyst_service/planbench_analyst/candidates.py` (mới). Nền tảng đề
+xuất **không gian cơ chế**, model chọn trong đó. Bắt model tự nghĩ ra không
+gian thì nó bám vào chữ trong packet, guard drop kết quả — và phép đo khi đó đo
+guard chứ không đo model.
+
+Bốn luật, mỗi luật là một cách làm sai đã tránh:
+
+- **Candidate không mang `supporting_refs`.** Refs là việc của model, guard chấm
+  việc chọn đó. Shortlist kèm sẵn citation sẽ chấm cách đọc của generator trong
+  khi trông như chấm model.
+- **`verification_options` là biến riêng** (cờ riêng): shortlist là prior về
+  *cơ chế*, options là gợi ý *cách kiểm chứng*. E4a/E4b đo tách; gộp thì gain ở
+  một bên báo thành gain ở cả hai.
+- **Ba nguồn, gộp, không nhân đôi**, dedupe `(mechanism_id, subject)`. Một cơ
+  chế đến từ hai nguồn là **một** candidate với hai lý do; liệt kê hai lần sẽ
+  đọc thành hai cơ chế đồng ý với nhau.
+  - Traits hành xử khác: nature nói thuật toán *như thế nào*, không nói run này
+    xảy ra gì — nên nó **nâng** cơ chế mà run đã gợi ý và **không tự sinh** cơ
+    chế mới. Một nature sinh được candidate từ hư không chính là folklore của
+    model đi vào bằng cửa của platform.
+- **`unknown` luôn có mặt** và luôn cuối danh sách. Shortlist không có đường
+  từ chối là ép chọn, và ép chọn là thứ làm analyst sai một cách tự tin.
+
+**Distractor** ở cùng module, **eval-only, fail-closed**: `partition` khác
+`development` thì `CandidateRefusal`. Distractor bốc từ các proposition
+**assertable** platform biết, không bốc từ nhãn scorer; bỏ gold phải **truyền
+tường minh** gold là gì (harness đoán = tự chấm phán đoán của mình).
+`generator_recall_at_k` chấm trên **output của generator**, trước mọi can thiệp
+harness — `RoundOutcome.shortlist` giữ đúng bản đó.
+
+Prompt thêm block `CANDIDATES` (chỉ khi cờ bật), `PROMPT_VERSION` → `a3.0.0`.
+Hai cờ mới: `candidate_shortlist`, `verification_options`, đều **mặc định tắt**.
+
+**Test:** `tests/test_analyst_candidates.py` (25) + suite analyst — 234 passed.
+**Commit:** `077319d`
+
+---
+
+## W3 - Tool routing theo capability
+
+`services/analyst_service/planbench_analyst/routing.py` (mới). Hai thay đổi,
+**độc lập**, vì trả lời hai câu hỏi khác nhau:
+
+| Cờ | Loại | Ý nghĩa |
+|---|---|---|
+| `filter_tool_menu` | **presentation** | Ẩn card mà run này không phục vụ được. Request đó dù sao cũng chết ở admission; nhưng refusal đọc với model như platform hỏng, và nó dành lượt sau đi vòng qua bức tường không tồn tại. |
+| `auto_route_checker` | **semantic** | Code chọn checker sau declare + admission. Đây là thứ duy nhất trong lớp này **đổi nghĩa một metric**: `checker_selection` thôi là "model chọn đúng check chưa" và thành "code chọn đúng chưa". |
+
+- **`menu_recall`** đo **trước** khi tin bất kỳ arm nào có filter. Filter cắt
+  mất tool mà case cần thì mọi số phía sau là số về filter — và hỏng kiểu này
+  vô hình về sau: vòng chạy đơn giản là không bao giờ hỏi.
+- **Fact query / evidence navigation không bị lọc theo cơ chế**: chúng chính là
+  cách analyst *tìm ra* cơ chế, lọc theo cơ chế chưa chọn là vòng tròn.
+  `unknown` giữ nguyên menu evidence-capable.
+- **W3.2 — card khai nguồn của từng argument** (`ArgumentSource`: packet
+  candidate / episode / region / pair, hoặc `analyst`). Router chỉ điền argument
+  có nguồn **packet**; argument thuộc về model (budget multiplier, độ rộng cửa
+  sổ) để nguyên — điền mặc định là platform tự chọn thí nghiệm rồi tự chấm.
+  Schema wire không đổi (đã regenerate, không drift) nên **không bump catalog**.
+- **Bốn failure type** giữ bốn số: `tool_not_in_menu`,
+  `missing_required_evidence`, `missing_required_argument`,
+  `repeat_after_verdict` — bốn cách sửa khác nhau; gộp thành một số thì không
+  chỉ được vào đâu.
+- Transcript ghi `menu:<shown>/<all>`, `routed:<tool>:code_route`,
+  `route_declined:<reason>` để report tách được **code-route** và
+  **model-chọn**.
+
+**Test:** `tests/test_analyst_routing.py` (21) + suite chạm tới — 362 passed.
+**Commit:** `66f327f`
+
+---
+
+## W4 - Discriminated union và repair có giới hạn
+
+Trước đây một hình dạng mang hai thứ khác nhau: statement mà bằng chứng đã có
+sẵn trong packet, và statement viết **trước** khi check chạy. Hai cái đọc giống
+hệt nhau, dù cái thứ hai chỉ được phép tồn tại vì host buộc evidence vào
+hypothesis đã declare trước.
+
+- **`decision: "no_check" | "check"`** vào schema, đặt **trước** `statement` để
+  model chốt nhánh rồi mới viết — viết trước rồi dán nhãn sau là kết luận đi
+  tìm hạng mục. `PROMPT_VERSION` → `a4.0.0`.
+- Union **ép trong parser**, không ép trong schema: strict mode buộc khai mọi
+  property của mọi nhánh, nên union thật sẽ phải nới `additionalProperties`
+  hoặc nhân đôi cả object. Parser từ chối **có tên** (`no_check` mà kèm check;
+  `check` mà không nêu tool) — và có tên chính là điều kiện để repair được.
+- **Repair đúng một lần**, tính là **một model call** (không phải retry theo
+  nghĩa A7): vòng lặp repair tới khi parse được là vòng lặp trả tiền để được
+  đồng ý.
+- **Guard rule 8 — `draft_claims_a_verdict`**: draft nói kết quả của check chưa
+  chạy bị chặn. Từ ngữ y hệt verdict thật, nên sau đó không thứ gì phân biệt
+  được.
+- **Audit link**: transcript ghi `draft:<id>`, `final:<id>`,
+  `supersedes:<cũ>:<mới>`. Không sửa `HypothesisProposal` (sẽ phải bump
+  `EXPLANATION_SCHEMA_VERSION` và dựng lại toàn bộ fixture) — viết lại dưới cùng
+  ID vốn đã bất khả thi theo protocol, phần còn thiếu chỉ là dòng audit.
+- **W4.6 — chi phí theo lớp chốt trước**: `cost_by_class(results, spec)` dùng
+  `expected_check_required` từ file nhãn; `branch_matrix` báo nhánh model chọn
+  **chỉ như chẩn đoán**. Báo chi phí theo nhánh model chọn là post-treatment:
+  nhánh là kết quả, và so subset chọn sau khi nhìn output là so hai quần thể
+  khác nhau rồi gọi hiệu số đó là chi phí.
+
+**Test:** `tests/test_analyst_union.py` (14) + suite chạm tới — 262 passed.
+**Commit:** `30ecd57`
+
+---
+
+## Cần An quyết (hai chỗ chặn)
+
+Toàn bộ phần **code** của plan tới W4 đã xong. Phần còn lại — B1, E1–E10, W5,
+freeze, confirmatory — là **đo**, và đo cần hai thứ chỉ An mở được:
+
+### 1. Duyệt traits (W1.6)
+
+Cơ chế đã có, người duyệt thì chưa. Trạng thái hiện tại: **6/6 row là `draft`**
+(anchor của cả sáu đều checkable sau khi sửa row `dwa`).
+
+```bash
+python scripts/review_algorithm_traits.py list
+python scripts/review_algorithm_traits.py approve dwa --by "An Tong"
+```
+
+Chưa duyệt thì traits vẫn **được cite** để mở rộng không gian giả thuyết, nhưng
+**không backing được claim đã promote**, và một golden run có promoting trên
+nature sẽ bị `lock_for_golden` chặn.
+
+### 2. Ngân sách model cho B1 và E1–E10
+
+B1 là baseline real-host: chạy model thật trên 3 fixture, 3 repeat, **bypass
+cache** (harness từ chối báo cáo nếu `cache_hits > 0`). E1–E10 nhân số đó lên
+theo số arm — arm vector hiện có 8 cờ, riêng E3 đã là 2×2.
+
+Cần An chốt:
+
+- Model nào (`o4-mini` như lần A7? local Ollama? cả hai để so?).
+- Trần chi phí cho đợt B1 + E1–E3, và có chạy tiếp E4–E10 hay dừng lại xem số.
+
+Nhắc lại một điều đã ghi trong preregistration: chưa có holdout (3/6 họ,
+`OFFICIAL_GOLDEN_READY=False`) nên **mọi kết quả E là exploratory**, không đủ
+cho quyết định deployment. Nếu muốn kết luận deployment thì phải dựng nốt 3 họ
+còn lại trước — đó cũng là một quyết định của An.
