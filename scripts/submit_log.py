@@ -9,21 +9,53 @@ After a successful submit, the live log is rotated:
 
 If the POST fails, the pending file is restored so nothing is lost.
 """
+
+import contextlib
 import json
 import os
 import shutil
 import sys
 import time
-import urllib.request
 import urllib.error
-from datetime import datetime, timezone
+import urllib.request
+from datetime import UTC, datetime
 from pathlib import Path
+
+
+def _load_dotenv_by_hand() -> None:
+    """Read `.env` without python-dotenv.
+
+    The import used to fall through to `pass`, which meant a Python
+    lacking the package produced "AI_LOG_SERVER not set" — a message that
+    names the wrong missing thing and reads like a configuration choice.
+    Logs were dropped for days behind it. This file is a handful of
+    `KEY=value` lines; parsing it is cheaper than the failure mode.
+    """
+    path = Path(__file__).resolve().parent.parent / ".env"
+    if not path.exists():
+        return
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if not key or key in os.environ:
+            # A real environment variable outranks the file, which is
+            # what `load_dotenv` does and what CI relies on.
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        os.environ[key] = value
+
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
-    pass
+    _load_dotenv_by_hand()
 
 SERVER_URL = os.environ.get("AI_LOG_SERVER", "")
 API_KEY = os.environ.get("AI_LOG_API_KEY", "")
@@ -37,12 +69,20 @@ ARCHIVE_DIR = LOG_DIR / "archive"
 BATCH_LIMIT = 500
 
 
+def _normalize_for_ingest(entry: dict) -> dict:
+    """Adapt locally lossless hook data to the server's current schema."""
+    response = entry.get("tool_response")
+    if response is not None and not isinstance(response, str):
+        entry["tool_response"] = json.dumps(response, ensure_ascii=False, default=str)
+    return entry
+
+
 def _archive(pending: Path) -> None:
     """Append pending file to today's archive. Never overwrites existing data."""
     if not pending.exists() or pending.stat().st_size == 0:
         return
     ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     archive_file = ARCHIVE_DIR / f"{today}.jsonl"
     with open(pending, "rb") as src, open(archive_file, "ab") as dst:
         shutil.copyfileobj(src, dst)
@@ -95,10 +135,9 @@ def main():
             if len(entries) >= BATCH_LIMIT:
                 leftover_lines.append(line)
                 continue
-            try:
-                entries.append(json.loads(stripped))
-            except json.JSONDecodeError:
-                pass  # drop unparseable line
+            # An unparseable line is dropped rather than aborting the batch.
+            with contextlib.suppress(json.JSONDecodeError):
+                entries.append(_normalize_for_ingest(json.loads(stripped)))
 
     if not entries:
         # Nothing to send; archive whatever was there (probably junk) and bail.
@@ -121,6 +160,20 @@ def main():
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             print(f"[ai-log] Submitted {len(entries)} entries → {resp.status}", file=sys.stderr)
+    except urllib.error.HTTPError as e:
+        # HTTPError is also a URLError, but it carries the validation response
+        # body. Preserve it so schema failures such as 422 can be diagnosed
+        # instead of being reduced to an opaque status line.
+        with contextlib.suppress(Exception):
+            detail = e.read().decode("utf-8", errors="replace").strip()
+        if not detail:
+            detail = str(e)
+        _restore_pending(pending)
+        print(
+            f"[ai-log] Submit failed: HTTP {e.code}: {detail[:4000]} — logs kept locally.",
+            file=sys.stderr,
+        )
+        sys.exit(0)  # Don't block push on server validation errors
     except urllib.error.URLError as e:
         # Failure: restore the whole pending (including leftover) for next push.
         _restore_pending(pending)

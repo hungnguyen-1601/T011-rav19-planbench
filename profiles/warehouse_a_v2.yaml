@@ -1,0 +1,152 @@
+# Task profile for the vertical slice (CONTRACTS HĐ-2, HĐ-15.1).
+#
+# The deployment question the slice answers: on this warehouse, with this
+# robot and this board, which global planner should ship — A* or RRT*?
+#
+# Numbers follow the worked example in §6.2 of the topic document so the
+# slice's output can be read against it: 40x25 m at 5 cm, a 0.52 m-wide
+# differential-drive robot, a Jetson Orin Nano with 3277 MB left for
+# navigation after everything else on the board is accounted for.
+#
+# No deviation from that example remains. There used to be one, and it
+# is worth keeping the story: this profile declared `control_period: 0.1`
+# (10 Hz) instead of 20 Hz, reasoning that the Python DWA cannot compute
+# a control step in 50 ms and that a 20 Hz profile would therefore fail
+# G4 for a property of the simulator.
+#
+# That reasoning stopped being true and nobody noticed. G4's threshold
+# *is* this field (`RobotConfig.t_cycle_ms`), so relaxing it to 10 Hz
+# doubled the real-time budget from 50 ms to 100 ms — the gate a
+# candidate has to clear was widened because the candidate could not
+# clear it. Two later fixes removed the need: contract 3.0.0 changed G4
+# from max-per-episode to a pooled p99 (so one contended episode no
+# longer decides the gate), and Phase 5.1 pinned the run to dedicated
+# cores. Measured after both, on 100 episodes: `astar+dwa` 10.81 ms and
+# `rrtstar+dwa` 16.10 ms pooled p99. Both fit inside 50 ms with room to
+# spare. The concession was a fossil of two bugs that had already been
+# fixed.
+#
+# Restoring 20 Hz costs nothing in fidelity: `simulation_dt` is
+# `min(MAX_SIMULATION_DT, control_period)` and MAX is 0.05, so the
+# physics steps at 0.05 s either way (episode.py). What it does change is
+# the *candidate*: the local controller must now actually close its loop
+# at 20 Hz, which `validate_control_rate` enforces at startup. Before
+# that check existed, a candidate could declare a 10 Hz DWA against a
+# 20 Hz deployment and pass G4 anyway, because G4 times one controller
+# call and never asks how often the call happens.
+#
+# One declared limitation, found by running the slice (HĐ-15.2):
+#
+#   * `goal_tolerance_rad: 3.1416` — this deployment does not require the
+#     robot to arrive on a particular heading. It is written wide on
+#     purpose, and it is a statement about the platform as much as about
+#     the warehouse: HĐ-6 judges arrival on position *and* heading, while
+#     the simulator has no final-orientation controller and stops as soon
+#     as the position tolerance is met. A profile that demanded a heading
+#     would therefore score every candidate as failing, for a property of
+#     the simulator rather than of the planners. Until a controller that
+#     settles orientation exists, heading-constrained missions cannot be
+#     evaluated here — the same shape of reservation as the missing
+#     target board in HĐ-7.2, and recorded for the same reason.
+
+# The id changes with the environment, and this is why. `episode_context_id`
+# hashes (task_profile_id, mission_id, environment_variant, seed) and HĐ-3.1
+# freezes that payload — the traffic is *not* in it. So editing the obstacles
+# while keeping the id produces contexts that hash identically to the old
+# ones, and `--reuse-traces` then serves episodes recorded under an
+# environment that no longer exists. Nothing warns; the ids match.
+#
+# v1 -> v2, two correctness fixes and no tuning choices. `seed_time_offset`
+# raised from 6 s to a full 24 s period: a partial-cycle offset lets the
+# seeds explore only that fraction of the phase, which is what left the
+# first 100-episode run with one distinct episode. `control_period` restored
+# to 0.05 (20 Hz): see the note above on why 10 Hz was a widened gate rather
+# than a deployment fact. The map, the mission and the traffic are the
+# deployment as declared, unchanged.
+id: warehouse_a_v2
+claim_level: mission
+
+environment:
+  map: maps/warehouse_a.pgm
+  map_yaml: maps/warehouse_a.yaml
+  dynamic_obstacles:
+    - name: forklift
+      radius: 0.4
+      # One full period. At 6.0 s on a 24 s patrol the seeds explored a
+      # quarter of the cycle, the robot crossed this lane in a ~2 s
+      # window around t = 20 s, and 0 of 100 seeds ever came within 2 m
+      # of the forklift — so `astar+dwa` drove one identical episode a
+      # hundred times and G2 printed a 3% bound built on a sample of one.
+      # Measured, not guessed: closest approach across the whole run was
+      # 2.53 m against a 0.66 m contact distance.
+      seed_time_offset: 24.0
+      motion:
+        kind: periodic
+        start: {x: 12.0, y: 4.0}
+        end: {x: 12.0, y: 18.0}
+        period: 24.0
+
+
+missions:
+  - id: m1
+    start: [2.0, 3.0, 0.0]
+    goal: [38.0, 21.0, 1.57]
+    probability: 1.0
+
+robot:
+  type: differential_drive
+  radius: 0.26
+  max_linear_velocity: 0.8
+  max_angular_velocity: 1.2
+  max_linear_acceleration: 0.5
+  max_angular_acceleration: 1.0
+  # 20 Hz, as the worked example in §6.2 declares. This is G4's threshold
+  # (50 ms) and the minimum rate any candidate's controller must run at.
+  control_period: 0.05
+
+available_observations: [lidar_2d]
+
+constraints:
+  success_rate_min: 0.95
+  # 1% accepted collision risk, the figure the worked example in §6.2
+  # declares. The rule of three (HĐ-7.1) turns it into N_min = 300 clean
+  # distinct paired episodes before "zero collisions observed" bounds
+  # anything.
+  #
+  # This field is the site's safety requirement. It is *not* a knob for
+  # how long a run takes, and it was briefly used as one: an earlier
+  # revision declared 3% with the reason written in this very comment —
+  # "because the run has to share a working machine". That inverts the
+  # contract's own arrow, which runs `declared risk -> N_min -> hours`,
+  # never back. A machine being busy is not a fact about the warehouse.
+  #
+  # The cost is real, so here is the ladder, as an operations note rather
+  # than as a reason to pick a number:
+  #
+  #     30 episodes  ->  ~17 min   (smoke run: prove the pipeline)
+  #     100 episodes ->  ~57 min
+  #     300 episodes ->  ~2.9 h    (what this declaration actually needs)
+  #
+  # Running fewer than N_min stays allowed and needs no edit here: pass
+  # `--episodes`, and G2 reports `fail` with "only N distinct runs, below
+  # N_min = 300; the 95% upper bound of X% is looser than the declared
+  # risk". The measurement is identical either way. What differs is that
+  # the system now says it fell short instead of lowering the bar to
+  # meet itself.
+  collision_probability_max: 0.01
+  no_path_rate_max: 0.02
+  goal_tolerance_m: 0.20
+  goal_tolerance_rad: 3.1416
+  episode_timeout_s: 180
+  stuck_threshold_s: 10
+  clearance_warning_m: 0.35
+
+hardware:
+  target_device: jetson_orin_nano
+  total_ram_mb: 8192
+  ram_budget_breakdown:
+    os_and_middleware_mb: 1536
+    perception_stack_mb: 2048
+    localization_mapping_mb: 819
+    logging_and_reserve_mb: 512
+  available_ram_mb: 3277

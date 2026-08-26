@@ -7,7 +7,9 @@ Usage (interactive):
   python scripts/log_manual.py
 
 Usage (one-line):
-  python scripts/log_manual.py --tool "chatgpt" --prompt "Asked ChatGPT to explain transformer architecture" --model "gpt-5.4"
+  python scripts/log_manual.py --tool "chatgpt" \
+      --prompt "Asked ChatGPT to explain transformer architecture" \
+      --model "gpt-5.4"
 
 Examples:
   # Tiến logs a ChatGPT session
@@ -19,12 +21,13 @@ Examples:
   # Quick interactive mode
   python scripts/log_manual.py
 """
+
+import argparse
 import json
 import os
-import sys
 import subprocess
-import argparse
-from datetime import datetime, timezone, timedelta
+import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 VN_TZ = timezone(timedelta(hours=7))
@@ -32,9 +35,12 @@ VN_TZ = timezone(timedelta(hours=7))
 
 def git(cmd):
     try:
-        return subprocess.check_output(cmd.split(), shell=False, text=True, stderr=subprocess.DEVNULL).strip()
+        out = subprocess.check_output(
+            cmd.split(), shell=False, text=True, stderr=subprocess.DEVNULL
+        )
     except Exception:
         return ""
+    return out.strip()
 
 
 def interactive_mode():
@@ -82,7 +88,7 @@ def main():
     if not student:
         student = os.environ.get("USERNAME", os.environ.get("USER", "unknown"))
         print(f"[log] ⚠️  git email not set! Using fallback: {student}", file=sys.stderr)
-        print(f"[log] Run: git config user.email \"your@vinuni.edu.vn\"", file=sys.stderr)
+        print('[log] Run: git config user.email "your@vinuni.edu.vn"', file=sys.stderr)
 
     entry = {
         "ts": ts,

@@ -1,0 +1,621 @@
+{
+  "artifact": "comparison_report",
+  "identity": {
+    "task_profile_id": "open_hall_v2",
+    "experiment_scope": "local_controller_selection",
+    "sensor_noise": {
+      "lidar_range_sigma_m": 0.02,
+      "wheel_slip_fraction": 0.02
+    },
+    "git_sha": "79f7b04d7cbd1418dc17caa125b12a62e5bb89f5",
+    "anchor_config_version": "v1.2",
+    "created_at": "2026-08-12T08:27:51.083570+00:00"
+  },
+  "sample": {
+    "n_episodes": 30,
+    "n_episodes_requested": 30,
+    "interrupted": false,
+    "n_min_required": 30,
+    "episode_context_ids": [
+      "f9fe72e232bd",
+      "120945f5db74",
+      "1c2f789626f2",
+      "79c30015ffd0",
+      "8fb798fba064",
+      "66eba93e8f48",
+      "b906f527f665",
+      "7ce5b78e5ce8",
+      "ea2e3e511070",
+      "4e888961033f",
+      "a51b6d46bbfd",
+      "38c2ca2875f8",
+      "013e1952aa95",
+      "558a12088394",
+      "344989d4d133",
+      "ce181fcd26f3",
+      "744d09f63089",
+      "54646d1cd323",
+      "2b8aa7f9842e",
+      "d61ac038001d",
+      "7aadabebad8d",
+      "29f78f1d00ee",
+      "069682ace3f3",
+      "659e14ab476e",
+      "c2133a5a02b1",
+      "6c7844da307c",
+      "6f50370c78c9",
+      "d12136ae0d03",
+      "4c7a5dfc5000",
+      "7d7f96c87555"
+    ]
+  },
+  "early_stop": {
+    "enabled": false,
+    "min_episodes_before_stop": 30,
+    "deployment_role": "acceptance",
+    "gates_without_a_rule": {
+      "G4": "p99 gộp không đơn điệu — thêm control step có thể kéo phân vị xuống, nên 'đang vượt ngân sách' không chứng minh được 'sẽ vượt'",
+      "G6": "quyết trước episode một, trong build_candidates — không còn gì để dừng sớm"
+    },
+    "stopped": [],
+    "episodes_saved": 0
+  },
+  "candidates": [
+    {
+      "candidate_id": "db26440f6052",
+      "stack_label": "rrtstar+dwa",
+      "local_controller_config": "dwa_coarse",
+      "n_episodes": 30,
+      "stopped_early": null,
+      "gates": {
+        "candidate_id": "db26440f6052",
+        "G1": "pass",
+        "G2": {
+          "result": "pass",
+          "observed": 0,
+          "n_runs": 30,
+          "n_distinct_episodes": 30,
+          "upper_bound_95": 0.1,
+          "n_min": 30,
+          "statement": "0 va chạm quan sát trong 30 lần chạy phân biệt; cận trên 95% dưới phân phối kịch bản đã mô phỏng: 10.0%",
+          "note": "dưới phân phối kịch bản đã mô phỏng"
+        },
+        "G3": "pass",
+        "G4": {
+          "result": "pass",
+          "status": "screened_on_host",
+          "p99_ms": 6.06158399874403,
+          "threshold_ms": 50.0,
+          "caveat": "G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"
+        },
+        "G5": {
+          "result": "pass",
+          "status": "estimated_from_structure",
+          "memory_estimate_mb": 8.531768798828125,
+          "available_ram_mb": 3277.0,
+          "peak_rss_mb_diagnostic": 160.84765625,
+          "note": "ước lượng từ bộ đếm cấu trúc dữ liệu nhân kích thước byte của hiện thực đích; pha sàng lọc là điều kiện cần — vượt ngân sách thì chắc chắn không vừa, không vượt thì chưa kết luận được điều ngược lại",
+          "target_implementation": "cpp_ros2",
+          "bytes_per_search_node": 40,
+          "peak_search_nodes": 0
+        },
+        "G6": "pass"
+      },
+      "cleared_gates": true,
+      "blocking_gates": [],
+      "n_distinct_episodes": 30,
+      "success_rate": 1.0,
+      "pooled_p99_latency_ms": 6.06158399874403
+    },
+    {
+      "candidate_id": "be4a8c4b7fb3",
+      "stack_label": "rrtstar+dwa",
+      "local_controller_config": "dwa_balanced",
+      "n_episodes": 30,
+      "stopped_early": null,
+      "gates": {
+        "candidate_id": "be4a8c4b7fb3",
+        "G1": "pass",
+        "G2": {
+          "result": "pass",
+          "observed": 0,
+          "n_runs": 30,
+          "n_distinct_episodes": 30,
+          "upper_bound_95": 0.1,
+          "n_min": 30,
+          "statement": "0 va chạm quan sát trong 30 lần chạy phân biệt; cận trên 95% dưới phân phối kịch bản đã mô phỏng: 10.0%",
+          "note": "dưới phân phối kịch bản đã mô phỏng"
+        },
+        "G3": "pass",
+        "G4": {
+          "result": "pass",
+          "status": "screened_on_host",
+          "p99_ms": 19.299482999431337,
+          "threshold_ms": 50.0,
+          "caveat": "G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"
+        },
+        "G5": {
+          "result": "pass",
+          "status": "estimated_from_structure",
+          "memory_estimate_mb": 8.531768798828125,
+          "available_ram_mb": 3277.0,
+          "peak_rss_mb_diagnostic": 160.9453125,
+          "note": "ước lượng từ bộ đếm cấu trúc dữ liệu nhân kích thước byte của hiện thực đích; pha sàng lọc là điều kiện cần — vượt ngân sách thì chắc chắn không vừa, không vượt thì chưa kết luận được điều ngược lại",
+          "target_implementation": "cpp_ros2",
+          "bytes_per_search_node": 40,
+          "peak_search_nodes": 0
+        },
+        "G6": "pass"
+      },
+      "cleared_gates": true,
+      "blocking_gates": [],
+      "n_distinct_episodes": 30,
+      "success_rate": 1.0,
+      "pooled_p99_latency_ms": 19.299482999431337
+    }
+  ],
+  "measurement_environment": {
+    "benchmark_host": {
+      "cpu": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+      "cores_allocated": 20,
+      "threads": 1,
+      "cpu_affinity": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ],
+      "logical_cores": 20,
+      "affinity_source": "inherited"
+    },
+    "warning": "Đo trên toàn bộ 20 nhân, không ghim: G4 đọc độ trễ theo đồng hồ tường nên mọi tải khác trên máy đi thẳng vào con số. Cùng candidate đo được 59,30 ms không ghim và 16,10 ms khi ghim 2 nhân"
+  },
+  "run_uri": "file://artifacts\\runs\\_repro_check\\2026-08-12\\open_hall_v2_local_controller_selection_3edf8fe6",
+  "run_checksum": "947e4b5742156caf715db05624e0b9a70dad28ce2415f8a8b82cdeef89990b3c",
+  "decision_card": {
+    "contracts_version": "6.5.0",
+    "recommendation_scope": "MISSION_LEVEL",
+    "experiment_scope": "local_controller_selection",
+    "decision_mode": "technical",
+    "decision_mode_label": "Khuyến nghị kỹ thuật — chỉ dựa trên số liệu đo được",
+    "status": "CLEAR_RECOMMENDATION",
+    "recommended": {
+      "candidate_id": "db26440f6052",
+      "stack": "rrtstar+dwa",
+      "params_ref": null
+    },
+    "alternative": null,
+    "gates": [
+      {
+        "candidate_id": "be4a8c4b7fb3",
+        "G1": "pass",
+        "G2": {
+          "result": "pass",
+          "observed": 0,
+          "n_runs": 30,
+          "n_distinct_episodes": 30,
+          "upper_bound_95": 0.1,
+          "n_min": 30,
+          "statement": "0 va chạm quan sát trong 30 lần chạy phân biệt; cận trên 95% dưới phân phối kịch bản đã mô phỏng: 10.0%",
+          "note": "dưới phân phối kịch bản đã mô phỏng"
+        },
+        "G3": "pass",
+        "G4": {
+          "result": "pass",
+          "status": "screened_on_host",
+          "p99_ms": 19.299482999431337,
+          "threshold_ms": 50.0,
+          "caveat": "G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"
+        },
+        "G5": {
+          "result": "pass",
+          "status": "estimated_from_structure",
+          "memory_estimate_mb": 8.531768798828125,
+          "available_ram_mb": 3277.0,
+          "peak_rss_mb_diagnostic": 160.9453125,
+          "note": "ước lượng từ bộ đếm cấu trúc dữ liệu nhân kích thước byte của hiện thực đích; pha sàng lọc là điều kiện cần — vượt ngân sách thì chắc chắn không vừa, không vượt thì chưa kết luận được điều ngược lại",
+          "target_implementation": "cpp_ros2",
+          "bytes_per_search_node": 40,
+          "peak_search_nodes": 0
+        },
+        "G6": "pass"
+      },
+      {
+        "candidate_id": "db26440f6052",
+        "G1": "pass",
+        "G2": {
+          "result": "pass",
+          "observed": 0,
+          "n_runs": 30,
+          "n_distinct_episodes": 30,
+          "upper_bound_95": 0.1,
+          "n_min": 30,
+          "statement": "0 va chạm quan sát trong 30 lần chạy phân biệt; cận trên 95% dưới phân phối kịch bản đã mô phỏng: 10.0%",
+          "note": "dưới phân phối kịch bản đã mô phỏng"
+        },
+        "G3": "pass",
+        "G4": {
+          "result": "pass",
+          "status": "screened_on_host",
+          "p99_ms": 6.06158399874403,
+          "threshold_ms": 50.0,
+          "caveat": "G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"
+        },
+        "G5": {
+          "result": "pass",
+          "status": "estimated_from_structure",
+          "memory_estimate_mb": 8.531768798828125,
+          "available_ram_mb": 3277.0,
+          "peak_rss_mb_diagnostic": 160.84765625,
+          "note": "ước lượng từ bộ đếm cấu trúc dữ liệu nhân kích thước byte của hiện thực đích; pha sàng lọc là điều kiện cần — vượt ngân sách thì chắc chắn không vừa, không vượt thì chưa kết luận được điều ngược lại",
+          "target_implementation": "cpp_ros2",
+          "bytes_per_search_node": 40,
+          "peak_search_nodes": 0
+        },
+        "G6": "pass"
+      }
+    ],
+    "objectives": {
+      "U_R": 1.0,
+      "U_S": 0.21706634467540128,
+      "U_E": 0.95655492124117,
+      "U_C": 0.8324780701754386
+    },
+    "decision_utility": 0.8522126893392361,
+    "pareto_label": "PARETO_FRONTIER",
+    "evidence": {
+      "delta_u_vs_second": 0.03208101675705993,
+      "delta_u_mean": 0.034184656703896144,
+      "ci95": [
+        0.03178970745358651,
+        0.037033078023420596
+      ],
+      "n_episodes": 30,
+      "effect_size": 4.744715936118731,
+      "weight_stability_margin": 1.0,
+      "anchor_stability": "unchanged_at_±10%",
+      "robustness_margin": null
+    },
+    "declared_assumptions": null,
+    "manifest_ref": "manifest.json",
+    "approval": {
+      "status": "PENDING",
+      "by": null,
+      "at": null,
+      "comment": null
+    }
+  },
+  "manifest": {
+    "contracts_version": "6.5.0",
+    "git_sha": "79f7b04d7cbd1418dc17caa125b12a62e5bb89f5",
+    "docker_image_digest": null,
+    "task_profile_id": "open_hall_v2",
+    "anchor_config_version": "v1.2",
+    "preference_profile": "kho_ban_dem",
+    "decision_mode": "technical",
+    "travel_time_accounting": "efficiency",
+    "sensor_noise": {
+      "lidar_range_sigma_m": 0.02,
+      "wheel_slip_fraction": 0.02
+    },
+    "constraints": {
+      "success_rate_min": 0.95,
+      "collision_probability_max": 0.1,
+      "no_path_rate_max": 0.02,
+      "goal_tolerance_m": 0.2,
+      "goal_tolerance_rad": 3.1416,
+      "episode_timeout_s": 120.0,
+      "stuck_threshold_s": 10.0,
+      "clearance_warning_m": 0.35,
+      "cost_per_mission_max": null
+    },
+    "candidates": [
+      "be4a8c4b7fb3",
+      "db26440f6052"
+    ],
+    "episode_contexts": {
+      "evaluation": [
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 12,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "013e1952aa95"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 22,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "069682ace3f3"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 1,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "120945f5db74"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 2,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "1c2f789626f2"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 21,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "29f78f1d00ee"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 18,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "2b8aa7f9842e"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 14,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "344989d4d133"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 11,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "38c2ca2875f8"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 28,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "4c7a5dfc5000"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 9,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "4e888961033f"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 17,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "54646d1cd323"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 13,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "558a12088394"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 23,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "659e14ab476e"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 5,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "66eba93e8f48"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 25,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "6c7844da307c"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 26,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "6f50370c78c9"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 16,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "744d09f63089"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 3,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "79c30015ffd0"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 20,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "7aadabebad8d"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 7,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "7ce5b78e5ce8"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 29,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "7d7f96c87555"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 4,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "8fb798fba064"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 10,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "a51b6d46bbfd"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 6,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "b906f527f665"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 24,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "c2133a5a02b1"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 15,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "ce181fcd26f3"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 27,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "d12136ae0d03"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 19,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "d61ac038001d"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 8,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "ea2e3e511070"
+        },
+        {
+          "task_profile_id": "open_hall_v2",
+          "mission_id": "through_hall",
+          "seed": 0,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "f9fe72e232bd"
+        }
+      ],
+      "neighborhood": []
+    },
+    "bootstrap": {
+      "seed": 0,
+      "n_resamples": 1000
+    },
+    "benchmark_host": {
+      "cpu": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+      "cores_allocated": 20,
+      "threads": 1,
+      "cpu_affinity": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ],
+      "logical_cores": 20,
+      "affinity_source": "inherited"
+    },
+    "created_at": "2026-08-12T08:27:51.083570+00:00"
+  },
+  "gate_only_deployment": null,
+  "checks": [
+    "all 2 candidates still in the run ran the same 30 episode contexts",
+    "all six gates reported for 2 candidates, with N",
+    "L_ref ≤ path_length + goal tolerance on all 60 successful episodes",
+    "peak_search_nodes ≤ costmap_cells on every episode",
+    "ΔU median +0.032081, CI95 [+0.031790, +0.037033] over 30 paired episodes",
+    "decision_utility reproduced to 6 dp: 0.852213"
+  ]
+}

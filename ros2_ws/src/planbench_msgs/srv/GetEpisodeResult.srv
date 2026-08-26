@@ -1,0 +1,10 @@
+# Fetch the outcome of the current (or last) episode.
+
+---
+bool finished
+string status
+string reason
+float64 elapsed_time
+int32 steps
+float64 trajectory_length
+float64 min_clearance

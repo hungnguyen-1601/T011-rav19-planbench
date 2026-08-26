@@ -1,0 +1,246 @@
+/** Benchmark contract mirrored from the backend. */
+
+import type { ReviewRequestView } from "./reviews";
+import type { EpisodeMetrics, TrajectoryPoint } from "./types";
+
+export type BenchmarkState =
+  | "draft"
+  | "pending_approval"
+  | "approved"
+  | "running"
+  | "paused"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "pending_review"
+  | "accepted"
+  | "rejected";
+
+/** What a planner layer is allowed to see (P02, information parity).
+ *
+ *  A stack that reads ground-truth pedestrian states is solving an
+ *  easier problem than one running on LiDAR; the label is what stops the
+ *  leaderboard from reporting that as a better algorithm.
+ *
+ *  `full_static_map+human_states` is not declared by any stack in the
+ *  registry: it is derived at run time for the global planner whenever
+ *  replanning is on, because a replan is computed from the ground-truth
+ *  obstacle positions. */
+export type ObservationClass =
+  | "full_static_map"
+  | "lidar_only"
+  | "human_states"
+  | "lidar+human_states"
+  | "full_static_map+human_states";
+
+export interface AlgorithmInfo {
+  id: string;
+  kind: string;
+  description: string;
+  benchmarkable: boolean;
+  config_schema: Record<string, unknown>;
+  /** Which global planner runs, stated by the registry rather than parsed out of `id`. */
+  global_planner: string;
+  /** Which local controller runs, stated for the same reason.
+   *
+   *  Needed once a picker chose the two layers separately: the registry
+   *  is not a full cross product (`rrtstar+ppo` does not exist), so
+   *  knowing which pairs are real means reading the facts rather than
+   *  splitting the id. */
+  local_controller: string;
+  /** True when that planner samples randomly, so results need many seeds to mean anything. */
+  stochastic_global_planner: boolean;
+  /** What the global planner is given — normally the whole static map. */
+  global_observation_class: ObservationClass;
+  /** What the controller is given. Stacks differing here are not comparable. */
+  local_observation_class: ObservationClass;
+  /** True when the controller is steered by a global path. */
+  requires_global_path: boolean;
+}
+
+export interface AlgorithmSpec {
+  id: string;
+  config: Record<string, unknown>;
+}
+
+export interface BenchmarkSpec {
+  name: string;
+  description: string;
+  algorithms: AlgorithmSpec[];
+  seeds: number[];
+  spec_version: string;
+  /** One replanning rule for the whole benchmark, never per algorithm. */
+  replanning?: ReplanningConfig;
+}
+
+export interface ReplanningConfig {
+  enabled: boolean;
+  max_replans: number;
+}
+
+export interface ApprovalRecord {
+  benchmark_id: string;
+  /** Nickname at the time of the decision — display only. */
+  user: string;
+  /** The identity that acted. Empty on rows written before accounts. */
+  user_id: string;
+  role: string;
+  action: string;
+  previous_state: BenchmarkState;
+  new_state: BenchmarkState;
+  comment: string;
+  timestamp: string;
+  /** Set when the decision answered a review request. */
+  review_request_id: string | null;
+}
+
+export interface BenchmarkResource {
+  id: string;
+  spec: BenchmarkSpec;
+  map_id: string;
+  scenario_id: string;
+  state: BenchmarkState;
+  created_by: string;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  approvals: ApprovalRecord[];
+  report_artifact_uri: string | null;
+  /** Ownership and pending reviews, resolved by the API for the caller.
+   *  Used to decide what to show; the backend decides what to allow. */
+  owner_user_id: string;
+  is_owner: boolean;
+  review_requests: ReviewRequestView[];
+}
+
+export interface FairnessRecord {
+  map_name: string;
+  map_checksum: string;
+  scenario_name: string;
+  scenario_checksum: string;
+  seeds: number[];
+  timeout_seconds: number;
+  simulation_dt: number;
+  robot_radius: number;
+  max_linear_velocity: number;
+  max_angular_velocity: number;
+  lidar_num_rays: number;
+  lidar_max_range: number;
+  // The replanning rule every algorithm ran under. Optional because
+  // reports stored before it exist; absent reads as disabled, which is
+  // what those runs did.
+  replanning_enabled?: boolean;
+  max_replans?: number;
+  conditions_checksum: string;
+}
+
+export interface RunRecord {
+  algorithm: string;
+  seed: number;
+  status: string;
+  reason: string;
+  metrics: EpisodeMetrics;
+  trajectory_points: number;
+  episode_index: number;
+}
+
+export interface AlgorithmAggregate {
+  algorithm: string;
+  episodes: number;
+  success_rate: number;
+  collision_rate: number;
+  timeout_rate: number;
+  stuck_rate: number;
+  no_progress_rate: number;
+  no_global_path_rate: number;
+  mean_travel_time_successful: number | null;
+  mean_trajectory_length_successful: number | null;
+  mean_path_efficiency_successful: number | null;
+  mean_smoothness_successful: number | null;
+  mean_min_clearance: number | null;
+  worst_min_clearance: number | null;
+  mean_local_planning_latency: number | null;
+  max_local_planning_latency: number | null;
+  mean_global_planning_time: number | null;
+  /** Robust summaries (P04). `iqr_*` is [q1, q3] — how much the runs
+   *  varied; `ci95_*` is a bootstrap interval for the median — how well
+   *  this many seeds pin it down. Null means not computed (no successful
+   *  episode, or a report written before P04), never zero. */
+  median_travel_time_successful: number | null;
+  iqr_travel_time_successful: [number, number] | null;
+  ci95_travel_time_successful: [number, number] | null;
+  median_path_efficiency_successful: number | null;
+  iqr_path_efficiency_successful: [number, number] | null;
+  ci95_path_efficiency_successful: [number, number] | null;
+  median_smoothness_successful: number | null;
+  iqr_smoothness_successful: [number, number] | null;
+  ci95_smoothness_successful: [number, number] | null;
+  ci95_success_rate: [number, number] | null;
+}
+
+/** One head-to-head test, paired seed by seed. Every numeric field is
+ *  nullable: too few paired seeds means no test was run, and that is a
+ *  normal outcome rather than an error. */
+export interface PairwiseComparison {
+  algorithm_a: string;
+  algorithm_b: string;
+  metric: string;
+  statistic: number | null;
+  p_value: number | null;
+  /** Cliff's delta of A against B. Negative = A's values are lower. */
+  effect_size: number | null;
+  significant: boolean;
+  paired_seed_count: number;
+  warning: string | null;
+}
+
+export interface BenchmarkReport {
+  spec: BenchmarkSpec;
+  fairness: FairnessRecord;
+  runs: RunRecord[];
+  aggregates: AlgorithmAggregate[];
+  /** Empty on single-algorithm benchmarks and on reports predating P04. */
+  comparisons: PairwiseComparison[];
+  /** Seeds every algorithm faced. */
+  seed_count: number;
+  /** False when the seed count is too small to support a conclusion.
+   *  Does not block anything — it changes what the numbers may claim. */
+  statistically_adequate: boolean;
+  /** Which split this scenario was in when the benchmark ran (P05), and
+   *  under which protocol version. Snapshotted, so re-classifying the
+   *  scenario later does not relabel these numbers. Null/`unassigned` on
+   *  reports written before P05. */
+  protocol_version: string | null;
+  scenario_split: "dev" | "holdout" | "unassigned";
+  /** Always null today: one benchmark is one scenario, so it is entirely
+   *  one split. The gap is computed across benchmarks — see
+   *  `GET /generalization`. Null means "not computed", not "no gap". */
+  generalization_gap: Record<string, number> | null;
+}
+
+export interface BenchmarkResults {
+  benchmark: BenchmarkResource;
+  report: BenchmarkReport | null;
+}
+
+export interface EpisodeSummary {
+  id: string;
+  benchmark_id: string;
+  algorithm: string;
+  seed: number;
+  created_at: string;
+  record: RunRecord;
+  artifact_uri: string;
+  artifact_checksum: string;
+  artifact_bytes: number;
+}
+
+export interface EpisodeReplay {
+  id: string;
+  algorithm: string;
+  seed: number;
+  plan_path: { x: number; y: number }[];
+  trajectory: TrajectoryPoint[];
+  events: { time: number; type: string; message: string }[];
+  metrics: EpisodeMetrics;
+}

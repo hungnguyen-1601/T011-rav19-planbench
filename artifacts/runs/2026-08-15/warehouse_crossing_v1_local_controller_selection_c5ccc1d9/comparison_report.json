@@ -1,0 +1,1210 @@
+{
+  "artifact": "comparison_report",
+  "identity": {
+    "task_profile_id": "warehouse_crossing_v1",
+    "experiment_scope": "local_controller_selection",
+    "sensor_noise": {
+      "lidar_range_sigma_m": 0.02,
+      "wheel_slip_fraction": 0.02,
+      "localization_drift_m": 0.0,
+      "localization_jump_probability": 0.0,
+      "lidar_dropout_probability": 0.0,
+      "odometry_bias_fraction": 0.0,
+      "command_latency_steps": 0
+    },
+    "git_sha": "b42e48da5bd383babcb04b9de5c8a152a3d0a8cd",
+    "anchor_config_version": "v1.2",
+    "created_at": "2026-08-15T04:09:56.352277+00:00"
+  },
+  "sample": {
+    "n_episodes": 30,
+    "n_episodes_requested": 30,
+    "interrupted": false,
+    "n_min_required": 30,
+    "episode_context_ids": [
+      "b408516ece7f",
+      "66d4a7599890",
+      "eb0ced43c9eb",
+      "9acbe9ba77e4",
+      "02aebc23d9f5",
+      "143deebc961c",
+      "ddf3dfda3757",
+      "5c42e1a74d5f",
+      "1cdf23b2fa98",
+      "ab325d70e8ac",
+      "354c124b59eb",
+      "64f7e9d1c823",
+      "ab8a538bda76",
+      "92428105ee46",
+      "b1af3d77c3a0",
+      "4752cdd01d17",
+      "157ed242e243",
+      "f91c961b9eca",
+      "b8bc710e548a",
+      "a3c43674fec3",
+      "59e545157c95",
+      "efba36f5a141",
+      "de955510daa0",
+      "ee68242ac88c",
+      "32bce1518850",
+      "86b342d34592",
+      "37eccb09dec5",
+      "40da04598b8e",
+      "72a65d2c47df",
+      "889eccc06e3b"
+    ]
+  },
+  "early_stop": {
+    "enabled": false,
+    "min_episodes_before_stop": 30,
+    "deployment_role": "instrument",
+    "gates_without_a_rule": {
+      "G4": "p99 gộp không đơn điệu — thêm control step có thể kéo phân vị xuống, nên 'đang vượt ngân sách' không chứng minh được 'sẽ vượt'",
+      "G6": "quyết trước episode một, trong build_candidates — không còn gì để dừng sớm"
+    },
+    "stopped": [],
+    "episodes_saved": 0
+  },
+  "candidates": [
+    {
+      "candidate_id": "3b18dfbfa9e7",
+      "stack_label": "astar+dwa",
+      "local_controller_config": "dwa_balanced",
+      "global_observation_class": "full_static_map",
+      "local_observation_class": "lidar_only",
+      "n_episodes": 30,
+      "stopped_early": null,
+      "gates": {
+        "candidate_id": "3b18dfbfa9e7",
+        "G1": "pass",
+        "G2": {
+          "result": "pass",
+          "observed": 0,
+          "n_runs": 30,
+          "n_distinct_episodes": 30,
+          "upper_bound_95": 0.1,
+          "n_min": 30,
+          "statement": "0 va chạm quan sát trong 30 lần chạy phân biệt; cận trên 95% dưới phân phối kịch bản đã mô phỏng: 10.0%",
+          "note": "dưới phân phối kịch bản đã mô phỏng"
+        },
+        "G3": "pass",
+        "G4": {
+          "result": "pass",
+          "status": "screened_on_host",
+          "p99_ms": 24.72709999892686,
+          "threshold_ms": 50.0,
+          "caveat": "G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"
+        },
+        "G5": {
+          "result": "pass",
+          "status": "estimated_from_structure",
+          "memory_estimate_mb": 13.714645385742188,
+          "available_ram_mb": 3277.0,
+          "peak_rss_mb_diagnostic": 149.82421875,
+          "note": "ước lượng từ bộ đếm cấu trúc dữ liệu nhân kích thước byte của hiện thực đích; pha sàng lọc là điều kiện cần — vượt ngân sách thì chắc chắn không vừa, không vượt thì chưa kết luận được điều ngược lại",
+          "target_implementation": "cpp_ros2",
+          "bytes_per_search_node": 40,
+          "peak_search_nodes": 119806
+        },
+        "G6": "pass"
+      },
+      "cleared_gates": true,
+      "blocking_gates": [],
+      "n_distinct_episodes": 30,
+      "success_rate": 1.0,
+      "pooled_p99_latency_ms": 24.72709999892686,
+      "replan_count": 0,
+      "episodes": [
+        {
+          "episode_context_id": "b408516ece7f",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20219361948553494,
+          "travel_time_s": 65.24999999999844,
+          "p99_latency_ms": 24.592920000577596,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "66d4a7599890",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20160050472634128,
+          "travel_time_s": 65.64999999999841,
+          "p99_latency_ms": 24.669984000611294,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "eb0ced43c9eb",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20228078026325103,
+          "travel_time_s": 65.59999999999842,
+          "p99_latency_ms": 30.70105999991935,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "9acbe9ba77e4",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2022607115407019,
+          "travel_time_s": 65.59999999999842,
+          "p99_latency_ms": 28.72197600037901,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "02aebc23d9f5",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2021675091324201,
+          "travel_time_s": 65.59999999999842,
+          "p99_latency_ms": 29.696168000518767,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "143deebc961c",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20218011772354721,
+          "travel_time_s": 65.69999999999841,
+          "p99_latency_ms": 28.483688000524097,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "ddf3dfda3757",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2022001695422157,
+          "travel_time_s": 65.34999999999843,
+          "p99_latency_ms": 25.61217200034665,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "5c42e1a74d5f",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20205986141836801,
+          "travel_time_s": 66.29999999999838,
+          "p99_latency_ms": 31.045499999963795,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "1cdf23b2fa98",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20190777909268187,
+          "travel_time_s": 65.24999999999844,
+          "p99_latency_ms": 30.650904999765785,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "ab325d70e8ac",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2018628176977234,
+          "travel_time_s": 66.39999999999837,
+          "p99_latency_ms": 32.49362400041722,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "354c124b59eb",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20222903377039048,
+          "travel_time_s": 65.24999999999844,
+          "p99_latency_ms": 25.261589999809075,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "64f7e9d1c823",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20213213248169942,
+          "travel_time_s": 65.64999999999841,
+          "p99_latency_ms": 17.650785000132597,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "ab8a538bda76",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20216334686217413,
+          "travel_time_s": 65.69999999999841,
+          "p99_latency_ms": 16.77125799935311,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "92428105ee46",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20184619044833385,
+          "travel_time_s": 65.19999999999844,
+          "p99_latency_ms": 16.66953600040871,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "b1af3d77c3a0",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20224423995332536,
+          "travel_time_s": 65.44999999999843,
+          "p99_latency_ms": 17.312227999955212,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "4752cdd01d17",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20143749380076836,
+          "travel_time_s": 65.64999999999841,
+          "p99_latency_ms": 17.214873000248186,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "157ed242e243",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2022651866636298,
+          "travel_time_s": 65.39999999999843,
+          "p99_latency_ms": 16.188467999818393,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "f91c961b9eca",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2016178667510382,
+          "travel_time_s": 65.59999999999842,
+          "p99_latency_ms": 17.63772799931757,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "b8bc710e548a",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2019669865300811,
+          "travel_time_s": 65.49999999999842,
+          "p99_latency_ms": 17.199110000183286,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "a3c43674fec3",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20216611320987443,
+          "travel_time_s": 65.44999999999843,
+          "p99_latency_ms": 16.94047400047566,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "59e545157c95",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20189926370585887,
+          "travel_time_s": 65.44999999999843,
+          "p99_latency_ms": 17.500823000918903,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "efba36f5a141",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20182864409426304,
+          "travel_time_s": 67.5499999999983,
+          "p99_latency_ms": 16.44711399985681,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "de955510daa0",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20262069254684428,
+          "travel_time_s": 65.44999999999843,
+          "p99_latency_ms": 17.374216999869542,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "ee68242ac88c",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20224602593481122,
+          "travel_time_s": 65.64999999999841,
+          "p99_latency_ms": 17.740563999959697,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "32bce1518850",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2017311741479338,
+          "travel_time_s": 65.49999999999842,
+          "p99_latency_ms": 16.9014300008712,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "86b342d34592",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20118498543912255,
+          "travel_time_s": 65.44999999999843,
+          "p99_latency_ms": 19.16020200062121,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "37eccb09dec5",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2019582996907816,
+          "travel_time_s": 65.44999999999843,
+          "p99_latency_ms": 17.292854000861574,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "40da04598b8e",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20175332237027438,
+          "travel_time_s": 65.49999999999842,
+          "p99_latency_ms": 20.290199998635224,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "72a65d2c47df",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2022309891708685,
+          "travel_time_s": 65.44999999999843,
+          "p99_latency_ms": 20.786784999618277,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "889eccc06e3b",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20250909496797026,
+          "travel_time_s": 65.54999999999842,
+          "p99_latency_ms": 23.759023000311647,
+          "replan_count": 0
+        }
+      ]
+    },
+    {
+      "candidate_id": "da8d812bee98",
+      "stack_label": "astar+dwa_predictive",
+      "local_controller_config": "dwa_predictive_balanced",
+      "global_observation_class": "full_static_map",
+      "local_observation_class": "lidar_only",
+      "n_episodes": 30,
+      "stopped_early": null,
+      "gates": {
+        "candidate_id": "da8d812bee98",
+        "G1": "pass",
+        "G2": {
+          "result": "pass",
+          "observed": 0,
+          "n_runs": 30,
+          "n_distinct_episodes": 30,
+          "upper_bound_95": 0.1,
+          "n_min": 30,
+          "statement": "0 va chạm quan sát trong 30 lần chạy phân biệt; cận trên 95% dưới phân phối kịch bản đã mô phỏng: 10.0%",
+          "note": "dưới phân phối kịch bản đã mô phỏng"
+        },
+        "G3": "pass",
+        "G4": {
+          "result": "pass",
+          "status": "screened_on_host",
+          "p99_ms": 27.424676999744403,
+          "threshold_ms": 50.0,
+          "caveat": "G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"
+        },
+        "G5": {
+          "result": "pass",
+          "status": "estimated_from_structure",
+          "memory_estimate_mb": 13.714645385742188,
+          "available_ram_mb": 3277.0,
+          "peak_rss_mb_diagnostic": 149.84765625,
+          "note": "ước lượng từ bộ đếm cấu trúc dữ liệu nhân kích thước byte của hiện thực đích; pha sàng lọc là điều kiện cần — vượt ngân sách thì chắc chắn không vừa, không vượt thì chưa kết luận được điều ngược lại",
+          "target_implementation": "cpp_ros2",
+          "bytes_per_search_node": 40,
+          "peak_search_nodes": 119806
+        },
+        "G6": "pass"
+      },
+      "cleared_gates": true,
+      "blocking_gates": [],
+      "n_distinct_episodes": 30,
+      "success_rate": 1.0,
+      "pooled_p99_latency_ms": 27.424676999744403,
+      "replan_count": 0,
+      "episodes": [
+        {
+          "episode_context_id": "b408516ece7f",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20219361948553494,
+          "travel_time_s": 65.24999999999844,
+          "p99_latency_ms": 30.096039999898515,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "66d4a7599890",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20160050472634128,
+          "travel_time_s": 65.64999999999841,
+          "p99_latency_ms": 32.141327000663296,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "eb0ced43c9eb",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20228078026325103,
+          "travel_time_s": 65.59999999999842,
+          "p99_latency_ms": 38.939515999736585,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "9acbe9ba77e4",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2022607115407019,
+          "travel_time_s": 65.59999999999842,
+          "p99_latency_ms": 31.62835200018889,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "02aebc23d9f5",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2021675091324201,
+          "travel_time_s": 65.59999999999842,
+          "p99_latency_ms": 33.44708799893845,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "143deebc961c",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20218011772354721,
+          "travel_time_s": 65.69999999999841,
+          "p99_latency_ms": 29.130823998639237,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "ddf3dfda3757",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2022001695422157,
+          "travel_time_s": 65.34999999999843,
+          "p99_latency_ms": 29.807244000185214,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "5c42e1a74d5f",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20205986141836801,
+          "travel_time_s": 66.29999999999838,
+          "p99_latency_ms": 27.554601999581802,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "1cdf23b2fa98",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20190777909268187,
+          "travel_time_s": 65.24999999999844,
+          "p99_latency_ms": 25.02188500020566,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "ab325d70e8ac",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2018628176977234,
+          "travel_time_s": 66.39999999999837,
+          "p99_latency_ms": 21.10285199960345,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "354c124b59eb",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20222903377039048,
+          "travel_time_s": 65.24999999999844,
+          "p99_latency_ms": 19.68455499982156,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "64f7e9d1c823",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20213213248169942,
+          "travel_time_s": 65.69999999999841,
+          "p99_latency_ms": 17.524843999999568,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "ab8a538bda76",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20216334686217413,
+          "travel_time_s": 65.69999999999841,
+          "p99_latency_ms": 18.0443660002129,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "92428105ee46",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20184619044833385,
+          "travel_time_s": 65.19999999999844,
+          "p99_latency_ms": 18.418420000743936,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "b1af3d77c3a0",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20224423995332536,
+          "travel_time_s": 65.44999999999843,
+          "p99_latency_ms": 18.072802999995485,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "4752cdd01d17",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20143749380076836,
+          "travel_time_s": 65.64999999999841,
+          "p99_latency_ms": 18.30447499953145,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "157ed242e243",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2022651866636298,
+          "travel_time_s": 65.39999999999843,
+          "p99_latency_ms": 17.79595200081531,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "f91c961b9eca",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2016178667510382,
+          "travel_time_s": 65.59999999999842,
+          "p99_latency_ms": 17.820699999138007,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "b8bc710e548a",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2019669865300811,
+          "travel_time_s": 65.49999999999842,
+          "p99_latency_ms": 18.59583999994358,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "a3c43674fec3",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20216611320987443,
+          "travel_time_s": 65.44999999999843,
+          "p99_latency_ms": 18.278491999681137,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "59e545157c95",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20189926370585887,
+          "travel_time_s": 65.44999999999843,
+          "p99_latency_ms": 17.863820999773484,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "efba36f5a141",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20182864409426304,
+          "travel_time_s": 67.5499999999983,
+          "p99_latency_ms": 17.959343000402445,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "de955510daa0",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20262069254684428,
+          "travel_time_s": 65.44999999999843,
+          "p99_latency_ms": 17.044301000096315,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "ee68242ac88c",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20224602593481122,
+          "travel_time_s": 65.64999999999841,
+          "p99_latency_ms": 17.501847999683378,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "32bce1518850",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2017311741479338,
+          "travel_time_s": 65.49999999999842,
+          "p99_latency_ms": 18.187860001489756,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "86b342d34592",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20118498543912255,
+          "travel_time_s": 65.44999999999843,
+          "p99_latency_ms": 18.710364999878955,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "37eccb09dec5",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2019582996907816,
+          "travel_time_s": 65.44999999999843,
+          "p99_latency_ms": 21.881937999369256,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "40da04598b8e",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20175332237027438,
+          "travel_time_s": 65.49999999999842,
+          "p99_latency_ms": 26.660759999504094,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "72a65d2c47df",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.2022309891708685,
+          "travel_time_s": 65.44999999999843,
+          "p99_latency_ms": 28.074859001026223,
+          "replan_count": 0
+        },
+        {
+          "episode_context_id": "889eccc06e3b",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.20250909496797026,
+          "travel_time_s": 65.54999999999842,
+          "p99_latency_ms": 30.06188700024723,
+          "replan_count": 0
+        }
+      ]
+    }
+  ],
+  "measurement_environment": {
+    "benchmark_host": {
+      "cpu": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+      "cores_allocated": 2,
+      "threads": 1,
+      "cpu_affinity": [
+        0,
+        1
+      ],
+      "logical_cores": 20,
+      "affinity_source": "script"
+    },
+    "warning": null
+  },
+  "run_uri": "file://E:\\VinAI\\RoboMind_project\\P-011\\artifacts\\runs\\2026-08-15\\warehouse_crossing_v1_local_controller_selection_c5ccc1d9",
+  "run_checksum": "5eae732b70fbe085786dec8dc716f34b3c644d5637bee41f0c356a395578fe75",
+  "decision_card": {
+    "contracts_version": "6.9.0",
+    "recommendation_scope": "MISSION_LEVEL",
+    "experiment_scope": "local_controller_selection",
+    "decision_mode": "technical",
+    "decision_mode_label": "Khuyến nghị kỹ thuật — chỉ dựa trên số liệu đo được",
+    "status": "CLEAR_RECOMMENDATION",
+    "recommended": {
+      "candidate_id": "3b18dfbfa9e7",
+      "stack": "astar+dwa",
+      "params_ref": null
+    },
+    "alternative": null,
+    "gates": [
+      {
+        "candidate_id": "3b18dfbfa9e7",
+        "G1": "pass",
+        "G2": {
+          "result": "pass",
+          "observed": 0,
+          "n_runs": 30,
+          "n_distinct_episodes": 30,
+          "upper_bound_95": 0.1,
+          "n_min": 30,
+          "statement": "0 va chạm quan sát trong 30 lần chạy phân biệt; cận trên 95% dưới phân phối kịch bản đã mô phỏng: 10.0%",
+          "note": "dưới phân phối kịch bản đã mô phỏng"
+        },
+        "G3": "pass",
+        "G4": {
+          "result": "pass",
+          "status": "screened_on_host",
+          "p99_ms": 24.72709999892686,
+          "threshold_ms": 50.0,
+          "caveat": "G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"
+        },
+        "G5": {
+          "result": "pass",
+          "status": "estimated_from_structure",
+          "memory_estimate_mb": 13.714645385742188,
+          "available_ram_mb": 3277.0,
+          "peak_rss_mb_diagnostic": 149.82421875,
+          "note": "ước lượng từ bộ đếm cấu trúc dữ liệu nhân kích thước byte của hiện thực đích; pha sàng lọc là điều kiện cần — vượt ngân sách thì chắc chắn không vừa, không vượt thì chưa kết luận được điều ngược lại",
+          "target_implementation": "cpp_ros2",
+          "bytes_per_search_node": 40,
+          "peak_search_nodes": 119806
+        },
+        "G6": "pass"
+      },
+      {
+        "candidate_id": "da8d812bee98",
+        "G1": "pass",
+        "G2": {
+          "result": "pass",
+          "observed": 0,
+          "n_runs": 30,
+          "n_distinct_episodes": 30,
+          "upper_bound_95": 0.1,
+          "n_min": 30,
+          "statement": "0 va chạm quan sát trong 30 lần chạy phân biệt; cận trên 95% dưới phân phối kịch bản đã mô phỏng: 10.0%",
+          "note": "dưới phân phối kịch bản đã mô phỏng"
+        },
+        "G3": "pass",
+        "G4": {
+          "result": "pass",
+          "status": "screened_on_host",
+          "p99_ms": 27.424676999744403,
+          "threshold_ms": 50.0,
+          "caveat": "G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"
+        },
+        "G5": {
+          "result": "pass",
+          "status": "estimated_from_structure",
+          "memory_estimate_mb": 13.714645385742188,
+          "available_ram_mb": 3277.0,
+          "peak_rss_mb_diagnostic": 149.84765625,
+          "note": "ước lượng từ bộ đếm cấu trúc dữ liệu nhân kích thước byte của hiện thực đích; pha sàng lọc là điều kiện cần — vượt ngân sách thì chắc chắn không vừa, không vượt thì chưa kết luận được điều ngược lại",
+          "target_implementation": "cpp_ros2",
+          "bytes_per_search_node": 40,
+          "peak_search_nodes": 119806
+        },
+        "G6": "pass"
+      }
+    ],
+    "objectives": {
+      "U_R": 1.0,
+      "U_S": 0.38850929186941213,
+      "U_E": 0.8673464023967651,
+      "U_C": 0.7118081852489376
+    },
+    "decision_utility": 0.8048203946232606,
+    "pareto_label": "PARETO_FRONTIER",
+    "evidence": {
+      "delta_u_vs_second": 0.0034445879997689888,
+      "delta_u_mean": 0.0037358360519043105,
+      "ci95": [
+        1.0133135198789282e-05,
+        0.007351723718649929
+      ],
+      "n_episodes": 30,
+      "effect_size": 0.3393008854441663,
+      "weight_stability_margin": 1.0,
+      "anchor_stability": "unchanged_at_±10%",
+      "robustness_margin": null
+    },
+    "declared_assumptions": null,
+    "manifest_ref": "manifest.json",
+    "approval": {
+      "status": "PENDING",
+      "by": null,
+      "at": null,
+      "comment": null
+    }
+  },
+  "manifest": {
+    "contracts_version": "6.9.0",
+    "git_sha": "b42e48da5bd383babcb04b9de5c8a152a3d0a8cd",
+    "docker_image_digest": null,
+    "task_profile_id": "warehouse_crossing_v1",
+    "anchor_config_version": "v1.2",
+    "preference_profile": "kho_ban_dem",
+    "decision_mode": "technical",
+    "travel_time_accounting": "efficiency",
+    "sensor_noise": {
+      "lidar_range_sigma_m": 0.02,
+      "wheel_slip_fraction": 0.02,
+      "localization_drift_m": 0.0,
+      "localization_jump_probability": 0.0,
+      "lidar_dropout_probability": 0.0,
+      "odometry_bias_fraction": 0.0,
+      "command_latency_steps": 0
+    },
+    "replanning": {
+      "enabled": false,
+      "max_replans": 0
+    },
+    "v_obstacle_max": null,
+    "constraints": {
+      "success_rate_min": 0.95,
+      "collision_probability_max": 0.1,
+      "no_path_rate_max": 0.02,
+      "goal_tolerance_m": 0.2,
+      "goal_tolerance_rad": 3.1416,
+      "episode_timeout_s": 180.0,
+      "stuck_threshold_s": 10.0,
+      "clearance_warning_m": 0.35,
+      "cost_per_mission_max": null
+    },
+    "candidates": [
+      "3b18dfbfa9e7",
+      "da8d812bee98"
+    ],
+    "episode_contexts": {
+      "evaluation": [
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 4,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "02aebc23d9f5"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 5,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "143deebc961c"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 16,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "157ed242e243"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 8,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "1cdf23b2fa98"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 24,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "32bce1518850"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 10,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "354c124b59eb"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 26,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "37eccb09dec5"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 27,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "40da04598b8e"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 15,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "4752cdd01d17"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 20,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "59e545157c95"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 7,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "5c42e1a74d5f"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 11,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "64f7e9d1c823"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 1,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "66d4a7599890"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 28,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "72a65d2c47df"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 25,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "86b342d34592"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 29,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "889eccc06e3b"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 13,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "92428105ee46"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 3,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "9acbe9ba77e4"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 19,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "a3c43674fec3"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 9,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "ab325d70e8ac"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 12,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "ab8a538bda76"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 14,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "b1af3d77c3a0"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 0,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "b408516ece7f"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 18,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "b8bc710e548a"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 6,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "ddf3dfda3757"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 22,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "de955510daa0"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 2,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "eb0ced43c9eb"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 23,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "ee68242ac88c"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 21,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "efba36f5a141"
+        },
+        {
+          "task_profile_id": "warehouse_crossing_v1",
+          "mission_id": "m1",
+          "seed": 17,
+          "environment_variant": "nominal",
+          "sample_set": "evaluation",
+          "episode_context_id": "f91c961b9eca"
+        }
+      ],
+      "neighborhood": []
+    },
+    "bootstrap": {
+      "seed": 0,
+      "n_resamples": 1000
+    },
+    "benchmark_host": {
+      "cpu": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+      "cores_allocated": 2,
+      "threads": 1,
+      "cpu_affinity": [
+        0,
+        1
+      ],
+      "logical_cores": 20,
+      "affinity_source": "script"
+    },
+    "created_at": "2026-08-15T04:09:56.352277+00:00"
+  },
+  "gate_only_deployment": null,
+  "checks": [
+    "all 2 candidates still in the run ran the same 30 episode contexts",
+    "all six gates reported for 2 candidates, with N",
+    "L_ref ≤ path_length + goal tolerance on all 60 successful episodes",
+    "peak_search_nodes ≤ costmap_cells on every episode",
+    "ΔU median +0.003445, CI95 [+0.000010, +0.007352] over 30 paired episodes",
+    "decision_utility reproduced to 6 dp: 0.804820"
+  ]
+}

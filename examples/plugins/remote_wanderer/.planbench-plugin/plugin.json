@@ -1,0 +1,34 @@
+{
+  "plugin_api": "1.1.0",
+  "id": "org.planbench.example.remote-wanderer",
+  "version": "0.1.0",
+  "role": "local",
+  "runtime": {
+    "supported_lanes": ["subprocess"],
+    "production_lane": "subprocess",
+    "profiles": {
+      "subprocess": {
+        "protocol": "planbench-subprocess/v1",
+        "codec": "json-v1",
+        "deadline_policy": "control-period",
+        "entry_point": "remote_wanderer:RemoteWanderer"
+      }
+    }
+  },
+  "requirements": {
+    "all_of": ["planbench://channel/legacy-observation@1"]
+  },
+  "supports": {
+    "action_types": ["continuous-velocity@1"],
+    "robot_dynamics": ["differential-drive@1"],
+    "execution_models": ["synchronous-step@1"]
+  },
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "cruise_speed": {"type": "number"},
+      "stall_ms": {"type": "number"}
+    }
+  },
+  "requires_global_path": false
+}

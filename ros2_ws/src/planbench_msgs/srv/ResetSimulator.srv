@@ -1,0 +1,7 @@
+# Restart the loaded scenario from its start pose. Clears the episode
+# clock, trajectory and events.
+
+int32 seed        # < 0 keeps the seed the scenario was loaded with
+---
+bool success
+string message

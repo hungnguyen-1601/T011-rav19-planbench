@@ -1,25 +1,137 @@
-# Core
-fastapi>=0.115.0
-uvicorn[standard]>=0.34.0
-pydantic>=2.10.0
-pydantic-settings>=2.7.0
-python-dotenv>=1.0.0
+# PlanBench — Python dependencies to clone, install and run.
+#
+# ===================================================================
+#   CÀI ĐẶT
+# ===================================================================
+#
+#     python3.12 -m venv .venv
+#     .venv/bin/pip install --upgrade pip
+#     .venv/bin/pip install -r requirements.txt
+#
+#     cd apps/web && npm install && cd ../..
+#
+# Xong. Chạy dự án:  start.bat  (Windows)  hoặc
+#                    ./scripts/dev_stack.sh start  (Linux/WSL/macOS)
+#
+# ===================================================================
+#   FILE NÀY GỒM NHỮNG GÌ
+# ===================================================================
+#
+# Đủ để chạy **toàn bộ** những gì một người mới clone về cần:
+#
+#   - API FastAPI + WebSocket
+#   - Simulator, A*, DWA, benchmark engine
+#   - Đăng nhập (OAuth Google/GitHub + dev login)
+#   - Lưu trữ SQLite + migration Alembic
+#   - Trợ lý AI ở chế độ mock tất định (không cần API key)
+#   - Toàn bộ test suite, formatter và linter
+#
+# **Không** gồm bốn thứ, mỗi thứ có lý do — xem `requirements-optional.txt`:
+#
+#   PostgreSQL   chỉ cần khi deploy; local mặc định dùng SQLite
+#   MLflow       theo dõi thí nghiệm; thiếu thì tự động tắt, không lỗi
+#   PPO / RL     torch nặng vài GB, và chỉ dùng khi train
+#   LLM thật     chỉ cần khi bạn dán API key vào .env
+#
+# Thiếu chúng thì tính năng tương ứng giảm chế độ một cách có kiểm soát
+# và **báo rõ**, chứ không crash.
+#
+# ===================================================================
+#   VỀ VIỆC GHIM PHIÊN BẢN
+# ===================================================================
+#
+# Mọi thứ đều ghim `==` đúng phiên bản mà repo này đã phát triển và chạy
+# test. Một nền tảng benchmark mà dependency của chính nó trôi âm thầm
+# thì không còn đo đúng thứ nó tuyên bố đo nữa. Muốn nâng: sửa có chủ ý,
+# rồi chạy lại toàn bộ test suite.
+#
+# Chỉ liệt kê dependency **trực tiếp** — thứ mà code trong repo này thật
+# sự `import` hoặc gọi. Dependency gián tiếp (starlette, python-dotenv,
+# typing-inspection, …) do pip tự giải quyết.
+#
+# Cần Python 3.12 trở lên.
 
-# AI / LangChain
-langchain>=0.3.0
-langchain-openai>=0.3.0
-langgraph>=0.2.0
+# ---------- API và web framework ----------
+# uvicorn[standard] kéo theo websockets + httptools; route /ws phát lại
+# trajectory qua WebSocket nên cần nó.
+fastapi==0.141.1
+uvicorn[standard]==0.52.0
+websockets==16.1.1
+# Form đăng nhập của OAuth2PasswordRequestForm là multipart, và
+# POST /candidates/from-paper/upload nhận file cũng qua multipart.
+python-multipart==0.0.32
 
-# Database (uncomment as needed)
-# sqlalchemy>=2.0.0
-# alembic>=1.14.0
-# psycopg2-binary>=2.9.0
+# ---------- Đọc paper người dùng tải lên ----------
+# Trích text từ PDF cho POST /candidates/from-paper/upload. Ở đây chứ
+# không ở requirements-optional.txt: paper gần như luôn là PDF, nên
+# thiếu nó thì nút "Tải paper lên" chỉ còn dùng được với .txt/.md/.tex —
+# tức là tính năng chính hỏng chứ không phải giảm chế độ. Thuần Python,
+# ~1MB, không cần trình biên dịch.
+#
+# Code vẫn chịu được khi thiếu (`paper.PdfUnavailable` → API trả 503 kèm
+# đúng lệnh cài), phòng trường hợp môi trường bị cắt bớt.
+pypdf==6.16.1
 
-# Vector Store (uncomment as needed)
-# chromadb>=0.5.0
+# ---------- Contract-first: Pydantic là nguồn sự thật của domain ----------
+pydantic==2.13.4
+pydantic-settings==2.14.2
 
-# Dev tools
-ruff>=0.8.0
-pytest>=8.0.0
-pytest-asyncio>=0.24.0
-httpx>=0.28.0
+# ---------- Xác thực ----------
+# bcrypt dùng trực tiếp: passlib 1.7.4 không tương thích bcrypt 5.x
+# (xem docs/KNOWN_LIMITATIONS.md).
+bcrypt==5.0.0
+PyJWT==2.13.0
+# Gọi token endpoint của Google/GitHub **phía server**. Cũng là thứ
+# fastapi.testclient dùng, nên test cần nó kể cả khi không bật OAuth.
+httpx==0.28.1
+
+# ---------- Simulator, planner, metrics ----------
+# Sidecar YAML của định dạng map_server (planbench_schemas.map_io).
+PyYAML==6.0.3
+# Bản đang chạy toàn bộ test suite. NumPy 2.5.x yêu cầu Python >= 3.12,
+# trùng với `requires-python` của dự án và với phiên bản CI dùng.
+numpy==2.5.1
+# Thống kê của giao thức đánh giá (P04): Wilcoxon signed-rank và
+# bootstrap CI. Không tự cài lại — kiểm định thống kê cài sai không ném
+# exception, nó chỉ trả một con số trông hợp lý và sai. Độ tin cậy của
+# benchmark đáng giá hơn việc bớt một dependency.
+scipy==1.18.0
+# Trace files (CONTRACTS HĐ-5): mỗi episode ghi đúng một file Parquet, và
+# đó là nguồn dữ liệu DUY NHẤT của Metrics Engine. Không phải optional:
+# thiếu nó thì không episode nào ghi được bằng chứng, và mọi con số trên
+# Decision Card mất nguồn gốc.
+pyarrow==25.0.0
+# Ghim nhân CPU trên Windows (CONTRACTS HĐ-7.4). Linux có
+# `os.sched_setaffinity` sẵn trong stdlib; Windows KHÔNG, và `hostinfo.py`
+# rơi về psutil ở đó. Thiếu nó thì `pin_to_cores` trả None và mọi run trên
+# Windows chạy KHÔNG GHIM — G4 đọc độ trễ theo đồng hồ tường, nên cùng một
+# stack đo được 59,30 ms không ghim và 16,10 ms khi ghim 2 nhân.
+#
+# Hệ thống có báo (`affinity_source: inherited` + cảnh báo trên report),
+# nên nó suy giảm có tiếng chứ không âm thầm. Nhưng biện pháp bảo vệ thì
+# vắng mặt, và đó là điều duy nhất đáng kể.
+#
+# Chưa từng được khai cho tới 2026-08-12, dù `hostinfo.py` có hẳn một
+# comment gọi nó là "a pinned dependency". Nó chạy được suốt vì môi trường
+# conda trên máy dev tình cờ có sẵn — một `.venv` dựng đúng theo README
+# thì không. Khai vô điều kiện chứ không dùng marker `sys_platform`: một
+# marker sẽ để người dùng Windows tự phát hiện ra thiếu gì.
+psutil==7.2.2
+
+# ---------- Lưu trữ ----------
+# SQLite có sẵn trong Python, không cần driver. PostgreSQL cần psycopg —
+# xem requirements-optional.txt.
+SQLAlchemy==2.0.51
+alembic==1.18.5
+
+# ---------- Công cụ phát triển ----------
+# Ở đây chứ không ở file riêng: người mới clone về nên chạy được test
+# ngay, không phải đoán xem còn thiếu gì.
+pytest==9.1.1
+pytest-cov==7.1.0
+ruff==0.16.0
+# Kiểm Decision Card và manifest sinh ra có đúng `contracts/schemas/*.json`
+# không (CONTRACTS HĐ-12, HĐ-13). Không phải runtime: API và simulator
+# không cần nó. Nhưng test thì cần — kiểm output bằng chính model Pydantic
+# đã sinh ra nó thì không chứng minh được gì, hợp đồng nằm ở file schema.
+jsonschema==4.26.0

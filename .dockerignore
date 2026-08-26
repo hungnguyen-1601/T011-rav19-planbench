@@ -1,16 +1,61 @@
+# Keep the build context small and free of anything that must not reach
+# an image. A large context is slow; a context containing .env is a leak.
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Version control and tooling
 .git
 .gitignore
-.env
+.github
+.claude
+.vscode
+.idea
+
+# Python
+**/__pycache__
+**/*.py[cod]
 .venv
-__pycache__
-*.pyc
+venv
 .pytest_cache
 .ruff_cache
-docs/
-presentation/
-eval/
-*.md
-!requirements.txt
-.dockerignore
-Dockerfile
-docker-compose.yml
+.mypy_cache
+htmlcov
+.coverage
+.coverage.*
+
+# Node / Next: dependencies and build output are produced inside the
+# image, and a host node_modules is the wrong platform anyway.
+**/node_modules
+apps/web/.next
+apps/web/out
+**/*.tsbuildinfo
+apps/web/next-env.d.ts
+
+# ROS 2 colcon output — the API image does not run ROS nodes.
+ros2_ws/build
+ros2_ws/install
+ros2_ws/log
+
+# Run output: artifacts live on a volume, not in the image.
+artifacts/
+mlruns/
+mlflow.db
+ml/checkpoints/
+models/
+*.pt
+*.zip
+
+# Databases and logs
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# OS noise
+.DS_Store
+Thumbs.db

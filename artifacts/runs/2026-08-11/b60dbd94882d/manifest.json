@@ -1,0 +1,829 @@
+{
+  "contracts_version": "5.0.0",
+  "git_sha": "b60dbd94882d369bc4aaef6e0f531c85e6a9ee24",
+  "docker_image_digest": null,
+  "task_profile_id": "warehouse_a_v1",
+  "anchor_config_version": "v1.2",
+  "preference_profile": "kho_ban_dem",
+  "decision_mode": "technical",
+  "travel_time_accounting": "efficiency",
+  "candidates": [
+    "2baaad3628e1",
+    "ac187ee7a77e"
+  ],
+  "episode_contexts": {
+    "evaluation": [
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 24,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "02f57d55a945"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 13,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "07d88b3874ef"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 73,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "0d3d3535c35a"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 74,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "0e3531cf0e23"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 0,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "0f6fa961731d"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 77,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "15e498f5a7ed"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 56,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "16ddbac592a6"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 70,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "16e3e7b0c1af"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 64,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "1802af9457d2"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 43,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "1844c09300cd"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 1,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "184edef07968"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 53,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "18df1e5902b5"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 35,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "1fe5309ecd80"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 46,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "22ad16fa8a2f"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 82,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "232cae55e45f"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 62,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "24f6c77f40ae"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 49,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "2a574d4ec578"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 37,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "2e3668ec2e69"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 6,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "32e44bccd803"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 17,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "3555af9af9d6"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 71,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "355ee7ecde1c"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 38,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "35ce01297ec2"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 92,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "3607d7316878"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 50,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "375c356b70e0"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 80,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "3bb07b62b4c2"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 97,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "3cb2b18b3cba"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 11,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "3ce88577a3b0"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 90,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "3e0a2363d82b"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 10,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "4112c8b08a0d"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 21,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "4132ce7a0743"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 26,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "41ef167df9dc"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 7,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "43df9f8f5065"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 32,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "44576f03009e"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 54,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "45045987bad6"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 20,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "4d0203077864"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 48,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "4d9ac4492154"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 72,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "5069d7bf4ccb"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 47,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "582706b10583"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 16,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "5bcdf14fff32"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 25,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "5fb435878fe0"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 99,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "6021aef3b666"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 85,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "619679dee83b"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 34,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "6c0d8fb7ce0b"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 57,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "6c680b17ca30"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 29,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "6f5aeea0e549"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 5,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "6ff1ec163d70"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 40,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "70f399ce2dbd"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 63,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "7653f8c471a6"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 86,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "774c2949b523"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 39,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "7861f305aeca"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 22,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "7863a7d1d281"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 76,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "79272602c682"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 83,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "792b8a977e5f"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 59,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "79cb799eb44f"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 67,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "7b1d0c41e1de"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 3,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "7dad21ff7a2c"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 61,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "810ec2845f70"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 8,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "8f552c92e43a"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 14,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "9a87818e8c2c"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 42,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "a107b87196cc"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 89,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "a1e8522510ce"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 95,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "a26ad5fa014b"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 87,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "a77ec40289db"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 75,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "a89b1c7db6d5"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 94,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "aa29f9d9a813"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 88,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "b0fdfb2c0f51"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 58,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "b1f9d95424e4"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 98,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "b2db099b1bb6"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 65,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "b552a8dd7f2c"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 33,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "ba19e1c49a2d"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 66,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "bcb49d519b09"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 19,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "bf5a604a8afb"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 84,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "c09ad8031985"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 41,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "c2cebf9ced19"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 52,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "c727b4afaada"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 30,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "c771f8082b53"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 78,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "c7c8be192ad0"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 60,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "c89bfadaee35"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 81,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "c9c3839befac"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 51,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "cb945fd048c0"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 31,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "ce770b64c1cd"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 4,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "d36b0f3e01c0"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 45,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "d677339b5ec5"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 18,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "ddde9cb55ed6"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 96,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "df577bbf7cc5"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 91,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "df76eb0c2d9b"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 23,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "e02dd92c3d2e"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 28,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "e2d24989a6ea"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 68,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "e9d278333e4b"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 55,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "ecaa9181630f"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 15,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "ee40a1347e08"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 27,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "ee9e1b23da8d"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 69,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "eea141f4ddb5"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 44,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "ef66eef311eb"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 9,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "f1f8657f35c1"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 2,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "f65446fde25a"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 12,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "f7429e20b3e3"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 79,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "f981ee8bd9b2"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 36,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "ff8120c4b28c"
+      },
+      {
+        "task_profile_id": "warehouse_a_v1",
+        "mission_id": "m1",
+        "seed": 93,
+        "environment_variant": "nominal",
+        "sample_set": "evaluation",
+        "episode_context_id": "fff9e3bc44ce"
+      }
+    ],
+    "neighborhood": []
+  },
+  "bootstrap": {
+    "seed": 0,
+    "n_resamples": 1000
+  },
+  "benchmark_host": {
+    "cpu": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+    "cores_allocated": 1,
+    "threads": 1
+  },
+  "created_at": "2026-08-11T02:20:01.011663+00:00"
+}

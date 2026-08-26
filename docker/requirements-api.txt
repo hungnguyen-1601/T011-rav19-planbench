@@ -1,0 +1,59 @@
+# Runtime dependencies for the API image.
+#
+# Pinned to the versions this repository was developed and tested
+# against (`.venv/bin/pip freeze`), so an image built next month runs the
+# same code as the test suite did. Bump deliberately, then re-run the
+# suite — a benchmark platform whose own dependencies drift silently is
+# not measuring what it claims to.
+#
+# ML training dependencies (torch, stable-baselines3, gymnasium) are NOT
+# here: training is a separate workload, and pulling torch into the API
+# image would add gigabytes for code the API never executes. The
+# astar+ppo stack therefore cannot be run from this image — see
+# docs/DEPLOYMENT.md.
+
+fastapi==0.141.1
+uvicorn[standard]==0.52.0
+pydantic==2.13.4
+pydantic-settings==2.14.2
+python-multipart==0.0.32
+websockets==16.1.1
+
+# Auth: bcrypt directly (passlib 1.7.4 is incompatible with bcrypt 5.x)
+# plus PyJWT. See docs/KNOWN_LIMITATIONS.md.
+bcrypt==5.0.0
+PyJWT==2.13.0
+
+# Simulator and planners.
+numpy==2.5.1
+# Sidecar YAML of the map_server format, plus the anchor file and every
+# task profile. `planbench_schemas.map_io`, `planbench_benchmark.task_map`
+# and `planbench_decision.anchors` all import it, so an image without it
+# cannot load a map or resolve an anchor — it was missing here while
+# being present in requirements.txt, which is exactly how a dependency
+# gap survives a green test suite.
+PyYAML==6.0.3
+# Trace files (CONTRACTS HĐ-5). Every episode writes one Parquet file and
+# that file is the *only* input the Metrics Engine has. Runtime, not a
+# development extra: the API runs benchmark episodes through the same
+# simulator, so an image without pyarrow records no evidence and every
+# number downstream loses its provenance.
+pyarrow==25.0.0
+# Evaluation statistics (P04): Wilcoxon signed-rank and bootstrap CIs.
+# The API computes them when it aggregates a report, so this is runtime,
+# not a development extra. Ships wheels — no build toolchain needed.
+scipy==1.18.0
+# `psutil` is deliberately absent, and the asymmetry with
+# requirements.txt is the point rather than an oversight. `hostinfo.py`
+# needs it only to read and set CPU affinity where the stdlib cannot:
+# Windows. This image is Linux, `os.sched_getaffinity` and
+# `os.sched_setaffinity` are both present, and the psutil branch is
+# unreachable — so adding it here would ship a package the image never
+# imports. Do not "fix" the difference in either direction: removing it
+# from requirements.txt leaves every Windows run unpinned (HĐ-7.4).
+
+# Persistence. psycopg[binary] ships wheels, so no build toolchain is
+# needed in the image.
+SQLAlchemy==2.0.51
+alembic==1.18.5
+psycopg[binary]==3.2.10

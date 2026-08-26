@@ -1,0 +1,288 @@
+"""Tests for the ROS map_server (PGM + YAML) loader — F01.
+
+Every test builds a real PGM byte string by hand (no fixture file on
+disk, no image library) so the exact pixel layout under test is visible
+right next to the assertion.
+"""
+
+from __future__ import annotations
+
+import pytest
+import yaml
+
+from planbench_schemas.geometry import Pose2D
+from planbench_schemas.map import CellState, MapData
+from planbench_schemas.map_io import MapServerFormatError, dump_map_server, load_map_server
+
+
+def make_pgm(rows: list[list[int]], *, maxval: int = 255, ascii_format: bool = False) -> bytes:
+    """Build a P5 (binary) or P2 (ASCII) PGM from pixel rows (row 0 = image top)."""
+    height = len(rows)
+    width = len(rows[0])
+    if ascii_format:
+        header = f"P2\n{width} {height}\n{maxval}\n"
+        body = " ".join(str(v) for row in rows for v in row)
+        return (header + body).encode("ascii")
+    header = f"P5\n{width} {height}\n{maxval}\n".encode("ascii")
+    body = bytes(v for row in rows for v in row)
+    return header + body
+
+
+def make_yaml(
+    resolution: float = 0.1,
+    origin: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    negate: int = 0,
+    occupied_thresh: float = 0.65,
+    free_thresh: float = 0.196,
+) -> str:
+    ox, oy, otheta = origin
+    return (
+        f"image: map.pgm\n"
+        f"resolution: {resolution}\n"
+        f"origin: [{ox}, {oy}, {otheta}]\n"
+        f"negate: {negate}\n"
+        f"occupied_thresh: {occupied_thresh}\n"
+        f"free_thresh: {free_thresh}\n"
+    )
+
+
+def cells_grid(map_data, width: int, height: int) -> list[list[str]]:
+    return [
+        [CellState(map_data.cells[row * width + col]).name for col in range(width)]
+        for row in range(height)
+    ]
+
+
+class TestBasicParsing:
+    def test_reads_dimensions_and_resolution(self) -> None:
+        pgm = make_pgm([[255, 255], [255, 255]])
+        m = load_map_server(pgm, make_yaml(resolution=0.05), name="tiny")
+        assert m.name == "tiny"
+        assert m.width == 2
+        assert m.height == 2
+        assert m.resolution == 0.05
+
+    def test_all_white_is_all_free(self) -> None:
+        pgm = make_pgm([[255, 255], [255, 255]])
+        m = load_map_server(pgm, make_yaml(), name="free")
+        assert all(c == CellState.FREE.value for c in m.cells)
+
+    def test_all_black_is_all_occupied(self) -> None:
+        pgm = make_pgm([[0, 0], [0, 0]])
+        m = load_map_server(pgm, make_yaml(), name="occupied")
+        assert all(c == CellState.OCCUPIED.value for c in m.cells)
+
+    def test_midrange_grey_is_unknown(self) -> None:
+        # occ = (255 - 128) / 255 ≈ 0.498, between free_thresh (0.196)
+        # and occupied_thresh (0.65) — the "we don't know" band.
+        pgm = make_pgm([[128, 128]])
+        m = load_map_server(pgm, make_yaml(), name="unknown")
+        assert all(c == CellState.UNKNOWN.value for c in m.cells)
+
+    def test_ascii_p2_parses_the_same_as_binary_p5(self) -> None:
+        rows = [[255, 0, 128], [0, 255, 0]]
+        binary = load_map_server(make_pgm(rows), make_yaml(), name="a")
+        ascii_ = load_map_server(make_pgm(rows, ascii_format=True), make_yaml(), name="a")
+        assert binary.cells == ascii_.cells
+
+
+class TestRowFlip:
+    def test_pgm_top_row_becomes_the_highest_map_row(self) -> None:
+        """PGM row 0 is the image top; MapData row 0 is the map origin
+        (bottom). An asymmetric image proves the flip direction, not
+        just that *a* flip happened."""
+        rows = [
+            [0, 0, 0],  # PGM top: occupied
+            [255, 255, 255],
+            [255, 255, 255],  # PGM bottom: free
+        ]
+        m = load_map_server(make_pgm(rows), make_yaml(), name="asym")
+        grid = cells_grid(m, 3, 3)
+        assert grid[0] == ["FREE", "FREE", "FREE"]
+        assert grid[1] == ["FREE", "FREE", "FREE"]
+        assert grid[2] == ["OCCUPIED", "OCCUPIED", "OCCUPIED"]
+
+
+class TestNegate:
+    def test_negate_flips_which_end_is_occupied(self) -> None:
+        pgm = make_pgm([[255, 255]])  # white
+        normal = load_map_server(pgm, make_yaml(negate=0), name="n0")
+        negated = load_map_server(pgm, make_yaml(negate=1), name="n1")
+        assert all(c == CellState.FREE.value for c in normal.cells)
+        assert all(c == CellState.OCCUPIED.value for c in negated.cells)
+
+
+class TestOrigin:
+    def test_origin_xy_carried_through(self) -> None:
+        m = load_map_server(make_pgm([[255]]), make_yaml(origin=(1.5, -2.5, 0.0)), name="o")
+        assert m.origin.x == pytest.approx(1.5)
+        assert m.origin.y == pytest.approx(-2.5)
+
+    def test_rotated_origin_rejected_with_a_named_error(self) -> None:
+        with pytest.raises(MapServerFormatError, match="rotated"):
+            load_map_server(make_pgm([[255]]), make_yaml(origin=(0.0, 0.0, 0.3)), name="rot")
+
+
+class TestMalformedInput:
+    def test_missing_resolution_key(self) -> None:
+        yaml_text = "origin: [0, 0, 0]\n"
+        with pytest.raises(MapServerFormatError, match="missing required key"):
+            load_map_server(make_pgm([[255]]), yaml_text, name="bad")
+
+    def test_not_a_mapping(self) -> None:
+        with pytest.raises(MapServerFormatError, match="mapping"):
+            load_map_server(make_pgm([[255]]), "- just\n- a\n- list\n", name="bad")
+
+    def test_unparseable_yaml_syntax(self) -> None:
+        """yaml.YAMLError is not a ValueError — must still surface as
+        MapServerFormatError, not leak past this function's contract."""
+        with pytest.raises(MapServerFormatError, match="invalid YAML"):
+            load_map_server(make_pgm([[255]]), "not: valid: yaml: [", name="bad")
+
+    def test_bad_pgm_magic(self) -> None:
+        garbage = b"NOTAPGM\n1 1\n255\n\xff"
+        with pytest.raises(MapServerFormatError, match="not a PGM"):
+            load_map_server(garbage, make_yaml(), name="bad")
+
+    def test_truncated_pgm_body(self) -> None:
+        header = b"P5\n4 4\n255\n"
+        with pytest.raises(MapServerFormatError, match="too short"):
+            load_map_server(header + b"\xff\xff", make_yaml(), name="bad")
+
+    def test_pgm_with_a_comment_line_in_the_header(self) -> None:
+        data = b"P5\n# a comment\n2 2\n255\n" + bytes([255, 255, 0, 0])
+        m = load_map_server(data, make_yaml(), name="commented")
+        assert m.width == 2
+        assert m.height == 2
+
+
+class TestThresholds:
+    def test_custom_thresholds_change_the_boundary(self) -> None:
+        # occ(pixel=100) = (255-100)/255 ≈ 0.608. Default occupied_thresh
+        # 0.65 -> UNKNOWN; a lower threshold of 0.5 -> OCCUPIED.
+        pgm = make_pgm([[100]])
+        default = load_map_server(pgm, make_yaml(), name="d")
+        assert default.cells[0] == CellState.UNKNOWN.value
+        stricter = load_map_server(pgm, make_yaml(occupied_thresh=0.5), name="s")
+        assert stricter.cells[0] == CellState.OCCUPIED.value
+
+
+class TestModeAndThresholdSanity:
+    """Two YAML fields that load happily and change what the map *is*."""
+
+    def test_scale_mode_is_refused_not_approximated(self) -> None:
+        """Under `scale` a mid-grey pixel is a partially occupied cell,
+        not an unknown one: read as trinary, a corridor of light-grey
+        clutter becomes open floor and every candidate plans through it."""
+        pgm = make_pgm([[254, 254]])
+        with pytest.raises(MapServerFormatError, match="unsupported map_server mode"):
+            load_map_server(pgm, make_yaml() + "mode: scale\n", name="scaled")
+
+    def test_explicit_trinary_mode_is_accepted(self) -> None:
+        pgm = make_pgm([[254, 254]])
+        assert load_map_server(pgm, make_yaml() + "mode: trinary\n", name="ok").width == 2
+
+    def test_unknown_mode_says_it_is_not_a_map_server_mode(self) -> None:
+        pgm = make_pgm([[254, 254]])
+        with pytest.raises(MapServerFormatError, match="not a map_server mode"):
+            load_map_server(pgm, make_yaml() + "mode: binry\n", name="typo")
+
+    def test_reversed_thresholds_are_refused(self) -> None:
+        """With them the other way round every pixel lands in the middle
+        band, the whole map reads UNKNOWN, and (unknown_as_occupied) the
+        map is one solid wall that gives every candidate no_path."""
+        pgm = make_pgm([[254, 0]])
+        yaml_text = make_yaml(occupied_thresh=0.2, free_thresh=0.7)
+        with pytest.raises(MapServerFormatError, match="must be below occupied_thresh"):
+            load_map_server(pgm, yaml_text, name="reversed")
+
+
+def grid(cells: list[list[int]], *, resolution: float = 0.05, origin=(0.0, 0.0)) -> MapData:
+    """A MapData from rows given **origin-first** — row 0 at the bottom.
+
+    Deliberately the opposite convention from :func:`make_pgm`, which
+    takes image rows top-first. The two disagreeing is the whole point of
+    the flip test below.
+    """
+    height = len(cells)
+    width = len(cells[0])
+    return MapData(
+        name="drawn",
+        width=width,
+        height=height,
+        resolution=resolution,
+        origin=Pose2D(x=origin[0], y=origin[1], theta=0.0),
+        cells=tuple(value for row in cells for value in row),
+    )
+
+
+class TestWritingAMapBackOut:
+    """A map somebody drew has to become a deployment.
+
+    The decision layer reads its map from the two paths a task profile
+    names (HĐ-2); the editor stores grids in a database. Writing the pair
+    out is the crossing, and it is only a crossing if what comes back is
+    the same map.
+    """
+
+    def test_round_trip_returns_the_same_map(self) -> None:
+        """The property everything else here rests on.
+
+        All three cell states, so a writer that silently collapsed
+        UNKNOWN into FREE would be caught — that collapse turns an
+        unsurveyed corner into open floor the planner drives through.
+        """
+        free, wall, unknown = (
+            CellState.FREE.value,
+            CellState.OCCUPIED.value,
+            CellState.UNKNOWN.value,
+        )
+        original = grid(
+            [[free, wall, unknown], [unknown, free, wall]], resolution=0.05, origin=(1.5, -2.0)
+        )
+        image, sidecar = dump_map_server(original, image_name="drawn.pgm")
+        assert load_map_server(image, sidecar, name="drawn") == original
+
+    def test_it_flips_rows_rather_than_writing_a_mirror(self) -> None:
+        """MapData row 0 sits at the map origin; PGM row 0 is the image
+        top. Without the flip the file is a vertical mirror of the map —
+        and a mirrored warehouse still looks like a warehouse, so this is
+        asserted rather than eyeballed."""
+        free, wall = CellState.FREE.value, CellState.OCCUPIED.value
+        # Occupied along the bottom row (row 0 = at the origin).
+        original = grid([[wall, wall], [free, free]])
+        image, _ = dump_map_server(original, image_name="drawn.pgm")
+        body = image.split(b"\n", 3)[3]
+        # The PGM's *last* row is the one at the origin, so the black
+        # pixels belong at the end of the body, not the start.
+        assert body == bytes([254, 254, 0, 0])
+
+    def test_the_sidecar_names_the_image_it_belongs_to(self) -> None:
+        """A sidecar naming a different image loads happily: the pixels
+        come from one map and the resolution and origin from another, and
+        nothing in the results looks wrong. The map loader cross-checks
+        this field, so it has to be written."""
+        meta = yaml.safe_load(dump_map_server(grid([[0]]), image_name="warehouse_b.pgm")[1])
+        assert meta["image"] == "warehouse_b.pgm"
+
+    def test_it_keeps_the_resolution_and_the_origin(self) -> None:
+        """Every coordinate in a run is read through these two. A default
+        origin written over a shifted one moves the whole map, and the
+        missions land somewhere else without a single error."""
+        meta = yaml.safe_load(
+            dump_map_server(grid([[0]], resolution=0.02, origin=(3.25, -1.75)), image_name="m.pgm")[
+                1
+            ]
+        )
+        assert meta["resolution"] == pytest.approx(0.02)
+        assert meta["origin"] == [3.25, -1.75, 0.0]
+
+    def test_a_large_map_survives_the_trip(self) -> None:
+        """The reference hall is 480x320. A writer that worked on a 2x3
+        fixture and broke on a real map would be found by whoever ran a
+        two-hour sweep on it."""
+        free, wall = CellState.FREE.value, CellState.OCCUPIED.value
+        rows = [[wall if (x + y) % 7 == 0 else free for x in range(200)] for y in range(120)]
+        original = grid(rows)
+        image, sidecar = dump_map_server(original, image_name="big.pgm")
+        assert load_map_server(image, sidecar, name="drawn").cells == original.cells

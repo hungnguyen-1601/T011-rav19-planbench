@@ -1,0 +1,85 @@
+# PlanBench — dependency tùy chọn.
+#
+# **Không cần file này để clone về và chạy dự án.** `requirements.txt`
+# đã đủ. Ở đây là bốn nhóm mà thiếu chúng thì tính năng tương ứng giảm
+# chế độ một cách có kiểm soát và báo rõ, chứ không crash.
+#
+# Cài **từng nhóm** bằng cách chép dòng bạn cần, đừng cài cả file — nhóm
+# PPO nặng vài GB.
+#
+# ===================================================================
+#   1. PostgreSQL
+# ===================================================================
+#
+#   .venv/bin/pip install "psycopg[binary]==3.2.10"
+#
+# Chỉ cần khi `PLANBENCH_DATABASE_URL` trỏ tới PostgreSQL. Mặc định local
+# là SQLite (driver có sẵn trong Python). `[binary]` có wheel dựng sẵn
+# nên không cần trình biên dịch C.
+#
+# Thiếu nó mà vẫn trỏ vào PostgreSQL: API dừng lúc khởi động và nói rõ
+# phải cài gì (`planbench_api/db/session.py`).
+#
+# psycopg[binary]==3.2.10
+
+# ===================================================================
+#   2. Theo dõi thí nghiệm (MLflow)
+# ===================================================================
+#
+#   .venv/bin/pip install mlflow==3.14.0
+#
+# Chỉ cần khi đặt `PLANBENCH_MLFLOW_TRACKING_URI`. Bỏ trống thì hệ thống
+# dùng null tracker — benchmark vẫn chạy và vẫn ghi kết quả đầy đủ, chỉ
+# là không đẩy sang MLflow.
+#
+# mlflow==3.14.0
+
+# ===================================================================
+#   3. Reinforcement learning (stack astar+ppo)
+# ===================================================================
+#
+#   .venv/bin/pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+#   .venv/bin/pip install gymnasium==1.3.0 stable-baselines3==2.9.0
+#
+# **Vài GB.** Chỉ cần khi train hoặc chạy stack `astar+ppo`. Không có
+# chúng thì `astar+ppo` không xuất hiện như một lựa chọn chạy được, và
+# mọi stack khác (astar+dwa, astar+pure_pursuit) vẫn hoạt động bình
+# thường.
+#
+# Repo này phát triển với bản CPU (`2.13.0+cpu`). Muốn GPU thì đổi
+# index-url theo hướng dẫn của PyTorch; phiên bản có thể khác.
+#
+# gymnasium==1.3.0
+# stable-baselines3==2.9.0
+# torch==2.13.0
+
+# ===================================================================
+#   4. LLM thật cho Trợ lý AI
+# ===================================================================
+#
+#   .venv/bin/pip install openai==2.50.0        # gemini, openai, openrouter,
+#                                               # groq, deepseek, xai, local
+#   .venv/bin/pip install anthropic             # claude
+#
+# Chỉ cần khi bạn dán API key vào `.env`. Không có key, trợ lý chạy bằng
+# provider **mock tất định**: trả lời bằng khớp từ khóa, offline, không
+# gọi mạng — và giao diện nói rõ điều đó thay vì giả vờ là model viết.
+#
+# Trang Agent có bảng liệt kê từng provider còn thiếu gì, nên "vì sao vẫn
+# là mock?" trả lời được từ giao diện chứ không phải từ log.
+#
+# openai==2.50.0
+# anthropic
+
+# ===================================================================
+#   5. Optuna (script tune tham số, P01)
+# ===================================================================
+#
+#   .venv/bin/pip install optuna==4.9.0
+#
+# Chỉ cần khi chạy `scripts/tune_hyperparameters.py` hoặc
+# `tests/test_tuning.py` (test tự skip qua `pytest.importorskip` nếu
+# thiếu). API đọc `tuning_cache.json` qua `GET /tuning` không cần cài
+# optuna — cache là file JSON tĩnh, không tính lại lúc request.
+#
+# optuna==4.9.0

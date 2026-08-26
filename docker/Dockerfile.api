@@ -1,0 +1,47 @@
+# PlanBench API.
+#
+# The repository is not pip-installable yet (no per-package pyproject),
+# so the image mirrors the layout and sets PYTHONPATH the same way the
+# local commands do. When the packages become installable this collapses
+# into a plain `pip install .` — until then, one convention, used
+# everywhere, beats two that can disagree.
+
+FROM python:3.12-slim AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Dependencies first: they change far less often than the source, so
+# this layer stays cached across ordinary code edits.
+COPY docker/requirements-api.txt /tmp/requirements-api.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-api.txt
+
+COPY packages/ /app/packages/
+COPY services/ /app/services/
+COPY apps/api/ /app/apps/api/
+COPY alembic/ /app/alembic/
+COPY alembic.ini /app/alembic.ini
+COPY docs/ /app/docs/
+
+ENV PYTHONPATH=/app/packages/schemas:/app/packages/planning:/app/packages/metrics:/app/packages/benchmark:/app/services/simulator:/app/services/tracking:/app/services/agent_service:/app/apps/api
+
+# Artifacts are written here; compose mounts a volume so they survive a
+# container rebuild (they are referenced by URI from the database).
+ENV PLANBENCH_ARTIFACT_DIR=/data/artifacts
+RUN mkdir -p /data/artifacts
+
+# Never run as root: a container that writes to a mounted volume as root
+# leaves files the host user cannot clean up.
+RUN useradd --create-home --uid 10001 planbench \
+    && chown -R planbench:planbench /data
+USER planbench
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3).status == 200 else 1)"
+
+CMD ["uvicorn", "planbench_api.main:app", "--host", "0.0.0.0", "--port", "8000"]

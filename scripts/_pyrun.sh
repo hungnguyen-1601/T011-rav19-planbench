@@ -8,7 +8,17 @@
 # Exits 0 silently if no Python is found — hooks must never block the AI tool.
 set -u
 
-if command -v python3 >/dev/null 2>&1; then
+# The repo venv first, when it exists. Not a preference — the hooks read
+# `.env` through python-dotenv, which is installed there and nowhere
+# else. A system python3 imports nothing, `submit_log.py` falls through
+# its `except ImportError: pass`, and every log is skipped with a message
+# that names the missing *variable* rather than the missing package. That
+# is how 263 entries sat unsent while the hook printed a tidy reason.
+if [ -x "$(git rev-parse --show-toplevel 2>/dev/null)/.venv/bin/python" ]; then
+  PY="$(git rev-parse --show-toplevel)/.venv/bin/python"
+elif [ -x "$(git rev-parse --show-toplevel 2>/dev/null)/.venv/Scripts/python.exe" ]; then
+  PY="$(git rev-parse --show-toplevel)/.venv/Scripts/python.exe"
+elif command -v python3 >/dev/null 2>&1; then
   PY=python3
 elif command -v python >/dev/null 2>&1; then
   PY=python
