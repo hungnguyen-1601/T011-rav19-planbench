@@ -8,8 +8,8 @@ phase đó.
 
 | Phase | Trạng thái | Commit |
 |---|---|---|
-| A-1 vá sàn model-free | **xong** | (xem §A-1) |
-| A0 skeleton + hạ tầng | chưa | |
+| A-1 vá sàn model-free | **xong** | `5932779` |
+| A0 skeleton + hạ tầng | **xong** | (xem §A0) |
 | A1 packet view + fact index | chưa | |
 | A2 hypothesis engine | chưa | |
 | A3 guard + critic + biên vào | chưa | |
@@ -99,3 +99,65 @@ phase này. **Đã chuyển sang A4**, lý do kỹ thuật chứ không phải �
 
 Không. `available_evidence` mặc định rỗng vẫn còn nguyên — đúng thiết kế, nó là
 việc của `RoundSource` ở A4.
+
+---
+
+## A0 — Skeleton + hạ tầng
+
+### Đã làm gì
+
+**1. `services/analyst_service/planbench_analyst/` ra đời.**
+
+Chỉ có `__init__.py`, và nó **không export gì**. Docstring chép lại bốn luật mà
+mọi module dưới đó thừa kế (đề xuất chứ không đóng dấu · model không bao giờ là
+nguồn của một con số · menu tool đóng · không đọc Parquet thô) — chép lại ở đây
+chứ không để trong plan, vì một module quên một trong bốn luật đó nhìn từ ngoài
+giống hệt một module đang chạy đúng.
+
+**2. Path nối vào bốn nơi phải khớp nhau.**
+
+| Nơi | Đổi gì |
+|---|---|
+| `pyproject.toml` `[tool.pytest.ini_options] pythonpath` | thêm `services/analyst_service` |
+| `scripts/dev_stack.sh` `PY_PATH` | thêm `$ROOT/services/analyst_service` |
+| `docker/Dockerfile.api` `ENV PYTHONPATH` | thêm `/app/services/analyst_service` |
+| `ruff.toml` `known-first-party` | thêm `planbench_analyst` |
+
+**Plan bản 8 §A0 nói `Dockerfile.api` thiếu `packages/decision`,
+`packages/explanation`, `packages/plugin_sdk`, `ml` — kiểm lại thì không thiếu
+nữa**, chúng đã được thêm ở đâu đó giữa 19-08 và hôm nay. Việc còn lại chỉ là
+`analyst_service`. Ghi ra vì đó là một dòng của plan không còn đúng.
+
+**3. Cổng canh cho chính bốn danh sách đó.**
+
+`tests/test_dev_stack_pythonpath.py` trước nay so **hai** danh sách (pytest ↔
+`dev_stack.sh`). Thêm danh sách thứ ba — PYTHONPATH của image — cùng ba test:
+
+- image import được mọi thứ suite import được (trừ `apps/desktop`, khai tường
+  minh trong `IMAGE_EXEMPT` vì image không `COPY` nó, chứ không phải vì quên);
+- image không mang thứ gì suite chưa từng import;
+- **mọi entry trên PYTHONPATH của image phải có một dòng `COPY` đưa nó vào
+  `/app`** — hai nửa này viết cách nhau mười hai dòng và chỉ một nửa kêu.
+
+`tests/test_analyst_service_wiring.py` (mới) hỏi câu hẹp hơn: gói này có import
+được không, có nằm trên **cả ba** path list không (gọi tên tường minh, vì một
+phép so tập hợp sẽ xanh trở lại ngay khi ai đó xoá entry khỏi cả ba cùng lúc),
+và ruff có xếp nó là first-party không.
+
+Kèm một test cố ý sẽ phải sửa theo từng phase: `__all__` rỗng **và** thư mục
+không có module `.py` nào ngoài `__init__`. Nó là chốt chống fake completion —
+để một `analyst.py` trả `None` nằm đó mà không ai export là cách rẻ nhất để
+trông như đã xong A2.
+
+### Bằng chứng
+
+| Phép kiểm | Kết quả |
+|---|---|
+| `pytest tests/test_analyst_service_wiring.py tests/test_dev_stack_pythonpath.py` | **11 passed** |
+| Bỏ `analyst_service` khỏi `Dockerfile.api` rồi chạy lại | **đỏ** đúng test path list; khôi phục ⟶ xanh |
+| `ruff check services/analyst_service tests/…` | sạch |
+
+### Còn nợ sau A0
+
+`docker/Dockerfile.analyst` là việc của A7 (freeze + container), không phải A0 —
+plan bản 7 xếp nó ở đó và không có lý do kéo lên sớm: chưa có gì để đóng gói.
