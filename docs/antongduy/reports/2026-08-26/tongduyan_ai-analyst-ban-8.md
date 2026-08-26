@@ -13,7 +13,8 @@ phase đó.
 | A0 skeleton + hạ tầng | **xong** | `df1743a` |
 | A1 packet view + fact index | **xong** | `5e6bf41` |
 | A2 hypothesis engine | **xong** | `285adda` |
-| A3 guard + critic + biên vào | **xong** | (xem §A3) |
+| A3 guard + critic + biên vào | **xong** | `95cfe75` |
+| A4-i budget + packet artifact | **xong** | (xem §A4-i) |
 | A4 seam + lane + gateway | chưa | |
 | A5 knowledge provider | chưa | |
 | A6 dev calibration + harness | chưa | |
@@ -457,6 +458,74 @@ an toàn".
   gọi là nợ, không phải tính năng.
 - Guard chưa nối vào vòng chạy thật — `propose()` trả `RoundReport`, guard là một
   lời gọi riêng. A4 (`runner.py`) là chỗ ghép engine ⟶ guard ⟶ host.
+
+---
+
+## A4-i — Hai object hợp đồng của một vòng được chấm
+
+Phần đầu của A4 (RFC platform). Cố ý tách nhỏ: `budget.py` và
+`packet_artifact.py` là **thêm mới**, không đụng file nào đang chạy, nên land
+được và kiểm được trước khi sờ vào `gate.py`/`bundle.py` — nơi có 201 test đứng.
+
+### Đã làm gì
+
+**1. `AnalysisBudget` — trần của một vòng, và ai quyết định nó.**
+
+Sáu trục: `max_tool_requests` · `max_model_calls` (cộng dồn cả vòng, không phải
+mỗi proposal — số proposal là do analyst chọn) · `max_input_tokens` /
+`max_output_tokens` (tính theo usage provider **báo**, không theo ước lượng) ·
+`max_wall_time_ms` (cả vòng, gồm cả thời gian trong checker) · `max_frame_bytes`
+**theo từng loại frame**.
+
+- `capped_by()` lấy **min từng trường**: bundle xin ít hơn trần thì được đúng
+  cái nó xin (bundle calibrate với 1 model call không được lặng lẽ nhận 12 ở
+  gate); xin nhiều hơn thì bị cắt.
+- `PLATFORM_BUDGET_CAP` là **hằng số trong module**, không phải tham số — cùng
+  lý do `OFFICIAL_GOLDEN_READY` là hằng số: nó quyết định platform trả tiền cho
+  cái gì, và bên bị chấm không được truyền vào.
+- Thiếu cap cho **bất kỳ** frame nào ⟶ từ chối. Một frame không có trần là hình
+  dạng mà packet ẩn thoát ra ngoài. `model_response` rộng gấp nhiều lần vì nó
+  chở assistant turn nguyên bản của vendor (thought signature, thinking block)
+  mà container phải trả lại nguyên vẹn; mọi frame do container tự viết thì chặt.
+
+**2. `PacketArtifact` — một file ở đúng đường dẫn chưa phải là bằng chứng.**
+
+- Loader **tính lại** cả hai checksum thay vì đọc. Checksum do caller nộp là
+  checksum caller nộp được cho bất cứ thứ gì, và ca duy nhất đáng chặn — fixture
+  bị sửa sau khi provenance đã ghi — đúng là ca mà giá trị lưu sẵn không bắt được.
+- **`fixture_kind` được suy ra, không được khai**: `hand_written` hoặc
+  `sidecar_present=False` ⟶ `synthetic`. Packet dựng từ run có trước writer mang
+  planning input **tái dựng**, và một ngưỡng thoả thuận trên đó là ngưỡng nướng
+  sẵn lỗi tái dựng vào. Gate ẩn chỉ nhận `recorded` (luật thi hành ở A4-ii).
+- Provenance trỏ sang case khác ⟶ từ chối; provenance tự lệch checksum của chính
+  nó ⟶ từ chối; thiếu file ⟶ từ chối và **gọi tên file**.
+- `packet_checksum()` dùng **đúng công thức** của `AnalysisRequest.case_packet_checksum`,
+  có test đòi hai bên khớp: hai công thức cho "checksum của packet này" sẽ lệch
+  ngay lần đầu một bên đổi cách sắp khoá, và lệch đó hiện ra dưới dạng tool
+  request bị từ chối vì khai sai packet.
+
+### Bằng chứng
+
+| Phép kiểm | Kết quả |
+|---|---|
+| `pytest tests/test_analyst_budget_artifact.py` | **14 passed** |
+| `pytest` 4 suite explanation + file mới | **201 passed** |
+| `ruff check` | sạch |
+
+Một chi tiết về quy ước: refusal ném từ `model_validator` bị pydantic bọc thành
+`ValidationError`, nên test đòi `(XRefusal, ValidationError)` — đúng cách
+`test_explanation_e5.py` đã làm với `GoldenRefusal`.
+
+### Còn lại của A4
+
+- **A4-ii** — RFC vào `gate.py` (`dry_run`, tách `DryGateRun`/`GateRun`,
+  fail-closed hidden + preregistered + mọi packet `recorded`) và `bundle.py`
+  (`runner_protocol_version`, embed `requested_budget`,
+  `GateDecision.effective_budget_checksum`). Đây là phần đụng fixture của
+  `test_explanation_gate.py`.
+- **A4-iii** — seam (`RoundHostProtocol` / `AnalystRunner` / `PreparedRound` /
+  `RoundSource`), runner có no-progress guard và một điểm `finalize` duy nhất.
+- **A4-iv** — JSONL ABI + model gateway + restricted artifact.
 
 ---
 
