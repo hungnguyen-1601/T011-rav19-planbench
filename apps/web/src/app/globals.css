@@ -2063,6 +2063,24 @@ a.stat-card:hover {
   min-width: 0;
 }
 
+/* **The bench takes back half the page gutter.**
+   ===================================================================
+   The 1440px measure is already lifted here — `wideContent` in
+   `lib/navigation` puts `/simulate` on `main.content--wide`, because a
+   simulator is a drawing surface rather than a column of prose. What was
+   still holding the panels in is the gutter `main.content` pads on every
+   route: 32px of nothing on each side of a panel whose content is cards
+   and a canvas, not a measure.
+
+   Half of it, and no more. A panel flush against the viewport edge reads
+   as a rendering fault rather than as width, and the remaining 16px is
+   what says the page has an edge. Scoped to `.simulate-page`, so no
+   other route moves, and only above 1200px — below that the gutter is
+   the only thing between the cards and the screen edge. */
+@media (min-width: 1200px) {
+  .simulate-page { margin-inline: calc(var(--space-4) * -1); }
+}
+
 .simulate-page-head {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -2156,9 +2174,17 @@ a.stat-card:hover {
 .simulate-section-head--compact { padding: 0 0 14px; border-bottom: 1px solid var(--border); }
 .simulate-section-head--compact .simulate-section-icon { width: 34px; height: 34px; }
 
+/* Three fieldsets, and only two of them get wider.
+   ===================================================================
+   The third holds one number. Under the old `0.6fr` it took a fifth of
+   whatever width the page had, so on a wide monitor a seed input sat in
+   400px of empty fieldset while the two that carry five dropdowns were
+   squeezed beside it. `max-content` bounded by a minimum stops it
+   growing past what it contains and hands the surplus to the columns
+   with something in them. */
 .simulate-setup-grid {
   display: grid;
-  grid-template-columns: minmax(250px, 0.8fr) minmax(440px, 1.6fr) minmax(180px, 0.6fr);
+  grid-template-columns: minmax(250px, 0.9fr) minmax(440px, 1.7fr) minmax(180px, max-content);
   gap: 10px;
   padding: 4px 16px 14px;
 }
@@ -2234,6 +2260,16 @@ label.field.simulate-field,
      not ask. */
   --condition-thresholds: var(--indigo);
   --condition-thresholds-soft: var(--indigo-soft);
+  /* The three cards added with the full inventory. No new tokens: the
+     palette already carries seven distinguishable hues, and inventing an
+     eighth for one card would put a colour on screen that means nothing
+     anywhere else in the app. */
+  --condition-scope: var(--info);
+  --condition-scope-soft: var(--info-soft);
+  --condition-sensing: var(--teal);
+  --condition-sensing-soft: var(--teal-soft);
+  --condition-behaviour: var(--goal);
+  --condition-behaviour-soft: var(--goal-soft);
   padding: 0;
   overflow: hidden;
 }
@@ -2280,19 +2316,34 @@ label.field.simulate-field,
 .deployment-conditions.is-expanded .deployment-conditions-toggle svg { transform: rotate(180deg); }
 .deployment-conditions-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* Four cards, and `auto-fit` rather than a fixed count.
+/* Seven cards, in columns rather than in a grid.
    ===================================================================
-   It was `repeat(3, …)`, so adding the thresholds card would have
-   dropped it onto a second row on its own, three quarters of the width
-   empty beside it. `minmax(210px, 1fr)` lets the row hold four where
-   there is room and fold to two or one where there is not, which also
-   retires the two media queries that were re-stating the same thing
-   with hard-coded counts. */
+   It was `repeat(3, …)`, then `repeat(auto-fit, minmax(210px, 1fr))`,
+   and the second one held four. It does not hold seven: a grid lays a
+   fixed number of tracks, so seven cards across six tracks put one card
+   alone on a second row with five sixths of the width empty beside it —
+   the same stranding `auto-fit` was brought in to fix, one card later.
+
+   Multi-column has no tracks to leave empty. The columns stretch to the
+   full width whatever the count, the browser balances the cards by
+   height — which matters here, because Robot carries fourteen rows and
+   Environment four — and the count falls to one on a phone without a
+   media query. Capped at four so a 2560px monitor gets four readable
+   columns rather than seven hairlines, and floored at 260px so a card
+   never gets narrower than its longest label.
+
+   `break-inside: avoid` is what keeps a card whole; without it a column
+   break lands in the middle of a card's rows and the header walks away
+   from the values under it. */
 .deployment-conditions-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: var(--space-2);
+  columns: 260px 4;
+  column-gap: var(--space-2);
   padding: var(--space-3);
+}
+
+.deployment-conditions-grid > .deployment-condition-group {
+  margin-bottom: var(--space-2);
+  break-inside: avoid;
 }
 
 .deployment-condition-group {
@@ -2310,6 +2361,9 @@ label.field.simulate-field,
 .deployment-condition-group--robot > header { color: var(--condition-robot); background: var(--condition-robot-soft); }
 .deployment-condition-group--environment > header { color: var(--condition-environment); background: var(--condition-environment-soft); }
 .deployment-condition-group--thresholds > header { color: var(--condition-thresholds); background: var(--condition-thresholds-soft); }
+.deployment-condition-group--scope > header { color: var(--condition-scope); background: var(--condition-scope-soft); }
+.deployment-condition-group--sensing > header { color: var(--condition-sensing); background: var(--condition-sensing-soft); }
+.deployment-condition-group--behaviour > header { color: var(--condition-behaviour); background: var(--condition-behaviour-soft); }
 
 .deployment-condition-list { margin: 0; padding: 4px 11px; }
 .deployment-condition-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 31px; border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }
@@ -2321,6 +2375,19 @@ label.field.simulate-field,
 .condition-status { padding: 3px 7px; }
 .condition-status.is-on { color: var(--ok); background: var(--ok-soft); }
 .condition-status.is-off { color: var(--muted); background: var(--panel-2); }
+/* **Absence, drawn as neither of the other two.** `Off` is a choice
+   somebody made and it gets a filled chip; a field the profile never
+   carried is not a value at all, so it gets an outline and no fill —
+   the same weight as the label beside it rather than the weight of an
+   answer. Without the difference `replanning: off` and `replanning:
+   never declared` read identically, and they are two deployments. */
+.condition-status.is-unset {
+  border: 1px dashed color-mix(in srgb, var(--border) 90%, var(--muted));
+  color: var(--muted);
+  background: transparent;
+  font-weight: 600;
+  font-style: italic;
+}
 .condition-noise-tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 230px; }
 .condition-noise-tags > span:not(.condition-status) { max-width: 100%; padding: 3px 6px; overflow: hidden; border-radius: 5px; color: var(--orange); background: var(--orange-soft); font-family: var(--font-mono); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 

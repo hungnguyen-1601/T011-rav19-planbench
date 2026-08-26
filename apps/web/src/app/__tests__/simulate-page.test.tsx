@@ -10,6 +10,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { CONDITION_GROUPS, describeCondition } from "@/lib/benchConditions";
+
 
 describe("the episode setup keeps its controls on one line", () => {
   const CSS = readFileSync(join(process.cwd(), "src", "app", "globals.css"), "utf8");
@@ -92,54 +94,62 @@ describe("field notes sit in the mark beside the name", () => {
 });
 
 describe("the conditions say what counts as a pass", () => {
-  const PAGE = readFileSync(join(process.cwd(), "src", "app", "simulate", "page.tsx"), "utf8");
   const CSS = readFileSync(join(process.cwd(), "src", "app", "globals.css"), "utf8");
-  const conditions = PAGE.slice(
-    PAGE.indexOf("deployment-conditions-grid"),
-    PAGE.indexOf("deployment-condition-footer"),
-  );
+  /* The rows moved out of the page and into a table when four cards
+     became seven, so what used to be asserted against a slice of JSX is
+     asserted against the inventory itself. `bench-conditions.test.ts`
+     is the other half: it checks that inventory against the pydantic
+     schemas, which is the check a slice of JSX could never carry. */
+  const paths = CONDITION_GROUPS.flatMap((group) => group.fields.map((field) => field.path));
 
   it("carries the gate thresholds, which no other card did", () => {
-    /* The other three say what the world *is* — where the robot starts,
+    /* The other cards say what the world *is* — where the robot starts,
        how fast it may go, what traffic is in it. A run that reaches the
        goal is not a run that cleared G3 unless the success floor is on
        screen. */
-    for (const key of [
+    for (const field of [
       "success_rate_min",
       "collision_probability_max",
       "no_path_rate_max",
       "clearance_warning_m",
       "stuck_threshold_s",
+      "cost_per_mission_max",
     ]) {
-      expect(conditions).toContain(key);
+      expect(paths).toContain(`constraints.${field}`);
     }
   });
 
   it("includes G5's threshold, which lives on the hardware block", () => {
     /* An allocation decision about the target board rather than a limit
-       on the mission — and the one number here a reader cannot infer
-       from anything else on the page. */
-    expect(conditions).toContain("deployment.hardware?.available_ram_mb");
+       on the mission. It sits with the board now rather than with the
+       thresholds: total minus the breakdown leaves available, and that
+       arithmetic is only checkable if the six numbers are on one card. */
+    const robot = CONDITION_GROUPS.find((group) => group.tone === "robot");
+    expect(robot?.fields.map((field) => field.path)).toContain("hardware.available_ram_mb");
   });
 
   it("shows a rate as the percentage the gates are argued about", () => {
     /* The contract stores them 0..1 and every screen that discusses
-       them says percent. Formatting at each call site is how one
-       threshold reads 0.95 here and 95% two screens away. */
-    expect(PAGE).toContain("function formatRate(");
-    expect(conditions).toContain("formatRate(deployment.constraints?.success_rate_min)");
-  });
-
-  it("keeps one decimal, so two thresholds do not print as one", () => {
-    /* `no_path_rate_max` defaults to 0.02; rounding to whole percent
-       would show 0.02 and 0.024 as the same 2%. */
-    expect(PAGE).toContain("(value * 100).toFixed(1)");
+       them says percent. One formatter for all of them is how a
+       threshold avoids reading 0.95 here and 95% two screens away. */
+    const rate = CONDITION_GROUPS.flatMap((group) => group.fields).find(
+      (field) => field.path === "constraints.success_rate_min",
+    );
+    expect(rate?.kind).toBe("rate");
+    expect(describeCondition(rate!, 0.95, (key) => key)).toEqual({
+      state: "value",
+      text: "95.0 %",
+    });
   });
 
   it("substitutes nothing for a field the profile never carried", () => {
     /* A default here would put a threshold on screen that nobody
-       declared and the gates were never held to. */
-    expect(PAGE).toContain('!Number.isFinite(value)\n    ? "—"');
+       declared and the gates were never held to — and a `0` would be
+       worse, because it reads as a number somebody chose. */
+    const stuck = CONDITION_GROUPS.flatMap((group) => group.fields).find(
+      (field) => field.path === "constraints.stuck_threshold_s",
+    );
+    expect(describeCondition(stuck!, undefined, (key) => key)).toEqual({ state: "undeclared" });
   });
 
   it("does not colour the card as a verdict", () => {
@@ -150,10 +160,25 @@ describe("the conditions say what counts as a pass", () => {
     expect(CSS).not.toContain("--condition-thresholds: var(--err)");
   });
 
-  it("lets the row hold four cards rather than stranding one", () => {
-    /* It was `repeat(3, …)`, which would have dropped the new card onto
-       a second row alone with three quarters of the width empty. */
-    expect(CSS).toContain("repeat(auto-fit, minmax(210px, 1fr))");
+  it("lays the cards out in columns, so the seventh is not stranded", () => {
+    /* It was `repeat(3, …)`, then an auto-fit grid that held four. A
+       grid lays a fixed number of tracks, so seven cards across six put
+       one alone on a second row with five sixths of the width empty.
+       Multi-column has no tracks to leave empty, and balances cards
+       whose row counts differ by ten. */
+    const rule = CSS.slice(
+      CSS.indexOf(".deployment-conditions-grid {"),
+      CSS.indexOf(".deployment-condition-list {"),
+    );
+    expect(rule).toContain("columns: 260px 4;");
+    expect(rule).toContain("break-inside: avoid;");
+  });
+
+  it("gives an undeclared value a mark of its own", () => {
+    /* Filled chip for `Off`, outline for absent. Without the difference
+       a reader cannot tell a decision from a silence. */
+    expect(CSS).toContain(".condition-status.is-unset {");
+    expect(CSS).toContain(".condition-status.is-off { color: var(--muted)");
   });
 });
 

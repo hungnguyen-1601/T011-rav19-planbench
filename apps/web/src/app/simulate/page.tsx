@@ -40,11 +40,19 @@ import Link from "next/link";
 
 import { CandidatePicker, type CandidateSelection } from "@/components/CandidatePicker";
 import { EmptyState } from "@/components/EmptyState";
-import { Icon, type IconName } from "@/components/Icon";
+import { Icon } from "@/components/Icon";
 import { MapView } from "@/components/MapView";
 import { MetricsPanel } from "@/components/MetricsPanel";
 import { api } from "@/lib/api";
 import { authFetch, useSession } from "@/lib/auth";
+import {
+  CONDITION_GROUPS,
+  conditionValue,
+  describeCondition,
+  type ConditionDisplay,
+  type ConditionGroupSpec,
+  type Translate,
+} from "@/lib/benchConditions";
 import {
   listLocalControllers,
   listTaskProfiles,
@@ -95,10 +103,11 @@ type BenchStage = "setup" | "results";
  *
  * Every field optional, and that is not laziness: the profile arrives as
  * stored JSON, and a run filed before a field existed genuinely does not
- * carry it. `formatCondition` and `formatRate` both render an em dash
- * for that, which is the honest answer — a default substituted here
- * would put a threshold on screen that nobody declared and the gates
- * were never held to.
+ * carry it. These are the few the page needs *as values* — the map, the
+ * keep-out ring, the collapsed one-line summary. Everything the
+ * condition cards read comes off the stored record by path, through
+ * `lib/benchConditions`, which is why adding a field to this interface
+ * is not how a field reaches the screen.
  */
 interface Deployment {
   missions?: Mission[];
@@ -106,8 +115,6 @@ interface Deployment {
   constraints?: {
     goal_tolerance_m?: number;
     episode_timeout_s?: number;
-    /* The gate thresholds. Rates are 0..1 in the contract and shown as
-       percentages — see `formatRate`. */
     success_rate_min?: number;
     collision_probability_max?: number;
     no_path_rate_max?: number;
@@ -616,57 +623,34 @@ export default function TestBenchPage() {
                 start: start ? `${start.x.toFixed(2)}, ${start.y.toFixed(2)}` : "—",
                 goal: goal ? `${goal.x.toFixed(2)}, ${goal.y.toFixed(2)}` : "—",
                 radius: deployment.robot?.radius === undefined ? "—" : `${deployment.robot.radius} m`,
-                replanning: deployment.replanning?.enabled ? t("bench.on") : t("bench.off"),
+                /* Three answers here too. The collapsed line is the one
+                   a reader sees first, so it is the worst place to
+                   report a silence as a decision. */
+                replanning:
+                  deployment.replanning?.enabled === undefined
+                    ? t("bench.notDeclared")
+                    : deployment.replanning.enabled
+                      ? t("bench.on")
+                      : t("bench.off"),
                 traffic: String(deployment.environment?.dynamic_obstacles?.length ?? 0),
               })}
             </p>
           ) : (
             <div className="deployment-conditions-grid">
-              <ConditionGroup title={t("bench.conditionsMission")} icon="map" tone="mission" rows={[
-                [t("simulate.start"), start ? `${start.x.toFixed(2)}, ${start.y.toFixed(2)} m` : "—"],
-                [t("simulate.goal"), goal ? `${goal.x.toFixed(2)}, ${goal.y.toFixed(2)} m` : "—"],
-                [t("bench.tolerance"), formatCondition(deployment.constraints?.goal_tolerance_m, "m")],
-                [t("library.timeout"), formatCondition(deployment.constraints?.episode_timeout_s, "s")],
-              ]} />
-              <ConditionGroup title={t("bench.conditionsRobot")} icon="cpu" tone="robot" rows={[
-                [t("simulate.robotRadius"), formatCondition(deployment.robot?.radius, "m")],
-                [t("simulate.maxSpeed"), formatCondition(deployment.robot?.max_linear_velocity, "m/s")],
-                [t("bench.controlPeriod"), formatCondition(deployment.robot?.control_period, "s")],
-              ]} />
-              {/* **The numbers the episode will be judged against.**
-                  The other three cards say what the world *is* — where
-                  the robot starts, how fast it may go, what traffic is
-                  in it. None of them says what counts as a pass, and
-                  that is the half a reader watching one episode is
-                  actually checking it against: a run that reaches the
-                  goal is not a run that cleared G3 unless the success
-                  floor is known.
-
-                  Rates are declared 0..1 and shown as percentages,
-                  which is how the gates are argued about and how the
-                  deployment form asks for them. `formatRate` keeps that
-                  in one place so a threshold cannot read as 0.95 here
-                  and 95% two screens away. */}
-              <ConditionGroup title={t("bench.conditionsThresholds")} icon="benchmark" tone="thresholds" rows={[
-                [t("deployments.form.successMin"), formatRate(deployment.constraints?.success_rate_min)],
-                [t("deployments.form.risk"), formatRate(deployment.constraints?.collision_probability_max)],
-                [t("deployments.form.noPathMax"), formatRate(deployment.constraints?.no_path_rate_max)],
-                [t("deployments.form.clearanceWarning"), formatCondition(deployment.constraints?.clearance_warning_m, "m")],
-                [t("deployments.form.stuck"), formatCondition(deployment.constraints?.stuck_threshold_s, "s")],
-                /* G5's own threshold. It lives on the hardware block
-                   rather than the constraints, and it is the one number
-                   here a reader cannot infer from anything else on the
-                   page. */
-                [t("deployments.form.availableRam"), formatCondition(deployment.hardware?.available_ram_mb, "MB")],
-              ]} />
-              <section className="deployment-condition-group deployment-condition-group--environment">
-                <header><span><Icon name="sparkles" size={16} /></span><h4>{t("bench.conditionsEnvironment")}</h4></header>
-                <dl className="deployment-condition-list">
-                  <div className="deployment-condition-row"><dt>{t("bench.traffic")}</dt><dd>{deployment.environment?.dynamic_obstacles?.length ?? 0}</dd></div>
-                  <div className="deployment-condition-row"><dt>{t("bench.replanning")}</dt><dd><span className={`condition-status ${deployment.replanning?.enabled ? "is-on" : "is-off"}`}><Icon name={deployment.replanning?.enabled ? "check" : "close"} size={12} />{deployment.replanning?.enabled ? t("bench.on") : t("bench.off")}</span></dd></div>
-                  <div className="deployment-condition-row deployment-condition-row--noise"><dt>{t("bench.noise")}</dt><dd className="condition-noise-tags">{activeNoiseNames(deployment.environment?.sensor_noise).length > 0 ? activeNoiseNames(deployment.environment?.sensor_noise).map((name) => <span key={name} title={name}>{name}</span>) : <span className="condition-status is-off">{t("bench.noiseNone")}</span>}</dd></div>
-                </dl>
-              </section>
+              {/* Seven cards, from the table in `lib/benchConditions` rather
+                  than from seven blocks written here. Rows written by hand
+                  covered eleven of the profile's forty-odd fields and
+                  nothing said which thirty were missing; declared as data,
+                  the inventory is checked against the schema itself. */}
+              {CONDITION_GROUPS.map((group) => (
+                <ConditionGroup
+                  key={group.tone}
+                  group={group}
+                  deployment={deployment}
+                  mission={mission}
+                  t={t}
+                />
+              ))}
             </div>
           )}
           {staged ? (
@@ -869,46 +853,74 @@ function activeNoiseNames(noise: Record<string, number | boolean> | undefined): 
     .map(([key]) => key);
 }
 
-function formatCondition(value: number | undefined, unit: string): string {
-  return value === undefined || !Number.isFinite(value) ? "—" : `${value} ${unit}`;
-}
-
-/** A 0..1 rate as the percentage the gates are argued about.
- *
- * The contract stores these as fractions and every screen that discusses
- * them — the deployment form, the comparison table, the gate detail —
- * says percent. Formatting it at each call site is how one threshold
- * ends up reading `0.95` on one page and `95%` on the next.
- *
- * One decimal, because `no_path_rate_max` defaults to 0.02 and rounding
- * to whole percent would print two different thresholds as the same 2%.
- */
-function formatRate(value: number | undefined): string {
-  return value === undefined || !Number.isFinite(value)
-    ? "—"
-    : `${(value * 100).toFixed(1)} %`;
-}
-
 function shortContextId(value: string): string {
   return value.length <= 16 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
 }
 
+/** One row of a condition card, with absence as its own answer.
+ *
+ * **The three states are the point.** A row that printed `Off` for a
+ * flag the profile never carried would say the author chose to switch
+ * replanning off, and `0` for a missing amplitude would say they
+ * measured the site as silent. Both are statements nobody made. So an
+ * undeclared field gets a chip of its own, visually unlike both the
+ * on badge and a number.
+ */
+function ConditionCell({ display, t }: { display: ConditionDisplay; t: Translate }) {
+  if (display.state === "undeclared") {
+    return (
+      <span className="condition-status is-unset" title={t("bench.notDeclaredHint")}>
+        {t("bench.notDeclared")}
+      </span>
+    );
+  }
+  if (display.state === "on" || display.state === "off") {
+    const on = display.state === "on";
+    return (
+      <span className={`condition-status ${on ? "is-on" : "is-off"}`}>
+        <Icon name={on ? "check" : "close"} size={12} />
+        {on ? t("bench.on") : t("bench.off")}
+      </span>
+    );
+  }
+  return <>{display.text}</>;
+}
+
+/** One card: a group of the inventory, resolved against this profile.
+ *
+ * The noise summary is the one row not in the table, and deliberately:
+ * the seven amplitudes above it answer "what is declared", and this
+ * answers "which of them are actually on" — which is what tells
+ * somebody at a glance that the episode runs under a drift they forgot
+ * they declared.
+ */
 function ConditionGroup({
-  title,
-  icon,
-  tone,
-  rows,
+  group,
+  deployment,
+  mission,
+  t,
 }: {
-  title: string;
-  icon: IconName;
-  tone: "mission" | "robot" | "thresholds";
-  rows: [string, string][];
+  group: ConditionGroupSpec;
+  deployment: Deployment;
+  mission: Mission | null;
+  t: Translate;
 }) {
   return (
-    <section className={`deployment-condition-group deployment-condition-group--${tone}`}>
-      <header><span><Icon name={icon} size={16} /></span><h4>{title}</h4></header>
+    <section className={`deployment-condition-group deployment-condition-group--${group.tone}`}>
+      <header><span><Icon name={group.icon} size={16} /></span><h4>{t(group.titleKey)}</h4></header>
       <dl className="deployment-condition-list">
-        {rows.map(([label, value]) => <div className="deployment-condition-row" key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+        {group.fields.map((field) => (
+          <div className="deployment-condition-row" key={field.path}>
+            <dt>{t(field.labelKey)}</dt>
+            <dd><ConditionCell display={describeCondition(field, conditionValue(deployment, mission, field), t)} t={t} /></dd>
+          </div>
+        ))}
+        {group.tone === "sensing" ? (
+          <div className="deployment-condition-row deployment-condition-row--noise">
+            <dt>{t("bench.noise")}</dt>
+            <dd className="condition-noise-tags">{activeNoiseNames(deployment.environment?.sensor_noise).length > 0 ? activeNoiseNames(deployment.environment?.sensor_noise).map((name) => <span key={name} title={name}>{name}</span>) : <span className="condition-status is-off">{t("bench.noiseNone")}</span>}</dd>
+          </div>
+        ) : null}
       </dl>
     </section>
   );
