@@ -23,7 +23,8 @@ phase đó.
 | M3 bảng traits trong DB | **xong** | `da29e94` |
 | A5 knowledge provider (AI2) | **xong** | `4d7c15e` |
 | A6 harness + calibration dev | **xong** | `721758d` |
-| A6.5 ba họ golden | **xong** | (xem §A6.5) |
+| A6.5 ba họ golden | **xong** | `9d278dd` |
+| A7 freeze + container + calibration | **xong** | (xem §A7) |
 | A4 seam + lane + gateway | chưa | |
 | A5 knowledge provider | chưa | |
 | A6 dev calibration + harness | chưa | |
@@ -1210,6 +1211,82 @@ và đúng lý do plan bản 9 nói macro trên 3/6 họ không so được vớ
 - Chưa có precision/recall: cần model **thật** chạy trên fixture có đáp án.
   Fixture đã có; chạy model thật cần API key và là quyết định chi phí của An.
 - Ablation critic treo cùng lý do.
+
+---
+
+## A7 — Đóng băng, container, và calibration chính thức
+
+Phase cuối của plan bản 8.
+
+### Đã làm gì
+
+**1. `bundle_builder.py` — ba thứ việc đóng băng phải từ chối.**
+
+- **Cây có sửa đổi thì không đóng băng được.** `agent_code_digest` khai
+  `git:<sha>`, và một working copy đang có sửa **không phải** commit đó. File
+  chưa track cũng tính là bẩn: nó là code mà digest không phủ, còn image thì vẫn
+  copy vào. Có `allow_dirty` cho người diễn tập, và docstring nói thẳng nó
+  **không phải** đường để đóng băng đi gate.
+- **Digest giả không phải digest.** `latest`, `sha256:short`, tag — từ chối hết.
+  Tag di chuyển được, và bundle có image di chuyển là bundle không chạy lại được.
+- **Calibration ba lượt và lấy cái tệ nhất.** Không phải best (hệ may một lần),
+  không phải mean (che lượt hỏng cấu trúc). **Không retry** — retry là một lần
+  bốc thăm nữa, báo cáo như thể lần đầu chưa xảy ra.
+- **Model phải cùng là một model.** Identity đọc trước lượt đầu, so lại sau mỗi
+  lượt: provider trỏ lại alias giữa chừng sinh ra một report về **hai** hệ, và
+  không con số nào lộ ra điều đó.
+
+**2. `docker/Dockerfile.analyst` + `requirements-analyst.txt`.**
+
+Không phải `Dockerfile.api` cộng thêm một service. Image này **không** giữ
+credential, **không** chạm database, **không** phục vụ HTTP; nó nhận packet qua
+stdin và trả lời trên stdout. `apps/`, `alembic/`, `ml/` không được COPY vào — một
+image mang code của API là một image mang tầm với của API, dù không ai gọi.
+
+Dependency cũng cắt: không uvicorn, không alembic, không driver DB. Mỗi thư viện
+không có mặt là một khả năng không ai phải suy luận về nó.
+
+**3. `stdio_lane.py` — lane container, viết cùng lúc với image như đã hẹn ở
+A4-iv.**
+
+Hai adapter: `FrameProvider` (muốn một completion thì **hỏi**) và `FrameHost`
+(muốn một check thì **hỏi**). Cả hai đúng interface mà runner đã cầm, nên
+**runner không đổi một dòng** — đó là chỗ seam của A4-iii trả tiền về.
+
+Container **không tự suy ra quyền của mình**: packet, catalog, `available_evidence`
+và budget đều tới trong frame `analysis_request`, vì mỗi thứ trong đó là một câu
+về việc platform cho phép cái gì, và một container tự tính lấy là một container
+trả lời câu hỏi không ai hỏi.
+
+### Bằng chứng
+
+| Phép kiểm | Kết quả |
+|---|---|
+| `pytest` 20 suite (toàn bộ phạm vi plan) | **523 passed** |
+| Bộ răng | **32/32 CẮN** |
+| `ruff check` | sạch |
+| Lane container chạy **end-to-end không có container** | một "platform giả" trả lời frame trên hai stream in-memory; cùng runner; kết thúc bằng `final_response` + `done`, `model_calls = 1`, log chỉ đi stderr |
+
+19 test mới: cây sạch đóng băng được · cây có sửa bị từ chối · file chưa track
+tính là bẩn · diễn tập được phép và tự khai · bốn kiểu tên image không phải
+digest đều bị từ chối · generation params đóng băng dạng JSON Pointer · hai
+bundle cùng cấu hình chung identity · budget khác ⟶ hệ khác · ba lượt lấy tệ
+nhất · vi phạm cấu trúc ở bất kỳ lượt nào là phủ quyết · lượt lỗi **không**
+retry · model đổi giữa chừng bị bắt · report khai cả hai budget · container hỏi
+completion thay vì gọi model · container hỏi check thay vì tự chạy · một vòng
+đầy đủ chạy qua frame.
+
+### Còn nợ sau A7 — nói thẳng
+
+- **Chưa build image thật.** Không có Docker daemon ở môi trường này, nên
+  `container_digest` chưa từng là digest của một image tồn tại. Dockerfile đã
+  viết, lane đã chạy qua frame, và `freeze_bundle` **từ chối** mọi digest giả —
+  nên chỗ này không thể tự lừa: muốn có bundle đi gate thì phải build image thật
+  rồi truyền digest thật vào.
+- **Chưa chạy calibration với model thật.** `calibrate()` nhận một `score_once`
+  do caller đưa; nối nó vào `run_gate` + gateway + API key là việc cần khoá và là
+  quyết định chi phí của An.
+- **`OFFICIAL_GOLDEN_READY` vẫn `False`** và vẫn nên thế: 3/6 họ.
 
 ---
 

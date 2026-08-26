@@ -33,6 +33,7 @@ ENTRY = "services/analyst_service"
 #: exports is a stub left behind.
 PHASES_LANDED = [
     "analyst",
+    "bundle_builder",
     "cache",
     "guard",
     "harness",
@@ -45,6 +46,7 @@ PHASES_LANDED = [
     "round_host",
     "runner",
     "sanitize",
+    "stdio_lane",
     "stdio_protocol",
 ]
 

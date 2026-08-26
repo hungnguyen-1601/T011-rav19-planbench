@@ -43,6 +43,13 @@ from planbench_analyst.analyst import (
     catalog_text,
     propose,
 )
+from planbench_analyst.bundle_builder import (
+    CalibrationRun,
+    FreezeRefusal,
+    ModelIdentity,
+    calibrate,
+    freeze_bundle,
+)
 from planbench_analyst.cache import CacheStats, ResponseCache, cache_key
 from planbench_analyst.guard import Blocked, GuardResult, critique, guard, quantities_in
 from planbench_analyst.harness import (
@@ -94,6 +101,7 @@ from planbench_analyst.round_host import (
 )
 from planbench_analyst.runner import RoundOutcome, run_round
 from planbench_analyst.sanitize import Aliases, canonical, is_suspicious, label_components
+from planbench_analyst.stdio_lane import FrameHost, FrameProvider, FrameStream
 from planbench_analyst.stdio_protocol import (
     Frame,
     FrameSession,
@@ -111,10 +119,16 @@ __all__ = [
     "Blocked",
     "EvidenceSource",
     "Frame",
+    "FrameHost",
+    "FrameProvider",
+    "FrameStream",
+    "FreezeRefusal",
     "FrameSession",
     "GatewayRefusal",
     "ModelGateway",
+    "ModelIdentity",
     "CacheStats",
+    "CalibrationRun",
     "CaseResult",
     "ConfigRefusal",
     "Fact",
@@ -135,6 +149,7 @@ __all__ = [
     "analyst_schema",
     "build_packet_view",
     "cache_key",
+    "calibrate",
     "case_token",
     "canonical",
     "catalog_text",
@@ -144,6 +159,7 @@ __all__ = [
     "in_process_round",
     "effective_generation_config",
     "failure_table",
+    "freeze_bundle",
     "flatten_config",
     "guard",
     "is_suspicious",
