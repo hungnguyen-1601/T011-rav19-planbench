@@ -1,0 +1,65 @@
+{
+ "candidates": [
+  {
+   "candidate_id": "astar+dwa",
+   "episodes": [
+    {
+     "collision_count": 0,
+     "episode_context_id": "2dd5a4512600",
+     "min_clearance": 0.42,
+     "p99_latency_ms": 14.262400000006892,
+     "peak_search_nodes": 68,
+     "peak_tree_nodes": 0
+    },
+    {
+     "collision_count": 0,
+     "episode_context_id": "fbf13c0edc3c",
+     "min_clearance": 0.42,
+     "p99_latency_ms": 13.506700001016725,
+     "peak_search_nodes": 531,
+     "peak_tree_nodes": 0
+    },
+    {
+     "collision_count": 0,
+     "episode_context_id": "ae1d19cce848",
+     "min_clearance": 0.42,
+     "p99_latency_ms": 13.14249999995809,
+     "peak_search_nodes": 496,
+     "peak_tree_nodes": 0
+    }
+   ]
+  },
+  {
+   "candidate_id": "astar+patient",
+   "episodes": [
+    {
+     "collision_count": 0,
+     "episode_context_id": "2dd5a4512600",
+     "min_clearance": 0.42,
+     "p99_latency_ms": 14.373899999554851,
+     "peak_search_nodes": 68,
+     "peak_tree_nodes": 0
+    },
+    {
+     "collision_count": 0,
+     "episode_context_id": "fbf13c0edc3c",
+     "min_clearance": 0.42,
+     "p99_latency_ms": 15.1968999998644,
+     "peak_search_nodes": 531,
+     "peak_tree_nodes": 0
+    },
+    {
+     "collision_count": 0,
+     "episode_context_id": "ae1d19cce848",
+     "min_clearance": 0.42,
+     "p99_latency_ms": 15.443899999809219,
+     "peak_search_nodes": 496,
+     "peak_tree_nodes": 0
+    }
+   ]
+  }
+ ],
+ "identity": {
+  "task_profile_id": "negative_control"
+ }
+}

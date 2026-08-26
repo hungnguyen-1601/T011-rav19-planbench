@@ -46,11 +46,25 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "golden" / "visibl
 #: the conditions — task profile, mission, variant, seed — so two stacks
 #: run against one world carry one id, which is why the sidecars are
 #: filed per candidate.
-RRT_EPISODE = "9cc2863da1f0"
 
 
 def sidecars(case_id: str) -> dict[str, Path]:
     return {folder.name: folder for folder in (FIXTURES / case_id / "sidecar").iterdir()}
+
+
+def _first_episode(case_id: str) -> str:
+    """The episode this fixture's sidecars are filed under.
+
+    Read from the fixture rather than pinned as a constant: the id is a
+    hash of the conditions, so a world that gains a mission or moves a
+    seed gets a new one — and a constant would then be testing a run
+    nobody has.
+    """
+    directory = sidecars(case_id)["astar+dwa"]
+    return next(directory.glob("*.planning_inputs.jsonl")).name.split(".")[0]
+
+
+RRT_EPISODE = _first_episode("rrt-001")
 
 
 def recorded_reference(case_id: str, candidate_id: str) -> str:

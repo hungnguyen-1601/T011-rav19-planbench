@@ -1,0 +1,1 @@
+{"packet_checksum": "50c6f46790e1d1daa162e7f7d328746dedd67d6a8e8301d1560a76cd5a576a4e", "packet_ref": "fixtures/golden/visible/control-001/packet.json", "provenance_checksum": "15bbf3c34551dc2470b11ee3ecb6a63db2f33bee2b74679cd5c472ef16986bef", "recorded_at": "2026-08-26T00:00:00Z", "run_id": "control-001", "sidecar_present": true, "source": "planted_run"}

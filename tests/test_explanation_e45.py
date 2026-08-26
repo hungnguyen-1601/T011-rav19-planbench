@@ -586,7 +586,10 @@ def test_a_snapshot_that_drifted_from_its_sidecar_is_caught(tmp_path) -> None:  
 
     # Somebody replaced the snapshot with a different world.
     drifted = stored.model_copy(update={"grid": grid(3)})
-    (tmp_path / "snapshots" / "attempt-001.json").write_text(
+    # The snapshot is filed under the name the record points at: the
+    # episode is in it, because one candidate can have several
+    # episodes in one directory.
+    (tmp_path / "snapshots" / record.snapshot_ref.split("/")[-1]).write_text(
         drifted.model_dump_json(), encoding="utf-8"
     )
     with pytest.raises(SidecarViolation, match="hashes to"):
@@ -653,7 +656,10 @@ def test_a_snapshot_with_a_swapped_goal_is_caught_by_the_whole_hash(tmp_path) ->
 
     moved = stored.model_copy(update={"goal_x": 4.5})
     assert moved.grid.checksum == record.costmap_checksum  # the grid is untouched
-    (tmp_path / "snapshots" / "attempt-001.json").write_text(
+    # The snapshot is filed under the name the record points at: the
+    # episode is in it, because one candidate can have several
+    # episodes in one directory.
+    (tmp_path / "snapshots" / record.snapshot_ref.split("/")[-1]).write_text(
         moved.model_dump_json(), encoding="utf-8"
     )
     with pytest.raises(SidecarViolation, match="hashes to"):
@@ -685,7 +691,10 @@ def test_a_snapshot_with_swapped_planner_parameters_is_caught_too(tmp_path) -> N
         update={"planner_parameters": {"max_iterations": 12000}}
     )
     writing.abandon()
-    (tmp_path / "snapshots" / "attempt-001.json").write_text(
+    # The snapshot is filed under the name the record points at: the
+    # episode is in it, because one candidate can have several
+    # episodes in one directory.
+    (tmp_path / "snapshots" / record.snapshot_ref.split("/")[-1]).write_text(
         retuned.model_dump_json(), encoding="utf-8"
     )
     with pytest.raises(SidecarViolation, match="hashes to"):

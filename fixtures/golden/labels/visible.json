@@ -10,11 +10,20 @@
       "expected_mechanism": "geometric_infeasibility",
       "expected_subject": "costmap_inflation",
       "acceptable_refs": [
-        {"subject": "costmap_inflation"},
-        {"ref_prefix": "obs:narrow_gap_refusal:"},
-        {"ref_prefix": "fact:route.narrowest_passage_m"}
+        {
+          "subject": "costmap_inflation"
+        },
+        {
+          "ref_prefix": "obs:narrow_gap_refusal:"
+        },
+        {
+          "ref_prefix": "fact:route.narrowest_passage_m"
+        }
       ],
-      "acceptable_tools": ["get_map_region_features", "gap_vs_footprint"],
+      "acceptable_tools": [
+        "get_map_region_features",
+        "gap_vs_footprint"
+      ],
       "expect_abstention": false,
       "expected_check_required": true,
       "wording_ceiling": "associated",
@@ -25,11 +34,19 @@
       "expected_mechanism": "sampling_budget_insufficiency",
       "expected_subject": "global_planner",
       "acceptable_refs": [
-        {"subject": "global_planner"},
-        {"ref_prefix": "fact:candidate:rrtstar+dwa"},
-        {"ref_prefix": "fact:route."}
+        {
+          "subject": "global_planner"
+        },
+        {
+          "ref_prefix": "fact:candidate:rrtstar+dwa"
+        },
+        {
+          "ref_prefix": "fact:route."
+        }
       ],
-      "acceptable_tools": ["rrt_convergence"],
+      "acceptable_tools": [
+        "rrt_convergence"
+      ],
       "expect_abstention": false,
       "expected_check_required": true,
       "wording_ceiling": "associated",
@@ -40,15 +57,72 @@
       "expected_mechanism": "local_minimum_entrapment",
       "expected_subject": "local_controller",
       "acceptable_refs": [
-        {"subject": "local_controller"},
-        {"ref_prefix": "obs:stuck_cluster:"},
-        {"ref_prefix": "obs:detour:"}
+        {
+          "subject": "local_controller"
+        },
+        {
+          "ref_prefix": "obs:stuck_cluster:"
+        },
+        {
+          "ref_prefix": "obs:detour:"
+        }
       ],
-      "acceptable_tools": ["get_episode_observations", "get_replay_window", "get_event_neighborhood"],
+      "acceptable_tools": [
+        "get_episode_observations",
+        "get_replay_window",
+        "get_event_neighborhood"
+      ],
       "expect_abstention": false,
       "expected_check_required": false,
       "wording_ceiling": "associated",
       "rationale": "The robot stalls in a concave pocket with a clear global path available. The stall cluster and the detour are in the packet; a controller-level mechanism is readable from them without a checker, so this case is the no-check stratum."
+    },
+    {
+      "case_id": "latency-001",
+      "expected_mechanism": "expansion_latency_association",
+      "expected_subject": "global_planner",
+      "acceptable_refs": [
+        {
+          "subject": "global_planner"
+        },
+        {
+          "ref_prefix": "fact:metric:astar+dwa.latency"
+        },
+        {
+          "ref_prefix": "fact:candidate:astar+dwa"
+        }
+      ],
+      "acceptable_tools": [
+        "latency_vs_expanded_nodes",
+        "get_candidate_measurements"
+      ],
+      "expect_abstention": false,
+      "expected_check_required": true,
+      "wording_ceiling": "associated",
+      "rationale": "Eight episodes down a zigzag corridor: the grid search opens sixteen nodes for the nearest goal and about fifty thousand for the furthest, and the tick latency rises with it. The association is what the checker measures and the ceiling is where it stops - a longer episode also draws more ticks, and this platform cannot split the planner's share of one."
+    },
+    {
+      "case_id": "control-001",
+      "acceptable_refs": [],
+      "acceptable_tools": [
+        "get_objective_decomposition",
+        "get_candidate_measurements"
+      ],
+      "expect_abstention": true,
+      "expected_check_required": false,
+      "wording_ceiling": "associated",
+      "rationale": "One stack under two controller tunings over three shared episodes. No detector fired on either side and the utility difference is a rounding error, so there is nothing here to explain - and an explanation offered anyway is the failure this layer exists to prevent."
+    },
+    {
+      "case_id": "gap-002",
+      "acceptable_refs": [],
+      "acceptable_tools": [
+        "get_known_unknowns"
+      ],
+      "expect_abstention": true,
+      "expected_check_required": false,
+      "wording_ceiling": "associated",
+      "rationale": "The episodes ran with no recorder attached, the way every run before the trace address change did. There are no observations, no sidecar and no replay: every mechanism check is unavailable, and naming what is missing is the whole of the correct answer."
     }
   ]
 }

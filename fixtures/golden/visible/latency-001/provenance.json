@@ -1,0 +1,1 @@
+{"packet_checksum": "50c12f8f634a85b3a139345b4146cb0b7c91076c755ea81e10b4ee48182143f9", "packet_ref": "fixtures/golden/visible/latency-001/packet.json", "provenance_checksum": "0cd86bfcff1b930fcd4fbcc9ce6c4980678257ff4c651ee21d99644ed8195409", "recorded_at": "2026-08-26T00:00:00Z", "run_id": "latency-001", "sidecar_present": true, "source": "planted_run"}

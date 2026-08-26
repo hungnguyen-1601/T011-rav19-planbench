@@ -134,6 +134,20 @@ def bundle_for(arm: str, model_id: str) -> AnalystBundle:
     )
 
 
+def report_for(case_id: str) -> dict[str, object] | None:
+    """The scoring report a fixture kept, if its run produced one.
+
+    Only the latency family does today: an association between search
+    size and tick latency lives per episode, and the packet carries per
+    candidate aggregates. A case without one leaves that check honestly
+    ``not_checkable``.
+    """
+    path = FIXTURES / case_id / "report.json"
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def sidecars(case_id: str) -> dict[str, Path]:
     directory = FIXTURES / case_id / "sidecar"
     if not directory.exists():
@@ -189,6 +203,7 @@ def main() -> int:
                     catalog=TOOL_CATALOG,
                     analysis_run_id=f"{arm}-{case_id}-r{index + 1}",
                     sidecar_directories=sidecars(case_id),
+                    report=report_for(case_id),
                 )
                 view = build_packet_view(
                     prepared.analysis.packet,

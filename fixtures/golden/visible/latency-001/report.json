@@ -1,0 +1,145 @@
+{
+ "candidates": [
+  {
+   "candidate_id": "astar+dwa",
+   "episodes": [
+    {
+     "collision_count": 0,
+     "episode_context_id": "555031ee3bc1",
+     "min_clearance": 0.32,
+     "p99_latency_ms": 8.938799999668845,
+     "peak_search_nodes": 16,
+     "peak_tree_nodes": 0
+    },
+    {
+     "collision_count": 0,
+     "episode_context_id": "d72dbfbb88e8",
+     "min_clearance": 0.32,
+     "p99_latency_ms": 5.436999999801628,
+     "peak_search_nodes": 56,
+     "peak_tree_nodes": 0
+    },
+    {
+     "collision_count": 0,
+     "episode_context_id": "efa68f012c1b",
+     "min_clearance": 0.0316496903294923,
+     "p99_latency_ms": 14.911099999153521,
+     "peak_search_nodes": 16145,
+     "peak_tree_nodes": 0
+    },
+    {
+     "collision_count": 0,
+     "episode_context_id": "91c11f2f1545",
+     "min_clearance": 0.03102922471717562,
+     "p99_latency_ms": 16.05339999878197,
+     "peak_search_nodes": 19273,
+     "peak_tree_nodes": 0
+    },
+    {
+     "collision_count": 0,
+     "episode_context_id": "19db5e66c07a",
+     "min_clearance": 0.03200677767264418,
+     "p99_latency_ms": 18.087599999489612,
+     "peak_search_nodes": 30573,
+     "peak_tree_nodes": 0
+    },
+    {
+     "collision_count": 0,
+     "episode_context_id": "4c593c06eef4",
+     "min_clearance": 0.028307725032490294,
+     "p99_latency_ms": 14.46849999956612,
+     "peak_search_nodes": 33578,
+     "peak_tree_nodes": 0
+    },
+    {
+     "collision_count": 0,
+     "episode_context_id": "7b49065758f7",
+     "min_clearance": 0.029642606652446835,
+     "p99_latency_ms": 20.43469999989611,
+     "peak_search_nodes": 44721,
+     "peak_tree_nodes": 0
+    },
+    {
+     "collision_count": 0,
+     "episode_context_id": "262c1d11e65b",
+     "min_clearance": 0.029642606652446835,
+     "p99_latency_ms": 20.455900001252303,
+     "peak_search_nodes": 47726,
+     "peak_tree_nodes": 0
+    }
+   ]
+  },
+  {
+   "candidate_id": "rrtstar+dwa",
+   "episodes": [
+    {
+     "collision_count": 0,
+     "episode_context_id": "555031ee3bc1",
+     "min_clearance": 0.32,
+     "p99_latency_ms": 14.600700000301003,
+     "peak_search_nodes": 0,
+     "peak_tree_nodes": 26
+    },
+    {
+     "collision_count": 0,
+     "episode_context_id": "d72dbfbb88e8",
+     "min_clearance": 0.32,
+     "p99_latency_ms": 11.18539999879431,
+     "peak_search_nodes": 0,
+     "peak_tree_nodes": 26
+    },
+    {
+     "collision_count": 0,
+     "episode_context_id": "efa68f012c1b",
+     "min_clearance": 0.32,
+     "p99_latency_ms": 9.490300000834395,
+     "peak_search_nodes": 0,
+     "peak_tree_nodes": 25
+    },
+    {
+     "collision_count": 0,
+     "episode_context_id": "91c11f2f1545",
+     "min_clearance": 0.32,
+     "p99_latency_ms": 7.039999998596613,
+     "peak_search_nodes": 0,
+     "peak_tree_nodes": 25
+    },
+    {
+     "collision_count": 0,
+     "episode_context_id": "19db5e66c07a",
+     "min_clearance": 0.32,
+     "p99_latency_ms": 12.086800001270603,
+     "peak_search_nodes": 0,
+     "peak_tree_nodes": 25
+    },
+    {
+     "collision_count": 0,
+     "episode_context_id": "4c593c06eef4",
+     "min_clearance": 0.32,
+     "p99_latency_ms": 10.410400000182563,
+     "peak_search_nodes": 0,
+     "peak_tree_nodes": 25
+    },
+    {
+     "collision_count": 0,
+     "episode_context_id": "7b49065758f7",
+     "min_clearance": 0.32,
+     "p99_latency_ms": 9.93200000084471,
+     "peak_search_nodes": 0,
+     "peak_tree_nodes": 25
+    },
+    {
+     "collision_count": 0,
+     "episode_context_id": "262c1d11e65b",
+     "min_clearance": 0.32,
+     "p99_latency_ms": 9.456800000407384,
+     "peak_search_nodes": 0,
+     "peak_tree_nodes": 25
+    }
+   ]
+  }
+ ],
+ "identity": {
+  "task_profile_id": "expansion_latency"
+ }
+}

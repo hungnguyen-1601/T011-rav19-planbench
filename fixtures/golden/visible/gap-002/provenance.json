@@ -1,0 +1,1 @@
+{"packet_checksum": "f8c7935b9ce1f47453b2069c2020b4330c0443cd056701748c8dbe84f663acdc", "packet_ref": "fixtures/golden/visible/gap-002/packet.json", "provenance_checksum": "7b00d7be9646d4e6180b2a791ff5b40cd12d49bb14f01ed25a3fad131407e0da", "recorded_at": "2026-08-26T00:00:00Z", "run_id": "gap-002", "sidecar_present": false, "source": "planted_run"}

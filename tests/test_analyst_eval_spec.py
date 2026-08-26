@@ -47,7 +47,14 @@ PREREGISTRATION_CHECKSUM = "17354118e80a864b8d52fd2603342058389366e8a0c81fc7f2d0
 
 def test_the_shipped_labels_load_and_cover_the_built_fixtures() -> None:
     spec = load_eval_spec(LABELS)
-    assert {item.case_id for item in spec.labels} == {"inflation-001", "rrt-001", "dwa-001"}
+    assert {item.case_id for item in spec.labels} == {
+        "inflation-001",
+        "rrt-001",
+        "dwa-001",
+        "latency-001",
+        "control-001",
+        "gap-002",
+    }
     for label in spec.labels:
         assert (FIXTURES / label.case_id / "packet.json").exists()
 
@@ -56,8 +63,8 @@ def test_the_stratum_is_decided_by_the_fixture_not_the_model() -> None:
     """A stratum chosen after seeing the model's branch is a
     post-treatment comparison."""
     spec = load_eval_spec(LABELS)
-    assert spec.strata["check_required"] == ("inflation-001", "rrt-001")
-    assert spec.strata["no_check_required"] == ("dwa-001",)
+    assert spec.strata["check_required"] == ("inflation-001", "rrt-001", "latency-001")
+    assert spec.strata["no_check_required"] == ("dwa-001", "control-001", "gap-002")
 
 
 def test_a_citation_that_is_different_and_correct_still_counts() -> None:

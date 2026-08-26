@@ -36,6 +36,7 @@ from planbench_explanation.budget import PLATFORM_BUDGET_CAP, AnalysisBudget
 from planbench_explanation.bundle import AnalystBundle
 from planbench_explanation.case_packet import CasePacket
 from planbench_explanation.host import (
+    ROUTE_REGION_ID,
     EvidenceSink,
     InMemoryEvidenceSink,
     ReportEvidence,
@@ -265,6 +266,19 @@ class InProcessHost:
         return self._host.call(request)
 
 
+def _route_regions(packet: CasePacket) -> dict[tuple[str, str], object]:
+    """The packet's one measured route, under the id the host resolves.
+
+    The same rule ``ReportEvidence.from_packet`` follows, lifted out so a
+    fixture that also carries a report keeps the geometry the analyst was
+    shown rather than losing it to the report path.
+    """
+    route = packet.task.route
+    if route is None:
+        return {}
+    return {(candidate.candidate_id, ROUTE_REGION_ID): route for candidate in packet.candidates}
+
+
 def in_process_round(
     supplied: PacketArtifact | CasePacket,
     bundle: AnalystBundle,
@@ -277,6 +291,7 @@ def in_process_round(
     sidecar_directory: Path | None = None,
     sidecar_directories: Mapping[str, Path] = MappingProxyType({}),
     replay_planner: ReplayPlanner | None = None,
+    report: Mapping[str, object] | None = None,
 ) -> PreparedRound:
     """Prepare one round in this process, from one evidence source.
 
@@ -296,10 +311,25 @@ def in_process_round(
     # Built from the same packet the request is built from, and pointed
     # at the same run's sidecars. A second packet here would be a host
     # answering about a different run in the analyst's own round.
-    evidence = ReportEvidence.from_packet(
-        source.packet,
-        sidecar_directory=sidecar_directory,
-        sidecar_directories=sidecar_directories,
+    # A fixture may carry the scoring report its run produced. The
+    # latency check reads per-episode search costs, and a packet holds
+    # per-candidate aggregates — so without the report that check is
+    # honestly ``not_checkable``, and with it the fixture can be graded
+    # on the mechanism it plants. G6.
+    evidence = (
+        ReportEvidence(
+            report,
+            packet=source.packet,
+            regions=_route_regions(source.packet),
+            sidecar_directory=sidecar_directory,
+            sidecar_directories=sidecar_directories,
+        )
+        if report is not None
+        else ReportEvidence.from_packet(
+            source.packet,
+            sidecar_directory=sidecar_directory,
+            sidecar_directories=sidecar_directories,
+        )
     )
     analysis = AnalysisRequest(
         analysis_run_id=analysis_run_id,

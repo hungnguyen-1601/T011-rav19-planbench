@@ -40,8 +40,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import shutil
 import sys
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,8 +53,17 @@ for package in ("schemas", "planning", "metrics", "benchmark", "decision", "expl
 sys.path.insert(0, str(ROOT / "services" / "simulator"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from plant_golden_runs import WORLDS, PlantedWorld, build_reference  # noqa: E402
+from plant_golden_runs import (  # noqa: E402
+    SECOND_VARIANTS_MISSING,
+    WORLDS,
+    PlantedWorld,
+    build_reference,
+)
 
+from planbench_decision.anchors import load_anchors  # noqa: E402
+from planbench_decision.candidate import Candidate  # noqa: E402
+from planbench_decision.objectives import DecisionSettings  # noqa: E402
+from planbench_decision.stats import build_evidence  # noqa: E402
 from planbench_explanation.case_packet import (  # noqa: E402
     CandidateMeasurements,
     DecisionFacts,
@@ -89,14 +101,18 @@ from planbench_explanation.versioning import (  # noqa: E402
     ExplanationArtifactHeader,
     artifact_checksum,
 )
+from planbench_explanation.waterfall import build_waterfall  # noqa: E402
+from planbench_metrics.definitions import compute_metrics  # noqa: E402
 from planbench_planning import (  # noqa: E402
     AStarPlanner,
+    DWAConfig,  # noqa: E402
     DWAPlanner,
     RRTStarConfig,
     RRTStarPlanner,
 )
 from planbench_schemas.episode_context import EpisodeContext  # noqa: E402
 from planbench_schemas.replanning import ReplanningConfig  # noqa: E402
+from planbench_schemas.task_profile import TaskProfile  # noqa: E402
 from planbench_simulator.nav_stack import _hard_radius, run_stack  # noqa: E402
 from planbench_simulator.trace import EpisodeTraceRecorder, read_trace  # noqa: E402
 
@@ -113,6 +129,104 @@ RECORDED_AT = "2026-08-26T00:00:00Z"
 #: stages one per world because it is planting a *mechanism*, so the
 #: second stack runs here on the same world and scenario.
 STACKS: tuple[str, ...] = ("astar", "rrtstar")
+
+
+#: What a planted world declares about itself when the decision layer
+#: has to score it. Written here rather than borrowed from a test fake:
+#: a fixture that inherits a test's numbers inherits a test's
+#: assumptions, and the two drift apart the first time somebody edits
+#: the test for an unrelated reason.
+#:
+#: The hardware block is the contract's own board budget (HĐ-2.4); the
+#: preference profile these worlds are scored under is
+#: ``measured_only``, because nothing here declares a tuning budget and
+#: a profile that prices engineering effort would charge every candidate
+#: for something nobody measured.
+def _profile(world: PlantedWorld, goals: Sequence[tuple[float, float]]) -> TaskProfile:
+    scenario = world.scenario
+    missions = [
+        {
+            "id": f"m{index + 1}",
+            "start": [scenario.start_pose.x, scenario.start_pose.y, 0.0],
+            "goal": [goal[0], goal[1], 0.0],
+            "probability": 1.0 / len(goals),
+        }
+        for index, goal in enumerate(goals)
+    ]
+    return TaskProfile.model_validate(
+        {
+            "id": f"planted_{world.family}",
+            "environment": {
+                "map": f"planted://{world.case_id}.pgm",
+                "map_yaml": f"planted://{world.case_id}.yaml",
+                "dynamic_obstacles": [],
+            },
+            "missions": missions,
+            "robot": {
+                "radius": scenario.robot.radius,
+                "max_linear_velocity": scenario.robot.max_linear_velocity,
+                "max_angular_velocity": scenario.robot.max_angular_velocity,
+                "max_linear_acceleration": scenario.robot.max_linear_acceleration,
+                "max_angular_acceleration": scenario.robot.max_angular_acceleration,
+                "control_period": scenario.simulation_dt,
+            },
+            "available_observations": ["lidar_2d"],
+            "constraints": {
+                "success_rate_min": 0.9,
+                "collision_probability_max": 0.1,
+                "clearance_warning_m": DetectorSettings().near_miss_clearance_m,
+                "goal_tolerance_m": scenario.goal_tolerance,
+                # Heading unconstrained: the simulator has no final-orientation
+                # controller, and a tighter value is refused at load.
+                "goal_tolerance_rad": math.pi,
+                "episode_timeout_s": scenario.timeout_seconds,
+                "stuck_threshold_s": 5.0,
+            },
+            "hardware": {
+                "target_device": "jetson_orin_nano",
+                "total_ram_mb": 8192,
+                "ram_budget_breakdown": {
+                    "os_and_middleware_mb": 1536,
+                    "perception_stack_mb": 2048,
+                    "localization_mapping_mb": 819,
+                    "logging_and_reserve_mb": 512,
+                },
+                "available_ram_mb": 3277,
+            },
+        }
+    )
+
+
+#: The two controller tunings the negative control compares. One stack,
+#: two horizons: a pair that differs in a planner would give an analyst
+#: something true to say, and this family is about the case where there
+#: is nothing.
+CONTROLLER_TUNINGS: dict[str, DWAConfig] = {
+    "dwa_default": DWAConfig(),
+    "dwa_patient": DWAConfig(horizon_seconds=1.7),
+}
+
+
+def _decision_candidate(world: PlantedWorld, planner: str, controller_config: str):  # type: ignore[no-untyped-def]
+    """The decision layer's view of one stack, for scoring only."""
+    return Candidate.model_validate(
+        {
+            "type": "modular",
+            "global_planner": {"name": planner, "version": "v1"},
+            "local_controller": {"name": "dwa", "version": "v1"},
+            "params": {planner: {}, "dwa": {"config": controller_config}},
+            "observation_requirements": ["lidar_2d"],
+            "resource_profile": {
+                "kind": "structural",
+                "target_implementation": "cpp_ros2",
+                "bytes_per_search_node": 40,
+                "bytes_per_tree_node": 40,
+                "bytes_per_costmap_cell": 1,
+                "costmap_layers": 3,
+                "fixed_overhead_mb": 8.0,
+            },
+        }
+    )
 
 
 def _planner(name: str):  # type: ignore[no-untyped-def]
@@ -233,23 +347,35 @@ def _deployment(world: PlantedWorld, reference_length_m: float) -> Deployment:
 def build(
     world: PlantedWorld, root: Path, trace_root: Path, reference: str
 ) -> tuple[Path, int, list[str]]:
-    """Run one staged world with both stacks and write its packet.
+    """Run one staged world and write its packet.
+
+    **Episodes, plural.** Three of the six families are about a pattern
+    *across* episodes rather than inside one: an association between how
+    much a search expanded and how long it took, and a difference that
+    straddles zero. One episode is one point, and a point has no slope
+    and no interval — so a world may name extra goals, and each becomes
+    an episode with its own context id.
 
     The planning-input sidecar is written **beside the packet**, one
-    directory per candidate. Both candidates run the same conditions, so
-    they share an ``episode_context_id`` — that is what the id is, a hash
-    of the conditions — and one flat directory would have the second
-    stack's sidecar overwrite the first's under the same name. Per
-    candidate is also how the trace layout files them in production.
+    directory per candidate and one file per episode. Candidates share
+    an ``episode_context_id`` — that is what the id is, a hash of the
+    conditions — so one flat directory would have the second stack
+    overwrite the first.
 
-    Without the sidecar the two replay checks have nothing to read, and
-    ``rrt_convergence`` is exactly the check that separates a sampling
-    planner running out of budget from a corridor that was never open.
-    A fixture for that family with no sidecar is a case whose mechanism
-    cannot be verified, however good the analyst is.
+    A world may also declare that **nothing recorded it**
+    (``record_traces=False``). That is not a fixture with its files
+    deleted afterwards: the episodes run with no recorder attached, the
+    way every run before the trace layout did, and the packet that comes
+    out honestly has no observations to carry.
     """
     folder = root / world.case_id
     folder.mkdir(parents=True, exist_ok=True)
+    # Start from an empty sidecar tree. Rebuilding in place left the
+    # previous build's episodes behind, and a stale sidecar still names
+    # a snapshot the new run overwrote — which the reader correctly
+    # reports as a file edited after its run, from a build nobody kept.
+    if (folder / "sidecar").exists():
+        shutil.rmtree(folder / "sidecar")
     traces: list[EpisodeTrace] = []
     timelines: list[EpisodeTimeline] = []
     measurements: list[CandidateMeasurements] = []
@@ -257,108 +383,213 @@ def build(
     notes: list[str] = []
     routes: dict[str, object] = {}
     sidecars: dict[str, Path] = {}
+    report_rows: dict[str, list[dict[str, object]]] = {}
+    scored: dict[str, object] = {}
 
     radius = world.scenario.robot.radius
     inflation_margin = _hard_radius(world.map_data, world.scenario) - radius
     start = (world.scenario.start_pose.x, world.scenario.start_pose.y)
-    goal = (world.scenario.goal_pose.x, world.scenario.goal_pose.y)
+    goals = [(world.scenario.goal_pose.x, world.scenario.goal_pose.y), *world.episode_goals]
+    profile = _profile(world, goals)
+    anchors = load_anchors().resolve(profile)
+    settings = DecisionSettings(preference_profile="measured_only")
 
-    context = _context(world)
-    # The platform's own id: a hash of task profile, mission, variant and
-    # seed. The first draft of this script wrote "<case>:<candidate>",
-    # which is not what a run produces and is not a filename a sidecar
-    # can live under on Windows.
-    episode_context_id = context.episode_context_id
+    # Two shapes of pair. Most worlds compare two global planners; the
+    # negative control compares two tunings of one controller, because a
+    # pair that differs in a planner would give an analyst something true
+    # to say and this family is about the case where there is nothing.
+    tunings = world.stacks
+    arms = (
+        [(world.global_planner_name, name) for name in tunings]
+        if tunings
+        else [(name, "dwa_default") for name in STACKS]
+    )
 
-    for name in STACKS:
-        candidate_id = f"{name}+dwa"
+    for planner_name, controller_config in arms:
+        # The pair every other world runs keeps the name it has always
+        # had: renaming a candidate renames every citation into it, and
+        # the labels the scorer holds are written against these ids.
+        candidate_id = (
+            f"{planner_name}+dwa"
+            if controller_config == "dwa_default"
+            else f"{planner_name}+{controller_config.removeprefix('dwa_')}"
+        )
         candidates.append(
             CandidateComponents(
                 candidate_id=candidate_id,
-                global_planner=name,
+                global_planner=planner_name,
                 local_controller="dwa",
-                local_controller_config="dwa_default",
+                local_controller_config=controller_config,
             )
         )
-        sidecar_path = (
-            folder / "sidecar" / candidate_id / f"{episode_context_id}.planning_inputs.jsonl"
-        )
-        planning = PlanningInputRecorder.to_path(
-            sidecar_path,
-            run_id=world.case_id,
-            episode_context_id=episode_context_id,
-            candidate_id=candidate_id,
-            execution_environment_ref=reference,
-        )
-        sidecars[candidate_id] = sidecar_path.parent
-        recorder = EpisodeTraceRecorder(
-            context,
-            candidate_id,
-            root=trace_root,
-            # The recorder's vocabulary, not the packet's: a planted world is
-            # a reference run, and the trace address says so.
-            evidence_class="reference",
-        )
-        try:
-            with recorder:
-                run = run_stack(
+        decision_candidate = _decision_candidate(world, planner_name, controller_config)
+        episode_metrics = []
+        episode_contexts = []
+
+        for index, goal in enumerate(goals):
+            mission = f"m{index + 1}"
+            context = EpisodeContext(
+                task_profile_id=profile.id, mission_id=mission, seed=7 + index
+            )
+            episode_context_id = context.episode_context_id
+            scenario = world.scenario.model_copy(
+                update={"goal_pose": world.scenario.goal_pose.model_copy(
+                    update={"x": goal[0], "y": goal[1]}
+                )}
+            )
+            controller = DWAPlanner(CONTROLLER_TUNINGS[controller_config])
+
+            if not world.record_traces:
+                # No recorder, no sidecar: the run this fixture is of is
+                # one nobody was recording.
+                run_stack(
                     world.map_data,
-                    world.scenario,
-                    DWAPlanner(),
-                    _planner(name),
+                    scenario,
+                    controller,
+                    _planner(planner_name),
                     ReplanningConfig(enabled=True, max_replans=2),
-                    recorder=recorder,
-                    planning_recorder=planning,
                 )
-        except Exception:
-            planning.abandon()
-            raise
-        written = planning.close(expected_attempts=run.replan_attempts + 1)
-        # Read it back the way a checker will, so a sidecar nothing can
-        # consume fails here rather than inside a graded round.
-        _header, reloaded = read_sidecar(sidecar_path)
-        validate_episode_attempts(reloaded, expected_attempts=len(written))
-        for record in reloaded:
-            snapshot_for(sidecar_path, record)
-        planned = tuple((point.x, point.y) for point in run.plan.path) or None
-        # Geometry along the route the stack set out on — or, when the
-        # planner refused and there is no route, along the straight line
-        # the task asks for, which is the corridor the refusal is about.
-        try:
-            # Half a cell, not the default 0.1 m: the planted wall is one
-            # cell thick, and a 0.1 m walk over a 0.1 m grid lands on cell
-            # boundaries where floating point puts 1.4/0.1 at 13.999 — the
-            # wall column was stepped over and every cross-section left the
-            # grid unbounded, which read as "no passage measured".
-            routes[candidate_id] = measure_route(
-                world.map_data,
-                planned or (start, goal),
-                sample_spacing_m=world.map_data.resolution / 2.0,
+                continue
+
+            sidecar_path = (
+                folder
+                / "sidecar"
+                / candidate_id
+                / f"{episode_context_id}.planning_inputs.jsonl"
             )
-        except MapFeatureRefusal as refused:
-            notes.append(f"{candidate_id}: route not measurable — {refused}")
-        # A refused plan leaves no route to measure progress along. The
-        # task's own start-to-goal line stands in as the reference — the
-        # corridor the refusal is about — and the note says so, because a
-        # reference nobody drove is a different thing from a plan.
-        reference_line = planned or (start, goal)
-        traces.append(
-            _trace_from_parquet(recorder.path, candidate_id, episode_context_id, reference_line)
-        )
-        measurements.append(_measured(candidate_id, run, traces[-1]))
-        if not planned:
-            notes.append(
-                f"{candidate_id}: the planner refused at the start pose; the trace is "
-                "the one row a stopped robot writes, carrying the refusal event, and "
-                "the reference line is the task's start-to-goal line"
+            planning = PlanningInputRecorder.to_path(
+                sidecar_path,
+                run_id=world.case_id,
+                episode_context_id=episode_context_id,
+                candidate_id=candidate_id,
+                execution_environment_ref=reference,
+            )
+            sidecars[candidate_id] = sidecar_path.parent
+            recorder = EpisodeTraceRecorder(
+                context,
+                candidate_id,
+                root=trace_root,
+                # The recorder's vocabulary, not the packet's: a planted
+                # world is a reference run, and the address says so.
+                evidence_class="reference",
+            )
+            try:
+                with recorder:
+                    run = run_stack(
+                        world.map_data,
+                        scenario,
+                        controller,
+                        _planner(planner_name),
+                        ReplanningConfig(enabled=True, max_replans=2),
+                        recorder=recorder,
+                        planning_recorder=planning,
+                    )
+            except Exception:
+                planning.abandon()
+                raise
+            written = planning.close(expected_attempts=run.replan_attempts + 1)
+            # Read it back the way a checker will, so a sidecar nothing
+            # can consume fails here rather than inside a graded round.
+            _header, reloaded = read_sidecar(sidecar_path)
+            validate_episode_attempts(reloaded, expected_attempts=len(written))
+            for record in reloaded:
+                snapshot_for(sidecar_path, record)
+
+            planned = tuple((point.x, point.y) for point in run.plan.path) or None
+            goal_point = (goal[0], goal[1])
+            try:
+                # Half a cell, not the default 0.1 m: a planted wall is
+                # one cell thick, and a 0.1 m walk over a 0.1 m grid
+                # lands on cell boundaries where floating point puts
+                # 1.4/0.1 at 13.999 - the wall column was stepped over
+                # and every cross-section left the grid unbounded.
+                measured = measure_route(
+                    world.map_data,
+                    planned or (start, goal_point),
+                    sample_spacing_m=world.map_data.resolution / 2.0,
+                )
+                routes.setdefault(candidate_id, measured)
+            except MapFeatureRefusal as refused:
+                notes.append(f"{candidate_id}/{mission}: route not measurable - {refused}")
+
+            reference_line = planned or (start, goal_point)
+            trace = _trace_from_parquet(
+                recorder.path, candidate_id, episode_context_id, reference_line
+            )
+            traces.append(trace)
+            if not planned:
+                notes.append(
+                    f"{candidate_id}/{mission}: the planner refused at the start pose; "
+                    "the trace is the one row a stopped robot writes, carrying the "
+                    "refusal event, and the reference line is the start-to-goal line"
+                )
+
+            # The scoring report row this episode contributes. Its two
+            # node columns are never added together: a grid frontier and
+            # a sampling tree count different structures, and a candidate
+            # populates one or the other.
+            sampling = planner_name in ("rrtstar", "rrt")
+            latencies = [
+                value for value in trace.columns["planner_latency_ms"] if value is not None
+            ]
+            report_rows.setdefault(candidate_id, []).append(
+                {
+                    "episode_context_id": episode_context_id,
+                    "peak_search_nodes": 0 if sampling else run.plan.expanded_nodes,
+                    "peak_tree_nodes": run.plan.expanded_nodes if sampling else 0,
+                    "p99_latency_ms": _percentile(latencies, 0.99) if latencies else 0.0,
+                    "min_clearance": min(
+                        (v for v in trace.columns["clearance_m"] if v is not None),
+                        default=0.0,
+                    ),
+                    "collision_count": 1 if run.result.status == "collision" else 0,
+                }
             )
 
-    # The timelines M2 asks for. A planted world ranks nobody, so there
-    # is no ΔU to select exemplars by; the roles are assigned from what
-    # the episodes were — the candidate that came closest to something
-    # is the safety-critical one, the other is typical — and both are
-    # carried, because a comparison with one timeline shows a shape with
-    # nothing to read it against.
+            loaded = read_trace(recorder.path)
+            try:
+                measured = compute_metrics(
+                    loaded,
+                    profile,
+                    context,
+                    world.map_data,
+                    resource_profile=decision_candidate.resource_profile,
+                )
+                # The decision layer names a candidate by the hash of
+                # its own declaration; the trace names it by the id this
+                # fixture reads by. Same run, two names — restamped here
+                # rather than renaming the candidate, because every
+                # citation in the packet points at the readable one.
+                episode_metrics.append(
+                    measured.model_copy(
+                        update={"candidate_id": decision_candidate.candidate_id}
+                    )
+                )
+                episode_contexts.append(context)
+            except Exception as refused:  # noqa: BLE001 - the metrics boundary
+                notes.append(f"{candidate_id}/{mission}: metrics refused - {refused}")
+
+        if traces and any(item.candidate_id == candidate_id for item in traces):
+            measurements.append(
+                _measured_over(
+                    candidate_id,
+                    [item for item in traces if item.candidate_id == candidate_id],
+                    report_rows.get(candidate_id, ()),
+                )
+            )
+        if episode_metrics:
+            try:
+                scored[candidate_id] = build_evidence(
+                    decision_candidate, episode_metrics, episode_contexts, anchors, settings
+                )
+            except Exception as refused:  # noqa: BLE001 - the decision boundary
+                notes.append(f"{candidate_id}: not scored - {refused}")
+
+    # The timelines M2 asks for, one per candidate, on that candidate's
+    # first episode. The role is assigned from what the episodes were -
+    # the candidate that came closest to something is the safety-critical
+    # one - because a planted world ranks nobody and there is no delta U
+    # to select exemplars by.
     worst_clearance = {
         trace.candidate_id: min(
             (value for value in trace.columns["clearance_m"] if value is not None),
@@ -367,7 +598,10 @@ def build(
         for trace in traces
     }
     closest = min(worst_clearance, key=lambda name: worst_clearance[name], default=None)
+    seen_timeline: set[str] = set()
     for trace in traces:
+        if trace.candidate_id in seen_timeline:
+            continue
         route = routes.get(trace.candidate_id)
         length = getattr(route, "route_length_m", 0.0)
         if not length:
@@ -388,18 +622,49 @@ def build(
             )
             continue
         timelines.append(timeline)
+        seen_timeline.add(trace.candidate_id)
 
     required_width = 2.0 * (radius + inflation_margin)
     observations, skipped = observations_from_traces(
         traces,
-        episodes_total=len(STACKS),
+        episodes_total=len(goals),
         route_features=routes,  # type: ignore[arg-type]
         required_passage_width_m=required_width,
     )
     notes.extend(skipped)
 
-    # The packet carries one route: the first candidate's, which on a
-    # planted single-episode world is the same corridor for both.
+    # The comparison, when there is one to make. Two candidates scored
+    # over the same contexts decompose into a waterfall; anything less is
+    # a run that ranked nobody, and the packet says so rather than
+    # carrying an empty structure somebody reads as "no difference".
+    waterfall = None
+    if len(scored) == 2:
+        names = sorted(scored)
+        left, right = (scored[key] for key in names)
+        try:
+            computed = build_waterfall(left, right, settings=settings)
+            # The decision layer names a candidate by the hash of its own
+            # declaration and the packet names it by the id every citation
+            # points at. The packet builder refuses a waterfall about
+            # candidates it cannot see — rightly — so the two names are
+            # joined here, in the open, rather than the packet carrying a
+            # comparison between ids nobody reading it can find.
+            waterfall = computed.model_copy(
+                update={
+                    "candidate_a": names[0],
+                    "candidate_b": names[1],
+                    "drill_down": computed.drill_down.model_copy(
+                        update={"candidate_a": names[0], "candidate_b": names[1]}
+                    ),
+                }
+            )
+            notes.append(
+                f"waterfall: delta U = {waterfall.delta_utility_mean:+.4f} over "
+                f"{waterfall.n_episodes} paired episode(s)"
+            )
+        except Exception as refused:  # noqa: BLE001 - the waterfall boundary
+            notes.append(f"waterfall refused - {refused}")
+
     route = next(iter(routes.values()), None)
     packet = build_case_packet(
         run_id=world.case_id,
@@ -420,7 +685,10 @@ def build(
             route=route,  # type: ignore[arg-type]
         ),
         candidates=candidates,
-        decision=DecisionFacts(status="GATE_ONLY"),
+        decision=DecisionFacts(
+            status="COMPARED" if waterfall is not None else "GATE_ONLY",
+            waterfall=waterfall,
+        ),
         observations=observations,
         measurements=measurements,
         timelines=timelines,
@@ -432,7 +700,7 @@ def build(
         packet_checksum=packet_checksum(packet),
         run_id=world.case_id,
         recorded_at=RECORDED_AT,
-        sidecar_present=True,
+        sidecar_present=bool(sidecars),
         source="planted_run",
     )
     (folder / "packet.json").write_text(
@@ -447,10 +715,98 @@ def build(
         ),
         encoding="utf-8",
     )
-    notes.append(
-        "sidecars: " + ", ".join(f"{name} -> {path.name}" for name, path in sidecars.items())
-    )
+
+    # The scoring report, when the run produced one. It is what
+    # ``latency_vs_expanded_nodes`` reads: the packet carries per
+    # candidate aggregates, and an association between expansion and
+    # latency lives per episode.
+    if report_rows:
+        (folder / "report.json").write_text(
+            json.dumps(
+                {
+                    "identity": {"task_profile_id": world.family},
+                    "candidates": [
+                        {"candidate_id": name, "episodes": rows}
+                        for name, rows in sorted(report_rows.items())
+                    ],
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+                indent=1,
+            ),
+            encoding="utf-8",
+        )
+
+    if sidecars:
+        notes.append(
+            "sidecars: " + ", ".join(f"{name} -> {path.name}" for name, path in sidecars.items())
+        )
+    else:
+        notes.append("no recorder was attached: this run left no traces and no sidecars")
     return folder, len(observations), notes
+
+
+def _measured_over(
+    candidate_id: str,
+    traces: Sequence[EpisodeTrace],
+    rows: Sequence[dict[str, object]],
+) -> CandidateMeasurements:
+    """What one candidate scored across its episodes.
+
+    The denominator is the number of episodes behind every rate, and it
+    is the packet's own field rather than an assumption a reader has to
+    make: a success rate over three episodes and one over thirty are
+    different claims wearing one number.
+    """
+    successes = sum(1 for row in rows if float(row.get("collision_count", 0)) == 0)
+    latencies = [
+        value
+        for trace in traces
+        for value in trace.columns["planner_latency_ms"]
+        if value is not None
+    ]
+    clearances = [
+        value
+        for trace in traces
+        for value in trace.columns["clearance_m"]
+        if value is not None
+    ]
+    driven = 0.0
+    for trace in traces:
+        xs, ys = trace.columns["x"], trace.columns["y"]
+        driven += sum(
+            ((xs[index] - xs[index - 1]) ** 2 + (ys[index] - ys[index - 1]) ** 2) ** 0.5
+            for index in range(1, len(xs))
+        )
+    count = max(1, len(traces))
+    fields: dict[str, MeasuredValue | None] = {
+        "success_rate": MeasuredValue(
+            value=successes / count, unit="ratio", denominator=count
+        ),
+        "collisions": MeasuredValue(
+            value=float(sum(float(row.get("collision_count", 0)) for row in rows)),
+            unit="count",
+            denominator=count,
+        ),
+        "path_length_m": MeasuredValue(
+            value=float(driven / count), unit="m", denominator=count
+        ),
+    }
+    if latencies:
+        fields["latency_p99_ms"] = MeasuredValue(
+            value=_percentile(latencies, 0.99), unit="ms", denominator=count
+        )
+        fields["latency_median_ms"] = MeasuredValue(
+            value=_percentile(latencies, 0.5), unit="ms", denominator=count
+        )
+    if clearances:
+        fields["min_clearance_m"] = MeasuredValue(
+            value=min(clearances), unit="m", denominator=count
+        )
+    # ``decision_utility`` stays absent unless a comparison was scored:
+    # a zero here would read as "scored nothing" rather than as "was
+    # never scored".
+    return CandidateMeasurements(candidate_id=candidate_id, **fields)
 
 
 def main() -> int:
@@ -458,8 +814,13 @@ def main() -> int:
     parser.add_argument("--root", type=Path, default=FIXTURE_ROOT)
     args = parser.parse_args()
 
-    print(f"{len(WORLDS)} of 6 families are staged; the other 3 are not, and no macro")
-    print("average over these is comparable with a bar agreed for six.")
+    staged = {world.family for world in WORLDS}
+    print(f"{len(staged)} of 6 families are staged: {', '.join(sorted(staged))}.")
+    print(
+        "One case per family, not two: the near-boundary and negative twins "
+        f"({len(SECOND_VARIANTS_MISSING)} of them) are what separates a mechanism "
+        "from its shape, and they are not built."
+    )
     reference = build_reference()
     with tempfile.TemporaryDirectory(prefix="golden-traces-") as scratch:
         for world in WORLDS:
@@ -468,7 +829,10 @@ def main() -> int:
                 print(f"    note: {note}")
             print(f"  built  {world.case_id:16} {sightings} observation(s)  {folder.name}")
     print(f"\n{len(WORLDS)} packet(s) written to {args.root}")
-    print("OFFICIAL_GOLDEN_READY stays False: three families are still missing.")
+    print(
+        "OFFICIAL_GOLDEN_READY stays False: six families is not twelve cases, and "
+        "the preregistration reports counts rather than a rate below twelve."
+    )
     return 0
 
 
