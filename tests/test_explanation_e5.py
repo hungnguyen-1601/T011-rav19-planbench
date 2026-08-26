@@ -18,6 +18,7 @@ import pytest
 from pydantic import ValidationError
 
 from planbench_decision.objectives import PREFERENCE_PROFILES
+from planbench_explanation.budget import PLATFORM_BUDGET_CAP
 from planbench_explanation.bundle import (
     CALIBRATION_TARGETS,
     REQUIRED_GATE_METRICS,
@@ -68,6 +69,7 @@ from planbench_explanation.knowledge_contract import (
 from planbench_explanation.ledger import HypothesisProposal, KnownUnknown, PropositionOutcome
 from planbench_explanation.propositions import PropositionType
 from planbench_explanation.protocol import (
+    ANALYST_RUNNER_PROTOCOL_VERSION,
     HOST_FAILURE_CODES,
     AnalysisRequest,
     AnalysisResponse,
@@ -628,6 +630,8 @@ def bundle(**overrides) -> AnalystBundle:  # type: ignore[no-untyped-def]
         "retrieval_config_checksum": "d" * 64,
         "tool_catalog_version": TOOL_CATALOG_VERSION,
         "generation_parameters": {"temperature": 0.0},
+        "runner_protocol_version": ANALYST_RUNNER_PROTOCOL_VERSION,
+        "requested_budget": PLATFORM_BUDGET_CAP,
         "created_at": "2026-08-19T09:30:00Z",
     }
     fields.update(overrides)
@@ -655,6 +659,7 @@ def decision(target: AnalystBundle, **overrides) -> GateDecision:  # type: ignor
         "preregistration_ref": "docs/preregistration/analyst-gate-1.md",
         "decided_at": "2026-08-20T10:00:00Z",
         "targets_checksum": CALIBRATION_TARGETS.checksum,
+        "effective_budget_checksum": PLATFORM_BUDGET_CAP.checksum,
         "metrics": CALIBRATION_TARGETS.evaluate(CLEARING_RUN),
     }
     fields.update(overrides)

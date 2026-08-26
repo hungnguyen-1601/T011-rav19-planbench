@@ -120,6 +120,14 @@ from planbench_explanation.versioning import (
 )
 
 #: Why a request or a result was turned away. A closed vocabulary so a
+#: The frame set and envelope the platform's runner speaks to an
+#: analyst. Bumped when a frame is added, removed, or changes shape —
+#: and part of :attr:`AnalystBundle.identity`, because a bundle built
+#: against one protocol and run against another is a different system
+#: whose symptom is a round that dies half way with a frame nobody
+#: recognises.
+ANALYST_RUNNER_PROTOCOL_VERSION = "1.0.0"
+
 #: harness can count rejections by kind rather than by matching prose.
 RejectionCode = Literal[
     "unknown_tool",

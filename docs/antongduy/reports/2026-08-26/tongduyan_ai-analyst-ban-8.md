@@ -14,7 +14,8 @@ phase đó.
 | A1 packet view + fact index | **xong** | `5e6bf41` |
 | A2 hypothesis engine | **xong** | `285adda` |
 | A3 guard + critic + biên vào | **xong** | `95cfe75` |
-| A4-i budget + packet artifact | **xong** | (xem §A4-i) |
+| A4-i budget + packet artifact | **xong** | `5ea1a31` |
+| A4-ii RFC gate + bundle | **xong** | (xem §A4-ii) |
 | A4 seam + lane + gateway | chưa | |
 | A5 knowledge provider | chưa | |
 | A6 dev calibration + harness | chưa | |
@@ -526,6 +527,82 @@ Một chi tiết về quy ước: refusal ném từ `model_validator` bị pydan
 - **A4-iii** — seam (`RoundHostProtocol` / `AnalystRunner` / `PreparedRound` /
   `RoundSource`), runner có no-progress guard và một điểm `finalize` duy nhất.
 - **A4-iv** — JSONL ABI + model gateway + restricted artifact.
+
+---
+
+## A4-ii — RFC vào `gate.py` và `bundle.py`
+
+Phần đụng hợp đồng. Đây là chỗ đã hoãn từ A-1, và hoãn đúng: nó kéo theo việc
+dựng lại fixture của `tests/test_explanation_gate.py`.
+
+### Đã làm gì
+
+**1. Bundle tự mô tả đầy đủ hơn.**
+
+`AnalystBundle` thêm hai trường, cả hai vào `identity`:
+
+- `runner_protocol_version` — bundle dựng theo một bộ frame rồi chạy với bộ
+  khác là một hệ khác, và triệu chứng là vòng chết giữa chừng vì một frame
+  không ai nhận ra.
+- `requested_budget` — **object, không phải checksum**. Bundle chỉ mang digest
+  của giới hạn thì không tự chạy lại được: phải có ai đó tìm ra cái budget hash
+  ra giá trị đó, mà "ai đó" chính là bên đang bị chấm.
+
+`GateDecision` thêm `effective_budget_checksum`: budget vòng chấm **thực sự**
+chạy dưới.
+
+**2. `verify_gate_decision` nhận thêm `effective_budget`.**
+
+Lệch ⟶ `BundleRefusal` với câu nói rõ vì sao: analyst được chấm với gấp đôi số
+tool call so với production là analyst được chấm như một hệ không tồn tại.
+`analyst_visible`/`why_not_visible` nhận `production_budget` và tắt cờ khi lệch.
+
+**3. `gate.py`: `dry_run` thay `allow_visible_suite`, và tách hai kiểu.**
+
+`DryGateRun` **không có** trường `decision`. Trước đây dry run trả về `GateRun`
+đầy đủ, tức là sinh ra một `GateDecision` hợp lệ — mà `analyst_visible` nhận
+đúng loại object đó. Nghĩa là một buổi diễn tập trên bộ calibration **bật được
+tính năng lên**. Tách kiểu đóng đường đó bằng cấu trúc: không có object nào cho
+`verify_gate_decision` nhận, vì không có decision.
+
+**4. Fail-closed ba điều kiện** khi không phải dry run:
+
+- suite `hidden` — chấm trên bộ AI team đã hiệu chỉnh là đo mức khớp bộ đó;
+- suite `preregistered` — bộ đang làm dở là bộ ai đó còn sửa được, và ngưỡng
+  thoả thuận sau khi thấy số không phải ngưỡng;
+- **mọi packet là `PacketArtifact` có `fixture_kind == "recorded"`** — dry run
+  được nhận packet trần (bắt người ta viết provenance mới cho diễn tập là cách
+  làm cho diễn tập không bao giờ xảy ra), vòng chấm thì không.
+
+`GateRun` mang cả `requested_budget_checksum` lẫn `effective_budget_checksum`, và
+validator từ chối khi decision khai budget khác run.
+
+**5. Fixture gate dựng lại — và một quyết định cần ghi rõ.**
+
+Helper `preregistered()` dựng suite **thật sự hợp lệ**, dưới ba `mock.patch`
+(`OFFICIAL_GOLDEN_READY`, `CASE_FAMILIES`, `MIN_VARIANTS_PER_FAMILY`) vì cả ba
+là luật về **dữ liệu đã sẵn sàng chưa**, đều có test riêng ở
+`test_explanation_e5.py`, và không phải thứ file này nói về. Nhưng luật
+**must_abstain** thì **không patch** — helper tự thêm một case `must_abstain`
+thật, vì "im lặng là một câu trả lời được chấm" là luật về hành vi analyst, đúng
+thứ file này đang kiểm.
+
+Thêm `artifacts_from()` (packet có provenance, cho vòng chấm) bên cạnh
+`packets_from()` (packet trần, cho diễn tập), và `rehearsal()` bên cạnh `gate()`.
+
+### Bằng chứng
+
+| Phép kiểm | Kết quả |
+|---|---|
+| `pytest` 4 suite explanation + 6 suite analyst | **310 passed** |
+| Test mới ở `test_explanation_gate.py` | 9: suite calibration bị từ chối · packet trần bị từ chối · fixture hand-written bị từ chối · run không sidecar bị từ chối · diễn tập nhận cả ba · decision ghi budget · bundle xin quá trần bị cắt về trần · decision khai budget khác run bị từ chối · production budget lệch ⟶ tắt cờ |
+| `ruff check` toàn `planbench_explanation` + 2 file test | sạch |
+
+### Còn nợ sau A4-ii
+
+`gate.py` vẫn nhận `analyst: Analyst` (một callable), chưa nhận `RoundSource`.
+Đó là A4-iii: seam mới dựng cặp analysis+host từ **cùng** một evidence source,
+và đó là chỗ `available_evidence` hết rỗng.
 
 ---
 

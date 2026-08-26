@@ -19,6 +19,12 @@ research specifications nobody may execute, and the golden suite format
 that says what "good enough to show" means.
 """
 
+from planbench_explanation.budget import (
+    FRAME_TYPES,
+    PLATFORM_BUDGET_CAP,
+    AnalysisBudget,
+    BudgetRefusal,
+)
 from planbench_explanation.bundle import (
     CALIBRATION_TARGETS,
     REQUIRED_GATE_METRICS,
@@ -84,6 +90,7 @@ from planbench_explanation.exemplars import (
 )
 from planbench_explanation.gate import (
     CaseOutcome,
+    DryGateRun,
     GateRefusal,
     GateRun,
     gate_summary,
@@ -178,6 +185,12 @@ from planbench_explanation.map_features import (
     MapFeatureRefusal,
     RouteFeatures,
     measure_route,
+)
+from planbench_explanation.packet_artifact import (
+    PacketArtifact,
+    PacketArtifactRefusal,
+    PacketProvenance,
+    load_packet_artifact,
 )
 from planbench_explanation.packet_builder import (
     EpisodeTrace,
@@ -569,6 +582,15 @@ __all__ = [
     "detect_all",
     "file_checksum",
     "find_divergence",
+    "AnalysisBudget",
+    "PacketArtifact",
+    "PacketArtifactRefusal",
+    "PacketProvenance",
+    "load_packet_artifact",
+    "BudgetRefusal",
+    "FRAME_TYPES",
+    "PLATFORM_BUDGET_CAP",
+    "DryGateRun",
     "gate_summary",
     "index_metrics",
     "level_rank",
