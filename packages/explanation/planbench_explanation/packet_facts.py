@@ -131,6 +131,8 @@ def serve_from_packet(
         )
     if card.tool_id == "get_candidate_measurements":
         return _measurements(packet, str(arguments.get("candidate_id", "")))
+    if card.tool_id == "get_episode_timeline":
+        return _timeline(packet, arguments)
     if card.tool_id == "find_exemplar_episodes":
         chosen = packet.representative_episodes
         if chosen is None or not chosen.exemplars:
@@ -190,3 +192,59 @@ def _measurements(
     # reference is a pointer into evidence a reader can open, and the
     # candidate id is already in the request the transcript recorded.
     return (measurements, ())
+
+
+def _timeline(
+    packet: CasePacket, arguments: Mapping[str, object]
+) -> tuple[dict[str, float], tuple[EvidenceReference, ...]] | FactRefusal:
+    """One exemplar episode as it went, on **one** clock — W1.2.
+
+    The clock is an argument and not a default because the two answer
+    different questions: at equal wall-clock time the robots are at
+    different places on the task, and at equal progress they are at the
+    same place having taken different times. A reader handed the wrong
+    one gets a number about neither candidate, so an unrecognised clock
+    is refused rather than quietly resolved to one of them.
+
+    The candidate is an argument too, and optional. An
+    ``episode_context_id`` is a hash of the *conditions*, so both
+    candidates of a comparison share one; when both drove the episode
+    this refuses rather than picking, because an answer that does not
+    say whose run it is describes neither.
+
+    The measurements are the state at the **last** mark of the series,
+    which is what the card's names mean: progress reached, worst
+    clearance so far, latency budget used so far.
+    """
+    episode = str(arguments.get("episode_context_id", ""))
+    clock = str(arguments.get("clock", ""))
+    if clock not in ("at_time", "at_progress"):
+        return FactRefusal("clock_not_recognised")
+    matching = [item for item in packet.timelines if item.episode_context_id == episode]
+    if not matching:
+        # Either the episode is not in this packet at all, or it is in it
+        # and was not chosen as an exemplar. The card has one code for
+        # both, and it is the right one: only exemplars carry timelines,
+        # so from this tool's side they are the same fact.
+        return FactRefusal("episode_not_an_exemplar")
+    candidate = str(arguments.get("candidate_id", "") or "")
+    if candidate:
+        matching = [item for item in matching if item.candidate_id == candidate]
+        if not matching:
+            return FactRefusal("timeline_not_recorded")
+    elif len(matching) > 1:
+        return FactRefusal("candidate_required_for_episode")
+    points = [point for point in matching[0].points if point.clock == clock]
+    if not points:
+        return FactRefusal("timeline_not_recorded")
+    last = points[-1]
+    return (
+        {
+            "n_points": float(len(points)),
+            "progress_fraction": last.progress_fraction,
+            "safety_margin": last.safety_margin,
+            "compute_budget": last.compute_budget,
+            "path_efficiency": last.path_efficiency,
+        },
+        (),
+    )

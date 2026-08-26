@@ -55,6 +55,7 @@ from plant_golden_runs import WORLDS, PlantedWorld, build_reference  # noqa: E40
 from planbench_explanation.case_packet import (  # noqa: E402
     CandidateMeasurements,
     DecisionFacts,
+    EpisodeTimeline,
     MeasuredValue,
     RobotFacts,
     TaskFacts,
@@ -62,7 +63,13 @@ from planbench_explanation.case_packet import (  # noqa: E402
 )
 from planbench_explanation.catalog import TOOL_CATALOG_VERSION  # noqa: E402
 from planbench_explanation.contrast import CandidateComponents  # noqa: E402
-from planbench_explanation.detectors import DETECTOR_VERSION  # noqa: E402
+from planbench_explanation.detectors import (  # noqa: E402
+    DETECTOR_VERSION,
+    DetectorSettings,
+)
+from planbench_explanation.detectors import (  # noqa: E402
+    read_trace as read_trace_view,
+)
 from planbench_explanation.knowledge import KNOWLEDGE_BASE_VERSION  # noqa: E402
 from planbench_explanation.map_features import MapFeatureRefusal, measure_route  # noqa: E402
 from planbench_explanation.packet_artifact import (  # noqa: E402
@@ -72,7 +79,10 @@ from planbench_explanation.packet_artifact import (  # noqa: E402
 from planbench_explanation.packet_builder import (  # noqa: E402
     EpisodeTrace,
     observations_from_traces,
+    timeline_from_trace,
 )
+from planbench_explanation.replay_sync import choose_reference, project  # noqa: E402
+from planbench_explanation.running_metrics import Deployment  # noqa: E402
 from planbench_explanation.sidecar_writer import (  # noqa: E402
     PlanningInputRecorder,
     read_sidecar,
@@ -205,6 +215,53 @@ def _measured(candidate_id: str, run, trace) -> CandidateMeasurements:  # type: 
     return CandidateMeasurements(candidate_id=candidate_id, **fields)
 
 
+def _with_progress(trace: EpisodeTrace) -> EpisodeTrace:
+    """The same episode with its arc length along the reference line.
+
+    The recorder writes where the robot was; how far along the task that
+    is depends on the line it is measured against, so it is computed
+    here through the platform's own projection — the one the detectors
+    already run — rather than by a second rule that would place the
+    half-way mark somewhere else.
+    """
+    payload = dict(trace.columns)
+    payload.setdefault("candidate_id", trace.candidate_id)
+    payload.setdefault("episode_context_id", trace.episode_context_id)
+    view = read_trace_view(payload)
+    reference = choose_reference(
+        planned_path=trace.planned_path,
+        candidate_path=[(point.x, point.y) for point in view.track],
+    )
+    projected = project(view.track, reference)
+    return trace.model_copy(
+        update={
+            "columns": {
+                **trace.columns,
+                "progress_m": [sample.progress_m for sample in projected.samples],
+            }
+        }
+    )
+
+
+def _deployment(world: PlantedWorld, reference_length_m: float) -> Deployment:
+    """The thresholds the running numbers are read against.
+
+    Every figure is the world's own, except the near-miss distance:
+    these planted worlds carry no task profile, so the platform's own
+    detector threshold stands in and is named here rather than being a
+    number somebody chose. ``clearance_preference`` is a planner cost
+    weight, not a distance, and using it would put a preference where a
+    metre belongs.
+    """
+    return Deployment(
+        robot_radius_m=world.scenario.robot.radius,
+        control_period_s=world.scenario.simulation_dt,
+        clearance_warning_m=DetectorSettings().near_miss_clearance_m,
+        max_linear_velocity=world.scenario.robot.max_linear_velocity,
+        reference_length_m=reference_length_m,
+    )
+
+
 def build(
     world: PlantedWorld, root: Path, trace_root: Path, reference: str
 ) -> tuple[Path, int, list[str]]:
@@ -226,6 +283,7 @@ def build(
     folder = root / world.case_id
     folder.mkdir(parents=True, exist_ok=True)
     traces: list[EpisodeTrace] = []
+    timelines: list[EpisodeTimeline] = []
     measurements: list[CandidateMeasurements] = []
     candidates: list[CandidateComponents] = []
     notes: list[str] = []
@@ -327,6 +385,42 @@ def build(
                 "the reference line is the task's start-to-goal line"
             )
 
+    # The timelines M2 asks for. A planted world ranks nobody, so there
+    # is no ΔU to select exemplars by; the roles are assigned from what
+    # the episodes were — the candidate that came closest to something
+    # is the safety-critical one, the other is typical — and both are
+    # carried, because a comparison with one timeline shows a shape with
+    # nothing to read it against.
+    worst_clearance = {
+        trace.candidate_id: min(
+            (value for value in trace.columns["clearance_m"] if value is not None),
+            default=float("inf"),
+        )
+        for trace in traces
+    }
+    closest = min(worst_clearance, key=lambda name: worst_clearance[name], default=None)
+    for trace in traces:
+        route = routes.get(trace.candidate_id)
+        length = getattr(route, "route_length_m", 0.0)
+        if not length:
+            notes.append(
+                f"{trace.candidate_id}: no measured route, so there is no line to "
+                "place progress against and no timeline"
+            )
+            continue
+        timeline = timeline_from_trace(
+            _with_progress(trace),
+            role="safety_critical" if trace.candidate_id == closest else "typical",
+            deployment=_deployment(world, length),
+        )
+        if timeline is None:
+            notes.append(
+                f"{trace.candidate_id}: the trace is missing a column the running "
+                "metrics read, so no point on it can be placed"
+            )
+            continue
+        timelines.append(timeline)
+
     required_width = 2.0 * (radius + inflation_margin)
     observations, skipped = observations_from_traces(
         traces,
@@ -361,6 +455,7 @@ def build(
         decision=DecisionFacts(status="GATE_ONLY"),
         observations=observations,
         measurements=measurements,
+        timelines=timelines,
         evidence_class="research",
     )
 

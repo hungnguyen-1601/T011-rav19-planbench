@@ -560,11 +560,17 @@ def build_packet_view(
     # is **in the ref**, not implied by position: "who is ahead" and
     # "who did the same work better" are two questions, and a citation
     # that did not say which one it meant would be unreadable.
+    # The candidate is in the ref too, and has to be: an
+    # ``episode_context_id`` is a hash of the *conditions*, so both
+    # candidates of a comparison carry one, and a ref without the
+    # candidate named two values as soon as a packet held both their
+    # timelines — which W1.2's fixtures do. The index refuses a
+    # duplicate ref outright, so the whole view was unbuildable.
     for timeline in packet.timelines:
         for point in timeline.points:
             base = (
-                f"episode:{timeline.episode_context_id}/{point.clock}/"
-                f"{point.mark:g}"
+                f"episode:{timeline.episode_context_id}/{timeline.candidate_id}/"
+                f"{point.clock}/{point.mark:g}"
             )
             facts.extend(
                 _scalar_facts(

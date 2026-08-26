@@ -367,6 +367,76 @@ def _slice_from(trace: EpisodeTrace) -> TraceSlice | None:
     return TraceSlice(candidate_id=trace.candidate_id, **values)  # type: ignore[arg-type]
 
 
+def timeline_from_trace(
+    trace: EpisodeTrace, *, role: str, deployment: Deployment
+) -> EpisodeTimeline | None:
+    """One episode at :data:`TIMELINE_MARKS`, on both clocks — or ``None``.
+
+    Lifted out of :func:`timelines_from_traces` at W1.2 so a caller that
+    already knows which episode plays which role — the golden fixture
+    builder does; a planted world has no ranked pair to select exemplars
+    from — reaches the same marks by the same arithmetic. Two ways to
+    place a timeline point would be two answers to "where was it at half
+    the task", and both would render.
+
+    ``None`` when the trace is missing a column these metrics read. The
+    caller says so; a half-built slice would report a different moment
+    of the episode than the one asked for.
+    """
+    sliced = _slice_from(trace)
+    if sliced is None:
+        return None
+    series = sample_series(sliced, deployment=deployment)
+    points: list[TimelinePoint] = []
+    for fraction in TIMELINE_MARKS:
+        at_time = series[min(int(len(series) * fraction), len(series) - 1)]
+        points.append(
+            TimelinePoint(
+                clock="at_time",
+                mark=round(at_time.elapsed_s, 3),
+                progress_fraction=at_time.progress_fraction,
+                safety_margin=at_time.safety_margin,
+                compute_budget=at_time.compute_budget,
+                path_efficiency=at_time.path_efficiency,
+                elapsed_s=at_time.elapsed_s,
+                replans=at_time.replans,
+            )
+        )
+        reached = next((row for row in series if row.progress_fraction >= fraction), series[-1])
+        points.append(
+            TimelinePoint(
+                clock="at_progress",
+                mark=fraction,
+                progress_fraction=reached.progress_fraction,
+                safety_margin=reached.safety_margin,
+                compute_budget=reached.compute_budget,
+                path_efficiency=reached.path_efficiency,
+                elapsed_s=reached.elapsed_s,
+                replans=reached.replans,
+            )
+        )
+    # One point per moment. A one-row trace — a planner that refused at
+    # the start pose writes exactly that — puts all three ``at_time``
+    # marks at t=0, and three copies of one instant are not three
+    # readings: downstream they collide as three facts claiming one ref,
+    # which the analyst's fact index refuses outright, taking the whole
+    # view with it. Kept in order, first occurrence wins.
+    seen: set[tuple[str, float]] = set()
+    unique: list[TimelinePoint] = []
+    for point in points:
+        key = (point.clock, point.mark)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(point)
+    return EpisodeTimeline(
+        episode_context_id=trace.episode_context_id,
+        candidate_id=trace.candidate_id,
+        role=role,
+        points=tuple(unique),
+    )
+
+
 def timelines_from_traces(
     traces: Sequence[EpisodeTrace],
     exemplars: ExemplarSet | None,
@@ -392,52 +462,14 @@ def timelines_from_traces(
         role = wanted.get(trace.episode_context_id)
         if role is None:
             continue
-        sliced = _slice_from(trace)
-        if sliced is None:
+        timeline = timeline_from_trace(trace, role=role, deployment=deployment)
+        if timeline is None:
             omissions.append(
                 f"timeline {trace.episode_context_id}: the trace is missing a column "
                 "these metrics read, so no point on it can be placed"
             )
             continue
-        series = sample_series(sliced, deployment=deployment)
-        points: list[TimelinePoint] = []
-        for fraction in TIMELINE_MARKS:
-            at_time = series[min(int(len(series) * fraction), len(series) - 1)]
-            points.append(
-                TimelinePoint(
-                    clock="at_time",
-                    mark=round(at_time.elapsed_s, 3),
-                    progress_fraction=at_time.progress_fraction,
-                    safety_margin=at_time.safety_margin,
-                    compute_budget=at_time.compute_budget,
-                    path_efficiency=at_time.path_efficiency,
-                    elapsed_s=at_time.elapsed_s,
-                    replans=at_time.replans,
-                )
-            )
-            reached = next(
-                (row for row in series if row.progress_fraction >= fraction), series[-1]
-            )
-            points.append(
-                TimelinePoint(
-                    clock="at_progress",
-                    mark=fraction,
-                    progress_fraction=reached.progress_fraction,
-                    safety_margin=reached.safety_margin,
-                    compute_budget=reached.compute_budget,
-                    path_efficiency=reached.path_efficiency,
-                    elapsed_s=reached.elapsed_s,
-                    replans=reached.replans,
-                )
-            )
-        built.append(
-            EpisodeTimeline(
-                episode_context_id=trace.episode_context_id,
-                candidate_id=trace.candidate_id,
-                role=role,
-                points=tuple(points),
-            )
-        )
+        built.append(timeline)
     if not built and not omissions:
         omissions.append(
             "timelines: no trace was available for the exemplar episodes, so the "

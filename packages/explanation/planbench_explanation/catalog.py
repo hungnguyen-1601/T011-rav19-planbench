@@ -109,6 +109,14 @@ def _points_at(kind: str, description: str, *, required: bool = True) -> Referen
 #: ``gap_vs_footprint`` also moved to 2.0.0: it now compares a width
 #: against a width, which changes the measurement names it returns.
 #:
+#: **3.4.0** — W1.2 does for ``get_episode_timeline`` what 3.3.0 did
+#: for the measurements: it requires ``episode_timeline``, the block M2
+#: put in the packet, rather than the trace and reference line that
+#: block was *derived from*. It also gains an optional ``candidate_id``,
+#: because an episode id is a hash of the conditions and the two
+#: candidates of a comparison share one — an answer that did not say
+#: whose run it was would be about neither.
+#:
 #: **3.3.0** — W1.1 corrects what ``get_candidate_measurements``
 #: requires: ``candidate_measurements``, the block it actually reads,
 #: rather than ``episode_decision_utility``, which it never touched.
@@ -129,7 +137,7 @@ def _points_at(kind: str, description: str, *, required: bool = True) -> Referen
 #: small" from "the corridor is not there": both look like a low number.
 #: Different measurement names, so a different wire contract, so a
 #: different version.
-TOOL_CATALOG_VERSION = "3.3.0"
+TOOL_CATALOG_VERSION = "3.4.0"
 
 _RECORDED = EvidencePolicy(allowed_input_provenance=("recorded",))
 _RECORDED_OR_VERIFIED = EvidencePolicy(
@@ -436,7 +444,13 @@ EPISODE_TIMELINE = ToolCard(
     ),
     proposition_policy=PropositionPolicy(maximum_claim_level="observed"),
     evidence_policy=_RECORDED,
-    required_evidence=("trace", "reference_line"),
+    # The packet's timeline block, not the raw trace. M2 derived these
+    # points server-side against the reference line and put them in the
+    # packet; asking for ``trace`` and ``reference_line`` described the
+    # inputs of that derivation rather than what this tool reads, and on
+    # a run whose sidecar was absent it withheld a block the packet was
+    # carrying. W1.2.
+    required_evidence=("episode_timeline",),
     io=ToolIO(
         arguments=(
             ArgumentSpec(
@@ -449,6 +463,14 @@ EPISODE_TIMELINE = ToolCard(
                 kind="string",
                 description="'at_time' for who is ahead, 'at_progress' for who did "
                 "the same work better. The two are never mixed in one row.",
+            ),
+            ArgumentSpec(
+                name="candidate_id",
+                kind="string",
+                description="Whose run of that episode. Required when both "
+                "candidates drove it — an episode id is a hash of the "
+                "conditions, so a comparison shares one.",
+                required=False,
             ),
         ),
         measurements=(
@@ -479,7 +501,12 @@ EPISODE_TIMELINE = ToolCard(
             ),
         ),
     ),
-    failure_modes=("episode_not_an_exemplar", "timeline_not_recorded"),
+    failure_modes=(
+        "episode_not_an_exemplar",
+        "timeline_not_recorded",
+        "clock_not_recognised",
+        "candidate_required_for_episode",
+    ),
 )
 
 KNOWN_UNKNOWNS = ToolCard(

@@ -25,7 +25,7 @@ def checksum(**overrides):  # type: ignore[no-untyped-def]
     fields = {
         "prompt_checksum": "a" * 64,
         "generation_config": {"temperature": 0.0},
-        "catalog_version": "3.3.0",
+        "catalog_version": "3.4.0",
         "source_manifest_hash": "b" * 64,
     }
     fields.update(overrides)

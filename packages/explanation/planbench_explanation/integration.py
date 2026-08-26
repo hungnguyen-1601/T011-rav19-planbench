@@ -138,6 +138,7 @@ TYPICAL_AVAILABLE_EVIDENCE = frozenset(
         "comparison_pair",
         "episode_decision_utility",
         "candidate_measurements",
+        "episode_timeline",
         "preference_profile",
         "candidate_components",
         "map_checksum",

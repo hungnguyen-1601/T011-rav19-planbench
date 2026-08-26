@@ -56,7 +56,7 @@ def test_the_wire_contract_moved_because_admission_did() -> None:
     bundle frozen against 3.2.0 was graded on a menu this tool could not
     be called from, and a version that did not move would let that
     grading keep looking valid."""
-    assert TOOL_CATALOG_VERSION == "3.3.0"
+    assert TOOL_CATALOG_VERSION == "3.4.0"
 
 
 def test_both_refusal_codes_are_ones_the_card_declares() -> None:

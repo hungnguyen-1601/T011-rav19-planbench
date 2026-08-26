@@ -181,6 +181,11 @@ def evidence_for(packet: CasePacket, *, sidecar_present: bool) -> RoundEvidence:
         # the same to an analyst, and both should be refused at
         # admission rather than answered with an empty result.
         available -= {"candidate_measurements"}
+    if not packet.timelines:
+        # M2's block is absent. A packet may carry measurements and no
+        # timelines — the exemplar traces are the expensive half — so
+        # the two are withheld separately rather than together.
+        available -= {"episode_timeline"}
     return RoundEvidence(
         packet=packet,
         available_evidence=frozenset(available),
