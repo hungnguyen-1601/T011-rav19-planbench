@@ -264,6 +264,14 @@ def run_round(
     sequence = 0
     guarded: GuardResult | None = None
     stopped = "final"
+    #: W4. One repair turn for a malformed answer, and one only. It is a
+    #: model call and is counted as one, which is what keeps it from
+    #: being a retry wearing another word: A7's rule is that a case gets
+    #: one attempt, and a repair does not buy a second.
+    repaired = False
+    #: Statement ids that were drafts when they were declared. Nothing
+    #: renders or scores these until a verdict comes back.
+    drafts_declared: dict[str, str] = {}
 
     for attempt in range(max_revisions + 1):
         if spent.model_calls >= budget.max_model_calls:
@@ -299,6 +307,34 @@ def run_round(
             break
 
         reports.append(report)
+        if (
+            report.dropped
+            and not report.response.proposals
+            and not repaired
+            and spent.model_calls + 1 < budget.max_model_calls
+        ):
+            # Everything the model said was malformed in a way this
+            # module could name. One turn to say what was wrong is
+            # cheaper than an abstention nobody can act on — and it is
+            # bounded at one, because a loop that repairs until it
+            # parses is a loop that pays for agreement.
+            repaired = True
+            feedback.append(
+                CheckFeedback(
+                    hypothesis_id="repair",
+                    tool_id="",
+                    execution_status="malformed",
+                    rejected_as="; ".join(report.dropped[:3]),
+                )
+            )
+            events.append(f"repair:{len(report.dropped)}")
+            spent = replace(
+                spent,
+                model_calls=spent.model_calls + report.cost.model_calls,
+                input_tokens=spent.input_tokens + report.cost.input_tokens,
+                output_tokens=spent.output_tokens + report.cost.output_tokens,
+            )
+            continue
         spent = replace(
             spent,
             model_calls=spent.model_calls + report.cost.model_calls,
@@ -316,6 +352,23 @@ def run_round(
         # read as the platform being broken.
         prepared.host.declare(guarded.response)
         events.append(f"declared:{len(guarded.response.proposals)}")
+
+        # W4's audit link. A revised statement is different content, so
+        # it carries a different id — rewriting under the old one is
+        # already impossible by protocol. What was missing is the line
+        # that says which draft this replaced, so a reader of the
+        # transcript can follow a refuted claim to what became of it.
+        for proposal in guarded.response.proposals:
+            key = f"{proposal.proposition_type}:{proposal.proposed_subject}"
+            previous = drafts_declared.get(key)
+            if previous and previous != proposal.hypothesis_id:
+                events.append(f"supersedes:{previous}:{proposal.hypothesis_id}")
+            if proposal.requested_checks:
+                drafts_declared[key] = proposal.hypothesis_id
+                events.append(f"draft:{proposal.hypothesis_id}")
+            else:
+                drafts_declared.pop(key, None)
+                events.append(f"final:{proposal.hypothesis_id}")
 
         if guarded.response.abstained:
             stopped = "final"

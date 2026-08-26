@@ -169,8 +169,14 @@ class CheckFeedback:
 
 @dataclass
 class _Draft:
-    """One hypothesis as the model sent it, before it is given a name."""
+    """One hypothesis as the model sent it, before it is given a name.
 
+    ``decision`` is W4's branch: ``no_check`` for a statement whose
+    evidence is already in the packet, ``check`` for a draft that exists
+    only so the host has something to bind a tool result to.
+    """
+
+    decision: str
     statement: str
     proposition_type: str
     subject: str
@@ -289,6 +295,10 @@ def _drafts(payload: Mapping[str, Any]) -> tuple[list[_Draft], list[str]]:
         if not all(isinstance(part, str) and part.strip() for part in parts):
             dropped.append(f"hypothesis {index}: statement, proposition_type or subject missing")
             continue
+        decision = item.get("decision")
+        if decision not in ("no_check", "check"):
+            dropped.append(f"hypothesis {index}: decision is neither no_check nor check")
+            continue
         check = item.get("requested_check")
         tool_id = ""
         arguments: dict[str, Any] = {}
@@ -303,8 +313,25 @@ def _drafts(payload: Mapping[str, Any]) -> tuple[list[_Draft], list[str]]:
                         value = pair.get("value")
                         if isinstance(name, str) and isinstance(value, str):
                             arguments[name.strip()] = value
+        # The union, enforced here because the schema cannot: a branch
+        # that asked for no check and then asked for one, or promised a
+        # check and named no tool, is a malformed answer with a name —
+        # and a named failure is one a single repair turn can fix.
+        if decision == "no_check" and tool_id:
+            dropped.append(
+                f"hypothesis {index}: decision=no_check carries a requested_check; "
+                "a final statement is one whose evidence is already in hand"
+            )
+            continue
+        if decision == "check" and not tool_id:
+            dropped.append(
+                f"hypothesis {index}: decision=check names no tool; a draft exists "
+                "only because a check is coming"
+            )
+            continue
         drafts.append(
             _Draft(
+                decision=str(decision),
                 statement=statement.strip(),  # type: ignore[union-attr]
                 proposition_type=proposition.strip(),  # type: ignore[union-attr]
                 subject=subject.strip(),  # type: ignore[union-attr]

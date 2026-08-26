@@ -37,7 +37,7 @@ __all__ = [
 #: already catches that; the version is what a human reads in a report
 #: when two runs disagree, because "the prompt changed" is a sentence
 #: somebody has to be able to say without diffing two hex digests.
-PROMPT_VERSION = "a3.0.0"
+PROMPT_VERSION = "a4.0.0"
 
 ANALYST_SYSTEM = """You are proposing mechanisms for why one robot \
 navigation stack scored differently from another, for a platform that \
@@ -140,6 +140,20 @@ def analyst_schema() -> dict[str, object]:
     extras, and a schema offering one would invite an answer the parse
     step then throws away.
 
+    ``decision`` is W4's discriminator, and the shape it selects is
+    enforced in :mod:`planbench_analyst.analyst` rather than in the
+    schema: a strict schema mode has to declare every property of every
+    branch, so a true union would either loosen
+    ``additionalProperties`` or duplicate the whole object. The parser
+    refuses the mismatch instead, by name, which is also what makes it
+    repairable.
+
+    ``no_check`` means the statement is final — the evidence in the
+    packet is what it will ever have. ``check`` means the statement is a
+    **draft**: it exists only because the host binds evidence to a
+    hypothesis that was declared first, and nothing renders or scores it
+    until a verdict comes back.
+
     ``arguments`` is a list of name/value pairs rather than an open
     object: strict schema modes require every property to be declared,
     and the properties here differ per tool card. The values arrive as
@@ -158,6 +172,12 @@ def analyst_schema() -> dict[str, object]:
                 "items": {
                     "type": "object",
                     "properties": {
+                        # W4's discriminator. Declared **before** the
+                        # statement so the model commits to a branch and
+                        # then writes for it: a statement written first
+                        # and labelled afterwards is a conclusion looking
+                        # for a category.
+                        "decision": {"type": "string", "enum": ["no_check", "check"]},
                         "statement": {"type": "string", "maxLength": 400},
                         "proposition_type": {
                             "type": "string",
@@ -207,6 +227,7 @@ def analyst_schema() -> dict[str, object]:
                         },
                     },
                     "required": [
+                        "decision",
                         "statement",
                         "proposition_type",
                         "subject",

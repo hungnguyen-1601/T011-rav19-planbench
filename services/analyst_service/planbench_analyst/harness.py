@@ -43,6 +43,7 @@ from math import comb
 
 from planbench_agent.provider import LLMProvider
 from planbench_analyst.cache import ResponseCache
+from planbench_analyst.eval_spec import EvalSpec
 from planbench_analyst.guard import guard
 from planbench_analyst.packet_view import build_packet_view
 from planbench_analyst.round_host import PreparedRound
@@ -51,6 +52,8 @@ from planbench_explanation.integration import reference_analyst
 from planbench_explanation.protocol import AnalysisResponse
 
 __all__ = [
+    "branch_matrix",
+    "cost_by_class",
     "CaseResult",
     "FloorComparison",
     "HarnessReport",
@@ -395,3 +398,71 @@ def compare_with_floor(
         caveats=tuple(caveats),
         cache_hits=hits,
     )
+
+
+def cost_by_class(
+    results: Sequence[CaseResult], spec: EvalSpec
+) -> dict[str, dict[str, float | int]]:
+    """Median tokens and model calls per **fixture class** — W4.6.
+
+    The class is ``expected_check_required``, which the label file fixed
+    before anything ran. Reporting cost by the branch the *model* chose
+    instead would be post-treatment: the branch is an outcome, and
+    comparing the check-plan cases against a baseline subset picked
+    after seeing which cases the model sent down that branch compares
+    two different populations and calls the difference a cost.
+
+    The branch is still reported, in :func:`branch_matrix`, and only as
+    a diagnostic.
+    """
+    by_class: dict[str, list[CaseResult]] = {"check_required": [], "no_check_required": []}
+    for name, case_ids in spec.strata.items():
+        for result in results:
+            if result.case_id in case_ids:
+                by_class.setdefault(name, []).append(result)
+    summary: dict[str, dict[str, float | int]] = {}
+    for name, rows in by_class.items():
+        tokens = sorted(
+            row.outcome.cost.input_tokens + row.outcome.cost.output_tokens for row in rows
+        )
+        calls = sorted(row.outcome.cost.model_calls for row in rows)
+        summary[name] = {
+            "cases": len(rows),
+            "median_tokens": _median(tokens),
+            "median_model_calls": _median(calls),
+        }
+    return summary
+
+
+def branch_matrix(results: Sequence[CaseResult], spec: EvalSpec) -> dict[str, dict[str, int]]:
+    """Fixture class against the branch the model actually took.
+
+    Diagnostic only. What it answers is "does the model send the cases
+    that need a checker down the check branch" — which is worth seeing
+    and is not a cost comparison, because the branch is the model's
+    decision and the class is not.
+    """
+    matrix: dict[str, dict[str, int]] = {
+        name: {"check": 0, "no_check": 0} for name in ("check_required", "no_check_required")
+    }
+    for name, case_ids in spec.strata.items():
+        for result in results:
+            if result.case_id not in case_ids:
+                continue
+            asked = any(
+                proposal.requested_checks for proposal in result.outcome.response.proposals
+            )
+            matrix.setdefault(name, {"check": 0, "no_check": 0})[
+                "check" if asked else "no_check"
+            ] += 1
+    return matrix
+
+
+def _median(values: Sequence[float]) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return float(ordered[middle])
+    return (float(ordered[middle - 1]) + float(ordered[middle])) / 2.0

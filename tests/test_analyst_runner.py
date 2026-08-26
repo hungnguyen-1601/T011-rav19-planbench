@@ -119,6 +119,12 @@ def hypothesis(**overrides):  # type: ignore[no-untyped-def]
         "recommended_experiments": [],
     }
     fields.update(overrides)
+    # W4's discriminator, derived from what the fixture asked for so the
+    # existing cases keep meaning what they meant: a hypothesis with a
+    # check is a draft, one without is final.
+    fields.setdefault("decision", "check" if fields.get("requested_check") else "no_check")
+    if not fields.get("requested_check"):
+        fields.pop("requested_check", None)
     return fields
 
 

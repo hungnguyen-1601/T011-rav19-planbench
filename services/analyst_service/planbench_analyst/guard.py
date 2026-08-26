@@ -238,6 +238,23 @@ def guard(
         if problem is not None:
             blocked.append(Blocked(proposal.hypothesis_id, problem[0], problem[1]))
             continue
+        # Rule 8 (W4). A draft is written **before** its check runs, so
+        # a draft that reports the check's outcome is reporting a result
+        # that does not exist yet. The words are the same ones a real
+        # verdict would use, which is exactly why nothing downstream
+        # could tell the two apart afterwards.
+        if proposal.requested_checks:
+            claimed = [
+                word
+                for word in ("verified", "confirmed", "refuted", "the check shows")
+                if word in proposal.hypothesis_statement.lower()
+            ]
+            if claimed:
+                blocked.append(
+                    Blocked(proposal.hypothesis_id, "draft_claims_a_verdict", f"{claimed}")
+                )
+                continue
+
         wording = check_phrases(proposal.hypothesis_statement, "associated")
         if wording:
             blocked.append(
