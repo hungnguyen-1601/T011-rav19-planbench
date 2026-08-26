@@ -15,7 +15,11 @@ phase đó. Không chạy full suite cho tới khi xong plan — chỉ suite ch�
 | W1.1 handler measurements | **xong** | `35c73b7` |
 | W1.2 handler timeline | **xong** | `81030a4` |
 | W1.3 timeline vào packet runtime | **xong** | `23aba5c` |
-| W1.4–W1.8 | chưa | |
+| W1.4 reader traits | **xong** | `e0de7f8` |
+| W1.5 retrieval opt-in | **xong** | `dbedbaf` |
+| W1.6 cơ chế duyệt traits | **xong** (chờ người duyệt) | `3375b13` |
+| W1.7 feature flags | **xong** | `bd8f752` |
+| W1.8 snapshot bộ ba | **xong** | `6df43a4` |
 | B1 baseline real-host | chưa | |
 | E1–E3 input ablation | chưa | |
 | W2 hybrid candidate generator | chưa | |
@@ -389,3 +393,139 @@ không phải hoá đơn prompt.
 (23 passed, 2m46s).
 
 **Commit:** `23aba5c`
+
+---
+
+## W1.4 - Reader `AlgorithmTraitRow -> TraitSource`
+
+M3 dựng bảng `algorithm_traits` (migration 0012) và `traits_store` dựng hình
+dạng; **không có gì nối hai cái**. Mọi reader vẫn lấy `SHIPPED_TRAITS` - hằng
+số mà migration seed *từ đó* - nên một nature viết cho thuật toán import được
+ghi vào bảng rồi không ai đọc. Bảng mà một nửa platform ghi còn nửa kia không
+thấy tệ hơn không có bảng: nhìn ngoài tưởng tính năng đã có.
+
+`apps/api/planbench_api/db/traits_repositories.py` (mới) -
+`SqlTraitRepository.load()/get()/save()/seed()`:
+
+- Trả về đúng `TraitSource` mà **cả hai lane** (advisory rules và analyst) đang
+  nhận. Hai loader với hai bộ lọc là hai bảng, và bất đồng sẽ hiện ra đúng chỗ
+  không ai nhìn - phần giải thích.
+- Sắp theo `algorithm_id` chứ không theo thứ tự DB trả: W1.8 hash catalog này,
+  và content hash mà thứ tự đầu vào đổi theo tâm trạng DB là checksum đổi vì lý
+  do không ai gọi tên được.
+- Row không parse được thì **từ chối cả load**, không bỏ qua. Bỏ qua sẽ đọc
+  xuống dưới thành "không ai mô tả thuật toán này", câu dễ nghe hơn sự thật.
+- `seed()` không đè row đã có - review là thứ duy nhất trong bảng do người làm
+  bằng tay.
+
+**Test:** `tests/api/test_trait_repository.py` (13) + `test_sql_repositories`
+- 110 passed. **Commit:** `e0de7f8`
+
+---
+
+## W1.5 - Knowledge retrieval vào runner, opt-in
+
+A5 dựng retriever, resolver và trait offers; runner **không gọi cái nào**. Hai
+đầu vào tồn tại mà chưa vòng nào chạy với chúng.
+
+- `run_round(..., features=..., traits=...)`: cả hai **mặc định tắt**. Đây là
+  nửa quyết định ý nghĩa của phép đo - mặc định bật sẽ nhét thứ E1 định thêm
+  vào chính baseline nó được đo lại.
+- Transcript ghi `knowledge:<resolved>/<offered>`: "không có gì khớp" khác
+  "khớp năm cái mà không cái nào resolve", chỉ một trong hai là lỗi retrieval.
+- Offer được **index thành fact citable** trong packet view (`kb:<id>@<v>`),
+  vì guard rule 1 drop ref view không resolve được - entry cho model xem mà
+  không cho cite thì với model nó là kho bị cấm dùng.
+- `review_status` nằm trong label chứ không dùng làm bộ lọc: được promotion hay
+  không là câu trả lời của promotion matrix, không phải của retrieval.
+
+**Test:** `tests/test_analyst_retrieval_round.py` (13) + suite analyst - 179
+passed. **Commit:** `dbedbaf`
+
+---
+
+## W1.6 - Duyệt traits: anchor độc lập, khoá trước golden
+
+**Đây là phase cần người duyệt - xem mục "Cần An quyết" cuối báo cáo.**
+
+`packages/benchmark/planbench_benchmark/traits_review.py` (mới):
+
+- `approve(entry, reviewed_by, at)` - từ chối nếu không có người ký, không có
+  gì để duyệt, hoặc **anchor không độc lập**. Anchor lặp lại chính claim, viện
+  "ai cũng biết", hoặc không trỏ ra ngoài row đều bị từ chối: row approved được
+  quyền backing một claim đã promote, và folklore trong bảng đọc y hệt số đo.
+- `lock_for_golden(source, promoting=True)` - còn row chưa duyệt thì **không
+  chạy**. Duyệt một nature sau khi thấy nó giúp được case nào là chọn oracle từ
+  kết quả, và không checksum nào phân biệt được việc đó với duyệt tử tế.
+- `scripts/review_algorithm_traits.py` - `list` / `seed` / `approve <id> --by`.
+  Cố tình **không có `--all`**: review làm được cho sáu row bằng một cờ là
+  review sẽ được làm bằng một cờ.
+
+**Luật bắt ngay row đầu tiên:** anchor của `dwa` trong `TRAITS` là
+"velocity-sampling controller; horizon and weights are its whole world" - mô tả
+thuật toán, không trỏ đi đâu, nên row đó **không bao giờ duyệt được**. Đã sửa
+thành `planbench_planning.dwa: the rollout scoring loop, ...`.
+
+**Test:** `tests/test_analyst_traits_review.py` (19) + outcome/traits suites -
+82 passed. **Commit:** `3375b13`
+
+---
+
+## W1.7 - Feature flag từng đầu vào, vào `runtime_config_checksum`
+
+`services/analyst_service/planbench_analyst/features.py` (mới) -
+`RoundFeatures(measurements, timelines, knowledge, traits, filter_tool_menu,
+auto_route_checker)`:
+
+- Vào `runtime_config_checksum`. Bundle chấm với block timeline trong prompt
+  rồi replay không có nó **không còn dùng chung một identity** - trước đây lần
+  đọc thứ hai sẽ hiện ra như model variance.
+- Bốn cờ đầu vào **độc lập**: E3 cần 2x2 đủ, cặp chỉ đổi cùng nhau là một arm
+  đội hai tên. Test kiểm 16 tổ hợp cho 16 checksum khác nhau.
+- Mặc định = **hành vi trước W1.7** (measurements/timelines bật, retrieval
+  tắt), không phải "baseline nên là gì". Mặc định đổi hành vi sẽ chạy lại mọi
+  phép đo cũ dưới một arm mới mà không ai yêu cầu; baseline phải **khai** arm
+  vector của nó.
+- Runner **từ chối** khi được đưa TraitSource mà vector không khai traits -
+  nếu không, checksum nói arm tắt trong khi prompt mang natures.
+- `filter_tool_menu` / `auto_route_checker` (của W3) **từ chối `True`** thay vì
+  im lặng không làm gì: một arm báo là đã chạy mà chưa chạy là lỗi duy nhất
+  không thứ gì phía sau phát hiện được. Vẫn nằm trong checksum khi tắt, để
+  preregistration viết trước không phải viết lại sau.
+
+**Test:** `tests/test_analyst_features.py` (13) + suite analyst - 191 passed.
+**Commit:** `bd8f752`
+
+---
+
+## W1.8 - Snapshot traits tái dựng được (bộ ba)
+
+Hash một mình pin **giá trị**, không pin **tài liệu**. Bảng có trạng thái
+*hiện tại*: operator sửa một row, pointer dịch, revision mà bundle được chấm
+biến mất - còn lại một bundle nêu một hash không ai dựng nổi tài liệu khớp.
+Nhìn thì "đã pin", thực tế không replay được: đúng thứ frozen bundle sinh ra
+để chặn, đi vào qua đúng cái field không ai kiểm.
+
+`services/analyst_service/planbench_analyst/traits_snapshot.py` (mới) +
+`AnalystBundle` thêm 3 field:
+
+| Field | Nghĩa |
+|---|---|
+| `traits_revision_id` | revision nào - nhãn để operator nói chuyện |
+| `traits_snapshot_checksum` | hash **nội dung**, mọi reader tự tính lại |
+| `traits_snapshot_ref` | tài liệu ở đâu - **content-addressed**, checksum nằm trong tên file |
+
+- Có một thì phải có cả ba (bundle validator), và cả ba nằm trong `identity` +
+  `runtime_config_checksum`. Mỗi cái riêng lẻ có thể đúng trong khi cặp sai:
+  ref trỏ revision khác, checksum khớp tài liệu bundle không nêu, id bị dùng
+  lại.
+- Hash **toàn bộ catalog**, không phải phần một packet dùng - subset theo
+  packet sẽ cho một hệ hai checksum trên hai case.
+- Canonical trước khi hash (sort `(algorithm_id, kind)`, text qua NFKC bằng
+  chính `sanitize.canonical`, hash bằng chính `artifact_checksum`) - không đẻ
+  công thức hash thứ hai.
+- `read_snapshot` tính lại checksum từ bytes và **từ chối** file sửa tại chỗ;
+  `verify_snapshot` kiểm cả ba; `delete_snapshot` từ chối khi còn bundle cite.
+
+**Test:** `tests/test_analyst_traits_snapshot.py` (20) + bundle/gate/identity -
+127 passed. **Commit:** `6df43a4`
