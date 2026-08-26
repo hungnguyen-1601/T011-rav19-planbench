@@ -31,7 +31,7 @@ about fields that moved.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -42,6 +42,7 @@ from planbench_benchmark.traits_store import TraitSource
 from planbench_explanation.case_packet import CasePacket
 from planbench_explanation.detectors import DETECTOR_VERSION
 from planbench_explanation.knowledge import KNOWLEDGE_BASE_VERSION
+from planbench_explanation.knowledge_contract import ResolvedReference
 from planbench_explanation.ledger import EvidenceKind
 from planbench_explanation.subjects import Subject
 from planbench_explanation.versioning import (
@@ -311,6 +312,7 @@ def build_packet_view(
     tool_catalog_version: str,
     aliases: Aliases | None = None,
     traits: TraitSource | None = None,
+    knowledge: Sequence[ResolvedReference] = (),
 ) -> PacketView:
     """Index one packet, or refuse to read it.
 
@@ -613,6 +615,25 @@ def build_packet_view(
                     scope=f"algorithm:{offer.algorithm_id}",
                 )
             )
+
+    # The curated mechanisms retrieval offered for this case (A5/W1.5).
+    # Indexed for the same reason the traits are: guard rule 1 refuses a
+    # citation the view cannot resolve, so a knowledge entry the analyst
+    # was *shown* and could not cite would read to the model as a base it
+    # is forbidden to use. Whether an entry may promote a claim is the
+    # promotion matrix's answer; the review status rides in the label.
+    for reference in knowledge:
+        entry = reference.entry
+        facts.append(
+            Fact(
+                ref=entry.citation,
+                kind="knowledge_entry",
+                label=f"{entry.title} ({entry.review_status})",
+                value=entry.mechanism,
+                subject=reference.subject,
+                scope=f"mechanism:{reference.proposition_type}",
+            )
+        )
 
     for unknown in packet.known_unknowns:
         facts.append(

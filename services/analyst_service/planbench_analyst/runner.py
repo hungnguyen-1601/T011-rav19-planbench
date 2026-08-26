@@ -46,8 +46,11 @@ from planbench_analyst.analyst import (
     propose,
 )
 from planbench_analyst.guard import GuardResult, guard
+from planbench_analyst.knowledge_provider import query_for, retrieve, trait_offers
 from planbench_analyst.packet_view import build_packet_view
 from planbench_analyst.round_host import PreparedRound
+from planbench_benchmark.traits_store import TraitSource
+from planbench_explanation.knowledge_contract import ResolvedReference, resolve_candidates
 from planbench_explanation.protocol import (
     AnalysisResponse,
     ProtocolRejection,
@@ -121,16 +124,51 @@ def run_round(
     *,
     max_revisions: int = DEFAULT_MAX_REVISIONS,
     timeout_s: float = DEFAULT_TIMEOUT_S,
+    knowledge: bool = False,
+    traits: TraitSource | None = None,
 ) -> RoundOutcome:
-    """Drive one analysis round to one of its four endings."""
+    """Drive one analysis round to one of its four endings.
+
+    ``knowledge`` and ``traits`` are the two retrieval inputs, and both
+    are **off by default** (W1.5). Off is not timidity: each one costs
+    prompt budget on every case and each is a separate arm of the input
+    ablation, so a default that quietly turned them on would make the
+    baseline unmeasurable — B1 would already contain what E1 is meant to
+    add. W1.7 puts the same two flags into ``runtime_config_checksum``,
+    so a bundle cannot be graded with one setting and replayed with the
+    other.
+
+    Retrieval offers **keys**, and the platform resolves them: an entry
+    the curated base does not hold is rejected here rather than carried
+    into a prompt, which is the boundary A5 drew and the reason nothing
+    a provider names can widen the base.
+    """
     analysis = prepared.analysis
     budget = prepared.effective_budget
+
+    offered: tuple[ResolvedReference, ...] = ()
+    rejected_offers = 0
+    if knowledge:
+        outcome = resolve_candidates(retrieve(query_for(analysis.packet)))
+        offered = outcome.resolved
+        rejected_offers = len(outcome.rejected)
+
     view = build_packet_view(
-        analysis.packet, tool_catalog_version=analysis.catalog.catalog_version
+        analysis.packet,
+        tool_catalog_version=analysis.catalog.catalog_version,
+        traits=traits,
+        knowledge=offered,
     )
 
     started = time.monotonic()
     events: list[str] = [f"start:{analysis.analysis_run_id}"]
+    if knowledge:
+        # Counted in the transcript, both halves. "Nothing was offered"
+        # and "five things were offered and none resolved" are different
+        # runs, and only one of them is a retrieval problem.
+        events.append(f"knowledge:{len(offered)}/{len(offered) + rejected_offers}")
+    if traits is not None:
+        events.append(f"traits:{len(trait_offers(analysis.packet, traits))}")
     reports: list[RoundReport] = []
     results: list[ToolResult] = []
     feedback: list[CheckFeedback] = []
