@@ -163,6 +163,22 @@ class AgentGateway(Protocol):
         """
         ...
 
+    def get_recommendation(self, task_profile_id: str | None = None) -> dict[str, Any]:
+        """Which algorithm this deployment should use, from stored runs.
+
+        The deterministic recommendation rules — feasibility on this
+        profile first, then the stored cards, then the per-mission
+        split. The agent reads this so "which should I pick" is answered
+        by the same floor a person sees on the deployment page, never by
+        the model's own weighing of the evidence.
+
+        ``task_profile_id`` may be omitted when exactly one deployment
+        exists; with several, the gateway refuses and names them, which
+        is an answer the model can relay rather than a guess it must
+        make.
+        """
+        ...
+
 
 __all__ = [
     "AgentGateway",

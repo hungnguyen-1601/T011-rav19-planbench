@@ -137,7 +137,15 @@ mlartifacts/
 ml/checkpoints/
 ml/runs/
 ml/**/*.zip
-models/
+# Uploaded checkpoints, where the API's default puts them. **Anchored,
+# and the anchor is load-bearing**: a bare `models/` matches a directory
+# of that name at any depth, and it was silently swallowing
+# `apps/web/src/app/models/` — the entire Models page was untracked, and
+# `git status` was clean because ignored files do not appear in it.
+# Found on 2026-08-24 while adding the algorithm-import tab to that page.
+/models/
+/artifacts/models/
+/artifacts/plugins/
 *.pt
 *.pth
 *.ckpt
@@ -191,3 +199,13 @@ CLAUDE.md
 # is ever adopted properly, generate the lockfile from those pins and drop
 # this rule in the same commit.
 uv.lock
+
+# ---------- README backup ----------
+# The README was rewritten 2026-08-24; the previous one is kept on disk
+# while the new one settles. Ignored rather than committed: two READMEs in
+# the tree is two answers to "what is this project", and a reader who finds
+# the stale one has no way to tell which is current. Delete it once nothing
+# is being copied back out of it.
+README.old.md
+build/
+dist/

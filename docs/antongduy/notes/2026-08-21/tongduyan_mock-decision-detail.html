@@ -1,0 +1,890 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PlanBench — Decision Detail (mock)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ===================================================================
+   MOCK ONLY — not wired to the app. Every value here is the proposed
+   design token, written out so an implementer copies rather than
+   invents. Nothing outside the scales below is used anywhere.
+   =================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* ---- surface ---- */
+  --bg:            #f6f7f9;
+  --panel:         #ffffff;
+  --panel-2:       #f1f3f6;
+  --border:        #e3e7ee;
+  --border-strong: #c4ccd8;
+  --text:          #14181f;
+  --muted:         #5a6472;
+  --hover:         rgba(20,24,31,.05);
+
+  /* ---- interaction: link, focus, primary button, "leads" cell ---- */
+  --accent:         #1f6feb;
+  --accent-contrast:#ffffff;
+  --accent-soft:    rgba(31,111,235,.08);
+
+  /* ---- state: pass / caution / fail. NEVER "slightly better" ---- */
+  --ok:   #1a7f37;  --ok-soft:   rgba(26,127,55,.10);
+  --warn: #9a6700;  --warn-soft: rgba(154,103,0,.10);
+  --err:  #cf222e;  --err-soft:  rgba(207,34,46,.09);
+
+  /* ---- identity: which candidate. Split off --accent on purpose ---- */
+  --candidate-a: #5267c9;
+  --candidate-b: #087f6a;
+
+  /* ---- spacing: 4px scale, no other value permitted ---- */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px;
+  --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px;
+
+  /* ---- radius: three steps, nothing else ---- */
+  --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px;
+
+  /* ---- type ---- */
+  --font-sans: "Be Vietnam Pro", Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+
+  --fs-caption: 11px;
+  --fs-sm:      12px;
+  --fs-body:    13px;
+  --fs-label:   14px;
+  --fs-value:   16px;
+  --fs-h3:      18px;
+  --fs-h1:      24px;
+
+  /* ---- shadow: popovers only. Panels use a 1px border. ---- */
+  --shadow-pop: 0 4px 12px rgba(20,24,31,.10);
+
+  --rail:   232px;
+  --topbar: 52px;
+  --row:    32px;
+}
+
+/* Dark is not the deliverable, but the tokens have to prove they can
+   carry one. Only the palette changes; no rule below is redeclared. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:#0f1115; --panel:#171a21; --panel-2:#1e222b;
+  --border:#2a2f3a; --border-strong:#3a4150;
+  --text:#e6e9ef; --muted:#9aa4b2; --hover:rgba(255,255,255,.06);
+  --accent:#4c9aff; --accent-contrast:#05070c; --accent-soft:rgba(76,154,255,.13);
+  --ok:#3fb950; --ok-soft:rgba(63,185,80,.14);
+  --warn:#d29922; --warn-soft:rgba(210,153,34,.14);
+  --err:#f85149; --err-soft:rgba(248,81,73,.13);
+  --candidate-a:#8fa5ff; --candidate-b:#50c7ad;
+  --shadow-pop: 0 4px 12px rgba(0,0,0,.45);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  /* 1.5 minimum: Vietnamese stacked diacritics touch the line above
+     at 1.2, which is what the current build does. */
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+:where(a, button, summary, input, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.sr-only {
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
+}
+
+/* ===================================================================
+   Shell
+   =================================================================== */
+
+.app { display: grid; grid-template-columns: var(--rail) minmax(0,1fr); min-height: 100vh; }
+
+/* ---- rail ---------------------------------------------------------
+   232px, not 264. Every item is one 32px line: icon + label. The
+   sentence that used to sit under each label is now the title
+   attribute, which is where a description that is read once belongs. */
+.rail {
+  grid-column: 1;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding: var(--space-3);
+  position: sticky; top: 0; height: 100vh;
+  overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+
+.brand { display:flex; align-items:center; gap:var(--space-2); padding: var(--space-1) var(--space-2) var(--space-4); }
+.brand-mark {
+  flex:none; width:28px; height:28px; border-radius: var(--radius-md);
+  display:grid; place-items:center;
+  background: var(--accent-soft); color: var(--accent);
+}
+.brand-name { font-size: var(--fs-label); font-weight: 600; letter-spacing: -.01em; }
+
+.rail-group + .rail-group { margin-top: var(--space-4); }
+.rail-group-title {
+  font-size: var(--fs-caption); font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .06em;
+  padding: 0 var(--space-2) var(--space-1); margin: 0;
+}
+
+.rail nav { display:flex; flex-direction:column; gap: 2px; }
+.rail nav a {
+  display:flex; align-items:center; gap: 10px;
+  height: var(--row); padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--text); font-size: var(--fs-body);
+  white-space: nowrap; overflow: hidden;
+}
+.rail nav a:hover { background: var(--hover); text-decoration: none; }
+.rail nav a[aria-current="page"] {
+  background: var(--accent-soft); color: var(--accent); font-weight: 600;
+  /* Not colour alone — the bar survives greyscale. */
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.rail nav a svg { flex:none; opacity:.85; }
+.rail nav a[aria-current="page"] svg { opacity:1; }
+.rail-label { overflow:hidden; text-overflow:ellipsis; }
+.rail-legacy { margin-left:auto; }
+
+.rail-foot { margin-top:auto; padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.rail-user { display:flex; align-items:center; gap: var(--space-2); height: var(--row); padding: 0 var(--space-2); }
+.rail-user .avatar {
+  flex:none; width:22px; height:22px; border-radius:50%;
+  display:grid; place-items:center;
+  background: var(--panel-2); color: var(--muted);
+  font-size: var(--fs-caption); font-weight:600;
+}
+
+/* ---- topbar -------------------------------------------------------
+   Solid, not blurred. backdrop-filter on a light theme buys a smear
+   and a compositing layer and solves nothing. */
+.topbar {
+  position: sticky; top: 0; z-index: 30;
+  height: var(--topbar);
+  display:flex; align-items:center; gap: var(--space-3);
+  padding: 0 var(--space-6);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.crumb { font-size: var(--fs-sm); color: var(--muted); display:flex; align-items:center; gap: 6px; }
+.crumb b { color: var(--text); font-weight: 600; }
+.topbar-actions { margin-left:auto; display:flex; align-items:center; gap: var(--space-2); }
+
+/* ---- content ------------------------------------------------------
+   The one missing line in the current build: without max-width the
+   value columns inflate to 480px around a six-character number. */
+main.content {
+  max-width: 1440px; margin-inline: auto;
+  padding: var(--space-5) var(--space-6) var(--space-7);
+}
+
+/* ===================================================================
+   Primitives
+   =================================================================== */
+
+.btn {
+  display:inline-flex; align-items:center; gap: 6px;
+  height: var(--row); padding: 0 var(--space-3);
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--panel); color: var(--text);
+  font: 600 var(--fs-body)/1 var(--font-sans);
+  cursor: pointer;
+}
+/* Hover tints; it does not recolour the border, which would make every
+   button on the page look focused. */
+.btn:hover { background: var(--hover); }
+.btn--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+.btn--primary:hover { background: var(--accent); filter: brightness(1.07); }
+.btn--ghost { background: transparent; border-color: transparent; color: var(--muted); font-weight: 500; }
+.btn--ghost:hover { background: var(--hover); color: var(--text); }
+.btn--danger { color: var(--err); border-color: var(--err); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.badge {
+  display:inline-flex; align-items:center; gap: 4px;
+  height: 20px; padding: 0 6px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm); font-weight: 600; line-height: 1;
+  white-space: nowrap;
+}
+.badge--neutral { background: var(--panel-2); color: var(--muted); }
+.badge--ok   { background: var(--ok-soft);   color: var(--ok); }
+.badge--warn { background: var(--warn-soft); color: var(--warn); }
+.badge--err  { background: var(--err-soft);  color: var(--err); }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-5);
+  /* No shadow. A 1px border on a grey ground is what separates
+     instrument software from a marketing page. */
+}
+.panel-head {
+  display:flex; align-items:center; justify-content:space-between; gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.panel-head h2, .panel-head h3 { margin: 0; font-size: var(--fs-h3); font-weight: 600; letter-spacing: -.01em; }
+.eyebrow {
+  display:block;
+  font-size: var(--fs-caption); font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+
+/* The mark carrying a field's sentence. Quiet by default — the current
+   build renders it near-black and bold because it points at an
+   undefined token, which is why a column of them reads as decoration. */
+.hint {
+  display:inline-flex; align-items:center; justify-content:center;
+  width: 14px; height: 14px; margin-left: 4px; padding: 0;
+  border: 0; background: none; cursor: help;
+  color: var(--muted); opacity: .55;
+  font: 600 var(--fs-caption)/1 var(--font-sans);
+  vertical-align: middle;
+}
+.hint:hover, .hint:focus-visible { opacity: 1; color: var(--accent); }
+
+.notice {
+  display:flex; gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--panel-2);
+  font-size: var(--fs-body);
+  margin-bottom: var(--space-4);
+}
+.notice svg { flex:none; margin-top: 2px; }
+.notice--warn     { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+.notice--warn svg { color: var(--warn); }
+/* Reserved for the one class of message that voids every number under
+   it — n below N_min. Nothing else gets this weight. */
+.notice--critical     { background: var(--err-soft); border-color: var(--err); }
+.notice--critical svg { color: var(--err); }
+
+/* ===================================================================
+   Page header
+   =================================================================== */
+
+.page-head {
+  display:grid; grid-template-columns: minmax(0,1fr) auto;
+  align-items: start; gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-5);
+}
+.page-head h1 { margin: 2px 0 0; font-size: var(--fs-h1); font-weight: 650; letter-spacing: -.02em; line-height: 1.25; }
+.page-meta {
+  margin: var(--space-2) 0 0;
+  display:flex; flex-wrap:wrap; align-items:center; gap: var(--space-2);
+  font-size: var(--fs-sm); color: var(--muted);
+}
+.page-meta .sep { opacity: .5; }
+.page-meta code { font-family: var(--font-mono); font-size: var(--fs-sm); }
+/* Replaces three 26px cards that all read "30". A figure only earns a
+   card when it is abnormal; when it is fine it earns a clause. */
+.sample-line {
+  margin: var(--space-3) 0 0;
+  display:flex; flex-wrap:wrap; align-items:center; gap: var(--space-2);
+  font-size: var(--fs-sm); color: var(--muted);
+}
+.sample-line b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ===================================================================
+   Comparison grid — the page
+   =================================================================== */
+
+.cmp {
+  display: grid;
+  /* Driven by a custom property, not an inline grid-template. That is
+     what lets the 900px rule below win without !important. */
+  grid-template-columns:
+    minmax(260px, 420px)
+    repeat(var(--cols, 2), minmax(150px, 260px))
+    minmax(96px, 140px);
+  justify-content: start;
+  align-items: stretch;
+}
+
+.cmp-cell { padding: 6px var(--space-4); display:flex; align-items:center; min-height: var(--row); border-bottom: 1px solid var(--border); }
+.cmp-gutter { padding: 6px var(--space-4); display:flex; flex-direction:column; justify-content:center; min-height: var(--row); border-bottom: 1px solid var(--border); }
+
+/* Column heads. The tint is a 3px cap, not a wash down the whole
+   column — the identity has to be legible without swallowing the
+   numbers it sits above. */
+.cmp-head {
+  align-items: flex-start; flex-direction: column; gap: 3px;
+  padding-top: var(--space-3); padding-bottom: var(--space-3);
+  border-top: 3px solid transparent;
+  position: sticky; top: var(--topbar); background: var(--panel); z-index: 2;
+}
+.cmp-head--a { border-top-color: var(--candidate-a); }
+.cmp-head--b { border-top-color: var(--candidate-b); }
+.cmp-head .letter { font-size: var(--fs-caption); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+/* The config is the H — it is the only thing that differs. The stack
+   name is identical on both sides, so it cannot be the headline. */
+.cmp-head .config { font-size: var(--fs-label); font-weight: 600; letter-spacing: -.01em; }
+.cmp-head--a .config { color: var(--candidate-a); }
+.cmp-head--b .config { color: var(--candidate-b); }
+.cmp-head .stack { font-size: var(--fs-sm); color: var(--muted); }
+.cmp-head .marks { display:flex; flex-wrap:wrap; gap: var(--space-1); margin-top: var(--space-1); }
+
+.cmp-label { font-size: var(--fs-label); font-weight: 600; line-height: 1.3; color: var(--text); }
+.cmp-sub   { font-size: var(--fs-sm); font-weight: 400; color: var(--muted); margin-top: 1px; }
+/* A caution that qualifies one metric lives in that metric's row.
+   Above the table it qualifies everything, which is a lie. */
+.cmp-warn  { display:flex; align-items:flex-start; gap: 5px; font-size: var(--fs-sm); color: var(--warn); margin-top: 3px; line-height: 1.4; }
+.cmp-warn svg { flex:none; margin-top: 2px; }
+
+/* Right-aligned. tabular-nums was already on in the current build and
+   then defeated by centring: 7.85 and 17.89 do not line up. */
+.cmp-value {
+  justify-content: flex-end;
+  font-family: var(--font-mono); font-size: var(--fs-value); font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cmp-value .unit { font-family: var(--font-sans); font-size: var(--fs-sm); font-weight: 400; color: var(--muted); margin-left: 3px; }
+/* Leading is a background, never a colour. Green stays reserved for
+   "cleared a gate"; it cannot also mean "0.1 s quicker". */
+.cmp-value.is-lead { background: var(--accent-soft); font-weight: 700; }
+.cmp-value.is-muted { color: var(--muted); font-weight: 500; }
+
+.cmp-delta {
+  justify-content: flex-end;
+  font-family: var(--font-mono); font-size: var(--fs-body); font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted); white-space: nowrap;
+}
+
+.cmp-foot { border-bottom: 0; }
+.cmp-flags { gap: var(--space-1); flex-wrap: wrap; }
+
+.cmp-summary {
+  display:flex; align-items:center; gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-body); color: var(--muted);
+}
+.cmp-summary b { color: var(--text); font-weight: 600; }
+
+/* Gate detail: collapsed, because the verdict is already on the column
+   head. Expanded it is six cells, not a second table. */
+.gates { border-top: 1px solid var(--border); }
+.gates > summary {
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--fs-body); font-weight: 600; cursor: pointer;
+  display:flex; align-items:center; gap: 6px; list-style: none;
+}
+.gates > summary::-webkit-details-marker { display:none; }
+.gates > summary .chev { transition: transform 120ms ease; }
+.gates[open] > summary .chev { transform: rotate(90deg); }
+.gates-body { display:grid; gap: var(--space-4); padding: 0 var(--space-4) var(--space-4); grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); }
+.gate-col-name { font-size: var(--fs-sm); font-weight: 600; color: var(--muted); margin-bottom: var(--space-2); }
+.gate-grid { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: var(--space-1); }
+.gate-cell {
+  display:flex; align-items:center; justify-content:space-between; gap: 4px;
+  padding: 5px 6px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--panel-2); font-size: var(--fs-sm);
+}
+.gate-cell code { font-family: var(--font-mono); font-size: var(--fs-caption); color: var(--muted); }
+
+.export { display:flex; flex-wrap:wrap; align-items:center; gap: var(--space-2); padding: var(--space-4); }
+.export .spacer { flex: 1; }
+
+/* ===================================================================
+   Annotation overlay — review aid only, deleted on implementation
+   =================================================================== */
+[data-qa] { position: relative; }
+body:not(.qa) [data-qa]::after { display: none; }
+body.qa [data-qa] { outline: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 1px; }
+body.qa [data-qa]::after {
+  content: attr(data-qa);
+  position:absolute; top:-8px; left:-8px; z-index: 20;
+  min-width: 18px; height: 18px; padding: 0 4px;
+  display:grid; place-items:center;
+  border-radius: 9px; background: var(--accent); color: var(--accent-contrast);
+  font: 700 10px/1 var(--font-sans); letter-spacing: 0;
+  box-shadow: var(--shadow-pop);
+}
+
+.devbar {
+  position: fixed; right: var(--space-4); bottom: var(--space-4); z-index: 50;
+  display:flex; align-items:center; gap: var(--space-2);
+  padding: var(--space-2); border-radius: var(--radius-lg);
+  border: 1px solid var(--border); background: var(--panel);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--fs-sm);
+}
+.devbar .tag { color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; font-size: var(--fs-caption); padding-inline: var(--space-1); }
+
+/* ===================================================================
+   Responsive
+   =================================================================== */
+
+@media (max-width: 1180px) {
+  main.content { padding: var(--space-5) var(--space-4) var(--space-6); }
+  .topbar { padding-inline: var(--space-4); }
+}
+
+@media (max-width: 1023px) {
+  .app { grid-template-columns: 68px minmax(0,1fr); }
+  .rail { padding-inline: var(--space-2); }
+  .rail-label, .rail-group-title, .brand-name, .rail-legacy, .rail-user span { display: none; }
+  .rail nav a, .brand { justify-content: center; padding-inline: 0; }
+}
+
+@media (max-width: 900px) {
+  /* Δ goes first — it is derived, and it is the column a narrow screen
+     can rebuild by reading the two values. */
+  .cmp { grid-template-columns: minmax(0, 1fr) repeat(var(--cols,2), minmax(110px, 1fr)); }
+  .cmp-delta { display: none; }
+  .cmp-value { font-size: var(--fs-label); }
+  .gate-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+
+@media (max-width: 620px) {
+  .app { grid-template-columns: minmax(0,1fr); }
+  .rail { display: none; }
+  main.content { padding: var(--space-4) var(--space-3) var(--space-6); }
+  .topbar { padding-inline: var(--space-3); }
+  .page-head { grid-template-columns: minmax(0,1fr); }
+  .cmp { grid-template-columns: minmax(0,1fr) repeat(var(--cols,2), minmax(84px,1fr)); }
+  .cmp-cell, .cmp-gutter { padding-inline: var(--space-3); }
+  .cmp-value { font-size: var(--fs-body); }
+  .cmp-value .unit { display:block; margin: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-dash" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></g></symbol>
+<symbol id="i-deploy" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c1.8 2 1.8 10 0 12M8 2C6.2 4 6.2 12 8 14"/></g></symbol>
+<symbol id="i-play" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M6.5 5.5l4 2.5-4 2.5z"/></g></symbol>
+<symbol id="i-chart" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 13.5V9M6.5 13.5V4M10.5 13.5V7M14 13.5h-13"/></g></symbol>
+<symbol id="i-map" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2 4l4-1.5 4 1.5 4-1.5v10L10 14 6 12.5 2 14z"/><path d="M6 2.5v10M10 4v10"/></g></symbol>
+<symbol id="i-book" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2.5 3h4a2 2 0 012 2v8a1.6 1.6 0 00-1.6-1.6H2.5z"/><path d="M13.5 3h-4a2 2 0 00-2 2v8a1.6 1.6 0 011.6-1.6h4.4z"/></g></symbol>
+<symbol id="i-cpu" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4.5" y="4.5" width="7" height="7" rx="1"/><path d="M6.5 2v2.5M9.5 2v2.5M6.5 11.5V14M9.5 11.5V14M2 6.5h2.5M2 9.5h2.5M11.5 6.5H14M11.5 9.5H14"/></g></symbol>
+<symbol id="i-box" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M8 1.8l5.5 3v6.4L8 14.2 2.5 11.2V4.8z"/><path d="M2.5 4.8L8 7.9l5.5-3.1M8 7.9v6.3"/></g></symbol>
+<symbol id="i-layers" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M8 2l6 3-6 3-6-3z"/><path d="M2 8l6 3 6-3M2 11l6 3 6-3"/></g></symbol>
+<symbol id="i-gauge" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 11a6 6 0 1111 0"/><path d="M8 11l3-3"/></g></symbol>
+<symbol id="i-trophy" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4.5 2.5h7v3a3.5 3.5 0 01-7 0z"/><path d="M4.5 3.5h-2v1a2 2 0 002 2M11.5 3.5h2v1a2 2 0 01-2 2M8 9v2.5M5.5 13.5h5"/></g></symbol>
+<symbol id="i-edit" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M11 2.5l2.5 2.5-8 8H3v-2.5z"/></g></symbol>
+<symbol id="i-agent" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M8 1.5l1.6 3.9 3.9 1.6-3.9 1.6L8 12.5 6.4 8.6 2.5 7l3.9-1.6z"/></g></symbol>
+<symbol id="i-inbox" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2 9.5l1.8-6h8.4L14 9.5v3a1 1 0 01-1 1H3a1 1 0 01-1-1z"/><path d="M2 9.5h3.5l1 2h3l1-2H14"/></g></symbol>
+<symbol id="i-info" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 7.2v4M8 4.9v.1"/></g></symbol>
+<symbol id="i-warn" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.2l6 10.6H2z"/><path d="M8 6.4v3M8 11.3v.1"/></g></symbol>
+<symbol id="i-check" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 8.5l3.2 3.2L13 5"/></symbol>
+<symbol id="i-copy" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-1a1.5 1.5 0 00-1.5-1.5H4a1.5 1.5 0 00-1.5 1.5v5A1.5 1.5 0 004 11h1"/></g></symbol>
+<symbol id="i-chev" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M6 3.5L10.5 8 6 12.5"/></symbol>
+<symbol id="i-down" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v8M4.5 7.5L8 11l3.5-3.5M2.5 13.5h11"/></g></symbol>
+</defs></svg>
+
+<div class="app">
+
+  <!-- ============================ RAIL ============================ -->
+  <aside class="rail" aria-label="Main navigation">
+    <div class="brand">
+      <span class="brand-mark"><svg width="16" height="16"><use href="#i-chart"/></svg></span>
+      <span class="brand-name">PlanBench</span>
+    </div>
+
+    <div class="rail-group" data-qa="15">
+      <p class="rail-group-title" data-t="g.workflow">Workflow</p>
+      <nav>
+        <a href="#" title="Where things stand"><svg width="16" height="16"><use href="#i-dash"/></svg><span class="rail-label" data-t="n.dashboard">Dashboard</span></a>
+        <a href="#" title="Declare a world to measure on"><svg width="16" height="16"><use href="#i-deploy"/></svg><span class="rail-label" data-t="n.deployments">Deployments</span></a>
+        <a href="#" title="Try one episode before spending hours"><svg width="16" height="16"><use href="#i-play"/></svg><span class="rail-label" data-t="n.testbench">Test Bench</span></a>
+        <a href="#" aria-current="page" title="Run a comparison, read it, approve it"><svg width="16" height="16"><use href="#i-chart"/></svg><span class="rail-label" data-t="n.decisions">Decisions</span></a>
+      </nav>
+    </div>
+
+    <div class="rail-group" data-qa="16">
+      <p class="rail-group-title" data-t="g.resources">Resources</p>
+      <nav>
+        <a href="#" title="Draw the walls a deployment runs in"><svg width="16" height="16"><use href="#i-map"/></svg><span class="rail-label" data-t="n.maps">Maps</span></a>
+        <a href="#" title="Built-in scenarios, easiest to hardest"><svg width="16" height="16"><use href="#i-book"/></svg><span class="rail-label" data-t="n.library">Scenario Library</span></a>
+        <a href="#" title="The configurations a comparison chooses between"><svg width="16" height="16"><use href="#i-cpu"/></svg><span class="rail-label" data-t="n.candidates">Candidates</span></a>
+        <a href="#" title="Trained policies and the robots they were trained for"><svg width="16" height="16"><use href="#i-box"/></svg><span class="rail-label" data-t="n.models">Model Registry</span></a>
+        <a href="#" title="The stack registry. Candidates replaces it"><svg width="16" height="16"><use href="#i-layers"/></svg><span class="rail-label" data-t="n.algorithms">Algorithms</span><span class="badge badge--neutral rail-legacy" data-t="b.legacy">Legacy</span></a>
+        <a href="#" title="The old comparison. Decisions replaces it"><svg width="16" height="16"><use href="#i-gauge"/></svg><span class="rail-label" data-t="n.benchmarks">Benchmarks</span><span class="badge badge--neutral rail-legacy" data-t="b.legacy">Legacy</span></a>
+        <a href="#" title="Ranks across scenarios, which a recommendation cannot do"><svg width="16" height="16"><use href="#i-trophy"/></svg><span class="rail-label" data-t="n.leaderboard">Leaderboard</span><span class="badge badge--neutral rail-legacy" data-t="b.legacy">Legacy</span></a>
+        <a href="#" title="The older editor. The deployment form now draws obstacles too"><svg width="16" height="16"><use href="#i-edit"/></svg><span class="rail-label" data-t="n.editor">Scenario Editor</span><span class="badge badge--neutral rail-legacy" data-t="b.legacy">Legacy</span></a>
+      </nav>
+    </div>
+
+    <div class="rail-group">
+      <p class="rail-group-title" data-t="g.account">Account</p>
+      <nav>
+        <a href="#" title="Ask about the platform in words"><svg width="16" height="16"><use href="#i-agent"/></svg><span class="rail-label" data-t="n.agent">Agent</span></a>
+        <a href="#" title="What is waiting on you"><svg width="16" height="16"><use href="#i-inbox"/></svg><span class="rail-label" data-t="n.reviews">Reviews</span><span class="badge badge--warn rail-legacy">2</span></a>
+        <a href="#" title="Versions, health, connection"><svg width="16" height="16"><use href="#i-info"/></svg><span class="rail-label" data-t="n.system">System Information</span></a>
+      </nav>
+    </div>
+
+    <div class="rail-foot">
+      <div class="rail-user"><span class="avatar">A</span><span>antongduy</span></div>
+    </div>
+  </aside>
+
+  <!-- ========================== CONTENT ========================== -->
+  <div>
+    <header class="topbar">
+      <nav class="crumb" aria-label="Breadcrumb" data-qa="18">
+        <a href="#" data-t="n.decisions">Decisions</a>
+        <span class="sep">/</span>
+        <b>sudden_stop_v5</b>
+      </nav>
+      <div class="topbar-actions">
+        <button class="btn btn--ghost" id="lang" aria-label="Switch language">EN</button>
+        <button class="btn btn--ghost" id="theme" aria-label="Switch theme">Light</button>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <!-- ---------------------- page header ---------------------- -->
+      <div class="page-head">
+        <div>
+          <span class="eyebrow" data-t="h.eyebrow">Comparison detail</span>
+          <h1>sudden_stop_v5</h1>
+          <p class="page-meta">
+            <span data-t="h.scope">local_controller_selection</span>
+            <span class="sep">·</span>
+            <span>2026-08-21 03:07</span>
+            <span class="sep">·</span>
+            <a href="#" data-t="h.allruns">All runs</a>
+            <span class="sep">·</span>
+            <button class="btn btn--ghost" style="height:20px;padding:0 6px;font-size:var(--fs-sm)">
+              <svg width="12" height="12"><use href="#i-copy"/></svg><code>5753d464c9f6</code>
+            </button>
+          </p>
+          <!-- QA #5: three 26px cards all reading "30", replaced -->
+          <p class="sample-line" data-qa="5">
+            <b>30</b> <span data-t="s.episodes">episodes measured</span>
+            <span class="sep">·</span>
+            <span data-t="s.nmin">meets N_min</span> (<b>30</b>)
+            <span class="sep">·</span>
+            <span data-t="s.full">ran the full request</span>
+          </p>
+        </div>
+        <div>
+          <span class="badge badge--ok" data-qa="17"><svg width="12" height="12"><use href="#i-check"/></svg><span data-t="h.hascard">Recommendation issued</span></span>
+        </div>
+      </div>
+
+      <!-- --------------------- comparison ------------------------ -->
+      <section class="panel" aria-labelledby="cmp-title">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow" data-t="c.eyebrow">Evidence by candidate</span>
+            <h2 id="cmp-title" data-t="c.title">Comparison results</h2>
+          </div>
+          <!-- QA #2: names the config, because both stacks are astar+dwa -->
+          <span class="badge badge--ok" data-qa="2">
+            <svg width="12" height="12"><use href="#i-trophy"/></svg>
+            <span data-t="c.reco">Recommended</span>: dwa_coarse
+          </span>
+        </div>
+
+        <!-- A count of what the highlighting already says, so the
+             pattern is readable without scanning ten rows. Derived
+             from the same leader rule, never a second judgement. -->
+        <p class="cmp-summary" data-qa="9">
+          <svg width="14" height="14" style="color:var(--muted)"><use href="#i-info"/></svg>
+          <b>dwa_coarse</b> <span data-t="c.summary1">leads on 2 of 10 metrics</span>,
+          <b>dwa_balanced</b> <span data-t="c.summary2">on 1</span>.
+          <span data-t="c.summary3">The remaining seven are ties.</span>
+        </p>
+
+        <div class="cmp" style="--cols:2">
+
+          <!-- ---- column heads ---- -->
+          <div class="cmp-gutter cmp-head"></div>
+          <div class="cmp-cell cmp-head cmp-head--a" data-qa="22">
+            <span class="letter" data-t="c.candA">Candidate A</span>
+            <span class="config">dwa_coarse</span>
+            <span class="stack">astar+dwa · lidar_only</span>
+            <span class="marks">
+              <span class="badge badge--ok"><svg width="12" height="12"><use href="#i-check"/></svg><span data-t="c.reco">Recommended</span></span>
+              <span class="badge badge--ok" data-qa="13">G1–G6 <span data-t="c.cleared">cleared</span></span>
+            </span>
+          </div>
+          <div class="cmp-cell cmp-head cmp-head--b">
+            <span class="letter" data-t="c.candB">Candidate B</span>
+            <span class="config">dwa_balanced</span>
+            <span class="stack">astar+dwa · lidar_only</span>
+            <span class="marks">
+              <span class="badge badge--ok">G1–G6 <span data-t="c.cleared">cleared</span></span>
+            </span>
+          </div>
+          <div class="cmp-cell cmp-head" style="justify-content:flex-end">
+            <span class="letter">Δ (B−A)</span>
+          </div>
+
+          <!-- ---- 1. success rate ---- -->
+          <div class="cmp-gutter">
+            <span class="cmp-label" data-t="m.success">Success rate<button class="hint" title="Share of episodes that reached the goal without a terminal failure.">?</button></span>
+          </div>
+          <div class="cmp-cell cmp-value">100.0<span class="unit">%</span></div>
+          <div class="cmp-cell cmp-value">100.0<span class="unit">%</span></div>
+          <div class="cmp-cell cmp-delta">0.0</div>
+
+          <!-- ---- 2. collisions ---- -->
+          <div class="cmp-gutter">
+            <span class="cmp-label" data-t="m.collisions">Collisions observed<button class="hint" title="Count of episodes that ended in contact. Raw count, not a rate.">?</button></span>
+          </div>
+          <div class="cmp-cell cmp-value">0</div>
+          <div class="cmp-cell cmp-value">0</div>
+          <div class="cmp-cell cmp-delta">0</div>
+
+          <!-- ---- 3. collision bound: QA #7, context inline ---- -->
+          <div class="cmp-gutter" data-qa="7">
+            <span class="cmp-label" data-t="m.bound">Collision probability, 95% upper bound<button class="hint" title="What a clean record actually supports. The bound is 3/N under the simulated scenario distribution, so a lower number means a larger evidence base, not a safer robot.">?</button></span>
+            <span class="cmp-sub" data-t="m.boundsub">rule of three · 0 collisions in 30 episodes</span>
+          </div>
+          <div class="cmp-cell cmp-value">≤ 10.0<span class="unit">%</span></div>
+          <div class="cmp-cell cmp-value">≤ 10.0<span class="unit">%</span></div>
+          <div class="cmp-cell cmp-delta">0.0</div>
+
+          <!-- ---- 4. no route: QA #12, no em-dash ---- -->
+          <div class="cmp-gutter" data-qa="12">
+            <span class="cmp-label" data-t="m.noroute">Episodes with no route found<button class="hint" title="Episodes where the global planner returned no path at all.">?</button></span>
+          </div>
+          <div class="cmp-cell cmp-value">0</div>
+          <div class="cmp-cell cmp-value">0</div>
+          <div class="cmp-cell cmp-delta">0</div>
+
+          <!-- ---- 5. worst clearance ---- -->
+          <div class="cmp-gutter">
+            <span class="cmp-label" data-t="m.clearance">Worst clearance in the whole run<button class="hint" title="Smallest distance to any obstacle across every step of every episode. Higher is better.">?</button></span>
+          </div>
+          <div class="cmp-cell cmp-value">0.470<span class="unit">m</span></div>
+          <div class="cmp-cell cmp-value is-lead">0.494<span class="unit">m</span><span class="sr-only"> (leads)</span></div>
+          <div class="cmp-cell cmp-delta">+0.024</div>
+
+          <!-- ---- 6. median duration ----
+               Leader marking follows metric direction, per An's call:
+               every difference is marked and the Δ column carries the
+               size of it, rather than the table deciding for the
+               reader which gaps are worth having. -->
+          <div class="cmp-gutter" data-qa="9">
+            <span class="cmp-label" data-t="m.duration">Median episode duration<button class="hint" title="Median wall-clock length of a completed episode. Lower is better.">?</button></span>
+          </div>
+          <div class="cmp-cell cmp-value is-lead">22.5<span class="unit">s</span><span class="sr-only"> (leads)</span></div>
+          <div class="cmp-cell cmp-value">22.6<span class="unit">s</span></div>
+          <div class="cmp-cell cmp-delta">+0.1</div>
+
+          <!-- ---- 7. p99: the only real difference. QA #1 + #14 ---- -->
+          <div class="cmp-gutter" data-qa="1">
+            <span class="cmp-label" data-t="m.p99">Planner latency, pooled p99<button class="hint" title="99th percentile of per-cycle planning time, pooled across every episode.">?</button></span>
+            <span class="cmp-sub" data-t="m.p99limit">limit 50 ms</span>
+            <span class="cmp-warn">
+              <svg width="12" height="12"><use href="#i-warn"/></svg>
+              <span data-t="m.p99warn">Measured on all 20 cores, unpinned — G4 reads wall-clock latency, so other load on the machine enters the figure. The same candidate measured 59.30 ms unpinned and 16.10 ms pinned to two cores.</span>
+            </span>
+          </div>
+          <div class="cmp-cell cmp-value is-lead">7.85<span class="unit">ms</span><span class="sr-only"> (leads)</span></div>
+          <div class="cmp-cell cmp-value">17.89<span class="unit">ms</span></div>
+          <div class="cmp-cell cmp-delta">+10.04</div>
+
+          <!-- ---- 8. memory ---- -->
+          <div class="cmp-gutter">
+            <span class="cmp-label" data-t="m.memory">Memory estimate on the target board<button class="hint" title="Data-structure counts at the target implementation's byte sizes — never the Python process's RSS.">?</button></span>
+            <span class="cmp-sub" data-t="m.memlimit">limit 3277 MB</span>
+          </div>
+          <div class="cmp-cell cmp-value">8.0<span class="unit">MB</span></div>
+          <div class="cmp-cell cmp-value">8.0<span class="unit">MB</span></div>
+          <div class="cmp-cell cmp-delta">0.0</div>
+
+          <!-- ---- 9-10. informational: no direction, so no ≈ chip ---- -->
+          <div class="cmp-gutter">
+            <span class="cmp-label" data-t="m.distinct">Distinct episodes<button class="hint" title="How many different seeds actually ran. Fewer than the episode count means the sweep replayed a seed.">?</button></span>
+          </div>
+          <div class="cmp-cell cmp-value is-muted">30</div>
+          <div class="cmp-cell cmp-value is-muted">30</div>
+          <div class="cmp-cell cmp-delta">0</div>
+
+          <div class="cmp-gutter cmp-foot">
+            <span class="cmp-label" data-t="m.replans">Replans across the run<button class="hint" title="Total number of times the global planner was re-invoked mid-episode.">?</button></span>
+          </div>
+          <div class="cmp-cell cmp-value cmp-foot is-muted">30</div>
+          <div class="cmp-cell cmp-value cmp-foot is-muted">30</div>
+          <div class="cmp-cell cmp-delta cmp-foot">0</div>
+        </div>
+
+        <!-- ---- gate detail, collapsed. Verdict already on the heads ---- -->
+        <details class="gates" data-qa="13">
+          <summary>
+            <svg width="14" height="14" class="chev"><use href="#i-chev"/></svg>
+            <span data-t="c.gatedetail">Feasibility gate detail</span>
+            <span class="badge badge--neutral" data-t="c.gateall">all cleared</span>
+          </summary>
+          <div class="gates-body">
+            <div>
+              <p class="gate-col-name" style="color:var(--candidate-a)">dwa_coarse</p>
+              <div class="gate-grid">
+                <span class="gate-cell"><code>G1</code><svg width="12" height="12" style="color:var(--ok)"><use href="#i-check"/></svg></span>
+                <span class="gate-cell"><code>G2</code><svg width="12" height="12" style="color:var(--ok)"><use href="#i-check"/></svg></span>
+                <span class="gate-cell"><code>G3</code><svg width="12" height="12" style="color:var(--ok)"><use href="#i-check"/></svg></span>
+                <span class="gate-cell"><code>G4</code><svg width="12" height="12" style="color:var(--ok)"><use href="#i-check"/></svg></span>
+                <span class="gate-cell"><code>G5</code><svg width="12" height="12" style="color:var(--ok)"><use href="#i-check"/></svg></span>
+                <span class="gate-cell"><code>G6</code><svg width="12" height="12" style="color:var(--ok)"><use href="#i-check"/></svg></span>
+              </div>
+            </div>
+            <div>
+              <p class="gate-col-name" style="color:var(--candidate-b)">dwa_balanced</p>
+              <div class="gate-grid">
+                <span class="gate-cell"><code>G1</code><svg width="12" height="12" style="color:var(--ok)"><use href="#i-check"/></svg></span>
+                <span class="gate-cell"><code>G2</code><svg width="12" height="12" style="color:var(--ok)"><use href="#i-check"/></svg></span>
+                <span class="gate-cell"><code>G3</code><svg width="12" height="12" style="color:var(--ok)"><use href="#i-check"/></svg></span>
+                <span class="gate-cell"><code>G4</code><svg width="12" height="12" style="color:var(--ok)"><use href="#i-check"/></svg></span>
+                <span class="gate-cell"><code>G5</code><svg width="12" height="12" style="color:var(--ok)"><use href="#i-check"/></svg></span>
+                <span class="gate-cell"><code>G6</code><svg width="12" height="12" style="color:var(--ok)"><use href="#i-check"/></svg></span>
+              </div>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <!-- ------------------------ actions ------------------------ -->
+      <section class="panel">
+        <div class="panel-head">
+          <h3 data-t="a.title">Decision</h3>
+          <span class="badge badge--warn" data-t="a.pending">Awaiting your approval</span>
+        </div>
+        <div class="export">
+          <button class="btn btn--primary"><svg width="14" height="14"><use href="#i-check"/></svg><span data-t="a.approve">Approve dwa_coarse</span></button>
+          <button class="btn btn--danger" data-t="a.reject">Reject</button>
+          <span class="spacer"></span>
+          <button class="btn"><svg width="14" height="14"><use href="#i-down"/></svg><span data-t="a.report">Report (PDF)</span></button>
+          <button class="btn"><svg width="14" height="14"><use href="#i-down"/></svg><span data-t="a.workbook">Workbook (XLSX)</span></button>
+        </div>
+      </section>
+
+      <!-- ------------ state examples, for review only ------------ -->
+      <section class="panel" id="states">
+        <div class="panel-head">
+          <h3 data-t="st.title">State variants</h3>
+          <span class="badge badge--neutral" data-t="st.note">reference — not part of this run</span>
+        </div>
+        <div style="padding:var(--space-4)">
+          <div class="notice notice--critical">
+            <svg width="14" height="14"><use href="#i-warn"/></svg>
+            <span data-t="st.critical"><b>18 of 30 episodes measured — below the N_min of 30 this deployment declares.</b> Every figure on this page rests on a sample the declared risk budget does not cover.</span>
+          </div>
+          <div class="notice notice--warn">
+            <svg width="14" height="14"><use href="#i-warn"/></svg>
+            <span data-t="st.warn">Candidate B retired at episode 12 under G2. Its column covers fewer episodes than candidate A's.</span>
+          </div>
+          <div class="notice">
+            <svg width="14" height="14" style="color:var(--muted)"><use href="#i-info"/></svg>
+            <span data-t="st.info">This run was scored before the explanation layer existed, so it carries no evidence packet. Re-run the comparison to get one.</span>
+          </div>
+          <div style="display:grid;gap:6px;max-width:520px">
+            <div style="height:var(--row);border-radius:var(--radius-sm);background:var(--panel-2)"></div>
+            <div style="height:var(--row);border-radius:var(--radius-sm);background:var(--panel-2);opacity:.75"></div>
+            <div style="height:var(--row);border-radius:var(--radius-sm);background:var(--panel-2);opacity:.5"></div>
+            <p style="margin:var(--space-1) 0 0;font-size:var(--fs-sm);color:var(--muted)" data-t="st.loading">Loading — row-shaped skeleton, no spinner, no "Loading…" text.</p>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<div class="devbar">
+  <span class="tag">mock</span>
+  <button class="btn btn--ghost" id="qa">Show QA notes</button>
+</div>
+
+<script>
+/* Mock controls only. None of this ships. */
+const root = document.documentElement;
+
+document.getElementById('theme').addEventListener('click', (e) => {
+  const dark = root.getAttribute('data-theme') === 'dark';
+  root.setAttribute('data-theme', dark ? 'light' : 'dark');
+  e.currentTarget.textContent = dark ? 'Light' : 'Dark';
+});
+
+document.getElementById('qa').addEventListener('click', (e) => {
+  const on = document.body.classList.toggle('qa');
+  e.currentTarget.textContent = on ? 'Hide QA notes' : 'Show QA notes';
+});
+
+/* Vietnamese pass. Present so the diacritics can be checked at every
+   size the page actually uses, and so label growth (~20% over English)
+   is visible in the gutter before it is discovered in production. */
+const VI = {
+  'g.workflow':'Luồng công việc','g.resources':'Tài nguyên','g.account':'Tài khoản',
+  'n.dashboard':'Tổng quan','n.deployments':'Cấu hình triển khai','n.testbench':'Bàn thử',
+  'n.decisions':'Quyết định','n.maps':'Bản đồ','n.library':'Thư viện kịch bản',
+  'n.candidates':'Ứng viên','n.models':'Kho mô hình','n.algorithms':'Thuật toán',
+  'n.benchmarks':'Đo chuẩn','n.leaderboard':'Bảng xếp hạng','n.editor':'Trình soạn kịch bản',
+  'n.agent':'Trợ lý','n.reviews':'Chờ duyệt','n.system':'Thông tin hệ thống',
+  'b.legacy':'Cũ',
+  'h.eyebrow':'Chi tiết phép so','h.scope':'local_controller_selection',
+  'h.allruns':'Tất cả lượt chạy','h.hascard':'Đã có khuyến nghị',
+  's.episodes':'episode đã đo','s.nmin':'đạt N_min','s.full':'chạy đủ yêu cầu',
+  'c.eyebrow':'Bằng chứng theo ứng viên','c.title':'Kết quả so sánh','c.reco':'Khuyến nghị',
+  'c.candA':'Ứng viên A','c.candB':'Ứng viên B','c.cleared':'đều đạt',
+  'c.summary1':'dẫn trên 2 trong 10 chỉ số',
+  'c.summary2':'trên 1',
+  'c.summary3':'Bảy chỉ số còn lại hoà.',
+  'c.gatedetail':'Chi tiết sáu gate khả thi','c.gateall':'đều đạt',
+  'm.success':'Tỉ lệ thành công','m.collisions':'Số va chạm quan sát được',
+  'm.bound':'Cận trên xác suất va chạm, mức tin cậy 95%',
+  'm.boundsub':'quy tắc ba · 0 va chạm trong 30 episode',
+  'm.noroute':'Số episode không tìm ra tuyến','m.clearance':'Khoảng hở tệ nhất cả lượt chạy',
+  'm.duration':'Thời lượng episode trung vị','m.p99':'Độ trễ planner, p99 gộp',
+  'm.p99limit':'ngưỡng 50 ms',
+  'm.p99warn':'Đo trên toàn bộ 20 nhân, không ghim — G4 đọc độ trễ theo đồng hồ tường nên mọi tải khác trên máy đều đi thẳng vào con số. Cùng ứng viên đó đo được 59,30 ms khi không ghim và 16,10 ms khi ghim hai nhân.',
+  'm.memory':'Ước lượng bộ nhớ trên board đích','m.memlimit':'ngưỡng 3277 MB',
+  'm.distinct':'Số episode phân biệt','m.replans':'Số lần hoạch định lại cả lượt chạy',
+  'a.title':'Quyết định','a.pending':'Đang chờ bạn duyệt','a.approve':'Duyệt dwa_coarse',
+  'a.reject':'Từ chối','a.report':'Báo cáo (PDF)','a.workbook':'Bảng tính (XLSX)',
+  'st.title':'Các biến thể trạng thái','st.note':'tham chiếu — không thuộc lượt chạy này',
+  'st.critical':'<b>Mới đo 18 trên 30 episode — dưới mức N_min là 30 mà cấu hình triển khai này khai báo.</b> Mọi con số trên trang đều dựa trên một cỡ mẫu nằm ngoài ngân sách rủi ro đã khai.',
+  'st.warn':'Ứng viên B dừng sớm ở episode 12 vì G2. Cột của nó phủ ít episode hơn cột ứng viên A.',
+  'st.info':'Lượt chạy này được chấm trước khi có tầng giải thích nên không kèm gói bằng chứng. Chạy lại phép so để có.',
+  'st.loading':'Đang tải — khung xương đúng hình dạng hàng, không spinner, không chữ "Đang tải…".'
+};
+const EN = {};
+document.querySelectorAll('[data-t]').forEach(el => { EN[el.dataset.t] = el.innerHTML; });
+
+document.getElementById('lang').addEventListener('click', (e) => {
+  const toVi = e.currentTarget.textContent.trim() === 'EN';
+  const map = toVi ? VI : EN;
+  document.querySelectorAll('[data-t]').forEach(el => {
+    const v = map[el.dataset.t];
+    if (v !== undefined) el.innerHTML = v;
+  });
+  root.lang = toVi ? 'vi' : 'en';
+  e.currentTarget.textContent = toVi ? 'VI' : 'EN';
+});
+</script>
+</body>
+</html>

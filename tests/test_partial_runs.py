@@ -14,6 +14,7 @@ each episode finishes, and the report a stopped run can still produce.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -21,7 +22,27 @@ from test_vertical_slice import write_profile
 
 from planbench_benchmark import pipeline, selection
 from planbench_benchmark.contexts import build_evaluation_contexts
-from planbench_simulator.trace import trace_path
+from planbench_benchmark.hostinfo import detect_benchmark_host, measurement_environment
+from planbench_benchmark.task_map import load_task_map
+from planbench_simulator.trace import EpisodeTraceRecorder
+
+
+def _write_trace(locator, candidate, context) -> Path:
+    """One real, readable trace at the address this run would use."""
+    from planbench_schemas.geometry import Pose2D
+    from planbench_schemas.robot import RobotState
+
+    with EpisodeTraceRecorder(
+        context,
+        candidate.candidate_id,
+        root=locator.root,
+        clearance=lambda _pose: 1.0,
+        execution_conditions_fingerprint=locator.fingerprint(context),
+        evidence_class=locator.evidence_class,
+    ) as recorder:
+        recorder.record(0.0, RobotState(pose=Pose2D(x=0.0, y=0.0, theta=0.0)))
+    return recorder.path
+
 
 CANDIDATES = (("astar+dwa", "dwa_coarse"), ("rrtstar+dwa", "dwa_coarse"))
 
@@ -115,15 +136,70 @@ class TestThePrefixRule:
         real, but keeping them would mean comparing candidates on episode
         lists that differ by whatever the hole was."""
         profile = selection.load_profile(write_profile(tmp_path))
+        map_data = load_task_map(profile, base_dir=tmp_path)
         candidates = selection.build_candidates(profile, CANDIDATES, "global_planner_selection")
         contexts = build_evaluation_contexts(profile, seed_count=5)
         root = tmp_path / "traces"
+        # **Real traces now, not empty files.** Since H9A a trace is
+        # addressed by the conditions it ran under and read through a
+        # policy, so "a file exists here" is no longer the same claim as
+        # "this episode can be scored" — and the prefix rule is about the
+        # second. A zero-byte placeholder would now be a hole rather than
+        # an episode, which is a different test from this one.
+        locator = pipeline.TraceLocator(root, profile, map_data)
         for index, context in enumerate(contexts):
             for candidate in candidates:
                 if index == 2 and candidate is candidates[1]:
                     continue  # the half-finished context
-                path = trace_path(candidate.candidate_id, context.episode_context_id, root=root)
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(b"")
-        kept = pipeline.paired_prefix(candidates, contexts, root)
+                _write_trace(locator, candidate, context)
+        kept = pipeline.paired_prefix(candidates, contexts, root, profile, map_data)
         assert [c.seed for c in kept] == [0, 1]
+
+
+ENVIRONMENT_KEYS = {"benchmark_host", "warning", "warning_code", "warning_params"}
+
+
+class TestTheMachineTravelsWithEitherReport:
+    """The unpinned caveat reaches both branches or it reaches neither.
+
+    Two functions build a report — one for a run that finished, one for a
+    run stopped before its first paired episode — and each used to write
+    the ``measurement_environment`` block itself. That is the shape where
+    a key added for the UI lands in the branch somebody was looking at
+    and quietly misses the other, so a caveat about the machine appears
+    or vanishes depending on how the run ended rather than on how it was
+    measured.
+    """
+
+    def test_a_finished_run_carries_the_structured_warning_keys(
+        self, complete: dict[str, object]
+    ) -> None:
+        assert set(complete["measurement_environment"]) == ENVIRONMENT_KEYS
+
+    def test_a_run_stopped_at_zero_carries_the_same_keys(self, tmp_path: Path) -> None:
+        """Called directly: reaching this branch through `run_comparison`
+        means killing a sweep mid-flight, and what is under test is the
+        report's shape, not the interruption that produced it."""
+        report = selection._interrupted_before_any_episode(
+            selection.load_profile(write_profile(tmp_path)),
+            "global_planner_selection",
+            10,
+            datetime.now(UTC),
+            None,
+            detect_benchmark_host(),
+        )
+        assert set(report["measurement_environment"]) == ENVIRONMENT_KEYS
+
+    def test_the_stopped_report_describes_the_host_it_was_given(self, tmp_path: Path) -> None:
+        """The interrupted report is a smaller record of the same run,
+        not a different kind of document."""
+        host = detect_benchmark_host()
+        report = selection._interrupted_before_any_episode(
+            selection.load_profile(write_profile(tmp_path)),
+            "global_planner_selection",
+            10,
+            datetime.now(UTC),
+            None,
+            host,
+        )
+        assert report["measurement_environment"] == measurement_environment(host)

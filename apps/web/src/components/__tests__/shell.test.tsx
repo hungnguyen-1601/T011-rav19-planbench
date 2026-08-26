@@ -11,11 +11,15 @@
  * theme.test.ts). Recorded in docs/KNOWN_LIMITATIONS.md.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { EmptyState } from "@/components/EmptyState";
 import { Sidebar } from "@/components/Sidebar";
+import { ALL_ROUTES } from "@/lib/navigation";
 import { StatCard } from "@/components/StatCard";
 import { DICTIONARIES, type Locale } from "@/lib/i18n";
 import { translate } from "@/lib/i18n";
@@ -56,13 +60,31 @@ function sidebar(
 }
 
 describe("Sidebar — expanded", () => {
-  it("shows the brand, the tagline and every menu name", () => {
+  it("shows the brand and every menu name", () => {
+    /* No tagline. "AMR/AGV planning benchmark — simulation only" is a
+       sentence about the product: read once, then read past forever,
+       from the top of the one surface used on every visit. It moved to
+       `/system`, which is the page opened to learn what this is. */
     const html = sidebar();
     expect(html).toContain("PlanBench");
-    expect(html).toContain("simulation only");
+    expect(html).not.toContain("simulation only");
     for (const label of ["Dashboard", "Maps", "Candidates", "Decisions", "Agent", "Reviews"]) {
       expect(html).toContain(label);
     }
+  });
+
+  it("carries an entry for the assistant page", () => {
+    /* This entry came off when the floating dock arrived and went back
+       when it turned out the two are not the same room. The dock answers
+       a question from wherever the reader is standing; the page reads
+       papers, drafts plugins and publishes what the agent may do. With
+       the entry gone, the only door to the second was a tile on the
+       dashboard, which is a door you have to already be in a particular
+       room to see. */
+    expect(sidebar()).toContain(">Agent<");
+    const entry = ALL_ROUTES.find((route) => route.href === "/agent");
+    expect(entry).toBeDefined();
+    expect(entry?.hidden).toBeFalsy();
   });
 
   it("groups the menu into labelled sections", () => {
@@ -71,22 +93,30 @@ describe("Sidebar — expanded", () => {
        one heading, so a replacement sat beside the thing it replaced
        with nothing saying which was which. */
     const html = sidebar();
-    expect(html).toContain("What you are doing");
-    expect(html).toContain("Materials");
-    expect(html).toContain("Being replaced");
+    expect(html).toContain("Workspace");
+    expect(html).toContain("Resources");
+    /* Three headings, not four. A heading is a claim about a set, and
+       `Being replaced` had come down to one member — so it cost a
+       heading to say what a chip says beside the name it is about. A
+       navigation label should name a place, not report on the project's
+       state, and that was the one here that did the second. */
+    expect(html).not.toContain("Being replaced");
+    expect(html.match(/sidebar-section-title/g)).toHaveLength(3);
   });
 
-  it("says what every entry is for, not just its name", () => {
-    /* Twelve names and nothing else left a reader unable to tell that
-       Benchmarks and Decisions answer different questions. That was the
-       largest cost of running two flows at once, and none of it was in
-       the code. */
+  it("still says what every entry is for, from the title attribute", () => {
+    /* The sentences stay — they are why a reader can tell that two
+       entries answer different questions. What changed is where they
+       are: twelve of them printed under twelve labels turned the rail
+       into a column of prose whose last item fell below the fold, and
+       each is read once and then never again. Nothing was deleted; the
+       keys and the strings are all still here. */
     const html = sidebar();
-    expect(html).toContain("Declare a world to measure on");
-    expect(html).toContain("sidebar-desc");
+    expect(html).toContain('title="Declare a world to measure on"');
+    expect(html).not.toContain("sidebar-desc");
   });
 
-  it("says out loud which pages are being replaced", () => {
+  it("still says out loud which page is being replaced", () => {
     /* One entry is left in that group. `/benchmarks`, `/leaderboard` and
        `/algorithms` were removed in P6, each only after the thing that
        replaced it existed. `/scenarios` was kept on the same rule — the
@@ -95,9 +125,14 @@ describe("Sidebar — expanded", () => {
        now, which makes retiring it a decision somebody has to take
        rather than a thing to wait for; until then the sidebar says what
        it is instead of implying it is still the only editor. */
+    /* One entry is left, and it keeps saying what it is — as a chip on
+       the row rather than as a heading over a set of one. The sentence
+       is still there too, in the title. */
     const html = sidebar({ user: ALICE });
-    expect(html).toContain("Being replaced");
+    expect(html).toContain("sidebar-legacy");
+    expect(html).toContain("Legacy");
     expect(html).toContain("The older editor");
+    expect(html.match(/sidebar-legacy/g)).toHaveLength(1);
   });
 
   it("offers a collapse control", () => {
@@ -108,6 +143,21 @@ describe("Sidebar — expanded", () => {
     // With the label visible, a tooltip saying the same thing is noise
     // and an aria-label saying it is read twice.
     expect(sidebar()).not.toContain('data-tooltip="Maps"');
+  });
+
+  it("keeps the collapse control off the custom tooltip", () => {
+    /* `[data-tooltip-side="right"]::after` is laid out 8px past the
+       button's right edge, and the button spans the full content width
+       of `.sidebar` — 12px of padding, and a scroll container, so both
+       axes clip. The bubble began 8px into that 12px gap and was cut
+       off 4px later: a hairline of its border against the rail's edge
+       on every hover, which is what the "stray frame" was. The native
+       tooltip is drawn by the browser and nothing clips it. */
+    const html = sidebar();
+    const toggle = html.slice(html.indexOf("sidebar-toggle"));
+    expect(toggle.slice(0, toggle.indexOf(">"))).not.toContain("data-tooltip");
+    // The accessible name and the focus ring are untouched by the fix.
+    expect(html).toContain('aria-label="Collapse sidebar"');
   });
 });
 
@@ -125,6 +175,10 @@ describe("Sidebar — collapsed", () => {
     const html = sidebar({ collapsed: true });
     expect(html).toContain('aria-label="Expand sidebar"');
     expect(html).not.toContain('aria-label="Collapse sidebar"');
+    /* With the label hidden, the button still says what it does —
+       through `title`, which the browser draws outside the clipped
+       rail. */
+    expect(html).toContain('title="Expand sidebar"');
   });
 
   it("still renders the labels, for CSS to hide", () => {
@@ -266,5 +320,330 @@ describe("EmptyState", () => {
     const html = renderToStaticMarkup(<EmptyState title="Nothing to review" />);
     expect(html).toContain("Nothing to review");
     expect(html).not.toContain("quick-action");
+  });
+});
+
+/* Read once, at module scope, and named `SHEET` rather than `CSS`.
+   Declared inside one `describe`, the name is out of scope in the next
+   — where `CSS` then resolves to the DOM global instead of failing, so
+   the mistake surfaces as `Property 'indexOf' does not exist on type
+   'typeof CSS'` rather than as "undefined variable". */
+const SHEET = readFileSync(
+  join(process.cwd(), "src", "app", "globals.css"),
+  "utf8",
+).replace(/\r\n/g, "\n");
+const SHELL = readFileSync(
+  join(process.cwd(), "src", "components", "AppShell.tsx"),
+  "utf8",
+);
+
+describe("the content column is a measure, not a container", () => {
+  it("caps the width and centres what is left", () => {
+    /* Without it the comparison table's value columns inflate to 480px
+       around a six-character number on a 1920 monitor. */
+    const rule = SHEET.slice(SHEET.indexOf("main.content {"), SHEET.indexOf("}", SHEET.indexOf("main.content {")));
+    expect(rule).toContain("max-width: 1440px");
+    expect(rule).toContain("margin-inline: auto");
+  });
+
+  it("gives the drawing surfaces a way out", () => {
+    expect(SHEET).toContain("main.content--wide { max-width: none; }");
+  });
+
+  it("decides that in the shell, because a page cannot reach this element", () => {
+    /* `AppShell` owns `<main>` and the root layout mounts it above every
+       page, so there is no prop to hand upward. A class sprinkled
+       through each page could not work even if someone tried. */
+    expect(SHELL).toContain("wideContent(pathname)");
+    expect(SHELL).toContain('"content content--wide" : "content"');
+  });
+
+  it("leaves the signed-out shell alone", () => {
+    /* `bare-page` sets its own 460px measure and is two classes deep, so
+       it still wins — but it is worth pinning, because it is the one
+       place `main.content` is not what the reader sees. */
+    expect(SHELL).toContain('className="content bare-page"');
+    expect(SHEET).toContain("main.content.bare-page {");
+  });
+});
+
+describe("the top bar is solid", () => {
+  const topbar = () => {
+    const at = SHEET.indexOf(".topbar {");
+    expect(at, "the topbar rule moved").toBeGreaterThan(-1);
+    return SHEET.slice(at, SHEET.indexOf("\n}", at)).replace(/\/\*[\s\S]*?\*\//g, "");
+  };
+
+  it("paints an opaque background rather than a translucent one", () => {
+    /* Twelve per cent of a light background showing through a light page
+       is not a glass effect — it is a faint smear of whatever happens to
+       be scrolling underneath, which on this app is a table of digits. */
+    expect(topbar()).toContain("background: var(--bg)");
+    expect(topbar()).not.toContain("color-mix");
+  });
+
+  it("does not pay for a compositing layer on a sticky element", () => {
+    /* `backdrop-filter` on `position: sticky` is the one place that cost
+       lands on every frame of every scroll rather than once. */
+    expect(topbar()).toContain("position: sticky");
+    expect(topbar()).not.toContain("backdrop-filter");
+  });
+
+  it("keeps the border that was doing the separating anyway", () => {
+    expect(topbar()).toContain("border-bottom: 1px solid var(--border)");
+  });
+});
+
+describe("the button scale", () => {
+  /* Anchored to the start of a line. Searching for `button {` as a bare
+     substring finds `.icon-button {` first, and `button:hover:not(...)`
+     finds `.icon-button:hover:not(...)` — so the assertions read a
+     neighbouring rule and fail for a reason that has nothing to do with
+     what they are checking. */
+  const rule = (selector: string) => {
+    const at = SHEET.indexOf(`\n${selector} {`);
+    expect(at, `${selector} is not declared at the start of a line`).toBeGreaterThan(-1);
+    return SHEET.slice(at, SHEET.indexOf("\n}", at)).replace(/\/\*[\s\S]*?\*\//g, "");
+  };
+
+  it("sets a floor rather than a fixed height", () => {
+    /* 102 buttons, and they are not one shape: icon buttons, pagers,
+       playback controls, a 20px id chip, buttons carrying a badge. A
+       fixed height does not make the short ones taller — it clips the
+       tall ones, and clipping reads as a design choice. */
+    expect(rule("button")).toContain("min-height: 32px");
+    expect(rule("button")).not.toMatch(/(?<!min-)height: *\d+px/);
+  });
+
+  it("tints on hover instead of recolouring the border", () => {
+    /* The accent border is what `button.active` uses to say a toggle is
+       on. While hover used it too, hover and on were the same picture
+       and "what will my next click do" was answerable only from the
+       caption. */
+    expect(rule("button:hover:not(:disabled)")).toContain("background: var(--hover)");
+    expect(rule("button:hover:not(:disabled)")).not.toContain("border-color");
+    expect(rule("button.active")).toContain("border-color: var(--accent)");
+  });
+
+  it("does not declare a second focus ring", () => {
+    /* One already exists, global, with the same outline and offset. A
+       duplicate on `button` would be a second place to change it. */
+    expect(SHEET).toContain(":focus-visible {");
+    expect(SHEET).not.toContain("button:focus-visible {");
+  });
+
+  it("keeps the compact controls compact", () => {
+    /* Each is a class and so outranks the element-level floor. Pinned
+       because the floor landing on them is a silent regression: the id
+       chip would become the tallest thing on its line of metadata. */
+    expect(rule(".decision-copy-id")).toContain("min-height: 20px");
+    expect(rule(".icon-button")).toContain("height: 34px");
+  });
+});
+
+describe("the badge scale", () => {
+  const badge = () => {
+    const at = SHEET.indexOf("\n.badge {");
+    expect(at, "the badge rule moved").toBeGreaterThan(-1);
+    return SHEET.slice(at, SHEET.indexOf("\n}", at)).replace(/\/\*[\s\S]*?\*\//g, "");
+  };
+
+  it("is a small rectangle, not a pill", () => {
+    /* A 10px radius on a 20px box is exactly half the height, which is
+       what a pill is — and forty-five of them read as a page of tags
+       rather than a page of states. */
+    expect(badge()).toContain("border-radius: var(--radius-sm)");
+    expect(badge()).not.toContain("border-radius: 10px");
+  });
+
+  it("takes a floor rather than a fixed height, like the buttons", () => {
+    /* `blocked at G2, G3` and `1 of 2 candidates blocked` are badges
+       too. A fixed height clips the long ones instead of shortening
+       them — the same failure the button scale avoids. */
+    expect(badge()).toContain("min-height: 20px");
+    expect(badge()).not.toMatch(/(?<!min-)height: *\d+px/);
+  });
+
+  it("sizes from the scale, one step up from the floor", () => {
+    /* 11px is where Vietnamese stacked diacritics start to close up, and
+       a badge is where the short decisive words live. */
+    expect(badge()).toContain("font-size: var(--fs-sm)");
+    expect(badge()).not.toContain("font-size: 11px");
+  });
+
+  it("keeps all four variants under one convention", () => {
+    /* `.badge.<name>`, matching the classes that already existed. The
+       fourth is still called `muted-badge` rather than `neutral`: the
+       rename reaches 26 references across fifteen files including two
+       logic modules, which is a cleanup, not a styling change. */
+    for (const variant of ["ok", "err", "warn", "muted-badge"]) {
+      expect(SHEET, variant).toContain(`.badge.${variant} {`);
+    }
+    expect(SHEET).not.toContain(".badge--");
+  });
+});
+
+describe("panels sit on the page rather than above it", () => {
+  const rule = (selector: string) => {
+    const at = SHEET.indexOf(`\n${selector} {`);
+    expect(at, `${selector} is not declared at the start of a line`).toBeGreaterThan(-1);
+    return SHEET.slice(at, SHEET.indexOf("\n}", at)).replace(/\/\*[\s\S]*?\*\//g, "");
+  };
+
+  it("separates a panel with a hairline, never a shadow", () => {
+    /* On a grey ground a border separates a card from the page; a shadow
+       lifts it off the page, and a screen of lifted cards is a marketing
+       layout wearing an instrument's data. */
+    expect(rule(".panel")).toContain("border: 1px solid var(--border)");
+    expect(rule(".panel")).not.toContain("box-shadow");
+  });
+
+  it("leaves more air between panels than inside one", () => {
+    /* The gap between two panels used to equal the gap between a panel's
+       border and its own contents, so a heading read as belonging to
+       whichever panel the eye reached first. */
+    expect(rule(".panel")).toContain("margin-bottom: var(--space-5)");
+    expect(rule(".panel")).toContain("padding: var(--space-4)");
+  });
+
+  it("does not let the dashboard keep its own rule", () => {
+    /* `.dashboard-panel` is a panel. Re-adding a shadow there made the
+       dashboard the one page where the rule did not hold — and a rule
+       with one exception is a rule nobody trusts. */
+    expect(rule(".dashboard-panel")).not.toContain("box-shadow");
+    expect(SHEET).not.toContain("--dashboard-card-shadow");
+  });
+
+  it("stops the tiles rising when pointed at", () => {
+    /* A tile that lifts says "this is clickable and exciting" about a
+       number that is neither. The border already changes on hover, which
+       is the part that answers "can I click this". */
+    for (const selector of [".dashboard-page .stat-card", ".dashboard-page .quick-action"]) {
+      expect(rule(selector), selector).not.toContain("box-shadow");
+      expect(rule(selector), selector).not.toContain("transform");
+    }
+    expect(SHEET).not.toContain("transform: translateY(-2px)");
+    expect(SHEET).not.toContain("transform: translateY(-1px)");
+  });
+});
+
+describe("notices say how much they matter", () => {
+  const rule = (selector: string) => {
+    const at = SHEET.indexOf(`\n${selector} {`);
+    expect(at, `${selector} is not declared at the start of a line`).toBeGreaterThan(-1);
+    return SHEET.slice(at, SHEET.indexOf("\n}", at)).replace(/\/\*[\s\S]*?\*\//g, "");
+  };
+
+  it("defaults to information, not to alarm", () => {
+    /* Every notice used to be yellow, so "you are signed out", "the
+       deployment was filed" and "this run measured fewer episodes than
+       the declared risk allows" wore one colour — which meant the colour
+       said nothing and the reader skimmed all three. */
+    expect(rule(".notice")).toContain("background: var(--panel-2)");
+    expect(rule(".notice")).not.toContain("var(--warn");
+  });
+
+  it("uses a class the stylesheet actually declares", () => {
+    /* Seven sites carried `className="notice warn"`, and `.notice.warn`
+       has never been a rule here — the class did nothing and the notice
+       stayed the default yellow, which happened to be the colour they
+       wanted, so nobody could see it was inert. */
+    expect(SHEET).not.toContain(".notice.warn ");
+    expect(SHEET).not.toContain(".notice.warn{");
+  });
+
+  it("reserves the critical variant for the one message that earns it", () => {
+    /* `--critical` is for a message that voids every number below it:
+       a sample under the deployment's declared N_min. A second kind of
+       message wearing it makes it mean nothing. */
+    const critical = [...SHEET.matchAll(/notice--critical/g)];
+    expect(critical.length).toBeGreaterThan(0);
+    expect(rule(".notice.notice--critical")).toContain("var(--err)");
+  });
+});
+
+describe("fields and tabs", () => {
+  const rule = (selector: string) => {
+    const at = SHEET.indexOf(`\n${selector} {`);
+    expect(at, `${selector} is not declared at the start of a line`).toBeGreaterThan(-1);
+    return SHEET.slice(at, SHEET.indexOf("\n}", at)).replace(/\/\*[\s\S]*?\*\//g, "");
+  };
+
+  it("gives a focused field a ring, not just a recoloured hairline", () => {
+    /* On a form of twelve inputs, a 1px border changing colour is the
+       difference between knowing where the caret is and hunting for
+       it. */
+    const focus = rule("select:focus,\ninput:focus,\ntextarea:focus");
+    expect(focus).toContain("box-shadow: 0 0 0 3px var(--accent-soft)");
+  });
+
+  it("puts fields on the same floor as buttons", () => {
+    /* So a field and the button beside it sit on one line rather than
+       half a step apart. A floor, not a height — a textarea is a field
+       too and pinning it would make it one row tall forever. */
+    const field = rule("select,\ninput,\ntextarea");
+    expect(field).toContain("min-height: 32px");
+    expect(field).not.toMatch(/(?<!min-)height: *\d+px/);
+  });
+
+  it("underlines the selected tab instead of filling it", () => {
+    /* A filled container holding filled tabs is two nested pills, and
+       the selected one then competes with the primary button on the same
+       form. The underline uses the edge a tab already shares with the
+       panel it opens. */
+    const active = rule(".deployment-config-panel .tabs-list button.active");
+    expect(active).toContain("box-shadow: inset 0 -2px 0 var(--accent)");
+    expect(active).toContain("background: transparent");
+    expect(rule(".deployment-config-panel .tabs-list")).not.toContain("background: var(--panel-2)");
+  });
+});
+
+describe("the current page is filled, not tinted", () => {
+  const CSS = readFileSync(join(process.cwd(), "src", "app", "globals.css"), "utf8");
+  const rule = CSS.slice(
+    CSS.indexOf('.sidebar nav a[aria-current="page"] {'),
+    CSS.indexOf(".sidebar nav a svg"),
+  );
+
+  it("paints a solid block rather than a wash of the accent", () => {
+    /* It was a 10% accent tint, accent-coloured text and a 2px edge —
+       three quiet signals that each had to be noticed. A fill is one
+       loud one. */
+    expect(rule).toContain("background: var(--accent);");
+    expect(rule).toContain("color: var(--accent-contrast);");
+    expect(rule).not.toContain("var(--accent-soft)");
+  });
+
+  it("takes the pair the primary buttons already use", () => {
+    /* `--accent` / `--accent-contrast` is declared per theme, so the
+       rail cannot drift from the buttons and the block inverts on its
+       own in the dark theme instead of becoming a smudge. */
+    expect(rule).not.toContain("var(--text)");
+    expect(rule).not.toContain("background: var(--bg)");
+  });
+
+  it("needs no left bar, because lightness now carries the signal", () => {
+    /* "Not colour alone" was the rule the bar served. An inverted fill
+       serves it better: the lightness inverts, which survives greyscale
+       and reads across a rail of ten items where 2px does not. */
+    expect(rule).not.toContain("inset 2px 0 0");
+  });
+
+  it("does not let hover lift the fill off the current item", () => {
+    /* `.sidebar nav a:hover` paints `--panel-2`. Unhandled, the one item
+       that must never look unselected turns pale under the pointer. */
+    expect(rule).toContain('.sidebar nav a[aria-current="page"]:hover');
+  });
+
+  it("keeps the chip legible once it rides on the fill", () => {
+    /* Muted grey on near-black is the pair this palette's own comment
+       warns about. */
+    expect(rule).toContain('.sidebar nav a[aria-current="page"] .badge');
+  });
+
+  it("inverts with the theme instead of hard-coding black", () => {
+    /* A literal colour would stay itself on a dark rail, which is where
+       a filled item stops being the filled one. */
+    expect(rule).not.toMatch(/background:\s*#[0-9a-fA-F]{3,6}/);
   });
 });

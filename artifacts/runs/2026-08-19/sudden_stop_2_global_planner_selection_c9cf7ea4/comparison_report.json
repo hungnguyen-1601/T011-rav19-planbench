@@ -1,0 +1,520 @@
+{
+  "artifact": "comparison_report",
+  "identity": {
+    "task_profile_id": "sudden_stop_2",
+    "experiment_scope": "global_planner_selection",
+    "sensor_noise": {
+      "lidar_range_sigma_m": 0.02,
+      "wheel_slip_fraction": 0.02,
+      "localization_drift_m": 0.0,
+      "localization_jump_probability": 0.0,
+      "lidar_dropout_probability": 0.0,
+      "odometry_bias_fraction": 0.0,
+      "command_latency_steps": 0
+    },
+    "git_sha": "6a4c8ef4555856e46646e17bbaeb830bccd4f8a8",
+    "anchor_config_version": "v1.2",
+    "created_at": "2026-08-19T16:45:00.569789+00:00"
+  },
+  "sample": {
+    "n_episodes": 5,
+    "n_episodes_requested": 5,
+    "interrupted": false,
+    "n_min_required": 30,
+    "episode_context_ids": [
+      "dec1e8b956a7",
+      "796e7bf4fb4d",
+      "072b35f6e637",
+      "0949c968b71e",
+      "891f5e1f7578"
+    ]
+  },
+  "early_stop": {
+    "enabled": false,
+    "min_episodes_before_stop": 30,
+    "deployment_role": "acceptance",
+    "gates_without_a_rule": {
+      "G4": "p99 gộp không đơn điệu — thêm control step có thể kéo phân vị xuống, nên 'đang vượt ngân sách' không chứng minh được 'sẽ vượt'",
+      "G6": "quyết trước episode một, trong build_candidates — không còn gì để dừng sớm"
+    },
+    "stopped": [],
+    "episodes_saved": 0
+  },
+  "candidates": [
+    {
+      "candidate_id": "e1251e42a20b",
+      "stack_label": "astar+dwa",
+      "local_controller_config": "dwa_coarse",
+      "components": {
+        "global_planner": "astar",
+        "local_controller": "dwa",
+        "local_controller_config": "dwa_coarse"
+      },
+      "global_observation_class": "full_static_map",
+      "local_observation_class": "lidar_only",
+      "n_episodes": 5,
+      "stopped_early": null,
+      "gates": {
+        "candidate_id": "e1251e42a20b",
+        "G1": "pass",
+        "G2": {
+          "result": "fail",
+          "observed": 0,
+          "n_runs": 5,
+          "n_distinct_episodes": 5,
+          "upper_bound_95": 0.6,
+          "n_min": 30,
+          "statement": "0 va chạm quan sát trong 5 lần chạy phân biệt; cận trên 95% dưới phân phối kịch bản đã mô phỏng: 60.0%",
+          "note": "chỉ 5 lần chạy phân biệt, dưới N_min = 30 = ceil(3 / 0.1); cận trên 60.0% còn lỏng hơn mức rủi ro đã khai"
+        },
+        "G3": "pass",
+        "G4": {
+          "result": "pass",
+          "status": "screened_on_host",
+          "p99_ms": 21.416341999465654,
+          "threshold_ms": 50.0,
+          "caveat": "G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"
+        },
+        "G5": {
+          "result": "pass",
+          "status": "estimated_from_structure",
+          "memory_estimate_mb": 8.007484436035156,
+          "available_ram_mb": 3277.0,
+          "peak_rss_mb_diagnostic": 252.5546875,
+          "note": "ước lượng từ bộ đếm cấu trúc dữ liệu nhân kích thước byte của hiện thực đích; pha sàng lọc là điều kiện cần — vượt ngân sách thì chắc chắn không vừa, không vượt thì chưa kết luận được điều ngược lại",
+          "target_implementation": "cpp_ros2",
+          "bytes_per_search_node": 40,
+          "peak_search_nodes": 45
+        },
+        "G6": "pass"
+      },
+      "cleared_gates": false,
+      "blocking_gates": [
+        "G2"
+      ],
+      "n_distinct_episodes": 5,
+      "success_rate": 1.0,
+      "pooled_p99_latency_ms": 21.416341999465654,
+      "replan_count": 5,
+      "episodes": [
+        {
+          "episode_context_id": "dec1e8b956a7",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.5233847032153446,
+          "travel_time_s": 29.30000000000028,
+          "p99_latency_ms": 18.273177999071773,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "796e7bf4fb4d",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.5382323331647848,
+          "travel_time_s": 29.750000000000288,
+          "p99_latency_ms": 21.66484499921351,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "072b35f6e637",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.5246602943348421,
+          "travel_time_s": 29.25000000000028,
+          "p99_latency_ms": 21.048389999759802,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "0949c968b71e",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.564602350464222,
+          "travel_time_s": 30.5500000000003,
+          "p99_latency_ms": 21.935571998892552,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "891f5e1f7578",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.5483899254146517,
+          "travel_time_s": 29.500000000000284,
+          "p99_latency_ms": 20.518030001039737,
+          "peak_search_nodes": 45,
+          "peak_tree_nodes": 0,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        }
+      ]
+    },
+    {
+      "candidate_id": "29cdf6266a44",
+      "stack_label": "rrtstar+dwa",
+      "local_controller_config": "dwa_coarse",
+      "components": {
+        "global_planner": "rrtstar",
+        "local_controller": "dwa",
+        "local_controller_config": "dwa_coarse"
+      },
+      "global_observation_class": "full_static_map",
+      "local_observation_class": "lidar_only",
+      "n_episodes": 5,
+      "stopped_early": null,
+      "gates": {
+        "candidate_id": "29cdf6266a44",
+        "G1": "pass",
+        "G2": {
+          "result": "fail",
+          "observed": 0,
+          "n_runs": 5,
+          "n_distinct_episodes": 5,
+          "upper_bound_95": 0.6,
+          "n_min": 30,
+          "statement": "0 va chạm quan sát trong 5 lần chạy phân biệt; cận trên 95% dưới phân phối kịch bản đã mô phỏng: 60.0%",
+          "note": "chỉ 5 lần chạy phân biệt, dưới N_min = 30 = ceil(3 / 0.1); cận trên 60.0% còn lỏng hơn mức rủi ro đã khai"
+        },
+        "G3": "fail",
+        "G4": {
+          "result": "pass",
+          "status": "screened_on_host",
+          "p99_ms": 22.194803999664135,
+          "threshold_ms": 50.0,
+          "caveat": "G4 mới qua vòng sàng lọc — chưa xác nhận trên bo mạch đích"
+        },
+        "G5": {
+          "result": "pass",
+          "status": "estimated_from_structure",
+          "memory_estimate_mb": 8.096748352050781,
+          "available_ram_mb": 3277.0,
+          "peak_rss_mb_diagnostic": 252.5625,
+          "note": "ước lượng từ bộ đếm cấu trúc dữ liệu nhân kích thước byte của hiện thực đích; pha sàng lọc là điều kiện cần — vượt ngân sách thì chắc chắn không vừa, không vượt thì chưa kết luận được điều ngược lại",
+          "target_implementation": "cpp_ros2",
+          "bytes_per_search_node": 40,
+          "peak_search_nodes": 0
+        },
+        "G6": "pass"
+      },
+      "cleared_gates": false,
+      "blocking_gates": [
+        "G2",
+        "G3"
+      ],
+      "n_distinct_episodes": 5,
+      "success_rate": 0.4,
+      "pooled_p99_latency_ms": 22.194803999664135,
+      "replan_count": 34,
+      "episodes": [
+        {
+          "episode_context_id": "dec1e8b956a7",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.16222209615308503,
+          "travel_time_s": 55.999999999998956,
+          "p99_latency_ms": 24.12321999981941,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2367,
+          "replan_count": 3,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "796e7bf4fb4d",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.15009605805183845,
+          "travel_time_s": 119.99999999999532,
+          "p99_latency_ms": 21.3566999991599,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2332,
+          "replan_count": 10,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "072b35f6e637",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.13376241894946317,
+          "travel_time_s": 119.99999999999532,
+          "p99_latency_ms": 19.9216000000888,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2385,
+          "replan_count": 10,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "0949c968b71e",
+          "success": true,
+          "failure_reason": null,
+          "collision_count": 0,
+          "min_clearance": 0.1563484189975245,
+          "travel_time_s": 36.40000000000007,
+          "p99_latency_ms": 20.06978800083744,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2349,
+          "replan_count": 1,
+          "episode_decision_utility": null
+        },
+        {
+          "episode_context_id": "891f5e1f7578",
+          "success": false,
+          "failure_reason": "timeout",
+          "collision_count": 0,
+          "min_clearance": 0.15169818674327895,
+          "travel_time_s": 119.99999999999532,
+          "p99_latency_ms": 23.177500001111184,
+          "peak_search_nodes": 0,
+          "peak_tree_nodes": 2364,
+          "replan_count": 10,
+          "episode_decision_utility": null
+        }
+      ]
+    }
+  ],
+  "measurement_environment": {
+    "benchmark_host": {
+      "cpu": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+      "cores_allocated": 20,
+      "threads": 1,
+      "cpu_affinity": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ],
+      "logical_cores": 20,
+      "affinity_source": null
+    },
+    "warning": "Đo trên toàn bộ 20 nhân, không ghim: G4 đọc độ trễ theo đồng hồ tường nên mọi tải khác trên máy đi thẳng vào con số. Cùng candidate đo được 59,30 ms không ghim và 16,10 ms khi ghim 2 nhân"
+  },
+  "run_uri": "file://artifacts\\runs\\2026-08-19\\sudden_stop_2_global_planner_selection_c9cf7ea4",
+  "run_checksum": "cf2f7f6e5161730e2495c14c7ce8f6a055485d18b81f861ec4b99bfab8fbb59d",
+  "decision_card": null,
+  "manifest": null,
+  "gate_only_deployment": null,
+  "why_no_card": "chỉ 0/2 candidate qua đủ sáu cổng, nên không có ΔU để tính và không có Decision Card để viết. Đây là một KẾT QUẢ, không phải lỗi: bảng cổng đã trả lời ai bị loại ở đâu sau bao nhiêu lần chạy. Lối ra hợp lệ là ĐĂNG KÝ MỘT CANDIDATE MỚI, không phải nới deployment",
+  "checks": [
+    "all 2 candidates still in the run ran the same 5 episode contexts",
+    "all six gates reported for 2 candidates, with N",
+    "L_ref ≤ path_length + goal tolerance on all 7 successful episodes",
+    "peak_search_nodes ≤ costmap_cells on every episode"
+  ],
+  "case_packet": {
+    "packet": {
+      "header": {
+        "source_manifest_ref": "comparison_report.json",
+        "source_manifest_checksum": "95722f73142cd9d2421022dba0791bcc279e431574d4cc40dbd3b514dd97e37a",
+        "explanation_schema_version": "0.1.0",
+        "promotion_matrix_version": "0.1.0",
+        "detector_version": "0.1.0",
+        "knowledge_base_version": "v1.0.0",
+        "tool_catalog_version": "3.0.0"
+      },
+      "run_id": "sudden_stop_2_global_planner_selection_c9cf7ea4",
+      "task": {
+        "task_profile_id": "sudden_stop_2",
+        "robot": {
+          "radius_m": 0.26,
+          "inflation_margin_m": 0.0,
+          "required_passage_width_m": 0.52
+        },
+        "route": null
+      },
+      "candidates": [
+        {
+          "candidate_id": "e1251e42a20b",
+          "global_planner": "astar",
+          "local_controller": "dwa",
+          "local_controller_config": "dwa_coarse"
+        },
+        {
+          "candidate_id": "29cdf6266a44",
+          "global_planner": "rrtstar",
+          "local_controller": "dwa",
+          "local_controller_config": "dwa_coarse"
+        }
+      ],
+      "decision": {
+        "status": "NO_DECISION_CARD",
+        "waterfall": null,
+        "gates": {
+          "e1251e42a20b": {
+            "passed": false
+          },
+          "29cdf6266a44": {
+            "passed": false
+          }
+        }
+      },
+      "lattice": [
+        {
+          "detection_type": "detour",
+          "verdict": "insufficient_contrast",
+          "subject": null,
+          "pairs": [],
+          "reason": "the pattern appeared in no candidate that a swap could compare"
+        },
+        {
+          "detection_type": "stuck_cluster",
+          "verdict": "rules_out_component_specific_attribution",
+          "subject": "global_planner",
+          "pairs": [
+            [
+              "29cdf6266a44",
+              "e1251e42a20b"
+            ]
+          ],
+          "reason": "the pattern is present on both sides of a global_planner swap, so that component is not what produces it. This does not show that the component they share does: task geometry, the costmap, the shared providers and the interaction between layers all produce shared patterns"
+        },
+        {
+          "detection_type": "near_miss_cluster",
+          "verdict": "supports_component_specific_attribution",
+          "subject": "global_planner",
+          "pairs": [
+            [
+              "29cdf6266a44",
+              "e1251e42a20b"
+            ]
+          ],
+          "reason": "the pattern follows global_planner across every pair that changes only that component, it is the only component it follows, and every other part of the stack was held fixed"
+        },
+        {
+          "detection_type": "replan_storm",
+          "verdict": "insufficient_contrast",
+          "subject": null,
+          "pairs": [],
+          "reason": "the pattern appeared in no candidate that a swap could compare"
+        },
+        {
+          "detection_type": "oscillation",
+          "verdict": "insufficient_contrast",
+          "subject": null,
+          "pairs": [],
+          "reason": "the pattern appeared in no candidate that a swap could compare"
+        },
+        {
+          "detection_type": "latency_spike",
+          "verdict": "supports_component_specific_attribution",
+          "subject": "global_planner",
+          "pairs": [
+            [
+              "29cdf6266a44",
+              "e1251e42a20b"
+            ]
+          ],
+          "reason": "the pattern follows global_planner across every pair that changes only that component, it is the only component it follows, and every other part of the stack was held fixed"
+        },
+        {
+          "detection_type": "narrow_gap_refusal",
+          "verdict": "insufficient_contrast",
+          "subject": null,
+          "pairs": [],
+          "reason": "the pattern appeared in no candidate that a swap could compare"
+        }
+      ],
+      "observations": [
+        {
+          "type": "latency_spike",
+          "candidate_id": "29cdf6266a44",
+          "episodes_seen": 5,
+          "episodes_total": 5,
+          "typical": {
+            "peak_latency_ms": 2543.655299999955,
+            "ticks": 2.0
+          },
+          "worst_episode_context_id": "891f5e1f7578"
+        },
+        {
+          "type": "near_miss_cluster",
+          "candidate_id": "29cdf6266a44",
+          "episodes_seen": 1,
+          "episodes_total": 5,
+          "typical": {
+            "min_clearance_m": 0.13376241894946317,
+            "samples": 175.0
+          },
+          "worst_episode_context_id": "072b35f6e637"
+        },
+        {
+          "type": "stuck_cluster",
+          "candidate_id": "29cdf6266a44",
+          "episodes_seen": 5,
+          "episodes_total": 5,
+          "typical": {
+            "stopped_seconds": 109.54999999999532,
+            "stops": 2.0
+          },
+          "worst_episode_context_id": "072b35f6e637"
+        },
+        {
+          "type": "stuck_cluster",
+          "candidate_id": "e1251e42a20b",
+          "episodes_seen": 5,
+          "episodes_total": 5,
+          "typical": {
+            "stopped_seconds": 11.050000000000134,
+            "stops": 1.0
+          },
+          "worst_episode_context_id": "0949c968b71e"
+        }
+      ],
+      "representative_episodes": null,
+      "known_unknowns": [
+        {
+          "id": "latency_accounting_unavailable",
+          "blocks_claim_types": [
+            "candidate_latency_attribution",
+            "perception_attribution"
+          ],
+          "source": "h4_not_complete"
+        },
+        {
+          "id": "ppo_golden_runtime_missing",
+          "blocks_claim_types": [
+            "ppo_behavior_attribution"
+          ],
+          "source": "h0_debt"
+        }
+      ],
+      "evidence_class": "production"
+    },
+    "skipped_episodes": [],
+    "omissions": [
+      "decision.waterfall: this run ranked nobody, so there is no pair to decompose and no exemplar roles to fill. The sightings and the gate table are what this run has to say."
+    ]
+  }
+}

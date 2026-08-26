@@ -192,6 +192,18 @@ def execution_conditions_fingerprint(
         "recovery": _canonical(profile.recovery),
         "obstacle_speed": profile.environment.v_obstacle_max,
     }
+    if profile.capability_grants:
+        # **Deployment-owned providers are conditions** (§7.1): a tracker
+        # the deployment runs, and the settings it runs it under, change
+        # what every candidate sees. Absent when none are granted — every
+        # profile written before H11 has none, and hashing an empty list
+        # would move the conditions hash of runs already recorded.
+        payload["capability_grants"] = _canonical(
+            sorted(
+                (grant.model_dump(mode="json") for grant in profile.capability_grants),
+                key=lambda entry: (entry["capability"], entry["provider_id"]),
+            )
+        )
     if host is not None and not host.is_empty():
         payload["host"] = _canonical(host)
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)

@@ -109,6 +109,24 @@ def _plan(text: str, first: str) -> list[tuple[str, dict[str, Any]]]:
             plan.append(("get_decision_card", {"run_id": run_id}))
         if any(word in lowered for word in ("wrong", "doubt", "object", "critique", "trust")):
             plan.append(("get_critique", {"run_id": run_id}))
+    if any(
+        phrase in lowered
+        for phrase in (
+            "which algorithm",
+            "which stack",
+            "should i use",
+            "should we use",
+            "recommend",
+            "nên chọn",
+            "nên dùng",
+            "chọn thuật toán",
+        )
+    ):
+        # No id argument on purpose: the gateway resolves a lone
+        # deployment itself and *names* the candidates when there are
+        # several — an answer the summary can relay, where a guessed id
+        # would be an assertion nobody made.
+        plan.append(("get_recommendation", {}))
     if any(word in lowered for word in ("run", "comparison", "compare", "decision")):
         plan.append(("list_decision_runs", {}))
     if any(word in lowered for word in ("deployment", "profile", "world", "robot")):

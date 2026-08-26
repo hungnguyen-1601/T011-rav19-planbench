@@ -52,6 +52,7 @@ from planbench_api.db.models import (
 )
 from planbench_api.db.registry_repositories import (
     SqlModelRepository,
+    SqlPluginBundleRepository,
     SqlRobotProfileRepository,
 )
 from planbench_api.db.session import SessionFactory
@@ -99,6 +100,30 @@ class SqlMapRepository:
     def get(self, map_id: str) -> StoredMap:
         with self._sessions.begin() as session:
             return _to_map(_require(session, MapRow, map_id, "map"))
+
+    def find_by_checksum(self, checksum: str) -> StoredMap | None:
+        """The map already holding this content, oldest first.
+
+        `ix_maps_checksum` has been on this table since it was created,
+        for exactly this lookup, and nothing ever performed it — so
+        storing the same grid a second time cost one row and no warning.
+        One database reached 198 maps carrying 41 distinct checksums that
+        way, 117 of them the same one.
+
+        Oldest rather than newest, so that repeating a call returns the
+        same id every time. A newest-first tiebreak would hand back a
+        different map the moment anything else stored the same grid,
+        which is the kind of instability that only shows up in a user's
+        bookmark months later.
+        """
+        with self._sessions.begin() as session:
+            row = session.scalars(
+                select(MapRow)
+                .where(MapRow.checksum == checksum)
+                .order_by(MapRow.created_at, MapRow.id)
+                .limit(1)
+            ).first()
+            return _to_map(row) if row is not None else None
 
     def list(self) -> list[StoredMap]:
         with self._sessions.begin() as session:
@@ -464,6 +489,14 @@ class SqlUserRepository:
             session.flush()
             return _to_user(row)
 
+    def set_password(self, user_id: str, password_hash: str) -> User:
+        with self._sessions.begin() as session:
+            row = _require(session, UserRow, user_id, "user")
+            row.password_hash = password_hash
+            row.updated_at = now_iso()
+            session.flush()
+            return _to_user(row)
+
     def list(self) -> list[User]:
         with self._sessions.begin() as session:
             rows = session.scalars(select(UserRow).order_by(UserRow.created_at)).all()
@@ -604,6 +637,7 @@ class SqlRepositoryHub:
         self.reviews = SqlReviewRepository(sessions)
         self.robot_profiles = SqlRobotProfileRepository(sessions)
         self.models = SqlModelRepository(sessions)
+        self.plugin_bundles = SqlPluginBundleRepository(sessions)
         self.task_profiles = SqlTaskProfileRepository(sessions)
         self.candidates = SqlCandidateRepository(sessions)
         self.decision_runs = SqlDecisionRunRepository(sessions)
@@ -670,6 +704,10 @@ def _to_map(row: MapRow) -> StoredMap:
         version=row.version,
         created_at=row.created_at,
         map_data=MapData.model_validate(row.payload),
+        # `or False` for rows read back through a schema that predates
+        # the column, which SQLite hands over as NULL rather than as the
+        # server default the migration declares.
+        kept=bool(row.kept or False),
     )
 
 

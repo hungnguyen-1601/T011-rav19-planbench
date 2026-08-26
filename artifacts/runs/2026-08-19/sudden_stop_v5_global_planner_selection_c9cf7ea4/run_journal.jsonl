@@ -1,0 +1,5 @@
+{"index": 1, "total": 6, "candidate_id": "e1251e42a20b", "stack_label": "astar+dwa", "seed": 0, "episode_context_id": "eaf290c13a8e", "status": "success", "wall_clock_s": 2.171, "finished_at": "2026-08-19T17:48:35.644574+00:00"}
+{"index": 2, "total": 6, "candidate_id": "29cdf6266a44", "stack_label": "rrtstar+dwa", "seed": 0, "episode_context_id": "eaf290c13a8e", "status": "success", "wall_clock_s": 10.833, "finished_at": "2026-08-19T17:48:46.477747+00:00"}
+{"index": 3, "total": 6, "candidate_id": "e1251e42a20b", "stack_label": "astar+dwa", "seed": 1, "episode_context_id": "83552bc429c8", "status": "success", "wall_clock_s": 2.189, "finished_at": "2026-08-19T17:48:48.667030+00:00"}
+{"index": 4, "total": 6, "candidate_id": "29cdf6266a44", "stack_label": "rrtstar+dwa", "seed": 1, "episode_context_id": "83552bc429c8", "status": "success", "wall_clock_s": 6.194, "finished_at": "2026-08-19T17:48:54.861819+00:00"}
+{"index": 5, "total": 6, "candidate_id": "e1251e42a20b", "stack_label": "astar+dwa", "seed": 2, "episode_context_id": "ebe1904a6b22", "status": "success", "wall_clock_s": 2.228, "finished_at": "2026-08-19T17:48:57.089985+00:00"}

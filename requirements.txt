@@ -56,7 +56,7 @@
 # trajectory qua WebSocket nên cần nó.
 fastapi==0.141.1
 uvicorn[standard]==0.52.0
-websockets==16.1.1
+websockets>=10.4,<15.0
 # Form đăng nhập của OAuth2PasswordRequestForm là multipart, và
 # POST /candidates/from-paper/upload nhận file cũng qua multipart.
 python-multipart==0.0.32
@@ -119,10 +119,9 @@ pyarrow==25.0.0
 psutil==7.2.2
 
 # ---------- Lưu trữ ----------
-# SQLite có sẵn trong Python, không cần driver. PostgreSQL cần psycopg —
-# xem requirements-optional.txt.
 SQLAlchemy==2.0.51
 alembic==1.18.5
+psycopg[binary]==3.2.10
 
 # ---------- Công cụ phát triển ----------
 # Ở đây chứ không ở file riêng: người mới clone về nên chạy được test
@@ -135,3 +134,8 @@ ruff==0.16.0
 # không cần nó. Nhưng test thì cần — kiểm output bằng chính model Pydantic
 # đã sinh ra nó thì không chứng minh được gì, hợp đồng nằm ở file schema.
 jsonschema==4.26.0
+
+# Xuất kết quả selection run ra .xlsx. Markdown đã có từ trước; Excel là
+# thứ người ký duyệt mở được mà không cần cài gì, và là dạng họ dán vào
+# báo cáo. Không phải thứ runtime cần — chỉ đường export dùng nó.
+openpyxl==3.1.5

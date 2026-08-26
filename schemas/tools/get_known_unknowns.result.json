@@ -1,0 +1,58 @@
+{
+  "$id": "schemas/tools/get_known_unknowns.result.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "measurements": {
+      "additionalProperties": false,
+      "properties": {
+        "n_blocked_claim_types": {
+          "description": "Distinct proposition types those gaps block.",
+          "type": "number",
+          "unit": "count"
+        },
+        "n_known_unknowns": {
+          "description": "Declared gaps on this packet.",
+          "type": "number",
+          "unit": "count"
+        }
+      },
+      "required": [
+        "n_known_unknowns",
+        "n_blocked_claim_types"
+      ],
+      "type": "object"
+    },
+    "references": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": []
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ref": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "measurements"
+  ],
+  "title": "get_known_unknowns@1.0.0 output",
+  "type": "object"
+}

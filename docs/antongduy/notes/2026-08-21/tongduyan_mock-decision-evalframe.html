@@ -1,0 +1,1219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PlanBench — Decision detail (EvalFrame direction)</title>
+<style>
+/* ===================================================================
+   MOCK v3 — trang Decision dựng theo ngôn ngữ EvalFrame.
+
+   Dữ liệu là DỮ LIỆU THẬT của run 20750b0d9dbe (chụp từ app), không
+   phải số bịa: astar+dwa 87.7/100 qua hết gate, rrtstar+dwa 31.3/100
+   trượt G3. Đây là ca "no card" — khó hơn ca có khuyến nghị, và là ca
+   trang hiện tại đang trình bày tệ nhất.
+
+   ĐIỀU EVALFRAME LÀM ĐÚNG mà bản decision hiện tại không làm:
+   "Neutral directional treatment keeps the UI monochrome while
+   preserving decision clarity." Hướng của một chỉ số KHÔNG cần màu.
+   Trang hiện tại tô xanh lá cho ô dẫn đầu, cùng đúng màu đang nghĩa
+   "đạt gate" — một màu nói hai điều.
+
+   CHỖ MOCK NÀY CỐ Ý LỆCH KHỎI EVALFRAME, và vì sao:
+   1. Gate pass/fail GIỮ MÀU. EvalFrame không có khái niệm gate. Một
+      gate là phán quyết an toàn, không phải một sở thích xếp hạng —
+      đơn sắc hoá phần xếp hạng là đúng, đơn sắc hoá phần an toàn thì
+      không. Dùng rất tiết chế: một chấm và một chữ, không phải chip tô.
+   2. Notice `n < N_min` giữ đỏ. Cùng lý do.
+   3. Topbar ĐẶC, không `backdrop-filter` (Plan 3 B3). Blur trên nền
+      sáng đổi lấy một vệt mờ và một compositing layer.
+   Ngoài ba chỗ đó, mọi thứ so sánh đều đơn sắc.
+   =================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* EvalFrame: nền ấm, không phải xám xanh */
+  --bg:#f3f3f1; --surface:#fff; --surface-2:#fafafa;
+  --ink:#111; --ink-2:#252525; --ink-3:#42423f;
+  --muted:#6f6f6b; --muted-2:#969691; --muted-3:#8b8b86;
+  --line:#deded9; --line-2:#ecece8; --line-3:#d3d3ce;
+  --hover:#f0f0ed;
+  --track:#ecece8; --bar-a:#111; --bar-b:#a4a49e;
+
+  --radius:12px; --radius-sm:6px; --radius-md:8px;
+  --shadow:0 8px 28px rgba(0,0,0,.055);
+  --shadow-pop:0 20px 60px rgba(0,0,0,.16);
+
+  /* Ba màu DUY NHẤT trong toàn trang. Chúng chỉ nói trạng thái gate
+     và mức nghiêm trọng của notice — không bao giờ nói "tốt hơn". */
+  --pass:#1f7a3d; --pass-soft:rgba(31,122,61,.09);
+  --fail:#b3261e; --fail-soft:rgba(179,38,30,.08);
+  --hold:#8a5a00; --hold-soft:rgba(138,90,0,.09);
+
+  --sidebar:252px; --sidebar-collapsed:76px;
+  --font:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Consolas,monospace;
+}
+
+/* Dark: EvalFrame không có. Nhưng Plan 3 yêu cầu dark còn chạy được,
+   nên đảo thang mực và GIỮ NGUYÊN tính đơn sắc. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:#0e0e0d; --surface:#171716; --surface-2:#1d1d1c;
+  --ink:#f2f2ef; --ink-2:#e0e0dc; --ink-3:#c9c9c4;
+  --muted:#9a9a94; --muted-2:#77776f; --muted-3:#8a8a83;
+  --line:#2c2c2a; --line-2:#252523; --line-3:#3a3a37;
+  --hover:#232321;
+  --track:#2a2a28; --bar-a:#f2f2ef; --bar-b:#6d6d66;
+  --shadow:0 8px 28px rgba(0,0,0,.4);
+  --shadow-pop:0 20px 60px rgba(0,0,0,.55);
+  --pass:#5bbd7b; --pass-soft:rgba(91,189,123,.13);
+  --fail:#f2837b; --fail-soft:rgba(242,131,123,.12);
+  --hold:#d7a13f; --hold-soft:rgba(215,161,63,.13);
+}
+
+/* Đường thứ ba: người dùng CHƯA chọn theme, OS đang dark.
+   Đây là đường A3 bản plan trước bỏ sót. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --bg:#0e0e0d; --surface:#171716; --surface-2:#1d1d1c;
+    --ink:#f2f2ef; --ink-2:#e0e0dc; --ink-3:#c9c9c4;
+    --muted:#9a9a94; --muted-2:#77776f; --muted-3:#8a8a83;
+    --line:#2c2c2a; --line-2:#252523; --line-3:#3a3a37;
+    --hover:#232321;
+    --track:#2a2a28; --bar-a:#f2f2ef; --bar-b:#6d6d66;
+    --shadow:0 8px 28px rgba(0,0,0,.4);
+    --shadow-pop:0 20px 60px rgba(0,0,0,.55);
+    --pass:#5bbd7b; --pass-soft:rgba(91,189,123,.13);
+    --fail:#f2837b; --fail-soft:rgba(242,131,123,.12);
+    --hold:#d7a13f; --hold-soft:rgba(215,161,63,.13);
+  }
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);
+  font-family:var(--font);font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit}
+button{border:0;background:none;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,
+a:focus-visible,summary:focus-visible{outline:2px solid var(--ink);outline-offset:2px;border-radius:4px}
+a{color:inherit;text-decoration:none}
+a.link{text-decoration:underline;text-underline-offset:2px;text-decoration-color:var(--line-3)}
+a.link:hover{text-decoration-color:var(--ink)}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+svg{display:block}
+.nav-item .icon svg{width:18px;height:18px}
+.btn svg,.icon-btn svg,.collapse-btn svg,.breadcrumb svg,.toast svg,.attachment svg,.chip svg{width:14px;height:14px}
+
+/* ---------------- shell ---------------- */
+.app{min-height:100vh;display:grid;grid-template-columns:var(--sidebar) minmax(0,1fr);transition:grid-template-columns .22s ease}
+.app.is-collapsed{grid-template-columns:var(--sidebar-collapsed)}
+.sidebar{position:sticky;top:0;height:100vh;background:var(--surface-2);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;z-index:20;overflow:hidden}
+.sidebar-inner{height:100%;display:flex;flex-direction:column;padding:16px 12px;overflow-y:auto}
+.brand{min-height:42px;display:flex;align-items:center;gap:10px;padding:0 7px;margin-bottom:18px}
+.brand-mark{width:28px;height:28px;background:var(--ink);color:var(--surface);border-radius:7px;display:grid;place-items:center;flex:0 0 auto}
+.brand-mark svg{width:16px;height:16px}
+.brand-copy{min-width:0;white-space:nowrap}
+.brand-name{font-weight:700;letter-spacing:-.02em;font-size:14px}
+.brand-meta{font-size:10px;color:var(--muted);margin-top:1px;letter-spacing:.04em;text-transform:uppercase}
+.section-label{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2);padding:0 10px;margin:13px 0 6px;white-space:nowrap}
+.nav{display:flex;flex-direction:column;gap:3px}
+.nav-item{position:relative;display:flex;align-items:center;gap:11px;min-height:38px;padding:0 10px;border-radius:8px;color:var(--muted);transition:background .15s,color .15s;width:100%;text-align:left}
+.nav-item:hover{background:var(--hover);color:var(--ink)}
+/* EvalFrame: mục đang mở là một viên đen đặc, không phải nền nhạt+chữ xanh */
+.nav-item.active{background:var(--ink);color:var(--surface)}
+.nav-item .icon{width:18px;height:18px;flex:0 0 18px}
+.nav-label{white-space:nowrap;overflow:hidden}
+.nav-badge{margin-left:auto;min-width:20px;padding:2px 6px;border:1px solid var(--line-3);border-radius:999px;font-size:10px;text-align:center;color:var(--muted);background:var(--surface)}
+.nav-item.active .nav-badge{background:transparent;border-color:currentColor;color:inherit}
+.sidebar-foot{margin-top:auto;padding-top:12px;border-top:1px solid var(--line)}
+.profile{display:flex;align-items:center;gap:9px;padding:9px 8px;border-radius:8px}
+.avatar{width:28px;height:28px;border-radius:7px;background:var(--line);display:grid;place-items:center;font-size:10px;font-weight:700;flex:0 0 auto}
+.profile-copy{min-width:0;white-space:nowrap}
+.profile-name{font-weight:600;font-size:11px}
+.profile-role{font-size:10px;color:var(--muted)}
+.collapse-btn{width:100%;min-height:36px;margin-top:7px;border:1px solid var(--line);background:var(--surface);border-radius:8px;display:flex;align-items:center;gap:10px;padding:0 10px;color:var(--muted)}
+.collapse-btn:hover{background:var(--hover);color:var(--ink)}
+.collapse-btn .collapse-icon{margin-left:auto}
+.is-collapsed .brand{justify-content:center;padding:0}
+.is-collapsed .brand-copy,.is-collapsed .section-label,.is-collapsed .nav-label,
+.is-collapsed .nav-badge,.is-collapsed .profile-copy,.is-collapsed .collapse-text{opacity:0;width:0;pointer-events:none;overflow:hidden}
+.is-collapsed .nav-item,.is-collapsed .profile,.is-collapsed .collapse-btn{justify-content:center;padding:0}
+.is-collapsed .collapse-btn .collapse-icon{margin-left:0}
+.nav-item[data-tooltip]::after{content:attr(data-tooltip);position:absolute;left:calc(100% + 9px);top:50%;transform:translateY(-50%);
+  background:var(--ink);color:var(--surface);border-radius:6px;padding:5px 7px;font-size:10px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .12s;z-index:40}
+.is-collapsed .nav-item:hover::after{opacity:1}
+
+.main{min-width:0}
+/* Đặc, không blur — Plan 3 B3 */
+.topbar{min-height:62px;border-bottom:1px solid var(--line);background:var(--bg);
+  display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 28px;position:sticky;top:0;z-index:15}
+.breadcrumb{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11px;min-width:0}
+.breadcrumb strong{color:var(--ink-2);font-weight:600}
+.top-actions{display:flex;align-items:center;gap:7px}
+.content{max-width:1440px;margin:0 auto;padding:30px 30px 54px}
+
+/* ---------------- primitives ---------------- */
+.btn,.icon-btn{min-height:34px;border:1px solid var(--line);background:var(--surface);border-radius:8px;
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:0 11px;color:var(--ink-3);font-size:11px;font-weight:600}
+.icon-btn{width:34px;padding:0}
+.btn:hover,.icon-btn:hover{background:var(--hover);border-color:var(--line-3);color:var(--ink)}
+.btn.primary{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.btn.primary:hover{background:var(--ink-2);color:var(--surface)}
+.btn.compact{min-height:26px;padding:0 8px;font-size:10px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+
+.pill{min-height:25px;padding:2px 8px;border:1px solid var(--line);border-radius:999px;display:inline-flex;align-items:center;gap:6px;
+  background:var(--surface);font-size:10px;color:var(--muted);white-space:nowrap}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--ink);flex:0 0 auto}
+.dot.pass{background:var(--pass)} .dot.fail{background:var(--fail)} .dot.hold{background:var(--hold)}
+
+/* Trạng thái gate — ba màu duy nhất, và chúng KHÔNG BAO GIỜ dùng cho
+   "chỉ số này tốt hơn". Chấm + chữ, không phải chip tô đầy. */
+.state{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.state.pass{color:var(--pass)} .state.fail{color:var(--fail)} .state.hold{color:var(--hold)}
+
+.eyebrow{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.13em;color:var(--muted-3)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.section{margin-top:24px}
+.section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:10px;flex-wrap:wrap}
+.section-title{font-size:13px;font-weight:700;letter-spacing:-.01em}
+.section-note{font-size:10px;color:var(--muted)}
+.rule{height:1px;background:var(--line-2);margin:15px 0}
+
+/* Dấu chú giải: nhạt theo mặc định. Bản đang chạy render nó gần đen và
+   đậm 700 vì trỏ vào token không tồn tại, nên cả cột đọc ra như trang trí. */
+.hint{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;margin-left:4px;padding:0;
+  border:0;background:none;cursor:help;color:var(--muted-2);opacity:.7;font-size:10px;font-weight:600;vertical-align:middle}
+.hint:hover,.hint:focus-visible{opacity:1;color:var(--ink)}
+
+.notice{display:flex;gap:9px;padding:11px 13px;border:1px solid var(--line);border-radius:var(--radius-md);
+  background:var(--surface-2);font-size:11px;color:var(--ink-3)}
+.notice svg{flex:0 0 auto;margin-top:1px;width:14px;height:14px;color:var(--muted)}
+.notice + .notice{margin-top:8px}
+.notice.warn{background:var(--hold-soft);border-color:color-mix(in srgb,var(--hold) 30%,transparent)}
+.notice.warn svg{color:var(--hold)}
+/* CHỈ dành cho loại thông điệp vô hiệu hoá mọi con số bên dưới */
+.notice.critical{background:var(--fail-soft);border-color:color-mix(in srgb,var(--fail) 45%,transparent)}
+.notice.critical svg{color:var(--fail)}
+
+/* ---------------- page head ---------------- */
+.title-row{display:flex;align-items:flex-end;justify-content:space-between;gap:20px}
+h1{font-size:28px;letter-spacing:-.04em;line-height:1.05;margin:6px 0 8px}
+.subtitle{font-size:12px;color:var(--muted);max-width:760px}
+.meta-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
+.meta-row code{font-family:var(--mono);font-size:10px}
+.copy-id{min-height:25px;padding:2px 8px;border:1px solid var(--line);border-radius:999px;background:var(--surface);
+  display:inline-flex;align-items:center;gap:6px;font-size:10px;color:var(--muted)}
+.copy-id:hover{background:var(--hover);color:var(--ink)}
+.copy-id[data-state="copied"]{color:var(--pass);border-color:color-mix(in srgb,var(--pass) 40%,var(--line))}
+.copy-id[data-state="failed"]{color:var(--fail);border-color:color-mix(in srgb,var(--fail) 40%,var(--line))}
+
+/* ---------------- standings row (EvalFrame grid-3) ---------------- */
+.grid-3{display:grid;grid-template-columns:1fr 1.08fr 1fr;gap:10px;align-items:stretch}
+.algo-card{padding:17px;display:flex;flex-direction:column}
+.algo-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.algo-name{font-size:14px;font-weight:700;letter-spacing:-.02em}
+.algo-sub{font-size:10px;color:var(--muted);margin-top:2px;font-family:var(--mono)}
+.algo-role{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.11em;color:var(--muted-3);margin-bottom:6px}
+.score{font-size:27px;font-weight:700;letter-spacing:-.05em;line-height:1;font-variant-numeric:tabular-nums;text-align:right}
+.score small{font-size:10px;color:var(--muted);font-weight:500;letter-spacing:0}
+/* Bốn thanh = bốn objective của HĐ-9.1. Chúng là 0..1 nên map thẳng
+   vào thanh của EvalFrame mà không phải bịa ra một thang nào. */
+.metric-line{display:grid;grid-template-columns:74px 1fr 40px;align-items:center;gap:9px;margin:9px 0}
+.metric-name{font-size:10px;color:var(--muted);font-family:var(--mono)}
+.track{height:6px;background:var(--track);border-radius:999px;overflow:hidden}
+.fill{height:100%;background:var(--bar-a);border-radius:999px}
+.algo-card.is-blocked .fill{background:var(--bar-b)}
+.metric-val{text-align:right;font-size:10px;font-weight:700;font-variant-numeric:tabular-nums}
+.algo-foot{margin-top:auto;padding-top:13px}
+
+.verdict{padding:20px;display:flex;flex-direction:column;justify-content:space-between;min-height:214px}
+.verdict-kicker{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.11em;font-weight:700}
+.verdict-main{margin:19px 0}
+.verdict-main strong{display:block;font-size:23px;letter-spacing:-.04em;line-height:1.08}
+.verdict-main span{display:block;font-size:11px;color:var(--muted);margin-top:7px}
+.verdict-split{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.verdict-split>div{background:var(--surface-2);padding:9px}
+.verdict-split b{display:block;font-size:12px;font-variant-numeric:tabular-nums}
+.verdict-split span{font-size:9px;color:var(--muted)}
+
+/* ---------------- matrix ---------------- */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:820px}
+th,td{padding:11px 13px;border-bottom:1px solid var(--line-2);text-align:left;vertical-align:middle}
+th{font-size:9px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted-3);font-weight:700;background:var(--surface-2);white-space:nowrap;position:sticky;top:0;z-index:1}
+td{font-size:11px;color:var(--ink-3)}
+tbody tr:last-child td{border-bottom:0}
+.metric-cell strong{display:block;font-size:11px;color:var(--ink)}
+.metric-cell span{font-size:9px;color:var(--muted)}
+.num{text-align:right;font-family:var(--mono);font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}
+.num .unit{font-family:var(--font);font-weight:400;font-size:9px;color:var(--muted);margin-left:3px}
+.num .sub{display:block;font-family:var(--font);font-weight:400;font-size:9px;color:var(--muted);margin-top:2px}
+.num.dim{color:var(--muted);font-weight:500}
+/* Không đo ≠ bằng 0. Không dùng em-dash cho cả hai. */
+.na{font-family:var(--font);font-weight:400;font-style:italic;color:var(--muted)}
+/* Đã có va chạm ⇒ rule of three không áp dụng. Không in ≤, cũng không
+   in "not measured" — phép đo tồn tại và kết quả của nó rất rõ. */
+.not-applicable{font-family:var(--font);font-weight:600;font-style:normal;color:var(--ink)}
+/* Δ là một chip xám, KHÔNG đổi màu theo dấu. Đây chính là điểm
+   "neutral directional treatment" của EvalFrame. */
+.delta{text-align:right;font-family:var(--mono);font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink-3)}
+.delta em{font-style:normal;background:var(--line-2);padding:3px 6px;border-radius:5px}
+.leads{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ink);white-space:nowrap}
+.leads.none{color:var(--muted-2)}
+tr.is-lead-a td:nth-child(2),tr.is-lead-b td:nth-child(3){background:var(--surface-2)}
+
+.limit{font-size:9px;color:var(--muted)}
+.warn-inline{display:flex;align-items:flex-start;gap:5px;font-size:9px;color:var(--hold);margin-top:4px;line-height:1.4;max-width:420px}
+.warn-inline svg{width:11px;height:11px;flex:0 0 auto;margin-top:2px}
+
+/* ---------------- gates ---------------- */
+details.gates{border-top:1px solid var(--line)}
+details.gates>summary{padding:12px 13px;font-size:11px;font-weight:700;display:flex;align-items:center;gap:8px;list-style:none;cursor:pointer}
+details.gates>summary::-webkit-details-marker{display:none}
+details.gates>summary .chev{transition:transform .12s ease}
+details.gates[open]>summary .chev{transform:rotate(90deg)}
+.gates-body{display:grid;gap:16px;padding:0 13px 16px;grid-template-columns:repeat(auto-fit,minmax(290px,1fr))}
+.gate-owner{font-size:10px;font-weight:700;color:var(--muted);margin-bottom:7px;font-family:var(--mono)}
+.gate-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+.gate-cell{display:flex;align-items:center;justify-content:space-between;gap:5px;padding:6px 7px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);font-size:10px}
+.gate-cell code{font-family:var(--mono);font-size:10px;color:var(--muted)}
+.gate-cell.fail{border-color:color-mix(in srgb,var(--fail) 45%,transparent);background:var(--fail-soft)}
+
+/* ---------------- episodes ---------------- */
+.ep-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 13px;border-bottom:1px solid var(--line-2);flex-wrap:wrap}
+.check{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:var(--ink-3)}
+.pager{display:flex;align-items:center;gap:4px;padding:11px 13px;flex-wrap:wrap}
+.page-btn{min-width:26px;min-height:26px;padding:0 7px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:10px;font-weight:600;color:var(--muted)}
+.page-btn:hover{background:var(--hover);color:var(--ink)}
+.page-btn.active{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.page-note{margin-left:auto;font-size:10px;color:var(--muted)}
+.ep-id{font-family:var(--mono);font-size:10px}
+.ep-outcome{font-size:10px;font-weight:700}
+.ep-outcome.pass{color:var(--pass)}
+.ep-outcome.fail{color:var(--fail)}
+tr.ep-selected td{background:var(--surface-2)}
+tr.ep-selected td:first-child{box-shadow:inset 2px 0 0 var(--ink)}
+
+.stage-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stage{padding:15px}
+.stage-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px}
+.canvas{aspect-ratio:16/10;border:1px solid var(--line-3);border-radius:var(--radius-md);background:var(--surface-2);position:relative;overflow:hidden}
+.canvas svg{width:100%;height:100%}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:7px;margin-top:11px}
+.tile{border:1px solid var(--line);border-radius:var(--radius-sm);padding:8px 9px;background:var(--surface-2)}
+.tile-label{font-size:9px;color:var(--muted);line-height:1.3}
+.tile-value{font-size:15px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;margin-top:3px;font-family:var(--mono)}
+.tile-value .unit{font-family:var(--font);font-size:9px;font-weight:400;color:var(--muted);margin-left:2px}
+.playbar{display:flex;align-items:center;gap:9px;padding:11px 13px;border-top:1px solid var(--line-2);flex-wrap:wrap}
+.playbar input[type=range]{flex:1;min-width:140px;accent-color:var(--ink)}
+.legend{display:flex;flex-wrap:wrap;gap:12px;padding:0 13px 12px;font-size:10px;color:var(--muted)}
+.legend i{display:inline-block;width:14px;height:0;border-top:2px solid var(--ink);margin-right:5px;vertical-align:middle}
+.legend i.dash{border-top-style:dashed}
+.legend i.grey{border-top-color:var(--bar-b)}
+.legend i.dotmark{width:8px;height:8px;border:0;border-radius:50%;background:var(--ink)}
+
+/* ---------------- evidence ---------------- */
+.insight-list{display:grid;gap:8px}
+.insight{padding:11px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface-2)}
+.insight-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
+.insight strong{font-size:11px;font-family:var(--mono)}
+.insight p{margin:5px 0 0;font-size:10px;color:var(--muted);line-height:1.5}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border:1px solid var(--line-3);border-radius:999px;font-size:9px;font-weight:600;color:var(--muted);background:var(--surface);white-space:nowrap}
+.chip.strong{border-color:var(--ink);color:var(--ink)}
+
+/* ---------------- conclusion ---------------- */
+.standings{padding:18px}
+.stand-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;padding:11px 0}
+.stand-name{font-size:14px;font-weight:700;letter-spacing:-.02em}
+.stand-name span{font-family:var(--mono);font-size:10px;font-weight:400;color:var(--muted);margin-left:7px}
+.stand-mark{font-size:22px;font-weight:700;letter-spacing:-.045em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stand-mark small{font-size:10px;color:var(--muted);font-weight:500;letter-spacing:0}
+.stand-bar{height:7px;background:var(--track);border-radius:999px;overflow:hidden;margin-top:8px}
+.stand-bar i{display:block;height:100%;background:var(--bar-a);border-radius:999px}
+.stand-row.blocked .stand-bar i{background:var(--bar-b)}
+.stand-obj{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}
+.obj{display:inline-flex;align-items:center;gap:5px;padding:3px 7px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);font-size:10px;font-family:var(--mono);color:var(--muted)}
+.obj b{color:var(--ink);font-weight:700}
+/* Đường KẺ ĐỨT là cả thiết kế: điểm xếp hạng TRONG một nhóm, và không
+   so được QUA đường này. Một stack đã va chạm vẫn có thể mang điểm cao
+   hơn một stack không va chạm, vì HĐ-6 loại va chạm khỏi U_S. */
+.stand-divider{border:0;border-top:1px dashed var(--line-3);margin:16px 0}
+.group-label{display:flex;align-items:center;gap:7px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.11em;color:var(--muted-3)}
+
+.decision-box{border-left:1px solid var(--ink);padding-left:17px;display:flex;flex-direction:column;justify-content:center}
+.decision-box .label{font-size:9px;text-transform:uppercase;letter-spacing:.11em;color:var(--muted-3);font-weight:700}
+.decision-box strong{font-size:20px;letter-spacing:-.035em;margin:5px 0}
+.decision-box p{font-size:10px;color:var(--muted);margin:0 0 10px;line-height:1.5}
+.recommend{padding:18px;display:grid;grid-template-columns:minmax(0,1.45fr) minmax(270px,.85fr);gap:22px}
+.rec-kicker{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.11em;color:var(--muted-3)}
+.rec-title{font-size:18px;font-weight:700;letter-spacing:-.035em;margin-top:5px;line-height:1.2}
+.rec-copy{font-size:11px;color:var(--muted);max-width:720px;margin-top:7px;line-height:1.6}
+.rec-list{display:grid;gap:7px;margin-top:14px}
+.rec-item{display:grid;grid-template-columns:24px 1fr auto;align-items:center;gap:9px;font-size:11px}
+.rec-num{width:22px;height:22px;border:1px solid var(--line);border-radius:6px;display:grid;place-items:center;font-size:9px;font-weight:700;background:var(--surface-2)}
+.rec-item span{color:var(--muted)}
+.rec-item b{font-size:10px;font-family:var(--mono)}
+.tag{padding:5px 7px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);font-size:9px;color:var(--muted)}
+.decision-tags{display:flex;flex-wrap:wrap;gap:5px}
+
+.actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:14px 18px;border-top:1px solid var(--line-2)}
+.actions .spacer{flex:1}
+.footer-note{margin-top:24px;padding-top:14px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:12px;color:var(--muted-2);font-size:9px;flex-wrap:wrap}
+
+/* ---------------- share modal ---------------- */
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.32);display:none;align-items:center;justify-content:center;z-index:100;padding:20px}
+.modal-backdrop.open{display:flex}
+.modal{width:min(520px,100%);background:var(--surface);border:1px solid var(--line-3);border-radius:var(--radius);box-shadow:var(--shadow-pop);overflow:hidden}
+.modal-head{padding:15px 17px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px}
+.modal-title{font-size:13px;font-weight:700}
+.modal-body{padding:17px}
+.field{display:grid;gap:6px;margin-bottom:12px}
+.field label{font-size:10px;font-weight:700;color:var(--muted)}
+.field input,.field textarea{width:100%;border:1px solid var(--line-3);border-radius:7px;padding:9px 10px;background:var(--surface);color:var(--ink)}
+.field textarea{min-height:92px;resize:vertical}
+.attachment{border:1px dashed var(--line-3);border-radius:7px;padding:9px;font-size:10px;color:var(--muted);background:var(--surface-2);display:flex;gap:8px;align-items:center}
+.modal-foot{padding:12px 17px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:7px}
+.toast{position:fixed;right:22px;bottom:22px;background:var(--ink);color:var(--surface);padding:10px 12px;border-radius:8px;box-shadow:var(--shadow-pop);font-size:10px;display:none;z-index:120}
+.toast.show{display:flex;align-items:center;gap:8px}
+.toast svg{color:currentColor}
+
+.mobile-menu{display:none}
+@media (max-width:1150px){
+  .grid-3{grid-template-columns:1fr 1fr}
+  .verdict{grid-column:1/-1;min-height:0}
+  .stage-grid{grid-template-columns:1fr}
+}
+@media (max-width:900px){ .recommend{grid-template-columns:1fr} .decision-box{border-left:0;border-top:1px solid var(--ink);padding:15px 0 0} }
+@media (max-width:760px){
+  .app,.app.is-collapsed{display:block}
+  .sidebar{position:fixed;left:0;top:0;width:252px;transform:translateX(-102%);transition:transform .2s;box-shadow:18px 0 40px rgba(0,0,0,.08)}
+  .sidebar.mobile-open{transform:translateX(0)}
+  .mobile-menu{display:inline-flex}
+  .topbar{padding:0 15px}
+  .content{padding:22px 15px 40px}
+  .title-row{align-items:flex-start;flex-direction:column}
+  .grid-3{grid-template-columns:1fr}
+  h1{font-size:23px}
+}
+/* !important ở đây LÀ CHỦ Ý — nó phải thắng transition khai cục bộ
+   trong từng component. Xoá là animation quay lại với đúng người đã
+   yêu cầu tắt nó. */
+@media (prefers-reduced-motion: reduce){ *{transition:none !important;animation:none !important} }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ============================ SIDEBAR ============================
+       12 mục. Ba route `/algorithms`, `/benchmarks`, `/leaderboard` đã bị
+       xoá khỏi sidebar rồi; chỉ `/scenarios` còn và chỉ nó mang chip.
+       Mô tả một câu chuyển vào `title`, đúng chỗ một câu đọc-một-lần
+       thuộc về. ============================================================ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-inner">
+      <div class="brand">
+        <div class="brand-mark" data-icon="layers" aria-hidden="true"></div>
+        <div class="brand-copy">
+          <div class="brand-name">PlanBench</div>
+          <div class="brand-meta">AMR/AGV · simulation only</div>
+        </div>
+      </div>
+
+      <div class="section-label">Workspace</div>
+      <nav class="nav" aria-label="Workspace">
+        <button class="nav-item" data-tooltip="Dashboard" title="Where things stand"><span class="icon" data-icon="grid"></span><span class="nav-label">Dashboard</span></button>
+        <button class="nav-item" data-tooltip="Deployments" title="Declare a world to measure on"><span class="icon" data-icon="deploy"></span><span class="nav-label">Deployments</span></button>
+        <button class="nav-item" data-tooltip="Test Bench" title="Try one episode before spending hours"><span class="icon" data-icon="play"></span><span class="nav-label">Test Bench</span></button>
+        <button class="nav-item active" data-tooltip="Decisions" title="Run a comparison, read it, approve it"><span class="icon" data-icon="compare"></span><span class="nav-label">Decisions</span></button>
+      </nav>
+
+      <div class="section-label">Resources</div>
+      <nav class="nav" aria-label="Resources">
+        <button class="nav-item" data-tooltip="Maps" title="Draw the walls a deployment runs in"><span class="icon" data-icon="map"></span><span class="nav-label">Maps</span></button>
+        <button class="nav-item" data-tooltip="Scenario Library" title="Built-in scenarios, easiest to hardest"><span class="icon" data-icon="book"></span><span class="nav-label">Scenario Library</span></button>
+        <button class="nav-item" data-tooltip="Candidates" title="The configurations a comparison chooses between"><span class="icon" data-icon="cpu"></span><span class="nav-label">Candidates</span></button>
+        <button class="nav-item" data-tooltip="Model Registry" title="Trained policies and the robots they were trained for"><span class="icon" data-icon="database"></span><span class="nav-label">Model Registry</span></button>
+        <button class="nav-item" data-tooltip="Scenario Editor" title="The older editor. The deployment form now draws obstacles too"><span class="icon" data-icon="file"></span><span class="nav-label">Scenario Editor</span><span class="nav-badge">Legacy</span></button>
+      </nav>
+
+      <div class="section-label">Account</div>
+      <nav class="nav" aria-label="Account">
+        <button class="nav-item" data-tooltip="Agent" title="Ask about the platform in words"><span class="icon" data-icon="spark"></span><span class="nav-label">Agent</span></button>
+        <button class="nav-item" data-tooltip="Reviews" title="What is waiting on you"><span class="icon" data-icon="inbox"></span><span class="nav-label">Reviews</span><span class="nav-badge">2</span></button>
+        <button class="nav-item" data-tooltip="System Information" title="Versions, health, connection"><span class="icon" data-icon="info"></span><span class="nav-label">System Information</span></button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="profile">
+          <div class="avatar">AN</div>
+          <div class="profile-copy"><div class="profile-name">antongduy</div><div class="profile-role">Not signed in</div></div>
+        </div>
+        <button class="collapse-btn" id="collapseBtn" type="button" aria-label="Collapse sidebar" aria-expanded="true">
+          <span data-icon="panel"></span><span class="collapse-text">Collapse sidebar</span><span class="collapse-icon" data-icon="chevron-left"></span>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <!-- Breadcrumb hiện TÊN PROFILE, không hiện UUID. Đọc
+           `run.task_profile_id` — không phải `run.report.task_profile_id`,
+           đường dẫn sai cho ra undefined rồi rơi về fallback im lặng. -->
+      <div class="breadcrumb">
+        <button class="icon-btn mobile-menu" id="mobileMenu" aria-label="Open navigation"><span data-icon="menu"></span></button>
+        <a class="link" href="#">Decisions</a><span data-icon="chevron-right"></span><strong>sudden_stop_v5</strong>
+      </div>
+      <div class="top-actions">
+        <button class="btn compact" id="lang" aria-label="Switch language">EN</button>
+        <button class="btn compact" id="theme" aria-label="Switch theme">Light</button>
+        <button class="btn" id="exportBtn"><span data-icon="download"></span><span data-t="a.export">Export</span></button>
+        <button class="btn primary" id="shareBtn"><span data-icon="send"></span><span data-t="a.share">Send report</span></button>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- ======================= PAGE HEAD ======================= -->
+      <section>
+        <div class="eyebrow" data-t="h.eyebrow">Evaluation / comparison detail</div>
+        <div class="title-row">
+          <div>
+            <h1>sudden_stop_v5</h1>
+            <div class="subtitle" data-t="h.sub">Two global planners measured on one deployment. Six feasibility gates ran before anything was scored, so the marks below rank only inside the group that cleared them.</div>
+            <div class="meta-row">
+              <span class="pill"><span class="dot"></span> global_planner_selection</span>
+              <span class="pill">2026-08-21 · 03:07</span>
+              <!-- T1: MỘT DÒNG, không phải ba card 26px cùng đọc "30".
+                   Nhánh có điều kiện — ca dưới N_min xem cuối trang. -->
+              <span class="pill" data-t="s.line"><b>30</b>&nbsp;episodes measured · meets N_min (30) · ran the full request</span>
+              <button class="copy-id" id="copyId" aria-label="Copy decision ID 20750b0d9dbe">
+                <span data-icon="copy"></span><code>20750b0d9dbe</code><span class="copy-state" aria-live="polite"></span>
+              </button>
+              <a class="link pill" href="#" data-t="h.allruns">All runs</a>
+            </div>
+          </div>
+          <button class="icon-btn" title="More actions" aria-label="More actions"><span data-icon="more"></span></button>
+        </div>
+      </section>
+
+      <!-- ================== STANDINGS (grid-3) ===================
+           Bốn thanh trong mỗi card là bốn objective của HĐ-9.1 — chúng
+           đã là 0..1 nên map thẳng vào thanh của EvalFrame, không phải
+           bịa ra thang nào.
+           Card giữa KHÔNG được nói "A dẫn đầu": run này không có card,
+           nên headline lấy từ trạng thái của card chứ không lấy từ
+           standings[0] (HĐ-10.1). ======================================= -->
+      <section class="section grid-3">
+        <article class="card algo-card">
+          <div class="algo-role" data-t="c.a">Candidate A · cleared every gate</div>
+          <div class="algo-top">
+            <div><div class="algo-name">astar+dwa</div><div class="algo-sub">dwa_coarse · lidar_only</div></div>
+            <div class="score">87.7<small>/100</small></div>
+          </div>
+          <div class="rule"></div>
+          <div class="metric-line"><span class="metric-name">U_R</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="metric-val">1.00</span></div>
+          <div class="metric-line"><span class="metric-name">U_S</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="metric-val">1.00</span></div>
+          <div class="metric-line"><span class="metric-name">U_E</span><span class="track"><span class="fill" style="width:57%"></span></span><span class="metric-val">0.57</span></div>
+          <div class="metric-line"><span class="metric-name">U_C</span><span class="track"><span class="fill" style="width:96%"></span></span><span class="metric-val">0.96</span></div>
+          <div class="algo-foot"><span class="state pass"><span class="dot pass"></span><span data-t="c.g16">G1–G6 cleared</span></span></div>
+        </article>
+
+        <article class="card verdict">
+          <div class="verdict-kicker"><span data-t="v.kicker">Outcome</span><span data-t="v.util">decision_utility</span></div>
+          <div class="verdict-main">
+            <strong data-t="v.title">No recommendation</strong>
+            <span data-t="v.body">Fewer than two candidates cleared every gate, so ΔU does not exist for this run. astar+dwa carries the higher mark — which is not the same as being recommended.</span>
+          </div>
+          <div class="verdict-split">
+            <div><b>87.7</b><span data-t="v.a">astar+dwa · eligible</span></div>
+            <div><b>31.3</b><span data-t="v.b">rrtstar+dwa · blocked</span></div>
+          </div>
+        </article>
+
+        <article class="card algo-card is-blocked">
+          <div class="algo-role" data-t="c.b">Candidate B · did not clear a gate</div>
+          <div class="algo-top">
+            <div><div class="algo-name">rrtstar+dwa</div><div class="algo-sub">dwa_coarse · lidar_only</div></div>
+            <div class="score">31.3<small>/100</small></div>
+          </div>
+          <div class="rule"></div>
+          <div class="metric-line"><span class="metric-name">U_R</span><span class="track"><span class="fill" style="width:0%"></span></span><span class="metric-val">0.00</span></div>
+          <div class="metric-line"><span class="metric-name">U_S</span><span class="track"><span class="fill" style="width:31%"></span></span><span class="metric-val">0.31</span></div>
+          <div class="metric-line"><span class="metric-name">U_E</span><span class="track"><span class="fill" style="width:43%"></span></span><span class="metric-val">0.43</span></div>
+          <div class="metric-line"><span class="metric-name">U_C</span><span class="track"><span class="fill" style="width:50%"></span></span><span class="metric-val">0.50</span></div>
+          <div class="algo-foot"><span class="state fail"><span class="dot fail"></span><span data-t="c.blocked">Blocked at G3 · success rate</span></span></div>
+        </article>
+      </section>
+
+      <!-- ==================== COMPARISON MATRIX ====================
+           Bảng, không phải CSS grid phẳng. Đây là chỗ ngôn ngữ EvalFrame
+           giải quyết luôn một bug của Plan 2 T4: một <tr> là một hàng
+           THẬT, nên hàng flags không thể thiếu ô rồi đẩy lệch toàn lưới.
+           Luật placeholder Δ trở nên không cần thiết. ==================== -->
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <div class="section-title" data-t="m.title">Metric-level comparison</div>
+            <div class="section-note" data-t="m.note">Neutral directional treatment: the Δ chip never changes colour with its sign. Green and red are reserved for gate verdicts.</div>
+          </div>
+          <span class="pill" data-t="m.count">A leads 5 of 8 scored metrics · 3 ties</span>
+        </div>
+
+        <div class="card">
+          <!-- T9: cảnh báo host thuộc về HÀNG p99, không phải một dải
+               trên đầu bảng. Ở đây nó nằm trong ô nhãn của hàng đó. -->
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th data-t="th.metric">Metric</th>
+                  <th style="text-align:right">astar+dwa</th>
+                  <th style="text-align:right">rrtstar+dwa</th>
+                  <th style="text-align:right" data-t="th.delta">Δ (B−A)</th>
+                  <th data-t="th.leads">Leads</th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- flags: cùng observation class ⇒ một hàng, không phải
+                     badge lặp lại trên mọi cột -->
+                <tr>
+                  <td class="metric-cell"><strong data-t="m.obs">Observation class</strong><span data-t="m.obssub">what each stack was shown</span></td>
+                  <td class="num dim">lidar_only</td>
+                  <td class="num dim">lidar_only</td>
+                  <td class="delta"></td>
+                  <td class="leads none">—</td>
+                </tr>
+                <tr class="is-lead-a">
+                  <td class="metric-cell"><strong data-t="m.success">Success rate<button class="hint" title="Share of episodes that reached the goal without a terminal failure. G3 threshold for this deployment.">?</button></strong><span data-t="m.higher">Higher is better</span></td>
+                  <td class="num">100.0<span class="unit">%</span></td>
+                  <td class="num">63.3<span class="unit">%</span></td>
+                  <td class="delta"><em>−36.7 pp</em></td>
+                  <td class="leads">A</td>
+                </tr>
+                <tr>
+                  <td class="metric-cell"><strong data-t="m.coll">Collisions observed<button class="hint" title="Count of episodes that ended in contact. Raw count, not a rate.">?</button></strong><span data-t="m.lower">Lower is better</span></td>
+                  <td class="num">0</td>
+                  <td class="num">0</td>
+                  <td class="delta"><em>0</em></td>
+                  <td class="leads none" data-t="m.tie">Tie</td>
+                </tr>
+                <!-- T7: cận trên tồn tại vì cả hai đều 0 va chạm. Mẫu số
+                     là n_distinct_episodes, KHÔNG phải n_runs — payload G2
+                     mang cả hai, và dùng row count là thứ đã đẻ ra một
+                     card claim 3.0% từ một episode chạy trăm lần. -->
+                <tr>
+                  <td class="metric-cell"><strong data-t="m.bound">Collision probability, 95% upper bound<button class="hint" title="What a clean record supports. The bound is 3/N under the simulated scenario distribution, so a lower number means a larger evidence base — not a safer robot.">?</button></strong><span data-t="m.rot">rule of three · lower is better</span></td>
+                  <td class="num">≤ 10.0<span class="unit">%</span><span class="sub" data-t="m.den">0 / 30 distinct episodes</span></td>
+                  <td class="num">≤ 10.0<span class="unit">%</span><span class="sub" data-t="m.den">0 / 30 distinct episodes</span></td>
+                  <td class="delta"><em>0.0 pp</em></td>
+                  <td class="leads none" data-t="m.tie">Tie</td>
+                </tr>
+                <!-- T8: hiện tại trang in "—" cho cả hai cột, nên "bằng 0"
+                     và "không đo" trông giống hệt nhau. -->
+                <tr>
+                  <td class="metric-cell"><strong data-t="m.noroute">Episodes with no route found<button class="hint" title="Episodes where the global planner returned no path at all. If G1 carries no_path_rate, this cell shows the rate; otherwise it says so.">?</button></strong><span data-t="m.lower">Lower is better</span></td>
+                  <td class="num"><span class="na" data-t="m.nm">not measured</span></td>
+                  <td class="num"><span class="na" data-t="m.nm">not measured</span></td>
+                  <td class="delta"></td>
+                  <td class="leads none">—</td>
+                </tr>
+                <tr class="is-lead-a">
+                  <td class="metric-cell"><strong data-t="m.clear">Worst clearance in the whole run<button class="hint" title="Smallest distance to any obstacle across every step of every episode. Read from the report, not recomputed in the browser.">?</button></strong><span data-t="m.higher">Higher is better</span></td>
+                  <td class="num">0.470<span class="unit">m</span></td>
+                  <td class="num">0.133<span class="unit">m</span></td>
+                  <td class="delta"><em>−0.337 m</em></td>
+                  <td class="leads">A</td>
+                </tr>
+                <tr class="is-lead-a">
+                  <td class="metric-cell"><strong data-t="m.median">Median episode duration<button class="hint" title="Median rather than mean: one timeout parked at the deployment's cap drags a mean by tens of seconds, and the number then says more about the cap than about the stack.">?</button></strong><span data-t="m.lower">Lower is better</span></td>
+                  <td class="num">22.5<span class="unit">s</span></td>
+                  <td class="num">40.0<span class="unit">s</span></td>
+                  <td class="delta"><em>+17.5 s</em></td>
+                  <td class="leads">A</td>
+                </tr>
+                <tr class="is-lead-a">
+                  <td class="metric-cell">
+                    <strong data-t="m.p99">Planner latency, pooled p99<button class="hint" title="99th percentile of per-cycle planning time, pooled across every episode.">?</button></strong>
+                    <span class="limit" data-t="m.p99lim">limit 50 ms · lower is better</span>
+                    <span class="warn-inline"><span data-icon="warn"></span><span data-t="m.p99warn">Measured on all 20 cores, unpinned — G4 reads wall-clock latency, so other load on the machine enters this figure. It qualifies this row only.</span></span>
+                  </td>
+                  <td class="num">7.85<span class="unit">ms</span></td>
+                  <td class="num">17.20<span class="unit">ms</span></td>
+                  <td class="delta"><em>+9.35 ms</em></td>
+                  <td class="leads">A</td>
+                </tr>
+                <tr class="is-lead-a">
+                  <td class="metric-cell"><strong data-t="m.mem">Memory estimate on the target board<button class="hint" title="Data-structure counts at the target implementation's byte sizes — never the Python process's RSS.">?</button></strong><span class="limit" data-t="m.memlim">limit 3277 MB · lower is better</span></td>
+                  <td class="num">8.0<span class="unit">MB</span></td>
+                  <td class="num">8.1<span class="unit">MB</span></td>
+                  <td class="delta"><em>+0.1 MB</em></td>
+                  <td class="leads">A</td>
+                </tr>
+                <tr>
+                  <td class="metric-cell"><strong data-t="m.distinct">Distinct episodes<button class="hint" title="How many different seeds actually ran. Fewer than the episode count means the sweep replayed a seed.">?</button></strong><span data-t="m.higher">Higher is better</span></td>
+                  <td class="num">30</td>
+                  <td class="num">30</td>
+                  <td class="delta"><em>0</em></td>
+                  <td class="leads none" data-t="m.tie">Tie</td>
+                </tr>
+                <!-- KHÔNG hướng: replan đã bị tính vào travel time và vào
+                     latency; chấm người thắng ở đây là tính giá hai lần và
+                     bịa ra một luật không ai viết. Nên nó cũng không vào
+                     mẫu số của dòng đếm phía trên. -->
+                <tr>
+                  <td class="metric-cell"><strong data-t="m.replan">Replans across the run<button class="hint" title="No direction: replanning is already charged in travel time and in latency, and the deployment declares no replan budget. Shown because it is evidence about behaviour.">?</button></strong><span data-t="m.nodir">No direction · evidence only</span></td>
+                  <td class="num dim">30</td>
+                  <td class="num dim">242</td>
+                  <td class="delta"><em>+212</em></td>
+                  <td class="leads none">—</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- T3: chi tiết gate gập lại; phán quyết đã nằm trên card đầu
+               trang. Badge tổng hợp nói TỈ LỆ — một badge "cleared" khi
+               chỉ một phía đạt là sai ở đúng chỗ người đọc dùng để quyết
+               định có mở ra hay không. -->
+          <details class="gates">
+            <summary>
+              <span class="chev" data-icon="chevron-right"></span>
+              <span data-t="g.detail">Feasibility gate detail</span>
+              <span class="state fail" style="margin-left:6px"><span class="dot fail"></span><span data-t="g.sum">1 of 2 candidates blocked</span></span>
+            </summary>
+            <div class="gates-body">
+              <div>
+                <div class="gate-owner">astar+dwa · dwa_coarse</div>
+                <div class="gate-grid">
+                  <span class="gate-cell"><code>G1</code><span class="state pass">pass</span></span>
+                  <span class="gate-cell"><code>G2</code><span class="state pass">pass</span></span>
+                  <span class="gate-cell"><code>G3</code><span class="state pass">pass</span></span>
+                  <span class="gate-cell"><code>G4</code><span class="state pass">pass</span></span>
+                  <span class="gate-cell"><code>G5</code><span class="state pass">pass</span></span>
+                  <span class="gate-cell"><code>G6</code><span class="state pass">pass</span></span>
+                </div>
+              </div>
+              <div>
+                <div class="gate-owner">rrtstar+dwa · dwa_coarse</div>
+                <div class="gate-grid">
+                  <span class="gate-cell"><code>G1</code><span class="state pass">pass</span></span>
+                  <span class="gate-cell"><code>G2</code><span class="state pass">pass</span></span>
+                  <span class="gate-cell fail"><code>G3</code><span class="state fail">fail</span></span>
+                  <span class="gate-cell"><code>G4</code><span class="state pass">pass</span></span>
+                  <span class="gate-cell"><code>G5</code><span class="state pass">pass</span></span>
+                  <span class="gate-cell"><code>G6</code><span class="state pass">pass</span></span>
+                </div>
+              </div>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- ====================== WATCH AN EPISODE ====================== -->
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <div class="section-title" data-t="e.title">Watch an episode</div>
+            <div class="section-note" data-t="e.note">Both stacks replay the same episode side by side. Five per page — a dropdown hides how many failed.</div>
+          </div>
+          <span class="pill" data-t="e.count">30 episodes · A failed 0 · B failed 11</span>
+        </div>
+
+        <div class="card">
+          <div class="ep-controls">
+            <label class="check"><input type="checkbox"> <span data-t="e.filter">Only episodes somebody failed</span></label>
+            <div style="display:flex;gap:6px">
+              <button class="btn compact primary" data-t="e.top">Top-down</button>
+              <button class="btn compact" data-t="e.iso">2.5D</button>
+              <button class="btn compact primary" data-t="e.bytime">By time</button>
+              <button class="btn compact" data-t="e.byprog">By progress</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table style="min-width:560px">
+              <thead><tr><th data-t="e.ep">Episode</th><th>astar+dwa</th><th>rrtstar+dwa</th><th data-t="e.dur">Duration A / B</th></tr></thead>
+              <tbody>
+                <tr class="ep-selected"><td><span class="ep-id">#1 · eaf290c1</span></td><td><span class="ep-outcome pass">pass</span></td><td><span class="ep-outcome pass">pass</span></td><td class="num dim">22.0 / 38.8 s</td></tr>
+                <tr><td><span class="ep-id">#2 · 83552bc4</span></td><td><span class="ep-outcome pass">pass</span></td><td><span class="ep-outcome pass">pass</span></td><td class="num dim">21.8 / 36.1 s</td></tr>
+                <tr><td><span class="ep-id">#3 · ebe1904a</span></td><td><span class="ep-outcome pass">pass</span></td><td><span class="ep-outcome fail">timeout</span></td><td class="num dim">22.4 / 60.0 s</td></tr>
+                <tr><td><span class="ep-id">#4 · 8fb66b28</span></td><td><span class="ep-outcome pass">pass</span></td><td><span class="ep-outcome pass">pass</span></td><td class="num dim">22.1 / 41.5 s</td></tr>
+                <tr><td><span class="ep-id">#5 · a237e138</span></td><td><span class="ep-outcome pass">pass</span></td><td><span class="ep-outcome fail">timeout</span></td><td class="num dim">22.9 / 60.0 s</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <button class="page-btn" aria-label="Previous page">‹</button>
+            <button class="page-btn active">1</button><button class="page-btn">2</button><button class="page-btn">3</button>
+            <button class="page-btn">4</button><button class="page-btn">5</button><button class="page-btn">6</button>
+            <button class="page-btn" aria-label="Next page">›</button>
+            <span class="page-note" data-t="e.page">page 1 of 6 · showing 5 of 30</span>
+          </div>
+        </div>
+
+        <div class="stage-grid" style="margin-top:10px">
+          <article class="card stage">
+            <div class="stage-head">
+              <div><div class="algo-role">Candidate A</div><div class="algo-name">astar+dwa</div><div class="algo-sub">dwa_coarse</div></div>
+              <div style="display:flex;gap:6px;align-items:center"><span class="state pass"><span class="dot pass"></span>pass</span><button class="btn compact" data-t="e.final">Final results</button></div>
+            </div>
+            <div class="canvas">
+              <svg viewBox="0 0 320 200" role="img" aria-label="Top-down replay, candidate A">
+                <rect x="6" y="6" width="308" height="188" fill="none" stroke="currentColor" stroke-opacity=".18" stroke-width="2"/>
+                <circle cx="112" cy="52" r="13" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="2"/>
+                <path d="M40 118 H265" stroke="currentColor" stroke-opacity=".35" stroke-width="1.5" stroke-dasharray="5 4"/>
+                <path d="M40 118 H150" stroke="currentColor" stroke-width="2"/>
+                <circle cx="40" cy="118" r="6" fill="none" stroke="currentColor" stroke-width="2"/>
+                <circle cx="265" cy="118" r="5" fill="none" stroke="currentColor" stroke-opacity=".5" stroke-width="2"/>
+                <circle cx="150" cy="118" r="4" fill="currentColor"/>
+              </svg>
+            </div>
+            <div class="tiles">
+              <div class="tile"><div class="tile-label" data-t="t.clear">Clearance now</div><div class="tile-value">0.990<span class="unit">m</span></div></div>
+              <div class="tile"><div class="tile-label" data-t="t.lat">Planner latency now</div><div class="tile-value">3.41<span class="unit">ms</span></div></div>
+              <div class="tile"><div class="tile-label" data-t="t.cov">Route covered</div><div class="tile-value">48.9<span class="unit">%</span></div></div>
+              <div class="tile"><div class="tile-label" data-t="t.worst">Worst clearance so far</div><div class="tile-value">0.612<span class="unit">m</span></div></div>
+              <div class="tile"><div class="tile-label" data-t="t.warn">Time inside warning distance</div><div class="tile-value">0.0<span class="unit">s</span></div></div>
+              <div class="tile"><div class="tile-label" data-t="t.replan">Replans so far</div><div class="tile-value">0</div></div>
+            </div>
+          </article>
+
+          <article class="card stage">
+            <div class="stage-head">
+              <div><div class="algo-role">Candidate B</div><div class="algo-name">rrtstar+dwa</div><div class="algo-sub">dwa_coarse</div></div>
+              <div style="display:flex;gap:6px;align-items:center"><span class="state pass"><span class="dot pass"></span>pass</span><button class="btn compact" data-t="e.final">Final results</button></div>
+            </div>
+            <div class="canvas">
+              <svg viewBox="0 0 320 200" role="img" aria-label="Top-down replay, candidate B">
+                <rect x="6" y="6" width="308" height="188" fill="none" stroke="currentColor" stroke-opacity=".18" stroke-width="2"/>
+                <circle cx="112" cy="52" r="13" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="2"/>
+                <path d="M40 118 C110 96 150 140 265 116" stroke="currentColor" stroke-opacity=".35" stroke-width="1.5" stroke-dasharray="5 4"/>
+                <path d="M40 118 C90 104 112 130 132 121" stroke="currentColor" stroke-width="2"/>
+                <circle cx="40" cy="118" r="6" fill="none" stroke="currentColor" stroke-width="2"/>
+                <circle cx="265" cy="116" r="5" fill="none" stroke="currentColor" stroke-opacity=".5" stroke-width="2"/>
+                <circle cx="132" cy="121" r="4" fill="currentColor"/>
+              </svg>
+            </div>
+            <div class="tiles">
+              <div class="tile"><div class="tile-label" data-t="t.clear">Clearance now</div><div class="tile-value">0.417<span class="unit">m</span></div></div>
+              <div class="tile"><div class="tile-label" data-t="t.lat">Planner latency now</div><div class="tile-value">12.86<span class="unit">ms</span></div></div>
+              <div class="tile"><div class="tile-label" data-t="t.cov">Route covered</div><div class="tile-value">31.2<span class="unit">%</span></div></div>
+              <div class="tile"><div class="tile-label" data-t="t.worst">Worst clearance so far</div><div class="tile-value">0.281<span class="unit">m</span></div></div>
+              <div class="tile"><div class="tile-label" data-t="t.warn">Time inside warning distance</div><div class="tile-value">2.4<span class="unit">s</span></div></div>
+              <div class="tile"><div class="tile-label" data-t="t.replan">Replans so far</div><div class="tile-value">7</div></div>
+            </div>
+          </article>
+        </div>
+
+        <div class="card" style="margin-top:10px">
+          <div class="playbar">
+            <button class="btn compact primary" data-t="e.play">Play</button>
+            <button class="btn compact" data-t="e.replay">Replay</button>
+            <span style="font-size:10px;color:var(--muted)" data-t="e.speed">Speed</span>
+            <select class="btn compact" style="padding-right:6px"><option>1×</option><option>2×</option><option>4×</option></select>
+            <input type="range" min="0" max="388" value="190" aria-label="Playback position">
+            <span class="num dim" style="font-size:11px">19.0 / 38.8 s</span>
+          </div>
+          <div class="legend">
+            <span><i class="dotmark"></i>Start</span>
+            <span><i class="dotmark" style="opacity:.45"></i>Goal</span>
+            <span><i></i>Driven path</span>
+            <span><i class="dash"></i>Planned route</span>
+            <span><i class="grey"></i>Dynamic obstacle</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================== EVIDENCE ======================== -->
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <div class="section-title" data-t="ev.title">Evidence behind this run</div>
+            <div class="section-note" data-t="ev.note">What the detectors saw, and which of it a swap can actually attribute to a component.</div>
+          </div>
+          <span class="pill" data-t="ev.claims">no claims yet</span>
+        </div>
+
+        <div class="card">
+          <div class="table-wrap">
+            <table style="min-width:620px">
+              <thead><tr><th data-t="ev.pattern">Pattern</th><th data-t="ev.cand">Candidate</th><th style="text-align:right" data-t="ev.eps">Episodes</th><th data-t="ev.share">Share</th></tr></thead>
+              <tbody>
+                <tr><td><code style="font-family:var(--mono);font-size:11px">latency_spike</code></td><td class="num dim">29cdf6266a44</td><td class="num">30 / 30</td><td><span class="track" style="width:120px;display:inline-block"><span class="fill" style="width:100%"></span></span></td></tr>
+                <tr><td><code style="font-family:var(--mono);font-size:11px">stuck_cluster</code></td><td class="num dim">29cdf6266a44</td><td class="num">30 / 30</td><td><span class="track" style="width:120px;display:inline-block"><span class="fill" style="width:100%"></span></span></td></tr>
+                <tr><td><code style="font-family:var(--mono);font-size:11px">stuck_cluster</code></td><td class="num dim">e1251e42a20b</td><td class="num">30 / 30</td><td><span class="track" style="width:120px;display:inline-block"><span class="fill" style="width:100%"></span></span></td></tr>
+                <tr><td><code style="font-family:var(--mono);font-size:11px">replan_storm</code></td><td class="num dim">29cdf6266a44</td><td class="num">20 / 30</td><td><span class="track" style="width:120px;display:inline-block"><span class="fill" style="width:66.7%"></span></span></td></tr>
+                <tr><td><code style="font-family:var(--mono);font-size:11px">near_miss_cluster</code></td><td class="num dim">29cdf6266a44</td><td class="num">5 / 30</td><td><span class="track" style="width:120px;display:inline-block"><span class="fill" style="width:16.7%"></span></span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:10px;padding:15px">
+          <div class="section-head" style="margin-bottom:9px">
+            <div><div class="section-title" data-t="ev.contrast">What the contrast supports</div>
+            <div class="section-note" data-t="ev.contrastnote">Three patterns can be attributed. One is ruled out. Three had nothing to compare against.</div></div>
+            <span class="pill">7</span>
+          </div>
+          <div class="insight-list">
+            <div class="insight"><div class="insight-top"><strong>latency_spike</strong><span class="chip strong" data-t="ev.supports">supports attributing · global_planner</span></div><p data-t="ev.supportsbody">Follows global_planner across every pair that changes only that component, it is the only component it follows, and every other part of the stack was held fixed.</p></div>
+            <div class="insight"><div class="insight-top"><strong>near_miss_cluster</strong><span class="chip strong" data-t="ev.supports">supports attributing · global_planner</span></div><p data-t="ev.supportsbody">Follows global_planner across every pair that changes only that component, it is the only component it follows, and every other part of the stack was held fixed.</p></div>
+            <div class="insight"><div class="insight-top"><strong>replan_storm</strong><span class="chip strong" data-t="ev.supports">supports attributing · global_planner</span></div><p data-t="ev.supportsbody">Follows global_planner across every pair that changes only that component, it is the only component it follows, and every other part of the stack was held fixed.</p></div>
+            <div class="insight"><div class="insight-top"><strong>stuck_cluster</strong><span class="chip" data-t="ev.rules">rules the component out · global_planner</span></div><p data-t="ev.rulesbody">Present on both sides of a global_planner swap, so that component is not what produces it. This does not show that the component they share does: task geometry, the costmap, the shared providers and the interaction between layers all produce shared patterns.</p></div>
+            <div class="insight"><div class="insight-top"><strong>detour · narrow_gap_refusal · oscillation</strong><span class="chip" data-t="ev.nocontrast">not enough contrast to say</span></div><p data-t="ev.nocontrastbody">The pattern appeared in no candidate that a swap could compare.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== WHICH STACK TO USE ===================== -->
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <div class="section-title" data-t="w.title">Which stack to use</div>
+            <div class="section-note" data-t="w.note">decision_utility, shown out of 100. One decimal on purpose: 0.8774 and 0.8770 both round to 88, and those are two candidates ΔU can tell apart.</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="standings">
+            <div class="group-label" data-t="w.eligible"><span class="dot pass"></span>Cleared every gate — the mark ranks inside this group</div>
+            <div class="stand-row">
+              <div>
+                <div class="stand-name">astar+dwa <span>dwa_coarse</span></div>
+                <div class="stand-bar"><i style="width:87.7%"></i></div>
+                <div class="stand-obj">
+                  <span class="obj">U_R <b>1.00</b></span><span class="obj">U_S <b>1.00</b></span>
+                  <span class="obj">U_E <b>0.57</b></span><span class="obj">U_C <b>0.96</b></span>
+                </div>
+              </div>
+              <div class="stand-mark">87.7<small> / 100</small></div>
+            </div>
+
+            <hr class="stand-divider">
+
+            <div class="group-label" data-t="w.blocked"><span class="dot fail"></span>Did not clear a gate — scored, but the mark does not compare across this line</div>
+            <div class="stand-row blocked">
+              <div>
+                <div class="stand-name">rrtstar+dwa <span>dwa_coarse</span></div>
+                <div class="stand-bar"><i style="width:31.3%"></i></div>
+                <div class="stand-obj">
+                  <span class="obj">U_R <b>0.00</b></span><span class="obj">U_S <b>0.31</b></span>
+                  <span class="obj">U_E <b>0.43</b></span><span class="obj">U_C <b>0.50</b></span>
+                  <span class="obj" style="color:var(--fail);border-color:color-mix(in srgb,var(--fail) 35%,var(--line))" data-t="w.g3">blocked at G3</span>
+                </div>
+              </div>
+              <div class="stand-mark">31.3<small> / 100</small></div>
+            </div>
+
+            <div class="notice" style="margin-top:16px">
+              <span data-icon="info"></span>
+              <span data-t="w.why"><b>Why a blocked candidate still carries a mark, and why the line matters more than the number.</b> There is no invented penalty — any figure we subtracted would be a weighting nobody wrote down, printed as though it had been measured. Instead the field splits in two and never interleaves: collisions are excluded from <code>U_S</code> by contract (HĐ-6) so they cannot be traded against speed, which means a stack that hit something can carry a <em>higher</em> mark than one that did not.</span>
+            </div>
+          </div>
+
+          <div class="recommend" style="border-top:1px solid var(--line-2)">
+            <div>
+              <div class="rec-kicker" data-t="w.kicker">What to do next</div>
+              <div class="rec-title" data-t="w.rectitle">Register a better candidate — never a softer deployment.</div>
+              <div class="rec-copy" data-t="w.reccopy">The gate table already answered who was eliminated and where. rrtstar+dwa reached the goal in 19 of 30 episodes against a threshold this deployment declares; relaxing that threshold would not make the stack safer, it would make the record quieter.</div>
+              <div class="rec-list">
+                <div class="rec-item"><div class="rec-num">01</div><span data-t="w.r1">Highest mark among candidates that cleared every gate</span><b>astar+dwa</b></div>
+                <div class="rec-item"><div class="rec-num">02</div><span data-t="w.r2">Weakest objective on that candidate — where the next gain is</span><b>U_E 0.57</b></div>
+                <div class="rec-item"><div class="rec-num">03</div><span data-t="w.r3">Pattern a swap can attribute to the planner</span><b>latency_spike</b></div>
+              </div>
+            </div>
+            <div class="decision-box">
+              <div class="label" data-t="w.status">Run status</div>
+              <strong data-t="w.nocard">No recommendation</strong>
+              <p data-t="w.nocardbody">A recommendation needs two candidates through the gates so ΔU has something to compare. One got through.</p>
+              <div class="decision-tags">
+                <span class="tag" data-t="w.t1">Eligible · 1 of 2</span>
+                <span class="tag" data-t="w.t2">ΔU · does not exist</span>
+                <span class="tag" data-t="w.t3">Pareto · not evaluated</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn" id="exportMd"><span data-icon="download"></span><span data-t="a.md">Export Markdown</span></button>
+            <button class="btn" id="exportXlsx"><span data-icon="download"></span><span data-t="a.xlsx">Excel (.xlsx)</span></button>
+            <button class="btn" id="shareBtn2"><span data-icon="send"></span><span data-t="a.email">Send by email</span></button>
+            <span class="spacer"></span>
+            <button class="btn" disabled data-t="a.read">Sign in to record that you read this</button>
+            <button class="btn primary" disabled data-t="a.approve">Approve</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= STATE VARIANTS (review only) ================= -->
+      <section class="section">
+        <div class="section-head">
+          <div><div class="section-title" data-t="st.title">State variants</div>
+          <div class="section-note" data-t="st.note">Cases this run does not exercise. They are drawn because a case nobody draws is a case nobody notices is broken.</div></div>
+          <span class="pill" data-t="st.tag">review only</span>
+        </div>
+        <div class="card" style="padding:16px">
+
+          <div class="eyebrow" style="margin-bottom:7px">T1 — sample line, below N_min</div>
+          <div class="meta-row" style="margin-top:0">
+            <span class="pill" style="color:var(--fail);border-color:color-mix(in srgb,var(--fail) 40%,var(--line))"><b>18</b>&nbsp;episodes measured · below N_min (18/30)</span>
+          </div>
+          <div class="notice critical" style="margin-top:9px">
+            <span data-icon="warn"></span>
+            <span data-t="st.critical"><b>18 of 30 episodes measured, and the run was interrupted.</b> Every figure on this page rests on a sample the declared risk budget does not cover. One notice, not two — the interrupted case folds into the critical one rather than stacking below it. And the summary line above says <em>below</em>, never <em>meets</em>: a notice cannot correct a false claim made in the line it annotates, because the reader who skims reads only the line.</span>
+          </div>
+
+          <div class="eyebrow" style="margin:22px 0 7px">T7 — collision bound where the rule of three does not apply</div>
+          <div class="table-wrap">
+            <table style="min-width:560px;border:1px solid var(--line);border-radius:var(--radius-md)">
+              <thead><tr><th>Metric</th><th style="text-align:right">Candidate A</th><th style="text-align:right">Candidate B</th></tr></thead>
+              <tbody><tr>
+                <td class="metric-cell"><strong>Collision probability, 95% upper bound</strong><span>rule of three</span></td>
+                <td class="num">≤ 10.0<span class="unit">%</span><span class="sub">0 / 30 distinct episodes</span></td>
+                <td class="num"><span class="not-applicable" data-t="st.na">not applicable</span><span class="sub" data-t="st.nasub">2 collisions / 30 distinct episodes</span></td>
+              </tr></tbody>
+            </table>
+          </div>
+          <p style="font-size:10px;color:var(--muted);margin:8px 0 0;line-height:1.6" data-t="st.nanote"><code>upper_bound_95</code> is <code>None</code> once a collision has been observed (<code>gates.py:199</code>): the rule of three applies to zero-event data only. So the cell prints neither <code>≤</code> — there is no bound to quote — nor <em>not measured</em> — the measurement exists and its result is unambiguous.</p>
+
+          <div class="eyebrow" style="margin:22px 0 7px">T10 — copy button, all three states</div>
+          <div style="display:flex;flex-wrap:wrap;gap:9px;align-items:center">
+            <button class="copy-id"><span data-icon="copy"></span><code>20750b0d9dbe</code></button>
+            <button class="copy-id" data-state="copied"><span data-icon="check"></span><code>20750b0d9dbe</code><span data-t="st.copied">Copied</span></button>
+            <button class="copy-id" data-state="failed"><span data-icon="x"></span><code>20750b0d9dbe</code><span data-t="st.failed">Copy failed</span></button>
+          </div>
+          <p style="font-size:10px;color:var(--muted);margin:8px 0 0;line-height:1.6" data-t="st.copynote">The id stays legible in every state, so the failure case is still usable — the reader selects it by hand. Tested through the pure helper <code>copyDecisionId(id, write)</code>, which takes the write function as a parameter, so both branches run in Node with no <code>navigator</code> and no global mock.</p>
+
+          <div class="eyebrow" style="margin:22px 0 7px" data-t="st.h4">A recommendation, when the run produces one</div>
+          <div class="notice">
+            <span data-icon="check"></span>
+            <span data-t="st.reco">With two candidates through the gates, the verdict card names a winner and prints ΔU <b>with its 95% interval, never without it</b> — a margin whose interval includes zero is consistent with the two being equal, and printing the mean alone turns that into a result.</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="footer-note">
+        <span>PlanBench · decision 20750b0d9dbe · mock v3, EvalFrame direction</span>
+        <span>Not wired to the app · real data from the run of 2026-08-21 03:07</span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Trả lời trực tiếp cho câu "gửi kết quả qua mail có khả thi không":
+     đây là bề mặt của nó. `mailto:` chạy được ngay, không cần backend —
+     nhưng nó KHÔNG đính kèm được file, nên bản thật cần SMTP phía server
+     nếu muốn gửi kèm workbook, cộng với chính sách ai-gửi-cho-ai và một
+     bản ghi audit cho mỗi lần gửi. -->
+<div class="modal-backdrop" id="shareModal" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title" id="shareTitle" data-t="sh.title">Send this decision</div><button class="icon-btn" id="closeModal" aria-label="Close"><span data-icon="x"></span></button></div>
+    <div class="modal-body">
+      <div class="field"><label for="recipient" data-t="sh.to">Recipient</label><input id="recipient" type="email" value="reviewer@vinuni.edu.vn"></div>
+      <div class="field"><label for="subject" data-t="sh.subj">Subject</label><input id="subject" value="Decision 20750b0d9dbe · sudden_stop_v5"></div>
+      <div class="field"><label for="message" data-t="sh.msg">Message</label><textarea id="message">No recommendation from this run: only one of two candidates cleared every gate, so there is no ΔU to report. astar+dwa carries 87.7/100 and cleared G1–G6; rrtstar+dwa carries 31.3/100 and is blocked at G3. The attached workbook has the gate table, the per-candidate outcome and every episode.</textarea></div>
+      <div class="attachment"><span data-icon="file"></span><strong>decision-20750b0d9dbe.xlsx</strong><span data-t="sh.size">· 7 sheets</span></div>
+      <p style="font-size:10px;color:var(--muted);margin:9px 0 0;line-height:1.6" data-t="sh.note"><b>What this button can and cannot do.</b> <code>mailto:</code> opens the reader's own mail client with the text filled in — no backend, works today. It <em>cannot</em> attach the workbook: the browser will not let a link put a file into an email. Attaching means sending server-side, which brings a provider choice, a rule for who may send to whom, and an audit record for every send.</p>
+    </div>
+    <div class="modal-foot"><button class="btn" id="cancelShare" data-t="sh.cancel">Cancel</button><button class="btn primary" id="sendShare"><span data-icon="send"></span><span data-t="sh.open">Open email client</span></button></div>
+  </div>
+</div>
+<div class="toast" id="toast"><span data-icon="check"></span><span id="toastText">Done</span></div>
+
+<script>
+const icons={
+ layers:'<path d="m12 3 8 4.5-8 4.5-8-4.5L12 3Z"/><path d="m4 12 8 4.5 8-4.5"/><path d="m4 16.5 8 4.5 8-4.5"/>',
+ grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+ deploy:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 3 2.5 15 0 18M12 3c-2.5 3-2.5 15 0 18"/>',
+ play:'<circle cx="12" cy="12" r="9"/><path d="M10 8.5 16 12l-6 3.5z"/>',
+ compare:'<path d="M4 19V5"/><path d="M4 19h16"/><path d="m7 15 3-4 3 2 4-6"/>',
+ map:'<path d="m3 6 6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/>',
+ book:'<path d="M4 4h6a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H4z"/><path d="M20 4h-6a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h6z"/>',
+ cpu:'<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/>',
+ database:'<ellipse cx="12" cy="5" rx="7" ry="3"/><path d="M5 5v7c0 1.7 3.1 3 7 3s7-1.3 7-3V5"/><path d="M5 12v7c0 1.7 3.1 3 7 3s7-1.3 7-3v-7"/>',
+ file:'<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/>',
+ spark:'<path d="m12 3 1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/>',
+ inbox:'<path d="M3 10 5 4h14l2 6v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 10h5l1 3h6l1-3h5"/>',
+ info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.6v.1"/>',
+ warn:'<path d="M12 3 22 20H2z"/><path d="M12 9v4M12 16.6v.1"/>',
+ panel:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
+ 'chevron-left':'<path d="m14 6-6 6 6 6"/>','chevron-right':'<path d="m10 6 6 6-6 6"/>',
+ download:'<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>',
+ send:'<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+ copy:'<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M15 9V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h4"/>',
+ more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+ menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',
+ x:'<path d="m6 6 12 12M18 6 6 18"/>',
+ check:'<path d="m5 12 4 4L19 6"/>'
+};
+const icon=n=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[n]||icons.file}</svg>`;
+document.querySelectorAll('[data-icon]').forEach(el=>{el.innerHTML=icon(el.dataset.icon)});
+
+const root=document.documentElement, app=document.getElementById('app');
+const collapseBtn=document.getElementById('collapseBtn');
+if(localStorage.getItem('pb-sidebar')==='collapsed') app.classList.add('is-collapsed');
+function syncSidebar(){
+  const c=app.classList.contains('is-collapsed');
+  collapseBtn.setAttribute('aria-expanded',String(!c));
+  collapseBtn.setAttribute('aria-label',c?'Expand sidebar':'Collapse sidebar');
+  collapseBtn.querySelector('.collapse-icon').innerHTML=icon(c?'chevron-right':'chevron-left');
+  localStorage.setItem('pb-sidebar',c?'collapsed':'expanded');
+}
+collapseBtn.addEventListener('click',()=>{app.classList.toggle('is-collapsed');syncSidebar()});
+document.addEventListener('keydown',e=>{if((e.key==='['||e.key===']')&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&!/^(INPUT|TEXTAREA)$/.test(e.target.tagName)){e.preventDefault();app.classList.toggle('is-collapsed');syncSidebar()}});
+syncSidebar();
+document.getElementById('mobileMenu').addEventListener('click',()=>document.getElementById('sidebar').classList.add('mobile-open'));
+
+/* Ba trạng thái theme, không phải hai: Light → Dark → OS (gỡ hẳn
+   data-theme). Trạng thái thứ ba là đường A3 bản plan trước bỏ sót,
+   nên nó phải bấm thử được. */
+const THEMES=['light','dark',null]; let ti=0;
+document.getElementById('theme').addEventListener('click',e=>{
+  ti=(ti+1)%THEMES.length; const t=THEMES[ti];
+  if(t) root.setAttribute('data-theme',t); else root.removeAttribute('data-theme');
+  e.currentTarget.textContent=t?t[0].toUpperCase()+t.slice(1):'OS';
+});
+root.setAttribute('data-theme','light');
+
+/* Helper thuần — đúng chữ ký plan chốt. Nhận hàm ghi qua tham số nên
+   cả hai nhánh test được trong Node, không cần navigator. */
+async function copyDecisionId(id,write){ try{ await write(id); return 'copied' }catch{ return 'failed' } }
+const copyBtn=document.getElementById('copyId'); let copyTimer=null;
+copyBtn.addEventListener('click',async()=>{
+  const state=await copyDecisionId('20750b0d9dbe',t=>
+    navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject(new Error('no clipboard')));
+  copyBtn.dataset.state=state;
+  copyBtn.querySelector('.copy-state').textContent=
+    state==='copied'?(root.lang==='vi'?'Đã sao chép':'Copied'):(root.lang==='vi'?'Sao chép lỗi':'Copy failed');
+  clearTimeout(copyTimer);
+  copyTimer=setTimeout(()=>{delete copyBtn.dataset.state;copyBtn.querySelector('.copy-state').textContent=''},4000);
+});
+
+document.querySelectorAll('.nav-item').forEach(i=>i.addEventListener('click',()=>{
+  document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));
+  i.classList.add('active');
+  if(innerWidth<=760) document.getElementById('sidebar').classList.remove('mobile-open');
+}));
+document.querySelectorAll('.page-btn').forEach(b=>b.addEventListener('click',()=>{
+  if(!/^\d+$/.test(b.textContent))return;
+  document.querySelectorAll('.page-btn').forEach(x=>x.classList.remove('active')); b.classList.add('active');
+}));
+
+const modal=document.getElementById('shareModal');
+const openModal=()=>{modal.classList.add('open');setTimeout(()=>document.getElementById('recipient').focus(),50)};
+const closeModal=()=>modal.classList.remove('open');
+document.getElementById('shareBtn').addEventListener('click',openModal);
+document.getElementById('shareBtn2').addEventListener('click',openModal);
+document.getElementById('closeModal').addEventListener('click',closeModal);
+document.getElementById('cancelShare').addEventListener('click',closeModal);
+modal.addEventListener('click',e=>{if(e.target===modal)closeModal()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
+document.getElementById('sendShare').addEventListener('click',()=>{
+  const to=document.getElementById('recipient').value.trim();
+  if(!to){document.getElementById('recipient').focus();return}
+  const s=encodeURIComponent(document.getElementById('subject').value);
+  const b=encodeURIComponent(document.getElementById('message').value+'\n\n— attach decision-20750b0d9dbe.xlsx by hand; a mailto: link cannot carry a file.');
+  location.href=`mailto:${encodeURIComponent(to)}?subject=${s}&body=${b}`;
+  closeModal(); toast('Email draft opened — attach the workbook by hand');
+});
+
+function toast(text){
+  const t=document.getElementById('toast');
+  document.getElementById('toastText').textContent=text;
+  t.classList.add('show'); clearTimeout(window.__t); window.__t=setTimeout(()=>t.classList.remove('show'),2600);
+}
+document.getElementById('exportBtn').addEventListener('click',()=>toast('In the app: GET /decisions/{id}/report.xlsx'));
+document.getElementById('exportMd').addEventListener('click',()=>toast('GET /decisions/20750b0d9dbe/report.md'));
+document.getElementById('exportXlsx').addEventListener('click',()=>toast('GET /decisions/20750b0d9dbe/report.xlsx · 7 sheets'));
+
+/* Lượt tiếng Việt: để dấu kiểm được ở mọi cỡ chữ trang thật dùng, và để
+   độ dài nhãn (~20% hơn tiếng Anh) lộ ra trước khi nó lộ trên production. */
+const VI={
+ 'h.eyebrow':'Đánh giá / chi tiết phép so',
+ 'h.sub':'Hai global planner đo trên cùng một cấu hình triển khai. Sáu gate khả thi chạy trước khi chấm điểm, nên các mức điểm bên dưới chỉ xếp hạng trong nhóm đã qua gate.',
+ 's.line':'<b>30</b>&nbsp;episode đã đo · đạt N_min (30) · chạy đủ yêu cầu',
+ 'h.allruns':'Tất cả lượt chạy',
+ 'a.export':'Xuất','a.share':'Gửi báo cáo',
+ 'c.a':'Ứng viên A · qua hết gate','c.b':'Ứng viên B · trượt gate',
+ 'c.g16':'G1–G6 đều đạt','c.blocked':'Bị chặn ở G3 · tỉ lệ thành công',
+ 'v.kicker':'Kết cục','v.util':'decision_utility','v.title':'Không có khuyến nghị',
+ 'v.body':'Dưới hai ứng viên qua hết gate nên ΔU không tồn tại cho lượt chạy này. astar+dwa mang điểm cao hơn — điều đó không đồng nghĩa với được khuyến nghị.',
+ 'v.a':'astar+dwa · hợp lệ','v.b':'rrtstar+dwa · bị chặn',
+ 'm.title':'So sánh theo từng chỉ số',
+ 'm.note':'Hướng của chỉ số không dùng màu: chip Δ không bao giờ đổi màu theo dấu. Xanh lá và đỏ dành riêng cho phán quyết gate.',
+ 'm.count':'A dẫn 5 trong 8 chỉ số có hướng · 3 hoà',
+ 'th.metric':'Chỉ số','th.delta':'Δ (B−A)','th.leads':'Dẫn',
+ 'm.obs':'Lớp quan sát','m.obssub':'mỗi stack được cho thấy gì',
+ 'm.success':'Tỉ lệ thành công','m.higher':'Cao hơn thì tốt hơn','m.lower':'Thấp hơn thì tốt hơn',
+ 'm.coll':'Số va chạm quan sát được','m.tie':'Hoà',
+ 'm.bound':'Cận trên xác suất va chạm, mức tin cậy 95%','m.rot':'quy tắc ba · thấp hơn thì tốt hơn',
+ 'm.den':'0 / 30 episode phân biệt',
+ 'm.noroute':'Số episode không tìm ra tuyến','m.nm':'không đo',
+ 'm.clear':'Khoảng hở tệ nhất cả lượt chạy','m.median':'Thời lượng episode trung vị',
+ 'm.p99':'Độ trễ planner, p99 gộp','m.p99lim':'ngưỡng 50 ms · thấp hơn thì tốt hơn',
+ 'm.p99warn':'Đo trên toàn bộ 20 nhân, không ghim — G4 đọc độ trễ theo đồng hồ tường nên mọi tải khác trên máy đều đi vào con số này. Nó chỉ áp cho hàng này.',
+ 'm.mem':'Ước lượng bộ nhớ trên board đích','m.memlim':'ngưỡng 3277 MB · thấp hơn thì tốt hơn',
+ 'm.distinct':'Số episode phân biệt','m.replan':'Số lần hoạch định lại cả lượt chạy',
+ 'm.nodir':'Không hướng · chỉ là bằng chứng',
+ 'g.detail':'Chi tiết sáu gate khả thi','g.sum':'1 trên 2 ứng viên bị chặn',
+ 'e.title':'Xem một episode','e.note':'Hai stack phát lại cùng một episode cạnh nhau. Năm mục một trang — dropdown giấu mất số lượng đã trượt.',
+ 'e.count':'30 episode · A trượt 0 · B trượt 11','e.filter':'Chỉ những episode có bên nào đó trượt',
+ 'e.top':'Nhìn từ trên','e.iso':'2.5D','e.bytime':'Theo thời gian','e.byprog':'Theo tiến độ',
+ 'e.ep':'Episode','e.dur':'Thời lượng A / B','e.page':'trang 1 trên 6 · hiện 5 trong 30',
+ 'e.final':'Kết quả cuối','e.play':'Chạy','e.replay':'Phát lại','e.speed':'Tốc độ',
+ 't.clear':'Khoảng hở hiện tại','t.lat':'Độ trễ planner hiện tại','t.cov':'Tuyến đã đi được',
+ 't.worst':'Khoảng hở tệ nhất tới giờ','t.warn':'Thời gian trong vùng cảnh báo','t.replan':'Số lần hoạch định lại',
+ 'ev.title':'Bằng chứng phía sau lượt chạy',
+ 'ev.note':'Các detector thấy gì, và trong đó cái nào một phép hoán đổi thật sự quy được cho một thành phần.',
+ 'ev.claims':'chưa có khẳng định nào','ev.pattern':'Mẫu hình','ev.cand':'Ứng viên','ev.eps':'Episode','ev.share':'Tỉ lệ',
+ 'ev.contrast':'Phép tương phản chống đỡ được gì',
+ 'ev.contrastnote':'Ba mẫu hình quy được. Một bị loại. Ba không có gì để đối chiếu.',
+ 'ev.supports':'quy được cho một thành phần · global_planner',
+ 'ev.supportsbody':'Mẫu hình bám theo global_planner qua mọi cặp chỉ đổi đúng thành phần đó, nó là thành phần duy nhất mẫu hình bám theo, và mọi phần khác của stack đều được giữ cố định.',
+ 'ev.rules':'loại thành phần này ra · global_planner',
+ 'ev.rulesbody':'Mẫu hình có mặt ở cả hai phía của một phép hoán đổi global_planner, nên thành phần đó không phải thứ sinh ra nó. Điều này KHÔNG chứng tỏ thành phần chung của chúng sinh ra nó: hình học bài toán, costmap, các provider dùng chung và tương tác giữa các tầng đều sinh ra mẫu hình chung.',
+ 'ev.nocontrast':'không đủ tương phản để kết luận',
+ 'ev.nocontrastbody':'Mẫu hình chỉ xuất hiện ở những ứng viên mà không phép hoán đổi nào so sánh được.',
+ 'w.title':'Nên dùng stack nào',
+ 'w.note':'decision_utility, quy về thang 100. Một chữ số thập phân là cố ý: 0,8774 và 0,8770 cùng làm tròn thành 88, mà đó là hai ứng viên ΔU phân biệt được.',
+ 'w.eligible':'Qua hết gate — điểm xếp hạng trong nhóm này',
+ 'w.blocked':'Trượt gate — vẫn có điểm, nhưng điểm không so được qua đường này',
+ 'w.g3':'bị chặn ở G3',
+ 'w.why':'<b>Vì sao ứng viên bị chặn vẫn có điểm, và vì sao đường kẻ quan trọng hơn con số.</b> Không có mức trừ nào được bịa ra — bất kỳ con số trừ nào cũng là một hệ số cân đo không ai viết, in ra như thể đã được đo. Thay vào đó, danh sách tách làm hai và không bao giờ xếp lẫn: va chạm bị loại khỏi <code>U_S</code> theo hợp đồng (HĐ-6) để nó không thể đem đổi lấy tốc độ, nghĩa là một stack đã đâm vào vật thể vẫn có thể mang điểm <em>cao hơn</em> một stack không đâm.',
+ 'w.kicker':'Việc tiếp theo','w.rectitle':'Đăng ký một ứng viên tốt hơn — đừng bao giờ nới cấu hình triển khai.',
+ 'w.reccopy':'Bảng gate đã trả lời ai bị loại và bị loại ở đâu. rrtstar+dwa tới đích ở 19 trên 30 episode, dưới ngưỡng mà cấu hình này khai báo; hạ ngưỡng đó không làm stack an toàn hơn, nó chỉ làm hồ sơ im tiếng hơn.',
+ 'w.r1':'Điểm cao nhất trong nhóm qua hết gate','w.r2':'Objective yếu nhất của ứng viên đó — chỗ còn dư địa',
+ 'w.r3':'Mẫu hình mà một phép hoán đổi quy được cho planner',
+ 'w.status':'Trạng thái lượt chạy','w.nocard':'Không có khuyến nghị',
+ 'w.nocardbody':'Một khuyến nghị cần hai ứng viên qua gate để ΔU có cái mà so. Chỉ một cái qua được.',
+ 'w.t1':'Hợp lệ · 1 trên 2','w.t2':'ΔU · không tồn tại','w.t3':'Pareto · chưa xét',
+ 'a.md':'Xuất Markdown','a.xlsx':'Excel (.xlsx)','a.email':'Gửi qua email',
+ 'a.read':'Đăng nhập để ghi nhận bạn đã đọc','a.approve':'Duyệt',
+ 'st.title':'Các biến thể trạng thái',
+ 'st.note':'Những ca lượt chạy này không chạm tới. Chúng được vẽ ra vì một ca không ai vẽ là một ca không ai nhận ra là đang hỏng.',
+ 'st.tag':'chỉ để review',
+ 'st.critical':'<b>Mới đo 18 trên 30 episode, và lượt chạy bị ngắt giữa chừng.</b> Mọi con số trên trang đều dựa trên một cỡ mẫu nằm ngoài ngân sách rủi ro đã khai. Một notice, không phải hai — ca bị ngắt gộp vào ca critical chứ không xếp chồng bên dưới. Và dòng tóm tắt phía trên ghi <em>dưới</em>, không bao giờ ghi <em>đạt</em>: một notice không sửa được lời nói sai nằm trong chính dòng nó chú thích, vì người lướt chỉ đọc dòng đó.',
+ 'st.na':'không áp dụng','st.nasub':'2 va chạm / 30 episode phân biệt',
+ 'st.nanote':'<code>upper_bound_95</code> là <code>None</code> một khi đã quan sát được va chạm (<code>gates.py:199</code>): quy tắc ba chỉ áp cho dữ liệu không-sự-kiện. Nên ô này không in <code>≤</code> — không có cận trên nào để nêu — cũng không in <em>không đo</em> — phép đo có tồn tại và kết quả của nó rất rõ.',
+ 'st.copied':'Đã sao chép','st.failed':'Sao chép lỗi',
+ 'st.copynote':'ID vẫn đọc được ở mọi trạng thái nên ca lỗi vẫn dùng được — người đọc bôi đen chép tay. Test qua helper thuần <code>copyDecisionId(id, write)</code>, nhận hàm ghi qua tham số nên cả hai nhánh chạy được trong Node, không cần <code>navigator</code>, không cần mock global.',
+ 'st.h4':'Khi lượt chạy có khuyến nghị',
+ 'st.reco':'Khi có hai ứng viên qua gate, card kết luận nêu tên người thắng và in ΔU <b>kèm khoảng tin cậy 95%, không bao giờ in thiếu</b> — một khoảng chứa số 0 nghĩa là hai bên có thể ngang nhau, và in mỗi giá trị trung bình sẽ biến điều đó thành một kết quả.',
+ 'sh.title':'Gửi quyết định này','sh.to':'Người nhận','sh.subj':'Tiêu đề','sh.msg':'Nội dung',
+ 'sh.size':'· 7 sheet','sh.cancel':'Huỷ','sh.open':'Mở ứng dụng mail',
+ 'sh.note':'<b>Nút này làm được gì và không làm được gì.</b> <code>mailto:</code> mở ứng dụng mail của chính người dùng với phần chữ đã điền sẵn — không cần backend, chạy được ngay hôm nay. Nó <em>không</em> đính kèm được workbook: trình duyệt không cho một liên kết nhét file vào email. Muốn đính kèm thì phải gửi từ phía server, kéo theo việc chọn nhà cung cấp, một luật ai-được-gửi-cho-ai, và một bản ghi audit cho mỗi lần gửi.'
+};
+const EN={}; document.querySelectorAll('[data-t]').forEach(el=>{EN[el.dataset.t]=el.innerHTML});
+document.getElementById('lang').addEventListener('click',e=>{
+  const toVi=e.currentTarget.textContent.trim()==='EN', map=toVi?VI:EN;
+  document.querySelectorAll('[data-t]').forEach(el=>{const v=map[el.dataset.t]; if(v!==undefined) el.innerHTML=v});
+  root.lang=toVi?'vi':'en'; e.currentTarget.textContent=toVi?'VI':'EN';
+});
+</script>
+</body>
+</html>

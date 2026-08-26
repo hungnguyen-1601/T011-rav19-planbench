@@ -37,7 +37,7 @@ holds no entry for any contract-era profile, so nothing in use was lost.
 from __future__ import annotations
 
 import math
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -519,6 +519,66 @@ class HardwareSpec(BaseModel):
         return self
 
 
+class CapabilityGrant(BaseModel):
+    """One capability this deployment owns beyond the v1 vocabulary (§5.2).
+
+    ``available_observations`` is a closed list of two tokens, and it has
+    to stay closed: gate G6 compares those tokens literally, so a typo
+    there would read as a hardware incompatibility that does not exist.
+    But a deployment that genuinely runs a tracker of its own has no way
+    to say so, and until it does, "custom capability" is a plugin-side
+    idea the deployment side cannot answer.
+
+    **Additive, and empty by default.** A profile that declares none
+    hashes and validates exactly as it did before this field existed —
+    which is not a convenience but a requirement: every stored profile
+    predates it, and a field that moved their fingerprints would orphan
+    the runs they describe.
+
+    ``provider_config`` is the deployment's, and it reaches the execution
+    fingerprint: a tracker retuned between two sweeps is a different
+    experimental condition, whatever the candidates did.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    capability: str = Field(min_length=1)
+    provider_id: str = Field(min_length=1)
+    provider_version: str = Field(min_length=1)
+    provider_config: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("capability", mode="before")
+    @classmethod
+    def _canonical_capability(cls, value: object) -> object:
+        """One spelling, through the SDK's alias bridge.
+
+        The same door ``CandidateProviderBinding`` uses, for the same
+        reason: a deployment granting ``lidar_2d`` and a plugin requiring
+        ``planbench://channel/lidar-2d@1`` must meet, and they only meet
+        if both sides reduce to one form before anything compares them.
+        """
+        if not isinstance(value, str):
+            return value
+        from planbench_plugin_sdk import canonical_requirement
+
+        return canonical_requirement(value)
+
+
+class AmbiguousGrantError(ValueError):
+    """Two providers offer one capability and nothing chose between them.
+
+    Refused rather than resolved. A tracker and a ground-truth source can
+    both produce ``human_state_estimates`` and they are **different
+    experiments**; picking the better one on the deployment's behalf
+    would change what a result means without saying so (§5.4).
+
+    Raised inside a validator, so callers see it wrapped in pydantic's
+    ``ValidationError`` — the same way every other refusal in this schema
+    layer surfaces. It exists as its own type so the *reason* is
+    greppable, not so it can be caught separately.
+    """
+
+
 class TaskProfile(BaseModel):
     """Complete deployment question, per CONTRACTS HĐ-2.
 
@@ -632,6 +692,13 @@ class TaskProfile(BaseModel):
     missions: tuple[Mission, ...] = Field(min_length=1)
     robot: TaskRobotSpec
     available_observations: tuple[ObservationToken, ...] = Field(min_length=1)
+    #: Capabilities this deployment owns beyond the v1 vocabulary (§5.2).
+    #:
+    #: Empty for every profile written before H11, and empty must mean
+    #: *unchanged*: the fingerprint payload omits the key entirely rather
+    #: than hashing ``[]``, so a stored profile keeps the conditions hash
+    #: its runs were recorded under.
+    capability_grants: tuple[CapabilityGrant, ...] = ()
     constraints: TaskConstraints
     hardware: HardwareSpec
 
@@ -651,6 +718,52 @@ class TaskProfile(BaseModel):
                 field="available_observations",
             )
         return value
+
+    @model_validator(mode="after")
+    def _grants_do_not_collide(self) -> TaskProfile:
+        """Two grants for one capability is a choice nobody made.
+
+        Checked here rather than at resolution so the profile is refused
+        when it is *written*, not when a sweep is three hours in: the
+        deployment is the thing that is wrong, and it is wrong before any
+        episode runs.
+        """
+        seen: dict[str, str] = {}
+        for grant in self.capability_grants:
+            previous = seen.get(grant.capability)
+            if previous is not None and previous != grant.provider_id:
+                raise AmbiguousGrantError(
+                    f"{grant.capability} is granted by both {previous!r} and "
+                    f"{grant.provider_id!r}, and this profile does not say which. The "
+                    "host will not choose: two sources of one capability are two "
+                    "different experiments"
+                )
+            seen[grant.capability] = grant.provider_id
+        overlap = {
+            grant.capability
+            for grant in self.capability_grants
+            if grant.capability in set(self.available_observations)
+        }
+        if overlap:
+            raise AmbiguousGrantError(
+                f"{sorted(overlap)} appear both in available_observations and in "
+                "capability_grants; the first says the deployment simply has it and the "
+                "second names a provider for it, and a resolver reading both would have "
+                "to guess which the deployment meant"
+            )
+        return self
+
+    def granted_capabilities(self) -> tuple[str, ...]:
+        """v1 tokens and v2 grants as one canonical set.
+
+        The single answer to *what does this deployment offer*. Sorted
+        and deduplicated for the reason the observation tokens are: a set
+        written in two orders is one set, and anything hashing it must
+        not see two.
+        """
+        return tuple(
+            sorted({*self.available_observations, *(g.capability for g in self.capability_grants)})
+        )
 
     @model_validator(mode="after")
     def _validate_missions(self) -> TaskProfile:

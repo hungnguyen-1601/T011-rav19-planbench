@@ -244,6 +244,32 @@ class FakeGateway:
             a.model_dump(mode="json") for a in outcome_advice(build_outcome(self._require(run_id)))
         ]
 
+    def get_recommendation(self, task_profile_id: str | None = None) -> dict[str, Any]:
+        """Shape-faithful and math-free: the real rules are exercised by
+        ``tests/test_recommendation.py`` against real reports; the fake
+        only proves the plumbing carries the answer."""
+        self.calls.append("get_recommendation")
+        if task_profile_id is None:
+            if len(self.deployments) != 1:
+                names = ", ".join(sorted(self.deployments)) or "none declared"
+                raise GatewayError(f"several deployments exist ({names}); name one")
+            task_profile_id = next(iter(self.deployments))
+        if task_profile_id not in self.deployments:
+            raise GatewayError(f"deployment {task_profile_id!r} not found")
+        runs = [
+            run_id
+            for run_id, report in self.runs.items()
+            if report["identity"]["task_profile_id"] == task_profile_id
+        ]
+        ranked = [run_id for run_id in runs if self.runs[run_id].get("decision_card")]
+        return {
+            "task_profile_id": task_profile_id,
+            "evidence_tier": 1 if ranked else 3,
+            "runs_considered": runs,
+            "cases": [],
+            "advice": [],
+        }
+
     def _require(self, run_id: str) -> dict[str, Any]:
         if run_id not in self.runs:
             raise GatewayError(f"decision run {run_id!r} not found")

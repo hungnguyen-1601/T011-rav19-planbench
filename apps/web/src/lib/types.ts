@@ -204,6 +204,12 @@ export interface ScenarioPreviewRequest {
   /** Seeded traffic is timed off this, so a preview shows one seed
    *  rather than implying the scenario looks like this for all of them. */
   seed?: number;
+  /** Seconds of motion to sample, from 0. Absent asks for the instant
+   *  alone — the shape this had before playback existed. */
+  duration?: number;
+  /** Seconds between samples. Resolution, not frame rate: the client
+   *  plays the track back at its own pace. */
+  step?: number;
 }
 
 export interface ScenarioResource {
@@ -228,7 +234,21 @@ export interface ScenarioPreview {
   seed: number;
   valid: boolean;
   errors: string[];
-  dynamic_obstacles: { name: string; radius: number; position: Point2D }[];
+  dynamic_obstacles: {
+    name: string;
+    radius: number;
+    position: Point2D;
+    /** Where this obstacle goes, sampled every `step` seconds from 0.
+     *  Empty on a reply that was asked for one instant, and on one from
+     *  a server that predates playback. */
+    track?: Point2D[];
+  }[];
+  /** What the tracks span. Read from here rather than from what was
+   *  asked for: the two differ whenever a request was clamped, and a
+   *  scrubber labelled longer than its track is the same lie as a canvas
+   *  labelled t = 40 showing t = 0. */
+  duration?: number;
+  step?: number;
 }
 
 export interface SimulationResource {
@@ -335,8 +355,48 @@ export interface SimulationResultResponse {
   metrics: EpisodeMetrics | null;
 }
 
+/** One route the global planner returned, and when it took over.
+ *
+ * `from_time` rather than a step index: the events and the trajectory
+ * are stamped by one engine clock, so a replan's moment lands on the
+ * frames without arithmetic. */
+export interface EpisodePlanRoute {
+  attempt: number;
+  from_time: number;
+  points: Point2D[];
+}
+
+/** A library entry, built and drawn without being stored.
+ *
+ * Shaped so `trafficAt` and `playableSeconds` read it unchanged — the
+ * same fields `ScenarioPreview` carries — because a second way to say
+ * "where is the traffic at t" is a second answer. */
+export interface LibraryPreview {
+  library_name: string;
+  map: MapData;
+  scenario: Scenario;
+  dynamic_obstacles: {
+    name: string;
+    radius: number;
+    position: Point2D;
+    track?: Point2D[];
+  }[];
+  duration?: number;
+  step?: number;
+}
+
 export type WsMessage =
-  | { type: "start"; simulation_id: string; steps: number; plan_path: Point2D[] }
+  | {
+      type: "start";
+      simulation_id: string;
+      steps: number;
+      plan_path: Point2D[];
+      /** Every route, first included. Absent from a server that predates
+       *  the field, and empty when the replans could not be placed —
+       *  both mean "draw the opening plan and nothing else", never "this
+       *  episode never replanned". */
+      plans?: EpisodePlanRoute[];
+    }
   | {
       type: "state";
       time: number;

@@ -302,6 +302,35 @@ def build_registry(
             effect=Effect.READ,
             handler=lambda args: gateway.get_outcome(str(args["run_id"])),
         ),
+        Tool(
+            name="get_recommendation",
+            description=(
+                "Which algorithm a deployment should use, argued from its stored "
+                "runs by deterministic rules: feasibility on that profile first, "
+                "then the cards, then the per-mission split of ΔU. Answer 'which "
+                "should I pick' from this — never from your own weighing of the "
+                "evidence. evidence_tier 3 means nothing comparable was measured "
+                "and the honest advice is which comparison to run. Omit "
+                "task_profile_id only when a single deployment exists."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "task_profile_id": {
+                        "type": "string",
+                        "description": (
+                            "Deployment id from list_deployments. Optional when "
+                            "exactly one deployment exists."
+                        ),
+                    }
+                },
+                "additionalProperties": False,
+            },
+            effect=Effect.READ,
+            handler=lambda args: gateway.get_recommendation(
+                str(args["task_profile_id"]) if args.get("task_profile_id") else None
+            ),
+        ),
     ]
 
     return ToolRegistry(tools, policy)

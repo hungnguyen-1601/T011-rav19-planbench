@@ -29,6 +29,7 @@ accepted benchmarks, not from this run.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from functools import lru_cache
 from pathlib import Path
@@ -62,6 +63,12 @@ def git_sha() -> str:
     Cached because it cannot change while the process lives, and shelling
     out per download would be a subprocess on a read path.
     """
+    # The same variable a decision card's manifest prefers. An installed
+    # build has no `.git`, and a report saying `unknown` beside a card
+    # naming a real commit would be two answers to one question.
+    stamped = os.environ.get("PLANBENCH_GIT_SHA", "").strip()
+    if stamped:
+        return stamped.lower()
     try:
         result = subprocess.run(  # noqa: S603 - fixed argv, no shell
             ["git", "rev-parse", "HEAD"],  # noqa: S607

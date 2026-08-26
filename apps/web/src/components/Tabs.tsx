@@ -41,6 +41,7 @@ export interface TabsProps<Id extends string> {
   /** Distinguishes this strip's ids from another's on the same page. */
   idPrefix: string;
   ariaLabel: string;
+  className?: string;
 }
 
 export function Tabs<Id extends string>({
@@ -49,10 +50,11 @@ export function Tabs<Id extends string>({
   onSelect,
   idPrefix,
   ariaLabel,
+  className,
 }: TabsProps<Id>) {
   return (
     <>
-      <div className="toolbar" role="tablist" aria-label={ariaLabel}>
+      <div className={`toolbar tabs-list${className ? ` ${className}` : ""}`} role="tablist" aria-label={ariaLabel}>
         {tabs.map((tab) => {
           const selected = tab.id === active;
           return (

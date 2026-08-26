@@ -30,6 +30,17 @@ export interface NavItem {
   hidden?: boolean;
   /** Requires a session; shown but marked when signed out. */
   session?: boolean;
+  /** Only an admin can do anything here, so only an admin is offered it.
+   *
+   * Cosmetic and stated as such: the API refuses the write regardless.
+   * Hiding the entry keeps the rail from advertising a door that
+   * answers with a 403 to most of the people who read it. */
+  admin?: boolean;
+  /** On its way out, and still the only way to do something.
+   *
+   * A chip beside the name rather than a section of its own: a heading
+   * is a claim about a set, and this set has one member. */
+  legacy?: boolean;
 }
 
 export interface NavSection {
@@ -45,14 +56,26 @@ export interface NavSection {
  * heading — `Deployments` and `Decisions` sitting between `Benchmarks`
  * and `Leaderboard`, with nothing saying which was replacing which.
  *
- * `nav.section.retiring` is deliberately visible rather than tidied
- * away. Those pages still work and are still the only way to do some
- * things; saying so is more use to a reader than a sidebar that quietly
- * lists a replacement beside the thing it replaces.
+ * **The `Being replaced` group is gone, and that reverses an earlier
+ * decision rather than tidying one away.** It was kept visible on the
+ * argument that those pages still work and are still the only way to do
+ * some things, and saying so beats a sidebar that quietly lists a
+ * replacement beside the thing it replaces. That argument held while the
+ * group had four entries. It has one.
+ *
+ * A heading is a claim about a set. Spending one on a single item makes
+ * the reader parse a category to learn a fact about one row — and the
+ * fact travels better as a chip beside the name it is about, which is
+ * what `legacy` now is. The page keeps saying what it is; it stops
+ * needing its own section of the menu to say it.
+ *
+ * A navigation label should also name a place, not report on the
+ * project's state. `Being replaced` was the one entry here that did the
+ * second.
  */
 export const NAV_SECTIONS: readonly NavSection[] = [
   {
-    titleKey: "nav.section.doing",
+    titleKey: "nav.section.workspace",
     items: [
       {
         href: "/",
@@ -81,7 +104,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     ],
   },
   {
-    titleKey: "nav.section.materials",
+    titleKey: "nav.section.resources",
     items: [
       { href: "/maps", labelKey: "nav.maps", icon: "map", descriptionKey: "nav.desc.maps" },
       {
@@ -103,29 +126,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         session: true,
         descriptionKey: "nav.desc.models",
       },
-    ],
-  },
-  {
-    titleKey: "nav.section.retiring",
-    items: [
-      // `/benchmarks`, `/leaderboard` and `/algorithms` were removed in
-      // P6, each after the thing that replaced it existed: candidates and
-      // the registry moved to `/candidates`, the catalogue of results to
-      // `/decisions`, and watching one episode to `/simulate`. What did
-      // *not* move — the difficulty curve, the generalization gap over
-      // scenario splits, the split badges — was retired with them on
-      // purpose: they are claims across scenarios, and HĐ-1.4 scopes a
-      // recommendation to one deployment. See the P6 report.
-      //
-      // `/scenarios` stays. The deployment form still cannot draw
-      // obstacles, so this is the only place to build a scenario with
-      // them, and removing it would take away a capability rather than
-      // move one.
       {
         href: "/scenarios",
         labelKey: "nav.scenarios",
         icon: "map",
         session: true,
+        legacy: true,
         descriptionKey: "nav.desc.scenarios",
       },
     ],
@@ -141,6 +147,14 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         session: true,
         descriptionKey: "nav.desc.reviews",
       },
+      {
+        href: "/settings",
+        labelKey: "nav.settings",
+        icon: "settings",
+        session: true,
+        admin: true,
+        descriptionKey: "nav.desc.settings",
+      },
       { href: "/system", labelKey: "nav.system", icon: "info", descriptionKey: "nav.desc.system" },
     ],
   },
@@ -148,6 +162,13 @@ export const NAV_SECTIONS: readonly NavSection[] = [
 
 /** Routes that need a title but no sidebar entry. */
 const EXTRA_ROUTES: readonly NavItem[] = [
+  /* The assistant is back on the rail. It came off when the floating
+     dock arrived, on the reading that two doors to one room is one door
+     too many — but the two are not one room: the dock answers a
+     question from wherever you are standing, and the page reads papers,
+     drafts plugins and publishes what the agent is allowed to do. The
+     rail was the only entry that named the second, and without it the
+     page was reachable only from a tile on the dashboard. */
   { href: "/login", labelKey: "nav.login", icon: "user", hidden: true },
   { href: "/welcome", labelKey: "nav.welcome", icon: "user", hidden: true },
   { href: "/auth/callback", labelKey: "nav.login", icon: "user", hidden: true },
@@ -195,6 +216,55 @@ export interface Crumb {
  * record id (`/benchmarks/ab12`) and shown verbatim: ids, checksums and
  * user-supplied names must never be run through a dictionary.
  */
+/** Pages whose content is a canvas rather than a column of text.
+ *
+ * A map editor, a simulator and a deployment form are drawing surfaces:
+ * more width is more of the thing the page is for. Everywhere else, a
+ * measure that runs the full width of a 1920 monitor is a measure
+ * nobody's eye can track back to the start of the next line — which is
+ * why `main.content` is capped at all.
+ *
+ * **The list lives here rather than on the pages.** `AppShell` owns
+ * `<main>`; the root layout mounts it above every page, so a page has
+ * nothing to pass upward. A named constant is also an edit a reviewer
+ * sees, where a class sprinkled through each page would not be.
+ */
+const WIDE_CONTENT_ROUTES = ["/maps", "/simulate", "/deployments"] as const;
+
+/** Whether this path wants the cap lifted.
+ *
+ * Matched with `isActive`, not with equality, so `/maps/warehouse_a` is
+ * as wide as `/maps` — the editor is the same drawing surface either
+ * way, and a detail page that suddenly narrowed would be the odd one.
+ */
+export function wideContent(pathname: string): boolean {
+  return WIDE_CONTENT_ROUTES.some((route) => isActive(pathname, route));
+}
+
+/**
+ * What one crumb shows, given a name the page supplied for its own.
+ *
+ * Three conditions, and each rules out a way of renaming the wrong
+ * thing:
+ *
+ * - **the last crumb only.** `/decisions/abc` puts `Decisions` first;
+ *   naming that one would relabel a section after one of its records.
+ * - **only a crumb with no `href`.** Those are the ones `breadcrumbs()`
+ *   could not name — the raw path segment. A crumb that has an `href`
+ *   is a known route whose label comes from the dictionary.
+ * - **only when a name was actually supplied.** `null` while the page's
+ *   fetch is in flight, and the id stands until it lands.
+ */
+export function crumbLabel(
+  crumbs: readonly Crumb[],
+  index: number,
+  named: string | null,
+): { labelKey?: string; label?: string } {
+  const crumb = crumbs[index];
+  if (crumb.href || index !== crumbs.length - 1 || !named) return crumb;
+  return { label: named };
+}
+
 export function breadcrumbs(pathname: string): Crumb[] {
   const route = matchRoute(pathname);
   if (!route || route.href === "/") return [];

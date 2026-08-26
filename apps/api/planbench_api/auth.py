@@ -134,9 +134,35 @@ class AuthService:
             logger.warning("developer password: %s", password)
 
     def _ensure_password_user(self, nickname: str, password: str) -> User | None:
-        """Create the account if it is missing; never overwrite one."""
+        """Create the account, or bring an existing one back in step.
+
+        Returns the account only when it was *created*, so the caller can
+        tell a fresh deployment from a returning one.
+
+        **The password is reconciled rather than left alone**, and that
+        is a correction. Creating-only meant `PLANBENCH_SEED_USERS` was
+        read exactly once in an installation's life: change the entry
+        afterwards and the file said one password while the database
+        still held the hash of another, with the sign-in page rejecting
+        the credential printed right next to it. That is what happened
+        when the desktop build moved to a known password — `.env` read
+        `admin:admin`, the account had been created days earlier with a
+        generated one, and there was no way to tell from the outside.
+
+        Safe because the seed list is deployment configuration and there
+        is no other way to set a password: the API has no change-password
+        route, so nothing a person did through the app can be undone by
+        this.
+        """
         existing = self._users.find_by_nickname(nickname)
         if existing is not None:
+            stored = self._users.get_stored(existing.id)
+            if not verify_password(password, stored.password_hash or ""):
+                self._users.set_password(existing.id, hash_password(password))
+                logger.info(
+                    "seed account password brought in step with PLANBENCH_SEED_USERS",
+                    extra={"context": {"nickname": nickname}},
+                )
             return None
         try:
             return self._users.create(

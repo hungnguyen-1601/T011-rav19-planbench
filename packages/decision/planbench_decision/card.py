@@ -41,6 +41,7 @@ its own acceptance criterion.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Mapping, Sequence
 from datetime import datetime
@@ -623,6 +624,18 @@ def resolve_git_sha(repo: Path | str | None = None) -> str:
     a placeholder: a manifest whose ``git_sha`` says ``unknown`` looks
     complete and rebuilds nothing.
     """
+    for env_var in (
+        "PLANBENCH_GIT_SHA",
+        "RENDER_GIT_COMMIT",
+        "GIT_COMMIT",
+        "COMMIT_SHA",
+        "SOURCE_VERSION",
+        "VERCEL_GIT_COMMIT_SHA",
+    ):
+        val = os.environ.get(env_var)
+        if val and val.strip():
+            return val.strip().lower()
+
     try:
         completed = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -631,12 +644,12 @@ def resolve_git_sha(repo: Path | str | None = None) -> str:
             text=True,
             check=True,
         )
+        return completed.stdout.strip().lower()
     except (OSError, subprocess.CalledProcessError) as exc:
         raise CardError(
             "cannot read the current git commit, so no manifest can honestly say which code "
             f"produced this card ({exc})"
         ) from exc
-    return completed.stdout.strip().lower()
 
 
 def _require_gates_reported(

@@ -353,7 +353,7 @@ export function TrafficEditor({
           validators live. A block with nowhere to show them would hide
           all five. */}
       {blockErrors.map((entry) => (
-        <p key={`${entry.path}:${entry.message}`} className="notice warn">
+        <p key={`${entry.path}:${entry.message}`} className="notice notice--warn">
           {entry.message}
         </p>
       ))}
@@ -519,7 +519,7 @@ export function TrafficEditor({
                 as declared traffic. Not a refusal: the shipped
                 `sudden_stop` scenario does exactly this on purpose. */}
             {parked !== null ? (
-              <div className="notice warn" style={{ marginTop: 6 }}>
+              <div className="notice notice--warn" style={{ marginTop: 6 }}>
                 {t("deployments.form.traffic.parkedFromTheStart", {
                   percent: String(Math.round(parked * 100)),
                   seconds: String(cycleSeconds(obstacle.motion) ?? 0),
@@ -554,7 +554,7 @@ export function TrafficEditor({
                 field constraint keeps its own address, so it belongs
                 beside the row it names rather than in the block's pile. */}
             {mine.map((entry) => (
-              <p key={`${entry.path}:${entry.message}`} className="notice warn">
+              <p key={`${entry.path}:${entry.message}`} className="notice notice--warn">
                 {entry.path.split(".").slice(3).join(".")}: {entry.message}
               </p>
             ))}

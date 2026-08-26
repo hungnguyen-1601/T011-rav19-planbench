@@ -30,11 +30,19 @@ import en from "../../lib/i18n/locales/en.json";
 import vi from "../../lib/i18n/locales/vi.json";
 import { NAV_SECTIONS } from "../../lib/navigation";
 import { poseOf } from "../../lib/deployments";
+import { CONDITION_GROUPS } from "../../lib/benchConditions";
 
 const APP = join(process.cwd(), "src", "app");
 const PAGE = readFileSync(join(APP, "simulate", "page.tsx"), "utf8");
 const CLIENT = readFileSync(join(process.cwd(), "src", "lib", "decisions.ts"), "utf8");
 const EN = en as Record<string, string>;
+const VI = vi as Record<string, string>;
+
+/** The condition rows, which moved out of the page when four cards
+ *  became seven — declared as a table so the inventory can be checked
+ *  against the schema itself (`bench-conditions.test.ts`). */
+const CONDITION_PATHS = CONDITION_GROUPS.flatMap((group) => group.fields.map((field) => field.path));
+const CONDITION_LABELS = CONDITION_GROUPS.flatMap((group) => group.fields.map((field) => field.labelKey));
 
 describe("the episode comes from a deployment, not from a form", () => {
   it("takes a deployment and one of its missions", () => {
@@ -72,9 +80,17 @@ describe("the episode comes from a deployment, not from a form", () => {
        comparison runs under; an editable copy would be a second
        statement of the deployment, free to disagree with it. */
     expect(PAGE).toContain("bench.conditions");
-    expect(PAGE).toContain("deployment.constraints?.episode_timeout_s");
+    /* The rows themselves moved into `lib/benchConditions` when the
+       four cards became seven, so the timeout is asserted where it is
+       now declared. The claim is unchanged: it is read out of the stored
+       profile, never offered as an input. */
+    expect(CONDITION_PATHS).toContain("constraints.episode_timeout_s");
     expect(PAGE).toContain("deployment.environment?.sensor_noise");
-    expect(EN["bench.conditionsNote"]).toContain("different experiment");
+    expect(EN["bench.conditionsNote"]).toContain("kept unchanged");
+    expect(VI["bench.conditions"]).toBe("Điều kiện triển khai");
+    expect(PAGE).toContain("deployment-conditions-grid");
+    expect(PAGE).toContain("<ConditionGroup");
+    expect(PAGE).not.toContain('<section className="panel simulate-conditions">');
   });
 
   it("names which noise streams are switched on", () => {
@@ -85,6 +101,32 @@ describe("the episode comes from a deployment, not from a form", () => {
     expect(PAGE).toContain("function describeNoise(");
     expect(en).toHaveProperty("bench.noiseNone");
     expect(vi).toHaveProperty("bench.noiseNone");
+  });
+
+  it("presents locked conditions as semantic compact groups", () => {
+    expect(PAGE).toContain('className="deployment-condition-list"');
+    expect(PAGE).toContain("<dt>");
+    expect(PAGE).toContain("<dd>");
+    expect(PAGE).toContain("bench.conditionsLockedHint");
+    expect(PAGE).toContain("aria-expanded={conditionsExpanded}");
+    expect(PAGE).toContain("bench.conditionsSummary");
+  });
+
+  it("renders replanning and active noise as labelled badges, not raw JSON", () => {
+    /* Three states, not two. `replanning: off` is an author's decision
+       and `replanning` absent is a profile that never said, so the badge
+       cannot be a boolean any more — see `bench-conditions.test.ts` for
+       the formatter that decides which of the three a row gets. */
+    expect(PAGE).toContain('condition-status ${on ? "is-on" : "is-off"}');
+    expect(PAGE).toContain('className="condition-status is-unset"');
+    expect(PAGE).toContain("activeNoiseNames(deployment.environment?.sensor_noise)");
+    expect(PAGE).toContain("bench.noiseNone");
+  });
+
+  it("shortens only the displayed context id", () => {
+    expect(PAGE).toContain("shortContextId(staged.episode_context_id)");
+    expect(PAGE).toContain('title={staged.episode_context_id}');
+    expect(PAGE).toContain("stageTestBenchEpisode");
   });
 });
 
@@ -160,8 +202,10 @@ describe("switching deployment clears what the last one drew", () => {
 
 describe("the page is reachable and translated", () => {
   it("sits with the things a reader is doing, not with the retiring flow", () => {
-    const doing = NAV_SECTIONS.find((section) => section.titleKey === "nav.section.doing");
-    expect(doing?.items.map((item) => item.href)).toContain("/simulate");
+    /* `nav.section.doing` is now `nav.section.workspace` — a label that
+       names a place rather than describing an activity. Same group. */
+    const workspace = NAV_SECTIONS.find((section) => section.titleKey === "nav.section.workspace");
+    expect(workspace?.items.map((item) => item.href)).toContain("/simulate");
   });
 
   it("is named for what it now is", () => {
@@ -336,8 +380,8 @@ describe("the conditions table says whether replanning is on", () => {
    * a deployment that never allowed a second plan.
    */
   it("lists it beside the other fixed conditions", () => {
-    expect(PAGE).toContain("bench.replanning");
-    expect(PAGE).toContain("deployment.replanning?.enabled");
+    expect(CONDITION_LABELS).toContain("bench.replanning");
+    expect(CONDITION_PATHS).toContain("replanning.enabled");
   });
 
   it("says what each state means rather than printing on or off", () => {

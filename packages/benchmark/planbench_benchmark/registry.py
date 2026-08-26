@@ -11,7 +11,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from importlib.util import find_spec
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    computed_field,
+    model_validator,
+)
 
 from planbench_benchmark.observation import ObservationClass
 from planbench_planning import (
@@ -140,7 +147,11 @@ class AlgorithmInfo(BaseModel):
     id: str
     kind: str
     description: str
-    benchmarkable: bool
+    #: A D12 pipeline reference: exists to exercise the machinery, never
+    #: to be a contender. ``*+pure_pursuit`` is the case — it ignores
+    #: sensing, so recommending it is the failure the gates exist to
+    #: prevent.
+    reference: bool = False
     config_schema: dict
     #: Which global planner the stack runs. Stated rather than parsed
     #: out of ``id``: the id is a display convention, this is the fact
@@ -168,16 +179,14 @@ class AlgorithmInfo(BaseModel):
     #: fabrication the spec forbids, so the property is now stated
     #: outright instead of being a side effect of field defaults.
     requires_model: bool = False
-    #: Why this stack is not offered as a candidate, when it is not.
+    #: Why this stack was retired **after being measured**, when it was.
     #:
-    #: ``benchmarkable=False`` has meant one thing since D12 — *a
-    #: reference adapter, never a contender* — and now it means two. A
-    #: stack can also be **withdrawn after being measured**, which is a
-    #: different fact about a different kind of entry, and a refusal that
-    #: told the second kind it was "a reference stack only" would be
-    #: misdirecting whoever reads it. So the reason travels with the
-    #: entry and the refusal quotes it. Empty for reference stacks, whose
-    #: reason has not changed.
+    #: A different fact from :attr:`reference`, and the two used to share
+    #: one boolean: ``benchmarkable=False`` meant "D12 reference adapter"
+    #: until ``dwa_predictive`` was withdrawn on measured evidence, after
+    #: which it meant two things and a refusal could not say which. Now
+    #: each says its own, and ``production_eligible`` derives from both —
+    #: so the flag that carried two meanings carries none.
     withdrawn: str = ""
     #: What each half of the stack is allowed to see (P02).
     #:
@@ -193,6 +202,50 @@ class AlgorithmInfo(BaseModel):
     #: that ignores it (end-to-end policies, in principle) solves a
     #: different problem and a report should be able to say so.
     requires_global_path: bool
+
+    @model_validator(mode="before")
+    @classmethod
+    def _refuse_the_retired_flag(cls, value: object) -> object:
+        """``benchmarkable=`` is derived now, and passing it is a no-op.
+
+        Refused rather than ignored: this model does not forbid extras,
+        so an entry still passing the old flag would be accepted and have
+        no effect — a stack meant to be withheld would quietly become a
+        contender, which is the one direction this field must never fail
+        in.
+        """
+        if isinstance(value, dict) and "benchmarkable" in value:
+            raise ValueError(
+                "benchmarkable is derived from reference and withdrawn; passing it here "
+                "would be silently ignored. Set reference=True for a D12 pipeline "
+                "adapter, or withdrawn='...' for a stack retired after measurement"
+            )
+        return value
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def production_eligible(self) -> bool:
+        """May this entry be offered as a candidate at all.
+
+        The **entry** half of §5.10's two gates. The other half is the
+        resolved ``evidence_class`` of a particular execution, and
+        production scoring needs both: a production-eligible entry run
+        with an oracle provider still produces oracle evidence.
+        """
+        return not self.reference and not self.withdrawn
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def benchmarkable(self) -> bool:
+        """Deprecated alias of :attr:`production_eligible`.
+
+        Kept, and kept *computed*, because ``/algorithms`` serialises it
+        and the web candidate picker filters on it. Renaming the wire
+        field would break a running UI to make a Python attribute read
+        better; leaving it derived costs nothing and removes the
+        possibility of the two disagreeing.
+        """
+        return self.production_eligible
 
 
 class _Entry(BaseModel):
@@ -213,6 +266,26 @@ class _Entry(BaseModel):
     config_model: type[BaseModel]
     factory: Callable[[BaseModel], LocalPlanner]
     global_factory: Callable[[int], GlobalPlanner]
+    #: What identifies this controller's *code*, when the code did not
+    #: come from this repository.
+    #:
+    #: Empty for every built-in, and that is not an oversight: their
+    #: version is a checksum over their declared source modules
+    #: (``candidates.controller_version``), which is derivable here and
+    #: therefore should not be restated. An imported bundle has no source
+    #: modules to hash — its code arrived as bytes — so the checksum of
+    #: those bytes has to travel with the entry instead.
+    controller_version: str = ""
+    #: Named parameter sets this controller may be registered with,
+    #: ``{name: params}``. Empty for built-ins, whose configurations live
+    #: in ``candidates.CONTROLLER_CONFIGS`` — written there because a
+    #: name like ``dwa_coarse`` records a design decision somebody made.
+    #:
+    #: An imported controller has no such table and cannot get one
+    #: without an edit to this repository, which is the thing importing
+    #: exists to avoid. So its configurations travel with its entry,
+    #: derived from the manifest.
+    controller_configs: dict[str, dict] = Field(default_factory=dict)
 
 
 def _astar(episode_seed: int) -> GlobalPlanner:  # noqa: ARG001 - A* ignores the seed
@@ -290,7 +363,6 @@ ALGORITHMS: dict[str, _Entry] = {
                 "Classic baseline: samples reachable velocities, rejects colliding "
                 "rollouts and minimises a weighted cost."
             ),
-            benchmarkable=True,
             config_schema=DWAConfig.model_json_schema(),
             global_observation_class="full_static_map",
             local_observation_class="lidar_only",
@@ -309,7 +381,6 @@ ALGORITHMS: dict[str, _Entry] = {
                 "A* global planner with the space-time DWA controller. "
                 + _DWA_PREDICTIVE_DESCRIPTION
             ),
-            benchmarkable=False,
             withdrawn=_WITHDRAWN,
             config_schema=DWAPredictiveConfig.model_json_schema(),
             global_observation_class="full_static_map",
@@ -336,7 +407,6 @@ ALGORITHMS: dict[str, _Entry] = {
                 + " Paired here with the space-time DWA controller. "
                 + _DWA_PREDICTIVE_DESCRIPTION
             ),
-            benchmarkable=False,
             withdrawn=_WITHDRAWN,
             config_schema=DWAPredictiveConfig.model_json_schema(),
             global_planner="rrtstar",
@@ -360,7 +430,6 @@ ALGORITHMS: dict[str, _Entry] = {
                 "verifies the observation and reward versions on load, and records "
                 "the checksum of what actually ran."
             ),
-            benchmarkable=True,
             requires_model=True,
             config_schema=PPOStackConfig.model_json_schema(),
             global_observation_class="full_static_map",
@@ -381,7 +450,7 @@ ALGORITHMS: dict[str, _Entry] = {
                 "pipeline reference only — it ignores sensing, so it must not "
                 "be used to draw benchmark conclusions."
             ),
-            benchmarkable=False,
+            reference=True,
             config_schema=PurePursuitConfig.model_json_schema(),
             global_observation_class="full_static_map",
             local_observation_class="lidar_only",
@@ -401,7 +470,6 @@ ALGORITHMS: dict[str, _Entry] = {
                 "Approach controller, so it differs from astar+dwa in the "
                 "global planner alone."
             ),
-            benchmarkable=True,
             config_schema=DWAConfig.model_json_schema(),
             global_planner="rrtstar",
             stochastic_global_planner=True,
@@ -423,7 +491,7 @@ ALGORITHMS: dict[str, _Entry] = {
                 "pipeline reference only — it ignores sensing, so it must not "
                 "be used to draw benchmark conclusions."
             ),
-            benchmarkable=False,
+            reference=True,
             config_schema=PurePursuitConfig.model_json_schema(),
             global_planner="rrtstar",
             stochastic_global_planner=True,
@@ -438,6 +506,97 @@ ALGORITHMS: dict[str, _Entry] = {
 }
 
 
+#: Stacks contributed at runtime rather than written here: imported
+#: plugin bundles, registered by whatever host process loaded them (see
+#: ``plugin_stacks``). Separate from ``ALGORITHMS`` on purpose — a
+#: catalogue that mixed source-defined stacks with process-lifetime ones
+#: would make "what does this platform offer?" depend on which requests
+#: had been served, with nothing saying so.
+#:
+#: Empty in every process nobody has registered into, which is every
+#: test that does not ask for a plugin, the CLI, and the whole benchmark
+#: package used as a library.
+EXTERNAL_ALGORITHMS: dict[str, _Entry] = {}
+
+
+def register_external(entry: _Entry) -> str:
+    """Add a stack the running process learned about. Returns its id."""
+    EXTERNAL_ALGORITHMS[entry.info.id] = entry
+    return entry.info.id
+
+
+def external_controller_version(controller: str) -> str:
+    """The code identity of an imported controller, or '' for a built-in.
+
+    **Deliberately not cached**, unlike its built-in counterpart. A
+    built-in's source cannot change while the process runs, so hashing it
+    once is safe; an imported bundle can be replaced by a new version at
+    any moment, and a cached answer would file the second import's runs
+    under the first import's identity — which is the exact confusion this
+    whole mechanism exists to prevent.
+    """
+    for entry in EXTERNAL_ALGORITHMS.values():
+        if entry.info.local_controller == controller and entry.controller_version:
+            return entry.controller_version
+    return ""
+
+
+def external_controller_configs() -> dict[str, dict[str, dict]]:
+    """``{controller: {config name: params}}`` for imported controllers.
+
+    Live, for the same reason :func:`external_controller_version` is: the
+    set of imported controllers changes while the process runs, and a
+    dropdown built from a cached answer would offer a configuration whose
+    plugin has since been disabled.
+    """
+    configs: dict[str, dict[str, dict]] = {}
+    for entry in EXTERNAL_ALGORITHMS.values():
+        if entry.controller_configs:
+            configs.setdefault(entry.info.local_controller, {}).update(entry.controller_configs)
+    return configs
+
+
+def unregister_external(algorithm_id: str) -> None:
+    EXTERNAL_ALGORITHMS.pop(algorithm_id, None)
+
+
+def clear_external() -> None:
+    """Forget every runtime-registered stack.
+
+    Tests use it, and so does anything rebuilding the set from storage:
+    re-registering over a stale entry would leave a plugin that has been
+    disabled still offerable under its old factory.
+    """
+    EXTERNAL_ALGORITHMS.clear()
+
+
+def _lookup(algorithm_id: str) -> _Entry | None:
+    """One entry, from whichever source has it. Built-ins win.
+
+    **Two dict probes, not a merged copy.** This used to return
+    ``{**EXTERNAL_ALGORITHMS, **ALGORITHMS}``, which made every lookup
+    O(number of registered stacks) — measured at 0.5 us with ten imported
+    plugins and 33 us with a thousand, for an operation that is a hash
+    lookup. Nothing about the catalogue's size should reach a caller
+    asking about one stack.
+
+    Built-ins win a collision. An imported bundle may not take over the
+    name of a stack whose results are on the leaderboard, and the id it
+    would need to claim is one the manifest id pattern cannot spell.
+    """
+    entry = ALGORITHMS.get(algorithm_id)
+    return entry if entry is not None else EXTERNAL_ALGORITHMS.get(algorithm_id)
+
+
+def _all_entries() -> dict[str, _Entry]:
+    """Both sources, for the callers that genuinely need every entry.
+
+    Enumeration is O(N) by nature; the point of :func:`_lookup` is that
+    *asking about one stack* is not.
+    """
+    return {**EXTERNAL_ALGORITHMS, **ALGORITHMS}
+
+
 def algorithm_info(algorithm_id: str) -> AlgorithmInfo | None:
     """The registry entry for ``algorithm_id``, or None if unregistered.
 
@@ -445,21 +604,23 @@ def algorithm_info(algorithm_id: str) -> AlgorithmInfo | None:
     an old stored report: a benchmark run before a stack was renamed (or
     removed) must still be displayable, just without its metadata.
     """
-    entry = ALGORITHMS.get(algorithm_id)
+    entry = _lookup(algorithm_id)
     return entry.info if entry is not None else None
 
 
 def list_algorithms() -> list[AlgorithmInfo]:
-    return [entry.info for entry in sorted(ALGORITHMS.values(), key=lambda e: e.info.id)]
+    return [entry.info for entry in sorted(_all_entries().values(), key=lambda e: e.info.id)]
 
 
 def _entry(algorithm_id: str) -> _Entry:
-    try:
-        return ALGORITHMS[algorithm_id]
-    except KeyError:
-        raise UnknownAlgorithmError(
-            f"unknown algorithm {algorithm_id!r}; registered: {sorted(ALGORITHMS)}"
-        ) from None
+    entry = _lookup(algorithm_id)
+    if entry is not None:
+        return entry
+    # The full listing is built only to explain a failure, which is the
+    # one moment its cost does not matter.
+    raise UnknownAlgorithmError(
+        f"unknown algorithm {algorithm_id!r}; registered: {sorted(_all_entries())}"
+    )
 
 
 def validate_algorithm_config(algorithm_id: str, config: dict | None) -> BaseModel:

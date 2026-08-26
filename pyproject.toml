@@ -26,12 +26,14 @@ pythonpath = [
     "packages/metrics",
     "packages/benchmark",
     "packages/decision",
+    "packages/explanation",
     "packages/plugin_sdk",
     "services/simulator",
     "services/tracking",
     "services/agent_service",
     "ml",
     "apps/api",
+    "apps/desktop",
 ]
 
 # Ruff is configured in `ruff.toml` at the repository root, not here.

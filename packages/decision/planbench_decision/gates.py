@@ -54,6 +54,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from planbench_decision.candidate import ArtifactResourceProfile, Candidate
+from planbench_decision.latency_screen import LatencyVerdictRecord
 from planbench_decision.pairing import require_sample_set
 from planbench_schemas.episode_context import EpisodeContext
 from planbench_schemas.observations import ObservationToken
@@ -242,6 +243,38 @@ class G4Result(_GateResult):
     p99_ms: float = Field(ge=0.0)
     threshold_ms: float = Field(gt=0.0)
     caveat: str = G4_HOST_ONLY_CAVEAT
+
+    #: The whole tick, when a session measured it (§5.9, H10).
+    #:
+    #: **Added beside the screen above, never in place of it.** The
+    #: legacy figure measures the algorithm's own compute and still
+    #: means exactly what it meant; what it never measured is transport,
+    #: provider work and the host's own overhead, which a plugin in the
+    #: subprocess lane pays every tick. A candidate computing in 4 ms
+    #: inside a 60 ms tick misses every deadline while passing a gate
+    #: that only looked at the 4.
+    #:
+    #: ``None`` when no screening session ran — most runs. Absent is not
+    #: "passed": ``result`` below stays the legacy verdict in that case,
+    #: and nothing claims the whole tick was checked.
+    end_to_end: LatencyVerdictRecord | None = None
+
+    @property
+    def overall(self) -> str:
+        """Both screens, with the stricter one deciding.
+
+        A ``not_measured`` end-to-end screen does **not** downgrade the
+        legacy verdict: it is a statement about the benchmark host being
+        busy, not about the candidate, and letting a noisy machine fail a
+        candidate would make the gate a measure of the room it ran in.
+        """
+        if self.end_to_end is None or self.end_to_end.verdict == "not_measured":
+            return self.result
+        if self.result == "fail" or self.end_to_end.verdict == "fail":
+            return "fail"
+        if self.end_to_end.verdict == "inconclusive":
+            return "inconclusive"
+        return self.result
 
 
 class G5Result(_GateResult):
@@ -620,7 +653,10 @@ def _gate_3(profile: TaskProfile, metrics: Sequence[EpisodeMetricSet]) -> G3Resu
 
 
 def _gate_4(
-    profile: TaskProfile, metrics: Sequence[EpisodeMetricSet], pooled_p99_ms: float
+    profile: TaskProfile,
+    metrics: Sequence[EpisodeMetricSet],
+    pooled_p99_ms: float,
+    end_to_end: LatencyVerdictRecord | None = None,
 ) -> G4Result:
     threshold_ms = profile.robot.t_cycle_ms
     return G4Result(
@@ -628,6 +664,7 @@ def _gate_4(
         n_runs=len(metrics),
         p99_ms=pooled_p99_ms,
         threshold_ms=threshold_ms,
+        end_to_end=end_to_end,
     )
 
 

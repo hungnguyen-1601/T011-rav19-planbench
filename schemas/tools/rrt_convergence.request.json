@@ -1,0 +1,25 @@
+{
+  "$id": "schemas/tools/rrt_convergence.request.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "budget_multiplier": {
+      "description": "Re-run at this multiple of the configured sample budget.",
+      "type": "number"
+    },
+    "candidate_id": {
+      "description": "Which candidate's data to read.",
+      "type": "string"
+    },
+    "episode_context_id": {
+      "description": "The paired episode context, the identity both candidates share.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "candidate_id",
+    "episode_context_id"
+  ],
+  "title": "rrt_convergence@2.0.0 arguments",
+  "type": "object"
+}

@@ -42,6 +42,28 @@ function asRoute(file: string): string {
   return file.replace(APP, "").split(sep).join("/");
 }
 
+/** Whether a page's text goes through the translator.
+ *
+ * Usually that is the page itself. The three dynamic routes are the
+ * exception: `generateStaticParams` has to run on the server, so their
+ * `page.tsx` is a wrapper that exports it and renders a colocated client
+ * component, and every string lives in that component. Following the
+ * `./Something` import keeps the guarantee exact rather than granting
+ * those three a blanket exemption — a wrapper whose component hardcodes
+ * English still fails.
+ */
+function translatesItsText(file: string): boolean {
+  const source = readFileSync(file, "utf8");
+  if (source.includes("useTranslation")) return true;
+  const colocated = [...source.matchAll(/from "\.\/([A-Z][A-Za-z0-9]*)"/g)].map(
+    (match) => join(file, "..", `${match[1]}.tsx`),
+  );
+  return (
+    colocated.length > 0 &&
+    colocated.every((path) => readFileSync(path, "utf8").includes("useTranslation"))
+  );
+}
+
 const DASHBOARD = readFileSync(join(APP, "page.tsx"), "utf8");
 
 describe("the BACKEND card is gone", () => {
@@ -118,7 +140,7 @@ describe("no page hardcodes English where a key belongs", () => {
   /** Every page goes through the shell, and the shell is translated. */
   it("uses the translator on every page", () => {
     const untranslated = pageFiles(APP)
-      .filter((file) => !readFileSync(file, "utf8").includes("useTranslation"))
+      .filter((file) => !translatesItsText(file))
       .map((file) => file.replace(APP, ""));
     expect(untranslated).toEqual([]);
   });

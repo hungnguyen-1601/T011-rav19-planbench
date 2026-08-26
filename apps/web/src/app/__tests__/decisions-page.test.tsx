@@ -19,16 +19,39 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import en from "../../lib/i18n/locales/en.json";
+import { comparisonRows } from "@/lib/candidateMetrics";
 import vi from "../../lib/i18n/locales/vi.json";
 import { NAV_SECTIONS } from "../../lib/navigation";
 
 const APP = join(process.cwd(), "src", "app");
 const LIST = readFileSync(join(APP, "decisions", "page.tsx"), "utf8");
-const DETAIL = readFileSync(join(APP, "decisions", "[id]", "page.tsx"), "utf8");
+const DETAIL = readFileSync(join(APP, "decisions", "[id]", "DecisionDetail.tsx"), "utf8");
+/* The stylesheet, for the rules this page depends on being absent as
+   much as present — a removed column tint leaves nothing to assert on
+   in the markup. */
+const CSS = readFileSync(join(APP, "globals.css"), "utf8");
+/* The summary at the top of the page. The no-card message lives here
+   now: it was one branch of `Outcome` at the bottom, and moving it up
+   moved these assertions with it. */
+const SUMMARY = readFileSync(
+  join(process.cwd(), "src", "components", "DecisionSummary.tsx"),
+  "utf8",
+);
+/* The comparison table, extracted so tests can render it — a
+   function declared inside a fetching page cannot be imported. */
+const GRID = readFileSync(
+  join(process.cwd(), "src", "components", "ComparisonGrid.tsx"),
+  "utf8",
+);
+
+/* The modules the page delegates its decisions to. Asserting a key on
+   the page would fail by design: the page renders `t(verdict.key)` and
+   the key is chosen where the rule lives. */
+const GATE_LIB = readFileSync(join(process.cwd(), "src", "lib", "gateSummary.ts"), "utf8");
 /* Read here because of one assertion below: the map editor is where
    people go looking for the start and the goal, and it has to send them
    to the page that actually has them. */
-const MAP_EDITOR = readFileSync(join(APP, "maps", "[id]", "page.tsx"), "utf8");
+const MAP_EDITOR = readFileSync(join(APP, "maps", "[id]", "MapEditor.tsx"), "utf8");
 /* Placing a start and a goal, and painting cells, are shared components:
    the launch panel and the deployment form both need them, and two
    copies would be two answers to the same question. The assertions below
@@ -36,6 +59,35 @@ const MAP_EDITOR = readFileSync(join(APP, "maps", "[id]", "page.tsx"), "utf8");
 const COMPONENTS = join(process.cwd(), "src", "components");
 const PLACER = readFileSync(join(COMPONENTS, "MissionPlacer.tsx"), "utf8");
 const PAINTER = readFileSync(join(COMPONENTS, "MapPainter.tsx"), "utf8");
+const DEPLOYMENT_PREVIEW = readFileSync(join(COMPONENTS, "DecisionDeploymentPreview.tsx"), "utf8");
+
+describe("the selected deployment preview", () => {
+  it("sits after the candidate selectors and before the rank action", () => {
+    expect(LIST.indexOf("<DecisionDeploymentPreview")).toBeGreaterThan(LIST.indexOf("comparison-setup-grid"));
+    expect(LIST.indexOf("<DecisionDeploymentPreview")).toBeLessThan(LIST.indexOf("comparison-launch-actions"));
+  });
+
+  it("is read-only and does not reset either candidate", () => {
+    expect(DEPLOYMENT_PREVIEW).toContain("<MapView");
+    expect(DEPLOYMENT_PREVIEW).not.toMatch(/<(input|select|textarea|checkbox)\b/);
+    expect(DEPLOYMENT_PREVIEW).not.toContain("setFirst(");
+    expect(DEPLOYMENT_PREVIEW).not.toContain("setSecond(");
+  });
+
+  it("clears a stale map and isolates map loading failures", () => {
+    expect(DEPLOYMENT_PREVIEW).toContain("setMap(null)");
+    expect(DEPLOYMENT_PREVIEW).toContain("api.getMap");
+    expect(DEPLOYMENT_PREVIEW).toContain("decision-deployment-map-error");
+    expect(DEPLOYMENT_PREVIEW).toContain("decision-deployment-details");
+  });
+
+  it("keeps the map and compact read-only details in one responsive layout", () => {
+    expect(DEPLOYMENT_PREVIEW).toContain("decision-deployment-content");
+    expect(DEPLOYMENT_PREVIEW.indexOf("decision-deployment-map-column")).toBeLessThan(DEPLOYMENT_PREVIEW.indexOf("decision-deployment-details"));
+    expect(DEPLOYMENT_PREVIEW).toContain("aria-expanded={showAdvanced}");
+    expect(DEPLOYMENT_PREVIEW).toContain("decision-noise-details");
+  });
+});
 
 describe("the list shows every run, not only the ones that ranked", () => {
   it("defaults to no outcome filter at all", () => {
@@ -72,8 +124,35 @@ describe("the list shows every run, not only the ones that ranked", () => {
 
 describe("the detail page leads with the gate table", () => {
   it("renders the gate table above the outcome", () => {
-    expect(DETAIL.indexOf("<GateTable")).toBeGreaterThan(-1);
-    expect(DETAIL.indexOf("<GateTable")).toBeLessThan(DETAIL.indexOf("<Outcome"));
+    // There is no gate table any more. Every candidate has a card
+    // carrying G1–G6 and its blocking list, and the comparison table
+    // under the cards carries the numbers the table held — for all
+    // of them, not the first two.
+    expect(DETAIL).not.toContain("<GateTable");
+    // The metrics are one table inside the comparison section: names
+    // down a column, candidates across, so a comparison is a glance
+    // along a row. The cards above carry no metric rows — that overlap
+    // is what made an earlier version of this table redundant.
+    // One grid: a neutral gutter of metric names, then one tinted
+    // column per candidate carrying its identity, its values and its
+    // gate verdicts. No metric appears twice.
+    // Now a real `<table>`, not a flat grid. A `<tr>` is a row, so the
+    // flags row emitting one cell fewer can no longer shift every cell
+    // after it — the failure the old grid had exactly when a candidate
+    // carried a finding.
+    expect(GRID).toContain('<table className="comparison-table">');
+    expect(GRID).toContain("comparison-gutter comparison-label");
+    expect(GRID).toContain('<th scope="col"');
+    expect(DETAIL).not.toContain("<MetricTable");
+    expect(DETAIL).not.toContain("metric-comparison-row");
+    // `Outcome` is gone. It was two components in one — the card's
+    // sensitivity table when a card existed, the no-card message when
+    // one did not — switching on the single condition the whole page
+    // turns on. The message is a branch of `DecisionSummary` at the top
+    // now, and `CardPanel` renders directly under the evidence.
+    expect(DETAIL).not.toContain("<Outcome run=");
+    expect(DETAIL.indexOf("<DecisionSummary")).toBeLessThan(DETAIL.indexOf("<CandidateComparison"));
+    expect(DETAIL.indexOf("<CandidateComparison")).toBeLessThan(DETAIL.indexOf("<CardPanel"));
   });
 
   it("renders all six gates for every candidate, in contract order", () => {
@@ -86,8 +165,18 @@ describe("the detail page leads with the gate table", () => {
        hundred replays of one episode is one independent sample, and
        printing only the run count is how this project once published a
        3.0% upper bound off a single episode driven a hundred times. */
-    expect(DETAIL).toContain("n_distinct_episodes");
-    expect(DETAIL).toContain("decisions.gates.distinctNote");
+    // The gate table carried this in a tooltip; it is a row of the
+    // comparison table now, with the same point spelled out in the
+    // hint beside it rather than hidden on hover over a header.
+    // Asserted against the module that defines the row, not the page:
+    // the page interpolates `decisions.compare.${metric.key}`, so it
+    // never spells any metric name and a source scan of it would pass
+    // with the row deleted.
+    expect(
+      comparisonRows([]).map((row) => row.key),
+    ).toContain("distinctEpisodes");
+    expect(en).toHaveProperty("decisions.compare.distinctEpisodes");
+    expect((en as Record<string, string>)["decisions.compare.why.distinctEpisodes"]).toContain("once per seed");
   });
 
   it("carries each gate's evidence, not only its verdict", () => {
@@ -109,21 +198,40 @@ describe("the detail page leads with the gate table", () => {
   it("marks a candidate that was retired before the others", () => {
     /* Its row rests on fewer episodes than the rest of the table, which
        qualifies every number in it. */
-    expect(DETAIL).toContain("candidate.stopped_early");
-    expect(DETAIL).toContain("decisions.gates.stoppedEarly");
+    expect(GRID).toContain("candidate.stopped_early");
+    expect(GRID).toContain("decisions.gates.stoppedEarly");
   });
 });
 
 describe("a run with no card says which situation it is in", () => {
-  it("distinguishes all three, because each asks for a different action", () => {
-    for (const reason of ["interrupted", "gate_only", "no_survivors"]) {
+  it("distinguishes all four, because each asks for a different action", () => {
+    for (const reason of ["interrupted", "gate_only", "single_survivor", "no_survivors"]) {
+      expect(en).toHaveProperty(`decisions.reason.${reason}`);
+      expect(vi).toHaveProperty(`decisions.reason.${reason}`);
       expect(en).toHaveProperty(`decisions.noCard.whatNext.${reason}`);
       expect(vi).toHaveProperty(`decisions.noCard.whatNext.${reason}`);
     }
   });
 
+  it("does not claim nobody cleared on the run where somebody did", () => {
+    /* The one-survivor sentence exists because the shared one said the
+       opposite of the gate column beside it. */
+    const sole = (en as Record<string, string>)["decisions.reason.single_survivor"];
+    expect(sole.toLowerCase()).toContain("one candidate");
+    expect(sole.toLowerCase()).not.toContain("no candidate");
+  });
+
   it("tells the reader what to do next rather than only what happened", () => {
-    expect(DETAIL).toContain("decisions.noCard.whatNext.");
+    expect(SUMMARY).toContain("decisions.noCard.whatNext.");
+  });
+
+  it("says it once, at the top, rather than four times down the page", () => {
+    /* Four panels each stated the missing recommendation in different
+       words, and one of them stated it wrongly. Four copies of one fact
+       force a reader to check them against each other; the fix is one
+       copy, above the evidence rather than below it. */
+    const uses = [...(DETAIL + SUMMARY).matchAll(/decisions\.noCard\.whatNext\./g)];
+    expect(uses.length, "places the next action is stated").toBe(1);
   });
 
   it("never calls it a failure", () => {
@@ -133,8 +241,12 @@ describe("a run with no card says which situation it is in", () => {
   });
 
   it("keeps the report's own words available rather than only a summary", () => {
-    expect(DETAIL).toContain("why_no_card");
-    expect(DETAIL).toContain("gate_only_deployment");
+    /* This client's reading of a reason code is a paraphrase. A reader
+       who disagrees with the reading needs the platform's own sentence,
+       so it travelled up with the message rather than being dropped
+       when the panel that held it went. */
+    expect(SUMMARY).toContain("why_no_card");
+    expect(SUMMARY).toContain("gate_only_deployment");
   });
 
   it("refuses to suggest loosening the deployment", () => {
@@ -170,39 +282,90 @@ describe("a Decision Card is shown with its caveats attached", () => {
   });
 });
 
-describe("the conditions the measurement happened in travel with it", () => {
-  it("shows the noise amplitudes", () => {
-    /* `episode_context_id` does not hash them (HĐ-3.1): two runs at the
-       same seeds under different sigma have identical context ids and
-       are two different experiments. If this panel is wrong, nothing
-       downstream can tell. */
-    expect(DETAIL).toContain("sensor_noise");
+describe("what the removed panels took with them", () => {
+  /* An asked for three panels to go for now: the measurement
+     environment, the ids for rebuilding a run, and the journal of who
+     read it. Their tests go with them rather than being re-aimed at
+     nothing — the assertions were about markup that is no longer
+     rendered, and a test kept alive against a deleted feature is a test
+     that will be "fixed" by somebody who does not know why it existed.
+
+     Git holds the components. What follows is the one thing that could
+     not leave with them. */
+
+  it("keeps the unpinned-machine warning, above the number it qualifies", () => {
+    /* G4 reads wall-clock latency, so an unpinned run measured a machine
+       that was also doing something else — the same candidate came out
+       at 59.30 ms unpinned and 16.10 ms pinned to two cores. The
+       comparison grid shows pooled p99 against the deployment's limit,
+       and a figure that may be several times too high is worse company
+       for a limit than no figure would be. */
+    expect(DETAIL).toContain("<HostWarning run={run} />");
+    expect(DETAIL).toContain("run.report?.measurement_environment");
   });
 
-  it("surfaces the unpinned-machine warning instead of leaving it in a log", () => {
-    expect(DETAIL).toContain("environment?.warning");
+  it("puts it with the other finding that qualifies the whole grid", () => {
+    /* The host warning is no longer a banner over the table: G4 reads
+       wall-clock latency, so it qualifies the p99 row and nothing else,
+       and above the table it claimed more than the measurement supports.
+       It is passed into the grid and rendered in that row's label. */
+    expect(DETAIL).toContain("hostWarning={<HostWarning run={run} />}");
+    expect(DETAIL.indexOf("<ObservationNotice")).toBeLessThan(
+      DETAIL.indexOf("<ComparisonGrid"),
+    );
+    expect(GRID).toContain('metric.key === "p99" ? hostWarning : null');
   });
 
-  it("shows the trace checksum beside the run URI", () => {
-    /* A URI alone cannot say the files behind it are still the ones this
-       result came from — that is what the checksum is for (D15). */
-    expect(DETAIL).toContain("run_uri");
-    expect(DETAIL).toContain("run_checksum");
+  it("never words the caveat itself, in either branch", () => {
+    /* The old rule was that the platform's sentence is rendered
+       verbatim, because a client that rewords a caveat can water it
+       down. It was right about why and wrong about what: the *numbers*
+       must survive untouched, the language need not, and freezing both
+       put a Vietnamese paragraph on the English page.
+
+       So there are exactly two paths, and neither is the page composing
+       prose: a dictionary key whose text is reviewed like every other
+       string, or the platform's own sentence passed through. The choice
+       between them is `hostWarningView`, tested over all four payload
+       shapes in `lib/__tests__/decisions.test.ts`. */
+    expect(DETAIL).toContain("hostWarningView(");
+    expect(DETAIL).toContain("view.translated ? t(view.key, view.vars) : view.text");
+  });
+
+  it("stops fetching the journal it no longer draws", () => {
+    /* A request whose response nothing reads is a request that keeps
+       working long after it stops meaning anything. */
+    expect(DETAIL).not.toContain("listDecisionEvents");
   });
 });
 
-describe("the audit trail", () => {
-  it("shows both ends of every change", () => {
-    /* "approved" alone does not say what it replaced. */
-    expect(DETAIL).toContain("previous_state");
-    expect(DETAIL).toContain("new_state");
+
+describe("the list says what each run compared and where", () => {
+  it("names the algorithms rather than the rule they were picked under", () => {
+    /* `experiment_scope` stood in this column. It is the *rule* a pair
+       was chosen under — a thing a reader looks up once — and it was
+       occupying the place they were scanning for which two algorithms
+       actually ran. Nineteen rows reading `global_planner_selection`
+       distinguish nothing. */
+    expect(LIST).toContain('t("decisions.column.candidates")');
+    expect(LIST).toContain("comparedCandidates(run)");
+    expect(LIST).not.toContain('t("decisions.column.scope")');
+    expect(LIST).not.toContain("run.experiment_scope ??");
   });
 
-  it("orders by sequence, not by timestamp", () => {
-    /* Two acts can share a clock reading, and "who decided first" is
-       exactly what an audit trail is asked. The server orders by
-       sequence; the page must not re-sort. */
-    expect(DETAIL).not.toContain("sort(");
+
+  it("keeps the column heading in both locales", () => {
+    for (const key of ["decisions.column.candidates"]) {
+      expect(en).toHaveProperty(key);
+      expect(vi).toHaveProperty(key);
+    }
+  });
+
+  it("drops the lone mark that sat on a row of its own", () => {
+    /* A hint with nothing beside it reads as a control, and a reader
+       clicks it to find out what it is. The counts above it are five
+       labelled cards and do not need a footnote under them. */
+    expect(LIST).not.toContain('t("decisions.tally.note")');
   });
 });
 
@@ -278,6 +441,69 @@ describe("the two human acts sit below the evidence", () => {
   });
 });
 
+describe("the export controls", () => {
+  it("names both formats as an action rather than as a file extension", () => {
+    /* `Excel (.xlsx)` beside `Export Markdown` reads as two different
+       kinds of thing — one a verb, one a suffix. Both are the same
+       action on the same run. */
+    expect((en as Record<string, string>)["decisions.export.excel"]).toBe("Export Excel");
+    expect((vi as Record<string, string>)["decisions.export.excel"]).toBe("Xuất Excel");
+  });
+
+  it("keeps the filename the browser actually saved under", () => {
+    /* `downloadReport` reads it off `Content-Disposition`, so it is what
+       is really in the folder rather than what this page would guess.
+       The component used to discard it, which left a completed download
+       with no trace on the page at all. */
+    expect(DETAIL).toContain(".then((filename) => setSaved({ format, filename }))");
+    expect(DETAIL).toContain('t("decisions.export.saved", { filename: saved.filename })');
+  });
+
+  it("offers the second download through the button that made the first", () => {
+    /* Not a fourth control. The button still works; the saved line names
+       what came out and the label says the button is how to get it
+       again. */
+    expect(DETAIL).toContain('t("decisions.export.again")');
+    expect((en as Record<string, string>)["decisions.export.again"]).toBeTruthy();
+    expect((vi as Record<string, string>)["decisions.export.again"]).toBeTruthy();
+  });
+
+  it("clears the last filename when a new attempt starts", () => {
+    /* Last time's filename beside a spinner says the new one is already
+       done. Both the error and the saved line go together. */
+    const save = DETAIL.slice(
+      DETAIL.indexOf('const save = (format: "md" | "xlsx")'),
+      DETAIL.indexOf("const download = format ==="),
+    );
+    expect(save).toContain("setFailed(null)");
+    expect(save).toContain("setSaved(null)");
+  });
+
+  it("asks for the document in the language the reader chose in the app", () => {
+    /* Not the browser's `Accept-Language`, which is a preference the
+       reader may already have switched away from inside the app. The
+       caveats are the part of these files that does the most work, and
+       one in a language the reader does not use does not travel. */
+    expect(DETAIL).toContain("const { t, locale } = useTranslation()");
+    expect(DETAIL).toContain("void download(runId, locale)");
+    const REPORTS = readFileSync(join(process.cwd(), "src", "lib", "reports.ts"), "utf8");
+    expect(REPORTS).toContain("?locale=${encodeURIComponent(locale)}");
+    /* English by default, so a caller written before the parameter
+       existed keeps receiving exactly the document it received. */
+    expect(REPORTS).toContain("locale: Locale = DEFAULT_LOCALE");
+  });
+
+  it("styles the saved line off the palette rather than a literal colour", () => {
+    expect(CSS).toContain(".decision-export__saved");
+    const rule = CSS.slice(
+      CSS.indexOf(".decision-export__saved"),
+      CSS.indexOf("}", CSS.indexOf(".decision-export__saved")),
+    );
+    expect(rule).toContain("var(--muted)");
+    expect(rule).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+  });
+});
+
 describe("starting a sweep from the page", () => {
   it("queues rather than running inside the request", () => {
     /* The episode count comes from the deployment's declared collision
@@ -326,6 +552,52 @@ describe("starting a sweep from the page", () => {
   it("offers cancel only while a job is live", () => {
     expect(LIST).toContain("jobIsLive(job) ? (");
     expect(LIST).toContain("cancelDecisionJob");
+  });
+});
+
+describe("the scope a sweep is queued under", () => {
+  it("sends one, instead of letting the client default decide", () => {
+    /* The whole defect: `queueDecision` was called without `scope`, so
+       every run took the client default `global_planner_selection` —
+       and a reader swapping the local controller was refused for a
+       scope they had never chosen and could not reach. */
+    const call = LIST.slice(LIST.indexOf("await queueDecision({"));
+    expect(call.slice(0, call.indexOf("});"))).toMatch(/^\s*scope,\s*$/m);
+  });
+
+  it("derives it from the candidates rather than asking first", () => {
+    expect(LIST).toContain("inferExperimentScope(candidates)");
+    expect(LIST).toContain("scopeOverride ?? derivedScope");
+  });
+
+  it("lets the reader disagree with the derivation", () => {
+    /* Three options, defaulting to the derived one. `null` is what
+       "still following the candidates" is stored as, so changing a
+       picker keeps moving the scope with it. */
+    expect(LIST).toContain("EXPERIMENT_SCOPES.map(");
+    expect(LIST).toContain("useState<ExperimentScope | null>(null)");
+  });
+
+  it("warns about a contradiction on the form without disabling the launch", () => {
+    /* Advisory only: the server validates the scope again and is the
+       authority. What this buys is the hours between the click and the
+       refusal. */
+    expect(LIST).toContain("scopeConflict(scope, candidates)");
+    expect(LIST).toContain("CONFLICT_KEY[conflict]");
+    const disabled = LIST.slice(LIST.indexOf("comparison-launch-actions"));
+    expect(disabled.slice(0, disabled.indexOf("</div>"))).not.toContain("conflict");
+  });
+
+  it("translates a scope refusal and keeps the server's own words", () => {
+    /* The message arrives as "…requires an identical local layer
+       (component, version and parameters)…, found 2 variants across
+       ['e1251e…', 'e4d2c…']" — accurate, and addressed to whoever wrote
+       the validator. The reader needs one of two moves out of it. */
+    expect(LIST).toContain("readScopeViolation(message)");
+    expect(LIST).toContain("violationKey(violation)");
+    expect(LIST).toContain("decisions.scope.violation.detail");
+    /* Anything unrecognised is still shown verbatim. */
+    expect(LIST).toContain('if (!violation) return <div className="error-box">{message}</div>;');
   });
 });
 
@@ -617,16 +889,112 @@ describe("which episodes failed, and how", () => {
     expect(en).toHaveProperty("decisions.episodes.notRunNote");
   });
 
-  it("opens an episode from its cell instead of asking for its hash", () => {
+  it("opens a whole episode row without asking for a candidate", () => {
     /* Finding the episode that collided and then copying its id into a
        dropdown is most of the work of looking at it. */
-    expect(DETAIL).toContain("onPick(candidate.candidate_id, episode)");
-    expect(DETAIL).toContain("void load(candidate, episode)");
+    expect(DETAIL).toContain("onClick={() => onPick(episode)}");
+    expect(DETAIL).toContain('aria-selected={episode === selectedEpisode}');
+    expect(DETAIL).toContain('event.key === "Enter" || event.key === " "');
   });
 
-  it("labels the episode dropdown with the outcome as well as the id", () => {
-    expect(DETAIL).toContain("decisions.episodes.pass");
-    expect(DETAIL).toContain("outcomes.get(episode)");
+  it("drives every episode picker from one piece of state", () => {
+    // The dropdown is gone — it listed ids and nothing else, so picking
+    // from it was picking blind. What remains are the table rows, the
+    // exemplar chips and the pager, and they must all read and write
+    // the same selection or the canvases will show a different episode
+    // than the table highlights.
+    expect(DETAIL).toContain("const [episodeId, setEpisodeId]");
+    expect(DETAIL).toContain("selectedEpisode={episodeId}");
+    expect(DETAIL).toContain("void loadPair(episodeId)");
+    expect(DETAIL).not.toContain("const [candidateId, setCandidateId]");
+  });
+
+  it("no longer offers an id-only dropdown", () => {
+    const toolbar = DETAIL.slice(DETAIL.indexOf('className="episode-toolbar"'));
+    expect(toolbar.slice(0, 600)).not.toContain("<select");
+  });
+
+  it("pages the episode table instead of listing every row", () => {
+    // Three hundred episodes would otherwise make the table the page.
+    expect(DETAIL).toContain("<EpisodePager");
+    expect(DETAIL).toContain("pageSlice(shown, current)");
+    expect(DETAIL).toContain("clampPage(page, shown.length)");
+  });
+
+  it("follows the selection onto its page", () => {
+    // Exemplar chips move the episode from outside the table; leaving
+    // the strip where it was highlights nothing and reads as the pick
+    // not registering.
+    expect(DETAIL).toContain("setPage(pageOf(index))");
+  });
+
+  it("keeps candidate A left, candidate B right and tolerates one missing trace", () => {
+    // The pair colours still only cover two; past that the column is
+    // neutral rather than reusing candidate A's blue for candidate C.
+    expect(DETAIL).toContain('candidate-${SIDES[index] ?? "n"}');
+    expect(DETAIL).toContain('const SIDES = ["a", "b"] as const');
+    expect(DETAIL).toContain('{ state: "missing" }');
+    expect(DETAIL).toContain('slot.state === "ready"');
+    expect(DETAIL).toContain('trace.missing');
+  });
+
+  it("offers the preregistered four, and both extremes among them", () => {
+    // Which pair loads first is a choice that looks like evidence, so a
+    // recipe makes it. Showing the winner's best without the
+    // runner-up's is the cherry-pick that recipe exists to prevent.
+    expect(DETAIL).toContain("getExemplars(run.id)");
+    expect(DETAIL).toContain("trace.exemplar.");
+    expect(DETAIL).toContain("item.tie_break_over.length > 0");
+  });
+
+  it("falls back to the plain episode list when no recipe answer exists", () => {
+    // A run scored before per-episode utility was stored has no ΔU, so
+    // three of the four roles cannot be filled. An empty set is the
+    // honest state — not a set chosen another way under the label.
+    expect(DETAIL).toContain("setExemplars([])");
+    expect(DETAIL).toContain("exemplars.length > 0");
+  });
+
+  it("keeps the alignment toggle apart from the draw mode", () => {
+    // `mode` is flat/raised — how the map is *drawn*. Reusing that name
+    // for time/progress would read, to the next person, as if the page
+    // already had two sync modes.
+    expect(DETAIL).toContain('const [syncMode, setSyncMode]');
+    expect(DETAIL).toContain('"time" | "progress"');
+    expect(DETAIL).toContain('t("trace.sync.mode")');
+  });
+
+  it("says what this run may be explained with before showing any of it", () => {
+    // The caveats render above the evidence: a qualifier below the fold
+    // qualifies nothing. And three of the five outcomes have no paired
+    // comparison, so the page reads the plan rather than deciding.
+    expect(DETAIL).toContain("<ExplanationHeader");
+    expect(DETAIL).toContain('panelPlan(run)');
+    expect(DETAIL).toContain("plan.caveatKeys.map");
+    expect(DETAIL).toContain("if (!plan.showTraceEvidence) return null;");
+    // Exemplars are gated separately: a run with no ranked pair still
+    // has traces worth opening.
+    expect(DETAIL).toContain("plan.showExemplars && exemplars.length > 0");
+  });
+
+  it("hands the panel work to a component a test can render", () => {
+    // These used to be four source-string assertions on this file. They
+    // moved with the code they describe: the caveat, the ruler and the
+    // divergence chips are now asserted against rendered HTML in
+    // `progress-sync.test.tsx`, and the pairing in
+    // `lib/__tests__/replay-sync.test.ts` — both of which can fail for
+    // the right reason, which a string search cannot.
+    expect(DETAIL).toContain("<ProgressSync");
+    expect(DETAIL).toContain('from "@/components/ProgressSync"');
+    expect(DETAIL).toContain("panelCandidates(run,");
+  });
+
+  it("shares top/raised mode and playback across both candidates", () => {
+    expect(DETAIL).toContain('const [mode, setMode]');
+    expect(DETAIL).toContain('mode={mode}');
+    expect(DETAIL).toContain('playbackTime={at}');
+    expect(DETAIL).toContain('syncMode === "progress" ? sideTime(view, scan.time, side) : playback.time');
+    expect(DETAIL).toContain('[0.25, 0.5, 1, 2, 4, 8]');
   });
 
   it("can narrow to the failures, and says how many it is hiding", () => {
@@ -675,10 +1043,30 @@ describe("the list is a catalogue, not a leaderboard", () => {
     expect((en as Record<string, string>)["decisions.tally.note"]).toContain("HĐ-1.4");
   });
 
-  it("never sorts the rows itself", () => {
-    /* The server returns them in one order. A client-side sort by any
-       score column is how a catalogue becomes a ranking by accident. */
-    expect(LIST).not.toContain(".sort(");
+  it("orders the rows by recency, and never by a score", () => {
+    /* This used to read "never sorts the rows itself", and forbade
+       `.sort(` outright. The accident it was aimed at is specific: a
+       client-side sort by `decision_utility` or any other measured
+       column turns a catalogue into a ranking across deployments, which
+       HĐ-1.4 forbids and which is the one thing this page exists to not
+       do. Recency is not a ranking of candidates — the newest
+       comparison is not the best one — so what is asserted now is
+       *what* the page sorts on rather than whether it sorts at all.
+
+       Sorted here rather than by flipping the endpoint's `order_by`:
+       the dashboard reads the same call and takes `slice(0, 5)` off the
+       front, so a `desc()` on the server would quietly turn its "the
+       first five comparisons" into "the latest five" — a change nobody
+       asked for, on a page nobody was looking at. */
+    const sorts = [...LIST.matchAll(/\.sort\(\([^)]*\) =>([^\n]*)/g)];
+    expect(sorts).toHaveLength(1);
+    const comparator = sorts[0][1];
+    expect(comparator).toContain("created_at");
+    /* Descending: `b` first is what puts the newest run at the top. */
+    expect(comparator).toMatch(/b\.created_at.*a\.created_at/);
+    for (const scored of ["decision_utility", "success", "latency", "collision", "ranked"]) {
+      expect(comparator).not.toContain(scored);
+    }
   });
 
   it("filters by what a human has done with a run", () => {
@@ -689,5 +1077,487 @@ describe("the list is a catalogue, not a leaderboard", () => {
       expect(vi).toHaveProperty(`decisions.filter.${key}`);
     }
     expect(LIST).toContain("reviewFilter");
+  });
+});
+
+describe("the sample line replaced the row of figures", () => {
+  it("no longer draws three cards that read the same number", () => {
+    /* `30 measured`, `30 requested`, `30 N_min` — one number three
+       times, at the largest type on the page. A figure earns a card when
+       it is abnormal; when it is fine it earns a clause. */
+    expect(DETAIL).not.toContain("decisions.sample.measured");
+    expect(DETAIL).not.toContain("decisions.sample.requested");
+    expect(DETAIL).not.toContain("decisions.sample.nMin");
+    expect(DETAIL).not.toContain("SampleBanner");
+  });
+
+  it("puts the line in the page head and the notice above the panels", () => {
+    /* Order is the argument: a notice saying the sample is too small
+       qualifies every number under it, so it cannot sit below them. */
+    expect(DETAIL).toContain("<SampleLine run={run} />");
+    expect(DETAIL).toContain("<SampleNotice run={run} />");
+    expect(DETAIL.indexOf("<SampleNotice run={run} />")).toBeLessThan(
+      DETAIL.indexOf("<CandidateComparison run={run} />"),
+    );
+  });
+
+  it("decides nothing inside the component", () => {
+    /* No jsdom in this repo, so a rule written in JSX is a rule no test
+       can reach. Both components read their answer from `lib/sample`. */
+    expect(DETAIL).toContain('from "@/lib/sample"');
+    expect(DETAIL).toContain("sampleLineFor(run)");
+    expect(DETAIL).toContain("noticeKey(sampleNotice(sample))");
+  });
+
+  it("carries both N_min wordings, in both languages", () => {
+    for (const key of [
+      "decisions.sample.line.measured",
+      "decisions.sample.line.meetsNMin",
+      "decisions.sample.line.belowNMin",
+      "decisions.sample.line.full",
+      "decisions.sample.line.coverage",
+      "decisions.sample.belowNMinInterrupted",
+    ]) {
+      expect(en, key).toHaveProperty(key);
+      expect(vi, key).toHaveProperty(key);
+    }
+  });
+
+  it("prints both numbers in the below-N_min wording", () => {
+    /* `N_min required: 30` alone does not say how short the run fell. */
+    for (const dict of [en, vi] as Record<string, string>[]) {
+      const below = dict["decisions.sample.line.belowNMin"];
+      expect(below).toContain("{n}");
+      expect(below).toContain("{min}");
+    }
+  });
+
+  it("keeps HTML out of the dictionary", () => {
+    /* `translate` returns a plain string and React escapes it, so a
+       `<b>` in a locale file renders as four visible characters. The
+       emphasis lives in the markup instead. */
+    for (const dict of [en, vi] as Record<string, string>[]) {
+      expect(dict["decisions.sample.line.measured"]).not.toContain("<");
+    }
+    expect(DETAIL).toContain("<b>{line.params.n}</b>");
+  });
+});
+
+describe("the column head names what actually differs", () => {
+  it("does not hard-code either field", () => {
+    /* Both hard-codings produce the same bug — two heads reading the
+       same words. `stack_label` gives `astar+dwa` twice on a
+       local-controller comparison; `local_controller_config` gives
+       `dwa_coarse` twice on a global-planner one, which is the commoner
+       run. The choice is made from the data. */
+    expect(DETAIL).toContain("headingField(candidates)");
+    expect(GRID).toContain("candidateNames(candidate, heading)");
+    expect(GRID).not.toContain("<h4>{candidate.stack_label}</h4>");
+    expect(DETAIL).not.toContain("<h4>{candidate.stack_label}</h4>");
+  });
+
+  it("chooses per panel, never per column", () => {
+    /* Two columns cannot disagree about what this comparison varied, so
+       the choice is made above the `.map` and passed down. The trace
+       panel makes it again — from the *whole* report, not from its own
+       reordered subset — so the two panels cannot name one candidate two
+       different things. */
+    expect(DETAIL).toContain("const heading = headingField(candidates);");
+    expect(DETAIL).toContain("const heading = headingField(run.report?.candidates ?? []);");
+    for (const call of DETAIL.match(/headingField\([^)]*\)/g) ?? []) {
+      expect(call).not.toContain("candidate.");
+    }
+  });
+
+  it("names the replay cards by the same field as the grid", () => {
+    /* Otherwise a local-controller run reads `dwa_coarse` / `dwa_balanced`
+       at the top of the page and `astar+dwa` twice further down. */
+    expect(DETAIL).toContain("heading={heading}");
+    expect(GRID).toContain("<h4>{names.heading}</h4>");
+  });
+
+  it("disambiguates the two final-results buttons by that field too", () => {
+    /* The accessible name used the stack, which is identical on both
+       sides of a local-controller comparison — so a screen reader heard
+       the same label twice. */
+    expect(DETAIL).toContain("} — ${names.heading}`}");
+    expect(DETAIL).not.toContain("} — ${candidate.stack_label}`}");
+  });
+
+  it("drops the icon that was the same glyph on both candidates", () => {
+    expect(DETAIL).not.toContain("candidate-result-icon");
+    expect(CSS).not.toContain(".candidate-result-icon");
+  });
+
+  it("keeps the observation finding after moving the class to the sub-line", () => {
+    /* The class itself is now under the heading. What stays in the flags
+       row is the case where nobody declared one — an empty cell there
+       would read as "same as the rest". */
+    expect(DETAIL).toContain("decisions.gates.observationUnknown");
+    expect(DETAIL).not.toContain('<span className="badge muted-badge">{candidate.local_observation_class}</span>');
+  });
+
+  it("does not draw a flags row when there is nothing to flag", () => {
+    /* A row of empty bordered cells is not a finding. */
+    expect(GRID).toContain("const hasFlags = candidates.some(");
+    expect(GRID).toContain("{hasFlags ?");
+  });
+});
+
+describe("the comparison grid tints its columns without drowning them", () => {
+  it("washes the column from a token built for it, not from the badge tint", () => {
+    /* **This asserted there was no wash, and the reason it gave was
+       right about the wash it was describing.** `--candidate-*-soft` is
+       10-14% of a saturated hue, built to sit behind a badge; run down a
+       whole column it was the loudest thing on a table whose entire job
+       is the figures.
+
+       Removing it answered that and cost something else: the identity
+       then lived on a 3px cap and the heading text, which tells the
+       columns apart at the head and stops doing so eight rows down —
+       exactly where a reader tracking one candidate's numbers is. The
+       wash is back at a sixth of the strength, from its own token. */
+    expect(CSS).toContain(".comparison-cell.candidate-a { background: var(--candidate-a-wash); }");
+    expect(CSS).toContain(".comparison-cell.candidate-b { background: var(--candidate-b-wash); }");
+    expect(CSS).not.toContain(".comparison-cell.candidate-a { background: var(--candidate-a-soft)");
+    expect(CSS).not.toContain(".comparison-cell.candidate-b { background: var(--candidate-b-soft)");
+    expect(CSS).toContain(".comparison-grid-head.candidate-a { border-top-color: var(--candidate-a); }");
+  });
+
+  it("mixes the wash into the panel rather than laying it over", () => {
+    /* Opaque, because the head cells are sticky and a translucent
+       sticky cell shows the rows sliding underneath it. */
+    expect(CSS).toContain("--candidate-a-wash: color-mix(in srgb, var(--indigo) 6%, var(--panel));");
+    expect(CSS).toContain("--candidate-b-wash: color-mix(in srgb, var(--purple) 10%, var(--panel));");
+    expect(CSS).toContain(".comparison-table thead th.candidate-b { background: var(--candidate-b-wash); }");
+  });
+
+  it("builds neither wash out of a colour that means an outcome", () => {
+    /* The wash has to stay quiet enough that `--ok` and `--err` are the
+       loudest thing in a cell. Building it *from* one of them would make
+       a whole column read as a verdict. */
+    for (const token of ["--ok", "--err", "--teal", "--warn"]) {
+      expect(CSS).not.toContain(`--candidate-a-wash: color-mix(in srgb, var(${token})`);
+      expect(CSS).not.toContain(`--candidate-b-wash: color-mix(in srgb, var(${token})`);
+    }
+  });
+
+  it("does not let the picker card's wash reach the table through a bare class", () => {
+    /* The two assertions above check selectors the table's own block
+       never had. The wash was real anyway: `.candidate-b { background }`
+       was written for the picker cards and matched every `<td>` carrying
+       the class. Scoping it to the card is what actually removes it, so
+       that is what is asserted. */
+    expect(CSS).not.toContain("\n.candidate-a {");
+    expect(CSS).not.toContain("\n.candidate-b {");
+    expect(CSS).toContain(".candidate-card.candidate-b {");
+  });
+
+  it("spends green and red on good and bad, never on whose column this is", () => {
+    /* `--teal` is #087f6a against an `--ok` of #1a7f37. On a run where
+       candidate B was the eliminated one, its green identity sat under a
+       red `blocked at G3` badge and over red numbers — the column colour
+       contradicting the verdict on its own head. */
+    expect(CSS).toContain("--candidate-b: var(--purple);");
+    expect(CSS).not.toContain("--candidate-b: var(--teal);");
+    for (const token of ["--ok", "--err", "--teal"]) {
+      expect(CSS).not.toContain(`--candidate-a: var(${token})`);
+      expect(CSS).not.toContain(`--candidate-b: var(${token})`);
+    }
+  });
+
+  it("gives a third candidate no wash at all", () => {
+    /* `candidate-n` is the fallback past B. Reusing A's blue would put
+       two stacks in one colour, and a third hue would have to come out
+       of the green or the red. No wash is the honest third answer. */
+    expect(CSS).not.toContain(".comparison-cell.candidate-n");
+  });
+
+  it("colours the heading with a selector that reaches no further", () => {
+    /* The class sits on the head cell itself, so a descendant form would
+       reach into any `.candidate-a` container that later grows an h4. */
+    expect(CSS).not.toContain(".candidate-a .comparison-grid-head h4");
+    expect(CSS).toContain(".comparison-grid-head.candidate-a h4");
+  });
+});
+
+describe("the gate verdict moved to the column head", () => {
+  it("puts pass or fail beside the candidate's name", () => {
+    /* Six gates run before anything is scored (HĐ-7), so a candidate
+       that failed one was never ranked at all. Reading that eleven
+       metric rows down inverts the contract on screen. */
+    expect(GRID).toContain("gateVerdictBadge(candidate)");
+    expect(GATE_LIB).toContain("decisions.gates.badge.cleared");
+    expect(GATE_LIB).toContain("decisions.gates.badge.blocked");
+    for (const key of ["decisions.gates.badge.cleared", "decisions.gates.badge.blocked"]) {
+      expect(en, key).toHaveProperty(key);
+      expect(vi, key).toHaveProperty(key);
+    }
+  });
+
+  it("uses the badge classes the stylesheet actually has", () => {
+    /* `.badge.ok` / `.badge.err` exist; `.badge--ok` does not, and
+       writing it would leave an unstyled badge for the whole gap
+       between this plan and the one that renames them. */
+    expect(CSS).toContain(".badge.ok");
+    expect(CSS).toContain(".badge.err");
+    expect(DETAIL).not.toContain("badge--");
+    expect(GRID).not.toContain("badge--");
+  });
+
+  it("collapses the six cells below the metric grid", () => {
+    expect(DETAIL).toContain('<details className="comparison-gate-detail">');
+    expect(GRID).not.toContain("comparison-grid-foot");
+    expect(CSS).not.toMatch(/^\.comparison-grid-foot\s*\{/m);
+  });
+
+  it("summarises the field as a ratio, never as one side's verdict", () => {
+    /* The badge sits on the control that decides whether the detail is
+       opened, so `cleared` over a field where somebody was eliminated is
+       wrong at the point of maximum cost. Three states, not two. */
+    for (const key of ["allCleared", "someBlocked", "allBlocked"]) {
+      expect(en, key).toHaveProperty(`decisions.gates.summary.${key}`);
+      expect(vi, key).toHaveProperty(`decisions.gates.summary.${key}`);
+    }
+    expect(DETAIL).toContain("gateSummary(candidates)");
+  });
+
+  it("counts in the summary wording rather than asserting a state", () => {
+    const dicts = [en, vi] as Record<string, string>[];
+    for (const dict of dicts) {
+      expect(dict["decisions.gates.summary.someBlocked"]).toContain("{blocked}");
+      expect(dict["decisions.gates.summary.someBlocked"]).toContain("{total}");
+      /* And the partial case must not use the word the all-clear case
+         uses — that was the original mistake. */
+      expect(dict["decisions.gates.summary.someBlocked"]).not.toBe(
+        dict["decisions.gates.summary.allCleared"],
+      );
+    }
+  });
+
+  it("names each candidate in the detail the way the head did", () => {
+    expect(DETAIL).toContain("candidateNames(candidate, heading).heading");
+  });
+});
+
+describe("the value cell aligns its decimals", () => {
+  it("does not centre the numbers", () => {
+    /* `text-align: center` was declared in the same rule as
+       `font-variant-numeric: tabular-nums` and cancelled it: tabular
+       figures give every digit the same width, and centring then throws
+       that away by moving the whole string. `7.85 ms` and `17.89 ms`
+       ended up a character apart. */
+    const rule = CSS.slice(
+      CSS.indexOf(".comparison-value {"),
+      CSS.indexOf("}", CSS.indexOf(".comparison-value {")),
+    );
+    expect(rule).not.toContain("text-align: center");
+    expect(rule).toContain("font-variant-numeric: tabular-nums");
+    /* The two slots moved onto `.value-figure` inside the cell: these
+       class names sit on `<td>` now, and a table cell given a grid
+       display stops being a table cell — which collapsed both candidates
+       into one column. The claim is unchanged, the layout just cannot
+       live on the cell itself. */
+    expect(CSS).toContain(".comparison-value .value-figure {");
+    expect(CSS.slice(CSS.indexOf(".comparison-value .value-figure {"), CSS.indexOf("}", CSS.indexOf(".comparison-value .value-figure {")))).toContain("grid-template-columns");
+  });
+
+  it("gives the unit its own lane, in the sans face", () => {
+    /* Right-aligning the whole string is not enough — `ms` is wider than
+       `m` is wider than `MB`, so the unit pushes each number a different
+       distance from the edge. And the unit must not be mono: it would
+       then join the tabular grid the digits are keeping. */
+    expect(CSS).toContain(".comparison-value .num { text-align: right; }");
+    const unit = CSS.slice(
+      CSS.indexOf(".comparison-value .unit {"),
+      CSS.indexOf("}", CSS.indexOf(".comparison-value .unit {")),
+    );
+    expect(unit).toContain("font-family: var(--font-sans)");
+    expect(unit).not.toContain("--font-mono");
+  });
+
+  it("reads the split fields rather than the joined string", () => {
+    /* `metric.text` already contains the unit; rendering it into `.num`
+       and then adding `.unit` prints the unit twice. */
+    expect(GRID).toContain('<span className="num">{digits}</span>');
+    expect(GRID).toContain('<span className="unit">{metric.unit ?? ""}</span>');
+    expect(GRID).not.toContain("metric.text");
+  });
+});
+
+describe("ahead in green, behind in red", () => {
+  const bestRule = () => {
+    const at = CSS.indexOf(".comparison-value.is-best {");
+    return CSS.slice(at, CSS.indexOf("}", at));
+  };
+  const worstRule = () => {
+    const at = CSS.indexOf(".comparison-value.is-worst {");
+    return CSS.slice(at, CSS.indexOf("}", at));
+  };
+
+  it("colours both sides of a decided row", () => {
+    /* An's call, over an earlier version that used a neutral tint. The
+       cost is real and is written into the stylesheet beside the rule:
+       `--ok` is also the `G1–G6 cleared` badge at the top of the same
+       column, so a green number sits under a green badge that means
+       something else. This table is read for the comparison. */
+    expect(bestRule()).toContain("color: var(--ok)");
+    expect(worstRule()).toContain("color: var(--err)");
+  });
+
+  it("marks only a comparison that actually happened", () => {
+    /* A tie, an unrecorded value and a directionless row stay
+       uncoloured. Red under a candidate whose run merely did not keep a
+       figure would be the same class of claim as printing that figure
+       as zero. The rule lives in `standings()`. */
+    expect(GRID).toContain("standings(metric)");
+    expect(GRID).not.toContain("leaders(metric)");
+  });
+
+  it("never lets colour be the only signal", () => {
+    /* This change is what makes the *losing* side depend on colour for
+       the first time, so both sides carry the word. A red number is
+       nothing at all to a colourblind reader. */
+    expect(bestRule()).toContain("font-weight: 700");
+    expect(GRID).toContain('t(mark[index] === "lead" ? "running.leads" : "running.trails")');
+    for (const dict of [en, vi] as Record<string, string>[]) {
+      expect(dict["running.leads"]).toBeTruthy();
+      expect(dict["running.trails"]).toBeTruthy();
+    }
+  });
+
+  it("does not carry a literal fallback for a token that exists", () => {
+    /* `var(--ok, #3f9a5a)` is the shape of the three bugs `tokens.test`
+       was written for: a fallback makes a missing token quieter, not
+       more correct. */
+    expect(bestRule()).not.toMatch(/#[0-9a-fA-F]{3,6}/);
+    expect(worstRule()).not.toMatch(/#[0-9a-fA-F]{3,6}/);
+  });
+});
+
+describe("the host caveat stopped being a banner", () => {
+  it("is a line, not a notice box", () => {
+    /* A bordered, filled box across the top of a table of plain numbers
+       outweighed the thing it warned about, and its shape claimed every
+       row underneath. */
+    expect(DETAIL).not.toContain('className="notice warn comparison-host-warning"');
+    expect(DETAIL).toContain('<span className="comparison-host-warning">');
+    const rule = CSS.slice(
+      CSS.indexOf(".comparison-host-warning {"),
+      CSS.indexOf("}", CSS.indexOf(".comparison-host-warning {")),
+    );
+    expect(rule).toContain("color: var(--warn)");
+    expect(rule).not.toContain("border");
+    expect(rule).not.toContain("background");
+  });
+
+  it("is handed to the grid rather than placed above it", () => {
+    expect(DETAIL).toContain("hostWarning={<HostWarning run={run} />}");
+    /* And exactly once — the duplicate that appeared while the grid was
+       being extracted rendered the same caveat twice. */
+    expect(DETAIL.match(/<HostWarning run=\{run\} \/>/g)).toHaveLength(1);
+  });
+});
+
+describe("the detail header carries the id and drops the tile", () => {
+  it("no longer opens with an icon that named nothing", () => {
+    /* The same `benchmark` glyph on every decision: it distinguished
+       nothing and only took the width the title needed. The *list* page
+       keeps its own, which is why the rule survives. */
+    const header = DETAIL.slice(DETAIL.indexOf("decision-detail-head"), DETAIL.indexOf("</header>"));
+    expect(header).not.toContain("decision-page-icon");
+    expect(CSS).toContain(".decision-page-icon {");
+    expect(LIST).toContain("decision-page-icon");
+  });
+
+  it("gives the header two tracks now that the tile has gone", () => {
+    expect(CSS).toContain(
+      ".decision-detail-head { display: grid; grid-template-columns: minmax(0, 1fr) auto;",
+    );
+  });
+
+  it("keeps the id readable in every state of the button", () => {
+    /* The clipboard refuses outside a secure context and whenever the
+       permission is denied. A button that replaced the id with "Copy
+       failed" would leave the reader with nothing to copy by hand. */
+    expect(DETAIL).toContain("<code>{id}</code>");
+    const rule = CSS.slice(
+      CSS.indexOf(".decision-copy-id {"),
+      CSS.indexOf("}", CSS.indexOf(".decision-copy-id {")),
+    );
+    expect(rule).toContain("background: transparent");
+  });
+
+  it("declares its own class rather than a button variant that does not exist", () => {
+    /* There is no `.btn` in this stylesheet yet — the shared button
+       scale is a later plan's. Writing `btn btn--ghost` here would leave
+       an unstyled control until then. */
+    expect(DETAIL).toContain('className="decision-copy-id"');
+    expect(CSS).not.toContain(".btn--ghost");
+  });
+
+  it("announces the outcome instead of only recolouring", () => {
+    expect(DETAIL).toContain('aria-live="polite"');
+    expect(DETAIL).toContain('aria-label={t("decisions.detail.copyId", { id })}');
+    /* The icon changes too, so the state survives greyscale. */
+    expect(DETAIL).toContain('name={outcome === "copied" ? "check" : "copy"}');
+  });
+
+  it("clears its timer on unmount", () => {
+    /* Copy twice, then leave: without this the second timer fires into
+       a component that is gone. */
+    expect(DETAIL).toContain("if (timer.current) clearTimeout(timer.current);");
+    expect(DETAIL).toContain("useEffect(() => () => {");
+  });
+
+  it("does not assume the clipboard object exists", () => {
+    /* On an insecure origin `navigator.clipboard` is undefined, and
+       reading `.writeText` off it throws before the helper's catch. */
+    expect(DETAIL).toContain("navigator.clipboard?.writeText(text)");
+  });
+});
+
+describe("the breadcrumb names the profile, not the id", () => {
+  it("reads the field that exists on the run", () => {
+    /* `run.task_profile_id`, not `run.report.task_profile_id`. The wrong
+       path yields `undefined`, which falls back to the id — so the
+       breadcrumb would simply never change, with nothing thrown and
+       nothing logged. That is the failure this task exists to fix,
+       reintroduced silently. */
+    expect(DETAIL).toContain("useNameThisCrumb(run?.task_profile_id)");
+    expect(DETAIL).not.toContain("run?.report?.task_profile_id)");
+  });
+
+  it("puts the provider above the page, since a page cannot pass upward", () => {
+    /* `TopBar` renders the breadcrumb and the root layout mounts it
+       above the page; there is no prop to hand up. */
+    const providers = readFileSync(
+      join(process.cwd(), "src", "components", "Providers.tsx"),
+      "utf8",
+    );
+    expect(providers).toContain("<CrumbOverrideProvider>");
+  });
+
+  it("leaves breadcrumbs() a pure function of the path", () => {
+    /* Its own comment is right that an id must not be run through a
+       dictionary. This replaces the id with a fetched name, which is a
+       different claim — and the pure function stays the one place that
+       decides what a *path* means. */
+    const nav = readFileSync(join(process.cwd(), "src", "lib", "navigation.ts"), "utf8");
+    const fn = nav.slice(
+      nav.indexOf("export function breadcrumbs("),
+      nav.indexOf("\n}", nav.indexOf("export function breadcrumbs(")),
+    );
+    expect(fn).not.toContain("override");
+    expect(fn).not.toContain("named");
+  });
+
+  it("clears the name when the page goes", () => {
+    /* Without this the crumb outlives the page: navigate to another
+       record and it still names the decision — not a stale label but a
+       wrong one, and only visible after a navigation, which is when
+       nobody is looking at the breadcrumb. */
+    const lib = readFileSync(join(process.cwd(), "src", "lib", "crumbOverride.tsx"), "utf8");
+    expect(lib).toContain("return () => set(null);");
   });
 });

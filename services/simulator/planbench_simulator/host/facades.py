@@ -143,6 +143,28 @@ def host_backed_planners(
     period — observed, never enforced, in this lane (see
     ``algorithm_host``).
     """
+    # **A controller that is already behind a host is not wrapped again.**
+    #
+    # `LegacyLocalPlugin` exists to put a *plain* controller behind the
+    # host contract. An imported plugin arrives already there — it is a
+    # `GraphBackedLocalPlanner` holding its own host and its own channel
+    # source — and wrapping it a second time hid the thing the loop needs
+    # to find: `run_stack` binds the channel seam by asking the
+    # controller for `channel_source`, and the outer facade does not have
+    # one. The seam was never bound, every tick raised inside the plugin,
+    # the host turned each into a safe stop, and the robot sat at its
+    # start pose for the whole episode while replanning fired over and
+    # over because it was not making progress.
+    #
+    # It looked like a broken controller. It was a wrapper: the same
+    # plugin driven directly through `run_stack` reached the goal.
+    if getattr(local_planner, "channel_source", None) is not None:
+        host = AlgorithmHost(
+            global_plugin=LegacyGlobalPlugin(global_planner),
+            control_deadline_s=local_planner.control_period,
+        )
+        return HostBackedGlobalPlanner(host), local_planner
+
     host = AlgorithmHost(
         global_plugin=LegacyGlobalPlugin(global_planner),
         local_plugin=LegacyLocalPlugin(local_planner),

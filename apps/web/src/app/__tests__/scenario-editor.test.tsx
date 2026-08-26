@@ -19,7 +19,7 @@ import { NAV_SECTIONS } from "../../lib/navigation";
 const read = (...parts: string[]) => readFileSync(join(process.cwd(), "src", ...parts), "utf8");
 
 const LIST = read("app", "scenarios", "page.tsx");
-const EDITOR = read("app", "scenarios", "[id]", "page.tsx");
+const EDITOR = read("app", "scenarios", "[id]", "ScenarioEditor.tsx");
 const CANVAS = read("components", "MapCanvas.tsx");
 const TYPES = read("lib", "types.ts");
 

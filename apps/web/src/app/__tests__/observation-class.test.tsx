@@ -31,7 +31,13 @@ import type { RunCandidate } from "../../lib/decisions";
 
 const APP = join(process.cwd(), "src", "app");
 const CANDIDATES = readFileSync(join(APP, "candidates", "page.tsx"), "utf8");
-const DETAIL = readFileSync(join(APP, "decisions", "[id]", "page.tsx"), "utf8");
+const DETAIL = readFileSync(join(APP, "decisions", "[id]", "DecisionDetail.tsx"), "utf8");
+/* The comparison table, extracted so tests can render it — a
+   function declared inside a fetching page cannot be imported. */
+const GRID = readFileSync(
+  join(process.cwd(), "src", "components", "ComparisonGrid.tsx"),
+  "utf8",
+);
 const EN = en as Record<string, string>;
 
 function candidate(local: string | null): RunCandidate {
@@ -66,8 +72,19 @@ describe("the report says what each candidate was shown", () => {
   it("renders a column, and names the gap when nobody declared one", () => {
     /* A blank cell reads as "same as the rest", which is the one thing
        an undeclared stack cannot be shown to be. */
-    expect(DETAIL).toContain("candidate.local_observation_class ??");
-    expect(DETAIL).toContain("decisions.gates.observationUnknown");
+    // It was a column of the gate table. That table is gone, so the
+    // fact moved onto each candidate card — it had to move rather
+    // than go, because `ObservationNotice` fires only when the
+    // classes *differ*, and a lone undeclared stack raises no
+    // warning at all.
+    // It was a column of the gate table, then a badge on the card,
+    // and is now a row of the comparison grid. It had to keep
+    // moving rather than go, because `ObservationNotice` fires only
+    // when the classes *differ* — a lone undeclared stack raises no
+    // warning at all.
+    expect(GRID).toContain("candidate.local_observation_class ?");
+    expect(GRID).toContain("decisions.gates.observationUnknown");
+    expect(GRID).toContain("comparison-flags");
     expect(EN["decisions.gates.observationUnknownNote"]).toContain("cannot be shown");
   });
 });
@@ -87,13 +104,19 @@ describe("mixing classes is a finding, and it is never silent", () => {
     ]);
   });
 
-  it("warns above the table, where the numbers are", () => {
-    const gateTable = DETAIL.slice(
-      DETAIL.indexOf("function GateTable"),
-      DETAIL.indexOf("function ExportReport"),
+  it("warns above the cards, where the numbers are", () => {
+    // It used to sit above the gate table. That table is gone, so
+    // the warning moved to the top of the comparison — it is a
+    // finding about the whole run, and leaving it to be deleted
+    // along with the section it happened to live in would have been
+    // the quiet way to lose it.
+    /* The grid moved into its own component, so the ordering claim is
+       now about the panel that wraps it. */
+    const comparison = DETAIL.slice(DETAIL.indexOf("function CandidateComparison("));
+    expect(comparison).toContain("<ObservationNotice");
+    expect(comparison.indexOf("<ObservationNotice")).toBeLessThan(
+      comparison.indexOf("<ComparisonGrid"),
     );
-    expect(gateTable).toContain("<ObservationNotice");
-    expect(gateTable.indexOf("<ObservationNotice")).toBeLessThan(gateTable.indexOf("<thead>"));
   });
 
   it("explains what the mixture does to ΔU rather than only flagging it", () => {
@@ -121,11 +144,28 @@ describe("the exported document carries it too", () => {
   it("has the column and the warning", () => {
     /* On paper this matters more than on screen: the reader cannot ask
        a follow-up question of a Markdown file. */
-    const markdown = readFileSync(
-      join(process.cwd(), "..", "api", "planbench_api", "decision_markdown.py"),
+    // Both documents, not just the Markdown: the finding moved to
+    // `decision_export` when Excel arrived, and a caveat that travels
+    // with only one of two files stops travelling the moment somebody
+    // prefers the other.
+    const shared = readFileSync(
+      join(process.cwd(), "..", "api", "planbench_api", "decision_export.py"),
       "utf8",
     );
-    expect(markdown).toContain("Shown");
-    expect(markdown).toContain("def _mixed_observation(");
+    const workbook = readFileSync(
+      join(process.cwd(), "..", "api", "planbench_api", "decision_xlsx.py"),
+      "utf8",
+    );
+    const texts = readFileSync(
+      join(process.cwd(), "..", "api", "planbench_api", "decision_text.py"),
+      "utf8",
+    );
+    // The column header is a word, and words moved to the text table
+    // when the export became bilingual — the column itself is still
+    // declared beside the rows it heads.
+    expect(texts).toContain('"en": "Shown"');
+    expect(shared).toContain('"column.gate.shown"');
+    expect(shared).toContain("def mixed_observation(");
+    expect(workbook).toContain("mixed_observation");
   });
 });

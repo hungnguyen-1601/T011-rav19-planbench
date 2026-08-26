@@ -1,0 +1,6 @@
+# The repo root ignores `.env.*` wholesale, which is right for secrets
+# and wrong for this one file: `.env.development` holds the backend URL
+# `next dev` should use and nothing private. Without it every developer
+# silently gets the same-origin fallback that only the desktop build
+# wants, so it has to be in the tree.
+!.env.development

@@ -43,16 +43,35 @@ export interface ChatResponse {
   model: string;
   deterministic: boolean;
   turn: ChatTurn;
+  /** The record the caller said was on screen resolved, and the model
+   *  was told about it. False also when one was sent and did not
+   *  resolve — the difference matters to a reader who expected their
+   *  question to be about the page they are on. */
+  context_used: boolean;
+}
+
+/** What the reader has open, as identifiers the server re-checks.
+ *
+ * Identifiers only. A description assembled in the browser would be page
+ * text arriving where instructions live, and a deployment can be named
+ * anything its owner types. */
+export interface ChatContext {
+  run_id?: string;
+  task_profile_id?: string;
 }
 
 export function getCapabilities(): Promise<Capabilities> {
   return authFetch<Capabilities>("/agent/capabilities");
 }
 
-export function askAgent(message: string, signal?: AbortSignal): Promise<ChatResponse> {
+export function askAgent(
+  message: string,
+  signal?: AbortSignal,
+  context?: ChatContext,
+): Promise<ChatResponse> {
   return authFetch<ChatResponse>("/agent/chat", {
     method: "POST",
-    body: JSON.stringify({ message }),
+    body: JSON.stringify(context ? { message, context } : { message }),
     signal,
   });
 }

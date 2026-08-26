@@ -1,0 +1,30 @@
+{
+  "$id": "schemas/tools/get_event_neighborhood.request.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "candidate_id": {
+      "description": "Which candidate's data to read.",
+      "type": "string"
+    },
+    "episode_context_id": {
+      "description": "The paired episode context, the identity both candidates share.",
+      "type": "string"
+    },
+    "event_index": {
+      "description": "Which recorded event to read around.",
+      "type": "integer"
+    },
+    "radius_rows": {
+      "description": "How many trace rows either side; a small default if omitted.",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "candidate_id",
+    "episode_context_id",
+    "event_index"
+  ],
+  "title": "get_event_neighborhood@1.0.0 arguments",
+  "type": "object"
+}

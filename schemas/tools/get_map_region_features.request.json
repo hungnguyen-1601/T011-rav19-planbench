@@ -1,0 +1,18 @@
+{
+  "$id": "schemas/tools/get_map_region_features.request.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "candidate_id": {
+      "description": "Measure along this candidate's route; the declared reference line if omitted.",
+      "type": "string"
+    },
+    "region_id": {
+      "description": "One named region; the whole route is measured when omitted.",
+      "type": "string"
+    }
+  },
+  "required": [],
+  "title": "get_map_region_features@1.0.0 arguments",
+  "type": "object"
+}

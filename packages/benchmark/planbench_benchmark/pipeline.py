@@ -58,7 +58,13 @@ from planbench_metrics.definitions import (
 from planbench_schemas.episode_context import EpisodeContext
 from planbench_schemas.map import MapData
 from planbench_schemas.task_profile import TaskProfile
-from planbench_simulator.trace import read_trace, read_trace_metadata, trace_path
+from planbench_simulator.trace import (
+    PRODUCTION_USE,
+    TraceUsePolicy,
+    load_trace_for_use,
+    metadata_for_use,
+    trace_path,
+)
 
 __all__ = [
     "AcceptanceFailure",
@@ -162,6 +168,8 @@ def simulate(
     map_data: MapData,
     trace_root: Path,
     *,
+    evidence_class: str = "production",
+    use: TraceUsePolicy = PRODUCTION_USE,
     reuse: bool,
     say: Say | None = None,
     journal: Path | None = None,
@@ -213,6 +221,7 @@ def simulate(
     verdict is recorded.
     """
     emit = say or print
+    locator = TraceLocator(trace_root, profile, map_data, evidence_class=evidence_class, use=use)
     total = episode_total(contexts, candidates)
     if journal is not None:
         journal.parent.mkdir(parents=True, exist_ok=True)
@@ -231,8 +240,7 @@ def simulate(
         if candidate.candidate_id in retired:
             continue
         covered[candidate.candidate_id].append(context)
-        path = trace_path(candidate.candidate_id, context.episode_context_id, root=trace_root)
-        if reuse and path.is_file() and _was_run_under(path, profile, context, map_data):
+        if reuse and locator.usable(candidate, context):
             if progress is not None:
                 progress(index, total, candidate.stack_label)
             _consult_retire(retire, retired, candidate, context, journal, emit)
@@ -242,7 +250,14 @@ def simulate(
         # into the journal — a reader cannot tell that from a real
         # measurement, and the journal is what a stopped run is judged on.
         started = time.monotonic()
-        _, run = run_contract_episode(candidate, profile, context, map_data, root=trace_root)
+        _, run = run_contract_episode(
+            candidate,
+            profile,
+            context,
+            map_data,
+            root=trace_root,
+            evidence_class=locator.evidence_class,
+        )
         elapsed = time.monotonic() - started
         emit(
             f"  {index:>4}/{total}  {candidate.stack_label:<14} "
@@ -326,32 +341,83 @@ class StaleTraceError(ValueError):
     """A trace on disk describes a world this run is not asking about."""
 
 
-def _was_run_under(path: Path, profile, context, map_data) -> bool:
-    """Whether the trace at ``path`` came from these exact conditions.
+class TraceLocator:
+    """Where this run's traces live, and which ones it may read.
 
-    **Fail closed.** A trace written before fingerprints existed carries
-    an empty one, and an empty fingerprint is *unknown*, not *matching* —
-    treating the two the same would keep the hole open for precisely the
-    traces most likely to predate the change that opened it. The cost is
-    re-simulating an existing trace store once; the alternative cost is a
-    comparison of two different worlds that nothing flags.
+    **Every address in this module comes from here.** Six call sites used
+    to build ``trace_path(candidate_id, context_id, root)`` themselves;
+    once the address grew an evidence class and a conditions hash, six
+    places computing it independently is six places to get it subtly
+    different — and a mismatch between where a trace is written and where
+    it is looked for reads as "no trace", which is silent.
+
+    The policy travels with the locator for the same reason: a run knows
+    what it is (production sweep, research lane), and a reader that had
+    to be told separately is a reader somebody will forget to tell.
     """
-    expected = execution_conditions_fingerprint(map_data, scenario_for(profile, context), profile)
-    try:
-        recorded = read_trace_metadata(path).execution_conditions_fingerprint
-    except Exception:
-        # An unreadable or metadata-less trace is not a trace this run
-        # may lean on. Re-simulating is always available here.
-        return False
-    return bool(recorded) and recorded == expected
+
+    def __init__(
+        self,
+        trace_root: Path,
+        profile: TaskProfile,
+        map_data: MapData,
+        *,
+        evidence_class: str = "production",
+        use: TraceUsePolicy = PRODUCTION_USE,
+    ) -> None:
+        self.root = Path(trace_root)
+        self.profile = profile
+        self.map_data = map_data
+        self.evidence_class = evidence_class
+        self.use = use
+
+    def fingerprint(self, context: EpisodeContext) -> str:
+        return execution_conditions_fingerprint(
+            self.map_data, scenario_for(self.profile, context), self.profile
+        )
+
+    def path(self, candidate: Candidate, context: EpisodeContext) -> Path:
+        return trace_path(
+            candidate.candidate_id,
+            context.episode_context_id,
+            root=self.root,
+            evidence_class=self.evidence_class,
+            execution_fingerprint=self.fingerprint(context),
+        )
+
+    def load(self, candidate: Candidate, context: EpisodeContext):
+        """Rows, through the one boundary — class and address checked."""
+        return load_trace_for_use(self.path(candidate, context), use=self.use)
+
+    def usable(self, candidate: Candidate, context: EpisodeContext) -> bool:
+        """Whether an existing trace may be reused for this run.
+
+        Three refusals in one answer, and all three are already the
+        platform's rules: the file must exist, its class must be one this
+        use accepts, and its conditions must be the ones being asked
+        about. The conditions check is now partly structural — a trace
+        from another world is at another address — but the metadata check
+        stays, because a file can be copied into a directory that lies.
+        """
+        path = self.path(candidate, context)
+        if not path.is_file():
+            return False
+        try:
+            recorded = metadata_for_use(path, use=self.use).execution_conditions_fingerprint
+        except Exception:
+            return False
+        return bool(recorded) and recorded == self.fingerprint(context)
 
 
 def paired_prefix(
     candidates: Sequence[Candidate],
     contexts: Sequence[EpisodeContext],
     trace_root: Path,
-    profile: TaskProfile | None = None,
-    map_data: MapData | None = None,
+    profile: TaskProfile,
+    map_data: MapData,
+    *,
+    evidence_class: str = "production",
+    use: TraceUsePolicy = PRODUCTION_USE,
 ) -> list[EpisodeContext]:
     """The longest leading run of contexts every candidate has a trace for.
 
@@ -361,22 +427,21 @@ def paired_prefix(
     candidate ran the same episodes" true (HĐ-7.3) instead of comparing
     one candidate's 245 episodes against another's 244.
     """
+    locator = TraceLocator(trace_root, profile, map_data, evidence_class=evidence_class, use=use)
     kept: list[EpisodeContext] = []
     stale: list[str] = []
     for context in contexts:
-        paths = [
-            trace_path(candidate.candidate_id, context.episode_context_id, root=trace_root)
-            for candidate in candidates
-        ]
+        paths = [locator.path(candidate, context) for candidate in candidates]
         if not all(path.is_file() for path in paths):
             break
-        if profile is not None and map_data is not None:
-            mismatched = [
-                path for path in paths if not _was_run_under(path, profile, context, map_data)
-            ]
-            if mismatched:
-                stale.extend(str(path) for path in mismatched)
-                break
+        mismatched = [
+            locator.path(candidate, context)
+            for candidate in candidates
+            if not locator.usable(candidate, context)
+        ]
+        if mismatched:
+            stale.extend(str(path) for path in mismatched)
+            break
         kept.append(context)
     if stale:
         # **Refused, not truncated.** Scoring re-reads finished traces and
@@ -398,6 +463,9 @@ def score(
     contexts: Sequence[EpisodeContext],
     map_data: MapData,
     trace_root: Path,
+    *,
+    evidence_class: str = "production",
+    use: TraceUsePolicy = PRODUCTION_USE,
 ) -> tuple[list[EpisodeMetricSet], float]:
     """Recompute every HĐ-6 metric for one candidate, from the files only.
 
@@ -412,10 +480,8 @@ def score(
     percentile per episode — so it is computed here, where the traces are
     open, rather than by re-reading them later.
     """
-    traces = [
-        read_trace(trace_path(candidate.candidate_id, context.episode_context_id, root=trace_root))
-        for context in contexts
-    ]
+    locator = TraceLocator(trace_root, profile, map_data, evidence_class=evidence_class, use=use)
+    traces = [locator.load(candidate, context) for context in contexts]
     metrics = [
         compute_metrics(
             trace,
@@ -435,6 +501,9 @@ def score_episode(
     context: EpisodeContext,
     map_data: MapData,
     trace_root: Path,
+    *,
+    evidence_class: str = "production",
+    use: TraceUsePolicy = PRODUCTION_USE,
 ) -> EpisodeMetricSet:
     """One episode's metrics, read back from its trace.
 
@@ -449,9 +518,8 @@ def score_episode(
     later, and two runs could disagree with nothing on disk to explain
     which was right.
     """
-    trace = read_trace(
-        trace_path(candidate.candidate_id, context.episode_context_id, root=trace_root)
-    )
+    locator = TraceLocator(trace_root, profile, map_data, evidence_class=evidence_class, use=use)
+    trace = locator.load(candidate, context)
     return compute_metrics(
         trace,
         profile,
@@ -465,6 +533,11 @@ def trace_checksum(
     candidates: Sequence[Candidate],
     contexts: Sequence[EpisodeContext],
     trace_root: Path,
+    profile: TaskProfile,
+    map_data: MapData,
+    *,
+    evidence_class: str = "production",
+    use: TraceUsePolicy = PRODUCTION_USE,
 ) -> str:
     """One hash over every trace this run was computed from (D15).
 
@@ -489,11 +562,12 @@ def trace_checksum(
     fingerprint of what the run actually had, and a run whose traces are
     incomplete should be *recognisable*, not unhashable.
     """
+    locator = TraceLocator(trace_root, profile, map_data, evidence_class=evidence_class, use=use)
     digest = hashlib.sha256()
     entries: list[str] = []
     for candidate in candidates:
         for context in contexts:
-            path = trace_path(candidate.candidate_id, context.episode_context_id, root=trace_root)
+            path = locator.path(candidate, context)
             key = f"{candidate.candidate_id}/{context.episode_context_id}"
             if not path.is_file():
                 entries.append(f"{key}:absent")

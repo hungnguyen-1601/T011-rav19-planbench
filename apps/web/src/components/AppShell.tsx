@@ -15,7 +15,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { wideContent } from "@/lib/navigation";
 
+import { AgentDock } from "./AgentDock";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import { useSession } from "@/lib/auth";
@@ -130,10 +132,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           pendingReviews={pending}
           onOpenSidebar={() => setDrawerOpen(true)}
         />
-        <main className="content" id="main-content">
+        {/* Capped everywhere except the drawing surfaces. `AppShell`
+            owns this element, so the choice cannot come from the page —
+            see `wideContent`. */}
+        <main
+          className={wideContent(pathname) ? "content content--wide" : "content"}
+          id="main-content"
+        >
           {children}
         </main>
       </div>
+
+      {/* **Outside the content column on purpose.** It floats over the
+          page rather than taking width from it: every canvas in this app
+          is sized in pixels rather than percentages, so a shell that
+          changes the content width changes what a click on a map means.
+          Inside `.layout` rather than at the document root so it
+          inherits the shell's stacking context and cannot end up above a
+          modal. */}
+      <AgentDock />
     </div>
   );
 }

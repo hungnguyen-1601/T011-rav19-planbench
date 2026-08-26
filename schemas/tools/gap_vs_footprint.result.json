@@ -1,0 +1,89 @@
+{
+  "$id": "schemas/tools/gap_vs_footprint.result.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "measurements": {
+      "additionalProperties": false,
+      "properties": {
+        "inflation_margin_m": {
+          "description": "The inflation margin per side that was configured.",
+          "type": "number",
+          "unit": "m"
+        },
+        "margin_m": {
+          "description": "Passage width minus required width; negative is the infeasible case.",
+          "type": "number",
+          "unit": "m"
+        },
+        "passage_width_m": {
+          "description": "Measured cross-section of the passage.",
+          "type": "number",
+          "unit": "m"
+        },
+        "required_passage_width_m": {
+          "description": "Corridor this configuration needs: 2 * (radius + inflation margin). A width, compared against a width \u2014 the first card compared it against a radius.",
+          "type": "number",
+          "unit": "m"
+        }
+      },
+      "required": [
+        "passage_width_m",
+        "required_passage_width_m",
+        "margin_m",
+        "inflation_margin_m"
+      ],
+      "type": "object"
+    },
+    "references": {
+      "allOf": [
+        {
+          "contains": {
+            "properties": {
+              "kind": {
+                "const": "map_region"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "map_region"
+            ]
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ref": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "measurements",
+    "references"
+  ],
+  "title": "gap_vs_footprint@2.0.0 output",
+  "type": "object"
+}

@@ -54,6 +54,11 @@ from planbench_api.worker import Job, JobQueue
 from planbench_benchmark.candidates import offered_controller_configs
 from planbench_benchmark.outcome import OUTCOME_CODES, build_outcome, outcome_advice
 from planbench_benchmark.preflight import PREFLIGHT_CODES, build_draft, preflight
+from planbench_benchmark.recommendation import (
+    RECOMMENDATION_CODES,
+    recommend_from_history,
+    recommendation_source,
+)
 from planbench_benchmark.reproduction import (
     REPRODUCTION_CODES,
     build_comparison,
@@ -83,6 +88,19 @@ MAX_PAPER_CHARS = 60_000
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
 router = APIRouter(tags=["decisions"])
+
+#: Which language an export is rendered in. A `Literal` rather than a
+#: free string so an unknown value is a 422 from FastAPI's own
+#: validation: a caller asking for a language nobody built should hear
+#: about it, rather than receive a document in a different one and take
+#: that for the only one available.
+ExportLocale = Annotated[
+    Literal["en", "vi"],
+    Query(description="Language of the exported document."),
+]
+#: English, so a client written before this parameter existed keeps
+#: receiving exactly the document it received before.
+DEFAULT_EXPORT_LOCALE: Literal["en", "vi"] = "en"
 
 Profiles = Annotated[TaskProfileService, Depends(get_task_profile_service)]
 Candidates = Annotated[CandidateService, Depends(get_candidate_service)]
@@ -296,6 +314,50 @@ class AdviceListResource(BaseModel):
     #: Model additions dropped for citing a field that does not resolve.
     #: Published, not buried — it is how a reader tells a model that
     #: added judgement from one that added noise.
+    fabricated: int = 0
+    refused: str = ""
+
+
+class RecommendationCaseResource(BaseModel):
+    """One mission's verdict inside one run — the 'in which cases' row.
+
+    ``ci95`` is null exactly when ``status`` is ``INSUFFICIENT_EPISODES``:
+    a group too small to bootstrap is described, never concluded from,
+    and shipping a null instead of a made-up interval is the description.
+    """
+
+    run_id: str
+    mission_id: str
+    n_pairs: int
+    delta_mean: float
+    delta_median: float
+    ci95: tuple[float, float] | None
+    status: str
+    winner_stack: str | None
+    winner_candidate_id: str | None
+
+
+class RecommendationResource(BaseModel):
+    """Which algorithm this deployment should use, argued from stored runs.
+
+    ``evidence_tier`` says where the answer stands: 1 means measured on
+    this very profile, 3 means no comparable evidence exists and the
+    advice is "run this comparison" rather than "adopt this stack".
+    Tier 2 — transfer from a similar environment — is deliberately not
+    produced yet; a field that names its own gap is how a reader knows
+    the gap exists rather than assuming it was covered.
+    """
+
+    task_profile_id: str
+    evidence_tier: int
+    runs_considered: list[str]
+    cases: list[RecommendationCaseResource]
+    rules_applied: int
+    advice: list[AdviceResource]
+    blocking: int
+    material: int
+    disclosure: int
+    summary: str = ""
     fabricated: int = 0
     refused: str = ""
 
@@ -1095,6 +1157,99 @@ def decision_outcome(
     )
 
 
+@router.get("/task-profiles/{profile_id}/recommendation", response_model=RecommendationResource)
+def task_profile_recommendation(
+    profile_id: str,
+    service: Runs,
+    profiles: Profiles,
+    map_root: MapRoot,
+    request: Request,
+    user: CurrentUser,
+    use_model: Annotated[bool, Query()] = False,
+) -> RecommendationResource:
+    """Which algorithm should this deployment use, and in which cases.
+
+    Everything here is read from stored runs on **this** profile: the
+    card's verdict is repeated, never recomputed, and the per-mission
+    split reuses the same paired bootstrap one aggregation level down.
+    Feasibility on this profile trumps history — a stack preflight blocks
+    is excluded however it fared elsewhere — and when no comparable
+    history exists the honest answer is tier 3: "run this comparison",
+    with the feasible field named.
+
+    Read-only, like every advisory route. Adopting the recommendation is
+    still a human act with a second person's approval (HĐ-14); there is
+    no verb here that could do it.
+
+    ``use_model`` layers the LLM over the rules — rank and extend, never
+    remove, fabricated citations dropped and counted.
+    """
+    profile = profiles.load(profile_id)
+    stored_runs = service.list(task_profile_id=profile_id)
+    source = recommendation_source(
+        profile,
+        [
+            {
+                "run_id": stored.id,
+                "status": stored.status,
+                "card": stored.card,
+                "report": stored.report,
+                "created_at": stored.created_at,
+                "contracts_version": stored.contracts_version,
+            }
+            for stored in stored_runs
+        ],
+        map_base_dir=map_root,
+    )
+    found = recommend_from_history(source)
+
+    cases = [
+        RecommendationCaseResource(run_id=row["run_id"], **case)
+        for row in source["runs"]
+        if row.get("case_table") and row["case_table"].get("available")
+        for case in row["case_table"]["cases"]
+    ]
+    runs_considered = [row["run_id"] for row in source["runs"]]
+
+    if not use_model:
+        items = [AdviceResource(**a.model_dump()) for a in found]
+        return RecommendationResource(
+            task_profile_id=profile_id,
+            evidence_tier=source["evidence_tier"],
+            runs_considered=runs_considered,
+            cases=cases,
+            **_advice_counts(items, len(RECOMMENDATION_CODES)),
+        )
+
+    agent = get_agent_service(request, user)
+    advised = advise_with_model("recommendation", source, found, agent.provider)
+    items = [
+        AdviceResource(
+            code=a.code,
+            kind=a.kind,
+            severity=a.severity,
+            claim=a.claim,
+            ground=a.ground,
+            field_path=a.field_path,
+            do=a.do,
+            do_not=a.do_not,
+            subject=a.subject,
+            source=a.source,
+        )
+        for a in advised.advice
+    ]
+    return RecommendationResource(
+        task_profile_id=profile_id,
+        evidence_tier=source["evidence_tier"],
+        runs_considered=runs_considered,
+        cases=cases,
+        **_advice_counts(items, len(RECOMMENDATION_CODES)),
+        summary=advised.summary,
+        fabricated=advised.fabricated,
+        refused=advised.refused,
+    )
+
+
 @router.get("/decisions/{run_id}/report-advice", response_model=AdviceListResource)
 def decision_report_advice(run_id: str, service: Runs, user: CurrentUser) -> AdviceListResource:
     """What a reader may claim about this run, and what they may not.
@@ -1611,6 +1766,78 @@ def get_trace(
     return service.trace(run_id, candidate_id, episode_context_id)
 
 
+@router.get("/decisions/{run_id}/explanation")
+def get_explanation(run_id: str, service: Runs) -> dict[str, Any]:
+    """The case packet: the evidence behind this run's decision (E4.1).
+
+    Built while the run was scored, not on the way out. The waterfall
+    needs the scoring pass's own evidence objects, and reconstructing
+    them here would mean a second implementation computing the same ΔU —
+    so this route reads a block off the report and validates it.
+
+    A run scored before E4.1 answers 409. It has no packet, and it
+    cannot be given one without exactly the second implementation this
+    design refused.
+    """
+    return service.explanation(run_id)
+
+
+@router.get("/decisions/{run_id}/exemplars")
+def get_exemplars(run_id: str, service: Runs) -> dict[str, Any]:
+    """Which four episodes to look at, decided by a fixed recipe.
+
+    Thirty episodes and one viewer: something has to choose which pair
+    loads first, and a person choosing it is a choice that looks like
+    evidence. The recipe returns the median episode, *both* extremes —
+    they travel as a pair, since showing the winner's best without the
+    runner-up's is the cherry-pick this exists to prevent — and the
+    worst safety outcome, which the utility ranking never surfaces on
+    its own.
+    """
+    return service.exemplars(run_id)
+
+
+@router.get("/decisions/{run_id}/replay-sync/{episode_context_id}")
+def get_replay_sync(
+    run_id: str,
+    episode_context_id: str,
+    candidate_a: str,
+    candidate_b: str,
+    service: Runs,
+    # Bounded, because this one parameter sizes both a loop and the
+    # response body and the route needs no login to reach. `steps=1e9`
+    # is not a client that wants a finer chart; the ceiling is far above
+    # any real one — the page asks for 200.
+    steps: Annotated[int, Query(ge=2, le=2000)] = 200,
+) -> dict[str, Any]:
+    """Both candidates of one episode, placed on arc length instead of the clock.
+
+    The comparison page drives its two canvases from one playhead, which
+    is time-sync and is the honest default: at a shared timestamp the
+    two robots saw the same world. This endpoint serves the other view —
+    the same part of the *map* for both — which is what makes a
+    geometric cause visible and what silently changes the meaning of
+    "at the same moment".
+
+    So the payload carries its own caveat: the projection quality (the
+    platform has no planned route to project onto yet, so today it is
+    always a degraded one) and the fixed warning that the two runs
+    reached each place at different times. A client cannot obtain the
+    rows without them.
+
+    Not a response model, for the reason :func:`get_trace` is not one:
+    the rows are bulk telemetry, and the shape is already validated by
+    the model that produced them.
+    """
+    return service.replay_sync(
+        run_id,
+        episode_context_id,
+        candidate_a=candidate_a,
+        candidate_b=candidate_b,
+        steps=steps,
+    )
+
+
 @router.post("/decisions/{run_id}/config-approval/withdraw", response_model=DecisionRunResource)
 def withdraw_config(
     run_id: str, request: ReviewRequest, service: Runs, user: CurrentUser
@@ -1643,7 +1870,9 @@ def withdraw_config(
 
 
 @router.get("/decisions/{run_id}/report.md", response_class=PlainTextResponse)
-def decision_report_markdown(run_id: str, service: Runs) -> Response:
+def decision_report_markdown(
+    run_id: str, service: Runs, locale: ExportLocale = DEFAULT_EXPORT_LOCALE
+) -> Response:
     """The whole run as one Markdown document, card or no card.
 
     **Exported for every run, not only ranked ones.** Fewer than two
@@ -1654,6 +1883,11 @@ def decision_report_markdown(run_id: str, service: Runs) -> Response:
     Unlike `approved_config.yaml` this is not gated on approval: it is a
     description of what was measured, and reading it is the act that
     approval follows.
+
+    ``locale`` defaults to English and a value outside the two languages
+    is a 422 rather than a quiet fall back: a caller asking for a
+    language nobody built should hear about it, not receive a document
+    in a different one and assume it is the only one available.
     """
     from planbench_api.decision_markdown import (
         decision_report_filename,
@@ -1662,10 +1896,39 @@ def decision_report_markdown(run_id: str, service: Runs) -> Response:
 
     stored = service.get(run_id)
     return Response(
-        content=render_decision_markdown(stored),
+        content=render_decision_markdown(stored, locale),
         media_type="text/markdown; charset=utf-8",
         headers={
             "Content-Disposition": f'attachment; filename="{decision_report_filename(run_id)}"'
+        },
+    )
+
+
+@router.get("/decisions/{run_id}/report.xlsx")
+def decision_report_xlsx(
+    run_id: str, service: Runs, locale: ExportLocale = DEFAULT_EXPORT_LOCALE
+) -> Response:
+    """The same run as a workbook, for a reader who works in a spreadsheet.
+
+    Same content as ``report.md`` — `decision_export` decides every
+    value and both renderers read it from there, so the two files cannot
+    quote different numbers for one run.
+
+    Exported for every run for the same reason the Markdown is: a run
+    that ranked nobody still has a gate table, and that is the whole
+    deliverable when fewer than two candidates cleared (HĐ-7).
+    """
+    from planbench_api.decision_xlsx import (
+        decision_workbook_filename,
+        render_decision_xlsx,
+    )
+
+    stored = service.get(run_id)
+    return Response(
+        content=render_decision_xlsx(stored, locale),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": (f'attachment; filename="{decision_workbook_filename(stored)}"')
         },
     )
 

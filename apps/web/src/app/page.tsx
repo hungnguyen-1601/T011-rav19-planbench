@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 
 import { EmptyState } from "@/components/EmptyState";
+import { Icon } from "@/components/Icon";
 import { QuickActions } from "@/components/QuickActions";
 import { StatCard } from "@/components/StatCard";
 import { StateBadge } from "@/components/StateBadge";
@@ -76,8 +77,8 @@ export default function DashboardPage() {
   const first = loading && !data;
 
   return (
-    <>
-      <div className="page-head">
+    <div className="dashboard-page">
+      <div className="page-head dashboard-head">
         <div>
           <h2>{t("dashboard.title")}</h2>
           <p>{t("dashboard.subtitle")}</p>
@@ -88,9 +89,9 @@ export default function DashboardPage() {
         />
       </div>
 
-      {data?.partial && data.online ? <div className="notice">{t("dashboard.stale")}</div> : null}
+      {data?.partial && data.online ? <div className="notice notice--warn">{t("dashboard.stale")}</div> : null}
 
-      <div className="stat-grid">
+      <div className="stat-grid dashboard-stat-grid">
         <StatCard
           icon="benchmark"
           label={t("dashboard.stats.decisions")}
@@ -98,6 +99,7 @@ export default function DashboardPage() {
           value={stats.decisions}
           loading={first}
           href="/decisions"
+          variant="comparison"
         />
         {/* Ranked beside the total, never instead of it. Most runs
             produce no card — fewer than two candidates through the gates
@@ -112,6 +114,7 @@ export default function DashboardPage() {
           value={stats.ranked}
           loading={first}
           href="/decisions"
+          variant="ranked"
         />
         <StatCard
           icon="check"
@@ -120,6 +123,7 @@ export default function DashboardPage() {
           value={stats.accepted}
           loading={first}
           href="/decisions"
+          variant="accepted"
         />
         <StatCard
           icon="inbox"
@@ -128,6 +132,7 @@ export default function DashboardPage() {
           value={stats.pendingReviews}
           loading={first}
           href="/reviews"
+          variant="pending"
         />
         <StatCard
           icon="library"
@@ -136,6 +141,7 @@ export default function DashboardPage() {
           value={stats.scenarios}
           loading={first}
           href="/library"
+          variant="scenario"
         />
         <StatCard
           icon="cpu"
@@ -144,6 +150,7 @@ export default function DashboardPage() {
           value={stats.algorithms}
           loading={first}
           href="/candidates"
+          variant="candidate"
         />
         <StatCard
           icon="play"
@@ -152,16 +159,17 @@ export default function DashboardPage() {
           value={stats.simulations}
           loading={first}
           href="/simulate"
+          variant="simulation"
         />
       </div>
 
       <QuickActions signedIn={signedIn} />
 
-      <div className="dashboard-columns">
-        <section className="panel">
+      <div className="dashboard-columns dashboard-activity-grid">
+        <section className="panel dashboard-panel dashboard-panel--decisions">
           <div className="panel-head">
-            <h3>{t("dashboard.recentDecisions")}</h3>
-            <Link href="/decisions">{t("dashboard.viewAll")}</Link>
+            <h3><span className="panel-title-icon" aria-hidden="true"><Icon name="benchmark" size={17} /></span>{t("dashboard.recentDecisions")}</h3>
+            <Link className="panel-view-all" href="/decisions">{t("dashboard.viewAll")}</Link>
           </div>
           {!signedIn ? (
             <EmptyState
@@ -213,10 +221,10 @@ export default function DashboardPage() {
           )}
         </section>
 
-        <section className="panel">
+        <section className="panel dashboard-panel dashboard-panel--reviews">
           <div className="panel-head">
-            <h3>{t("dashboard.pendingRequests")}</h3>
-            <Link href="/reviews">{t("dashboard.viewAll")}</Link>
+            <h3><span className="panel-title-icon" aria-hidden="true"><Icon name="inbox" size={17} /></span>{t("dashboard.pendingRequests")}</h3>
+            <Link className="panel-view-all" href="/reviews">{t("dashboard.viewAll")}</Link>
           </div>
           {!signedIn ? (
             <EmptyState
@@ -268,10 +276,10 @@ export default function DashboardPage() {
           )}
         </section>
 
-        <section className="panel">
+        <section className="panel dashboard-panel dashboard-panel--simulations">
           <div className="panel-head">
-            <h3>{t("dashboard.recentSimulations")}</h3>
-            <Link href="/simulate">{t("dashboard.viewAll")}</Link>
+            <h3><span className="panel-title-icon" aria-hidden="true"><Icon name="play" size={17} /></span>{t("dashboard.recentSimulations")}</h3>
+            <Link className="panel-view-all" href="/simulate">{t("dashboard.viewAll")}</Link>
           </div>
           {simulations.length === 0 ? (
             <EmptyState
@@ -310,6 +318,6 @@ export default function DashboardPage() {
           )}
         </section>
       </div>
-    </>
+    </div>
   );
 }

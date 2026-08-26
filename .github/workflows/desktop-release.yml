@@ -1,0 +1,131 @@
+# Build and publish the Windows desktop installer.
+#
+# Separate from ci.yml on purpose. That workflow answers "is this commit
+# sound?" and runs on every push; this one answers "is this artefact
+# shippable?" and runs on a tag. Merging them would mean either building
+# an installer on every push or gating every push on a Windows-only
+# toolchain.
+#
+# The release gate is `scripts/build_desktop.ps1`, and specifically the
+# smoke test inside it: it starts the staged interpreter, runs a real
+# plugin out of process, and serves the exported UI. Everything it checks
+# is invisible to the test suite, because none of those mechanisms exist
+# when pytest runs from a checkout.
+#
+#   git tag desktop-v0.2.0 && git push origin desktop-v0.2.0
+
+name: desktop release
+
+on:
+  push:
+    tags:
+      - "desktop-v*"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish a release (off = build and smoke test only)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          # The same minor version the installer ships. pip builds C
+          # extensions for the interpreter it runs on, so a mismatch here
+          # produces wheels the shipped Python cannot import — and the
+          # error names the module rather than the cause.
+          python-version: "3.12"
+
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Read the version stamp
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Get-Content 'apps/desktop/planbench_desktop/VERSION' -Raw).Trim()
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=desktop-v$version" >> $env:GITHUB_OUTPUT
+          Write-Host "version $version"
+
+      - name: The tag and the version stamp must agree
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $expected = '${{ steps.version.outputs.tag }}'
+          if ($tag -ne $expected) {
+            # Otherwise the release is named one thing and the installed
+            # application reports another, and the updater — which
+            # compares the tag against the running VERSION — offers the
+            # same update forever.
+            throw "tag $tag does not match the version stamp ($expected)"
+          }
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build and smoke test the installer
+        shell: pwsh
+        run: ./scripts/build_desktop.ps1
+
+      - name: Write the release manifest
+        id: manifest
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          # By name, not "the first .exe": a working tree that has built
+          # an older version still has its installer sitting in dist/,
+          # and publishing whichever one sorts first is how a release
+          # ends up carrying the wrong build.
+          $installer = Get-Item 'dist\PlanBench-Setup.exe' -ErrorAction SilentlyContinue
+          if (-not $installer) { throw 'the build produced no dist\PlanBench-Setup.exe' }
+          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLower()
+          # The updater refuses any download that does not hash to this.
+          # It is the only check between fetching a file and running it
+          # with the user's privileges, so it is written here, from the
+          # artefact this job just built.
+          @{
+            version = $version
+            asset   = $installer.Name
+            sha256  = $hash
+            built   = (Get-Date -Format 'o')
+          } | ConvertTo-Json | Set-Content 'dist/latest.json' -Encoding utf8
+          Write-Host "$($installer.Name)  $hash"
+          "installer=$($installer.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Keep the artefacts even when not publishing
+        uses: actions/upload-artifact@v4
+        with:
+          name: planbench-desktop-${{ steps.version.outputs.version }}
+          path: |
+            dist/*.exe
+            dist/latest.json
+          retention-days: 14
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          # `latest.json` is an asset of the release it describes, not a
+          # file at a fixed URL: a manifest that outlives its installer
+          # is a hash mismatch waiting to happen.
+          gh release create $tag dist/PlanBench-Setup.exe dist/latest.json `
+            --title "PlanBench $($tag -replace '^desktop-v', '')" `
+            --generate-notes

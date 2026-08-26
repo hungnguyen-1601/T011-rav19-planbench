@@ -8,7 +8,7 @@ decides who the caller is.
 
 from __future__ import annotations
 
-from conftest import ADMIN, ALICE, BOB, auth_headers
+from conftest import ADMIN, ALICE, BOB, auth_headers, isolate_environment
 from fastapi.testclient import TestClient
 
 from planbench_api.config import get_settings
@@ -136,3 +136,70 @@ class TestAccessControl:
         users._users.pop(user.id)  # only the in-memory backend can be poked like this
         response = client.get("/api/v1/auth/me", headers=headers)
         assert response.status_code == 401
+
+
+class TestASeedPasswordThatChanged:
+    """`PLANBENCH_SEED_USERS` has to keep meaning something after day one.
+
+    Creating-only meant the setting was read exactly once in an
+    installation's life. Change the entry afterwards and the file said
+    one password while the database held the hash of another — the
+    sign-in page rejecting the credential printed right beside it, with
+    nothing in the interface to explain why. A desktop build shipped
+    that way.
+    """
+
+    @staticmethod
+    def _sign_in(client: TestClient, nickname: str, password: str):
+        return client.post("/api/v1/auth/login", data={"username": nickname, "password": password})
+
+    def test_the_new_password_works_after_the_entry_changes(self, tmp_path, monkeypatch) -> None:
+        isolate_environment(monkeypatch)
+        monkeypatch.setenv("PLANBENCH_MODEL_DIR", str(tmp_path / "models"))
+        database = tmp_path / "seeded.db"
+        monkeypatch.setenv("PLANBENCH_DATABASE_URL", f"sqlite:///{database.as_posix()}")
+        monkeypatch.setenv("PLANBENCH_DB_CREATE_ALL", "true")
+
+        monkeypatch.setenv("PLANBENCH_SEED_USERS", "admin:the-first-password")
+        get_settings.cache_clear()
+        first = TestClient(create_app(artifact_dir=str(tmp_path / "a")))
+        assert self._sign_in(first, "admin", "the-first-password").status_code == 200
+
+        # Same database, a different entry — the shape of editing `.env`
+        # and reopening the app.
+        monkeypatch.setenv("PLANBENCH_SEED_USERS", "admin:the-second-password")
+        get_settings.cache_clear()
+        second = TestClient(create_app(artifact_dir=str(tmp_path / "b")))
+
+        assert self._sign_in(second, "admin", "the-second-password").status_code == 200
+        assert self._sign_in(second, "admin", "the-first-password").status_code == 401
+        get_settings.cache_clear()
+
+    def test_an_unchanged_entry_leaves_the_account_alone(self, tmp_path, monkeypatch) -> None:
+        """Reconciling must not mean rewriting the hash on every boot."""
+        isolate_environment(monkeypatch)
+        monkeypatch.setenv("PLANBENCH_MODEL_DIR", str(tmp_path / "models"))
+        database = tmp_path / "stable.db"
+        monkeypatch.setenv("PLANBENCH_DATABASE_URL", f"sqlite:///{database.as_posix()}")
+        monkeypatch.setenv("PLANBENCH_DB_CREATE_ALL", "true")
+        monkeypatch.setenv("PLANBENCH_SEED_USERS", "admin:unchanged")
+
+        get_settings.cache_clear()
+        TestClient(create_app(artifact_dir=str(tmp_path / "a")))
+        import sqlite3
+
+        with sqlite3.connect(database) as connection:
+            before = connection.execute(
+                "SELECT password_hash FROM users WHERE nickname = 'admin'"
+            ).fetchone()[0]
+
+        get_settings.cache_clear()
+        again = TestClient(create_app(artifact_dir=str(tmp_path / "b")))
+        with sqlite3.connect(database) as connection:
+            after = connection.execute(
+                "SELECT password_hash FROM users WHERE nickname = 'admin'"
+            ).fetchone()[0]
+
+        assert after == before
+        assert self._sign_in(again, "admin", "unchanged").status_code == 200
+        get_settings.cache_clear()

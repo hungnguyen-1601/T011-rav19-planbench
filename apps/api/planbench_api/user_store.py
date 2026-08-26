@@ -149,6 +149,16 @@ class InMemoryUserRepository:
             self._users[user_id] = stored.model_copy(update={"user": user})
             return user
 
+    def set_password(self, user_id: str, password_hash: str) -> User:
+        """Replace the credential an account signs in with."""
+        with self._lock:
+            stored = self.get_stored(user_id)
+            user = stored.user.model_copy(update={"updated_at": now_iso()})
+            self._users[user_id] = stored.model_copy(
+                update={"user": user, "password_hash": password_hash}
+            )
+            return user
+
     def list(self) -> list[User]:
         return sorted(
             (stored.user for stored in self._users.values()), key=lambda user: user.created_at

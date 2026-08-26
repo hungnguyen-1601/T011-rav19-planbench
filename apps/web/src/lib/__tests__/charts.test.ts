@@ -7,6 +7,9 @@
  * anything.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -400,9 +403,31 @@ describe("the download filename", () => {
     ).toBe("benchmark-run-abc123.md");
   });
 
-  it("falls back to the id when the header is missing or unparseable", () => {
-    expect(filenameFromDisposition(null, "abc123")).toBe("benchmark-abc123.md");
-    expect(filenameFromDisposition("attachment", "abc123")).toBe("benchmark-abc123.md");
+  it("returns the caller's fallback verbatim when the header cannot be read", () => {
+    // It used to append `.md` itself. That was true while Markdown was
+    // the only export and became a lie the moment a workbook came down
+    // the same pipe: the file saved as `.md` and Excel refused to open
+    // it. The extension is the caller's to choose.
+    expect(filenameFromDisposition(null, "decision-abc123.xlsx")).toBe("decision-abc123.xlsx");
+    expect(filenameFromDisposition("attachment", "decision-abc123.md")).toBe(
+      "decision-abc123.md",
+    );
+  });
+
+  it("never invents an extension of its own", () => {
+    expect(filenameFromDisposition(null, "plain-name")).toBe("plain-name");
+  });
+
+  it("is reached often, not rarely", () => {
+    // A browser withholds `Content-Disposition` from JavaScript across
+    // origins unless the server exposes it, and the app and the API sit
+    // on different ports — so this path runs on every download until
+    // the CORS header is in place.
+    const cors = readFileSync(
+      join(process.cwd(), "..", "api", "planbench_api", "main.py"),
+      "utf8",
+    );
+    expect(cors).toContain('expose_headers=["Content-Disposition"]');
   });
 
   it("never lets a server-supplied name carry a path separator", () => {

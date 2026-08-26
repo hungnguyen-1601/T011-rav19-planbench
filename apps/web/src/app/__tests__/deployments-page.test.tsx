@@ -27,6 +27,7 @@ const PAGE = readFileSync(join(APP, "deployments", "page.tsx"), "utf8");
 const DECISIONS = readFileSync(join(APP, "decisions", "page.tsx"), "utf8");
 const FORM = readFileSync(join(process.cwd(), "src", "components", "DeploymentForm.tsx"), "utf8");
 const LIB = readFileSync(join(process.cwd(), "src", "lib", "deployments.ts"), "utf8");
+const LIB2 = readFileSync(join(process.cwd(), "src", "lib", "traffic.ts"), "utf8");
 const TRAFFIC_UI = readFileSync(join(process.cwd(), "src", "components", "TrafficEditor.tsx"), "utf8");
 const TRAFFIC_LIB = readFileSync(join(process.cwd(), "src", "lib", "traffic.ts"), "utf8");
 
@@ -200,6 +201,27 @@ describe("the form is an input method, not a second definition", () => {
        copy would be a second answer to what clicking the map does. */
     expect(FORM).toContain("<MissionCanvas");
     expect(FORM).toContain("<MissionPoseFields");
+  });
+
+  it("renders the draw editor and preview as mutually exclusive map modes", () => {
+    const area = FORM.slice(FORM.indexOf("const mapArea"), FORM.indexOf("return (", FORM.indexOf("const mapArea")));
+    const condition = area.indexOf('source === "drawn" ? (');
+    const editor = area.indexOf("<DrawNewMap");
+    const alternative = area.indexOf(") : (", editor);
+    const preview = area.indexOf('className="deployment-map-workspace deployment-map-stage deployment-map-preview"');
+    expect(condition).toBeGreaterThan(-1);
+    expect(editor).toBeGreaterThan(condition);
+    expect(alternative).toBeGreaterThan(editor);
+    expect(preview).toBeGreaterThan(alternative);
+    expect(area.match(/<DrawNewMap/g)).toHaveLength(1);
+    expect(area.match(/<MissionCanvas/g)).toHaveLength(1);
+  });
+
+  it("sizes the draw canvas from the same full-width measured room", () => {
+    expect(FORM).toContain("availableWidth={roomForMap}");
+    expect(FORM).toContain("canvasSize(availableWidth, height / Math.max(width, 1), availableWidth)");
+    expect(FORM).toContain("width={painterSize.width}");
+    expect(FORM).toContain("height={painterSize.height}");
   });
 
   it("has every key it asks for, in both locales", () => {
@@ -530,24 +552,41 @@ describe("the traffic comes with the map it belongs to", () => {
     expect(FORM).not.toMatch(/flushDrag\(\s*(current\.)?pending/);
   });
 
-  it("puts the map beside the controls rather than a screen below them", () => {
-    /* Thirty fields stacked in one column left the map — the thing most
-       of them are about — near the bottom, so choosing a traffic route
-       meant scrolling away from the picture of it. */
+  it("puts the map in the left column, beside the configuration", () => {
+    /* **The full-width row is gone.** It drew the map as wide as the
+       form and left the tabs beside empty floor — and the tabs are what
+       an author reads while placing a mission on it. */
     expect(FORM).toContain("gridTemplateColumns");
     expect(FORM).toContain("sideBySide(shellWidth)");
+    expect(FORM).toContain('className="deployment-map-fullwidth"');
+    expect(FORM.indexOf("{mapArea}")).toBeLessThan(FORM.indexOf("deployment-config-panel"));
+    expect(FORM).toContain('"minmax(0, 1fr) minmax(0, 1fr)"');
     /* Measured, and passed down as a number. `MapCanvas` maps a press
        to world coordinates assuming its surface and its CSS box are the
        same size, so a `width: 100%` stretch would land every click away
        from the pointer while the map still looked right. */
     expect(FORM).toContain("canvasSize(roomForMap");
     expect(FORM).toContain("width={canvas.width}");
-    /* And the map's track *is* the map. Two flexible tracks left the
-       canvas at the left edge of a wider column and the panel at the
-       right edge of another, with a gap between them that belonged to
-       neither — which is what made the picker under the map look like
-       it was floating between the two. */
-    expect(FORM).toContain("`${canvas.width}px minmax(0, 1fr)`");
+  });
+
+  it("sizes the canvas for the half it now occupies", () => {
+    /* Half the form, less the gap between the columns and the frame's
+       own margin, border and padding. Sized for a full-width row it
+       would overflow its column, and CSS clamping it back is exactly
+       the stretch that moves every click away from the pointer. */
+    expect(FORM).toContain("(shellWidth - COLUMN_GAP_PX) / 2 - 44");
+    expect(FORM).toContain("canvasSize(roomForMap, mapAspect, roomForMap)");
+  });
+
+  it("keeps the map chooser inside the identity panel", () => {
+    /* Which world, held to which claim, under which name is one answer,
+       and it was split across two headed blocks with a panel border
+       through the middle. */
+    const identity = FORM.indexOf('id="deployment-identity"');
+    const selector = FORM.indexOf("{mapSelector}");
+    const close = FORM.indexOf("</section>", identity);
+    expect(selector).toBeGreaterThan(identity);
+    expect(selector).toBeLessThan(close);
   });
 
   it("says which tab a refusal is behind, and jumps there after a check", () => {
@@ -873,7 +912,7 @@ describe("an approval can be taken back, and taking it back is itself recorded",
    * would be an approval nobody could rely on.
    */
   const DETAIL_PAGE = readFileSync(
-    join(process.cwd(), "src", "app", "decisions", "[id]", "page.tsx"),
+    join(process.cwd(), "src", "app", "decisions", "[id]", "DecisionDetail.tsx"),
     "utf8",
   );
 
@@ -993,5 +1032,167 @@ describe("replanning is declared by the deployment, and has no budget", () => {
        settings produce identical context ids for two experiments — the
        trap `sensor_noise` sprang. */
     expect(EN_REPLAN["deployments.form.replanningNote"]).toContain("HĐ-3.1");
+  });
+});
+
+describe("the page leads with filing, not with the list", () => {
+  it("puts the form above the deployments already on file", () => {
+    /* The list is a reference — read when somebody needs an id or wants
+       to check a threshold — while filing one is what people come here
+       to do. With ten rows above it the form started below the fold, and
+       the empty-state banner had to carry a jump link down to reach it
+       at all. */
+    const form = PAGE.indexOf('id="deployment-file-panel"');
+    const list = PAGE.indexOf('className="panel deployment-list-panel"');
+    expect(form).toBeGreaterThan(-1);
+    expect(list).toBeGreaterThan(form);
+  });
+
+  it("keeps the count on the head, where the list used to answer it", () => {
+    /* "How many are on file" was answered by the list being the first
+       thing on screen. It is not any more, so the badge is now the only
+       thing answering it. */
+    expect(PAGE).toContain("deployment-count-badge");
+    expect(PAGE.indexOf("deployment-count-badge")).toBeLessThan(
+      PAGE.indexOf('id="deployment-file-panel"'),
+    );
+  });
+
+  it("keeps the noise note with the table it qualifies", () => {
+    /* It is about the rows, not about the page: moving the table has to
+       move the sentence under it. */
+    const list = PAGE.indexOf('className="panel deployment-list-panel"');
+    expect(PAGE.indexOf("deployments.noiseNote")).toBeGreaterThan(list);
+  });
+});
+
+describe("the preview plays the traffic rather than freezing it", () => {
+  it("asks for a span of motion, not one instant", () => {
+    /* A still frame answers "is the cart in my way at t = 12" and not
+       "where is it heading", which is the question somebody placing a
+       start pose actually has. Finding out meant typing 0, then 5, then
+       10, pressing the button each time. */
+    expect(LIB2).toContain("duration");
+    expect(LIB2).toContain("PREVIEW_STEP_SECONDS");
+  });
+
+  it("plays for the deployment's own episode timeout", () => {
+    /* A fixed sixty seconds would show traffic an episode that gives up
+       at twenty will never meet, and would stop short of the part an
+       author was worried about on a three-minute one. The number is
+       already required to build the scenario, so it cannot drift from
+       what the run will do. */
+    expect(LIB2).toContain("Math.min(timeout, MAX_PREVIEW_SECONDS)");
+  });
+
+  it("samples on the server, never in the browser", () => {
+    /* The rule the still frame was already built on. A second
+       implementation of four motion laws would drift from the
+       simulator's, and the drift shows up as an author placing a start
+       clear of a cart that is somewhere else when the run happens. */
+    expect(FORM).not.toContain("position_at");
+    expect(FORM).toContain("trafficAt(preview, playhead)");
+  });
+
+  it("keeps the playhead apart from the instant the request named", () => {
+    /* Folding them together would make dragging the scrubber invalidate
+       the very reply it is scrubbing: changing the request's numbers
+       clears the picture, and it has to keep doing that. */
+    expect(FORM).toContain("const [playhead, setPlayhead] = useState(0)");
+    expect(FORM).toContain("setPreviewTime(Number(event.target.value))");
+  });
+
+  it("stops the timer when the picture is cleared", () => {
+    /* A timer left running over a cleared canvas keeps counting seconds
+       of a world nobody is looking at. */
+    const scrub = FORM.slice(FORM.indexOf("const scrubPreview"), FORM.indexOf("const previewRequest"));
+    expect(scrub).toContain("setPlaying(false)");
+    expect(scrub).toContain("setPlayhead(0)");
+  });
+
+  it("parks a fresh answer at the start", () => {
+    /* Leaving the playhead at 30 s would show the middle of a route
+       nobody has watched the start of, under a scrubber that had not
+       moved. */
+    expect(FORM).toContain("setPreview(answer);\n        // A new answer is a new world");
+  });
+
+  it("shows both views the same second", () => {
+    /* A 2.5D view frozen at t=0 beside a top-down view at t=12 is two
+       worlds, which is the thing `snapshotsOf` was written to avoid. */
+    expect(FORM).toContain("snapshotsOf(preview, playhead)");
+  });
+
+  it("offers no transport when there is nothing to play", () => {
+    /* A scrubber over a single frame is a control that cannot move. */
+    expect(FORM).toContain("playableSeconds(preview) > 0 ?");
+  });
+});
+
+describe("every hook in the form runs on every render", () => {
+  it("calls no hook below the loading guard", () => {
+    /* **The failure this locks down took the page out entirely.** The
+       playback timer was written next to the preview code it belongs
+       with, which is below `if (!draft) return`. On the render before
+       the draft arrived React counted one hook fewer than on the render
+       after, and it refuses to guess which one moved: "React has
+       detected a change in the order of Hooks called by
+       DeploymentForm".
+
+       Checked by position rather than by eye because the guard is a
+       thousand lines above the end of the component, and every future
+       hook added near the code it serves lands on the wrong side of it
+       by default. */
+    const form = FORM.slice(0, FORM.indexOf("function numberAt("));
+    const guard = form.indexOf("if (!draft) return");
+    expect(guard).toBeGreaterThan(-1);
+    const after = form.slice(guard);
+    const hooks = [...after.matchAll(/\buse(State|Effect|Memo|Callback|Ref|Context)\s*\(/g)];
+    expect(hooks.map((hit) => hit[0]), "hooks below the guard").toEqual([]);
+  });
+});
+
+describe("the mission map has its own grid switch", () => {
+  const PLACER = readFileSync(join(process.cwd(), "src", "components", "MissionPlacer.tsx"), "utf8");
+  const CANVAS = readFileSync(join(process.cwd(), "src", "components", "MapCanvas.tsx"), "utf8");
+  const BENCH = readFileSync(join(process.cwd(), "src", "app", "simulate", "page.tsx"), "utf8");
+
+  it("can turn the grid off, which nothing here could before", () => {
+    /* `MapCanvas` defaults `showGrid` to true and `MissionCanvas` never
+       forwarded the prop, so this canvas had been drawing a grid since
+       it existed — invisible only because the ink was white at 4% alpha
+       against a floor that is near-white in the light theme. */
+    expect(CANVAS).toContain("showGrid = false");
+    expect(PLACER).toContain("showGrid?: boolean;");
+    expect(PLACER).toContain("showGrid={showGrid}");
+    expect(FORM).toContain("const [showGrid, setShowGrid] = useState(false)");
+    expect(FORM).toContain("deployment-map-grid-toggle");
+  });
+
+  it("keeps its switch separate from the test bench's", () => {
+    /* Two canvases doing different jobs — one a map being authored, one
+       a replay being watched. A shared preference would mean turning
+       the grid off to read a trajectory also turned it off for somebody
+       placing a start pose on another screen. Both are plain local
+       state; neither reads storage. */
+    expect(BENCH).toContain("const [showGrid, setShowGrid] = useState(false)");
+    expect(FORM).not.toContain("localStorage");
+    expect(BENCH).not.toContain("localStorage");
+  });
+
+  it("puts the switch in the legend, not beside the source tabs", () => {
+    /* The rest of that row says what the marks on the canvas mean, and
+       the grid is one more of them. */
+    const legend = FORM.indexOf("deployment-map-legend");
+    const toggle = FORM.indexOf("deployment-map-grid-toggle");
+    expect(legend).toBeGreaterThan(-1);
+    expect(toggle).toBeGreaterThan(legend);
+  });
+
+  it("declares the state above the loading guard", () => {
+    /* The hook-order rule this form has already been taken down by
+       once. */
+    const guard = FORM.indexOf("if (!draft) return");
+    expect(FORM.indexOf("const [showGrid, setShowGrid]")).toBeLessThan(guard);
   });
 });

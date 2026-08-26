@@ -92,7 +92,14 @@ describe("the arrangement /decisions relies on", () => {
        is drawn and touches no document, so freezing it would stop an
        author looking at what they just filed while it is being filed. */
     const html = render({ disabled: true });
-    const inputs = html.match(/<input[^>]*>/g) ?? [];
+    /* `map-view-control` marks the same exemption the switch above has
+       and for the same reason: the grid checkbox decides how the map is
+       drawn, not what the document says. Filtered by name rather than by
+       shape so a future field cannot slip through by being a checkbox
+       too. */
+    const inputs = (html.match(/<input[^>]*>/g) ?? []).filter(
+      (input) => !input.includes("map-view-control"),
+    );
     expect(inputs.length).toBeGreaterThan(4);
     for (const input of inputs) expect(input).toContain("disabled");
     for (const label of ["Place the start", "Place the goal"]) {

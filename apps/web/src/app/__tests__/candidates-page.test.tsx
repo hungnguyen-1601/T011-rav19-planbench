@@ -132,11 +132,13 @@ describe("the launch panel stops asking people to type identifiers", () => {
 });
 
 describe("the page is reachable and translated", () => {
-  it("sits in the sidebar as a material, not as a thing being replaced", () => {
+  it("sits in the sidebar as a resource, not as a thing being replaced", () => {
     /* A candidate is what a comparison chooses *between* — an input, the
-       same kind of thing as a map. */
-    const materials = NAV_SECTIONS.find((section) => section.titleKey === "nav.section.materials");
-    expect(materials?.items.map((item) => item.href)).toContain("/candidates");
+       same kind of thing as a map. The heading it sits under was renamed
+       from `materials` to `resources` when the four groups became three;
+       the claim is the same one. */
+    const resources = NAV_SECTIONS.find((section) => section.titleKey === "nav.section.resources");
+    expect(resources?.items.map((item) => item.href)).toContain("/candidates");
   });
 
   it("is the only page left that shows the registry", () => {
@@ -206,6 +208,52 @@ describe("choosing a candidate one layer at a time", () => {
        so is more use than an empty dropdown. */
     expect(PICKER).toContain("candidates.pick.noConfigs");
     expect(vi).toHaveProperty("candidates.pick.noConfigs");
+  });
+});
+
+describe("the algorithms panel above the stacks", () => {
+  const PAGE = readFileSync(join(process.cwd(), "src", "app", "candidates", "page.tsx"), "utf8");
+
+  it("sits above the stacks table", () => {
+    /* It answers the smaller question first — what algorithms exist at
+       all — and the table below then says which pairs of them are real,
+       which is a different fact: the registry is not a full cross
+       product. */
+    expect(PAGE.indexOf("<LayerTable")).toBeLessThan(PAGE.indexOf("<StackTable"));
+    expect(PAGE.indexOf("<LayerTable")).toBeGreaterThan(-1);
+  });
+
+  it("is its own panel rather than a section of the stacks one", () => {
+    const panel = PAGE.slice(PAGE.indexOf("function LayerTable"), PAGE.indexOf("function LayerRows"));
+    expect(panel).toContain('className="panel"');
+    expect(panel).toContain("candidates.layers.title");
+  });
+
+  it("splits the two layers into two tabs", () => {
+    /* A global planner and a local controller are not two species of
+       one thing: they are given different observations and the sampling
+       flag is meaningful for one and meaningless for the other. A
+       shared table sorted by Kind would put them under headings only
+       half the rows can answer. */
+    const panel = PAGE.slice(PAGE.indexOf("function LayerTable"), PAGE.indexOf("function LayerRows"));
+    expect(panel).toContain('id: "global" as const');
+    expect(panel).toContain('id: "local" as const');
+    expect(panel).toContain("globalPlanners(stacks)");
+    expect(panel).toContain("localControllers(stacks)");
+  });
+
+  it("does not label a controller with the planner's sampling flag", () => {
+    /* `stochastic_global_planner` describes the global planner. A
+       controller inheriting it from a stack it shares would be called
+       random for something it does not do. */
+    expect(PAGE).toContain("showStochastic={false}");
+    expect(PAGE).toContain("showStochastic && row.stochastic");
+  });
+
+  it("says the list is derived rather than a registry of its own", () => {
+    /* There is no endpoint enumerating the layers; they are the fields
+       the stacks declare. */
+    expect(PAGE).toContain("candidates.layers.note");
   });
 });
 
@@ -334,9 +382,15 @@ describe("the assistant takes a paper the way a chat client does", () => {
      comes back as the reply. */
 
   it("puts a paperclip in the composer, not a panel above the thread", () => {
-    expect(AGENT).toContain('className="chat-attach"');
+    /* The class was `chat-attach` until the page got its own styles;
+       the claim is unchanged and only the selector moved. */
+    expect(AGENT).toContain('className="agent-attach"');
     expect(AGENT).toContain('type="file"');
     expect(AGENT).not.toContain("<FromPaperPanel");
+    /* And inside the composer element, not merely somewhere on the
+       page: a paperclip beside the thread is the panel this replaced. */
+    const composer = AGENT.slice(AGENT.indexOf('className="agent-composer"'));
+    expect(composer.slice(0, composer.indexOf('</form>'))).toContain('className="agent-attach"');
   });
 
   it("holds the file until send rather than reading it on pick", () => {
@@ -527,20 +581,23 @@ describe("what an adversarial review found, and what now holds", () => {
   });
 });
 
-describe("the Vietnamese UI calls a candidate a phương án", () => {
-  /* "Ứng viên" is the literal translation, and in Vietnamese it means a
-     job applicant or someone standing for election — an odd thing for a
-     planner configuration to be. "Phương án" is what a person choosing
-     between alternatives calls them, which is exactly the act this
-     platform exists to support.
+describe("the Vietnamese UI calls a candidate an ứng viên", () => {
+  /* The word is the product owner's call, and it was made against the
+     alternative this test previously enforced. "Phương án" reads as
+     *the plan itself* — the thing a candidate proposes — so a screen
+     comparing four of them ends up saying "plan" where it means "the
+     entrant being judged", and the run that lost is still a phương án.
+     "Ứng viên" carries the one meaning the page needs: an entrant put
+     forward for a decision, which is precisely what a stack under
+     comparison is.
 
-     "Cấu hình" was not available: it is already the word for a
-     controller configuration in 27 other strings, and one candidate is
-     a stack *plus* one of those. */
+     Either word survives the argument on its own; what does not survive
+     is both. So the check is unchanged in shape and only its subject
+     moved: whichever word lost, no string may still carry it. */
 
-  it("uses no form of the old word anywhere", () => {
+  it("uses no form of the discarded word anywhere", () => {
     for (const value of Object.values(vi as Record<string, string>)) {
-      expect(value.toLowerCase()).not.toContain("ứng viên");
+      expect(value.toLowerCase()).not.toContain("phương án");
     }
   });
 

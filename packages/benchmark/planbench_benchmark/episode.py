@@ -21,11 +21,14 @@ not carry is a missing column, not a reason to pass a number sideways.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
 from planbench_benchmark.candidates import build_planners
 from planbench_benchmark.fingerprint import execution_conditions_fingerprint
 from planbench_decision.candidate import Candidate
+from planbench_decision.card import resolve_git_sha
+from planbench_explanation.sidecar_writer import PlanningInputRecorder
 from planbench_planning.common.base import PlanResult
 from planbench_schemas.episode_context import EpisodeContext
 from planbench_schemas.map import MapData
@@ -33,7 +36,11 @@ from planbench_schemas.robot import RobotConfig
 from planbench_schemas.scenario import Scenario
 from planbench_schemas.task_profile import Mission, TaskProfile
 from planbench_simulator.nav_stack import StackRun, run_stack
-from planbench_simulator.trace import DEFAULT_TRACE_ROOT, EpisodeTraceRecorder
+from planbench_simulator.trace import (
+    DEFAULT_TRACE_ROOT,
+    EpisodeTraceRecorder,
+    planning_inputs_path,
+)
 
 #: Coarsest physics step the bridge will use, in seconds. 20 Hz is the
 #: simulator's own default and the fidelity the engine's collision and
@@ -118,6 +125,20 @@ def scenario_for(profile: TaskProfile, context: EpisodeContext) -> Scenario:
     )
 
 
+@lru_cache(maxsize=1)
+def _build_reference() -> str:
+    """``git:<40 hex>`` of the code running this sweep.
+
+    Cached: it is the same for every episode of a run, and shelling out
+    to git a few thousand times would be a measurable share of a sweep.
+    Raises rather than substituting a placeholder — a sidecar whose
+    build reference says ``unknown`` looks complete and replays nothing,
+    and the replay admission checks this field before it checks anything
+    else.
+    """
+    return f"git:{resolve_git_sha()}"
+
+
 def run_contract_episode(
     candidate: Candidate,
     profile: TaskProfile,
@@ -125,6 +146,8 @@ def run_contract_episode(
     map_data: MapData,
     *,
     root: Path | str = DEFAULT_TRACE_ROOT,
+    evidence_class: str = "production",
+    record_planning_inputs: bool = True,
 ) -> tuple[Path, StackRun]:
     """Run one episode and write its HĐ-5 trace; return where it landed.
 
@@ -136,9 +159,36 @@ def run_contract_episode(
     The recorder is a context manager, so an episode that raises halfway
     still leaves the samples it collected. A partial trace is evidence; a
     missing one is a hole in a paired comparison.
+
+    ``record_planning_inputs`` writes the E4.5 sidecar beside the trace:
+    one record per global planning attempt, the ones that found no path
+    included, each pointing at a snapshot a replay can load. **On by
+    default**, because the whole reason the writer exists is that the
+    costmap a planner was handed cannot be recovered afterwards — a
+    sweep that ran without it produces runs whose mechanisms can never
+    be verified above ``associated``, and nothing at the time says so.
+    The flag exists for the diagnostic scripts that do not want the
+    extra artifacts, not as a performance dial.
     """
     global_planner, local_planner = build_planners(candidate, episode_seed=context.seed)
     scenario = scenario_for(profile, context)
+    fingerprint = execution_conditions_fingerprint(map_data, scenario, profile)
+
+    planning_recorder = None
+    if record_planning_inputs:
+        planning_recorder = PlanningInputRecorder.to_path(
+            planning_inputs_path(
+                candidate.candidate_id,
+                context.episode_context_id,
+                root=root,
+                evidence_class=evidence_class,  # type: ignore[arg-type]
+                execution_fingerprint=fingerprint,
+            ),
+            run_id=context.episode_context_id,
+            episode_context_id=context.episode_context_id,
+            candidate_id=candidate.candidate_id,
+            execution_environment_ref=_build_reference(),
+        )
 
     with EpisodeTraceRecorder(
         context,
@@ -149,9 +199,22 @@ def run_contract_episode(
         # the file on disk describes the same world. The two ids in the
         # path cannot answer that — HĐ-3.1 leaves the environment out of
         # ``episode_context_id`` — and the reuse paths trusted them.
-        execution_conditions_fingerprint=execution_conditions_fingerprint(
-            map_data, scenario, profile
-        ),
+        execution_conditions_fingerprint=fingerprint,
+        # **What this episode's evidence is worth, carried to the writer.**
+        # H9A gave traces a per-class address and then left this
+        # parameter off, so a sweep told to run the oracle lane still
+        # wrote into ``production/``: the namespace was separated and
+        # nothing was routed into it. A guard nobody reaches is not a
+        # guard, and this is the one line that makes the address real.
+        evidence_class=evidence_class,
+        # **Asked of the controller, because only it knows.** A trace
+        # file has one schema, fixed before the first row, so this cannot
+        # be discovered from the rows as they arrive. The subprocess lane
+        # measures the six §5.9 layers and an in-process controller does
+        # not, and the recorder refuses a row carrying columns it was not
+        # built for — which is what an imported plugin met the moment it
+        # started producing real commands instead of safe stops.
+        latency_layers=bool(getattr(local_planner, "emits_latency_layers", False)),
     ) as recorder:
         run = run_stack(
             map_data,
@@ -177,7 +240,13 @@ def run_contract_episode(
             # correctly for closing traffic the comparison would be
             # measuring safety rather than the layer it names.
             obstacle_speed=profile.environment.v_obstacle_max,
+            planning_recorder=planning_recorder,
         )
+        if planning_recorder is not None:
+            # The runner's own count, never the writer's: a validator
+            # handed its own input can only agree with it. One initial
+            # plan plus one per replan.
+            planning_recorder.close(expected_attempts=run.replan_attempts + 1)
         recorder.close(
             peak_search_nodes=_search_nodes(candidate, run.plan),
             peak_tree_nodes=_tree_nodes(candidate, run.plan),

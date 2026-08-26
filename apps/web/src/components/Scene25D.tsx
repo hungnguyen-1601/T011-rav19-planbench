@@ -25,6 +25,7 @@ import {
 } from "@/lib/scene25d";
 import { CAUTION_FILL, CAUTION_STROKE, KEEP_OUT_FILL, KEEP_OUT_STROKE } from "@/lib/keepOut";
 import type { MapData } from "@/lib/types";
+import { useTranslation } from "@/lib/i18n";
 
 export interface Scene25DProps extends SceneOptions {
   map: MapData;
@@ -33,7 +34,27 @@ export interface Scene25DProps extends SceneOptions {
   /** Degrees; the control strip writes these back. */
   azimuthDeg?: number;
   elevationDeg?: number;
+  /** Degrees about the world z axis — the angle a drag across the canvas
+   *  sets, and the only one that turns the room. */
+  yawDeg?: number;
   showControls?: boolean;
+  /** Draw the cell edges on the floor.
+   *
+   * **The raised view had no grid and looked like it did.** The floor is
+   * one quad per free cell, filled and never stroked, so the faint
+   * lattice on it was the anti-aliased seam between neighbours — a
+   * rendering artefact that no switch could turn off because nothing
+   * had drawn it. Off now closes those seams; on strokes them
+   * deliberately, in ink chosen to be seen. */
+  showGrid?: boolean;
+  /** **Lift the view out of this component.** Two of these sit side by
+   *  side showing the same episode, and a reader who turns one to look
+   *  behind a wall is comparing two rooms until they turn the other to
+   *  match by hand. Given this, the strip stops holding its own state
+   *  and reports every change to the owner of the pair. Omitted, the
+   *  scene keeps its own — the standalone viewer has nobody to sync
+   *  with. */
+  onViewChange?: (view: { yawDeg: number; elevationDeg: number; wallHeight: number }) => void;
   showPlan?: boolean;
   showTrajectory?: boolean;
 }
@@ -56,6 +77,11 @@ const COLOR = {
   outline: "rgba(0,0,0,0.25)",
   obstacle: "#ff6b6b",
   obstacleSide: "#c0454a",
+  /* The same mid-grey the flat canvas inks its grid with, and for the
+     same reason: it has to separate from whatever is behind it rather
+     than from one particular floor. Over this scene's `#1b2029` ground
+     it lands near `#4a5460`. */
+  gridLine: "rgba(120,132,150,0.35)",
 };
 
 export function Scene25D({
@@ -64,7 +90,10 @@ export function Scene25D({
   height = 520,
   azimuthDeg = 45,
   elevationDeg = 30,
+  yawDeg = 0,
   showControls = true,
+  showGrid = false,
+  onViewChange,
   showPlan = true,
   showTrajectory = true,
   wallHeight = 0.6,
@@ -79,13 +108,44 @@ export function Scene25D({
   trajectory,
   obstacles,
 }: Scene25DProps) {
+  const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [azimuth, setAzimuth] = useState(azimuthDeg);
-  const [elevation, setElevation] = useState(elevationDeg);
-  const [height3d, setHeight3d] = useState(wallHeight);
+  const [azimuth] = useState(azimuthDeg);
+  /* Controlled when the owner is listening, uncontrolled when it is
+     not. The local copies are the fallback for the standalone viewer;
+     with an `onViewChange` the props win on every render, so the two
+     panels cannot drift apart even for a frame. */
+  const [localYaw, setLocalYaw] = useState(yawDeg);
+  const [localElevation, setLocalElevation] = useState(elevationDeg);
+  const [localHeight, setLocalHeight] = useState(wallHeight);
+  const yaw = onViewChange ? yawDeg : localYaw;
+  const elevation = onViewChange ? elevationDeg : localElevation;
+  const height3d = onViewChange ? wallHeight : localHeight;
+
+  /** Where the pointer went down, and the angles it went down at.
+   *
+   * **Accumulated from the grab, not from the last frame.** Adding each
+   * move's delta to the current angle looks identical and drifts: with
+   * the value controlled from above, a move that arrives before the
+   * parent has re-rendered reads a stale angle, and that error is kept.
+   * Measuring the whole gesture from where it started cannot drift, and
+   * it is also what makes releasing and re-grabbing feel like picking
+   * the same object back up. */
+  const grab = useRef<{ x: number; y: number; yaw: number; elevation: number } | null>(null);
+
+  const emit = (next: Partial<{ yawDeg: number; elevationDeg: number; wallHeight: number }>) => {
+    const view = { yawDeg: yaw, elevationDeg: elevation, wallHeight: height3d, ...next };
+    if (onViewChange) onViewChange(view);
+    else {
+      setLocalYaw(view.yawDeg);
+      setLocalElevation(view.elevationDeg);
+      setLocalHeight(view.wallHeight);
+    }
+  };
 
   const scene = useMemo(() => {
     const projection = fitProjection(map, width, height, {
+      yaw: (yaw * Math.PI) / 180,
       azimuth: (azimuth * Math.PI) / 180,
       elevation: (elevation * Math.PI) / 180,
       wallHeight: height3d,
@@ -107,6 +167,7 @@ export function Scene25D({
     map,
     width,
     height,
+    yaw,
     azimuth,
     elevation,
     height3d,
@@ -121,6 +182,80 @@ export function Scene25D({
     trajectory,
     obstacles,
   ]);
+
+  /** Turn the room by dragging it, the way a thing on a turntable turns.
+   *
+   * Across is yaw and down is tilt, which is the gesture every 3D viewer
+   * has trained readers on — and it is why the two rotation sliders are
+   * gone rather than sitting beside it. A slider and a drag doing one
+   * job is two controls for one thing, which this file already refused
+   * once when "Rotate" turned out to drive an azimuth that rotated
+   * nothing.
+   *
+   * **Degrees per pixel, chosen so one drag across the canvas is a bit
+   * over a full turn.** Faster and the room spins past the angle the
+   * reader wanted; slower and looking at the far side takes several
+   * strokes. */
+  const YAW_PER_PX = 0.5;
+  const TILT_PER_PX = 0.4;
+  /** Straight down is the useful end; past it the room turns inside out
+   *  and the floor paints over the walls. At 0 it is edge-on, where the
+   *  room collapses to a line. */
+  const clampTilt = (degrees: number) => Math.max(1, Math.min(89, degrees));
+  /** A yaw is an angle, not a range: 359° and 1° are two degrees apart,
+   *  so it wraps rather than stopping at an end. */
+  const wrapYaw = (degrees: number) => ((degrees % 360) + 360) % 360;
+
+  const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    // Primary button only. A right-drag is the context menu and a
+    // middle-drag is autoscroll; taking either is rude.
+    if (event.button !== 0) return;
+    grab.current = { x: event.clientX, y: event.clientY, yaw, elevation };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const from = grab.current;
+    if (!from) return;
+    emit({
+      yawDeg: wrapYaw(from.yaw + (event.clientX - from.x) * YAW_PER_PX),
+      elevationDeg: clampTilt(from.elevation - (event.clientY - from.y) * TILT_PER_PX),
+    });
+  };
+
+  const endDrag = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    grab.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  /** The same two axes for a reader who is not holding a mouse.
+   *
+   * **This is what let the sliders go.** A canvas nobody can focus is a
+   * canvas only a pointer can reach, and dropping the sliders without
+   * this would have traded one complaint for a worse one: the room
+   * would have become unturnable by keyboard entirely. */
+  const onKeyDown = (event: React.KeyboardEvent<HTMLCanvasElement>) => {
+    const step = event.shiftKey ? 15 : 5;
+    switch (event.key) {
+      case "ArrowLeft":
+        emit({ yawDeg: wrapYaw(yaw - step) });
+        break;
+      case "ArrowRight":
+        emit({ yawDeg: wrapYaw(yaw + step) });
+        break;
+      case "ArrowUp":
+        emit({ elevationDeg: clampTilt(elevation + step) });
+        break;
+      case "ArrowDown":
+        emit({ elevationDeg: clampTilt(elevation - step) });
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -139,7 +274,7 @@ export function Scene25D({
     // Facets arrive back-to-front, so a plain sequential fill resolves
     // occlusion without a depth buffer.
     for (const facet of scene.facets) {
-      fillFacet(ctx, facet);
+      fillFacet(ctx, facet, showGrid);
     }
 
     if (showPlan && scene.plan.length > 1) {
@@ -237,37 +372,52 @@ export function Scene25D({
       ctx.ellipse(top.sx, top.sy, Math.max(2, radiusX), Math.max(1.5, radiusY), 0, 0, Math.PI * 2);
       ctx.fill();
     }
-  }, [scene, width, height, showPlan, showTrajectory]);
+  // The flags belong in this list or the canvas keeps whatever it last
+  // drew: `scene` is memoised on the projection, so toggling a layer
+  // changes nothing this effect watches unless the flag is named here.
+  }, [scene, width, height, showGrid, showPlan, showTrajectory]);
 
   return (
     <div className="scene25d">
-      <canvas ref={canvasRef} data-testid="scene-25d" />
+      <canvas
+        ref={canvasRef}
+        data-testid="scene-25d"
+        className="scene25d-canvas"
+        /* A group, not an image: it holds an orientation and changing
+           it is the point. `img` would tell a screen reader there is
+           nothing here to operate. */
+        role="group"
+        aria-label={`${t("scene25d.alt")} \u2014 ${t("scene25d.angles", {
+          yaw: String(Math.round(yaw)),
+          tilt: String(Math.round(elevation)),
+        })}`}
+        tabIndex={0}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onKeyDown={onKeyDown}
+      />
       {showControls ? (
         <div className="scene25d-controls">
-          <label>
-            Rotate
-            <input
-              type="range"
-              min={5}
-              max={85}
-              value={azimuth}
-              onChange={(event) => setAzimuth(Number(event.target.value))}
-            />
-            <span className="muted">{azimuth}°</span>
-          </label>
-          <label>
-            Tilt
-            <input
-              type="range"
-              min={0}
-              max={89}
-              value={elevation}
-              onChange={(event) => setElevation(Number(event.target.value))}
-            />
-            <span className="muted">
-              {elevation}°{elevation >= 88 ? " (top-down)" : ""}
-            </span>
-          </label>
+          {/* **No Rotate and Tilt sliders.** Both axes live on the
+              canvas now — drag it, or focus it and use the arrow keys —
+              and a slider beside a drag is two controls for one job.
+
+              What is left is the reading, so a reader can say which
+              angle they are looking from and come back to it, plus the
+              line that says the picture can be dragged at all. Wall
+              height keeps its slider: it is a property of the drawing
+              rather than of the camera, and there is no gesture for
+              it. */}
+          <span className="scene25d-readout">
+            {t("scene25d.angles", {
+              yaw: String(Math.round(yaw)),
+              tilt: String(Math.round(elevation)),
+            })}
+            {elevation >= 88 ? ` ${t("scene25d.topDown")}` : ""}
+          </span>
+          <span className="scene25d-hint">{t("scene25d.dragHint")}</span>
           <label>
             Wall height
             <input
@@ -275,7 +425,7 @@ export function Scene25D({
               min={0}
               max={20}
               value={Math.round(height3d * 10)}
-              onChange={(event) => setHeight3d(Number(event.target.value) / 10)}
+              onChange={(event) => emit({ wallHeight: Number(event.target.value) / 10 })}
             />
             <span className="muted">{height3d.toFixed(1)} m</span>
           </label>
@@ -285,8 +435,9 @@ export function Scene25D({
   );
 }
 
-function fillFacet(ctx: CanvasRenderingContext2D, facet: Facet): void {
-  ctx.fillStyle = FILL[facet.kind][facet.face];
+function fillFacet(ctx: CanvasRenderingContext2D, facet: Facet, showGrid: boolean): void {
+  const fill = FILL[facet.kind][facet.face];
+  ctx.fillStyle = fill;
   ctx.beginPath();
   facet.points.forEach((point, index) => {
     if (index === 0) ctx.moveTo(point.sx, point.sy);
@@ -294,12 +445,25 @@ function fillFacet(ctx: CanvasRenderingContext2D, facet: Facet): void {
   });
   ctx.closePath();
   ctx.fill();
+
   if (facet.kind === "occupied") {
     // Hairline seams stop adjacent walls from merging into one blob.
     ctx.strokeStyle = COLOR.outline;
     ctx.lineWidth = 0.5;
     ctx.stroke();
+    return;
   }
+
+  /* **The floor is always stroked; only the colour changes.**
+     Neighbouring quads share an edge, and filling them without a stroke
+     leaves an anti-aliased hairline between every pair — a lattice that
+     looks like a grid, cannot be switched off, and is not one. Stroking
+     in the fill's own colour closes it; stroking in the grid ink draws
+     the real thing. One code path, so "grid off" is a floor with no
+     lines on it rather than a floor with faint accidental ones. */
+  ctx.strokeStyle = showGrid ? COLOR.gridLine : fill;
+  ctx.lineWidth = showGrid ? 0.6 : 1;
+  ctx.stroke();
 }
 
 function strokePolyline(

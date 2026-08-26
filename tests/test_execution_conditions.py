@@ -141,6 +141,11 @@ class TestNothingTheSimulatorReadsIsUnhashed:
             # adapters — are hashed as ``HostConditions`` where they are
             # resolved and are facts rather than references.
             "channel_source",
+            # **Decided on 2026-08-24.** ``planning_recorder`` is the E4.5
+            # planning-input sidecar: it writes observations to disk but
+            # does not alter what the planner sees. A recorder that changes
+            # an outcome would be a bug in the recorder, not a condition.
+            "planning_recorder",
         }
         conditions = parameters - not_conditions
         assert conditions == set(CONDITION_ARGUMENTS), (

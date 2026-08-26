@@ -124,16 +124,20 @@ describe("what the author sees first", () => {
     expect(render()).toMatch(/id="deployment-form-tab-mission"[^>]*aria-selected="true"/);
   });
 
-  it("stops the map column where the map itself stops", () => {
-    /* The canvas is capped at 760 px; the column holding it is not. On
-       a wide screen the scenario picker stretched a clear 270 px past
-       the map's right edge and ran under the tab panel — a control
-       sitting between two things and belonging to neither. */
+  it("puts the map chooser in the identity panel and the map in the left column", () => {
+    /* Three headed blocks became two: identity and the choice of world
+       are one answer and now share a panel, while the canvas — which is
+       work rather than a sentence — takes the column beside the tabs
+       instead of a full-width row under them. */
     const html = render();
-    expect(html).toContain("max-width:760px");
-    const clamp = html.indexOf("max-width:760px");
-    expect(clamp).toBeGreaterThan(-1);
-    expect(html.indexOf("Map and mission")).toBeGreaterThan(clamp);
+    const identity = html.indexOf("deployment-section--identity");
+    const selector = html.indexOf('class="deployment-map-selector"');
+    const map = html.indexOf('class="deployment-map-fullwidth"');
+    const config = html.indexOf('class="deployment-config-panel"');
+    expect(identity).toBeGreaterThan(-1);
+    expect(selector).toBeGreaterThan(identity);
+    expect(map).toBeGreaterThan(selector);
+    expect(config).toBeGreaterThan(map);
   });
 });
 

@@ -219,6 +219,19 @@ export class FieldError extends Error {
      * narrow as a form needs.
      */
     public raw: unknown[] = [],
+    /** The HTTP status the refusal arrived with.
+     *
+     * Present because some refusals are **states**, not faults: a 409
+     * says "this run is in a condition that has no answer", and a page
+     * that cannot tell it from a 500 renders a red box for something
+     * that is simply true about the data. Carried as a number rather
+     * than left to be recovered by matching the message, for the same
+     * reason a checker's failure code is typed: prose changes when
+     * somebody improves a sentence.
+     *
+     * ``0`` for a refusal that never reached the network.
+     */
+    public status: number = 0,
   ) {
     super(message);
     this.name = "FieldError";
@@ -304,9 +317,14 @@ export async function login(username: string, password: string): Promise<Session
 /** Authenticated request against /api/v1; throws on non-2xx. */
 export async function authFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const session = loadSession();
-  // A `FormData` body must set its own Content-Type, because only the
-  // browser knows the multipart boundary it generated. Naming JSON here
-  // would produce a request the server cannot parse.
+  /* **A multipart body must set its own Content-Type.** The boundary is
+     generated per request and only `fetch` knows it; declaring
+     `application/json` over a `FormData` sends a body the server cannot
+     parse, and the failure reads as a rejected file rather than as a
+     header nobody meant to send.
+
+     Both branches reached this independently and wrote it the same way;
+     only the wording differed. */
   const multipart = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const response = await fetch(`${API_BASE}/api/v1${path}`, {
     ...init,
@@ -323,7 +341,7 @@ export async function authFetch<T>(path: string, init?: RequestInit): Promise<T>
     // Always a `FieldError`, even with no details: one type of refusal
     // is easier to reason about than two, and `details` being empty is
     // the honest answer for an error nobody addressed.
-    throw new FieldError(message, details, raw);
+    throw new FieldError(message, details, raw, response.status);
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;

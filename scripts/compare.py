@@ -51,10 +51,16 @@ for _package in (
     "packages/schemas",
     "packages/benchmark",
     "packages/decision",
+    "packages/explanation",
+    "packages/plugin_sdk",
     "packages/metrics",
     "packages/planning",
     "services/simulator",
     "ml",
+    "services/tracking",
+    "services/agent_service",
+    "apps/api",
+    "apps/desktop",
 ):
     sys.path.insert(0, str(REPO_ROOT / _package))
 

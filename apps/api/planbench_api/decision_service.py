@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +44,7 @@ from planbench_api.errors import (
     NotFoundError,
     field_errors,
 )
-from planbench_api.map_files import materialise_map
+from planbench_api.map_files import ensure_profile_map_materialised, materialise_map
 from planbench_api.repositories import StoredMap, now_iso
 from planbench_api.repository_ports import MapRepositoryPort
 from planbench_api.worker import Job, JobQueue
@@ -118,7 +119,9 @@ class TaskProfileService:
         return self._repository.create(profile.model_dump(mode="json"), owner_user_id=owner_user_id)
 
     def get(self, profile_id: str) -> StoredTaskProfile:
-        return self._repository.get(profile_id)
+        stored = self._repository.get(profile_id)
+        ensure_profile_map_materialised(stored.profile, self._map_root, self._maps)
+        return stored
 
     def list(self) -> list[StoredTaskProfile]:
         return self._repository.list()
@@ -190,7 +193,9 @@ class TaskProfileService:
 
     def load(self, profile_id: str) -> TaskProfile:
         """The stored profile as the contract object the engine needs."""
-        return TaskProfile.model_validate(self._repository.get(profile_id).profile)
+        stored = self._repository.get(profile_id)
+        ensure_profile_map_materialised(stored.profile, self._map_root, self._maps)
+        return TaskProfile.model_validate(stored.profile)
 
     def derive(
         self,
@@ -402,9 +407,11 @@ class DecisionRunService:
         repo_root: Path,
         trace_root: Path,
         run_root: Path,
+        maps: MapRepositoryPort | None = None,
     ) -> None:
         self._runs = runs
         self._profiles = profiles
+        self._maps = maps or getattr(profiles, "_maps", None)
         self._repo_root = repo_root
         self._trace_root = trace_root
         self._run_root = run_root
@@ -481,6 +488,8 @@ class DecisionRunService:
                 job.progress = done
                 job.total = total
                 job.message = what
+
+            ensure_profile_map_materialised(stored_profile.profile, self._repo_root, self._maps)
 
             report = run_comparison(
                 profile_path=profile_path,
@@ -577,7 +586,7 @@ class DecisionRunService:
         import pyarrow.parquet as pq
 
         from planbench_benchmark.task_map import load_task_map
-        from planbench_simulator.trace import trace_path
+        from planbench_simulator.trace import find_traces
 
         run = self._runs.get(run_id)
         report = run.report or {}
@@ -591,17 +600,48 @@ class DecisionRunService:
         if episodes and episode_context_id not in episodes:
             raise NotFoundError("episode in this run", episode_context_id)
 
-        path = trace_path(candidate_id, episode_context_id, root=self._trace_root)
-        if not path.is_file():
+        # Searched, not constructed. A trace is now addressed by its
+        # evidence class and the conditions it ran under, and this
+        # endpoint knows neither — building a path from a guessed
+        # fingerprint would produce a filename rather than an answer.
+        # The search applies the production policy, so an oracle episode
+        # is *not found* here rather than downloadable as evidence.
+        profile = self._profiles.load(run.task_profile_id)
+        map_data = load_task_map(profile, base_dir=self._repo_root, validate=False)
+
+        matches = find_traces(self._trace_root, candidate_id, episode_context_id)
+        # **Narrowed to this run's world.** A pair can legitimately have
+        # several production traces now — the same candidate measured
+        # under two deployments — and taking whichever sorted last would
+        # serve a different experiment's evidence under this run's name.
+        # That is the defect the conditions hash was added to close, so
+        # answering it with an arbitrary pick would reopen it at the one
+        # endpoint a human actually looks through.
+        expected = _expected_fingerprint(profile, map_data, episode_context_id)
+        if expected:
+            matches = [path for path in matches if path.parent.parent.name == expected]
+        if not matches:
             raise NotFoundError("trace file", f"{candidate_id}/{episode_context_id}")
+        if len(matches) > 1:
+            raise InvalidStateError(
+                f"{candidate_id}/{episode_context_id} has {len(matches)} traces under one "
+                "set of conditions; the store is ambiguous and serving either would be a "
+                "guess about which experiment this run meant"
+            )
+        path = matches[0]
 
         table = pq.read_table(path)
         columns = {name: table.column(name).to_pylist() for name in table.column_names}
+        # Built once: the planned routes are placed against these same
+        # indices, and two lists built the same way twice is two lists
+        # that can disagree.
+        events = [
+            {"index": index, "event": value}
+            for index, value in enumerate(columns.get("event", []))
+            if value
+        ]
         raw = (table.schema.metadata or {}).get(b"planbench_trace")
         metadata = json.loads(raw) if raw else {}
-
-        profile = self._profiles.load(run.task_profile_id)
-        map_data = load_task_map(profile, base_dir=self._repo_root, validate=False)
 
         return {
             "candidate_id": candidate_id,
@@ -610,6 +650,10 @@ class DecisionRunService:
             "metadata": metadata,
             "map": _packed_map(map_data),
             "robot_radius_m": profile.robot.radius,
+            # G4's budget, so a latency chart can say where "too slow"
+            # is rather than drawing a shape and leaving the reader to
+            # supply the threshold from memory.
+            "control_period_s": profile.robot.control_period,
             # Explicit fields rather than `list(pose)`: iterating a
             # pydantic model yields (name, value) pairs, which serialised
             # the start pose as [["x", 2.0], ["y", 8.0], ["theta", 0.0]]
@@ -633,46 +677,248 @@ class DecisionRunService:
             # Sparse: only the steps that carry one. HĐ-5 events are what
             # turn a path into an outcome, and dropping them would leave a
             # collision indistinguishable from an arrival.
-            "events": [
-                {"index": index, "event": value}
-                for index, value in enumerate(columns.get("event", []))
-                if value
-            ],
+            "events": events,
+            # **What moved while the robot drove.** The map is static and
+            # the trace records only the robot, so a canvas drawing both
+            # showed a path bending around nothing — the one thing on
+            # screen that explained the bend was missing from it. One
+            # position per timestamp, so the obstacle and the robot are
+            # always the same instant apart.
+            "dynamic_obstacles": _obstacle_tracks(
+                profile,
+                _context_for(profile, episode_context_id),
+                columns.get("t", []),
+            ),
+            # **What the planner asked for, beside where the robot
+            # went.** A replan is the moment those two diverged, and a
+            # canvas showing only the second cannot say so.
+            "planned_routes": _planned_routes(path, events),
         }
 
-    def trace_summary(
-        self, run_id: str, candidate_id: str, episode_context_id: str
+    def replay_sync(
+        self,
+        run_id: str,
+        episode_context_id: str,
+        *,
+        candidate_a: str,
+        candidate_b: str,
+        steps: int = 200,
     ) -> dict[str, Any]:
-        """The deterministic summary the trace reviewer reads.
+        """The two panels of one episode, aligned by arc length (E2).
 
-        Same ownership checks as :meth:`trace` — a summary of another
-        experiment's evidence under this run's name would be worse than a
-        404, because it would look diagnostic. The heavy part (Parquet →
-        DataFrame → aggregates) happens here in the service; the advice
-        rules that read the summary are pure and live in
-        :mod:`planbench_metrics.trace_review`.
+        Time-sync needs nothing from the server: both panels already run
+        off one clock in the browser. Progress-sync does, because the
+        projection has rules — which line the arc length is measured
+        along, and how honest that line is — and a second copy of them
+        in TypeScript would drift from the one the tests cover.
+
+        Thin on purpose. Two traces come out of :meth:`trace`, which
+        already refuses an episode or a candidate that does not belong
+        to this run and applies the production trace policy; everything
+        after that is :func:`build_replay_sync_view`.
         """
-        import pandas as pd
+        from planbench_explanation.replay_sync import ReferenceLine, ReplaySyncRefusal
+        from planbench_explanation.replay_view import build_replay_sync_view
 
-        from planbench_metrics.trace_review import summarise_trace
-        from planbench_simulator.trace import trace_path
+        payload_a = self.trace(run_id, candidate_a, episode_context_id)
+        payload_b = self.trace(run_id, candidate_b, episode_context_id)
+        try:
+            view = build_replay_sync_view(
+                payload_a,
+                payload_b,
+                # **The reference line can be the real plan now.** E4.5
+                # records every attempt's polyline and the trace endpoint
+                # serves it, so a run made after that gets
+                # ``reference_plan`` quality instead of measuring arc
+                # length along a candidate's own trajectory. A run made
+                # before it passes ``None`` and the view still says which
+                # lens it fell back to.
+                planned_path=_first_route(payload_a),
+                steps=steps,
+            )
+        except ReplaySyncRefusal as refusal:
+            # A refusal here is a statement about *this evidence* — two
+            # different episodes, a run with no samples, columns that do
+            # not line up. The caller asked something the data cannot
+            # answer, which is a 422; letting it fall through to the
+            # global handler would file an expected outcome as an
+            # internal error and bury it in the logs as a bug.
+            raise DomainValidationError(str(refusal)) from refusal
+
+        body = view.model_dump()
+        body["running"] = self._running_block(
+            run_id,
+            payload_a,
+            payload_b,
+            # The same ruler the ladder was built on, handed back rather
+            # than rebuilt: two rulers on one canvas is how a comparison
+            # starts disagreeing with the chart above it.
+            ReferenceLine(
+                points=tuple(tuple(point) for point in view.plan.reference.points),
+                quality=view.plan.reference.quality,
+            ),
+            view.plan.rows,
+        )
+        return body
+
+    def _running_block(
+        self,
+        run_id: str,
+        payload_a: dict[str, Any],
+        payload_b: dict[str, Any],
+        reference,  # type: ignore[no-untyped-def]
+        rows: Sequence[Any],
+    ) -> dict[str, Any] | None:
+        """The E4.3 numbers, in the two shapes the page reads them in.
+
+        ``ladder`` pairs the candidates at each rung of the progress
+        scale — the comparison table. ``by_step`` is each candidate's own
+        series, one entry per row of its trace, which is what the tiles
+        under each canvas show as the scrubber moves.
+
+        **One computation, two shapes.** The alternative was to let the
+        browser derive the tiles from the trace columns it already has,
+        which is a second implementation of "the running minimum
+        clearance" living in a different language — free to drift from
+        this one, and the drift invisible because both would render as
+        clearances. Everything here is projected onto the same reference
+        line the ladder above it uses.
+
+        ``None`` rather than an empty structure when the numbers cannot
+        be made: a deployment whose anchors will not resolve has no
+        objective curves, and a composite computed without them would be
+        a number this platform did not author. Empty would read as "the
+        two are identical".
+        """
+        from planbench_decision.anchors import AnchorError, load_anchors
+        from planbench_decision.objectives import DecisionSettings
+        from planbench_explanation.replay_sync import ReplaySyncRefusal
+        from planbench_explanation.running_metrics import (
+            Deployment,
+            RunningMetricsRefusal,
+            compare_at_progress,
+            sample_series,
+        )
 
         run = self._runs.get(run_id)
-        report = run.report or {}
-        candidates = {
-            str(entry.get("candidate_id"))
-            for entry in report.get("candidates", [])  # type: ignore[union-attr]
-        }
-        if candidate_id not in candidates:
-            raise NotFoundError("candidate in this run", candidate_id)
-        episodes = set(report.get("sample", {}).get("episode_context_ids", []))  # type: ignore[union-attr]
-        if episodes and episode_context_id not in episodes:
-            raise NotFoundError("episode in this run", episode_context_id)
+        profile = self._profiles.load(run.task_profile_id)
+        try:
+            anchors = load_anchors().resolve(profile)
+        except AnchorError:
+            return None
+        if not rows:
+            return None
 
-        path = trace_path(candidate_id, episode_context_id, root=self._trace_root)
-        if not path.is_file():
-            raise NotFoundError("trace file", f"{candidate_id}/{episode_context_id}")
-        return summarise_trace(pd.read_parquet(path))
+        # **The line's own length, not the ladder's top rung.** The top
+        # rung is the furthest point *both* candidates reached, so a run
+        # where one fails early gives a short denominator and a
+        # ``progress_fraction`` that reads 100% with the robot halfway
+        # down the map. The tile is labelled "route covered"; the route
+        # is the reference line.
+        reference_length = reference.length_m
+        if reference_length <= 0:
+            return None
+        deployment = Deployment(
+            robot_radius_m=profile.robot.radius,
+            control_period_s=profile.robot.control_period,
+            clearance_warning_m=profile.constraints.clearance_warning_m,
+            max_linear_velocity=profile.robot.max_linear_velocity,
+            reference_length_m=reference_length,
+        )
+
+        try:
+            slices = [_slice_for(payload, reference) for payload in (payload_a, payload_b)]
+        except (ReplaySyncRefusal, RunningMetricsRefusal, ValueError):
+            return None
+
+        settings = DecisionSettings()
+        ladder: list[dict[str, Any]] = []
+        for row in rows:
+            comparison = compare_at_progress(
+                slices[0],
+                slices[1],
+                float(row.progress_m),
+                deployment=deployment,
+                settings=settings,
+                anchors=anchors,
+            )
+            if comparison is None:
+                continue
+            ladder.append({"progress_m": float(row.progress_m), **comparison.model_dump()})
+
+        # Indexed by trace row, so the tile under a canvas and the pose
+        # drawn on it are the same instant. Anything else — a time grid
+        # of its own, a decimated series — would drift against the
+        # scrubber, and the drift would look like the metric moving.
+        by_step = {
+            side: [sample.model_dump() for sample in sample_series(slice_, deployment=deployment)]
+            for side, slice_ in zip(("a", "b"), slices, strict=True)
+        }
+        return {"ladder": ladder, "by_step": by_step}
+
+    def explanation(self, run_id: str) -> dict[str, Any]:
+        """The analyst's case packet for one run (E4.1).
+
+        Everything the decision page needs to show *evidence* rather
+        than a verdict: the ΔU decomposition, what the detectors saw,
+        what the contrast lattice would and would not attribute, the
+        four preregistered exemplars, and the gaps the platform declares
+        about itself.
+
+        **Claims are not here, and that is not an omission.** A claim
+        comes from the promotion matrix run over a checker result, and
+        no analyst has passed the gate yet — so the honest answer is
+        evidence with no conclusions drawn on it. The panel already
+        knows how to render that state; what it lacked was the evidence.
+
+        Refuses a run scored before E4.1 rather than returning an empty
+        packet. The two are different facts, and only one of them means
+        "nobody could explain this run".
+        """
+        from planbench_explanation.case_packet import CasePacketRefusal
+        from planbench_explanation.packet_builder import packet_from_block
+
+        run = self._runs.get(run_id)
+        block = (run.report or {}).get("case_packet")
+        try:
+            packet = packet_from_block(block if isinstance(block, dict) else {})
+        except CasePacketRefusal as refusal:
+            # 409 for the same reason the exemplars route uses it: the
+            # request is fine, the run is in a state that has no packet.
+            raise InvalidStateError(str(refusal)) from refusal
+        return {
+            "packet": packet.model_dump(mode="json"),
+            # Carried through so a reader can tell a thin packet from a
+            # broken one without opening the report.
+            "omissions": list(block.get("omissions") or []) if isinstance(block, dict) else [],
+            "skipped_episodes": (
+                list(block.get("skipped_episodes") or []) if isinstance(block, dict) else []
+            ),
+        }
+
+    def exemplars(self, run_id: str) -> dict[str, Any]:
+        """The four episodes the comparison page should open with (E2).
+
+        Preregistered, so that which pair a reader sees first is not a
+        choice somebody made after looking at the results. Refuses for a
+        run scored before per-episode utility was stored: three of the
+        four roles are defined on ΔU, and no column left in the report
+        can stand in for it.
+        """
+        from planbench_explanation.exemplars import (
+            ExemplarRefusal,
+            select_exemplars_from_report,
+        )
+
+        run = self._runs.get(run_id)
+        try:
+            return select_exemplars_from_report(run.report or {}).model_dump()
+        except ExemplarRefusal as refusal:
+            # 409, not 422 and not 500: nothing is wrong with the
+            # request. This run is in a state that has no exemplar set —
+            # no card, or scored before per-episode utility was kept —
+            # and the answer is the same however politely it is asked.
+            raise InvalidStateError(str(refusal)) from refusal
 
     def approved_config(self, run_id: str) -> str:
         """The deployable configuration, as YAML — approved runs only.
@@ -746,6 +992,7 @@ class DecisionRunService:
     def _materialise(self, stored: StoredTaskProfile) -> Path:
         import yaml
 
+        ensure_profile_map_materialised(stored.profile, self._repo_root, self._maps)
         directory = self._run_root / "profiles"
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / f"{stored.id}.yaml"
@@ -899,6 +1146,7 @@ class TestBenchService:
         from planbench_schemas.episode_context import EpisodeContext
 
         profile = TaskProfile.model_validate(self._profiles.get(task_profile_id).profile)
+        ensure_profile_map_materialised(profile, self._map_root, self._maps)
 
         params = LOCAL_CONTROLLER_CONFIGS.get(local_config)
         if params is None:
@@ -976,3 +1224,178 @@ class TestBenchService:
             if stored.map_id == map_id and stored.scenario.name == name:
                 return stored
         return None
+
+
+def _context_for(profile, episode_context_id: str):  # type: ignore[no-untyped-def]
+    """The episode context behind an id, or ``None``.
+
+    The id is a content hash, so it cannot be taken apart — the only way
+    back is to rebuild the deployment's contexts and look for the one
+    that hashes to it. Extracted because two callers now need it and a
+    second copy of the scan would be a second place to forget the
+    ``sample_set`` rule.
+    """
+    from planbench_benchmark.contexts import build_evaluation_contexts
+
+    for context in build_evaluation_contexts(profile):
+        if context.episode_context_id == episode_context_id:
+            return context
+    return None
+
+
+def _obstacle_tracks(profile, context, times: list[float]) -> list[dict[str, object]]:
+    """Where each dynamic obstacle was, at the trace's own timestamps.
+
+    **Computed here, never in the browser.** ``position_at`` is the one
+    implementation of these motion models, seed shift included, and a
+    second copy in TypeScript would drift from it the first time either
+    was fixed — the same argument that keeps progress-sync on the
+    server. The page receives coordinates and draws circles.
+
+    Sampled at the trace's timestamps rather than on a grid of its own,
+    so an obstacle and the robot on the same canvas are always being
+    shown at the same instant. Empty when the context could not be
+    rebuilt: a moving obstacle drawn at the wrong seed's positions is
+    worse than no obstacle, because it looks like evidence.
+    """
+    if context is None or not times:
+        return []
+    from planbench_schemas.dynamic import position_at
+
+    tracks = []
+    for obstacle in profile.environment.dynamic_obstacles:
+        points = [position_at(obstacle, time, context.seed) for time in times]
+        tracks.append(
+            {
+                "name": obstacle.name,
+                "radius_m": obstacle.radius,
+                "x": [point.x for point in points],
+                "y": [point.y for point in points],
+            }
+        )
+    return tracks
+
+
+def _first_route(payload: Mapping[str, Any]) -> list[tuple[float, float]] | None:
+    """The initial planned route, for use as the replay's reference line.
+
+    The *first* attempt rather than the last: arc length has to be
+    measured along one line for the whole episode, and a later replan's
+    route describes only the part after it.
+    """
+    routes = payload.get("planned_routes") or []
+    for route in routes:
+        points = route.get("points") or []
+        if len(points) >= 2:
+            return [(float(point["x"]), float(point["y"])) for point in points]
+    return None
+
+
+def _slice_for(payload: Mapping[str, Any], reference):  # type: ignore[no-untyped-def]
+    """One candidate's trace in the shape the running metrics take.
+
+    Progress comes from :func:`~planbench_explanation.replay_sync.project`
+    against **the reference line the view published**, so the arc length
+    here is the same arc length the progress ladder was built on. An
+    earlier draft used cumulative driven distance as a stand-in, which
+    would have made ``path_efficiency`` — progress over distance driven —
+    identically 1.0 for every candidate: a metric that renders, reads
+    plausibly, and measures nothing.
+    """
+    from planbench_explanation.replay_sync import project
+    from planbench_explanation.replay_view import _track  # noqa: PLC2701
+    from planbench_explanation.running_metrics import TraceSlice
+
+    projected = project(_track(payload), reference)
+    replans = tuple(
+        int(event["index"])
+        for event in payload.get("events") or []
+        if event.get("event") == "replan"
+    )
+    return TraceSlice(
+        candidate_id=str(payload.get("candidate_id") or ""),
+        t=tuple(float(value) for value in payload.get("t") or []),
+        x=tuple(float(value) for value in payload.get("x") or []),
+        y=tuple(float(value) for value in payload.get("y") or []),
+        clearance_m=tuple(float(value) for value in payload.get("clearance_m") or []),
+        planner_latency_ms=tuple(float(value) for value in payload.get("planner_latency_ms") or []),
+        progress_m=tuple(sample.progress_m for sample in projected.samples),
+        replan_indices=replans,
+    )
+
+
+def _planned_routes(trace_path, events: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Every route the global planner returned, and when each took over.
+
+    Read from the E4.5 sidecar beside the trace — nothing else keeps a
+    plan's polyline. The metrics store its length, ``StackRun.plans``
+    dies with the process that ran the episode, and the trace records
+    where the robot *went*, which is the other half of the very
+    comparison a reader is trying to make.
+
+    **The handover point comes from the trace's own replan events, not
+    from the sidecar's tick counter.** The record counts simulation
+    ticks and the trace counts control steps; they are different clocks,
+    and converting between them here would be a third opinion about the
+    episode's timeline. The events are already in the payload and
+    already indexed against the rows the canvas draws.
+
+    Returns nothing rather than guessing when the two disagree. A run
+    with three recorded attempts and one replan event is a run whose
+    plans cannot be placed, and a route drawn at the wrong moment is a
+    picture of a decision nobody made.
+    """
+    from planbench_explanation.planning_input_evidence import SidecarViolation
+    from planbench_explanation.sidecar_writer import read_sidecar
+
+    sidecar = trace_path.with_suffix(".planning_inputs.jsonl")
+    if not sidecar.exists():
+        return []
+    try:
+        _header, records = read_sidecar(sidecar)
+    except (SidecarViolation, ValueError):
+        # A sidecar that cannot be read is a file problem, not a reason
+        # to fail a trace download. The canvas draws one fewer thing.
+        return []
+
+    replans = [int(event["index"]) for event in events if event.get("event") == "replan"]
+    if len(records) != len(replans) + 1:
+        return []
+
+    # Attempt 1 is in force from the first row; attempt k+1 from the row
+    # its replan was recorded on.
+    starts = [0, *replans]
+    routes = []
+    for record, start in zip(records, starts, strict=True):
+        if not record.output_path:
+            # A refused attempt has no route. Recorded so the canvas can
+            # say the plan went *away* at that step rather than silently
+            # keeping the previous one on screen.
+            routes.append({"attempt": record.planning_attempt, "from_index": start, "points": []})
+            continue
+        routes.append(
+            {
+                "attempt": record.planning_attempt,
+                "from_index": start,
+                "points": [{"x": x, "y": y} for x, y in record.output_path],
+            }
+        )
+    return routes
+
+
+def _expected_fingerprint(profile, map_data, episode_context_id: str) -> str:
+    """The conditions hash this run's episode should carry, or ``""``.
+
+    Rebuilt from the deployment rather than read off a file, so it is a
+    statement about what was *asked for* and can be compared against
+    what is on disk. Empty when the context cannot be reconstructed —
+    the caller then falls back to the class filter alone rather than
+    refusing a download over a lookup it could not perform.
+    """
+    from planbench_benchmark.episode import scenario_for
+    from planbench_benchmark.fingerprint import execution_conditions_fingerprint
+
+    context = _context_for(profile, episode_context_id)
+    if context is None:
+        return ""
+    return execution_conditions_fingerprint(map_data, scenario_for(profile, context), profile)

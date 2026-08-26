@@ -18,9 +18,20 @@ import Link from "next/link";
 
 import { Avatar } from "./Avatar";
 import { Icon, type IconName } from "./Icon";
-import { NAV_SECTIONS, isActive } from "@/lib/navigation";
+import { NAV_SECTIONS, isActive, type NavItem } from "@/lib/navigation";
 import type { SessionUser } from "@/lib/auth";
 import type { Translator } from "@/lib/i18n";
+
+/** The entries this reader is offered.
+ *
+ * An `admin` entry is dropped for everyone else. Cosmetic and stated as
+ * such — the API refuses the write either way — but a rail that lists a
+ * page whose every control answers 403 is advertising a door most of
+ * the people reading it cannot open.
+ */
+function visible(items: readonly NavItem[], user: SessionUser | null): NavItem[] {
+  return items.filter((item) => !item.admin || user?.is_admin);
+}
 
 export function Sidebar({
   pathname,
@@ -47,8 +58,11 @@ export function Sidebar({
           <Icon name="benchmark" size={17} />
         </span>
         <div style={{ minWidth: 0 }}>
+          {/* No tagline. "AMR/AGV planning benchmark — simulation only"
+              is a sentence about the product, read once and then read
+              past forever, sitting at the top of the one surface a
+              reader uses on every visit. It belongs on `/system`. */}
           <h1>{t("app.name")}</h1>
-          <p className="tagline">{t("app.tagline")}</p>
         </div>
       </div>
 
@@ -56,7 +70,7 @@ export function Sidebar({
         {NAV_SECTIONS.map((section) => (
           <div className="sidebar-section" key={section.titleKey}>
             <p className="sidebar-section-title">{t(section.titleKey)}</p>
-            {section.items.map((item) => {
+            {visible(section.items, user).map((item) => {
               const label = t(item.labelKey);
               const description = item.descriptionKey ? t(item.descriptionKey) : null;
               const active = isActive(pathname, item.href);
@@ -72,6 +86,10 @@ export function Sidebar({
                   // screen so repeating it in a tooltip is noise and
                   // repeating it in an aria-label is read twice.
                   aria-label={collapsed ? label : undefined}
+                  // Expanded, the description is the link's `title`;
+                  // collapsed, the tooltip carries both because the
+                  // label is not on screen either.
+                  title={collapsed ? undefined : (description ?? undefined)}
                   data-tooltip={
                     collapsed ? (description ? `${label} — ${description}` : label) : undefined
                   }
@@ -79,10 +97,16 @@ export function Sidebar({
                   aria-current={active ? "page" : undefined}
                 >
                   <Icon name={item.icon as IconName} />
-                  <span className="sidebar-label">
-                    {label}
-                    {description ? <span className="sidebar-desc">{description}</span> : null}
-                  </span>
+                  {/* The description moved into `title`. Twelve entries
+                      × a sentence each turned the rail into a column of
+                      prose whose last item fell below the fold; the
+                      sentences are read once and then never again, which
+                      is what a tooltip is for. Nothing is lost — the
+                      keys and the strings all stay. */}
+                  <span className="sidebar-label">{label}</span>
+                  {item.legacy ? (
+                    <span className="badge muted-badge sidebar-legacy">{t("nav.legacy")}</span>
+                  ) : null}
                 </Link>
               );
             })}
@@ -107,8 +131,28 @@ export function Sidebar({
           onClick={onToggleCollapse}
           aria-label={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
           aria-expanded={!collapsed}
-          data-tooltip={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
-          data-tooltip-side="right"
+          // The native tooltip, not `data-tooltip`, and the reason is
+          // that this button is the one place the custom one could not
+          // work. `[data-tooltip-side="right"]::after` is laid out 8px
+          // past the button's right edge; the button spans the full
+          // content width of `.sidebar`, whose padding is 12px and
+          // which is a scroll container (`overflow-y: auto`, so both
+          // axes clip). The bubble therefore began 8px into a 12px gap
+          // and was cut off 4px later — a hairline of its left border
+          // and background against the rail's edge, appearing on hover
+          // and reading as a stray frame rather than as a tooltip.
+          //
+          // The nav links get away with it because they only carry a
+          // tooltip while collapsed, where the same clipping applies —
+          // see the note in the report; here the button carried one in
+          // both states, so the sliver was on every hover.
+          //
+          // Nothing about keyboard access changes: `aria-label` is
+          // still the accessible name and the global `:focus-visible`
+          // outline is untouched. As with the links, the tooltip is
+          // dropped while expanded, where the label is already on
+          // screen.
+          title={collapsed ? t("sidebar.expand") : undefined}
         >
           <Icon name={collapsed ? "chevronRight" : "chevronLeft"} />
           <span className="sidebar-label">{t("sidebar.collapse")}</span>

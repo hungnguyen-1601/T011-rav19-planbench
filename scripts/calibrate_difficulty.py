@@ -37,6 +37,8 @@ for relative in (
     "packages/planning",
     "packages/metrics",
     "packages/benchmark",
+    "packages/explanation",
+    "packages/plugin_sdk",
     "services/simulator",
     "services/tracking",
 ):

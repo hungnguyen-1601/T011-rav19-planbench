@@ -10,6 +10,15 @@ import Link from "next/link";
 
 import { Icon, type IconName } from "./Icon";
 
+export type StatCardVariant =
+  | "comparison"
+  | "ranked"
+  | "accepted"
+  | "pending"
+  | "scenario"
+  | "candidate"
+  | "simulation";
+
 export function StatCard({
   label,
   value,
@@ -17,6 +26,7 @@ export function StatCard({
   icon,
   href,
   loading = false,
+  variant = "comparison",
 }: {
   label: string;
   value: number | null;
@@ -24,12 +34,19 @@ export function StatCard({
   icon: IconName;
   href?: string;
   loading?: boolean;
+  variant?: StatCardVariant;
 }) {
+  const valueState = value === 0 ? "is-zero" : value === null ? "is-unknown" : "has-value";
+  const attention = variant === "pending" && value !== null && value > 0;
+  const className = `stat-card stat-card--${variant} ${valueState}${attention ? " needs-attention" : ""}`;
   const body = (
     <>
       <span className="stat-card-head">
-        <Icon name={icon} size={15} />
-        {label}
+        <span className="stat-card-icon" aria-hidden="true">
+          <Icon name={icon} size={18} />
+        </span>
+        <span className="stat-card-label">{label}</span>
+        {attention ? <span className="stat-card-alert-dot" aria-hidden="true" /> : null}
       </span>
       {loading ? (
         <span className="skeleton" style={{ height: 30, width: 56 }} aria-hidden="true" />
@@ -46,10 +63,10 @@ export function StatCard({
 
   if (href) {
     return (
-      <Link className="stat-card" href={href}>
+      <Link className={className} href={href}>
         {body}
       </Link>
     );
   }
-  return <div className="stat-card">{body}</div>;
+  return <div className={className}>{body}</div>;
 }

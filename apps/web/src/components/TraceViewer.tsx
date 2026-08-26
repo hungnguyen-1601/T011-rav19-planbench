@@ -21,11 +21,14 @@
  *   might have been going the other way.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { plannedRouteColour, routeAt } from "@/lib/evidence";
 
+import { LatencyChart } from "@/components/LatencyChart";
 import { Scene25D } from "@/components/Scene25D";
 import { useTranslation } from "@/lib/i18n";
-import type { TracePayload } from "@/lib/decisions";
+import type { RunningSample, TracePayload } from "@/lib/decisions";
+import { frameIndexAt } from "@/lib/playback";
 
 /** Cells to pixels, keeping the aspect ratio and fitting the box. */
 function fit(map: TracePayload["map"], maxWidth: number, maxHeight: number): number {
@@ -62,16 +65,105 @@ function clearanceColour(metres: number, radius: number): string {
   return `hsl(${hue.toFixed(0)}, 80%, 45%)`;
 }
 
-export function TraceViewer({ trace }: { trace: TracePayload }) {
+export interface TraceViewerProps {
+  trace: TracePayload;
+  /** Supplied by the episode comparison so both maps share one clock. */
+  playbackTime?: number;
+  mode?: "flat" | "raised";
+  showControls?: boolean;
+  candidateSide?: "a" | "b";
+  /** This candidate's E4.3 series, one entry per trace row (see
+   *  `RunningBlock.by_step`). Absent for a run whose objective anchors
+   *  would not resolve, and for the standalone viewer, which has no
+   *  pair and therefore no shared reference line to measure progress
+   *  along. The dynamic tiles simply do not appear. */
+  running?: RunningSample[] | null;
+  /** What to show in place of the live readings once the replay has
+   *  run out — the episode's scored result. Passed in rather than built
+   *  here because it is the caller's table: this component knows the
+   *  trace, not how the run was graded.
+   *
+   *  **The same frame holds one or the other, never both.** While the
+   *  replay is playing, a column of final results beside it invites
+   *  reading a total as a reading; once it has stopped, a row of live
+   *  values is a set of frozen numbers under labels that say "now". */
+  finalPanel?: ReactNode;
+  /** Show the final panel without waiting for the replay to finish.
+   *  The control belongs to the comparison, not to one canvas: two
+   *  panels showing different kinds of number cannot be read against
+   *  each other. */
+  forceFinal?: boolean;
+  /** Seek the replay from the latency chart, in seconds on this
+   *  candidate's own clock. The caller decides what that means for the
+   *  pair — see the page's `seekFrom`. */
+  onSeek?: (seconds: number) => void;
+  /** True when *this* candidate's own driven path became the reference
+   *  line — only ever on a run with no recorded plan. Its
+   *  `path_efficiency` is then 1.00 by construction rather than by
+   *  merit, and the tile has to say so. */
+  isReferenceRuler?: boolean;
+  /** The 2.5D camera, owned by whoever owns the pair. Both panels show
+   *  the same episode from the same angle or they are two rooms. */
+  view25d?: { yawDeg: number; elevationDeg: number; wallHeight: number };
+  onView25dChange?: (view: { yawDeg: number; elevationDeg: number; wallHeight: number }) => void;
+}
+
+export function TraceViewer({
+  trace,
+  playbackTime,
+  mode: controlledMode,
+  showControls = true,
+  candidateSide,
+  running,
+  finalPanel,
+  forceFinal = false,
+  onSeek,
+  isReferenceRuler = false,
+  view25d,
+  onView25dChange,
+}: TraceViewerProps) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [step, setStep] = useState(trace.x.length - 1);
   const [playing, setPlaying] = useState(false);
-  const [mode, setMode] = useState<"flat" | "raised">("flat");
+  const [localMode, setLocalMode] = useState<"flat" | "raised">("flat");
+  const mode = controlledMode ?? localMode;
+  const timedFrames = useMemo(() => trace.t.map((time) => ({ time })), [trace.t]);
+  const controlledStep = playbackTime === undefined
+    ? undefined
+    : Math.max(0, Math.min(trace.x.length - 1, frameIndexAt(timedFrames, playbackTime)));
+  const visibleStep = controlledStep ?? step;
 
   const cells = useMemo(
     () => unpack(trace.map.occupied_bits, trace.map.width * trace.map.height),
     [trace.map.occupied_bits, trace.map.width, trace.map.height],
+  );
+
+  /** Traffic at the frame on screen, as the 2.5D scene wants it.
+   *
+   * **The raised view was drawing a room with nothing in it.** The flat
+   * canvas has drawn moving obstacles since they arrived — it is what
+   * explains a route that bends around apparently empty floor — and the
+   * `Scene25D` call simply never passed them, so switching to 2.5D
+   * deleted the only thing on screen that accounted for the bend. The
+   * scene builder wanted them all along: it turns each one into a
+   * cylinder plus the keep-out and caution rings it derives from the
+   * same functions the flat view quotes.
+   *
+   * The step is clamped exactly the way the flat canvas clamps it. A
+   * track can be shorter than the trace — it stops being recorded when
+   * it leaves the scenario — and reading past its end would place an
+   * obstacle at `undefined`, which projects to the top-left corner of
+   * the room rather than to nowhere.
+   */
+  const obstaclesNow = useMemo(
+    () =>
+      (trace.dynamic_obstacles ?? []).flatMap((track) => {
+        const step = Math.min(visibleStep, track.x.length - 1);
+        if (step < 0) return [];
+        return [{ name: track.name, x: track.x[step], y: track.y[step], radius: track.radius_m }];
+      }),
+    [trace.dynamic_obstacles, visibleStep],
   );
 
   // A new trace is a new episode: start showing the whole path again
@@ -130,14 +222,52 @@ export function TraceViewer({ trace }: { trace: TracePayload }) {
     }
 
     for (const mission of trace.missions) {
-      context.strokeStyle = "#0ea5e9";
+      context.strokeStyle = "#16a34a";
       context.lineWidth = 2;
       context.beginPath();
       context.arc(toX(mission.start.x), toY(mission.start.y), 7, 0, Math.PI * 2);
       context.stroke();
-      context.strokeStyle = "#16a34a";
+      context.strokeStyle = "#d946ef";
       context.beginPath();
       context.arc(toX(mission.goal.x), toY(mission.goal.y), 7, 0, Math.PI * 2);
+      context.stroke();
+    }
+
+    // **What the planner asked for, under everything else.** Dashed and
+    // pale on purpose: it is an intention, not a measurement, and a
+    // solid line would compete with the trajectory that actually
+    // happened. Drawn first so the driven path sits on top of it —
+    // where the two diverge is the thing worth seeing.
+    //
+    // The colour changes at every replan. One colour for all of them
+    // left a reader unable to tell "the plan bent" from "the plan was
+    // thrown away and a new one drawn": mid-scrub the two look the
+    // same, and only one of them is a replan.
+    const planned = routeAt(trace.planned_routes ?? [], visibleStep);
+    if (planned && planned.points.length > 1) {
+      context.save();
+      context.setLineDash([6, 5]);
+      context.strokeStyle = plannedRouteColour(planned.attempt);
+      context.lineWidth = 2;
+      context.beginPath();
+      context.moveTo(toX(planned.points[0].x), toY(planned.points[0].y));
+      for (const point of planned.points.slice(1)) {
+        context.lineTo(toX(point.x), toY(point.y));
+      }
+      context.stroke();
+      context.restore();
+    }
+
+    // Candidate identity remains visible beneath the clearance ramp.
+    if (candidateSide && visibleStep > 0) {
+      context.strokeStyle = candidateSide === "a" ? "#2563eb" : "#7c3aed";
+      context.lineWidth = 5;
+      context.lineCap = "round";
+      context.beginPath();
+      context.moveTo(toX(trace.x[0]), toY(trace.y[0]));
+      for (let index = 1; index <= visibleStep && index < trace.x.length; index += 1) {
+        context.lineTo(toX(trace.x[index]), toY(trace.y[index]));
+      }
       context.stroke();
     }
 
@@ -145,7 +275,7 @@ export function TraceViewer({ trace }: { trace: TracePayload }) {
     // single stroked path could only carry one.
     context.lineWidth = 2.5;
     context.lineCap = "round";
-    for (let index = 1; index <= step && index < trace.x.length; index += 1) {
+    for (let index = 1; index <= visibleStep && index < trace.x.length; index += 1) {
       context.strokeStyle = clearanceColour(
         trace.clearance_m[index] ?? Number.NaN,
         trace.robot_radius_m,
@@ -156,8 +286,31 @@ export function TraceViewer({ trace }: { trace: TracePayload }) {
       context.stroke();
     }
 
+    // **Traffic, at the instant being shown.** Drawn after the path and
+    // before the robot: over the path because it is what the path was
+    // avoiding, under the robot because the robot is the subject. Until
+    // this existed a route bent around nothing, and the one thing on
+    // screen that explained the bend was the thing missing from it.
+    for (const track of trace.dynamic_obstacles ?? []) {
+      const step = Math.min(visibleStep, track.x.length - 1);
+      if (step < 0) continue;
+      const radius = Math.max((track.radius_m / map.resolution) * scale, 3);
+      const centreX = toX(track.x[step]);
+      const centreY = toY(track.y[step]);
+      // Amber, and filled softly rather than solid: it is an obstacle,
+      // not an event, and a solid disc at cart size would hide the path
+      // underneath exactly where a reader is looking.
+      context.fillStyle = "rgba(217, 119, 6, 0.22)";
+      context.beginPath();
+      context.arc(centreX, centreY, radius, 0, Math.PI * 2);
+      context.fill();
+      context.strokeStyle = "#b45309";
+      context.lineWidth = 2;
+      context.stroke();
+    }
+
     for (const event of trace.events) {
-      if (event.index > step) continue;
+      if (event.index > visibleStep) continue;
       context.fillStyle = "#dc2626";
       context.beginPath();
       context.arc(toX(trace.x[event.index]), toY(trace.y[event.index]), 5, 0, Math.PI * 2);
@@ -166,25 +319,34 @@ export function TraceViewer({ trace }: { trace: TracePayload }) {
 
     // The robot at the current step, to its declared radius rather than
     // a dot — a path that "looks clear" at one pixel per cell may not be.
-    if (step < trace.x.length) {
+    if (visibleStep < trace.x.length) {
       const radius = (trace.robot_radius_m / map.resolution) * scale;
       context.strokeStyle = "#111827";
       context.lineWidth = 2;
       context.beginPath();
-      context.arc(toX(trace.x[step]), toY(trace.y[step]), Math.max(radius, 2), 0, Math.PI * 2);
+      context.arc(toX(trace.x[visibleStep]), toY(trace.y[visibleStep]), Math.max(radius, 2), 0, Math.PI * 2);
       context.stroke();
       context.beginPath();
-      context.moveTo(toX(trace.x[step]), toY(trace.y[step]));
+      context.moveTo(toX(trace.x[visibleStep]), toY(trace.y[visibleStep]));
       context.lineTo(
-        toX(trace.x[step] + Math.cos(trace.theta[step]) * trace.robot_radius_m * 1.8),
-        toY(trace.y[step] + Math.sin(trace.theta[step]) * trace.robot_radius_m * 1.8),
+        toX(trace.x[visibleStep] + Math.cos(trace.theta[visibleStep]) * trace.robot_radius_m * 1.8),
+        toY(trace.y[visibleStep] + Math.sin(trace.theta[visibleStep]) * trace.robot_radius_m * 1.8),
       );
       context.stroke();
     }
-  }, [trace, cells, step]);
+  }, [trace, cells, visibleStep, candidateSide]);
 
-  const clearance = trace.clearance_m[step];
-  const latency = trace.planner_latency_ms[step];
+  const clearance = trace.clearance_m[visibleStep];
+  const latency = trace.planner_latency_ms[visibleStep];
+  // Indexed by the same row the pose is drawn from, so the tile and the
+  // robot on the canvas are never two different moments.
+  const live = running?.[visibleStep] ?? null;
+  // The scrubber has reached the last recorded pose: there is no "now"
+  // left to report. `forceFinal` is the reader asking for the result
+  // before the replay gets there.
+  const showFinal =
+    Boolean(finalPanel) &&
+    (forceFinal || (trace.x.length > 0 && visibleStep >= trace.x.length - 1));
 
   /** The trace's grid as the raised view takes it.
    *
@@ -208,14 +370,14 @@ export function TraceViewer({ trace }: { trace: TracePayload }) {
 
   return (
     <div>
-      <div className="toolbar" style={{ marginBottom: 8 }}>
+      {showControls ? <div className="toolbar" style={{ marginBottom: 8 }}>
         {(["flat", "raised"] as const).map((option) => (
           <button
             key={option}
             type="button"
             className={mode === option ? "primary" : ""}
             aria-pressed={mode === option}
-            onClick={() => setMode(option)}
+            onClick={() => setLocalMode(option)}
           >
             {t(`mapView.${option}`)}
           </button>
@@ -226,18 +388,23 @@ export function TraceViewer({ trace }: { trace: TracePayload }) {
             view draws a single-colour path. Switching trades the reading
             for the shape. */}
         {mode === "raised" ? <span className="muted">{t("trace.flatHasClearance")}</span> : null}
-      </div>
+      </div> : null}
 
       {mode === "raised" ? (
         <Scene25D
           map={mapData}
           width={760}
           height={480}
+          yawDeg={view25d?.yawDeg}
+          elevationDeg={view25d?.elevationDeg}
+          wallHeight={view25d?.wallHeight}
+          onViewChange={onView25dChange}
           robotRadius={trace.robot_radius_m}
           startPose={trace.missions[0] ? { ...trace.missions[0].start, theta: 0 } : undefined}
           goalPose={trace.missions[0] ? { ...trace.missions[0].goal, theta: 0 } : undefined}
-          robotPose={{ x: trace.x[step], y: trace.y[step], theta: trace.theta[step] }}
-          trajectory={trace.x.slice(0, step + 1).map((x, index) => ({
+          robotPose={{ x: trace.x[visibleStep], y: trace.y[visibleStep], theta: trace.theta[visibleStep] }}
+          obstacles={obstaclesNow}
+          trajectory={trace.x.slice(0, visibleStep + 1).map((x, index) => ({
             time: trace.t[index] ?? 0,
             x,
             y: trace.y[index],
@@ -250,7 +417,7 @@ export function TraceViewer({ trace }: { trace: TracePayload }) {
         <canvas ref={canvasRef} style={{ maxWidth: "100%", border: "1px solid var(--border)" }} />
       )}
 
-      <div className="row" style={{ alignItems: "center", gap: 12, marginTop: 8 }}>
+      {showControls ? <div className="row" style={{ alignItems: "center", gap: 12, marginTop: 8 }}>
         <button type="button" onClick={() => setPlaying((current) => !current)}>
           {playing ? t("trace.pause") : t("trace.play")}
         </button>
@@ -268,36 +435,153 @@ export function TraceViewer({ trace }: { trace: TracePayload }) {
         <span className="muted">
           {step + 1}/{trace.x.length} · {(trace.t[step] ?? 0).toFixed(1)} s
         </span>
-      </div>
+      </div> : null}
 
-      <div className="stat-grid" style={{ marginTop: 12 }}>
-        <Figure
-          label={t("trace.clearance")}
-          value={Number.isFinite(clearance) ? `${clearance.toFixed(3)} m` : "—"}
-        />
-        <Figure
-          label={t("trace.latency")}
-          value={Number.isFinite(latency) ? `${latency.toFixed(2)} ms` : "—"}
-        />
-        <Figure label={t("trace.duration")} value={`${(trace.t.at(-1) ?? 0).toFixed(1)} s`} />
-        <Figure
-          label={t("trace.outcome")}
-          value={trace.events.at(-1)?.event ?? t("trace.noEvent")}
-        />
-      </div>
+      {/* **One frame, one kind of number.**
 
-      <p className="muted" style={{ marginTop: 8 }}>
-        {t("trace.colourNote")}
-      </p>
+          While the replay is running this holds only what is true at
+          this instant; the episode's result is not shown beside it,
+          because a total sitting in a row of readings gets read as a
+          reading. Once the replay has run out — or the reader asks for
+          it early — the same frame holds the result instead, and the
+          live row goes away rather than freezing under labels that say
+          "now". Candidate B on a timeout episode used to sit at
+          "7.63 ms" beside a p99 of 2101 ms.
+
+          The first two tiles are momentary and the rest accumulate. The
+          cumulative ones arrive at the episode's totals by
+          construction — worst-clearance-so-far at the last row *is* the
+          minimum — which is why nothing here has to reconcile them with
+          the result panel. */}
+      {showFinal ? (
+        finalPanel
+      ) : (
+        <>
+          {/* **Units in the label, numbers alone in the value.** With
+              the unit inside the figure, `3.20 ms` and `11.66 ms` are
+              different lengths, so the two panels' tiles wrapped at
+              different points and the digits moved as the replay ran —
+              on a row a reader is scanning across to compare. The unit
+              belongs to the metric, which does not change, so it belongs
+              to the label, which does not move. */}
+          <div className="stat-grid stat-grid--readings" style={{ marginTop: 12 }}>
+            <Figure
+              label={t("trace.clearance")}
+              unit="m"
+              value={Number.isFinite(clearance) ? clearance.toFixed(3) : "—"}
+            />
+            <Figure
+              label={t("trace.latency")}
+              unit="ms"
+              value={Number.isFinite(latency) ? latency.toFixed(2) : "—"}
+            />
+            {live ? (
+              <>
+                <Figure
+                  label={t("trace.running.progress")}
+                  unit="%"
+                  value={(live.progress_fraction * 100).toFixed(1)}
+                />
+                {/* **Both units, because the tile beside it uses the
+                    other one.** `safety_margin` is in robot radii and
+                    that is deliberate — a metre of room means something
+                    different to a robot of a different size. But the
+                    tile two along reads `0.990 m`, the comparison table
+                    above reads `0.470 m`, and one concept wearing two
+                    units on one screen with nothing saying so is a
+                    reader silently comparing `3.81` against `0.470`.
+                    The radius is in the trace, so the metres are a
+                    conversion rather than a second measurement. */}
+                {/* **Metres on the tile, radii in the note.** The
+                    underlying series is in robot radii, and printing
+                    both — `0.516 m · 1.99 r` — put two units in one
+                    figure, which wrapped onto two lines and left this
+                    tile taller than the six beside it. Metres wins the
+                    tile because the comparison table above reports
+                    clearance in metres; the radii figure the platform
+                    actually recorded is one hover away. */}
+                <Figure
+                  label={t("trace.running.margin")}
+                  unit="m"
+                  value={(live.safety_margin * trace.robot_radius_m).toFixed(3)}
+                  note={t("trace.running.marginUnits", {
+                    radii: live.safety_margin.toFixed(2),
+                    radius: trace.robot_radius_m.toFixed(3),
+                  })}
+                />
+                <Figure
+                  label={t("trace.running.exposure")}
+                  unit="s"
+                  value={live.exposure_s.toFixed(1)}
+                />
+                {/* No unit: a ratio has none, and the slot stays empty
+                    rather than being filled with something plausible. */}
+                <Figure
+                  label={t("trace.running.efficiency")}
+                  value={`${live.path_efficiency.toFixed(3)}${isReferenceRuler ? " †" : ""}`}
+                  note={isReferenceRuler ? t("running.rulerArtefact") : undefined}
+                />
+                <Figure label={t("trace.running.replans")} value={`${live.replans}`} />
+              </>
+            ) : null}
+          </div>
+          {/* **The chart is one of the live readings**, so it lives
+              inside this branch and goes away with them. It also takes
+              the space the per-canvas colour note used to: that note was
+              rendered once per candidate — the same four sentences twice,
+              side by side — and it explains how the canvas is drawn,
+              which is one fact about the pair. It now sits once on the
+              shared legend above.
+
+              What replaces it is the one quantity a single number cannot
+              report: latency has a *shape*, and both the tile ("now") and
+              the result panel ("p99") are summaries of it. */}
+          <LatencyChart
+            times={trace.t}
+            latencies={trace.planner_latency_ms}
+            controlPeriodS={trace.control_period_s}
+            step={visibleStep}
+            atTime={trace.t[visibleStep] ?? 0}
+            // The running p99 the compute tile is normalised from,
+            // turned back into milliseconds. An exact inversion of
+            // `_percentile(...) / (T_cycle * 1000)`, not a second
+            // percentile — one implementation, two units.
+            p99Ms={live ? live.compute_budget * trace.control_period_s * 1000 : null}
+            onSeek={onSeek}
+          />
+        </>
+      )}
+
     </div>
   );
 }
 
-function Figure({ label, value }: { label: string; value: string }) {
+function Figure({
+  label,
+  value,
+  unit,
+  note,
+}: {
+  label: string;
+  value: string;
+  /** Shown beside the metric's name, not beside its number. A unit is a
+   *  property of what is being measured and never changes while the
+   *  replay runs, so putting it in the figure made a fixed fact move
+   *  with a moving one — and took the digits with it. Omitted for a
+   *  ratio or a count, which have none. */
+  unit?: string;
+  note?: string;
+}) {
   return (
-    <div className="stat-card">
-      <span className="stat-card-head">{label}</span>
-      <span className="stat-card-value">{value}</span>
+    <div className="stat-card" title={note}>
+      <span className="stat-card-head">
+        {label}
+        {unit ? <span className="stat-card-unit">({unit})</span> : null}
+      </span>
+      <span className={note ? "stat-card-value muted" : "stat-card-value"}>{value}</span>
+      {/* The dagger carries the caveat for a sighted reader; this
+          carries it for everyone else. */}
+      {note ? <span className="sr-only">{note}</span> : null}
     </div>
   );
 }

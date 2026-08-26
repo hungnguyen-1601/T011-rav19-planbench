@@ -1,0 +1,89 @@
+{
+  "$id": "schemas/tools/get_episode_observations.result.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "measurements": {
+      "additionalProperties": false,
+      "properties": {
+        "episodes_seen": {
+          "description": "Episodes the detection appeared in.",
+          "type": "number",
+          "unit": "count"
+        },
+        "episodes_total": {
+          "description": "Episodes it was looked for in.",
+          "type": "number",
+          "unit": "count"
+        },
+        "n_observations": {
+          "description": "Detection types that fired for this pairing.",
+          "type": "number",
+          "unit": "count"
+        },
+        "prevalence": {
+          "description": "episodes_seen over episodes_total.",
+          "type": "number",
+          "unit": "ratio"
+        }
+      },
+      "required": [
+        "n_observations",
+        "episodes_seen",
+        "episodes_total",
+        "prevalence"
+      ],
+      "type": "object"
+    },
+    "references": {
+      "allOf": [
+        {
+          "contains": {
+            "properties": {
+              "kind": {
+                "const": "episode"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "episode"
+            ]
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ref": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "measurements",
+    "references"
+  ],
+  "title": "get_episode_observations@1.0.0 output",
+  "type": "object"
+}

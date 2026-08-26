@@ -257,6 +257,61 @@ class ModelUsageRow(Base):
     )
 
 
+class PluginBundleRow(Base):
+    """One imported algorithm bundle.
+
+    A sibling of ``models`` rather than a row in it. The two share
+    storage and a status vocabulary and nothing else: a model is weights
+    for a controller the platform already has, a bundle is a controller
+    it has never seen, and the columns that describe one describe
+    nothing about the other.
+
+    The archive itself never lands here — only `storage_key` plus two
+    checksums. `manifest_checksum` identifies what the author declared,
+    `checksum` identifies the bytes they uploaded, and a candidate keyed
+    on the second is a candidate keyed on the code that actually ran.
+    """
+
+    __tablename__ = "plugin_bundles"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    version: Mapped[str] = mapped_column(String(40), nullable=False, default="1")
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    plugin_id: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    plugin_version: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="local")
+    entry_point: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    manifest: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
+    manifest_checksum: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    package_dir: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    storage_key: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    original_filename: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    uploaded_by_user_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False, default="")
+    robot_profile_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    validation_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    validation_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+
+    __table_args__ = (
+        Index("ix_plugin_bundles_owner", "uploaded_by_user_id"),
+        Index("ix_plugin_bundles_status", "status", "validation_status"),
+        # **Identity is the archive, not the label.** A candidate hashes
+        # on this checksum, so two rows carrying the same bytes would be
+        # two names for one piece of code — while two rows carrying
+        # different bytes are genuinely different controllers whatever
+        # their manifests call themselves. Keying on the declared version
+        # instead made an author edit a number by hand before every
+        # upload, and refused a real change that forgot to.
+        UniqueConstraint("plugin_id", "checksum", name="uq_plugin_bundles_identity"),
+    )
+
+
 class ConversationRow(Base):
     """One chat with the assistant."""
 
@@ -313,6 +368,10 @@ class MapRow(Base):
     checksum: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
     payload: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
+    #: Pinned by hand against the orphan sweep. "Unreachable" and
+    #: "unwanted" are different claims, and a sweep that cannot tell them
+    #: apart is one nobody runs twice.
+    kept: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     __table_args__ = (Index("ix_maps_checksum", "checksum"),)
 

@@ -35,12 +35,29 @@
   --warn-soft: rgba(210, 153, 34, 0.16);
   --err: #f85149;
   --err-soft: rgba(248, 81, 73, 0.14);
+  --info: #66a7ff;
+  --info-soft: rgba(76, 154, 255, 0.13);
+  --purple: #b39df3;
+  --purple-soft: rgba(163, 132, 238, 0.14);
+  --cyan: #55c7df;
+  --cyan-soft: rgba(50, 185, 214, 0.13);
+  --indigo: #8fa5ff;
+  --indigo-soft: rgba(111, 132, 238, 0.14);
+  --teal: #50c7ad;
+  --teal-soft: rgba(54, 184, 156, 0.14);
+  --goal: #e879b7;
+  --goal-soft: rgba(232, 121, 183, 0.14);
+  --orange: #e49a45;
+  --orange-soft: rgba(228, 154, 69, 0.14);
   --canvas-bg: #0b0d11;
   --overlay: rgba(0, 0, 0, 0.6);
   --hover: rgba(255, 255, 255, 0.06);
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 
-  --sidebar-width: 264px;
+  /* 232, from 264. The rail carried a sentence under every label; with
+     those gone the extra 32px was empty column beside twelve short
+     names, taken from the content that has numbers in it. */
+  --sidebar-width: 232px;
   --sidebar-width-collapsed: 68px;
   --topbar-height: 52px;
 }
@@ -70,6 +87,20 @@
   --warn-soft: rgba(154, 103, 0, 0.14);
   --err: #cf222e;
   --err-soft: rgba(207, 34, 46, 0.1);
+  --info: #1769d2;
+  --info-soft: rgba(31, 111, 235, 0.09);
+  --purple: #7157b7;
+  --purple-soft: rgba(113, 87, 183, 0.1);
+  --cyan: #087e96;
+  --cyan-soft: rgba(8, 126, 150, 0.09);
+  --indigo: #5267c9;
+  --indigo-soft: rgba(82, 103, 201, 0.1);
+  --teal: #087f6a;
+  --teal-soft: rgba(8, 127, 106, 0.1);
+  --goal: #b42372;
+  --goal-soft: rgba(180, 35, 114, 0.09);
+  --orange: #a65b12;
+  --orange-soft: rgba(166, 91, 18, 0.1);
   --canvas-bg: #eef1f5;
   --overlay: rgba(20, 24, 31, 0.42);
   --hover: rgba(20, 24, 31, 0.05);
@@ -100,11 +131,161 @@
     --warn-soft: rgba(154, 103, 0, 0.14);
     --err: #cf222e;
     --err-soft: rgba(207, 34, 46, 0.1);
+    --info: #1769d2;
+    --info-soft: rgba(31, 111, 235, 0.09);
+    --purple: #7157b7;
+    --purple-soft: rgba(113, 87, 183, 0.1);
+    --cyan: #087e96;
+    --cyan-soft: rgba(8, 126, 150, 0.09);
+    --indigo: #5267c9;
+    --indigo-soft: rgba(82, 103, 201, 0.1);
+    --teal: #087f6a;
+    --teal-soft: rgba(8, 127, 106, 0.1);
+    --goal: #b42372;
+    --goal-soft: rgba(180, 35, 114, 0.09);
+    --orange: #a65b12;
+    --orange-soft: rgba(166, 91, 18, 0.1);
     --canvas-bg: #eef1f5;
     --overlay: rgba(20, 24, 31, 0.42);
     --hover: rgba(20, 24, 31, 0.05);
     --shadow: 0 8px 24px rgba(20, 24, 31, 0.12);
   }
+}
+
+/* Which candidate a mark belongs to.
+   ===================================================================
+   Identity, not interaction, and identity not outcome. `--candidate-a`
+   used to be `var(--accent)`, so one blue meant both "this is a link,
+   click it" and "this column is candidate A". Indigo fixed that half.
+
+   **Teal had the same fault in the other direction.** `--teal` is
+   `#087f6a` against an `--ok` of `#1a7f37`: two greens, one meaning
+   "candidate B" and one meaning "the better number", side by side in a
+   table that paints both. On the run this was found in, candidate B was
+   the eliminated one and its whole column carried a green wash — the
+   colour said the opposite of the verdict on its own column head, and
+   nothing on the screen resolved which reading won.
+
+   So B is purple. Purple is in the palette on all three theme paths and
+   is used by nothing else on these pages, which is what makes it usable
+   as a name: green and red are now spent entirely on good and bad, and
+   neither candidate borrows them.
+
+   **Derived, and declared once.** `--indigo` and `--teal` are already
+   part of the palette on all three theme paths — `:root`, the explicit
+   `[data-theme="light"]`, and the `prefers-color-scheme` block for a
+   visitor who has chosen nothing. Reading them here means the six
+   candidate tokens follow the theme for free, including that third path
+   which is the one a first-time visitor actually lands on and the one
+   hand-written hex values in two theme blocks would have missed.
+
+   It also makes the six impossible to declare partially. Writing them
+   out by hand invites getting `--candidate-b` right and forgetting
+   `--candidate-b-soft`, which does not fail loudly: it puts the old
+   purple wash behind the new teal text, in one card, on one page. */
+:root {
+  --candidate-a: var(--indigo);
+  --candidate-a-soft: var(--indigo-soft);
+  --candidate-a-border: color-mix(in srgb, var(--indigo) 48%, var(--border));
+  --candidate-b: var(--purple);
+  --candidate-b-soft: var(--purple-soft);
+  --candidate-b-border: color-mix(in srgb, var(--purple) 48%, var(--border));
+
+  /* The column wash, which is a third thing and not `-soft` weakened.
+     ===================================================================
+     `-soft` is 10–14% of a saturated hue and is built to sit behind a
+     badge — a small shape with its own text colour. Run it down a whole
+     column of a table and it competes with every figure in it, which is
+     why the table dropped it once already.
+
+     Two properties this needs that `-soft` does not have:
+
+     **Opaque.** These are mixed *into* `--panel` rather than laid over
+     it, so the head cells can be sticky. A translucent sticky cell shows
+     the rows sliding underneath it.
+
+     **Weak enough that `--ok` and `--err` still read as the loudest
+     thing in the cell.** Both stay above 5:1 on either wash, and the
+     figures are bold mono against body-weight labels, so the wash says
+     "same column" and the colour still says "better number".
+
+     **Why 6% against 10%.** Not a highlight: purple carries less
+     luminance contrast against a light panel than indigo does, so equal
+     percentages read as two different depths. These two land at the same
+     apparent weight. Blue and violet are also the only pair available —
+     teal reads as green and orange or magenta as red, and both of those
+     are spent on outcome. */
+  --candidate-a-wash: color-mix(in srgb, var(--indigo) 6%, var(--panel));
+  --candidate-b-wash: color-mix(in srgb, var(--purple) 10%, var(--panel));
+}
+
+/* The scales. These sit outside the theme blocks above on purpose:
+   neither a typeface nor a spacing step changes when the palette does,
+   so declaring them in all three blocks would be three places to forget
+   one of them.
+
+   Nothing below is a new *look*. Every value here is a name for
+   something the stylesheet already does by hand in dozens of places;
+   routing those places through the names is the next phase's work, and
+   it is where the pixels actually move. Declaring the vocabulary first
+   keeps that phase reviewable as "this rule now reads a token" rather
+   than as "this rule changed and also its value changed". */
+:root {
+  /* ---- type -------------------------------------------------------
+     The public tokens every rule reads. A webfont will not replace
+     these declarations — next/font emits its own `--font-*-loaded`, and
+     the value here becomes `var(--font-*-loaded, <this stack>)`, so
+     anything reading them keeps rendering whether or not the font
+     finished loading.
+
+     `--font-sans` carries the stack `html, body` was already using,
+     character for character, `-apple-system` included. Two things it
+     must not do: prepend a face like Inter, which would change the
+     typeface on exactly those machines that happen to have it installed
+     and nowhere else; or drop `-apple-system`, which is the link that
+     picks San Francisco on Safari. Either one turns a declaration-only
+     step into a silent, partial redesign. */
+  --font-sans: var(--font-sans-loaded, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif);
+  --font-mono: var(--font-mono-loaded, ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace);
+
+  /* ---- spacing: a 4px scale, and nothing between its steps --------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* ---- radius: three steps ---------------------------------------- */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* ---- size: named by the job, not by the number, so a rule says
+     what it is showing rather than how big it wants to be ------------ */
+  --fs-caption: 11px;
+  --fs-sm: 12px;
+  --fs-body: 13px;
+  --fs-label: 14px;
+  --fs-value: 16px;
+  --fs-h3: 18px;
+  --fs-h1: 24px;
+
+  /* ---- elevation ---------------------------------------------------
+     Derived, never a literal. A hard-coded light-theme shadow with the
+     dark value written in a comment beside it is the failure this
+     project has already shipped twice: a comment is not a rule, so the
+     token keeps the light value on dark and draws a pale grey smudge on
+     a near-black ground — invisible, and invisible in review too.
+
+     `--shadow` is declared on all three theme paths (`:root`,
+     `[data-theme="light"]`, and the `prefers-color-scheme` block for
+     visitors who chose nothing), so deriving from it is correct on all
+     three for free. If popovers ever want a lighter shadow than panels,
+     the answer is a `--shadow-pop` of its own in all three of those
+     places — not one value here plus a note about the other. */
+  --shadow-pop: var(--shadow);
 }
 
 * {
@@ -117,8 +298,28 @@ body {
   padding: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  font-size: 14px;
+  /* Reads the token rather than repeating its stack. Identical value, so
+     no pixel moves — but leaving the stack written out here would mean
+     a webfont could change `--font-sans` and body text would carry on
+     in the system face until somebody noticed. One stack, one place. */
+  font-family: var(--font-sans);
+  /* 13px, from 14. This is the "semi-compact" base — but read what it
+     actually reaches before expecting the whole app to shrink: 154 of
+     the 172 `font-size` declarations in this file are in `px` and pin
+     their own size, so what moves is *inherited* text (a paragraph, a
+     cell, a control that never named a size) and the three `rem` rules
+     near the episode panel. Making the rest compact is the later steps'
+     work, one component at a time. */
+  font-size: var(--fs-body);
+  /* **The change with the widest reach on this line.** There was no
+     global `line-height` at all, so body text ran at the browser
+     default — around 1.15–1.2 depending on the face's own metrics. At
+     that spacing Vietnamese stacked diacritics collide with the line
+     above: `ế`, `ữ` and `ộ` put a mark on top of a mark, and the tittle
+     of the upper line has nowhere to go. 1.5 is the floor for this
+     alphabet, not a taste. Inherited, so it reaches every element that
+     has not set its own — which is most of them. */
+  line-height: 1.5;
 }
 
 a {
@@ -164,7 +365,7 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 14px 12px;
+  padding: var(--space-3);
   position: sticky;
   top: 0;
   height: 100vh;
@@ -175,8 +376,8 @@ a:hover {
 .sidebar-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 4px 6px 12px;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2) var(--space-3);
   min-width: 0;
 }
 
@@ -198,15 +399,8 @@ a:hover {
   white-space: nowrap;
 }
 
-.sidebar-brand .tagline {
-  color: var(--muted);
-  font-size: 11px;
-  margin: 2px 0 0;
-  line-height: 1.3;
-}
-
 .sidebar-section {
-  margin-top: 10px;
+  margin-top: var(--space-3);
 }
 
 .sidebar-section-title {
@@ -214,21 +408,21 @@ a:hover {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
-  padding: 0 8px 6px;
+  padding: 0 var(--space-2) var(--space-1);
   margin: 0;
 }
 
 .sidebar nav {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-1);
 }
 
 .sidebar nav a {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: var(--space-2);
+  padding: var(--space-2);
   border-radius: 7px;
   color: var(--text);
   white-space: nowrap;
@@ -240,12 +434,52 @@ a:hover {
   text-decoration: none;
 }
 
+/* **Filled, not tinted.** The current page was a 10% wash of the accent
+   with accent-coloured text and a 2px bar down its left edge — three
+   quiet signals that each had to be noticed. A solid block is one loud
+   one, and it is the treatment An asked for.
+
+   It also keeps the property the bar was there to provide, and keeps it
+   better. "Not colour alone" was the rule: a tint plus a bar survives
+   greyscale because of the bar. An inverted fill survives it because
+   the *lightness* inverts — the strongest signal available, and the one
+   that still reads at a glance across a rail of ten items where a 2px
+   edge does not.
+
+   `--accent` on `--accent-contrast` rather than a hard-coded blue. The
+   pair is declared per theme and is already the one every primary button
+   uses, so the rail cannot drift from the buttons — and in the dark
+   theme it inverts on its own: a light blue block with dark text, rather
+   than the same dark blue turning into a smudge on a dark rail.
+
+   The lightness argument above survives the change. `#1f6feb` against an
+   `#f6f7f9` rail and `#4c9aff` against `#0f1115` are both far apart in
+   lightness, so the block still reads in greyscale — which a mid-blue
+   chosen for its hue alone would not. */
 .sidebar nav a[aria-current="page"] {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
   font-weight: 600;
-  /* Not colour alone: the bar survives greyscale and colour blindness. */
-  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* Hover must not lift the fill. `.sidebar nav a:hover` paints
+   `--panel-2`, which on the current item would replace the block with a
+   pale rectangle for as long as the pointer sits on it — the one item
+   that should never look unselected. */
+.sidebar nav a[aria-current="page"]:hover {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+/* The chip rides on the fill now, so it cannot keep the muted grey it
+   wears against the rail: grey on near-black is the pair this palette
+   spends its light-theme comment warning about. Drawn from the fill's
+   own foreground instead, so it stays legible in either theme without a
+   third colour entering the sidebar. */
+.sidebar nav a[aria-current="page"] .badge {
+  border-color: color-mix(in srgb, var(--accent-contrast) 40%, transparent);
+  background: color-mix(in srgb, var(--accent-contrast) 16%, transparent);
+  color: var(--accent-contrast);
 }
 
 .sidebar nav a svg {
@@ -257,31 +491,20 @@ a:hover {
   text-overflow: ellipsis;
 }
 
-/* The one line saying what a page is for. Stacked under the name rather
-   than beside it: a rail is narrow, and a description that competes with
-   the label for one line ends up truncating the label. */
-.sidebar-desc {
-  display: block;
-  font-size: 11px;
-  line-height: 1.3;
-  color: var(--muted);
-  white-space: normal;
-  margin-top: 1px;
-}
 
-/* Nothing here works less than the rest — these pages are still the only
-   way to do some things. The muted title says "a replacement exists",
-   which is more use to a reader than a sidebar that lists the
-   replacement silently beside the thing it replaces. */
-.sidebar-section:has(> .sidebar-section-title) a[href="/benchmarks"] .sidebar-label,
-.sidebar-section:has(> .sidebar-section-title) a[href="/leaderboard"] .sidebar-label,
-.sidebar-section:has(> .sidebar-section-title) a[href="/scenarios"] .sidebar-label {
-  opacity: 0.85;
-}
+/* The chip beside the name, where the section heading used to be.
+   ===================================================================
+   What this replaced was three hard-coded paths in the stylesheet
+   dimming their own labels — a rule that could not be found by anyone
+   reading the navigation model, and that kept dimming `/benchmarks`
+   and `/leaderboard` for months after both were removed from the rail.
+   The flag lives on the item now, so adding or clearing it is an edit
+   to the model rather than to a selector. */
+.sidebar-legacy { margin-left: auto; flex: none; }
 
 .sidebar-footer {
   margin-top: auto;
-  padding-top: 10px;
+  padding-top: var(--space-3);
   border-top: 1px solid var(--border);
 }
 
@@ -298,11 +521,10 @@ a:hover {
    tree too — a visually hidden label plus an aria-label on the link
    would be read twice. */
 :root[data-sidebar="collapsed"] .sidebar {
-  padding: 14px 8px;
+  padding: var(--space-3) var(--space-2);
 }
 
 :root[data-sidebar="collapsed"] .sidebar-label,
-:root[data-sidebar="collapsed"] .sidebar-brand .tagline,
 :root[data-sidebar="collapsed"] .sidebar-brand h1,
 :root[data-sidebar="collapsed"] .sidebar-section-title,
 :root[data-sidebar="collapsed"] .sidebar-footer .session-card > div {
@@ -329,9 +551,21 @@ a:hover {
 
 main.content {
   flex: 1;
-  padding: 22px 26px 40px;
   min-width: 0;
+  /* **A measure, not a container.** Without this the value columns on a
+     1920 monitor inflate to 480px around a six-character number, and a
+     line of prose runs wider than an eye can track back to the start of
+     the next one. 1440 is where the comparison table stops growing and
+     starts being read. */
+  max-width: 1440px;
+  margin-inline: auto;
+  padding: var(--space-5) var(--space-6) var(--space-7);
 }
+/* Lifted for the drawing surfaces — a map editor, the simulator, the
+   deployment form. There more width is more of the thing the page is
+   for. Which routes those are is decided in `lib/navigation`, not here
+   and not in the pages. */
+main.content--wide { max-width: none; }
 
 /* ---------- Top bar ---------- */
 
@@ -343,9 +577,21 @@ main.content {
   align-items: center;
   gap: 12px;
   height: var(--topbar-height);
-  padding: 0 16px 0 20px;
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(8px);
+  padding: 0 var(--space-4);
+  /* **Opaque, and no blur.**
+     ===================================================================
+     This was `color-mix(--bg 88%, transparent)` over `backdrop-filter:
+     blur(8px)`. Twelve per cent of a light background showing through a
+     light page is not a glass effect — it is a faint smear of whatever
+     happens to be scrolling underneath, and on a table of numbers the
+     thing scrolling underneath is digits. The border below already does
+     the whole job of separating the bar from the page.
+
+     It also costs a compositing layer on a `position: sticky` element,
+     which is the one place that cost is paid on every frame of every
+     scroll rather than once. Paying it for an effect nobody can see is
+     the worst of both. */
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
 
@@ -385,7 +631,7 @@ main.content {
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   margin-left: auto;
 }
 
@@ -543,12 +789,11 @@ main.content {
   /* On a phone the sidebar is a drawer, so the desktop collapse is
      irrelevant — never show icon-only rail on top of a drawer. */
   :root[data-sidebar="collapsed"] .sidebar {
-    padding: 14px 12px;
+    padding: var(--space-3);
   }
 
   :root[data-sidebar="collapsed"] .sidebar-label,
   :root[data-sidebar="collapsed"] .sidebar-brand h1,
-  :root[data-sidebar="collapsed"] .sidebar-brand .tagline,
   :root[data-sidebar="collapsed"] .sidebar-section-title,
   :root[data-sidebar="collapsed"] .sidebar-footer .session-card > div {
     display: revert;
@@ -579,21 +824,21 @@ main.content {
   }
 
   main.content {
-    padding: 18px 16px 32px;
+    padding: var(--space-4) var(--space-4) var(--space-6);
   }
 
   .topbar {
-    padding: 0 10px;
+    padding: 0 var(--space-3);
   }
 }
 
 @media (max-width: 560px) {
   main.content {
-    padding: 14px 12px 28px;
+    padding: var(--space-3) var(--space-3) var(--space-5);
   }
 
   .topbar {
-    gap: 6px;
+    gap: var(--space-2);
   }
 
   /* Below 560px the label is the first thing to go; the icon and its
@@ -622,10 +867,20 @@ h3 {
 
 .panel {
   background: var(--panel);
+  /* **A 1px border and no shadow**, which is already what this rule
+     said — worth stating rather than leaving as an absence, because a
+     panel is the one component where a shadow is always available and
+     never necessary. On a grey ground a hairline separates a card from
+     the page; a shadow lifts it off the page, and a screen of lifted
+     cards is a marketing layout wearing an instrument's data. */
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 16px;
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  /* 24px, from 16. The gap between two panels was the same as the gap
+     between a panel's border and its own contents, so a heading read as
+     belonging to whichever panel the eye reached first. Separation
+     between things has to beat separation within one. */
+  margin-bottom: var(--space-5);
 }
 
 .row {
@@ -639,14 +894,33 @@ button {
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  padding: 6px var(--space-3);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-body);
+  /* **`min-height`, not `height`.**
+     ===================================================================
+     There are 102 buttons in this app and they are not one shape: icon
+     buttons, a sidebar toggle, episode pagers, playback controls, the
+     20px id-copy chip in the decision header, and buttons carrying a
+     badge inside them. A fixed height does not make the short ones
+     taller — it clips the tall ones, and clipping is the failure that
+     looks like a design choice.
+
+     A floor gives the same rhythm everywhere it can and gets out of the
+     way where it cannot. Buttons centre their own content, so nothing
+     else is needed to make it sit right. */
+  min-height: 32px;
 }
 
+/* Tints on hover; does **not** recolour the border.
+   ===================================================================
+   This was `border-color: var(--accent)`, which is also what
+   `button.active` uses to say a toggle is on — so hover and on were
+   the same picture, and "what will my next click do" was answerable
+   only from the caption. The accent border now means one thing. */
 button:hover:not(:disabled) {
-  border-color: var(--accent);
+  background: var(--hover);
 }
 
 button:disabled {
@@ -661,6 +935,56 @@ button.primary {
   font-weight: 600;
 }
 
+/* Quiet: no fill, no border until it is pointed at. For controls that
+   sit inside a line of something else — a row of metadata, a toolbar —
+   where a filled button would outrank the thing it belongs to. */
+button.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+button.ghost:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* An action that takes something away. Outlined rather than filled: a
+   solid red button is the loudest thing on any page it appears on, and
+   these sit beside an ordinary confirm rather than replacing it. */
+button.danger {
+  color: var(--err);
+  border-color: color-mix(in srgb, var(--err) 45%, var(--border));
+}
+button.danger:hover:not(:disabled) {
+  background: var(--err-soft);
+}
+
+/* **The controls that are deliberately not 32px.**
+   ===================================================================
+   Each is a class, so each already outranks the element-level floor
+   above — this list exists so the exceptions are findable rather than
+   discovered one surprise at a time.
+
+   | `.icon-button`                  | 34px square. Kept at 34, not
+   |                                 | moved to 32: the size is argued
+   |                                 | for where it is declared — past
+   |                                 | the 24px touch minimum, and four
+   |                                 | still fit a 320px top bar.
+   | `.decision-copy-id`             | 20px. It sits inside a line of
+   |                                 | metadata; at 32 it would be the
+   |                                 | tallest thing on that line and
+   |                                 | outrank the run's own title.
+   | `.deployment-conditions-toggle` | 30px, pre-existing.
+   | any button with a badge inside  | taller than the floor, which is
+   |                                 | why the floor is a floor.
+*/
+
+/* Neither variant has a caller yet, on purpose — the same split as the
+   `.notice` variants: declaring the vocabulary is one change, deciding
+   which of the 102 buttons is which is another, and it is a judgement
+   per button. The destructive controls that exist (reject, withdraw an
+   approval) sit in `HumanActs`, which this pass does not touch. */
+
 /* A toggle that is currently on — the placement modes in the scenario
    editor and in the launch panel's map picker. Both already set this
    class; until now nothing styled it, so "what will my next click do"
@@ -672,13 +996,34 @@ button.active {
 }
 
 select,
-input {
+input,
+textarea {
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 5px 8px;
-  font-size: 13px;
+  border-radius: var(--radius-md);
+  padding: 5px var(--space-2);
+  font-size: var(--fs-body);
+  /* The same floor as a button, so a field and the button beside it sit
+     on one line rather than half a step apart. A floor and not a height:
+     a textarea is a field too, and pinning it would make it one row
+     tall forever. */
+  min-height: 32px;
+}
+
+/* A ring rather than a recoloured border.
+   ===================================================================
+   A 1px border changing colour is the weakest focus signal a field can
+   give, and on a form of twelve inputs it is the difference between
+   knowing where the caret is and hunting for it. The global
+   `:focus-visible` outline covers keyboard focus; this covers the field
+   being *active*, which is also true when it was reached by clicking. */
+select:focus,
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 table {
@@ -724,11 +1069,29 @@ th {
 }
 
 .badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 11px;
+  /* Flex, so a badge that carries an icon aligns it with the text
+     instead of sitting it on the baseline, and so the floor below
+     centres what is in the box. */
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px var(--space-2);
+  /* **4px, not 10.** On a 20px-tall box a 10px radius is exactly half
+     the height, which is the definition of a pill — and a page with
+     forty-five pills on it reads as a page of tags rather than a page
+     of states. A small radius still separates the badge from the text
+     around it without making it an ornament. */
+  border-radius: var(--radius-sm);
+  /* 12px, from 11. The badge sits at the bottom of the type scale
+     either way, but 11px is where Vietnamese stacked diacritics start
+     to close up — and a badge is where the short, decisive words live,
+     so it is the worst place to make the reader squint. */
+  font-size: var(--fs-sm);
   font-weight: 600;
+  /* A floor, for the same reason buttons have one: `blocked at G2, G3`
+     and `1 of 2 candidates blocked` are badges too, and a fixed height
+     clips the long ones rather than shortening them. */
+  min-height: 20px;
 }
 
 .badge.ok {
@@ -763,6 +1126,11 @@ button.badge-button:hover:not(:disabled),
 button.badge-button[aria-pressed="true"] {
   border-color: var(--accent);
 }
+
+/* The way back off the sign-in page, above its heading rather than
+   under the form: a reader who changed their mind has already stopped
+   reading downwards. */
+.login-back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 10px; }
 
 .error-box {
   background: var(--err-soft);
@@ -835,6 +1203,31 @@ label.inline {
 .scene25d-controls input[type="range"] {
   width: 130px;
 }
+
+/* The picture is the control.
+   ===================================================================
+   `grab`/`grabbing` is the whole affordance — a canvas gives no other
+   sign that it can be turned — and it is why the readout beside it
+   states the angle in words: a reader who has spun the room needs to be
+   able to say where they are looking from.
+
+   `touch-action: none` because the browser claims a one-finger drag for
+   scrolling the page, and a turntable that scrolls instead of turning
+   is worse than one that does not move. */
+.scene25d-canvas {
+  cursor: grab;
+  touch-action: none;
+}
+.scene25d-canvas:active { cursor: grabbing; }
+.scene25d-canvas:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.scene25d-readout {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.scene25d-hint { color: var(--muted); }
 
 .view-toggle {
   display: inline-flex;
@@ -1068,18 +1461,75 @@ details summary {
 }
 
 .notice {
+  /* **Neutral by default.** Every notice on the site used to be yellow,
+     which made "you are signed out", "the deployment was filed" and
+     "this run measured fewer episodes than the declared risk allows"
+     the same colour — so the colour said nothing and the reader learned
+     to skim all three. The default is now information, and a notice
+     that means more than that says so. */
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+  font-size: var(--fs-body);
+}
+
+/* Three severities.
+   ===================================================================
+   The vocabulary landed first and the call sites were assigned after,
+   so the diff that decided which notice is which reads as that decision
+   rather than as a change in what any of them look like.
+
+   How the twenty-one sites came out: three are warnings, seven more
+   were *already* asking to be — they carried `className="notice warn"`,
+   and `.notice.warn` is not a rule this stylesheet has ever had, so the
+   class did nothing and the notice stayed the default yellow. Nobody
+   could see it because the default happened to be the colour they
+   wanted. The rest are information. Exactly one thing on the site is
+   `--critical`, and it is below.
+
+   Written `.notice.notice--x` rather than `.notice--x`. Both would work
+   today — the variants sit after the base rule, so equal specificity
+   resolves in their favour by source order. Doubling the class makes
+   that a property of the selector instead of a property of where the
+   block happens to sit in a 3500-line file. This project has already
+   shipped three CSS failures that were invisible in review; a rule that
+   stops working because someone moved it would be a fourth of the same
+   kind. */
+
+/* Neutral. The default once phase B lands: a note that adds context
+   without claiming anything is wrong. */
+.notice.notice--info {
+  background: var(--panel-2);
+  border-color: var(--border);
+}
+
+/* Something is off, and it is bounded — one candidate retired early,
+   one measurement taken on an unpinned host. It qualifies part of the
+   page, not the page. */
+.notice.notice--warn {
   background: var(--warn-soft);
-  border: 1px solid var(--warn);
-  border-radius: 6px;
-  padding: 10px 12px;
-  margin-bottom: 12px;
-  font-size: 13px;
+  /* Softer than the base rule's solid `--warn`: once the neutral
+     variant exists, a warning no longer has to shout to be told apart
+     from an ordinary note. */
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+}
+
+/* Reserved for the one class of message that voids every number below
+   it — `n` under the deployment's declared N_min. If a second kind of
+   message starts wearing this, it stops meaning anything. */
+.notice.notice--critical {
+  background: var(--err-soft);
+  border-color: var(--err);
 }
 
 /* The mark that carries a field's explanation — see components/Hint.
    Small and quiet: it sits beside every labelled number on the
    deployment form, and a row of loud icons would be its own kind of
-   clutter, which is the thing this replaced. */
+   clutter, which is the thing this replaced. The weight stays under the
+   650 of .comparison-label so the mark never reads heavier than the
+   label it annotates. */
 .hint-mark {
   display: inline-flex;
   align-items: center;
@@ -1090,20 +1540,34 @@ details summary {
   border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--bg-elevated);
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1;
   cursor: help;
   user-select: none;
   vertical-align: middle;
 }
 
-.hint-mark:hover,
+.hint-mark:hover {
+  color: var(--text);
+  border-color: var(--accent, #4c9aff);
+}
+
+/* Keyboard focus is its own state, not a synonym for hover. Sharing the
+   rule meant `outline: none` reached the keyboard too, leaving a 15px
+   circle whose only focus signal was a 1px border changing colour.
+
+   border-radius repeats here because the global :focus-visible rule sets
+   4px, matches this element, and is declared later at equal specificity —
+   without this line the circle turns into a rounded square the moment it
+   takes focus. */
 .hint-mark:focus-visible {
   color: var(--text);
   border-color: var(--accent, #4c9aff);
-  outline: none;
+  border-radius: 50%;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .hint-bubble {
@@ -1352,6 +1816,1533 @@ a.stat-card:hover {
   background: var(--err);
 }
 
+/* ---------- Dashboard engineering overview ----------
+   Everything below is scoped to the dashboard so shared panels, tables,
+   stat grids and quick actions keep their established behaviour elsewhere. */
+
+.dashboard-head {
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 2px;
+}
+
+.dashboard-head h2 {
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+.dashboard-page .system-status {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  font-weight: 600;
+}
+
+.dashboard-page .system-status:has(.status-dot.online) {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 28%, var(--border));
+  background: var(--ok-soft);
+}
+
+.dashboard-page .system-status:has(.status-dot.offline) {
+  color: var(--err);
+  border-color: color-mix(in srgb, var(--err) 28%, var(--border));
+  background: var(--err-soft);
+}
+
+.dashboard-stat-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.dashboard-page .stat-card {
+  --stat-color: var(--info);
+  --stat-soft: var(--info-soft);
+  position: relative;
+  min-height: 142px;
+  padding: 15px 16px;
+  gap: 8px;
+  overflow: hidden;
+  border-color: var(--border);
+  /* No shadow, and no lift on hover. A tile that rises off the page
+     when pointed at is a marketing affordance: it says "this is
+     clickable and exciting" about a number that is neither. The border
+     already changes on hover, which is the part that answers "can I
+     click this". */
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+.dashboard-page .stat-card--ranked { --stat-color: var(--purple); --stat-soft: var(--purple-soft); }
+.dashboard-page .stat-card--accepted { --stat-color: var(--ok); --stat-soft: var(--ok-soft); }
+.dashboard-page .stat-card--pending { --stat-color: var(--warn); --stat-soft: var(--warn-soft); }
+.dashboard-page .stat-card--scenario { --stat-color: var(--cyan); --stat-soft: var(--cyan-soft); }
+.dashboard-page .stat-card--candidate { --stat-color: var(--indigo); --stat-soft: var(--indigo-soft); }
+.dashboard-page .stat-card--simulation { --stat-color: var(--teal); --stat-soft: var(--teal-soft); }
+
+.dashboard-page a.stat-card:hover {
+  border-color: color-mix(in srgb, var(--stat-color) 42%, var(--border));
+  background: color-mix(in srgb, var(--stat-soft) 42%, var(--panel));
+}
+
+/* Nothing to undo on `:active` now that nothing moved on `:hover`. */
+
+.dashboard-page .stat-card-head {
+  align-items: center;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.stat-card-icon {
+  display: inline-grid;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--stat-color) 24%, transparent);
+  border-radius: 9px;
+  background: var(--stat-soft);
+  color: var(--stat-color);
+}
+
+.stat-card-label { min-width: 0; line-height: 1.35; }
+
+.stat-card-alert-dot {
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  flex: none;
+  border: 2px solid var(--panel);
+  border-radius: 50%;
+  background: var(--warn);
+  box-shadow: 0 0 0 2px var(--warn-soft);
+}
+
+.dashboard-page .stat-card-value {
+  color: var(--stat-color);
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+
+.dashboard-page .stat-card.is-zero .stat-card-value,
+.dashboard-page .stat-card.is-unknown .stat-card-value { color: var(--muted); }
+
+.dashboard-page .stat-card-hint {
+  margin-top: auto;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.dashboard-actions {
+  margin-bottom: 20px;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 72%, var(--bg));
+}
+
+.dashboard-section-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.dashboard-section-heading h3 { margin: 0; color: var(--text); }
+.dashboard-section-icon,
+.quick-action-icon { display: inline-grid; place-items: center; color: var(--accent); }
+
+.dashboard-quick-actions {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.25fr) repeat(4, minmax(135px, 1fr));
+  gap: 9px;
+  margin: 0;
+}
+
+.dashboard-page .quick-action {
+  min-height: 42px;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  /* Same argument as the tiles above: a button that rises when pointed
+     at, and a primary one wearing a coloured glow, were the two loudest
+     things on a page whose content is counts. The base button rule
+     already tints on hover. */
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+.dashboard-page .quick-action.primary .quick-action-icon { color: currentColor; }
+
+.dashboard-activity-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+
+.dashboard-panel {
+  min-width: 0;
+  margin-bottom: 0;
+  padding: 0;
+  overflow: hidden;
+  /* A panel, so it looks like every other panel: a hairline on a grey
+     ground. Re-adding a shadow here made the dashboard the one page
+     where the rule did not hold. */
+  border-radius: var(--radius-lg);
+}
+
+.dashboard-panel--simulations { grid-column: 1 / -1; }
+
+.dashboard-panel .panel-head {
+  min-height: 54px;
+  margin: 0;
+  padding: 13px 15px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel-2) 44%, var(--panel));
+}
+
+.dashboard-panel .panel-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.panel-title-icon {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.dashboard-panel--reviews .panel-title-icon { background: var(--warn-soft); color: var(--warn); }
+.dashboard-panel--simulations .panel-title-icon { background: var(--teal-soft); color: var(--teal); }
+.panel-view-all { flex: none; font-size: 12px; font-weight: 600; }
+
+.dashboard-panel .empty-state {
+  min-height: 210px;
+  margin: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--panel-2) 42%, transparent);
+}
+
+.dashboard-panel .empty-state .empty-icon { width: 44px; height: 44px; color: var(--accent); }
+.dashboard-panel .table-scroll { margin: 0; padding: 0; }
+.dashboard-panel th,
+.dashboard-panel td { padding: 10px 15px; vertical-align: middle; }
+.dashboard-panel tbody tr:nth-child(even) { background: color-mix(in srgb, var(--panel-2) 38%, transparent); }
+.dashboard-panel tbody tr:hover { background: var(--hover); }
+.dashboard-panel tbody tr:last-child td { border-bottom: 0; }
+
+@media (min-width: 1500px) {
+  .dashboard-stat-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+}
+
+@media (max-width: 1199px) {
+  .dashboard-stat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dashboard-quick-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 900px) {
+  .dashboard-stat-grid,
+  .dashboard-activity-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-panel--simulations { grid-column: 1 / -1; }
+}
+
+/* ===================================================================
+   Test bench — scoped robotics simulation console
+   =================================================================== */
+
+.simulate-page {
+  --robot: var(--ok);
+  --robot-soft: var(--ok-soft);
+  --trajectory: var(--purple);
+  --trajectory-soft: var(--purple-soft);
+  --collision: var(--err);
+  --collision-soft: var(--err-soft);
+  --running: var(--accent);
+  --running-soft: var(--accent-soft);
+  min-width: 0;
+}
+
+/* **The bench takes back half the page gutter.**
+   ===================================================================
+   The 1440px measure is already lifted here — `wideContent` in
+   `lib/navigation` puts `/simulate` on `main.content--wide`, because a
+   simulator is a drawing surface rather than a column of prose. What was
+   still holding the panels in is the gutter `main.content` pads on every
+   route: 32px of nothing on each side of a panel whose content is cards
+   and a canvas, not a measure.
+
+   Half of it, and no more. A panel flush against the viewport edge reads
+   as a rendering fault rather than as width, and the remaining 16px is
+   what says the page has an edge. Scoped to `.simulate-page`, so no
+   other route moves, and only above 1200px — below that the gutter is
+   the only thing between the cards and the screen edge. */
+@media (min-width: 1200px) {
+  .simulate-page { margin-inline: calc(var(--space-4) * -1); }
+}
+
+.simulate-page-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.simulate-page-icon,
+.simulate-section-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--accent-soft-border);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.simulate-page-heading h2 { margin: 0; }
+.simulate-page-heading p { max-width: 760px; margin: 3px 0 0; }
+
+.simulate-status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: capitalize;
+}
+
+.simulate-status-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.simulate-status--running { border-color: var(--accent-soft-border); background: var(--running-soft); color: var(--running); }
+.simulate-status--paused { background: var(--warn-soft); color: var(--warn); }
+.simulate-status--success { background: var(--ok-soft); color: var(--ok); }
+.simulate-status--failed { background: var(--collision-soft); color: var(--collision); }
+.simulate-status--timeout { background: var(--orange-soft); color: var(--orange); }
+
+.simulate-notice {
+  margin-bottom: 12px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--border));
+  border-radius: 10px;
+  background: var(--warn-soft);
+}
+
+.simulate-notice summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 9px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.simulate-notice summary::-webkit-details-marker { display: none; }
+.simulate-notice summary > svg { color: var(--warn); transition: transform 160ms ease; }
+.simulate-notice[open] summary > svg { transform: rotate(180deg); }
+.simulate-notice-icon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--warn-soft); color: var(--warn); }
+.simulate-notice summary span:nth-child(2) { display: grid; gap: 2px; }
+.simulate-notice summary small { color: var(--muted); font-size: 12px; }
+.simulate-notice > p { margin: 0; padding: 0 52px 12px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+
+.simulate-error { display: flex; align-items: center; gap: 8px; }
+
+.simulate-empty-banner { margin-bottom: 12px; border: 1px dashed var(--accent-soft-border); border-radius: 10px; background: var(--accent-soft); }
+.simulate-empty-banner .empty-state { display: grid; min-height: 0; padding: 12px 14px; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; text-align: left; }
+.simulate-empty-banner .empty-icon { grid-row: 1 / 3; }
+.simulate-empty-banner .empty-state strong { grid-column: 2; grid-row: 1; align-self: end; }
+.simulate-empty-banner .empty-state p { grid-column: 2; grid-row: 2; align-self: start; margin: 1px 0 0; }
+/* No `!important`: `.quick-action` sets no margin of its own and
+   nothing else targets this element, so the flag was beating nothing. */
+.simulate-empty-banner .quick-action { grid-column: 3; grid-row: 1 / 3; margin: 0; }
+
+.simulate-setup { padding: 0; overflow: hidden; }
+.simulate-section-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; }
+.simulate-section-head h3 { margin: 0; font-size: 15px; }
+.simulate-section-head p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+.simulate-section-head--compact { padding: 0 0 14px; border-bottom: 1px solid var(--border); }
+.simulate-section-head--compact .simulate-section-icon { width: 34px; height: 34px; }
+
+/* Three fieldsets, and only two of them get wider.
+   ===================================================================
+   The third holds one number. Under the old `0.6fr` it took a fifth of
+   whatever width the page had, so on a wide monitor a seed input sat in
+   400px of empty fieldset while the two that carry five dropdowns were
+   squeezed beside it. `max-content` bounded by a minimum stops it
+   growing past what it contains and hands the surplus to the columns
+   with something in them. */
+.simulate-setup-grid {
+  display: grid;
+  grid-template-columns: minmax(250px, 0.9fr) minmax(440px, 1.7fr) minmax(180px, max-content);
+  gap: 10px;
+  padding: 4px 16px 14px;
+}
+
+.simulate-setup-group {
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-2);
+}
+
+.simulate-setup-group legend { padding: 0 5px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.simulate-setup-group--conditions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+/* **Every field in this panel puts its control on the same row.**
+   The three fieldsets lay out independently, and the fields inside them
+   did too: `.candidate-picker-field` is a grid whose rows stretch to the
+   height of its cell, so the one field with no hint under it —
+   Configuration — split the slack between its label and its select and
+   pushed the select 25px below its neighbours. The fields with a
+   two-line hint sat somewhere else again.
+
+   `auto auto 1fr` pins the label and the control to their natural
+   heights at the top and gives the leftover to the hint, which is the
+   part that is allowed to be a different length. `align-content: start`
+   stops the whole stack drifting when a cell is taller than its
+   contents. Applied to both kinds of field, because they sit in one row
+   and a rule for only one of them would align each group with itself. */
+/* `label.field` above sets `display: flex` and outranks a bare class,
+   so the element has to be named here or the template below is written
+   and never applied. */
+label.field.simulate-field,
+.candidate-picker--detailed .candidate-picker-field {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  align-content: start;
+  min-width: 0;
+  gap: var(--space-1);
+}
+.simulate-field > span,
+.candidate-picker--detailed .candidate-picker-field > span { color: var(--text); font-size: 12px; font-weight: 650; }
+.simulate-field small,
+.candidate-picker--detailed small { color: var(--muted); font-size: 10px; line-height: 1.35; }
+.simulate-page select,
+.simulate-page input[type="number"] { min-height: 38px; }
+
+.candidate-picker--detailed { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.candidate-picker--detailed > .candidate-picker-label { display: none; }
+.candidate-picker-field { display: grid; min-width: 0; gap: var(--space-1); }
+.candidate-picker-field select { width: 100%; min-width: 0; }
+.candidate-picker--detailed > .muted { grid-column: 1 / -1; }
+
+.simulate-run-actions { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--panel-2); }
+.simulate-run-button { min-height: 42px; padding-inline: 18px; font-weight: 750; }
+.simulate-run-button,
+.simulate-world-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.simulate-disabled-reason { display: flex; align-items: center; gap: 6px; margin: 0 0 0 auto; color: var(--muted); font-size: 12px; }
+.simulate-spinner { width: 16px; height: 16px; border: 2px solid color-mix(in srgb, currentColor 35%, transparent); border-top-color: currentColor; border-radius: 50%; animation: simulate-spin 700ms linear infinite; }
+@keyframes simulate-spin { to { transform: rotate(360deg); } }
+
+.deployment-conditions {
+  --condition-mission: var(--cyan);
+  --condition-mission-soft: var(--cyan-soft);
+  --condition-robot: var(--purple);
+  --condition-robot-soft: var(--purple-soft);
+  --condition-environment: var(--orange);
+  --condition-environment-soft: var(--orange-soft);
+  /* Indigo, which is the one hue left that is not already a candidate
+     colour or an outcome. The thresholds are neither a good nor a bad
+     reading — they are the line the reading will be held to — so a
+     green or a red header here would answer a question this card does
+     not ask. */
+  --condition-thresholds: var(--indigo);
+  --condition-thresholds-soft: var(--indigo-soft);
+  /* The three cards added with the full inventory. No new tokens: the
+     palette already carries seven distinguishable hues, and inventing an
+     eighth for one card would put a colour on screen that means nothing
+     anywhere else in the app. */
+  --condition-scope: var(--info);
+  --condition-scope-soft: var(--info-soft);
+  --condition-sensing: var(--teal);
+  --condition-sensing-soft: var(--teal-soft);
+  --condition-behaviour: var(--goal);
+  --condition-behaviour-soft: var(--goal-soft);
+  padding: 0;
+  overflow: hidden;
+}
+
+.deployment-conditions-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel-2) 55%, var(--panel));
+}
+
+.deployment-conditions-header h3,
+.deployment-conditions-header p { margin: 0; }
+.deployment-conditions-header h3 { font-size: 15px; }
+.deployment-conditions-header p { margin-top: 3px; color: var(--muted); font-size: 11px; }
+
+.deployment-conditions-title-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.deployment-conditions-lock,
+.condition-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.deployment-conditions-lock { padding: 5px 8px; color: var(--info); background: var(--info-soft); }
+.deployment-conditions-toggle { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 5px 9px; }
+.deployment-conditions.is-expanded .deployment-conditions-toggle svg { transform: rotate(180deg); }
+.deployment-conditions-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Seven cards, in columns rather than in a grid.
+   ===================================================================
+   It was `repeat(3, …)`, then `repeat(auto-fit, minmax(210px, 1fr))`,
+   and the second one held four. It does not hold seven: a grid lays a
+   fixed number of tracks, so seven cards across six tracks put one card
+   alone on a second row with five sixths of the width empty beside it —
+   the same stranding `auto-fit` was brought in to fix, one card later.
+
+   Multi-column has no tracks to leave empty. The columns stretch to the
+   full width whatever the count, the browser balances the cards by
+   height — which matters here, because Robot carries fourteen rows and
+   Environment four — and the count falls to one on a phone without a
+   media query. Capped at four so a 2560px monitor gets four readable
+   columns rather than seven hairlines, and floored at 260px so a card
+   never gets narrower than its longest label.
+
+   `break-inside: avoid` is what keeps a card whole; without it a column
+   break lands in the middle of a card's rows and the header walks away
+   from the values under it. */
+.deployment-conditions-grid {
+  columns: 260px 4;
+  column-gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.deployment-conditions-grid > .deployment-condition-group {
+  margin-bottom: var(--space-2);
+  break-inside: avoid;
+}
+
+.deployment-condition-group {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+}
+
+.deployment-condition-group > header { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border-bottom: 1px solid var(--border); }
+.deployment-condition-group > header span { display: grid; width: 27px; height: 27px; place-items: center; border-radius: 7px; }
+.deployment-condition-group > header h4 { margin: 0; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
+.deployment-condition-group--mission > header { color: var(--condition-mission); background: var(--condition-mission-soft); }
+.deployment-condition-group--robot > header { color: var(--condition-robot); background: var(--condition-robot-soft); }
+.deployment-condition-group--environment > header { color: var(--condition-environment); background: var(--condition-environment-soft); }
+.deployment-condition-group--thresholds > header { color: var(--condition-thresholds); background: var(--condition-thresholds-soft); }
+.deployment-condition-group--scope > header { color: var(--condition-scope); background: var(--condition-scope-soft); }
+.deployment-condition-group--sensing > header { color: var(--condition-sensing); background: var(--condition-sensing-soft); }
+.deployment-condition-group--behaviour > header { color: var(--condition-behaviour); background: var(--condition-behaviour-soft); }
+
+.deployment-condition-list { margin: 0; padding: 4px 11px; }
+.deployment-condition-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 31px; border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }
+.deployment-condition-row:last-child { border-bottom: 0; }
+.deployment-condition-row dt { min-width: 0; color: var(--muted); font-size: 11px; }
+.deployment-condition-row dd { min-width: 0; margin: 0; font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
+.deployment-condition-row--noise { align-items: start; padding-block: 6px; }
+
+.condition-status { padding: 3px 7px; }
+.condition-status.is-on { color: var(--ok); background: var(--ok-soft); }
+.condition-status.is-off { color: var(--muted); background: var(--panel-2); }
+/* **Absence, drawn as neither of the other two.** `Off` is a choice
+   somebody made and it gets a filled chip; a field the profile never
+   carried is not a value at all, so it gets an outline and no fill —
+   the same weight as the label beside it rather than the weight of an
+   answer. Without the difference `replanning: off` and `replanning:
+   never declared` read identically, and they are two deployments. */
+.condition-status.is-unset {
+  border: 1px dashed color-mix(in srgb, var(--border) 90%, var(--muted));
+  color: var(--muted);
+  background: transparent;
+  font-weight: 600;
+  font-style: italic;
+}
+.condition-noise-tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 230px; }
+.condition-noise-tags > span:not(.condition-status) { max-width: 100%; padding: 3px 6px; overflow: hidden; border-radius: 5px; color: var(--orange); background: var(--orange-soft); font-family: var(--font-mono); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+
+.deployment-conditions-summary { margin: 0; padding: 11px 16px; color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.deployment-condition-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; padding: 8px 13px; border-top: 1px solid var(--border); color: var(--muted); font-size: 10px; }
+.deployment-condition-footer code { color: var(--text); }
+
+@media (max-width: 1000px) {
+}
+
+@media (max-width: 620px) {
+  .deployment-conditions-header { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .deployment-conditions-lock { grid-column: 2; justify-self: start; }
+  .deployment-conditions-toggle { grid-column: 3; grid-row: 1 / span 2; }
+}
+.simulate-context-id { margin: 0; padding: 10px 16px; border-top: 1px solid var(--border); font-size: 11px; }
+
+/* ---------- The two screens ---------- */
+
+/* The page is a setup form and then an episode, and only one of them is
+   up at a time. Both stay mounted — the form so the way back lands on
+   the choices the reader made, the console so the socket, the frames and
+   the playhead survive the switch — so the `hidden` attribute is what
+   separates them.
+
+   Every element it is put on is named here, because the UA rule
+   (`[hidden] { display: none }`) loses to any author `display`, and the
+   two that carry one would otherwise stay on screen with nothing saying
+   why. The same trap `.decision-tabpanel[hidden]` documents. */
+.simulate-setup[hidden],
+.deployment-conditions[hidden],
+.simulate-stage-bar[hidden],
+.simulate-console[hidden],
+.simulate-metrics[hidden],
+.simulate-status[hidden] { display: none; }
+
+/* The world before it is run in: what Show world puts up, on the screen
+   that pressed it. Shorter than the console's canvas, which is watched;
+   this one is checked and then left. */
+.simulate-preview { padding: 0; overflow: hidden; }
+.simulate-preview .map-view { margin: 0; border: 0; border-radius: 0; background: var(--canvas-bg); }
+.simulate-preview .map-view-switch { margin: 0; border-inline: 0; border-top: 0; border-radius: 0; }
+.simulate-preview canvas { display: block; max-width: 100%; height: auto; margin-inline: auto; }
+
+/* The way back out of the results screen. A quiet button: the reader is
+   looking at an episode, and the loudest thing on the screen should not
+   be the one that takes it away. */
+.simulate-stage-bar { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+.simulate-another-button { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; }
+.simulate-stage-bar p { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 11px; }
+.simulate-stage-bar p svg { flex: none; color: var(--info); }
+
+.simulate-console { margin-top: 12px; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--bg-elevated); }
+.simulate-playback { display: grid; grid-template-columns: auto auto minmax(200px, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.simulate-playback-buttons { display: flex; gap: 6px; }
+.simulate-playback button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; }
+.simulate-playback .simulate-play:not(:disabled) { border-color: var(--accent); background: var(--accent); color: var(--accent-contrast); }
+.simulate-pause-icon { width: 12px; height: 12px; border-inline: 3px solid currentColor; }
+.simulate-speed { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
+.simulate-speed select { min-height: 34px; padding-block: 4px; }
+.simulate-timeline { display: grid; grid-template-columns: minmax(120px, 1fr) auto; align-items: center; gap: 10px; }
+.simulate-timeline input { width: 100%; accent-color: var(--accent); }
+.simulate-timeline span { min-width: 92px; color: var(--muted); font: 11px var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.simulate-stop-reason { grid-column: 1 / -1; color: var(--err); font-size: 11px; }
+
+.simulate-layers { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel-2); }
+.simulate-layers > strong { margin-right: 4px; font-size: 11px; }
+.simulate-layer { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 5px 9px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel); color: var(--muted); cursor: pointer; font-size: 11px; }
+.simulate-layer:has(input:checked) { border-color: var(--border-strong); color: var(--text); }
+.simulate-layer input { margin: 0; accent-color: var(--accent); }
+.simulate-layer-swatch { width: 9px; height: 9px; border-radius: 3px; background: var(--muted); }
+.simulate-layer--plan .simulate-layer-swatch { background: var(--cyan); }
+.simulate-layer--trajectory .simulate-layer-swatch { background: var(--trajectory); }
+
+.simulate-workspace { display: grid; grid-template-columns: minmax(0, 3fr) minmax(260px, 1fr); min-height: 540px; }
+.simulate-map-panel { position: relative; display: flex; min-width: 0; min-height: 540px; margin: 0; padding: 0; flex-direction: column; border: 0; border-radius: 0; background: var(--canvas-bg); }
+.simulate-map-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.simulate-map-head > div { display: grid; gap: 2px; }
+.simulate-map-head strong { font-size: 12px; }
+.simulate-map-head span:not(.simulate-status, .simulate-status-dot) { color: var(--muted); font-size: 10px; }
+.simulate-map-panel .map-view { flex: 1; margin: 0; border: 0; border-radius: 0; background: var(--canvas-bg); }
+.simulate-map-panel .map-view-switch { margin: 0; border-inline: 0; border-top: 0; border-radius: 0; }
+.simulate-map-panel canvas { display: block; max-width: 100%; height: auto; margin-inline: auto; }
+.simulate-map-placeholder { display: grid; flex: 1; place-content: center; justify-items: center; padding: 32px; color: var(--muted); text-align: center; }
+.simulate-map-placeholder > span { display: grid; width: 58px; height: 58px; margin-bottom: 12px; place-items: center; border: 1px dashed var(--accent-soft-border); border-radius: 16px; background: var(--accent-soft); color: var(--accent); }
+.simulate-map-placeholder strong { color: var(--text); }
+.simulate-map-placeholder p { max-width: 390px; margin: 5px 0 0; font-size: 12px; }
+
+.simulate-side-panel { display: grid; align-content: start; gap: 10px; padding: 10px; border-left: 1px solid var(--border); background: var(--panel-2); }
+.simulate-side-panel .panel { margin: 0; }
+.simulate-status-panel { border-color: var(--border); }
+.simulate-status-panel--success { border-color: color-mix(in srgb, var(--ok) 42%, var(--border)); }
+.simulate-status-panel--failed { border-color: color-mix(in srgb, var(--err) 42%, var(--border)); }
+.simulate-telemetry { display: grid; margin: 0; }
+.simulate-telemetry > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.simulate-telemetry > div:last-child { border-bottom: 0; }
+.simulate-telemetry dt { color: var(--muted); font-size: 11px; }
+.simulate-telemetry dd { margin: 0; font: 650 12px var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.simulate-telemetry dd small { color: var(--muted); font-size: 9px; font-weight: 500; }
+.simulate-telemetry-status,
+.simulate-telemetry-reason { grid-column: 1 / -1; }
+.simulate-mini-empty { display: grid; min-height: 120px; place-content: center; justify-items: center; gap: 8px; color: var(--muted); text-align: center; }
+.simulate-mini-empty p { margin: 0; font-size: 11px; }
+
+.simulate-next-card { position: relative; padding-top: 46px; }
+.simulate-next-icon { position: absolute; top: 14px; left: 14px; display: grid; width: 28px; height: 28px; place-items: center; border-radius: 8px; background: var(--purple-soft); color: var(--purple); }
+.simulate-next-card h3 { margin: 0 0 5px; font-size: 14px; }
+.simulate-next-card p { margin: 0 0 12px; font-size: 11px; line-height: 1.5; }
+.simulate-next-card .button-link { display: inline-flex; align-items: center; gap: 6px; }
+
+.simulate-metrics { margin-top: 12px; }
+.simulate-metrics .metrics-panel { margin: 0; padding: 0; overflow: hidden; }
+.simulate-metrics .metrics-panel > h3 { margin: 0; padding: 14px 16px 0; }
+.simulate-metrics .metrics-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.simulate-metrics .metrics-panel-head h3 { margin: 0; font-size: 15px; }
+.simulate-metrics .metrics-panel-head p { margin: 2px 0 0; color: var(--muted); font-size: 10px; }
+.simulate-metrics .metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; }
+.simulate-metrics .metric { position: relative; min-height: 92px; border: 0; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); border-radius: 0; background: var(--panel); }
+.simulate-metrics .metric::before { position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--accent); content: ""; }
+.simulate-metrics .metric--motion::before { background: var(--purple); }
+.simulate-metrics .metric--safety::before { background: var(--ok); }
+.simulate-metrics .metric--result::before { background: var(--muted); }
+.simulate-metrics .metric .value { font-variant-numeric: tabular-nums; }
+.simulate-metrics .metrics-panel-empty { display: flex; align-items: center; gap: 10px; margin: 12px 16px 16px; padding: 12px; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted); background: var(--panel-2); }
+.simulate-metrics .metrics-panel-empty span { color: var(--accent); font-size: 24px; }
+.simulate-metrics .metrics-panel-empty p { margin: 0; font-size: 12px; }
+.simulate-metrics-note { display: flex; align-items: flex-start; gap: 6px; margin: 8px 0 0; color: var(--muted); font-size: 10px; }
+.simulate-metrics-note svg { flex: none; color: var(--info); }
+
+.simulate-page :is(button, select, input, a, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (max-width: 1100px) {
+  .simulate-setup-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .simulate-setup-group--candidate { grid-column: 1 / -1; grid-row: 2; }
+  .simulate-playback { grid-template-columns: auto auto minmax(180px, 1fr); }
+  .simulate-playback > .simulate-status { grid-column: 1 / -1; }
+  .simulate-workspace { grid-template-columns: minmax(0, 1fr); }
+  .simulate-side-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--border); border-left: 0; }
+  .simulate-metrics .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .simulate-page-head { grid-template-columns: auto minmax(0, 1fr); }
+  .simulate-page-head > .simulate-status { grid-column: 2; }
+  .simulate-notice summary small { display: none; }
+  .simulate-notice > p { padding-inline: 12px; }
+  .simulate-empty-banner .empty-state { grid-template-columns: auto minmax(0, 1fr); }
+  .simulate-empty-banner .quick-action { grid-column: 1 / -1; grid-row: auto; justify-self: stretch; justify-content: center; }
+  .simulate-setup-grid { grid-template-columns: minmax(0, 1fr); }
+  .simulate-setup-group--candidate { grid-column: auto; grid-row: auto; }
+  .candidate-picker--detailed,
+  .simulate-setup-group--conditions { grid-template-columns: minmax(0, 1fr); }
+  .simulate-run-actions { align-items: stretch; flex-direction: column; }
+  .simulate-run-actions button { width: 100%; }
+  .simulate-disabled-reason { margin: 0; }
+  .simulate-playback { grid-template-columns: minmax(0, 1fr) auto; }
+  .simulate-playback-buttons { grid-column: 1 / -1; }
+  .simulate-playback-buttons button { flex: 1; }
+  .simulate-timeline { grid-column: 1 / -1; }
+  .simulate-layers { align-items: stretch; flex-wrap: wrap; }
+  .simulate-layers > strong { width: 100%; }
+  .simulate-layer { flex: 1 1 130px; }
+  .simulate-workspace { min-height: 0; }
+  .simulate-map-panel { min-height: 420px; }
+  .simulate-side-panel { grid-template-columns: minmax(0, 1fr); }
+  .simulate-metrics .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .simulate-metrics .metrics-panel-head { align-items: flex-start; }
+  .simulate-metrics .metrics-panel-head p { display: none; }
+}
+
+@media (max-width: 420px) {
+  .simulate-page-icon { width: 34px; height: 34px; }
+  .simulate-playback-buttons button span:not(.simulate-pause-icon) { display: none; }
+  .simulate-timeline { grid-template-columns: minmax(100px, 1fr); }
+  .simulate-timeline span { min-width: 0; text-align: left; }
+  .simulate-metrics .metrics { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* **The `!important` here is load-bearing.** It has to beat the
+   `transition` each component declares for itself, and that is the only
+   mechanism by which this rule does anything. Removing it hands the
+   animation back to the one reader who asked for it to stop — and it
+   fails silently, because nobody who set the preference is looking at a
+   screenshot. Three rules carry it, all inside a
+   `prefers-reduced-motion` block; the test below allows it nowhere
+   else. */
+@media (prefers-reduced-motion: reduce) {
+  .simulate-page * { scroll-behavior: auto !important; transition: none !important; }
+  .simulate-spinner { animation-duration: 1.5s; }
+}
+
+/* Decisions — scoped technical comparison workspace.
+
+   The six candidate tokens this block used to redeclare now live in
+   `:root`. They are removed rather than aliased: a local scope beats
+   `:root` regardless of order, so leaving even `--candidate-a:
+   var(--candidate-a)` here would read as though there were still a
+   reason for the page to have its own opinion. */
+.decision-page {
+  min-width: 0;
+}
+
+.decision-page-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; margin-bottom: 12px; }
+/* Two tracks: the title block, and the badge. The 40px icon tile that
+   opened this row is gone — it was the same `benchmark` glyph on every
+   decision, so it named nothing and only took the width the title
+   needed. `start` rather than `center` because the block below the
+   title now runs to three lines. */
+.decision-detail-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px; margin-bottom: 12px; }
+/* Still used — by the *list* page (`decisions/page.tsx`), which keeps
+   its icon because there it names the section rather than repeating on
+   every row. Only the detail header dropped it. Deleting the rule with
+   the detail page's markup would have left the list page's span
+   unstyled, which is the quiet kind of breakage: nothing throws, the
+   box simply stops being a box. */
+.decision-page-icon { display: grid; width: 40px; height: 40px; place-items: center; border: 1px solid var(--accent-soft-border); border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
+.decision-page-head h1,
+.decision-detail-head h1 { margin: 0; font-size: 22px; }
+.decision-page-head p,
+.decision-detail-head p { margin: 3px 0 0; }
+
+/* The run's id, and the button that copies it.
+   ===================================================================
+   Declared here rather than as a `.btn` variant because this stylesheet
+   has no `.btn` at all yet; the shared button scale is a later plan's
+   work, and writing a class that does not exist would leave an unstyled
+   control in the meantime.
+
+   Quiet by default. It sits in a line of metadata, and a filled button
+   there would outrank the run's own title two lines above it.
+
+   The id keeps its `<code>` face in every state — the failure case is
+   still usable, because the reader can select the text and copy by
+   hand, which is the whole reason the id is never replaced by a
+   status word. */
+.decision-copy-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font: 500 var(--fs-sm)/1.4 var(--font-sans);
+  cursor: pointer;
+  vertical-align: baseline;
+}
+.decision-copy-id:hover { background: var(--hover); color: var(--text); }
+.decision-copy-id code { font-family: var(--font-mono); font-size: var(--fs-sm); }
+/* Success and failure differ by more than colour: the icon changes to a
+   tick, and the state word is announced through `aria-live`. */
+.decision-copy-id[data-state="copied"] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
+.decision-copy-id[data-state="failed"] { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, var(--border)); }
+.decision-copy-id .copy-state:not(:empty) { margin-left: 2px; font-weight: 600; }
+
+/* How big the sample was, as one line under the run's name.
+   ===================================================================
+   What it replaced: three 26px figures reading `30`, `30`, `30` — the
+   same number three times at the largest type on the page. A figure
+   earns a card when it is abnormal; when it is fine it earns a clause.
+
+   Wraps rather than truncates: on a narrow window the clauses stack,
+   and a clause that says the run fell below N_min is not one to hide
+   behind an ellipsis. */
+.sample-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.sample-line b {
+  color: var(--text);
+  font-weight: 600;
+  /* The episode count sits beside other figures on the page; tabular
+     digits keep them on one vertical rhythm. */
+  font-variant-numeric: tabular-nums;
+}
+.sample-line .sep { opacity: 0.45; }
+/* Below N_min is the one state on this line that changes what every
+   number under it is worth, so it is the one clause allowed a colour.
+   The notice underneath explains the consequence; this only has to make
+   the reader notice there is one. */
+.sample-line .sample-below { color: var(--err); font-weight: 600; }
+.decision-running-badge { display: inline-flex; align-items: center; gap: 7px; padding: 6px 9px; border: 1px solid var(--accent-soft-border); border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 700; }
+.decision-spinner { display: inline-block; width: 15px; height: 15px; border: 2px solid color-mix(in srgb, currentColor 28%, transparent); border-top-color: currentColor; border-radius: 50%; animation: decision-spin 700ms linear infinite; }
+@keyframes decision-spin { to { transform: rotate(360deg); } }
+
+.comparison-setup { padding: 0; overflow: hidden; }
+.comparison-setup > .panel-head { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.comparison-setup > .panel-head h3 { display: flex; align-items: center; gap: 8px; }
+.comparison-setup-grid { display: grid; grid-template-columns: minmax(190px,.55fr) minmax(0,1fr) 34px minmax(0,1fr); align-items: stretch; gap: 10px; padding: 14px 16px; }
+.comparison-common { display: grid; align-content: start; gap: 10px; min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2); }
+.comparison-common legend { padding-inline: 5px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+/* The scope sits below the two candidate cards rather than beside the
+   deployment, because it is derived from them: reading downwards, the
+   pair is chosen and then what the pair can conclude is stated. */
+.comparison-scope { margin: 0 16px 14px; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2); }
+.comparison-scope legend { padding-inline: 5px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.comparison-scope-row { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
+.comparison-scope-row .field { min-width: min(320px, 100%); }
+.comparison-scope-note { margin: 8px 0 0; font-size: 12px; }
+/* The server's own wording, kept but folded away: evidence for a bug
+   report, not the first thing a reader has to parse. */
+.launch-error-headline { margin: 0; }
+.launch-error-detail { margin-top: 6px; font-size: 12px; }
+.launch-error-detail summary { cursor: pointer; }
+.launch-error-detail code { display: block; margin-top: 4px; overflow-wrap: anywhere; }
+.candidate-card { min-width: 0; padding: 12px; border: 1px solid; border-radius: 10px; }
+/* **Scoped to the card, because the class travels.** These two were
+   bare selectors, so they painted anything carrying `candidate-a` or
+   `candidate-b` — including every `<td>` in the comparison table, which
+   is where the column-wide wash came from that the rule further down
+   this file says does not exist. It said so honestly: nothing in the
+   table's own block sets a background. The tint arrived from up here,
+   1400 lines earlier, on a selector written for the picker cards. */
+.candidate-card.candidate-a { border-color: var(--candidate-a-border); background: var(--candidate-a-soft); }
+.candidate-card.candidate-b { border-color: var(--candidate-b-border); background: var(--candidate-b-soft); }
+.candidate-card-head { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid color-mix(in srgb, currentColor 18%, transparent); }
+.candidate-card-head > span { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 9px; background: var(--panel); }
+.candidate-a .candidate-card-head { color: var(--candidate-a); }
+.candidate-b .candidate-card-head { color: var(--candidate-b); }
+.candidate-card-head div { display: grid; min-width: 0; }
+.candidate-card-head small { font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.candidate-card-head strong { overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.comparison-setup .candidate-picker--detailed { grid-template-columns: minmax(0,1fr); }
+.comparison-setup .candidate-picker--detailed small { display: none; }
+.candidate-vs { display: grid; align-self: center; width: 34px; height: 34px; place-items: center; border: 1px solid var(--border-strong); border-radius: 50%; background: var(--panel); color: var(--muted); font-size: 10px; font-weight: 900; }
+.comparison-launch-actions { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--panel-2); }
+.comparison-launch-actions button { display: inline-flex; align-items: center; gap: 7px; min-height: 42px; padding-inline: 18px; font-weight: 750; }
+.comparison-disabled-reason { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
+.comparison-setup > div[style] { padding-inline: 16px; }
+.decision-deployment-empty { margin: 0 16px 14px; padding: 13px 15px; border: 1px dashed var(--border); border-radius: 10px; color: var(--muted); font-size: 12px; }
+.decision-deployment-preview { min-width: 0; margin: 0 16px 14px; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+.decision-deployment-header { display: flex; align-items: center; flex-wrap: wrap; gap: 9px 12px; padding: 11px 13px; border-bottom: 1px solid var(--border); }
+.decision-deployment-header > div { display: grid; min-width: 0; margin-right: auto; gap: 2px; }
+.decision-deployment-header h4 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+.decision-deployment-header code { max-width: 36rem; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.decision-deployment-header > a { font-size: 11px; }
+.decision-readonly-badge { padding: 4px 8px; border: 1px solid color-mix(in srgb, var(--info) 30%, var(--border)); border-radius: 999px; color: var(--info); background: var(--info-soft); font-size: 10px; font-weight: 750; }
+.decision-deployment-content { display: grid; grid-template-columns: minmax(0, 3fr) minmax(340px, 2fr); align-items: start; gap: 16px; padding: 0 13px 13px; }
+.decision-deployment-map-column, .decision-deployment-details { min-width: 0; }
+.decision-deployment-map { min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--canvas-bg); }
+.decision-deployment-map .map-view, .decision-deployment-map canvas, .decision-deployment-map svg { display: block; max-width: 100%; }
+.decision-deployment-map canvas, .decision-deployment-map svg { width: 100%; height: auto; }
+.decision-deployment-skeleton { display: grid; min-height: 240px; place-items: center; color: var(--muted); background: color-mix(in srgb, var(--panel) 75%, var(--canvas-bg)); }
+.decision-deployment-map-error { display: flex; min-height: 140px; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; padding: 18px; color: var(--muted); text-align: center; }
+.decision-deployment-map-error button:focus-visible, .decision-deployment-header a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.decision-deployment-legend { display: flex; flex-wrap: wrap; gap: 7px 14px; padding: 9px 2px 0; color: var(--muted); font-size: 10px; }
+.decision-deployment-legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 5px; border-radius: 50%; background: #64748b; }
+.decision-deployment-legend .start::before { background: #16a34a; } .decision-deployment-legend .goal::before { background: #db2777; } .decision-deployment-legend .dynamic::before { background: #f97316; }
+.decision-deployment-details { overflow: hidden; border: 1px solid var(--border); border-radius: 10px; }
+.decision-condition-section + .decision-condition-section { border-top: 1px solid var(--border); }
+.decision-condition-header { display: flex; align-items: center; gap: 7px; margin: 0; padding: 7px 10px; color: var(--info); background: color-mix(in srgb, var(--info-soft) 65%, transparent); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+.decision-condition-header > span { width: 7px; height: 7px; border-radius: 2px; background: currentColor; }
+.decision-condition-section--robot .decision-condition-header { color: var(--condition-robot); background: color-mix(in srgb, var(--condition-robot-soft) 65%, transparent); }
+.decision-condition-section--environment .decision-condition-header { color: var(--condition-environment); background: color-mix(in srgb, var(--condition-environment-soft) 65%, transparent); }
+.decision-condition-section--threshold .decision-condition-header { color: var(--ok); background: color-mix(in srgb, var(--ok-soft) 65%, transparent); }
+.decision-condition-list { margin: 0; padding: 2px 10px; }
+.decision-condition-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }
+.decision-condition-row:last-child { border: 0; } .decision-condition-row dt { min-width: 0; color: var(--muted); font-size: 10px; } .decision-condition-row dd { min-width: 0; max-width: 15rem; margin: 0; overflow-wrap: anywhere; font-size: 10px; font-weight: 650; font-variant-numeric: tabular-nums; text-align: right; }
+.decision-noise-summary dd { color: var(--condition-environment); }
+.decision-noise-details { display: grid; gap: 4px; margin: 0; padding: 5px 10px 9px; list-style: none; }
+.decision-noise-details li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 6px; border-radius: 5px; background: var(--panel-2); font-size: 9px; font-variant-numeric: tabular-nums; }
+.decision-noise-details code { min-width: 0; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.decision-details-toggle { width: 100%; min-height: 32px; border: 0; border-top: 1px solid var(--border); border-radius: 0; color: var(--accent); background: var(--panel-2); font-size: 10px; font-weight: 700; }
+.decision-details-toggle:focus-visible { position: relative; outline: 2px solid var(--accent); outline-offset: -3px; }
+@media (max-width: 1000px) { .decision-deployment-content { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) { .decision-deployment-preview, .decision-deployment-empty { margin-inline: 10px; } .decision-deployment-content { padding-inline: 9px; gap: 10px; } }
+.comparison-explainer { margin: 12px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); }
+.comparison-explainer summary { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; list-style: none; }
+.comparison-explainer summary::-webkit-details-marker { display: none; }
+.comparison-explainer summary svg { color: var(--info); }
+.comparison-explainer p { margin: 0; padding: 0 36px 12px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.decision-progress-panel { margin: 12px 16px 16px; overflow: hidden; border: 1px solid var(--border); border-radius: 9px; }
+.decision-progress-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; background: var(--panel-2); font-size: 11px; }
+.decision-progress-head > span { display: inline-flex; align-items: center; gap: 7px; color: var(--accent); }
+.decision-progress-track { height: 5px; overflow: hidden; background: var(--panel-3); }
+.decision-progress-track span { display: block; height: 100%; background: var(--accent); transition: width 180ms ease; }
+.decision-progress-panel .table-scroll { border: 0; }
+
+.decision-tally-panel { margin: 12px 0; }
+.decision-tallies { grid-template-columns: repeat(5,minmax(0,1fr)); }
+.decision-tally { position: relative; min-height: 92px; padding-left: 48px; }
+.decision-tally-icon { position: absolute; top: 14px; left: 14px; display: grid; width: 28px; height: 28px; place-items: center; border-radius: 8px; background: var(--accent-soft); color: var(--accent); }
+.decision-tally--purple .decision-tally-icon { background: var(--purple-soft); color: var(--purple); }
+.decision-tally--cyan .decision-tally-icon { background: var(--cyan-soft); color: var(--cyan); }
+.decision-tally--orange .decision-tally-icon { background: var(--orange-soft); color: var(--orange); }
+.decision-tally--green .decision-tally-icon { background: var(--ok-soft); color: var(--ok); }
+.decision-tally.is-zero .decision-tally-icon { background: var(--panel-2); color: var(--muted); }
+.decision-filter-bar { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: end; gap: 8px 12px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel); }
+.decision-filter-fields { display: flex; align-items: flex-end; gap: 10px; }
+.decision-filter-fields .field { min-width: 150px; }
+.decision-result-count { padding: 5px 8px; border-radius: 999px; background: var(--panel-2); color: var(--muted); font-size: 11px; font-weight: 700; }
+.decision-table-panel { padding: 0; overflow: hidden; }
+
+/* The candidates a run compared, one per line. A list rather than a
+   joined string: two stacks separated by a comma wrap mid-name in a
+   narrow column, and the reader cannot tell where one ends. */
+.decision-candidate-list { margin: 0; padding: 0; list-style: none; }
+.decision-candidate-list li { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.decision-candidate-list li + li { margin-top: 2px; }
+.decision-table-panel .table-scroll { border: 0; }
+
+.decision-eyebrow { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.decision-detail-badges { display: flex; align-items: center; gap: 8px; }
+.decision-sample-panel .stat-grid { grid-template-columns: repeat(4,minmax(0,1fr)); }
+.decision-gates-panel { border-color: var(--border-strong); }
+.decision-gates-panel .table-scroll { margin-top: 12px; }
+
+.comparison-results { padding: 0; overflow: hidden; }
+.comparison-results-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.comparison-results-head h3 { margin: 2px 0 0; }
+.comparison-results-head .badge { display: inline-flex; align-items: center; gap: 5px; }
+.candidate-gates { margin: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.candidate-gates summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 10px; cursor: pointer; }
+.candidate-gates > div { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; padding: 0 10px 10px; }
+.candidate-gates > div > div { display: flex; align-items: center; justify-content: space-between; gap: 5px; padding: 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); }
+.decision-summary { border-left: 3px solid var(--muted); }
+.decision-summary--card { border-left-color: var(--ok); }
+
+.decision-page :is(button,select,input,a,summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (max-width: 1050px) {
+  .comparison-setup-grid { grid-template-columns: minmax(180px,.55fr) minmax(0,1fr) minmax(0,1fr); }
+  .candidate-vs { display: none; }
+  .decision-tallies { grid-template-columns: repeat(3,minmax(0,1fr)); }
+}
+@media (max-width: 760px) {
+  .decision-page-head,.decision-detail-head { grid-template-columns: auto minmax(0,1fr); }
+  .decision-page-head > :last-child,.decision-detail-badges { grid-column: 2; justify-self: start; }
+  .comparison-setup-grid { grid-template-columns: minmax(0,1fr); }
+  .candidate-card { width: 100%; }
+  .comparison-launch-actions { align-items: stretch; flex-direction: column; }
+  .comparison-launch-actions button { justify-content: center; width: 100%; }
+  .decision-tallies { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .decision-filter-bar { grid-template-columns: minmax(0,1fr); }
+  .decision-filter-fields { align-items: stretch; flex-direction: column; }
+  .decision-filter-fields .field { width: 100%; }
+  .decision-result-count { justify-self: start; }
+  .decision-sample-panel .stat-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 420px) {
+  .candidate-gates > div { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .decision-page * { transition: none !important; }
+  .decision-spinner { animation-duration: 1.5s; }
+}
+
+@media (max-width: 560px) {
+  .dashboard-head { align-items: flex-start; gap: 10px; }
+  .dashboard-stat-grid,
+  .dashboard-activity-grid,
+  .dashboard-quick-actions { grid-template-columns: minmax(0, 1fr); }
+  .dashboard-page .stat-card { min-height: 128px; }
+  .dashboard-panel--simulations { grid-column: auto; }
+  .dashboard-panel .panel-head,
+  .dashboard-panel th,
+  .dashboard-panel td { padding-inline: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-page .stat-card,
+  .dashboard-page .quick-action { transition: none; }
+  .dashboard-page a.stat-card:hover,
+  .dashboard-page .quick-action:hover { transform: none; }
+}
+
+/* ===================================================================
+   Deployment configuration workspace
+   =================================================================== */
+
+.deployment-page { min-width: 0; }
+
+.deployment-page-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.deployment-page-icon,
+.deployment-empty-icon {
+  display: grid;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid var(--accent-soft-border);
+  border-radius: 11px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.deployment-page-heading { min-width: 0; }
+.deployment-page-heading h1 { margin: 0 0 3px; font-size: 23px; letter-spacing: -0.025em; }
+.deployment-page-heading p { margin: 0; max-width: 72ch; }
+
+.deployment-count-badge {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-left: auto;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.deployment-count-badge strong { color: var(--accent); font-size: 15px; }
+
+.deployment-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 70px;
+  color: var(--muted);
+}
+
+.deployment-loading .skeleton { width: 38px; height: 38px; }
+
+.deployment-empty-banner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 104px;
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px dashed var(--accent-soft-border);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--accent-soft) 62%, var(--panel));
+}
+
+.deployment-empty-banner strong { display: block; margin-bottom: 4px; font-size: 14px; }
+.deployment-empty-banner p { margin: 0; color: var(--muted); font-size: 12px; }
+.deployment-empty-banner .quick-action { margin: 0; white-space: nowrap; }
+
+.deployment-list-panel,
+.deployment-file-panel {
+  border-radius: 11px;
+}
+
+.deployment-file-panel { padding: 0; overflow: visible; }
+.deployment-file-panel > .panel-head { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.deployment-file-panel > .panel-head h3 { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text); }
+.deployment-file-panel > p,
+.deployment-file-panel > .deployment-mode-bar,
+.deployment-file-panel > .deployment-form,
+.deployment-file-panel > .deployment-yaml-mode { margin-inline: 16px; }
+
+.deployment-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-block: 14px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-2);
+}
+
+.deployment-mode-tabs,
+.map-view-switch {
+  display: inline-flex;
+  flex: none;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.deployment-mode-tabs button,
+.map-view-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.deployment-mode-tabs button.active,
+.map-view-switch button.active {
+  border-color: var(--accent-soft-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.deployment-mode-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--warn);
+  font-size: 12px;
+}
+
+.deployment-yaml-mode { padding-bottom: 16px; }
+.deployment-yaml-editor {
+  width: 100%;
+  max-width: 100%;
+  min-height: 380px;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--canvas-bg);
+  color: var(--text);
+  font: 12px/1.55 var(--font-mono);
+  resize: vertical;
+}
+
+.deployment-yaml-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+
+.deployment-section {
+  --section-color: var(--accent);
+  margin-bottom: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-left: 3px solid color-mix(in srgb, var(--section-color) 70%, var(--border));
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.deployment-section--mission { --section-color: var(--cyan); }
+.deployment-section--traffic { --section-color: var(--orange); }
+.deployment-section--robot { --section-color: var(--purple); }
+.deployment-section--constraints { --section-color: var(--ok); }
+.deployment-section--noise { --section-color: var(--warn); }
+.deployment-section--policies { --section-color: var(--indigo); }
+.deployment-section--hardware { --section-color: var(--muted); }
+
+.deployment-section-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 49px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel-2) 48%, var(--panel));
+}
+
+.deployment-section-head h4 { margin: 0; font-size: 13px; }
+.deployment-section-head .badge { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+
+.deployment-section-icon {
+  display: inline-grid;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--section-color) 12%, transparent);
+  color: var(--section-color);
+}
+
+.deployment-section-body { padding: 13px; }
+.deployment-section--identity { margin-bottom: 14px; }
+/* **The map chooser is part of this panel, not a card inside it.**
+   Which world, held to which claim, under which name is one answer, and
+   it used to be split across two headed blocks with a panel border
+   through the middle. Merged, the chooser keeps its heading — it is
+   still a distinct question — and loses the box: a bordered card inside
+   a bordered panel reads as a thing that wandered in.
+
+   Scoped to the identity section so the drawing stage below, which uses
+   the same class, keeps the frame it needs. */
+.deployment-section--identity .deployment-map-selector {
+  padding: 0 var(--space-3) var(--space-3);
+}
+.deployment-section--identity .deployment-map-workspace {
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+.deployment-section--identity .deployment-map-head {
+  padding-inline: 0;
+  background: transparent;
+}
+.deployment-section--identity .deployment-map-workspace > .field,
+.deployment-section--identity .deployment-map-workspace > .row,
+.deployment-section--identity .deployment-map-workspace > .muted,
+.deployment-section--identity .deployment-map-workspace > .notice { margin-inline: 0; }
+
+.deployment-identity-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.5fr) repeat(2, minmax(170px, 1fr));
+  gap: var(--space-3);
+  /* On the scale, and the map chooser below it now reads the same
+     token — the two share a left edge inside one panel, so they cannot
+     be a pixel apart by having been typed separately. */
+  padding: var(--space-3);
+}
+
+.deployment-config-grid,
+.deployment-map-selector,
+.deployment-map-fullwidth,
+.deployment-config-panel { min-width: 0; }
+
+/* Named for the row it used to own. It is a grid column now — the left
+   half, beside the tabs — so it fills its cell and the grid's own gap
+   does the spacing that this margin used to. Kept at 100% because the
+   cell is what decides the width; the canvas inside is sized in pixels
+   from the same number, since CSS stretching it would move every click
+   away from the pointer. */
+.deployment-map-fullwidth {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.deployment-map-fullwidth .deployment-map-workspace { width: 100%; max-width: 100%; }
+.deployment-map-fullwidth .deployment-map-frame { overflow: hidden; }
+.deployment-map-editor > .toolbar,
+.deployment-map-editor > .map-view { margin-inline: 12px; }
+.deployment-map-editor > .toolbar { margin-top: 12px; }
+.deployment-map-editor > .map-view { overflow: hidden; }
+.deployment-map-fullwidth .map-view,
+.deployment-map-fullwidth .map-view > canvas,
+.deployment-map-fullwidth .map-view > div { max-width: 100%; }
+
+/* Underline, not a pill.
+   ===================================================================
+   A filled rounded container holding filled rounded tabs is two nested
+   pills, and the selected one then competes with the primary button on
+   the same form. An underline says "you are here" using the one edge
+   that is already shared with the content below it — which is what a
+   tab is: the top of the panel it opens. */
+.deployment-config-panel .tabs-list {
+  flex-wrap: nowrap;
+  gap: 0;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  overflow-x: auto;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  border-radius: 0;
+}
+
+.deployment-config-panel .tabs-list button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.deployment-config-panel .tabs-list button:hover:not(:disabled) {
+  background: transparent;
+  color: var(--text);
+}
+
+/* `inset` so the line sits on the tab's own bottom edge, flush with the
+   container's border rather than floating below it. */
+.deployment-config-panel .tabs-list button.active {
+  background: transparent;
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.deployment-map-workspace {
+  --section-color: var(--cyan);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.deployment-map-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 52px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--cyan-soft) 55%, var(--panel));
+}
+
+.deployment-map-head > div { display: flex; align-items: center; gap: 8px; }
+.deployment-map-head h4 { margin: 0; }
+
+.deployment-map-sources {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  padding: 10px 12px;
+}
+
+.deployment-map-source {
+  min-height: 40px;
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.deployment-map-source.active {
+  border-color: var(--cyan);
+  background: var(--cyan-soft);
+  color: var(--cyan);
+  font-weight: 600;
+}
+
+.deployment-map-library-link { grid-column: 1 / -1; font-size: 12px; }
+.deployment-map-workspace > .field,
+.deployment-map-workspace > .deployment-map-frame,
+.deployment-map-workspace > .muted,
+.deployment-map-workspace > .row,
+.deployment-map-workspace > .notice { margin-inline: 12px; }
+.deployment-map-workspace > .field select { width: 100%; }
+
+.deployment-map-frame {
+  position: relative;
+  margin-top: 10px;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--canvas-bg) 88%, var(--panel));
+}
+
+.deployment-map-frame canvas { border-color: var(--border-strong); box-shadow: inset 0 0 0 1px var(--hover); }
+.deployment-map-frame .map-view-switch { margin-bottom: 8px; }
+
+.deployment-map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.deployment-map-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.deployment-map-legend i { width: 9px; height: 9px; border-radius: 50%; }
+.legend-start { background: var(--ok); }
+.legend-goal { background: var(--goal); }
+.legend-traffic { background: var(--orange); }
+
+.deployment-form .placement-button { min-height: 38px; border-radius: 8px; font-weight: 600; }
+.deployment-form .placement-button--start { color: var(--ok); }
+.deployment-form .placement-button--start.active { border-color: var(--ok); background: var(--ok-soft); }
+.deployment-form .placement-button--goal { color: var(--goal); }
+.deployment-form .placement-button--goal.active { border-color: var(--goal); background: var(--goal-soft); }
+
+.mission-pose {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.mission-pose--start { border-left: 3px solid var(--ok); }
+.mission-pose--goal { border-left: 3px solid var(--goal); }
+.mission-pose .field { flex: 1 1 88px; }
+
+/* Also not needed. A child selector is `(0,2,0)` against `.row`'s
+   `(0,1,0)`, so it already won; `.grid` has no base rule in this file at
+   all, so there was never anything to beat. */
+.deployment-section-body > .row,
+.deployment-section-body > .grid { gap: 10px; }
+
+.deployment-field { min-width: 150px; flex: 1 1 150px; }
+.deployment-field > span:first-child { color: var(--text); font-weight: 600; }
+
+.deployment-field-control { position: relative; display: flex; align-items: center; }
+.deployment-field-control input { width: 100%; min-height: 36px; padding-right: 42px; }
+.deployment-field-unit {
+  position: absolute;
+  right: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  pointer-events: none;
+}
+
+.deployment-field-check { position: absolute; right: 8px; color: var(--ok); pointer-events: none; }
+.deployment-field-control:has(.deployment-field-unit) .deployment-field-check { display: none; }
+.deployment-field.has-value input,
+.deployment-field.has-value select { border-color: color-mix(in srgb, var(--ok) 32%, var(--border)); }
+.deployment-field.has-error input,
+.deployment-field.has-error select { border-color: var(--err); }
+
+.deployment-field-error {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 5px;
+  color: var(--err);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.deployment-noise-field { flex: 1 1 180px; min-width: 180px; }
+
+.deployment-action-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px -16px 0;
+  padding: 11px 16px;
+  border-top: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.deployment-action-main,
+.deployment-action-summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.deployment-action-main button { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; }
+.deployment-submit { min-width: 104px; justify-content: center; }
+.deployment-action-summary { justify-content: flex-end; font-size: 11px; }
+
+@media (max-width: 900px) {
+  .deployment-mode-bar { align-items: flex-start; flex-direction: column; }
+  .deployment-identity-grid { grid-template-columns: minmax(0, 1fr); }
+  .deployment-action-bar { position: static; align-items: stretch; flex-direction: column; margin-inline: -16px; backdrop-filter: none; }
+  .deployment-action-summary { justify-content: flex-start; }
+}
+
+@media (max-width: 560px) {
+  .deployment-page-head { align-items: flex-start; }
+  .deployment-count-badge span { display: none; }
+  .deployment-empty-banner { grid-template-columns: auto minmax(0, 1fr); }
+  .deployment-empty-banner .quick-action { grid-column: 1 / -1; justify-content: center; }
+  .deployment-mode-tabs { width: 100%; }
+  .deployment-mode-tabs button { flex: 1; justify-content: center; }
+  .deployment-map-sources { grid-template-columns: minmax(0, 1fr); }
+  .deployment-map-library-link { grid-column: auto; }
+  .deployment-yaml-actions { align-items: stretch; flex-direction: column; }
+  .deployment-action-main { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .deployment-action-main button { justify-content: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deployment-page *,
+  .deployment-form * { scroll-behavior: auto !important; transition: none !important; }
+}
+
 /* ---------- Tooltip ---------- */
 
 /* CSS-only: a JS tooltip would need portals and focus management for
@@ -1413,7 +3404,7 @@ a.stat-card:hover {
   left: 8px;
   top: -48px;
   z-index: 100;
-  padding: 8px 14px;
+  padding: var(--space-2) var(--space-3);
   border-radius: 8px;
   background: var(--accent);
   color: var(--accent-contrast);
@@ -1546,7 +3537,268 @@ main.content code {
 main.content.bare-page {
   max-width: 460px;
   margin: 0 auto;
-  padding: 56px 20px;
+  padding: var(--space-7) var(--space-4);
+}
+
+/* ===================================================================
+   The assistant page
+   ===================================================================
+   The shape people already know: a thread that fills the screen, a
+   composer pinned to the bottom of it. The reader's question is short
+   and sits in a bubble on the right; the answer is long -- prose, tool
+   evidence, sometimes a whole extracted paper -- and runs the full
+   width of the column rather than being folded into a bubble sized for
+   a chat message.
+   =================================================================== */
+
+.agent-page {
+  display: flex;
+  flex-direction: column;
+  /* Fill what is left under the top bar, so the composer sits at the
+     bottom of the screen and only the thread scrolls. */
+  height: calc(100vh - var(--topbar-height) - var(--space-6));
+  min-height: 420px;
+}
+
+.agent-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.agent-head-text { min-width: 0; }
+.agent-head-text h2 { margin: 0; }
+.agent-head-text p { margin: 0; font-size: var(--fs-body); }
+.agent-head-badge { margin-left: auto; }
+/* Without a badge to push it, the disclosure takes the slot itself. */
+.agent-head-badge + .agent-boundaries { margin-left: var(--space-3); }
+.agent-boundaries { margin-left: auto; position: relative; }
+.agent-boundaries summary { cursor: pointer; white-space: nowrap; }
+.agent-boundaries-body {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  width: min(360px, 80vw);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.agent-boundaries-body p { margin: 0 0 var(--space-2); }
+.agent-boundaries-body p:last-child { margin-bottom: 0; }
+
+.agent-thread {
+  flex: 1;
+  overflow-y: auto;
+  /* Room on the right so a scrollbar does not sit on the text. */
+  padding: var(--space-4) var(--space-2) var(--space-4) 0;
+}
+
+/* One column, centred, capped at a comfortable measure. A thread that
+   runs the full width of a 1440px screen is a thread nobody finishes a
+   line of. */
+.agent-thread-inner {
+  display: flex;
+  max-width: 46rem;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0 auto;
+}
+
+.agent-msg { display: flex; flex-direction: column; }
+
+/* The question, in a bubble, right-aligned: it is short, it is the
+   reader's own words, and it needs to be findable when scrolling back
+   through answers. */
+.agent-msg.user { align-items: flex-end; }
+.agent-msg.user .agent-msg-body {
+  max-width: 80%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--accent-soft-border);
+  border-radius: 8px;
+  background: var(--accent-soft);
+}
+
+.agent-msg-who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-2);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.agent-msg-body {
+  margin: 0;
+  font-size: var(--fs-label);
+  line-height: 1.6;
+  /* The model answers in paragraphs and lists. Collapsing its newlines
+     turns a four-step answer into one run-on sentence. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agent-msg-after { margin: var(--space-2) 0 0; }
+
+/* What the answer was read from. The no-tool case is a chip in this
+   same row rather than a quieter line under it: "read nothing" is the
+   most consequential thing the row can say. */
+.agent-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+.agent-evidence-label { color: var(--muted); font-size: var(--fs-sm); }
+.agent-tool {
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.agent-tool.warn {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.agent-copy {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.agent-copy:hover { border-color: var(--border); color: var(--text); }
+
+.agent-thinking { display: flex; align-items: center; gap: var(--space-2); margin: 0; }
+
+/* The first screen is a prompt, not an empty box. A chat that opens
+   blank asks the reader to guess what it knows. */
+.agent-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: auto 0;
+  text-align: center;
+}
+.agent-welcome h3 { margin: var(--space-3) 0 var(--space-2); }
+.agent-welcome p { margin: 0; max-width: 40rem; }
+.agent-welcome-mark {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.agent-suggestions {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+.agent-suggestion {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--fs-body);
+  text-align: left;
+}
+.agent-suggestion:hover { border-color: var(--accent-soft-border); background: var(--panel-2); }
+
+/* One box holding the attachment, the text and the controls, so the
+   whole thing reads as the field rather than as three widgets that
+   happen to be adjacent. */
+.agent-composer-wrap { padding-top: var(--space-3); }
+.agent-composer {
+  display: flex;
+  max-width: 46rem;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0 auto;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.agent-composer:focus-within { border-color: var(--accent-soft-border); }
+
+/* Borderless inside the box: the box is the field. Height is set in
+   script from the content, so `resize` would fight it. */
+.agent-input {
+  max-height: 200px;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-label);
+  line-height: 1.5;
+  resize: none;
+}
+.agent-input:focus { outline: none; }
+
+.agent-composer-tools { display: flex; align-items: center; gap: var(--space-2); }
+.agent-composer-hint { margin-right: auto; font-size: var(--fs-sm); }
+.agent-attach {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+}
+.agent-attach:hover:not(:disabled) { border-color: var(--border); color: var(--text); }
+
+/* Inside the box and above the text, so a long filename wraps across
+   the composer instead of squeezing the line being typed into a slot. */
+.agent-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel-2);
+  font-size: var(--fs-sm);
+}
+.agent-chip-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.agent-chip-remove {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.agent-chip-remove:hover { color: var(--text); }
+
+/* On a narrow screen the suggestion grid becomes a list: two cards side
+   by side at 360px are two cards of three words each. */
+@media (max-width: 560px) {
+  .agent-suggestions { grid-template-columns: minmax(0, 1fr); }
+  .agent-msg.user .agent-msg-body { max-width: 100%; }
+  .agent-composer-hint { display: none; }
 }
 
 /* ===================================================================
@@ -1852,15 +4104,1652 @@ main.content.bare-page {
     opacity: 1;
   }
 }
+/* Paired trace evidence: one episode, two candidates, one playback clock.
 
-/* A button that reads as a link, for actions that live inside prose.
-   A full button chrome inside a chat bubble's footnote would shout. */
-.link-button {
-  background: none;
-  border: 0;
+   This block used to hard-code `#2563eb` and `#7c3aed` — literal hex, so
+   the replay panel kept light-theme blue and purple on a dark ground
+   while the rest of the page had moved on. The candidate tokens are read
+   from `:root` now, and they follow the theme. */
+
+
+.episode-toolbar,
+.episode-playback,
+.episode-comparison-head,
+.episode-candidate > header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.episode-toolbar {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+
+.episode-toolbar .field { min-width: min(100%, 320px); }
+.episode-view-toggle { display: inline-flex; gap: 6px; }
+
+.episode-comparison-stage {
+  scroll-margin-top: 84px;
+  outline: none;
+}
+
+.episode-comparison-head {
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px 12px 0 0;
+  background: var(--panel-2);
+}
+
+.episode-comparison-head h4 {
+  margin: 3px 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+}
+
+.episode-result-badges { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+
+.episode-playback {
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-top: 0;
+}
+
+.episode-playback label { display: inline-flex; align-items: center; gap: 6px; }
+.episode-playback select { width: auto; }
+.episode-playback input[type="range"] { flex: 1 1 260px; min-width: 120px; }
+.episode-playback output { min-width: 92px; font-variant-numeric: tabular-nums; text-align: right; }
+
+.episode-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-top: 0;
+  color: var(--muted);
+  /* Was `.78rem`. Three `font-size` rules in this file were in `rem` and
+     so were the only ones that moved when the base dropped from 14px to
+     13 — and they moved the wrong way: this one from 10.9px to 10.1px,
+     and the header label below from 10.5px to 9.75px, under
+     `--fs-caption`, the smallest step the scale defines, on text that
+     carries Vietnamese diacritics. Pinned to the scale instead, where
+     every other size in this file already is. */
+  font-size: var(--fs-sm);
+}
+
+.episode-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border); }
+.legend-dot--start { background: #16a34a; }
+.legend-dot--goal { background: #d946ef; }
+.legend-dot--candidate-a { background: var(--candidate-a); }
+.legend-dot--candidate-b { background: var(--candidate-b); }
+.legend-dot--dynamic { background: #f97316; }
+.legend-dot--collision { background: #dc2626; }
+
+.episode-comparison-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.episode-candidate {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--candidate-a);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.episode-candidate--a { border-color: var(--candidate-a-border); border-top-color: var(--candidate-a); }
+.episode-candidate--b { border-color: var(--candidate-b-border); border-top-color: var(--candidate-b); }
+.episode-candidate--a > header { background: var(--candidate-a-soft); }
+.episode-candidate--b > header { background: var(--candidate-b-soft); }
+
+.episode-candidate > header {
+  justify-content: space-between;
+  align-items: flex-start;
+  min-height: 92px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.episode-candidate > header span:first-child { font-size: var(--fs-caption); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.episode-candidate > header h4 { margin: 4px 0; }
+
+.episode-map {
+  display: grid;
+  place-items: center;
+  min-height: 360px;
+  padding: 12px;
+  overflow: hidden;
+  background: var(--panel-2);
+}
+
+.episode-map > div,
+.episode-map canvas,
+.episode-map svg { max-width: 100%; }
+
+.episode-skeleton,
+.episode-empty,
+.episode-error {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 320px;
+  padding: 24px;
+  color: var(--muted);
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.episode-skeleton { animation: episode-pulse 1.4s ease-in-out infinite; }
+.episode-error { color: var(--err); }
+
+.episode-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  padding: 1px;
+  background: var(--border);
+}
+
+.episode-metrics > div { min-width: 0; padding: 12px 14px; background: var(--panel); }
+.episode-metrics dt { color: var(--muted); font-size: var(--fs-sm); }
+.episode-metrics dd { margin: 5px 0 0; font-weight: 750; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+.decision-sample-panel tbody tr[tabindex] { cursor: pointer; transition: background-color .15s ease; }
+.decision-sample-panel tbody tr[tabindex]:hover { background: color-mix(in srgb, var(--candidate-a) 6%, transparent); }
+.decision-sample-panel tbody tr[tabindex].is-selected { background: var(--candidate-a-soft); box-shadow: inset 4px 0 var(--candidate-a); }
+.decision-sample-panel tbody tr[tabindex]:focus-visible { outline: 2px solid var(--candidate-a); outline-offset: -2px; }
+.decision-sample-panel thead th:nth-child(2) { color: var(--candidate-a); }
+.decision-sample-panel thead th:nth-child(3) { color: var(--candidate-b); }
+.episode-difference { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-left: 7px; border-radius: 50%; color: #fff; background: #d97706; font-weight: 800; }
+
+@keyframes episode-pulse { 50% { opacity: .55; } }
+
+@media (max-width: 860px) {
+  .episode-comparison-grid { grid-template-columns: minmax(0, 1fr); }
+  .episode-map { min-height: 300px; }
+  .episode-comparison-head { flex-direction: column; }
+  .episode-result-badges { justify-content: flex-start; }
+}
+
+@media (max-width: 520px) {
+  .episode-toolbar { align-items: stretch; }
+  .episode-toolbar .field, .episode-view-toggle { width: 100%; }
+  .episode-view-toggle button { flex: 1; }
+  .episode-playback button { flex: 1; }
+  .episode-playback input[type="range"] { flex-basis: 100%; }
+  .episode-metrics { grid-template-columns: minmax(0, 1fr); }
+  .episode-map { min-height: 250px; padding: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .episode-skeleton { animation: none; }
+  .decision-sample-panel tbody tr[tabindex] { transition: none; }
+}
+
+/* Evidence panel (E4.1/E4.2) — what was seen, under the gate table.
+   Tables rather than a drawn chart: the numbers are the point, and a
+   bar with no interval beside it invites reading the height alone. */
+.evidence-panel > * + * { margin-top: 14px; }
+.evidence-lede { margin: 0 0 8px; }
+.evidence-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.evidence-table th,
+.evidence-table td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+.evidence-table thead th { font-weight: 600; color: var(--muted); }
+.evidence-table tfoot th { border-bottom: none; border-top: 2px solid var(--border); }
+.evidence-bar-wrap { display: flex; align-items: center; gap: 8px; }
+/* The bar is a reading aid behind the number, never instead of it. */
+.evidence-bar { display: inline-block; height: 8px; border-radius: 2px; min-width: 1px; }
+.evidence-bar.pos { background: var(--ok, #3f9a5a); }
+.evidence-bar.neg { background: var(--err, #b4483f); }
+.evidence-sightings h4 { margin: 0 0 6px; font-size: 13px; }
+.evidence-lattice > ul,
+.evidence-gaps > ul,
+.evidence-omissions > ul { margin: 8px 0 0; padding-left: 18px; }
+.evidence-lattice li + li,
+.evidence-gaps li + li,
+.evidence-omissions li + li { margin-top: 8px; }
+.evidence-lattice li p { margin: 4px 0 0; }
+.evidence-subject { margin-left: 6px; }
+.evidence-panel .small { font-size: 12px; }
+
+/* Running comparison (E4.3) — both candidates at one rung of the ladder.
+   Two tables rather than one: the metrics belong to two different
+   clocks, and a single eight-row block would invite reading a
+   worst-clearance against a progress fraction as if they answered the
+   same question. */
+.episode-running { margin-top: 16px; }
+.episode-running h4 { margin: 0 0 4px; font-size: 14px; }
+.episode-running h5 { margin: 0 0 2px; font-size: 13px; }
+.episode-running-clock + .episode-running-clock { margin-top: 12px; }
+.episode-running-clock p { margin: 0 0 6px; font-size: 12px; }
+.episode-running table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.episode-running th,
+.episode-running td { padding: 5px 8px; border-bottom: 1px solid var(--border); }
+.episode-running thead th { font-weight: 600; color: var(--muted); text-align: left; }
+.episode-running tbody th { font-weight: 400; text-align: left; }
+/* Tabular figures: a column whose digits shift width as the slider
+   moves is a column the eye cannot compare down. */
+.episode-running td { text-align: right; font-variant-numeric: tabular-nums; }
+.episode-running td.ok { font-weight: 600; color: var(--ok, #3f9a5a); }
+.episode-running-composite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 12px;
+}
+.episode-running-composite strong { font-variant-numeric: tabular-nums; }
+.episode-running-composite strong.ok { color: var(--ok, #3f9a5a); }
+.episode-running-composite strong.warn { color: var(--err, #b4483f); }
+/* The caveat takes the whole next line rather than trailing the number:
+   a qualifier that wraps into the gap beside a figure is a qualifier
+   that gets skipped. */
+.episode-running-composite p { flex-basis: 100%; margin: 0; font-size: 12px; }
+/* Available to a screen reader, absent from the layout. The colour
+   carries the "leads" claim visually; this carries it otherwise. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
   padding: 0;
-  color: var(--accent);
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* The dagger beside a number that follows from the choice of reference
+   line rather than from how the robot drove. Marked rather than hidden:
+   the value is real, what it is evidence of is not. */
+.episode-running-artefact { opacity: 0.7; cursor: help; }
+.episode-running td.muted { color: var(--muted); font-weight: 400; }
+
+/* The result panel now shares one frame with the live readings (E4.3):
+   while a replay runs the frame holds what is true at that instant, and
+   once it stops the same frame holds the episode's result instead. It
+   therefore sits inside `.episode-map`, where the grid centres and
+   shrink-wraps its child — so it needs the width the stat grid takes by
+   default, and the same gap above it. */
+.episode-map .episode-metrics { width: 100%; margin-top: 12px; }
+
+/* Planner latency over the episode (E4.3), in the space the per-canvas
+   colour note used to take. A number cannot show a spike, and both the
+   live tile and the scored p99 are summaries of a shape. */
+.latency-chart { margin: 12px 0 0; }
+.latency-chart figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.latency-chart svg { display: block; width: 100%; height: auto; }
+.latency-axis { stroke: var(--border); stroke-width: 1; }
+.latency-line { fill: none; stroke: var(--accent, #2563eb); stroke-width: 1.6; stroke-linejoin: round; }
+/* The threshold reads as a limit, not as another series. */
+.latency-budget { stroke: var(--err, #b4483f); stroke-width: 1; stroke-dasharray: 5 4; }
+.latency-p99 { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; }
+.latency-playhead { stroke: var(--text); stroke-width: 1; opacity: 0.45; }
+.latency-tick { fill: var(--muted); font-size: 10px; }
+.latency-chart-empty { margin-top: 12px; font-size: 12px; }
+
+/* The colour note moved off each canvas onto the shared legend, so the
+   legend is now a keys row plus its explanation rather than one line. */
+.episode-legend-keys { display: flex; flex-wrap: wrap; gap: 12px; }
+.episode-legend > p { margin: 6px 0 0; font-size: 12px; }
+
+/* The live/final switch is per candidate now — one reader wants a
+   finished stack's results while the other is still driving — so it
+   lives in that panel's own header beside its verdict. */
+.episode-candidate-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.episode-candidate-actions button { font-size: 12px; padding: 4px 10px; }
+/* The chart doubles as the timeline: clicking it seeks both replays. */
+.latency-seekable { cursor: pointer; }
+.latency-seekable:focus-visible { outline: 2px solid var(--accent, #2563eb); outline-offset: 2px; }
+/* The mark sits in headings now, not only beside form labels. */
+h3 > .hint-mark, h4 > .hint-mark, h5 > .hint-mark { vertical-align: middle; }
+
+/* The hint belongs to the gate id, not to the gap between it and the
+   verdict — `space-between` on the chip was pushing the mark into the
+   middle of the cell where it looked like a third column. */
+.candidate-gate-name { display: inline-flex; align-items: center; gap: 2px; }
+
+/* Five episodes a window. A three-hundred-episode sweep would otherwise
+   make the table the page. */
+.episode-pager { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.episode-pager-ids { display: flex; flex-wrap: wrap; gap: 6px; }
+.episode-pager-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.episode-pager-tabs button { min-width: 30px; padding: 3px 8px; font-size: 12px; }
+.episode-pager-tabs button[disabled] { opacity: .4; cursor: default; }
+.episode-pager-tabs > .muted { margin-left: 4px; font-size: 11px; }
+
+/* The shared list pager, used by `/decisions` and `/deployments`.
+   Separate from `.episode-pager` above rather than a variant of it: that
+   one offers numbered pages because an exemplar episode can be on page 9
+   and has to be jumpable to, while nothing in a list of runs or
+   deployments is addressed by page number. Right-aligned under the
+   table, where the last row ends. */
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.pager-step { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; font-size: 12px; }
+/* Dimmed at the ends rather than removed: a control that disappears at
+   page 1 moves the one beside it, so "next" lands where "previous" was. */
+.pager-step[disabled] { opacity: .4; cursor: default; }
+.pager-position { font-size: 12px; color: var(--muted); }
+
+/* **The comparison, as one grid.** A neutral gutter on the left holds
+   each metric's name — written once, so a comparison is a glance along
+   a row — and every column after it is one candidate, tinted from its
+   header down through its gate verdicts.
+
+   Emitted row by row rather than card by card. A row of cards cannot
+   promise that a label sits level with its values; the grid can, and at
+   ten metrics that alignment is the whole readability of the thing. */
+/* A `<table>`, laid out by the browser rather than by a column count
+   this file has to be told. The grid it replaced needed
+   `grid-template-columns` fed in from JSX — which is why the rule below
+   once carried `!important`, to beat an inline style. Neither is needed
+   now: a table sizes its own columns and there is no inline style to
+   outrank. */
+/* The count above the table. Quiet: it restates the tinting rather
+   than adding a finding, so it must not outweigh the figures it is
+   summarising. */
+.comparison-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: var(--fs-body);
+}
+.comparison-summary svg { flex: none; margin-top: 2px; }
+
+.comparison-scroll { overflow-x: auto; }
+.comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  /* Under this the table scrolls inside its own wrapper. Letting it
+     shrink instead puts the whole page into a horizontal scroll, which
+     moves the navigation along with the numbers. */
+  min-width: 720px;
+}
+.comparison-gutter { padding: 8px 14px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
+.comparison-cell { padding: 8px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+/* **A column wash, at a sixth of the strength of the one that was
+   removed.**
+   ===================================================================
+   The wash that went was `--candidate-*-soft` — 10–14% of a saturated
+   hue, built for a badge — run down a whole column, where it was the
+   loudest thing on a table whose entire job is the figures. Removing it
+   left the identity on a 3px cap and the heading text, which tells the
+   two columns apart at the head and stops telling them apart eight rows
+   down, exactly where a reader tracking one candidate's numbers is.
+
+   So the wash is back and the objection is answered rather than
+   overruled: `--candidate-*-wash` is 6–10% mixed *into* the panel, weak
+   enough that `--ok` and `--err` stay the loudest thing in any cell they
+   land in, and opaque so the sticky head can carry it too. The hue pair
+   is blue and violet because those are the only two families left once
+   green and red are spent on outcome.
+
+   Past two, neutral: `candidate-n` takes no wash at all. Reusing
+   candidate A's blue for candidate C would put two stacks in one colour
+   on a page whose job is telling them apart, and inventing a third hue
+   would have to come out of the green or the red. */
+.comparison-cell.candidate-a { background: var(--candidate-a-wash); }
+.comparison-cell.candidate-b { background: var(--candidate-b-wash); }
+.comparison-cell + .comparison-cell { border-left: 1px solid var(--border); }
+
+/* **Nothing on a table cell may set `display`.**
+   ===================================================================
+   These class names are on `<th>` and `<td>` now. A table cell given
+   `display: grid` stops being a table cell, and the browser then wraps
+   every consecutive non-cell child of the row into one *anonymous*
+   cell — so both candidates land in a single column, stacked, and the
+   table quietly becomes a two-column layout. Internal layout goes on a
+   wrapper inside the cell. */
+.comparison-grid-head {
+  text-align: left;
+  vertical-align: bottom;
+  padding-top: var(--space-4);
+  padding-bottom: var(--space-4);
+  border-top: 3px solid transparent;
+}
+/* Two tracks, not three: the 34px `cpu` icon that used to open this cell
+   is gone. It was the same glyph on both candidates and on the page
+   header, so it distinguished nothing — it just took the width the
+   heading needed. */
+.comparison-grid-head .head-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+}
+.comparison-grid-head.candidate-a { border-top-color: var(--candidate-a); }
+.comparison-grid-head.candidate-b { border-top-color: var(--candidate-b); }
+.candidate-letter { display: block; color: var(--muted); font-size: var(--fs-caption); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+/* The heading carries the candidate's colour. Whichever field it holds,
+   it is the one thing that differs between the columns, so it is the one
+   thing worth colouring. */
+.comparison-grid-head h4 { margin: 2px 0; font-size: var(--fs-label); font-weight: 600; letter-spacing: -.01em; }
+.comparison-grid-head.candidate-a h4 { color: var(--candidate-a); }
+.comparison-grid-head.candidate-b h4 { color: var(--candidate-b); }
+.candidate-secondary { display: block; color: var(--muted); font-size: var(--fs-sm); }
+
+/* On the wrapper span inside the cell, never on the cell. */
+.comparison-flags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+.comparison-flags .badge { font-size: 12px; }
+
+/* Bold and a size up: the gutter is the column a reader scans to
+   find the row they want, so the names have to carry more weight
+   than the muted footnote they were set as. */
+.comparison-label { color: var(--text); font-size: var(--fs-label); font-weight: 650; line-height: 1.35; }
+/* The limit stays light and small — it qualifies the metric, it is
+   not a second name for it. */
+.comparison-limit { display: block; margin-top: 2px; color: var(--muted); font-size: var(--fs-sm); font-weight: 400; opacity: .9; }
+/* Two slots: the digits, then a fixed-width lane for the unit.
+   ===================================================================
+   Right-aligning the whole string is not enough. `ms` is wider than `m`
+   is wider than `MB`, so `17.89 ms` above `0.470 m` still leaves the
+   decimal points ragged — the unit pushes each number a different
+   distance from the edge. Giving the unit its own lane means the digits
+   end where the digits end, on every row.
+
+   Centring, which this used to do, threw the alignment away entirely
+   *and* cancelled the `tabular-nums` declared right beside it. */
+.comparison-value {
+  font: 700 16px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* The two slots live on a wrapper inside the cell, for the reason set
+   out above the column-head rule: a cell that is a grid is not a cell. */
+.comparison-value .value-figure {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.6em;
+  align-items: baseline;
+}
+.comparison-value .num { text-align: right; }
+/* Rendered even when empty: dropping the slot for a unitless row lets
+   its number slide right and breaks the column for every row above. */
+.comparison-value .unit {
+  padding-left: 4px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  color: var(--muted);
+}
+/* Spans both slots — it is prose, not a quantity, so it has no unit to
+   sit beside and no decimal point to line up. */
+/* A clause under the metric name, true of every column in the row —
+   `rule of three`, which qualifies the whole collision-bound row and
+   not any one candidate. */
+.comparison-sub {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+}
+/* The sample a cell's number rests on, under the number. For the
+   collision bound this is not decoration: `3/N` means a lower figure
+   comes from a larger evidence base, so without N the cell reads as the
+   opposite of what it says. */
+.comparison-cell-sub {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  text-align: right;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  font-weight: 400;
+  white-space: normal;
+}
+/* Collisions were observed, so the rule of three does not apply and the
+   platform publishes no bound. Not muted like `not measured` — this is
+   a finding, not a gap: the measurement exists and came out badly. */
+.comparison-value .not-applicable {
+  grid-column: 1 / -1;
+  text-align: right;
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--err);
+}
+
+.comparison-value .not-measured {
+  grid-column: 1 / -1;
+  text-align: right;
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  font-style: italic;
+  color: var(--muted);
+}
+
+/* B−A, on the display scale. Muted and a size down: it is derived from
+   the two columns beside it and must not outweigh them. */
+.comparison-delta {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font: 500 var(--fs-body) var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--muted);
+}
+/* Ahead in green, behind in red — An's call, and worth writing down
+   what it costs so a later reader does not "fix" it back.
+   ===================================================================
+   `--ok` is also the colour of the `G1–G6 cleared` badge at the top of
+   the same column, and `--err` of `blocked at G3`. So a green number
+   sits under a green badge meaning something else: the badge says the
+   candidate is *admissible*, the number says it is a tenth of a second
+   quicker. The colours are doing two jobs at once, and this table is
+   read for the comparison — which is the job An asked them to do here.
+
+   Two things keep that from overclaiming:
+
+   - **Only a real comparison is marked.** A tie, an unrecorded value and
+     a row with no direction all stay uncoloured, so red never appears
+     under a candidate that merely failed to record something. That rule
+     lives in `standings()`, not here.
+   - **Colour is never the only signal.** The leader keeps its weight,
+     and both sides carry the word in an `sr-only` span — a red number is
+     nothing at all to a colourblind reader, and this change is what
+     makes the *losing* side depend on colour for the first time. */
+.comparison-value.is-best {
+  color: var(--ok);
+  font-weight: 700;
+}
+.comparison-value.is-worst {
+  color: var(--err);
+}
+
+/* Who led, in words — the second signal the rule above says colour must
+   never be without.
+   ===================================================================
+   `sr-only` beside each value reaches a screen reader and nobody else:
+   a sighted colourblind reader had green and red and nothing more. This
+   column is that reader's copy of the same fact, and it costs 96px.
+
+   Three states, three renderings, and the third is not the second. A
+   level row and a row that was never a comparison are different facts,
+   so `—` carries a title saying which one it is rather than standing in
+   for both. */
+.comparison-winner {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font: 700 var(--fs-body) var(--font-sans);
+  text-align: center;
+  white-space: nowrap;
+}
+.comparison-winner.is-lead { color: var(--ok); }
+.comparison-winner.is-tie { color: var(--muted); font-weight: 500; }
+.comparison-winner.is-uncompared { color: var(--border-strong); font-weight: 400; cursor: help; }
+
+/* Which way is better, beside the metric name. Muted and small: it
+   qualifies the row, it is not a value in it. */
+.comparison-direction {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  cursor: help;
+}
+
+/* Why there is no weight column. Sits under the table rather than in a
+   tooltip: a reader looking for a missing column is not hovering, they
+   are scanning for it. */
+.comparison-footnote {
+  margin: 0;
+  padding: 10px 16px 14px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+/* The head follows a long table down.
+   ===================================================================
+   Ten metric rows plus a flags row plus the gate detail below run past a
+   laptop viewport, and a number in the fourth column means nothing once
+   the column it belongs to has scrolled away. The `<thead>` cells carry
+   their own background because a sticky cell is transparent by default
+   and the rows would run underneath it. */
+.comparison-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+}
+/* The head keeps its column's wash, so the tint runs unbroken from the
+   candidate's name to its last figure. Declared after the rule above
+   because that one sets a flat panel on every head cell — and both are
+   opaque, which is what a sticky cell needs: a translucent one shows the
+   rows sliding under it. */
+.comparison-table thead th.candidate-a { background: var(--candidate-a-wash); }
+.comparison-table thead th.candidate-b { background: var(--candidate-b-wash); }
+
+/* The six-cell gate grid, now inside a collapsed <details> below the
+   metric grid rather than as its last row.
+   ===================================================================
+   The verdict itself moved up to the column head — a candidate that
+   failed a gate was never ranked (HĐ-7), and reading that eleven metric
+   rows down inverts the contract on screen. What is left here is the
+   *reason*, which is worth a click and not worth a row. */
+/* No `border-top` here: the metric grid's last row already draws its
+   bottom border, and the two together made a 2px line. The rule that
+   used to strip that border from the last row (`.comparison-grid-foot`)
+   went with the gate row it existed for. */
+.comparison-gate-detail { }
+.comparison-gate-detail > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--fs-body);
+  font-weight: 600;
   cursor: pointer;
-  font-size: inherit;
+  /* The default triangle sits outside the flex row and cannot be
+     aligned with the badge; the chevron below replaces it. */
+  list-style: none;
+}
+.comparison-gate-detail > summary::-webkit-details-marker { display: none; }
+.comparison-gate-detail > summary svg { flex: none; transition: transform 120ms ease; }
+.comparison-gate-detail[open] > summary svg:first-child { transform: rotate(90deg); }
+/* Pushed to the end of the row so it lands in the same place whatever
+   the label's length — it is the part a reader scans for. */
+.comparison-gate-detail > summary .badge { margin-left: auto; }
+.comparison-gate-detail-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-4);
+  padding: 0 var(--space-4) var(--space-4);
+}
+/* Names the candidate the way the column head did — the field that
+   actually differs on this run, in that candidate's colour. */
+.comparison-gate-owner { margin: 0 0 var(--space-2); font-size: var(--fs-sm); font-weight: 600; }
+.comparison-gate-owner.candidate-a { color: var(--candidate-a); }
+.comparison-gate-owner.candidate-b { color: var(--candidate-b); }
+.comparison-gate-owner.candidate-n { color: var(--muted); }
+
+/* Both marks a column head can carry, wrapping rather than squeezing:
+   a recommended candidate that also cleared every gate has two. */
+.candidate-marks { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+
+.comparison-gate-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.comparison-gate-grid > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+@media (max-width: 900px) {
+  /* Δ goes first: it is the only column a reader can rebuild by
+     subtracting the two beside it. `display: none` on a cell is fine in
+     a table — the row simply has fewer cells, and nothing shifts. */
+  .comparison-delta { display: none; }
+  .comparison-table { min-width: 560px; }
+  .comparison-gate-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 620px) {
+  .comparison-table { min-width: 460px; }
+  .comparison-table th,
+  .comparison-table td { padding-inline: var(--space-3); }
+  .comparison-value { font-size: var(--fs-body); }
+}
+/* The unpinned-host caveat, inside the one row it qualifies.
+   ===================================================================
+   It was a `.notice` banner across the top of the table. Two things
+   were wrong with that. A box spanning everything reads as a caveat on
+   everything, and G4 measures wall-clock latency — so an unpinned
+   machine muddies p99 and leaves worst clearance, success rate and
+   memory exactly as trustworthy as before. And the warning outweighed
+   what it warned about: a bordered, filled box above a table of plain
+   numbers.
+
+   As a line under the metric name it sits with the figure it is about,
+   at the size of a caveat rather than of a finding. */
+.comparison-host-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 4px;
+  /* Wider than the gutter's text would otherwise wrap to, but capped:
+     a caveat that runs the full width of a wide screen becomes the
+     longest line on the page. */
+  max-width: 44ch;
+  color: var(--warn);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  line-height: 1.45;
+  /* The label cell is `white-space: nowrap` for the metric name; the
+     caveat is a sentence and has to wrap. */
+  white-space: normal;
+}
+.comparison-host-warning svg { flex: none; margin-top: 2px; }
+/* Two export formats, side by side. */
+.decision-export { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* What actually reached the disk, named. Muted rather than a success
+   banner: the file arriving is the ordinary outcome, and the line is
+   there to be checked against the Downloads folder, not celebrated. */
+.decision-export__saved { color: var(--muted); font-size: 12px; }
+
+/* Sending the run on. Wider than the default modal because a message
+   box three words wide invites a message three words long, and this one
+   is the covering note for a document somebody has to act on. */
+.share-modal { max-width: 560px; display: grid; gap: var(--space-3); }
+.share-modal textarea {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+}
+.share-field > span { display: block; margin-bottom: var(--space-1); }
+/* A row of committed addresses plus the one being typed, inside one
+   box, so the whole thing reads as a single field rather than as chips
+   sitting next to an input. */
+.share-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+.share-chips > input {
+  flex: 1 1 8rem;
+  min-width: 8rem;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  padding: var(--space-1);
+}
+.share-chips > input:focus { outline: none; }
+.share-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-1);
+  border-radius: 4px;
+  background: var(--panel-2);
+  font-size: 12px;
+}
+.share-chip > button {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+/* Red on the chip, not on the whole field: one bad address among five
+   good ones is one thing to fix, and marking the field would hide which. */
+.share-chip--invalid { background: var(--err-soft); color: var(--err); }
+.share-attachments {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: var(--space-2);
+  display: grid;
+  gap: var(--space-1);
+}
+.share-attachments label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: 13px;
+}
+.share-attachments .muted { font-size: 12px; }
+.share-mode { font-size: 12px; }
+
+/* Which stack to use. Two groups with a line between them: inside a
+   group the mark ranks, across the line it does not compare — a gate
+   failure the utility cannot see would otherwise crown the wrong
+   candidate. */
+.conclusion-headline { padding: 0 16px 12px; font-size: 14px; }
+.conclusion-headline strong { font-size: 16px; }
+.conclusion-headline--muted { color: var(--muted); }
+.conclusion-headline .badge { margin-left: 8px; }
+.conclusion-group { padding: 0 16px 12px; }
+.conclusion-group h4 { margin: 8px 0; font-size: 13px; color: var(--muted); }
+/* The line itself. Not a divider between two lists of the same kind —
+   it marks where ranking stops meaning anything. */
+.conclusion-group.is-separated { border-top: 2px dashed var(--border-strong); padding-top: 12px; }
+.conclusion-row + .conclusion-row { margin-top: 12px; }
+.conclusion-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.conclusion-stack { font-size: 14px; font-weight: 600; }
+.conclusion-stack code { margin-left: 6px; color: var(--muted); font-size: 11px; font-weight: 400; }
+.conclusion-mark { font: 700 18px var(--font-mono); font-variant-numeric: tabular-nums; }
+.conclusion-bar { height: 10px; margin-top: 5px; border-radius: 5px; background: var(--panel-2); overflow: hidden; }
+.conclusion-bar > span { display: block; height: 100%; background: var(--accent); }
+.conclusion-group.is-separated .conclusion-bar > span { background: var(--muted); }
+.conclusion-objectives { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.conclusion-objectives code { font-weight: 700; }
+.conclusion-flags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.conclusion-flags .badge { font-size: 11px; }
+
+/* The conclusion, at the top of the page that reached it.
+   ===================================================================
+   Two lanes at 1440: the marks, which are a comparison and want width,
+   and the recommendation, which is a single answer and does not. Below
+   1180 they stack — the card is the half a reader on a narrow screen
+   came for, so it must not end up in a 300px column beside a bar. */
+.decision-summary-panel { padding: 0; overflow: hidden; }
+.decision-summary-panel > .panel-head { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
+.decision-summary-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 368px;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+}
+.decision-summary-scores { display: grid; align-content: start; gap: var(--space-4); }
+.decision-summary-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+.decision-summary-stack { font-size: var(--fs-label); font-weight: 650; }
+.decision-summary-stack code { margin-left: var(--space-1); color: var(--muted); font-size: var(--fs-caption); font-weight: 400; }
+.decision-summary-mark {
+  font: 700 var(--fs-h3) var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.decision-summary-bar {
+  height: 10px;
+  margin-top: var(--space-1);
+  border-radius: 4px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.decision-summary-bar > span { display: block; height: 100%; background: var(--accent); }
+/* **Hollow, not greyed.** Grey reads as "scored low", which is the one
+   thing this bar does not mean: a blocked candidate can hold the higher
+   mark and still be ineligible, because a gate removed it and the score
+   never entered into it. An outline says "not in the running" — it is
+   not on the same scale as the filled bars rather than low on it — and
+   no lightness value says that. (A diagonal hatch would have said it
+   too, and would have been the third gradient in a stylesheet that
+   allows exactly two, both of which are animating something.) */
+.decision-summary-row.is-blocked .decision-summary-bar > span {
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+}
+.decision-summary-row.is-blocked .decision-summary-mark,
+.decision-summary-row.is-blocked .decision-summary-stack { color: var(--muted); }
+.decision-summary-blocked { margin-top: var(--space-1); }
+
+.decision-recommendation {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+.decision-recommendation.is-card { border-left-color: var(--ok); }
+.decision-recommendation.is-tie { border-left-color: var(--muted); }
+.decision-recommendation.is-none { border-left-color: var(--warn); }
+.decision-recommendation-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--muted);
+  font-size: var(--fs-caption);
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.decision-recommendation strong { font-size: var(--fs-value); line-height: 1.3; }
+.decision-recommendation p { margin: 0; font-size: var(--fs-sm); }
+.decision-recommendation-evidence { display: flex; flex-wrap: wrap; gap: var(--space-3); margin: var(--space-1) 0 0; }
+.decision-recommendation-evidence div { display: grid; gap: 0; }
+.decision-recommendation-evidence dt { color: var(--muted); font-size: var(--fs-caption); }
+.decision-recommendation-evidence dd {
+  margin: 0;
+  font: 600 var(--fs-sm) var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+/* An interval crossing zero is the one caveat that changes what the
+   number above it is worth, so it is the one allowed a colour. */
+.decision-recommendation-caveat { color: var(--warn); font-weight: 600; }
+.decision-recommendation-verbatim summary { cursor: pointer; font-size: var(--fs-sm); }
+
+/* Three use cases, three answers, on every run — blocked ones included.
+   ===================================================================
+   `is-empty` is a real state and not a styling accident: "nothing here"
+   is the honest answer for two of the three cards on a run where nobody
+   cleared, and it has to look deliberate rather than unfinished. */
+.decision-advice { padding: 0; overflow: hidden; }
+.decision-advice > .panel-head { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
+.decision-advice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+.decision-advice-card {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+.decision-advice-case {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--muted);
+  font-size: var(--fs-caption);
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.decision-advice-answer { font-size: var(--fs-label); line-height: 1.35; }
+.decision-advice-none { color: var(--muted); font-size: var(--fs-label); font-weight: 600; }
+.decision-advice-why { margin: 0; color: var(--muted); font-size: var(--fs-sm); }
+.decision-advice-card.is-empty { border-style: dashed; background: transparent; }
+
+/* The replay, closed. The marker is drawn by the chevron in the summary,
+   so the browser's own triangle would be a second one. */
+.episode-comparison > summary { display: flex; align-items: center; gap: var(--space-2); cursor: pointer; list-style: none; }
+.episode-comparison > summary::-webkit-details-marker { display: none; }
+.episode-comparison > summary h3 { margin: 0; }
+.episode-comparison > summary > svg { transition: transform 120ms ease; color: var(--muted); }
+.episode-comparison[open] > summary > svg { transform: rotate(90deg); }
+.episode-comparison > summary .badge { margin-left: auto; }
+
+@media (max-width: 1180px) {
+  .decision-summary-body { grid-template-columns: minmax(0, 1fr); }
+  .decision-advice-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* The reading of the table, and the picture of it.
+   ===================================================================
+   Ten metrics against two candidates is eighty digits, and every reader
+   was being asked to do the same diff by eye and arrive at the same
+   three sentences. The insights are that reading; the bars are the
+   shape a reader would otherwise have built in their head. */
+.tradeoff-panel { padding: 0; overflow: hidden; }
+.tradeoff-panel > .panel-head { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
+.tradeoff-list { margin: 0; padding: var(--space-3) var(--space-4) var(--space-3) var(--space-6); }
+.tradeoff-list li + li { margin-top: var(--space-2); }
+.tradeoff-list li { font-size: var(--fs-body); line-height: 1.5; }
+/* The rows an insight was read off, so every claim is checkable against
+   the table above rather than taken on trust. */
+.tradeoff-metrics { color: var(--muted); font-size: var(--fs-sm); }
+.tradeoff-tradeoff { font-weight: 600; }
+.tradeoff-unmeasured,
+.tradeoff-atLimit { color: var(--muted); }
+
+.tradeoff-bars { padding: 0 var(--space-4) var(--space-3); border-top: 1px solid var(--border); }
+.tradeoff-bar-row {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+.tradeoff-bar-label { color: var(--muted); font-size: var(--fs-sm); }
+.tradeoff-bar-pair { display: grid; gap: var(--space-1); }
+.tradeoff-bar-line {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) 96px;
+  align-items: center;
+  gap: var(--space-2);
+}
+.tradeoff-bar-name { overflow: hidden; color: var(--muted); font-size: var(--fs-caption); text-overflow: ellipsis; white-space: nowrap; }
+.tradeoff-bar-track { height: 8px; border-radius: 4px; background: var(--panel-2); }
+.tradeoff-bar-track.candidate-a { --bar: var(--candidate-a); }
+.tradeoff-bar-track.candidate-b { --bar: var(--candidate-b); }
+.tradeoff-bar-fill { display: block; height: 100%; border-radius: 4px; background: var(--bar, var(--muted)); }
+/* The leader keeps the candidate's own colour and gains weight. Painting
+   it green would put the identity colour and the outcome colour on the
+   same swatch, which is the collision the table below already refuses. */
+.tradeoff-bar-fill.is-lead { box-shadow: inset 0 0 0 1px var(--text); }
+.tradeoff-bar-value {
+  font: 600 var(--fs-sm) var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+/* A normalised bar with no scale beside it is the chart equivalent of a
+   percentage with no denominator. */
+.tradeoff-scale-note { margin: var(--space-2) 0 0; color: var(--muted); font-size: var(--fs-sm); }
+
+/* Blocked at the gates, on the score panel — same reading as the summary
+   at the top of the page, same reason for not using grey. */
+.conclusion-bar.is-blocked > span {
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+}
+
+@media (max-width: 1180px) {
+  .tradeoff-bar-row { grid-template-columns: minmax(0, 1fr); }
+  .tradeoff-bar-line { grid-template-columns: 96px minmax(0, 1fr) 80px; }
+}
+
+/* The replay's reading tiles, lined up.
+   ===================================================================
+   Seven tiles per candidate, fourteen across the pair, read by scanning
+   left to right and then across to the other panel. Two things were
+   stopping that from being a scan.
+
+   **The unit moved with the number.** `3.20 ms` and `11.66 ms` are
+   different lengths, so one panel's tile wrapped where the other's did
+   not, and the digits shifted every frame of the replay. The unit is now
+   in the label, where it belongs: it is a property of the metric and
+   does not change while the run does.
+
+   **The labels are one line or two, and the values followed them.**
+   `Replan tới giờ` is one line and `Thời gian trong khoảng cảnh báo` is
+   three, so the figures sat at three different heights across one row.
+   Grid rows already stretch the cards to a common height, so pushing the
+   value to the bottom of the card puts every figure in a row on one
+   baseline — which is also the arrangement that survives a label
+   changing length in another language. */
+.stat-grid--readings .stat-card-value { margin-top: auto; }
+/* Block, not the shared flex row: `.stat-card-head` is a flex container
+   with an 8px gap and centred items, which would hold the unit off at
+   arm's length and centre it against a label that has wrapped to three
+   lines. Here the unit is part of the sentence naming the metric, so it
+   flows at the end of it. */
+.stat-grid--readings .stat-card-head { display: block; line-height: 1.35; }
+/* Smaller and muted: it names the metric, it is not part of the reading.
+   Kept out of the figure entirely so nothing about it can change the
+   digits' position. */
+.stat-card-unit {
+  margin-left: var(--space-1);
+  color: var(--muted);
+  font-size: var(--fs-caption);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+/* The evidence panel, read by somebody who did not build the detectors.
+   ===================================================================
+   `near_miss_cluster` is precise, checkable against the replay, and the
+   id every report and trace path is keyed on. It is also the reason a
+   reader who is not on this team could not tell whether the row was a
+   problem. The plain name leads, the code follows it small enough to be
+   an identifier rather than a heading, and the claim under both is the
+   sentence the panel existed to produce and never wrote down. */
+.evidence-pattern {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-weight: 600;
+}
+.evidence-pattern-id {
+  margin-left: var(--space-2);
+  color: var(--muted);
+  font-size: var(--fs-caption);
+}
+.evidence-claim { margin: var(--space-1) 0 0; }
+/* The method note, which describes the experiment rather than the
+   result. Folded away rather than deleted: a reader who disagrees with
+   a claim needs to see how it was reached. */
+.evidence-method { margin-top: var(--space-1); }
+.evidence-method summary { cursor: pointer; }
+.evidence-lattice-note { margin: var(--space-1) 0 var(--space-3); }
+
+/* The preview transport: play, scrub, and the clock that says where.
+   ===================================================================
+   It appears only once a reply carries a track. A still frame answers
+   "is the cart in my way at t = 12" and not "where is it heading", and
+   a scrubber over a single frame is a control that cannot move.
+
+   The clock is not decoration. The scrubber's own position is the only
+   other thing saying which second is drawn, and a slider handle is a
+   poor readout for the moment somebody is trying to name — "the cart
+   reaches the doorway at 12.4 s" is a sentence they will type into the
+   Time box afterwards. */
+.deployment-preview-transport {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding-inline: var(--space-3);
+}
+.deployment-preview-scrub { flex: 1; min-width: 0; }
+.deployment-preview-play { min-width: 72px; }
+.deployment-preview-clock {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The model registry.
+   ===================================================================
+   A row carries two independent verdicts — a decision somebody made
+   (`status`) and what the file turned out to be (`validation_status`) —
+   and `is-unusable` is the two of them read together. Dimmed rather
+   than hidden: a disabled model is still the one a past benchmark ran,
+   and hiding it would leave a reader unable to find what a result
+   refers to. */
+.models-page > * + * { margin-top: var(--space-4); }
+.models-note { margin: 0; font-size: var(--fs-sm); }
+.models-page tr.is-unusable td { opacity: 0.62; }
+.models-owner { margin-left: var(--space-2); }
+.models-shapes { margin-top: var(--space-1); }
+.models-actions { white-space: nowrap; }
+.models-actions button + button { margin-left: var(--space-2); }
+
+.models-upload { padding: 0; overflow: hidden; }
+.models-upload > .panel-head { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
+.models-upload-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) 0;
+}
+.models-upload-wide { grid-column: 1 / -1; }
+/* Three pickers, three meanings — the zip runs, the json is parsed, the
+   pdf is only ever read. Side by side so the difference is visible; one
+   "attachments" control would lose it. */
+.models-upload-files {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+.models-file input[type="file"] { font-size: var(--fs-sm); }
+.models-upload-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4);
+}
+.models-progress { flex: 1; max-width: 320px; }
+
+@media (max-width: 900px) {
+  .models-upload-grid,
+  .models-upload-files { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* The two layers a stack is made of, listed on their own.
+   ===================================================================
+   Above the stacks table because it answers the smaller question first
+   — what algorithms exist at all — and the table below then says which
+   pairs of them are real, which is a different fact: the registry is
+   not a full cross product. */
+.layer-note { margin: 0 0 var(--space-3); }
+.layer-flag { margin-left: var(--space-2); }
+/* The stacks a layer appears in, wrapped rather than run off the row: a
+   controller shared by four stacks is the interesting case, and it is
+   the one a nowrap cell would push out of view. */
+.layer-stacks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+
+/* The grid checkbox, in the legend row it belongs to.
+   ===================================================================
+   The rest of that row says what the marks on the canvas mean; the grid
+   is one more of them, and putting it up beside the source tabs would
+   separate a layer switch from the layer legend. `margin-left: auto`
+   pushes it to the far end so it reads as a control rather than as a
+   fourth thing being explained. */
+.deployment-map-grid-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  cursor: pointer;
+}
+
+/* The grid switch that ships with the view itself.
+   ===================================================================
+   Beside the Top-down / 2.5D buttons because it is the same kind of
+   control: what the canvas *draws*, as against what it contains. Only
+   rendered when the page has not brought its own — the test bench and
+   the deployment form both keep one in a layer strip of their own, and
+   two checkboxes for one flag can disagree on screen while agreeing in
+   state. */
+.map-view-grid {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+/* Previewing a library entry, which stores nothing.
+   ===================================================================
+   The row being previewed is marked so a reader who has scrolled to the
+   panel below can find their way back to which entry it belongs to —
+   ten scenarios and one picture is otherwise a picture with no name on
+   the row it came from. */
+.library-actions { display: flex; gap: var(--space-2); white-space: nowrap; }
+.library-preview > .panel-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.library-preview-static { margin: var(--space-2) 0 0; }
+tr.is-previewing > td { background: var(--accent-soft); }
+
+/* Two modes on one page: filing a new artefact, and changing what is
+   written about one already on the shelf.
+   ===================================================================
+   The `.zip` slot is a sentence rather than a picker. The server refuses
+   to replace a model file — results are filed against the id, so
+   swapping the bytes underneath them turns a measurement into a record
+   of a file that no longer exists — and a control that collects 200 MB
+   before reporting that is a worse answer than saying so first. */
+.models-modes { padding: 0; overflow: hidden; }
+.models-modes .tabs-list { padding: var(--space-2) var(--space-4) 0; }
+.models-edit { display: grid; gap: var(--space-3); padding: var(--space-3) var(--space-4) var(--space-4); }
+.models-edit-empty { padding: var(--space-4); }
+.models-file--fixed {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+}
+.models-file--fixed p { margin: 0; }
+.models-file--fixed button { justify-self: start; }
+
+/* The floating assistant: a launcher and a panel over the page.
+   ===================================================================
+   Over the page rather than in the layout. Every canvas in this app is
+   sized in pixels rather than percentages — `MissionCanvas` maps a press
+   to world coordinates by assuming its surface and its CSS box match —
+   so a dock that took width from the content would move every click on
+   a map by however wide it happened to be.
+
+   Bottom-right because bottom-left already belongs to the framework's
+   own dev overlay, and two circles in one corner is one corner nobody
+   can use. */
+.agent-dock {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.agent-dock-launcher {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--accent-soft-border);
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  box-shadow: var(--shadow);
+}
+/* Hover **deepens** the button. `filter: brightness(1.06)` lightened it,
+   which is the wrong direction twice over: in the light theme it washed
+   a mid blue towards the page it sits on, and in the dark theme it
+   pushed an already-light accent further towards white — both make the
+   control harder to see at the moment the pointer is on it, which is
+   the moment it most has to look pressable.
+   A `color-mix` towards black rather than a filter, because a filter
+   applies to the glyph as well and darkening the icon along with its
+   background loses the contrast between them. Mixing the background
+   alone deepens it in either theme — `#1f6feb` and `#4c9aff` both stay
+   well clear of their own page — and leaves `--accent-contrast` where
+   it was. */
+/* Hover **inverts** the button: pale ground, deep mark.
+
+   Deepening the background alone left the mark itself `--accent-contrast`
+   — white on darker blue — so the thing the pointer is aimed at was the
+   one part that did not change, and it read as washed out rather than
+   as reachable. Swapping ground and figure moves the mark from the
+   lightest colour on the button to the darkest, which is the direction
+   asked for and the one that survives both themes: the pale ground is
+   mixed from `--accent` rather than from plain white, so it stays a
+   blue in the dark theme instead of flaring.
+
+   The first inversion mixed that ground at 12% of `--panel` and drew
+   a 55%-transparent border around it. On screen that did not read as
+   a pale button — it read as the button having gone *see-through*,
+   which is worse than the washed-out mark it was meant to fix. Three
+   things make it definite now: enough accent in the ground to be a
+   colour rather than the page, a border at full strength so the ring
+   has an edge, and a heavier stroke on the mark.
+
+   The two anchors are literal `#fff` and `#000` rather than theme
+   tokens, and that is the point: `--panel` and `--accent-contrast`
+   invert between the themes, so mixing towards either gives a pale
+   ground in one theme and a dark one in the other — and the mark,
+   which has to contrast with it, cannot follow both. Pale ground and
+   deep mark, mixed from `--accent` in both directions, means the
+   button holds its contrast whichever theme it is drawn in, and it is
+   still a blue rather than a white chip because the accent share does
+   the colouring. */
+.agent-dock-launcher:hover,
+.agent-dock-launcher:focus-visible {
+  background: color-mix(in srgb, var(--accent) 32%, #fff);
+  border-color: var(--accent);
+  color: color-mix(in srgb, var(--accent) 45%, #000);
+}
+/* The mark is drawn in strokes, not filled, so on a pale ground the
+   whole button is four thin lines and reads as an empty ring. Thicker
+   on hover, which is the state that asked for the pale ground. */
+.agent-dock-launcher:hover svg,
+.agent-dock-launcher:focus-visible svg { stroke-width: 2.4; }
+
+.agent-dock-panel {
+  display: flex;
+  width: min(380px, calc(100vw - var(--space-6)));
+  max-height: min(560px, calc(100vh - 120px));
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.agent-dock-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.agent-dock-head p { margin: 0; }
+.agent-dock-mark {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.agent-dock-close { margin-left: auto; padding: var(--space-1); }
+
+/* What this question is attached to, said in the panel rather than
+   implied by the page behind it. The dock floats over every route, so a
+   reader who cannot see the chip cannot tell an answer about this run
+   from an answer about the last one they asked. Quiet by default -- it
+   is a statement of fact, not a control competing with the composer --
+   and the button beside it is the way to say no. */
+.agent-dock-context {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-soft);
+  color: var(--muted);
+}
+.agent-dock-context > span { flex: 1; min-width: 0; }
+.agent-dock-context button {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
   text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Scrolls on its own, so a long transcript never grows the panel past
+   the viewport and takes its own composer off screen.
+
+   A column rather than a block because the bubbles inside are the same
+   `.chat-bubble` the full agent page uses, and those place themselves
+   with `align-self` -- left for an answer, right for a question. In a
+   plain block both sit flush left and the thread stops reading as a
+   conversation. */
+.agent-dock-log {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-2);
+  overflow-y: auto;
+  padding: var(--space-3);
+}
+.agent-dock-log p { margin: 0; font-size: var(--fs-sm); line-height: 1.5; }
+/* A bubble holds its own lines: the answer, then what it was read from.
+   The gap above separates turns, not the parts of one. */
+.agent-dock-log .chat-bubble > p + p { margin-top: var(--space-1); }
+
+/* Sits under the composer rather than in the header: it is where the
+   conversation goes next, not what it is. */
+.agent-dock-more {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.agent-dock-composer {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.agent-dock-composer input { flex: 1; min-width: 0; }
+
+/* On a phone the panel is the screen. A 380px card floating over a
+   360px viewport is a card with its own margins clipped. */
+@media (max-width: 560px) {
+  .agent-dock { right: var(--space-2); bottom: var(--space-2); left: var(--space-2); }
+  .agent-dock-panel { width: 100%; }
+}
+
+/* ---------- Settings ---------- */
+
+/* The state line is a panel rather than a strip so it reads as a claim
+   of the same weight as the two panels below it. What is *answering*
+   and what is *configured* are equally load-bearing facts, and a thin
+   banner above the form would file the first as decoration. */
+.settings-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+.settings-status p { margin: 0; font-size: 12px; }
+
+/* Panels here carry a short note under each control. `.muted` gives it
+   the colour; this gives it the spacing, so the note sits with the
+   field it is about rather than floating between two of them. */
+.settings-note {
+  margin: var(--space-2) 0 0;
+  font-size: 12px;
+}
+
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* Beside the input, not above the form: this one is about the value
+   that was typed, and the reader has to see which field it means. */
+.settings-field-error {
+  margin: var(--space-2) 0 0;
+  font-size: 12px;
+  color: var(--err);
+}
+
+/* ---------- Decision detail tabs ---------- */
+
+/* The detail page's dozen panels, cut into four groups. The panels
+   themselves are untouched — `.decision-tabpanel` is a wrapper around
+   the same `.panel` stack, so everything below keeps its own spacing.
+
+   No `display` on the panel itself, deliberately: the inactive panels
+   are hidden with the `hidden` attribute, and the UA rule that
+   implements it (`[hidden] { display: none }`) loses to any author
+   `display`. A base rule here would silently show all four at once. */
+.decision-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.decision-tablist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  /* The line under the strip is what makes a row of buttons read as
+     tabs: the active one sits *on* it and the rest sit above it. */
+  border-bottom: 1px solid var(--border);
+}
+
+.decision-tab {
+  /* Not `.panel`'s ground: a tab is a control, and giving it a card's
+     background makes the strip look like four small panels above the
+     real one. */
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: -1px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.decision-tab:hover { background: var(--hover); color: var(--text); }
+
+.decision-tab.is-active {
+  background: var(--panel);
+  border-color: var(--border);
+  border-bottom: 1px solid var(--panel);
+  color: var(--text);
+}
+
+/* Stated here as well as in the page-wide `.decision-page :is(button…)`
+   rule, because the negative `margin-bottom` above pulls a 2px outline
+   half under the strip's own border. The offset is what puts it back. */
+.decision-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  /* Above the neighbouring tabs, or the ring is clipped by whichever
+     one paints after it. */
+  position: relative;
+  z-index: 1;
+}
+
+.decision-tabpanel[hidden] { display: none; }
+
+/* A strip inside another strip's panel — the `/decisions` overview's
+   "finished" and "episode runs" views. Same control, quieter: two
+   strips of equal weight stacked read as one strip that has wrapped,
+   and the reader loses which one they are steering. No `display` here
+   either, for the reason stated above the block. */
+.decision-tabpanel .decision-tabs { gap: var(--space-3); }
+.decision-tabpanel .decision-tablist { border-bottom-style: dashed; }
+.decision-tabpanel .decision-tab { padding: var(--space-1) var(--space-2); font-size: 12px; }
+
+/* On a phone four labels do not fit across, and a wrapped strip is
+   taller than the panel it labels. Scrolled sideways instead — the
+   labels stay full words, which is what a reader picks by. */
+@media (max-width: 560px) {
+  .decision-tablist {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  .decision-tab { font-size: 12px; padding: var(--space-2); }
+}
+
+/* -- the test bench, while an episode is being computed ------------- */
+
+/* `runOne` awaits the whole simulation before the socket opens, so the
+   press is followed by a wait with nothing moving. The overlay below is
+   the only thing on screen that says the wait is work rather than a
+   stall. It anchors on `.simulate-map-panel`, which carries
+   `position: relative` at its own declaration above — an absolutely
+   positioned child with no positioned ancestor escapes to the page and
+   covers whatever it lands on. */
+
+.simulate-map-busy {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  border-radius: inherit;
+  /* Translucent, not opaque: the map underneath still answers "did it
+     take the deployment I chose", and covering that to say "working"
+     would trade an answer for a noise. */
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.simulate-map-busy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.simulate-map-busy-spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: simulate-map-busy-spin 0.8s linear infinite;
+}
+
+@keyframes simulate-map-busy-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Everything beside the canvas recedes while the canvas is the subject.
+   `pointer-events: none` as well as the fade: a control that looks
+   unavailable and still takes a click is worse than one that only looks
+   it. The canvas panel itself is excluded — it carries the overlay. */
+.simulate-workspace.is-simulating > *:not(.simulate-map-panel) {
+  opacity: 0.45;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+/* A spinner that never stops is a poor companion for anyone who asked
+   the system not to animate. The label still says what is happening. */
+@media (prefers-reduced-motion: reduce) {
+  .simulate-map-busy-spinner { animation-duration: 2.4s; }
+  .simulate-workspace.is-simulating > *:not(.simulate-map-panel) { transition: none; }
 }

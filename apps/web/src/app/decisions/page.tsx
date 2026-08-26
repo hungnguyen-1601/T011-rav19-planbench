@@ -13,15 +13,27 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { Hint } from "@/components/Hint";
 import { EmptyState } from "@/components/EmptyState";
 import { AdviceListView } from "@/components/AdviceListView";
 import { CandidatePicker } from "@/components/CandidatePicker";
+import { DecisionDeploymentPreview } from "@/components/DecisionDeploymentPreview";
+import { DecisionTabs } from "@/components/DecisionTabs";
+import { Icon, type IconName } from "@/components/Icon";
 import { MissionPlacer } from "@/components/MissionPlacer";
+import { Pager } from "@/components/Pager";
 import { api } from "@/lib/api";
+import { usePagination } from "@/lib/pagination";
 import { authFetch, useSession } from "@/lib/auth";
+import {
+  decisionsListTabStore,
+  useDecisionsListTab,
+  type DecisionsListTabId,
+} from "@/lib/decisionsListTabs";
 import { useTranslation } from "@/lib/i18n";
 import {
   cancelDecisionJob,
+  comparedCandidates,
   coverage,
   deriveTaskProfile,
   jobIsLive,
@@ -40,11 +52,25 @@ import {
   type NoCardReason,
   type TaskProfileSummary,
 } from "@/lib/decisions";
+import {
+  CONFLICT_KEY,
+  EXPERIMENT_SCOPES,
+  SCOPE_LABEL_KEY,
+  SCOPE_NOTE_KEY,
+  inferExperimentScope,
+  readScopeViolation,
+  scopeConflict,
+  violationKey,
+  type ExperimentScope,
+} from "@/lib/experimentScope";
 import type { AlgorithmInfo } from "@/lib/benchmarkTypes";
 import type { MapData, MapSummary, Pose2D } from "@/lib/types";
 
 type RankedFilter = "all" | "ranked" | "unranked";
 type ReviewFilter = "all" | "unreviewed" | "reviewed" | "approved";
+/** The two halves of the overview tab: what has finished, and what is
+ *  running right now. */
+type RunsTabId = "results" | "jobs";
 
 /** What has been measured, in four numbers.
  *
@@ -71,6 +97,7 @@ function summarise(runs: DecisionRun[]) {
 const REASON_TONE: Record<Exclude<NoCardReason, null>, string> = {
   interrupted: "warn",
   gate_only: "muted-badge",
+  single_survivor: "muted-badge",
   no_survivors: "muted-badge",
 };
 
@@ -83,6 +110,27 @@ export default function DecisionsPage() {
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>("all");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const tab = useDecisionsListTab();
+  const [runsTab, setRunsTab] = useState<RunsTabId>("results");
+  /* The sweep queue, held **here** rather than inside `LaunchPanel`.
+     ============================================================
+     The queue is started in one tab ("Run a comparison") and read in
+     another ("Episode runs", under the overview), and one poll has to
+     serve both. Leaving the `setInterval` in the launch panel would
+     have worked — every panel of a `DecisionTabs` strip stays mounted,
+     so a hidden panel's effects keep running — but the `jobs` array it
+     produced would have been trapped in the panel that is not the one
+     rendering the table.
+
+     The two alternatives were worse. Polling in both places is two
+     requests every two seconds for one answer, and two answers free to
+     disagree by one tick. Passing a setter *down* into the launch panel
+     and letting it keep the interval leaves the page's list refresh —
+     the thing that must happen when the last job finishes — depending
+     on a child that a future edit could stop rendering. So the state
+     and the timer sit at the page, and the launch panel is handed the
+     array plus a way to say "I just queued one, re-read it". */
+  const [jobs, setJobs] = useState<DecisionJob[]>([]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -108,14 +156,74 @@ export default function DecisionsPage() {
     void refresh();
   }, [refresh]);
 
-  const shown = runs.filter((run) =>
-    reviewFilter === "all"
-      ? true
-      : reviewFilter === "approved"
-        ? run.config_state === "approved"
-        : run.review_state === reviewFilter,
-  );
+  // Poll only while something is live. A page that keeps asking after
+  // everything finished is a page that keeps a laptop awake.
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const fetched = await listDecisionJobs();
+        if (cancelled) return;
+        const wasLive = jobs.some(jobIsLive);
+        setJobs(fetched);
+        if (wasLive && !fetched.some(jobIsLive)) await refresh();
+      } catch {
+        // A failed poll is not worth a red banner: the next one may
+        // succeed, and the launch button reports its own errors.
+      }
+    };
+    void tick();
+    if (!jobs.some(jobIsLive)) return;
+    const timer = setInterval(() => void tick(), 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs.some(jobIsLive)]);
+
+  /* Re-read rather than patch the row locally: cancelling is a request
+     the server may answer differently from what the button assumed —
+     a job that finished in the same second cancels into `succeeded`. */
+  const cancelJob = useCallback(async (jobId: string) => {
+    await cancelDecisionJob(jobId);
+    setJobs(await listDecisionJobs());
+  }, []);
+
+  const shown = runs
+    .filter((run) =>
+      reviewFilter === "all"
+        ? true
+        : reviewFilter === "approved"
+          ? run.config_state === "approved"
+          : run.review_state === reviewFilter,
+    )
+    /* Newest first, **sorted here and not in the API**. The endpoint
+       orders ascending, and flipping it would be the smaller edit — but
+       the dashboard reads the same call and takes `slice(0, 5)` off the
+       front, so a `desc()` on the server would silently turn its "the
+       first five comparisons" into "the latest five". A change nobody
+       asked for, on a page nobody was looking at while making it.
+
+       `localeCompare` on the raw strings rather than `Date.parse`:
+       these are ISO-8601 timestamps, which sort chronologically as
+       text, and parsing would only add a way to produce `NaN`. */
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  /* **Filter first, then page.** The tallies and the result count both
+     read `shown` — every run that survived the filters — and never the
+     page. A five-row page of a forty-run list must not report "5
+     results" or tally five runs; that number is the answer to "how much
+     is there", and scoping it to the window would make it the answer to
+     "how much is on screen", which the reader can already see.
+
+     The page returns to the first one whenever a filter changes, which
+     is what `resetKey` is: standing on page 4 and narrowing to one
+     deployment otherwise leaves a blank table that reads as "no runs
+     for this deployment". */
   const totals = summarise(shown);
+  const paged = usePagination(shown, {
+    resetKey: `${profileId}|${rankedFilter}|${reviewFilter}`,
+  });
   // The utility column appears only once the list is one deployment.
   // `decision_utility` is comparable **within** a deployment and
   // meaningless across them (HĐ-1.4), and a sortable column of it over a
@@ -124,111 +232,211 @@ export default function DecisionsPage() {
   const oneDeployment = profileId !== "";
 
   return (
-    <section>
-      <div className="page-head">
-        <h1>{t("decisions.title")}</h1>
-        <p className="muted">{t("decisions.subtitle")}</p>
-      </div>
+    <section className="decision-page">
+      <header className="page-head decision-page-head">
+        <span className="decision-page-icon"><Icon name="benchmark" size={21} /></span>
+        <div><h1>{t("decisions.title")}</h1><p className="muted">{t("decisions.workspaceSubtitle")}</p></div>
+        {loading ? <span className="decision-running-badge"><span className="decision-spinner" />{t("common.loading")}</span> : null}
+      </header>
 
       {error ? <div className="error-box">{error}</div> : null}
 
-      <LaunchPanel profiles={profiles} onFinished={refresh} />
+      {/* Two jobs, one page, and the reading one goes first.
+          ===============================================================
+          What is above the strip qualifies both halves: the title, and
+          the error from the list fetch — which is also the only thing
+          that says the page failed to load, so filing it under one tab
+          would hide it from whoever is on the other.
 
-      <div className="panel">
-        <div className="stat-grid">
-          <Tally label={t("decisions.tally.runs")} value={totals.runs} />
-          <Tally label={t("decisions.tally.deployments")} value={totals.deployments} />
-          <Tally label={t("decisions.tally.ranked")} value={totals.ranked} />
-          <Tally label={t("decisions.tally.reviewed")} value={totals.reviewed} />
-          <Tally label={t("decisions.tally.approved")} value={totals.approved} />
-        </div>
-        {/* Counting is not ranking, and the distinction is the reason
-            this replaced a leaderboard rather than moving one. */}
-        <p className="muted" style={{ marginTop: 8 }}>
-          {t("decisions.tally.note")}
-        </p>
-      </div>
+          **The launch form is second, and that reverses the old
+          column.** It sat on top because it was added on top, and the
+          result was that arriving to read the table meant scrolling
+          past two candidate pickers, a scope, a map and a queue every
+          time. The source order below follows the strip rather than the
+          old page, because a tab is a window onto a column and the
+          column now reads: what happened, then start another.
 
-      <div className="panel">
-        <div className="row" style={{ alignItems: "flex-end" }}>
-          <label className="field">
-            <span>{t("decisions.filter.deployment")}</span>
-            <select value={profileId} onChange={(event) => setProfileId(event.target.value)}>
-              <option value="">{t("decisions.filter.allDeployments")}</option>
-              {profiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.id}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>{t("decisions.filter.outcome")}</span>
-            <select
-              value={rankedFilter}
-              onChange={(event) => setRankedFilter(event.target.value as RankedFilter)}
-            >
-              <option value="all">{t("decisions.filter.all")}</option>
-              <option value="ranked">{t("decisions.filter.ranked")}</option>
-              <option value="unranked">{t("decisions.filter.unranked")}</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>{t("decisions.filter.humanState")}</span>
-            {/* Filtered here rather than on the server: both states are
-                already on every row, and an endpoint parameter for them
-                would be a second way to ask one question. */}
-            <select
-              value={reviewFilter}
-              onChange={(event) => setReviewFilter(event.target.value as ReviewFilter)}
-            >
-              <option value="all">{t("decisions.filter.all")}</option>
-              <option value="unreviewed">{t("decisions.filter.unreviewed")}</option>
-              <option value="reviewed">{t("decisions.filter.reviewed")}</option>
-              <option value="approved">{t("decisions.filter.approved")}</option>
-            </select>
-          </label>
-        </div>
-        {/* Said out loud rather than left to be inferred from the row
-            count: a reader who filters to "ranked" and sees one row
-            should know the others still exist. */}
-        <p className="muted" style={{ marginTop: 8 }}>
-          {t("decisions.filter.note")}
-        </p>
-      </div>
+          **Hidden, never unmounted** — the reason `DecisionTabs`
+          exists. The launch form holds a half-filled choice of
+          candidates, a scope override, an episode count and a drawn
+          start/goal pose; the overview holds three filter selections and
+          a fetched list. A ternary here would throw one of those away
+          every time the reader looked at the other. */}
+      <DecisionTabs
+        labelKey="decisions.list.tabs.label"
+        active={tab}
+        onSelect={(id) => decisionsListTabStore.set(id as DecisionsListTabId)}
+        tabs={[
+          {
+            id: "overview",
+            labelKey: "decisions.list.tabs.overview",
+            /* Two sub-tabs under "Comparisons run", because the queue
+               belongs with the runs it is producing rather than with the
+               form that started it.
+               ---------------------------------------------------------
+               "Episode runs" used to sit at the bottom of the launch
+               panel, which reads well for the ten seconds after a click
+               and badly for the two hours after that: a sweep outlives
+               the form, and somebody coming back to ask "is it still
+               going" had to open the tab for *starting* a comparison to
+               find out. Under the overview it is where the reader
+               already is — one strip, two questions: what finished, and
+               what is running.
 
-      {loading ? (
-        <p className="muted">{t("common.loading")}</p>
-      ) : shown.length === 0 ? (
-        <EmptyState
-          icon="benchmark"
-          title={t("decisions.empty.title")}
-          body={t("decisions.empty.body")}
-        />
-      ) : (
-        <div className="panel">
-          <div className="table-scroll">
-            <table>
-            <thead>
-              <tr>
-                <th>{t("decisions.column.deployment")}</th>
-                <th>{t("decisions.column.scope")}</th>
-                <th>{t("decisions.column.episodes")}</th>
-                <th>{t("decisions.column.outcome")}</th>
-                {oneDeployment ? <th>{t("decisions.column.utility")}</th> : null}
-                <th>{t("decisions.column.review")}</th>
-                <th>{t("decisions.column.created")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((run) => (
-                <DecisionRow key={run.id} run={run} withUtility={oneDeployment} />
-              ))}
-            </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+               The sub-tab is not remembered across reloads, unlike the
+               strip above it. "What has finished" is the answer to the
+               question the page exists for; a reader who last looked at
+               a job that has since ended should not come back to a table
+               of it. */
+            content: (
+              <DecisionTabs
+                labelKey="decisions.list.runs.tabs.label"
+                active={runsTab}
+                onSelect={(id) => setRunsTab(id as RunsTabId)}
+                tabs={[
+                  {
+                    id: "results",
+                    labelKey: "decisions.list.runs.tabs.results",
+                    content: (
+                      <>
+                        <div className="decision-tally-panel">
+                          <div className="stat-grid decision-tallies">
+                            <Tally icon="benchmark" tone="blue" label={t("decisions.tally.runs")} value={totals.runs} />
+                            <Tally icon="map" tone="cyan" label={t("decisions.tally.deployments")} value={totals.deployments} />
+                            <Tally icon="trophy" tone="purple" label={t("decisions.tally.ranked")} value={totals.ranked} />
+                            <Tally icon="info" tone="orange" label={t("decisions.tally.reviewed")} value={totals.reviewed} />
+                            <Tally icon="check" tone="green" label={t("decisions.tally.approved")} value={totals.approved} />
+                          </div>
+                        </div>
+
+                        <div className="decision-filter-bar">
+                          <div className="decision-filter-fields">
+                            <label className="field">
+                              <span>{t("decisions.filter.deployment")}</span>
+                              <select value={profileId} onChange={(event) => setProfileId(event.target.value)}>
+                                <option value="">{t("decisions.filter.allDeployments")}</option>
+                                {profiles.map((profile) => (
+                                  <option key={profile.id} value={profile.id}>
+                                    {profile.id}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="field">
+                              <span>{t("decisions.filter.outcome")}</span>
+                              <select
+                                value={rankedFilter}
+                                onChange={(event) => setRankedFilter(event.target.value as RankedFilter)}
+                              >
+                                <option value="all">{t("decisions.filter.all")}</option>
+                                <option value="ranked">{t("decisions.filter.ranked")}</option>
+                                <option value="unranked">{t("decisions.filter.unranked")}</option>
+                              </select>
+                            </label>
+                            <label className="field">
+                              <span>{t("decisions.filter.humanState")}</span>
+                              {/* Filtered here rather than on the server: both states are
+                                  already on every row, and an endpoint parameter for them
+                                  would be a second way to ask one question. */}
+                              <select
+                                value={reviewFilter}
+                                onChange={(event) => setReviewFilter(event.target.value as ReviewFilter)}
+                              >
+                                <option value="all">{t("decisions.filter.all")}</option>
+                                <option value="unreviewed">{t("decisions.filter.unreviewed")}</option>
+                                <option value="reviewed">{t("decisions.filter.reviewed")}</option>
+                                <option value="approved">{t("decisions.filter.approved")}</option>
+                              </select>
+                            </label>
+                          </div>
+                          {/* Said out loud rather than left to be inferred from the row
+                              count: a reader who filters to "ranked" and sees one row
+                              should know the others still exist. */}
+                          <span className="decision-result-count">
+                            {shown.length} {t("decisions.filter.results")}{" "}
+                            <Hint text={t("decisions.filter.note")} label={t("decisions.filter.results")} />
+                          </span>
+                        </div>
+
+                        {loading ? (
+                          <p className="muted">{t("common.loading")}</p>
+                        ) : shown.length === 0 ? (
+                          <EmptyState
+                            icon="benchmark"
+                            title={t("decisions.empty.title")}
+                            body={t("decisions.empty.body")}
+                          />
+                        ) : (
+                          <div className="panel decision-table-panel">
+                            <div className="table-scroll">
+                              <table>
+                              <thead>
+                                <tr>
+                                  <th>{t("decisions.column.deployment")}</th>
+                                  <th>{t("decisions.column.candidates")}</th>
+                                  <th>{t("decisions.column.episodes")}</th>
+                                  <th>{t("decisions.column.outcome")}</th>
+                                  {oneDeployment ? <th>{t("decisions.column.utility")}</th> : null}
+                                  <th>{t("decisions.column.review")}</th>
+                                  <th>{t("decisions.column.created")}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {paged.visible.map((run) => (
+                                  <DecisionRow key={run.id} run={run} withUtility={oneDeployment} />
+                                ))}
+                              </tbody>
+                              </table>
+                            </div>
+                            <Pager
+                              page={paged.page}
+                              pageCount={paged.pageCount}
+                              onPage={paged.setPage}
+                              labelKey="decisions.list.pager.label"
+                            />
+                          </div>
+                        )}
+                      </>
+                    ),
+                  },
+                  {
+                    id: "jobs",
+                    labelKey: "decisions.list.runs.tabs.jobs",
+                    /* Moved whole, running and finished alike. A queue
+                       that dropped its finished rows would answer "is
+                       anything running" and lose "did the one I started
+                       an hour ago fail", which is the same table's other
+                       job — and the failed row is the one carrying the
+                       error message. */
+                    content:
+                      jobs.length > 0 ? (
+                        <JobList jobs={jobs} onCancel={cancelJob} />
+                      ) : (
+                        <EmptyState
+                          icon="play"
+                          title={t("decisions.job.empty.title")}
+                          body={t("decisions.job.empty.body")}
+                        />
+                      ),
+                  },
+                ]}
+              />
+            ),
+          },
+          {
+            id: "launch",
+            labelKey: "decisions.list.tabs.launch",
+            /* The launch flow only: the candidate pickers, the scope,
+               the map and the preflight. The queue it produces has moved
+               under the overview — a sweep runs for hours and outlives
+               the form, so "is it still going" is a question about the
+               runs, not about the button. */
+            content: (
+              <LaunchPanel profiles={profiles} jobs={jobs} onJobsChange={setJobs} />
+            ),
+          },
+        ]}
+      />
     </section>
   );
 }
@@ -249,10 +457,17 @@ export default function DecisionsPage() {
  */
 function LaunchPanel({
   profiles,
-  onFinished,
+  jobs,
+  onJobsChange,
 }: {
   profiles: TaskProfileSummary[];
-  onFinished: () => Promise<void>;
+  /** The queue, owned by the page. Read here only to refuse a second
+   *  launch while one is live; drawn in the overview's "Episode runs"
+   *  sub-tab, which is where a sweep that outlives this form belongs. */
+  jobs: DecisionJob[];
+  /** "I just queued one — re-read it." The page holds the polling
+   *  timer, so this is the one moment the queue changes without it. */
+  onJobsChange: (jobs: DecisionJob[]) => void;
 }) {
   const { t } = useTranslation();
   const session = useSession();
@@ -266,7 +481,12 @@ function LaunchPanel({
     local_config: "dwa_coarse",
   });
   const [episodes, setEpisodes] = useState("");
-  const [jobs, setJobs] = useState<DecisionJob[]>([]);
+  /* `null` means "whatever the candidates say", which is the state this
+     panel is in until somebody disagrees with the derivation — not a
+     scope value, so changing a candidate keeps moving the scope with
+     it. Storing the derived value here instead would freeze the first
+     derivation and quietly stop tracking the picker. */
+  const [scopeOverride, setScopeOverride] = useState<ExperimentScope | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [custom, setCustom] = useState<CustomMap>(NO_CUSTOM_MAP);
@@ -275,6 +495,10 @@ function LaunchPanel({
 
   const live = jobs.filter(jobIsLive);
   const base = profiles.find((profile) => profile.id === profileId);
+  const candidates = [first, second];
+  const derivedScope = inferExperimentScope(candidates);
+  const scope = scopeOverride ?? derivedScope;
+  const conflict = scopeConflict(scope, candidates);
   const customReady =
     custom.mapId !== "" &&
     custom.newProfileId.trim() !== "" &&
@@ -304,32 +528,6 @@ function LaunchPanel({
       cancelled = true;
     };
   }, []);
-
-  // Poll only while something is live. A page that keeps asking after
-  // everything finished is a page that keeps a laptop awake.
-  useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      try {
-        const fetched = await listDecisionJobs();
-        if (cancelled) return;
-        const wasLive = jobs.some(jobIsLive);
-        setJobs(fetched);
-        if (wasLive && !fetched.some(jobIsLive)) await onFinished();
-      } catch {
-        // A failed poll is not worth a red banner: the next one may
-        // succeed, and the launch button reports its own errors.
-      }
-    };
-    void tick();
-    if (!jobs.some(jobIsLive)) return;
-    const timer = setInterval(() => void tick(), 2000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobs.some(jobIsLive)]);
 
   const [preflight, setPreflight] = useState<import("@/lib/decisions").PreflightResult | null>(
     null,
@@ -393,13 +591,19 @@ function LaunchPanel({
         : profileId;
       await queueDecision({
         task_profile_id: target,
-        candidates: [first, second],
+        candidates,
+        // Sent, never left out. The client's default is
+        // `global_planner_selection`, so an omitted scope silently
+        // declared a global-planner conclusion over whatever pair was
+        // on the form — and every local-controller comparison, the
+        // commoner one, was refused for a scope nobody chose.
+        scope,
         // Omitted rather than sent as a number when blank: the default
         // is N_min from the deployment's declared risk, and inventing a
         // count here would quietly override the contract's arithmetic.
         ...(Number.isFinite(parsed) && parsed > 0 ? { episodes: parsed } : {}),
       });
-      setJobs(await listDecisionJobs());
+      onJobsChange(await listDecisionJobs());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -410,14 +614,16 @@ function LaunchPanel({
   if (!session) return null;
 
   return (
-    <div className="panel">
+    <div className="panel comparison-setup">
       <div className="panel-head">
-        <h3>{t("decisions.launch.title")}</h3>
+        <h3><Icon name="play" size={18} />{t("decisions.launch.title")}</h3>
       </div>
 
-      {error ? <div className="error-box">{error}</div> : null}
+      {error ? <LaunchError message={error} /> : null}
 
-      <div className="row" style={{ alignItems: "flex-end" }}>
+      <div className="comparison-setup-grid">
+        <fieldset className="comparison-common">
+          <legend>{t("decisions.launch.common")}</legend>
         <label className="field">
           <span>{t("decisions.launch.deployment")}</span>
           <select value={profileId} onChange={(event) => setProfileId(event.target.value)}>
@@ -429,20 +635,6 @@ function LaunchPanel({
             ))}
           </select>
         </label>
-        <CandidatePicker
-          label={t("decisions.launch.candidateA")}
-          value={first}
-          onChange={setFirst}
-          stacks={stacks}
-          configs={configs}
-        />
-        <CandidatePicker
-          label={t("decisions.launch.candidateB")}
-          value={second}
-          onChange={setSecond}
-          stacks={stacks}
-          configs={configs}
-        />
         <label className="field">
           <span>{t("decisions.launch.episodes")}</span>
           <input
@@ -452,6 +644,43 @@ function LaunchPanel({
             inputMode="numeric"
           />
         </label>
+        </fieldset>
+        <div className="candidate-card candidate-a">
+          <div className="candidate-card-head"><span><Icon name="cpu" size={18} /></span><div><small>Candidate A</small><strong>{first.stack || "—"}</strong></div></div>
+        <CandidatePicker
+          label={t("decisions.launch.candidateA")}
+          value={first}
+          onChange={setFirst}
+          stacks={stacks}
+          configs={configs}
+          detailed
+        />
+        </div>
+        <span className="candidate-vs" aria-hidden="true">VS</span>
+        <div className="candidate-card candidate-b">
+          <div className="candidate-card-head"><span><Icon name="cpu" size={18} /></span><div><small>Candidate B</small><strong>{second.stack || "—"}</strong></div></div>
+        <CandidatePicker
+          label={t("decisions.launch.candidateB")}
+          value={second}
+          onChange={setSecond}
+          stacks={stacks}
+          configs={configs}
+          detailed
+        />
+        </div>
+      </div>
+
+      <ScopeField
+        scope={scope}
+        derived={derivedScope}
+        overridden={scopeOverride !== null}
+        conflict={conflict}
+        onChange={setScopeOverride}
+      />
+
+      <DecisionDeploymentPreview deployment={base} />
+
+      <div className="comparison-launch-actions">
         <button
           type="button"
           disabled={checking || !profileId || customReady}
@@ -474,8 +703,12 @@ function LaunchPanel({
           }
           onClick={() => void launch()}
         >
+          {busy ? <span className="decision-spinner" /> : <Icon name="play" size={18} />}
           {customReady ? t("decisions.launch.submitDerived") : t("decisions.launch.submit")}
         </button>
+        {(busy || !profileId || live.length > 0 || (custom.mapId !== "" && !customReady)) ? (
+          <span className="comparison-disabled-reason"><Icon name="info" size={15} />{busy ? t("decisions.launch.busy") : !profileId ? t("decisions.launch.needDeployment") : live.length > 0 ? t("decisions.launch.oneAtATime") : t("decisions.launch.needMap")}</span>
+        ) : null}
       </div>
 
       {preflight ? (
@@ -498,20 +731,113 @@ function LaunchPanel({
         disabled={busy || live.length > 0}
       />
 
-      <p className="muted" style={{ marginTop: 8 }}>
-        {live.length > 0 ? t("decisions.launch.oneAtATime") : t("decisions.launch.note")}{" "}
-        <Link href="/candidates">{t("decisions.launch.whatAreThese")}</Link>
-      </p>
+      <details className="comparison-explainer">
+        <summary><Icon name="info" size={16} /><strong>{t("decisions.launch.howTitle")}</strong><Icon name="chevronDown" size={15} /></summary>
+        {/* The queue warning stays on the page; the standing
+            explanation of what a launch costs goes behind the mark. One
+            is a fact about right now, the other is background. */}
+        <p>{live.length > 0 ? t("decisions.launch.oneAtATime") : <Hint text={t("decisions.launch.note")} label={t("decisions.launch.title")} />} {" "}<Link href="/candidates">{t("decisions.launch.whatAreThese")}</Link></p>
+      </details>
+    </div>
+  );
+}
 
-      {jobs.length > 0 ? (
-        <JobList
-          jobs={jobs}
-          onCancel={async (jobId) => {
-            await cancelDecisionJob(jobId);
-            setJobs(await listDecisionJobs());
-          }}
-        />
+/** What this comparison is allowed to conclude about.
+ *
+ * **Derived, shown, and still editable.** The derivation is right for
+ * every controlled swap — see `lib/experimentScope` — so the field opens
+ * on the answer the two candidates already imply and nobody has to learn
+ * the rule to queue a valid run. It stays editable because a reader may
+ * be asking a question the pair does not spell out, and because a page
+ * that silently decides on their behalf is how the old one shipped a
+ * default nobody could see.
+ *
+ * **The warning does not disable the button.** The server validates the
+ * scope again and is the authority; a client that refused first would be
+ * a second implementation of HĐ-1.4, free to drift from it. What this
+ * buys is the interval — the sweep is queued and runs for hours, so a
+ * refusal that arrives before the click costs a re-pick and one that
+ * arrives after costs an afternoon.
+ */
+function ScopeField({
+  scope,
+  derived,
+  overridden,
+  conflict,
+  onChange,
+}: {
+  scope: ExperimentScope;
+  derived: ExperimentScope;
+  overridden: boolean;
+  conflict: ReturnType<typeof scopeConflict>;
+  onChange: (next: ExperimentScope | null) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <fieldset className="comparison-scope">
+      <legend>{t("decisions.launch.scope")}</legend>
+      <div className="comparison-scope-row">
+        <label className="field">
+          <span>{t("decisions.launch.scope")}</span>
+          <select
+            value={scope}
+            onChange={(event) => onChange(event.target.value as ExperimentScope)}
+          >
+            {EXPERIMENT_SCOPES.map((one) => (
+              <option key={one} value={one}>
+                {t(SCOPE_LABEL_KEY[one])}
+              </option>
+            ))}
+          </select>
+        </label>
+        {overridden ? (
+          <button type="button" onClick={() => onChange(null)}>
+            {t("decisions.launch.scopeReset")}
+          </button>
+        ) : null}
+      </div>
+      {/* What this scope licenses a conclusion about — the whole reason
+          the choice matters, and a sentence nobody would go looking for
+          in the contract. */}
+      <p className="muted comparison-scope-note">{t(SCOPE_NOTE_KEY[scope])}</p>
+      <p className="muted comparison-scope-note">
+        {overridden
+          ? t("decisions.launch.scopeOverridden", { derived: t(SCOPE_LABEL_KEY[derived]) })
+          : t("decisions.launch.scopeDerived")}
+      </p>
+      {conflict ? (
+        <p className="notice notice--warn comparison-scope-note">{t(CONFLICT_KEY[conflict])}</p>
       ) : null}
+    </fieldset>
+  );
+}
+
+/** A launch refusal, in a sentence that names the next move.
+ *
+ * The scope violations are the ones worth translating: they arrive as
+ * *"scope global_planner_selection requires an identical local layer
+ * (component, version and parameters) in every candidate, found 2
+ * variants across ['e1251e…', 'e4d2c…']"* — accurate, and addressed to
+ * whoever wrote the validator. The reader needs one of two moves out of
+ * it, and neither is in the sentence.
+ *
+ * **The server's own words stay, one fold down.** They carry the
+ * candidate ids and the variant count, which is what anybody reporting
+ * the problem needs, and a translation that turned out to be wrong
+ * would otherwise have destroyed the evidence. Anything unrecognised is
+ * shown verbatim: an error mistranslated is worse than one untranslated.
+ */
+function LaunchError({ message }: { message: string }) {
+  const { t } = useTranslation();
+  const violation = readScopeViolation(message);
+  if (!violation) return <div className="error-box">{message}</div>;
+  return (
+    <div className="error-box">
+      <p className="launch-error-headline">{t(violationKey(violation))}</p>
+      <details className="launch-error-detail">
+        <summary>{t("decisions.scope.violation.detail")}</summary>
+        <code>{message}</code>
+      </details>
     </div>
   );
 }
@@ -673,7 +999,14 @@ function MapChoice({
         <>
           <div className="row" style={{ alignItems: "flex-end", marginTop: 12 }}>
             <label className="field">
-              <span>{t("decisions.map.newId")}</span>
+              {/* Attached to the id field, which is the control the note
+                  is about: choosing a map files a *new* deployment
+                  rather than editing the chosen one, and this box is
+                  where its name goes. */}
+              <span>
+                {t("decisions.map.newId")}{" "}
+                <Hint text={t("decisions.map.note")} label={t("decisions.map.newId")} />
+              </span>
               <input
                 value={value.newProfileId}
                 disabled={disabled}
@@ -683,9 +1016,7 @@ function MapChoice({
             </label>
           </div>
 
-          <p className="muted" style={{ marginTop: 8 }}>
-            {t("decisions.map.note")}
-          </p>
+
 
           {mapData ? (
             <MissionPlacer
@@ -741,7 +1072,10 @@ function JobList({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="table-scroll" style={{ marginTop: 12 }}>
+    <div className="decision-progress-panel" aria-live="polite">
+      <div className="decision-progress-head"><span><span className="decision-spinner" />{t("decisions.job.progress")}</span><strong>{jobs.filter(jobIsLive).length > 0 ? t("decisions.job.running") : t("decisions.job.finished")}</strong></div>
+      {jobs.find(jobIsLive)?.total ? <div className="decision-progress-track"><span style={{ width: `${Math.min(100, (jobs.find(jobIsLive)!.progress / jobs.find(jobIsLive)!.total) * 100)}%` }} /></div> : null}
+    <div className="table-scroll">
       <table>
         <thead>
           <tr>
@@ -803,6 +1137,7 @@ function JobList({
         </tbody>
       </table>
     </div>
+    </div>
   );
 }
 
@@ -813,13 +1148,28 @@ function DecisionRow({ run, withUtility }: { run: DecisionRun; withUtility: bool
   const covered = coverage(run);
   const requested = run.report?.sample?.n_episodes_requested;
   const measured = run.report?.sample?.n_episodes ?? 0;
+  const compared = comparedCandidates(run);
 
   return (
     <tr>
       <td>
         <Link href={`/decisions/${run.id}`}>{run.task_profile_id}</Link>
       </td>
-      <td className="muted">{run.experiment_scope ?? "—"}</td>
+      <td>
+        {/* What was actually put against what. The scope name stood
+            here and named the *rule* the pair was chosen under, which
+            is a thing a reader can look up once; which two algorithms
+            ran is the thing they are scanning the list for. */}
+        {compared.length > 0 ? (
+          <ul className="decision-candidate-list">
+            {compared.map((label) => (
+              <li key={label}>{label}</li>
+            ))}
+          </ul>
+        ) : (
+          <span className="muted">—</span>
+        )}
+      </td>
       <td>
         {/* Both counts when they differ. "245" alone reads as a
             deliberate 245-episode run, which is a different claim from
@@ -898,9 +1248,10 @@ function DecisionRow({ run, withUtility }: { run: DecisionRun; withUtility: bool
 }
 
 /** One number with a label, for the tally strip. */
-function Tally({ label, value }: { label: string; value: number }) {
+function Tally({ label, value, icon, tone }: { label: string; value: number; icon: IconName; tone: string }) {
   return (
-    <div className="stat-card">
+    <div className={`stat-card decision-tally decision-tally--${tone}${value === 0 ? " is-zero" : ""}`}>
+      <span className="decision-tally-icon"><Icon name={icon} size={17} /></span>
       <span className="stat-card-head">{label}</span>
       <span className="stat-card-value">{value}</span>
     </div>

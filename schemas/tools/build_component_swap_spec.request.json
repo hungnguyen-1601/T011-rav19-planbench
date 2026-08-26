@@ -1,0 +1,21 @@
+{
+  "$id": "schemas/tools/build_component_swap_spec.request.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "component": {
+      "description": "The single component to vary.",
+      "type": "string"
+    },
+    "hypothesis_id": {
+      "description": "Which hypothesis the experiment would settle.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "hypothesis_id",
+    "component"
+  ],
+  "title": "build_component_swap_spec@1.0.0 arguments",
+  "type": "object"
+}

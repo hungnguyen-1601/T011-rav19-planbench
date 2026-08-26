@@ -23,6 +23,7 @@ engine still checks collisions with the exact robot radius.
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import math
 from collections.abc import Sequence
@@ -34,7 +35,7 @@ from planbench_planning import AStarPlanner, GlobalPlanner, PlanResult
 from planbench_planning.common.local_base import LocalPlanner, LocalPlanResult
 from planbench_schemas.episode import EpisodeEvent, EpisodeResult, EpisodeStatus, Observation
 from planbench_schemas.feasibility import SafetyEnvelope, hard_clearance
-from planbench_schemas.geometry import EPS, Point2D, normalize_angle
+from planbench_schemas.geometry import EPS, Point2D, Pose2D, normalize_angle
 from planbench_schemas.map import CellState, MapData
 from planbench_schemas.recovery import NO_RECOVERY, RecoveryConfig
 from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
@@ -108,6 +109,16 @@ class StackRun(BaseModel):
     Empty means **not recorded**, not "no plans" — episodes stored before
     this field existed come back that way, and reconstructing ``(plan,)``
     for them would claim they never replanned.
+    """
+
+    replan_attempts: int = 0
+    """How many times the loop replanned. The runner's own counter.
+
+    Exposed because the E4.5 sidecar has to be closed against a count
+    the **runner** owns — a validator handed the writer's own tally can
+    only agree with it — and the contract pipeline builds no
+    ``EpisodeMetrics``, so the only other place this number lived was
+    unreachable exactly where it was needed.
     """
 
 
@@ -199,19 +210,174 @@ def _caution_ramp(map_data: MapData, scenario: Scenario) -> float:
     return math.sqrt(2.0) * map_data.resolution / 2.0 + _feasible_clearance(scenario)
 
 
+def _record_attempt(
+    recorder,  # noqa: ANN001 - PlanningInputRecorder, kept untyped so this
+    #                            module does not import the explanation layer
+    *,
+    grid: OccupancyGrid,
+    start: Point2D,
+    goal: Point2D,
+    plan: PlanResult,
+    simulation_tick: int,
+    planner: GlobalPlanner,
+) -> None:
+    """Write one planning attempt to the sidecar, if one is open.
+
+    **The grid recorded is the one the planner was handed**, after
+    inflation and after any standing-room relaxation — not the map on
+    disk. Two attempts in one episode see different grids, and hashing
+    the source map would make them look identical, which would make a
+    replay look reproducible when it is not.
+
+    **And the cells go with it, not only their hash.** A checksum
+    verifies a grid somebody already has; it cannot produce one. The
+    first cut recorded the hash alone, which left a replay with nothing
+    to load — the sidecar existed and the thing it existed for did not
+    work.
+
+    **The planner's actual configuration goes in, not only its name.**
+    Recording ``planner_name`` alone meant every snapshot this runner
+    produced carried empty parameters and no seed — so a replay of an A*
+    with a tuned heuristic would run the default, and a replay of RRT*
+    would grow a different tree. The knobs come off the planner object,
+    where they already are.
+
+    A failed attempt is recorded exactly like a successful one, which is
+    the whole reason the sidecar exists: ``StackRun.plans`` keeps only
+    the paths that were found, and the episode somebody most wants
+    explained is the one where the planner returned nothing.
+    """
+    if recorder is None:
+        return
+    from planbench_explanation.sidecar_writer import GridSnapshot
+
+    snapshot = GridSnapshot.from_cells(
+        grid.map_data.cells,
+        width=grid.width,
+        height=grid.height,
+        resolution=grid.resolution,
+        origin_x=grid.map_data.origin.x,
+        origin_y=grid.map_data.origin.y,
+    )
+    common = {
+        "simulation_tick": simulation_tick,
+        "start_pose": Pose2D(x=start.x, y=start.y, theta=0.0),
+        "goal_pose": Pose2D(x=goal.x, y=goal.y, theta=0.0),
+        "grid": snapshot,
+        "planner_name": _planner_name(planner),
+        "planner_parameters": _planner_parameters(planner),
+        "seed": _planner_seed(planner),
+    }
+    if plan.success:
+        recorder.record(
+            **common,
+            outcome="path",
+            output_plan_checksum=_plan_checksum(plan),
+            # The route itself, not only its hash. A checksum settles
+            # whether two plans are the same; it cannot draw either.
+            output_path=[(point.x, point.y) for point in plan.path],
+        )
+        return
+    recorder.record(
+        **common,
+        outcome="no_path",
+        failure_code=plan.failure_reason or "no_global_path",
+    )
+
+
+def _planner_name(planner: GlobalPlanner) -> str:
+    """The planner's declared name, falling back to its type.
+
+    ``GlobalPlanner`` requires ``name``, but a test double or a plugin
+    wrapper may not have got there, and a snapshot with no planner name
+    is a snapshot nobody can replay.
+    """
+    declared = getattr(planner, "name", None)
+    return str(declared) if declared else type(planner).__name__
+
+
+def _planner_parameters(planner: GlobalPlanner) -> dict[str, object]:
+    """The planner's own config, as values a snapshot can carry.
+
+    Read off ``planner.config`` where there is one — every planner in
+    this repository exposes a frozen pydantic config, and its fields are
+    exactly the knobs a replay has to set. Anything nested or non-scalar
+    is dropped rather than flattened into a shape the snapshot schema
+    would refuse: an incomplete parameter set is visible in the file,
+    while a serialisation guess is not.
+    """
+    config = getattr(planner, "config", None)
+    dump = getattr(config, "model_dump", None)
+    if dump is None:
+        return {}
+    return {
+        key: value
+        for key, value in dump(mode="json").items()
+        if isinstance(value, (bool, int, float, str))
+    }
+
+
+def _planner_seed(planner: GlobalPlanner) -> int | None:
+    """The seed a sampling planner grew its tree from, or ``None``.
+
+    ``None`` for a deterministic planner is a statement rather than a
+    gap — see the snapshot's own field. Both the planner's config seed
+    and the episode seed matter to RRT*, and the episode seed is the
+    one the benchmark varies, so it is the one recorded.
+    """
+    episode_seed = getattr(planner, "episode_seed", None)
+    if episode_seed is not None:
+        return int(episode_seed)
+    config_seed = getattr(getattr(planner, "config", None), "seed", None)
+    return None if config_seed is None else int(config_seed)
+
+
+def _plan_checksum(plan: PlanResult) -> str:
+    """SHA-256 of the polyline the planner returned.
+
+    Rounded to the millimetre before hashing. A path is float arithmetic,
+    and two runs of the same deterministic planner on the same inputs can
+    differ in the last bit; a checksum that changes with the last bit
+    would report every replay as a mismatch and make the comparison
+    useless in the one direction it is allowed to be used.
+    """
+    body = ";".join(f"{point.x:.3f},{point.y:.3f}" for point in plan.path)
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
 def plan_global_path(
-    map_data: MapData, scenario: Scenario, global_planner: GlobalPlanner | None = None
+    map_data: MapData,
+    scenario: Scenario,
+    global_planner: GlobalPlanner | None = None,
+    *,
+    planning_recorder=None,  # noqa: ANN001 - see _record_attempt
+    simulation_tick: int = 0,
 ) -> tuple[PlanResult, OccupancyGrid]:
     """Run the global planner on the inflated grid; also return the raw grid.
 
     Defaults to A* so callers that do not care which global planner runs
     (the RL environment, most tests) keep the historical behaviour.
+
+    ``planning_recorder`` is the E4.5 sidecar. Optional, and a run
+    without one behaves exactly as before — the same shape as
+    ``recorder`` for the trace, and for the same reason: what a run
+    records is a property of the run, not of this function.
     """
     planner = global_planner or AStarPlanner()
+    grid = _planning_grid(map_data, scenario)
     plan = planner.plan(
-        _planning_grid(map_data, scenario),
+        grid,
         scenario.start_pose.position,
         scenario.goal_pose.position,
+    )
+    _record_attempt(
+        planning_recorder,
+        grid=grid,
+        start=scenario.start_pose.position,
+        goal=scenario.goal_pose.position,
+        plan=plan,
+        simulation_tick=simulation_tick,
+        planner=planner,
     )
     return plan, OccupancyGrid(map_data)
 
@@ -459,6 +625,7 @@ def _replan(
     scenario: Scenario,
     global_planner: GlobalPlanner,
     engine: SimulationEngine,
+    planning_recorder=None,  # noqa: ANN001 - see _record_attempt
 ) -> PlanResult:
     """Plan again from where the robot is, around what the robot can see.
 
@@ -492,11 +659,18 @@ def _replan(
     feasible = OccupancyGrid(rasterize_obstacles(believed, scenario.static_obstacles)).inflate(
         _feasible_clearance(scenario)
     )
-    return global_planner.plan(
-        _with_standing_room(grid, feasible, position, _caution_ramp(believed, scenario)),
-        position,
-        scenario.goal_pose.position,
+    handed = _with_standing_room(grid, feasible, position, _caution_ramp(believed, scenario))
+    plan = global_planner.plan(handed, position, scenario.goal_pose.position)
+    _record_attempt(
+        planning_recorder,
+        grid=handed,
+        start=position,
+        goal=scenario.goal_pose.position,
+        plan=plan,
+        simulation_tick=engine.steps,
+        planner=global_planner,
     )
+    return plan
 
 
 def _drive_for(
@@ -846,6 +1020,7 @@ def run_stack(
     recovery: RecoveryConfig | None = None,
     obstacle_speed: float | None = None,
     channel_source: ChannelSource | None = None,
+    planning_recorder=None,  # noqa: ANN001 - see _record_attempt
 ) -> StackRun:
     """Run one episode of ``<global_planner>+<local_planner>`` on a scenario.
 
@@ -872,6 +1047,14 @@ def run_stack(
     one trigger and one budget for all of them. It defaults to disabled,
     and a disabled run is byte-identical to the behaviour before
     replanning existed.
+
+    ``planning_recorder`` writes the E4.5 planning-input sidecar: one
+    record per global planning attempt, the failures included. It has to
+    happen here for the same reason ``recorder`` does, only more so —
+    the costmap a planner was handed exists for the duration of one call
+    and is not in any artifact afterwards, so a replay of a run without
+    one is reconstruction, which the evidence ladder caps at
+    ``associated`` however careful the reconstruction is.
 
     ``recorder`` writes the HĐ-5 trace as the episode happens. It has to
     happen here, inside the one loop, rather than afterwards from
@@ -927,7 +1110,9 @@ def run_stack(
         if isinstance(global_planner, _NoGlobalPlanning)
         else f"{global_planner.name}+{local_planner.name}"
     )
-    plan, raw_grid = plan_global_path(map_data, scenario, global_planner)
+    plan, raw_grid = plan_global_path(
+        map_data, scenario, global_planner, planning_recorder=planning_recorder
+    )
 
     if not plan.success:
         # One row, so the episode exists in the paired comparison. A
@@ -972,7 +1157,12 @@ def run_stack(
             else None
         )
         return StackRun(
-            algorithm=algorithm, plan=plan, result=result, metrics=metrics, plans=(plan,)
+            algorithm=algorithm,
+            plan=plan,
+            result=result,
+            metrics=metrics,
+            plans=(plan,),
+            replan_attempts=0,
         )
 
     engine = SimulationEngine()
@@ -983,6 +1173,18 @@ def run_stack(
     # deployment, not from the controller's own configuration, which is
     # what stops a candidate narrowing the set the planner used (L2).
     envelope = SafetyEnvelope.for_noise(scenario.sensor_noise)
+    # A controller may carry its own seam. Asked of the object rather
+    # than required of the caller, because the two call sites that build
+    # a controller — the simulation service and the benchmark runner —
+    # get one back from `build_local_planner` and have no way to know
+    # whether it needs channels: that is a property of the controller,
+    # and this is the controller answering for itself.
+    #
+    # Still one protocol and still no algorithm named. An explicit
+    # argument wins, so a caller wiring a source by hand is never
+    # overruled by one the planner happened to bring.
+    if channel_source is None:
+        channel_source = getattr(local_planner, "channel_source", None)
     if channel_source is not None:
         channel_source.bind(engine, raw_grid, scenario.random_seed)
     _reset_local(
@@ -1102,7 +1304,7 @@ def run_stack(
             last_trigger_distance = goal_distance
             if progressed:
                 recovery_rung = 0
-            new_plan = _replan(map_data, scenario, global_planner, engine)
+            new_plan = _replan(map_data, scenario, global_planner, engine, planning_recorder)
             # **A replan is compute the next control step had to wait
             # for**, and until it was charged it cost nothing the platform
             # could see: `recorder.record` runs only in the `recompute`
@@ -1326,5 +1528,10 @@ def run_stack(
         else None
     )
     return StackRun(
-        algorithm=algorithm, plan=plan, result=result, metrics=metrics, plans=tuple(plans)
+        algorithm=algorithm,
+        plan=plan,
+        result=result,
+        metrics=metrics,
+        plans=tuple(plans),
+        replan_attempts=replan_attempts,
     )

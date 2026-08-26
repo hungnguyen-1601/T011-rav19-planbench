@@ -23,6 +23,7 @@ export type IconName =
   | "sparkles"
   | "inbox"
   | "info"
+  | "settings"
   | "user"
   | "menu"
   | "close"
@@ -38,6 +39,7 @@ export type IconName =
   | "plus"
   | "refresh"
   | "check"
+  | "copy"
   | "alert";
 
 const PATHS: Record<IconName, React.ReactNode> = {
@@ -104,6 +106,12 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <path d="M12 11v5M12 8h.01" />
     </>
   ),
+  settings: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2.5 13.4 5a7.6 7.6 0 0 1 2 .8l2.7-.7 1.8 3.1-1.8 2a7.6 7.6 0 0 1 0 1.6l1.8 2-1.8 3.1-2.7-.7a7.6 7.6 0 0 1-2 .8L12 21.5l-1.4-2.5a7.6 7.6 0 0 1-2-.8l-2.7.7-1.8-3.1 1.8-2a7.6 7.6 0 0 1 0-1.6l-1.8-2 1.8-3.1 2.7.7a7.6 7.6 0 0 1 2-.8Z" />
+    </>
+  ),
   user: (
     <>
       <circle cx="12" cy="8" r="4" />
@@ -151,6 +159,12 @@ const PATHS: Record<IconName, React.ReactNode> = {
     </>
   ),
   check: <path d="m5 13 4 4L19 7" />,
+  copy: (
+    <>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3" />
+    </>
+  ),
   alert: (
     <>
       <path d="M12 3 2 20h20L12 3Z" />

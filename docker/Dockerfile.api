@@ -14,6 +14,12 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
 # Dependencies first: they change far less often than the source, so
 # this layer stays cached across ordinary code edits.
 COPY docker/requirements-api.txt /tmp/requirements-api.txt
@@ -25,18 +31,21 @@ COPY apps/api/ /app/apps/api/
 COPY alembic/ /app/alembic/
 COPY alembic.ini /app/alembic.ini
 COPY docs/ /app/docs/
+COPY maps/ /app/maps/
+COPY profiles/ /app/profiles/
+COPY configs/ /app/configs/
+COPY ml/ /app/ml/
+COPY contracts/ /app/contracts/
+COPY schemas/ /app/schemas/
 
-ENV PYTHONPATH=/app/packages/schemas:/app/packages/planning:/app/packages/metrics:/app/packages/benchmark:/app/services/simulator:/app/services/tracking:/app/services/agent_service:/app/apps/api
+ENV PYTHONPATH=/app/packages/schemas:/app/packages/planning:/app/packages/metrics:/app/packages/benchmark:/app/packages/decision:/app/packages/explanation:/app/packages/plugin_sdk:/app/services/simulator:/app/services/tracking:/app/services/agent_service:/app/ml:/app/apps/api
 
 # Artifacts are written here; compose mounts a volume so they survive a
 # container rebuild (they are referenced by URI from the database).
 ENV PLANBENCH_ARTIFACT_DIR=/data/artifacts
-RUN mkdir -p /data/artifacts
-
-# Never run as root: a container that writes to a mounted volume as root
-# leaves files the host user cannot clean up.
-RUN useradd --create-home --uid 10001 planbench \
-    && chown -R planbench:planbench /data
+RUN mkdir -p /data/artifacts /app/maps/custom \
+    && useradd --create-home --uid 10001 planbench \
+    && chown -R planbench:planbench /app /data
 USER planbench
 
 EXPOSE 8000

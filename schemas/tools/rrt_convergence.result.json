@@ -1,0 +1,76 @@
+{
+  "$id": "schemas/tools/rrt_convergence.result.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "measurements": {
+      "additionalProperties": false,
+      "properties": {
+        "budget_multiplier": {
+          "description": "The larger budget, as a multiple of configured.",
+          "type": "number",
+          "unit": "ratio"
+        },
+        "seeds_reaching_corridor": {
+          "description": "Seeds whose tree reached it.",
+          "type": "number",
+          "unit": "count"
+        },
+        "seeds_run": {
+          "description": "Seeds the corridor was attempted on.",
+          "type": "number",
+          "unit": "count"
+        },
+        "success_rate_at_budget": {
+          "description": "Rate at the configured sample budget.",
+          "type": "number",
+          "unit": "ratio"
+        },
+        "success_rate_at_high_budget": {
+          "description": "Rate at the larger preregistered budget. The pair is the measurement: a rate that does not move with the budget points at the geometry.",
+          "type": "number",
+          "unit": "ratio"
+        }
+      },
+      "required": [
+        "seeds_run",
+        "seeds_reaching_corridor",
+        "success_rate_at_budget",
+        "success_rate_at_high_budget",
+        "budget_multiplier"
+      ],
+      "type": "object"
+    },
+    "references": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": []
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ref": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "measurements"
+  ],
+  "title": "rrt_convergence@2.0.0 output",
+  "type": "object"
+}

@@ -16,6 +16,7 @@ from planbench_api.model_registry import (
     RegistryError,
     RobotProfile,
 )
+from planbench_api.plugin_registry import PluginBundleRecord
 from planbench_api.repositories import new_id
 
 
@@ -177,7 +178,95 @@ class InMemoryModelRepository:
         return seen
 
 
+class InMemoryPluginBundleRepository:
+    """Imported algorithm bundles, in memory.
+
+    No ``delete``. A bundle is what a benchmark *ran*: results are filed
+    against its id, and removing the row turns those measurements into
+    records of nothing. Disabling is the retirement path — the same rule
+    the models table follows, and the reason its delete button was never
+    wired up either.
+    """
+
+    def __init__(self) -> None:
+        self._items: dict[str, PluginBundleRecord] = {}
+        self._lock = threading.RLock()
+
+    def create(self, record: PluginBundleRecord) -> PluginBundleRecord:
+        with self._lock:
+            stamp = now_iso()
+            stored = record.model_copy(
+                update={
+                    "id": record.id or new_id(),
+                    "created_at": record.created_at or stamp,
+                    "updated_at": stamp,
+                }
+            )
+            self._require_unique(stored)
+            self._items[stored.id] = stored
+            return stored
+
+    def _require_unique(self, record: PluginBundleRecord) -> None:
+        """One plugin, one archive, once.
+
+        **Keyed on the bytes, not on the label.** A candidate hashes on
+        this checksum, so two rows carrying the same archive would be two
+        names for one piece of code. Two rows carrying *different*
+        archives are different controllers whatever their manifests call
+        themselves — which is why re-uploading changed code is accepted
+        even when the author left the manifest version alone.
+        """
+        for other in self._items.values():
+            if (
+                other.id != record.id
+                and other.plugin_id == record.plugin_id
+                and other.checksum == record.checksum
+            ):
+                raise RegistryError(
+                    f"this exact bundle is already imported as {other.label!r} "
+                    f"(revision {other.revision}). Nothing in it has changed, so there "
+                    "is nothing new to measure; change the code and upload again"
+                )
+
+    def next_revision(self, plugin_id: str) -> int:
+        """Which upload of this plugin the next one will be."""
+        seen = [r.revision for r in self._items.values() if r.plugin_id == plugin_id]
+        return max(seen, default=0) + 1
+
+    def others_of(self, plugin_id: str, exclude_id: str) -> list[PluginBundleRecord]:
+        """Every other upload of the same plugin, newest first."""
+        return [
+            record
+            for record in self.list()
+            if record.plugin_id == plugin_id and record.id != exclude_id
+        ]
+
+    def get(self, bundle_id: str) -> PluginBundleRecord:
+        record = self._items.get(bundle_id)
+        if record is None:
+            raise NotFoundError("algorithm bundle", bundle_id)
+        return record
+
+    def save(self, record: PluginBundleRecord) -> PluginBundleRecord:
+        with self._lock:
+            self.get(record.id)
+            self._require_unique(record)
+            stored = record.model_copy(update={"updated_at": now_iso()})
+            self._items[stored.id] = stored
+            return stored
+
+    def list(self) -> list[PluginBundleRecord]:
+        return sorted(self._items.values(), key=lambda record: record.created_at, reverse=True)
+
+    def find_by_plugin(self, plugin_id: str, plugin_version: str) -> PluginBundleRecord | None:
+        for record in self._items.values():
+            if record.plugin_id == plugin_id and record.plugin_version == plugin_version:
+                return record
+        return None
+
+
 __all__ = [
     "InMemoryModelRepository",
+    "InMemoryPluginBundleRepository",
     "InMemoryRobotProfileRepository",
 ]

@@ -176,3 +176,32 @@ def test_history_is_prepended_to_the_conversation() -> None:
     service(provider).converse("now", history=history)
     texts = [message.text for message in provider.requests[0].messages]
     assert texts[:2] == ["earlier", "noted"]
+
+
+class TestTheRecordOnScreen:
+    """What the reader has open travels as a fact about the question.
+
+    Not as a rule. The system prompt is where the honesty rules live and
+    it is the same on every turn; which page somebody happens to be on is
+    neither honest nor dishonest, and putting it there would make the
+    model's constitution vary by route.
+    """
+
+    def test_the_preamble_reaches_the_model_ahead_of_the_question(self) -> None:
+        provider = scripted(answer("read"))
+        turn, _ = service(provider).converse(
+            "why did this one end that way?", preamble="The reader is looking at decision run r-1."
+        )
+        sent = provider.requests[0].messages[0].text
+        assert sent.index("decision run r-1") < sent.index("why did this one")
+        assert turn.text == "read"
+
+    def test_it_is_a_user_turn_not_a_rule(self) -> None:
+        provider = scripted(answer("read"))
+        service(provider).converse("hello", preamble="The reader is looking at run r-1.")
+        assert provider.requests[0].system == CHAT_SYSTEM
+
+    def test_no_preamble_leaves_the_question_exactly_as_typed(self) -> None:
+        provider = scripted(answer("read"))
+        service(provider).converse("hello")
+        assert provider.requests[0].messages[0].text == "hello"

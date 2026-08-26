@@ -62,6 +62,12 @@ beforeEach(() => {
     sessionStorage: new MemoryStorage(),
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
+    // `auth.ts` imports `API_BASE`, which falls back to the page's own
+    // origin when no `NEXT_PUBLIC_API_URL` is baked in — the desktop
+    // build's case. A fake window with no `location` is not a browser
+    // any of this code has to survive, and leaving it out made every
+    // case here fail on module *import* rather than on an assertion.
+    location: { origin: "http://localhost:8000" },
   });
 });
 

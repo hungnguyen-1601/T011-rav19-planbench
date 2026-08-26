@@ -57,3 +57,6 @@ scipy==1.18.0
 SQLAlchemy==2.0.51
 alembic==1.18.5
 psycopg[binary]==3.2.10
+
+# Export selection run to .xlsx.
+openpyxl==3.1.5

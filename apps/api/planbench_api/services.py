@@ -121,6 +121,20 @@ class MapService:
     def create(self, map_data: MapData) -> StoredMap:
         return self._repos.maps.create(map_data)
 
+    def adopt(self, map_data: MapData) -> StoredMap:
+        """Store this grid, or hand back the row that already holds it.
+
+        **The difference from `create` is who is asking.** `POST /maps`
+        is a person filing a map and means it: two uploads of the same
+        grid under different names are two things that person wanted.
+        Importing a library scenario is not that — it is a caller who
+        needs *a* map id for a grid the library already defines, and
+        giving it a fresh row every time is how a form that merely
+        opened wrote 117 copies of one hall into the store.
+        """
+        existing = self._repos.maps.find_by_checksum(map_data.checksum())
+        return existing if existing is not None else self._repos.maps.create(map_data)
+
     def get(self, map_id: str) -> StoredMap:
         return self._repos.maps.get(map_id)
 
@@ -151,6 +165,23 @@ class ScenarioService:
         if errors:
             raise DomainValidationError("scenario is invalid for this map", errors)
         return self._repos.scenarios.create(map_id, scenario)
+
+    def adopt(self, map_id: str, scenario: Scenario) -> StoredScenario:
+        """The scenario already stored on this map under this name, or a
+        new one.
+
+        Matched on map **and** name rather than on content: a library
+        scenario is generated from its name, so two imports of the same
+        entry onto the same grid are the same description twice. Two
+        scenarios that merely *look* alike are not the same claim — the
+        poses are an author's choice — so nothing broader than this is
+        collapsed, and `create` is left alone for the callers filing a
+        scenario somebody wrote.
+        """
+        for stored in self._repos.scenarios.list():
+            if stored.map_id == map_id and stored.scenario.name == scenario.name:
+                return stored
+        return self.create(map_id, scenario)
 
     def get(self, scenario_id: str) -> StoredScenario:
         return self._repos.scenarios.get(scenario_id)

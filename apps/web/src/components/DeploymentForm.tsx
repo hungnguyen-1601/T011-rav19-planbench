@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import Link from "next/link";
 
 import { Hint } from "@/components/Hint";
+import { Icon, type IconName } from "@/components/Icon";
 import { MapPainter } from "@/components/MapPainter";
 import {
   MissionCanvas,
@@ -71,12 +72,13 @@ import {
   withValue,
   type ProfileDraft,
 } from "@/lib/deployments";
-import { COLUMN_GAP_PX, PANEL_MIN_PX, canvasSize, sideBySide } from "@/lib/canvasSize";
+import { COLUMN_GAP_PX, canvasSize, sideBySide } from "@/lib/canvasSize";
 import { emptyBorderedMap } from "@/lib/demoMap";
 import { firstTabWithError, tallyErrors, type FormTab } from "@/lib/formTabs";
 import { useTranslation } from "@/lib/i18n";
 import { listRobotProfiles, type RobotProfile } from "@/lib/models";
 import type { LibraryEntry } from "@/lib/platformTypes";
+import { advance, playableSeconds, trafficAt } from "@/lib/previewPlayback";
 import type { MapData, MapSummary, Point2D, Pose2D, ScenarioPreview } from "@/lib/types";
 import { safetyEnvelope } from "@/lib/keepOut";
 
@@ -235,6 +237,33 @@ export function DeploymentForm({
   const [preview, setPreview] = useState<ScenarioPreview | null>(null);
   const [previewTime, setPreviewTime] = useState(0);
   const [previewSeed, setPreviewSeed] = useState(0);
+  /** Where the playhead is, and whether it is moving.
+   *
+   * Separate from `previewTime`, which is the instant the *request*
+   * named. Folding them together would make dragging the scrubber
+   * invalidate the reply it is scrubbing — `scrubPreview` clears the
+   * picture whenever the request's numbers change, and it has to keep
+   * doing that. The playhead moves inside one answer; `previewTime`
+   * asks a different question. */
+  const [playhead, setPlayhead] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  /** Draw the cell grid on the mission map.
+   *
+   * **The grid was always on here and nobody could see it.**
+   * `MapCanvas` defaults `showGrid` to `true` and `MissionCanvas` never
+   * forwarded the prop, so this canvas has been drawing one since it
+   * existed — invisible only because the ink was white at 4% alpha
+   * against a floor that is near-white in the light theme. Fixing the
+   * ink made it appear, which is when it became clear this page had no
+   * way to turn it off.
+   *
+   * Its own state, not the test bench's. That page keeps an identical
+   * checkbox and the two are deliberately unconnected: they are two
+   * canvases doing different jobs — one is a map being authored, the
+   * other a replay being watched — and a preference shared between them
+   * would mean turning the grid off to read a trajectory also turned it
+   * off for the person placing a start pose on a different screen. */
+  const [showGrid, setShowGrid] = useState(false);
   /** Which panel of controls is on top.
    *
    * Opens on the mission, because that is the tab whose controls the
@@ -675,6 +704,40 @@ export function DeploymentForm({
    * this form asked for and clears on every edit — a filing refusal
    * belongs to the page and can outlive the document it was about, so it
    * must not win a `find` against a fresher answer. */
+  /* **Above the `!draft` guard, and that is not a preference.** This
+     hook sat below it, so on the render before the draft arrived React
+     saw one fewer hook than on the render after — which is the order
+     change it refuses to guess about, and it took the whole page down
+     with a Rules of Hooks error. Nothing here reads `draft`; it was
+     simply written next to the preview code it belongs with. */
+  /** Walk the playhead while it is running.
+   *
+   * `requestAnimationFrame` rather than an interval, and real elapsed
+   * time rather than a fixed increment per frame: a tab in the
+   * background is throttled to one frame a second, and adding a
+   * constant each time would make the traffic crawl there and race on a
+   * 144 Hz screen. What is being played back is seconds of a simulated
+   * episode, so seconds are what the clock has to count. */
+  useEffect(() => {
+    if (!playing) return;
+    const span = playableSeconds(preview);
+    if (span <= 0) return;
+    let frame = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const elapsed = (now - last) / 1000;
+      last = now;
+      setPlayhead((current) => {
+        const next = advance(current, elapsed, span);
+        if (!next.running) setPlaying(false);
+        return next.seconds;
+      });
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [playing, preview]);
+
   const shownErrors = useMemo(
     () => [...dryRunErrors, ...fieldErrors],
     [dryRunErrors, fieldErrors],
@@ -955,6 +1018,10 @@ export function DeploymentForm({
   const scrubPreview = () => {
     previewSeq.supersede();
     setPreview(null);
+    // A timer left running over a cleared picture keeps counting
+    // seconds of a world that is no longer on screen.
+    setPlaying(false);
+    setPlayhead(0);
   };
 
   /** The request this draft can currently support, or nothing.
@@ -999,7 +1066,14 @@ export function DeploymentForm({
       // Replies can overtake each other; only the newest request may
       // draw. Without this a slow answer about t = 0 lands after a quick
       // one about t = 40 and the canvas shows the older instant.
-      if (previewSeq.isCurrent(asked)) setPreview(answer);
+      if (previewSeq.isCurrent(asked)) {
+        setPreview(answer);
+        // A new answer is a new world; leaving the playhead at 30 s
+        // would show the middle of a route nobody has watched the start
+        // of, under a scrubber that had not moved.
+        setPlayhead(0);
+        setPlaying(false);
+      }
     } catch (caught) {
       if (!previewSeq.isCurrent(asked)) return;
       setPreview(null);
@@ -1015,6 +1089,7 @@ export function DeploymentForm({
       error={errorFor(path)}
       value={at(draft, path)}
       step={step}
+      unit={unitFor(path)}
       disabled={frozen}
       onChange={(value) => set(path, value)}
     />
@@ -1053,7 +1128,7 @@ export function DeploymentForm({
     const current = Number(at(draft, path) ?? 0);
     const on = current > 0;
     return (
-      <div key={path} className="field">
+      <div key={path} className="field deployment-noise-field">
         <label className="row" style={{ alignItems: "center", gap: 6, marginBottom: 4 }}>
           <input
             type="checkbox"
@@ -1150,14 +1225,33 @@ export function DeploymentForm({
    *  its own cap. The panel then takes the rest — so on a wide screen
    *  the spare room goes to the controls rather than becoming a gap
    *  between two things that are supposed to sit beside each other. */
-  const roomForMap = twoColumns ? shellWidth - PANEL_MIN_PX - COLUMN_GAP_PX : shellWidth;
-  const canvas = canvasSize(roomForMap, mapAspect);
+  /* **The map is back in a column, at half the form's width.**
+     It had a full-width row of its own under both configuration
+     columns, which drew it as large as the form and left the tabs
+     beside a strip of empty floor. The room it gets is now the left
+     half: the form's width, less the gap between the columns, halved,
+     less the frame's own margin, border and padding.
+
+     Measured and passed down as a number rather than left to CSS.
+     `MissionCanvas` maps a press to world coordinates by assuming its
+     drawing surface and its CSS box are the same size, so stretching
+     the element while the prop stays put lands every click somewhere
+     other than the pointer — silently, because the map still looks
+     right. */
+  const roomForMap = twoColumns
+    ? Math.max(0, (shellWidth - COLUMN_GAP_PX) / 2 - 44)
+    : Math.max(0, shellWidth - 44);
+  const canvas = canvasSize(roomForMap, mapAspect, roomForMap);
 
   const badgeFor = (tab: FormTab) => tally.byTab[tab] || undefined;
   const badgeWord = (tab: FormTab) =>
     tally.byTab[tab]
       ? t("deployments.form.tabs.badge", { n: String(tally.byTab[tab]) })
       : undefined;
+
+  const identityErrors = shownErrors.filter((entry) =>
+    ["id", "claim_level", "deployment_role"].includes(entry.path),
+  ).length;
 
   const missionTab = (
     <>
@@ -1542,30 +1636,46 @@ export function DeploymentForm({
     { id: "policies", label: t("deployments.form.tabs.policies"), content: policiesTab },
     { id: "hardware", label: t("deployments.form.tabs.hardware"), content: hardwareTab },
   ];
+  const sectionIcons: Record<FormTab, IconName> = {
+    mission: "map",
+    traffic: "alert",
+    robot: "cpu",
+    constraints: "check",
+    noise: "sparkles",
+    policies: "benchmark",
+    hardware: "monitor",
+  };
   const TABS: TabDefinition<FormTab>[] = TAB_CONTENT.map((tab) => ({
     ...tab,
+    content: (
+      <DeploymentSection
+        title={tab.label}
+        icon={sectionIcons[tab.id]}
+        tone={tab.id}
+        errors={tally.byTab[tab.id]}
+        checked={checkedClean}
+      >
+        {tab.content}
+      </DeploymentSection>
+    ),
     badge: badgeFor(tab.id),
     badgeLabel: badgeWord(tab.id),
   }));
 
-  const mapColumn = (
-    <div>
-      {/* **Everything in this column stops where the map stops.**
-          Redundant in two columns, where the track is already exactly
-          the canvas — but not in one, where the column is the whole
-          form and the canvas is still capped. Without it a wide phone
-          in portrait, or any window between the collapse point and the
-          cap, would stretch the scenario picker well past the map it
-          belongs to. */}
-      <div style={{ maxWidth: canvas.width }}>
-      <h4>{t("deployments.form.map")}</h4>
-      <div className="toolbar">
+  const mapSelector = (
+    <div className="deployment-map-selector">
+      <div className="deployment-map-workspace">
+      <div className="deployment-map-head">
+        <div><span className="deployment-section-icon" aria-hidden="true"><Icon name="map" size={18} /></span><h4>{t("deployments.form.map")}</h4></div>
+        {mapData ? <span className="badge muted-badge">{mapData.width} × {mapData.height}</span> : null}
+      </div>
+      <div className="deployment-map-sources" role="group" aria-label={t("deployments.form.map")}>
         {(["library", "stored", "drawn"] as MapSource[]).map((option) => (
           <button
             key={option}
             type="button"
             disabled={frozen}
-            className={source === option ? "active" : undefined}
+            className={`deployment-map-source${source === option ? " active" : ""}`}
             aria-pressed={source === option}
             onClick={() => {
               // An adoption started from the source being left is no
@@ -1577,7 +1687,7 @@ export function DeploymentForm({
             {t(`deployments.form.source.${option}`)}
           </button>
         ))}
-        <Link href="/maps">{t("decisions.map.drawOne")}</Link>
+        <Link className="deployment-map-library-link" href="/maps">{t("decisions.map.drawOne")}</Link>
       </div>
 
       {source === "library" ? (
@@ -1619,19 +1729,29 @@ export function DeploymentForm({
         </label>
       ) : null}
 
-      {source === "drawn" ? (
-        <DrawNewMap
-          disabled={frozen}
-          /* The claim is taken as the saved grid arrives rather than
-             before the save: `DrawNewMap` owns that request and disables
-             its own button while it runs, so there is never a second one
-             to be overtaken by. */
-          onSaved={(data, id) => void adopt(data, id, null, adoption.claim())}
-          onError={setError}
-        />
-      ) : null}
+      </div>
+    </div>
+  );
 
+  const mapArea = (
+    <div className="deployment-map-fullwidth">
+      {source === "drawn" ? (
+        <div className="deployment-map-workspace deployment-map-stage deployment-map-editor">
+          <DrawNewMap
+            disabled={frozen}
+            availableWidth={roomForMap}
+            /* The claim is taken as the saved grid arrives rather than
+               before the save: `DrawNewMap` owns that request and disables
+               its own button while it runs, so there is never a second one
+               to be overtaken by. */
+            onSaved={(data, id) => void adopt(data, id, null, adoption.claim())}
+            onError={setError}
+          />
+        </div>
+      ) : (
+      <div className="deployment-map-workspace deployment-map-stage deployment-map-preview">
       {mapData ? (
+        <div className="deployment-map-frame">
         <MissionCanvas
           map={mapData}
           width={canvas.width}
@@ -1701,19 +1821,40 @@ export function DeploymentForm({
           onPointerMoveWhileDown={dragTo}
           onPointerFinished={endDrag}
           onDoubleClickMap={removeWaypointUnder}
-          dynamicObstacles={(preview?.dynamic_obstacles ?? []).map((obstacle) => ({
-            name: obstacle.name,
-            radius: obstacle.radius,
-            position: obstacle.position,
-          }))}
-          obstacleSnapshots={snapshotsOf(preview)}
+          /* Read at the playhead rather than at the instant the request
+             named. With a track in hand these are the same thing only at
+             t = 0; without one, `trafficAt` falls back to the still
+             frame and this is exactly what it always was. */
+          dynamicObstacles={trafficAt(preview, playhead)}
+          obstacleSnapshots={snapshotsOf(preview, playhead)}
           /* The document's own traffic, drawn from the points it
              stores. Until this existed, placing waypoints drew nothing
              until somebody pressed Preview — so a route was authored by
              clicking into an empty map and hoping. */
           authoredTraffic={overlayOf(trafficOf(draft), trafficUi.selectedObstacleIndex)}
-          previewTime={preview?.time}
+          previewTime={preview ? playhead : undefined}
+          showGrid={showGrid}
         />
+        <div className="deployment-map-legend" aria-label={t("deployments.form.map")}>
+          <span><i className="legend-start" />{t("decisions.map.start")}</span>
+          <span><i className="legend-goal" />{t("decisions.map.goal")}</span>
+          <span><i className="legend-traffic" />{t("deployments.form.tabs.traffic")}</span>
+          {/* In the legend rather than beside the source tabs: the rest
+              of this row says what the marks on the canvas mean, and the
+              grid is one more of them. `simulate.grid` is reused rather
+              than copied — this row already borrows its other three
+              labels across namespaces, and two keys for one word is how
+              "Grid" and "Lưới ô" end up on two screens. */}
+          <label className="deployment-map-grid-toggle">
+            <input
+              type="checkbox"
+              checked={showGrid}
+              onChange={(event) => setShowGrid(event.target.checked)}
+            />
+            {t("simulate.grid")}
+          </label>
+        </div>
+        </div>
       ) : (
         <p className="muted">{t("common.loading")}</p>
       )}
@@ -1783,6 +1924,60 @@ export function DeploymentForm({
         <Hint text={t("deployments.form.previewNote")} label={t("deployments.form.preview")} />
       </div>
 
+      {/* **The transport, and why it only exists once there is a track.**
+          A still frame answers "is the cart in my way at t = 12" and not
+          "where is it heading", which is the question somebody placing a
+          start pose actually has — and finding it out meant typing 0,
+          then 5, then 10, pressing the button each time and holding the
+          difference in their head.
+
+          It runs for the deployment's own `episode_timeout_s`, so what
+          plays is the length of episode this deployment will actually
+          run. A fixed sixty seconds would show traffic an episode that
+          gives up at twenty will never meet.
+
+          Stops at the end rather than looping: an author watching for
+          one moment — the instant a cart reaches the doorway — loses
+          track of whether they have seen it yet once the picture starts
+          over with no cue for where the repeat began. */}
+      {preview && playableSeconds(preview) > 0 ? (
+        <div className="deployment-preview-transport">
+          <button
+            type="button"
+            className="deployment-preview-play"
+            aria-pressed={playing}
+            onClick={() => {
+              // Pressing play at the end replays from the start rather
+              // than doing nothing, which is what a button that looks
+              // available has to do.
+              if (!playing && playhead >= playableSeconds(preview)) setPlayhead(0);
+              setPlaying((current) => !current);
+            }}
+          >
+            {t(playing ? "deployments.form.previewPause" : "deployments.form.previewPlay")}
+          </button>
+          <input
+            type="range"
+            className="deployment-preview-scrub"
+            min={0}
+            max={playableSeconds(preview)}
+            step={preview.step ?? 0.2}
+            value={playhead}
+            aria-label={t("deployments.form.previewScrub")}
+            onChange={(event) => {
+              // Dragging takes over from the timer. Leaving it running
+              // would fight the drag, and the handle would spring
+              // forward out from under the pointer.
+              setPlaying(false);
+              setPlayhead(Number(event.target.value));
+            }}
+          />
+          <span className="deployment-preview-clock">
+            {playhead.toFixed(1)} / {playableSeconds(preview).toFixed(1)} s
+          </span>
+        </div>
+      ) : null}
+
       {/* The preview endpoint answers two questions and the first
           version read only one of them. It runs the scenario against the
           *map* — a start pose inside a wall, an obstacle spawned in
@@ -1792,7 +1987,7 @@ export function DeploymentForm({
           back from here with `valid: false`, and the author would have
           seen only traffic drawn as though nothing were wrong. */}
       {preview && !preview.valid ? (
-        <div className="notice warn">
+        <div className="notice notice--warn">
           <strong>{t("deployments.form.previewInvalid")}</strong>
           <ul>
             {preview.errors.map((reason) => (
@@ -1802,19 +1997,25 @@ export function DeploymentForm({
         </div>
       ) : null}
       </div>
+      )}
     </div>
   );
 
   return (
-    <div ref={shellRef}>
+    <div ref={shellRef} className="deployment-form">
       {error ? <div className="error-box">{error}</div> : null}
 
       {/* Above the tabs rather than on one of them: the id and the two
           claim fields are what the deployment *is*, and burying them
           behind a tab would make the first thing an author types the
           one thing they have to go looking for. */}
-      <h4>{t("deployments.form.identity")}</h4>
-      <div className="row" style={{ alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
+      <section className="deployment-section deployment-section--identity" id="deployment-identity">
+      <div className="deployment-section-head">
+        <span className="deployment-section-icon" aria-hidden="true"><Icon name="info" size={18} /></span>
+        <h4>{t("deployments.form.identity")}</h4>
+        {identityErrors ? <span className="badge err">{identityErrors}</span> : null}
+      </div>
+      <div className="deployment-identity-grid">
         {field("id", t("deployments.form.id"), undefined, t("deployments.form.idNote"))}
         <Choice
           label={t("deployments.form.claimLevel")}
@@ -1833,36 +2034,43 @@ export function DeploymentForm({
           error={errorFor("deployment_role")}
         />
       </div>
+      {mapSelector}
+      </section>
 
-      {/* **The map beside the controls, not a screen below them.**
-          Thirty fields stacked in one column put the map — the thing
-          most of them are *about* — near the bottom, so choosing a
-          traffic route meant scrolling away from the picture of it. The
-          columns collapse when the form is too narrow to hold both; see
-          `lib/canvasSize` for where that width comes from. */}
+      {/* **What the deployment is, in one panel.** The id, the claim
+          fields and the choice of world were three headed blocks in a
+          row — `Identity` above, `Map and mission` below and to the
+          left — and they are one answer: which world, held to which
+          claim, under which name. Splitting them put a panel border
+          through the middle of a single thought and cost a heading to
+          say so.
+
+          The canvas does not come with them. Choosing a map is a
+          sentence; placing a mission on it is work, and work wants the
+          room the row below gives it. */}
       <div
+        className={`deployment-config-grid${twoColumns ? " is-two-column" : ""}`}
         style={{
           display: "grid",
-          /* The map's track is exactly the map, and the panel takes
-             everything else. Both tracks flexible left the canvas
-             pinned to the left of a wider column and the panel pushed
-             to the right of another, with a gap in the middle that
-             read as a third region — so the scenario picker under the
-             map looked like it belonged to neither side. */
-          gridTemplateColumns: twoColumns ? `${canvas.width}px minmax(0, 1fr)` : "1fr",
+          gridTemplateColumns: twoColumns ? "minmax(0, 1fr) minmax(0, 1fr)" : "minmax(0, 1fr)",
           gap: COLUMN_GAP_PX,
           alignItems: "start",
           marginTop: 12,
         }}
       >
-        {mapColumn}
-        <div>
+        {/* Left: the map, at half the form's width. It had a full-width
+            row of its own, which drew it as wide as the form and left
+            the tabs beside empty floor — and the tabs are what an author
+            is reading while they place a mission. */}
+        {mapArea}
+        <div className="deployment-config-panel">
           <Tabs
             tabs={TABS}
             active={activeTab}
             onSelect={setActiveTab}
             idPrefix="deployment-form"
             ariaLabel={t("deployments.form.tabs.label")}
+            className="deployment-tabs"
           />
         </div>
       </div>
@@ -1870,24 +2078,13 @@ export function DeploymentForm({
       {/* **Sticky inside the form, not fixed to the window.** Fixed
           would sit over whatever is at the bottom of the page and take
           a bite out of a phone screen permanently. */}
-      <div
-        style={{
-          position: "sticky",
-          bottom: 0,
-          marginTop: 16,
-          paddingTop: 12,
-          paddingBottom: 12,
-          background: "var(--panel, #16181d)",
-          borderTop: "1px solid var(--border, #2a2f3a)",
-          zIndex: 2,
-        }}
-      >
-        <div className="row" style={{ alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <div className="deployment-action-bar" id="deployment-actions">
+        <div className="deployment-action-main">
           {/* Both frozen, and the reason is the same for each: while a map
               is being written out the canvas already shows it and the
               draft does not, so filing would store a deployment nobody is
               looking at. */}
-          <button type="button" className="primary" disabled={frozen || !complete} onClick={() => void submit()}>
+          <button type="button" className="primary deployment-submit" disabled={frozen || !complete} onClick={() => void submit()} title={!complete ? t("deployments.file.idRule") : undefined}>
             {t("deployments.file.submit")}
           </button>
           <button type="button" disabled={frozen || !complete} onClick={() => void check()}>
@@ -1904,6 +2101,7 @@ export function DeploymentForm({
             onClick={stepBack}
             title={t("deployments.form.undoHint")}
           >
+            <Icon name="chevronLeft" size={15} />
             {t("deployments.form.undo")}
           </button>
           <button
@@ -1913,7 +2111,10 @@ export function DeploymentForm({
             title={t("deployments.form.redoHint")}
           >
             {t("deployments.form.redo")}
+            <Icon name="chevronRight" size={15} />
           </button>
+        </div>
+        <div className="deployment-action-summary">
           <span className="muted">
             {t("deployments.file.idRule")}
             <Hint text={t("deployments.form.validateNote")} label={t("deployments.form.validate")} />
@@ -1930,7 +2131,7 @@ export function DeploymentForm({
             under a heading that does not own it is a refusal the author
             will not find, and filing stays blocked meanwhile. */}
         {tally.unmapped.map((entry) => (
-          <p key={`${entry.path}:${entry.message}`} className="notice warn">
+          <p key={`${entry.path}:${entry.message}`} className="notice notice--warn">
             {entry.path}: {entry.message}
           </p>
         ))}
@@ -1942,6 +2143,57 @@ export function DeploymentForm({
 function numberAt(draft: ProfileDraft, path: string): number | undefined {
   const value = at(draft, path);
   return typeof value === "number" ? value : undefined;
+}
+
+/** Display-only units. Values and payloads stay untouched; the suffix is
+ * outside the input and exists solely to make engineering quantities
+ * scannable without reopening their help text. */
+function unitFor(path: string): string | undefined {
+  if (path.endsWith("_mb")) return "MB";
+  if (path === V_OBSTACLE_MAX) return "m/s";
+  if (path.endsWith("_probability") || path.endsWith("_fraction") || path.endsWith("_rate_max") || path.endsWith("_rate_min")) return "ratio";
+  if (path.endsWith("_velocity")) return path.includes("angular") ? "rad/s" : "m/s";
+  if (path.endsWith("_acceleration")) return path.includes("angular") ? "rad/s²" : "m/s²";
+  if (path.endsWith("_rad")) return "rad";
+  if (path.endsWith("_s") || path === "robot.control_period") return "s";
+  if (path.endsWith("_m") || path === "robot.radius") return "m";
+  return undefined;
+}
+
+function DeploymentSection({
+  title,
+  icon,
+  tone,
+  errors,
+  checked,
+  children,
+}: {
+  title: string;
+  icon: IconName;
+  tone: FormTab;
+  errors: number;
+  checked: boolean;
+  children: ReactNode;
+}) {
+  const { t } = useTranslation();
+  return (
+    <section className={`deployment-section deployment-section--${tone}`}>
+      <div className="deployment-section-head">
+        <span className="deployment-section-icon" aria-hidden="true"><Icon name={icon} size={18} /></span>
+        <h4>{title}</h4>
+        {errors ? (
+          <span className="badge err">{errors}</span>
+        ) : checked ? (
+          <span className="badge ok" aria-label={t("deployments.section.complete")}>
+            <Icon name="check" size={12} />
+          </span>
+        ) : (
+          <span className="badge muted-badge">—</span>
+        )}
+      </div>
+      <div className="deployment-section-body">{children}</div>
+    </section>
+  );
 }
 
 /** The width of an element, kept current as it changes.
@@ -1978,10 +2230,12 @@ function useMeasuredWidth(): [(node: HTMLDivElement | null) => void, number] {
  */
 function DrawNewMap({
   disabled,
+  availableWidth,
   onSaved,
   onError,
 }: {
   disabled: boolean;
+  availableWidth: number;
   onSaved: (map: MapData, mapId: string) => void;
   onError: (message: string) => void;
 }) {
@@ -1992,6 +2246,7 @@ function DrawNewMap({
   const [name, setName] = useState("");
   const [map, setMap] = useState<MapData>(() => emptyBorderedMap("drawn", 40, 30, 0.25));
   const [saving, setSaving] = useState(false);
+  const painterSize = canvasSize(availableWidth, height / Math.max(width, 1), availableWidth);
 
   const reshape = (w: number, h: number, r: number) => {
     setWidth(w);
@@ -2055,6 +2310,8 @@ function DrawNewMap({
         map={map}
         onChange={setMap}
         disabled={disabled || saving}
+        width={painterSize.width}
+        height={painterSize.height}
         actions={
           <button type="button" className="primary" disabled={disabled || saving} onClick={() => void save()}>
             {t("deployments.form.saveMap")}
@@ -2081,6 +2338,7 @@ function Field({
   error,
   value,
   step,
+  unit,
   disabled,
   onChange,
 }: {
@@ -2089,16 +2347,19 @@ function Field({
   error?: string;
   value: unknown;
   step?: number;
+  unit?: string;
   disabled: boolean;
   onChange: (value: unknown) => void;
 }) {
   const numeric = step !== undefined;
+  const hasValue = value !== null && value !== undefined && String(value).trim() !== "";
   return (
-    <label className="field" style={{ minWidth: 150 }}>
+    <label className={`field deployment-field${error ? " has-error" : hasValue ? " has-value" : ""}`}>
       <span>
         {label}
         {note ? <Hint text={note} label={label} /> : null}
       </span>
+      <span className="deployment-field-control">
       <input
         type={numeric ? "number" : "text"}
         step={step}
@@ -2109,6 +2370,9 @@ function Field({
         }
         aria-invalid={error ? true : undefined}
       />
+      {unit ? <span className="deployment-field-unit" aria-hidden="true">{unit}</span> : null}
+      {hasValue && !error ? <Icon name="check" size={14} className="deployment-field-check" /> : null}
+      </span>
       {error ? <span className="badge err">{error}</span> : null}
     </label>
   );
@@ -2130,12 +2394,13 @@ function Choice({
   error?: string;
 }) {
   return (
-    <label className="field">
+    <label className={`field deployment-field${error ? " has-error" : " has-value"}`}>
       <span>{label}</span>
       <select
         value={typeof value === "string" ? value : options[0]}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
+        aria-invalid={error ? true : undefined}
       >
         {options.map((option) => (
           <option key={option} value={option}>
@@ -2143,7 +2408,7 @@ function Choice({
           </option>
         ))}
       </select>
-      {error ? <span className="badge err">{error}</span> : null}
+      {error ? <span className="deployment-field-error"><Icon name="alert" size={13} />{error}</span> : null}
     </label>
   );
 }

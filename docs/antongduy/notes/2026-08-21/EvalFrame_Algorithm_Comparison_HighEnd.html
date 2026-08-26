@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#111">
+<title>EvalFrame — Algorithm Comparison</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700&display=swap');
+:root{
+  --bg:#f3f3f1; --surface:#fff; --surface-2:#fafafa; --ink:#111; --ink-2:#252525;
+  --muted:#6f6f6b; --muted-2:#969691; --line:#deded9; --line-2:#ecece8;
+  --black:#111; --white:#fff; --radius:12px; --shadow:0 8px 28px rgba(0,0,0,.055);
+  --sidebar:252px; --sidebar-collapsed:76px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px;line-height:1.45}
+button,input,textarea{font:inherit}
+button{border:0;background:none;color:inherit}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid #111;outline-offset:2px}
+a{color:inherit;text-decoration:none}
+.nav-item .icon svg,.btn svg,.icon-btn svg,.collapse-btn svg,.breadcrumb svg,.toast svg,.attachment svg{width:16px;height:16px;display:block}
+.nav-item .icon svg{width:18px;height:18px}
+.app{min-height:100vh;display:grid;grid-template-columns:var(--sidebar) minmax(0,1fr);transition:grid-template-columns .22s ease}
+.app.is-collapsed{grid-template-columns:var(--sidebar-collapsed)}
+.sidebar{position:sticky;top:0;height:100vh;background:#fbfbfa;border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:20;overflow:hidden}
+.sidebar-inner{height:100%;display:flex;flex-direction:column;padding:16px 12px}
+.brand{height:42px;display:flex;align-items:center;gap:10px;padding:0 7px;margin-bottom:18px}
+.brand-mark{width:28px;height:28px;background:#111;color:#fff;border-radius:7px;display:grid;place-items:center;flex:0 0 auto}
+.brand-mark svg{width:16px;height:16px}
+.brand-copy{min-width:0;white-space:nowrap;transition:opacity .12s ease,transform .18s ease}
+.brand-name{font-weight:700;letter-spacing:-.02em;font-size:14px}
+.brand-meta{font-size:10px;color:var(--muted);margin-top:1px;letter-spacing:.04em;text-transform:uppercase}
+.section-label{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#9a9a95;padding:0 10px;margin:13px 0 6px;white-space:nowrap}
+.nav{display:flex;flex-direction:column;gap:3px}
+.nav-item{position:relative;display:flex;align-items:center;gap:11px;min-height:38px;padding:0 10px;border-radius:8px;color:#5f5f5b;transition:background .15s,color .15s}
+.nav-item:hover{background:#efefec;color:#111}
+.nav-item.active{background:#111;color:#fff}
+.nav-item .icon{width:18px;height:18px;flex:0 0 18px}
+.nav-label{white-space:nowrap;overflow:hidden;transition:opacity .12s ease}
+.nav-badge{margin-left:auto;min-width:20px;padding:2px 6px;border:1px solid #d3d3ce;border-radius:999px;font-size:10px;text-align:center;color:#6b6b66;background:#fff}
+.nav-item.active .nav-badge{background:#2d2d2d;border-color:#4a4a4a;color:#fff}
+.sidebar-foot{margin-top:auto;padding-top:12px;border-top:1px solid var(--line)}
+.profile{display:flex;align-items:center;gap:9px;padding:9px 8px;border-radius:8px}
+.avatar{width:28px;height:28px;border-radius:7px;background:#e1e1dc;display:grid;place-items:center;font-size:10px;font-weight:700;flex:0 0 auto}
+.profile-copy{min-width:0;white-space:nowrap}
+.profile-name{font-weight:600;font-size:11px}
+.profile-role{font-size:10px;color:var(--muted)}
+.collapse-btn{width:100%;height:36px;margin-top:7px;border:1px solid var(--line);background:#fff;border-radius:8px;display:flex;align-items:center;gap:10px;padding:0 10px;color:#5d5d58}
+.collapse-btn:hover{background:#f0f0ed;color:#111}
+.collapse-btn .collapse-icon{margin-left:auto}
+.is-collapsed .brand{justify-content:center;padding:0}
+.is-collapsed .brand-copy,.is-collapsed .section-label,.is-collapsed .nav-label,.is-collapsed .nav-badge,.is-collapsed .profile-copy,.is-collapsed .collapse-text{opacity:0;width:0;pointer-events:none}
+.is-collapsed .nav-item{justify-content:center;padding:0}
+.is-collapsed .profile{justify-content:center}
+.is-collapsed .collapse-btn{justify-content:center;padding:0}
+.is-collapsed .collapse-btn .collapse-icon{margin-left:0}
+.nav-item[data-tooltip]::after{content:attr(data-tooltip);position:absolute;left:calc(100% + 9px);top:50%;transform:translateY(-50%);background:#111;color:#fff;border-radius:6px;padding:5px 7px;font-size:10px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .12s;z-index:40}
+.is-collapsed .nav-item:hover::after{opacity:1}
+.main{min-width:0}
+.topbar{height:62px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.86);backdrop-filter:blur(12px);display:flex;align-items:center;justify-content:space-between;padding:0 28px;position:sticky;top:0;z-index:15}
+.breadcrumb{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11px}
+.breadcrumb strong{color:#222;font-weight:600}
+.top-actions{display:flex;align-items:center;gap:7px}
+.icon-btn,.btn{height:34px;border:1px solid var(--line);background:#fff;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:0 11px;color:#42423f;font-size:11px;font-weight:600}
+.icon-btn{width:34px;padding:0}
+.icon-btn:hover,.btn:hover{background:#f1f1ee;border-color:#cfcfc9;color:#111}
+.btn.primary{background:#111;border-color:#111;color:#fff}
+.btn.primary:hover{background:#2b2b2b}
+.content{max-width:1440px;margin:0 auto;padding:30px 30px 54px}
+.eyebrow{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.13em;color:#8b8b86}
+.title-row{display:flex;align-items:flex-end;justify-content:space-between;gap:20px}
+h1{font-size:28px;letter-spacing:-.04em;line-height:1.05;margin:6px 0 8px}
+.subtitle{font-size:12px;color:var(--muted);max-width:720px}
+.meta-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
+.pill{height:25px;padding:0 8px;border:1px solid var(--line);border-radius:999px;display:inline-flex;align-items:center;gap:6px;background:#fff;font-size:10px;color:#555550}
+.dot{width:6px;height:6px;border-radius:50%;background:#111}
+.section{margin-top:24px}
+.grid-3{display:grid;grid-template-columns:1fr 1.08fr 1fr;gap:10px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.algo-card{padding:17px}
+.algo-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.algo-name{font-size:14px;font-weight:700;letter-spacing:-.02em}
+.algo-sub{font-size:10px;color:var(--muted);margin-top:2px}
+.score{font-size:27px;font-weight:700;letter-spacing:-.05em;line-height:1}
+.score small{font-size:10px;color:var(--muted);font-weight:500;letter-spacing:0}
+.rule{height:1px;background:var(--line-2);margin:15px 0}
+.metric-line{display:grid;grid-template-columns:82px 1fr 42px;align-items:center;gap:9px;margin:9px 0}
+.metric-name{font-size:10px;color:#686864}
+.track{height:6px;background:#ecece8;border-radius:999px;overflow:hidden}
+.fill{height:100%;background:#111;border-radius:999px}
+.metric-val{text-align:right;font-size:10px;font-weight:700}
+.verdict{padding:20px;display:flex;flex-direction:column;justify-content:space-between;min-height:214px}
+.verdict-kicker{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.11em;font-weight:700}
+.verdict-main{margin:19px 0}
+.verdict-main strong{display:block;font-size:23px;letter-spacing:-.04em;line-height:1.08}
+.verdict-main span{display:block;font-size:11px;color:var(--muted);margin-top:7px}
+.verdict-split{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.verdict-split>div{background:#fafafa;padding:9px}
+.verdict-split b{display:block;font-size:12px}
+.verdict-split span{font-size:9px;color:var(--muted)}
+.section-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:10px}
+.section-title{font-size:13px;font-weight:700;letter-spacing:-.01em}
+.section-note{font-size:10px;color:var(--muted)}
+.recommend{padding:18px;display:grid;grid-template-columns:minmax(0,1.45fr) minmax(270px,.85fr);gap:22px}
+.rec-kicker{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.11em;color:#858580}
+.rec-title{font-size:18px;font-weight:700;letter-spacing:-.035em;margin-top:5px}
+.rec-copy{font-size:11px;color:#5f5f5a;max-width:720px;margin-top:6px}
+.rec-list{display:grid;gap:7px;margin-top:14px}
+.rec-item{display:grid;grid-template-columns:24px 1fr auto;align-items:center;gap:8px;font-size:11px}
+.rec-num{width:22px;height:22px;border:1px solid var(--line);border-radius:6px;display:grid;place-items:center;font-size:9px;font-weight:700;background:#fafafa}
+.rec-item span{color:#656560}
+.rec-item b{font-size:10px}
+.decision-box{border-left:1px solid #111;padding-left:17px;display:flex;flex-direction:column;justify-content:center}
+.decision-box .label{font-size:9px;text-transform:uppercase;letter-spacing:.11em;color:#8b8b86;font-weight:700}
+.decision-box strong{font-size:20px;letter-spacing:-.035em;margin:5px 0}
+.decision-box p{font-size:10px;color:var(--muted);margin:0 0 10px}
+.decision-tags{display:flex;flex-wrap:wrap;gap:5px}
+.tag{padding:5px 7px;background:#f2f2ef;border:1px solid #e2e2dc;border-radius:6px;font-size:9px;color:#555550}
+.matrix{overflow:hidden}
+.table-wrap{overflow:auto}
+table{width:100%;border-collapse:collapse;min-width:800px}
+th,td{padding:11px 13px;border-bottom:1px solid var(--line-2);text-align:left;vertical-align:middle}
+th{font-size:9px;text-transform:uppercase;letter-spacing:.09em;color:#858580;font-weight:700;background:#fafafa}
+td{font-size:11px;color:#333}
+tr:last-child td{border-bottom:0}
+.metric-cell strong{display:block;font-size:11px}
+.metric-cell span{font-size:9px;color:var(--muted)}
+.value{font-weight:700;font-variant-numeric:tabular-nums}
+.delta{font-weight:700}
+.delta.pos{background:#f0f0ed;padding:4px 6px;border-radius:5px}
+.winner{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.chart-grid{display:grid;grid-template-columns:1.35fr .65fr;gap:10px}
+.chart-card{padding:17px}
+.bar-row{display:grid;grid-template-columns:105px 1fr 36px;gap:9px;align-items:center;margin:12px 0}
+.bar-label{font-size:10px;color:#666660}
+.bar-track{height:8px;background:#ecece8;border-radius:999px;position:relative;overflow:hidden}
+.bar-a,.bar-b{height:50%;position:absolute;left:0;background:#111;border-radius:999px}
+.bar-b{top:50%;background:#a4a49e}
+.bar-val{text-align:right;font-size:10px;font-weight:700}
+.insight-list{display:grid;gap:8px}
+.insight{padding:11px;border:1px solid var(--line);border-radius:8px;background:#fafafa}
+.insight-top{display:flex;justify-content:space-between;gap:10px}
+.insight strong{font-size:11px}
+.insight p{margin:4px 0 0;font-size:10px;color:#6a6a65}
+.footer-note{margin-top:24px;padding-top:14px;border-top:1px solid var(--line);display:flex;justify-content:space-between;color:#999994;font-size:9px}
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.32);display:none;align-items:center;justify-content:center;z-index:100;padding:20px}
+.modal-backdrop.open{display:flex}
+.modal{width:min(520px,100%);background:#fff;border:1px solid #d5d5d0;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.16);overflow:hidden}
+.modal-head{padding:15px 17px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.modal-title{font-size:13px;font-weight:700}
+.modal-body{padding:17px}
+.field{display:grid;gap:6px;margin-bottom:12px}
+.field label{font-size:10px;font-weight:700;color:#666661}
+.field input,.field textarea{width:100%;border:1px solid #d8d8d2;border-radius:7px;padding:9px 10px;background:#fff;color:#222}
+.field textarea{min-height:92px;resize:vertical}
+.attachment{border:1px dashed #cfcfc9;border-radius:7px;padding:9px;font-size:10px;color:#5e5e59;background:#fafafa;display:flex;gap:8px;align-items:center}
+.modal-foot{padding:12px 17px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:7px}
+.toast{position:fixed;right:22px;bottom:22px;background:#111;color:#fff;padding:10px 12px;border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.18);font-size:10px;display:none;z-index:120}
+.toast.show{display:flex;align-items:center;gap:8px}
+.mobile-menu{display:none}
+@media (max-width:1050px){
+  .grid-3{grid-template-columns:1fr 1fr}.verdict{grid-column:1/-1}.chart-grid{grid-template-columns:1fr}
+}
+@media (max-width:760px){
+  .app,.app.is-collapsed{display:block}
+  .sidebar{position:fixed;left:0;top:0;width:252px;transform:translateX(-102%);transition:transform .2s;box-shadow:18px 0 40px rgba(0,0,0,.08)}
+  .sidebar.mobile-open{transform:translateX(0)}
+  .mobile-menu{display:inline-flex}
+  .topbar{padding:0 15px}
+  .content{padding:22px 15px 40px}
+  .title-row{align-items:flex-start;flex-direction:column}
+  .grid-3,.recommend{grid-template-columns:1fr}
+  .verdict{grid-column:auto}
+  .decision-box{border-left:0;border-top:1px solid #111;padding:15px 0 0}
+}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-inner">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true" data-icon="layers"></div>
+        <div class="brand-copy">
+          <div class="brand-name">EvalFrame</div>
+          <div class="brand-meta">Evaluation workspace</div>
+        </div>
+      </div>
+
+      <div class="section-label">Workspace</div>
+      <nav class="nav" aria-label="Workspace navigation">
+        <button class="nav-item" data-tooltip="Overview" data-page="Overview"><span class="icon" data-icon="grid"></span><span class="nav-label">Overview</span></button>
+        <button class="nav-item" data-tooltip="Experiments" data-page="Experiments"><span class="icon" data-icon="flask"></span><span class="nav-label">Experiments</span><span class="nav-badge">12</span></button>
+        <button class="nav-item active" data-tooltip="Comparison" data-page="Comparison"><span class="icon" data-icon="compare"></span><span class="nav-label">Comparison</span></button>
+        <button class="nav-item" data-tooltip="Algorithms" data-page="Algorithms"><span class="icon" data-icon="cpu"></span><span class="nav-label">Algorithms</span></button>
+      </nav>
+
+      <div class="section-label">Analysis</div>
+      <nav class="nav" aria-label="Analysis navigation">
+        <button class="nav-item" data-tooltip="Metrics" data-page="Metrics"><span class="icon" data-icon="chart"></span><span class="nav-label">Metrics</span></button>
+        <button class="nav-item" data-tooltip="Reports" data-page="Reports"><span class="icon" data-icon="file"></span><span class="nav-label">Reports</span></button>
+        <button class="nav-item" data-tooltip="Datasets" data-page="Datasets"><span class="icon" data-icon="database"></span><span class="nav-label">Datasets</span></button>
+      </nav>
+
+      <div class="section-label">System</div>
+      <nav class="nav" aria-label="System navigation">
+        <button class="nav-item" data-tooltip="Settings" data-page="Settings"><span class="icon" data-icon="settings"></span><span class="nav-label">Settings</span></button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="profile">
+          <div class="avatar">AL</div>
+          <div class="profile-copy"><div class="profile-name">Alex Le</div><div class="profile-role">Research lead</div></div>
+        </div>
+        <button class="collapse-btn" id="collapseBtn" type="button" aria-label="Collapse sidebar" aria-expanded="true">
+          <span data-icon="panel"></span><span class="collapse-text">Collapse sidebar</span><span class="collapse-icon" data-icon="chevron-left"></span>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="breadcrumb">
+        <button class="icon-btn mobile-menu" id="mobileMenu" aria-label="Open navigation"><span data-icon="menu"></span></button>
+        <span>Experiments</span><span data-icon="chevron-right"></span><strong>EXP-0247</strong>
+      </div>
+      <div class="top-actions">
+        <button class="icon-btn" title="Search" aria-label="Search"><span data-icon="search"></span></button>
+        <button class="btn" id="exportBtn"><span data-icon="download"></span>Export</button>
+        <button class="btn primary" id="shareBtn"><span data-icon="share"></span>Share report</button>
+      </div>
+    </header>
+
+    <div class="content">
+      <section>
+        <div class="eyebrow">Evaluation / final comparison</div>
+        <div class="title-row">
+          <div>
+            <h1>Algorithm comparison</h1>
+            <div class="subtitle">Benchmark results translated into a decision surface: overall performance, metric-level trade-offs and a deployment recommendation.</div>
+            <div class="meta-row">
+              <span class="pill"><span class="dot"></span> Evaluation complete</span>
+              <span class="pill">Dataset · Retail-2026-Q3</span>
+              <span class="pill">1,240 test cases</span>
+              <span class="pill">Run · 21 Aug 2026 · 13:42</span>
+            </div>
+          </div>
+          <button class="icon-btn" title="More actions" aria-label="More actions"><span data-icon="more"></span></button>
+        </div>
+      </section>
+
+      <section class="section grid-3">
+        <article class="card algo-card">
+          <div class="algo-top"><div><div class="algo-name">Algorithm A</div><div class="algo-sub">Gradient Boosting</div></div><div class="score">86.4<small>/100</small></div></div>
+          <div class="rule"></div>
+          <div class="metric-line"><span class="metric-name">Accuracy</span><span class="track"><span class="fill" style="width:92%"></span></span><span class="metric-val">92%</span></div>
+          <div class="metric-line"><span class="metric-name">Latency</span><span class="track"><span class="fill" style="width:78%"></span></span><span class="metric-val">78ms</span></div>
+          <div class="metric-line"><span class="metric-name">Robustness</span><span class="track"><span class="fill" style="width:83%"></span></span><span class="metric-val">83</span></div>
+          <div class="metric-line"><span class="metric-name">Cost / 1k</span><span class="track"><span class="fill" style="width:66%"></span></span><span class="metric-val">$0.42</span></div>
+        </article>
+
+        <article class="card verdict">
+          <div class="verdict-kicker"><span>Overall verdict</span><span>Weighted score</span></div>
+          <div class="verdict-main"><strong>A leads overall</strong><span>Higher aggregate score under the current business weights.</span></div>
+          <div class="verdict-split">
+            <div><b>86.4</b><span>Algorithm A</span></div>
+            <div><b>82.1</b><span>Algorithm B</span></div>
+          </div>
+        </article>
+
+        <article class="card algo-card">
+          <div class="algo-top"><div><div class="algo-name">Algorithm B</div><div class="algo-sub">Random Forest</div></div><div class="score">82.1<small>/100</small></div></div>
+          <div class="rule"></div>
+          <div class="metric-line"><span class="metric-name">Accuracy</span><span class="track"><span class="fill" style="width:88%"></span></span><span class="metric-val">88%</span></div>
+          <div class="metric-line"><span class="metric-name">Latency</span><span class="track"><span class="fill" style="width:91%"></span></span><span class="metric-val">61ms</span></div>
+          <div class="metric-line"><span class="metric-name">Robustness</span><span class="track"><span class="fill" style="width:76%"></span></span><span class="metric-val">76</span></div>
+          <div class="metric-line"><span class="metric-name">Cost / 1k</span><span class="track"><span class="fill" style="width:88%"></span></span><span class="metric-val">$0.31</span></div>
+        </article>
+      </section>
+
+      <section class="section card recommend">
+        <div>
+          <div class="rec-kicker">Decision recommendation</div>
+          <div class="rec-title">Use A as the primary model; retain B for latency-sensitive paths.</div>
+          <div class="rec-copy">The aggregate score alone does not tell the full story. A wins accuracy and robustness, while B is materially faster and cheaper. For a production system with mixed workloads, a controlled hybrid strategy produces the best fit.</div>
+          <div class="rec-list">
+            <div class="rec-item"><div class="rec-num">01</div><span>Accuracy-first workflows</span><b>Algorithm A</b></div>
+            <div class="rec-item"><div class="rec-num">02</div><span>Latency / cost constrained workflows</span><b>Algorithm B</b></div>
+            <div class="rec-item"><div class="rec-num">03</div><span>Mixed production workload</span><b>Hybrid A + B</b></div>
+          </div>
+        </div>
+        <div class="decision-box">
+          <div class="label">Recommended deployment</div>
+          <strong>Hybrid A + B</strong>
+          <p>Route high-value or uncertain cases to A; use B for fast-path classification.</p>
+          <div class="decision-tags"><span class="tag">Accuracy critical → A</span><span class="tag">Latency critical → B</span><span class="tag">Fallback → A</span></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head"><div><div class="section-title">Metric-level comparison</div><div class="section-note">Neutral directional treatment keeps the UI monochrome while preserving decision clarity.</div></div><span class="pill">Weights normalized · 100%</span></div>
+        <div class="card matrix">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Metric</th><th>Weight</th><th>Algorithm A</th><th>Algorithm B</th><th>Delta</th><th>Advantage</th></tr></thead>
+              <tbody>
+                <tr><td class="metric-cell"><strong>Accuracy</strong><span>Higher is better</span></td><td>35%</td><td class="value">92.0%</td><td class="value">88.0%</td><td class="delta pos">+4.0 pp</td><td class="winner">A</td></tr>
+                <tr><td class="metric-cell"><strong>Latency</strong><span>Lower is better</span></td><td>25%</td><td class="value">78 ms</td><td class="value">61 ms</td><td class="delta pos">B −17 ms</td><td class="winner">B</td></tr>
+                <tr><td class="metric-cell"><strong>Robustness</strong><span>Higher is better</span></td><td>20%</td><td class="value">83.0</td><td class="value">76.0</td><td class="delta pos">+7.0</td><td class="winner">A</td></tr>
+                <tr><td class="metric-cell"><strong>Cost / 1k cases</strong><span>Lower is better</span></td><td>20%</td><td class="value">$0.42</td><td class="value">$0.31</td><td class="delta pos">B −$0.11</td><td class="winner">B</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="section chart-grid">
+        <article class="card chart-card">
+          <div class="section-head"><div><div class="section-title">Performance profile</div><div class="section-note">Normalized view · A dark / B gray</div></div><span class="pill">4 metrics</span></div>
+          <div class="bar-row"><span class="bar-label">Accuracy</span><span class="bar-track"><span class="bar-a" style="width:92%"></span><span class="bar-b" style="width:88%"></span></span><span class="bar-val">A</span></div>
+          <div class="bar-row"><span class="bar-label">Latency score</span><span class="bar-track"><span class="bar-a" style="width:78%"></span><span class="bar-b" style="width:91%"></span></span><span class="bar-val">B</span></div>
+          <div class="bar-row"><span class="bar-label">Robustness</span><span class="bar-track"><span class="bar-a" style="width:83%"></span><span class="bar-b" style="width:76%"></span></span><span class="bar-val">A</span></div>
+          <div class="bar-row"><span class="bar-label">Cost efficiency</span><span class="bar-track"><span class="bar-a" style="width:66%"></span><span class="bar-b" style="width:88%"></span></span><span class="bar-val">B</span></div>
+        </article>
+        <article class="card chart-card">
+          <div class="section-head"><div><div class="section-title">Key trade-offs</div><div class="section-note">What changes the decision</div></div></div>
+          <div class="insight-list">
+            <div class="insight"><div class="insight-top"><strong>A wins accuracy</strong><span class="pill">+4.0 pp</span></div><p>Material for high-value decisions and error-sensitive workflows.</p></div>
+            <div class="insight"><div class="insight-top"><strong>B wins latency</strong><span class="pill">−17 ms</span></div><p>Useful where response time has a direct product impact.</p></div>
+            <div class="insight"><div class="insight-top"><strong>B wins cost</strong><span class="pill">−26%</span></div><p>Lower unit cost supports high-volume inference.</p></div>
+          </div>
+        </article>
+      </section>
+
+      <div class="footer-note"><span>EvalFrame · EXP-0247 · Internal evaluation artifact</span><span>Last run 21 Aug 2026, 13:42 ICT</span></div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="shareModal" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title" id="shareTitle">Share evaluation report</div><button class="icon-btn" id="closeModal" aria-label="Close"><span data-icon="x"></span></button></div>
+    <div class="modal-body">
+      <div class="field"><label for="recipient">Recipient</label><input id="recipient" type="email" value="reviewer@vinuni.edu.vn"></div>
+      <div class="field"><label for="subject">Subject</label><input id="subject" value="Algorithm comparison · EXP-0247"></div>
+      <div class="field"><label for="message">Message</label><textarea id="message">Attached is the completed algorithm evaluation report, including metric-level comparison and deployment recommendation.</textarea></div>
+      <div class="attachment"><span data-icon="file"></span><strong>EXP-0247-comparison.xlsx</strong><span>· 24 KB</span></div>
+    </div>
+    <div class="modal-foot"><button class="btn" id="cancelShare">Cancel</button><button class="btn primary" id="sendShare"><span data-icon="send"></span>Open email client</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"><span data-icon="check"></span><span id="toastText">Done</span></div>
+
+<script>
+const icons = {
+  layers:'<path d="m12 3 8 4.5-8 4.5-8-4.5L12 3Z"/><path d="m4 12 8 4.5 8-4.5"/><path d="m4 16.5 8 4.5 8-4.5"/>',
+  grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+  flask:'<path d="M9 3h6"/><path d="M10 3v6l-5.5 9.2A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.8L14 9V3"/><path d="M8 14h8"/>',
+  compare:'<path d="M7 5h10"/><path d="m7 5 3-3"/><path d="m7 5 3 3"/><path d="M17 19H7"/><path d="m17 19-3-3"/><path d="m17 19-3 3"/>',
+  cpu:'<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/><path d="M10 10h4v4h-4z"/>',
+  chart:'<path d="M4 19V5"/><path d="M4 19h16"/><path d="m7 15 3-4 3 2 4-6"/>',
+  file:'<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/>',
+  database:'<ellipse cx="12" cy="5" rx="7" ry="3"/><path d="M5 5v7c0 1.7 3.1 3 7 3s7-1.3 7-3V5"/><path d="M5 12v7c0 1.7 3.1 3 7 3s7-1.3 7-3v-7"/>',
+  settings:'<path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="m19.4 15 .1.1 1.6 1.3-1.8 3.1-2-.8-.1.1a8.2 8.2 0 0 1-1.5.9l-.3 2.1h-3.6l-.3-2.1a8.2 8.2 0 0 1-1.5-.9l-.1-.1-2 .8-1.8-3.1L7.6 15l-.1-.2a8.2 8.2 0 0 1 0-1.6l.1-.2-1.5-1.3 1.8-3.1 2 .8.1-.1a8.2 8.2 0 0 1 1.5-.9l.3-2.1h3.6l.3 2.1a8.2 8.2 0 0 1 1.5.9l.1.1 2-.8 1.8 3.1-1.6 1.3.1.2a8.2 8.2 0 0 1 0 1.6Z"/>',
+  panel:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
+  'chevron-left':'<path d="m14 6-6 6 6 6"/>',
+  'chevron-right':'<path d="m10 6 6 6-6 6"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+  download:'<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>',
+  share:'<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4"/><path d="m15.4 6.5-6.8 4"/>',
+  more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',
+  x:'<path d="m6 6 12 12M18 6 6 18"/>',
+  send:'<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+  check:'<path d="m5 12 4 4L19 6"/>'
+};
+function icon(name){
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]||icons.file}</svg>`;
+}
+document.querySelectorAll('[data-icon]').forEach(el=>{el.innerHTML=icon(el.dataset.icon);});
+const app=document.getElementById('app');
+const collapseBtn=document.getElementById('collapseBtn');
+const stored=localStorage.getItem('evalframe-sidebar');
+if(stored==='collapsed') app.classList.add('is-collapsed');
+function syncSidebar(){
+  const collapsed=app.classList.contains('is-collapsed');
+  collapseBtn.setAttribute('aria-expanded',String(!collapsed));
+  collapseBtn.setAttribute('aria-label',collapsed?'Expand sidebar':'Collapse sidebar');
+  collapseBtn.querySelector('.collapse-icon').innerHTML=icon(collapsed?'chevron-right':'chevron-left');
+  localStorage.setItem('evalframe-sidebar',collapsed?'collapsed':'expanded');
+}
+collapseBtn.addEventListener('click',()=>{app.classList.toggle('is-collapsed');syncSidebar();});
+document.addEventListener('keydown',e=>{if((e.key==='['||e.key===']') && !e.metaKey && !e.ctrlKey && !e.altKey){e.preventDefault();app.classList.toggle('is-collapsed');syncSidebar();}});
+syncSidebar();
+
+document.querySelectorAll('.nav-item').forEach(item=>{
+  item.addEventListener('click',()=>{
+    document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));
+    item.classList.add('active');
+    showToast(item.dataset.page+' selected');
+    if(window.innerWidth<=760) document.getElementById('sidebar').classList.remove('mobile-open');
+  });
+});
+document.getElementById('mobileMenu').addEventListener('click',()=>document.getElementById('sidebar').classList.add('mobile-open'));
+
+const modal=document.getElementById('shareModal');
+function openModal(){modal.classList.add('open');setTimeout(()=>document.getElementById('recipient').focus(),50);}
+function closeModal(){modal.classList.remove('open');}
+document.getElementById('shareBtn').addEventListener('click',openModal);
+document.getElementById('closeModal').addEventListener('click',closeModal);
+document.getElementById('cancelShare').addEventListener('click',closeModal);
+modal.addEventListener('click',e=>{if(e.target===modal)closeModal();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+
+document.getElementById('sendShare').addEventListener('click',()=>{
+  const to=document.getElementById('recipient').value.trim();
+  if(!to){document.getElementById('recipient').focus();return;}
+  const subject=encodeURIComponent(document.getElementById('subject').value);
+  const body=encodeURIComponent(document.getElementById('message').value+'\n\nAttachment: EXP-0247-comparison.xlsx');
+  window.location.href=`mailto:${encodeURIComponent(to)}?subject=${subject}&body=${body}`;
+  closeModal(); showToast('Email draft opened');
+});
+
+function showToast(text){
+  const t=document.getElementById('toast'); document.getElementById('toastText').textContent=text;
+  t.classList.add('show'); clearTimeout(window.__toast); window.__toast=setTimeout(()=>t.classList.remove('show'),1800);
+}
+
+document.getElementById('exportBtn').addEventListener('click',()=>{
+  const rows=[
+    ['Algorithm comparison','EXP-0247','','','',''],
+    ['Metric','Weight','Algorithm A','Algorithm B','Delta','Advantage'],
+    ['Accuracy','35%','92.0%','88.0%','+4.0 pp','A'],
+    ['Latency','25%','78 ms','61 ms','B −17 ms','B'],
+    ['Robustness','20%','83.0','76.0','+7.0','A'],
+    ['Cost / 1k cases','20%','$0.42','$0.31','B −$0.11','B'],
+    [],
+    ['Recommendation','','Hybrid A + B','','',''],
+    ['Rationale','','A leads accuracy/robustness; B leads latency/cost.','','','']
+  ];
+  if(window.XLSX){
+    const wb=XLSX.utils.book_new();
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols']=[{wch:24},{wch:12},{wch:16},{wch:16},{wch:16},{wch:12}];
+    XLSX.utils.book_append_sheet(wb,ws,'Comparison');
+    XLSX.writeFile(wb,'EXP-0247-algorithm-comparison.xlsx');
+    showToast('Excel workbook exported');
+  }else{
+    const csv=rows.map(r=>r.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(',')).join('\r\n');
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='EXP-0247-algorithm-comparison.csv';a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),500); showToast('CSV fallback exported');
+  }
+});
+</script>
+</body>
+</html>

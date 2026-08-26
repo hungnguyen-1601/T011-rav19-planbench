@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from planbench_agent import build_provider
 from planbench_api.artifacts import FileSystemArtifactStore
 from planbench_api.auth import AuthService
-from planbench_api.config import get_settings
+from planbench_api.config import get_settings, load_provider_keys
 from planbench_api.db import (
     SessionFactory,
     SqlRepositoryHub,
@@ -29,6 +29,7 @@ from planbench_api.errors import register_error_handlers
 from planbench_api.logging_config import configure_logging
 from planbench_api.model_storage import LocalModelStorage
 from planbench_api.oauth import ExchangeCodes, OAuthClient
+from planbench_api.plugin_service import sync_catalogue as sync_plugin_catalogue
 from planbench_api.repositories import RepositoryHub
 from planbench_api.routers import (
     agent,
@@ -41,6 +42,7 @@ from planbench_api.routers import (
     library,
     maps,
     models,
+    plugins,
     reviews,
     scenarios,
     simulations,
@@ -48,6 +50,10 @@ from planbench_api.routers import (
     users,
     ws,
 )
+from planbench_api.routers import (
+    settings as settings_router,
+)
+from planbench_api.static_site import SpaStaticFiles
 from planbench_api.worker import JobQueue
 from planbench_tracking import build_tracker
 
@@ -91,6 +97,14 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     # Uploaded checkpoints. Separate from the artifact store because the
     # lifecycles differ: artifacts belong to a run, models outlive many.
     app.state.model_storage = LocalModelStorage(settings.model_dir)
+    # Where imported bundles are unpacked to be run. Follows the artifact
+    # root when a caller overrides it, so a test never unpacks somebody's
+    # uploaded code into the developer's checkout.
+    app.state.plugin_install_root = (
+        Path(settings.plugin_dir)
+        if settings.plugin_dir
+        else Path(artifact_dir or settings.artifact_dir) / "plugins"
+    )
     # Decision layer (Phase 6.2). The roots follow `artifact_dir` when a
     # caller overrides it — a test passing its own artifact root must not
     # have selection runs land in the developer's checkout — but an
@@ -108,7 +122,34 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     # temporary directory, every test re-simulated episodes another test
     # had already run.
     decision_root = Path(artifact_dir) if artifact_dir else Path(settings.artifact_dir)
-    app.state.decision_map_root = Path(settings.map_root)
+    _map_root_candidate = Path(settings.map_root).resolve()
+    # Verify the map root is writable (container filesystems like Render's
+    # can be read-only for /app while /tmp is always writable). Fall back
+    # to a well-known writable location so custom maps materialise correctly.
+    try:
+        _probe = _map_root_candidate / "maps" / "custom"
+        _probe.mkdir(parents=True, exist_ok=True)
+        _test_file = _probe / ".write_probe"
+        _test_file.write_text("ok", encoding="utf-8")
+        _test_file.unlink()
+        app.state.decision_map_root = _map_root_candidate
+    except OSError:
+        import logging as _logging
+        import tempfile
+
+        # `tempfile.gettempdir()`, not the literal "/tmp": on Windows
+        # that literal is a *relative* path once resolved against the
+        # drive of the working directory, so the fallback quietly created
+        # C:\tmp\ and the desktop build wrote its custom maps somewhere
+        # nobody would look for them.
+        _fallback = Path(tempfile.gettempdir()) / "planbench_maps"
+        (_fallback / "maps" / "custom").mkdir(parents=True, exist_ok=True)
+        _logging.getLogger("planbench.api").warning(
+            "map_root %s is not writable; falling back to %s",
+            _map_root_candidate,
+            _fallback,
+        )
+        app.state.decision_map_root = _fallback
     app.state.decision_trace_dir = (
         Path(settings.decision_trace_dir)
         if settings.decision_trace_dir
@@ -119,6 +160,18 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     )
     app.state.repos = _build_repositories(settings, artifacts, app)
     app.state.auth = AuthService(settings, app.state.repos.users)
+    # Republish imported algorithms into the runtime catalogue. The set
+    # lives in the benchmark registry for the life of the process, so a
+    # restart has to rebuild it from what was stored — otherwise a
+    # plugin imported yesterday silently stops being offerable today.
+    # Storage as well as the root: a bundle whose directory this build
+    # no longer looks in — the identity change moved it — is unpacked
+    # again from the archive rather than offered with nothing behind it.
+    sync_plugin_catalogue(
+        app.state.repos.plugin_bundles,
+        app.state.plugin_install_root,
+        app.state.model_storage,
+    )
     # One-time codes and the provider HTTP client are app-scoped: the
     # codes must outlive a request, and the client is replaced wholesale
     # in tests so no OAuth test ever reaches the network.
@@ -141,6 +194,17 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     # else. Two queues, two different jobs, two different bounds.
     app.state.decision_jobs = JobQueue(1)
     app.state.tracker = build_tracker(settings.mlflow_tracking_uri, settings.mlflow_experiment)
+    # Before the provider is built, not after: `build_provider` decides
+    # which backend is reachable by reading os.environ, and the keys are
+    # documented as living in `.env` — which pydantic-settings reads into
+    # the settings object and nowhere else. Without this the model id
+    # arrives, the key does not, and `auto` falls to the offline
+    # responder while the configuration looks complete.
+    filled = load_provider_keys()
+    if filled:
+        logging.getLogger("planbench.api").info(
+            "provider keys read from .env: %s", ", ".join(filled)
+        )
     app.state.agent_provider = build_provider(
         settings.agent_provider,
         model=settings.agent_model or None,
@@ -153,6 +217,13 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # Without this the browser hides `Content-Disposition` from
+        # JavaScript on any cross-origin read — and the web app is on a
+        # different port from the API in every local setup. The download
+        # helper then cannot see the filename the server chose and falls
+        # back to one it guessed, which is how the Excel export came to
+        # save itself as `.md`.
+        expose_headers=["Content-Disposition"],
     )
     register_error_handlers(app)
     app.include_router(health.router, prefix=API_PREFIX)
@@ -161,6 +232,13 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     app.include_router(reviews.router, prefix=API_PREFIX)
     app.include_router(maps.router, prefix=API_PREFIX)
     app.include_router(scenarios.router, prefix=API_PREFIX)
+    # Before `algorithms`, and the order is load-bearing: that router
+    # owns `/algorithms/{algorithm_id}`, which matches the literal path
+    # `/algorithms/plugins` too. FastAPI takes the first route that
+    # matches, so registering the catalogue first would answer every
+    # plugin request with "unknown algorithm 'plugins'". Pinned by
+    # test_the_plugin_routes_are_not_swallowed_by_the_catalogue.
+    app.include_router(plugins.router, prefix=API_PREFIX)
     app.include_router(algorithms.router, prefix=API_PREFIX)
     app.include_router(tuning.router, prefix=API_PREFIX)
     app.include_router(simulations.router, prefix=API_PREFIX)
@@ -170,7 +248,22 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     app.include_router(models.router, prefix=API_PREFIX)
     app.include_router(decisions.router, prefix=API_PREFIX)
     app.include_router(agent.router, prefix=API_PREFIX)
+    app.include_router(settings_router.router, prefix=API_PREFIX)
     app.include_router(ws.router)  # websockets are not under /api/v1
+    # Last, and the position is the whole of it: a mount at "/" matches
+    # every path, so registering it earlier would answer /api/v1 and
+    # /ws with the web UI's 404 page. Pinned by
+    # test_mounting_the_web_ui_does_not_swallow_the_api.
+    if settings.web_dir:
+        web_root = Path(settings.web_dir)
+        if web_root.is_dir():
+            app.mount("/", SpaStaticFiles(directory=web_root, html=True), name="web")
+        else:
+            logging.getLogger("planbench.api").warning(
+                "PLANBENCH_WEB_DIR is set to %s, which is not a directory; "
+                "serving the API without a web UI",
+                web_root,
+            )
     return app
 
 

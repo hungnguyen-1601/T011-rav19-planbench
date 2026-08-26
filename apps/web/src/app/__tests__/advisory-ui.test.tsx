@@ -19,7 +19,7 @@ const APP = join(process.cwd(), "src", "app");
 const read = (...parts: string[]) => readFileSync(join(process.cwd(), "src", ...parts), "utf8");
 
 const LAUNCH = read("app", "decisions", "page.tsx");
-const DETAIL = readFileSync(join(APP, "decisions", "[id]", "page.tsx"), "utf8");
+const DETAIL = readFileSync(join(APP, "decisions", "[id]", "DecisionDetail.tsx"), "utf8");
 const AGENT = read("app", "agent", "page.tsx");
 const PAPER = read("components", "FromPaperPanel.tsx");
 const ADVICE_VIEW = read("components", "AdviceListView.tsx");

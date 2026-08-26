@@ -24,9 +24,32 @@ import vi from "../../lib/i18n/locales/vi.json";
 
 const read = (...parts: string[]) => readFileSync(join(process.cwd(), "src", ...parts), "utf8");
 const REPORTS = read("lib", "reports.ts");
-const DETAIL = read("app", "decisions", "[id]", "page.tsx");
+const DETAIL = read("app", "decisions", "[id]", "DecisionDetail.tsx");
 const MARKDOWN = readFileSync(
   join(process.cwd(), "..", "api", "planbench_api", "decision_markdown.py"),
+  "utf8",
+);
+
+// What an export *says* moved out of the Markdown renderer when Excel
+// became a second format: one module decides every value, and the two
+// renderers only decide where it sits. The assertions below are about
+// content, so they read that module.
+const EXPORT = readFileSync(
+  join(process.cwd(), "..", "api", "planbench_api", "decision_export.py"),
+  "utf8",
+);
+const WORKBOOK = readFileSync(
+  join(process.cwd(), "..", "api", "planbench_api", "decision_xlsx.py"),
+  "utf8",
+);
+/* The words themselves moved again when the export became bilingual: a
+   document in a language the reader does not use is one whose caveats do
+   not travel, which is the failure the caveats exist to prevent. The
+   renderers now carry keys and this table carries the sentences, so an
+   assertion about wording reads it and an assertion about placement
+   still reads the renderer. */
+const TEXTS = readFileSync(
+  join(process.cwd(), "..", "api", "planbench_api", "decision_text.py"),
   "utf8",
 );
 
@@ -47,7 +70,12 @@ describe("the export is a fetch, never a link", () => {
   });
 
   it("takes a path so the mechanism outlived the flow it was written for", () => {
-    expect(REPORTS).toContain("downloadReportMarkdown(path: string, fallbackName: string)");
+    // Renamed when it stopped being Markdown-only: a helper whose name
+    // says Markdown while it serves .xlsx is a lie nothing ever fails on.
+    expect(REPORTS).toContain("downloadReport(path: string, fallbackName: string)");
+    // The old name may still be named in a comment explaining the
+    // rename; what must be gone is the function.
+    expect(REPORTS).not.toContain("function downloadReportMarkdown");
     expect(REPORTS).toContain("export function downloadDecisionReport(");
   });
 });
@@ -68,8 +96,16 @@ describe("every run can be exported, not only the ranked ones", () => {
   });
 
   it("renders the no-card case as a section rather than refusing", () => {
-    expect(MARKDOWN).toContain("## No Decision Card");
-    expect(MARKDOWN).toContain("gate_only_deployment");
+    expect(TEXTS).toContain('"en": "No Decision Card"');
+    expect(MARKDOWN).toContain("heading.no_card");
+    expect(EXPORT).toContain("gate_only_deployment");
+    // And the workbook too — a run that ranked nobody is the
+    // ordinary outcome, so it must not be the one that cannot be
+    // handed to a reviewer in either format.
+    expect(WORKBOOK).toContain("heading.no_card");
+    // In both languages, because the reader who cannot be handed it is
+    // the same reader either way.
+    expect(TEXTS).toContain('"vi": "Không có Thẻ quyết định"');
   });
 });
 
@@ -78,28 +114,40 @@ describe("the document keeps the caveats attached to the numbers", () => {
     /* HĐ-12 defines null that way, and a blank cell in a Markdown table
        reads as reassurance — worse on paper than on screen, because the
        reader cannot ask. */
-    expect(MARKDOWN).toContain('NOT_MEASURED = "not measured"');
-    expect(MARKDOWN).toContain("None of the sensitivity margins were measured");
+    expect(TEXTS).toContain('"value.not_measured": {"en": "not measured"');
+    expect(EXPORT).toContain('NOT_MEASURED = text("value.not_measured")');
+    // Sharper in a spreadsheet: a blank cell sorts to the top, sums
+    // as zero, and averages as though it had been measured.
+    expect(WORKBOOK).toContain("never as a blank");
+    expect(TEXTS).toContain("None of the sensitivity margins were measured");
   });
 
   it("carries the recommendation's scope with the recommendation", () => {
-    expect(MARKDOWN).toContain("HĐ-1.4");
-    expect(MARKDOWN).toContain("and to nothing else");
+    expect(TEXTS).toContain("HĐ-1.4");
+    expect(TEXTS).toContain("and to nothing else");
+    // Both renderers reach for it, so neither format can be the one
+    // that arrives without the limit.
+    expect(MARKDOWN).toContain("prose.scope");
+    expect(WORKBOOK).toContain("prose.scope_sheet");
   });
 
   it("names every candidate retired early, with the sample it actually got", () => {
-    expect(MARKDOWN).toContain("def _stopped_early(");
-    expect(MARKDOWN).toContain("rest on fewer episodes");
+    expect(EXPORT).toContain("def retired_candidates(");
+    expect(TEXTS).toContain("rest on fewer episodes");
+    expect(MARKDOWN).toContain("prose.retired");
   });
 
   it("puts the gates before the card", () => {
-    expect(MARKDOWN.indexOf("_gates(report)")).toBeLessThan(MARKDOWN.indexOf("_card(run, report)"));
+    expect(MARKDOWN.indexOf("_gates(report, locale)")).toBeLessThan(
+      MARKDOWN.indexOf("_card(run, report, locale)"),
+    );
   });
 
   it("keeps an unpinned measurement host in the document", () => {
     /* Unpinned, every latency number measures this machine as much as
        the candidate. */
-    expect(MARKDOWN).toContain("Measurement environment");
+    expect(TEXTS).toContain("Measurement environment");
+    expect(MARKDOWN).toContain("heading.measurement_environment");
   });
 });
 
