@@ -751,3 +751,60 @@ B1 + 8 arm trên o4-mini, B1 trên local, 28 răng.
 3. **Có chạy tiếp E6-E10 + W5 (cascade/model selection) không**, và với ngân
    sách nào. Đợt vừa rồi: 8 arm × 9 lượt o4-mini ≈ 1,4 triệu token vào + 0,3
    triệu ra.
+
+---
+
+## G6 - dựng đủ sáu họ golden (commit `1110e78`)
+
+Ba họ bị chặn vì cùng một lý do: chúng nói về **mẫu hình giữa các episode**,
+không phải bên trong một episode.
+
+| Họ | Cần gì | Dựng thế nào |
+|---|---|---|
+| `expansion_latency` | tương quan search-size vs latency - một điểm thì không có độ dốc | 8 goal dọc hành lang zigzag 40x20 m; A* mở 16 node cho goal gần nhất, ~48 000 cho goal xa nhất |
+| `negative_control` | hiệu số ΔU vắt qua 0 - cần một cặp chấm trên cùng episode | một stack, hai tuning controller (`dwa_default` vs `dwa_patient`), 3 episode; ΔU = +0,008, không detection nào |
+| `insufficient_evidence` | một run không ai ghi lại | chạy **không gắn recorder** - không phải xoá file sau khi chạy |
+
+**Bản nháp đầu của họ latency là một sảnh trống**: search chỉ 16-246 node,
+latency phẳng 5 ms, checker trả **refuted** - đúng. Fixture phải trồng một cơ
+chế **đủ lớn để chính dụng cụ của platform thấy được**; đó là thuộc tính của
+thế giới, không phải của câu chữ. Bản dùng: ρ = 0,93, verdict **supported**.
+
+Chuỗi mới bắc được: planted world → `TaskProfile` → `compute_metrics` →
+`build_evidence` → `build_waterfall`. Hai chỗ phải nối tên: decision layer gọi
+candidate bằng hash khai báo của nó, packet gọi bằng id mọi citation trỏ tới -
+nối tường minh trong builder, vì packet builder (đúng) từ chối một waterfall so
+sánh những candidate nó không thấy.
+
+**Lỗi thật bắt được khi dựng:** sidecar writer đặt tên snapshot chỉ theo số
+attempt, nên episode thứ hai của cùng một candidate **ghi đè** snapshot của
+episode đầu, và mọi record sau đó trỏ vào một file đã bị viết lại - reader báo
+"file bị sửa sau khi chạy", hoàn toàn đúng. Tên snapshot giờ mang episode id.
+
+Fixture: `latency-001` mang thêm `report.json` (per-episode search cost) vì
+`latency_vs_expanded_nodes` đọc theo episode còn packet chỉ mang tổng hợp theo
+candidate. `in_process_round(..., report=...)`.
+
+**`OFFICIAL_GOLDEN_READY` vẫn False**: sáu họ không phải mười hai case; sáu
+biến thể thứ hai chưa dựng (`SECOND_VARIANTS_MISSING`).
+
+**Test:** `tests/test_golden_six_families.py` (22) + suite chạm tới - 220 passed.
+
+---
+
+## E6/E7 - hai cờ arm (commit `61bbe7d`)
+
+`discriminated_union` (tắt = hình dạng trước W4, parser suy nhánh từ việc có
+check hay không) và `critic` (tắt = không xếp hạng, không gắn cờ). Cả hai vào
+`runtime_config_checksum`, mặc định bật.
+
+---
+
+## Điểm dừng phiên
+
+Máy hết khả dụng giữa lúc chạy E6/E7 trên `qwen3:8b` (xong arm `b1`, đang giữa
+`e6_free_schema`). **Không có artifact cho đợt đó** - runner chỉ ghi JSON khi
+chạy xong; chạy lại từ đầu.
+
+Cách vào lại, việc còn lại theo thứ tự, và ba cái bẫy dễ quên:
+`notes/2026-08-26/tongduyan_diem-dung-va-cach-resume.md`.
