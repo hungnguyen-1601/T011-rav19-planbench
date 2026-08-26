@@ -101,14 +101,28 @@ database, not only to a fresh one.
 ### The rate limit is shared with the running app
 
 GitHub's anonymous API allows **60 requests per hour, per IP address**,
-and the installed app uses the same allowance from the same machine.
+and the installed app used the same allowance from the same machine.
 Polling a build every 30 seconds exhausts it and the app starts
 answering `403` to its own update check. That happened, and it looked
 like a bug in the updater.
 
-Poll at 60-second intervals or slower, and prefer the release manifest
-(`releases/latest/download/latest.json`, served by the CDN and not
-counted) over `/actions/runs`.
+It happened a second time with nothing polling at all — ordinary use of
+git and the API from a developer's machine was enough. 0.1.13 shipped
+and the 0.1.12 beside it went on saying it was current, because its
+check got a 403 and a failed check is silent by design.
+
+**From 0.1.14 the app's check no longer touches the API.** It reads
+`releases/latest/download/latest.json`, which the release CDN serves
+without any rate limit, and falls back to the API only when that
+manifest is unusable. An update now costs zero API calls end to end.
+Older installs still use the API and can still be starved; a token in
+their `.env` is the only fix for those, and installing 0.1.14 by hand is
+the better one.
+
+When watching a build **from this machine**, still poll at 60-second
+intervals or slower, and prefer that same manifest over `/actions/runs`
+— or authenticate, which moves you to a separate 5000-an-hour budget
+and leaves the anonymous one for anything that cannot.
 
 ---
 

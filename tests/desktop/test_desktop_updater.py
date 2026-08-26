@@ -85,7 +85,7 @@ class TestVersionComparison:
 
 class TestChoosingARelease:
     def test_it_offers_the_newest_release_above_the_running_one(self, api) -> None:
-        api.responses["/releases"] = json.dumps(
+        api.responses["per_page"] = json.dumps(
             [
                 _release_payload("desktop-v0.1.0"),
                 _release_payload("desktop-v0.3.0"),
@@ -99,7 +99,7 @@ class TestChoosingARelease:
         assert release.version == "0.3.0"
 
     def test_it_offers_nothing_when_the_running_version_is_current(self, api) -> None:
-        api.responses["/releases"] = json.dumps([_release_payload("desktop-v0.2.0")]).encode()
+        api.responses["per_page"] = json.dumps([_release_payload("desktop-v0.2.0")]).encode()
 
         assert updater.latest_release("0.2.0", "token") is None
 
@@ -109,14 +109,14 @@ class TestChoosingARelease:
         Running one of those through a Windows installer is not an
         upgrade, it is a category error with an executable at the end.
         """
-        api.responses["/releases"] = json.dumps(
+        api.responses["per_page"] = json.dumps(
             [{"tag_name": "v9.9.9", "assets": [], "body": ""}]
         ).encode()
 
         assert updater.latest_release("0.1.0", "token") is None
 
     def test_it_skips_a_draft(self, api) -> None:
-        api.responses["/releases"] = json.dumps(
+        api.responses["per_page"] = json.dumps(
             [_release_payload("desktop-v0.5.0", draft=True)]
         ).encode()
 
@@ -125,7 +125,7 @@ class TestChoosingARelease:
     def test_it_skips_a_release_with_no_manifest_to_check_against(self, api) -> None:
         """Without the manifest there is no hash, and without a hash the
         download is an unverified executable."""
-        api.responses["/releases"] = json.dumps(
+        api.responses["per_page"] = json.dumps(
             [_release_payload("desktop-v0.5.0", with_manifest=False)]
         ).encode()
 
@@ -208,16 +208,95 @@ class TestDownloading:
         """The listing is an API resource, not an asset — it really is
         JSON, and asking for octet-stream there would be the mirror of
         the same mistake."""
-        api.responses["/releases"] = json.dumps([]).encode()
+        api.responses["per_page"] = json.dumps([]).encode()
 
         updater.latest_release("0.1.0", "")
 
-        assert api.accepts == [
-            (
-                "https://api.github.com/repos/" + updater.REPOSITORY + "/releases?per_page=30",
-                "application/vnd.github+json",
-            )
-        ]
+        listing = "https://api.github.com/repos/" + updater.REPOSITORY + "/releases?per_page=30"
+        assert (listing, "application/vnd.github+json") in api.accepts
+
+
+class TestTheCheckThatDoesNotSpendTheApiBudget:
+    """Why the manifest is read first, and what that buys.
+
+    Anonymous GitHub API access is capped at sixty calls an hour **per
+    IP**, shared with everything else on the machine that talks to
+    GitHub. The app's own share is one call per launch, so it is rarely
+    what exhausts the budget — it is what notices. When the budget was
+    gone the check answered 403 and the app said nothing was available:
+    0.1.13 shipped, and the 0.1.12 beside it went on reporting itself
+    current. Release assets are served by a CDN with no such cap.
+    """
+
+    @staticmethod
+    def _manifest(version: str) -> bytes:
+        return json.dumps(
+            {"version": version, "asset": "PlanBench-Setup.exe", "sha256": "aa" * 32}
+        ).encode()
+
+    def test_a_newer_version_is_found_without_touching_the_api(self, api) -> None:
+        api.responses["releases/latest/download"] = self._manifest("0.2.0")
+
+        release = updater.latest_release("0.1.0", "")
+
+        assert release is not None
+        assert release.version == "0.2.0"
+        assert not any("api.github.com" in url for url in api.asked)
+
+    def test_being_up_to_date_costs_no_api_call_either(self, api) -> None:
+        """The common case: this runs once per launch on every install,
+        and almost always finds nothing to do."""
+        api.responses["releases/latest/download"] = self._manifest("0.1.12")
+
+        assert updater.latest_release("0.1.12", "") is None
+        assert not any("api.github.com" in url for url in api.asked)
+
+    def test_the_urls_are_pinned_to_the_tag_rather_than_to_latest(self, api) -> None:
+        """`releases/latest` moves. If the download followed it, a release
+        publishing between the check and the download would hand over an
+        installer other than the one whose hash was read — and that hash
+        is the only thing standing between a download and running an
+        unknown executable."""
+        api.responses["releases/latest/download"] = self._manifest("0.2.0")
+
+        release = updater.latest_release("0.1.0", "")
+
+        assert release is not None
+        assert release.tag == "desktop-v0.2.0"
+        for url in (release.installer_url, release.manifest_url):
+            assert "releases/download/desktop-v0.2.0/" in url
+            assert "/latest/" not in url
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"asset": "PlanBench-Setup.exe"},
+            {"version": "0.2.0"},
+            {"version": "0.2.0", "asset": "notes.txt"},
+        ],
+    )
+    def test_an_unusable_manifest_falls_back_to_the_api(self, api, payload) -> None:
+        """`releases/latest` is the newest release of *any* kind, and this
+        repository tags other things. A manifest that does not name both a
+        version and an installer is the signal to go and filter the
+        listing by tag prefix, which only the API can do."""
+        api.responses["releases/latest/download"] = json.dumps(payload).encode()
+        api.responses["per_page"] = json.dumps([_release_payload("desktop-v0.3.0")]).encode()
+
+        release = updater.latest_release("0.1.0", "")
+
+        assert release is not None
+        assert release.version == "0.3.0"
+        assert any("per_page" in url for url in api.asked)
+
+    def test_a_cdn_failure_falls_back_rather_than_giving_up(self, api) -> None:
+        """No stub for the manifest, so the fake transport raises — the
+        same shape a 404 or a timeout arrives in."""
+        api.responses["per_page"] = json.dumps([_release_payload("desktop-v0.3.0")]).encode()
+
+        release = updater.latest_release("0.1.0", "")
+
+        assert release is not None and release.version == "0.3.0"
 
 
 class TestTheFlow:
@@ -231,23 +310,36 @@ class TestTheFlow:
         indistinguishable, from their side, from having no updater.
         """
         monkeypatch.delenv(updater.TOKEN_ENV, raising=False)
-        api.responses["/releases"] = json.dumps([_release_payload("desktop-v0.9.0")]).encode()
+        api.responses["per_page"] = json.dumps([_release_payload("desktop-v0.9.0")]).encode()
         monkeypatch.setattr(updater, "ask", lambda release: False)
 
         updater.offer("0.1.0", tmp_path, ["python"])
 
-        assert any("/releases" in url for url in api.asked)
-        assert api.credentials == [""]
+        assert any("per_page" in url for url in api.asked)
+        assert set(api.credentials) == {""}
 
-    def test_a_token_is_used_when_one_is_configured(self, api, monkeypatch, tmp_path) -> None:
-        """Honoured, not required: it raises the anonymous rate limit and
-        is what would keep this working if the repository went private."""
+    def test_a_token_is_used_on_the_api_and_never_on_the_cdn(
+        self, api, monkeypatch, tmp_path
+    ) -> None:
+        """Honoured where it helps, withheld where it would break things.
+
+        The API fallback takes it — raising that budget is what a
+        credential is for here. The manifest request must not: the CDN
+        redirects to a pre-signed storage URL, which refuses a request
+        arriving with a second credential, so signing that one would
+        break the ordinary path for exactly the people who configured a
+        token.
+        """
         monkeypatch.setenv(updater.TOKEN_ENV, "  configured-token  ")
-        api.responses["/releases"] = json.dumps([]).encode()
+        api.responses["per_page"] = json.dumps([]).encode()
 
         updater.offer("0.1.0", tmp_path, ["python"])
 
-        assert api.credentials == ["configured-token"]
+        sent = dict(zip(api.asked, api.credentials, strict=True))
+        listing = next(url for url in api.asked if "per_page" in url)
+        manifest = next(url for url in api.asked if "releases/latest/download" in url)
+        assert sent[listing] == "configured-token"
+        assert sent[manifest] == ""
 
     def test_a_network_failure_never_stops_the_app_opening(self, api, tmp_path) -> None:
         """An updater that can prevent the application from starting is a
@@ -258,7 +350,7 @@ class TestTheFlow:
         assert updater.offer("0.1.0", tmp_path, ["python"]) is False
 
     def test_declining_leaves_everything_alone(self, api, monkeypatch, tmp_path) -> None:
-        api.responses["/releases"] = json.dumps([_release_payload("desktop-v0.9.0")]).encode()
+        api.responses["per_page"] = json.dumps([_release_payload("desktop-v0.9.0")]).encode()
         monkeypatch.setattr(updater, "ask", lambda release: False)
         applied: list[object] = []
         monkeypatch.setattr(updater, "apply", lambda *a, **kw: applied.append(a))
@@ -268,7 +360,7 @@ class TestTheFlow:
 
     def test_accepting_downloads_and_hands_off(self, api, monkeypatch, tmp_path) -> None:
         payload = b"installer bytes"
-        api.responses["/releases"] = json.dumps([_release_payload("desktop-v0.9.0")]).encode()
+        api.responses["per_page"] = json.dumps([_release_payload("desktop-v0.9.0")]).encode()
         api.responses["manifest"] = json.dumps(
             {"version": "0.9.0", "sha256": hashlib.sha256(payload).hexdigest()}
         ).encode()

@@ -21,12 +21,30 @@ executable with the user's privileges.
 
 The releases are public, so no credential is needed and none is asked
 for: an installation checks anonymously and updates itself. A token in
-the data directory's `.env` is honoured when present — it raises the
-anonymous rate limit, and it is what would keep this working if the
-repository were ever made private — but requiring one would have meant
-every person who installed the app had to paste a credential before it
-would ever notice a new version, which is the same as not having an
-updater at all.
+the data directory's `.env` is honoured when present — it is what would
+keep this working if the repository were ever made private — but
+requiring one would have meant every person who installed the app had to
+paste a credential before it would ever notice a new version, which is
+the same as not having an updater at all.
+
+**The check no longer goes through the API, and that is a bug fix.**
+Anonymous API access is capped at sixty calls an hour *per IP* — a
+budget the app shares with git, with CI checks, with everything else on
+the machine that talks to GitHub. The app's own share is one call per
+launch, so it is almost never the thing that exhausts the budget; it is
+simply the thing that notices. When the budget is gone the API answers
+403, the check fails, and the person is told nothing is available.
+
+That is measured, not imagined: 0.1.13 shipped, and the 0.1.12 running
+beside it went on reporting itself current with two 403s in its log.
+Setting a token fixes it for one machine. Not spending the budget fixes
+it for everyone, including the colleague who installs this from a file
+somebody sent them and will never edit a `.env`.
+
+So the ordinary path reads the release's own published manifest, which
+is served by the release CDN and is not rate limited at all. The API
+stays as the fallback, because only it can filter releases by tag
+prefix — see :func:`_latest_from_manifest` for when that matters.
 """
 
 from __future__ import annotations
@@ -63,6 +81,13 @@ MANIFEST_ASSET = "latest.json"
 TOKEN_ENV = "PLANBENCH_UPDATE_TOKEN"
 
 API = "https://api.github.com"
+
+#: Where a release's own files are served from, as opposed to the API
+#: that describes them. **This host applies no rate limit**, which is the
+#: whole reason the check below prefers it: that check runs once per
+#: launch on every machine the app is installed on.
+DOWNLOADS = "https://github.com"
+
 TIMEOUT_S = 10.0
 
 #: Read size while streaming the installer. Small enough that the
@@ -155,12 +180,81 @@ def token() -> str:
     return os.environ.get(TOKEN_ENV, "").strip()
 
 
+def _asset_url(tag: str, asset: str) -> str:
+    """A release file by tag and name, straight from the CDN."""
+    return f"{DOWNLOADS}/{REPOSITORY}/releases/download/{tag}/{asset}"
+
+
 def latest_release(current: str, credential: str) -> Release | None:
     """The newest desktop release above ``current``, if there is one.
 
+    The manifest first and the API only if that fails. The module
+    docstring says why: the API path costs a call against a sixty-an-hour
+    budget shared with everything else on the machine, and when it runs
+    out this reports "up to date" for a version that is not.
+    """
+    try:
+        return _latest_from_manifest(current)
+    except UpdateError as exc:
+        # Info rather than warning: the fallback below is the path that
+        # was here before this one existed, and it is still correct.
+        logger.info("the published manifest was unusable (%s); asking the API", exc)
+    return _latest_from_api(current, credential)
+
+
+def _latest_from_manifest(current: str) -> Release | None:
+    """What the newest release publishes about itself, read without the API.
+
+    **Sent unsigned, deliberately.** The CDN answers with a redirect to a
+    pre-signed storage URL, and that URL refuses a request arriving with
+    a second credential — so passing the optional token here would break
+    the ordinary path for exactly the people who bothered to configure
+    one. It is not needed either: the releases are public.
+
+    **`releases/latest` is the newest release of *any* kind**, and this
+    repository carries tags that are not this application. So the
+    manifest is not trusted for being the latest thing — it has to name a
+    version and an installer, and if it does not, this raises and the
+    caller falls back to the API, which can filter by tag prefix.
+
+    The URLs handed back are pinned to the tag the manifest named, never
+    to `latest`. Between this check and the download a release could
+    publish; pinning means what gets hashed and what gets installed are
+    the same file.
+    """
+    payload = json.loads(
+        _request(
+            f"{DOWNLOADS}/{REPOSITORY}/releases/latest/download/{MANIFEST_ASSET}",
+            accept="application/octet-stream",
+        )
+    )
+    version = str(payload.get("version", "")).strip()
+    asset = str(payload.get("asset", "")).strip()
+    if not version or not asset.lower().endswith(".exe"):
+        raise UpdateError(f"{MANIFEST_ASSET} names no installer for a version")
+    if parse_version(version) <= parse_version(current):
+        return None
+    tag = f"{TAG_PREFIX}{version}"
+    return Release(
+        version=version,
+        tag=tag,
+        installer_url=_asset_url(tag, asset),
+        installer_name=asset,
+        manifest_url=_asset_url(tag, MANIFEST_ASSET),
+        # The manifest carries no release body, and the dialog needs a
+        # version and a question rather than notes. `ask` handles "".
+        notes="",
+    )
+
+
+def _latest_from_api(current: str, credential: str) -> Release | None:
+    """The fallback, and the one thing it can do that the manifest cannot.
+
     The releases list rather than `/releases/latest`: that endpoint
     answers with the newest release of *any* kind, which in a repository
-    that tags other things is not necessarily this application.
+    that tags other things is not necessarily this application. Filtering
+    the list by tag prefix is the only way to be certain, and it is why
+    this path is kept rather than deleted.
     """
     payload = json.loads(
         _request(
@@ -414,6 +508,7 @@ def offer(current: str, cache: Path, relaunch: list[str]) -> bool:
 
 
 __all__ = [
+    "DOWNLOADS",
     "MANIFEST_ASSET",
     "REPOSITORY",
     "TAG_PREFIX",
