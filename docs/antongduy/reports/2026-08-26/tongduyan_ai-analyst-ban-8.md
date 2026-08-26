@@ -21,7 +21,8 @@ phase đó.
 | M1 metrics cuối cùng vào packet | **xong** | `382ca5d` |
 | M2 metrics realtime theo episode | **xong** | `40bd527` |
 | M3 bảng traits trong DB | **xong** | `da29e94` |
-| A5 knowledge provider (AI2) | **xong** | (xem §A5) |
+| A5 knowledge provider (AI2) | **xong** | `4d7c15e` |
+| A6 harness + calibration dev | **xong** | (xem §A6) |
 | A4 seam + lane + gateway | chưa | |
 | A5 knowledge provider | chưa | |
 | A6 dev calibration + harness | chưa | |
@@ -1065,6 +1066,89 @@ view không traits thì rỗng · review status hiện trong label.
   retrieval có thêm gì không. Nói rõ để không ai đọc "A5 xong" thành "analyst
   đang dùng KB".
 - Reader từ bảng DB sang `TraitSource` vẫn treo như ghi ở M3.
+
+---
+
+## A6 — Harness: đếm lỗi trước, đọc ngưỡng sau
+
+### Đã làm gì
+
+Thứ tự của module này là thứ tự của công việc, và cố ý **không** phải thứ tự mà
+ai đó với tay tới một metric sẽ chọn.
+
+**1. `failure_table()` chạy trước khi đọc bất kỳ ngưỡng nào.** Trả về bảng tần
+suất: luật guard nào nổ, host từ chối mã nào, mỗi vòng kết thúc kiểu gì. Một cái
+bar chọn trước khi ai đó nhìn xem thực tế hỏng ra sao là cái bar đo **thứ dễ
+đo**. Sáu ngưỡng preregister vẫn là bar; bảng này nói ngưỡng nào đáng làm trước.
+
+**2. `pass_hat_k()` — chạy một lần không đo được độ tin cậy.** `pass@k` ("có
+đúng ít nhất một lần") là con số đem đi demo; `pass^k` ("đúng mọi lần") là con số
+deployment phải sống chung. Analyst đúng 90%/lượt thì `pass^3` còn 0,73.
+
+**3. So với sàn là phép so **ghép cặp**, không phải hai trung bình.**
+`mcnemar_exact()` chỉ đọc các ca hai bên **bất đồng** — ca cả hai cùng đúng hoặc
+cùng sai không mang thông tin nào về việc bên nào tốt hơn. Và `underpowered` được
+**báo cáo tường minh**: dưới ~6 ca bất đồng thì p nhỏ nhất có thể đạt vẫn trên
+0,05, nên "p = 0,25 trên ba ca" **không phải bằng chứng yếu về việc không khác
+nhau** — nó là không có bằng chứng theo cả hai chiều.
+
+**4. Chi phí là một trục, không phải chú thích.** Token và tool call trung vị đi
+cạnh số chất lượng. "Tốt hơn và đắt gấp bốn" là một câu trả lời khác với "tốt
+hơn", và chỉ một trong hai là một deployment. Trung vị chứ không trung bình: một
+ca chạy loạn không được đặt con số mà người ta lập ngân sách theo.
+
+**5. `routing_failures()` — 22 mã từ chối đọc thành 4 loại lỗi routing.**
+`checker_selection` là **một** con số cho một kỹ năng có bốn cách hỏng khác nhau;
+xin tool không trả lời được câu hỏi và xin đúng tool với sai đối số cần hai cách
+sửa khác nhau.
+
+**6. Không báo cáo precision trên packet thật, và lý do đi kèm bảng.**
+`REAL_PACKET_CAVEATS` nằm trên chính report chứ không nằm trong một docstring ai
+đó đọc một lần.
+
+### Lỗi harness tìm ra ngay khi vừa dựng xong
+
+**Sàn model-free vi phạm chính luật mà nó bị đem ra so.**
+
+`reference_analyst` viết câu: *"the stuck_cluster seen on cand_a **in 9 of 30
+episodes** is consistent with local minimum entrapment"*. Đó là **số trong
+statement** — đúng thứ guard luật 2 drop, bất kể ai viết. Hệ quả: sàn **đi qua
+guard là abstain trên mọi packet có gì đó**, và phép so mà harness chạy với nó
+đang đo **con số không**.
+
+Phát hiện được vì test `test_an_observation_the_floor_maps_makes_the_pairing_visible`
+đòi `floor_only == 1` và nhận 0.
+
+Vá ở sàn chứ không nới guard: bỏ hai con số khỏi câu, giữ nguyên ref
+`obs:<type>:<candidate>` — số nằm trong packet, ref trỏ vào đó. Kèm comment nói
+rõ lần sai này, vì "so sàn" là một trong sáu phép đo A6 hứa.
+
+Đây là lần thứ tư trong plan này một phép kiểm phát hiện ra thứ mà test xanh
+không thấy, và lần đầu tiên nó là **phép so chính** bị vô hiệu.
+
+### Bằng chứng
+
+| Phép kiểm | Kết quả |
+|---|---|
+| `pytest` 18 suite | **497 passed** |
+| Bộ răng | **32/32 CẮN** |
+| `ruff check` | sạch |
+
+20 test mới: bảng lỗi gộp guard + host + ending · bảng rỗng khi không có gì ·
+mã host đọc thành loại lỗi routing · `pass^k` giảm theo k · chỉ ca bất đồng mang
+thông tin · 4 ca bất đồng **không thể** đạt ý nghĩa, 6 ca thì được · comparison
+tự khai underpowered · chi phí nằm cạnh chất lượng · precision **không** có trong
+summary và lý do đi kèm · model chết đếm là crash chứ không phải abstention ·
+sàn cũng đi qua guard · mỗi repeat dựng round mới (host mang session).
+
+### Còn nợ sau A6
+
+- Chưa chạy trên **packet thật** trong worktree: packet cũ khai
+  `EXPLANATION_SCHEMA_VERSION 0.1.0`, mà M1 đã bump lên 0.2.0 nên view từ chối —
+  **đúng luật**. Cần A6.5 dựng packet mới rồi mới có số thật. Ghi ra để không ai
+  đọc "harness xong" thành "đã đo model thật".
+- Ablation critic (bật/tắt, leave-one-out) chưa chạy: nó cần cùng bộ packet mới,
+  nên đi cùng A6.5.
 
 ---
 

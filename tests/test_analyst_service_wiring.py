@@ -35,6 +35,7 @@ PHASES_LANDED = [
     "analyst",
     "cache",
     "guard",
+    "harness",
     "identity",
     "knowledge_provider",
     "model_gateway",

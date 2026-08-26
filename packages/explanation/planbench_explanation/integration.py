@@ -382,9 +382,16 @@ def reference_analyst(analysis: AnalysisRequest) -> AnalysisResponse:
         proposals.append(
             HypothesisProposal(
                 hypothesis_id=f"hyp-{index:03d}",
+                # **No counts in the sentence.** This floor used to
+                # say "in 9 of 30 episodes", which is a quantity in a
+                # statement — the one thing the analyst guard drops
+                # whoever wrote it. A guarded floor therefore abstained
+                # on every packet that had anything in it, and the
+                # comparison the harness runs against it was measuring
+                # nothing. The numbers are in the packet and the ref
+                # below points at them.
                 hypothesis_statement=(
-                    f"the {detection_type} seen on {observation.candidate_id} in "
-                    f"{observation.episodes_seen} of {observation.episodes_total} episodes "
+                    f"the {detection_type} seen on {observation.candidate_id} "
                     f"is consistent with {proposition.replace('_', ' ')}"
                 ),
                 proposition_type=proposition,
