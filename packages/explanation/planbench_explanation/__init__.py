@@ -113,7 +113,6 @@ from planbench_explanation.golden import (
     score_case,
     score_suite,
 )
-from planbench_explanation.golden_fixtures import VISIBLE_SUITE
 from planbench_explanation.host import (
     AWAITING_SIDECAR,
     EvidenceSource,
@@ -643,3 +642,21 @@ __all__ = [
     "write_sidecar",
     "write_tool_schemas",
 ]
+
+
+def __getattr__(name: str):  # type: ignore[no-untyped-def]
+    """``VISIBLE_SUITE`` resolves on demand, and only where it exists.
+
+    The visible suite carries the planted answer for every calibration
+    case. The analyst image removes ``golden_fixtures.py`` after copying
+    this package (see ``docker/Dockerfile.analyst``), because an answer
+    key inside the container is an answer key inside the exam. An eager
+    import here would make the whole package fail to load there; a lazy
+    one fails only when something actually reaches for the labels —
+    which, in the container, nothing legitimately does.
+    """
+    if name == "VISIBLE_SUITE":
+        from planbench_explanation.golden_fixtures import VISIBLE_SUITE
+
+        return VISIBLE_SUITE
+    raise AttributeError(name)

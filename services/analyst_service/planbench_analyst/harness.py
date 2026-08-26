@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 from math import comb
 
 from planbench_agent.provider import LLMProvider
+from planbench_analyst.cache import ResponseCache
 from planbench_analyst.guard import guard
 from planbench_analyst.packet_view import build_packet_view
 from planbench_analyst.round_host import PreparedRound
@@ -57,7 +58,9 @@ __all__ = [
     "failure_table",
     "mcnemar_exact",
     "pass_hat_k",
+    "quality_pass_hat_k",
     "routing_failures",
+    "wilson_interval",
 ]
 
 #: Host rejection codes read as the tool-routing mistake they are. The
@@ -156,6 +159,43 @@ def pass_hat_k(runs: Sequence[Sequence[bool]]) -> float:
     return sum(1 for case in runs if case and all(case)) / len(runs)
 
 
+def wilson_interval(successes: int, trials: int, *, z: float = 1.96) -> tuple[float, float]:
+    """A confidence interval that behaves near 0 and 1 on small n.
+
+    Reported beside every ``pass^k`` because three to five repeats on a
+    handful of cases is a coarse estimate, and a bare rate reads as more
+    precise than it is. Wilson rather than Wald: Wald collapses to a
+    zero-width interval at 0/n and n/n, which is exactly where small
+    evaluations land.
+    """
+    if trials <= 0:
+        return (0.0, 0.0)
+    rate = successes / trials
+    denominator = 1 + z * z / trials
+    centre = (rate + z * z / (2 * trials)) / denominator
+    half = z * ((rate * (1 - rate) / trials + z * z / (4 * trials * trials)) ** 0.5)
+    half /= denominator
+    return (max(0.0, centre - half), min(1.0, centre + half))
+
+
+def quality_pass_hat_k(
+    runs: Sequence[Sequence[bool]], *, min_cases: int
+) -> tuple[float | None, tuple[int, int], tuple[float, float]]:
+    """``pass^k`` where pass means *met the quality bar*, not *did not crash*.
+
+    Returns ``(rate, (held, cases), wilson_ci)``. The rate is ``None``
+    below ``min_cases``: on three cases one flip is thirty-three points,
+    and a number that coarse should not travel as a number — the counts
+    do, and the reader sees them.
+    """
+    held = sum(1 for case in runs if case and all(case))
+    cases = len(runs)
+    interval = wilson_interval(held, cases)
+    if cases < min_cases:
+        return (None, (held, cases), interval)
+    return (held / cases, (held, cases), interval)
+
+
 def mcnemar_exact(only_first: int, only_second: int) -> float:
     """Two-sided exact p over the discordant pairs. No dependencies.
 
@@ -215,6 +255,14 @@ class HarnessReport:
     #: and recall are not computable and are not here.
     caveats: tuple[str, ...] = ()
     notes: tuple[str, ...] = field(default_factory=tuple)
+    #: Reads served from a response cache during this run. A measured
+    #: run must report zero: reading the same answer twice says nothing
+    #: about whether the model would say it twice.
+    cache_hits: int = 0
+
+    @property
+    def measured_independently(self) -> bool:
+        return self.cache_hits == 0
 
     @property
     def crashes(self) -> int:
@@ -260,6 +308,8 @@ class HarnessReport:
             "floor_discordant": self.comparison.discordant if self.comparison else 0,
             "floor_p_value": round(self.comparison.p_value, 4) if self.comparison else None,
             "floor_underpowered": self.comparison.underpowered if self.comparison else None,
+            "cache_hits": self.cache_hits,
+            "measured_independently": self.measured_independently,
             "caveats": list(self.caveats),
         }
 
@@ -282,6 +332,7 @@ def compare_with_floor(
     *,
     repeats: int = 1,
     caveats: Sequence[str] = REAL_PACKET_CAVEATS,
+    cache: ResponseCache | None = None,
 ) -> HarnessReport:
     """Run the model and the floor over the same packets, and report both.
 
@@ -327,10 +378,20 @@ def compare_with_floor(
     comparison = FloorComparison(
         cases=tuple(results), model_only=model_only, floor_only=floor_only
     )
+    hits = cache.stats.hits if cache is not None else 0
+    if hits:
+        # Not a caveat — a refusal. A report with cache hits in it is
+        # not a measurement of the model, and it must not be able to
+        # leave this function looking like one.
+        raise RuntimeError(
+            f"{hits} response(s) were served from cache during a measured run; every "
+            "repeat has to be an independent model call"
+        )
     return HarnessReport(
         cases=tuple(results),
         repeats=max(1, repeats),
         reliability=pass_hat_k(holds),
         comparison=comparison,
         caveats=tuple(caveats),
+        cache_hits=hits,
     )

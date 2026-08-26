@@ -51,6 +51,15 @@ from planbench_analyst.bundle_builder import (
     freeze_bundle,
 )
 from planbench_analyst.cache import CacheStats, ResponseCache, cache_key
+from planbench_analyst.eval_spec import (
+    CaseLabels,
+    EvalSpec,
+    EvalSpecRefusal,
+    RefPredicate,
+    assert_no_label_in,
+    load_eval_spec,
+    refs_satisfy,
+)
 from planbench_analyst.guard import Blocked, GuardResult, critique, guard, quantities_in
 from planbench_analyst.harness import (
     CaseResult,
@@ -60,7 +69,9 @@ from planbench_analyst.harness import (
     failure_table,
     mcnemar_exact,
     pass_hat_k,
+    quality_pass_hat_k,
     routing_failures,
+    wilson_interval,
 )
 from planbench_analyst.identity import (
     SOURCE_GLOBS,
@@ -84,6 +95,11 @@ from planbench_analyst.packet_view import (
     PacketView,
     PacketViewRefusal,
     build_packet_view,
+)
+from planbench_analyst.preregistration import (
+    PREREGISTRATION,
+    Preregistration,
+    preregistration_checksum,
 )
 from planbench_analyst.prompts import (
     ANALYST_SYSTEM,
@@ -109,6 +125,18 @@ from planbench_analyst.stdio_protocol import (
 )
 
 __all__ = [
+    "wilson_interval",
+    "refs_satisfy",
+    "quality_pass_hat_k",
+    "preregistration_checksum",
+    "load_eval_spec",
+    "assert_no_label_in",
+    "RefPredicate",
+    "Preregistration",
+    "PREREGISTRATION",
+    "EvalSpecRefusal",
+    "EvalSpec",
+    "CaseLabels",
     "ANALYST_SYSTEM",
     "RETRIEVAL_VERSION",
     "SOURCE_GLOBS",

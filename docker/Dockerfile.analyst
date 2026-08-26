@@ -50,6 +50,13 @@ COPY services/agent_service/ /app/services/agent_service/
 COPY services/analyst_service/ /app/services/analyst_service/
 COPY schemas/ /app/schemas/
 
+# The visible suite is the answer key for every calibration case. It
+# is code, so the COPY above brought it in; it leaves here, and the
+# package imports it lazily so nothing else breaks. A container that
+# could read expected findings could read them into a prompt, and the
+# test on this file is what keeps the line from being tidied away.
+RUN rm /app/packages/explanation/planbench_explanation/golden_fixtures.py
+
 ENV PYTHONPATH=/app/packages/schemas:/app/packages/planning:/app/packages/metrics:/app/packages/benchmark:/app/packages/decision:/app/packages/explanation:/app/packages/plugin_sdk:/app/services/agent_service:/app/services/analyst_service
 
 # Unprivileged, and with no writable state directory: the analyst
