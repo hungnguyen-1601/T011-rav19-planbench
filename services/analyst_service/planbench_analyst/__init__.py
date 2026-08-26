@@ -37,6 +37,7 @@ from __future__ import annotations
 
 from planbench_analyst.analyst import (
     AnalystRefusal,
+    CheckFeedback,
     RoundCost,
     RoundReport,
     catalog_text,
@@ -65,6 +66,14 @@ from planbench_analyst.prompts import (
     analyst_schema,
     prompt_checksum,
 )
+from planbench_analyst.round_host import (
+    EvidenceSource,
+    PreparedRound,
+    RoundHostProtocol,
+    evidence_for,
+    in_process_round,
+)
+from planbench_analyst.runner import RoundOutcome, run_round
 from planbench_analyst.sanitize import Aliases, canonical, is_suspicious, label_components
 
 __all__ = [
@@ -73,15 +82,20 @@ __all__ = [
     "PROMPT_VERSION",
     "Aliases",
     "AnalystRefusal",
+    "CheckFeedback",
     "Blocked",
+    "EvidenceSource",
     "CacheStats",
     "ConfigRefusal",
     "Fact",
     "GuardResult",
     "PacketView",
     "PacketViewRefusal",
+    "PreparedRound",
     "ResponseCache",
     "RoundCost",
+    "RoundHostProtocol",
+    "RoundOutcome",
     "RoundReport",
     "analyst_schema",
     "build_packet_view",
@@ -89,6 +103,8 @@ __all__ = [
     "canonical",
     "catalog_text",
     "critique",
+    "evidence_for",
+    "in_process_round",
     "effective_generation_config",
     "flatten_config",
     "guard",
@@ -97,6 +113,7 @@ __all__ = [
     "prompt_checksum",
     "propose",
     "quantities_in",
+    "run_round",
     "runtime_config_checksum",
     "source_manifest_hash",
     "validate_generation_config",

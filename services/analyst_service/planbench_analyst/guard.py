@@ -157,15 +157,19 @@ def _check_problem(
                 f"{check.tool_id} is served at {card.tool_version}, asked at {check.tool_version}",
             )
         supported = card.proposition_policy.supported_proposition_types
-        if card.tool_class == "mechanism_check":
-            if proposal.proposition_type not in supported:
-                return (
-                    "check_cannot_answer",
-                    f"{card.tool_id} supports {list(supported)}, not "
-                    f"{proposal.proposition_type}",
-                )
-        elif supported:  # pragma: no cover - the catalog forbids this shape
-            return ("check_cannot_answer", f"{card.tool_id} declares propositions it may not")
+        if card.tool_class == "mechanism_check" and proposal.proposition_type not in supported:
+            return (
+                "check_cannot_answer",
+                f"{card.tool_id} supports {list(supported)}, not {proposal.proposition_type}",
+            )
+        # A fact query or a navigation tool is **not** required to leave
+        # ``supported_proposition_types`` empty, and an earlier version of
+        # this rule refused every proposal that asked for one which does —
+        # ``get_candidate_contrast`` declares
+        # ``component_specific_attribution``. The rule that matters is the
+        # one above: a *mechanism check* may only be asked a question its
+        # card answers. Reading anything else off this list turned a
+        # perfectly good request into a blocked-claim statistic.
         problems = card.io.check_arguments(check.arguments)
         if problems:
             return ("check_arguments_rejected", "; ".join(problems))

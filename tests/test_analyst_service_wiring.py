@@ -31,7 +31,17 @@ ENTRY = "services/analyst_service"
 #: a phase lands and never otherwise — the test below reads it as the
 #: claim "this is all there is", and a module on disk that nobody
 #: exports is a stub left behind.
-PHASES_LANDED = ["analyst", "cache", "guard", "identity", "packet_view", "prompts", "sanitize"]
+PHASES_LANDED = [
+    "analyst",
+    "cache",
+    "guard",
+    "identity",
+    "packet_view",
+    "prompts",
+    "round_host",
+    "runner",
+    "sanitize",
+]
 
 
 def test_the_analyst_package_imports() -> None:

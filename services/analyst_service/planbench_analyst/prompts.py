@@ -25,6 +25,7 @@ from planbench_explanation.versioning import artifact_checksum
 __all__ = [
     "ANALYST_SYSTEM",
     "PROMPT_VERSION",
+    "REVISION_PREFACE",
     "analyst_schema",
     "build_user_turn",
     "prompt_checksum",
@@ -96,6 +97,16 @@ CATALOG_PREFACE = (
 )
 
 CATALOG_SUFFIX = "\nCATALOG"
+
+#: What a revision turn is told. A constant, and inside
+#: :func:`prompt_checksum`, because the second turn is part of the same
+#: request: two bundles that revise differently are two systems, and a
+#: checksum that covered only the first turn would call them one.
+REVISION_PREFACE = (
+    "Checks already run in this round, and what the platform's own checkers said. "
+    "Revise in light of them: withdraw what was refuted, keep what stands, and do "
+    "not ask again for a check that has already answered.\n"
+)
 
 
 def analyst_schema() -> dict[str, object]:
@@ -223,6 +234,7 @@ def prompt_checksum() -> str:
             "packet_suffix": PACKET_SUFFIX,
             "catalog_preface": CATALOG_PREFACE,
             "catalog_suffix": CATALOG_SUFFIX,
+            "revision_preface": REVISION_PREFACE,
             "schema": analyst_schema(),
         }
     )

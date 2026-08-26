@@ -15,7 +15,8 @@ phase đó.
 | A2 hypothesis engine | **xong** | `285adda` |
 | A3 guard + critic + biên vào | **xong** | `95cfe75` |
 | A4-i budget + packet artifact | **xong** | `5ea1a31` |
-| A4-ii RFC gate + bundle | **xong** | (xem §A4-ii) |
+| A4-ii RFC gate + bundle | **xong** | `3dba01b` |
+| A4-iii seam + runner | **xong** | (xem §A4-iii) |
 | A4 seam + lane + gateway | chưa | |
 | A5 knowledge provider | chưa | |
 | A6 dev calibration + harness | chưa | |
@@ -603,6 +604,92 @@ Thêm `artifacts_from()` (packet có provenance, cho vòng chấm) bên cạnh
 `gate.py` vẫn nhận `analyst: Analyst` (một callable), chưa nhận `RoundSource`.
 Đó là A4-iii: seam mới dựng cặp analysis+host từ **cùng** một evidence source,
 và đó là chỗ `available_evidence` hết rỗng.
+
+---
+
+## A4-iii — Seam và vòng chạy
+
+### Đã làm gì
+
+**1. `round_host.py` — một nguồn bằng chứng, hai thứ dựng từ nó.**
+
+Lỗi mà hình dạng này sinh ra để chặn tìm được bằng cách đọc, không phải chạy:
+`AnalysisRequest.available_evidence` là field frozen mặc định rỗng, và
+`ToolSession.admit` từ chối mọi tool có `required_evidence` không nằm trong đó.
+Dựng request trước, host sau — thứ tự hiển nhiên — thì host đang ngồi trên cả
+trace mà mọi request chết ở `missing_required_evidence`, và analyst đọc vòng của
+chính nó thành "platform không có gì", một câu về platform **không đúng**.
+
+Nên không có chỗ nào ở đây dựng request trước: `EvidenceSource` dựng trước, tập
+available **suy ra** từ nó (`evidence_for`), rồi request và host cùng nhận một
+object. Chúng không thể bất đồng vì không bên nào được hỏi.
+
+Tập available suy ra thật, không nhận từ caller: không route đo được ⟶ bỏ
+`region_geometry`; không inflation ⟶ bỏ `inflation_parameters`; không xếp hạng
+ai ⟶ bỏ `comparison_pair`. Không sidecar ⟶ `PRE_SIDECAR_AVAILABLE_EVIDENCE`.
+Packet trần (không provenance) ⟶ **giả định không có sidecar**: giả định ngược
+lại là đưa cho analyst đúng những tool run không phục vụ được.
+
+`PreparedRound` mang cặp + ba checksum, trong đó `evidence_identity_checksum` là
+bằng chứng cặp đó đến từ một nguồn — gate artifact lưu nó để câu "vòng này dựng
+từ bằng chứng kia" kiểm lại được thay vì tin.
+
+**2. `runner.py` — bốn lối ra, mỗi lối một tên, tất cả qua một `finalize`.**
+
+| Kết thúc | Nghĩa |
+|---|---|
+| `final` | model hết thứ để hỏi |
+| `revisions_exhausted` | ngân sách vòng sửa là một con số, không phải một tâm trạng |
+| `no_progress` | xin lại đúng check đã chạy — **checker là tất định**, lần hai trả đúng lần một, nên vòng đó tiêu một model call để biết đúng thứ đã biết |
+| `budget_exceeded` | một trục cạn. Ghi là kết thúc riêng, không gộp vào abstention: "tôi không có gì để nói" và "tôi bị dừng" là hai câu trả lời khác nhau |
+
+Cộng `model_failed` khi provider hỏng — trả abstention **có lý do**, không phải
+im lặng.
+
+`no_progress` khoá theo `(tool_id, tool_version, arguments)` và **không** theo
+hypothesis: hai giả thuyết hỏi cùng một tool cùng một câu nhận cùng một câu trả
+lời, và trả tiền hai lần vẫn là lãng phí như nhau.
+
+**Declare trước request** là bất biến duy nhất của vòng lặp: host gắn bằng chứng
+vào giả thuyết nó được thu cho, nên request tới trước sẽ bị từ chối
+`unknown_hypothesis` — và cái từ chối đó đọc ra như platform hỏng.
+
+Runner cầm `RoundHostProtocol` (hai động từ), **không thấy session**. Lane
+in-process và lane container sau này là cùng một đường code ở đây.
+
+**3. Engine nhận feedback để sửa.** `CheckFeedback` cố ý **không** phải
+`ToolResult` thô: result mang measurement, và model được cho xem measurement sẽ
+đặt nó vào câu tiếp theo — rồi guard drop vì câu mang số. Thứ nó cần để sửa là
+**verdict** và lý do, nên đó là thứ nó nhận. `REVISION_PREFACE` là hằng số và
+nằm trong `prompt_checksum`: lượt thứ hai là một phần của cùng một yêu cầu.
+
+### Một luật guard phải nới, và vì sao
+
+Luật 4 bản đầu viết: tool **không phải** mechanism_check mà khai
+`supported_proposition_types` không rỗng ⟶ chặn. Sai:
+`get_candidate_contrast` là `fact_query` và khai `component_specific_attribution`.
+Hậu quả đo được: mọi đề xuất xin tool đó bị biến thành một con số
+blocked-claim. Luật đúng chỉ có một vế — **mechanism check chỉ được hỏi câu mà
+card của nó trả lời được**. Đã nới, kèm comment nói rõ lần sai này.
+
+### Bằng chứng
+
+| Phép kiểm | Kết quả |
+|---|---|
+| `pytest` 7 suite analyst + 2 suite explanation | **269 passed** |
+| Bộ răng `tongduyan_analyst-bites.yaml` | **23/23 CẮN** (thêm 9 răng mới cho seam, runner, và gate fail-closed) |
+| `ruff check` | sạch |
+
+Một răng khai sai lúc đầu (`GATE_TAKES_A_BARE_PACKET` tiêm chuỗi hai dòng, mà
+bitekit chỉ thay một dòng). Sửa bằng cách đưa câu từ chối ra hằng số
+`_BARE_PACKET_REFUSAL` — refusal một dòng ở chỗ gọi, và răng bám vào đúng dòng
+đó. Ghi lại vì đây là lần thứ hai một răng không cắn do **khai sai chỗ tiêm**,
+không phải do code an toàn.
+
+### Còn lại của A4
+
+**A4-iv** — JSONL ABI (`stdio_protocol.py`, `stdio_lane.py`), model gateway giữ
+credential, và restricted artifact cho stderr/transcript của hidden gate.
 
 ---
 

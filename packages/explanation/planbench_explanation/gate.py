@@ -187,6 +187,14 @@ def _abstained_for(case: PlantedCase, analysis: AnalysisRequest, reason: str) ->
     )
 
 
+#: Said in one place so the refusal is one line at the call site: a
+#: multi-line ``raise`` reads as scenery, and this one is load-bearing.
+_BARE_PACKET_REFUSAL = (
+    "case {case_id} arrived as a bare packet; a graded run needs the artifact so the "
+    "platform can derive where it came from rather than take the submitter's word for it"
+)
+
+
 def _packet_for(case: PlantedCase, source: PacketSource, *, dry_run: bool) -> CasePacket:
     """The packet for one case, and what a graded run demands of it.
 
@@ -208,11 +216,7 @@ def _packet_for(case: PlantedCase, source: PacketSource, *, dry_run: bool) -> Ca
             )
         return supplied.packet
     if not dry_run:
-        raise GateRefusal(
-            f"case {case.case_id} arrived as a bare packet; a graded run needs the "
-            "artifact so the platform can derive where it came from rather than take "
-            "the submitter's word for it"
-        )
+        raise GateRefusal(_BARE_PACKET_REFUSAL.format(case_id=case.case_id))
     return supplied
 
 

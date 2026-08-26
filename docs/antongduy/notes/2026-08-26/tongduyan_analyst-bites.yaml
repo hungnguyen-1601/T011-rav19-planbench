@@ -3,7 +3,9 @@ workdir: "E:/VinAI/RoboMind_project/P-011-analyst"
 gate: >-
   python -m pytest tests/test_analyst_guard.py tests/test_analyst_engine.py
   tests/test_analyst_packet_view.py tests/test_analyst_identity.py
-  tests/test_analyst_service_wiring.py -q --no-header -p no:cacheprovider
+  tests/test_analyst_service_wiring.py tests/test_analyst_runner.py
+  tests/test_analyst_budget_artifact.py tests/test_explanation_gate.py
+  -q --no-header -p no:cacheprovider
 
 exclude:
   - node_modules
@@ -164,6 +166,107 @@ bites:
     expect:
       exit_not_zero: true
       output_contains: "test_a_call_that_does_not_come_back_ends_the_round_at_a_known_time"
+
+  # ---- The runner and the seam (A4) -------------------------------------
+  - id: SEAM_EVIDENCE_EMPTY
+    mo_ta: "the request is built without the evidence the host holds"
+    inject:
+      file: services/analyst_service/planbench_analyst/round_host.py
+      replace: "        available_evidence=source.available_evidence,"
+      with: "        available_evidence=frozenset(),"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_request_and_the_host_are_built_from_one_source"
+
+  - id: SEAM_EVIDENCE_TAKEN_ON_TRUST
+    mo_ta: "a run with no sidecar is offered the replay tools anyway"
+    inject:
+      file: services/analyst_service/planbench_analyst/round_host.py
+      replace: "        TYPICAL_AVAILABLE_EVIDENCE if sidecar_present else PRE_SIDECAR_AVAILABLE_EVIDENCE"
+      with: "        TYPICAL_AVAILABLE_EVIDENCE"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_run_without_the_sidecar_offers_fewer_tools"
+
+  - id: RUNNER_DECLARE_SKIPPED
+    mo_ta: "requests go out before the host was told what they are for"
+    inject:
+      file: services/analyst_service/planbench_analyst/runner.py
+      replace: "        prepared.host.declare(guarded.response)"
+      with: "        pass"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_proposals_are_declared_before_any_request_is_made"
+
+  - id: RUNNER_NO_PROGRESS_OFF
+    mo_ta: "the same check is requested again, at the price of a model call"
+    inject:
+      file: services/analyst_service/planbench_analyst/runner.py
+      replace: "        if wanted and not fresh:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_asking_for_the_same_check_again_stops_the_round"
+
+  - id: RUNNER_BUDGET_TOOLS_OFF
+    mo_ta: "the tool budget stops stopping anything"
+    inject:
+      file: services/analyst_service/planbench_analyst/runner.py
+      replace: "            if spent.tool_requests >= budget.max_tool_requests:"
+      with: "            if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_tool_budget_stops_the_requests_and_says_so"
+
+  # ---- The platform's fail-closed gate (A4-ii) --------------------------
+  - id: GATE_PREREGISTRATION_OFF
+    mo_ta: "a suite somebody is still editing may be graded against"
+    inject:
+      file: packages/explanation/planbench_explanation/gate.py
+      replace: "        if suite.status != \"preregistered\":"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_working_suite_is_refused_by_a_graded_run"
+
+  - id: GATE_TAKES_A_BARE_PACKET
+    mo_ta: "a graded run accepts a packet with no provenance"
+    inject:
+      file: packages/explanation/planbench_explanation/gate.py
+      replace: "        raise GateRefusal(_BARE_PACKET_REFUSAL.format(case_id=case.case_id))"
+      with: "        return supplied"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_bare_packet_is_refused_by_a_graded_run"
+
+  - id: GATE_FIXTURE_KIND_IGNORED
+    mo_ta: "a hand-written fixture is graded as if it were recorded"
+    inject:
+      file: packages/explanation/planbench_explanation/gate.py
+      replace: "        if not dry_run and supplied.fixture_kind != \"recorded\":"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_hand_written_fixture_is_refused_by_a_graded_run"
+
+  - id: GATE_BUDGET_NOT_RECORDED
+    mo_ta: "the decision stops naming the budget the run had"
+    inject:
+      file: packages/explanation/planbench_explanation/bundle.py
+      replace: "    if effective_budget is not None and decision.effective_budget_checksum != ("
+      with: "    if False and decision.effective_budget_checksum != ("
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_feature_stays_off_when_production_gives_a_different_budget"
 
   # ---- Controls ---------------------------------------------------------
   - id: META_EXIT_CODE_PROPAGATES

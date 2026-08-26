@@ -43,6 +43,7 @@ from planbench_agent.provider import LLMMessage, LLMProvider, LLMRequest, LLMRes
 from planbench_analyst.packet_view import PacketView
 from planbench_analyst.prompts import (
     ANALYST_SYSTEM,
+    REVISION_PREFACE,
     analyst_schema,
     build_user_turn,
     prompt_checksum,
@@ -58,6 +59,7 @@ __all__ = [
     "DEFAULT_MAX_TOKENS",
     "DEFAULT_TIMEOUT_S",
     "AnalystRefusal",
+    "CheckFeedback",
     "RoundCost",
     "RoundReport",
     "catalog_text",
@@ -131,6 +133,38 @@ class RoundReport:
     #: rude name is a platform denying service over a string.
     injection_suspected: tuple[tuple[str, tuple[str, ...]], ...] = ()
     notes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class CheckFeedback:
+    """What came back from one check, in the words the model may read.
+
+    Deliberately not the raw :class:`~planbench_explanation.protocol.ToolResult`:
+    a result carries measurements, and a model shown measurements will
+    put them in its next statement — which the guard then drops for
+    carrying a number. What it needs to revise is the *verdict* and the
+    reason, so that is what it gets.
+    """
+
+    hypothesis_id: str
+    tool_id: str
+    execution_status: str
+    failure_code: str = ""
+    verdicts: tuple[str, ...] = ()
+    rejected_as: str = ""
+
+    def render(self) -> str:
+        if self.rejected_as:
+            return (
+                f"- {self.tool_id} for {self.hypothesis_id}: the host refused the "
+                f"request ({self.rejected_as})"
+            )
+        parts = [f"- {self.tool_id} for {self.hypothesis_id}: {self.execution_status}"]
+        if self.failure_code:
+            parts.append(f"({self.failure_code})")
+        if self.verdicts:
+            parts.append("— " + ", ".join(self.verdicts))
+        return " ".join(parts)
 
 
 @dataclass
@@ -369,6 +403,7 @@ def propose(
     view: PacketView,
     provider: LLMProvider,
     *,
+    feedback: Sequence[CheckFeedback] = (),
     max_tokens: int = DEFAULT_MAX_TOKENS,
     timeout_s: float = DEFAULT_TIMEOUT_S,
 ) -> RoundReport:
@@ -380,13 +415,12 @@ def propose(
     module could not use comes back in :attr:`RoundReport.dropped`,
     because a proposal that disappeared reads as one that was never made.
     """
+    turn = build_user_turn(view.serialize(), catalog_text(analysis.catalog))
+    if feedback:
+        turn += "\n\n" + REVISION_PREFACE + "\n".join(item.render() for item in feedback)
     request = LLMRequest(
         system=ANALYST_SYSTEM,
-        messages=(
-            LLMMessage.user(
-                build_user_turn(view.serialize(), catalog_text(analysis.catalog))
-            ),
-        ),
+        messages=(LLMMessage.user(turn),),
         output_schema=analyst_schema(),
         max_tokens=max_tokens,
     )
