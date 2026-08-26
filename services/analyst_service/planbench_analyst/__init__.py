@@ -54,6 +54,7 @@ from planbench_analyst.identity import (
     source_manifest_hash,
     validate_generation_config,
 )
+from planbench_analyst.model_gateway import GatewayRefusal, ModelGateway
 from planbench_analyst.packet_view import (
     Fact,
     PacketView,
@@ -66,6 +67,7 @@ from planbench_analyst.prompts import (
     analyst_schema,
     prompt_checksum,
 )
+from planbench_analyst.restricted import RestrictedArtifact, case_token, public_error
 from planbench_analyst.round_host import (
     EvidenceSource,
     PreparedRound,
@@ -75,6 +77,11 @@ from planbench_analyst.round_host import (
 )
 from planbench_analyst.runner import RoundOutcome, run_round
 from planbench_analyst.sanitize import Aliases, canonical, is_suspicious, label_components
+from planbench_analyst.stdio_protocol import (
+    Frame,
+    FrameSession,
+    ProtocolViolation,
+)
 
 __all__ = [
     "ANALYST_SYSTEM",
@@ -85,6 +92,10 @@ __all__ = [
     "CheckFeedback",
     "Blocked",
     "EvidenceSource",
+    "Frame",
+    "FrameSession",
+    "GatewayRefusal",
+    "ModelGateway",
     "CacheStats",
     "ConfigRefusal",
     "Fact",
@@ -92,6 +103,8 @@ __all__ = [
     "PacketView",
     "PacketViewRefusal",
     "PreparedRound",
+    "ProtocolViolation",
+    "RestrictedArtifact",
     "ResponseCache",
     "RoundCost",
     "RoundHostProtocol",
@@ -100,6 +113,7 @@ __all__ = [
     "analyst_schema",
     "build_packet_view",
     "cache_key",
+    "case_token",
     "canonical",
     "catalog_text",
     "critique",
@@ -111,6 +125,7 @@ __all__ = [
     "is_suspicious",
     "label_components",
     "prompt_checksum",
+    "public_error",
     "propose",
     "quantities_in",
     "run_round",

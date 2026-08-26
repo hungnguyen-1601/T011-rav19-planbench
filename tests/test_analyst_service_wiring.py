@@ -36,11 +36,14 @@ PHASES_LANDED = [
     "cache",
     "guard",
     "identity",
+    "model_gateway",
     "packet_view",
     "prompts",
+    "restricted",
     "round_host",
     "runner",
     "sanitize",
+    "stdio_protocol",
 ]
 
 

@@ -16,7 +16,8 @@ phase đó.
 | A3 guard + critic + biên vào | **xong** | `95cfe75` |
 | A4-i budget + packet artifact | **xong** | `5ea1a31` |
 | A4-ii RFC gate + bundle | **xong** | `3dba01b` |
-| A4-iii seam + runner | **xong** | (xem §A4-iii) |
+| A4-iii seam + runner | **xong** | `3f7f85b` |
+| A4-iv wire + gateway + restricted | **xong** | (xem §A4-iv) |
 | A4 seam + lane + gateway | chưa | |
 | A5 knowledge provider | chưa | |
 | A6 dev calibration + harness | chưa | |
@@ -690,6 +691,93 @@ không phải do code an toàn.
 
 **A4-iv** — JSONL ABI (`stdio_protocol.py`, `stdio_lane.py`), model gateway giữ
 credential, và restricted artifact cho stderr/transcript của hidden gate.
+
+---
+
+## A4-iv — Dây, cổng giữ khoá, và thứ ở lại với platform
+
+Ba module: `stdio_protocol.py` · `model_gateway.py` · `restricted.py`. A4 xong.
+
+### Đã làm gì
+
+**1. Dây: một dòng JSON một frame, và một danh sách những gì bị từ chối.**
+
+`stdout` chở **protocol và không gì khác** — container in một cảnh báo ra stdout
+là đã làm hỏng luồng, và cách đọc trung thực một luồng hỏng là "vòng này kết
+thúc", không phải "bỏ dòng đó rồi hy vọng". Log đi stderr, và stderr là
+restricted artifact chứ không phải một kênh.
+
+Frame bị chặn theo **từng loại**, trần lấy từ budget của vòng chứ không từ hằng
+số: frame hợp pháp chở một megabyte — assistant turn của vendor quay về qua
+gateway — đúng là frame mà một cú rò rỉ sẽ chọn.
+
+Sequence tăng nghiêm ngặt (trùng ⟶ replay), phase là máy trạng thái
+(`tool_request` trước khi declare = xin bằng chứng cho giả thuyết chưa ai khai).
+`error` tới được từ **mọi** phase: máy trạng thái nhốt được một vòng đang hỏng
+là máy trạng thái treo.
+
+**2. Gateway: container không bao giờ cầm khoá.**
+
+Config đọc từ **bundle đã đóng băng**, không từ frame; frame khai khác ⟶ kết thúc
+vòng, không merge. Model khai khác bundle ⟶ từ chối.
+
+`ProviderTurn` round-trip **nguyên vẹn** dưới dạng mapping JSON: Gemini từ chối
+lượt kế nếu thiếu `thought_signature`, Anthropic đòi thinking block y nguyên.
+Gateway không đọc, không sửa; format lạ vẫn chuyển tiếp — đó là thứ làm một
+transcript đi được qua lần đổi provider.
+
+Tiêu tiền tính theo **usage provider báo**, không theo ước lượng: ước lượng quyết
+định có gửi đi không, hoá đơn quyết định đã tiêu bao nhiêu. Vượt phát hiện **sau**
+lời gọi, response giữ trong restricted transcript — chỗ duy nhất trung thực để
+giữ một câu trả lời mà vòng không được dùng.
+
+**3. Restricted: cái platform giữ, cái submitter nghe.**
+
+stderr có trần và **khai rõ đã cắt bao nhiêu byte** (trần âm thầm là một log nói
+dối về chuyện đã xảy ra). Submitter nhận **mã lỗi đóng + token vô danh** cho case
+— "analyst của bạn chết ở `narrow-gap-007`" là nói cho họ biết case ẩn nào tồn
+tại và nó về cái gì. Token salt theo run: giữ token của lần nộp trước cũng không
+ghép được sang lần này.
+
+### Ba lỗi bộ răng tìm ra, không phải test tìm ra
+
+Đây là phần đáng đọc nhất của phase này.
+
+**(a) Refusal tự nó là một kênh rò.** Răng `STDIO_ERROR_QUOTES_ITS_INPUT` **không
+cắn** — và lý do là test yếu: nó gửi `message_type="tool_request"` (một frame
+hợp lệ) nên không bao giờ chạm dòng bị tiêm. Sửa test cho đúng thì **code đỏ**:
+`decode` đang nhét `str(message_type)` — chuỗi do container viết — vào thông điệp
+lỗi. Container đặt tên frame bằng nội dung packet ẩn rồi đọc lại từ log của
+platform. Vá bằng `safe_detail()` (lọc charset + cắt 32 ký tự), và **cùng lỗi ở
+field thứ hai** (`protocol_version`) cũng vá luôn, kèm test riêng.
+
+**(b) Nửa input của cổng token chưa từng được kiểm.** Răng
+`GATEWAY_TRUSTS_THE_ESTIMATE` không cắn vì test overshoot bằng **output** token,
+nên tắt nhánh input vẫn xanh. Thêm test cho nhánh input, và răng chuyển sang bám
+đúng nhánh đó.
+
+**(c) Gọi khi không còn output budget.** Phát hiện lúc viết test (b):
+`max_tokens=min(..., remaining)` có thể ra ≤ 0 — tức trả tiền cho một câu trả lời
+vòng buộc phải vứt. Thêm luật từ chối **trước khi gửi**.
+
+Cả ba đều đúng thứ `bites` sinh ra để bắt: một cổng xanh không có nghĩa cổng có
+răng, và một răng không cắn phải được đọc là "chưa biết", không phải "an toàn".
+
+### Bằng chứng
+
+| Phép kiểm | Kết quả |
+|---|---|
+| `pytest` 8 suite analyst + 4 suite explanation | **361 passed** |
+| Bộ răng `tongduyan_analyst-bites.yaml` | **32/32 CẮN** + đối chứng dương |
+| `ruff check` | sạch |
+
+### Còn nợ sau A4
+
+- `stdio_lane.py` (spawn container thật, đọc stdout/stderr, kill khi timeout)
+  **chưa viết**: nó cần `docker/Dockerfile.analyst`, và image là việc của A7.
+  Hợp đồng — frame, phase, trần, gateway, restricted — đã đủ và đã có răng; phần
+  còn lại là ống dẫn process, viết cùng lúc với image thay vì viết mù bây giờ.
+- Ghi rõ vì đây là **một hạng mục hoãn có tên**, không phải một phần bị quên.
 
 ---
 

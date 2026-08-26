@@ -5,6 +5,7 @@ gate: >-
   tests/test_analyst_packet_view.py tests/test_analyst_identity.py
   tests/test_analyst_service_wiring.py tests/test_analyst_runner.py
   tests/test_analyst_budget_artifact.py tests/test_explanation_gate.py
+  tests/test_analyst_stdio.py
   -q --no-header -p no:cacheprovider
 
 exclude:
@@ -267,6 +268,106 @@ bites:
     expect:
       exit_not_zero: true
       output_contains: "test_the_feature_stays_off_when_production_gives_a_different_budget"
+
+  # ---- The wire, the gateway, and what stays back (A4-iv) ---------------
+  - id: STDIO_FRAME_CAP_OFF
+    mo_ta: "a frame may be any size, which is the shape a packet leaves through"
+    inject:
+      file: services/analyst_service/planbench_analyst/stdio_protocol.py
+      replace: "        if len(raw) > cap:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_every_frame_type_has_a_cap_and_the_cap_is_enforced"
+
+  - id: STDIO_PHASE_MACHINE_OFF
+    mo_ta: "a tool request arrives before anything was declared"
+    inject:
+      file: services/analyst_service/planbench_analyst/stdio_protocol.py
+      replace: "        if not always and frame.message_type not in _ALLOWED_AFTER.get(self.phase, frozenset()):"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_tool_request_before_anything_was_declared_is_refused"
+
+  - id: STDIO_REPLAY_ALLOWED
+    mo_ta: "a sequence number may be used twice"
+    inject:
+      file: services/analyst_service/planbench_analyst/stdio_protocol.py
+      replace: "        if frame.sequence in self.seen_sequences:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_replayed_sequence_number_is_refused"
+
+  - id: STDIO_ERROR_QUOTES_ITS_INPUT
+    mo_ta: "the refusal carries the payload it refused, into the log"
+    inject:
+      file: services/analyst_service/planbench_analyst/stdio_protocol.py
+      replace: "    reduced = _SAFE_DETAIL.sub(\"\", value)[:limit]"
+      with: "    reduced = value"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_refusal_does_not_quote_what_it_refused"
+
+  - id: GATEWAY_CONFIG_UNCHECKED
+    mo_ta: "the container may raise its own temperature mid-round"
+    inject:
+      file: services/analyst_service/planbench_analyst/model_gateway.py
+      replace: "        if config is not None and dict(config) != dict(self.bundle.generation_parameters):"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_temperature_the_bundle_did_not_freeze_is_refused"
+
+  - id: GATEWAY_MODEL_UNCHECKED
+    mo_ta: "a model swapped mid-round is served anyway"
+    inject:
+      file: services/analyst_service/planbench_analyst/model_gateway.py
+      replace: "        if model is not None and model != self.bundle.model_id:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_model_swapped_mid_round_is_refused"
+
+  - id: GATEWAY_TRUSTS_THE_ESTIMATE
+    mo_ta: "reported usage stops being checked, so a low estimate passes"
+    inject:
+      file: services/analyst_service/planbench_analyst/model_gateway.py
+      replace: "            self.input_tokens > self.budget.max_input_tokens"
+      with: "            False"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_input_usage_that_overshoots_is_caught_the_same_way"
+
+  - id: RESTRICTED_CAP_OFF
+    mo_ta: "stderr grows without limit, so a packet fits in it"
+    inject:
+      file: services/analyst_service/planbench_analyst/restricted.py
+      replace: "        if len(encoded) > room:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_restricted_stream_is_capped_and_says_how_much_went"
+
+  - id: PUBLIC_ERROR_NAMES_THE_CASE
+    mo_ta: "the submitter is told which hidden case failed"
+    inject:
+      file: services/analyst_service/planbench_analyst/restricted.py
+      replace: "    return {\"error\": code, \"case\": case_token(case_id, run_salt=run_salt)}"
+      with: "    return {\"error\": code, \"case\": case_id}"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_submitter_gets_a_code_and_a_token_not_a_case_id"
 
   # ---- Controls ---------------------------------------------------------
   - id: META_EXIT_CODE_PROPAGATES
