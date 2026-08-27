@@ -167,7 +167,7 @@ describe("Sidebar — collapsed", () => {
        description too — a rail of icons with nothing but names is what
        the descriptions were added to fix. */
     const html = sidebar({ collapsed: true });
-    expect(html).toContain('data-tooltip="Maps — Draw the walls a deployment runs in"');
+    expect(html).toContain('data-tooltip="Maps - Draw the walls a deployment runs in"');
     expect(html).toContain('aria-label="Maps"');
   });
 

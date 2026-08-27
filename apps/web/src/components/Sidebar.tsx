@@ -83,7 +83,7 @@ function NavEntry({
       data-tooltip={
         collapsed
           ? description
-            ? `${label} — ${description}`
+            ? `${label} - ${description}`
             : label
           : undefined
       }

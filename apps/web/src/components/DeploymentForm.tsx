@@ -1121,7 +1121,7 @@ export function DeploymentForm({
     if (!defaults) {
       throw new Error(
         `noise control path "${path}" has no NOISE_DEFAULTS entry. Pass the full dotted ` +
-          `path (environment.sensor_noise.<field>), not the leaf name — the control writes ` +
+          `path (environment.sensor_noise.<field>), not the leaf name - the control writes ` +
           `to that path, so a leaf name would edit a field the deployment does not have.`,
       );
     }
