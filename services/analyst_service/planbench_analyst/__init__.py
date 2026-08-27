@@ -60,6 +60,21 @@ from planbench_analyst.candidates import (
     inject_distractors,
     render_candidates,
 )
+from planbench_analyst.episode_guard import (
+    CONTRACT_TERMS,
+    EpisodeAnnotation,
+    EpisodeRoundResult,
+    carry_annotation,
+    contract_terms_met,
+    contradicts_verdict,
+    episode_guard,
+)
+from planbench_analyst.episode_view import (
+    EpisodeView,
+    EpisodeViewRefusal,
+    build_episode_view,
+    run_context_block,
+)
 from planbench_analyst.eval_spec import (
     CaseLabels,
     EvalSpec,
@@ -233,6 +248,17 @@ __all__ = [
     "analyst_schema",
     "build_packet_view",
     "cache_key",
+    "CONTRACT_TERMS",
+    "EpisodeAnnotation",
+    "EpisodeRoundResult",
+    "EpisodeView",
+    "EpisodeViewRefusal",
+    "build_episode_view",
+    "carry_annotation",
+    "contract_terms_met",
+    "contradicts_verdict",
+    "episode_guard",
+    "run_context_block",
     "calibrate",
     "case_token",
     "canonical",

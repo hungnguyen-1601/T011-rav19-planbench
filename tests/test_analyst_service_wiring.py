@@ -60,6 +60,8 @@ PHASES_LANDED = [
     "bundle_builder",
     "cache",
     "candidates",
+    "episode_guard",
+    "episode_view",
     "eval_spec",
     "features",
     "guard",
