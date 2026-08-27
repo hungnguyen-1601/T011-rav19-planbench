@@ -42,6 +42,17 @@ depends_on: str | Sequence[str] | None = None
 
 JSON_TYPE = sa.JSON().with_variant(JSONB, "postgresql")
 
+#: Same width, same type, same name as every other table in this schema
+#: (0002, 0003, 0010). Timestamps are stored as ISO strings here, not as
+#: a database ``DATETIME``: ``TraitEntry.updated_at`` is a ``str``, the
+#: repository writes one, and a column of a different type reads back a
+#: different Python object on one dialect and the same one on another.
+#: This migration declared ``sa.DateTime`` at first, which
+#: ``test_migration_matches_the_models`` caught the moment the suite ran
+#: end to end — the model said ``String(40)`` and the table said
+#: ``DATETIME``.
+TIMESTAMP = sa.String(40)
+
 
 def _seed_rows() -> list[dict[str, object]]:
     """The shipped natures, read from the module that already holds them.
@@ -81,12 +92,7 @@ def upgrade() -> None:
         sa.Column("anchor", sa.Text(), nullable=False),
         sa.Column("review_status", sa.String(16), nullable=False, server_default="none"),
         sa.Column("reviewed_by", sa.String(120), nullable=False, server_default=""),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.func.now(),
-        ),
+        sa.Column("updated_at", TIMESTAMP, nullable=False, server_default=""),
         sa.CheckConstraint(
             "review_status in ('none','draft','approved','withdrawn')",
             name="ck_algorithm_traits_review_status",
