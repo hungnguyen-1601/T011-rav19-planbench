@@ -184,6 +184,14 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
         app.state.repos.plugin_bundles,
         app.state.plugin_install_root,
         app.state.model_storage,
+        # Under governance the catalogue is what reviewers published, not
+        # what happens to be runnable, and a restart has to rebuild it
+        # from the same source the routes write to.
+        publications=(
+            app.state.repos.plugin_publications
+            if app.state.deployment.algorithm_governance
+            else None
+        ),
     )
     # One-time codes and the provider HTTP client are app-scoped: the
     # codes must outlive a request, and the client is replaced wholesale

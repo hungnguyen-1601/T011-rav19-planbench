@@ -368,9 +368,18 @@ class PluginBundleRow(Base):
     checksum: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     uploaded_by_user_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False, default="")
     robot_profile_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False, default="")
+    #: active | held | disabled. A third value in the column that already
+    #: answers "may this be picked?", rather than a second column beside
+    #: it — two answers to one question is how they come to disagree.
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
     validation_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     validation_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    #: Why it was retired, and by whom. Kept on the bundle rather than
+    #: only in the event trail because it is read at a distance: a stored
+    #: approval whose algorithm was turned off has to be able to say so.
+    disabled_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+    disabled_by_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    disabled_reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
     updated_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
 
@@ -386,6 +395,61 @@ class PluginBundleRow(Base):
         # upload, and refused a real change that forgot to.
         UniqueConstraint("plugin_id", "checksum", name="uq_plugin_bundles_identity"),
     )
+
+
+class PluginPublicationRow(Base):
+    """One act of putting a revision in front of everyone.
+
+    Append-only history rather than a pointer per plugin. Superseded and
+    unpublished are different columns because they are different facts:
+    the first says a newer revision took its place, the second says a
+    reviewer pulled it back — and only the second is evidence about the
+    revision itself. An upsert would leave both looking like absence.
+    """
+
+    __tablename__ = "plugin_publications"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    plugin_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    bundle_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("plugin_bundles.id", ondelete="CASCADE"), nullable=False
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    published_by_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    published_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+    superseded_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+    unpublished_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+    unpublished_by_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    __table_args__ = (
+        Index("ix_plugin_publications_bundle", "bundle_id"),
+        Index(
+            "uq_plugin_publication_current",
+            "plugin_id",
+            unique=True,
+            sqlite_where=text("superseded_at IS NULL AND unpublished_at IS NULL"),
+            postgresql_where=text("superseded_at IS NULL AND unpublished_at IS NULL"),
+        ),
+    )
+
+
+class PluginEventRow(Base):
+    """Append-only: what happened to a bundle, and under which capability."""
+
+    __tablename__ = "plugin_events"
+
+    sequence: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    bundle_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    actor_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    actor_roles: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    authorized_capability: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    action: Mapped[str] = mapped_column(String(30), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+
+    __table_args__ = (Index("ix_plugin_events_bundle", "bundle_id"),)
 
 
 class ConversationRow(Base):

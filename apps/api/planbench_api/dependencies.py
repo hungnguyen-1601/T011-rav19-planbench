@@ -67,6 +67,7 @@ def get_plugin_service(request: Request) -> PluginBundleService:
     """
     settings = get_settings()
     repos = get_repos(request)
+    policy = request.app.state.deployment
     return PluginBundleService(
         repos.plugin_bundles,
         repos.robot_profiles,
@@ -78,6 +79,10 @@ def get_plugin_service(request: Request) -> PluginBundleService:
             max_manifest_bytes=settings.max_plugin_manifest_kb * 1024,
         ),
         install_root=request.app.state.plugin_install_root,
+        publications=repos.plugin_publications,
+        events=repos.plugin_events,
+        governance=policy.algorithm_governance,
+        strict_duties=not policy.relaxed,
     )
 
 

@@ -32,7 +32,7 @@ import pathlib
 import zipfile
 
 import pytest
-from conftest import ADMIN, ALICE, auth_headers
+from conftest import ADMIN, ENGINEER, auth_headers
 from test_api_plugin_import import default_profile
 
 from planbench_schemas.episode_context import EpisodeContext
@@ -561,5 +561,6 @@ class TestReplacingItWithChangedCode:
 
 
 class TestSomebodyElseCannotImportIt:
-    def test_a_member_is_refused(self, client):
-        assert do_import(client, auth_headers(client, ALICE)).status_code == 403
+    def test_an_engineer_is_refused(self, client):
+        """Importing is the reviewer package; alice now carries it too."""
+        assert do_import(client, auth_headers(client, ENGINEER)).status_code == 403

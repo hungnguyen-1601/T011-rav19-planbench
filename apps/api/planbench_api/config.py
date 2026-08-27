@@ -33,9 +33,11 @@ class Settings(BaseSettings):
     # Production must set AUTH_SECRET (see docs/DEPLOYMENT.md).
     jwt_secret: str = ""
     jwt_ttl_minutes: int = 60
-    # "name:password" entries, comma separated (a legacy third ":role"
-    # field is accepted and ignored — everyone is a member now). Only
-    # usable when dev login is enabled.
+    # "name:roles:password" entries, comma separated; "name:password"
+    # still parses. Roles are joined with "+" and are honoured only on
+    # a single-person profile — on a shared server they are ignored
+    # with a warning, because a reviewer grown out of an environment
+    # variable grew silently. Only usable when dev login is enabled.
     seed_users: str = ""
     # Username/password sign-in. Off unless explicitly enabled, so a
     # deployment cannot accidentally expose a password login next to
@@ -91,6 +93,16 @@ class Settings(BaseSettings):
     # a local dev-login account the deployment created itself.
     demo_owner_email: str = ""
     demo_owner_nickname: str = ""
+
+    # Whether publishing gates the catalogue. Off means the resolver
+    # behaves exactly as it did before contract 7.0.0 — every runnable
+    # bundle is offered — so this phase can land without changing what
+    # any deployment currently runs. It is turned on once the rest of
+    # the chain exists: pinned run identity, a job that stops when a
+    # bundle is disabled, and reliance derived on read. Turning it on
+    # earlier would give an operator a kill switch whose consequences
+    # nothing downstream understands yet.
+    algorithm_governance: bool = False
 
     # What a brand-new account gets. Only `engineer` or nothing:
     # reviewer and admin are grants somebody makes deliberately, and a

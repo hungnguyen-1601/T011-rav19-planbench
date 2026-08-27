@@ -19,7 +19,7 @@ import json
 import zipfile
 
 import pytest
-from conftest import ADMIN, ALICE, auth_headers
+from conftest import ADMIN, ENGINEER, auth_headers
 from test_api_plugin_import import GOOD_MANIFEST, MANIFEST_PATH, default_profile, message
 
 WORKING_PLANNER = """\
@@ -224,12 +224,15 @@ class TestWhatIsNotRunIsNotCalledPassing:
 
 
 class TestRunningSomebodyElsesCodeIsTheImportPrivilege:
-    def test_a_member_cannot_trigger_a_run(self, client, admin):
+    def test_an_engineer_cannot_trigger_a_run(self, client, admin):
+        """Re-validating executes the uploader's code, so it is the same
+        privilege importing is — the reviewer package, not the engineer
+        one."""
         bundle_id = import_probe(client, admin, WORKING_PLANNER).json()["id"]
-        member = auth_headers(client, ALICE)
-        response = client.post(f"/api/v1/algorithms/plugins/{bundle_id}/validate", headers=member)
+        engineer = auth_headers(client, ENGINEER)
+        response = client.post(f"/api/v1/algorithms/plugins/{bundle_id}/validate", headers=engineer)
         assert response.status_code == 403
-        assert "administrator" in message(response)
+        assert "reviewer" in message(response)
 
 
 class TestExtractionRefusesToWriteOutsideItsDirectory:

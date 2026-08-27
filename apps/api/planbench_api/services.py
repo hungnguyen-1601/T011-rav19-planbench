@@ -152,9 +152,7 @@ class MapService:
     def list(self) -> list[StoredMap]:
         return self._repos.maps.list()
 
-    def update(
-        self, map_id: str, map_data: MapData, actor_user_id: str | None = None
-    ) -> StoredMap:
+    def update(self, map_id: str, map_data: MapData, actor_user_id: str | None = None) -> StoredMap:
         self._require_owner(self._repos.maps.get(map_id), actor_user_id)
         return self._repos.maps.update(map_id, map_data)
 

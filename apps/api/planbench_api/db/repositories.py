@@ -62,6 +62,8 @@ from planbench_api.db.models import (
 from planbench_api.db.registry_repositories import (
     SqlModelRepository,
     SqlPluginBundleRepository,
+    SqlPluginEventRepository,
+    SqlPluginPublicationRepository,
     SqlRobotProfileRepository,
 )
 from planbench_api.db.session import SessionFactory
@@ -773,6 +775,8 @@ class SqlRepositoryHub:
         self.robot_profiles = SqlRobotProfileRepository(sessions)
         self.models = SqlModelRepository(sessions)
         self.plugin_bundles = SqlPluginBundleRepository(sessions)
+        self.plugin_publications = SqlPluginPublicationRepository(sessions)
+        self.plugin_events = SqlPluginEventRepository(sessions)
         self.task_profiles = SqlTaskProfileRepository(sessions)
         self.candidates = SqlCandidateRepository(sessions)
         self.decision_runs = SqlDecisionRunRepository(sessions)

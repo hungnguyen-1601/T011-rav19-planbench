@@ -177,12 +177,14 @@ class DeploymentPolicy:
         default_roles: frozenset[Role],
         demo_owner_email: str = "",
         demo_owner_nickname: str = "",
+        algorithm_governance: bool = False,
     ) -> None:
         self.profile = profile
         self.separation_of_duties = separation_of_duties
         self.default_roles = default_roles
         self.demo_owner_email = demo_owner_email.strip().casefold()
         self.demo_owner_nickname = demo_owner_nickname.strip().casefold()
+        self.algorithm_governance = algorithm_governance
 
     @property
     def relaxed(self) -> bool:
@@ -230,6 +232,7 @@ def load_policy(settings) -> DeploymentPolicy:
         default_roles=parse_default_roles(settings.default_roles),
         demo_owner_email=demo_email,
         demo_owner_nickname=demo_nickname,
+        algorithm_governance=bool(getattr(settings, "algorithm_governance", False)),
     )
 
 

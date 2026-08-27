@@ -32,6 +32,11 @@ ALICE = ("alice", "alice-password")
 BOB = ("bob", "bob-password")
 CAROL = ("carol", "carol-password")
 ADMIN = ("dave", "dave-password")
+#: Engineer and nothing else. The account that proves a package really
+#: does stop somewhere: alice and bob carry reviewer as well, so a test
+#: asking "is this refused to somebody without the capability?" needs
+#: somebody who genuinely lacks it.
+ENGINEER = ("erin", "erin-password")
 
 #: Engineer and reviewer together, because most fixtures need to create
 #: work *and* the test then needs somebody able to review it. The
@@ -39,7 +44,13 @@ ADMIN = ("dave", "dave-password")
 MEMBER_ROLES = "engineer+reviewer"
 
 SEED_USERS = ",".join(
-    f"{nickname}:{MEMBER_ROLES}:{password}" for nickname, password in (ALICE, BOB, CAROL, ADMIN)
+    [
+        *(
+            f"{nickname}:{MEMBER_ROLES}:{password}"
+            for nickname, password in (ALICE, BOB, CAROL, ADMIN)
+        ),
+        f"{ENGINEER[0]}:engineer:{ENGINEER[1]}",
+    ]
 )
 
 
@@ -158,6 +169,12 @@ def carol_headers(client: TestClient) -> dict[str, str]:
 @pytest.fixture
 def admin_headers(client: TestClient) -> dict[str, str]:
     return auth_headers(client, ADMIN)
+
+
+@pytest.fixture
+def engineer_headers(client: TestClient) -> dict[str, str]:
+    """Somebody holding the engineer package and nothing else."""
+    return auth_headers(client, ENGINEER)
 
 
 @pytest.fixture

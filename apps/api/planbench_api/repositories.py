@@ -404,6 +404,8 @@ class RepositoryHub:
         from planbench_api.registry_store import (
             InMemoryModelRepository,
             InMemoryPluginBundleRepository,
+            InMemoryPluginEventRepository,
+            InMemoryPluginPublicationRepository,
             InMemoryRobotProfileRepository,
         )
         from planbench_api.user_store import InMemoryReviewRepository, InMemoryUserRepository
@@ -419,6 +421,8 @@ class RepositoryHub:
         self.robot_profiles = InMemoryRobotProfileRepository()
         self.models = InMemoryModelRepository()
         self.plugin_bundles = InMemoryPluginBundleRepository()
+        self.plugin_publications = InMemoryPluginPublicationRepository()
+        self.plugin_events = InMemoryPluginEventRepository()
         # Decision layer (HĐ-1, HĐ-2, HĐ-12/13). Imported here rather
         # than at module scope because `planbench_api.decisions` imports
         # `new_id`/`now_iso` from this module.
