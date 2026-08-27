@@ -58,6 +58,10 @@ export interface ChatResponse {
 export interface ChatContext {
   run_id?: string;
   task_profile_id?: string;
+  /** Which episode of that run is on screen. Sent only when a reader
+   *  chose one — the replay opens on the first so its canvases are
+   *  not blank, and that is a default, not a question. */
+  episode_context_id?: string;
 }
 
 export function getCapabilities(): Promise<Capabilities> {

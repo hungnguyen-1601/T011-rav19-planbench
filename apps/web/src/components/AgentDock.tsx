@@ -42,6 +42,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "@/components/Icon";
 import { askAgent, type ChatContext, type ChatTurn } from "@/lib/agent";
+import { episodeForRun, useEpisodeSelection } from "@/lib/episodeSelection";
 import { useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import { useDismiss } from "@/lib/useDismiss";
@@ -86,6 +87,11 @@ export function AgentDock() {
   const session = useSession();
   const pathname = usePathname();
   const runId = runOnScreen(pathname);
+  // Which episode the reader pointed at on this run, if any. Empty
+  // for a run whose replay nobody has chosen from, and empty the
+  // moment they walk to another run: an id belonging to the page
+  // before would put the model in front of the wrong record.
+  const episodeId = episodeForRun(runId, useEpisodeSelection());
   // Attached by default, because a question typed on a run's page is
   // almost always about that run. Detaching is one click and it stays
   // detached only until the page changes: the reader who walked to a
@@ -128,7 +134,11 @@ export function AgentDock() {
     setDraft("");
     setError(null);
     const context: ChatContext | undefined =
-      attached && runId ? { run_id: runId } : undefined;
+      attached && runId
+        ? episodeId
+          ? { run_id: runId, episode_context_id: episodeId }
+          : { run_id: runId }
+        : undefined;
     setEntries((prev) => [...prev, { role: "user", text: message }]);
     setBusy(true);
     const controller = new AbortController();

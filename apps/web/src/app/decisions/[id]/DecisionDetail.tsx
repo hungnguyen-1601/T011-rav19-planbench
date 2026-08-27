@@ -43,6 +43,7 @@ import {
   selectedEpisode,
   type SelectionOrigin,
 } from "@/lib/episodeVerdict";
+import { clearEpisodeSelection, setEpisodeSelection } from "@/lib/episodeSelection";
 import { commonProgress, panelCandidates, sideProgress, sideTime } from "@/lib/replaySync";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { panelPlan } from "@/lib/explainPanel";
@@ -632,6 +633,10 @@ function TracePanel({ run }: { run: DecisionRun }) {
    * request that started earliest is the one that lands last often
    * enough to show episode A's finding under episode B's heading.
    */
+  // A selection that outlived this page would attach the next question
+  // to an episode chosen before it, and nothing on screen would say so.
+  useEffect(() => clearEpisodeSelection, []);
+
   useEffect(() => {
     const chosen = selectedEpisode({ episodeId, origin: selectionOrigin });
     if (!chosen || candidates.length < 2) {
@@ -724,6 +729,11 @@ function TracePanel({ run }: { run: DecisionRun }) {
   const chooseEpisode = (episode: string, scroll = false) => {
     setEpisodeId(episode);
     setSelectionOrigin("user");
+    // Published for the dock, which floats over this page from the
+    // shell and cannot see this state. Only from here: the episode the
+    // replay opened on is a default, and a question attached to it
+    // would be a question about something nobody pointed at.
+    setEpisodeSelection({ runId: run.id, episodeContextId: episode });
     if (scroll) window.setTimeout(() => comparisonRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
 

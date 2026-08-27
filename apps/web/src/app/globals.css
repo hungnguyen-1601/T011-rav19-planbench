@@ -4281,16 +4281,16 @@ main.content.bare-page {
    spacing is the only thing keeping a fault found on the winning side
    from being scanned as an account of the other side's loss. */
 .episode-verdict { margin-top: 16px; }
-.episode-verdict h4 { margin: 18px 0 6px; font-size: 14px; }
+.episode-verdict h4 { margin: 16px 0 8px; font-size: 14px; }
 .episode-verdict-headline { margin: 0; font-size: 16px; font-weight: 600; }
 /* Never smaller than the body around it. A caveat set in fine print is
    a caveat somebody decided not to be read. */
 .episode-verdict-caveat {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   font-size: 13px;
   color: var(--muted);
   border-left: 3px solid var(--border);
-  padding-left: 10px;
+  padding-left: 12px;
 }
 .episode-verdict-diagnoses {
   display: grid;
@@ -4302,7 +4302,7 @@ main.content.bare-page {
   border: 1px solid var(--border);
   border-top: 3px solid var(--candidate-b);
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 12px;
 }
 /* The winning side is marked, and marked only here. The contrast list
    below states which side a difference is against in words — a colour
@@ -4312,19 +4312,19 @@ main.content.bare-page {
 .episode-verdict-outcome {
   display: grid;
   grid-template-columns: auto auto;
-  gap: 2px 12px;
+  gap: 4px 12px;
   margin: 0 0 8px;
   font-size: 13px;
 }
 .episode-verdict-outcome dt { color: var(--muted); }
 .episode-verdict-outcome dd { margin: 0; font-variant-numeric: tabular-nums; }
-.episode-verdict-detections { margin: 0; padding-left: 18px; font-size: 13px; }
+.episode-verdict-detections { margin: 0; padding-left: 16px; font-size: 13px; }
 .episode-verdict-attempts { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
-.episode-verdict-contrasts { margin: 0; padding-left: 18px; }
+.episode-verdict-contrasts { margin: 0; padding-left: 16px; }
 .episode-verdict-contrasts li { margin-bottom: 4px; }
 .contrast-strength {
   display: inline-block;
-  padding: 1px 7px;
+  padding: 0 8px;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
