@@ -47,6 +47,7 @@ from planbench_api.errors import (
 from planbench_api.map_files import ensure_profile_map_materialised, materialise_map
 from planbench_api.repositories import StoredMap, now_iso
 from planbench_api.repository_ports import MapRepositoryPort
+from planbench_api.run_identity import PinnedRun
 from planbench_api.worker import Job, JobQueue
 from planbench_benchmark.candidates import (
     LOCAL_CONTROLLER_CONFIGS,
@@ -437,6 +438,7 @@ class DecisionRunService:
         episodes: int | None = None,
         created_by: str | None = None,
         reuse_traces: bool = True,
+        pinned: PinnedRun | None = None,
     ) -> StoredDecisionRun:
         """Execute the selection, then store whatever it produced.
 
@@ -459,7 +461,9 @@ class DecisionRunService:
             quiet=True,
             map_base_dir=self._repo_root,
         )
-        return self._store(report, stored_profile, scope=scope, created_by=created_by)
+        return self._store(
+            report, stored_profile, scope=scope, created_by=created_by, pinned=pinned
+        )
 
     def submit(
         self,
@@ -471,6 +475,8 @@ class DecisionRunService:
         episodes: int | None = None,
         created_by: str | None = None,
         reuse_traces: bool = True,
+        pinned: PinnedRun | None = None,
+        recheck=None,
     ) -> Job:
         """Queue the selection instead of running it inside the request.
 
@@ -503,6 +509,16 @@ class DecisionRunService:
 
             ensure_profile_map_materialised(stored_profile.profile, self._repo_root, self._maps)
 
+            # **Re-checked, not re-resolved.** Between the request and
+            # this line a reviewer can publish a new revision or withdraw
+            # the one that was pinned. Asking the question again would
+            # quietly measure whatever is current now, under a run id
+            # that claims to be about what was requested; comparing
+            # against the pin lets the job fail with the name of the
+            # thing that moved, which is recoverable.
+            if recheck is not None and pinned is not None:
+                recheck(pinned)
+
             report = run_comparison(
                 profile_path=profile_path,
                 candidate_specs=candidate_specs,
@@ -515,7 +531,9 @@ class DecisionRunService:
                 map_base_dir=self._repo_root,
                 progress=progress,
             )
-            stored = self._store(report, stored_profile, scope=scope, created_by=created_by)
+            stored = self._store(
+                report, stored_profile, scope=scope, created_by=created_by, pinned=pinned
+            )
             # The finished run's id, so a client watching the job knows
             # where to look without searching the list for something that
             # appeared recently — "recent" is not an identity.
@@ -1018,6 +1036,7 @@ class DecisionRunService:
         *,
         scope: str,
         created_by: str | None,
+        pinned: PinnedRun | None = None,
     ) -> StoredDecisionRun:
         card = report.get("decision_card")
         # HĐ-13: the manifest is what somebody else rebuilds the card
@@ -1035,6 +1054,23 @@ class DecisionRunService:
                 contracts_version=CONTRACTS_VERSION,
                 created_at=now_iso(),
                 created_by=created_by,
+                purpose=(pinned.purpose.value if pinned is not None else "production"),
+                # Written in the same transaction as the run, so a stored
+                # measurement can always say what it measured.
+                candidates=[
+                    {
+                        "slot": row.slot,
+                        "stack": row.stack,
+                        "local_config": row.local_config,
+                        "bundle_id": row.bundle_id,
+                        "plugin_id": row.plugin_id,
+                        "revision": row.revision,
+                        "archive_checksum": row.archive_checksum,
+                        "provider_fingerprint": row.provider_fingerprint,
+                        "runtime_profile": row.runtime_profile,
+                    }
+                    for row in (pinned.candidates if pinned is not None else ())
+                ],
                 report=report,
                 card=card,
                 manifest=manifest,

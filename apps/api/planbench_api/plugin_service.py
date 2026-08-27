@@ -28,6 +28,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from planbench_api.accounts import Capability, User, roles_label
+from planbench_api.errors import NotFoundError
 from planbench_api.model_registry import (
     RegistryError,
     ValidationStatus,
@@ -447,6 +448,40 @@ class PluginBundleService:
             )
             self.sync_catalogue()
         return record
+
+    # -- resolving a stack name to code --------------------------------
+    #
+    # Three questions, deliberately narrow, because they are what
+    # :mod:`planbench_api.run_identity` needs and nothing more. Passing
+    # the whole service into that module would let it reach for anything
+    # and make it untestable without a database.
+
+    def current(self, plugin_id: str) -> PluginBundleRecord | None:
+        """The bundle a published stack name resolves to."""
+        publication = self.publication(plugin_id)
+        if publication is None:
+            return None
+        try:
+            return self._bundles.get(publication.bundle_id)
+        except NotFoundError:
+            return None
+
+    def newest(self, plugin_id: str) -> PluginBundleRecord | None:
+        """What the pre-publishing rule offered: the newest runnable one.
+
+        Only reached with governance off. It exists so this phase can pin
+        identity on a deployment that has not turned publishing on —
+        before publishing there is no such thing as "not published", and
+        refusing there would refuse runs that are ordinary today.
+        """
+        candidates = [
+            record
+            for record in self._bundles.list()
+            if record.plugin_id == plugin_id
+            and record.usable
+            and record.validation_status is ValidationStatus.LOADED
+        ]
+        return max(candidates, key=lambda record: record.revision, default=None)
 
     def publication(self, plugin_id: str) -> PluginPublication | None:
         """The revision currently published for this plugin, if any."""

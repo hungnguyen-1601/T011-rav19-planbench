@@ -792,6 +792,14 @@ class DecisionRunRow(Base):
     config_state: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="not_applicable"
     )
+    #: production | validation. A validation run is a reviewer watching
+    #: an unpublished bundle behave: same code path, different label, and
+    #: never submitted or approved.
+    purpose: Mapped[str] = mapped_column(String(20), nullable=False, default="production")
+
+    candidates: Mapped[list[DecisionRunCandidateRow]] = relationship(
+        cascade="all, delete-orphan", lazy="selectin"
+    )
     config_decided_by: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
     config_decided_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
 
@@ -805,6 +813,37 @@ class DecisionRunRow(Base):
         Index("ix_decision_runs_review_state", "review_state"),
         Index("ix_decision_runs_config_state", "config_state"),
     )
+
+
+class DecisionRunCandidateRow(Base):
+    """Which code a run actually ran, written when it was asked for.
+
+    A stack name is a pointer, and a queue puts time between following it
+    and running it. Recording the answer is what lets the job refuse
+    loudly when the pointer moved, instead of measuring something nobody
+    chose under an id that claims otherwise.
+    """
+
+    __tablename__ = "decision_run_candidates"
+
+    run_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("decision_runs.id", ondelete="CASCADE"), primary_key=True
+    )
+    #: Position in the request, so the order somebody saw is the order
+    #: that comes back.
+    slot: Mapped[int] = mapped_column(Integer, primary_key=True)
+    stack: Mapped[str] = mapped_column(String(200), nullable=False)
+    local_config: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    #: Null for a built-in stack: nothing to pin, the code shipped with
+    #: the deployment.
+    bundle_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    plugin_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    archive_checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    runtime_profile: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+
+    __table_args__ = (Index("ix_decision_run_candidates_bundle", "bundle_id"),)
 
 
 class DecisionRunReviewRow(Base):

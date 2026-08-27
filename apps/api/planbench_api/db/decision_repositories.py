@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from planbench_api.db.models import (
     CandidateRow,
+    DecisionRunCandidateRow,
     DecisionRunReviewRow,
     DecisionRunRow,
     TaskProfileRow,
@@ -198,9 +199,15 @@ class SqlDecisionRunRepository:
             config_state=run.config_state,
             config_decided_by=run.config_decided_by,
             config_decided_at=run.config_decided_at,
+            purpose=run.purpose,
         )
         with self._sessions.begin() as session:
             session.add(row)
+            # One transaction with the run itself. A run whose candidates
+            # failed to write would be a stored measurement that cannot
+            # say what it measured, which is worse than no run at all.
+            for entry in run.candidates:
+                session.add(DecisionRunCandidateRow(run_id=run.id, **entry))
             session.flush()
             return _to_run(row)
 
@@ -462,6 +469,21 @@ def _to_run(row: DecisionRunRow) -> StoredDecisionRun:
         reviewed_by=row.reviewed_by,
         reviewed_at=row.reviewed_at,
         config_state=row.config_state,  # type: ignore[arg-type]
+        purpose=row.purpose or "production",
+        candidates=[
+            {
+                "slot": entry.slot,
+                "stack": entry.stack,
+                "local_config": entry.local_config or "",
+                "bundle_id": entry.bundle_id,
+                "plugin_id": entry.plugin_id,
+                "revision": entry.revision,
+                "archive_checksum": entry.archive_checksum,
+                "provider_fingerprint": entry.provider_fingerprint or "",
+                "runtime_profile": entry.runtime_profile or "",
+            }
+            for entry in sorted(row.candidates, key=lambda entry: entry.slot)
+        ],
         config_decided_by=row.config_decided_by,
         config_decided_at=row.config_decided_at,
     )

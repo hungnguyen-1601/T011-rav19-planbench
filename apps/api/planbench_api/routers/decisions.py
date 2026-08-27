@@ -32,7 +32,8 @@ from planbench_agent.paper import (
     selectable_stacks,
 )
 from planbench_agent.plugin_author import author_plugin
-from planbench_api.auth import CurrentUser, ReadingUser, SimulatingUser
+from planbench_api.accounts import Capability
+from planbench_api.auth import CurrentUser, Forbidden, ReadingUser, SimulatingUser
 from planbench_api.decision_service import (
     CandidateService,
     DecisionRunService,
@@ -46,10 +47,19 @@ from planbench_api.dependencies import (
     get_decision_jobs,
     get_decision_run_service,
     get_map_root,
+    get_plugin_service,
     get_task_profile_service,
     get_test_bench_service,
 )
-from planbench_api.errors import DomainValidationError, NotFoundError
+from planbench_api.errors import DomainValidationError, InvalidStateError, NotFoundError
+from planbench_api.plugin_service import PluginBundleService
+from planbench_api.run_identity import (
+    IdentityError,
+    PinnedRun,
+    RunPurpose,
+)
+from planbench_api.run_identity import recheck as recheck_identity
+from planbench_api.run_identity import resolve as resolve_identity
 from planbench_api.worker import Job, JobQueue
 from planbench_benchmark.candidates import offered_controller_configs
 from planbench_benchmark.outcome import OUTCOME_CODES, build_outcome, outcome_advice
@@ -106,6 +116,9 @@ Profiles = Annotated[TaskProfileService, Depends(get_task_profile_service)]
 Candidates = Annotated[CandidateService, Depends(get_candidate_service)]
 Runs = Annotated[DecisionRunService, Depends(get_decision_run_service)]
 DecisionJobs = Annotated[JobQueue, Depends(get_decision_jobs)]
+#: Only for resolving a stack name to the code behind it — see
+#: :mod:`planbench_api.run_identity`. Nothing here imports algorithms.
+Plugins = Annotated[PluginBundleService, Depends(get_plugin_service)]
 MapRoot = Annotated[Path, Depends(get_map_root)]
 TestBench = Annotated[TestBenchService, Depends(get_test_bench_service)]
 
@@ -177,11 +190,22 @@ class CandidateResource(BaseModel):
 class CandidateSpec(BaseModel):
     stack: str = Field(min_length=1)
     local_config: str = "dwa_coarse"
+    #: Names an imported bundle outright instead of letting the stack
+    #: name resolve to whatever is published. Only a validation run may
+    #: do this: the whole point of one is to watch a revision nobody has
+    #: vouched for yet, and the alias would silently hand back a
+    #: different one.
+    bundle_id: str | None = None
 
 
 class DecisionRequest(BaseModel):
     task_profile_id: str = Field(min_length=1)
     candidates: list[CandidateSpec] = Field(min_length=2)
+    #: ``production`` unless a reviewer is checking an algorithm. A
+    #: validation run measures the same way and carries no verdict — it
+    #: is never submitted and never approved, because it exists to look
+    #: at code nobody has published.
+    purpose: RunPurpose = RunPurpose.PRODUCTION
     scope: str = DEFAULT_SCOPE
     #: Defaults to ``N_min`` from the profile (HĐ-7.1) — the episode
     #: count is a consequence of the declared collision risk, not a taste
@@ -1400,7 +1424,13 @@ def preflight_decision(
 
 
 @router.post("/decisions", response_model=DecisionRunResource, status_code=status.HTTP_201_CREATED)
-def run_decision(request: DecisionRequest, service: Runs, user: CurrentUser) -> DecisionRunResource:
+def run_decision(
+    request: DecisionRequest,
+    service: Runs,
+    user: CurrentUser,
+    plugins: Plugins,
+    http_request: Request,
+) -> DecisionRunResource:
     """Run a selection and store the result, ranked or not.
 
     Synchronous on purpose at this size. The episode count comes from the
@@ -1417,23 +1447,63 @@ def run_decision(request: DecisionRequest, service: Runs, user: CurrentUser) -> 
             "a selection needs at least two *distinct* candidates. The same configuration "
             "twice is the same candidate_id (HĐ-1.3), and a candidate cannot be its own rival"
         )
+    pinned = _pin(request, plugins, http_request, user)
     return _run(
         service.run(
             task_profile_id=request.task_profile_id,
-            candidate_specs=[(spec.stack, spec.local_config) for spec in request.candidates],
+            candidate_specs=pinned.specs,
             scope=request.scope,
             episodes=request.episodes,
             created_by=user.id,
             reuse_traces=request.reuse_traces,
+            pinned=pinned,
         )
     )
+
+
+def _pin(request: DecisionRequest, plugins, http_request: Request, user) -> PinnedRun:
+    """Follow every stack name once, here, and keep the answer.
+
+    Done in the router rather than in the service because this is where
+    the caller's intent is still visible: which purpose they asked for,
+    and whether they named a bundle. By the time the engine sees a list
+    of ``(stack, local_config)`` pairs that has all been flattened away.
+    """
+    if request.purpose is RunPurpose.VALIDATION and not user.can(
+        Capability.ALGORITHM_VALIDATION_RUN
+    ):
+        raise Forbidden(
+            "a validation run measures an algorithm nobody has published yet, so it is "
+            "part of the reviewer role"
+        )
+    if request.purpose is RunPurpose.PRODUCTION and not user.can(Capability.RUN_CREATE):
+        raise Forbidden("starting a selection is part of the engineer role")
+    try:
+        return resolve_identity(
+            purpose=request.purpose,
+            task_profile_id=request.task_profile_id,
+            specs=[(spec.stack, spec.local_config) for spec in request.candidates],
+            bundle_ids=[spec.bundle_id for spec in request.candidates],
+            lookup=plugins,
+            governance=http_request.app.state.deployment.algorithm_governance,
+        )
+    except IdentityError as exc:
+        # 409 rather than 422: the request is well formed and was legal
+        # yesterday. What changed is the state of the catalogue, and that
+        # is a conflict rather than a mistake in what was typed.
+        raise InvalidStateError(str(exc)) from exc
 
 
 @router.post(
     "/decisions/jobs", response_model=DecisionJobResource, status_code=status.HTTP_202_ACCEPTED
 )
 def queue_decision(
-    request: DecisionRequest, service: Runs, jobs: DecisionJobs, user: CurrentUser
+    request: DecisionRequest,
+    service: Runs,
+    jobs: DecisionJobs,
+    user: CurrentUser,
+    plugins: Plugins,
+    http_request: Request,
 ) -> DecisionJobResource:
     """Queue a selection and hand back a job to watch. 202, not 201.
 
@@ -1455,15 +1525,28 @@ def queue_decision(
             "a selection needs at least two *distinct* candidates. The same configuration "
             "twice is the same candidate_id (HĐ-1.3), and a candidate cannot be its own rival"
         )
+    pinned = _pin(request, plugins, http_request, user)
+    governance = http_request.app.state.deployment.algorithm_governance
+
+    def recheck_at_start(run: PinnedRun) -> None:
+        try:
+            recheck_identity(run, plugins, governance)
+        except IdentityError as exc:
+            # Raised inside the worker: the job fails carrying the name of
+            # what moved, rather than measuring something else quietly.
+            raise InvalidStateError(str(exc)) from exc
+
     return _job(
         service.submit(
             jobs=jobs,
             task_profile_id=request.task_profile_id,
-            candidate_specs=[(spec.stack, spec.local_config) for spec in request.candidates],
+            candidate_specs=pinned.specs,
             scope=request.scope,
             episodes=request.episodes,
             created_by=user.id,
             reuse_traces=request.reuse_traces,
+            pinned=pinned,
+            recheck=recheck_at_start,
         )
     )
 

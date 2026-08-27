@@ -140,6 +140,14 @@ class StoredDecisionRun:
     status: str | None = None
     run_uri: str | None = None
     run_checksum: str | None = None
+    #: What this run is for. A validation run carries no verdict: it is
+    #: a reviewer watching an unpublished algorithm behave, and letting
+    #: one be approved would put a conclusion on evidence gathered
+    #: precisely because nobody had vouched for the code yet.
+    purpose: str = "production"
+    #: The code each candidate resolved to, in request order. Empty for
+    #: runs stored before this was recorded — see the backfill script.
+    candidates: list[dict[str, Any]] = field(default_factory=list)
     review_state: ReviewState = "unreviewed"
     reviewed_by: str | None = None
     reviewed_at: str | None = None
