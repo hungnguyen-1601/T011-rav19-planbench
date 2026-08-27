@@ -191,6 +191,18 @@ export const GUIDE: readonly GuideArticleMeta[] = [
       { id: "settings-system", title: { vi: "Cài đặt và Hệ thống", en: "Settings and System" } },
     ],
   },
+  {
+    slug: "reference",
+    group: "reference",
+    order: 100,
+    title: { vi: "Tra cứu", en: "Reference" },
+    sections: [],
+    tabs: [
+      { id: "quyen-han", title: { vi: "Quyền hạn", en: "What you may do" } },
+      { id: "xuat-chia-se-duyet", title: { vi: "Xuất, chia sẻ, duyệt", en: "Export, share, review" } },
+      { id: "gioi-han", title: { vi: "Giới hạn hiện tại", en: "Current limits" } },
+    ],
+  },
 ];
 
 export const GUIDE_SLUGS: readonly string[] = GUIDE.map((article) => article.slug);

@@ -1,0 +1,111 @@
+Three things people come back to look up rather than read once: what you
+may do, how a result leaves the system, and what the system **cannot** do
+yet.
+
+<GuideTabs slug="reference">
+
+<div>
+
+Permission here answers two different questions, and mixing them is the
+source of most confusion:
+
+- **What kind of action you may take** — importing an algorithm requires
+  the `plugin.import` capability, and so does setting the API key for the
+  deployment, because that key spends money on behalf of everyone using
+  it.
+- **Which records you may act on** — the maps, scenarios and deployments
+  you created are yours to edit.
+
+A third question, separate from both: **may you approve your own work**.
+While a review request is open the owner cannot, which is the entire
+point of asking a second person.
+
+What the signed-in account actually holds is stated by **the app**, not
+by this page — see the status line on [the front page](/guide). Writing
+the answer into prose is how it becomes wrong on the day the permission
+model changes and nobody updates the document.
+
+The server decides; the interface only hides. A button you cannot see is
+not where the fence is.
+
+</div>
+
+<div>
+
+**Export Markdown** — a readable version, made for pasting into another
+document.
+
+**Export Excel** — opens with a summary sheet answering "what did this
+run produce", then the metric table and the objective breakdown. Numbers
+are numbers rather than text, so they sort and filter. The file name
+carries the project, the pair being compared and the timestamp; above two
+candidates it **counts** rather than listing, because a name holding four
+stacks is a name nobody reads to the end.
+
+**Share report** — a link for somebody with no account.
+
+Both exports follow the language currently selected in the interface.
+
+**Ask for review** — optional. Choose *spec* review (before running) or
+*result* review (after), and name the person. Cancel at any time.
+
+<AppLink href="/reviews" />
+
+</div>
+
+<div>
+
+This is the most important part of the guide. A document living **inside**
+the product is read as a promise, so the places that do not yet carry
+weight have to be named.
+
+<Callout kind="missing">
+
+**The system can say *who won*, not yet *why*.** The contract layer
+exists — the tool cards, the mechanism checkers, the four-rung evidence
+ladder, the sidecar recording every planner call including the ones that
+answered "no path". But **the agent that looks for causes is not in this
+build**: there is no `services/analyst_service`.
+
+</Callout>
+
+<Callout kind="missing">
+
+**The golden set is not official.** `OFFICIAL_GOLDEN_READY` is still
+`False` in this build, so no score for the explanation layer counts as
+official.
+
+</Callout>
+
+<Callout kind="missing">
+
+**The mechanism knowledge base is still a draft.** Every entry carries
+`draft` status; none has been approved, so no claim resting on it can be
+promoted up the evidence ladder.
+
+</Callout>
+
+<Callout kind="missing">
+
+**A global planner cannot be imported** — see
+[Importing your algorithm](/guide/plugin-import#gioi-han-hom-nay).
+
+</Callout>
+
+<Callout kind="missing">
+
+**The assistant has no conversation memory**, and does not analyse
+mechanism. Asked "why did A win" it reads the deterministic advice and
+retells it — which is retelling the rules, not analysis. See
+[The two AI layers](/guide/ai).
+
+</Callout>
+
+Two smaller things worth knowing: no comparison has yet been run between
+the template's phrasing and a model's, so model-written prose is not
+shipped where a template is doing the job; and a handful of frontend
+tests are red because they ask for translation keys that never existed.
+
+</div>
+
+</GuideTabs>

@@ -50,6 +50,10 @@ export const GUIDE_MODULES = {
       ssr: false,
       loading: ArticleSkeleton,
     }),
+    reference: dynamic(() => import("./vi/reference.mdx"), {
+      ssr: false,
+      loading: ArticleSkeleton,
+    }),
     "plugin-import": dynamic(() => import("./vi/plugin-import.mdx"), {
       ssr: false,
       loading: ArticleSkeleton,
@@ -89,6 +93,10 @@ export const GUIDE_MODULES = {
   },
   en: {
     overview: dynamic(() => import("./en/overview.mdx"), {
+      ssr: false,
+      loading: ArticleSkeleton,
+    }),
+    reference: dynamic(() => import("./en/reference.mdx"), {
       ssr: false,
       loading: ArticleSkeleton,
     }),

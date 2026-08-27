@@ -1,0 +1,107 @@
+Ba thứ người ta quay lại tra chứ không đọc một lần: bạn được làm gì, mang
+kết quả ra ngoài thế nào, và hệ thống **chưa** làm được gì.
+
+<GuideTabs slug="reference">
+
+<div>
+
+Quyền ở đây trả lời hai câu khác nhau, và trộn chúng là nguồn của phần
+lớn hiểu nhầm:
+
+- **Bạn được làm loại hành động nào** — ví dụ nhập một thuật toán cần
+  capability `plugin.import`; đặt khoá API cho cả deployment cũng vậy, vì
+  khoá đó tiêu tiền cho mọi người dùng chung.
+- **Bạn được làm trên bản ghi nào** — bản đồ, kịch bản và triển khai bạn
+  tạo thì bạn sửa.
+
+Câu thứ ba, tách khỏi cả hai: **có được duyệt thứ mình tạo không**. Khi
+một yêu cầu duyệt đang mở, chính chủ không tự duyệt được — đó là toàn bộ
+ý nghĩa của việc nhờ người thứ hai.
+
+Tài khoản đang đăng nhập của bạn có những gì thì **hệ thống nói**, không
+phải trang này nói — xem dòng trạng thái ở [trang đầu](/guide). Viết cứng
+câu trả lời vào đây là cách nó sai đi vào ngày mô hình quyền thay đổi mà
+không ai sửa tài liệu.
+
+Server quyết định; giao diện chỉ ẩn bớt. Một nút không thấy không có
+nghĩa là hàng rào nằm ở nút đó.
+
+</div>
+
+<div>
+
+**Xuất Markdown** — bản đọc được, hợp để dán vào tài liệu khác.
+
+**Xuất Excel** — mở đầu bằng một trang tóm tắt trả lời "run này ra cái
+gì", rồi tới bảng metric và phân rã theo mục tiêu. Số là số chứ không
+phải chữ, nên sắp xếp và lọc được. Tên tệp mang tên dự án, cặp đem so và
+thời điểm; trên hai ứng viên thì **đếm** chứ không liệt kê, vì một tên
+nhồi bốn stack là tên không ai đọc hết.
+
+**Chia sẻ báo cáo** — link cho người không có tài khoản.
+
+Cả hai bản xuất theo đúng ngôn ngữ đang chọn trên giao diện.
+
+**Nhờ duyệt** — không bắt buộc. Chọn duyệt *spec* (trước khi chạy) hay
+*result* (sau khi chạy), nhập nickname người cần xem. Huỷ lúc nào cũng
+được.
+
+<AppLink href="/reviews" />
+
+</div>
+
+<div>
+
+Đây là mục quan trọng nhất của cả trang hướng dẫn. Một tài liệu nằm
+**trong** sản phẩm được đọc như một lời hứa, nên chỗ chưa đỡ được sức
+nặng phải được gọi tên.
+
+<Callout kind="missing">
+
+**Hệ thống chỉ ra được *ai thắng*, chưa nói được *vì sao*.** Tầng hợp
+đồng đã có — bộ thẻ công cụ, các checker cơ chế, thang bằng chứng bốn
+mức, sidecar ghi lại mọi lần bộ lập kế hoạch được gọi kể cả khi nó trả
+"không có đường". Nhưng **con agent đi tìm nguyên nhân thì chưa có trong
+bản này**: không có `services/analyst_service`.
+
+</Callout>
+
+<Callout kind="missing">
+
+**Bộ golden chưa chính thức.** Cờ `OFFICIAL_GOLDEN_READY` vẫn là `False`
+trong bản này, nên chưa có điểm chấm nào cho tầng giải thích được coi là
+chính thức.
+
+</Callout>
+
+<Callout kind="missing">
+
+**Cơ sở tri thức cơ chế còn ở trạng thái nháp.** Mọi entry mang trạng
+thái `draft`; chưa entry nào được duyệt, nên chưa khẳng định nào dựa vào
+nó được nâng mức trên thang bằng chứng.
+
+</Callout>
+
+<Callout kind="missing">
+
+**Chưa nhập được bộ lập kế hoạch toàn cục** — xem
+[Nhập thuật toán của bạn](/guide/plugin-import#gioi-han-hom-nay).
+
+</Callout>
+
+<Callout kind="missing">
+
+**Trợ lý không có trí nhớ hội thoại**, và không phân tích cơ chế. Hỏi "vì
+sao A thắng" thì nó đọc lời khuyên tất định rồi thuật lại — đó là thuật
+lại luật, không phải phân tích. Xem [Hai lớp AI](/guide/ai).
+
+</Callout>
+
+Hai điều nữa, nhỏ hơn nhưng nên biết: chưa có phép so nào giữa cách diễn
+đạt của template và của model, nên phần văn do model viết chưa được ship
+ở chỗ nào template đang đủ dùng; và một vài test giao diện đang đỏ vì đòi
+những khoá dịch chưa từng tồn tại.
+
+</div>
+
+</GuideTabs>
