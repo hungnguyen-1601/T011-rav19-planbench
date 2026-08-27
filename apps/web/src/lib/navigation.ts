@@ -260,8 +260,16 @@ export interface Crumb {
  * `<main>`; the root layout mounts it above every page, so a page has
  * nothing to pass upward. A named constant is also an edit a reviewer
  * sees, where a class sprinkled through each page would not be.
+ *
+ * `/guide` is here for a different reason than the other three. It is
+ * not a drawing surface — it is two columns, and the cap applies to the
+ * pair. Centring that pair inside a 1440px column pushes the navigation
+ * rail into the middle of the screen with empty space to its left, which
+ * reads as a rendering fault rather than as a margin. Lifting the cap
+ * lets the rail sit against the app's own rail; the article keeps its
+ * own measure, set in characters where a measure belongs.
  */
-const WIDE_CONTENT_ROUTES = ["/maps", "/simulate", "/deployments"] as const;
+const WIDE_CONTENT_ROUTES = ["/maps", "/simulate", "/deployments", "/guide"] as const;
 
 /** Whether this path wants the cap lifted.
  *

@@ -269,6 +269,12 @@
   --fs-body: 13px;
   --fs-label: 14px;
   --fs-value: 16px;
+  /* The guide's prose measure. In `ch`, not `rem`: a measure counts
+     characters an eye can track back to the start of the next line, and
+     the same pixel width is a different count at a different font size —
+     which is exactly what changed when that article text was enlarged
+     past the app's dense 13px body. */
+  --guide-measure: 72ch;
   --fs-h3: 18px;
   --fs-h1: 24px;
 
@@ -2691,7 +2697,7 @@ label.field.simulate-field,
    pair is chosen and then what the pair can conclude is stated. */
 .comparison-scope { margin: 0 16px 14px; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2); }
 .comparison-scope legend { padding-inline: 5px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
-.comparison-scope-row { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
+.comparison-scope-row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
 .comparison-scope-row .field { min-width: min(320px, 100%); }
 .comparison-scope-note { margin: 8px 0 0; font-size: 12px; }
 /* The server's own wording, kept but folded away: evidence for a bug
@@ -2782,7 +2788,7 @@ label.field.simulate-field,
 .decision-tally--orange .decision-tally-icon { background: var(--orange-soft); color: var(--orange); }
 .decision-tally--green .decision-tally-icon { background: var(--ok-soft); color: var(--ok); }
 .decision-tally.is-zero .decision-tally-icon { background: var(--panel-2); color: var(--muted); }
-.decision-filter-bar { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: end; gap: 8px 12px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel); }
+.decision-filter-bar { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: flex-end; gap: 8px 12px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel); }
 .decision-filter-fields { display: flex; align-items: flex-end; gap: 10px; }
 .decision-filter-fields .field { min-width: 150px; }
 .decision-result-count { padding: 5px 8px; border-radius: 999px; background: var(--panel-2); color: var(--muted); font-size: 11px; font-weight: 700; }
@@ -5824,7 +5830,21 @@ tr.is-previewing > td { background: var(--accent-soft); }
 }
 
 .guide-article {
-  max-width: 46rem;
+  max-width: var(--guide-measure);
+  /* Larger than the app's 13px body. The rest of this interface is
+     dense on purpose — tables of numbers read by somebody scanning for
+     one value — but this is prose read a paragraph at a time, and the
+     two want different sizes. */
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.guide-article li {
+  margin-bottom: var(--space-2);
+}
+
+.guide-article p {
+  margin-bottom: var(--space-4);
 }
 
 .guide-article h2 {
@@ -5837,7 +5857,7 @@ tr.is-previewing > td { background: var(--accent-soft); }
 }
 
 .guide-toc {
-  max-width: 46rem;
+  max-width: var(--guide-measure);
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -5866,7 +5886,7 @@ tr.is-previewing > td { background: var(--accent-soft); }
   display: flex;
   justify-content: space-between;
   gap: var(--space-4);
-  max-width: 46rem;
+  max-width: var(--guide-measure);
   padding-top: var(--space-4);
   border-top: 1px solid var(--border);
 }
@@ -5916,7 +5936,7 @@ tr.is-previewing > td { background: var(--accent-soft); }
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  max-width: 46rem;
+  max-width: var(--guide-measure);
 }
 
 .guide-skeleton-line {
