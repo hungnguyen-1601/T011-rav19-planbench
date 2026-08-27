@@ -47,6 +47,7 @@ for _package in (
     "services/simulator",
     "services/tracking",
     "services/agent_service",
+    "services/analyst_service",
     "ml",
     "apps/api",
     "apps/desktop",
