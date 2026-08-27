@@ -1884,5 +1884,6 @@
   "guide.capability.cannotImport": "Your account may not import an algorithm — ask somebody who can.",
   "guide.signInToSee": "Sign in to see what you may do",
   "dashboard.guide.title": "Operating guide",
-  "welcome.guide.link": "Read the operating guide"
+  "welcome.guide.link": "Read the operating guide",
+  "guide.tabs": "Parts of {article}"
 }

@@ -1,0 +1,55 @@
+Bài này dành cho người muốn **thấy một kết quả trước khi đọc bất cứ thứ
+gì khác**. Không vẽ bản đồ, không khai thế giới — dùng đồ dựng sẵn.
+
+<Section id="muon-mot-thu-de-nhin" title="Muốn một thứ để nhìn">
+
+Vào thư viện kịch bản, chọn một mục dễ, bấm **Import**. Một lần nhập tạo
+cả bản đồ lẫn kịch bản, nên sau bước này bạn đã có một thế giới chạy
+được.
+
+Muốn xem robot chạy trước đã thì sang sân thử: chọn bản đồ và kịch bản
+vừa nhập, đặt điểm xuất phát và đích, chạy một episode. Bước này không
+bắt buộc, nhưng nó là cách nhanh nhất để biết mọi thứ đang hoạt động.
+
+<AppLink href="/library" />
+
+</Section>
+
+<Section id="chay-phep-so-dau-tien" title="Chạy phép so đầu tiên">
+
+Vào trang quyết định, chọn cấu hình triển khai vừa có, rồi chọn hai ứng
+viên **chỉ khác nhau một thành phần** — ví dụ `astar+dwa` và
+`rrtstar+dwa`. Để số episode trống thì hệ thống dùng đúng số mà cấu hình
+triển khai yêu cầu.
+
+Bấm xếp hàng. Run chạy nền; đóng tab cũng không sao.
+
+<Callout kind="trap">
+
+Đổi cả bộ lập kế hoạch lẫn bộ điều khiển cùng lúc thì kết quả không nói
+được thành phần nào tạo ra chênh lệch. Lần đầu, đổi một thứ thôi.
+
+</Callout>
+
+<AppLink href="/decisions" />
+
+</Section>
+
+<Section id="roi-doc-no" title="Rồi đọc nó">
+
+Mở run vừa chạy. Đọc từ trên xuống, và dừng lâu nhất ở hai chỗ:
+
+- **Bảng cổng** — ai bị loại, ở cổng nào. Cổng chạy *trước* mọi phép chấm
+  điểm, và một ứng viên trượt cổng không được cứu bằng việc nó nhanh.
+  Từng cổng nghĩa là gì: [Sáu cổng khả thi](/guide/gates).
+- **Khoảng tin cậy cạnh hiệu số** — vắt qua 0 nghĩa là run này chưa chứng
+  minh được chênh lệch nó vừa báo. Vì sao:
+  [Bằng chứng đứng sau con số](/guide/evidence).
+
+Một run **không xếp hạng ai** vẫn là kết quả — nó nói rằng dưới điều kiện
+này, dữ liệu chưa đủ để chọn.
+
+Xong phần nhìn thấy kết quả. Muốn khai thế giới của chính bạn thì đi
+[Bảy bước vận hành](/guide/operation).
+
+</Section>

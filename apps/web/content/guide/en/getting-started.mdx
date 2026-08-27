@@ -1,0 +1,58 @@
+This article is for somebody who wants **to see a result before reading
+anything else**. No map to draw, no world to declare — use what ships
+with the app.
+
+<Section id="muon-mot-thu-de-nhin" title="Something to look at">
+
+Open the scenario library, pick an easy entry, press **Import**. One
+import creates both the map and the scenario, so after this step there is
+a world that runs.
+
+To watch a robot first, go to the test bench: pick the map and scenario
+just imported, place a start and a goal, run one episode. Optional, and
+the fastest way to know everything is working.
+
+<AppLink href="/library" />
+
+</Section>
+
+<Section id="chay-phep-so-dau-tien" title="Run the first comparison">
+
+Open the decisions screen, choose the deployment you now have, and pick
+two candidates that **differ in exactly one component** — say `astar+dwa`
+and `rrtstar+dwa`. Leave the episode count empty and the deployment's own
+requirement is used.
+
+Queue it. The run continues in the background; closing the tab is fine.
+
+<Callout kind="trap">
+
+Changing the planner and the controller together leaves a result that
+cannot say which one produced the difference. For a first run, change one
+thing.
+
+</Callout>
+
+<AppLink href="/decisions" />
+
+</Section>
+
+<Section id="roi-doc-no" title="Then read it">
+
+Open the finished run and read down, lingering on two places:
+
+- **The gate table** — who was rejected and at which gate. Gates run
+  *before* any scoring, and a candidate that fails one is not rescued by
+  being fast. What each gate means:
+  [The six feasibility gates](/guide/gates).
+- **The interval beside the difference** — straddling zero means this run
+  has not shown the difference it just reported. Why:
+  [The evidence behind a number](/guide/evidence).
+
+A run that **ranks nobody** is still a result — it says that under these
+conditions the data does not support a choice.
+
+That is the whole of seeing a result. To declare a world of your own, go
+to [Seven steps](/guide/operation).
+
+</Section>

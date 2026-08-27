@@ -1884,5 +1884,6 @@
   "guide.capability.cannotImport": "Tài khoản của bạn chưa nhập được thuật toán — nhờ người có quyền.",
   "guide.signInToSee": "Đăng nhập để biết bạn được làm gì",
   "dashboard.guide.title": "Hướng dẫn vận hành",
-  "welcome.guide.link": "Đọc hướng dẫn vận hành"
+  "welcome.guide.link": "Đọc hướng dẫn vận hành",
+  "guide.tabs": "Các phần của bài {article}"
 }

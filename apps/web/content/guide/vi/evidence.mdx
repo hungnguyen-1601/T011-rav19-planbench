@@ -1,0 +1,66 @@
+Ba cơ chế dưới đây quyết định một con số trên màn hình được phép nói tới
+đâu. Chúng ngang hàng nhau và không cái nào cần đọc trước cái nào.
+
+<GuideTabs slug="evidence">
+
+<div>
+
+Hai ứng viên chạy trên **cùng một tập điều kiện episode**: cùng seed,
+cùng vật cản động ở cùng vị trí tại cùng thời điểm, cùng nhiễu cảm biến.
+Mỗi bộ điều kiện mang một **checksum**, nên câu "hai bên chạy cùng điều
+kiện" là thứ kiểm lại được chứ không phải lời tự khai.
+
+Hiệu số tính theo **từng cặp**, rồi mới tổng hợp — không phải hiệu của
+hai trung bình rời nhau.
+
+Vì sao khác biệt này quan trọng: nhiễu lớn nhất trong một benchmark điều
+hướng thường là *episode nào rơi vào ai*. Ghép cặp khử phần nhiễu đó
+trước khi tính; hai trung bình rời nhau thì mang nguyên nó vào kết quả.
+
+Chỉ so những run cùng checksum. Khác checksum là khác thế giới.
+
+</div>
+
+<div>
+
+Mọi con số đi kèm một khoảng tin cậy 95% và **số lượt chạy đứng sau nó**.
+Khoảng tính bằng bootstrap trên chính các hiệu số ghép cặp.
+
+Khoảng **vắt qua 0** nghĩa là run này chưa chứng minh được chênh lệch nó
+vừa báo — kể cả khi hiệu số trung bình khác 0 và dấu của nó trông thuyết
+phục.
+
+<Callout kind="trap">
+
+Đọc dấu của hiệu số mà bỏ qua khoảng là cách một kết luận nghe mạnh hơn
+dữ liệu cho phép. "A hơn B" dễ nói hơn nhiều so với "A hơn B 0,039 với
+khoảng tin cậy 95% [0,036; 0,042] trên 30 episode ghép cặp".
+
+</Callout>
+
+Thẻ quyết định nói thẳng điều đó thay vì để người đọc tự nhận ra.
+
+</div>
+
+<div>
+
+Một khẳng định về **cơ chế** — *vì sao* A hơn B — không được phép đứng
+ngang hàng với một quan sát. Thang bốn mức, và chỉ bốn:
+
+1. **observed** — đã thấy trong dữ liệu.
+2. **associated** — có liên hệ thống kê.
+3. **mechanism_verified** — cơ chế đã được kiểm bằng một phép kiểm tất
+   định.
+4. **intervention_supported** — có can thiệp và kết quả đổi theo.
+
+**Không có mức thứ năm cho "không biết".** Thiếu bằng chứng nghĩa là
+**không có khẳng định**, chứ không phải một khẳng định yếu.
+
+Vai của AI ở tầng này là **sinh giả thuyết**, vì không gian tổ hợp quá
+lớn cho một bộ luật cứng. Nhưng AI không bao giờ là nguồn của một con số,
+một dấu xác nhận hay một kết luận nhân quả — nó đề xuất, tầng tất định
+kiểm và đóng dấu.
+
+</div>
+
+</GuideTabs>

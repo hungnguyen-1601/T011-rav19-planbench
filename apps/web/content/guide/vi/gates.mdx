@@ -1,0 +1,104 @@
+Cổng chạy **trước** mọi phép chấm điểm. Chấm điểm trả lời *cái nào tốt
+hơn*; cổng trả lời *cái này có được xét đến không*.
+
+**Cả sáu cổng luôn chạy**, không dừng ở cổng hỏng đầu tiên: biết một ứng
+viên "trượt G2" mà không biết G4 có hỏng không là một chẩn đoán không
+hành động được.
+
+Mọi ngưỡng dưới đây đọc từ bản khai triển khai — không cổng nào mang một
+hằng số của riêng nó.
+
+<GuideTabs slug="gates">
+
+<div>
+
+**Tỷ lệ không tìm được đường ≤ ngưỡng đã khai.**
+
+Cổng này tách khỏi G3 dù cả hai đều đếm thất bại, vì chúng hỏng ở hai
+việc khác nhau: một bộ lập kế hoạch **không tìm ra** lộ trình đang hỏng ở
+việc lập kế hoạch, còn một stack tìm ra đường rồi vẫn không tới nơi đang
+hỏng ở việc bám theo nó.
+
+Tỷ lệ `no_path` cao thường nói về hình học bản đồ và bán kính nở, không
+nói về chất lượng bộ điều khiển.
+
+</div>
+
+<div>
+
+**Không va chạm trên toàn bộ tập đánh giá, *và* số lượt chạy đạt tối
+thiểu.**
+
+Vế thứ hai là thứ làm vế thứ nhất có nghĩa. Quan sát 0 va chạm trong 10
+lượt vẫn nhất quán với một tỷ lệ va chạm 26%.
+
+<Callout kind="trap">
+
+Con số này là một **chặn trên**, không phải chứng chỉ: 0 va chạm trong N
+lượt chỉ chặn xác suất ở mức khoảng 3/N với độ tin cậy 95%, và chỉ dưới
+phân phối kịch bản đã mô phỏng. Câu đó đi kèm mọi lần con số được nhắc.
+
+</Callout>
+
+Tiếp xúc biên được tính là va chạm — quy tắc bảo thủ, cố ý.
+
+</div>
+
+<div>
+
+**Tỷ lệ thành công ≥ ngưỡng đã khai.**
+
+"Thành công" nghĩa là tới đích trong dung sai và trong giới hạn thời gian
+mà bản khai triển khai đặt ra. Một stack tìm được đường mỗi lần nhưng
+không tới nơi sẽ qua G1 và trượt ở đây.
+
+</div>
+
+<div>
+
+**Độ trễ p99 ≤ chu kỳ điều khiển.**
+
+p99 lấy trên **mọi bước điều khiển của cả tập đánh giá**, gộp lại — cố ý
+không phải p99 của episode tệ nhất (biến cổng thành hàm của khoảnh khắc
+xui nhất trên máy chạy benchmark) và cũng không phải trung bình.
+
+<Callout kind="trap">
+
+**Chỉ chứng minh được một chiều.** Máy chạy benchmark nhanh hơn bo mạch
+đích và chạy Python chứ không phải C++/ROS2. Trượt ở đây thì chắc chắn
+trượt trên đích; **qua** ở đây thì **không chứng minh được gì** về đích —
+và mọi kết quả G4 mang theo đúng câu cảnh báo đó.
+
+</Callout>
+
+</div>
+
+<div>
+
+**Ước lượng bộ nhớ ≤ RAM khả dụng đã khai.**
+
+Ước lượng tính từ số lượng cấu trúc dữ liệu nhân với kích thước byte của
+**bản hiện thực đích**, không bao giờ lấy từ RSS đo được: RSS của một
+tiến trình Python lệch cả bậc so với ngân sách của một bo mạch C++, và
+lệch theo hướng không đoán trước được.
+
+RSS vẫn được ghi kèm để truy rò rỉ và so tương đối, và được đặt tên sao
+cho không thể nhầm nó là căn cứ của cổng.
+
+</div>
+
+<div>
+
+**Tập quan sát ứng viên cần ⊆ tập quan sát thế giới có.**
+
+Một phép so tập hợp thuần. Nó làm được như vậy vì từ vựng đóng ở cả hai
+phía: một token lạ trượt ngay lúc phân tích cú pháp, nên một lỗi chính tả
+không bao giờ tới được cổng này rồi bị báo thành một sự không tương thích
+phần cứng không có thật.
+
+Ứng viên khai *cần gì*, triển khai khai *có gì*. Thiếu thì loại — và đó
+là một câu về cấu hình, không phải một phán quyết về chất lượng.
+
+</div>
+
+</GuideTabs>

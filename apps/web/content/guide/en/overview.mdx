@@ -1,10 +1,55 @@
 <Section id="he-thong-lam-gi" title="What this is for">
 
-PlanBench answers **which navigation stack to deploy** in one particular
-warehouse, with evidence somebody else can check.
+PlanBench answers **one** question: *which navigation configuration
+should be deployed in this warehouse* — and answers it with evidence
+somebody else can check.
 
-This article is still being written. The frame around it — navigation,
-search, and loading content in the reader's language — works; the articles
-themselves arrive in later phases.
+Measuring on a real robot is expensive, slow and unrepeatable: each run
+costs tens of minutes, needs a free robot and a clear floor, one
+collision damages hardware, and the situation that just broke cannot be
+staged again to look at. This platform replaces that with simulation —
+**simulation only, no real robot, no safety certification.**
+
+What it adds over running something a few times and picking is three
+things: conditions that are locked and checkable, a set of gates kept
+separate from the score, and every number carrying a confidence interval
+and the number of runs behind it.
+
+</Section>
+
+<Section id="luong-tong-the" title="How the work flows">
+
+Four things, in dependency order:
+
+1. **Declare the world** — map, robot, sensors, missions, thresholds.
+   This is the fixed half of a comparison.
+2. **Choose what to compare** — two complete navigation configurations.
+3. **Run** — both across the same set of episode conditions.
+4. **Read** — gates first, score second; then take the result out, or ask
+   a second person to review it.
+
+Each step in detail is in [Seven steps](/guide/operation). To see a
+result before reading anything else, take
+[The first five minutes](/guide/getting-started).
+
+</Section>
+
+<Section id="thuat-ngu" title="The words used here">
+
+Four words used throughout, and none of them is a synonym for another:
+
+- **Deployment** — the declaration of one specific world. Map, robot,
+  sensors, missions, thresholds, weights. Everything *held fixed* in a
+  comparison.
+- **Candidate** — one complete navigation configuration: a global planner
+  plus a local controller plus that controller's configuration. Not "an
+  algorithm".
+- **Episode** — one run: one mission, one seed, one set of moving
+  obstacles at defined moments.
+- **Comparison** — two candidates run over the **same** episodes,
+  producing a decision card.
+
+Why these distinctions matter when reading numbers:
+[Ten ideas](/guide/concepts).
 
 </Section>

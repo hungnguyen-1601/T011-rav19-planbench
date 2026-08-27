@@ -50,6 +50,18 @@ export const GUIDE_MODULES = {
       ssr: false,
       loading: ArticleSkeleton,
     }),
+    "getting-started": dynamic(() => import("./vi/getting-started.mdx"), {
+      ssr: false,
+      loading: ArticleSkeleton,
+    }),
+    "gates": dynamic(() => import("./vi/gates.mdx"), {
+      ssr: false,
+      loading: ArticleSkeleton,
+    }),
+    "evidence": dynamic(() => import("./vi/evidence.mdx"), {
+      ssr: false,
+      loading: ArticleSkeleton,
+    }),
     pages: dynamic(() => import("./vi/pages.mdx"), {
       ssr: false,
       loading: ArticleSkeleton,
@@ -65,6 +77,18 @@ export const GUIDE_MODULES = {
   },
   en: {
     overview: dynamic(() => import("./en/overview.mdx"), {
+      ssr: false,
+      loading: ArticleSkeleton,
+    }),
+    "getting-started": dynamic(() => import("./en/getting-started.mdx"), {
+      ssr: false,
+      loading: ArticleSkeleton,
+    }),
+    "gates": dynamic(() => import("./en/gates.mdx"), {
+      ssr: false,
+      loading: ArticleSkeleton,
+    }),
+    "evidence": dynamic(() => import("./en/evidence.mdx"), {
       ssr: false,
       loading: ArticleSkeleton,
     }),

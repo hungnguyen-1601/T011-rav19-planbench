@@ -1,0 +1,71 @@
+These three decide how far a number on the screen is allowed to go. They
+are peers; none needs reading before another.
+
+<GuideTabs slug="evidence">
+
+<div>
+
+Both candidates run over the **same set of episode conditions**: same
+seed, same moving obstacles in the same places at the same moments, same
+sensor noise. Each set of conditions carries a **checksum**, so "both ran
+under the same conditions" is checkable rather than asserted.
+
+The difference is taken **per pair** and only then aggregated — not as
+the difference of two detached averages.
+
+Why that matters: the largest source of noise in a navigation benchmark
+is usually *which episodes fell to whom*. Pairing removes that before
+anything is computed; two detached averages carry it into the result.
+
+Only compare runs with the same checksum. A different checksum is a
+different world.
+
+</div>
+
+<div>
+
+Every number carries a 95% confidence interval and **the number of runs
+behind it**. The interval is bootstrapped over the paired differences
+themselves.
+
+An interval **straddling zero** means this run has not demonstrated the
+difference it just reported — even when the mean difference is non-zero
+and its sign looks convincing.
+
+<Callout kind="trap">
+
+Reading the sign while ignoring the interval is how a conclusion ends up
+sounding stronger than the data allows. "A beats B" is far easier to say
+than "A exceeds B by 0.039, 95% interval [0.036, 0.042], over 30 paired
+episodes".
+
+</Callout>
+
+The decision card says so outright rather than leaving the reader to
+notice.
+
+</div>
+
+<div>
+
+A claim about **mechanism** — *why* A beat B — is not allowed to stand
+level with an observation. Four rungs, and only four:
+
+1. **observed** — seen in the data.
+2. **associated** — statistically related.
+3. **mechanism_verified** — the mechanism checked by a deterministic
+   test.
+4. **intervention_supported** — something was changed and the result
+   moved with it.
+
+**There is no fifth rung for "unknown".** Missing evidence means **no
+claim**, not a weak one.
+
+AI's role at this layer is to **propose hypotheses**, because the
+combinatorial space is too large for a fixed rule set. It is never the
+source of a number, a verification, or a causal conclusion — it proposes,
+and the deterministic layer checks and stamps.
+
+</div>
+
+</GuideTabs>

@@ -58,6 +58,19 @@ export const GUIDE: readonly GuideArticleMeta[] = [
     title: { vi: "Tổng quan", en: "Overview" },
     sections: [
       { id: "he-thong-lam-gi", title: { vi: "Hệ thống làm gì", en: "What this is for" } },
+      { id: "luong-tong-the", title: { vi: "Luồng tổng thể", en: "How the work flows" } },
+      { id: "thuat-ngu", title: { vi: "Thuật ngữ", en: "The words used here" } },
+    ],
+  },
+  {
+    slug: "getting-started",
+    group: "overview",
+    order: 15,
+    title: { vi: "Năm phút đầu", en: "The first five minutes" },
+    sections: [
+      { id: "muon-mot-thu-de-nhin", title: { vi: "Muốn một thứ để nhìn", en: "Something to look at" } },
+      { id: "chay-phep-so-dau-tien", title: { vi: "Chạy phép so đầu tiên", en: "Run the first comparison" } },
+      { id: "roi-doc-no", title: { vi: "Rồi đọc nó", en: "Then read it" } },
     ],
   },
   {
@@ -91,6 +104,33 @@ export const GUIDE: readonly GuideArticleMeta[] = [
       { id: "sang-loc-mot-chieu", title: { vi: "Sàng lọc chỉ chứng minh một chiều", en: "Host screening proves one direction" } },
       { id: "khoang-tin-cay-vat-qua-0", title: { vi: "Khoảng tin cậy vắt qua 0", en: "An interval straddling zero" } },
       { id: "doi-mot-thanh-phan", title: { vi: "Đổi đúng một thành phần", en: "Change exactly one component" } },
+    ],
+  },
+  {
+    slug: "gates",
+    group: "results",
+    order: 50,
+    title: { vi: "Sáu cổng khả thi", en: "The six feasibility gates" },
+    sections: [],
+    tabs: [
+      { id: "g1", title: { vi: "G1 — Không tìm được đường", en: "G1 — No path found" } },
+      { id: "g2", title: { vi: "G2 — Va chạm", en: "G2 — Collisions" } },
+      { id: "g3", title: { vi: "G3 — Tỷ lệ thành công", en: "G3 — Success rate" } },
+      { id: "g4", title: { vi: "G4 — Thời gian thực", en: "G4 — Real time" } },
+      { id: "g5", title: { vi: "G5 — Bộ nhớ", en: "G5 — Memory" } },
+      { id: "g6", title: { vi: "G6 — Quan sát cần có", en: "G6 — Required observations" } },
+    ],
+  },
+  {
+    slug: "evidence",
+    group: "results",
+    order: 60,
+    title: { vi: "Bằng chứng đứng sau con số", en: "The evidence behind a number" },
+    sections: [],
+    tabs: [
+      { id: "ghep-cap", title: { vi: "Ghép cặp", en: "Pairing" } },
+      { id: "khoang-tin-cay", title: { vi: "Khoảng tin cậy", en: "Confidence intervals" } },
+      { id: "thang-bang-chung", title: { vi: "Thang bằng chứng", en: "The evidence ladder" } },
     ],
   },
   {
