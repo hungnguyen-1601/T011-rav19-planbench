@@ -69,7 +69,10 @@ def main() -> int:
     for row in rows:
         arms[row["arm"]].append(row)
 
-    print(f"{'arm':24} {'ok':>3} {'fail':>4} {'abst':>4} {'prop':>4} {'blk':>4} {'$':>6}  vetoes")
+    print(
+        f"{'arm':24} {'ok':>3} {'fail':>4} {'abst':>4} {'prop':>4} {'ctr':>4} "
+        f"{'blk':>4} {'drop':>5} {'$':>6}  vetoes"
+    )
     summary: dict[str, dict[str, Any]] = {}
     for arm, entries in arms.items():
         failed = [row for row in entries if "model_failed" in row]
@@ -90,12 +93,26 @@ def main() -> int:
             "usd": round(spend, 3),
             **breaches,
         }
+        offered = summary[arm]["proposals"] + summary[arm]["blocked"]
+        summary[arm]["drop_rate"] = round(summary[arm]["blocked"] / offered, 3) if offered else 0.0
         breached = ", ".join(f"{name}={count}" for name, count in breaches.items() if count)
         print(
             f"{arm:24} {len(done):3} {len(failed):4} {summary[arm]['abstained']:4} "
-            f"{summary[arm]['proposals']:4} {summary[arm]['blocked']:4} "
+            f"{summary[arm]['proposals']:4} {summary[arm]['contrasts']:4} "
+            f"{summary[arm]['blocked']:4} {summary[arm]['drop_rate']:5.2f} "
             f"{spend:6.2f}  {breached or '-'}"
         )
+
+    if len(summary) <= EPISODE_PREREGISTRATION.stage_two_arms:
+        # The selection rule belongs to the stage that has arms to
+        # choose between. Printing "stage two: ep_b1" underneath a
+        # stage-two artifact reads as a conclusion and is none.
+        print(
+            f"\nno selection printed: {len(summary)} arms is what stage two "
+            "runs, so there is nothing here to select from"
+        )
+        _per_cluster(arms)
+        return 0
 
     baseline = summary.get("ep_b1", {}).get("blocked", 0)
     print(f"\nselection rule: {EPISODE_PREREGISTRATION.stage_two_rule}")
@@ -114,6 +131,11 @@ def main() -> int:
     chosen = ["ep_b1", *contenders][: EPISODE_PREREGISTRATION.stage_two_arms]
     print(f"  stage two: {', '.join(chosen)}")
 
+    _per_cluster(arms)
+    return 0
+
+
+def _per_cluster(arms: dict[str, list[dict[str, Any]]]) -> None:
     print("\nper cluster, because a run is a cluster:")
     for arm, entries in arms.items():
         by_cluster: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -126,7 +148,6 @@ def main() -> int:
             for cluster, rs in sorted(by_cluster.items())
         ]
         print(f"  {arm:24} " + "  ".join(parts))
-    return 0
 
 
 if __name__ == "__main__":
