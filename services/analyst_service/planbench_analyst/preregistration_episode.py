@@ -134,6 +134,14 @@ class EpisodePreregistration:
     stage_two_arms: int = 2
     #: What lets an arm through: it violated no hard constraint, and it
     #: did not drop more of its own proposals than the baseline did.
+    #:
+    #: The second half reads the ``*_blocked`` figures and **is meant
+    #: to** — unlike a veto, it is comparative and against the baseline
+    #: rather than against a ceiling of zero, so an arm whose sentences
+    #: the guard has to remove more often than b1's is worse in the way
+    #: this says it is. Left as written when the vetoes were corrected,
+    #: because it is not the same error and rewriting a selection rule
+    #: that is sound is what the preregistration exists to stop.
     stage_two_rule: str = "no_hard_constraint_violated_and_guard_drops_not_worse_than_b1"
 
     #: Judged blind, by one person, against the rubric fixed on 26-08.
