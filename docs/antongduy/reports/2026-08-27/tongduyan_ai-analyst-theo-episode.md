@@ -803,3 +803,73 @@ bảng, và nó không phải thứ mà bất kỳ endpoint nào đang đo.
 register, subject — **không có tên arm**; key ánh xạ ngược nằm file riêng. Thứ tự
 mục sinh từ hash danh tính của chính mục đó, nên cùng artifact luôn ra cùng sheet,
 không ai xáo lại được cho tới khi đọc thuận mắt hơn. Stage 1: **84 mục**.
+
+---
+
+## P5 (phần 3) — Stage 2, và **blocker**: endpoint chính không đo được trên dữ liệu này
+
+Stage 2: `ep_b1` + `ep_no_union`, 12 episode × 3 lượt, **0,89 USD**, 72/72 vòng.
+
+| Arm | Vòng | Abstain | Proposal | **Contrast** | Guard gỡ | Tỷ lệ gỡ | USD | Veto |
+|---|---|---|---|---|---|---|---|---|
+| `ep_b1` | 36 | 28 | 11 | **0** | 34 | 0,76 | 0,42 | 0 |
+| `ep_no_union` | 36 | 20 | 21 | **0** | 36 | 0,63 | 0,47 | 0 |
+
+Vẫn không vi phạm veto nào. Nhưng hai điều đọc ra được:
+
+**Thứ tự stage 1 không lặp lại.** Stage 1 chọn `ep_no_union` vì nó bị gỡ ít nhất
+(9 so với 12). Chạy 3 lượt thì `ep_no_union` bị gỡ **nhiều hơn** (36 so với 34).
+Đếm thô đảo chiều. Tính theo **tỷ lệ** thì `ep_no_union` vẫn tốt hơn (0,63 so với
+0,76) — nó đề xuất 57 câu giữ 21, baseline đề xuất 45 giữ 11. Nghĩa là: luật chọn
+arm đọc **số đếm** trên một stage mà các arm đề xuất không bằng nhau, và số đếm
+đó không phải thứ nó tưởng nó đọc. Đã thêm cột tỷ lệ vào scorer; **không sửa
+luật** — sửa luật lúc này là sửa sau khi thấy kết quả.
+
+### Blocker
+
+Cột `Contrast` bằng **0**. Trên cả 144 vòng của hai stage, đúng **1** proposal
+sống sót mang register `contrast`.
+
+Không phải model kém. Dựng lại 16 packet từ chính các run đã ghi:
+
+| Contrast trong packet | Số lượng |
+|---|---|
+| `component_differs` (context) | 15 |
+| `divergence_precedes_outcome` (context) | 11 |
+| `outcome_differs` (context) | 9 |
+| `detection_only_on_loser` (**support**) | **1** |
+| `detection_worse_on_loser` (**support**) | **0** |
+
+Hợp đồng bằng chứng đòi `contrast_support`. Trong 36 contrast của 16 packet có
+**đúng 1** cái mang strength `support`. Model có trích contrast — 62 lần trên
+hai stage — nhưng 54 lần trong đó là `outcome_differs` / `component_differs`,
+tức context, nên rule 10 hạ cấp về `diagnosis`. Đúng như thiết kế.
+
+⇒ **Endpoint chính `contrast_holds_up_rate_cluster_level` có trần khoảng 1 quan
+sát trên 3 cluster.** Không tiêu thêm tiền nào sửa được: không arm nào, prompt
+nào, model nào rút được contrast có support ra khỏi packet không chứa cái đó.
+
+Đây là thuộc tính của **dữ liệu đã ghi**, không phải của thiết kế: hai stack
+trong các run này hiếm khi có detector chỉ bắn ở một bên. Ba câu hỏi trong plan
+mà lần này **vẫn trả lời được**: veto, tải guard, chi phí, tỷ lệ abstain. Câu
+"arm nào giải thích được sự khác biệt tốt hơn" thì không.
+
+### Đã tiêu
+
+| Lượt | USD |
+|---|---|
+| Stage 1 lần đầu (view rò id — **bỏ**) | 1,00 |
+| Stage 1 chạy lại | 0,87 |
+| Stage 2 | 0,89 |
+| **Tổng** | **2,76** / trần 3,00 |
+
+Dừng tiêu ở đây, chờ anh quyết hướng.
+
+### Đã sinh, chờ chấm tay
+
+| File | Mục |
+|---|---|
+| `stage1-o4mini-v2-rubric-sheet.md` | 84 |
+| `stage2-o4mini-rubric-sheet.md` | 80 |
+
+Sheet không mang tên arm; key ánh xạ ngược ở file `-rubric-key.json` cạnh đó.
