@@ -51,11 +51,16 @@ from collections.abc import Mapping, Sequence
 from pydantic import BaseModel, ConfigDict, Field
 
 from planbench_explanation.case_packet import (
+    CandidateMeasurements,
     CasePacket,
     CasePacketRefusal,
     DecisionFacts,
+    EpisodeTimeline,
+    GateOutcome,
+    MeasuredValue,
     RobotFacts,
     TaskFacts,
+    TimelinePoint,
     build_case_packet,
 )
 from planbench_explanation.contrast import (
@@ -81,7 +86,8 @@ from planbench_explanation.exemplars import (
     select_exemplars_from_report,
 )
 from planbench_explanation.map_features import RouteFeatures
-from planbench_explanation.replay_sync import ReplaySyncRefusal, choose_reference
+from planbench_explanation.replay_sync import ReplaySyncRefusal, choose_reference, project
+from planbench_explanation.running_metrics import Deployment, TraceSlice, sample_series
 from planbench_explanation.versioning import ExplanationArtifactHeader
 from planbench_explanation.waterfall import Waterfall
 
@@ -220,6 +226,342 @@ def lattice_from(
     return tuple(findings), tuple(refused)
 
 
+#: Gate payload keys this builder knows how to read as "the number and
+#: the bar". Deliberately short: a gate whose shape nobody wrote down
+#: here contributes its verdict and no numbers, which is the honest
+#: reading — inventing a threshold from an unfamiliar key would put a
+#: number in the packet that the run never compared anything against.
+_GATE_NUMBERS: tuple[tuple[str, str, str, str], ...] = (
+    ("p99_ms", "threshold_ms", "ms", "at_most"),
+    ("n_distinct_episodes", "n_min", "count", "at_least"),
+)
+
+
+def _gate_row(candidate_id: str, gate_id: str, verdict: object) -> GateOutcome:
+    """One gate's verdict, with its number when the run recorded one."""
+    if isinstance(verdict, str):
+        return GateOutcome(gate_id=gate_id, candidate_id=candidate_id, passed=verdict == "pass")
+    if not isinstance(verdict, Mapping):
+        return GateOutcome(gate_id=gate_id, candidate_id=candidate_id, passed=False)
+    passed = str(verdict.get("result", "")) == "pass"
+    for value_key, threshold_key, unit, direction in _GATE_NUMBERS:
+        value = verdict.get(value_key)
+        threshold = verdict.get(threshold_key)
+        if isinstance(value, int | float) and isinstance(threshold, int | float):
+            return GateOutcome(
+                gate_id=gate_id,
+                candidate_id=candidate_id,
+                passed=passed,
+                threshold=float(threshold),
+                value=float(value),
+                unit=unit,
+                direction=direction,  # type: ignore[arg-type]
+            )
+    return GateOutcome(gate_id=gate_id, candidate_id=candidate_id, passed=passed)
+
+
+def measurements_from_report(report: Mapping[str, object]) -> tuple[CandidateMeasurements, ...]:
+    """What each candidate scored, read off the stored report.
+
+    Only what the run actually recorded. A field the report does not
+    carry stays ``None``, because a zero here would be read as a
+    measurement — "no collisions" and "nobody counted collisions" are
+    different sentences and the packet must not merge them.
+    """
+    rows: list[CandidateMeasurements] = []
+    for candidate in report.get("candidates", ()) or ():
+        if not isinstance(candidate, Mapping):
+            continue
+        episodes = [
+            item for item in candidate.get("episodes", ()) or () if isinstance(item, Mapping)
+        ]
+        denominator = candidate.get("n_distinct_episodes") or candidate.get("n_episodes")
+        denominator = int(denominator) if isinstance(denominator, int | float) else None
+        fields: dict[str, MeasuredValue | None] = {}
+        rate = candidate.get("success_rate")
+        if isinstance(rate, int | float) and denominator:
+            fields["success_rate"] = MeasuredValue(
+                value=float(rate), unit="ratio", denominator=denominator
+            )
+        latency = candidate.get("pooled_p99_latency_ms")
+        if isinstance(latency, int | float):
+            fields["latency_p99_ms"] = MeasuredValue(
+                value=float(latency), unit="ms", denominator=denominator
+            )
+        utility = candidate.get("decision_utility")
+        if isinstance(utility, int | float) and denominator:
+            fields["decision_utility"] = MeasuredValue(
+                value=float(utility), unit="ratio", denominator=denominator
+            )
+        collisions = [
+            item["collision_count"]
+            for item in episodes
+            if isinstance(item.get("collision_count"), int | float)
+        ]
+        if collisions:
+            fields["collisions"] = MeasuredValue(
+                value=float(sum(collisions)), unit="count", denominator=len(collisions)
+            )
+        clearances = [
+            item["min_clearance"]
+            for item in episodes
+            if isinstance(item.get("min_clearance"), int | float)
+        ]
+        if clearances:
+            fields["min_clearance_m"] = MeasuredValue(
+                value=float(min(clearances)), unit="m", denominator=len(clearances)
+            )
+        rows.append(
+            CandidateMeasurements(candidate_id=str(candidate.get("candidate_id", "")), **fields)
+        )
+    return tuple(row for row in rows if row.candidate_id)
+
+
+def gate_rows_from_report(report: Mapping[str, object]) -> tuple[GateOutcome, ...]:
+    """Every gate verdict in the report, with its number where there is one."""
+    rows: list[GateOutcome] = []
+    for candidate in report.get("candidates", ()) or ():
+        if not isinstance(candidate, Mapping):
+            continue
+        candidate_id = str(candidate.get("candidate_id", ""))
+        table = candidate.get("gates")
+        if not isinstance(table, Mapping):
+            continue
+        for gate_id, verdict in sorted(table.items()):
+            if gate_id == "candidate_id":
+                continue
+            rows.append(_gate_row(candidate_id, gate_id, verdict))
+    return tuple(rows)
+
+
+#: Which exemplar roles get a timeline, and at which marks.
+#:
+#: Two roles rather than four, and three marks rather than every trace
+#: row, because a packet is a prompt somebody pays for on every case.
+#: The two ΔU extremes are already described by the waterfall — what a
+#: timeline adds that the decomposition cannot is the *shape* of a
+#: representative episode and of the one that came closest to something.
+#: Measured: this is about 50 facts per packet, against 15–54 before M2.
+TIMELINE_ROLES: tuple[str, ...] = ("typical", "safety_critical")
+TIMELINE_MARKS: tuple[float, ...] = (0.25, 0.5, 1.0)
+
+
+def _slice_from(trace: EpisodeTrace) -> TraceSlice | None:
+    """The columns these metrics need, or ``None`` if the run lacks one.
+
+    Absent columns come back as empty rather than as an error, so a
+    trace that cannot be measured is skipped and said so — building a
+    slice out of half the columns would report a different moment of the
+    episode than the one asked for.
+    """
+    columns = trace.columns
+    needed = ("t", "x", "y", "clearance_m", "planner_latency_ms", "progress_m")
+    values: dict[str, tuple[float, ...]] = {}
+    for name in needed:
+        column = columns.get(name)
+        if column is None:
+            return None
+        values[name] = tuple(float(item) for item in column)
+    if not values["t"] or len({len(column) for column in values.values()}) > 1:
+        return None
+    return TraceSlice(candidate_id=trace.candidate_id, **values)  # type: ignore[arg-type]
+
+
+class DeploymentThresholds(BaseModel):
+    """The profile's half of a :class:`Deployment` — W1.3.
+
+    Everything the running metrics normalise against **except** the
+    reference length, which is not the deployment's to state: it is the
+    length of the line *this episode* was measured along, and one number
+    shared across a run would put a robot halfway down the map at 100%
+    of a shorter neighbour's route. The scoring pass holds the profile;
+    the episode holds its line; this is the join.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
+
+    robot_radius_m: float = Field(gt=0)
+    control_period_s: float = Field(gt=0)
+    clearance_warning_m: float = Field(ge=0)
+    max_linear_velocity: float = Field(gt=0)
+
+    def for_length(self, reference_length_m: float) -> Deployment:
+        return Deployment(
+            robot_radius_m=self.robot_radius_m,
+            control_period_s=self.control_period_s,
+            clearance_warning_m=self.clearance_warning_m,
+            max_linear_velocity=self.max_linear_velocity,
+            reference_length_m=reference_length_m,
+        )
+
+
+def project_progress(trace: EpisodeTrace) -> tuple[EpisodeTrace, float] | None:
+    """The same episode with its arc length along the reference line.
+
+    The recorder writes **where** the robot was; how far along the task
+    that is depends on the line it is measured against, so it is derived
+    here through the platform's own projection — the one the detectors
+    already run — rather than by a second rule free to place the
+    half-way mark somewhere else.
+
+    Returns the trace and the line's length. A trace that already
+    carries ``progress_m`` is returned untouched with a length of 0.0:
+    somebody upstream measured it against a line this function cannot
+    see, and recomputing would be the second rule. ``None`` when the
+    projection refuses — the caller then says so rather than placing
+    points on a line that could not be built.
+    """
+    if trace.columns.get("progress_m") is not None:
+        return trace, 0.0
+    payload = dict(trace.columns)
+    payload.setdefault("candidate_id", trace.candidate_id)
+    payload.setdefault("episode_context_id", trace.episode_context_id)
+    try:
+        view = read_trace(payload)
+        reference = choose_reference(
+            planned_path=trace.planned_path,
+            candidate_path=[(point.x, point.y) for point in view.track],
+        )
+        projected = project(view.track, reference)
+    except (DetectorRefusal, ReplaySyncRefusal, ValueError):
+        return None
+    updated = trace.model_copy(
+        update={
+            "columns": {
+                **trace.columns,
+                "progress_m": [sample.progress_m for sample in projected.samples],
+            }
+        }
+    )
+    return updated, reference.length_m
+
+
+def timeline_from_trace(
+    trace: EpisodeTrace, *, role: str, deployment: Deployment
+) -> EpisodeTimeline | None:
+    """One episode at :data:`TIMELINE_MARKS`, on both clocks — or ``None``.
+
+    Lifted out of :func:`timelines_from_traces` at W1.2 so a caller that
+    already knows which episode plays which role — the golden fixture
+    builder does; a planted world has no ranked pair to select exemplars
+    from — reaches the same marks by the same arithmetic. Two ways to
+    place a timeline point would be two answers to "where was it at half
+    the task", and both would render.
+
+    ``None`` when the trace is missing a column these metrics read. The
+    caller says so; a half-built slice would report a different moment
+    of the episode than the one asked for.
+    """
+    projected = project_progress(trace)
+    if projected is None:
+        return None
+    trace, reference_length_m = projected
+    if reference_length_m > 0:
+        # This episode's own line. A length carried over from another
+        # episode would report a fraction of the wrong route.
+        deployment = deployment.model_copy(update={"reference_length_m": reference_length_m})
+    sliced = _slice_from(trace)
+    if sliced is None:
+        return None
+    series = sample_series(sliced, deployment=deployment)
+    points: list[TimelinePoint] = []
+    for fraction in TIMELINE_MARKS:
+        at_time = series[min(int(len(series) * fraction), len(series) - 1)]
+        points.append(
+            TimelinePoint(
+                clock="at_time",
+                mark=round(at_time.elapsed_s, 3),
+                progress_fraction=at_time.progress_fraction,
+                safety_margin=at_time.safety_margin,
+                compute_budget=at_time.compute_budget,
+                path_efficiency=at_time.path_efficiency,
+                elapsed_s=at_time.elapsed_s,
+                replans=at_time.replans,
+            )
+        )
+        reached = next((row for row in series if row.progress_fraction >= fraction), series[-1])
+        points.append(
+            TimelinePoint(
+                clock="at_progress",
+                mark=fraction,
+                progress_fraction=reached.progress_fraction,
+                safety_margin=reached.safety_margin,
+                compute_budget=reached.compute_budget,
+                path_efficiency=reached.path_efficiency,
+                elapsed_s=reached.elapsed_s,
+                replans=reached.replans,
+            )
+        )
+    # One point per moment. A one-row trace — a planner that refused at
+    # the start pose writes exactly that — puts all three ``at_time``
+    # marks at t=0, and three copies of one instant are not three
+    # readings: downstream they collide as three facts claiming one ref,
+    # which the analyst's fact index refuses outright, taking the whole
+    # view with it. Kept in order, first occurrence wins.
+    seen: set[tuple[str, float]] = set()
+    unique: list[TimelinePoint] = []
+    for point in points:
+        key = (point.clock, point.mark)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(point)
+    return EpisodeTimeline(
+        episode_context_id=trace.episode_context_id,
+        candidate_id=trace.candidate_id,
+        role=role,
+        points=tuple(unique),
+    )
+
+
+def timelines_from_traces(
+    traces: Sequence[EpisodeTrace],
+    exemplars: ExemplarSet | None,
+    deployment: Deployment | None,
+    *,
+    thresholds: DeploymentThresholds | None = None,
+) -> tuple[tuple[EpisodeTimeline, ...], tuple[str, ...]]:
+    """A few marks of the exemplar episodes, on both clocks.
+
+    Returns the timelines and the reasons any were left out. A reader
+    asking why an explanation is thin is owed the reason, and an empty
+    tuple with no account reads as "the recipe found nothing".
+    """
+    if thresholds is not None and deployment is None:
+        # A length that every episode overrides on its own line. Stated
+        # rather than left implicit: ``Deployment`` requires one, and
+        # this is the value no episode keeps.
+        deployment = thresholds.for_length(1.0)
+    if exemplars is None or deployment is None:
+        return (), ("timelines: no exemplar set or no deployment thresholds for this run",)
+
+    wanted = {
+        item.episode_context_id: item.role
+        for item in exemplars.exemplars
+        if item.role in TIMELINE_ROLES
+    }
+    built: list[EpisodeTimeline] = []
+    omissions: list[str] = []
+    for trace in traces:
+        role = wanted.get(trace.episode_context_id)
+        if role is None:
+            continue
+        timeline = timeline_from_trace(trace, role=role, deployment=deployment)
+        if timeline is None:
+            omissions.append(
+                f"timeline {trace.episode_context_id}: the trace is missing a column "
+                "these metrics read, so no point on it can be placed"
+            )
+            continue
+        built.append(timeline)
+    if not built and not omissions:
+        omissions.append(
+            "timelines: no trace was available for the exemplar episodes, so the "
+            "packet says what each episode scored and not how it went"
+        )
+    return tuple(built), tuple(omissions)
+
+
 def build_scoring_packet(
     *,
     run_id: str,
@@ -240,6 +582,8 @@ def build_scoring_packet(
     detector_settings: DetectorSettings | None = None,
     route_features: Mapping[str, RouteFeatures] | None = None,
     gates: Mapping[str, Mapping[str, object]] | None = None,
+    deployment: Deployment | None = None,
+    deployment_thresholds: DeploymentThresholds | None = None,
 ) -> PacketBuildReport:
     """Assemble one run's case packet from what the scoring pass holds.
 
@@ -293,6 +637,19 @@ def build_scoring_packet(
         except (ExemplarRefusal, ReportExemplarRefusal) as refusal:
             omissions.append(f"representative_episodes: {refusal}")
 
+    timelines, timeline_omissions = timelines_from_traces(
+        traces, exemplars, deployment, thresholds=deployment_thresholds
+    )
+    omissions.extend(timeline_omissions)
+
+    measurements = measurements_from_report(report)
+    if not measurements:
+        omissions.append(
+            "measurements: the report carries no per-candidate metrics, so the packet "
+            "carries none. An analyst can talk about the decomposition and not about "
+            "what either candidate scored."
+        )
+
     packet = build_case_packet(
         run_id=run_id,
         header=ExplanationArtifactHeader.for_current_code(
@@ -315,9 +672,12 @@ def build_scoring_packet(
             status=decision_status,
             waterfall=waterfall,
             gates={name: dict(row) for name, row in (gates or {}).items()},
+            gate_rows=gate_rows_from_report(report),
         ),
         lattice=lattice,
         observations=observations,
+        measurements=measurements,
+        timelines=timelines,
         representative_episodes=exemplars,
         evidence_class=evidence_class,
     )

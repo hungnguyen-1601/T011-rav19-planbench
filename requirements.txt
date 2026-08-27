@@ -101,6 +101,14 @@ scipy==1.18.0
 # thiếu nó thì không episode nào ghi được bằng chứng, và mọi con số trên
 # Decision Card mất nguồn gốc.
 pyarrow==25.0.0
+# `tests/test_trace_review.py` dựng khung dữ liệu bằng pandas để nạp cho
+# `summarise_trace`, vốn nhận một DataFrame. **Không dòng code chạy nào
+# import pandas** — chỉ test — nhưng file này khai nó là "đủ để chạy toàn
+# bộ test suite", và thiếu nó thì cả file không thu thập được: `pytest`
+# dừng ở lỗi collection chứ không báo kết quả. Đúng chuyện đã xảy ra —
+# test có từ 2026-08-24, dependency chưa từng được khai, nên trên một
+# `.venv` dựng theo README nó chưa từng chạy lần nào.
+pandas==2.3.3
 # Ghim nhân CPU trên Windows (CONTRACTS HĐ-7.4). Linux có
 # `os.sched_setaffinity` sẵn trong stdlib; Windows KHÔNG, và `hostinfo.py`
 # rơi về psutil ở đó. Thiếu nó thì `pin_to_cores` trả None và mọi run trên

@@ -35,9 +35,11 @@ what happened.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from planbench_explanation.budget import PLATFORM_BUDGET_CAP, AnalysisBudget
 from planbench_explanation.bundle import (
     AnalystBundle,
     BundleRefusal,
@@ -52,6 +54,7 @@ from planbench_explanation.golden import (
     SuiteScore,
     score_suite,
 )
+from planbench_explanation.packet_artifact import PacketArtifact
 from planbench_explanation.protocol import (
     AnalysisRequest,
     AnalysisResponse,
@@ -69,7 +72,7 @@ Analyst = Callable[[AnalysisRequest], AnalysisResponse]
 #: than a directory of files because the hidden set is not in this
 #: repository and must not become discoverable by being addressable
 #: here.
-PacketSource = Callable[[PlantedCase], CasePacket]
+PacketSource = Callable[[PlantedCase], CasePacket | PacketArtifact]
 
 #: How the platform gets a host session for a case, so tool requests are
 #: admitted and answered the way they will be in production. Returns the
@@ -96,14 +99,47 @@ class CaseOutcome(BaseModel):
     error: str | None = None
 
 
+class DryGateRun(BaseModel):
+    """A rehearsal: a score, and deliberately no decision.
+
+    The first version of this returned an ordinary :class:`GateRun` with
+    ``allow_visible_suite=True``, which meant a dry run produced a
+    perfectly valid :class:`GateDecision` — and
+    :func:`~planbench_explanation.bundle.analyst_visible` takes one of
+    those. A rehearsal on the calibration set could therefore turn the
+    feature on. Splitting the types closes that by construction: there
+    is no object here for ``verify_gate_decision`` to accept, because
+    there is no decision.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
+
+    is_dry_run: Literal[True] = True
+    bundle_id: str = Field(min_length=1)
+    bundle_identity_checksum: str = Field(min_length=64, max_length=64)
+    suite_version: str = Field(min_length=1)
+    outcomes: tuple[CaseOutcome, ...]
+    score: SuiteScore
+
+    @property
+    def failed_cases(self) -> tuple[str, ...]:
+        return tuple(item.case_id for item in self.outcomes if item.error is not None)
+
+
 class GateRun(BaseModel):
     """One bundle, one suite, one pass. The record of the grading itself."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
+    is_dry_run: Literal[False] = False
     bundle_id: str = Field(min_length=1)
     bundle_identity_checksum: str = Field(min_length=64, max_length=64)
     suite_version: str = Field(min_length=1)
+    #: What the bundle asked for, and what it actually ran under. Both,
+    #: because "the platform capped you" is a fact about the run that a
+    #: submitter reading a failed gate needs and cannot derive.
+    requested_budget_checksum: str = Field(min_length=64, max_length=64)
+    effective_budget_checksum: str = Field(min_length=64, max_length=64)
     outcomes: tuple[CaseOutcome, ...]
     score: SuiteScore
     decision: GateDecision
@@ -116,6 +152,10 @@ class GateRun(BaseModel):
             )
         if self.decision.hidden_suite_version != self.suite_version:
             raise GateRefusal("the decision names a different suite than the one that was run")
+        if self.decision.effective_budget_checksum != self.effective_budget_checksum:
+            raise GateRefusal(
+                "the decision names a different effective budget than the run that produced it"
+            )
         return self
 
     @property
@@ -146,6 +186,39 @@ def _abstained_for(case: PlantedCase, analysis: AnalysisRequest, reason: str) ->
     )
 
 
+#: Said in one place so the refusal is one line at the call site: a
+#: multi-line ``raise`` reads as scenery, and this one is load-bearing.
+_BARE_PACKET_REFUSAL = (
+    "case {case_id} arrived as a bare packet; a graded run needs the artifact so the "
+    "platform can derive where it came from rather than take the submitter's word for it"
+)
+
+
+def _packet_for(case: PlantedCase, source: PacketSource, *, dry_run: bool) -> CasePacket:
+    """The packet for one case, and what a graded run demands of it.
+
+    A dry run may be handed a bare :class:`CasePacket` — it is a
+    rehearsal, and asking somebody to write a provenance file to
+    rehearse is how rehearsals stop happening. A graded run may not:
+    without a :class:`PacketArtifact` there is nothing to derive
+    ``fixture_kind`` from, and "was this packet recorded or written by
+    hand" is exactly the question a threshold rests on.
+    """
+    supplied = source(case)
+    if isinstance(supplied, PacketArtifact):
+        if not dry_run and supplied.fixture_kind != "recorded":
+            raise GateRefusal(
+                f"case {case.case_id} is a {supplied.fixture_kind} fixture; a gate "
+                "grades against runs that were recorded as they happened, and a "
+                "threshold agreed against a hand-written packet is a threshold about "
+                "a run nobody made"
+            )
+        return supplied.packet
+    if not dry_run:
+        raise GateRefusal(_BARE_PACKET_REFUSAL.format(case_id=case.case_id))
+    return supplied
+
+
 def run_gate(
     bundle: AnalystBundle,
     suite: GoldenSuite,
@@ -157,22 +230,40 @@ def run_gate(
     targets: MetricTargets,
     preregistration_ref: str,
     decided_at: str,
-    allow_visible_suite: bool = False,
-) -> GateRun:
+    budget_cap: AnalysisBudget = PLATFORM_BUDGET_CAP,
+    dry_run: bool = False,
+) -> GateRun | DryGateRun:
     """Run one frozen analyst over one suite and record what it earned.
 
-    ``allow_visible_suite`` exists for a dry run against the calibration
-    set and defaults to false, because the ordinary mistake is to grade
-    on the set the submitter tuned against and read the result as a
-    gate.
+    ``dry_run`` is a rehearsal and returns a :class:`DryGateRun`, which
+    carries no decision at all — see that class for why the flag alone
+    was not enough. It was called ``allow_visible_suite``; the name
+    described one of the three things it turns off.
+
+    **The graded path is fail-closed on three conditions**, and all
+    three are the same mistake wearing different clothes — grading
+    against something other than the preregistered hidden set:
+
+    * the suite is ``hidden``: a score on the calibration set measures
+      how well the submitter fitted the set they were given;
+    * the suite is ``preregistered``: a working set is a set somebody
+      may still be editing, and a threshold agreed after the numbers
+      were seen is not a threshold;
+    * every packet is a ``recorded`` artifact: see :func:`_packet_for`.
     """
-    if suite.visibility != "hidden" and not allow_visible_suite:
-        raise GateRefusal(
-            f"suite {suite.suite_version} is {suite.visibility}; grading against the "
-            "set the AI team calibrated on measures how well it fitted that set. "
-            "Pass allow_visible_suite=True only for a dry run, and do not call the "
-            "result a gate."
-        )
+    if not dry_run:
+        if suite.visibility != "hidden":
+            raise GateRefusal(
+                f"suite {suite.suite_version} is {suite.visibility}; grading against the "
+                "set the AI team calibrated on measures how well it fitted that set. "
+                "Pass dry_run=True for a rehearsal, and do not call the result a gate."
+            )
+        if suite.status != "preregistered":
+            raise GateRefusal(
+                f"suite {suite.suite_version} is {suite.status!r}, not 'preregistered'; "
+                "a working set is one somebody may still be editing, and a bar agreed "
+                "against a moving set is not a bar. Preregister it or pass dry_run=True."
+            )
     if not bundle.runs_catalog(catalog.catalog_version):
         raise GateRefusal(
             f"the bundle was frozen against tool catalog {bundle.tool_catalog_version!r} "
@@ -180,9 +271,10 @@ def run_gate(
             "moved is a different system under the same name"
         )
 
+    effective_budget = bundle.requested_budget.capped_by(budget_cap)
     outcomes: list[CaseOutcome] = []
     for case in suite.cases:
-        packet = packets(case)
+        packet = _packet_for(case, packets, dry_run=dry_run)
         analysis = AnalysisRequest(
             analysis_run_id=f"{bundle.bundle_id}:{case.case_id}",
             analyst_bundle_id=bundle.bundle_id,
@@ -206,6 +298,14 @@ def run_gate(
         outcomes.append(CaseOutcome(case_id=case.case_id, submission=submission, error=error))
 
     score = score_suite(suite, [item.submission for item in outcomes])
+    if dry_run:
+        return DryGateRun(
+            bundle_id=bundle.bundle_id,
+            bundle_identity_checksum=bundle.identity_checksum,
+            suite_version=suite.suite_version,
+            outcomes=tuple(outcomes),
+            score=score,
+        )
     decision = GateDecision(
         bundle_id=bundle.bundle_id,
         bundle_identity_checksum=bundle.identity_checksum,
@@ -213,6 +313,7 @@ def run_gate(
         preregistration_ref=preregistration_ref,
         decided_at=decided_at,
         targets_checksum=targets.checksum,
+        effective_budget_checksum=effective_budget.checksum,
         metrics=targets.evaluate(score.macro.measurements),
         notes=tuple(
             f"analyst raised on {case_id}"
@@ -223,6 +324,8 @@ def run_gate(
         bundle_id=bundle.bundle_id,
         bundle_identity_checksum=bundle.identity_checksum,
         suite_version=suite.suite_version,
+        requested_budget_checksum=bundle.requested_budget.checksum,
+        effective_budget_checksum=effective_budget.checksum,
         outcomes=tuple(outcomes),
         score=score,
         decision=decision,

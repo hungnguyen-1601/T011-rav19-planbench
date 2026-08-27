@@ -312,6 +312,33 @@ class PluginBundleRow(Base):
     )
 
 
+class AlgorithmTraitRow(Base):
+    """What one algorithm is known to be good and bad at.
+
+    A table rather than the dict that used to hold this, because the
+    platform now runs algorithms nobody here has heard of and a nature
+    somebody can only add by editing Python is a nature an imported
+    algorithm will never have.
+
+    ``anchor`` is not nullable and the migration checks it is non-empty:
+    a nature with nowhere to check it is folklore, and folklore in a
+    column reads exactly like a measurement. ``review_status`` gates
+    promotion the same way the knowledge base does — an unreviewed row
+    may inform a hypothesis and may not back a claim.
+    """
+
+    __tablename__ = "algorithm_traits"
+
+    algorithm_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="other")
+    strengths: Mapped[list] = mapped_column(JsonColumn, nullable=False, default=list)
+    weaknesses: Mapped[list] = mapped_column(JsonColumn, nullable=False, default=list)
+    anchor: Mapped[str] = mapped_column(Text, nullable=False)
+    review_status: Mapped[str] = mapped_column(String(16), nullable=False, default="none")
+    reviewed_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    updated_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False, default="")
+
+
 class ConversationRow(Base):
     """One chat with the assistant."""
 

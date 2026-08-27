@@ -56,26 +56,55 @@ from planbench_explanation.tools import (
 )
 
 
-def _argument(name: str, kind: str, description: str, *, required: bool = True) -> ArgumentSpec:
+def _argument(
+    name: str,
+    kind: str,
+    description: str,
+    *,
+    required: bool = True,
+    source: str = "analyst",
+) -> ArgumentSpec:
     return ArgumentSpec(
         name=name,
         kind=kind,  # type: ignore[arg-type]
         required=required,
         description=description,
+        source=source,  # type: ignore[arg-type]
     )
 
 
-_CANDIDATE = _argument("candidate_id", "string", "Which candidate's data to read.")
+_CANDIDATE = _argument(
+    "candidate_id",
+    "string",
+    "Which candidate's data to read.",
+    source="packet_candidate",
+)
 _PAIR = (
-    _argument("candidate_a", "string", "First candidate of the compared pair."),
-    _argument("candidate_b", "string", "Second candidate of the compared pair."),
+    _argument(
+        "candidate_a",
+        "string",
+        "First candidate of the compared pair.",
+        source="packet_pair",
+    ),
+    _argument(
+        "candidate_b",
+        "string",
+        "Second candidate of the compared pair.",
+        source="packet_pair",
+    ),
 )
 _EPISODE = _argument(
     "episode_context_id",
     "string",
     "The paired episode context, the identity both candidates share.",
+    source="packet_episode",
 )
-_REGION = _argument("region_id", "string", "A named region of the task map.")
+_REGION = _argument(
+    "region_id",
+    "string",
+    "A named region of the task map.",
+    source="packet_region",
+)
 
 
 def _measure(name: str, unit: str, description: str, *, required: bool = True) -> MeasurementSpec:
@@ -109,12 +138,35 @@ def _points_at(kind: str, description: str, *, required: bool = True) -> Referen
 #: ``gap_vs_footprint`` also moved to 2.0.0: it now compares a width
 #: against a width, which changes the measurement names it returns.
 #:
+#: **3.4.0** — W1.2 does for ``get_episode_timeline`` what 3.3.0 did
+#: for the measurements: it requires ``episode_timeline``, the block M2
+#: put in the packet, rather than the trace and reference line that
+#: block was *derived from*. It also gains an optional ``candidate_id``,
+#: because an episode id is a hash of the conditions and the two
+#: candidates of a comparison share one — an answer that did not say
+#: whose run it was would be about neither.
+#:
+#: **3.3.0** — W1.1 corrects what ``get_candidate_measurements``
+#: requires: ``candidate_measurements``, the block it actually reads,
+#: rather than ``episode_decision_utility``, which it never touched.
+#: Same arguments and same measurements, but a different admission
+#: rule is a different wire contract, and a bundle frozen against
+#: 3.2.0 was graded on a menu where this tool could not be called.
+#:
+#: **3.2.0** — M2 adds ``get_episode_timeline``: the exemplar
+#: episodes as they happened, on two clocks that are never mixed.
+#:
+#: **3.1.0** — M1 adds ``get_candidate_measurements``: what a
+#: candidate scored, which until now lived in the report and never
+#: reached an analyst. A card added is a menu changed, so the version
+#: moves and every bundle frozen against 3.0.0 needs a new gate.
+#:
 #: **3.0.0** — ``rrt_convergence`` reports a rate at **two** budgets
 #: rather than one, because one rate cannot tell "the budget is too
 #: small" from "the corridor is not there": both look like a low number.
 #: Different measurement names, so a different wire contract, so a
 #: different version.
-TOOL_CATALOG_VERSION = "3.0.0"
+TOOL_CATALOG_VERSION = "3.4.0"
 
 _RECORDED = EvidencePolicy(allowed_input_provenance=("recorded",))
 _RECORDED_OR_VERIFIED = EvidencePolicy(
@@ -350,6 +402,140 @@ MAP_REGION_FEATURES = ToolCard(
         ),
     ),
     failure_modes=("region_not_resolved", "map_coverage_insufficient"),
+)
+
+CANDIDATE_MEASUREMENTS = ToolCard(
+    tool_id="get_candidate_measurements",
+    tool_version="1.0.0",
+    title="Read what one candidate actually scored",
+    tool_class="fact_query",
+    purpose=ToolPurpose(
+        notes=(
+            "The decomposition says how a pair differed; this says what either of "
+            "them did. Until M1 these numbers lived in the report and never reached "
+            "an analyst, so the only thing it could talk about was ΔU.",
+            "Every rate arrives with its denominator. A success rate without one is "
+            "the sentence this platform exists to refuse.",
+        ),
+    ),
+    proposition_policy=PropositionPolicy(maximum_claim_level="observed"),
+    evidence_policy=_RECORDED,
+    # What this card reads is the packet's measurement block, which M1
+    # put there. It asked for ``episode_decision_utility`` until W1.1 —
+    # written before M1 landed, when the only per-candidate number in
+    # reach was the one the waterfall was built from. The consequence
+    # was silent and total: a gate-only run ranks nobody, so the seam
+    # withheld that evidence, so this tool was refused at admission on
+    # every packet that had measurements and no ranking. A card that
+    # names evidence it does not read is a card nobody can call.
+    required_evidence=("candidate_measurements",),
+    io=ToolIO(
+        arguments=(
+            ArgumentSpec(
+                name="candidate_id",
+                kind="string",
+                description="Which candidate's measurements to read.",
+            ),
+        ),
+        measurements=(
+            _measure("success_rate", "ratio", "Episodes that reached the goal, over episodes run."),
+            _measure("n_episodes", "count", "The denominator of every rate reported here."),
+            _measure("collisions", "count", "Episodes that ended in contact.", required=False),
+            _measure("latency_p99_ms", "ms", "Tail planning latency.", required=False),
+            _measure("latency_median_ms", "ms", "Typical planning latency.", required=False),
+            _measure("path_length_m", "m", "Median path length driven.", required=False),
+            _measure("min_clearance_m", "m", "Smallest clearance observed.", required=False),
+            _measure(
+                "decision_utility",
+                "ratio",
+                "Set-level decision utility, as the card holds it.",
+                required=False,
+            ),
+        ),
+    ),
+    failure_modes=("candidate_not_in_packet", "measurements_not_recorded"),
+)
+
+EPISODE_TIMELINE = ToolCard(
+    tool_id="get_episode_timeline",
+    tool_version="1.0.0",
+    title="Read how an exemplar episode went while it was going",
+    tool_class="fact_query",
+    purpose=ToolPurpose(
+        notes=(
+            "Two clocks, never mixed. At equal wall-clock time the robots are at "
+            "different places on the task; at equal progress they are at the same "
+            "place having taken different times. A clearance compared at equal time "
+            "compares two different parts of the map.",
+            "Exemplar episodes only. Thirty episodes at every trace row is a packet "
+            "nobody reads and a prompt somebody pays for on every case.",
+        ),
+    ),
+    proposition_policy=PropositionPolicy(maximum_claim_level="observed"),
+    evidence_policy=_RECORDED,
+    # The packet's timeline block, not the raw trace. M2 derived these
+    # points server-side against the reference line and put them in the
+    # packet; asking for ``trace`` and ``reference_line`` described the
+    # inputs of that derivation rather than what this tool reads, and on
+    # a run whose sidecar was absent it withheld a block the packet was
+    # carrying. W1.2.
+    required_evidence=("episode_timeline",),
+    io=ToolIO(
+        arguments=(
+            ArgumentSpec(
+                name="episode_context_id",
+                kind="string",
+                description="Which exemplar episode to read.",
+            ),
+            ArgumentSpec(
+                name="clock",
+                kind="string",
+                description="'at_time' for who is ahead, 'at_progress' for who did "
+                "the same work better. The two are never mixed in one row.",
+            ),
+            ArgumentSpec(
+                name="candidate_id",
+                kind="string",
+                description="Whose run of that episode. Required when both "
+                "candidates drove it — an episode id is a hash of the "
+                "conditions, so a comparison shares one.",
+                required=False,
+            ),
+        ),
+        measurements=(
+            _measure("n_points", "count", "Marks this episode was sampled at."),
+            _measure(
+                "progress_fraction",
+                "ratio",
+                "Fraction of the reference line covered at the last mark.",
+                required=False,
+            ),
+            _measure(
+                "safety_margin",
+                "ratio",
+                "Worst clearance so far, in robot radii.",
+                required=False,
+            ),
+            _measure(
+                "compute_budget",
+                "ratio",
+                "p99 planner latency so far over the control period.",
+                required=False,
+            ),
+            _measure(
+                "path_efficiency",
+                "ratio",
+                "Progress over distance driven. 1.0 is a straight line.",
+                required=False,
+            ),
+        ),
+    ),
+    failure_modes=(
+        "episode_not_an_exemplar",
+        "timeline_not_recorded",
+        "clock_not_recognised",
+        "candidate_required_for_episode",
+    ),
 )
 
 KNOWN_UNKNOWNS = ToolCard(
@@ -910,6 +1096,8 @@ TOOL_CATALOG = ToolCatalog(
         EPISODE_OBSERVATIONS,
         CANDIDATE_CONTRAST,
         MAP_REGION_FEATURES,
+        CANDIDATE_MEASUREMENTS,
+        EPISODE_TIMELINE,
         KNOWN_UNKNOWNS,
         FIND_EXEMPLARS,
         REPLAY_WINDOW,

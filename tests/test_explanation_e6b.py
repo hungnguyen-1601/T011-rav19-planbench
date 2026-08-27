@@ -473,7 +473,7 @@ def test_too_few_seeds_is_a_refusal_rather_than_a_rate() -> None:
         check_rrt_convergence(
             convergence_evidence(seeds=(1, 2, 3, 4)), planner=BudgetSensitive(threshold=1)
         )
-    assert caught.value.code == "insufficient_seeds"
+    assert caught.value.code == "seed_set_too_small"
 
 
 def test_a_seed_counted_twice_moves_the_rate_without_adding_a_draw() -> None:

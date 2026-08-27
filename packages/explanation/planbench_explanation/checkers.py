@@ -76,7 +76,7 @@ RefusalCode = Literal[
     "replay_harness_incomplete",
     "seed_counted_twice",
     "budget_parameter_not_recorded",
-    "insufficient_seeds",
+    "seed_set_too_small",
 ]
 
 

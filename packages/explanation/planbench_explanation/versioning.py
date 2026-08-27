@@ -48,7 +48,16 @@ from planbench_schemas.identity import canonical_json
 
 #: Shape of the ledger objects in :mod:`planbench_explanation.ledger`.
 #: Bump MINOR to add an optional field, MAJOR to change or remove one.
-EXPLANATION_SCHEMA_VERSION = "0.1.0"
+#:
+#: **0.2.0** — M1: the packet carries what each candidate measured
+#: (:class:`~planbench_explanation.case_packet.CandidateMeasurements`)
+#: and what each gate decided *against*
+#: (:class:`~planbench_explanation.case_packet.GateOutcome`). Both are
+#: optional, so a packet recorded under 0.1.0 still validates — and the
+#: analyst's packet view refuses it anyway, on this version, because a
+#: reader that cannot tell "no measurements recorded" from "this build
+#: cannot see them" is a reader who will read the first as the second.
+EXPLANATION_SCHEMA_VERSION = "0.2.0"
 
 #: Version of the deterministic rules in
 #: :mod:`planbench_explanation.promotion`. Bump on **any** change that

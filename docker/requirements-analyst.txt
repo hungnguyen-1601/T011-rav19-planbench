@@ -1,0 +1,12 @@
+# What the analyst container needs, and deliberately nothing else.
+#
+# No uvicorn, no alembic, no database driver: the analyst answers frames
+# on stdio. Every dependency it does not have is a capability nobody has
+# to reason about — and a package that can open a socket is one somebody
+# eventually will.
+pydantic>=2.9,<3
+# The provider layer imports vendor SDKs lazily. The container never
+# holds a credential (see docker/Dockerfile.analyst), so these are here
+# only because `planbench_agent.provider` is imported for its types.
+anthropic>=0.40
+openai>=1.50

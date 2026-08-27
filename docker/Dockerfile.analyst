@@ -1,0 +1,71 @@
+# The analyst, as the image a gate grades.
+#
+# Deliberately not `Dockerfile.api` with an extra service on the path.
+# The API image holds credentials, reaches the database and serves HTTP;
+# this one must do none of those. A graded analyst gets a packet through
+# stdin and answers on stdout, and every capability it does not have is
+# a capability nobody has to reason about.
+#
+# **No credential lands here.** The model is reached through the
+# platform's gateway (`planbench_analyst.model_gateway`), which holds the
+# key on the other side of the wire. There is no `ENV ANTHROPIC_API_KEY`
+# in this file and there must never be one: a container that could call
+# a vendor directly could also send it a hidden packet.
+#
+# **No network is granted at run time.** That is the runner's flag
+# (`--network none`), not the image's, but it is written here because a
+# reader looking for the boundary looks in the Dockerfile first.
+#
+# **The digest is the identity.** `AnalystBundle.container_digest` is the
+# `sha256:` of the image built from this file, and `freeze_bundle`
+# refuses a tag: a tag moves, and a bundle whose image moved is a bundle
+# nobody can re-run.
+
+FROM python:3.12-slim AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Dependencies first so ordinary code edits do not invalidate the layer.
+# The analyst needs pydantic and the vendor SDKs the provider layer
+# imports lazily; it does not need uvicorn, alembic or a database driver,
+# and leaving those out is not tidying — every one of them is a way out.
+COPY docker/requirements-analyst.txt /tmp/requirements-analyst.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-analyst.txt
+
+# Only what the analyst reads. `apps/`, `alembic/` and `ml/` are absent
+# on purpose: an image that carries the API's code carries the API's
+# reach, whether or not anything calls it.
+COPY packages/schemas/ /app/packages/schemas/
+COPY packages/planning/ /app/packages/planning/
+COPY packages/metrics/ /app/packages/metrics/
+COPY packages/benchmark/ /app/packages/benchmark/
+COPY packages/decision/ /app/packages/decision/
+COPY packages/explanation/ /app/packages/explanation/
+COPY packages/plugin_sdk/ /app/packages/plugin_sdk/
+COPY services/agent_service/ /app/services/agent_service/
+COPY services/analyst_service/ /app/services/analyst_service/
+COPY schemas/ /app/schemas/
+
+# The visible suite is the answer key for every calibration case. It
+# is code, so the COPY above brought it in; it leaves here, and the
+# package imports it lazily so nothing else breaks. A container that
+# could read expected findings could read them into a prompt, and the
+# test on this file is what keeps the line from being tidied away.
+RUN rm /app/packages/explanation/planbench_explanation/golden_fixtures.py
+
+ENV PYTHONPATH=/app/packages/schemas:/app/packages/planning:/app/packages/metrics:/app/packages/benchmark:/app/packages/decision:/app/packages/explanation:/app/packages/plugin_sdk:/app/services/agent_service:/app/services/analyst_service
+
+# Unprivileged, and with no writable state directory: the analyst
+# produces frames, not files. Anything it needs to keep is something the
+# platform should be holding instead.
+RUN useradd --create-home --uid 10002 analyst \
+    && chown -R analyst:analyst /app
+USER analyst
+
+# One round per process, over stdio. No port, no health check, nothing
+# listening: there is nothing here for anything to connect to.
+ENTRYPOINT ["python", "-m", "planbench_analyst.stdio_lane"]

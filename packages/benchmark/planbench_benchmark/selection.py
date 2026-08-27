@@ -110,6 +110,7 @@ from planbench_explanation.catalog import TOOL_CATALOG_VERSION
 from planbench_explanation.detectors import DETECTOR_VERSION
 from planbench_explanation.knowledge import KNOWLEDGE_BASE_VERSION
 from planbench_explanation.packet_builder import (
+    DeploymentThresholds,
     EpisodeTrace,
     build_scoring_packet,
     packet_block,
@@ -1109,6 +1110,20 @@ def _explanation_packet(
             else json.dumps(dict(report), sort_keys=True, default=str).encode("utf-8")
         )
 
+        # M2's timelines were never built on this path: the packet
+        # builder needs the deployment's thresholds to normalise a
+        # running number against, nothing passed them, and the block
+        # came out empty on every production run while the fixtures had
+        # it. The reference **length** is deliberately not here — it
+        # belongs to each episode's own line, and the builder takes it
+        # from the projection it runs per trace. W1.3.
+        thresholds = DeploymentThresholds(
+            robot_radius_m=profile.robot.radius,
+            control_period_s=profile.robot.control_period,
+            clearance_warning_m=profile.constraints.clearance_warning_m,
+            max_linear_velocity=profile.robot.max_linear_velocity,
+        )
+
         built = build_scoring_packet(
             run_id=run_id,
             source_manifest_ref=manifest_name,
@@ -1129,6 +1144,7 @@ def _explanation_packet(
                 name: {"passed": bool(getattr(row, "passed", False))}
                 for name, row in gate_reports.items()
             },
+            deployment_thresholds=thresholds,
         )
     except Exception as error:  # noqa: BLE001 - a thin packet beats a lost sweep
         say(f"⚠ không dựng được case packet cho tầng giải thích: {error!r}")
