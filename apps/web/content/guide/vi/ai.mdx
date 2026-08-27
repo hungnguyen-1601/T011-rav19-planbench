@@ -1,0 +1,101 @@
+Hai lớp AI, hai chỗ khác nhau, hai việc khác nhau. Nhầm chúng với nhau là
+lý do hay gặp nhất khiến người dùng chờ một câu trả lời mà lớp đang mở
+không có nhiệm vụ đưa ra.
+
+Nguyên tắc chung cho cả hai: **AI đề xuất, con người quyết định.** Không
+route AI nào trong hệ thống có động từ ghi.
+
+<GuideTabs slug="ai">
+
+<div>
+
+Dock nổi ở góc phải màn hình, có mặt trên mọi trang; bản đầy đủ ở trang
+trợ lý.
+
+Nó đọc những gì nền tảng **đã ghi** bằng 11 công cụ chỉ-đọc — liệt kê
+triển khai, đọc một run, đọc thẻ quyết định, đọc bảng cổng, đọc phản
+biện, đọc khuyến nghị — rồi trả lời từ đó. Hỏi một thứ chưa được ghi lại
+thì nó nói là chưa có chứ không đoán.
+
+Nó **không** chạy được phép so, không sửa được triển khai, không duyệt
+được gì.
+
+Mở dock khi đang đứng trên trang một run thì nó tự gắn với run đó, và
+chip trên khung chat nói rõ điều đó — bấm một cái là gỡ.
+
+<Callout kind="missing">
+
+**Không có trí nhớ hội thoại.** Hỏi "còn ứng viên B thì sao?" là model
+không biết B nào. Đây là một quyết định thiết kế — không có ngữ cảnh ẩn
+mà người đọc không nhìn thấy — nhưng cái giá của nó là hội thoại nhiều
+lượt không hoạt động.
+
+</Callout>
+
+<AppLink href="/agent" />
+
+</div>
+
+<div>
+
+Nút *Hỏi thêm model* trên các panel lời khuyên trong trang một run. Không
+có ô nhập; bấm là chạy.
+
+Nó nhận danh sách lời khuyên mà **bộ luật tất định** đã sinh, sắp lại
+theo thứ tự nên xử lý, và thêm tối đa vài ý mà luật không nhìn thấy.
+
+Bốn ràng buộc, mỗi cái có test và mỗi test đã được chứng minh là bắt được
+lỗi thật bằng cách tiêm lỗi vào rồi đòi nó đỏ:
+
+1. **Tầng luật là sàn.** Model sắp lại được, bỏ bớt thì không.
+2. **Mọi ý thêm phải trỏ vào một trường có thật.** Trỏ sai thì bị bỏ và
+   **đếm công khai** trên màn hình.
+3. **Không hạ cấp cảnh báo.** Model không đẩy được một cảnh báo chặn
+   xuống dưới một ghi chú.
+4. **Provider chết thì mất phần văn, không mất tầng luật.**
+
+Kết quả hiển thị tách rõ ý nào của luật, ý nào của model.
+
+</div>
+
+<div>
+
+Cần **hai** biến môi trường, không phải một:
+
+```
+PLANBENCH_AGENT_PROVIDER=auto
+PLANBENCH_AGENT_MODEL=o4-mini
+OPENAI_API_KEY=<khoá của bạn>
+```
+
+<Callout kind="trap">
+
+`auto` **bỏ qua** provider nào có khoá mà không có tên model. Khai mỗi
+khoá rồi tưởng đã xong là lỗi cấu hình hay gặp nhất ở đây.
+
+</Callout>
+
+Trên bản desktop thì không sửa tệp: dán khoá vào trang cài đặt, có hiệu
+lực ngay, không cần khởi động lại.
+
+<AppLink href="/settings" />
+
+</div>
+
+<div>
+
+Chưa cấu hình khoá thì **cả hai lớp** chạy bằng một bộ khớp từ khoá
+ngoại tuyến, và giao diện nói thẳng điều đó thay vì để một dấu tích xanh
+ngụ ý có model đang trả lời.
+
+Điều này quan trọng khi đọc kết quả: một câu trả lời ngoại tuyến vẫn là
+một câu trả lời có ích, nhưng nó là **khớp từ khoá**, không phải phân
+tích. Đừng trích nó như trích một model.
+
+Tầng luật tất định **không** phụ thuộc vào khoá. Cổng, thẻ quyết định,
+lời khuyên của bộ luật và phản biện của bộ luật chạy đầy đủ dù không có
+model nào.
+
+</div>
+
+</GuideTabs>

@@ -1,0 +1,97 @@
+The platform says anyone can plug their own algorithm in. This article
+says **exactly** how far that is true today.
+
+<Section id="duong-di" title="The route in">
+
+Open the models screen, go to the **Import algorithm** tab, choose a
+`.zip`, import it.
+
+The bundle must contain **code**, not just a declaration. A manifest
+*names* an entry point rather than *containing* an algorithm, so
+importing one for an algorithm nobody installed yields only "registered
+but missing its runtime" — useless to somebody without access to the
+server.
+
+The server reads the zip's index and parses the manifest **before
+extracting anything and without importing anything**. If the manifest is
+valid, the bundle is extracted into its own directory, loaded in a
+**subprocess**, and put through the SDK's conformance suite. Clearing all
+of that, it appears in the algorithm list beside the built-in ones and
+can run a simulation immediately.
+
+<AppLink href="/models" />
+
+</Section>
+
+<Section id="ai-duoc-nhap" title="Who may import">
+
+Importing an algorithm requires the `plugin.import` capability.
+
+Whether your account has it is stated by the app rather than by this
+sentence — see the status line on [the guide's front page](/guide). If it
+does not, ask somebody whose does.
+
+</Section>
+
+<Section id="lane-khong-phai-sandbox" title="Subprocess is not a sandbox">
+
+A plugin **must** run in the subprocess lane. That lane isolates crashes
+and the interpreter.
+
+<Callout kind="trap">
+
+**It is not a sandbox.** The subprocess inherits the environment, the
+`PYTHONPATH`, the filesystem rights and the network access of the process
+that spawned it. Importing a bundle runs somebody else's code on your
+server with the rights of the account running it.
+
+</Callout>
+
+That sentence is repeated verbatim in three other places in the
+repository. This is the fourth, and that is deliberate — it is the claim
+most easily softened in retelling.
+
+</Section>
+
+<Section id="gioi-han-hom-nay" title="What it cannot do today">
+
+<Callout kind="missing">
+
+**A global planner cannot be imported yet.** The supported roles are
+`local` and `monolithic` only, because the subprocess wrapper has `reset`
+and `step` and no `plan()`.
+
+</Callout>
+
+So today you can plug in your own **local controller** or a monolithic
+stack, but not a path finder to stand in for A\* or RRT\*.
+
+</Section>
+
+<Section id="tran-va-tu-choi" title="Ceilings and refusals">
+
+Four ceilings, set generously and expected to come down once real bundles
+have been measured:
+
+| Ceiling | Value |
+|---|---|
+| Zip size | 50 MB |
+| Members in the zip | 500 |
+| Total after extraction | 200 MB |
+| Manifest size | 64 KB |
+
+The third is the one most easily forgotten and the one that matters: **a
+compressed size says nothing about what extraction writes to disk.**
+
+Two more rules:
+
+- **A manifest that will not parse is refused outright** rather than
+  stored as a broken record — a bundle takes its identity from its
+  manifest, so without one there is nothing to name the record after.
+- **There is no delete**, for the reason the models screen has none: a
+  bundle is something a benchmark has already run.
+
+Errors from the SDK's checker come back **verbatim**. Rewriting them to
+sound friendlier gives a plugin author two vocabularies for one fault.
+
+</Section>
