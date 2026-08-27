@@ -106,7 +106,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
   {
     titleKey: "nav.section.resources",
     items: [
-      { href: "/maps", labelKey: "nav.maps", icon: "map", descriptionKey: "nav.desc.maps" },
+      {
+        href: "/maps",
+        labelKey: "nav.maps",
+        icon: "map",
+        descriptionKey: "nav.desc.maps",
+      },
       {
         href: "/library",
         labelKey: "nav.library",
@@ -139,7 +144,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
   {
     titleKey: "nav.section.account",
     items: [
-      { href: "/agent", labelKey: "nav.agent", icon: "sparkles", descriptionKey: "nav.desc.agent" },
+      {
+        href: "/agent",
+        labelKey: "nav.agent",
+        icon: "sparkles",
+        descriptionKey: "nav.desc.agent",
+      },
       {
         href: "/reviews",
         labelKey: "nav.reviews",
@@ -155,8 +165,29 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         admin: true,
         descriptionKey: "nav.desc.settings",
       },
-      { href: "/system", labelKey: "nav.system", icon: "info", descriptionKey: "nav.desc.system" },
+      {
+        href: "/system",
+        labelKey: "nav.system",
+        icon: "info",
+        descriptionKey: "nav.desc.system",
+      },
     ],
+  },
+];
+
+/** Below the sections, above the collapse control, behind a rule.
+ *
+ * The guide is not a place to work and not part of an account, so it
+ * belongs to neither group — and a heading over a set of one is the
+ * mistake this file removed once already. A utility slot says what a
+ * one-item section would have said, without claiming to be a category.
+ */
+export const NAV_UTILITY: readonly NavItem[] = [
+  {
+    href: "/guide",
+    labelKey: "nav.guide",
+    icon: "book",
+    descriptionKey: "nav.desc.guide",
   },
 ];
 
@@ -176,6 +207,7 @@ const EXTRA_ROUTES: readonly NavItem[] = [
 
 export const ALL_ROUTES: readonly NavItem[] = [
   ...NAV_SECTIONS.flatMap((section) => section.items),
+  ...NAV_UTILITY,
   ...EXTRA_ROUTES,
 ];
 

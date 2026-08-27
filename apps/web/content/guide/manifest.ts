@@ -31,7 +31,12 @@ export type GuideGroup = "overview" | "operating" | "results" | "advanced" | "re
 export interface GuideArticleMeta {
   slug: string;
   group: GuideGroup;
-  /** Reading order inside the group, and the order prev/next walks. */
+  /** Reading order across the whole guide, not within the group.
+   *
+   * Prev/next walks it end to end and crosses group boundaries: somebody
+   * working through the guide should not have to go back to the rail to
+   * learn what follows the last article of a group. The rail sorts by
+   * the same number inside each group, so one ordering serves both. */
   order: number;
   title: Bilingual;
   /** Anchors inside the article. Pinned against the body by a test. */

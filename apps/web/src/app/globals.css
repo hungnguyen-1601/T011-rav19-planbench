@@ -5753,3 +5753,188 @@ tr.is-previewing > td { background: var(--accent-soft); }
   .simulate-map-busy-spinner { animation-duration: 2.4s; }
   .simulate-workspace.is-simulating > *:not(.simulate-map-panel) { transition: none; }
 }
+
+/* ---------------------------------------------------------------- guide
+   The guide is a second rail beside the app's, and a column of prose
+   beside that. Widths are the only thing here that is a decision rather
+   than a default: the article is capped at a measure an eye can track
+   back to the start of the next line, which is the same reason
+   `main.content` is capped at all. */
+
+.guide-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.guide-rail {
+  position: sticky;
+  top: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.guide-rail-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.guide-rail-title {
+  margin: 0 0 var(--space-2);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.guide-rail a {
+  display: block;
+  padding: 6px var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.guide-rail a:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.guide-rail a[aria-current="page"] {
+  background: var(--panel-2);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.guide-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.guide-article {
+  max-width: 46rem;
+}
+
+.guide-article h2 {
+  margin-top: var(--space-6);
+  /* The heading a hash lands on must not sit under the sticky top bar.
+     `scroll-margin` moves where the browser stops, not where the
+     heading is — the alternative is padding that opens a gap nobody
+     asked for on every heading that was never linked to. */
+  scroll-margin-top: var(--space-6);
+}
+
+.guide-toc {
+  max-width: 46rem;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel-2);
+}
+
+.guide-toc h2 {
+  margin: 0 0 var(--space-2);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.guide-toc ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+.guide-prevnext {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  max-width: 46rem;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.guide-prevnext a {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.guide-prevnext a span {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.guide-next {
+  text-align: right;
+  margin-left: auto;
+}
+
+.guide-callout {
+  margin: var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--border);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--panel-2);
+}
+
+.guide-callout > :first-child { margin-top: 0; }
+.guide-callout > :last-child { margin-bottom: 0; }
+
+/* Three kinds, three consequences: context, something that will go
+   wrong, and the guide admitting the system cannot do this yet. */
+.guide-callout-trap { border-left-color: var(--warn); }
+.guide-callout-missing { border-left-color: var(--err); }
+
+.guide-applink {
+  display: inline-block;
+  font-weight: 600;
+}
+
+/* The skeleton is given a height so the page does not grow under the
+   reader when the article's chunk lands. */
+.guide-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 46rem;
+}
+
+.guide-skeleton-line {
+  height: 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+}
+
+.guide-skeleton-line:nth-child(3n) { width: 82%; }
+.guide-skeleton-line:nth-child(4n) { width: 64%; }
+
+.sidebar-utility {
+  margin-top: auto;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 900px) {
+  .guide-shell { grid-template-columns: minmax(0, 1fr); }
+  .guide-rail { position: static; }
+}

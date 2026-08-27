@@ -1859,5 +1859,18 @@
   "deployments.tabs.label": "Các mục của trang Cấu hình triển khai",
   "deployments.tabs.create": "Tạo cấu hình triển khai",
   "deployments.tabs.list": "Đã có trên hệ thống",
-  "deployments.pager.label": "Các trang của danh sách cấu hình triển khai"
+  "deployments.pager.label": "Các trang của danh sách cấu hình triển khai",
+  "nav.guide": "Hướng dẫn",
+  "nav.desc.guide": "Cách vận hành, và cách đọc kết quả cho đúng",
+  "guide.rail": "Các bài hướng dẫn",
+  "guide.toc": "Trong bài này",
+  "guide.prevNext": "Bài trước và bài sau",
+  "guide.prev": "Bài trước",
+  "guide.next": "Bài tiếp",
+  "guide.openIn": "Mở trang {page}",
+  "guide.group.overview": "Tổng quan",
+  "guide.group.operating": "Vận hành",
+  "guide.group.results": "Hiểu kết quả",
+  "guide.group.advanced": "Nâng cao",
+  "guide.group.reference": "Tham khảo"
 }

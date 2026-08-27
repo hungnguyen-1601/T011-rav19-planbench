@@ -1859,5 +1859,18 @@
   "deployments.tabs.label": "Deployments sections",
   "deployments.tabs.create": "File a deployment",
   "deployments.tabs.list": "On file",
-  "deployments.pager.label": "Deployment pages"
+  "deployments.pager.label": "Deployment pages",
+  "nav.guide": "Guide",
+  "nav.desc.guide": "How to run it, and how to read what it says",
+  "guide.rail": "Guide articles",
+  "guide.toc": "In this article",
+  "guide.prevNext": "Previous and next article",
+  "guide.prev": "Previous",
+  "guide.next": "Next",
+  "guide.openIn": "Open {page}",
+  "guide.group.overview": "Overview",
+  "guide.group.operating": "Operating",
+  "guide.group.results": "Reading results",
+  "guide.group.advanced": "Advanced",
+  "guide.group.reference": "Reference"
 }
