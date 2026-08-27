@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from planbench_agent.provider import LLMMessage, LLMProvider, LLMRequest
@@ -186,13 +186,16 @@ def run_episode_round(
     for position, proposal in enumerate(kept):
         bearings[proposal.hypothesis_id] = positions.get(position, DIAGNOSIS)
 
-    return episode_guard(
+    result = episode_guard(
         report.response,
         view,
         catalog=cards,
         bearings=bearings,
         critic=flags.critic,
     )
+    # The guard reads proposals and knows nothing about what the round
+    # spent getting them. Attached here, where both are in hand.
+    return replace(result, cost=report.cost)
 
 
 class _Replayed:

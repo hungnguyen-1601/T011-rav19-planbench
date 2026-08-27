@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from planbench_analyst.analyst import RoundCost
 from planbench_analyst.episode_view import EpisodeView
 from planbench_analyst.guard import Blocked, guard
 from planbench_explanation.ledger import HypothesisProposal
@@ -95,6 +96,11 @@ class EpisodeRoundResult:
     response: AnalysisResponse
     annotations: dict[str, EpisodeAnnotation] = field(default_factory=dict)
     blocked: tuple[Blocked, ...] = ()
+    #: What the round spent. Carried here rather than left to the
+    #: caller to find, because a spend cap reading zero for every
+    #: round is a cap on nothing — the same failure as a latency term
+    #: nobody measured, which turns a slow arm into a fast one.
+    cost: RoundCost = field(default_factory=lambda: RoundCost())
     ranking: tuple[str, ...] = ()
     flags: tuple[tuple[str, str], ...] = ()
 

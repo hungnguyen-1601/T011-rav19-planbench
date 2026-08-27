@@ -22,7 +22,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile, status
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from planbench_agent.advisor import advise_with_model
 from planbench_agent.critique import critique_with_model
@@ -33,6 +33,7 @@ from planbench_agent.paper import (
 )
 from planbench_agent.plugin_author import author_plugin
 from planbench_api.auth import CurrentUser
+from planbench_api.config import get_settings
 from planbench_api.decision_service import (
     CandidateService,
     DecisionRunService,
@@ -48,6 +49,12 @@ from planbench_api.dependencies import (
     get_map_root,
     get_task_profile_service,
     get_test_bench_service,
+)
+from planbench_api.episode_analysis import (
+    MODES,
+    EpisodeAnalystPolicy,
+    InFlightRegistry,
+    SpendLedger,
 )
 from planbench_api.errors import DomainValidationError, NotFoundError
 from planbench_api.worker import Job, JobQueue
@@ -1878,6 +1885,75 @@ def get_episode_verdict(
         episode_context_id,
         candidate_a=candidate_a,
         candidate_b=candidate_b,
+    )
+
+
+#: One ledger and one in-flight registry per process.
+#:
+#: In memory, and that is a limitation with a name: a cap that survives
+#: a restart needs a store, and a store needs a migration. What a cap is
+#: worth is stopping a loop this afternoon, which this does.
+_SPEND = SpendLedger()
+_IN_FLIGHT = InFlightRegistry()
+
+
+def _episode_policy(settings: Any) -> EpisodeAnalystPolicy:
+    """What this deployment allows, read off its settings."""
+    mode = settings.episode_analyst_mode
+    return EpisodeAnalystPolicy(
+        mode=mode if mode in MODES else "off",
+        evaluation_report_ref=settings.episode_analyst_report_ref,
+        max_calls_per_day=settings.episode_analyst_max_calls_per_day,
+        max_tokens_per_day=settings.episode_analyst_max_tokens_per_day,
+    )
+
+
+class EpisodeAnalysisRequest(BaseModel):
+    """Which pair, and where the reader is looking."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_a: str = ""
+    candidate_b: str = ""
+
+
+@router.post("/decisions/{run_id}/episodes/{episode_context_id}/analysis")
+def post_episode_analysis(
+    run_id: str,
+    episode_context_id: str,
+    payload: EpisodeAnalysisRequest,
+    request: Request,
+    service: Runs,
+    user: CurrentUser,
+) -> dict[str, Any]:
+    """The deterministic answer, and — where the deployment allows it —
+    what a model made of it.
+
+    **Off by default.** The mode is the deployment's, the role is the
+    reader's, and neither is this route's to assume; a build that has
+    said nothing answers 404 here and keeps serving the verdict on the
+    route beside it.
+
+    The deterministic half is in the response either way. A reader who
+    may not be shown a model's answer is still owed the verdict, the
+    diagnoses and the differences — a route that returned nothing would
+    have made the model the feature rather than the layer over it.
+    """
+    settings = get_settings()
+    policy = _episode_policy(settings)
+    agent = get_agent_service(request, user)
+    return service.episode_analysis(
+        run_id,
+        episode_context_id,
+        candidate_a=payload.candidate_a,
+        candidate_b=payload.candidate_b,
+        policy=policy,
+        provider=agent.provider,
+        caller=user.id,
+        is_admin=user.is_admin,
+        ledger=_SPEND,
+        in_flight=_IN_FLIGHT,
+        artifact_root=Path(settings.episode_analyst_artifact_root),
     )
 
 
