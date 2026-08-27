@@ -1,4 +1,14 @@
-"""Map CRUD + validation endpoints."""
+"""Map CRUD + validation endpoints.
+
+**Reading is open to any signed-in account; writing is not.** Until
+contract 7.0.0 none of these asked for a token at all, so a passer-by
+could rewrite the grid a stored scenario stood on.
+
+Deleting is now archiving. A map is referenced by scenarios, by task
+profiles and by every run made against it, and a removed row turns each
+of those references into a hole — an audit trail that points at nothing
+is not an audit trail.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +18,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel
 
-from planbench_api.auth import CurrentUser
+from planbench_api.auth import CurrentUser, ReadingUser, WritingUser
 from planbench_api.dependencies import get_map_root, get_map_service
 from planbench_api.map_files import materialise_map
 from planbench_api.repositories import StoredMap
@@ -61,32 +71,40 @@ def _summary(stored: StoredMap) -> MapSummary:
 
 
 @router.get("", response_model=list[MapSummary])
-def list_maps(service: Service) -> list[MapSummary]:
+def list_maps(service: Service, _: ReadingUser) -> list[MapSummary]:
     return [_summary(stored) for stored in service.list()]
 
 
 @router.post("", response_model=MapResource, status_code=status.HTTP_201_CREATED)
-def create_map(map_data: MapData, service: Service) -> MapResource:
-    return _resource(service.create(map_data))
+def create_map(map_data: MapData, service: Service, user: WritingUser) -> MapResource:
+    return _resource(service.create(map_data, owner_user_id=user.id))
 
 
 @router.get("/{map_id}", response_model=MapResource)
-def get_map(map_id: str, service: Service) -> MapResource:
+def get_map(map_id: str, service: Service, _: ReadingUser) -> MapResource:
     return _resource(service.get(map_id))
 
 
 @router.put("/{map_id}", response_model=MapResource)
-def update_map(map_id: str, map_data: MapData, service: Service) -> MapResource:
-    return _resource(service.update(map_id, map_data))
+def update_map(map_id: str, map_data: MapData, service: Service, user: WritingUser) -> MapResource:
+    return _resource(service.update(map_id, map_data, actor_user_id=user.id))
 
 
 @router.delete("/{map_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_map(map_id: str, service: Service) -> None:
-    service.delete(map_id)
+def archive_map(map_id: str, service: Service, user: WritingUser) -> None:
+    """Archive, despite the verb.
+
+    The method stays ``DELETE`` because that is what "take this off my
+    list" means to a caller, and changing it would break every client for
+    a distinction they do not have to care about. What changes is the
+    storage: the row survives, so a run made against this map can still
+    say what it ran on.
+    """
+    service.archive(map_id, actor_user_id=user.id)
 
 
 @router.post("/validate", response_model=ValidationReport)
-def validate_map(map_data: MapData, service: Service) -> ValidationReport:
+def validate_map(map_data: MapData, service: Service, _: ReadingUser) -> ValidationReport:
     errors = service.validate(map_data)
     return ValidationReport(valid=not errors, errors=tuple(errors))
 

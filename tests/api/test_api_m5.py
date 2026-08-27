@@ -63,9 +63,9 @@ class TestScenarioLibrary:
         response = client.post("/api/v1/scenario-library/mars_colony/import", headers=alice_headers)
         assert response.status_code == 422
 
-    def test_import_requires_a_signed_in_member(self, client: TestClient) -> None:
+    def test_import_requires_a_signed_in_member(self, anonymous: TestClient) -> None:
         """Importing writes to the shared library, so it needs an account."""
-        assert client.post("/api/v1/scenario-library/open_space/import").status_code == 401
+        assert anonymous.post("/api/v1/scenario-library/open_space/import").status_code == 401
 
 
 class TestBackgroundWorker:
@@ -219,8 +219,8 @@ class TestLeaderboard:
         assert entry["local_observation_class"] == "lidar_only"
         assert entry["requires_global_path"] is True
 
-    def test_requires_authentication(self, client: TestClient) -> None:
-        assert client.get("/api/v1/leaderboard").status_code == 401
+    def test_requires_authentication(self, anonymous: TestClient) -> None:
+        assert anonymous.get("/api/v1/leaderboard").status_code == 401
 
 
 class TestAlgorithmMetadata:

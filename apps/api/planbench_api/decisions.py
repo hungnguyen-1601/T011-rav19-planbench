@@ -96,6 +96,14 @@ class StoredTaskProfile:
     owner_user_id: str | None
     created_at: str
     profile: dict[str, Any]
+    #: A deployment a reviewer validates imported algorithms against.
+    #: Refuses to be edited or deleted, which ``owner_user_id is None``
+    #: cannot express — that already means "filed before accounts", which
+    #: is shared rather than fixed. A validation result is only
+    #: comparable across bundles if the thing they ran on did not move
+    #: between them.
+    is_reference: bool = False
+    archived_at: str | None = None
 
 
 @dataclass

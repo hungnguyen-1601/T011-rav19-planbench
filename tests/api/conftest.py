@@ -1,13 +1,22 @@
 """Fixtures for API tests: fresh app per test, signed-in clients, resources.
 
-Four accounts, all members. There is no operator and no reviewer any
-more — who may do what is decided per benchmark by ownership, so the
-fixtures are named after people rather than roles, and a test that needs
-"somebody else" reaches for ``bob`` instead of a different role.
+Four accounts. Three hold the business packages an ordinary member needs
+(engineer + reviewer, so one person can both create work and answer a
+review request without the fixtures having to invent a fifth account);
+``dave`` additionally holds ``admin`` through ``PLANBENCH_ADMIN_NICKNAMES``,
+because admin comes from deployment configuration and the tests exercise
+it the way production does. They are named after people rather than after
+roles, so a test needing "somebody else" reaches for ``bob``.
 
-``dave`` is the admin, granted through ``PLANBENCH_ADMIN_NICKNAMES``:
-admin comes from deployment configuration, never from anything a user
-can set, and the tests exercise it the same way production does.
+**``client`` is signed in as alice.** That is the change contract 7.0.0
+forced: reading a trace, a report or a stored map now needs an account,
+so an anonymous client is no longer the ordinary case — it is the
+special one. Tests that are *about* anonymity take ``anonymous`` instead,
+and that spelling is deliberate: it makes "this asserts a 401" visible in
+the signature rather than hidden in the absence of a header.
+
+Per-request headers still win, so ``headers=auth_headers(client, BOB)``
+behaves exactly as it did.
 """
 
 from __future__ import annotations
@@ -24,7 +33,14 @@ BOB = ("bob", "bob-password")
 CAROL = ("carol", "carol-password")
 ADMIN = ("dave", "dave-password")
 
-SEED_USERS = ",".join(f"{nickname}:{password}" for nickname, password in (ALICE, BOB, CAROL, ADMIN))
+#: Engineer and reviewer together, because most fixtures need to create
+#: work *and* the test then needs somebody able to review it. The
+#: packages do not nest, so this has to be said rather than implied.
+MEMBER_ROLES = "engineer+reviewer"
+
+SEED_USERS = ",".join(
+    f"{nickname}:{MEMBER_ROLES}:{password}" for nickname, password in (ALICE, BOB, CAROL, ADMIN)
+)
 
 
 def isolate_environment(monkeypatch) -> None:
@@ -42,6 +58,12 @@ def isolate_environment(monkeypatch) -> None:
     """
     monkeypatch.setenv("PLANBENCH_SEED_USERS", SEED_USERS)
     monkeypatch.setenv("PLANBENCH_ENABLE_DEV_LOGIN", "true")
+    # Seed roles are honoured on single-person profiles only, and the
+    # suite needs them honoured. The alternative — granting through the
+    # admin API in a fixture — would make every test depend on the very
+    # routes several of them exist to check.
+    monkeypatch.setenv("PLANBENCH_DEPLOYMENT_PROFILE", "desktop-single-user")
+    monkeypatch.setenv("PLANBENCH_SEPARATION_OF_DUTIES", "strict")
     monkeypatch.setenv("PLANBENCH_ADMIN_NICKNAMES", ADMIN[0])
     monkeypatch.setenv("PLANBENCH_ADMIN_EMAILS", "")
     monkeypatch.setenv("AUTH_SECRET", "test-secret-not-used-in-production")
@@ -72,8 +94,17 @@ def app(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def client(app) -> TestClient:
+def anonymous(app) -> TestClient:
+    """Nobody. For the tests that assert a route refuses a stranger."""
     return TestClient(app, raise_server_exceptions=False)
+
+
+@pytest.fixture
+def client(app) -> TestClient:
+    """Signed in as alice, because reading now needs an account."""
+    signed_in = TestClient(app, raise_server_exceptions=False)
+    signed_in.headers.update(auth_headers(signed_in, ALICE))
+    return signed_in
 
 
 def login(client: TestClient, credentials: tuple[str, str]) -> str:
@@ -87,6 +118,23 @@ def login(client: TestClient, credentials: tuple[str, str]) -> str:
 
 def auth_headers(client: TestClient, credentials: tuple[str, str]) -> dict[str, str]:
     return {"Authorization": f"Bearer {login(client, credentials)}"}
+
+
+def ws_url(client: TestClient, path: str, **params: str) -> str:
+    """A socket URL carrying a fresh one-time ticket.
+
+    A browser cannot set a header on a WebSocket, so the socket takes a
+    ticket minted over ordinary HTTP instead of the bearer token — the
+    token would otherwise be written into every access log along the
+    path, valid for the next hour. Tests go through the same door.
+    """
+    response = client.post("/api/v1/ws/tickets")
+    assert response.status_code == 200, response.text
+    query = "&".join(
+        [f"ticket={response.json()['ticket']}", *(f"{k}={v}" for k, v in params.items())]
+    )
+    separator = "&" if "?" in path else "?"
+    return f"{path}{separator}{query}"
 
 
 @pytest.fixture

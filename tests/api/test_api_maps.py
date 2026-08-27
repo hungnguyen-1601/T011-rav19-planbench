@@ -46,9 +46,21 @@ class TestMaps:
         assert response.status_code == 200
         assert response.json()["version"] == 2
 
-    def test_delete(self, client: TestClient, created_map: dict) -> None:
-        assert client.delete(f"/api/v1/maps/{created_map['id']}").status_code == 204
-        assert client.get(f"/api/v1/maps/{created_map['id']}").status_code == 404
+    def test_delete_archives_rather_than_removes(
+        self, client: TestClient, created_map: dict
+    ) -> None:
+        """The verb stays DELETE; the row stays too.
+
+        A map is referenced by scenarios, task profiles and every run
+        made against it. Removing the row turns each of those into a
+        dangling id, so what a caller means by "delete" — take it off my
+        list — is served by archiving, and fetching it by id still
+        answers so a stored run can still say what it ran on.
+        """
+        map_id = created_map["id"]
+        assert client.delete(f"/api/v1/maps/{map_id}").status_code == 204
+        assert map_id not in [row["id"] for row in client.get("/api/v1/maps").json()]
+        assert client.get(f"/api/v1/maps/{map_id}").status_code == 200
 
     def test_unknown_map_404_with_error_shape(self, client: TestClient) -> None:
         response = client.get("/api/v1/maps/doesnotexist")
@@ -139,10 +151,9 @@ class TestTurningAStoredMapIntoTheTwoPathsAProfileNames:
         # And the old file is still there for the deployment that named it.
         assert (REPO_ROOT / before["map"]).is_file()
 
-    def test_it_needs_a_login(self, client: TestClient, map_id: str) -> None:
-        """It writes files. Reading a map does not need a login; leaving
-        two of them on the server's disk does."""
-        assert client.post(f"/api/v1/maps/{map_id}/materialise").status_code == 401
+    def test_it_needs_a_login(self, anonymous: TestClient, map_id: str) -> None:
+        """It writes files, and files outlive the request that made them."""
+        assert anonymous.post(f"/api/v1/maps/{map_id}/materialise").status_code == 401
 
     def test_an_unknown_map_is_a_404(self, client, alice_headers):
         response = client.post("/api/v1/maps/doesnotexist/materialise", headers=alice_headers)

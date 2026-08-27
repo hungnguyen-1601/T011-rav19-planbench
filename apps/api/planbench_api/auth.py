@@ -427,3 +427,4 @@ def require_capability(capability: Capability) -> Callable[..., User]:
 ReadingUser = Annotated[User, Depends(require_capability(Capability.RESOURCE_READ))]
 WritingUser = Annotated[User, Depends(require_capability(Capability.RESOURCE_WRITE))]
 SimulatingUser = Annotated[User, Depends(require_capability(Capability.SIMULATION_RUN))]
+CataloguingUser = Annotated[User, Depends(require_capability(Capability.ALGORITHM_CATALOGUE))]

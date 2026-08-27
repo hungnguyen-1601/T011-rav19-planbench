@@ -32,7 +32,7 @@ from planbench_agent.paper import (
     selectable_stacks,
 )
 from planbench_agent.plugin_author import author_plugin
-from planbench_api.auth import CurrentUser
+from planbench_api.auth import CurrentUser, ReadingUser, SimulatingUser
 from planbench_api.decision_service import (
     CandidateService,
     DecisionRunService,
@@ -725,7 +725,7 @@ def derive_task_profile(
 
 
 @router.get("/task-profiles", response_model=list[TaskProfileResource])
-def list_task_profiles(service: Profiles) -> list[TaskProfileResource]:
+def list_task_profiles(service: Profiles, _: ReadingUser) -> list[TaskProfileResource]:
     return [_profile(stored) for stored in service.list()]
 
 
@@ -734,7 +734,7 @@ def list_task_profiles(service: Profiles) -> list[TaskProfileResource]:
 #: whose path matches wins, and the parametrised one would swallow
 #: "template" and answer 404.
 @router.get("/task-profiles/template", response_model=dict[str, Any])
-def task_profile_template(map_root: MapRoot) -> dict[str, Any]:
+def task_profile_template(map_root: MapRoot, _: ReadingUser) -> dict[str, Any]:
     """The values a blank form opens with — read from the shipped profile.
 
     **Served rather than duplicated in the browser.** A hand-copied set
@@ -764,7 +764,7 @@ def task_profile_template(map_root: MapRoot) -> dict[str, Any]:
 
 
 @router.get("/task-profiles/{profile_id}", response_model=TaskProfileResource)
-def get_task_profile(profile_id: str, service: Profiles) -> TaskProfileResource:
+def get_task_profile(profile_id: str, service: Profiles, _: ReadingUser) -> TaskProfileResource:
     return _profile(service.get(profile_id))
 
 
@@ -841,7 +841,7 @@ class TestBenchResource(BaseModel):
     status_code=status.HTTP_201_CREATED,
 )
 def stage_test_bench_episode(
-    profile_id: str, request: TestBenchRequest, service: TestBench
+    profile_id: str, request: TestBenchRequest, service: TestBench, _: SimulatingUser
 ) -> TestBenchResource:
     """Assemble one episode of this deployment and hand back a simulation.
 
@@ -908,7 +908,7 @@ class LocalControllerConfig(BaseModel):
 
 
 @router.get("/local-controllers", response_model=list[LocalControllerConfig])
-def list_local_controllers() -> list[LocalControllerConfig]:
+def list_local_controllers(_: ReadingUser) -> list[LocalControllerConfig]:
     """The named configurations a candidate may be registered with.
 
     **Served rather than copied into the client.** Registration already
@@ -938,12 +938,12 @@ def list_local_controllers() -> list[LocalControllerConfig]:
 
 
 @router.get("/candidates", response_model=list[CandidateResource])
-def list_candidates(service: Candidates) -> list[CandidateResource]:
+def list_candidates(service: Candidates, _: ReadingUser) -> list[CandidateResource]:
     return [_candidate(stored) for stored in service.list()]
 
 
 @router.get("/candidates/{candidate_id}", response_model=CandidateResource)
-def get_candidate(candidate_id: str, service: Candidates) -> CandidateResource:
+def get_candidate(candidate_id: str, service: Candidates, _: ReadingUser) -> CandidateResource:
     return _candidate(service.get(candidate_id))
 
 
@@ -1469,12 +1469,12 @@ def queue_decision(
 
 
 @router.get("/decisions/jobs", response_model=list[DecisionJobResource])
-def list_decision_jobs(jobs: DecisionJobs) -> list[DecisionJobResource]:
+def list_decision_jobs(jobs: DecisionJobs, _: ReadingUser) -> list[DecisionJobResource]:
     return [_job(job) for job in jobs.list()]
 
 
 @router.get("/decisions/jobs/{job_id}", response_model=DecisionJobResource)
-def get_decision_job(job_id: str, jobs: DecisionJobs) -> DecisionJobResource:
+def get_decision_job(job_id: str, jobs: DecisionJobs, _: ReadingUser) -> DecisionJobResource:
     job = jobs.get(job_id)
     if job is None:
         raise NotFoundError("decision job", job_id)
@@ -1500,6 +1500,7 @@ def cancel_decision_job(job_id: str, jobs: DecisionJobs, _: CurrentUser) -> Deci
 @router.get("/decisions", response_model=list[DecisionRunResource])
 def list_decisions(
     service: Runs,
+    _: ReadingUser,
     task_profile_id: Annotated[str | None, Query()] = None,
     ranked: Annotated[bool | None, Query()] = None,
 ) -> list[DecisionRunResource]:
@@ -1521,7 +1522,7 @@ def list_decisions(
 
 
 @router.get("/decisions/{run_id}", response_model=DecisionRunResource)
-def get_decision(run_id: str, service: Runs) -> DecisionRunResource:
+def get_decision(run_id: str, service: Runs, _: ReadingUser) -> DecisionRunResource:
     return _run(service.get(run_id))
 
 
@@ -1572,7 +1573,7 @@ def decide_config(
 
 
 @router.get("/decisions/{run_id}/audit", response_model=list[ReviewEventResource])
-def decision_audit(run_id: str, service: Runs) -> list[ReviewEventResource]:
+def decision_audit(run_id: str, service: Runs, _: ReadingUser) -> list[ReviewEventResource]:
     """The append-only trail, oldest first (HĐ-14).
 
     Ordered by ``sequence`` rather than by timestamp because two acts can
@@ -1747,7 +1748,7 @@ async def candidate_from_paper_upload(
 
 @router.get("/decisions/{run_id}/traces/{candidate_id}/{episode_context_id}")
 def get_trace(
-    run_id: str, candidate_id: str, episode_context_id: str, service: Runs
+    run_id: str, candidate_id: str, episode_context_id: str, service: Runs, _: ReadingUser
 ) -> dict[str, Any]:
     """One episode's trajectory, with the map it was driven on.
 
@@ -1767,7 +1768,7 @@ def get_trace(
 
 
 @router.get("/decisions/{run_id}/explanation")
-def get_explanation(run_id: str, service: Runs) -> dict[str, Any]:
+def get_explanation(run_id: str, service: Runs, _: ReadingUser) -> dict[str, Any]:
     """The case packet: the evidence behind this run's decision (E4.1).
 
     Built while the run was scored, not on the way out. The waterfall
@@ -1783,7 +1784,7 @@ def get_explanation(run_id: str, service: Runs) -> dict[str, Any]:
 
 
 @router.get("/decisions/{run_id}/exemplars")
-def get_exemplars(run_id: str, service: Runs) -> dict[str, Any]:
+def get_exemplars(run_id: str, service: Runs, _: ReadingUser) -> dict[str, Any]:
     """Which four episodes to look at, decided by a fixed recipe.
 
     Thirty episodes and one viewer: something has to choose which pair
@@ -1804,7 +1805,7 @@ def get_replay_sync(
     candidate_a: str,
     candidate_b: str,
     service: Runs,
-    # Bounded, because this one parameter sizes both a loop and the
+    # Bounded, _: ReadingUser, because this one parameter sizes both a loop and the
     # response body and the route needs no login to reach. `steps=1e9`
     # is not a client that wants a finer chart; the ceiling is far above
     # any real one — the page asks for 200.
@@ -1871,7 +1872,7 @@ def withdraw_config(
 
 @router.get("/decisions/{run_id}/report.md", response_class=PlainTextResponse)
 def decision_report_markdown(
-    run_id: str, service: Runs, locale: ExportLocale = DEFAULT_EXPORT_LOCALE
+    run_id: str, service: Runs, _: ReadingUser, locale: ExportLocale = DEFAULT_EXPORT_LOCALE
 ) -> Response:
     """The whole run as one Markdown document, card or no card.
 
@@ -1906,7 +1907,7 @@ def decision_report_markdown(
 
 @router.get("/decisions/{run_id}/report.xlsx")
 def decision_report_xlsx(
-    run_id: str, service: Runs, locale: ExportLocale = DEFAULT_EXPORT_LOCALE
+    run_id: str, service: Runs, _: ReadingUser, locale: ExportLocale = DEFAULT_EXPORT_LOCALE
 ) -> Response:
     """The same run as a workbook, for a reader who works in a spreadsheet.
 
@@ -1934,7 +1935,7 @@ def decision_report_xlsx(
 
 
 @router.get("/decisions/{run_id}/approved_config.yaml", response_class=PlainTextResponse)
-def approved_config(run_id: str, service: Runs) -> str:
+def approved_config(run_id: str, service: Runs, _: ReadingUser) -> str:
     """The deployable configuration — approved runs only (HĐ-14).
 
     Served as text rather than JSON because it is a file somebody saves,

@@ -425,6 +425,8 @@ def _to_profile(row: TaskProfileRow) -> StoredTaskProfile:
         owner_user_id=row.owner_user_id,
         created_at=row.created_at,
         profile=row.profile,
+        is_reference=bool(row.is_reference or False),
+        archived_at=row.archived_at,
     )
 
 

@@ -141,8 +141,8 @@ class TestSearch:
         assert results
         assert set(results[0]) == {"id", "nickname", "display_name", "avatar_url"}
 
-    def test_requires_a_signed_in_member(self, client: TestClient) -> None:
-        assert client.get("/api/v1/users/search", params={"nickname": "bob"}).status_code == 401
+    def test_requires_a_signed_in_member(self, anonymous: TestClient) -> None:
+        assert anonymous.get("/api/v1/users/search", params={"nickname": "bob"}).status_code == 401
 
 
 class TestNicknameIsNotAnAuthorizationKey:

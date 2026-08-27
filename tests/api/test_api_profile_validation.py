@@ -83,11 +83,11 @@ class TestALegalDocumentPassesQuietly:
         assert client.get(f"{API}/task-profiles").json() == before
         assert client.get(f"{API}/task-profiles/{crossing['id']}").status_code == 404
 
-    def test_it_needs_an_account(self, client: TestClient, crossing) -> None:
+    def test_it_needs_an_account(self, anonymous: TestClient, crossing) -> None:
         """Nothing is written and nothing is owned, but this is the same
         code path ``create`` runs, and a door to it that needs no account
         is a door that drifts away from the one beside it."""
-        assert client.post(f"{API}/task-profiles/validate", json=crossing).status_code == 401
+        assert anonymous.post(f"{API}/task-profiles/validate", json=crossing).status_code == 401
 
 
 class TestTheRefusalLooksLikeFilingsRefusal:

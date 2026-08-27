@@ -63,14 +63,14 @@ def reproduction(client, headers, candidate_id: str, extraction: dict[str, Any])
 
 
 class TestTheRoutesAreClosed:
-    def test_preflight_requires_authentication(self, client):
-        assert client.post("/api/v1/decisions/preflight", json={}).status_code == 401
+    def test_preflight_requires_authentication(self, anonymous):
+        assert anonymous.post("/api/v1/decisions/preflight", json={}).status_code == 401
 
-    def test_advice_requires_authentication(self, client):
-        assert client.get("/api/v1/decisions/anything/advice").status_code == 401
+    def test_advice_requires_authentication(self, anonymous):
+        assert anonymous.get("/api/v1/decisions/anything/advice").status_code == 401
 
-    def test_reproduction_requires_authentication(self, client):
-        assert client.post("/api/v1/candidates/x/reproduction", json={}).status_code == 401
+    def test_reproduction_requires_authentication(self, anonymous):
+        assert anonymous.post("/api/v1/candidates/x/reproduction", json={}).status_code == 401
 
 
 class TestNoRouteHereActs:
@@ -232,8 +232,8 @@ class TestPreflightSaysWhatTheRunWouldCost:
 
 
 class TestReportAdviceOverHttp:
-    def test_requires_authentication(self, client):
-        assert client.get("/api/v1/decisions/x/report-advice").status_code == 401
+    def test_requires_authentication(self, anonymous):
+        assert anonymous.get("/api/v1/decisions/x/report-advice").status_code == 401
 
     def test_an_unknown_run_is_a_404(self, client, alice_headers):
         response = client.get("/api/v1/decisions/no_such/report-advice", headers=alice_headers)
@@ -241,8 +241,8 @@ class TestReportAdviceOverHttp:
 
 
 class TestTraceReviewOverHttp:
-    def test_requires_authentication(self, client):
-        assert client.get("/api/v1/decisions/r/traces/c/e/review").status_code == 401
+    def test_requires_authentication(self, anonymous):
+        assert anonymous.get("/api/v1/decisions/r/traces/c/e/review").status_code == 401
 
     def test_an_unknown_run_is_a_404(self, client, alice_headers):
         response = client.get("/api/v1/decisions/no_such/traces/c/e/review", headers=alice_headers)
@@ -272,8 +272,8 @@ class TestTheModelLayerDegradesHonestly:
 
 
 class TestOutcomeOverHttp:
-    def test_requires_authentication(self, client):
-        assert client.get("/api/v1/decisions/x/outcome").status_code == 401
+    def test_requires_authentication(self, anonymous):
+        assert anonymous.get("/api/v1/decisions/x/outcome").status_code == 401
 
     def test_an_unknown_run_is_a_404(self, client, alice_headers):
         assert (

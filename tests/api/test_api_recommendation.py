@@ -73,8 +73,8 @@ def _seed_ranked_run(app, deployment: str, *, run_id: str = "seededrun001") -> N
 
 
 class TestTheRouteIsClosed:
-    def test_authentication_is_required(self, client):
-        assert client.get("/api/v1/task-profiles/x/recommendation").status_code == 401
+    def test_authentication_is_required(self, anonymous):
+        assert anonymous.get("/api/v1/task-profiles/x/recommendation").status_code == 401
 
     def test_an_unknown_profile_is_a_404_not_a_plausible_answer(self, client, alice_headers):
         response = client.get(

@@ -164,8 +164,8 @@ class TestOnlyAdministratorsMayPutCodeOnTheServer:
         assert listed.status_code == 200
         assert [row["plugin_id"] for row in listed.json()] == ["org.vinai.vfh-plus"]
 
-    def test_anonymous_callers_get_nothing(self, client):
-        assert client.get("/api/v1/algorithms/plugins").status_code == 401
+    def test_anonymous_callers_get_nothing(self, anonymous):
+        assert anonymous.get("/api/v1/algorithms/plugins").status_code == 401
 
 
 class TestTheArchiveIsCheckedBeforeAnythingIsRegistered:

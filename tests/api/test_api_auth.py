@@ -126,8 +126,8 @@ class TestDevLoginFlag:
 
 
 class TestAccessControl:
-    def test_benchmarks_require_authentication(self, client: TestClient) -> None:
-        response = client.get("/api/v1/benchmarks")
+    def test_benchmarks_require_authentication(self, anonymous: TestClient) -> None:
+        response = anonymous.get("/api/v1/benchmarks")
         assert response.status_code == 401
 
     def test_invalid_token_rejected(self, client: TestClient) -> None:

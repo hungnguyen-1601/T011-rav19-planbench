@@ -56,6 +56,7 @@ from planbench_api.routers import (
 )
 from planbench_api.static_site import SpaStaticFiles
 from planbench_api.worker import JobQueue
+from planbench_api.ws_tickets import TicketStore
 from planbench_tracking import build_tracker
 
 API_PREFIX = "/api/v1"
@@ -187,6 +188,10 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     # One-time codes and the provider HTTP client are app-scoped: the
     # codes must outlive a request, and the client is replaced wholesale
     # in tests so no OAuth test ever reaches the network.
+    # Single-use credentials for the playback socket, which cannot carry
+    # a header. In memory: a ticket outlives its usefulness in a minute,
+    # and a restart has already dropped the socket it was for.
+    app.state.ws_tickets = TicketStore()
     app.state.oauth_codes = ExchangeCodes()
     app.state.oauth_client = OAuthClient()
     app.state.jobs = JobQueue(settings.worker_concurrency)
@@ -261,6 +266,10 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     app.include_router(decisions.router, prefix=API_PREFIX)
     app.include_router(agent.router, prefix=API_PREFIX)
     app.include_router(settings_router.router, prefix=API_PREFIX)
+    # The socket is not a versioned resource; the ticket that opens it is
+    # an ordinary authenticated POST, so it goes where the client already
+    # looks for authenticated routes.
+    app.include_router(ws.tickets_router, prefix=API_PREFIX)
     app.include_router(ws.router)  # websockets are not under /api/v1
     # Last, and the position is the whole of it: a mount at "/" matches
     # every path, so registering it earlier would answer /api/v1 and

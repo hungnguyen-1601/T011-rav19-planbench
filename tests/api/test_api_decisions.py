@@ -509,8 +509,8 @@ class TestRunningASelection:
 
 
 class TestWhoMayDoWhat:
-    def test_filing_a_deployment_needs_a_login(self, client):
-        response = client.post(f"{API}/task-profiles", json=tiny_profile())
+    def test_filing_a_deployment_needs_a_login(self, anonymous):
+        response = anonymous.post(f"{API}/task-profiles", json=tiny_profile())
         assert response.status_code == 401
 
     def test_reading_does_not(self, client, alice_headers):
@@ -1207,8 +1207,8 @@ class TestPuttingADifferentMapUnderADeployment:
         response = self._derive(client, alice_headers, base_id, "no_such_map")
         assert response.status_code == 404, response.text
 
-    def test_deriving_needs_a_login(self, client, base_id, a_map):
-        response = self._derive(client, {}, base_id, a_map)
+    def test_deriving_needs_a_login(self, anonymous, base_id, a_map):
+        response = self._derive(anonymous, {}, base_id, a_map)
         assert response.status_code == 401
 
     def test_the_derived_deployment_can_actually_be_swept(

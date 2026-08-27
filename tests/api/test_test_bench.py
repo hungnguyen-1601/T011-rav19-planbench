@@ -319,8 +319,10 @@ class TestDeletingADeployment:
         response = client.delete(f"{API}/task-profiles/no_such_thing", headers=alice_headers)
         assert response.status_code == 404
 
-    def test_signing_out_does_not_get_to_delete(self, client: TestClient, deployment: dict) -> None:
-        response = client.delete(f"{API}/task-profiles/{deployment['id']}")
+    def test_signing_out_does_not_get_to_delete(
+        self, client: TestClient, anonymous: TestClient, deployment: dict
+    ) -> None:
+        response = anonymous.delete(f"{API}/task-profiles/{deployment['id']}")
         assert response.status_code in (401, 403)
         assert client.get(f"{API}/task-profiles/{deployment['id']}").status_code == 200
 

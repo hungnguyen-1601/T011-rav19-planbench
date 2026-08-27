@@ -32,11 +32,13 @@ def upload(client, headers, name: str, data: bytes):
 
 
 class TestBothRoutesAreClosed:
-    def test_pasting_requires_authentication(self, client):
-        assert client.post("/api/v1/candidates/from-paper", json={"text": PAPER}).status_code == 401
+    def test_pasting_requires_authentication(self, anonymous):
+        assert (
+            anonymous.post("/api/v1/candidates/from-paper", json={"text": PAPER}).status_code == 401
+        )
 
-    def test_uploading_requires_authentication(self, client):
-        assert upload(client, None, "paper.txt", PAPER.encode()).status_code == 401
+    def test_uploading_requires_authentication(self, anonymous):
+        assert upload(anonymous, None, "paper.txt", PAPER.encode()).status_code == 401
 
     def test_empty_text_is_rejected_by_the_schema(self, client, alice_headers):
         response = client.post(

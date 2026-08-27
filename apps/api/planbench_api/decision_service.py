@@ -129,6 +129,12 @@ class TaskProfileService:
     def delete(self, profile_id: str, *, delete_runs: bool = False) -> int:
         """Remove a deployment; return how many runs went with it.
 
+        A **reference** deployment is refused outright. It is the fixed
+        ground a reviewer validates imported algorithms against, and two
+        validation runs are only comparable if what they ran on did not
+        change between them — so it is not the owner who may not delete
+        it, it is nobody.
+
         **Two cases, and the difference is whether anything was
         measured.** A deployment nobody ever ran is a draft: deleting it
         destroys a description and nothing else, so it goes straight
@@ -149,7 +155,13 @@ class TaskProfileService:
         spans two stores, and only something that can see both can state
         it once.
         """
-        self._repository.get(profile_id)  # 404 before anything else
+        stored = self._repository.get(profile_id)
+        if getattr(stored, "is_reference", False):
+            raise InvalidStateError(
+                f"deployment {profile_id!r} is a reference deployment: it is the fixed "
+                "ground imported algorithms are validated against, so it cannot be "
+                "edited or deleted"
+            )
         runs = self._runs.list(task_profile_id=profile_id) if self._runs is not None else []
 
         # An approved run is not more data. Somebody signed a

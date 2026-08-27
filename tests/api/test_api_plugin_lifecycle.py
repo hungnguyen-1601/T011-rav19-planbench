@@ -41,7 +41,7 @@ PLUGIN_ID = "org.newlab.wall-follower"
 
 #: A controller that is not VFH+ and not the probe: it takes four
 #: parameters, checks them, and refuses nonsense loudly.
-PLANNER = '''\
+PLANNER = """\
 class WallFollower:
     def __init__(self, standoff_m=0.6, cruise_speed=0.35, turn_gain=1.8, patience=3):
         # Loud on purpose. A constructor that shrugged at None would hide
@@ -92,7 +92,7 @@ def _payload(request, capability):
         if envelope.capability == capability:
             return envelope.payload
     raise LookupError(capability + " was not granted")
-'''
+"""
 
 MANIFEST = {
     "plugin_api": "1.2.0",
@@ -404,8 +404,7 @@ class TestTheTraceItLeavesBehind:
             spent = sum(column[index] for column in layers)
             if spent == 0.0:
                 assert label == NOT_MEASURED, (
-                    f"row {index} reports no time in any layer but claims {label!r} "
-                    "measured it"
+                    f"row {index} reports no time in any layer but claims {label!r} measured it"
                 )
 
     def test_a_built_in_trace_keeps_the_plain_schema(self, client, admin, imported, tmp_path):
@@ -517,9 +516,7 @@ class TestReplacingItWithChangedCode:
             headers=admin,
         )
 
-    def test_changed_code_is_accepted_without_touching_the_manifest(
-        self, client, admin, imported
-    ):
+    def test_changed_code_is_accepted_without_touching_the_manifest(self, client, admin, imported):
         faster = PLANNER.replace("cruise_speed=0.35", "cruise_speed=0.75")
         assert faster != PLANNER
         response = self.upload(client, admin, faster)

@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel
 
-from planbench_api.auth import ActiveUser
+from planbench_api.auth import ActiveUser, ReadingUser
 from planbench_api.dependencies import get_map_service, get_repos, get_scenario_service
 from planbench_api.generalization import build_generalization_summary
 from planbench_api.leaderboard import Leaderboard, ScoreWeights, build_leaderboard
@@ -96,7 +96,7 @@ class LibraryPreview(BaseModel):
 
 
 @router.get("/scenario-library", response_model=list[LibraryEntry])
-def list_library() -> list[LibraryEntry]:
+def list_library(_: ReadingUser) -> list[LibraryEntry]:
     """Built-in scenarios, ordered easiest to hardest (curriculum order)."""
     entries = []
     for index, name in enumerate(CURRICULUM_ORDER):
@@ -141,7 +141,7 @@ class DifficultyCalibrationSummary(BaseModel):
 
 
 @router.get("/difficulty-calibration", response_model=DifficultyCalibrationSummary)
-def difficulty_calibration() -> DifficultyCalibrationSummary:
+def difficulty_calibration(_: ReadingUser) -> DifficultyCalibrationSummary:
     """Measured scenario difficulty against the pinned baseline (P03).
 
     Returns an empty scale rather than an error when nothing has been
@@ -163,7 +163,7 @@ def difficulty_calibration() -> DifficultyCalibrationSummary:
 
 @router.get("/scenario-protocol", response_model=list[ScenarioProtocolMetadata])
 def list_scenario_protocol(
-    scenario_name: str | None = Query(default=None),
+    _: ReadingUser, scenario_name: str | None = Query(default=None)
 ) -> list[ScenarioProtocolMetadata]:
     """Dev/held-out classification of scenarios (P05).
 
@@ -181,6 +181,7 @@ def list_scenario_protocol(
 @router.get("/scenario-library/{name}/preview", response_model=LibraryPreview)
 def preview_library_scenario(
     name: str,
+    _: ReadingUser,
     seed: int = Query(default=0, ge=0),
     step: float = Query(default=0.2, gt=0, le=5.0),
 ) -> LibraryPreview:

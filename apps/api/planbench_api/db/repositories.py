@@ -92,7 +92,7 @@ class SqlMapRepository:
     def __init__(self, sessions: SessionFactory) -> None:
         self._sessions = sessions
 
-    def create(self, map_data: MapData) -> StoredMap:
+    def create(self, map_data: MapData, owner_user_id: str | None = None) -> StoredMap:
         row = MapRow(
             id=new_id(),
             version=1,
@@ -103,6 +103,7 @@ class SqlMapRepository:
             checksum=map_data.checksum(),
             created_at=now_iso(),
             payload=map_data.model_dump(mode="json"),
+            owner_user_id=owner_user_id,
         )
         with self._sessions.begin() as session:
             session.add(row)
@@ -136,10 +137,12 @@ class SqlMapRepository:
             ).first()
             return _to_map(row) if row is not None else None
 
-    def list(self) -> list[StoredMap]:
+    def list(self, include_archived: bool = False) -> list[StoredMap]:
         with self._sessions.begin() as session:
-            rows = session.scalars(select(MapRow).order_by(MapRow.created_at)).all()
-            return [_to_map(row) for row in rows]
+            query = select(MapRow).order_by(MapRow.created_at)
+            if not include_archived:
+                query = query.where(MapRow.archived_at.is_(None))
+            return [_to_map(row) for row in session.scalars(query).all()]
 
     def update(self, map_id: str, map_data: MapData) -> StoredMap:
         with self._sessions.begin() as session:
@@ -154,7 +157,15 @@ class SqlMapRepository:
             session.flush()
             return _to_map(row)
 
+    def archive(self, map_id: str) -> StoredMap:
+        with self._sessions.begin() as session:
+            row = _require(session, MapRow, map_id, "map")
+            row.archived_at = now_iso()
+            session.flush()
+            return _to_map(row)
+
     def delete(self, map_id: str) -> None:
+        """Hard delete, for the orphan sweep only — see the in-memory twin."""
         with self._sessions.begin() as session:
             session.delete(_require(session, MapRow, map_id, "map"))
 
@@ -163,7 +174,9 @@ class SqlScenarioRepository:
     def __init__(self, sessions: SessionFactory) -> None:
         self._sessions = sessions
 
-    def create(self, map_id: str, scenario: Scenario) -> StoredScenario:
+    def create(
+        self, map_id: str, scenario: Scenario, owner_user_id: str | None = None
+    ) -> StoredScenario:
         row = ScenarioRow(
             id=new_id(),
             version=1,
@@ -171,6 +184,7 @@ class SqlScenarioRepository:
             name=scenario.name,
             created_at=now_iso(),
             payload=scenario.model_dump(mode="json"),
+            owner_user_id=owner_user_id,
         )
         with self._sessions.begin() as session:
             session.add(row)
@@ -180,10 +194,12 @@ class SqlScenarioRepository:
         with self._sessions.begin() as session:
             return _to_scenario(_require(session, ScenarioRow, scenario_id, "scenario"))
 
-    def list(self) -> list[StoredScenario]:
+    def list(self, include_archived: bool = False) -> list[StoredScenario]:
         with self._sessions.begin() as session:
-            rows = session.scalars(select(ScenarioRow).order_by(ScenarioRow.created_at)).all()
-            return [_to_scenario(row) for row in rows]
+            query = select(ScenarioRow).order_by(ScenarioRow.created_at)
+            if not include_archived:
+                query = query.where(ScenarioRow.archived_at.is_(None))
+            return [_to_scenario(row) for row in session.scalars(query).all()]
 
     def update(self, scenario_id: str, map_id: str, scenario: Scenario) -> StoredScenario:
         with self._sessions.begin() as session:
@@ -192,6 +208,13 @@ class SqlScenarioRepository:
             row.map_id = map_id
             row.name = scenario.name
             row.payload = scenario.model_dump(mode="json")
+            session.flush()
+            return _to_scenario(row)
+
+    def archive(self, scenario_id: str) -> StoredScenario:
+        with self._sessions.begin() as session:
+            row = _require(session, ScenarioRow, scenario_id, "scenario")
+            row.archived_at = now_iso()
             session.flush()
             return _to_scenario(row)
 
@@ -884,6 +907,8 @@ def _to_map(row: MapRow) -> StoredMap:
         # the column, which SQLite hands over as NULL rather than as the
         # server default the migration declares.
         kept=bool(row.kept or False),
+        owner_user_id=row.owner_user_id,
+        archived_at=row.archived_at,
     )
 
 
@@ -894,6 +919,8 @@ def _to_scenario(row: ScenarioRow) -> StoredScenario:
         map_id=row.map_id,
         created_at=row.created_at,
         scenario=Scenario.model_validate(row.payload),
+        owner_user_id=row.owner_user_id,
+        archived_at=row.archived_at,
     )
 
 
