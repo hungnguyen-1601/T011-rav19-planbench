@@ -739,3 +739,67 @@ trần 1,60 USD; cộng stage 2 (~1,00 USD) vẫn nằm dưới trần 2–3 USD
 | Bộ răng | **22/22 CẮN**, positive control giữ |
 | `ruff check` + `format` | sạch |
 | Đếm id rò trong output thật | 38 → **0** |
+
+---
+
+## P5 (phần 2) — Stage 1 chạy lại, và cái luật chọn arm còn thiếu
+
+6 arm × 12 episode × 1 lượt, o4-mini, **0,87 USD**, 72/72 vòng xong, không vòng
+nào model gãy.
+
+| Arm | Vòng | Abstain | Proposal giữ lại | Guard gỡ | USD | Vi phạm veto |
+|---|---|---|---|---|---|---|
+| `ep_b1` | 12 | 10 | 2 | 12 | 0,14 | **0** |
+| `ep_shortlist` | 12 | 6 | 11 | 10 | 0,15 | **0** |
+| `ep_knowledge` | 12 | 7 | 6 | 13 | 0,14 | **0** |
+| `ep_shortlist_knowledge` | 12 | 4 | 8 | 13 | 0,15 | **0** |
+| `ep_no_union` | 12 | 4 | 12 | 9 | 0,15 | **0** |
+| `ep_run_context` | 12 | 8 | 6 | 12 | 0,15 | **0** |
+
+Cột cuối là cột đáng tiền: **không arm nào vi phạm veto nào**, trong đó
+`candidate_ids_in_final = 0` trên cả 72 vòng. Lượt trước 38 câu gọi tên hash;
+lượt này 0. Đọc câu thật thì thấy model viết `C1`:
+
+> local_controller experienced local minimum entrapment on **C1**, as shown by
+> the stuck_cluster detector firing
+
+Và `quantities_in_statements_in_final = 0` trong khi guard vẫn gỡ 9–13 câu mỗi
+arm — đúng cái hình mà định nghĩa cũ đọc thành thảm hoạ.
+
+### Luật chọn arm thiếu một nửa
+
+Luật `no_hard_constraint_violated_and_guard_drops_not_worse_than_b1` cho ra
+**4 arm** đủ điều kiện: `ep_b1` (12), `ep_shortlist` (10), `ep_no_union` (9),
+`ep_run_context` (12). Nhưng `stage_two_arms = 2`. Preregistration nói arm nào
+**đủ điều kiện** và nói có 2 chỗ, mà không nói cắt 4 xuống 2 thế nào.
+
+Chọn bằng mắt ở đúng thời điểm này là chính cái mà preregistration sinh ra để
+cấm. Nên ghi thành luật, đánh dấu là **amendment 2026-08-27, sau stage 1 và
+trước stage 2**:
+
+- baseline luôn qua — stage 2 là so sánh, không có `ep_b1` thì arm kia
+  "tốt hơn" cái gì;
+- ghế còn lại về arm **ít bị guard gỡ nhất** trong nhóm đủ điều kiện — cùng con
+  số mà luật đủ-điều-kiện đã đọc, đẩy tới cực trị thay vì tới ngưỡng;
+- hoà thì xét theo tên arm, không để cho người chạy quyết.
+
+⇒ **stage 2 = `ep_b1` + `ep_no_union`**, và scorer tự in ra dòng đó, không ai
+gõ tay.
+
+`ep_no_union` cũng là arm nhiều proposal nhất (12) và ít abstain nhất (4) — tiện,
+nhưng không phải lý do chọn; luật đọc guard drops.
+
+### Điều đáng chú ý không nằm trong luật
+
+`ep_b1` **abstain 10/12 vòng**, và toàn bộ lý do abstain là
+`quantity_in_statement` — model viết câu có con số, guard gỡ hết, không còn gì
+để nộp. Đây không phải model kém: đây là prompt baseline không nói đủ rõ rằng
+câu không được mang số. Ghi lại vì nó là ứng viên sửa prompt rẻ nhất trong cả
+bảng, và nó không phải thứ mà bất kỳ endpoint nào đang đo.
+
+### Chấm tay mù arm
+
+`scripts/blind_rubric_sheet.py` sinh 2 file từ 1 artifact: sheet chỉ có câu, ref,
+register, subject — **không có tên arm**; key ánh xạ ngược nằm file riêng. Thứ tự
+mục sinh từ hash danh tính của chính mục đó, nên cùng artifact luôn ra cùng sheet,
+không ai xáo lại được cho tới khi đọc thuận mắt hơn. Stage 1: **84 mục**.
