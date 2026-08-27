@@ -69,6 +69,13 @@ from planbench_analyst.episode_guard import (
     contradicts_verdict,
     episode_guard,
 )
+from planbench_analyst.episode_prompts import (
+    EPISODE_PROMPT_VERSION,
+    EPISODE_SYSTEM,
+    build_episode_user_turn,
+    episode_prompt_checksum,
+    episode_schema,
+)
 from planbench_analyst.episode_view import (
     EpisodeView,
     EpisodeViewRefusal,
@@ -249,6 +256,11 @@ __all__ = [
     "build_packet_view",
     "cache_key",
     "CONTRACT_TERMS",
+    "EPISODE_PROMPT_VERSION",
+    "EPISODE_SYSTEM",
+    "build_episode_user_turn",
+    "episode_prompt_checksum",
+    "episode_schema",
     "EpisodeAnnotation",
     "EpisodeRoundResult",
     "EpisodeView",
