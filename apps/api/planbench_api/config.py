@@ -68,6 +68,36 @@ class Settings(BaseSettings):
     admin_nicknames: str = ""
     admin_emails: str = ""
 
+    # Which kind of deployment this is. Absent means `production`, and
+    # that direction is deliberate: a server already running has no such
+    # variable, and the safe reading of silence is the strict one. The
+    # desktop launcher sets its own profile in-process before Settings
+    # loads, so an installed copy with an older .env still identifies
+    # itself correctly (see planbench_desktop.provision).
+    deployment_profile: str = "production"
+
+    # Whether one person may carry a decision run through their own
+    # approval gate. `strict` everywhere a second human exists;
+    # `relaxed` only for a single-person install, and then every such act
+    # is written to the audit trail as `self_*` so the record never
+    # claims somebody else looked. Never inferred from how many
+    # reviewers currently exist: that number changes when an account is
+    # disabled, and a rule that flips silently is not a rule.
+    separation_of_duties: str = "strict"
+
+    # The demo profile's single all-capability account, bound on first
+    # sign-in and thereafter keyed by the immutable user id. Email is
+    # preferred because a provider verified it; the nickname form is for
+    # a local dev-login account the deployment created itself.
+    demo_owner_email: str = ""
+    demo_owner_nickname: str = ""
+
+    # What a brand-new account gets. Only `engineer` or nothing:
+    # reviewer and admin are grants somebody makes deliberately, and a
+    # sign-up form that hands them out is a sign-up form that hands out
+    # the deployment.
+    default_roles: str = "engineer"
+
     # Artifact storage root for trajectories and reports.
     artifact_dir: str = "artifacts"
 

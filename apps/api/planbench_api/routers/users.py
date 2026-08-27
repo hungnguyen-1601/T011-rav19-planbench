@@ -37,6 +37,7 @@ def _accounts(request: Request) -> AccountService:
         request.app.state.repos.users,
         admin_nicknames=settings.admin_nicknames,
         admin_emails=settings.admin_emails,
+        policy=getattr(request.app.state, "deployment", None),
     )
 
 

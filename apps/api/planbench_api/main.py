@@ -25,6 +25,7 @@ from planbench_api.db import (
     create_all,
     create_db_engine,
 )
+from planbench_api.deployment import guard_stored_state, load_policy
 from planbench_api.errors import register_error_handlers
 from planbench_api.logging_config import configure_logging
 from planbench_api.model_storage import LocalModelStorage
@@ -159,7 +160,18 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
         Path(settings.decision_run_dir) if settings.decision_run_dir else decision_root / "runs"
     )
     app.state.repos = _build_repositories(settings, artifacts, app)
-    app.state.auth = AuthService(settings, app.state.repos.users)
+    # Resolved before anything reads it, and it can refuse: a deployment
+    # whose profile and duties setting contradict each other must not
+    # start, because every approval it then records would be a claim
+    # nobody chose to make. Storage is checked too — the dangerous case
+    # is a `.env` already cleaned up while the grant it created is still
+    # in the database.
+    app.state.deployment = load_policy(settings)
+    guard_stored_state(app.state.deployment, app.state.repos.users)
+    logging.getLogger("planbench.api").info(
+        "deployment policy resolved: %s", app.state.deployment.describe()
+    )
+    app.state.auth = AuthService(settings, app.state.repos.users, app.state.deployment)
     # Republish imported algorithms into the runtime catalogue. The set
     # lives in the benchmark registry for the life of the process, so a
     # restart has to rebuild it from what was stored — otherwise a

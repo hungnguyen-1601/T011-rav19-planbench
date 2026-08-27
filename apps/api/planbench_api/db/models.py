@@ -34,6 +34,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -71,13 +72,88 @@ class UserRow(Base):
     email: Mapped[str] = mapped_column(String(320), nullable=False, default="")
     display_name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     avatar_url: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    #: Dead as of 0012, dropped in a later migration. Roles live in
+    #: ``user_roles``; keeping a second copy of "is this an
+    #: administrator" would mean a grant that forgets to update one of
+    #: them, and the one that gets forgotten is always the copy.
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     #: Only set for accounts usable with the development password login.
     password_hash: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    #: Set when an administrator disabled the account. The row and its
+    #: audit history stay; what is lost is the ability to trade a token
+    #: for a session.
+    disabled_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+    last_sign_in_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
     created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
     updated_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
 
+    roles: Mapped[list[UserRoleRow]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", lazy="selectin"
+    )
+
     __table_args__ = (UniqueConstraint("nickname_key", name="uq_users_nickname_key"),)
+
+
+class UserRoleRow(Base):
+    """One capability package held by one account.
+
+    A set, not a column, because the packages do not form a rank: an
+    administrator holds no business capability, and somebody who both
+    operates the deployment and vouches for algorithms holds two rows.
+
+    ``uq_single_demo_owner`` is a partial unique index rather than a
+    service-level check alone: ``demo_owner`` carries every capability at
+    once, so "there is exactly one" has to survive two simultaneous
+    writes.
+    """
+
+    __tablename__ = "user_roles"
+
+    user_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    role: Mapped[str] = mapped_column(String(20), primary_key=True)
+    granted_by_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    granted_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+
+    user: Mapped[UserRow] = relationship(back_populates="roles")
+
+    __table_args__ = (
+        Index("ix_user_roles_role", "role"),
+        Index(
+            "uq_single_demo_owner",
+            "role",
+            unique=True,
+            sqlite_where=text("role = 'demo_owner'"),
+            postgresql_where=text("role = 'demo_owner'"),
+        ),
+    )
+
+
+class AccountEventRow(Base):
+    """Append-only: what happened to an account, and who did it.
+
+    ``actor_roles`` and ``authorized_capability`` are stored rather than
+    resolved by joining, because revoking a role next week must not
+    rewrite what last week's entry says the caller was.
+    """
+
+    __tablename__ = "account_events"
+
+    sequence: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+    actor_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    actor_roles: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    authorized_capability: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    action: Mapped[str] = mapped_column(String(30), nullable=False)
+    previous: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    new: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+
+    __table_args__ = (Index("ix_account_events_user", "user_id"),)
 
 
 class OAuthAccountRow(Base):
@@ -372,6 +448,10 @@ class MapRow(Base):
     #: "unwanted" are different claims, and a sweep that cannot tell them
     #: apart is one nobody runs twice.
     kept: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    owner_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    #: Archived rather than deleted: an audit trail pointing at rows
+    #: somebody removed is a trail with holes in it.
+    archived_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
 
     __table_args__ = (Index("ix_maps_checksum", "checksum"),)
 
@@ -385,6 +465,8 @@ class ScenarioRow(Base):
     # deleting a map would silently erase benchmark provenance.
     map_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    owner_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    archived_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
     created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
     payload: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
 
@@ -522,6 +604,11 @@ class TaskProfileRow(Base):
     id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
     environment: Mapped[str] = mapped_column(String(200), nullable=False)
     owner_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    archived_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+    #: A deployment a reviewer validates plugins against. Distinct from
+    #: ``owner_user_id IS NULL``, which already means "made before
+    #: accounts existed" — shared, but not immutable.
+    is_reference: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
     profile: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
 

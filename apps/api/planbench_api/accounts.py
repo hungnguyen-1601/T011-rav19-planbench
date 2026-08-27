@@ -35,11 +35,13 @@ and an admin holds no business capability at all. Somebody who needs
 both carries both roles, and each action is audited under the capability
 that actually authorised it.
 
-``is_admin`` survives as the storage-level shadow of ``admin`` in
-``user_roles`` while the migration settles. It is not a benchmark role:
-an admin acting on someone else's work is recorded in the audit trail
-exactly like anyone else, and carries ``override`` when it is done on
-their behalf.
+``is_admin`` is now a **read-only property** over ``roles``. Its column
+is still in the table until a later migration drops it, and nothing
+reads or writes it: two records of who administers a deployment is one
+too many, and the copy that goes stale is always the one a grant forgot
+to update. Administrator is not a business role — an admin acting on
+somebody else's work is recorded in the audit trail like anyone else,
+and carries ``override`` plus a reason when it is done on their behalf.
 
 Two identifiers, deliberately not interchangeable:
 
@@ -77,12 +79,150 @@ class AuthProvider(StrEnum):
     GITHUB = "github"
 
 
+class Role(StrEnum):
+    """A capability package. Not a rank — see :data:`CAPABILITIES`."""
+
+    ENGINEER = "engineer"
+    REVIEWER = "reviewer"
+    ADMIN = "admin"
+    #: Every capability at once, one holder per database, and only under
+    #: ``PLANBENCH_DEPLOYMENT_PROFILE=demo``. Exists so a demonstration
+    #: has one badge and one provisioned account instead of an
+    #: explanation about why one person carries three roles.
+    DEMO_OWNER = "demo_owner"
+
+
+#: The three packages a production deployment grants. ``DEMO_OWNER`` is
+#: deliberately absent: it is a deployment-profile exception, and code
+#: that iterates "the roles" should not sweep it up.
+BUSINESS_ROLES: tuple[Role, ...] = (Role.ENGINEER, Role.REVIEWER, Role.ADMIN)
+
+
+class Capability(StrEnum):
+    """What a caller may do, independent of which record they do it to.
+
+    Named as data rather than as booleans on ``User`` because the
+    role→capability mapping has to be readable in one screen: the day a
+    capability moves between packages, the diff should be two lines
+    here, not a search through routers.
+    """
+
+    RESOURCE_READ = "resource.read"
+    RESOURCE_WRITE = "resource.write"
+    SIMULATION_RUN = "simulation.run"
+    RUN_CREATE = "run.create"
+    RUN_CANCEL = "run.cancel"
+    RUN_SUBMIT = "run.submit"
+    RUN_REVIEW = "run.review"
+    RUN_WITHDRAW = "run.withdraw"
+    ALGORITHM_CATALOGUE = "algorithm.catalogue"
+    ALGORITHM_INSPECT = "algorithm.inspect"
+    ALGORITHM_IMPORT = "algorithm.import"
+    ALGORITHM_VALIDATE = "algorithm.validate"
+    ALGORITHM_VALIDATION_RUN = "algorithm.validation_run"
+    ALGORITHM_PUBLISH = "algorithm.publish"
+    ALGORITHM_DISABLE = "algorithm.disable"
+    MODEL_UPLOAD = "model.upload"
+    MODEL_VALIDATE = "model.validate"
+    SYSTEM_KILL_SWITCH = "system.kill_switch"
+    USER_MANAGE = "user.manage"
+    SYSTEM_CONFIGURE = "system.configure"
+    SYSTEM_OPERATE = "system.operate"
+    AUDIT_READ = "audit.read"
+
+
+#: Every capability the platform defines.
+#:
+#: Written out rather than spelled ``"*"``: a wildcard would silently
+#: hand ``demo_owner`` any capability added later, including one whose
+#: author never considered a single account holding it alongside
+#: everything else. ``test_roles`` asserts this equals the union of the
+#: three business packages, so a new capability that nobody filed into a
+#: package fails the suite instead of quietly belonging to no one.
+ALL_CAPABILITIES: frozenset[Capability] = frozenset(Capability)
+
+
+CAPABILITIES: dict[Role, frozenset[Capability]] = {
+    Role.ENGINEER: frozenset(
+        {
+            Capability.RESOURCE_READ,
+            Capability.RESOURCE_WRITE,
+            Capability.SIMULATION_RUN,
+            Capability.RUN_CREATE,
+            Capability.RUN_CANCEL,
+            Capability.RUN_SUBMIT,
+            Capability.ALGORITHM_CATALOGUE,
+        }
+    ),
+    Role.REVIEWER: frozenset(
+        {
+            Capability.RESOURCE_READ,
+            # A reviewer runs the bench to watch a plugin behave before
+            # publishing it. Withholding this would mean asking an
+            # engineer to run it for them.
+            Capability.SIMULATION_RUN,
+            Capability.RUN_REVIEW,
+            Capability.RUN_WITHDRAW,
+            Capability.ALGORITHM_CATALOGUE,
+            Capability.ALGORITHM_INSPECT,
+            Capability.ALGORITHM_IMPORT,
+            Capability.ALGORITHM_VALIDATE,
+            Capability.ALGORITHM_VALIDATION_RUN,
+            Capability.ALGORITHM_PUBLISH,
+            Capability.ALGORITHM_DISABLE,
+            # A trained policy is an executable artefact arriving from
+            # outside, the same class of thing as a plugin bundle.
+            Capability.MODEL_UPLOAD,
+            Capability.MODEL_VALIDATE,
+            Capability.AUDIT_READ,
+        }
+    ),
+    Role.ADMIN: frozenset(
+        {
+            Capability.RESOURCE_READ,
+            Capability.ALGORITHM_CATALOGUE,
+            # Turning an algorithm off is an incident action, and waiting
+            # for a reviewer to be reachable is not an incident response.
+            # Kept distinct from ``algorithm.disable`` so the audit row
+            # says which of the two jobs the caller was doing.
+            Capability.SYSTEM_KILL_SWITCH,
+            Capability.USER_MANAGE,
+            Capability.SYSTEM_CONFIGURE,
+            Capability.SYSTEM_OPERATE,
+            Capability.AUDIT_READ,
+        }
+    ),
+    Role.DEMO_OWNER: ALL_CAPABILITIES,
+}
+
+
+def capabilities_of(roles: frozenset[Role] | set[Role] | tuple[Role, ...]) -> frozenset[Capability]:
+    """The union of what these roles allow."""
+    return frozenset().union(*(CAPABILITIES[role] for role in roles)) if roles else frozenset()
+
+
+def roles_granting(capability: Capability) -> tuple[Role, ...]:
+    """Which business packages include ``capability``, for error messages."""
+    return tuple(role for role in BUSINESS_ROLES if capability in CAPABILITIES[role])
+
+
 class AccountError(ValueError):
     """Something about this account cannot be done as asked."""
 
 
 class NicknameError(AccountError):
     """The nickname is malformed or already taken."""
+
+
+class LastAdministratorError(AccountError):
+    """This change would leave nobody able to administer the deployment.
+
+    Its own class because the caller has to answer it differently from
+    every other refusal: the fix is "grant somebody else first", not
+    "try again". It is raised from inside the same transaction that made
+    the change, so two administrators removing each other at the same
+    moment cannot both succeed.
+    """
 
 
 class AccountLinkError(AccountError):
@@ -139,13 +279,43 @@ class User(BaseModel):
     email: str = ""
     display_name: str = ""
     avatar_url: str = ""
-    is_admin: bool = False
+    #: The capability packages this account holds. Empty is legal and
+    #: means "no capability at all" — an account part-way through
+    #: onboarding, or one every role was revoked from.
+    roles: frozenset[Role] = frozenset()
+    #: Set when an administrator disabled the account. Disabled accounts
+    #: keep their rows and their audit history; what they lose is the
+    #: ability to exchange a token for a session.
+    disabled_at: str = ""
     created_at: str = ""
     updated_at: str = ""
 
     @property
     def needs_nickname(self) -> bool:
         return not self.nickname
+
+    @property
+    def disabled(self) -> bool:
+        return bool(self.disabled_at)
+
+    @property
+    def capabilities(self) -> frozenset[Capability]:
+        return capabilities_of(self.roles)
+
+    def can(self, capability: Capability) -> bool:
+        return capability in self.capabilities
+
+    @property
+    def is_admin(self) -> bool:
+        """Kept as a property so existing checks keep reading correctly.
+
+        It was a stored column, and the column is still in the table
+        until a later migration drops it — but nothing reads or writes
+        it any more. Two places recording who is an administrator is one
+        place too many, and the copy that loses is the one a role grant
+        would have had to remember to update.
+        """
+        return Role.ADMIN in self.roles or Role.DEMO_OWNER in self.roles
 
     @property
     def label(self) -> str:
@@ -189,6 +359,38 @@ class OAuthAccount(BaseModel):
     updated_at: str = ""
 
 
+class AccountEvent(BaseModel):
+    """One append-only entry about an account.
+
+    ``actor_roles`` and ``authorized_capability`` are snapshots. Reading
+    them back through a join would let a role revoked next week rewrite
+    what this entry says the caller was, which is the one thing an audit
+    trail may never do.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    sequence: int = 0
+    user_id: str
+    actor_user_id: str | None = None
+    actor_roles: str = ""
+    authorized_capability: str = ""
+    action: str
+    previous: str = ""
+    new: str = ""
+    reason: str = ""
+    #: True when an administrator acted on somebody else's behalf. Set
+    #: alongside a mandatory reason, so "an admin fixed it" is a visible
+    #: event rather than an invisible one.
+    override: bool = False
+    created_at: str = ""
+
+
+def roles_label(roles: frozenset[Role] | set[Role]) -> str:
+    """The stored form of a role snapshot: sorted, comma separated."""
+    return ",".join(sorted(role.value for role in roles))
+
+
 class UserSummary(BaseModel):
     """The public view of somebody else — no email, no admin flag.
 
@@ -214,18 +416,28 @@ class UserSummary(BaseModel):
 
 
 __all__ = [
+    "ALL_CAPABILITIES",
+    "AccountEvent",
+    "BUSINESS_ROLES",
+    "CAPABILITIES",
     "NICKNAME_MAX",
     "NICKNAME_MIN",
     "NICKNAME_RULES",
     "AccountError",
     "AccountLinkError",
     "AuthProvider",
+    "Capability",
+    "LastAdministratorError",
     "NicknameError",
     "OAuthAccount",
+    "Role",
     "StoredUser",
     "User",
     "UserSummary",
+    "capabilities_of",
     "normalise_nickname",
     "now_iso",
+    "roles_granting",
+    "roles_label",
     "validate_nickname",
 ]
