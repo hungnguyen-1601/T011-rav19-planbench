@@ -4202,8 +4202,75 @@ main.content.bare-page {
 
 @keyframes episode-pulse { 50% { opacity: .55; } }
 
+/* The episode's own answer: verdict, then each side, then the
+   differences. The three read as three because they are three, and the
+   spacing is the only thing keeping a fault found on the winning side
+   from being scanned as an account of the other side's loss. */
+.episode-verdict { margin-top: 16px; }
+.episode-verdict h4 { margin: 18px 0 6px; font-size: 14px; }
+.episode-verdict-headline { margin: 0; font-size: 16px; font-weight: 600; }
+/* Never smaller than the body around it. A caveat set in fine print is
+   a caveat somebody decided not to be read. */
+.episode-verdict-caveat {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  border-left: 3px solid var(--border);
+  padding-left: 10px;
+}
+.episode-verdict-diagnoses {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.episode-verdict-column {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--candidate-b);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+/* The winning side is marked, and marked only here. The contrast list
+   below states which side a difference is against in words — a colour
+   doing that job as well would be a second, quieter claim. */
+.episode-verdict-column.is-winner { border-top-color: var(--candidate-a); }
+.episode-verdict-column h5 { margin: 0 0 8px; font-size: 13px; }
+.episode-verdict-outcome {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 2px 12px;
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.episode-verdict-outcome dt { color: var(--muted); }
+.episode-verdict-outcome dd { margin: 0; font-variant-numeric: tabular-nums; }
+.episode-verdict-detections { margin: 0; padding-left: 18px; font-size: 13px; }
+.episode-verdict-attempts { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+.episode-verdict-contrasts { margin: 0; padding-left: 18px; }
+.episode-verdict-contrasts li { margin-bottom: 4px; }
+.contrast-strength {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+/* Two weights, and the weaker one is deliberately quiet: a difference
+   that only narrows where a mechanism could live must not be read with
+   the same force as one a detector actually fired on. */
+.contrast-support { background: var(--accent-soft); color: var(--accent); }
+.contrast-context { background: color-mix(in srgb, var(--muted) 16%, transparent); color: var(--muted); }
+.contrast-kind { font-weight: 600; }
+.contrast-detail { color: var(--muted); }
+.episode-verdict-ruled-out, .episode-verdict-omissions { margin-top: 12px; font-size: 13px; }
+.episode-verdict-ruled-out summary, .episode-verdict-omissions summary { color: var(--muted); cursor: pointer; }
+
+
 @media (max-width: 860px) {
   .episode-comparison-grid { grid-template-columns: minmax(0, 1fr); }
+  .episode-verdict-diagnoses { grid-template-columns: minmax(0, 1fr); }
   .episode-map { min-height: 300px; }
   .episode-comparison-head { flex-direction: column; }
   .episode-result-badges { justify-content: flex-start; }
