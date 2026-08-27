@@ -163,6 +163,17 @@ class AgentGateway(Protocol):
         """
         ...
 
+    def get_episode_verdict(self, run_id: str, episode_context_id: str) -> dict[str, Any]:
+        """Which of two stacks took one episode, and what differed in it.
+
+        Deterministic: the verdict is the utility the scoring pass stored
+        for that episode, and the differences come from rules over the
+        two recordings. The agent reads it so an answer about "this
+        episode" starts from what the platform measured rather than from
+        the model's reading of a replay it cannot see.
+        """
+        ...
+
     def get_recommendation(self, task_profile_id: str | None = None) -> dict[str, Any]:
         """Which algorithm this deployment should use, from stored runs.
 

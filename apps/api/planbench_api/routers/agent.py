@@ -67,6 +67,13 @@ class ChatContext(BaseModel):
 
     run_id: str = Field(default="", max_length=64)
     task_profile_id: str = Field(default="", max_length=120)
+    #: Which episode of that run is on screen, when one is. An
+    #: identifier like the two above: the server checks the run
+    #: actually ran it, and a reader who has chosen none sends none —
+    #: the replay opens on the first episode so its canvases are not
+    #: blank, and answering about that one would be answering a
+    #: question nobody asked.
+    episode_context_id: str = Field(default="", max_length=64)
 
 
 class ChatRequest(BaseModel):
@@ -136,6 +143,7 @@ def _resolve_context(agent: AgentService, context: ChatContext | None) -> str:
     if context is None:
         return ""
     known: list[str] = []
+    report: dict[str, object] = {}
     if context.run_id:
         try:
             report = agent.gateway.get_decision_run(context.run_id)
@@ -157,6 +165,15 @@ def _resolve_context(agent: AgentService, context: ChatContext | None) -> str:
             pass
         else:
             known.append(f"deployment {context.task_profile_id}")
+    if context.episode_context_id:
+        # Checked against this run's own sample rather than taken on
+        # trust: an episode id the run never ran would put the model in
+        # front of a record that does not exist, and it would talk about
+        # it — which is the failure the whole context mechanism was
+        # built to avoid.
+        episodes = ((report or {}).get("sample") or {}).get("episode_context_ids") or ()
+        if context.episode_context_id in episodes:
+            known.insert(0, f"episode {context.episode_context_id}")
     if not known:
         return ""
     return (
