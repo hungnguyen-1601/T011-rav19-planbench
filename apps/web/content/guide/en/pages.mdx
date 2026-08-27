@@ -1,0 +1,169 @@
+This article is for looking **one screen** up: what is on it, what a field
+means, and where it goes wrong. The order of the work is in
+[Seven steps](/guide/operation).
+
+<Section id="maps" title="Maps">
+
+Where the world the robot drives in gets drawn. Create a *new warehouse
+map* (racking and aisles already in place) or a *new empty map*, then set
+its size and resolution. Click a map to open the editor: pick the
+*obstacle* or *free* brush, click and drag, then **Save changes**.
+
+Every save writes a **new version with a checksum** rather than
+overwriting the old one — a run that happened on one version still points
+at that version.
+
+<Callout kind="trap">
+
+**A map must have a closed boundary wall.** LiDAR treats everything
+outside the map as non-reflective while collision treats it as solid, so
+a robot leaving the edge is a situation the system cannot describe.
+
+</Callout>
+
+<AppLink href="/maps" />
+
+</Section>
+
+<Section id="library" title="Scenario library">
+
+Prebuilt scenarios, easiest first. *Preview* stores nothing. A single
+**Import** creates **both the map and the scenario** — take this route and
+there is no map to draw.
+
+<AppLink href="/library" />
+
+</Section>
+
+<Section id="deployments" title="Deployments">
+
+Where everything **held fixed** in a comparison is declared: the map, the
+robot, its sensors and their noise, the missions, the moving obstacles,
+the feasibility thresholds and the objective weights. Two modes, one
+result — a grouped form, or pasted YAML.
+
+Six groups of fields: *Identity* · *Robot* · *Thresholds* · *Declared
+noise* · *Moving obstacles* · *Missions*. Every field has a **?** saying
+what it is for.
+
+Two that are routinely misread:
+
+- **Thresholds** are not targets to aim at. They define what *passing*
+  means in this world, and every gate reads them from here. No threshold
+  lives in the code.
+- **Declared noise** left empty means you are declaring a **noiseless**
+  world, and the interface says so — it is not a sensible default.
+
+<Callout kind="trap">
+
+**Submitting the same id with different contents is refused, not merged.**
+The id is the identity of a world; changing what it contains under the
+same name turns every earlier result into a result about something else.
+
+</Callout>
+
+<AppLink href="/deployments" />
+
+</Section>
+
+<Section id="candidates" title="Candidates">
+
+Three parts: the algorithms the system currently has (with the kind of
+observation each one needs), the stacks already assembled in the
+registry, and the form that registers a candidate.
+
+Registering is **optional** — the comparison form picks a stack and a
+controller configuration on the spot. It earns its keep when you want to
+reuse one configuration repeatedly and have an id to quote.
+
+<AppLink href="/candidates" />
+
+</Section>
+
+<Section id="models" title="Models">
+
+The store of trained checkpoints. Upload a `.zip`, name it, give it a
+version and the robot it was trained for; the system checks the checksum
+and whether it fits that robot profile.
+
+**There is no delete.** A model is something a benchmark *has already
+run*; removing the row turns an old result into a record of nothing. A
+benchmarked model can be relabelled but its file cannot be swapped.
+
+The **Import algorithm** tab lives on this screen — see the *Importing an
+algorithm* article.
+
+<AppLink href="/models" />
+
+</Section>
+
+<Section id="simulate" title="Test bench">
+
+Runs **one** episode and shows it. Pick a map, a scenario and an
+algorithm; click to place the start and the goal on the map; run. Replay
+with play / pause / restart, drag the timeline, change the speed, toggle
+each layer.
+
+This is where a missing boundary wall or an impossible mission is found
+**before** thirty episodes are spent on it.
+
+<AppLink href="/simulate" />
+
+</Section>
+
+<Section id="decisions" title="Decisions">
+
+Every comparison, filtered by deployment or by outcome; and the form that
+queues a new one.
+
+A run that **ranks nobody** is still a result rather than a failure, and
+the list says which: only one candidate cleared the gates, none did, the
+deployment cannot be ranked, or the run was stopped part-way.
+
+Opening a run is the reading screen — what to read in what order is in
+[Ten ideas](/guide/concepts).
+
+<AppLink href="/decisions" />
+
+</Section>
+
+<Section id="reviews" title="Reviews">
+
+What is waiting on you, and what you have sent to somebody else. Approve,
+reject, comment, or cancel.
+
+Review is **optional**. While a request is open the owner cannot approve
+their own work — which is the entire point of asking.
+
+<AppLink href="/reviews" />
+
+</Section>
+
+<Section id="agent" title="Assistant">
+
+The full version of the conversational assistant. It reads what the
+platform has recorded and answers from it; it **cannot** run a
+comparison, edit a deployment, or approve anything. Ask about something
+never recorded and it says so rather than guessing.
+
+The dock in the corner is the same assistant, present on every screen.
+Opened while standing on a run, it attaches itself to that run.
+
+<AppLink href="/agent" />
+
+</Section>
+
+<Section id="settings-system" title="Settings and System">
+
+**Settings** holds the API key and the model the assistant answers with.
+Without one, both AI layers run on an offline keyword responder and the
+interface says so, rather than letting a green tick imply a model.
+
+**System** reports the running version, the API's health, and the address
+it is reached at.
+
+<AppLink href="/settings" />
+
+<AppLink href="/system" />
+
+</Section>

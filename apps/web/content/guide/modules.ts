@@ -50,9 +50,33 @@ export const GUIDE_MODULES = {
       ssr: false,
       loading: ArticleSkeleton,
     }),
+    pages: dynamic(() => import("./vi/pages.mdx"), {
+      ssr: false,
+      loading: ArticleSkeleton,
+    }),
+    operation: dynamic(() => import("./vi/operation.mdx"), {
+      ssr: false,
+      loading: ArticleSkeleton,
+    }),
+    concepts: dynamic(() => import("./vi/concepts.mdx"), {
+      ssr: false,
+      loading: ArticleSkeleton,
+    }),
   },
   en: {
     overview: dynamic(() => import("./en/overview.mdx"), {
+      ssr: false,
+      loading: ArticleSkeleton,
+    }),
+    pages: dynamic(() => import("./en/pages.mdx"), {
+      ssr: false,
+      loading: ArticleSkeleton,
+    }),
+    operation: dynamic(() => import("./en/operation.mdx"), {
+      ssr: false,
+      loading: ArticleSkeleton,
+    }),
+    concepts: dynamic(() => import("./en/concepts.mdx"), {
       ssr: false,
       loading: ArticleSkeleton,
     }),

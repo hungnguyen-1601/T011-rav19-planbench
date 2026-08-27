@@ -1,0 +1,121 @@
+Bảy bước dưới đây là **thứ tự phụ thuộc**, không phải thứ tự khuyến nghị:
+mỗi bước cần thứ bước trước tạo ra. Dùng bản đồ và kịch bản dựng sẵn thì
+bắt đầu thẳng từ bước 3.
+
+Bài này nói **làm gì, theo thứ tự nào**. Từng màn hình có gì và ô nào
+nghĩa là gì nằm ở [Từng trang làm gì](/guide/pages).
+
+<Section id="buoc-1-ban-do" title="1 — Bản đồ">
+
+Vẽ thế giới robot chạy trong đó, hoặc nạp một bản đồ mẫu để thử nhanh.
+
+Bản đồ là thứ duy nhất trong phép so mà bạn vẽ bằng tay, và cũng là thứ
+dễ làm hỏng cả run nhất: thiếu một đoạn tường bao thì robot đi ra ngoài
+mép, và ngoài mép là vùng hệ thống không mô tả được.
+
+Bỏ qua bước này nếu định nhập từ thư viện kịch bản — một lần nhập tạo cả
+bản đồ lẫn kịch bản.
+
+[Xem chi tiết màn hình →](/guide/pages#maps)
+
+</Section>
+
+<Section id="buoc-2-kich-ban" title="2 — Kịch bản">
+
+Hai đường, chọn một.
+
+**Đường nhanh:** nhập một mục từ thư viện kịch bản. Xem trước không lưu
+gì; nhập thì tạo cả bản đồ lẫn kịch bản.
+
+**Đường tự khai:** bỏ qua bước này. Mission và vật cản động khai thẳng
+trong form triển khai ở bước sau, không cần mở trình soạn kịch bản riêng.
+
+[Xem chi tiết màn hình →](/guide/pages#library)
+
+</Section>
+
+<Section id="buoc-3-deployment" title="3 — Khai triển khai">
+
+Đây là bước không bỏ qua được, và là bước quyết định mọi thứ sau nó.
+
+Một *triển khai* khai toàn bộ những gì **cố định** trong phép so: bản đồ,
+robot, cảm biến và nhiễu, mission, vật cản động, ngưỡng khả thi, trọng số
+mục tiêu. Điền form hoặc dán YAML — cùng một kết quả.
+
+Ba điều đáng biết trước khi bấm nộp:
+
+- Ngưỡng ở đây **là** định nghĩa của "đạt" trên thế giới này. Mọi cổng
+  đọc từ đây, và không ngưỡng nào nằm trong mã nguồn.
+- Để trống ô nhiễu nghĩa là bạn khai một thế giới **không nhiễu** — đó là
+  một tuyên bố, không phải một mặc định.
+- Mã triển khai là **danh tính**. Nộp lại cùng mã với nội dung khác bị từ
+  chối, không gộp.
+
+[Xem chi tiết màn hình →](/guide/pages#deployments)
+
+</Section>
+
+<Section id="buoc-4-ung-vien" title="4 — Ứng viên">
+
+Chọn cái đem ra so. Một ứng viên là **một cấu hình điều hướng hoàn
+chỉnh** — bộ lập kế hoạch toàn cục, bộ điều khiển cục bộ, và cấu hình của
+nó — chứ không phải "một thuật toán".
+
+Đăng ký trước là tuỳ chọn: bước 6 chọn được stack và cấu hình ngay tại
+chỗ. Đăng ký có ích khi muốn dùng lại đúng một cấu hình nhiều lần.
+
+Nếu ứng viên là một policy đã huấn luyện thì tải checkpoint lên kho mô
+hình trước.
+
+[Xem chi tiết màn hình →](/guide/pages#candidates)
+
+</Section>
+
+<Section id="buoc-5-san-thu" title="5 — Chạy thử một episode">
+
+Chạy **một** episode trên thế giới vừa khai và nhìn nó chạy.
+
+Ba thứ đáng nhìn: robot có tới được đích không, đường toàn cục có hợp lý
+không, và quỹ đạo thực tế bám đường đó tới đâu.
+
+Bước này bỏ qua được, và bỏ qua là cách tốn hàng giờ để phát hiện một
+mission bất khả thi.
+
+[Xem chi tiết màn hình →](/guide/pages#simulate)
+
+</Section>
+
+<Section id="buoc-6-phep-so" title="6 — Chạy phép so">
+
+Chọn triển khai, chọn ứng viên A và B, đặt số episode, xếp hàng.
+
+<Callout kind="trap">
+
+**Đổi đúng một thành phần mỗi lần.** So `astar+dwa` với `rrtstar+dwa` thì
+hiệu số quy được cho bộ lập kế hoạch toàn cục. Đổi cả hai tầng cùng lúc
+thì kết quả không nói được thành phần nào tạo ra chênh lệch.
+
+</Callout>
+
+Run chạy nền — đóng tab cũng không sao.
+
+[Xem chi tiết màn hình →](/guide/pages#decisions)
+
+</Section>
+
+<Section id="buoc-7-doc-va-mang-ra" title="7 — Đọc, và mang ra ngoài">
+
+Mở run ra, đọc từ trên xuống: run này kết luận gì · nên triển khai cái
+nào · kết quả từng metric · bảng cổng · từng episode · phát lại · phản
+biện.
+
+Cái gì trong đó nghĩa là gì — và chỗ nào dễ đọc quá tay — nằm ở
+[Mười khái niệm](/guide/concepts).
+
+Mang ra ngoài: xuất Markdown, xuất Excel, hoặc tạo link chia sẻ cho người
+không có tài khoản. Muốn người thứ hai xác nhận thì gửi đi duyệt — không
+bắt buộc, và trong lúc chờ thì chính chủ không tự duyệt được.
+
+[Xem chi tiết màn hình →](/guide/pages#reviews)
+
+</Section>

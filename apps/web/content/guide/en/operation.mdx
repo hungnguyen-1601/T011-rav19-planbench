@@ -1,0 +1,128 @@
+These seven steps are an order of **dependency**, not a recommended
+sequence: each one needs what the one before it produced. Using a
+prebuilt map and scenario, start at step 3.
+
+This article says **what to do, in what order**. What each screen holds
+and what its fields mean is in [What each screen is for](/guide/pages).
+
+<Section id="buoc-1-ban-do" title="1 — The map">
+
+Draw the world the robot drives in, or load a sample map to try something
+quickly.
+
+The map is the only part of a comparison you draw by hand, and the
+easiest way to ruin a run: leave a gap in the boundary and the robot
+drives off the edge, which is a place the system cannot describe.
+
+Skip this if you plan to import from the scenario library — one import
+creates both the map and the scenario.
+
+[See the screen →](/guide/pages#maps)
+
+</Section>
+
+<Section id="buoc-2-kich-ban" title="2 — The scenario">
+
+Two routes, pick one.
+
+**The quick one:** import an entry from the scenario library. Preview
+stores nothing; importing creates both the map and the scenario.
+
+**The declared one:** skip this step. Missions and moving obstacles are
+declared directly in the deployment form in the next step, with no
+separate editor to open.
+
+[See the screen →](/guide/pages#library)
+
+</Section>
+
+<Section id="buoc-3-deployment" title="3 — Declare the deployment">
+
+The step that cannot be skipped, and the one that decides everything
+after it.
+
+A *deployment* declares everything **held fixed** in the comparison: the
+map, the robot, its sensors and their noise, the missions, the moving
+obstacles, the feasibility thresholds and the objective weights. Fill in
+the form or paste YAML — the same result either way.
+
+Three things worth knowing before submitting:
+
+- The thresholds here **are** the definition of "passing" in this world.
+  Every gate reads them, and no threshold lives in the code.
+- Leaving the noise fields empty declares a **noiseless** world. That is
+  a claim, not a default.
+- The deployment id is an **identity**. Resubmitting the same id with
+  different contents is refused rather than merged.
+
+[See the screen →](/guide/pages#deployments)
+
+</Section>
+
+<Section id="buoc-4-ung-vien" title="4 — The candidates">
+
+Choose what is being compared. A candidate is **a complete navigation
+configuration** — a global planner, a local controller, and that
+controller's configuration — not "an algorithm".
+
+Registering ahead of time is optional: step 6 picks a stack and a
+configuration on the spot. Registering earns its keep when one
+configuration is reused repeatedly.
+
+If a candidate is a trained policy, upload its checkpoint to the model
+store first.
+
+[See the screen →](/guide/pages#candidates)
+
+</Section>
+
+<Section id="buoc-5-san-thu" title="5 — Try one episode">
+
+Run **one** episode on the world just declared, and watch it.
+
+Three things worth looking at: whether the robot reaches the goal,
+whether the global path is sensible, and how closely the actual
+trajectory follows it.
+
+This step is skippable, and skipping it is how an impossible mission
+costs hours instead of a minute.
+
+[See the screen →](/guide/pages#simulate)
+
+</Section>
+
+<Section id="buoc-6-phep-so" title="6 — Run the comparison">
+
+Pick the deployment, pick candidates A and B, set the episode count,
+queue it.
+
+<Callout kind="trap">
+
+**Change exactly one component per comparison.** `astar+dwa` against
+`rrtstar+dwa` attributes the difference to the global planner. Change
+both layers at once and the result cannot say which one produced it.
+
+</Callout>
+
+The run continues in the background — closing the tab is fine.
+
+[See the screen →](/guide/pages#decisions)
+
+</Section>
+
+<Section id="buoc-7-doc-va-mang-ra" title="7 — Read it, and take it out">
+
+Open the run and read down: what this run concludes · which to deploy ·
+each metric · the gate table · every episode · the replay · the critique.
+
+What any of it means — and where it is easy to read more than the data
+allows — is in [Ten ideas](/guide/concepts).
+
+Taking it out: export Markdown, export Excel, or share a link with
+somebody who has no account. To have a second person confirm it, send it
+for review — optional, and while it is pending the owner cannot approve
+their own work.
+
+[See the screen →](/guide/pages#reviews)
+
+</Section>

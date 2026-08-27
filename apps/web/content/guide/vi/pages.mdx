@@ -1,0 +1,166 @@
+Bài này tra cứu **một màn hình**: nó có gì, ô nào nghĩa là gì, và chỗ nào
+hay sai. Thứ tự công việc nằm ở bài [Bảy bước vận hành](/guide/operation).
+
+<Section id="maps" title="Bản đồ">
+
+Nơi vẽ thế giới robot chạy trong đó. Tạo *Bản đồ kho mới* (có sẵn kệ và
+lối đi) hoặc *Bản đồ trống mới*, đặt kích thước và độ phân giải. Bấm vào
+một bản đồ để mở trình sửa: chọn bút *Vật cản* hoặc *Trống*, bấm và kéo,
+rồi **Lưu thay đổi**.
+
+Mỗi lần lưu tạo một **phiên bản mới kèm checksum**, không ghi đè bản cũ —
+một run đã chạy trên bản đồ nào thì vẫn trỏ đúng vào bản đó.
+
+<Callout kind="trap">
+
+**Bản đồ phải có tường bao kín.** LiDAR coi vùng ngoài bản đồ là không
+phản xạ, còn phát hiện va chạm coi ngoài bản đồ là vật cản — robot ra
+khỏi mép là một tình huống hệ thống không mô tả được.
+
+</Callout>
+
+<AppLink href="/maps" />
+
+</Section>
+
+<Section id="library" title="Thư viện kịch bản">
+
+Kịch bản dựng sẵn, xếp từ dễ tới khó. *Xem trước* không lưu gì cả. Một
+lần **Import** tạo **cả bản đồ lẫn kịch bản** — đi đường này thì không
+cần vẽ bản đồ trước.
+
+<AppLink href="/library" />
+
+</Section>
+
+<Section id="deployments" title="Triển khai">
+
+Khai toàn bộ những gì **cố định** trong phép so: bản đồ, robot, cảm biến
+và nhiễu của nó, mission, vật cản động, ngưỡng khả thi, trọng số mục
+tiêu. Hai chế độ cho cùng một kết quả — điền form theo nhóm, hoặc dán
+YAML.
+
+Sáu nhóm trường: *Danh tính* · *Robot* · *Ngưỡng* · *Nhiễu đã khai* ·
+*Vật cản động* · *Mission*. Mỗi ô có dấu **?** nói ô đó dùng làm gì.
+
+Vài ô hay bị hiểu nhầm:
+
+- **Ngưỡng** không phải mục tiêu phấn đấu — chúng định nghĩa thế nào là
+  *đạt* trên thế giới này, và mọi cổng đọc từ đây. Không ngưỡng nào nằm
+  trong mã nguồn.
+- **Nhiễu đã khai** để trống nghĩa là bạn đang khai một thế giới **không
+  nhiễu**, và giao diện hiển thị đúng như vậy — không phải "mặc định hợp
+  lý".
+
+<Callout kind="trap">
+
+**Nộp lại cùng một mã với nội dung khác sẽ bị từ chối, không phải gộp.**
+Mã cấu hình là danh tính của một thế giới; sửa nội dung dưới cùng cái tên
+biến mọi kết quả cũ thành kết quả của một thứ khác.
+
+</Callout>
+
+<AppLink href="/deployments" />
+
+</Section>
+
+<Section id="candidates" title="Ứng viên">
+
+Ba phần: thuật toán đang có trong hệ thống (kèm loại quan sát mỗi cái
+cần), các stack đã ghép sẵn trong registry, và form đăng ký một ứng viên.
+
+Đăng ký **không bắt buộc** — bước chạy phép so cũng chọn được stack và
+cấu hình controller ngay tại chỗ. Đăng ký có ích khi muốn dùng lại đúng
+một cấu hình nhiều lần và có id để tra.
+
+<AppLink href="/candidates" />
+
+</Section>
+
+<Section id="models" title="Mô hình">
+
+Kho checkpoint đã huấn luyện. Tải một tệp `.zip` lên, khai tên, phiên bản
+và robot mà nó được huấn luyện cho; hệ thống kiểm checksum và kiểm tương
+thích với robot profile.
+
+**Không có nút xoá.** Một mô hình là thứ một benchmark *đã chạy*; xoá
+dòng đó biến kết quả cũ thành bản ghi của hư không. Model đã benchmark
+thì sửa được nhãn nhưng không đổi được tệp.
+
+Tab **Nhập thuật toán** ở cùng trang này — xem bài *Import thuật toán*.
+
+<AppLink href="/models" />
+
+</Section>
+
+<Section id="simulate" title="Sân thử">
+
+Chạy **một** episode và xem nó. Chọn bản đồ, kịch bản, thuật toán; bấm
+đặt điểm xuất phát và đích ngay trên bản đồ; chạy. Xem lại bằng phát /
+tạm dừng / chạy lại, kéo thanh thời gian, đổi tốc độ, bật tắt từng lớp
+hiển thị.
+
+Đây là chỗ phát hiện bản đồ thiếu tường bao hay mission bất khả thi
+**trước** khi phóng một phép so ba mươi episode.
+
+<AppLink href="/simulate" />
+
+</Section>
+
+<Section id="decisions" title="Quyết định">
+
+Danh sách mọi phép so, lọc được theo cấu hình triển khai hoặc theo kết
+cục; và form xếp hàng một phép so mới.
+
+Một run **không xếp hạng ai** vẫn là một kết quả chứ không phải một thất
+bại, và danh sách nói rõ lý do: chỉ một ứng viên qua đủ cổng, không ứng
+viên nào qua, cấu hình triển khai không xếp hạng được, hay run bị dừng
+giữa chừng.
+
+Mở một run ra là trang đọc kết quả — thứ tự đọc và ý nghĩa từng mục nằm ở
+[Mười khái niệm](/guide/concepts).
+
+<AppLink href="/decisions" />
+
+</Section>
+
+<Section id="reviews" title="Duyệt">
+
+Hộp thư việc đang chờ bạn, và những yêu cầu bạn đã gửi đi. Duyệt, từ
+chối, ghi chú, hoặc huỷ.
+
+Quy trình duyệt là **tuỳ chọn**. Khi đang chờ, chính chủ không tự duyệt
+được — đó là toàn bộ ý nghĩa của việc nhờ người khác.
+
+<AppLink href="/reviews" />
+
+</Section>
+
+<Section id="agent" title="Trợ lý AI">
+
+Bản đầy đủ của trợ lý hội thoại. Nó đọc những gì nền tảng đã ghi rồi trả
+lời; nó **không** chạy được phép so, không sửa được cấu hình triển khai,
+không duyệt được gì. Hỏi một thứ chưa được ghi lại thì nó nói là chưa có
+chứ không đoán.
+
+Dock nổi ở góc phải màn hình là cùng một trợ lý, có mặt trên mọi trang.
+Mở dock khi đang đứng trên trang một run thì nó tự gắn với run đó.
+
+<AppLink href="/agent" />
+
+</Section>
+
+<Section id="settings-system" title="Cài đặt và Hệ thống">
+
+**Cài đặt** giữ khoá API và model mà trợ lý trả lời bằng nó. Chưa cấu
+hình thì cả hai lớp AI chạy bằng bộ khớp từ khoá ngoại tuyến, và giao
+diện nói thẳng điều đó thay vì để một dấu tích xanh ngụ ý có model.
+
+**Hệ thống** cho biết phiên bản đang chạy, trạng thái API và địa chỉ kết
+nối.
+
+<AppLink href="/settings" />
+
+<AppLink href="/system" />
+
+</Section>

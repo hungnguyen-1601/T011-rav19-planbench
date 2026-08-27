@@ -1,0 +1,110 @@
+Mười điều dưới đây quyết định bạn **đọc** kết quả ra sao. Bấm đúng nút mà
+hiểu sai con số thì tệ hơn là không chạy.
+
+<Section id="ung-vien-la-mot-stack" title="Ứng viên là một stack, không phải một thuật toán">
+
+A\* và RRT\* là **bộ lập kế hoạch toàn cục**; DWA là **bộ điều khiển cục
+bộ**. Chúng không thay thế nhau và không được xếp cùng một bảng.
+
+Đơn vị được đo là một **cấu hình điều hướng hoàn chỉnh**. Vì vậy câu "A\*
+thắng RRT\*" thường là một câu sai địa chỉ — thứ thắng là cả một stack,
+và trách nhiệm thuộc về **thành phần**, không thuộc về tên thuật toán.
+
+</Section>
+
+<Section id="ghep-cap-episode" title="Hiệu số tính theo từng cặp episode">
+
+Hai ứng viên chạy trên **cùng một tập điều kiện episode**: cùng seed,
+cùng vị trí vật cản động tại cùng thời điểm, cùng nhiễu cảm biến. Hiệu số
+tính theo **từng cặp**, không phải giữa hai trung bình rời nhau.
+
+Một chênh lệch ghép cặp loại bỏ được nhiễu do "hôm ấy bản đồ dễ hơn". Hai
+con số trung bình rời nhau thì không.
+
+</Section>
+
+<Section id="checksum-dieu-kien" title="Checksum điều kiện — công bằng phải kiểm lại được">
+
+Mỗi bộ điều kiện mang một checksum. Câu "hai bên chạy cùng điều kiện" vì
+thế là thứ **kiểm lại được**, chứ không phải lời người chạy benchmark tự
+khai.
+
+Chỉ so những run có cùng checksum. Khác checksum là khác thế giới.
+
+</Section>
+
+<Section id="ma-deployment-la-danh-tinh" title="Mã triển khai là danh tính của một thế giới">
+
+Nộp lại cùng một mã với nội dung khác **bị từ chối, không phải gộp**.
+
+Nếu sửa được nội dung dưới cùng cái tên thì mọi kết quả cũ mang tên đó
+lặng lẽ trở thành kết quả của một thứ khác — và không ai biết lúc nào.
+
+</Section>
+
+<Section id="nguong-doc-tu-deployment" title="Ngưỡng đọc từ triển khai, không nằm trong mã">
+
+Mọi ngưỡng cổng đọc từ bản khai triển khai. **Không một hằng số nào nằm
+trong mã nguồn** — một ngưỡng viết cứng là một ngưỡng không ai đặt ra và
+không ai chịu trách nhiệm.
+
+Hệ quả thực dụng: muốn đổi định nghĩa "đạt" thì sửa triển khai, và việc
+sửa đó nằm trong bản ghi.
+
+</Section>
+
+<Section id="cong-khong-phai-diem" title="Cổng không phải điểm số">
+
+Chấm điểm trả lời *cái nào tốt hơn*. Cổng trả lời *cái này có được xét
+đến không*. Trộn hai câu là cách một stack va chạm được cứu bằng việc nó
+nhanh.
+
+**Cả sáu cổng luôn chạy**, không dừng ở cổng hỏng đầu tiên: biết "bị loại
+ở G2" mà không biết G4 có hỏng không là một chẩn đoán không hành động
+được.
+
+</Section>
+
+<Section id="khong-va-cham-la-chan-tren" title="Không va chạm là một chặn trên, không phải chứng chỉ">
+
+Quan sát 0 va chạm trong N lượt chạy chỉ chặn xác suất ở mức khoảng
+**3/N** với độ tin cậy 95%, và chỉ **dưới phân phối kịch bản đã mô
+phỏng**.
+
+Vì vậy cổng an toàn đòi thêm một số lượt tối thiểu, và câu chặn trên đi
+kèm mọi lần con số đó được nhắc. "Không va chạm lần nào" trên 5 lượt
+không phải một lời hứa — nó là một quan sát trên 5 lượt.
+
+</Section>
+
+<Section id="sang-loc-mot-chieu" title="Sàng lọc trên máy chạy benchmark chỉ chứng minh một chiều">
+
+Máy chạy benchmark nhanh hơn bo mạch đích và chạy Python chứ không phải
+C++/ROS2.
+
+Cổng thời gian thực **hỏng** thì chắc chắn hỏng trên đích. Cổng **đạt**
+thì **không chứng minh được gì** về đích — và mọi kết quả loại này mang
+theo câu cảnh báo đó nguyên văn.
+
+</Section>
+
+<Section id="khoang-tin-cay-vat-qua-0" title="Khoảng tin cậy vắt qua 0 nghĩa là chưa chứng minh được">
+
+Mọi con số đi kèm khoảng tin cậy và số lần chạy đứng sau nó.
+
+Khoảng tin cậy 95% vắt qua 0 thì thẻ quyết định nói thẳng: run này
+**không** chứng minh được chênh lệch nó vừa báo. Đọc dấu của hiệu số mà
+bỏ qua khoảng là cách một kết luận nghe mạnh hơn dữ liệu cho phép.
+
+</Section>
+
+<Section id="doi-mot-thanh-phan" title="Đổi đúng một thành phần mỗi lần so">
+
+So `astar+dwa` với `rrtstar+dwa`: hiệu số quy được cho bộ lập kế hoạch
+toàn cục.
+
+Đổi cả bộ lập kế hoạch lẫn bộ điều khiển cùng lúc: kết quả có thể đúng,
+nhưng nó không nói được thành phần nào tạo ra chênh lệch — và đó thường
+là câu bạn cần trả lời.
+
+</Section>
