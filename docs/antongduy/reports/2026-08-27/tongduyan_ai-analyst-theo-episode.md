@@ -873,3 +873,64 @@ Dừng tiêu ở đây, chờ anh quyết hướng.
 | `stage2-o4mini-rubric-sheet.md` | 80 |
 
 Sheet không mang tên arm; key ánh xạ ngược ở file `-rubric-key.json` cạnh đó.
+
+---
+
+## P5 (phần 4) — Sinh dữ liệu có contrast support, và cái bẫy ở chiều ngược lại
+
+### Vì sao 3 run cũ không có contrast support
+
+Đếm trên **toàn bộ 120 episode** của 4 run đã ghi:
+
+| Run | Có contrast support | Người thắng từng episode |
+|---|---|---|
+| `demo_hall_global_planner_selection` | 0/30 | một bên thắng cả 30 |
+| `sudden_stop_v5_local_controller_selection` | 0/30 | một bên thắng cả 30 |
+| `sudden_stop_v6_full_stack_selection` | **11/30** | **10 / 11 / 9 hoà** |
+
+`sudden_stop_v6` là run duy nhất **không suy biến**: hai bên thay nhau thắng, và
+11 episode có detector bắn một bên. Khác biệt duy nhất về cấu hình: v6 ghép
+**hai thuật toán khác nhau** (`dwa_coarse` vs plugin `org.vinai.vfh-plus`), hai
+run kia đổi một config hoặc một planner.
+
+### Trở ngại kỹ thuật, và cách gỡ
+
+`scripts/compare.py` chỉ biết registry gốc, mà registry gốc **không có local
+controller thứ hai dùng được**: `pure_pursuit` và `ppo` không có bảng config nên
+validator từ chối, `dwa_predictive` bị từ chối theo KNOWN_LIMITATIONS L19. Còn
+lại đúng một họ DWA — tức mọi cặp dựng được từ registry gốc đều là "đổi một
+thành phần", đúng cái hình cho 0/30.
+
+VFH+ là plugin: source ở `artifacts/plugins/org.vinai.vfh-plus/`, manifest trong
+`planbench.db`. Đã viết `scripts/compare_with_imported.py` — đọc bundle từ DB
+(**read-only**, không ghi gì vào deployment của anh), đăng ký y hệt API lúc
+khởi động, rồi giao phần còn lại cho `compare.py`. Nạp được
+`astar+org.vinai.vfh-plus`. Sim ~28 s/episode-pair, **không tốn tiền API**.
+
+### Sinh xong, và cái bẫy
+
+Chạy đúng cặp đó trên 3 task profile khác map (`sudden_stop_v5`, `_4`, `_3`):
+
+| Run mới | Contrast support | Người thắng |
+|---|---|---|
+| `sudden_stop_3_full_stack_selection` | — | 0/2 candidate qua cổng, không có card |
+| `sudden_stop_4_full_stack_selection` | **30/30** | VFH+ thắng **cả 30** |
+| `sudden_stop_v5_full_stack_selection` | **30/30** | VFH+ thắng **cả 30** |
+
+30/30 nghe như thành công. Nó là hỏng ở chiều ngược lại: **cả 30 episode giống
+hệt nhau** — cùng người thắng, cùng detector (`stuck_cluster` bắn ở DWA, không
+bắn ở VFH+), cùng đủ 4 loại contrast. Một analyst viết đúng một câu rồi lặp 30
+lần sẽ được điểm tuyệt đối. Endpoint sẽ đọc gần trần cho **mọi** arm và không
+phân biệt được arm nào hơn arm nào.
+
+Cái làm cho một tập episode đáng đo là **hai bên ngang nhau** — mỗi bên thắng
+một phần, có hoà, có episode không detector nào bắn. Đúng hình của v6.
+
+Đang quét nốt 4 task profile còn lại (`sudden_stop`, `sudden_stop_2`,
+`open_hall_2`, `test_corridor`) tìm map mà DWA và VFH+ ngang nhau. Chỉ tốn thời
+gian sim, không tốn tiền.
+
+**Phải khai rõ khi kết luận:** chọn map vì trên đó hai stack ngang nhau là quyết
+định thiết kế thí nghiệm (cần một so sánh không suy biến), **không phải** chọn
+theo kết quả của arm — arm chưa chạy trên các map này. Nhưng nó vẫn là một lựa
+chọn có thể làm đẹp số, nên ghi thành amendment và kết luận vẫn để `exploratory`.
