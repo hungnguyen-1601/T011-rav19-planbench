@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import mdx from "@mdx-js/rollup";
 import { defineConfig } from "vitest/config";
 
 /** Vitest config.
@@ -9,6 +10,10 @@ import { defineConfig } from "vitest/config";
  *   is right for Next but leaves esbuild emitting `React.createElement`
  *   against a `React` that was never imported. The automatic runtime is
  *   what Next itself uses.
+ * - **the MDX plugin.** Next compiles `.mdx` through its own loader,
+ *   which Vitest does not run. Without this, a test that touches the
+ *   guide does not fail — it dies while collecting, which reads like a
+ *   broken test file rather than a missing transform.
  * - **the `@/` alias**, so tests import components exactly the way the
  *   app does rather than through a parallel set of relative paths.
  *
@@ -19,6 +24,7 @@ import { defineConfig } from "vitest/config";
  * live; it does not cover clicking. See docs/KNOWN_LIMITATIONS.md.
  */
 export default defineConfig({
+  plugins: [mdx()],
   esbuild: { jsx: "automatic" },
   test: {
     // `auth.test.ts` calls `vi.resetModules()` and re-imports the module
