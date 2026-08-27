@@ -131,11 +131,7 @@ def retrieve(
     here would move the promotion rule into retrieval, where nobody
     would be able to see it.
     """
-    scored = [
-        (score, entry)
-        for entry in entries
-        if (score := _score(entry, query)) > 0.0
-    ]
+    scored = [(score, entry) for entry in entries if (score := _score(entry, query)) > 0.0]
     scored.sort(key=lambda pair: (-pair[0], pair[1].entry_id))
     return KnowledgeResult(
         entries=tuple(

@@ -166,9 +166,7 @@ def generate_candidates(
         replace(
             candidate,
             verification_options=(
-                _options_for(candidate, catalog, available_evidence)
-                if verification_options
-                else ()
+                _options_for(candidate, catalog, available_evidence) if verification_options else ()
             ),
         )
         for candidate in ranked

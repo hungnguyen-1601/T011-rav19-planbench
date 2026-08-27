@@ -154,8 +154,7 @@ class GateRun(BaseModel):
             raise GateRefusal("the decision names a different suite than the one that was run")
         if self.decision.effective_budget_checksum != self.effective_budget_checksum:
             raise GateRefusal(
-                "the decision names a different effective budget than the run that "
-                "produced it"
+                "the decision names a different effective budget than the run that produced it"
             )
         return self
 

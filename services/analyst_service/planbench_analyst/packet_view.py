@@ -199,8 +199,7 @@ class PacketView:
                 names.add(finding.subject)
         if packet.representative_episodes is not None:
             names.update(
-                exemplar.episode_context_id
-                for exemplar in packet.representative_episodes.exemplars
+                exemplar.episode_context_id for exemplar in packet.representative_episodes.exemplars
             )
         if packet.decision.waterfall is not None:
             names.update(bar.objective for bar in packet.decision.waterfall.bars)

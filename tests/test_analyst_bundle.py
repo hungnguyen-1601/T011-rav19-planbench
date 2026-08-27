@@ -119,9 +119,7 @@ def test_an_image_named_by_anything_but_a_digest_is_refused(tmp_path: Path, dige
 def test_generation_parameters_are_frozen_as_pointers(tmp_path: Path) -> None:
     """Two configurations differing only in nesting must not share an
     identity — see the collision the flattening exists to prevent."""
-    nested = frozen(
-        clean_repo(tmp_path), generation_parameters={"thinking": {"type": "enabled"}}
-    )
+    nested = frozen(clean_repo(tmp_path), generation_parameters={"thinking": {"type": "enabled"}})
     assert list(nested.generation_parameters) == ["/thinking/type"]
 
 
@@ -285,9 +283,7 @@ def test_the_container_asks_for_a_check_rather_than_running_one() -> None:
         analysis_run_id="analysis-a7",
         analyst_bundle_id="bundle-a7",
         packet=built,
-        catalog=__import__(
-            "planbench_explanation.catalog", fromlist=["TOOL_CATALOG"]
-        ).TOOL_CATALOG,
+        catalog=__import__("planbench_explanation.catalog", fromlist=["TOOL_CATALOG"]).TOOL_CATALOG,
     )
     host = MockToolHost(analysis)
     request = ToolRequest(

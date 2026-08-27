@@ -77,9 +77,7 @@ def test_a_clean_proposal_survives() -> None:
 
 
 def test_a_citation_the_packet_does_not_hold_is_dropped() -> None:
-    result = run(
-        answer(proposal(supports=(EvidenceRef(ref="obs:invented:cand_a", kind="fact"),)))
-    )
+    result = run(answer(proposal(supports=(EvidenceRef(ref="obs:invented:cand_a", kind="fact"),))))
     assert result.response.abstained
     assert result.blocked_by_rule == {"ref_not_in_packet": 1}
 
@@ -228,9 +226,7 @@ def test_a_citation_about_another_component_is_dropped() -> None:
             proposal(
                 proposed_subject="global_planner",
                 proposition_type="sampling_budget_insufficiency",
-                supports=(
-                    EvidenceRef(ref="fact:candidate:cand_a.local_controller", kind="fact"),
-                ),
+                supports=(EvidenceRef(ref="fact:candidate:cand_a.local_controller", kind="fact"),),
             )
         )
     )
@@ -246,9 +242,7 @@ def test_a_measurement_the_packet_attributes_to_nobody_does_not_trip_rule_six() 
             proposal(
                 proposed_subject="global_planner",
                 proposition_type="sampling_budget_insufficiency",
-                supports=(
-                    EvidenceRef(ref="obs:narrow_gap_refusal:cand_a", kind="observation"),
-                ),
+                supports=(EvidenceRef(ref="obs:narrow_gap_refusal:cand_a", kind="observation"),),
             )
         )
     )

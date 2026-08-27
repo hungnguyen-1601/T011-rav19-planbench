@@ -119,9 +119,7 @@ def test_every_shipped_nature_has_a_checkable_anchor() -> None:
     """The seed becomes the first thing anybody reviews; a row that
     could never be approved would make that review pointless."""
     unusable = [
-        item.algorithm_id
-        for item in entries_from_mapping(TRAITS)
-        if not independent_anchor(item)
+        item.algorithm_id for item in entries_from_mapping(TRAITS) if not independent_anchor(item)
     ]
     assert unusable == []
 

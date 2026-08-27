@@ -143,7 +143,7 @@ def test_only_the_algorithms_this_packet_ran_are_offered() -> None:
 
 
 def test_an_algorithm_nobody_described_contributes_no_offer() -> None:
-    """"Nobody described this" belongs in the packet's account of its
+    """ "Nobody described this" belongs in the packet's account of its
     gaps, not in a citation an analyst could lean on."""
     imported = case(candidates=[stack("cand_a", "mppi"), stack("cand_b", "rrtstar")])
     offered = trait_offers(imported, SHIPPED_TRAITS)
@@ -180,9 +180,7 @@ def test_a_nature_carries_the_component_it_is_about() -> None:
     indexed = build_packet_view(
         case(), tool_catalog_version=TOOL_CATALOG_VERSION, traits=SHIPPED_TRAITS
     )
-    subjects = {
-        fact.subject for fact in indexed.facts if fact.ref.startswith("trait:")
-    }
+    subjects = {fact.subject for fact in indexed.facts if fact.ref.startswith("trait:")}
     assert subjects <= {"global_planner", "local_controller"}
 
 

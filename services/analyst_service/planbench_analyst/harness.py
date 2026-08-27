@@ -378,9 +378,7 @@ def compare_with_floor(
         elif first.abstained and not first.floor_abstained:
             floor_only += 1
 
-    comparison = FloorComparison(
-        cases=tuple(results), model_only=model_only, floor_only=floor_only
-    )
+    comparison = FloorComparison(cases=tuple(results), model_only=model_only, floor_only=floor_only)
     hits = cache.stats.hits if cache is not None else 0
     if hits:
         # Not a caveat — a refusal. A report with cache hits in it is
@@ -449,9 +447,7 @@ def branch_matrix(results: Sequence[CaseResult], spec: EvalSpec) -> dict[str, di
         for result in results:
             if result.case_id not in case_ids:
                 continue
-            asked = any(
-                proposal.requested_checks for proposal in result.outcome.response.proposals
-            )
+            asked = any(proposal.requested_checks for proposal in result.outcome.response.proposals)
             matrix.setdefault(name, {"check": 0, "no_check": 0})[
                 "check" if asked else "no_check"
             ] += 1

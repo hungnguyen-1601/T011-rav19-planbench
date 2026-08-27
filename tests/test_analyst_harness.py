@@ -68,6 +68,7 @@ def test_an_empty_run_has_an_empty_table_rather_than_a_zero_for_everything() -> 
 def test_host_refusals_are_read_as_the_routing_mistake_they_are() -> None:
     """``checker_selection`` is one number for a skill with four ways of
     going wrong, and they need different fixes."""
+
     class _Fake:
         stopped_because = "final"
         events = ("rejected:arguments_rejected", "rejected:missing_required_evidence")
@@ -138,7 +139,7 @@ def test_the_comparison_says_when_it_was_underpowered() -> None:
 
 
 def test_a_run_reports_cost_beside_quality() -> None:
-    """"Better and four times the price" is a different answer from
+    """ "Better and four times the price" is a different answer from
     "better", and only one of them is a deployment."""
     report = compare_with_floor(["case-1"], prepared_for, scripted(answer(hypothesis())))
     summary = report.summary()

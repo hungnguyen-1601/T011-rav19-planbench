@@ -204,9 +204,7 @@ def test_an_inference_only_type_is_refused_by_name() -> None:
     """``universal_algorithm_superiority`` exists so a card can forbid it.
     A model that proposes it anyway is the reason the schema's enum is
     not the last line of defence."""
-    report = run(
-        scripted(answer(hypothesis(proposition_type="universal_algorithm_superiority")))
-    )
+    report = run(scripted(answer(hypothesis(proposition_type="universal_algorithm_superiority"))))
     assert report.response.abstained
     assert any("inference-only" in note for note in report.dropped)
 
@@ -368,9 +366,7 @@ def test_the_prompt_checksum_covers_the_words_and_the_schema() -> None:
 
 def test_the_report_names_the_packet_and_the_answer() -> None:
     report = run(scripted(answer(hypothesis())))
-    view = build_packet_view(
-        analysis().packet, tool_catalog_version=TOOL_CATALOG_VERSION
-    )
+    view = build_packet_view(analysis().packet, tool_catalog_version=TOOL_CATALOG_VERSION)
     assert report.packet_checksum == view.checksum
     assert len(report.response_checksum) == 64
     assert report.prompt_checksum == prompt_checksum()

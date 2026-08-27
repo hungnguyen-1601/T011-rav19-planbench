@@ -190,9 +190,10 @@ def test_the_real_host_serves_the_timeline() -> None:
 
 
 def test_the_seam_withholds_the_block_when_the_packet_has_none() -> None:
-    assert "episode_timeline" not in evidence_for(
-        without_timelines(packet()), sidecar_present=True
-    ).available_evidence
+    assert (
+        "episode_timeline"
+        not in evidence_for(without_timelines(packet()), sidecar_present=True).available_evidence
+    )
     assert "episode_timeline" in evidence_for(packet(), sidecar_present=True).available_evidence
 
 

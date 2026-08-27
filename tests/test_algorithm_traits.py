@@ -106,7 +106,7 @@ def test_every_shipped_row_names_its_anchor() -> None:
 
 
 def test_an_algorithm_nobody_described_says_so() -> None:
-    """"Nobody wrote this down" and "this algorithm has no weaknesses"
+    """ "Nobody wrote this down" and "this algorithm has no weaknesses"
     are different sentences, and only one of them is ever true."""
     block = TraitSource().block("mppi")
     assert block["review_status"] == "undescribed"

@@ -250,9 +250,7 @@ def _trace_from_parquet(path: Path, candidate_id: str, episode_context_id: str, 
     """
     loaded = read_trace(path)
     events = [
-        {"index": index, "event": name}
-        for index, name in enumerate(loaded.column("event"))
-        if name
+        {"index": index, "event": name} for index, name in enumerate(loaded.column("event")) if name
     ]
     return EpisodeTrace(
         candidate_id=candidate_id,
@@ -428,14 +426,14 @@ def build(
 
         for index, goal in enumerate(goals):
             mission = f"m{index + 1}"
-            context = EpisodeContext(
-                task_profile_id=profile.id, mission_id=mission, seed=7 + index
-            )
+            context = EpisodeContext(task_profile_id=profile.id, mission_id=mission, seed=7 + index)
             episode_context_id = context.episode_context_id
             scenario = world.scenario.model_copy(
-                update={"goal_pose": world.scenario.goal_pose.model_copy(
-                    update={"x": goal[0], "y": goal[1]}
-                )}
+                update={
+                    "goal_pose": world.scenario.goal_pose.model_copy(
+                        update={"x": goal[0], "y": goal[1]}
+                    )
+                }
             )
             controller = DWAPlanner(CONTROLLER_TUNINGS[controller_config])
 
@@ -452,10 +450,7 @@ def build(
                 continue
 
             sidecar_path = (
-                folder
-                / "sidecar"
-                / candidate_id
-                / f"{episode_context_id}.planning_inputs.jsonl"
+                folder / "sidecar" / candidate_id / f"{episode_context_id}.planning_inputs.jsonl"
             )
             planning = PlanningInputRecorder.to_path(
                 sidecar_path,
@@ -561,9 +556,7 @@ def build(
                 # rather than renaming the candidate, because every
                 # citation in the packet points at the readable one.
                 episode_metrics.append(
-                    measured.model_copy(
-                        update={"candidate_id": decision_candidate.candidate_id}
-                    )
+                    measured.model_copy(update={"candidate_id": decision_candidate.candidate_id})
                 )
                 episode_contexts.append(context)
             except Exception as refused:  # noqa: BLE001 - the metrics boundary
@@ -766,10 +759,7 @@ def _measured_over(
         if value is not None
     ]
     clearances = [
-        value
-        for trace in traces
-        for value in trace.columns["clearance_m"]
-        if value is not None
+        value for trace in traces for value in trace.columns["clearance_m"] if value is not None
     ]
     driven = 0.0
     for trace in traces:
@@ -780,17 +770,13 @@ def _measured_over(
         )
     count = max(1, len(traces))
     fields: dict[str, MeasuredValue | None] = {
-        "success_rate": MeasuredValue(
-            value=successes / count, unit="ratio", denominator=count
-        ),
+        "success_rate": MeasuredValue(value=successes / count, unit="ratio", denominator=count),
         "collisions": MeasuredValue(
             value=float(sum(float(row.get("collision_count", 0)) for row in rows)),
             unit="count",
             denominator=count,
         ),
-        "path_length_m": MeasuredValue(
-            value=float(driven / count), unit="m", denominator=count
-        ),
+        "path_length_m": MeasuredValue(value=float(driven / count), unit="m", denominator=count),
     }
     if latencies:
         fields["latency_p99_ms"] = MeasuredValue(

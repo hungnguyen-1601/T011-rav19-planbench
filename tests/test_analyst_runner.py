@@ -255,7 +255,7 @@ def test_a_model_that_keeps_finding_new_checks_runs_out_of_revisions() -> None:
 
 
 def test_the_model_call_budget_ends_the_round_as_its_own_ending() -> None:
-    """"I had nothing to say" and "I was stopped" are different answers
+    """ "I had nothing to say" and "I was stopped" are different answers
     and must not score the same."""
     tight = PLATFORM_BUDGET_CAP.model_copy(update={"max_model_calls": 1})
     outcome = run_round(
@@ -282,9 +282,7 @@ def test_the_tool_budget_stops_the_requests_and_says_so() -> None:
             },
         ),
     ]
-    outcome = run_round(
-        prepared(bundle=bundle(requested_budget=tight)), scripted(answer(*two))
-    )
+    outcome = run_round(prepared(bundle=bundle(requested_budget=tight)), scripted(answer(*two)))
     assert outcome.cost.tool_requests == 1
     assert outcome.stopped_because == "budget_exceeded"
 

@@ -74,9 +74,7 @@ __all__ = [
 #: Where the checker code this host runs actually lives. Resolved once
 #: per process: hashing the tree is cheap but not free, and the tree does
 #: not change under a running round.
-_IMPLEMENTATION_GLOBS: tuple[str, ...] = (
-    "packages/explanation/planbench_explanation/*.py",
-)
+_IMPLEMENTATION_GLOBS: tuple[str, ...] = ("packages/explanation/planbench_explanation/*.py",)
 
 
 @lru_cache(maxsize=1)

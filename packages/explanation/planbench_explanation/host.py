@@ -552,7 +552,6 @@ class ReportEvidence:
                 return [row for row in episodes if isinstance(row, Mapping)]
         return []
 
-
     def replay_evidence(
         self, *, candidate_id: str, episode_context_id: str, planning_attempt: int
     ) -> ReplayEvidence | None:

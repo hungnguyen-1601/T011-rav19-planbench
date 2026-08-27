@@ -61,7 +61,7 @@ def test_a_written_row_comes_back_as_the_source_both_lanes_take(
 def test_an_algorithm_with_no_row_reads_as_undescribed_and_not_as_clean(
     traits: SqlTraitRepository,
 ) -> None:
-    """"Nobody wrote this down" and "this algorithm has no weaknesses"
+    """ "Nobody wrote this down" and "this algorithm has no weaknesses"
     are different sentences, and only one of them is ever true."""
     block = traits.load().block("an-imported-planner")
     assert block["review_status"] == "undescribed"

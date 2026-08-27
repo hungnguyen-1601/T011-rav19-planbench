@@ -139,9 +139,7 @@ def test_an_option_this_run_cannot_serve_is_never_offered() -> None:
     """Naming it would send the analyst at a tool the host refuses at
     admission, and the refusal reads to a model as a broken platform."""
     offered = shortlist(available_evidence=frozenset())
-    named = {
-        option.tool_id for candidate in offered for option in candidate.verification_options
-    }
+    named = {option.tool_id for candidate in offered for option in candidate.verification_options}
     # Only the card that needs no evidence at all survives; every check
     # and every reader of a block this run does not hold is gone.
     assert named <= {"get_known_unknowns"}

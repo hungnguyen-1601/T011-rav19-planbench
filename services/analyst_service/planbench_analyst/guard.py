@@ -67,13 +67,49 @@ __all__ = [
 NUMBER_WORDS: frozenset[str] = frozenset(
     {
         # en
-        "zero", "one", "two", "three", "four", "five", "six", "seven",
-        "eight", "nine", "ten", "eleven", "twelve", "twenty", "thirty",
-        "forty", "fifty", "hundred", "thousand", "half", "twice", "double",
-        "triple", "percent", "per cent",
+        "zero",
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten",
+        "eleven",
+        "twelve",
+        "twenty",
+        "thirty",
+        "forty",
+        "fifty",
+        "hundred",
+        "thousand",
+        "half",
+        "twice",
+        "double",
+        "triple",
+        "percent",
+        "per cent",
         # vi
-        "không", "một", "hai", "ba", "bốn", "năm", "sáu", "bảy", "tám",
-        "chín", "mười", "trăm", "nghìn", "ngàn", "nửa", "gấp đôi", "phần trăm",
+        "không",
+        "một",
+        "hai",
+        "ba",
+        "bốn",
+        "năm",
+        "sáu",
+        "bảy",
+        "tám",
+        "chín",
+        "mười",
+        "trăm",
+        "nghìn",
+        "ngàn",
+        "nửa",
+        "gấp đôi",
+        "phần trăm",
     }
 )
 
@@ -144,9 +180,7 @@ class GuardResult:
         return counts
 
 
-def _check_problem(
-    proposal: HypothesisProposal, catalog: ToolCatalog
-) -> tuple[str, str] | None:
+def _check_problem(proposal: HypothesisProposal, catalog: ToolCatalog) -> tuple[str, str] | None:
     for check in proposal.requested_checks:
         card = next((item for item in catalog.cards if item.tool_id == check.tool_id), None)
         if card is None:

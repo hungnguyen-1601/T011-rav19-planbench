@@ -214,9 +214,7 @@ def catalog_text(catalog: ToolCatalog) -> str:
     return "\n".join(lines)
 
 
-def _complete(
-    provider: LLMProvider, request: LLMRequest, *, timeout_s: float
-) -> LLMResponse:
+def _complete(provider: LLMProvider, request: LLMRequest, *, timeout_s: float) -> LLMResponse:
     """One completion, with a deadline the provider layer does not offer.
 
     The worker thread is not cancellable — a blocked socket read stays
@@ -416,9 +414,7 @@ def _hypothesis_id(draft: _Draft) -> str:
     return f"hyp-{digest[:ID_DIGITS]}"
 
 
-def _refs(
-    view: PacketView, refs: Sequence[str], unresolved: list[str]
-) -> tuple[EvidenceRef, ...]:
+def _refs(view: PacketView, refs: Sequence[str], unresolved: list[str]) -> tuple[EvidenceRef, ...]:
     built: list[EvidenceRef] = []
     for ref in refs:
         fact = view.fact(ref)

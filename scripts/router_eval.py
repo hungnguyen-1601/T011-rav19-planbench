@@ -235,9 +235,7 @@ def main() -> int:
 
     # Router recall and false non-escalation, on the cases where
     # escalating was the right call.
-    needed = {
-        case for case in shared if strong[case].quality > default[case].quality
-    }
+    needed = {case for case in shared if strong[case].quality > default[case].quality}
     caught = needed & escalated
     print()
     print(f"cases where escalating helps: {len(needed)}")

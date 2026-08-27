@@ -80,27 +80,21 @@ ARMS: dict[str, RoundFeatures] = {
     "e1_measurements": RoundFeatures(measurements=True, timelines=False),
     "e2_timelines": RoundFeatures(measurements=True, timelines=True),
     "e3_knowledge": RoundFeatures(measurements=True, timelines=True, knowledge=True),
-    "e4a_shortlist": RoundFeatures(
-        measurements=True, timelines=True, candidate_shortlist=True
-    ),
+    "e4a_shortlist": RoundFeatures(measurements=True, timelines=True, candidate_shortlist=True),
     "e4b_options": RoundFeatures(
         measurements=True,
         timelines=True,
         candidate_shortlist=True,
         verification_options=True,
     ),
-    "e5a_filtered_menu": RoundFeatures(
-        measurements=True, timelines=True, filter_tool_menu=True
-    ),
+    "e5a_filtered_menu": RoundFeatures(measurements=True, timelines=True, filter_tool_menu=True),
     "e5b_auto_route": RoundFeatures(
         measurements=True, timelines=True, filter_tool_menu=True, auto_route_checker=True
     ),
     # E6 asks whether making the model commit to a branch first is worth
     # what it costs. The control arm is the shape the answer had before
     # W4: one object carrying both kinds of statement.
-    "e6_free_schema": RoundFeatures(
-        measurements=True, timelines=True, discriminated_union=False
-    ),
+    "e6_free_schema": RoundFeatures(measurements=True, timelines=True, discriminated_union=False),
     # E7 asks whether the deterministic critic earns its place. Off is
     # the comparison; a critic nobody has measured is a habit.
     "e7_no_critic": RoundFeatures(measurements=True, timelines=True, critic=False),

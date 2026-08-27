@@ -143,9 +143,7 @@ def test_a_moved_file_changes_the_hash(tmp_path) -> None:  # type: ignore[no-unt
 
 def test_a_cache_written_under_one_identity_is_not_read_under_another() -> None:
     first = cache_key(runtime_checksum=checksum(), packet_checksum="c" * 64)
-    other = cache_key(
-        runtime_checksum=checksum(catalog_version="4.0.0"), packet_checksum="c" * 64
-    )
+    other = cache_key(runtime_checksum=checksum(catalog_version="4.0.0"), packet_checksum="c" * 64)
     assert first != other
 
 

@@ -176,14 +176,10 @@ def score_repeat(
     # still the analyst having chosen a tool, and the refusal is counted
     # elsewhere as a routing failure.
     asked = {
-        check.tool_id
-        for proposal in response.proposals
-        for check in proposal.requested_checks
+        check.tool_id for proposal in response.proposals for check in proposal.requested_checks
     }
     tool_acceptable = (
-        not label.acceptable_tools
-        or not asked
-        or bool(asked & set(label.acceptable_tools))
+        not label.acceptable_tools or not asked or bool(asked & set(label.acceptable_tools))
     )
 
     verified = any(

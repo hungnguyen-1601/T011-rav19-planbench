@@ -123,9 +123,7 @@ def effective_generation_config(*layers: Mapping[str, Any]) -> dict[str, Any]:
     return merged
 
 
-def validate_generation_config(
-    config: Mapping[str, Any], *, supported: Collection[str]
-) -> None:
+def validate_generation_config(config: Mapping[str, Any], *, supported: Collection[str]) -> None:
     """Refuse before the call, not after the bill.
 
     A knob the model does not support is either ignored — in which case

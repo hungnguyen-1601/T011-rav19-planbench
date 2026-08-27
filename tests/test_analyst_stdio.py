@@ -396,7 +396,7 @@ def test_a_container_narrating_a_packet_fills_the_cap_and_gets_cut() -> None:
 
 
 def test_the_submitter_gets_a_code_and_a_token_not_a_case_id() -> None:
-    """"Your analyst crashed on narrow-gap-007" tells a submitter which
+    """ "Your analyst crashed on narrow-gap-007" tells a submitter which
     hidden case exists and what it is about."""
     told = public_error("analyst_raised", case_id="narrow-gap-007", run_salt="run-1")
     assert told["error"] == "analyst_raised"

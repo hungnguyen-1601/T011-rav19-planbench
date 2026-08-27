@@ -83,7 +83,7 @@ def test_collisions_are_summed_and_clearance_is_the_worst_one() -> None:
 
 
 def test_a_field_the_run_did_not_record_stays_absent() -> None:
-    """"No collisions" and "nobody counted collisions" are different
+    """ "No collisions" and "nobody counted collisions" are different
     sentences, and a zero here would merge them."""
     measured = only(measurements_from_report(report(episodes=[])))
     assert measured.collisions is None
@@ -92,9 +92,7 @@ def test_a_field_the_run_did_not_record_stays_absent() -> None:
 
 
 def test_a_rate_with_no_denominator_in_the_report_is_dropped_rather_than_guessed() -> None:
-    measured = only(
-        measurements_from_report(report(n_distinct_episodes=None, n_episodes=None))
-    )
+    measured = only(measurements_from_report(report(n_distinct_episodes=None, n_episodes=None)))
     assert measured.success_rate is None
     assert measured.latency_p99_ms is not None
 

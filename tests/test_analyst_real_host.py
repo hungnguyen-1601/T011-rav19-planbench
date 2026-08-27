@@ -371,7 +371,8 @@ def test_a_code_the_card_never_declared_is_reported_not_raised() -> None:
     card = next(card for card in TOOL_CATALOG.cards if card.tool_id == "gap_vs_footprint")
     assert "invented_code" not in card.failure_modes
     result = prepared.host._host._unavailable(
-        card, ask(prepared, "gap_vs_footprint", {"candidate_id": "a", "region_id": "b"}),
+        card,
+        ask(prepared, "gap_vs_footprint", {"candidate_id": "a", "region_id": "b"}),
         "invented_code",
     )
     assert result.failure_code == "host_internal_error"

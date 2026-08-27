@@ -172,9 +172,7 @@ def refs_satisfy(refs: Iterable[EvidenceRef], label: CaseLabels, view: PacketVie
     """
     if not label.acceptable_refs:
         return True
-    return any(
-        predicate.matches(ref, view) for ref in refs for predicate in label.acceptable_refs
-    )
+    return any(predicate.matches(ref, view) for ref in refs for predicate in label.acceptable_refs)
 
 
 def load_eval_spec(path: Path) -> EvalSpec:

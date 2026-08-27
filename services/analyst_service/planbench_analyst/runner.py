@@ -245,7 +245,6 @@ def run_round(
         )
         events.append(f"menu:{len(menu.cards)}/{len(analysis.catalog.cards)}")
 
-
     if features.knowledge:
         # Counted in the transcript, both halves. "Nothing was offered"
         # and "five things were offered and none resolved" are different
@@ -350,9 +349,7 @@ def run_round(
         )
         events.append(f"proposed:{len(report.response.proposals)}")
 
-        guarded = guard(
-            report.response, view, catalog=analysis.catalog, critic=features.critic
-        )
+        guarded = guard(report.response, view, catalog=analysis.catalog, critic=features.critic)
         events.extend(f"blocked:{item.rule}" for item in guarded.blocked)
 
         # Declare before any request. The host binds evidence to the
@@ -402,9 +399,7 @@ def run_round(
             for proposal in guarded.response.proposals:
                 if proposal.requested_checks:
                     continue
-                answered = tuple(
-                    (tool, arguments) for _hypothesis, tool, arguments in routed_keys
-                )
+                answered = tuple((tool, arguments) for _hypothesis, tool, arguments in routed_keys)
                 route, reason = route_for(
                     proposal,
                     catalog=analysis.catalog,

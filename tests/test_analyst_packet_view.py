@@ -383,7 +383,7 @@ def test_what_a_candidate_scored_is_reachable_by_ref() -> None:
 
 
 def test_the_denominator_is_a_fact_of_its_own() -> None:
-    """"Over thirty episodes" is the half of a rate that keeps it from
+    """ "Over thirty episodes" is the half of a rate that keeps it from
     being read as a promise, so a statement has to be able to cite it."""
     fact = view(measurements=[measured()]).fact("fact:metric:cand_a.success_rate.denominator")
     assert fact is not None
