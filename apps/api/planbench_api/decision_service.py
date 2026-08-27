@@ -55,8 +55,21 @@ from planbench_benchmark.candidates import (
     validate_config_names,
 )
 from planbench_benchmark.selection import DEFAULT_SCOPE, run_comparison
+from planbench_explanation.case_packet import RobotFacts
+from planbench_explanation.catalog import TOOL_CATALOG_VERSION
+from planbench_explanation.detectors import DETECTOR_VERSION
 from planbench_schemas.contracts import CONTRACTS_VERSION
 from planbench_schemas.task_profile import TaskProfile
+
+#: The margin below which one episode's utility difference is a tie.
+#:
+#: Preregistered — chosen before any real run was read — and passed into
+#: the builder rather than looked up inside it, because a margin picked
+#: after the distribution is visible is a margin picked to produce an
+#: answer. Half a percent of the utility range, which is the smallest
+#: gap this platform reports anywhere else without a confidence interval
+#: beside it.
+EPISODE_TIE_EPSILON = 0.005
 
 
 class TaskProfileService:
@@ -919,6 +932,142 @@ class DecisionRunService:
             # no card, or scored before per-episode utility was kept —
             # and the answer is the same however politely it is asked.
             raise InvalidStateError(str(refusal)) from refusal
+
+    def episode_verdict(
+        self,
+        run_id: str,
+        episode_context_id: str,
+        *,
+        candidate_a: str = "",
+        candidate_b: str = "",
+        tie_epsilon: float = EPISODE_TIE_EPSILON,
+    ) -> dict[str, Any]:
+        """One episode: who won, what happened to each side, what differed.
+
+        Everything here is deterministic and **no model is involved**.
+        The verdict is the utility this run already scored per episode;
+        the diagnoses are the detectors over the two served traces; the
+        contrasts are the platform's own rules over the two.
+
+        The pair defaults to the run's own ``comparison_pair`` rather
+        than to the first two candidates registered: which two a page
+        compares is a claim, and the registration order is not one. A
+        run that ranked nobody has no pair, and refuses rather than
+        picking.
+
+        Refuses a run scored before per-episode utility existed for the
+        same reason the exemplars route does — the answer is the same
+        however politely it is asked.
+        """
+        from planbench_explanation.episode_builder import (
+            EpisodeBuildRefusal,
+            build_episode_packet,
+        )
+        from planbench_explanation.episode_floor import episode_floor
+        from planbench_explanation.exemplars import compared_pair
+        from planbench_explanation.packet_builder import DeploymentThresholds
+
+        run = self._runs.get(run_id)
+        report = run.report or {}
+
+        if not candidate_a or not candidate_b:
+            pair = compared_pair(report)
+            if pair is None:
+                raise InvalidStateError(
+                    "this run ranked nobody, so it names no pair to compare; ask for "
+                    "two candidates explicitly if you want a specific comparison"
+                )
+            candidate_a, candidate_b = pair
+
+        traces: dict[str, dict[str, Any] | None] = {}
+        for candidate_id in (candidate_a, candidate_b):
+            try:
+                traces[candidate_id] = self.trace(run_id, candidate_id, episode_context_id)
+            except (NotFoundError, InvalidStateError):
+                # One unreadable trace is a reason to say so beside the
+                # other side's findings, not a reason to have no answer.
+                traces[candidate_id] = None
+
+        # The deployment is what a timeline is measured against, and it
+        # can be gone: a run outlives the profile it was run under, and
+        # the verdict itself needs none of it — the rows were scored
+        # when the profile still existed. So a missing one costs the
+        # timeline and the geometry, is said out loud, and does not cost
+        # the answer.
+        thresholds: DeploymentThresholds | None = None
+        robot: RobotFacts | None = None
+        try:
+            profile = self._profiles.load(run.task_profile_id)
+        except (NotFoundError, InvalidStateError):
+            profile = None
+        if profile is not None:
+            thresholds = DeploymentThresholds(
+                robot_radius_m=profile.robot.radius,
+                control_period_s=profile.robot.control_period,
+                clearance_warning_m=profile.constraints.clearance_warning_m,
+                max_linear_velocity=profile.robot.max_linear_velocity,
+            )
+            robot = RobotFacts(radius_m=profile.robot.radius)
+
+        try:
+            packet = build_episode_packet(
+                header=self._episode_header(run),
+                run_id=run_id,
+                episode_context_id=episode_context_id,
+                candidate_a=candidate_a,
+                candidate_b=candidate_b,
+                report=report,
+                trace_a=traces[candidate_a],
+                trace_b=traces[candidate_b],
+                tie_epsilon=tie_epsilon,
+                robot=robot,
+                thresholds=thresholds,
+            )
+        except EpisodeBuildRefusal as refusal:
+            raise InvalidStateError(str(refusal)) from refusal
+
+        floor = episode_floor(packet)
+        return {
+            "packet": packet.model_dump(mode="json"),
+            "verdict": packet.verdict.model_dump(mode="json"),
+            "diagnoses": [item.model_dump(mode="json") for item in packet.diagnoses],
+            "contrasts": [item.model_dump(mode="json") for item in packet.contrasts],
+            "ruled_out": [item.model_dump(mode="json") for item in packet.ruled_out],
+            "floor": {
+                "abstained": floor.abstained,
+                "proposals": [item.model_dump(mode="json") for item in floor.proposals],
+                "bearings": dict(floor.bearings),
+            },
+            "omissions": list(packet.omissions),
+            "candidate_a": candidate_a,
+            "candidate_b": candidate_b,
+            "episode_context_id": episode_context_id,
+        }
+
+    def _episode_header(self, run: Any) -> Any:
+        """The provenance header an episode packet carries.
+
+        Reuses the run's own manifest reference and checksum: an episode
+        packet explains part of that run, and a header naming anything
+        else would let a reader check the wrong artifact and find it
+        consistent.
+        """
+        from planbench_explanation.knowledge import KNOWLEDGE_BASE_VERSION
+        from planbench_explanation.versioning import ExplanationArtifactHeader
+
+        report = run.report or {}
+        block = report.get("case_packet")
+        if isinstance(block, dict):
+            header = (block.get("packet") or {}).get("header")
+            if isinstance(header, dict):
+                return ExplanationArtifactHeader(**header)
+        return ExplanationArtifactHeader.for_current_code(
+            source_manifest_ref=str(report.get("run_uri") or f"runs/{run.id}"),
+            source_manifest_checksum=str(report.get("run_checksum") or "0" * 64),
+            detector_version=DETECTOR_VERSION,
+            knowledge_base_version=KNOWLEDGE_BASE_VERSION,
+            tool_catalog_version=TOOL_CATALOG_VERSION,
+        )
 
     def approved_config(self, run_id: str) -> str:
         """The deployable configuration, as YAML — approved runs only.
