@@ -31,7 +31,10 @@ from planbench_analyst.features import FeatureRefusal, RoundFeatures
 from planbench_explanation.catalog import TOOL_CATALOG
 
 CONTRAST_REF = "contrast:detection_only_on_loser:1"
-OBSERVATION_REF = "obs:stuck_cluster:B@ep-004"
+#: Read off the view rather than written out. A candidate id never
+#: reaches the model — it is behind a label — so a ref naming one
+#: would be a ref no round could produce.
+OBSERVATION_REF = "obs:stuck_cluster:{label}@ep-004"
 
 
 def answer(*hypotheses: dict[str, object]) -> LLMResponse:
@@ -39,6 +42,16 @@ def answer(*hypotheses: dict[str, object]) -> LLMResponse:
         structured={"abstained": False, "hypotheses": list(hypotheses)},
         input_tokens=1200,
         output_tokens=340,
+    )
+
+
+def observation_ref() -> str:
+    """The detection ref this packet actually carries, label and all."""
+    view = build_episode_view(build_packet())
+    return next(
+        fact.ref
+        for fact in view.facts
+        if fact.ref.startswith("obs:stuck_cluster:") and "/" not in fact.ref
     )
 
 
@@ -52,7 +65,7 @@ def hypothesis(**overrides: object) -> dict[str, object]:
         ),
         "proposition_type": "local_minimum_entrapment",
         "subject": "local_controller",
-        "supports": [CONTRAST_REF, OBSERVATION_REF],
+        "supports": [CONTRAST_REF, observation_ref()],
         "contradicts": [],
         "missing_evidence": [],
         "recommended_experiments": [],
@@ -162,7 +175,13 @@ class TestTheRegisterSurvivesTheEngine:
 
 class TestTheRulesStillApply:
     def test_a_statement_handing_the_episode_to_the_loser_is_dropped(self) -> None:
-        result = round_over(answer(hypothesis(statement="B outperforms the other side here")))
+        # Written in the label the model was shown, because that is the
+        # only name it has for the losing side — and rule 9 reads the
+        # sentence the model actually wrote.
+        loser = build_episode_view(build_packet()).aliases.label_for("B")
+        result = round_over(
+            answer(hypothesis(statement=f"{loser} outperforms the other side here"))
+        )
         assert result.response.abstained
         assert "contradicts_verdict" in {item.rule for item in result.blocked}
 

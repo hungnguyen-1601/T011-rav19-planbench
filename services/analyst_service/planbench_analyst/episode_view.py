@@ -99,8 +99,10 @@ class EpisodeView:
         """
         names: set[str] = {self._packet.episode_context_id, self._packet.run_id}
         names.update(self._aliases.by_label)
-        for stack in self._packet.candidates:
-            names.add(stack.candidate_id)
+        # **Not the candidate ids.** Admitting them here is what let a
+        # statement naming a twelve-character hash through rule 2: the
+        # model never sees an id, so writing one is either a guess or a
+        # leak, and both should be dropped.
         return frozenset(name for name in names if name)
 
     @property
@@ -114,16 +116,55 @@ class EpisodeView:
         return artifact_checksum(self.serialize())
 
     def serialize(self) -> str:
-        """The index as the model will read it. Same input, same string."""
+        """The index as the model will read it. Same input, same string.
+
+        ``candidate_id`` is **rewritten to its label** on the way out.
+        The field is there for a renderer, which needs the real id to
+        put a name back on screen, and dumping the object whole put that
+        id in front of the model — which then wrote twelve-character
+        hashes into sentences nobody can read.
+        """
+        rendered = []
+        for fact in self._facts:
+            row = fact.model_dump(mode="json")
+            if row.get("candidate_id"):
+                row["candidate_id"] = self._aliases.label_for(row["candidate_id"])
+            # A scope is built from an id in several places; rewriting
+            # it here means a new one added later cannot leak by
+            # forgetting to.
+            scope = row.get("scope") or ""
+            for value, label in self._aliases.by_value.items():
+                if value and value in scope:
+                    scope = scope.replace(value, label)
+            if scope:
+                row["scope"] = scope
+            rendered.append(row)
         return canonical_json(
             {
                 "episode": self._packet.episode_context_id,
-                "facts": [fact.model_dump(mode="json") for fact in self._facts],
+                "facts": rendered,
             }
         )
 
 
-def _verdict_facts(packet: EpisodePacket) -> list[Fact]:
+def _labelled(text: str, aliases: Aliases) -> str:
+    """One sentence the platform wrote, with real names swapped for labels.
+
+    The detail on a contrast is built by the packet, which works in real
+    ids because that is what a renderer needs. It also becomes a fact
+    label, which is text the model reads — so the swap happens here, at
+    the one boundary between the two.
+
+    Longest first: a substring replacement that ran shortest-first would
+    rewrite the beginning of a longer id and leave its tail behind.
+    """
+    for value in sorted(aliases.by_value, key=len, reverse=True):
+        if value and value in text:
+            text = text.replace(value, aliases.by_value[value])
+    return text
+
+
+def _verdict_facts(packet: EpisodePacket, aliases: Aliases) -> list[Fact]:
     """Who won, as facts nothing may contradict.
 
     ``subject`` is ``None`` throughout: a verdict is an arithmetic over
@@ -155,7 +196,7 @@ def _verdict_facts(packet: EpisodePacket) -> list[Fact]:
                 ref="verdict:winner",
                 kind="observation",
                 label="the candidate this episode went to",
-                value=verdict.winner,
+                value=aliases.label_for(verdict.winner),
                 candidate_id=verdict.winner,
                 scope=scope,
             )
@@ -165,7 +206,7 @@ def _verdict_facts(packet: EpisodePacket) -> list[Fact]:
                 ref="verdict:loser",
                 kind="observation",
                 label="the candidate this episode went against",
-                value=verdict.loser,
+                value=aliases.label_for(verdict.loser),
                 candidate_id=verdict.loser,
                 scope=scope,
             )
@@ -215,10 +256,7 @@ def _diagnosis_facts(packet: EpisodePacket, aliases: Aliases) -> list[Fact]:
     facts: list[Fact] = []
     scope = f"episode:{packet.episode_context_id}"
     for diagnosis in packet.diagnoses:
-        # The platform's own id, not a label: a candidate id is a hash
-        # this side computed, and the strings a third party wrote are
-        # the component names inside the stack.
-        label = diagnosis.candidate_id
+        label = aliases.label_for(diagnosis.candidate_id)
         if diagnosis.outcome is not None:
             outcome = diagnosis.outcome
             for field, unit in (
@@ -329,7 +367,7 @@ def _contrast_facts(
             Fact(
                 ref=ref,
                 kind="contrast",
-                label=contrast.detail,
+                label=_labelled(contrast.detail, aliases),
                 value=contrast.strength,
                 subject=contrast.subject,
                 candidate_id=contrast.against_candidate_id,
@@ -353,7 +391,7 @@ def _contrast_facts(
             Fact(
                 ref=f"ruled_out:{withheld.kind}:{position}",
                 kind="observation",
-                label=withheld.detail,
+                label=_labelled(withheld.detail, aliases),
                 value=withheld.reason,
                 scope=scope,
             )
@@ -372,7 +410,7 @@ def _timeline_facts(packet: EpisodePacket, aliases: Aliases) -> list[Fact]:
     facts: list[Fact] = []
     scope = f"episode:{packet.episode_context_id}"
     for timeline in packet.timelines:
-        label = timeline.candidate_id
+        label = aliases.label_for(timeline.candidate_id)
         for point in timeline.points:
             base = f"episode:{packet.episode_context_id}/{label}/{point.clock}/{point.mark:g}"
             for field, unit in (
@@ -410,10 +448,20 @@ def build_episode_view(
     string a third party wrote, and the only safe place for it is behind
     a name the platform chose.
     """
+    # **Candidate ids are labelled as well as component names.**
+    # They are hashes this platform computed rather than strings a third
+    # party wrote, so they are not an injection risk — which is why the
+    # first cut let them through. Two things that reasoning missed. A
+    # sentence naming ``e1251e42a20b`` is a sentence nobody can read,
+    # and it is what the model writes when that is what it was shown.
+    # And rule 2 has to admit whatever the packet calls a name, so a
+    # twelve-character hash in a statement reads to the guard as an
+    # identifier and to a person as a number.
     resolved = aliases or label_components(
         name
         for stack in packet.candidates
         for name in (
+            stack.candidate_id,
             stack.global_planner,
             stack.local_controller,
             stack.local_controller_config,
@@ -421,7 +469,7 @@ def build_episode_view(
     )
 
     facts: list[Fact] = []
-    facts.extend(_verdict_facts(packet))
+    facts.extend(_verdict_facts(packet, resolved))
     facts.extend(_diagnosis_facts(packet, resolved))
     contrast_facts, _ = _contrast_facts(packet, resolved)
     facts.extend(contrast_facts)
@@ -429,7 +477,7 @@ def build_episode_view(
 
     scope = f"episode:{packet.episode_context_id}"
     for stack in packet.candidates:
-        label = stack.candidate_id
+        label = resolved.label_for(stack.candidate_id)
         for field in ("global_planner", "local_controller", "local_controller_config"):
             facts.append(
                 Fact(
@@ -438,7 +486,7 @@ def build_episode_view(
                     label=f"{field.replace('_', ' ')} of {label}",
                     value=resolved.label_for(getattr(stack, field)),
                     candidate_id=stack.candidate_id,
-                    scope=f"candidate:{stack.candidate_id}",
+                    scope=f"candidate:{label}",
                 )
             )
 

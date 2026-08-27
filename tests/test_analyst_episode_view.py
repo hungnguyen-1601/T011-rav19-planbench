@@ -63,7 +63,7 @@ def proposal(**overrides: object) -> HypothesisProposal:
         "proposed_subject": "local_controller",
         "supports": (
             EvidenceRef(ref="contrast:detection_only_on_loser:1", kind="contrast"),
-            EvidenceRef(ref="obs:stuck_cluster:B@ep-004", kind="observation"),
+            EvidenceRef(ref=observation_ref(), kind="observation"),
         ),
     }
     fields.update(overrides)
@@ -76,6 +76,20 @@ def guarded(item: HypothesisProposal, *, bearing: str, view: EpisodeView | None 
         view or view_of(),
         catalog=TOOL_CATALOG,
         bearings={item.hypothesis_id: bearing},
+    )
+
+
+def label_of(candidate_id: str) -> str:
+    """What the model calls that candidate. It never sees the id."""
+    return view_of().aliases.label_for(candidate_id)
+
+
+def observation_ref() -> str:
+    """The detection ref this packet carries, label and all."""
+    return next(
+        fact.ref
+        for fact in view_of().facts
+        if fact.ref.startswith("obs:stuck_cluster:") and "/" not in fact.ref
     )
 
 
@@ -117,8 +131,28 @@ class TestWhatTheIndexHolds:
         serialised = view.serialize()
         assert "astar" not in serialised
         assert "rrtstar" not in serialised
-        assert {"C1", "C2"} <= view.identifiers, "component names travel as labels"
-        assert {"A", "B"} <= view.identifiers, "candidate ids are the platform's own"
+        assert len(view.identifiers) > 2, "component names travel as labels"
+
+    def test_the_model_never_sees_a_candidate_id_either(self) -> None:
+        """Not an injection risk — an id is a hash this side computed —
+        and let through for that reason at first. Two things that missed:
+        a sentence naming ``e1251e42a20b`` is one nobody can read, and it
+        is exactly what a model writes when that is what it was shown;
+        and rule 2 must admit whatever the packet calls a name, so a
+        twelve-character hash in a statement reads to the guard as an
+        identifier and to a person as a number. Both were seen on a real
+        run before this test existed."""
+        view = view_of()
+        # The `Fact` objects keep the real id: a renderer has to put a
+        # name back on screen, and that is what the field is for. What
+        # is checked is the **serialised** form, which is the only thing
+        # the model reads.
+        serialised = view.serialize()
+        assert "A" not in view.identifiers
+        assert "B" not in view.identifiers
+        assert '"A"' not in serialised
+        assert '"B"' not in serialised
+        assert '"C1"' in serialised, "the label took its place"
 
     def test_two_facts_may_not_claim_one_ref(self) -> None:
         packet = build_packet()
@@ -165,7 +199,7 @@ class TestRunContextCannotBeCited:
 class TestRuleNineTheVerdictStands:
     def test_a_statement_handing_the_episode_to_the_loser_is_dropped(self) -> None:
         result = guarded(
-            proposal(hypothesis_statement="B outperforms the other side here"),
+            proposal(hypothesis_statement=f"{label_of('B')} outperforms the other side here"),
             bearing=CONTRAST,
         )
         assert "contradicts_verdict" in {item.rule for item in result.blocked}
@@ -177,7 +211,7 @@ class TestRuleNineTheVerdictStands:
         side the episode went against, which is most of what there is to say.
         """
         result = guarded(
-            proposal(hypothesis_statement="B stalls where the other side did not"),
+            proposal(hypothesis_statement=f"{label_of('B')} stalls where the other side did not"),
             bearing=DIAGNOSIS,
         )
         assert "contradicts_verdict" not in {item.rule for item in result.blocked}
@@ -206,8 +240,8 @@ class TestRuleNineTheVerdictStands:
         )
         outcome_result = guarded(
             proposal(
-                hypothesis_statement="B outperforms the other side here",
-                supports=(EvidenceRef(ref="obs:stuck_cluster:B@ep-004", kind="observation"),),
+                hypothesis_statement=f"{label_of('B')} outperforms the other side here",
+                supports=(EvidenceRef(ref=observation_ref(), kind="observation"),),
             ),
             bearing=DIAGNOSIS,
             view=view,
@@ -244,7 +278,7 @@ class TestRuleTenTheContrastContract:
             proposal(
                 supports=(
                     EvidenceRef(ref="contrast:component_differs:2", kind="contrast"),
-                    EvidenceRef(ref="obs:stuck_cluster:B@ep-004", kind="observation"),
+                    EvidenceRef(ref=observation_ref(), kind="observation"),
                 ),
             ),
             bearing=CONTRAST,
@@ -273,7 +307,7 @@ class TestRuleTenTheContrastContract:
         )
         missing, annotation = contract_terms_met(rewritten, view_of())
         assert missing == ()
-        assert annotation.occurrence_evidence_refs == ("obs:stuck_cluster:B@ep-004",)
+        assert annotation.occurrence_evidence_refs == (observation_ref(),)
 
     def test_a_diagnosis_is_not_asked_to_meet_the_contract(self) -> None:
         result = guarded(proposal(supports=()), bearing=DIAGNOSIS)

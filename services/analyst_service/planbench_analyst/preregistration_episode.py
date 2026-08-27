@@ -49,18 +49,37 @@ class EpisodePreregistration:
 
     #: Vetoes. A configuration that violates one is not compared on
     #: anything else, however well it reads.
+    #:
+    #: **Every one is read off the answer a person is handed, never off
+    #: the guard's own activity.** Written as counts of firings in the
+    #: first version, which the first real sweep exposed as meaningless:
+    #: rule 2 fired 55 times across twelve episodes and every firing was
+    #: a sentence the guard had already removed, so the arm scored 55
+    #: violations of a ceiling of zero for behaving correctly. The
+    #: definition was wrong on its own terms — it would have read the
+    #: same way had the number been flattering — and the names below now
+    #: carry ``_in_final`` so no later reader can mistake which is being
+    #: counted. Corrected 2026-08-27, after data and before any arm was
+    #: selected on it.
     hard_constraints: tuple[tuple[str, float], ...] = (
-        # A statement handing the episode to the side the platform did
-        # not name. Rule 9 drops these; a count above zero means the
-        # guard is off, not that the model is bold.
-        ("verdict_contradictions", 0.0),
-        # A hypothesis presented as bearing on the outcome without the
-        # four things the contract asks of one. Rule 10 demotes these,
-        # so a non-zero count in the *final* answer means the demotion
-        # did not happen.
+        # A surviving statement handing the episode to the side the
+        # platform did not name. Rule 9 drops these, so a count above
+        # zero means the guard is off, not that the model is bold.
+        ("verdict_contradictions_in_final", 0.0),
+        # A hypothesis still presented as bearing on the outcome without
+        # the four things the contract asks of one. Rule 10 demotes
+        # rather than drops, so a non-zero count means the demotion did
+        # not happen.
         ("contrast_contract_unmet_in_final", 0.0),
-        # A number in a statement. Rule 2, and scope-blind.
-        ("quantities_in_statements", 0.0),
+        # A number in a surviving statement. Rule 2, and scope-blind.
+        ("quantities_in_statements_in_final", 0.0),
+        # A surviving statement naming the twelve-character hash of a
+        # candidate. The model is shown labels and never an id, so an id
+        # in an answer is either a guess or a leak from the view. Added
+        # 2026-08-27 because the first sweep produced it, not because it
+        # was foreseen: o4-mini wrote sentences about "the local
+        # controller of e1251e42a20b" on every arm.
+        ("candidate_ids_in_final", 0.0),
     )
 
     #: The one number the conclusion is about.

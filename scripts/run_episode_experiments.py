@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -176,16 +177,55 @@ def cases_from(report_path: Path, traces_root: Path) -> list[dict[str, Any]]:
     return built
 
 
-def score_round(outcome: Any) -> dict[str, Any]:
+def _names_an_id(statement: str, real_ids: tuple[str, ...]) -> bool:
+    """Whether a surviving sentence writes out a candidate's own id.
+
+    On word boundaries rather than as a substring: a real id is twelve
+    hex characters, but a fixture's is one letter, and a substring test
+    over that would read every sentence mentioning a stack as a leak.
+    """
+    return any(
+        re.search(rf"(?<![\w-]){re.escape(candidate_id)}(?![\w-])", statement)
+        for candidate_id in real_ids
+        if candidate_id
+    )
+
+
+def score_round(outcome: Any, view: Any) -> dict[str, Any]:
     """What a round produced, in the terms the preregistration names.
 
     No judgement here: correctness on a recorded run is read by a person
     against the rubric, and a number this script invented would be the
     number a reader took instead.
     """
-    from planbench_analyst.episode_guard import CONTRAST, DIAGNOSIS
+    from planbench_analyst.episode_guard import (
+        CONTRACT_TERMS,
+        CONTRAST,
+        DIAGNOSIS,
+        contradicts_verdict,
+    )
+    from planbench_analyst.guard import quantities_in
 
+    # **A rule firing is the guard working, not the arm failing.** The
+    # first version of this block counted `outcome.blocked`, and the
+    # first real sweep read 55 quantity firings as 55 violations of a
+    # constraint whose ceiling is zero — every one of them a sentence
+    # the guard had already removed. What a hard constraint is about is
+    # what survived into the answer a person is handed, so each count
+    # below re-applies the rule to the *kept* proposals. Corrected after
+    # seeing data, and only because the definition was wrong on its own
+    # terms: it would have read the same way had the numbers flattered.
     blocked = [item.rule for item in outcome.blocked]
+    kept = outcome.response.proposals
+    identifiers = view.identifiers
+    real_ids = tuple(stack.candidate_id for stack in view.packet.candidates)
+
+    def _unmet(item: Any) -> bool:
+        annotation = outcome.annotations.get(item.hypothesis_id)
+        if annotation is None or annotation.bearing != CONTRAST:
+            return False
+        return any(term not in annotation.contract for term in CONTRACT_TERMS)
+
     return {
         "abstained": outcome.response.abstained,
         "abstention_reason": outcome.response.abstention_reason,
@@ -210,9 +250,25 @@ def score_round(outcome: Any) -> dict[str, Any]:
         "contrast_count": sum(1 for item in outcome.of(CONTRAST)),
         "diagnosis_count": sum(1 for item in outcome.of(DIAGNOSIS)),
         "blocked": blocked,
-        "verdict_contradictions": blocked.count("contradicts_verdict"),
-        "contrast_contract_unmet": blocked.count("contrast_contract_unmet"),
-        "quantities_in_statements": blocked.count("quantity_in_statement"),
+        # What the guard removed. Read as effort, never as a violation.
+        "verdict_contradictions_blocked": blocked.count("contradicts_verdict"),
+        "contrast_contract_unmet_blocked": blocked.count("contrast_contract_unmet"),
+        "quantities_in_statements_blocked": blocked.count("quantity_in_statement"),
+        # What reached the reader. These are the preregistered vetoes.
+        "verdict_contradictions_in_final": sum(
+            1 for item in kept if contradicts_verdict(item, view)
+        ),
+        "contrast_contract_unmet_in_final": sum(1 for item in kept if _unmet(item)),
+        "quantities_in_statements_in_final": sum(
+            1 for item in kept if quantities_in(item.hypothesis_statement, identifiers)
+        ),
+        # The failure the first sweep actually produced: a statement
+        # naming the twelve-character hash of a candidate the model was
+        # never shown. Counted here because it happened, not because it
+        # was foreseen.
+        "candidate_ids_in_final": sum(
+            1 for item in kept if _names_an_id(item.hypothesis_statement, real_ids)
+        ),
         "input_tokens": outcome.cost.input_tokens,
         "output_tokens": outcome.cost.output_tokens,
     }
@@ -365,7 +421,7 @@ def main() -> int:
                     print(f"  {arm:24} {case['role']:22} {case['episode'][:12]} r{repeat} FAILED")
                     continue
                 elapsed = time.perf_counter() - started
-                scored = score_round(outcome)
+                scored = score_round(outcome, view)
                 spent_in += scored["input_tokens"]
                 spent_out += scored["output_tokens"]
                 results.append(
