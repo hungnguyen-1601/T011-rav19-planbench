@@ -37,6 +37,12 @@ import {
   pageWindow,
 } from "@/lib/episodePages";
 import { ProgressSync, type SyncSlot } from "@/components/ProgressSync";
+import { EpisodeVerdictPanel, type VerdictSlot } from "@/components/EpisodeVerdictPanel";
+import {
+  answersCurrentSelection,
+  selectedEpisode,
+  type SelectionOrigin,
+} from "@/lib/episodeVerdict";
 import { commonProgress, panelCandidates, sideProgress, sideTime } from "@/lib/replaySync";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { panelPlan } from "@/lib/explainPanel";
@@ -54,6 +60,7 @@ import {
   withdrawConfig,
   getDecision,
   getTrace,
+  getEpisodeVerdict,
   getReplaySync,
   getExemplars,
   noCardReason,
@@ -494,6 +501,13 @@ function TracePanel({ run }: { run: DecisionRun }) {
   const heading = headingField(run.report?.candidates ?? []);
   const episodes = run.report?.sample?.episode_context_ids ?? [];
   const [episodeId, setEpisodeId] = useState(episodes[0] ?? "");
+  /** **How** that episode came to be selected. The replay opens on the
+   *  first one so the canvases are not blank; nobody pointed at it.
+   *  Anything that answers "the episode the reader is looking at" has
+   *  to tell the two apart, or it explains an episode never asked
+   *  about — with the confidence of one that was. */
+  const [selectionOrigin, setSelectionOrigin] = useState<SelectionOrigin>("default");
+  const [verdict, setVerdict] = useState<VerdictSlot>({ state: "idle" });
   const [slots, setSlots] = useState<Record<string, TraceSlot>>({});
   const [mode, setMode] = useState<"flat" | "raised">("flat");
   /* **One camera for the pair.** Each `Scene25D` used to keep its own
@@ -611,6 +625,43 @@ function TracePanel({ run }: { run: DecisionRun }) {
     };
   }, [candidates, episodeId, run.id]);
 
+  /** The episode verdict, for the episode a reader **chose**.
+   *
+   * Aborted when the selection moves, and checked again at render: a
+   * reader clicks through episodes faster than this answers, and the
+   * request that started earliest is the one that lands last often
+   * enough to show episode A's finding under episode B's heading.
+   */
+  useEffect(() => {
+    const chosen = selectedEpisode({ episodeId, origin: selectionOrigin });
+    if (!chosen || candidates.length < 2) {
+      setVerdict({ state: "idle" });
+      return;
+    }
+    const controller = new AbortController();
+    setVerdict({ state: "loading" });
+    getEpisodeVerdict(
+      run.id,
+      chosen,
+      candidates[0].candidate_id,
+      candidates[1].candidate_id,
+      controller.signal,
+    )
+      .then((view) => setVerdict({ state: "ready", view }))
+      .catch((caught: unknown) => {
+        if (controller.signal.aborted) return;
+        const message = caught instanceof Error ? caught.message : String(caught);
+        // A run that ranked nobody is a state, not a fault: there is no
+        // pair to compare, and saying so is the answer.
+        setVerdict(
+          message.includes("409")
+            ? { state: "unavailable", message }
+            : { state: "error", message },
+        );
+      });
+    return () => controller.abort();
+  }, [candidates, episodeId, run.id, selectionOrigin]);
+
   const traces = candidates.flatMap((candidate) => {
     const slot = slots[candidate.candidate_id];
     return slot?.state === "ready" ? [slot.trace] : [];
@@ -672,6 +723,7 @@ function TracePanel({ run }: { run: DecisionRun }) {
 
   const chooseEpisode = (episode: string, scroll = false) => {
     setEpisodeId(episode);
+    setSelectionOrigin("user");
     if (scroll) window.setTimeout(() => comparisonRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
 
@@ -741,6 +793,33 @@ function TracePanel({ run }: { run: DecisionRun }) {
           <ProgressSync sync={sync} scan={scan} span={span} onScan={setScan} candidates={candidates} />
         )}
         <EpisodeLegend />
+        {/* **Three separate readings, never one heading.** What the
+            episode went to, what happened on each side, and which
+            differences carry evidence. A fault on the winning side is a
+            diagnosis; presented under the difference heading it would
+            explain the other side's loss with the winner's problem.
+
+            Rendered only for an episode a reader chose: the replay opens
+            on the first one so the canvases are not blank, and that is a
+            default rather than a question anybody asked. */}
+        <EpisodeVerdictPanel
+          slot={
+            answersCurrentSelection(
+              verdict.state === "ready" ? verdict.view : null,
+              {
+                episode: selectedEpisode({ episodeId, origin: selectionOrigin }),
+                candidateA: candidates[0]?.candidate_id ?? "",
+                candidateB: candidates[1]?.candidate_id ?? "",
+              },
+            )
+              ? verdict
+              : verdict.state === "ready"
+                ? { state: "loading" }
+                : verdict
+          }
+          episodeSelected={Boolean(selectedEpisode({ episodeId, origin: selectionOrigin }))}
+          onSeek={seekFrom}
+        />
         <div className="episode-comparison-grid">
           {/* The same choice the comparison grid made. Two panels on one
               page naming a candidate by different fields is worse than
