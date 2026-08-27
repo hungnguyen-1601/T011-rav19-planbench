@@ -32,23 +32,32 @@ every contrast that needs a losing side is withheld with
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from planbench_explanation.case_packet import MeasuredValue
+from planbench_explanation.case_packet import (
+    STANDING_UNKNOWNS,
+    EpisodeTimeline,
+    MeasuredValue,
+    RobotFacts,
+)
 from planbench_explanation.contrast import CandidateComponents
 from planbench_explanation.detectors import (
     SEVERITY,
     Detection,
     severity_of,
 )
+from planbench_explanation.ledger import KnownUnknown
+from planbench_explanation.map_features import RouteFeatures
 from planbench_explanation.propositions import (
     PropositionType,
     effect_direction,
 )
 from planbench_explanation.subjects import Subject
+from planbench_explanation.versioning import ExplanationArtifactHeader
+from planbench_schemas.identity import canonical_json
 
 EPISODE_PACKET_SCHEMA_VERSION = "0.1.0"
 
@@ -745,3 +754,323 @@ def build_contrasts(
 
     found.sort(key=lambda item: (0 if item.strength == "support" else 1, item.kind))
     return tuple(found), tuple(withheld)
+
+
+# --------------------------------------------------------------------------
+# What blocks a claim here, which is not what blocks one for the run
+# --------------------------------------------------------------------------
+
+#: Gaps that hold whatever scope is being asked about.
+#:
+#: Both members are properties of the platform, not of a run: H4's
+#: accounting is not finished, and the PPO golden runtime is not
+#: recorded. Neither becomes true for one episode because that episode
+#: happened to go well.
+GLOBAL_UNKNOWN_IDS: frozenset[str] = frozenset(unknown.id for unknown in STANDING_UNKNOWNS)
+
+UnknownScope = Literal["global", "run_statistical", "episode"]
+
+
+class ScopedUnknown(BaseModel):
+    """A known unknown, and whether it has any force at episode scope.
+
+    **A run-level gap does not automatically block an episode claim.**
+    The run may lack the prevalence to call a pattern a property of the
+    pairing while this episode has a sidecar and a checker that
+    reproduced the refusal. Carrying the run's blocks across unchanged
+    would drop exactly the claims this layer was built to allow, and it
+    would do it silently — the guard's rule 3 reports "the packet blocks
+    that claim type" either way.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    unknown: KnownUnknown
+    scope: UnknownScope
+
+    @property
+    def blocks(self) -> bool:
+        """Whether this one may remove a claim type at episode scope."""
+        return self.scope in ("global", "episode")
+
+
+def classify_unknown(unknown: KnownUnknown) -> ScopedUnknown:
+    """Which of the three scopes a gap belongs to.
+
+    A table rather than a field on :class:`KnownUnknown`, because that
+    model is the wire contract between the platform and an external
+    analyst: widening it would bump the explanation schema and rebuild
+    every fixture, to record something only this layer asks about.
+    """
+    if unknown.id in GLOBAL_UNKNOWN_IDS:
+        return ScopedUnknown(unknown=unknown, scope="global")
+    return ScopedUnknown(unknown=unknown, scope="run_statistical")
+
+
+def episode_unknowns(
+    *,
+    sidecar_present: bool,
+    route: RouteFeatures | None,
+    robot: RobotFacts | None,
+    has_clearance: bool,
+    has_latency: bool,
+) -> tuple[KnownUnknown, ...]:
+    """The gaps **this episode** has, recomputed from what it recorded.
+
+    Each one is a fact about the recording, checked here rather than
+    inherited: no sidecar means no replay can be reproduced, no route
+    geometry means a passage width cannot be compared to a footprint,
+    and a trace missing a column means the detector reading it never
+    ran and so never found anything.
+    """
+    gaps: list[KnownUnknown] = []
+    if not sidecar_present:
+        gaps.append(
+            KnownUnknown(
+                id="episode_planning_inputs_unavailable",
+                blocks_claim_types=("sampling_budget_insufficiency",),
+                source="no planning-input sidecar was recorded for this episode",
+            )
+        )
+    width = None
+    if robot is not None:
+        # Declared if the packet builder wrote one, derived from radius
+        # and margin otherwise. Deriving here rather than refusing keeps
+        # the gap honest: the parts are on the packet, and a claim that
+        # the passage was too narrow is checkable from them.
+        width = robot.required_passage_width_m or robot.derived_passage_width_m
+    if route is None or route.narrowest_passage_m is None or width is None:
+        gaps.append(
+            KnownUnknown(
+                id="episode_route_geometry_unavailable",
+                blocks_claim_types=("geometric_infeasibility",),
+                source=(
+                    "this episode records no measured passage width or no inflated "
+                    "footprint, so no passage can be compared against one"
+                ),
+            )
+        )
+    if not has_clearance:
+        gaps.append(
+            KnownUnknown(
+                id="episode_clearance_unrecorded",
+                blocks_claim_types=("clearance_refusal",),
+                source="the trace for this episode carries no clearance column",
+            )
+        )
+    if not has_latency:
+        gaps.append(
+            KnownUnknown(
+                id="episode_latency_unrecorded",
+                blocks_claim_types=("expansion_latency_association",),
+                source="the trace for this episode carries no planner latency column",
+            )
+        )
+    return tuple(gaps)
+
+
+# --------------------------------------------------------------------------
+# The packet
+# --------------------------------------------------------------------------
+
+
+class EpisodePacket(BaseModel):
+    """Everything an analyst may read about one episode, and no more.
+
+    Deliberately **not** a :class:`CasePacket` with a narrower scope. The
+    case packet's validators require a waterfall for exemplars and at
+    least two candidates for a comparison, and its facts are set-level:
+    ΔU over thirty episodes, an observation seen in nine of them. None of
+    that is available here and none of it should be — a packet about one
+    episode that carried the run's aggregates would let a statement about
+    this episode rest on a number from the other twenty-nine.
+
+    What does travel from the run is identity only: the header, the task,
+    the components. Those name things; they assert nothing about this
+    episode. Measurements over the whole run are reachable through a tool
+    when a round asks for them, and arrive labelled with run scope.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
+
+    header: ExplanationArtifactHeader
+    episode_packet_schema_version: str = EPISODE_PACKET_SCHEMA_VERSION
+    run_id: str = Field(min_length=1)
+    #: The run's own case packet, by checksum. Pins what "the run" meant
+    #: without copying any of it: a tool that serves run-level facts must
+    #: be reading the same artifact this was built beside.
+    run_packet_checksum: str = ""
+    episode_context_id: str = Field(min_length=1)
+
+    verdict: EpisodeVerdict
+    diagnoses: tuple[EpisodeDiagnosis, ...]
+    contrasts: tuple[EpisodeContrast, ...] = ()
+    ruled_out: tuple[RuledOut, ...] = ()
+
+    candidates: tuple[CandidateComponents, ...]
+    robot: RobotFacts | None = None
+    route: RouteFeatures | None = None
+    timelines: tuple[EpisodeTimeline, ...] = ()
+    known_unknowns: tuple[KnownUnknown, ...] = ()
+    #: Run-level gaps, carried for the reader and stripped of force.
+    run_context_unknowns: tuple[KnownUnknown, ...] = ()
+    #: What the budgeter dropped, and why. Never silent.
+    omissions: tuple[str, ...] = ()
+    evidence_class: str = "production"
+
+    @model_validator(mode="after")
+    def _check(self) -> EpisodePacket:
+        if len(self.candidates) != 2:
+            raise EpisodePacketRefusal(
+                "an episode packet explains a comparison, and a comparison needs "
+                f"two candidates; this one has {len(self.candidates)}"
+            )
+        named = {item.candidate_id for item in self.candidates}
+        if named != {self.verdict.candidate_a, self.verdict.candidate_b}:
+            raise EpisodePacketRefusal(
+                f"the packet carries components for {sorted(named)} and a verdict about "
+                f"{sorted({self.verdict.candidate_a, self.verdict.candidate_b})}"
+            )
+        if self.verdict.episode_context_id != self.episode_context_id:
+            raise EpisodePacketRefusal(
+                f"the packet is about {self.episode_context_id!r} and the verdict about "
+                f"{self.verdict.episode_context_id!r}"
+            )
+        for timeline in self.timelines:
+            if timeline.episode_context_id != self.episode_context_id:
+                raise EpisodePacketRefusal(
+                    f"a timeline for {timeline.episode_context_id!r} is in the packet "
+                    f"for {self.episode_context_id!r}"
+                )
+            if timeline.candidate_id not in named:
+                raise EpisodePacketRefusal(
+                    f"a timeline names {timeline.candidate_id!r}, which is not one of "
+                    f"{sorted(named)}"
+                )
+        for contrast in self.contrasts:
+            if contrast.against_candidate_id not in named:
+                raise EpisodePacketRefusal(
+                    f"a contrast is stated against {contrast.against_candidate_id!r}, "
+                    f"which is not one of {sorted(named)}"
+                )
+        return self
+
+    @property
+    def blocked_claim_types(self) -> tuple[PropositionType, ...]:
+        """What may not be claimed **here**.
+
+        Global gaps and this episode's own. Run-statistical gaps are in
+        :attr:`run_context_unknowns` and carry no force: they describe
+        what thirty episodes could not settle, and this is one episode
+        with its own recording.
+        """
+        blocked: set[PropositionType] = set()
+        for unknown in self.known_unknowns:
+            blocked.update(unknown.blocks_claim_types)
+        return tuple(sorted(blocked))  # type: ignore[return-value]
+
+
+#: What the budgeter keeps, best first. It drops from the **other** end.
+#:
+#: Verdict and caveat are absent because they are never dropped. The rest
+#: is ranked by what a reader could not reconstruct without it: a
+#: detection is an observation nothing else in the packet records, while
+#: ``outcome_differs`` and ``component_differs`` restate rows and
+#: identifiers that are in the packet anyway — which is why the weak
+#: contrasts go before the diagnoses and not after.
+BUDGET_KEEP_ORDER: tuple[str, ...] = (
+    "supported_contrast",
+    "diagnosis",
+    "weak_contrast",
+    "divergence",
+    "timeline",
+)
+
+
+class BudgetedPacket(BaseModel):
+    """A packet that fits, and an account of what it cost to make it fit."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    packet: EpisodePacket
+    dropped: tuple[str, ...] = ()
+
+
+def packet_bytes(packet: EpisodePacket) -> int:
+    """The packet's size, measured the way it will be serialised."""
+    return len(canonical_json(packet.model_dump(mode="json")).encode("utf-8"))
+
+
+def fit_to_budget(
+    packet: EpisodePacket,
+    *,
+    max_bytes: int,
+    measure: Callable[[EpisodePacket], int] = packet_bytes,
+) -> BudgetedPacket:
+    """Drop whole findings until the packet fits, and say which.
+
+    Drops from the **cheap end** of :data:`BUDGET_KEEP_ORDER`: timelines
+    first, supported contrasts last and only when nothing else is left
+    to give.
+
+    **Atomic groups.** Dropping the diagnoses removes the detections a
+    supported contrast rests on, so it happens only after the weak
+    contrasts have gone and never while a supported contrast is still
+    the thing being kept — a packet that states a difference and carries
+    nothing that shows it is worse than one that says less.
+
+    The checksum a caller pins is taken **after** this runs, for the
+    obvious reason: what a round was given is what was left.
+    """
+    if max_bytes <= 0:
+        raise EpisodePacketRefusal("a byte budget of zero leaves no room for the verdict")
+
+    current = packet
+    dropped: list[str] = []
+    for stage in reversed(BUDGET_KEEP_ORDER):
+        if measure(current) <= max_bytes:
+            break
+        trimmed = _drop_stage(current, stage)
+        if trimmed is None:
+            continue
+        current = trimmed
+        dropped.append(stage)
+
+    return BudgetedPacket(
+        packet=current.model_copy(
+            update={"omissions": (*current.omissions, *(f"dropped:{name}" for name in dropped))}
+        ),
+        dropped=tuple(dropped),
+    )
+
+
+def _drop_stage(packet: EpisodePacket, stage: str) -> EpisodePacket | None:
+    """One stage of the budget, or ``None`` when there was nothing there."""
+    if stage == "timeline":
+        if not packet.timelines:
+            return None
+        return packet.model_copy(update={"timelines": ()})
+
+    if stage == "weak_contrast":
+        weak = tuple(item for item in packet.contrasts if item.strength == "context")
+        if not weak:
+            return None
+        kept = tuple(item for item in packet.contrasts if item.strength != "context")
+        return packet.model_copy(update={"contrasts": kept})
+
+    if stage == "diagnosis":
+        if not any(item.detections for item in packet.diagnoses):
+            return None
+        # The outcome rows stay: they are what the verdict rests on, and
+        # they cost a fraction of what the detections do.
+        stripped = tuple(item.model_copy(update={"detections": ()}) for item in packet.diagnoses)
+        return packet.model_copy(update={"diagnoses": stripped})
+
+    if stage == "supported_contrast":
+        supported = tuple(item for item in packet.contrasts if item.strength == "support")
+        if not supported:
+            return None
+        kept = tuple(item for item in packet.contrasts if item.strength != "support")
+        return packet.model_copy(update={"contrasts": kept})
+
+    return None

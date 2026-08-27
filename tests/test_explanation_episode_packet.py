@@ -19,6 +19,11 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from planbench_explanation.case_packet import (
+    STANDING_UNKNOWNS,
+    EpisodeTimeline,
+    RobotFacts,
+)
 from planbench_explanation.contrast import CandidateComponents
 from planbench_explanation.detectors import Detection
 from planbench_explanation.episode_packet import (
@@ -30,18 +35,30 @@ from planbench_explanation.episode_packet import (
     VERDICT_HAS_NO_DIRECTION,
     CandidateOutcome,
     EpisodeContrast,
+    EpisodePacket,
     EpisodePacketRefusal,
     EpisodeVerdict,
     build_contrasts,
     build_diagnoses,
     build_verdict,
+    classify_unknown,
+    episode_unknowns,
+    fit_to_budget,
     outcome_from_row,
+    packet_bytes,
 )
+from planbench_explanation.knowledge import KNOWLEDGE_BASE_VERSION
+from planbench_explanation.ledger import KnownUnknown
+from planbench_explanation.map_features import RouteFeatures
 from planbench_explanation.propositions import (
     ASSERTABLE_PROPOSITIONS,
     EFFECT_DIRECTION,
     effect_direction,
 )
+from planbench_explanation.versioning import ExplanationArtifactHeader
+from planbench_schemas.identity import canonical_json
+
+TOOL_CATALOG_VERSION_FOR_HEADER = "3.4.0"
 
 EPISODE = "ep-004"
 EPSILON = 0.005
@@ -414,6 +431,13 @@ class TestReadingTheScoredRow:
         read = outcome_from_row({"success": False, "collision_count": 1}, candidate_id="B")
         assert read.decision_utility is None
 
+    def test_a_row_whose_utility_is_not_a_number_reads_as_absent(self) -> None:
+        read = outcome_from_row(
+            {"success": True, "collision_count": 0, "episode_decision_utility": float("nan")},
+            candidate_id="A",
+        )
+        assert read.decision_utility is None
+
     def test_the_mechanism_table_covers_the_detectors_that_map(self) -> None:
         """Same six pairs the model-free floor uses. A seventh detector
         arriving without an entry means it can be diagnosed and not offered
@@ -427,3 +451,193 @@ class TestReadingTheScoredRow:
             "latency_spike",
             "replan_storm",
         }
+
+
+class TestWhatBlocksAClaimHere:
+    """A run-level gap is not automatically an episode-level one."""
+
+    def test_a_platform_gap_holds_at_every_scope(self) -> None:
+        for unknown in STANDING_UNKNOWNS:
+            assert classify_unknown(unknown).scope == "global"
+            assert classify_unknown(unknown).blocks
+
+    def test_a_run_statistical_gap_carries_no_force_here(self) -> None:
+        """The run could not settle a pattern over thirty episodes. This
+        episode has its own recording, and inheriting the run's block would
+        drop exactly the claims this layer was built to allow — silently,
+        because rule 3 reports the packet blocking the type either way."""
+        gap = KnownUnknown(
+            id="prevalence_unavailable",
+            blocks_claim_types=("sampling_budget_insufficiency",),
+            source="fewer episodes than the detector needs to call a pattern",
+        )
+        scoped = classify_unknown(gap)
+        assert scoped.scope == "run_statistical"
+        assert not scoped.blocks
+
+    def test_an_episode_without_a_sidecar_blocks_the_replayable_claim(self) -> None:
+        gaps = episode_unknowns(
+            sidecar_present=False,
+            route=None,
+            robot=None,
+            has_clearance=True,
+            has_latency=True,
+        )
+        blocked = {kind for gap in gaps for kind in gap.blocks_claim_types}
+        assert "sampling_budget_insufficiency" in blocked
+
+    def test_an_episode_that_recorded_everything_blocks_nothing(self) -> None:
+        gaps = episode_unknowns(
+            sidecar_present=True,
+            route=RouteFeatures(
+                narrowest_passage_m=0.9,
+                narrowest_at_progress_m=12.0,
+                narrowest_lower_bound_m=0.9,
+                obstacle_density=0.2,
+                density_band_m=1.0,
+                route_length_m=30.0,
+                unmeasured_samples=0,
+                samples_limited_by_coverage=0,
+            ),
+            robot=RobotFacts(radius_m=0.25, inflation_margin_m=0.08),
+            has_clearance=True,
+            has_latency=True,
+        )
+        assert gaps == ()
+
+    def test_a_missing_column_blocks_the_detector_that_reads_it(self) -> None:
+        """The detector never ran, so it never found anything — which is not
+        the same as having looked and seen nothing."""
+        gaps = episode_unknowns(
+            sidecar_present=True,
+            route=None,
+            robot=None,
+            has_clearance=False,
+            has_latency=False,
+        )
+        blocked = {kind for gap in gaps for kind in gap.blocks_claim_types}
+        assert {"clearance_refusal", "expansion_latency_association"} <= blocked
+
+
+def build_packet(**overrides: object) -> EpisodePacket:
+    scored_a = outcome("A", decision_utility=0.87)
+    scored_b = outcome("B")
+    result = verdict_for(scored_a, scored_b)
+    detections = [detection("stuck_cluster", "B", stopped_seconds=4.1)]
+    contrasts, ruled_out = build_contrasts(
+        verdict=result,
+        outcomes={"A": scored_a, "B": scored_b},
+        components={"A": components("A"), "B": components("B", global_planner="rrtstar")},
+        detections=detections,
+    )
+    fields: dict[str, object] = {
+        "header": ExplanationArtifactHeader.for_current_code(
+            source_manifest_ref="runs/2026-08-27/abc/manifest.json",
+            source_manifest_checksum="a" * 64,
+            detector_version="0.1.0",
+            knowledge_base_version=KNOWLEDGE_BASE_VERSION,
+            tool_catalog_version=TOOL_CATALOG_VERSION_FOR_HEADER,
+        ),
+        "run_id": "run-1",
+        "episode_context_id": EPISODE,
+        "verdict": result,
+        "diagnoses": build_diagnoses(
+            verdict=result,
+            outcomes={"A": scored_a, "B": scored_b},
+            detections=detections,
+        ),
+        "contrasts": contrasts,
+        "ruled_out": ruled_out,
+        "candidates": (components("A"), components("B", global_planner="rrtstar")),
+    }
+    fields.update(overrides)
+    return EpisodePacket(**fields)  # type: ignore[arg-type]
+
+
+class TestThePacket:
+    def test_it_refuses_to_be_about_one_candidate(self) -> None:
+        with pytest.raises((EpisodePacketRefusal, ValidationError)):
+            build_packet(candidates=(components("A"),))
+
+    def test_it_refuses_a_verdict_about_other_candidates(self) -> None:
+        with pytest.raises((EpisodePacketRefusal, ValidationError)):
+            build_packet(candidates=(components("C"), components("D")))
+
+    def test_it_refuses_a_timeline_from_another_episode(self) -> None:
+        stray = EpisodeTimeline(
+            episode_context_id="ep-999",
+            candidate_id="A",
+            role="selected",
+            points=(),
+        )
+        with pytest.raises((EpisodePacketRefusal, ValidationError)):
+            build_packet(timelines=(stray,))
+
+    def test_blocked_types_come_from_the_episode_and_the_platform(self) -> None:
+        packet = build_packet(
+            known_unknowns=(
+                *STANDING_UNKNOWNS,
+                *episode_unknowns(
+                    sidecar_present=False,
+                    route=None,
+                    robot=None,
+                    has_clearance=True,
+                    has_latency=True,
+                ),
+            ),
+            run_context_unknowns=(
+                KnownUnknown(
+                    id="prevalence_unavailable",
+                    blocks_claim_types=("local_minimum_entrapment",),
+                    source="the run has too few episodes to call it a pattern",
+                ),
+            ),
+        )
+        blocked = set(packet.blocked_claim_types)
+        assert "sampling_budget_insufficiency" in blocked, "the episode's own gap holds"
+        assert "candidate_latency_attribution" in blocked, "a platform gap holds everywhere"
+        assert "local_minimum_entrapment" not in blocked, (
+            "a run-statistical gap must not remove a claim this episode can support"
+        )
+
+
+class TestTheBudget:
+    def test_a_packet_that_fits_loses_nothing(self) -> None:
+        assert fit_to_budget(build_packet(), max_bytes=1_000_000).dropped == ()
+
+    def test_it_drops_from_the_cheap_end_first(self) -> None:
+        """Order is a decision, not a rendering detail: a reader can rebuild
+        an outcome difference from rows the packet carries anyway, and cannot
+        rebuild a detection from anything."""
+        packet = build_packet()
+        first = fit_to_budget(packet, max_bytes=packet_bytes(packet) - 1).dropped
+        assert first, "a budget one byte under the size has to drop something"
+        assert "supported_contrast" not in first
+
+    def test_a_supported_contrast_is_the_last_thing_to_go(self) -> None:
+        squeezed = fit_to_budget(build_packet(), max_bytes=1)
+        if "supported_contrast" in squeezed.dropped:
+            assert squeezed.dropped[-1] == "supported_contrast"
+
+    def test_the_verdict_survives_any_budget(self) -> None:
+        """Everything else elaborates on the one thing the reader opened the
+        panel for."""
+        squeezed = fit_to_budget(build_packet(), max_bytes=1)
+        assert squeezed.packet.verdict.winner == "A"
+        assert squeezed.packet.verdict.caveat == EPISODE_VERDICT_CAVEAT
+
+    def test_every_drop_is_written_down(self) -> None:
+        squeezed = fit_to_budget(build_packet(), max_bytes=1)
+        assert squeezed.dropped
+        for name in squeezed.dropped:
+            assert f"dropped:{name}" in squeezed.packet.omissions
+
+    def test_a_budget_of_nothing_is_refused_rather_than_served_empty(self) -> None:
+        with pytest.raises(EpisodePacketRefusal):
+            fit_to_budget(build_packet(), max_bytes=0)
+
+    def test_the_size_is_measured_the_way_it_is_serialised(self) -> None:
+        packet = build_packet()
+        assert packet_bytes(packet) == len(
+            canonical_json(packet.model_dump(mode="json")).encode("utf-8")
+        )
