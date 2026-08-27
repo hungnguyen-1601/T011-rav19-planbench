@@ -89,6 +89,12 @@ class RoundOutcome:
     #: The audit trail. Exactly one ``finalize`` event, whichever way
     #: the round ended.
     events: tuple[str, ...]
+    #: How long the whole round took, in milliseconds. The **round's**
+    #: number and not the model's: it includes the checkers, the guard
+    #: and every revision, which is what a deployment waits for and what
+    #: the router's utility function prices. Recorded here because a
+    #: latency nobody measured is a term E10 has to drop.
+    elapsed_ms: float = 0.0
     #: W2's shortlist **as the generator produced it**, before the model
     #: saw it and before any harness touched it. ``generator_recall@K``
     #: is scored here: a recall read off the model's answer measures the
@@ -492,5 +498,6 @@ def run_round(
         cost=spent,
         stopped_because=stopped,
         events=tuple(events),
+        elapsed_ms=(time.monotonic() - started) * 1000.0,
         shortlist=shortlist,
     )

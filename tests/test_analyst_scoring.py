@@ -132,6 +132,15 @@ def test_what_the_guard_dropped_is_counted_as_a_structural_violation() -> None:
     assert result.structural_violations >= 1
 
 
+def test_the_rounds_wall_time_travels_with_the_score() -> None:
+    """The router's utility prices latency at five thousandths a second.
+    A run that recorded none leaves E10 with a term it has to drop, and
+    a zero would price a slow arm as a fast one."""
+    result, outcome = scored()
+    assert outcome.elapsed_ms > 0
+    assert result.latency_s == outcome.elapsed_ms / 1000.0
+
+
 def test_the_tokens_and_calls_travel_with_the_score() -> None:
     result, outcome = scored()
     assert result.cost_tokens == outcome.cost.input_tokens + outcome.cost.output_tokens

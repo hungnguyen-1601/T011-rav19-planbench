@@ -58,6 +58,10 @@ class RepeatScore:
     #: unverified, and the two must not be added together.
     verified: bool
     stopped_because: str
+    #: Wall time for the whole round, in seconds. The router's utility
+    #: prices it (``0.005`` a second in the preregistration), so a run
+    #: that did not record it leaves E10 with a term it has to drop.
+    latency_s: float
     input_tokens: int
     output_tokens: int
     model_calls: int
@@ -142,6 +146,7 @@ def score_repeat(
             structural_violations=blocked,
             verified=False,
             stopped_because=outcome.stopped_because,
+            latency_s=outcome.elapsed_ms / 1000.0,
             input_tokens=outcome.cost.input_tokens,
             output_tokens=outcome.cost.output_tokens,
             model_calls=outcome.cost.model_calls,
@@ -196,6 +201,7 @@ def score_repeat(
         structural_violations=blocked,
         verified=verified,
         stopped_because=outcome.stopped_because,
+        latency_s=outcome.elapsed_ms / 1000.0,
         input_tokens=outcome.cost.input_tokens,
         output_tokens=outcome.cost.output_tokens,
         model_calls=outcome.cost.model_calls,
