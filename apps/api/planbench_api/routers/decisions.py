@@ -1536,6 +1536,29 @@ def queue_decision(
             # what moved, rather than measuring something else quietly.
             raise InvalidStateError(str(exc)) from exc
 
+    def stop_if_withdrawn() -> str | None:
+        """Asked at every episode boundary, not only at the start.
+
+        A warehouse sweep is hours long, and an algorithm turned off
+        during it is turned off for a reason somebody had *while it was
+        running*. Checking once at the start would let the remaining
+        three hours go on measuring code that had just been withdrawn,
+        and then store the result as evidence.
+        """
+        for row in pinned.candidates:
+            if not row.is_imported:
+                continue
+            try:
+                record = plugins.get(row.bundle_id)
+            except NotFoundError:
+                return f"{row.stack} is no longer in the algorithm store"
+            if record.status.value == "disabled":
+                return (
+                    f"{row.stack} was disabled while this run was in progress "
+                    f"({record.disabled_reason or 'no reason recorded'})"
+                )
+        return None
+
     return _job(
         service.submit(
             jobs=jobs,
@@ -1547,6 +1570,7 @@ def queue_decision(
             reuse_traces=request.reuse_traces,
             pinned=pinned,
             recheck=recheck_at_start,
+            stop_check=stop_if_withdrawn,
         )
     )
 

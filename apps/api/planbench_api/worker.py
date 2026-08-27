@@ -42,6 +42,18 @@ class Job:
     total: int = 0
     message: str = ""
     error: str | None = None
+    #: Who asked for it. Cancelling somebody else's run is an
+    #: administrator acting on their behalf, which is a different act and
+    #: has to be recorded as one — so the queue has to know whose it is.
+    created_by: str | None = None
+    #: production | validation, mirroring the run it will store.
+    purpose: str = "production"
+    #: The run it produced, once it has produced one.
+    run_id: str | None = None
+    #: What the request resolved to, so the job can be re-checked at
+    #: start rather than re-resolved. Opaque here on purpose: the queue
+    #: carries it and does not read it.
+    pinned: object | None = None
 
 
 class JobQueue:
@@ -63,15 +75,29 @@ class JobQueue:
     def concurrency(self) -> int:
         return self._concurrency
 
-    def submit(self, job_id: str, kind: str, work: Callable[[Job], None], total: int = 0) -> Job:
-        """Queue ``work``; it receives the Job so it can report progress."""
+    def submit(
+        self,
+        job_id: str,
+        kind: str,
+        work: Callable[[Job], None],
+        total: int = 0,
+        **attributes,
+    ) -> Job:
+        """Queue ``work``; it receives the Job so it can report progress.
+
+        ``attributes`` are stamped onto the job before it can start —
+        who asked for it, what it will run, which run it produces. Set
+        here rather than by the caller afterwards because a job on a free
+        queue starts immediately, and a field written after ``submit``
+        returns can be read empty by the work already in flight.
+        """
         with self._lock:
             if job_id in self._jobs and self._jobs[job_id].state in (
                 JobState.QUEUED,
                 JobState.RUNNING,
             ):
                 raise ValueError(f"job {job_id!r} is already active")
-            job = Job(id=job_id, kind=kind, total=total)
+            job = Job(id=job_id, kind=kind, total=total, **attributes)
             self._jobs[job_id] = job
             self._cancelled.discard(job_id)
 

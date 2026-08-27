@@ -477,6 +477,7 @@ class DecisionRunService:
         reuse_traces: bool = True,
         pinned: PinnedRun | None = None,
         recheck=None,
+        stop_check=None,
     ) -> Job:
         """Queue the selection instead of running it inside the request.
 
@@ -507,6 +508,22 @@ class DecisionRunService:
                 job.total = total
                 job.message = what
 
+            def should_stop() -> str | None:
+                """Asked at every episode boundary.
+
+                Two things can make a queued sweep stop being the right
+                thing to run: the person who asked for it cancelled, or
+                something it depends on was withdrawn. Both are checked
+                here rather than only before the first episode, because
+                a three-hour warehouse sweep spends almost all of its
+                life *after* that point.
+                """
+                if jobs.is_cancelled(job.id):
+                    return "cancelled by the account that started it"
+                if stop_check is not None:
+                    return stop_check()
+                return None
+
             ensure_profile_map_materialised(stored_profile.profile, self._repo_root, self._maps)
 
             # **Re-checked, not re-resolved.** Between the request and
@@ -530,10 +547,12 @@ class DecisionRunService:
                 quiet=True,
                 map_base_dir=self._repo_root,
                 progress=progress,
+                should_stop=should_stop,
             )
             stored = self._store(
                 report, stored_profile, scope=scope, created_by=created_by, pinned=pinned
             )
+            job.run_id = stored.id
             # The finished run's id, so a client watching the job knows
             # where to look without searching the list for something that
             # appeared recently — "recent" is not an identity.
@@ -546,7 +565,15 @@ class DecisionRunService:
         # "60/60". A denominator that changes under the reader is worse
         # than one that arrives a second late, so the sweep reports both
         # numbers itself when it has them.
-        return jobs.submit(job_id, "decision_run", work, total=0)
+        return jobs.submit(
+            job_id,
+            "decision_run",
+            work,
+            total=0,
+            created_by=created_by,
+            purpose=(pinned.purpose.value if pinned is not None else "production"),
+            pinned=pinned,
+        )
 
     def get(self, run_id: str) -> StoredDecisionRun:
         return self._runs.get(run_id)
