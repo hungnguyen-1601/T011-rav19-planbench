@@ -62,6 +62,7 @@ PHASES_LANDED = [
     "candidates",
     "episode_guard",
     "episode_prompts",
+    "episode_runner",
     "episode_view",
     "eval_spec",
     "features",

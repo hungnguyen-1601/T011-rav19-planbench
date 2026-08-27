@@ -76,6 +76,14 @@ from planbench_analyst.episode_prompts import (
     episode_prompt_checksum,
     episode_schema,
 )
+from planbench_analyst.episode_runner import (
+    EpisodeRound,
+    EpisodeScopeRefusal,
+    check_scope,
+    declared_bearings,
+    episode_runtime_config,
+    run_episode_round,
+)
 from planbench_analyst.episode_view import (
     EpisodeView,
     EpisodeViewRefusal,
@@ -257,6 +265,12 @@ __all__ = [
     "cache_key",
     "CONTRACT_TERMS",
     "EPISODE_PROMPT_VERSION",
+    "EpisodeRound",
+    "EpisodeScopeRefusal",
+    "check_scope",
+    "declared_bearings",
+    "episode_runtime_config",
+    "run_episode_round",
     "EPISODE_SYSTEM",
     "build_episode_user_turn",
     "episode_prompt_checksum",

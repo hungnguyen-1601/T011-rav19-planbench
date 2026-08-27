@@ -37,7 +37,7 @@ import json
 import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 from planbench_agent.provider import LLMMessage, LLMProvider, LLMRequest, LLMResponse
 from planbench_analyst.packet_view import PacketView
@@ -50,7 +50,7 @@ from planbench_analyst.prompts import (
 )
 from planbench_explanation.catalog import ToolCatalog
 from planbench_explanation.ledger import EvidenceRef, HypothesisProposal, RequestedCheck
-from planbench_explanation.protocol import AnalysisRequest, AnalysisResponse
+from planbench_explanation.protocol import AnalysisResponse
 from planbench_explanation.tools import ToolCard
 from planbench_explanation.versioning import artifact_checksum
 from planbench_schemas.identity import canonical_json
@@ -429,8 +429,30 @@ def _refs(view: PacketView, refs: Sequence[str], unresolved: list[str]) -> tuple
     return tuple(built)
 
 
+class RoundIdentity(Protocol):
+    """The three things this module needs of the round it is answering.
+
+    :class:`~planbench_explanation.protocol.AnalysisRequest` satisfies
+    it and stays what every caller passes. Written as a protocol because
+    the **packet** on that request is not among the three: the facts
+    reach the model through ``view.serialize()``, and nothing below
+    reads ``analysis.packet``. That is what lets a round about a
+    differently shaped packet be answered by this same engine without
+    widening a frozen wire contract to admit one.
+    """
+
+    @property
+    def catalog(self) -> ToolCatalog: ...
+
+    @property
+    def analysis_run_id(self) -> str: ...
+
+    @property
+    def analyst_bundle_id(self) -> str: ...
+
+
 def propose(
-    analysis: AnalysisRequest,
+    analysis: RoundIdentity,
     view: PacketView,
     provider: LLMProvider,
     *,

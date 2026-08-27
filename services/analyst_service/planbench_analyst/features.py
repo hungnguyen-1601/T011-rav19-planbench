@@ -77,6 +77,33 @@ class RoundFeatures:
     filter_tool_menu: bool = False
     #: W3: route to a checker deterministically after the model declares.
     auto_route_checker: bool = False
+    #: The round is about one episode rather than the whole run.
+    #:
+    #: Not an input toggle like the four above: it selects **which
+    #: question was asked**. A round graded on one scope and replayed on
+    #: the other is not the same system, so the runner refuses a packet
+    #: of the wrong shape rather than reading it — the two are similar
+    #: enough that a mismatch would otherwise run to completion and
+    #: answer confidently about the wrong thing.
+    episode_scope: bool = False
+    #: Show the run's aggregates beside an episode, as background.
+    #:
+    #: Nothing in that block carries a ref, so it cannot be cited
+    #: whatever this flag says; the arm measures whether *seeing* it
+    #: changes the answer. Meaningless without ``episode_scope``, and
+    #: refused there rather than ignored — an arm reporting that it ran
+    #: a setting it silently dropped is the one failure nothing
+    #: downstream can detect.
+    run_context: bool = False
+
+    def __post_init__(self) -> None:
+        if self.run_context and not self.episode_scope:
+            raise FeatureRefusal(
+                "run_context shows the run beside one episode, and there is no "
+                "episode in a run-scope round; an arm that reported having run "
+                "this setting while it was quietly dropped would be measuring "
+                "nothing and saying so to nobody"
+            )
 
     @property
     def as_config(self) -> dict[str, bool]:

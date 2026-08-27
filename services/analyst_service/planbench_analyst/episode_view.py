@@ -30,6 +30,7 @@ from planbench_explanation.episode_packet import (
 )
 from planbench_explanation.knowledge_contract import MechanismReferenceCandidate
 from planbench_explanation.subjects import Subject
+from planbench_explanation.versioning import artifact_checksum
 from planbench_schemas.identity import canonical_json
 
 
@@ -101,6 +102,16 @@ class EpisodeView:
         for stack in self._packet.candidates:
             names.add(stack.candidate_id)
         return frozenset(name for name in names if name)
+
+    @property
+    def checksum(self) -> str:
+        """What the round records as the facts it was answering about.
+
+        Over the **serialised index** rather than over the packet: what
+        identifies a round is what the model was shown, and the budgeter
+        may have trimmed the packet on the way here.
+        """
+        return artifact_checksum(self.serialize())
 
     def serialize(self) -> str:
         """The index as the model will read it. Same input, same string."""
