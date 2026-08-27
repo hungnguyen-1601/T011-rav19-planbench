@@ -5938,3 +5938,96 @@ tr.is-previewing > td { background: var(--accent-soft); }
   .guide-shell { grid-template-columns: minmax(0, 1fr); }
   .guide-rail { position: static; }
 }
+
+/* The landing page: a search box, what is running, and every article
+   there is. Cards rather than one long list because the groups answer
+   different questions and a reader arrives with one of them. */
+
+.guide-landing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 60rem;
+}
+
+.guide-landing header h1 { margin: 0 0 var(--space-1); }
+.guide-landing header p { margin: 0; }
+
+.guide-search input {
+  width: 100%;
+  max-width: 32rem;
+}
+
+.guide-search-results {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  max-width: 32rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel-2);
+}
+
+.guide-search-results li + li { border-top: 1px solid var(--border); }
+
+.guide-search-results a {
+  display: block;
+  padding: var(--space-2) var(--space-3);
+  text-decoration: none;
+  color: var(--text);
+}
+
+.guide-search-results a:hover { background: var(--hover); }
+
+.guide-search-empty {
+  margin: var(--space-2) 0 0;
+  max-width: 32rem;
+  font-size: var(--fs-sm);
+}
+
+.guide-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.guide-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--space-4);
+}
+
+.guide-card {
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel-2);
+}
+
+.guide-card h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.guide-card ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* The one line that is about the reader rather than about the system.
+   `data-allowed` rather than two classes: the state is one fact. */
+.guide-capability {
+  margin: var(--space-3) 0;
+  font-size: var(--fs-sm);
+}
+
+.guide-capability[data-allowed="false"] { color: var(--muted); }

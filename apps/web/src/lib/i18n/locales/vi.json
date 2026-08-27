@@ -1872,5 +1872,17 @@
   "guide.group.operating": "Vận hành",
   "guide.group.results": "Hiểu kết quả",
   "guide.group.advanced": "Nâng cao",
-  "guide.group.reference": "Tham khảo"
+  "guide.group.reference": "Tham khảo",
+  "guide.title": "Hướng dẫn vận hành",
+  "guide.subtitle": "Hiểu hệ thống, thao tác, và đọc kết quả cho đúng",
+  "guide.search.placeholder": "Tìm bài và đề mục",
+  "guide.search.noMatch": "Không có bài hay đề mục nào khớp. Ô này chưa tìm nội dung trong bài — mở bài rồi dùng Ctrl+F.",
+  "guide.version": "Phiên bản {version}",
+  "guide.ai.on": "AI đang dùng {model}",
+  "guide.ai.offline": "AI đang chạy ngoại tuyến, trả lời bằng bộ khớp từ khoá",
+  "guide.capability.canImport": "Tài khoản của bạn nhập được thuật toán.",
+  "guide.capability.cannotImport": "Tài khoản của bạn chưa nhập được thuật toán — nhờ người có quyền.",
+  "guide.signInToSee": "Đăng nhập để biết bạn được làm gì",
+  "dashboard.guide.title": "Hướng dẫn vận hành",
+  "welcome.guide.link": "Đọc hướng dẫn vận hành"
 }

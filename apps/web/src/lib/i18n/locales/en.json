@@ -1872,5 +1872,17 @@
   "guide.group.operating": "Operating",
   "guide.group.results": "Reading results",
   "guide.group.advanced": "Advanced",
-  "guide.group.reference": "Reference"
+  "guide.group.reference": "Reference",
+  "guide.title": "Operating guide",
+  "guide.subtitle": "Understand the system, run it, and read what it says",
+  "guide.search.placeholder": "Find an article or heading",
+  "guide.search.noMatch": "No article or heading matches. This box does not search article text — open an article and use Ctrl+F.",
+  "guide.version": "Version {version}",
+  "guide.ai.on": "AI is answering with {model}",
+  "guide.ai.offline": "AI is offline, answering from the keyword responder",
+  "guide.capability.canImport": "Your account may import an algorithm.",
+  "guide.capability.cannotImport": "Your account may not import an algorithm — ask somebody who can.",
+  "guide.signInToSee": "Sign in to see what you may do",
+  "dashboard.guide.title": "Operating guide",
+  "welcome.guide.link": "Read the operating guide"
 }
