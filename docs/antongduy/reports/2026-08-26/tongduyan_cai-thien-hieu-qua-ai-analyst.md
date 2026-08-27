@@ -808,3 +808,50 @@ chạy xong; chạy lại từ đầu.
 
 Cách vào lại, việc còn lại theo thứ tự, và ba cái bẫy dễ quên:
 `notes/2026-08-26/tongduyan_diem-dung-va-cach-resume.md`.
+
+---
+
+## E6-E10 - chạy trên model local, bộ sáu họ
+
+Chi tiết: `notes/2026-08-26/tongduyan_e6-e10-tren-model-local.md`.
+Hosted (o4-mini) hết token nên đợt này chỉ local; E9 **chặn**.
+
+| Model | Arm | Case | Guard drop | Token TB | Wall TB |
+|---|---|---|---|---|---|
+| qwen3:8b | `b1` | 0/6 | 11 | 1 569 | - |
+| qwen3:8b | `e6_free_schema` | 0/6 | **17** | 1 706 | - |
+| qwen3:8b | `e7_no_critic` | 0/6 | 10 | 1 795 | - |
+| qwen3:8b | `e8_model` | 0/6 | 18 | 2 005 | 42,1 s |
+| llama3.2 | `e8_model` | 0/6 | 9 | 6 064 | 25,6 s |
+| **Sàn model-free** | - | **3/6** | 0 | 0 | 0 |
+
+**E6:** bỏ discriminated union làm guard drop tăng **11 → 17** trên cùng model,
+cùng case. Union không làm model đúng hơn - nó làm model **sai ít hơn về hình
+thức**, đúng thứ nó được thiết kế để làm.
+
+**E7:** tắt critic đổi drop 11 → 10 trên 18 lượt. Không đủ để nói gì.
+
+**E8:** hai model local giống nhau ở chất lượng (0/6), khác ở hình thức và giá:
+llama3.2 ít vi phạm hơn và nhanh hơn nhưng **tốn token gấp ba**; qwen3 rẻ token,
+chậm hơn, hỏng schema nhiều hơn.
+
+**E10 (tính offline, không gọi model thêm):**
+
+| Arm | Case đúng | Cost (k tok) | Utility |
+|---|---|---|---|
+| `floor_only` | **3** | 0,0 | **+3,000** |
+| `always_default` (llama3.2) | 0 | 36,9 | -1,465 |
+| `always_strong` (qwen3:8b) | 0 | 11,1 | -1,289 |
+| `oracle_router` | 3 | 0,0 | +3,000 |
+| `frozen_cascade` | 0 | 36,9 | -1,465 |
+
+**Oracle router chính là sàn**: trên bộ này quyết định tối ưu ở mọi case là
+"đừng gọi model". Router recall **không định nghĩa được** - không có case nào
+model đắt đúng còn model rẻ sai. Bậc escalate thứ hai **âm** (-0,175). Với hai
+model local này, cascade không có cơ sở - không phải router tồi, mà là không có
+gì để router quyết.
+
+**Một lỗ hổng bịt trong lúc chạy:** utility preregistered tính latency mà không
+gì đo giây. Đã thêm `RoundOutcome.elapsed_ms` → `RepeatScore.latency_s`, và
+`router_eval.py` báo **ABSENT** thay vì 0 cho run không có số - đặt 0 sẽ biến
+một arm chậm thành arm nhanh. Commit `d74b369`.

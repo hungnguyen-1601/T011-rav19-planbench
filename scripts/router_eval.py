@@ -50,8 +50,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+for package in ("schemas", "planning", "metrics", "benchmark", "decision", "explanation"):
+    sys.path.insert(0, str(ROOT / "packages" / package))
+sys.path.insert(0, str(ROOT / "services" / "simulator"))
+sys.path.insert(0, str(ROOT / "services" / "agent_service"))
 sys.path.insert(0, str(ROOT / "services" / "analyst_service"))
-sys.path.insert(0, str(ROOT / "packages" / "explanation"))
 
 from planbench_analyst.preregistration import PREREGISTRATION  # noqa: E402
 
