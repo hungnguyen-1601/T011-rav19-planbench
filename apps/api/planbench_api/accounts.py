@@ -1,19 +1,45 @@
-"""Accounts: one kind of user, identified by a stable id and a nickname.
+"""Accounts: a user, identified by a stable id and a nickname.
 
-The platform used to split people into ``operator`` and ``reviewer``,
+**Roles are coming back, and this docstring is the record of why they
+left and why that was wrong.** HĐ-14 as of contract 7.0.0 defines three
+independent capability packages — engineer, reviewer, admin — plus a
+deployment-profile exception, ``demo_owner``. The tables live in
+:mod:`planbench_api.auth`; the reasoning is in
+``docs/antongduy/plans/2026-08-27/thiet-ke-role-engineer-reviewer-admin.md``.
+
+The platform first split people into ``operator`` and ``reviewer``,
 which forced a single person doing their own work to sign out and back
-in to get past their own approval gate. That was separation of duties
-applied to the wrong unit: the guarantee worth keeping is "the person
-who ran a benchmark did not silently rubber-stamp somebody *else's*
-review", not "one human may not finish their own experiment".
+in to get past their own approval gate. The fix applied at the time was
+to delete roles entirely and let **ownership** carry all authority: you
+may act on what you created, and review is something you opt into by
+naming another member.
 
-So there is now one role — member — and authority comes from
-**ownership**: you may act on what you created. Review is something you
-opt into by naming another member, and only that member can answer it.
+That over-corrected. Ownership answers *"which record?"* and it answers
+it well; it cannot answer *"which kind of action?"* — and nothing else
+was answering that question either. The visible cost: any signed-in
+account could approve anybody else's decision run, because the only rule
+left was "not the person who created it".
 
-``is_admin`` remains for operational recovery. It is not a benchmark
-role: an admin acting on someone else's benchmark is recorded in the
-audit trail exactly like anyone else.
+So both live here now, as separate conditions on the same check:
+
+    allowed = has_capability(user, "resource.write") and owns(user, record)
+
+The original complaint — one person blocked by their own gate — is
+answered by ``separation_of_duties``, a setting a deployment states out
+loud, not by having no roles at all. On a single-person install it reads
+``relaxed`` and the self-approval is recorded as ``self_approve_config``
+so the trail never claims a second human looked.
+
+Packages do **not** nest: a reviewer is not a superset of an engineer,
+and an admin holds no business capability at all. Somebody who needs
+both carries both roles, and each action is audited under the capability
+that actually authorised it.
+
+``is_admin`` survives as the storage-level shadow of ``admin`` in
+``user_roles`` while the migration settles. It is not a benchmark role:
+an admin acting on someone else's work is recorded in the audit trail
+exactly like anyone else, and carries ``override`` when it is done on
+their behalf.
 
 Two identifiers, deliberately not interchangeable:
 

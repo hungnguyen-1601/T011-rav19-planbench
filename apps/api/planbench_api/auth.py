@@ -1,11 +1,23 @@
-"""Authentication: who the caller is. Not what they may do.
+"""Authentication: who the caller is, and which capabilities that buys.
 
-Authorization moved out of this module in the accounts refactor. There
-is no ``require_roles`` any more, because there are no roles to require:
-every signed-in person is a member, and what they may do depends on the
-benchmark in front of them (see :mod:`planbench_api.approval`). Keeping
-a role check here would have been a second, weaker answer to a question
-that ownership already answers.
+Two questions, deliberately kept apart in one module because they share
+one thing — the token — and nothing else. ``decode_token`` answers *who*;
+``require_capability`` answers *what kind of action*. Neither answers
+*which record*: ownership does that, at the call site, and both
+conditions have to hold (HĐ-14.1).
+
+``require_roles`` is not coming back. A dependency that names roles
+spreads the role table across every router, so the day a capability
+moves between packages is the day somebody greps for it and misses one.
+Routes name the **capability** they need; the mapping from role to
+capability lives in exactly one dict here.
+
+Capability packages do not nest. ``reviewer`` is not ``engineer`` plus
+extras — it lacks ``resource.write`` and ``run.create`` on purpose, and
+``admin`` holds no business capability at all. A person who needs two
+packages holds two roles; the audit trail records which capability
+authorised each action, not the caller's highest-ranked role, because
+"highest" is not a thing here.
 
 **The token carries a user id, never a nickname.** Nicknames are how
 people find each other and they can be changed; an authorization key
