@@ -15,6 +15,7 @@ where they were: with a person, on the decisions page.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -25,7 +26,9 @@ from planbench_agent.factory import provider_status
 from planbench_agent.gateway import GatewayError
 from planbench_agent.tools import FORBIDDEN_CAPABILITIES
 from planbench_api.auth import ActiveUser
+from planbench_api.config import get_settings
 from planbench_api.dependencies import get_agent_service
+from planbench_api.episode_analysis import MODES, EpisodeAnalystPolicy, visible_to
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -48,6 +51,14 @@ class CapabilitiesResponse(BaseModel):
     tools: tuple[str, ...]
     forbidden: tuple[str, ...]
     providers: tuple[ProviderInfo, ...] = ()
+    #: Whether this deployment lets a model be asked why one episode
+    #: went the way it did, and to whom the answer may be shown.
+    #: Read by the page so the control appears only where pressing it
+    #: would produce something — a button that appears and then
+    #: refuses is worse than one that was never there.
+    episode_analyst_mode: str = "off"
+    #: Whether **this** reader is one of those people.
+    episode_analyst_visible: bool = False
 
 
 class ChatContext(BaseModel):
@@ -96,7 +107,7 @@ class ChatResponse(BaseModel):
 
 
 @router.get("/capabilities", response_model=CapabilitiesResponse)
-def capabilities(agent: Agent, _: ActiveUser) -> CapabilitiesResponse:
+def capabilities(agent: Agent, user: ActiveUser) -> CapabilitiesResponse:
     """What this agent can and cannot do, including the provider in use.
 
     Surfacing ``deterministic`` matters: an answer from the fallback
@@ -108,12 +119,24 @@ def capabilities(agent: Agent, _: ActiveUser) -> CapabilitiesResponse:
     reading server logs — most often the answer is an unset model id,
     which `auto` treats as a reason to skip a provider that has a key.
     """
+    settings = get_settings()
+    policy = EpisodeAnalystPolicy(
+        mode=settings.episode_analyst_mode if settings.episode_analyst_mode in MODES else "off",
+        evaluation_report_ref=settings.episode_analyst_report_ref,
+    )
+    # A mode this build refuses to honour reads as off here, so the
+    # page never offers a control the route would turn down.
+    mode = policy.mode if not policy.refusal(now=datetime.now(UTC).isoformat()) else "off"
     return CapabilitiesResponse(
         provider=agent.provider.name,
         model=agent.provider.model,
         deterministic=agent.provider.deterministic,
         tools=agent.registry.names(),
         forbidden=tuple(sorted(FORBIDDEN_CAPABILITIES)),
+        episode_analyst_mode=mode,
+        episode_analyst_visible=visible_to(policy, is_admin=user.is_admin)
+        if mode != "off"
+        else False,
         providers=tuple(
             ProviderInfo(
                 name=status.name,

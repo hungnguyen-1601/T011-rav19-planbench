@@ -786,6 +786,29 @@ export function getEpisodeVerdict(
   );
 }
 
+/** The same answer, plus what a model made of it where allowed.
+ *
+ * The deterministic half is in the response at every refusal, so a
+ * reader who may not be shown a model's answer still sees the verdict.
+ * 404 means this deployment does not offer the model half at all.
+ */
+export function postEpisodeAnalysis(
+  runId: string,
+  episodeContextId: string,
+  candidateA: string,
+  candidateB: string,
+  signal?: AbortSignal,
+): Promise<EpisodeVerdictView> {
+  return authFetch<EpisodeVerdictView>(
+    `/decisions/${runId}/episodes/${episodeContextId}/analysis`,
+    {
+      method: "POST",
+      body: JSON.stringify({ candidate_a: candidateA, candidate_b: candidateB }),
+      signal,
+    },
+  );
+}
+
 export function getTrace(
   runId: string,
   candidateId: string,

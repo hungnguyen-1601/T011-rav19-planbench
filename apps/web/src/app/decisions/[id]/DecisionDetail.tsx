@@ -44,6 +44,7 @@ import {
   type SelectionOrigin,
 } from "@/lib/episodeVerdict";
 import { clearEpisodeSelection, setEpisodeSelection } from "@/lib/episodeSelection";
+import { getCapabilities, type Capabilities } from "@/lib/agent";
 import { commonProgress, panelCandidates, sideProgress, sideTime } from "@/lib/replaySync";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { panelPlan } from "@/lib/explainPanel";
@@ -62,6 +63,7 @@ import {
   getDecision,
   getTrace,
   getEpisodeVerdict,
+  postEpisodeAnalysis,
   getReplaySync,
   getExemplars,
   noCardReason,
@@ -509,6 +511,12 @@ function TracePanel({ run }: { run: DecisionRun }) {
    *  about — with the confidence of one that was. */
   const [selectionOrigin, setSelectionOrigin] = useState<SelectionOrigin>("default");
   const [verdict, setVerdict] = useState<VerdictSlot>({ state: "idle" });
+  /** What this deployment allows, and whether this reader is one of
+   *  the people who may be shown it. Read once: the control is drawn
+   *  from it, and a button that appears and then refuses is worse
+   *  than one that was never there. */
+  const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
+  const [asking, setAsking] = useState(false);
   const [slots, setSlots] = useState<Record<string, TraceSlot>>({});
   const [mode, setMode] = useState<"flat" | "raised">("flat");
   /* **One camera for the pair.** Each `Scene25D` used to keep its own
@@ -633,6 +641,42 @@ function TracePanel({ run }: { run: DecisionRun }) {
    * request that started earliest is the one that lands last often
    * enough to show episode A's finding under episode B's heading.
    */
+  useEffect(() => {
+    let live = true;
+    getCapabilities()
+      .then((found) => live && setCapabilities(found))
+      .catch(() => live && setCapabilities(null));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const mayAsk =
+    capabilities?.episode_analyst_mode !== undefined &&
+    capabilities.episode_analyst_mode !== "off" &&
+    Boolean(capabilities.episode_analyst_visible);
+
+  const askTheModel = useCallback(async () => {
+    const chosen = selectedEpisode({ episodeId, origin: selectionOrigin });
+    if (!chosen || candidates.length < 2 || asking) return;
+    setAsking(true);
+    try {
+      const answered = await postEpisodeAnalysis(
+        run.id,
+        chosen,
+        candidates[0].candidate_id,
+        candidates[1].candidate_id,
+      );
+      setVerdict({ state: "ready", view: answered });
+    } catch {
+      // The deterministic half is already on screen and stays there.
+      // A failed request to the model half is not a reason to take it
+      // away, and the panel says nothing new rather than something wrong.
+    } finally {
+      setAsking(false);
+    }
+  }, [asking, candidates, episodeId, run.id, selectionOrigin]);
+
   // A selection that outlived this page would attach the next question
   // to an episode chosen before it, and nothing on screen would say so.
   useEffect(() => clearEpisodeSelection, []);
@@ -829,6 +873,8 @@ function TracePanel({ run }: { run: DecisionRun }) {
           }
           episodeSelected={Boolean(selectedEpisode({ episodeId, origin: selectionOrigin }))}
           onSeek={seekFrom}
+          onAskTheModel={mayAsk ? askTheModel : undefined}
+          asking={asking}
         />
         <div className="episode-comparison-grid">
           {/* The same choice the comparison grid made. Two panels on one

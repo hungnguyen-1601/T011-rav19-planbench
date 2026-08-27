@@ -15,6 +15,12 @@ export interface ProviderInfo {
 }
 
 export interface Capabilities {
+  /** Whether this deployment lets a model be asked about one episode,
+   *  and whether this reader may be shown the answer. Read before the
+   *  control is drawn: a button that appears and then refuses is
+   *  worse than one that was never there. */
+  episode_analyst_mode?: string;
+  episode_analyst_visible?: boolean;
   provider: string;
   model: string;
   /** True means the answer came from the offline keyword responder, not

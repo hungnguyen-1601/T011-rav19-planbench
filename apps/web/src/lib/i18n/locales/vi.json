@@ -1897,5 +1897,14 @@
   "episodeVerdict.outcome.travelTime": "Thời gian di chuyển",
   "episodeVerdict.outcome.replans": "Số lần replan",
   "episodeVerdict.outcome.noRecord": "Không có bản ghi cho episode này. Đó không phải là thua: candidate này có thể chưa từng chạy nó, có thể bị loại trước đó, hoặc không được ghi lại.",
-  "episodeVerdict.noPathAttempts": "Planner trả về không có đường ở {count} trong {total} lần thử."
+  "episodeVerdict.noPathAttempts": "Planner trả về không có đường ở {count} trong {total} lần thử.",
+  "episodeVerdict.askTheModel": "Hỏi model",
+  "episodeVerdict.asking": "Đang hỏi…",
+  "episodeVerdict.previewOnly": "Bản xem nội bộ. Điều model đề xuất được kiểm trước khi hiện, và nó không quyết định gì.",
+  "episodeVerdict.modelSuggested": "Model đề xuất",
+  "episodeVerdict.modelAbstained": "Model không đề xuất gì: {reason}",
+  "episodeVerdict.modelFailed": "Không gọi được model. Mọi thứ ở trên được tính mà không cần nó.",
+  "episodeVerdict.modelKept": "Giữ {kept}, bỏ {dropped} theo luật của nền tảng.",
+  "episodeVerdict.bearing.diagnosis": "Quan sát",
+  "episodeVerdict.bearing.contrast": "Liên quan kết cục"
 }

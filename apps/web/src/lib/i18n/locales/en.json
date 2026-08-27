@@ -1897,5 +1897,14 @@
   "episodeVerdict.outcome.travelTime": "Travel time",
   "episodeVerdict.outcome.replans": "Replans",
   "episodeVerdict.outcome.noRecord": "No record for this episode. That is not a loss: this candidate may never have run it, may have been eliminated before it, or may not have been recorded.",
-  "episodeVerdict.noPathAttempts": "The planner returned no path on {count} of {total} attempts."
+  "episodeVerdict.noPathAttempts": "The planner returned no path on {count} of {total} attempts.",
+  "episodeVerdict.askTheModel": "Ask the model",
+  "episodeVerdict.asking": "Asking…",
+  "episodeVerdict.previewOnly": "Internal preview. What a model proposes is checked before it is shown, and it decides nothing.",
+  "episodeVerdict.modelSuggested": "The model proposed",
+  "episodeVerdict.modelAbstained": "The model proposed nothing: {reason}",
+  "episodeVerdict.modelFailed": "The model could not be reached. Everything above was worked out without it.",
+  "episodeVerdict.modelKept": "Kept {kept}, dropped {dropped} against the platform's rules.",
+  "episodeVerdict.bearing.diagnosis": "Observation",
+  "episodeVerdict.bearing.contrast": "Bears on the outcome"
 }
