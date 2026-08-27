@@ -5,7 +5,7 @@ nào "chuẩn" hơn.
 
 <div>
 
-Bản web đã triển khai — không cài gì, đăng nhập rồi làm theo
+Bản web đã triển khai - không cài gì, đăng nhập rồi làm theo
 [Bảy bước vận hành](/guide/operation).
 
 Đây là đường dành cho người muốn dùng, không muốn dựng.
@@ -23,7 +23,7 @@ bash scripts/dev_stack.sh stop
 
 Script chạy `alembic upgrade head` **trước** khi khởi động API, và in ra
 phương thức đăng nhập nào đang bật. Migration lỗi thì nó dừng và báo, chứ
-không khởi động API trên một schema cũ — một API chạy được với schema sai
+không khởi động API trên một schema cũ - một API chạy được với schema sai
 là cách tạo ra dữ liệu phải sửa tay về sau.
 
 Lần đầu cần cài dependency: Python 3.12 và Node 20 trở lên.
@@ -43,8 +43,8 @@ Chỉ API, không cần bash:
 **Đừng gọi thẳng `python -m uvicorn planbench_api.main:app`.** Dự án
 không được cài đặt như một package, nên các thư mục dưới `packages/` và
 `services/` chỉ vào `sys.path` khi có thứ gì đó đặt chúng vào.
-`serve.py` đọc danh sách đường dẫn từ `pyproject.toml` — đúng danh sách
-mà pytest dùng — rồi mới khởi động.
+`serve.py` đọc danh sách đường dẫn từ `pyproject.toml` - đúng danh sách
+mà pytest dùng - rồi mới khởi động.
 
 </Callout>
 
@@ -53,12 +53,12 @@ mà pytest dùng — rồi mới khởi động.
 <div>
 
 Một trình cài đặt, một máy, một người. Không cần Docker, Node hay Python
-cài sẵn — bản dựng mang theo trình thông dịch của nó.
+cài sẵn - bản dựng mang theo trình thông dịch của nó.
 
 Dữ liệu nằm dưới `%LOCALAPPDATA%\PlanBench`: cơ sở dữ liệu, artifact,
 bản đồ, profile, và tệp `.env` giữ tài khoản cục bộ cùng khoá API.
 
-Windows SmartScreen sẽ cảnh báo nhà phát hành không rõ — trình cài đặt
+Windows SmartScreen sẽ cảnh báo nhà phát hành không rõ - trình cài đặt
 chưa được ký số.
 
 Khoá API dán ở trang cài đặt, không sửa tệp.
@@ -86,7 +86,7 @@ curl -X POST http://localhost:8000/api/v1/decisions \
 Trả `201` kèm `id`; đọc kết quả bằng `GET /api/v1/decisions/<id>`.
 
 Đường này hợp khi cần xếp hàng nhiều phép so bằng script. Nó đi qua **đúng
-bộ cổng và đúng phép so** như giao diện — không có đường tắt nào ở đây.
+bộ cổng và đúng phép so** như giao diện - không có đường tắt nào ở đây.
 
 </div>
 

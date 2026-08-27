@@ -7,7 +7,7 @@ A\* và RRT\* là **bộ lập kế hoạch toàn cục**; DWA là **bộ điề
 bộ**. Chúng không thay thế nhau và không được xếp cùng một bảng.
 
 Đơn vị được đo là một **cấu hình điều hướng hoàn chỉnh**. Vì vậy câu "A\*
-thắng RRT\*" thường là một câu sai địa chỉ — thứ thắng là cả một stack,
+thắng RRT\*" thường là một câu sai địa chỉ - thứ thắng là cả một stack,
 và trách nhiệm thuộc về **thành phần**, không thuộc về tên thuật toán.
 
 </Section>
@@ -23,7 +23,7 @@ con số trung bình rời nhau thì không.
 
 </Section>
 
-<Section id="checksum-dieu-kien" title="Checksum điều kiện — công bằng phải kiểm lại được">
+<Section id="checksum-dieu-kien" title="Checksum điều kiện - công bằng phải kiểm lại được">
 
 Mỗi bộ điều kiện mang một checksum. Câu "hai bên chạy cùng điều kiện" vì
 thế là thứ **kiểm lại được**, chứ không phải lời người chạy benchmark tự
@@ -38,14 +38,14 @@ Chỉ so những run có cùng checksum. Khác checksum là khác thế giới.
 Nộp lại cùng một mã với nội dung khác **bị từ chối, không phải gộp**.
 
 Nếu sửa được nội dung dưới cùng cái tên thì mọi kết quả cũ mang tên đó
-lặng lẽ trở thành kết quả của một thứ khác — và không ai biết lúc nào.
+lặng lẽ trở thành kết quả của một thứ khác - và không ai biết lúc nào.
 
 </Section>
 
 <Section id="nguong-doc-tu-deployment" title="Ngưỡng đọc từ triển khai, không nằm trong mã">
 
 Mọi ngưỡng cổng đọc từ bản khai triển khai. **Không một hằng số nào nằm
-trong mã nguồn** — một ngưỡng viết cứng là một ngưỡng không ai đặt ra và
+trong mã nguồn** - một ngưỡng viết cứng là một ngưỡng không ai đặt ra và
 không ai chịu trách nhiệm.
 
 Hệ quả thực dụng: muốn đổi định nghĩa "đạt" thì sửa triển khai, và việc
@@ -73,7 +73,7 @@ phỏng**.
 
 Vì vậy cổng an toàn đòi thêm một số lượt tối thiểu, và câu chặn trên đi
 kèm mọi lần con số đó được nhắc. "Không va chạm lần nào" trên 5 lượt
-không phải một lời hứa — nó là một quan sát trên 5 lượt.
+không phải một lời hứa - nó là một quan sát trên 5 lượt.
 
 </Section>
 
@@ -83,7 +83,7 @@ Máy chạy benchmark nhanh hơn bo mạch đích và chạy Python chứ không
 C++/ROS2.
 
 Cổng thời gian thực **hỏng** thì chắc chắn hỏng trên đích. Cổng **đạt**
-thì **không chứng minh được gì** về đích — và mọi kết quả loại này mang
+thì **không chứng minh được gì** về đích - và mọi kết quả loại này mang
 theo câu cảnh báo đó nguyên văn.
 
 </Section>
@@ -104,7 +104,7 @@ So `astar+dwa` với `rrtstar+dwa`: hiệu số quy được cho bộ lập kế
 toàn cục.
 
 Đổi cả bộ lập kế hoạch lẫn bộ điều khiển cùng lúc: kết quả có thể đúng,
-nhưng nó không nói được thành phần nào tạo ra chênh lệch — và đó thường
+nhưng nó không nói được thành phần nào tạo ra chênh lệch - và đó thường
 là câu bạn cần trả lời.
 
 </Section>

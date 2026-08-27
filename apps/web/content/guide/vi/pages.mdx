@@ -8,13 +8,13 @@ lối đi) hoặc *Bản đồ trống mới*, đặt kích thước và độ p
 một bản đồ để mở trình sửa: chọn bút *Vật cản* hoặc *Trống*, bấm và kéo,
 rồi **Lưu thay đổi**.
 
-Mỗi lần lưu tạo một **phiên bản mới kèm checksum**, không ghi đè bản cũ —
+Mỗi lần lưu tạo một **phiên bản mới kèm checksum**, không ghi đè bản cũ -
 một run đã chạy trên bản đồ nào thì vẫn trỏ đúng vào bản đó.
 
 <Callout kind="trap">
 
 **Bản đồ phải có tường bao kín.** LiDAR coi vùng ngoài bản đồ là không
-phản xạ, còn phát hiện va chạm coi ngoài bản đồ là vật cản — robot ra
+phản xạ, còn phát hiện va chạm coi ngoài bản đồ là vật cản - robot ra
 khỏi mép là một tình huống hệ thống không mô tả được.
 
 </Callout>
@@ -26,7 +26,7 @@ khỏi mép là một tình huống hệ thống không mô tả được.
 <Section id="library" title="Thư viện kịch bản">
 
 Kịch bản dựng sẵn, xếp từ dễ tới khó. *Xem trước* không lưu gì cả. Một
-lần **Import** tạo **cả bản đồ lẫn kịch bản** — đi đường này thì không
+lần **Import** tạo **cả bản đồ lẫn kịch bản** - đi đường này thì không
 cần vẽ bản đồ trước.
 
 <AppLink href="/library" />
@@ -37,7 +37,7 @@ cần vẽ bản đồ trước.
 
 Khai toàn bộ những gì **cố định** trong phép so: bản đồ, robot, cảm biến
 và nhiễu của nó, mission, vật cản động, ngưỡng khả thi, trọng số mục
-tiêu. Hai chế độ cho cùng một kết quả — điền form theo nhóm, hoặc dán
+tiêu. Hai chế độ cho cùng một kết quả - điền form theo nhóm, hoặc dán
 YAML.
 
 Sáu nhóm trường: *Danh tính* · *Robot* · *Ngưỡng* · *Nhiễu đã khai* ·
@@ -45,11 +45,11 @@ Sáu nhóm trường: *Danh tính* · *Robot* · *Ngưỡng* · *Nhiễu đã kh
 
 Vài ô hay bị hiểu nhầm:
 
-- **Ngưỡng** không phải mục tiêu phấn đấu — chúng định nghĩa thế nào là
+- **Ngưỡng** không phải mục tiêu phấn đấu - chúng định nghĩa thế nào là
   *đạt* trên thế giới này, và mọi cổng đọc từ đây. Không ngưỡng nào nằm
   trong mã nguồn.
 - **Nhiễu đã khai** để trống nghĩa là bạn đang khai một thế giới **không
-  nhiễu**, và giao diện hiển thị đúng như vậy — không phải "mặc định hợp
+  nhiễu**, và giao diện hiển thị đúng như vậy - không phải "mặc định hợp
   lý".
 
 <Callout kind="trap">
@@ -69,7 +69,7 @@ biến mọi kết quả cũ thành kết quả của một thứ khác.
 Ba phần: thuật toán đang có trong hệ thống (kèm loại quan sát mỗi cái
 cần), các stack đã ghép sẵn trong registry, và form đăng ký một ứng viên.
 
-Đăng ký **không bắt buộc** — bước chạy phép so cũng chọn được stack và
+Đăng ký **không bắt buộc** - bước chạy phép so cũng chọn được stack và
 cấu hình controller ngay tại chỗ. Đăng ký có ích khi muốn dùng lại đúng
 một cấu hình nhiều lần và có id để tra.
 
@@ -87,7 +87,7 @@ thích với robot profile.
 dòng đó biến kết quả cũ thành bản ghi của hư không. Model đã benchmark
 thì sửa được nhãn nhưng không đổi được tệp.
 
-Tab **Nhập thuật toán** ở cùng trang này — xem bài *Import thuật toán*.
+Tab **Nhập thuật toán** ở cùng trang này - xem bài *Import thuật toán*.
 
 <AppLink href="/models" />
 
@@ -117,7 +117,7 @@ bại, và danh sách nói rõ lý do: chỉ một ứng viên qua đủ cổng,
 viên nào qua, cấu hình triển khai không xếp hạng được, hay run bị dừng
 giữa chừng.
 
-Mở một run ra là trang đọc kết quả — thứ tự đọc và ý nghĩa từng mục nằm ở
+Mở một run ra là trang đọc kết quả - thứ tự đọc và ý nghĩa từng mục nằm ở
 [Mười khái niệm](/guide/concepts).
 
 <AppLink href="/decisions" />
@@ -130,7 +130,7 @@ Hộp thư việc đang chờ bạn, và những yêu cầu bạn đã gửi đi
 chối, ghi chú, hoặc huỷ.
 
 Quy trình duyệt là **tuỳ chọn**. Khi đang chờ, chính chủ không tự duyệt
-được — đó là toàn bộ ý nghĩa của việc nhờ người khác.
+được - đó là toàn bộ ý nghĩa của việc nhờ người khác.
 
 <AppLink href="/reviews" />
 

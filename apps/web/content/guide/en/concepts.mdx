@@ -7,7 +7,7 @@ A\* and RRT\* are **global planners**; DWA is a **local controller**. They
 do not replace each other and do not belong in one table.
 
 What gets measured is a **complete navigation configuration**. So "A\*
-beat RRT\*" is usually addressed to the wrong thing — what won was a
+beat RRT\*" is usually addressed to the wrong thing - what won was a
 stack, and responsibility belongs to a **component**, not to an
 algorithm's name.
 
@@ -25,7 +25,7 @@ that day". Two detached averages do not.
 
 </Section>
 
-<Section id="checksum-dieu-kien" title="The conditions checksum — fairness you can check">
+<Section id="checksum-dieu-kien" title="The conditions checksum - fairness you can check">
 
 Every set of conditions carries a checksum, so "both ran under the same
 conditions" is something you can **verify** rather than something the
@@ -42,7 +42,7 @@ Resubmitting the same id with different contents is **refused, not
 merged**.
 
 If contents could change under the same name, every earlier result
-carrying that name would quietly become a result about something else —
+carrying that name would quietly become a result about something else -
 and nobody would know when.
 
 </Section>
@@ -50,7 +50,7 @@ and nobody would know when.
 <Section id="nguong-doc-tu-deployment" title="Thresholds come from the deployment, not the code">
 
 Every gate threshold is read from the declared deployment. **No constant
-lives in the source** — a hardcoded threshold is one nobody set and
+lives in the source** - a hardcoded threshold is one nobody set and
 nobody owns.
 
 The practical consequence: changing what "passing" means is an edit to
@@ -78,7 +78,7 @@ that was simulated**.
 
 So the safety gate also demands a minimum number of runs, and that bound
 travels with the number every time it is quoted. "No collisions" over
-five runs is not a promise — it is an observation over five runs.
+five runs is not a promise - it is an observation over five runs.
 
 </Section>
 
@@ -88,7 +88,7 @@ The machine running the benchmark is faster than the target board and
 runs Python rather than C++/ROS2.
 
 A real-time gate that **fails** will certainly fail on the target. One
-that **passes** proves **nothing** about the target — and every result of
+that **passes** proves **nothing** about the target - and every result of
 that kind carries the warning verbatim.
 
 </Section>
@@ -111,7 +111,7 @@ conclusion ends up sounding stronger than the data allows.
 global planner.
 
 Change the planner and the controller together: the result may be
-correct, but it cannot say which component produced the difference — and
+correct, but it cannot say which component produced the difference - and
 that is usually the question you needed answered.
 
 </Section>

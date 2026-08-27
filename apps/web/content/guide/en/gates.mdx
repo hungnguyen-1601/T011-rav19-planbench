@@ -5,7 +5,7 @@ gate answers *is this one considered at all*.
 knowing a candidate "failed G2" without knowing whether G4 also failed is
 a diagnosis nobody can act on.
 
-Every threshold below is read from the declared deployment — no gate
+Every threshold below is read from the declared deployment - no gate
 carries a constant of its own.
 
 <GuideTabs slug="gates">
@@ -41,7 +41,7 @@ with the number every time it is quoted.
 
 </Callout>
 
-Touching a boundary counts as a collision — deliberately conservative.
+Touching a boundary counts as a collision - deliberately conservative.
 
 </div>
 
@@ -60,7 +60,7 @@ arrives clears G1 and fails here.
 **p99 latency ≤ the control period.**
 
 The p99 is taken over **every control step of the whole evaluation set**,
-pooled — deliberately neither the worst episode's p99, which would make
+pooled - deliberately neither the worst episode's p99, which would make
 the gate a function of the unluckiest moment on the benchmark host, nor a
 mean.
 
@@ -69,7 +69,7 @@ mean.
 **Proves one direction only.** The benchmark host is faster than the
 target board and runs Python rather than C++/ROS2. Failing here means it
 will fail on the target; **passing** here proves **nothing** about the
-target — and every G4 result carries that warning verbatim.
+target - and every G4 result carries that warning verbatim.
 
 </Callout>
 
@@ -100,7 +100,7 @@ difference can never reach this gate and be reported as a hardware
 incompatibility that does not exist.
 
 The candidate declares *what it needs*, the deployment declares *what it
-has*. Missing means excluded — a statement about configuration, not a
+has*. Missing means excluded - a statement about configuration, not a
 verdict on quality.
 
 </div>

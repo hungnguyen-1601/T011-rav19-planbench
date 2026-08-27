@@ -10,7 +10,7 @@ seed, same moving obstacles in the same places at the same moments, same
 sensor noise. Each set of conditions carries a **checksum**, so "both ran
 under the same conditions" is checkable rather than asserted.
 
-The difference is taken **per pair** and only then aggregated — not as
+The difference is taken **per pair** and only then aggregated - not as
 the difference of two detached averages.
 
 Why that matters: the largest source of noise in a navigation benchmark
@@ -29,7 +29,7 @@ behind it**. The interval is bootstrapped over the paired differences
 themselves.
 
 An interval **straddling zero** means this run has not demonstrated the
-difference it just reported — even when the mean difference is non-zero
+difference it just reported - even when the mean difference is non-zero
 and its sign looks convincing.
 
 <Callout kind="trap">
@@ -48,14 +48,14 @@ notice.
 
 <div>
 
-A claim about **mechanism** — *why* A beat B — is not allowed to stand
+A claim about **mechanism** - *why* A beat B - is not allowed to stand
 level with an observation. Four rungs, and only four:
 
-1. **observed** — seen in the data.
-2. **associated** — statistically related.
-3. **mechanism_verified** — the mechanism checked by a deterministic
+1. **observed** - seen in the data.
+2. **associated** - statistically related.
+3. **mechanism_verified** - the mechanism checked by a deterministic
    test.
-4. **intervention_supported** — something was changed and the result
+4. **intervention_supported** - something was changed and the result
    moved with it.
 
 **There is no fifth rung for "unknown".** Missing evidence means **no
@@ -63,7 +63,7 @@ claim**, not a weak one.
 
 AI's role at this layer is to **propose hypotheses**, because the
 combinatorial space is too large for a fixed rule set. It is never the
-source of a number, a verification, or a causal conclusion — it proposes,
+source of a number, a verification, or a causal conclusion - it proposes,
 and the deterministic layer checks and stamps.
 
 </div>

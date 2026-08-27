@@ -10,7 +10,7 @@ its size and resolution. Click a map to open the editor: pick the
 *obstacle* or *free* brush, click and drag, then **Save changes**.
 
 Every save writes a **new version with a checksum** rather than
-overwriting the old one — a run that happened on one version still points
+overwriting the old one - a run that happened on one version still points
 at that version.
 
 <Callout kind="trap">
@@ -28,7 +28,7 @@ a robot leaving the edge is a situation the system cannot describe.
 <Section id="library" title="Scenario library">
 
 Prebuilt scenarios, easiest first. *Preview* stores nothing. A single
-**Import** creates **both the map and the scenario** — take this route and
+**Import** creates **both the map and the scenario** - take this route and
 there is no map to draw.
 
 <AppLink href="/library" />
@@ -40,7 +40,7 @@ there is no map to draw.
 Where everything **held fixed** in a comparison is declared: the map, the
 robot, its sensors and their noise, the missions, the moving obstacles,
 the feasibility thresholds and the objective weights. Two modes, one
-result — a grouped form, or pasted YAML.
+result - a grouped form, or pasted YAML.
 
 Six groups of fields: *Identity* · *Robot* · *Thresholds* · *Declared
 noise* · *Moving obstacles* · *Missions*. Every field has a **?** saying
@@ -52,7 +52,7 @@ Two that are routinely misread:
   means in this world, and every gate reads them from here. No threshold
   lives in the code.
 - **Declared noise** left empty means you are declaring a **noiseless**
-  world, and the interface says so — it is not a sensible default.
+  world, and the interface says so - it is not a sensible default.
 
 <Callout kind="trap">
 
@@ -72,7 +72,7 @@ Three parts: the algorithms the system currently has (with the kind of
 observation each one needs), the stacks already assembled in the
 registry, and the form that registers a candidate.
 
-Registering is **optional** — the comparison form picks a stack and a
+Registering is **optional** - the comparison form picks a stack and a
 controller configuration on the spot. It earns its keep when you want to
 reuse one configuration repeatedly and have an id to quote.
 
@@ -90,7 +90,7 @@ and whether it fits that robot profile.
 run*; removing the row turns an old result into a record of nothing. A
 benchmarked model can be relabelled but its file cannot be swapped.
 
-The **Import algorithm** tab lives on this screen — see the *Importing an
+The **Import algorithm** tab lives on this screen - see the *Importing an
 algorithm* article.
 
 <AppLink href="/models" />
@@ -120,7 +120,7 @@ A run that **ranks nobody** is still a result rather than a failure, and
 the list says which: only one candidate cleared the gates, none did, the
 deployment cannot be ranked, or the run was stopped part-way.
 
-Opening a run is the reading screen — what to read in what order is in
+Opening a run is the reading screen - what to read in what order is in
 [Ten ideas](/guide/concepts).
 
 <AppLink href="/decisions" />
@@ -133,7 +133,7 @@ What is waiting on you, and what you have sent to somebody else. Approve,
 reject, comment, or cancel.
 
 Review is **optional**. While a request is open the owner cannot approve
-their own work — which is the entire point of asking.
+their own work - which is the entire point of asking.
 
 <AppLink href="/reviews" />
 
