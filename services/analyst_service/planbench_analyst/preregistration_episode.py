@@ -144,6 +144,27 @@ class EpisodePreregistration:
     #: that is sound is what the preregistration exists to stop.
     stage_two_rule: str = "no_hard_constraint_violated_and_guard_drops_not_worse_than_b1"
 
+    #: How four eligible arms become the two stage two has room for.
+    #:
+    #: **An amendment, added 2026-08-27 after stage one and before stage
+    #: two ran**, because the rule above was silent on it: it says which
+    #: arms are *eligible* and the field beside it says two go through,
+    #: and stage one produced four eligible arms. Deciding the cut by
+    #: eye at that point is the whole failure mode a preregistration
+    #: exists to stop, so the cut is written as a rule instead:
+    #:
+    #: * the baseline always goes through — stage two compares arms, and
+    #:   without b1 in it there is nothing the other arm is better *than*;
+    #: * the other seat goes to the eligible arm with the fewest guard
+    #:   drops, which is the same figure the eligibility rule already
+    #:   reads, taken to its extreme rather than to its threshold;
+    #: * ties broken by the arm name, so nothing is left to whoever runs
+    #:   it.
+    #:
+    #: On stage one this selects **ep_no_union** (9 drops) beside b1 (12),
+    #: over ep_shortlist (10) and ep_run_context (12).
+    stage_two_tiebreak: str = "baseline_plus_fewest_guard_drops_then_by_name"
+
     #: Judged blind, by one person, against the rubric fixed on 26-08.
     rubric: str = "r0.1.0"
     scoring: str = "blind_to_arm_single_scorer"
@@ -173,6 +194,7 @@ class EpisodePreregistration:
             "stage_two_repeats": self.stage_two_repeats,
             "stage_two_arms": self.stage_two_arms,
             "stage_two_rule": self.stage_two_rule,
+            "stage_two_tiebreak": self.stage_two_tiebreak,
             "rubric": self.rubric,
             "scoring": self.scoring,
             "holdout": self.holdout,
