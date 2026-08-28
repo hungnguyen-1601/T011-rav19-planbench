@@ -33,6 +33,7 @@ from planbench_api.oauth import ExchangeCodes, OAuthClient
 from planbench_api.plugin_service import sync_catalogue as sync_plugin_catalogue
 from planbench_api.repositories import RepositoryHub
 from planbench_api.routers import (
+    admin,
     agent,
     algorithms,
     auth,
@@ -254,6 +255,7 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     app.include_router(health.router, prefix=API_PREFIX)
     app.include_router(auth.router, prefix=API_PREFIX)
     app.include_router(users.router, prefix=API_PREFIX)
+    app.include_router(admin.router, prefix=API_PREFIX)
     app.include_router(reviews.router, prefix=API_PREFIX)
     app.include_router(maps.router, prefix=API_PREFIX)
     app.include_router(scenarios.router, prefix=API_PREFIX)
