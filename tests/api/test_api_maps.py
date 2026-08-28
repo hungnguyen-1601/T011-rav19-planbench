@@ -470,3 +470,114 @@ class TestStagingDoesNotFileACopyPerClick:
             "staging must point at the stored map, not at a copy named after its file"
         )
         assert after == before, f"staging filed a shadow map row: {before} -> {after}"
+
+
+class TestStagingFollowsAnEditedDeployment:
+    """Editing a deployment and staging it again must run the new world.
+
+    Staging reuses a stored scenario rather than filing one per click,
+    and it used to find that row **by name**. The name is the
+    ``episode_context_id``, and the comment there called it "the hash of
+    the conditions" — which is the one thing HĐ-3.1 says it is not: that
+    id hashes the deployment id, the mission, the environment variant
+    and the seed, and not the traffic, the noise or the thresholds.
+
+    So editing the traffic left the name unchanged, the lookup matched a
+    row built from the previous document, and the bench replayed a world
+    the deployment no longer described. Removing an obstacle changed
+    nothing on screen, and nothing else in the system would have said
+    otherwise, because a staged episode reaches no gate and no card.
+    """
+
+    def _deployment(self, client, headers, profile_id: str, obstacles: list[dict]) -> dict:
+        base = client.get("/api/v1/task-profiles/template", headers=headers).json()
+        base["id"] = profile_id
+        base["environment"]["dynamic_obstacles"] = obstacles
+        return base
+
+    def _cart(self, name: str, x: float, seed_offset: int = 0) -> dict:
+        """One cart. `seed_offset` differs per obstacle on purpose.
+
+        The server refuses two obstacles that share a clock key — it is
+        `seed_offset` plus the name's *length*, so equal-length names
+        collide and the pair moves together at every seed. The refusal is
+        right; this just satisfies it.
+        """
+        return {
+            "name": name,
+            "radius": 0.35,
+            "motion": {
+                "kind": "sudden_stop",
+                "start": {"x": x, "y": 6.0},
+                "heading": -1.5707963267948966,
+                "speed": 0.6,
+                "stop_time": 2.0,
+            },
+            "seed_time_offset": 2.0,
+            "seed_offset": seed_offset,
+        }
+
+    def _stage(self, client, headers, profile_id: str, missions) -> dict:
+        answered = client.post(
+            f"/api/v1/task-profiles/{profile_id}/test-bench",
+            json={
+                "mission_id": missions[0]["id"],
+                "seed": 3,
+                "stack": "astar+dwa",
+                "local_config": "dwa_coarse",
+            },
+            headers=headers,
+        )
+        assert answered.status_code == 201, answered.text
+        return answered.json()
+
+    def test_removing_an_obstacle_reaches_the_bench(self, client, alice_headers) -> None:
+        two = self._deployment(
+            client,
+            alice_headers,
+            "staging_follows_edit",
+            [self._cart("obstacle-1", 5.0, 0), self._cart("obstacle-2", 8.0, 1)],
+        )
+        filed = client.post("/api/v1/task-profiles", json=two, headers=alice_headers)
+        assert filed.status_code in (200, 201), filed.text
+        missions = filed.json()["profile"]["missions"]
+
+        first = self._stage(client, alice_headers, "staging_follows_edit", missions)
+        assert len(first["scenario"]["dynamic_obstacles"]) == 2
+
+        # Take one away. Nothing has measured this deployment, so the
+        # edit is allowed and the id does not move — which is exactly the
+        # condition under which the stale lookup used to bite.
+        one = self._deployment(
+            client, alice_headers, "staging_follows_edit", [self._cart("obstacle-1", 5.0)]
+        )
+        edited = client.put(
+            "/api/v1/task-profiles/staging_follows_edit", json=one, headers=alice_headers
+        )
+        assert edited.status_code == 200, edited.text
+
+        second = self._stage(client, alice_headers, "staging_follows_edit", missions)
+        assert len(second["scenario"]["dynamic_obstacles"]) == 1, (
+            "the bench staged the world the deployment used to describe"
+        )
+        # And it is a different scenario row, so the first episode still
+        # describes what it actually ran.
+        assert second["scenario_id"] != first["scenario_id"]
+
+    def test_staging_the_same_world_twice_still_reuses_one_row(self, client, alice_headers) -> None:
+        """Content matching must not turn every click into a new row.
+
+        That was the reason the lookup existed. Watching one deployment
+        twenty times has to leave one scenario, not twenty.
+        """
+        document = self._deployment(
+            client, alice_headers, "staging_reuse_probe", [self._cart("obstacle-1", 5.0)]
+        )
+        filed = client.post("/api/v1/task-profiles", json=document, headers=alice_headers)
+        assert filed.status_code in (200, 201), filed.text
+        missions = filed.json()["profile"]["missions"]
+
+        first = self._stage(client, alice_headers, "staging_reuse_probe", missions)
+        second = self._stage(client, alice_headers, "staging_reuse_probe", missions)
+        assert first["scenario_id"] == second["scenario_id"]
+        assert first["map_id"] == second["map_id"]

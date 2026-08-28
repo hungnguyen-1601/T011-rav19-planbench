@@ -1388,7 +1388,7 @@ class TestBenchService:
 
         stored_map = self._existing_map(map_data) or self._maps.create(map_data)
         stored_scenario = self._existing_scenario(
-            stored_map.id, scenario.name
+            stored_map.id, scenario
         ) or self._scenarios.create(stored_map.id, scenario)
 
         # Through the service rather than the repository, so the same
@@ -1460,15 +1460,32 @@ class TestBenchService:
                 return stored
         return None
 
-    def _existing_scenario(self, map_id: str, name: str) -> Any | None:
-        """The scenario for this context, if it has been staged before.
+    def _existing_scenario(self, map_id: str, scenario: Any) -> Any | None:
+        """A stored scenario identical to the one about to be staged.
 
-        Matched on the name, which :func:`scenario_for` sets to the
-        ``episode_context_id`` — so the lookup key is the hash of the
-        conditions rather than a label somebody typed.
+        **Matched on content, and it used to be matched on the name.**
+        The name is the ``episode_context_id``, and the old docstring
+        called that "the hash of the conditions" — which is exactly the
+        thing HĐ-3.1 says it is not. That id hashes the deployment id,
+        the mission, the environment variant and the seed; it does *not*
+        hash the traffic, the noise or the thresholds.
+
+        So editing a deployment and staging it again produced the same
+        name, the name matched a row built from the *old* document, and
+        the bench replayed a world the deployment no longer described.
+        Removing an obstacle changed nothing on screen — the strongest
+        possible symptom, and one nothing else in the system would have
+        contradicted, because a staged episode reaches no gate and no
+        card.
+
+        Comparing the scenario itself asks the question that was meant
+        all along: is the world already stored the world we are about to
+        run? A row that differs is left alone rather than overwritten —
+        an earlier staged episode still describes what it actually ran,
+        and these rows are cheap.
         """
         for stored in self._scenarios.list():
-            if stored.map_id == map_id and stored.scenario.name == name:
+            if stored.map_id == map_id and stored.scenario == scenario:
                 return stored
         return None
 
