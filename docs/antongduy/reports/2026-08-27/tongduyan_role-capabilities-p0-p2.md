@@ -1,8 +1,8 @@
-# Thi hành plan role: P0–P8 xong, backend đã đủ — 2026-08-27
+# Thi hành plan role: P0–P8 + P12 xong, P9 dở — 2026-08-27
 
-Báo cáo cập nhật lần 3. Bản đầu phủ P0–P2, bản hai phủ tới P6; bản này
-phủ tới **P8 — toàn bộ phần backend của plan**. Tên file giữ nguyên để
-link cũ không hỏng.
+Báo cáo cập nhật lần 4. Bản đầu phủ P0–P2, bản hai tới P6, bản ba tới
+P8; bản này thêm **P12 (desktop)** và **nửa đầu P9 (web)**. Tên file giữ
+nguyên để link cũ không hỏng.
 
 Plan: `plans/2026-08-27/thiet-ke-role-engineer-reviewer-admin.md` (13
 phase). Khảo sát nền: `notes/2026-08-27/tongduyan_khao-sat-hien-trang-role.md`.
@@ -19,10 +19,16 @@ phase). Khảo sát nền: `notes/2026-08-27/tongduyan_khao-sat-hien-trang-role.
 | P5 | Dừng hợp tác tại episode boundary | xong | `e977df8` |
 | P6 | Luồng duyệt claim/ack/decide | xong | `56d1f2d` |
 | P7 | Reliance dẫn xuất + cảnh báo trên config | xong | `74456a9` |
-| P8 | Admin: users/roles, audit, break-glass | xong | (commit cuối) |
-| **P9–P12** | **web (3 phase) + desktop** | **chưa bắt đầu** | — |
+| P8 | Admin: users/roles, audit, break-glass | xong | `a2c4e51` |
+| **P12** | **Desktop: launcher, ba tài khoản, ca upgrade** | **xong (làm sớm)** | (commit) |
+| P9 | Web: session/nav/badge/banner + duyệt ba bước | **một nửa** | 2 commit |
+| P10–P11 | Web: Review Queue, dashboard, `/admin/*` | chưa bắt đầu | — |
 
-Nhánh `tongduyan_roles-capabilities` từ `main`, **16 commit**, chưa push.
+Nhánh `tongduyan_roles-capabilities` từ `main`, **20 commit**, chưa push.
+
+**P12 làm sớm, ra trước P9–P11.** Nó là thứ chặn phát hành, nhỏ, và
+không phụ thuộc web — để sau thì nhánh này nằm ở trạng thái "không được
+release" lâu hơn cần thiết.
 
 **Nhánh mang hai luồng việc.** Ngoài commit role của tôi, An đã commit 5
 bản ghi AI-analyst lên cùng nhánh (`3f7f0b4`, `7a4b10f`, `27a6035`,
@@ -165,76 +171,135 @@ khác nhau; đã ghim `ZipInfo(date_time=…)`.
 
 ---
 
-## 4. Còn lại — P9 đến P12, toàn bộ web + desktop
+## 4. P12 — desktop, làm sớm vì nó chặn phát hành
 
-Chưa động một dòng nào ở `apps/web`. Việc còn lại:
+**Đã đo trước khi sửa.** Dựng đúng tình huống (DB schema 0011 + tài
+khoản `admin` có `is_admin=1` + `.env` cũ) rồi boot code mới:
 
-**P9 — web nền**: `SessionUser.roles/.capabilities` từ `/auth/me`;
-`NavItem.capability` thay `NavItem.admin`; badge role; banner khi
-`separation_of_duties=relaxed` và banner DEMO MODE không tắt được;
-`HumanActs` thành ba bước Claim → Acknowledge → Approve; trang
-`/algorithms` mới + detail + publications; candidate picker lọc theo
-publication; nút "Tải cấu hình lịch sử" khi reliance ≠ active.
+| | trước khi vá | sau khi vá |
+|---|---|---|
+| App boot, login `admin:admin` | được | được |
+| profile | `production` | `desktop-single-user` |
+| roles | `engineer + admin` | `engineer + reviewer + admin` |
+| `run.review` | **không** | có |
+| `algorithm.import` / `publish` | **không** | có |
 
-**P10 — web review**: Review Queue ba tab, dashboard theo role, modal
-submit/takeover.
+Nghĩa là trước khi vá, giám khảo vẫn chạy được so sánh nhưng **không
+duyệt được cấu hình nào và không import được thuật toán**.
 
-**P11 — web admin**: `/admin/*` bốn trang, dời `/settings` và `/system`.
+**Vá launcher đặt profile thôi là chưa đủ** — đo riêng và xác nhận: kết
+quả y hệt. Lý do: `.env` cũ dùng dạng hai phần `admin:admin`, không khai
+role nào, nên reconcile không có gì để thêm. Launcher phải cấp **cả
+profile lẫn seed roles lẫn SoD** khi file im lặng, và cấp **mỗi lần
+launch** chứ không chỉ lần đầu — file viết từ hai bản trước sẽ không bao
+giờ tự mọc thêm dòng.
 
-**P12 — desktop**: launcher `setdefault` profile trong process; template
-`.env` ba tài khoản (`admin` ba role, `engineer`, `reviewer`); smoke gate
-**ca upgrade từ 0.1.14 với `.env` cũ**; `docs/DEMO-PROFILE.md`.
+Ba luật giữ kèm: cái gì `.env` nói rõ thì thắng (kể cả ai chọn `demo`);
+password đang có được giữ nguyên; tài khoản đã đổi tên thì cấp role cho
+đúng tên đó chứ không dựng thêm tài khoản mẫu bên cạnh.
 
-Nhắc lại ràng buộc chi phối P12: **bản desktop đã phát hành đang được ban
-giám khảo chấm bằng `admin:admin`**. Cơ chế đỡ đã có từ P1 (reconcile
-role ở API startup theo profile), nhưng **phần launcher chưa viết** —
-nghĩa là hôm nay một bản cài cũ nâng cấp lên nhánh này sẽ rơi vào profile
-`production` và `admin` chỉ còn role `admin`. **Đây là việc bắt buộc phải
-làm trước khi phát hành bất cứ bản desktop nào từ nhánh này.**
+Cộng: template `.env` mới seed **ba tài khoản** (`admin` ba role,
+`engineer`, `reviewer`) để một máy có thể trình bày luồng theo cả hai
+kiểu — một người làm hết, và hai vai tách nhau. Và `docs/DEMO-PROFILE.md`
+— cách bật demo trên máy đã cài, và quy trình gỡ trước production.
 
-Ngoài phạm vi plan (đã ghi từ đầu): governance cho PPO model, job queue
-bền qua restart, đồng bộ settings nhiều worker, gỡ luồng benchmark cũ,
+`tests/desktop/test_upgrade_keeps_access.py`, **9 test**, khẳng định
+**kết quả** chứ không khẳng định cơ chế: đăng nhập sau nâng cấp và làm
+được việc. Đó là dạng duy nhất bắt được lỗi thứ hai, vì lỗi đó qua được
+mọi assertion về profile.
+
+---
+
+## 5. P9 — web, mới xong một nửa
+
+**Đã làm (2 commit):**
+
+- `SessionUser` mang `roles` + `capabilities`; helper `can()` và hằng
+  `CAPABILITIES`. Session khôi phục từ store bản cũ mặc định **rỗng**,
+  không phải "đủ mọi quyền".
+- `NavItem.capability` thay `NavItem.admin`; Sidebar lọc theo capability
+  server gửi, không theo tên role.
+- Badge hiện **mọi** role đang giữ; `demo_owner` hiện một mình.
+- `DeploymentBanner` — banner `relaxed` và `DEMO MODE` không tắt được,
+  đọc từ `/health` (đã thêm khối `deployment` vào endpoint đó), có cả ở
+  trang login.
+- `HumanActs` thành bốn bước: Send → Claim → Acknowledge → Approve, kèm
+  nút Take over (đòi lý do) và Put it back. Câu dưới nút nói **thiếu
+  bước nào**.
+- API client: `fetchReviewState`, `submitForReview`, `claimReview`,
+  `takeoverReview`, `releaseReview`, `cancelSubmission`.
+- 34 khoá i18n mới, **cả `en.json` lẫn `vi.json`**.
+
+**Còn lại trong P9:**
+
+- Trang `/algorithms` (đã thêm mục vào rail, **chưa có route**) + detail
+  + publications + audit timeline.
+- Candidate picker lọc theo publication current, hiện chip trạng thái
+  cho bundle chưa publish.
+- Nút "Tải cấu hình lịch sử" + cảnh báo reliance trên trang decision
+  (khoá i18n đã có, chưa nối vào component).
+- Trang `/admin/users` (đã thêm mục vào rail, **chưa có route**).
+
+**Nghiệm thu web**: `npx tsc --noEmit` sạch; `vitest` 1080/1081 pass.
+Lỗi còn lại là `agent-dock.test.tsx`, đọc file tôi không đụng — có sẵn.
+Hai lỗi khác gặp lúc làm (`decision-prose`, `decisions-page`) cũng có
+sẵn: đã đối chiếu tập khoá `en.json` trước/sau, **không mất khoá nào**,
+và hai khoá chúng đòi (`preflight.disabledDerived`, `outcome.title`)
+chưa từng tồn tại.
+
+---
+
+## 6. Còn lại
+
+**P10** — Review Queue ba tab (Runs / Algorithms / Legacy), dashboard
+theo role, modal submit/takeover.
+
+**P11** — `/admin/*` bốn trang, dời `/settings` và `/system` vào đó.
+
+**Phần đuôi P9** — bốn mục ở §5.
+
+Ngoài phạm vi plan (ghi từ đầu): governance cho PPO model, job queue bền
+qua restart, đồng bộ settings nhiều worker, gỡ luồng benchmark cũ,
 sandbox bảo mật thật cho plugin.
 
+**Nhánh này giờ phát hành desktop được** — ràng buộc giám khảo đã có
+test giữ. Nhưng hai mục rail (`/algorithms`, `/admin/users`) đang trỏ
+tới route chưa tồn tại, nên **đừng release trước khi xong P9 + P11**,
+nếu không người dùng bấm vào sẽ ra 404.
+
 ---
 
-## 5. Quyết định phát sinh khi làm (plan không lường trước)
+## 7. Quyết định phát sinh khi làm (plan không lường trước)
 
-1. **`status` của plugin thêm giá trị thứ ba thay vì thêm cột.** Cột thứ
-   hai sẽ là câu trả lời thứ hai cho câu hỏi cột `status` đã trả lời.
-2. **`held` thay `quarantined`** — `QuarantinedPlugin` ở discovery (H5)
-   đã nghĩa "manifest không parse được".
-3. **Fixture `client` đăng nhập sẵn**, thêm fixture `anonymous`. 306 lời
-   gọi GET, chỉ 128 có header; sửa 178 chỗ là churn cơ học.
-4. **Thêm tài khoản seed `erin:engineer`** — alice/bob/carol mang
-   `engineer+reviewer`, nên test "người không có quyền bị chặn" cần một
-   người thật sự không có.
-5. **Ticket router tách khỏi socket router** — socket ngoài `/api/v1`,
-   ticket là POST có auth nên vào trong.
-6. **Thứ tự refusal artefact-trước-người**: "run này không có card" và
-   "chưa từng duyệt" trả lời trước "anh không giữ review này" / "thiếu
-   lý do". Hỏi ngược sẽ đẩy người ta đi tìm một quyền không giúp được gì.
-7. **`_decision_action()`** chọn `self_approve_config` khi một tài khoản
-   vừa tạo run vừa ký.
-8. **`acknowledged_under` nhận cả `review` lẫn `acknowledge`** — store
-   ghi `review` từ trước khi lane này tồn tại, và những dòng đó là
-   acknowledge thật.
-9. **`ReviewConflict` → 409** (thua cuộc đua thì reload), tách khỏi
-   `ReviewNotAllowed` → 403 (cần quyền khác) và `ReviewError` → 422.
+1. **`status` của plugin thêm giá trị thứ ba thay vì thêm cột.**
+2. **`held` thay `quarantined`** — tên cũ đã có nghĩa khác ở discovery.
+3. **Fixture `client` đăng nhập sẵn**, thêm fixture `anonymous`.
+4. **Thêm tài khoản seed `erin:engineer`** cho test "bị chặn".
+5. **Ticket router tách khỏi socket router.**
+6. **Thứ tự refusal artefact-trước-người** — áp cho cả `decide_config`
+   lẫn `withdraw_config`.
+7. **`_decision_action()`** chọn `self_approve_config`.
+8. **`acknowledged_under` nhận cả `review` lẫn `acknowledge`.**
+9. **`ReviewConflict` → 409**, tách khỏi 403 và 422.
 10. **Claim tự nhả kiểm lúc đọc**, không chỉ ở chỗ gỡ role.
-11. **`latest()` khác `current()`**: "chưa từng gửi" và "đã xong" là hai
-    trạng thái, một query trả `None` cho cả hai sẽ bị gộp.
-12. **`append_event` công khai** trên cả hai backend — cho những việc xảy
-    ra *với* một quyết định chứ không *trong* nó.
+11. **`latest()` khác `current()`** — "chưa gửi" và "đã xong" là hai
+    trạng thái.
+12. **`append_event` công khai** trên cả hai backend.
+13. **`/health` mang khối `deployment`** — banner phải lên được trước
+    khi ai đăng nhập.
+14. **`ReviewAssignment` chứ không phải `ReviewState`** ở web —
+    `ReviewState` đã nghĩa "đã đọc chưa".
+15. **Launcher cấp profile + seed roles + SoD, mỗi lần launch** (§4).
 
 ---
 
-## 6. Lệnh để tiếp tục
+## 8. Lệnh để tiếp tục
 
 ```powershell
 git switch tongduyan_roles-capabilities     # đang ở đây, cây sạch
-python -m pytest tests/test_roles.py tests/test_run_identity.py tests/test_sweep_stop.py tests/test_reliance.py -q
-python -m pytest tests/api/test_api_admin.py tests/api/test_api_decision_review.py -q
+python -m pytest tests/desktop/ -q                        # 110 pass
+python -m pytest tests/test_roles.py tests/test_reliance.py -q
+cd apps/web; npx tsc --noEmit; npx vitest run src/lib/__tests__ src/components/__tests__
 ```
 
 Không có gì chạy nền. Không push remote nào. `.ai-log/` chưa commit —
