@@ -20,6 +20,7 @@ import { wideContent } from "@/lib/navigation";
 import { AgentDock } from "./AgentDock";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
+import { DeploymentBanner } from "@/components/DeploymentBanner";
 import { useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import { fetchInbox } from "@/lib/reviews";
@@ -94,7 +95,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [userId]);
 
   if (isBare(pathname)) {
-    return <main className="content bare-page">{children}</main>;
+    // The banner survives here too. "This machine approves its own
+    // work" is context for reading the login page, not only for reading
+    // an approval.
+    return (
+      <>
+        <DeploymentBanner />
+        <main className="content bare-page">{children}</main>
+      </>
+    );
   }
 
   return (
@@ -139,6 +148,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           className={wideContent(pathname) ? "content content--wide" : "content"}
           id="main-content"
         >
+          <DeploymentBanner />
           {children}
         </main>
       </div>

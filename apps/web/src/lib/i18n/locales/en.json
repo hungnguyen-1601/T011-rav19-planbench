@@ -1859,5 +1859,15 @@
   "deployments.tabs.label": "Deployments sections",
   "deployments.tabs.create": "File a deployment",
   "deployments.tabs.list": "On file",
-  "deployments.pager.label": "Deployment pages"
+  "deployments.pager.label": "Deployment pages",
+  "topbar.role.engineer": "Engineer",
+  "topbar.role.reviewer": "Reviewer",
+  "topbar.role.admin": "Admin",
+  "topbar.role.demo_owner": "Demo Owner",
+  "nav.adminUsers": "Users & access",
+  "nav.desc.adminUsers": "Accounts, the roles they hold, and the trail",
+  "deployment.relaxed.title": "Single-person deployment",
+  "deployment.relaxed.body": "One account may both run a comparison and sign it off. Every such approval is recorded as a self-approval, so the trail never claims a second person looked.",
+  "deployment.demo.title": "DEMO MODE",
+  "deployment.demo.body": "The Demo Owner holds every capability and separation of duties is relaxed. Do not use this configuration for production."
 }

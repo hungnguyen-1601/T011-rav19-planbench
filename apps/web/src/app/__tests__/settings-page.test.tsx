@@ -158,7 +158,11 @@ describe("a reader who is not an admin", () => {
   });
 
   it("is not offered the entry in the rail either", () => {
-    expect(SIDEBAR).toContain("!item.admin || user?.is_admin");
+    // Matched on the capability the account holds rather than on a
+    // role: the server sends what this account may do, and comparing
+    // against that is what keeps the rail from drifting the day a
+    // capability moves between packages.
+    expect(SIDEBAR).toContain("user?.capabilities?.includes(item.capability)");
     expect(SIDEBAR).toContain("visible(section.items, user)");
   });
 });
@@ -230,10 +234,10 @@ describe("saving", () => {
 });
 
 describe("the rail and the dictionaries", () => {
-  it("lists the page under Account, for admins only", () => {
+  it("lists the page under Account, for whoever configures the deployment", () => {
     const account = NAV_SECTIONS.find((section) => section.titleKey === "nav.section.account");
     const entry = account?.items.find((item) => item.href === "/settings");
-    expect(entry?.admin).toBe(true);
+    expect(entry?.capability).toBe("system.configure");
     expect(entry?.session).toBe(true);
     expect(entry?.labelKey).toBe("nav.settings");
   });

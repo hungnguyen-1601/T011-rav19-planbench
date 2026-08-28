@@ -1859,5 +1859,15 @@
   "deployments.tabs.label": "Các mục của trang Cấu hình triển khai",
   "deployments.tabs.create": "Tạo cấu hình triển khai",
   "deployments.tabs.list": "Đã có trên hệ thống",
-  "deployments.pager.label": "Các trang của danh sách cấu hình triển khai"
+  "deployments.pager.label": "Các trang của danh sách cấu hình triển khai",
+  "topbar.role.engineer": "Kỹ sư",
+  "topbar.role.reviewer": "Người duyệt",
+  "topbar.role.admin": "Quản trị",
+  "topbar.role.demo_owner": "Demo Owner",
+  "nav.adminUsers": "Người dùng & quyền",
+  "nav.desc.adminUsers": "Tài khoản, role đang giữ, và nhật ký",
+  "deployment.relaxed.title": "Deployment một người",
+  "deployment.relaxed.body": "Một tài khoản vừa chạy so sánh vừa ký duyệt được. Mọi lần duyệt như vậy đều ghi là tự duyệt, nên nhật ký không bao giờ nói rằng có người thứ hai đã xem.",
+  "deployment.demo.title": "CHẾ ĐỘ DEMO",
+  "deployment.demo.body": "Demo Owner giữ toàn bộ quyền và separation of duties đang nới. Không dùng cấu hình này cho production."
 }

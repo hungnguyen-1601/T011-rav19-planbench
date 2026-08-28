@@ -24,13 +24,19 @@ import type { Translator } from "@/lib/i18n";
 
 /** The entries this reader is offered.
  *
- * An `admin` entry is dropped for everyone else. Cosmetic and stated as
- * such — the API refuses the write either way — but a rail that lists a
- * page whose every control answers 403 is advertising a door most of
- * the people reading it cannot open.
+ * An entry naming a capability the reader does not hold is dropped.
+ * Cosmetic and stated as such — the API refuses the request either way —
+ * but a rail that lists a page whose every control answers 403 is
+ * advertising a door most of the people reading it cannot open.
+ *
+ * Filtered on the capability rather than on a role: the server sends
+ * what this account may do, and matching that exactly means the rail
+ * cannot drift from it when a capability moves between packages.
  */
 function visible(items: readonly NavItem[], user: SessionUser | null): NavItem[] {
-  return items.filter((item) => !item.admin || user?.is_admin);
+  return items.filter(
+    (item) => !item.capability || Boolean(user?.capabilities?.includes(item.capability)),
+  );
 }
 
 export function Sidebar({

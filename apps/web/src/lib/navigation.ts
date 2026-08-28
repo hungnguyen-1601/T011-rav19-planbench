@@ -30,12 +30,17 @@ export interface NavItem {
   hidden?: boolean;
   /** Requires a session; shown but marked when signed out. */
   session?: boolean;
-  /** Only an admin can do anything here, so only an admin is offered it.
+  /** The capability this page needs to be worth offering.
    *
-   * Cosmetic and stated as such: the API refuses the write regardless.
-   * Hiding the entry keeps the rail from advertising a door that
-   * answers with a 403 to most of the people who read it. */
-  admin?: boolean;
+   * Cosmetic and stated as such: the API refuses the request regardless.
+   * Hiding the entry keeps the rail from advertising a door that answers
+   * with a 403 to most of the people who read it.
+   *
+   * A capability rather than a role, for the same reason the routes name
+   * one: the mapping from role to capability lives in a single dict on
+   * the server, and a rail that named roles would be a second copy of it
+   * — free to disagree the day a capability moves between packages. */
+  capability?: string;
   /** On its way out, and still the only way to do something.
    *
    * A chip beside the name rather than a section of its own: a heading
@@ -114,6 +119,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         descriptionKey: "nav.desc.library",
       },
       {
+        href: "/algorithms",
+        labelKey: "nav.algorithms",
+        icon: "cpu",
+        descriptionKey: "nav.desc.algorithms",
+      },
+      {
         href: "/candidates",
         labelKey: "nav.candidates",
         icon: "cpu",
@@ -152,8 +163,16 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         labelKey: "nav.settings",
         icon: "settings",
         session: true,
-        admin: true,
+        capability: "system.configure",
         descriptionKey: "nav.desc.settings",
+      },
+      {
+        href: "/admin/users",
+        labelKey: "nav.adminUsers",
+        icon: "user",
+        session: true,
+        capability: "user.manage",
+        descriptionKey: "nav.desc.adminUsers",
       },
       { href: "/system", labelKey: "nav.system", icon: "info", descriptionKey: "nav.desc.system" },
     ],
