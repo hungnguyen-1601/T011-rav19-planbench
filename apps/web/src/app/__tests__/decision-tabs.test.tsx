@@ -239,3 +239,39 @@ describe("the open tab survives a reload", () => {
     expect(lib).toContain('"planbench.decision-tab"');
   });
 });
+
+describe("a tab label arrives as a key or as text, never as either", () => {
+  const SOURCE = readFileSync(
+    join(process.cwd(), "src", "components", "DecisionTabs.tsx"),
+    "utf8",
+  );
+
+  it("keeps the two apart as fields rather than as one string", () => {
+    /* `string | string` compiles and says nothing: handed "G1", the
+       component cannot tell a key it must look up from text already in
+       the reader's language. The guide's tab titles come from a manifest
+       holding both languages, so there is no key to pass. */
+    expect(SOURCE).toContain("labelKey: string; label?: never");
+    expect(SOURCE).toContain("label: string; labelKey?: never");
+  });
+
+  it("resolves a key and passes text through untouched", () => {
+    /* Running text through `t()` would look up a dictionary entry named
+       "G1", miss, and fall back — printing the same thing by accident on
+       the day it works and something else the day a key of that name is
+       added. */
+    expect(SOURCE).toContain("source.label !== undefined ? source.label : t(source.labelKey)");
+  });
+
+  it("still lets every existing caller pass a key alone", () => {
+    /* The point of widening rather than renaming: four call sites, none
+       of them touched. */
+    for (const caller of [
+      join("src", "app", "decisions", "page.tsx"),
+      join("src", "app", "decisions", "[id]", "DecisionDetail.tsx"),
+      join("src", "app", "deployments", "page.tsx"),
+    ]) {
+      expect(readFileSync(join(process.cwd(), caller), "utf8")).toContain("labelKey=");
+    }
+  });
+});

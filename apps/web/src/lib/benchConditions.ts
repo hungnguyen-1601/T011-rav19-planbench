@@ -582,7 +582,7 @@ function describeDeclared(
         const settings =
           config && typeof config === "object" ? Object.keys(config as object).length : 0;
         const suffix = settings > 0 ? ` (${t("bench.cond.settings", { n: settings })})` : "";
-        return `${String(grant.capability)} — ${String(grant.provider_id)} ${String(
+        return `${String(grant.capability)} - ${String(grant.provider_id)} ${String(
           grant.provider_version,
         )}${suffix}`;
       });

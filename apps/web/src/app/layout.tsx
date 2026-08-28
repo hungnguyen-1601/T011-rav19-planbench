@@ -50,7 +50,7 @@ const mono = localFont({
 
 export const metadata: Metadata = {
   title: "PlanBench",
-  description: "Agentic AI PlanBench — AMR/AGV path & motion planning benchmark",
+  description: "Agentic AI PlanBench - AMR/AGV path & motion planning benchmark",
 };
 
 /**

@@ -22,7 +22,7 @@ export function NotificationButton({ pending }: { pending: number }) {
     <Link
       href="/reviews"
       className="icon-button badge-dot"
-      aria-label={`${t("topbar.reviews")} — ${label}`}
+      aria-label={`${t("topbar.reviews")} - ${label}`}
       data-tooltip={label}
     >
       <Icon name="inbox" />

@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authFetch, updateSessionUser, useSession, type SessionUser } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
@@ -113,6 +114,11 @@ export default function WelcomePage() {
             {busy ? t("welcome.saving") : t("welcome.continue")}
           </button>
         </form>
+        {/* The first screen a new account sees, and the one moment
+            somebody is certain to be looking for where to begin. */}
+        <p style={{ marginTop: 14, fontSize: 12 }}>
+          <Link href="/guide">{t("welcome.guide.link")}</Link>
+        </p>
         {session.user.email ? (
           <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
             {session.user.providers.length
