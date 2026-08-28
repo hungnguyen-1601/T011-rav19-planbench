@@ -234,12 +234,40 @@ describe("saving", () => {
 });
 
 describe("the rail and the dictionaries", () => {
-  it("lists the page under Account, for whoever configures the deployment", () => {
-    const account = NAV_SECTIONS.find((section) => section.titleKey === "nav.section.account");
-    const entry = account?.items.find((item) => item.href === "/settings");
+  it("lists the page under Administration, for whoever configures the deployment", () => {
+    /* It used to sit under Account, among the pages every signed-in
+       person has. Configuring the deployment is not one of those, and
+       somebody looking for "where do I change who may publish?" had to
+       read every account entry to find out none of them was it.
+
+       The *href* deliberately did not move with it: `/settings` has been
+       linked from release notes and from the desktop launcher since
+       0.1.x, and changing a URL to tidy a menu breaks a bookmark to fix
+       nothing. */
+    const admin = NAV_SECTIONS.find(
+      (section) => section.titleKey === "nav.section.administration",
+    );
+    const entry = admin?.items.find((item) => item.href === "/settings");
     expect(entry?.capability).toBe("system.configure");
     expect(entry?.session).toBe(true);
     expect(entry?.labelKey).toBe("nav.settings");
+
+    const account = NAV_SECTIONS.find((section) => section.titleKey === "nav.section.account");
+    expect(account?.items.some((item) => item.href === "/settings")).toBe(false);
+  });
+
+  it("puts every administration entry behind a capability", () => {
+    /* The section is drawn only when at least one of its entries is
+       visible, so an entry with no capability would make the whole
+       heading appear for everybody — and "Administration" with one link
+       under it reads as a deployment where anybody may administer it. */
+    const admin = NAV_SECTIONS.find(
+      (section) => section.titleKey === "nav.section.administration",
+    );
+    expect(admin?.items.length).toBeGreaterThan(0);
+    for (const item of admin?.items ?? []) {
+      expect(item.capability, `${item.href} is offered to everybody`).toBeTruthy();
+    }
   });
 
   it("has every key it names in both locales", () => {

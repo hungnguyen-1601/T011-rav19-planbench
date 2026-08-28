@@ -122,6 +122,10 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         href: "/algorithms",
         labelKey: "nav.algorithms",
         icon: "cpu",
+        // Held by all three packages, so this hides the entry from
+        // exactly one kind of account: one with no package at all, which
+        // is a dormant account rather than a reader.
+        capability: "algorithm.catalogue",
         descriptionKey: "nav.desc.algorithms",
       },
       {
@@ -158,14 +162,25 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         session: true,
         descriptionKey: "nav.desc.reviews",
       },
-      {
-        href: "/settings",
-        labelKey: "nav.settings",
-        icon: "settings",
-        session: true,
-        capability: "system.configure",
-        descriptionKey: "nav.desc.settings",
-      },
+      { href: "/system", labelKey: "nav.system", icon: "info", descriptionKey: "nav.desc.system" },
+    ],
+  },
+  /* **Administration, gathered rather than scattered.** These four were
+     in among the account pages, where somebody looking for "where do I
+     change who may publish?" had to read every entry to find out none of
+     them was it. Grouping them makes the rail say that running the
+     deployment is a distinct job — which is the whole claim the
+     administrator package makes.
+
+     The hrefs are unchanged. `/settings` and `/system` have been linked
+     to from release notes and from the desktop launcher since 0.1.x, and
+     moving a URL to tidy a menu breaks a bookmark to fix nothing. Every
+     entry here is capability-gated, so on a deployment where nobody is
+     an administrator the section renders as nothing at all rather than
+     as an empty heading. */
+  {
+    titleKey: "nav.section.administration",
+    items: [
       {
         href: "/admin/users",
         labelKey: "nav.adminUsers",
@@ -174,7 +189,22 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         capability: "user.manage",
         descriptionKey: "nav.desc.adminUsers",
       },
-      { href: "/system", labelKey: "nav.system", icon: "info", descriptionKey: "nav.desc.system" },
+      {
+        href: "/admin/audit",
+        labelKey: "nav.adminAudit",
+        icon: "info",
+        session: true,
+        capability: "audit.read",
+        descriptionKey: "nav.desc.adminAudit",
+      },
+      {
+        href: "/settings",
+        labelKey: "nav.settings",
+        icon: "settings",
+        session: true,
+        capability: "system.configure",
+        descriptionKey: "nav.desc.settings",
+      },
     ],
   },
 ];

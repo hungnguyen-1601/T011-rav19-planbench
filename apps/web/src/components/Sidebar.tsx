@@ -73,10 +73,17 @@ export function Sidebar({
       </div>
 
       <nav aria-label={t("sidebar.label")}>
-        {NAV_SECTIONS.map((section) => (
-          <div className="sidebar-section" key={section.titleKey}>
-            <p className="sidebar-section-title">{t(section.titleKey)}</p>
-            {visible(section.items, user).map((item) => {
+        {NAV_SECTIONS.map((section) => {
+          const items = visible(section.items, user);
+          // A heading is a claim that there is something under it. On a
+          // deployment where nobody holds the administrator package,
+          // every entry in that section is hidden, and the heading alone
+          // would advertise a set with no members.
+          if (items.length === 0) return null;
+          return (
+            <div className="sidebar-section" key={section.titleKey}>
+              <p className="sidebar-section-title">{t(section.titleKey)}</p>
+              {items.map((item) => {
               const label = t(item.labelKey);
               const description = item.descriptionKey ? t(item.descriptionKey) : null;
               const active = isActive(pathname, item.href);
@@ -116,8 +123,9 @@ export function Sidebar({
                 </Link>
               );
             })}
-          </div>
-        ))}
+            </div>
+          );
+        })}
       </nav>
 
       <div className="sidebar-footer">
