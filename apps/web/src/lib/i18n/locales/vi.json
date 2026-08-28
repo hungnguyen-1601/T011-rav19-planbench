@@ -2090,5 +2090,12 @@
   "maps.pins.newIdHint": "ví dụ sudden_stop_v3",
   "maps.pins.newIdWhy": "Id mới, không dùng lại id cũ: một id mang hai thế giới khác nhau chính là thứ làm kết quả đã lưu không đọc được nữa. Mọi thứ còn lại — mission, robot, ngưỡng — được sao y.",
   "maps.pins.made": "Đã tạo:",
-  "bench.mapVersion": "map {id} v{version}"
+  "bench.mapVersion": "map {id} v{version}",
+  "deployments.copy": "Nhân bản",
+  "deployments.edit": "Sửa",
+  "deployments.editLocked": "Đã đo",
+  "deployments.editLockedWhy": "Đã có comparison chạy trên deployment này nên không sửa được nữa: mã episode không ghi lại nó chạy trong thế giới nào, sửa ở đây sẽ khiến các kết quả đó mô tả một nơi không còn tồn tại. Hãy nhân bản thay vì sửa.",
+  "deployments.column.measured": "Đã đo",
+  "deployments.notMeasured": "Chưa",
+  "deployments.notMeasuredWhy": "Chưa comparison nào chạy trên deployment này, nên vẫn sửa trực tiếp được."
 }

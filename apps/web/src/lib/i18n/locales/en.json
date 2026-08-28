@@ -2090,5 +2090,12 @@
   "maps.pins.newIdHint": "e.g. sudden_stop_v3",
   "maps.pins.newIdWhy": "A new id, never the old one reused: the same id meaning two different worlds is what would make stored results unreadable. Everything else — missions, robot, thresholds — is copied.",
   "maps.pins.made": "Filed:",
-  "bench.mapVersion": "map {id} v{version}"
+  "bench.mapVersion": "map {id} v{version}",
+  "deployments.copy": "Copy",
+  "deployments.edit": "Edit",
+  "deployments.editLocked": "Measured",
+  "deployments.editLockedWhy": "A comparison has already run against this deployment, so it can no longer be changed: an episode id does not record which world it ran in, and editing this one would leave those results describing somewhere that no longer exists. Copy it instead.",
+  "deployments.column.measured": "Measured",
+  "deployments.notMeasured": "Not yet",
+  "deployments.notMeasuredWhy": "No comparison has run against this deployment, so it can still be corrected in place."
 }

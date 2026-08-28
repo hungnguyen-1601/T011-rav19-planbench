@@ -178,6 +178,16 @@ export interface DeploymentFormProps {
   /** The draft, lifted so the YAML tab can show what this tab built. */
   draft: ProfileDraft | null;
   onDraftChange: (draft: ProfileDraft) => void;
+  /** The id of the deployment this draft was opened from, when it was
+   * opened from one — duplicating, or correcting.
+   *
+   * A marker rather than the document itself: the document already
+   * arrives as `draft`, and what this adds is *that it came from
+   * somewhere*, which is what tells the form to bring its map controls
+   * into line instead of leaving them on the template's defaults. It
+   * changes when a different deployment is opened, which is what makes
+   * the hydration run again. */
+  startFrom?: string | null;
 }
 
 export function DeploymentForm({
@@ -186,6 +196,7 @@ export function DeploymentForm({
   fieldErrors,
   draft,
   onDraftChange,
+  startFrom = null,
 }: DeploymentFormProps) {
   const { t } = useTranslation();
   const [error, setError] = useState<string | null>(null);
@@ -507,20 +518,29 @@ export function DeploymentForm({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // The defaults, from the shipped profile rather than a copy in here.
+  /** The pickers, always; the template, only for an empty form.
+   *
+   * These used to be one effect that returned early when a draft was
+   * already present — fine while the only way to have a draft was for
+   * this effect to have created it. It stopped being true the moment the
+   * page could open the form on a deployment that already exists: the
+   * draft arrives first, the effect returns, and the map, scenario and
+   * vehicle pickers stay empty for a form whose whole purpose is to edit
+   * what those pickers describe.
+   *
+   * The template is still withheld when a draft exists, because that is
+   * the part that would overwrite it.
+   */
   useEffect(() => {
-    if (draft) return;
     let cancelled = false;
     void (async () => {
       try {
-        const [template, entries, stored, fleet] = await Promise.all([
-          getProfileTemplate(),
+        const [entries, stored, fleet] = await Promise.all([
           listScenarioLibrary().catch(() => [] as LibraryEntry[]),
           api.listMaps().catch(() => [] as MapSummary[]),
           listRobotProfiles().catch(() => [] as RobotProfile[]),
         ]);
         if (cancelled) return;
-        onDraftChange(withNoiseDefaults(template));
         setLibrary(entries);
         setMaps(stored);
         setVehicles(fleet);
@@ -531,7 +551,75 @@ export function DeploymentForm({
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // The defaults, from the shipped profile rather than a copy in here.
+  useEffect(() => {
+    if (draft) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const template = await getProfileTemplate();
+        if (cancelled) return;
+        onDraftChange(withNoiseDefaults(template));
+      } catch (caught) {
+        if (!cancelled) setError(caught instanceof Error ? caught.message : String(caught));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [draft, onDraftChange]);
+
+  /** Bring the map controls into line with a draft this form did not build.
+   *
+   * **Not `adopt`, which is the important part.** Adopting a map resets
+   * the poses onto it, because a coordinate means something else on
+   * other walls. That is right when somebody *chooses* a different map
+   * and exactly wrong here: the document already carries missions that
+   * were placed on these walls and validated against them, and moving
+   * them to the map's corners would silently discard the thing being
+   * copied.
+   *
+   * So this only makes the picker, the canvas and the placed poses agree
+   * with what the document already says. It runs once per incoming
+   * document — keyed on the id — so typing in the form afterwards does
+   * not drag the map back.
+   */
+  const hydratedFrom = useRef<string | null>(null);
+  useEffect(() => {
+    const document = draft as { id?: string; environment?: { map?: string } } | null;
+    const identity = startFrom ?? null;
+    if (!document || !identity || hydratedFrom.current === identity) return;
+    hydratedFrom.current = identity;
+
+    const path = String(document.environment?.map ?? "");
+    const custom = /^maps\/custom\/(.+?)__v\d+\.(?:pgm|yaml)$/.exec(path);
+    // A bundled map has no row in the store to select, and the document
+    // names it by a path that stays valid. Leaving the picker on its
+    // default is honest: there is nothing here to pick.
+    if (!custom) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const resource = await api.getMap(custom[1]);
+        if (cancelled) return;
+        setSource("stored");
+        setStoredMapId(custom[1]);
+        setActiveMapId(custom[1]);
+        setMapData(resource.map_data);
+      } catch {
+        // The map row is gone — archived, or never materialised from a
+        // profile written by hand. The document still names a file the
+        // engine can read, so the form stays usable and simply cannot
+        // draw the walls.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [draft, startFrom]);
 
   /** Adopt a map: draw it, write it out, and reset the poses onto it.
    *

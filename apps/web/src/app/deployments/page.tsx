@@ -35,6 +35,8 @@ import {
 import { usePagination } from "@/lib/pagination";
 import {
   createTaskProfile,
+  replaceTaskProfile,
+  suggestProfileId,
   deleteTaskProfile,
   listTaskProfiles,
   type DeletionBlocked,
@@ -130,16 +132,72 @@ export default function DeploymentsPage() {
    *  Refusals come back whole: the sentence for the reader and, since
    *  the server started addressing them, one entry per offending field
    *  for the form to outline. Nothing here decides anything. */
+  /** Which deployment the form is *correcting*, if it is correcting one.
+   *
+   * Null covers both filing something new and duplicating: a duplicate
+   * is a new deployment that happens to start from an old one's text,
+   * and treating it as an edit would send a PUT at the id it was copied
+   * from. Held apart from `openedFrom` for exactly that reason — the two
+   * differ only in this field, and everything else about them is the
+   * same act. */
+  const [editing, setEditing] = useState<string | null>(null);
+  /** Which deployment the draft was opened from, either way. Passed to
+   *  the form so it can bring its map controls into line. */
+  const [openedFrom, setOpenedFrom] = useState<string | null>(null);
+
+  const openCopy = useCallback(
+    (row: TaskProfileSummary) => {
+      /* The id is suggested, not silently assigned. It is the
+         deployment's identity and it goes into every episode_context_id
+         hash, so a name nobody chose is a name nobody recognises three
+         weeks later. Filling the field and leaving it editable is the
+         middle path: fast for the ordinary case, still a decision. */
+      const document = {
+        ...(row.profile as ProfileDraft),
+        id: suggestProfileId(row.id, profiles.map((each) => each.id)),
+      } as ProfileDraft;
+      setEditing(null);
+      setOpenedFrom(row.id);
+      setFormDraft(document);
+      setDraft("");
+      setError(null);
+      setFiled(null);
+      setFieldErrors([]);
+      deploymentsTabStore.set("create");
+    },
+    [profiles],
+  );
+
+  const openEdit = useCallback((row: TaskProfileSummary) => {
+    setEditing(row.id);
+    setOpenedFrom(row.id);
+    setFormDraft(row.profile as ProfileDraft);
+    setDraft("");
+    setError(null);
+    setFiled(null);
+    setFieldErrors([]);
+    deploymentsTabStore.set("create");
+  }, []);
+
   const file = async (profile: ProfileDraft) => {
     setBusy(true);
     setError(null);
     setFiled(null);
     setFieldErrors([]);
     try {
-      const created = await createTaskProfile(profile);
-      setFiled(created.id);
+      /* One handler for both, because filing and correcting are the same
+         act from the form's side: it hands over a document. Which verb
+         goes out is a fact about where the document came from, and the
+         server owns the rule either way — a PUT at a deployment that has
+         been measured is refused there, not here. */
+      const saved = editing
+        ? await replaceTaskProfile(editing, profile)
+        : await createTaskProfile(profile);
+      setFiled(saved.id);
       setDraft("");
       setFormDraft(null);
+      setEditing(null);
+      setOpenedFrom(null);
       await refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -285,6 +343,7 @@ export default function DeploymentsPage() {
                           setFieldErrors([]);
                         }}
                         onSubmit={file}
+                        startFrom={openedFrom}
                         busy={busy}
                         fieldErrors={fieldErrors}
                       />
@@ -358,12 +417,27 @@ export default function DeploymentsPage() {
                             <th>{t("deployments.column.risk")}</th>
                             <th>{t("deployments.column.replanning")}</th>
                             <th>{t("deployments.column.nMin")}</th>
+                            {/* Whether anything has been measured against this
+                                deployment. A column of its own rather than a word
+                                wedged between two buttons: it is a fact about the
+                                deployment, like the noise and the thresholds beside
+                                it, and it is also what decides whether the row can
+                                be edited — so it belongs where somebody scanning
+                                the table reads facts, not where they reach for
+                                actions. */}
+                            <th>{t("deployments.column.measured")}</th>
                             <th />
                           </tr>
                         </thead>
                         <tbody>
                           {paged.visible.map((profile) => (
-                            <DeploymentRow key={profile.id} profile={profile} onDeleted={refresh} />
+                            <DeploymentRow
+                              key={profile.id}
+                              profile={profile}
+                              onDeleted={refresh}
+                              onCopy={openCopy}
+                              onEdit={openEdit}
+                            />
                           ))}
                         </tbody>
                       </table>
@@ -391,9 +465,13 @@ export default function DeploymentsPage() {
 function DeploymentRow({
   profile,
   onDeleted,
+  onCopy,
+  onEdit,
 }: {
   profile: TaskProfileSummary;
   onDeleted: () => void;
+  onCopy: (profile: TaskProfileSummary) => void;
+  onEdit: (profile: TaskProfileSummary) => void;
 }) {
   const { t } = useTranslation();
   const constraints = constraintsOf(profile);
@@ -448,6 +526,32 @@ function DeploymentRow({
         {constraints.n_min_evaluation_episodes ?? "—"}
       </td>
       <td>
+        {/* The badge carries the consequence in its tooltip either way.
+            "Measured" on its own reads as a label; what a reader needs
+            is why it stops them editing, and what to do instead. */}
+        {profile.editable ? (
+          <span className="muted small" title={t("deployments.notMeasuredWhy")}>
+            {t("deployments.notMeasured")}
+          </span>
+        ) : (
+          <span className="badge warn" title={t("deployments.editLockedWhy")}>
+            {t("deployments.editLocked")}
+          </span>
+        )}
+      </td>
+      <td className="row-actions">
+        {/* Copy first, because it is the one that always works. Editing
+            is offered only while nothing has measured this deployment —
+            the server says which, and a button that always refuses is
+            worse than no button. */}
+        <button type="button" onClick={() => onCopy(profile)}>
+          {t("deployments.copy")}
+        </button>
+        {profile.editable ? (
+          <button type="button" onClick={() => onEdit(profile)}>
+            {t("deployments.edit")}
+          </button>
+        ) : null}
         <DeleteDeployment id={profile.id} onDeleted={onDeleted} />
       </td>
     </tr>

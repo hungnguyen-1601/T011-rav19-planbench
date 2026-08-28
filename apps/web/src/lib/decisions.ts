@@ -342,6 +342,15 @@ export interface TaskProfileSummary {
   owner_user_id: string | null;
   created_at: string;
   profile: Record<string, unknown>;
+  /** Whether this deployment can still be corrected in place: nothing
+   * has been measured against it yet, and it is not the reference one.
+   *
+   * Sent by the server rather than worked out here, because working it
+   * out means counting this deployment's runs — and a count made in the
+   * browser is a second answer, free to disagree with the one the server
+   * would refuse on. Defaulted to `false` so a client talking to an
+   * older API offers nothing rather than offering a button that fails. */
+  editable?: boolean;
 }
 
 export function listDecisions(filters?: {
@@ -380,6 +389,53 @@ export function createTaskProfile(
     method: "POST",
     body: JSON.stringify(profile),
   });
+}
+
+/** Correct a deployment that nothing has measured yet.
+ *
+ * **Not a general edit.** The server refuses the moment a single
+ * comparison exists, because `episode_context_id` does not hash the
+ * environment (HĐ-3.1) and changing the deployment would leave those
+ * runs describing a world that no longer exists while their ids still
+ * matched. A deployment nothing has run has no such runs — it is a
+ * description somebody typed, usually minutes ago with one number
+ * wrong.
+ *
+ * The refusal is a 409 that names `derive` as the way forward, so a
+ * caller can offer that instead of just reporting a wall.
+ */
+export function replaceTaskProfile(
+  profileId: string,
+  profile: unknown,
+): Promise<TaskProfileSummary> {
+  return authFetch<TaskProfileSummary>(`/task-profiles/${encodeURIComponent(profileId)}`, {
+    method: "PUT",
+    body: JSON.stringify(profile),
+  });
+}
+
+/** A free id for a copy of `baseId`, given what is already filed.
+ *
+ * Suggested rather than generated silently: the id is the deployment's
+ * identity, it goes into every `episode_context_id` hash, and a name
+ * nobody chose is a name nobody recognises three weeks later. The form
+ * puts this in the field and lets it be edited.
+ *
+ * `sudden_stop_v6` becomes `sudden_stop_v7`; a name with no version
+ * suffix gains `_v2`; and the count keeps rising until it finds one
+ * that is free, so duplicating twice does not offer a taken id.
+ */
+export function suggestProfileId(baseId: string, taken: readonly string[]): string {
+  const used = new Set(taken);
+  const match = /^(.*?)(\d+)$/.exec(baseId);
+  const stem = match ? match[1] : `${baseId}_v`;
+  let next = match ? Number(match[2]) + 1 : 2;
+  let candidate = `${stem}${next}`;
+  while (used.has(candidate)) {
+    next += 1;
+    candidate = `${stem}${next}`;
+  }
+  return candidate;
 }
 
 /** File a deployment that is another one with a different map.
