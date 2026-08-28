@@ -183,17 +183,39 @@ class OAuthAccountRow(Base):
 
 
 class ReviewRequestRow(Base):
-    """One request for a second opinion on a benchmark."""
+    """One request for a second opinion, on a benchmark or a decision run.
+
+    Three columns describe who it is waiting on, and they are three
+    because they answer different questions. ``requested_reviewer_user_id``
+    is what the engineer asked for and never changes — it is part of what
+    they said. ``claimed_by_user_id`` is where it is now.
+    ``available_to_pool`` is whether anybody else may take it, stated
+    rather than inferred from the other two: inferring it is what left a
+    directed request stuck after its reviewer released it.
+    """
 
     __tablename__ = "review_requests"
 
     id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
-    benchmark_id: Mapped[str] = mapped_column(
-        String(ID_LENGTH), ForeignKey("benchmarks.id", ondelete="CASCADE"), nullable=False
+    #: Kept, and still the foreign key, for the benchmark lane. Null for
+    #: a decision run — that lane's integrity is enforced in the service,
+    #: inside the transaction that creates the request.
+    benchmark_id: Mapped[str | None] = mapped_column(
+        String(ID_LENGTH), ForeignKey("benchmarks.id", ondelete="CASCADE"), nullable=True
     )
+    subject_kind: Mapped[str] = mapped_column(String(20), nullable=False, default="benchmark")
+    subject_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
     stage: Mapped[str] = mapped_column(String(10), nullable=False)
     requested_by_user_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
-    reviewer_user_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+    #: The old name for "the reviewer", kept so benchmark rows written
+    #: before this load unchanged.
+    reviewer_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    requested_reviewer_user_id: Mapped[str | None] = mapped_column(
+        String(ID_LENGTH), nullable=True
+    )
+    claimed_by_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    claimed_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+    available_to_pool: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[str] = mapped_column(String(12), nullable=False)
     request_comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
     review_comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -206,6 +228,7 @@ class ReviewRequestRow(Base):
         # The inbox query: my pending requests, newest first.
         Index("ix_review_requests_reviewer", "reviewer_user_id", "status"),
         Index("ix_review_requests_requester", "requested_by_user_id"),
+        Index("ix_review_requests_subject", "subject_kind", "subject_id", "status"),
     )
 
 
@@ -796,6 +819,12 @@ class DecisionRunRow(Base):
     #: an unpublished bundle behave: same code path, different label, and
     #: never submitted or approved.
     purpose: Mapped[str] = mapped_column(String(20), nullable=False, default="production")
+    #: The request this run is waiting on, if any. A pointer rather than
+    #: a copy of its state: two places recording who a run is waiting on
+    #: is how they come to disagree.
+    current_review_request_id: Mapped[str | None] = mapped_column(
+        String(ID_LENGTH), nullable=True
+    )
 
     candidates: Mapped[list[DecisionRunCandidateRow]] = relationship(
         cascade="all, delete-orphan", lazy="selectin"

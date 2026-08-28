@@ -12,6 +12,7 @@ from planbench_agent.tools import ToolPolicy
 from planbench_api.agent_gateway import ApiAgentGateway
 from planbench_api.auth import CurrentUser
 from planbench_api.config import get_settings
+from planbench_api.decision_review import DecisionReviewService
 from planbench_api.decision_service import (
     CandidateService,
     DecisionRunService,
@@ -84,6 +85,17 @@ def get_plugin_service(request: Request) -> PluginBundleService:
         governance=policy.algorithm_governance,
         strict_duties=not policy.relaxed,
     )
+
+
+def get_decision_review_service(request: Request) -> DecisionReviewService:
+    """The claim workflow, for decision runs.
+
+    Separate from ``get_review_service`` because the two lanes have
+    different rules, and one object answering to both would be one object
+    that has to keep asking which lane it is in.
+    """
+    repos = get_repos(request)
+    return DecisionReviewService(repos.reviews, repos.users, repos.decision_runs)
 
 
 def get_review_service(request: Request) -> ReviewService:

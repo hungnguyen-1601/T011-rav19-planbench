@@ -600,13 +600,22 @@ class DecisionRunService:
         actor_user_id: str | None,
         username: str,
         comment: str = "",
+        relaxed: bool = False,
     ) -> StoredDecisionRun:
+        """``relaxed`` comes from the deployment, never from the request.
+
+        It is the single-person install's answer to "may one account both
+        create a run and sign it?". Passed down rather than read here so
+        the store stays a state machine with no opinion about where it is
+        running — and so a caller cannot ask for it.
+        """
         return self._runs.decide_config(
             run_id,
             approve=approve,
             actor_user_id=actor_user_id,
             username=username,
             comment=comment,
+            relaxed=relaxed,
         )
 
     def withdraw_config(

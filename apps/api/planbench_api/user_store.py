@@ -326,8 +326,25 @@ class InMemoryReviewRepository:
         return self._sorted(
             request
             for request in self._items.values()
-            if request.reviewer_user_id == reviewer_user_id
+            if (
+                request.reviewer_user_id == reviewer_user_id
+                or request.claimed_by_user_id == reviewer_user_id
+            )
             and (status is None or request.status is status)
+        )
+
+    def list_for_subject(self, subject_kind: str, subject_id: str) -> list[ReviewRequest]:
+        return self._sorted(
+            request
+            for request in self._items.values()
+            if request.subject_kind.value == subject_kind and request.subject == subject_id
+        )
+
+    def list_by_kind(self, subject_kind: str) -> list[ReviewRequest]:
+        return self._sorted(
+            request
+            for request in self._items.values()
+            if request.subject_kind.value == subject_kind
         )
 
     def list_requested_by(self, user_id: str) -> list[ReviewRequest]:

@@ -55,7 +55,22 @@ ConfigState = Literal["not_applicable", "pending", "approved", "rejected"]
 
 #: What a human did. Append-only vocabulary: nothing here undoes anything,
 #: because an audit trail that can be rewound is not one (HĐ-14).
-ReviewAction = Literal["review", "approve_config", "reject_config", "withdraw_config"]
+ReviewAction = Literal[
+    "review",
+    #: What ``review`` is called from the decision lane onwards. The old
+    #: spelling stays valid so rows written before this still parse — an
+    #: audit trail that cannot be read is not an audit trail.
+    "acknowledge",
+    "approve_config",
+    "reject_config",
+    "withdraw_config",
+    #: A single-person deployment, where the same account created the run
+    #: and signed it. Recorded under its own name so the trail never
+    #: claims a second human looked.
+    "self_approve_config",
+    "self_reject_config",
+    "algorithm_disabled_after_approval",
+]
 
 
 def same_deployment(stored: dict, incoming: dict) -> bool:
@@ -296,6 +311,18 @@ class CandidateRepository:
             return list(self._items.values())
 
 
+def _decision_action(approve: bool, alone: bool) -> str:
+    """What to call this in the trail.
+
+    ``self_*`` when one account both created the run and signed it. The
+    outcome is identical; the record is not, and a reader has to be able
+    to tell a second pair of eyes from the absence of one.
+    """
+    if alone:
+        return "self_approve_config" if approve else "self_reject_config"
+    return "approve_config" if approve else "reject_config"
+
+
 @dataclass
 class ReviewEvent:
     """One human act on one run. Append-only (HĐ-14).
@@ -401,6 +428,7 @@ class DecisionRunRepository:
         actor_user_id: str | None,
         username: str,
         comment: str,
+        relaxed: bool = False,
     ) -> StoredDecisionRun:
         """Approve or reject this run's recommendation as a configuration.
 
@@ -438,7 +466,8 @@ class DecisionRunRepository:
                     "stands; the way to change a recommendation is a new run, which leaves "
                     "both records in place"
                 )
-            if actor_user_id is not None and actor_user_id == run.created_by:
+            own_run = actor_user_id is not None and actor_user_id == run.created_by
+            if own_run and not relaxed:
                 raise InvalidStateError(
                     f"account {actor_user_id} started decision run {run_id} and cannot approve "
                     "its own recommendation (HĐ-14, separation of duties). Whoever chose the "
@@ -450,7 +479,7 @@ class DecisionRunRepository:
             run.config_decided_at = now_iso()
             self._append(
                 run_id,
-                "approve_config" if approve else "reject_config",
+                _decision_action(approve, own_run and relaxed),
                 actor_user_id,
                 username,
                 previous,

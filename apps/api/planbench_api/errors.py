@@ -135,7 +135,7 @@ def register_error_handlers(app: FastAPI) -> None:
     from planbench_api.model_registry import ModelNotAllowed, RegistryError
     from planbench_api.oauth import OAuthError
     from planbench_api.plugin_registry import PluginNotAllowed
-    from planbench_api.review import ReviewError, ReviewNotAllowed
+    from planbench_api.review import ReviewConflict, ReviewError, ReviewNotAllowed
     from planbench_benchmark.registry import AlgorithmConfigError, UnknownAlgorithmError
 
     # Registered before ProviderError because it is a subclass; FastAPI
@@ -186,8 +186,15 @@ def register_error_handlers(app: FastAPI) -> None:
     async def permission_denied(_: Request, exc: PermissionDenied) -> JSONResponse:
         return JSONResponse(status_code=403, content=_error_body("forbidden", str(exc)))
 
-    # Before ReviewError, which it subclasses: being the wrong person is a
-    # 403, while asking for something impossible is a 422.
+    # Both registered before ReviewError, which they subclass. The three
+    # say different things and a caller acts on each differently: being
+    # the wrong person is a 403 and needs a different permission; losing
+    # a race is a 409 and needs a reload; asking for something impossible
+    # is a 422 and needs a different request.
+    @app.exception_handler(ReviewConflict)
+    async def review_conflict(_: Request, exc: ReviewConflict) -> JSONResponse:
+        return JSONResponse(status_code=409, content=_error_body("conflict", str(exc)))
+
     @app.exception_handler(ReviewNotAllowed)
     async def review_not_allowed(_: Request, exc: ReviewNotAllowed) -> JSONResponse:
         return JSONResponse(status_code=403, content=_error_body("forbidden", str(exc)))

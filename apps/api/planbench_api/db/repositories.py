@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from planbench_api.accounts import (
@@ -77,7 +77,7 @@ from planbench_api.repositories import (
     new_id,
     now_iso,
 )
-from planbench_api.review import ReviewRequest, ReviewStage, ReviewStatus
+from planbench_api.review import ReviewRequest, ReviewStage, ReviewStatus, ReviewSubject
 from planbench_benchmark import BenchmarkReport, BenchmarkSpec, RunRecord
 from planbench_metrics import EpisodeMetrics
 from planbench_planning import PlanResult
@@ -704,10 +704,16 @@ class SqlReviewRepository:
     def create(self, request: ReviewRequest) -> ReviewRequest:
         row = ReviewRequestRow(
             id=request.id or new_id(),
-            benchmark_id=request.benchmark_id,
+            benchmark_id=request.benchmark_id or None,
+            subject_kind=request.subject_kind.value,
+            subject_id=request.subject or None,
             stage=request.stage.value,
             requested_by_user_id=request.requested_by_user_id,
-            reviewer_user_id=request.reviewer_user_id,
+            reviewer_user_id=request.reviewer_user_id or None,
+            requested_reviewer_user_id=request.requested_reviewer_user_id,
+            claimed_by_user_id=request.claimed_by_user_id,
+            claimed_at=request.claimed_at,
+            available_to_pool=request.available_to_pool,
             status=request.status.value,
             request_comment=request.request_comment,
             review_comment=request.review_comment,
@@ -732,6 +738,9 @@ class SqlReviewRepository:
             row.review_comment = request.review_comment
             row.reviewed_at = request.reviewed_at
             row.cancelled_at = request.cancelled_at
+            row.claimed_by_user_id = request.claimed_by_user_id
+            row.claimed_at = request.claimed_at
+            row.available_to_pool = request.available_to_pool
             session.flush()
             return _to_review(row)
 
@@ -741,13 +750,33 @@ class SqlReviewRepository:
     def list_for_reviewer(
         self, reviewer_user_id: str, status: ReviewStatus | None = None
     ) -> list[ReviewRequest]:
-        clauses = [ReviewRequestRow.reviewer_user_id == reviewer_user_id]
+        # Either column, because the two lanes name the same idea
+        # differently: a benchmark request is addressed to somebody and a
+        # decision request is *held* by somebody. An inbox that read only
+        # the older column would show a reviewer nothing they had
+        # claimed.
+        clauses = [
+            or_(
+                ReviewRequestRow.reviewer_user_id == reviewer_user_id,
+                ReviewRequestRow.claimed_by_user_id == reviewer_user_id,
+            )
+        ]
         if status is not None:
             clauses.append(ReviewRequestRow.status == status.value)
         return self._query(*clauses)
 
     def list_requested_by(self, user_id: str) -> list[ReviewRequest]:
         return self._query(ReviewRequestRow.requested_by_user_id == user_id)
+
+    def list_for_subject(self, subject_kind: str, subject_id: str) -> list[ReviewRequest]:
+        return self._query(
+            ReviewRequestRow.subject_kind == subject_kind,
+            ReviewRequestRow.subject_id == subject_id,
+        )
+
+    def list_by_kind(self, subject_kind: str) -> list[ReviewRequest]:
+        """The queue: every request in one lane, whatever its state."""
+        return self._query(ReviewRequestRow.subject_kind == subject_kind)
 
     def _query(self, *clauses) -> list[ReviewRequest]:
         with self._sessions.begin() as session:
@@ -886,12 +915,25 @@ def _to_oauth(row: OAuthAccountRow) -> OAuthAccount:
 
 
 def _to_review(row: ReviewRequestRow) -> ReviewRequest:
+    """Read a request back, whichever lane wrote it.
+
+    ``requested_reviewer_user_id`` falls back to the older
+    ``reviewer_user_id`` so a benchmark request written before the split
+    still says who was asked — the two columns held one meaning then, and
+    losing it would strand every stored request.
+    """
     return ReviewRequest(
         id=row.id,
-        benchmark_id=row.benchmark_id,
+        benchmark_id=row.benchmark_id or "",
+        subject_kind=ReviewSubject(row.subject_kind or "benchmark"),
+        subject_id=row.subject_id or row.benchmark_id or "",
         stage=ReviewStage(row.stage),
         requested_by_user_id=row.requested_by_user_id,
-        reviewer_user_id=row.reviewer_user_id,
+        requested_reviewer_user_id=row.requested_reviewer_user_id or row.reviewer_user_id,
+        claimed_by_user_id=row.claimed_by_user_id,
+        claimed_at=row.claimed_at,
+        available_to_pool=bool(row.available_to_pool),
+        reviewer_user_id=row.reviewer_user_id or "",
         status=ReviewStatus(row.status),
         request_comment=row.request_comment or "",
         review_comment=row.review_comment or "",

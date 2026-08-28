@@ -445,9 +445,36 @@ class TestAnApprovalIsNotDeletableUntilItIsWithdrawn:
                 status="recommended",
             )
         )
+        # Signing goes through the claim workflow now: somebody asks,
+        # a reviewer takes it, reads it, then signs. The run here is
+        # injected rather than created over HTTP, so its request is
+        # injected the same way — going through `submit` would need the
+        # owner's session, and the owner of this run does not exist.
+        from planbench_api.review import ReviewRequest, ReviewStatus, ReviewSubject
+
+        app.state.repos.reviews.create(
+            ReviewRequest(
+                id="",
+                subject_kind=ReviewSubject.DECISION_RUN,
+                subject_id=run_id,
+                requested_by_user_id="somebody_else",
+                available_to_pool=True,
+                status=ReviewStatus.OPEN,
+                created_at="2026-08-13T10:00:00Z",
+            )
+        )
+        assert client.post(f"{API}/decisions/{run_id}/claim", headers=headers).status_code == 200
+        assert (
+            client.post(
+                f"{API}/decisions/{run_id}/review",
+                json={"comment": "read the gate table"},
+                headers=headers,
+            ).status_code
+            == 200
+        )
         decided = client.post(
             f"{API}/decisions/{run_id}/config-approval",
-            json={"decision": "approve"},
+            json={"decision": "approve", "comment": "clear on both objectives"},
             headers=headers,
         )
         assert decided.status_code == 200, decided.text

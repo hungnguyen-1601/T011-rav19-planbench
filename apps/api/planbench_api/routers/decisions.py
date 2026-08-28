@@ -32,8 +32,15 @@ from planbench_agent.paper import (
     selectable_stacks,
 )
 from planbench_agent.plugin_author import author_plugin
-from planbench_api.accounts import Capability
-from planbench_api.auth import CurrentUser, Forbidden, ReadingUser, SimulatingUser
+from planbench_api.accounts import Capability, User
+from planbench_api.auth import (
+    CurrentUser,
+    Forbidden,
+    ReadingUser,
+    SimulatingUser,
+    require_capability,
+)
+from planbench_api.decision_review import DecisionReviewService, submission_of
 from planbench_api.decision_service import (
     CandidateService,
     DecisionRunService,
@@ -45,6 +52,7 @@ from planbench_api.dependencies import (
     get_agent_service,
     get_candidate_service,
     get_decision_jobs,
+    get_decision_review_service,
     get_decision_run_service,
     get_map_root,
     get_plugin_service,
@@ -53,6 +61,7 @@ from planbench_api.dependencies import (
 )
 from planbench_api.errors import DomainValidationError, InvalidStateError, NotFoundError
 from planbench_api.plugin_service import PluginBundleService
+from planbench_api.review import ReviewStatus
 from planbench_api.run_identity import (
     IdentityError,
     PinnedRun,
@@ -119,6 +128,10 @@ DecisionJobs = Annotated[JobQueue, Depends(get_decision_jobs)]
 #: Only for resolving a stack name to the code behind it — see
 #: :mod:`planbench_api.run_identity`. Nothing here imports algorithms.
 Plugins = Annotated[PluginBundleService, Depends(get_plugin_service)]
+Reviews = Annotated[DecisionReviewService, Depends(get_decision_review_service)]
+ReviewingUser = Annotated[User, Depends(require_capability(Capability.RUN_REVIEW))]
+SubmittingUser = Annotated[User, Depends(require_capability(Capability.RUN_SUBMIT))]
+WithdrawingUser = Annotated[User, Depends(require_capability(Capability.RUN_WITHDRAW))]
 MapRoot = Annotated[Path, Depends(get_map_root)]
 TestBench = Annotated[TestBenchService, Depends(get_test_bench_service)]
 
@@ -1635,7 +1648,11 @@ def get_decision(run_id: str, service: Runs, _: ReadingUser) -> DecisionRunResou
 
 @router.post("/decisions/{run_id}/review", response_model=DecisionRunResource)
 def review_decision(
-    run_id: str, request: ReviewRequest, service: Runs, user: CurrentUser
+    run_id: str,
+    request: ReviewRequest,
+    service: Runs,
+    reviews: Reviews,
+    user: ReviewingUser,
 ) -> DecisionRunResource:
     """Record that somebody read this run's evidence.
 
@@ -1646,16 +1663,37 @@ def review_decision(
     four quietly become artifacts nobody ever looked at — which is the
     outcome that made this a separate act from approval below.
     """
-    return _run(
+    held = reviews.require_claimant(run_id, user)
+    stored = service.get(run_id)
+    if stored.created_by and stored.created_by == user.id:
+        raise Forbidden(
+            "you started this run. Reading your own evidence is not the independent check "
+            "an acknowledgement records"
+        )
+    acknowledged = _run(
         service.review(
             run_id, actor_user_id=user.id, username=user.nickname, comment=request.comment
         )
     )
+    # A run that recommends nobody has nothing to approve, so reading it
+    # *is* the whole answer and the request closes here. Most comparisons
+    # rank nobody; leaving those requests open forever would make the
+    # queue a list of things nobody can finish.
+    if stored.config_state == "not_applicable":
+        reviews.close(run_id, ReviewStatus.ACKNOWLEDGED, request.comment)
+    else:
+        _ = held
+    return acknowledged
 
 
 @router.post("/decisions/{run_id}/config-approval", response_model=DecisionRunResource)
 def decide_config(
-    run_id: str, request: ConfigDecisionRequest, service: Runs, user: CurrentUser
+    run_id: str,
+    request: ConfigDecisionRequest,
+    service: Runs,
+    reviews: Reviews,
+    user: ReviewingUser,
+    http_request: Request,
 ) -> DecisionRunResource:
     """Approve or reject this run's recommendation as a configuration.
 
@@ -1668,15 +1706,143 @@ def decide_config(
     (HĐ-14). The person who chose the candidates, the deployment and the
     episode count is not an independent check on the answer.
     """
-    return _run(
+    # **The run first, then the caller.** "This recommends nobody, so
+    # there is nothing to sign" is a fact about the artefact; "you are
+    # not holding this review" is a fact about who is asking. Asking the
+    # second first would answer an unranked run with a message about
+    # claims, sending somebody to look for a permission that would not
+    # have helped them.
+    stored = service.get(run_id)
+    if stored.config_state == "not_applicable":
+        raise InvalidStateError(
+            f"decision run {run_id} produced no Decision Card, so it recommends no "
+            "configuration and there is nothing to approve. Its gate table is still a "
+            "result and can be reviewed — POST /decisions/{id}/review"
+        )
+    if not request.comment.strip():
+        raise DomainValidationError(
+            "signing a configuration needs a comment. It is the only part of the record "
+            "that says *why*, and a signature without one is a name and a timestamp"
+        )
+    held = reviews.require_claimant(run_id, user)
+    if not reviews.acknowledged_under(held, service.events(run_id)):
+        raise Forbidden(
+            "acknowledge the evidence before signing it. The acknowledgement has to be "
+            "yours and under this claim: reading somebody else did, before they handed "
+            "the review on, is not reading"
+        )
+    relaxed = http_request.app.state.deployment.relaxed
+    decided = _run(
         service.decide_config(
             run_id,
             approve=request.decision == "approve",
             actor_user_id=user.id,
             username=user.nickname,
             comment=request.comment,
+            relaxed=relaxed,
         )
     )
+    reviews.close(
+        run_id,
+        ReviewStatus.APPROVED if request.decision == "approve" else ReviewStatus.REJECTED,
+        request.comment,
+    )
+    return decided
+
+
+class SubmitRequest(BaseModel):
+    """Ask for a review. Naming a reviewer is optional — see the service."""
+
+    reviewer: str = ""
+    comment: str = ""
+
+
+class TakeoverRequest(BaseModel):
+    reason: str = ""
+
+
+class ReviewStateResource(BaseModel):
+    """Who a run is waiting on, derived rather than stored.
+
+    ``submission`` has no column: it is read off the live request. Two
+    places recording who a run is waiting on is how they come to
+    disagree, and this is the one that would go stale.
+    """
+
+    submission: str
+    request_id: str | None = None
+    requested_reviewer_user_id: str | None = None
+    claimed_by_user_id: str | None = None
+    claimed_at: str | None = None
+    available_to_pool: bool = False
+    status: str | None = None
+
+
+def _review_state(request) -> ReviewStateResource:
+    if request is None:
+        return ReviewStateResource(submission=submission_of(None))
+    return ReviewStateResource(
+        submission=submission_of(request),
+        request_id=request.id,
+        requested_reviewer_user_id=request.requested_reviewer_user_id,
+        claimed_by_user_id=request.claimed_by_user_id,
+        claimed_at=request.claimed_at,
+        available_to_pool=request.available_to_pool,
+        status=request.status.value,
+    )
+
+
+@router.get("/decisions/{run_id}/review-state", response_model=ReviewStateResource)
+def review_state(run_id: str, reviews: Reviews, _: ReadingUser) -> ReviewStateResource:
+    return _review_state(reviews.latest(run_id))
+
+
+@router.post("/decisions/{run_id}/submit", response_model=ReviewStateResource)
+def submit_for_review(
+    run_id: str, payload: SubmitRequest, reviews: Reviews, service: Runs, user: SubmittingUser
+) -> ReviewStateResource:
+    """Send a finished run to be reviewed.
+
+    Refused for a validation run. That one exists so a reviewer can watch
+    an algorithm nobody has published yet; submitting it would ask for a
+    verdict on evidence gathered precisely because there was no verdict
+    to be had.
+    """
+    run = service.get(run_id)
+    if getattr(run, "purpose", "production") != "production":
+        raise InvalidStateError(
+            f"decision run {run_id} is a validation run. It measures an algorithm nobody "
+            "has published, so there is no configuration to sign off"
+        )
+    if run.created_by and run.created_by != user.id:
+        raise Forbidden("only the member who started a run can send it for review")
+    return _review_state(reviews.submit(run_id, user, payload.reviewer, payload.comment))
+
+
+@router.post("/decisions/{run_id}/submit/cancel", response_model=ReviewStateResource)
+def cancel_submission(run_id: str, reviews: Reviews, user: SubmittingUser) -> ReviewStateResource:
+    reviews.cancel(run_id, user)
+    return _review_state(reviews.current(run_id))
+
+
+@router.post("/decisions/{run_id}/claim", response_model=ReviewStateResource)
+def claim_review(run_id: str, reviews: Reviews, user: ReviewingUser) -> ReviewStateResource:
+    """Take a review. Atomic: two reviewers cannot both hold one."""
+    return _review_state(reviews.claim(run_id, user))
+
+
+@router.post("/decisions/{run_id}/takeover", response_model=ReviewStateResource)
+def takeover_review(
+    run_id: str, payload: TakeoverRequest, reviews: Reviews, user: ReviewingUser
+) -> ReviewStateResource:
+    """Take it from whoever holds it, or from somebody who never came back."""
+    return _review_state(reviews.takeover(run_id, user, payload.reason))
+
+
+@router.post("/decisions/{run_id}/release", response_model=ReviewStateResource)
+def release_review(run_id: str, reviews: Reviews, user: ReviewingUser) -> ReviewStateResource:
+    """Put it back in the pool, keeping who was originally asked."""
+    return _review_state(reviews.release(run_id, user))
 
 
 @router.get("/decisions/{run_id}/audit", response_model=list[ReviewEventResource])
@@ -1948,9 +2114,22 @@ def get_replay_sync(
 
 @router.post("/decisions/{run_id}/config-approval/withdraw", response_model=DecisionRunResource)
 def withdraw_config(
-    run_id: str, request: ReviewRequest, service: Runs, user: CurrentUser
+    run_id: str, request: ReviewRequest, service: Runs, user: WithdrawingUser
 ) -> DecisionRunResource:
     """Take an approval back, leaving both acts in the journal.
+
+    **Any reviewer, not only the one who signed.** A reviewer leaves the
+    project, or is disabled, and the approval they left behind would
+    otherwise be permanent — and permanent in a way that blocks other
+    things: a deployment refuses to be deleted while one of its runs is
+    approved. Withdrawing runs in the conservative direction, back to
+    ``pending`` rather than to ``rejected``, so the risk of letting
+    anybody with the capability do it is small and the cost of letting
+    nobody is a deployment nobody can clean up.
+
+    The comment is required for the same reason it is required on
+    signing: it is the only part of the record that says why, and this
+    one is read by whoever finds their approval gone.
 
     **Not an erasure.** The approve event stays and a withdraw event
     lands beside it, naming who took it back and why — which is what
@@ -1967,6 +2146,15 @@ def withdraw_config(
     "undecided again", not "decided against", and writing the second
     would record a verdict nobody reached.
     """
+    # The run first, then the request. Asking somebody to write a reason
+    # for withdrawing an approval that never existed sends them away to
+    # compose a sentence that will be refused anyway; the service owns
+    # the wording of that refusal, so this only decides the order.
+    if service.get(run_id).config_state == "approved" and not request.comment.strip():
+        raise DomainValidationError(
+            "withdrawing an approval needs a reason. Somebody signed this, and they are "
+            "the person who reads it"
+        )
     return _run(
         service.withdraw_config(
             run_id,

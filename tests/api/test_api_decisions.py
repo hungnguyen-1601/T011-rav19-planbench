@@ -658,7 +658,24 @@ class TestTheTwoHumanActsOverHttp:
     """Phase 6.3 wiring. The rules live in
     ``tests/test_decision_review.py``; these check that the endpoints
     reach them, and that the split survives the HTTP surface.
+
+    Reading and signing now sit behind a claim (contract 7.0.0), so each
+    of these walks the workflow — submit, claim, then act. That is not
+    ceremony added to the test: the claim is what makes an
+    acknowledgement belong to a particular person at a particular time,
+    and a test that skipped it would be testing an endpoint nobody can
+    reach.
     """
+
+    @staticmethod
+    def _hand_over(client, run_id: str, owner_headers, reviewer_headers) -> None:
+        """Owner asks; the reviewer takes it."""
+        sent = client.post(
+            f"{API}/decisions/{run_id}/submit", json={}, headers=owner_headers
+        )
+        assert sent.status_code == 200, sent.text
+        claimed = client.post(f"{API}/decisions/{run_id}/claim", headers=reviewer_headers)
+        assert claimed.status_code == 200, claimed.text
 
     def test_an_unranked_run_can_be_reviewed(self, client, alice_headers, bob_headers, profile_id):
         """The point of the split. This run recommends nobody, and
@@ -679,6 +696,7 @@ class TestTheTwoHumanActsOverHttp:
         assert run["review_state"] == "unreviewed"
         assert run["config_state"] == "not_applicable"
 
+        self._hand_over(client, run["id"], alice_headers, bob_headers)
         reviewed = client.post(
             f"{API}/decisions/{run['id']}/review",
             json={"comment": "cả hai trượt G3, đã đọc bảng cổng"},
@@ -709,9 +727,13 @@ class TestTheTwoHumanActsOverHttp:
             headers=alice_headers,
         ).json()
 
+        self._hand_over(client, run["id"], alice_headers, bob_headers)
+        client.post(
+            f"{API}/decisions/{run['id']}/review", json={"comment": "đọc"}, headers=bob_headers
+        )
         refused = client.post(
             f"{API}/decisions/{run['id']}/config-approval",
-            json={"decision": "approve"},
+            json={"decision": "approve", "comment": "muốn duyệt"},
             headers=bob_headers,
         )
         assert refused.status_code == 409, refused.text
@@ -734,6 +756,7 @@ class TestTheTwoHumanActsOverHttp:
             },
             headers=alice_headers,
         ).json()
+        self._hand_over(client, run["id"], alice_headers, bob_headers)
         client.post(
             f"{API}/decisions/{run['id']}/review",
             json={"comment": "đọc"},
