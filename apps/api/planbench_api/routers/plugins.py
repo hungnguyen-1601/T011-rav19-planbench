@@ -26,6 +26,7 @@ else in the system understands yet.
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
@@ -37,6 +38,8 @@ from planbench_api.dependencies import get_plugin_service
 from planbench_api.model_storage import CHUNK
 from planbench_api.plugin_registry import PluginBundleSummary
 from planbench_api.plugin_service import HostCompatibility, PluginBundleService
+
+logger = logging.getLogger("planbench.api.plugins")
 
 router = APIRouter(prefix="/algorithms/plugins", tags=["algorithms"])
 
@@ -309,11 +312,56 @@ def disable_plugin(
     act, and a shared endpoint would have to guess.
     """
     _require_governance(request)
-    return PluginBundleSummary.of(
-        plugins.disable(bundle_id, user, payload.reason, capability=Capability.ALGORITHM_DISABLE),
-        user.id,
-        inspect=user.can(Capability.ALGORITHM_INSPECT),
+    record = plugins.disable(
+        bundle_id, user, payload.reason, capability=Capability.ALGORITHM_DISABLE
     )
+    _note_approvals_that_rested_on_it(request, record, user, payload.reason)
+    return PluginBundleSummary.of(record, user.id, inspect=user.can(Capability.ALGORITHM_INSPECT))
+
+
+def _note_approvals_that_rested_on_it(request: Request, record, user, reason: str) -> None:
+    """Write into each affected run's journal that its algorithm went away.
+
+    **Not a withdrawal.** The system does not sign anything on a
+    reviewer's behalf, and disabling can happen for a security fix, a
+    crash, a dependency, or an investigation — none of which prove the
+    original recommendation was wrong. What it does is leave a dated
+    entry beside the approval, so somebody reading that journal later
+    finds out *there* rather than by noticing the algorithm is gone.
+
+    Failure here is logged and swallowed: an incomplete journal entry is
+    bad, and an algorithm that could not be turned off because writing
+    one failed is worse.
+    """
+    runs = request.app.state.repos.decision_runs
+    try:
+        affected = [
+            run
+            for run in runs.list()
+            if run.config_state == "approved"
+            and any(
+                entry.get("bundle_id") == record.id
+                for entry in (getattr(run, "candidates", []) or [])
+            )
+        ]
+    except Exception:  # noqa: BLE001 - see the docstring
+        logger.warning("could not look for approvals resting on this bundle", exc_info=True)
+        return
+    for run in affected:
+        try:
+            runs.append_event(
+                run.id,
+                "algorithm_disabled_after_approval",
+                user.id,
+                user.nickname,
+                run.config_state,
+                run.config_state,
+                f"{record.label} (revision {record.revision}) was disabled: {reason}",
+            )
+        except Exception:  # noqa: BLE001 - see the docstring
+            logger.warning(
+                "could not record the disable against a run", extra={"context": {"run": run.id}}
+            )
 
 
 @router.post("/{bundle_id}/validate", response_model=PluginBundleSummary)

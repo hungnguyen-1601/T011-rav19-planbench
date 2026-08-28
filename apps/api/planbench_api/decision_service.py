@@ -409,6 +409,31 @@ class CandidateService:
         return self._repository.list()
 
 
+def _candidate_bundle(run) -> dict | None:
+    """The imported bundle the recommended candidate ran, if there was one.
+
+    Reads the pinned identity rather than resolving the stack name now:
+    the name points at whatever is published today, and this file is
+    about what was measured then.
+    """
+    recommended_id = run.recommended_candidate_id
+    for entry in getattr(run, "candidates", []) or []:
+        if not entry.get("bundle_id"):
+            continue
+        # Matched on stack rather than candidate_id, because the pinned
+        # row records what was asked for and the card records the hash of
+        # what it became.
+        if recommended_id and entry.get("stack") not in str(run.card or ""):
+            continue
+        return {
+            "bundle_id": entry.get("bundle_id"),
+            "plugin_id": entry.get("plugin_id"),
+            "revision": entry.get("revision"),
+            "archive_checksum": entry.get("archive_checksum"),
+        }
+    return None
+
+
 class DecisionRunService:
     """Runs a selection through the shared chain and stores the result."""
 
@@ -986,7 +1011,9 @@ class DecisionRunService:
             # and the answer is the same however politely it is asked.
             raise InvalidStateError(str(refusal)) from refusal
 
-    def approved_config(self, run_id: str) -> str:
+    def approved_config(
+        self, run_id: str, reliance: str = "active", warning: dict | None = None
+    ) -> str:
         """The deployable configuration, as YAML — approved runs only.
 
         HĐ-14: *"only a Decision Card in the APPROVED state can export
@@ -1023,10 +1050,22 @@ class DecisionRunService:
             ),
             "task_profile_id": run.task_profile_id,
             "experiment_scope": run.experiment_scope,
+            # **The two questions, kept apart.** ``approval.status`` below
+            # says what a person decided and never changes.
+            # ``reliance_status`` says whether that decision may still be
+            # acted on, and is derived when this file is generated — an
+            # algorithm disabled last week does not un-decide anything,
+            # but it does mean this is no longer a configuration to run.
+            "reliance_status": reliance,
             "candidate": {
                 "candidate_id": recommended.get("candidate_id"),
                 "stack": recommended.get("stack"),
                 "params_ref": recommended.get("params_ref"),
+                # Which bundle, at which revision. Without it a warning
+                # about "the algorithm behind this" could not name it,
+                # and a reader could not resolve the stack back to the
+                # code — the alias points at whatever is published now.
+                "bundle": _candidate_bundle(run),
             },
             "decision": {
                 "status": run.status,
@@ -1045,12 +1084,22 @@ class DecisionRunService:
                 "created_at": run.created_at,
             },
             "approval": {
+                # What a person decided, and when. Paired with
+                # ``reliance_status`` above and deliberately not merged
+                # with it: this one is a record of a human act and never
+                # changes, that one is a fact about the world now.
+                "status": run.config_state,
                 "approved_by": run.config_decided_by,
                 "approved_at": run.config_decided_at,
                 "reviewed_by": run.reviewed_by,
                 "reviewed_at": run.reviewed_at,
             },
         }
+        if warning:
+            # Ahead of everything else in the file: somebody opening this
+            # to copy a number should meet the reason it may not be a
+            # number to copy before they reach it.
+            payload = {"artifact": payload.pop("artifact"), "warning": warning, **payload}
         return yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
 
     # -- internals -----------------------------------------------------

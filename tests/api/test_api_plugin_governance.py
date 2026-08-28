@@ -312,3 +312,125 @@ class TestReadingCodeIsTheReviewersJob:
             f"{PLUGINS}/{bundle['id']}/events", headers=auth_headers(client, ENGINEER)
         )
         assert refused.status_code == 403
+
+
+class TestAnApprovalOutlivesTheAlgorithmItRestedOn:
+    """The two questions, over HTTP.
+
+    Disabling an algorithm must not rewrite what a person decided, and
+    must not leave a dead recommendation reading as a live one. So the
+    approval stands, the file still downloads, and the file says why it
+    is no longer something to run.
+    """
+
+    def test_the_journal_gains_an_entry_and_the_approval_stands(
+        self, governed_client: TestClient, governed
+    ) -> None:
+        from planbench_api.decisions import StoredDecisionRun
+
+        bundle = _import(governed_client).json()
+        governed_client.post(f"{PLUGINS}/{bundle['id']}/publish", json={"reason": "ok"})
+
+        # A run that already carries an approval and names this bundle.
+        # Injected rather than driven over HTTP: what is under test is
+        # what happens to a *stored* approval, and simulating six
+        # episodes to reach one would test the simulator instead.
+        governed.state.repos.decision_runs.create(
+            StoredDecisionRun(
+                id="run_approved",
+                task_profile_id="p1",
+                artifact_kind="decision_card",
+                experiment_scope="global_planner_selection",
+                contracts_version="7.0.0",
+                created_at="2026-08-27T10:00:00Z",
+                created_by="somebody_else",
+                report={},
+                card={"status": "recommended"},
+                manifest=None,
+                recommended_candidate_id="c1",
+                status="recommended",
+                config_state="approved",
+                config_decided_by="u1",
+                config_decided_at="2026-08-27T11:00:00Z",
+                candidates=[
+                    {
+                        "slot": 0,
+                        "stack": "astar+org.vinai.vfh-plus",
+                        "local_config": "",
+                        "bundle_id": bundle["id"],
+                        "plugin_id": "org.vinai.vfh-plus",
+                        "revision": bundle["revision"],
+                        "archive_checksum": "",
+                        "provider_fingerprint": "",
+                        "runtime_profile": "local",
+                    }
+                ],
+            )
+        )
+
+        disabled = governed_client.post(
+            f"{PLUGINS}/{bundle['id']}/disable", json={"reason": "unsafe near glass"}
+        )
+        assert disabled.status_code == 200, disabled.text
+
+        run = governed_client.get("/api/v1/decisions/run_approved").json()
+        assert run["config_state"] == "approved", "nobody withdrew anything"
+
+        trail = governed_client.get("/api/v1/decisions/run_approved/audit").json()
+        entry = next(
+            event for event in trail if event["action"] == "algorithm_disabled_after_approval"
+        )
+        assert "unsafe near glass" in entry["comment"]
+        assert entry["previous_state"] == entry["new_state"] == "approved"
+
+    def test_the_configuration_still_downloads_and_says_why_not_to_use_it(
+        self, governed_client: TestClient, governed
+    ) -> None:
+        """Refusing would only make the evidence hard to reach at the
+        moment somebody is investigating why it was withdrawn."""
+        from planbench_api.decisions import StoredDecisionRun
+
+        bundle = _import(governed_client).json()
+        governed_client.post(f"{PLUGINS}/{bundle['id']}/publish", json={"reason": "ok"})
+        governed.state.repos.decision_runs.create(
+            StoredDecisionRun(
+                id="run_two",
+                task_profile_id="p1",
+                artifact_kind="decision_card",
+                experiment_scope="global_planner_selection",
+                contracts_version="7.0.0",
+                created_at="2026-08-27T10:00:00Z",
+                created_by="somebody_else",
+                report={},
+                card={"status": "recommended", "recommended": {"candidate_id": "c1"}},
+                manifest=None,
+                recommended_candidate_id="c1",
+                status="recommended",
+                config_state="approved",
+                config_decided_by="u1",
+                config_decided_at="2026-08-27T11:00:00Z",
+                candidates=[
+                    {
+                        "slot": 0,
+                        "stack": "astar+org.vinai.vfh-plus",
+                        "local_config": "",
+                        "bundle_id": bundle["id"],
+                        "plugin_id": "org.vinai.vfh-plus",
+                        "revision": bundle["revision"],
+                        "archive_checksum": "abc",
+                        "provider_fingerprint": "",
+                        "runtime_profile": "local",
+                    }
+                ],
+            )
+        )
+        governed_client.post(f"{PLUGINS}/{bundle['id']}/disable", json={"reason": "unsafe"})
+
+        exported = governed_client.get("/api/v1/decisions/run_two/approved_config.yaml")
+        assert exported.status_code == 200, exported.text
+        body = exported.text
+        assert "reliance_status: revoked" in body
+        assert "algorithm_disabled_after_approval" in body
+        assert "unsafe" in body
+        # And it still says what was decided, unchanged.
+        assert "status: approved" in body

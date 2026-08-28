@@ -489,6 +489,17 @@ class PluginBundleService:
             return None
         return self._publications.current(plugin_id)
 
+    def publications_for_bundle(self, bundle_id: str) -> list[PluginPublication]:
+        """Every publication row naming this bundle.
+
+        Asked by the reliance check, which needs "was this revision ever
+        published, and is that still standing?" — a question about one
+        bundle rather than about a plugin's timeline.
+        """
+        if self._publications is None:
+            return []
+        return self._publications.for_bundle(bundle_id)
+
     def publication_history(self, plugin_id: str) -> list[PluginPublication]:
         return [] if self._publications is None else self._publications.history(plugin_id)
 

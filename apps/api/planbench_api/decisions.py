@@ -545,6 +545,30 @@ class DecisionRunRepository:
             raise NotFoundError("decision run", run_id)
         return stored
 
+    def append_event(  # noqa: PLR0913 - one audit row, one argument each
+        self,
+        run_id: str,
+        action: ReviewAction,
+        actor_user_id: str | None,
+        username: str,
+        previous_state: str,
+        new_state: str,
+        comment: str,
+    ) -> None:
+        """Add a row to a run's journal without moving the run.
+
+        For the things that happen *to* a decision rather than *in* it —
+        an algorithm it rested on being turned off, for instance. The
+        state does not change, which is the point: the system is not
+        deciding anything on a person's behalf, only recording that the
+        ground moved.
+        """
+        with self._lock:
+            self._require(run_id)
+            self._append(
+                run_id, action, actor_user_id, username, previous_state, new_state, comment
+            )
+
     def _append(  # noqa: PLR0913 - one audit row, one argument each
         self,
         run_id: str,

@@ -363,6 +363,30 @@ class SqlDecisionRunRepository:
             session.flush()
             return _to_run(row)
 
+    def append_event(  # noqa: PLR0913 - one audit row, one argument each
+        self,
+        run_id: str,
+        action: str,
+        actor_user_id: str | None,
+        username: str,
+        previous_state: str,
+        new_state: str,
+        comment: str,
+    ) -> None:
+        """A row in the journal without a state change — see the in-memory twin."""
+        with self._sessions.begin() as session:
+            _require(session, DecisionRunRow, run_id, "decision run")
+            _append_event(
+                session,
+                run_id,
+                action,
+                actor_user_id,
+                username,
+                previous_state,
+                new_state,
+                comment,
+            )
+
     def events(self, run_id: str) -> list[ReviewEvent]:
         with self._sessions.begin() as session:
             _require(session, DecisionRunRow, run_id, "decision run")

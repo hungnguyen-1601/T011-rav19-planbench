@@ -61,6 +61,8 @@ from planbench_api.dependencies import (
 )
 from planbench_api.errors import DomainValidationError, InvalidStateError, NotFoundError
 from planbench_api.plugin_service import PluginBundleService
+from planbench_api.reliance import describe as describe_reliance
+from planbench_api.reliance import of_run as reliance_of_run
 from planbench_api.review import ReviewStatus
 from planbench_api.run_identity import (
     IdentityError,
@@ -2230,11 +2232,27 @@ def decision_report_xlsx(
 
 
 @router.get("/decisions/{run_id}/approved_config.yaml", response_class=PlainTextResponse)
-def approved_config(run_id: str, service: Runs, _: ReadingUser) -> str:
+def approved_config(
+    run_id: str, service: Runs, plugins: Plugins, http_request: Request, _: ReadingUser
+) -> str:
     """The deployable configuration — approved runs only (HĐ-14).
 
     Served as text rather than JSON because it is a file somebody saves,
     and because the sim-only notice inside it should be the first thing
     read rather than a field in a viewer.
+
+    **Still 200 when the algorithm behind it has been withdrawn.**
+    Refusing would not erase the approval, it would only make the
+    evidence hard to reach at the moment somebody is investigating why
+    it was withdrawn. What changes is the file: it carries the reason,
+    at the top, and says plainly that it is not a configuration to run.
     """
-    return service.approved_config(run_id)
+    stored = service.get(run_id)
+    verdict, warning = reliance_of_run(
+        getattr(stored, "candidates", []),
+        plugins,
+        http_request.app.state.deployment.algorithm_governance,
+    )
+    return service.approved_config(
+        run_id, reliance=verdict.value, warning=describe_reliance(warning)
+    )
