@@ -426,9 +426,11 @@ def main() -> int:
     # them as two clusters would double an observation.
     seen: dict[str, Path] = {}
     for path in sorted(runs_root.glob("*/*/comparison_report.json")):
-        report = json.loads(path.read_text(encoding="utf-8"))
-        if "comparison_pair" not in report:
-            continue
+        # Deliberately not filtered on having a comparison pair. That
+        # test was here because a report without one produced no cases,
+        # and it silently kept excluding the cardless runs after
+        # `cases_from` learned to read them — a filter that outlives its
+        # reason looks exactly like a run with nothing in it.
         key = path.parent.name
         seen.setdefault(key, path)
 
