@@ -181,9 +181,7 @@ export default function AlgorithmsPage() {
         )}
       </div>
 
-      {selected ? (
-        <AlgorithmDetail bundleId={selected} onChanged={() => void refresh()} />
-      ) : null}
+      {selected ? <AlgorithmDetail bundleId={selected} onChanged={() => void refresh()} /> : null}
     </section>
   );
 }

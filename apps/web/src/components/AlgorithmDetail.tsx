@@ -236,7 +236,9 @@ export function AlgorithmDetail({
                     {row.unpublished_at
                       ? t("algorithms.withdrawnAt", { at: row.unpublished_at })
                       : row.superseded_at
-                        ? t("algorithms.supersededAt", { at: row.superseded_at })
+                        ? t("algorithms.supersededAt", {
+                            at: row.superseded_at,
+                          })
                         : t("algorithms.stillCurrent")}
                   </td>
                   <td className="muted small">{row.reason || "—"}</td>
