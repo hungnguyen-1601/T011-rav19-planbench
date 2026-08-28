@@ -1869,5 +1869,22 @@
   "deployment.relaxed.title": "Deployment một người",
   "deployment.relaxed.body": "Một tài khoản vừa chạy so sánh vừa ký duyệt được. Mọi lần duyệt như vậy đều ghi là tự duyệt, nên nhật ký không bao giờ nói rằng có người thứ hai đã xem.",
   "deployment.demo.title": "CHẾ ĐỘ DEMO",
-  "deployment.demo.body": "Demo Owner giữ toàn bộ quyền và separation of duties đang nới. Không dùng cấu hình này cho production."
+  "deployment.demo.body": "Demo Owner giữ toàn bộ quyền và separation of duties đang nới. Không dùng cấu hình này cho production.",
+  "decisions.acts.submit": "Gửi duyệt",
+  "decisions.acts.reviewerOptional": "Người duyệt (không bắt buộc)",
+  "decisions.acts.reviewerHint": "để trống nếu ai cũng được",
+  "decisions.acts.claim": "Nhận duyệt",
+  "decisions.acts.release": "Trả lại",
+  "decisions.acts.takeover": "Lấy lại",
+  "decisions.acts.claimNote": "Chưa ai nhận duyệt lượt chạy này.",
+  "decisions.acts.youHoldIt": "Bạn đang giữ lượt duyệt này.",
+  "decisions.acts.someoneHoldsIt": "Người khác đang giữ. Lấy lại cần nêu lý do — ghi vào ô nhận xét.",
+  "decisions.acts.claimFirst": "Nhận duyệt trước khi ghi nhận là đã đọc.",
+  "decisions.acts.whyNotSubmitted": "Lượt chạy này chưa được gửi duyệt.",
+  "decisions.acts.whyNotYours": "Người khác đang giữ lượt duyệt này.",
+  "decisions.acts.whyNotRead": "Ghi nhận đã đọc bằng chứng trước khi ký.",
+  "decisions.acts.historicConfig": "Tải cấu hình lịch sử",
+  "decisions.reliance.revoked": "Thuật toán của cấu hình này đã bị tắt sau khi được duyệt. File giữ để kiểm toán; không dùng cho việc mới.",
+  "decisions.reliance.suspended": "Thuật toán của cấu hình này hiện không còn được publish. Phê duyệt vẫn đứng; cấu hình thì chưa dùng được hôm nay.",
+  "decisions.reliance.unknown": "Lượt chạy này có trước khi hệ thống ghi định danh thuật toán, nên không rõ nó đã đo bản nào."
 }

@@ -59,8 +59,12 @@ export function DeploymentBanner() {
       role="status"
       data-profile={state.profile}
     >
-      <strong>{t(demo ? "deployment.demo.title" : "deployment.relaxed.title")}</strong>{" "}
-      <span>{t(demo ? "deployment.demo.body" : "deployment.relaxed.body")}</span>
+      <strong>
+        {t(demo ? "deployment.demo.title" : "deployment.relaxed.title")}
+      </strong>{" "}
+      <span>
+        {t(demo ? "deployment.demo.body" : "deployment.relaxed.body")}
+      </span>
     </div>
   );
 }

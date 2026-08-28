@@ -1869,5 +1869,22 @@
   "deployment.relaxed.title": "Single-person deployment",
   "deployment.relaxed.body": "One account may both run a comparison and sign it off. Every such approval is recorded as a self-approval, so the trail never claims a second person looked.",
   "deployment.demo.title": "DEMO MODE",
-  "deployment.demo.body": "The Demo Owner holds every capability and separation of duties is relaxed. Do not use this configuration for production."
+  "deployment.demo.body": "The Demo Owner holds every capability and separation of duties is relaxed. Do not use this configuration for production.",
+  "decisions.acts.submit": "Send for review",
+  "decisions.acts.reviewerOptional": "Reviewer (optional)",
+  "decisions.acts.reviewerHint": "leave blank for anyone",
+  "decisions.acts.claim": "Take this review",
+  "decisions.acts.release": "Put it back",
+  "decisions.acts.takeover": "Take it over",
+  "decisions.acts.claimNote": "Nobody is holding this review yet.",
+  "decisions.acts.youHoldIt": "You are holding this review.",
+  "decisions.acts.someoneHoldsIt": "Somebody else is holding it. Taking it over needs a reason — put one in the comment.",
+  "decisions.acts.claimFirst": "Take the review before recording that you have read it.",
+  "decisions.acts.whyNotSubmitted": "This run has not been sent for review yet.",
+  "decisions.acts.whyNotYours": "Somebody else is holding this review.",
+  "decisions.acts.whyNotRead": "Record that you have read the evidence before signing it.",
+  "decisions.acts.historicConfig": "Download the historic configuration",
+  "decisions.reliance.revoked": "The algorithm behind this configuration was disabled after it was approved. The file is kept for audit; do not use it for new work.",
+  "decisions.reliance.suspended": "The algorithm behind this configuration is not currently published. The approval stands; the configuration is not one to run today.",
+  "decisions.reliance.unknown": "This run predates recorded algorithm identity, so which build it measured is not known."
 }

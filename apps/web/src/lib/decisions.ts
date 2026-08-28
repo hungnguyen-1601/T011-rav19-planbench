@@ -32,7 +32,8 @@ export type ReviewState = "unreviewed" | "reviewed";
  * `not_applicable` where there is no card — not a missing value but a
  * statement: this run recommends nobody, so there is nothing to approve.
  */
-export type ConfigState = "not_applicable" | "pending" | "approved" | "rejected";
+export type ConfigState =
+  "not_applicable" | "pending" | "approved" | "rejected";
 
 /** One gate's verdict.
  *
@@ -42,10 +43,13 @@ export type ConfigState = "not_applicable" | "pending" | "approved" | "rejected"
  * a table where G1 is plain text and G2 is a coloured chip reads as if
  * they were different kinds of judgement — they are not.
  */
-export type GateVerdict = { result: "pass" | "fail"; [field: string]: unknown } | "pass" | "fail";
+export type GateVerdict =
+  { result: "pass" | "fail"; [field: string]: unknown } | "pass" | "fail";
 
 /** The verdict, whichever shape it arrived in. */
-export function gateResult(verdict: GateVerdict | undefined): "pass" | "fail" | undefined {
+export function gateResult(
+  verdict: GateVerdict | undefined,
+): "pass" | "fail" | undefined {
   if (verdict === undefined) return undefined;
   return typeof verdict === "string" ? verdict : verdict.result;
 }
@@ -56,10 +60,15 @@ export function gateResult(verdict: GateVerdict | undefined): "pass" | "fail" | 
  * had nothing to add. Never invented, because "G3: fail" with fabricated
  * numbers beside it is worse than "G3: fail" alone.
  */
-export function gateEvidence(verdict: GateVerdict | undefined): [string, string][] {
+export function gateEvidence(
+  verdict: GateVerdict | undefined,
+): [string, string][] {
   if (verdict === undefined || typeof verdict === "string") return [];
   return Object.entries(verdict)
-    .filter(([key, value]) => key !== "result" && value !== null && value !== undefined)
+    .filter(
+      ([key, value]) =>
+        key !== "result" && value !== null && value !== undefined,
+    )
     .map(([key, value]) => [key, String(value)]);
 }
 
@@ -255,7 +264,11 @@ export interface DecisionCard {
   decision_mode: string;
   decision_mode_label?: string;
   status: string;
-  recommended: { candidate_id: string; stack: string; params_ref: string | null };
+  recommended: {
+    candidate_id: string;
+    stack: string;
+    params_ref: string | null;
+  };
   alternative: { candidate_id: string; stack: string } | null;
   decision_utility: number;
   pareto_label: string;
@@ -320,8 +333,10 @@ export function listDecisions(filters?: {
   ranked?: boolean;
 }): Promise<DecisionRun[]> {
   const query = new URLSearchParams();
-  if (filters?.taskProfileId) query.set("task_profile_id", filters.taskProfileId);
-  if (filters?.ranked !== undefined) query.set("ranked", String(filters.ranked));
+  if (filters?.taskProfileId)
+    query.set("task_profile_id", filters.taskProfileId);
+  if (filters?.ranked !== undefined)
+    query.set("ranked", String(filters.ranked));
   const suffix = query.toString() ? `?${query}` : "";
   return authFetch<DecisionRun[]>(`/decisions${suffix}`);
 }
@@ -342,7 +357,9 @@ export function listTaskProfiles(): Promise<TaskProfileSummary[]> {
  *  to redefine an existing id with different content — so this can 409,
  *  and that 409 is the guard that keeps stored runs describing the world
  *  they were actually measured in. */
-export function createTaskProfile(profile: unknown): Promise<TaskProfileSummary> {
+export function createTaskProfile(
+  profile: unknown,
+): Promise<TaskProfileSummary> {
   return authFetch<TaskProfileSummary>("/task-profiles", {
     method: "POST",
     body: JSON.stringify(profile),
@@ -367,11 +384,85 @@ export function deriveTaskProfile(request: {
   base_task_profile_id: string;
   new_id: string;
   map_id: string;
-  missions?: { id: string; start: number[]; goal: number[]; probability?: number }[];
+  missions?: {
+    id: string;
+    start: number[];
+    goal: number[];
+    probability?: number;
+  }[];
 }): Promise<TaskProfileSummary> {
   return authFetch<TaskProfileSummary>("/task-profiles/derive", {
     method: "POST",
     body: JSON.stringify(request),
+  });
+}
+
+/** Who a run is waiting on. Derived by the server, never stored.
+ *
+ * Named for the *assignment* rather than the state, because
+ * `ReviewState` already means something else here — whether the
+ * evidence has been read. Two names for two questions.
+ *
+ * `submission` distinguishes the three states an interface has to draw
+ * differently: never sent, waiting for somebody, and finished. A query
+ * that answered `null` for the first and the last would let the page
+ * offer a submit button on a run that has already been signed.
+ */
+export interface ReviewAssignment {
+  submission: "none" | "submitted" | "in_review" | "closed";
+  request_id: string | null;
+  requested_reviewer_user_id: string | null;
+  claimed_by_user_id: string | null;
+  claimed_at: string | null;
+  available_to_pool: boolean;
+  status: string | null;
+}
+
+export function fetchReviewState(runId: string): Promise<ReviewAssignment> {
+  return authFetch<ReviewAssignment>(`/decisions/${runId}/review-state`);
+}
+
+/** Ask for a review. Naming a reviewer is optional — without one it
+ * goes to the pool, which is where "whoever picks it up" belongs. */
+export function submitForReview(
+  runId: string,
+  reviewer: string,
+  comment: string,
+): Promise<ReviewAssignment> {
+  return authFetch<ReviewAssignment>(`/decisions/${runId}/submit`, {
+    method: "POST",
+    body: JSON.stringify({ reviewer, comment }),
+  });
+}
+
+export function cancelSubmission(runId: string): Promise<ReviewAssignment> {
+  return authFetch<ReviewAssignment>(`/decisions/${runId}/submit/cancel`, {
+    method: "POST",
+  });
+}
+
+/** Take a review. Atomic: two reviewers cannot both hold one. */
+export function claimReview(runId: string): Promise<ReviewAssignment> {
+  return authFetch<ReviewAssignment>(`/decisions/${runId}/claim`, {
+    method: "POST",
+  });
+}
+
+/** Take it from whoever holds it, or from somebody who never came back.
+ * The reason is required, because they see it. */
+export function takeoverReview(
+  runId: string,
+  reason: string,
+): Promise<ReviewAssignment> {
+  return authFetch<ReviewAssignment>(`/decisions/${runId}/takeover`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function releaseReview(runId: string): Promise<ReviewAssignment> {
+  return authFetch<ReviewAssignment>(`/decisions/${runId}/release`, {
+    method: "POST",
   });
 }
 
@@ -380,7 +471,10 @@ export function deriveTaskProfile(request: {
  * Allowed on every run, including the ones that recommend nobody — which
  * is the whole reason it is a separate act from approving a config.
  */
-export function reviewRun(runId: string, comment: string): Promise<DecisionRun> {
+export function reviewRun(
+  runId: string,
+  comment: string,
+): Promise<DecisionRun> {
   return authFetch<DecisionRun>(`/decisions/${runId}/review`, {
     method: "POST",
     body: JSON.stringify({ comment }),
@@ -470,7 +564,11 @@ export interface TracePayload {
    *  rather than from a constant, so a deployment that declares a
    *  different control rate gets a different line. */
   control_period_s: number;
-  missions: { id: string; start: { x: number; y: number }; goal: { x: number; y: number } }[];
+  missions: {
+    id: string;
+    start: { x: number; y: number };
+    goal: { x: number; y: number };
+  }[];
   t: number[];
   x: number[];
   y: number[];
@@ -501,9 +599,7 @@ export interface TracePayload {
  * progress against is asking to be believed.
  */
 export type ProjectionQuality =
-  | "reference_plan"
-  | "degraded_candidate_path"
-  | "degraded_straight_line";
+  "reference_plan" | "degraded_candidate_path" | "degraded_straight_line";
 
 export interface ProgressSyncRow {
   progress_m: number;
@@ -754,7 +850,10 @@ export function getReplaySync(
   candidateA: string,
   candidateB: string,
 ): Promise<ReplaySyncView> {
-  const query = new URLSearchParams({ candidate_a: candidateA, candidate_b: candidateB });
+  const query = new URLSearchParams({
+    candidate_a: candidateA,
+    candidate_b: candidateB,
+  });
   return authFetch<ReplaySyncView>(
     `/decisions/${runId}/replay-sync/${episodeContextId}?${query.toString()}`,
   );
@@ -770,7 +869,8 @@ export function getTrace(
   );
 }
 
-export type JobState = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+export type JobState =
+  "queued" | "running" | "succeeded" | "failed" | "cancelled";
 
 export interface DecisionJob {
   id: string;
@@ -822,7 +922,9 @@ export function listDecisionJobs(): Promise<DecisionJob[]> {
 }
 
 export function cancelDecisionJob(jobId: string): Promise<DecisionJob> {
-  return authFetch<DecisionJob>(`/decisions/jobs/${jobId}`, { method: "DELETE" });
+  return authFetch<DecisionJob>(`/decisions/jobs/${jobId}`, {
+    method: "DELETE",
+  });
 }
 
 /** Is this job still going? Used to decide whether to keep polling. */
@@ -862,11 +964,7 @@ export const GATES = ["G1", "G2", "G3", "G4", "G5", "G6"] as const;
  * one of them is wrong because of wording alone.
  */
 export type NoCardReason =
-  | "interrupted"
-  | "gate_only"
-  | "single_survivor"
-  | "no_survivors"
-  | null;
+  "interrupted" | "gate_only" | "single_survivor" | "no_survivors" | null;
 
 export function noCardReason(run: DecisionRun): NoCardReason {
   if (run.ranked) return null;
@@ -889,8 +987,15 @@ export function noCardReason(run: DecisionRun): NoCardReason {
  * seven of one array and row seven of the other can be different
  * episodes. Only the episode id lines them up.
  */
-export function outcomesByEpisode(candidate: RunCandidate): Map<string, EpisodeOutcome> {
-  return new Map((candidate.episodes ?? []).map((episode) => [episode.episode_context_id, episode]));
+export function outcomesByEpisode(
+  candidate: RunCandidate,
+): Map<string, EpisodeOutcome> {
+  return new Map(
+    (candidate.episodes ?? []).map((episode) => [
+      episode.episode_context_id,
+      episode,
+    ]),
+  );
 }
 
 /** Did any candidate in this run report per-episode outcomes?
@@ -899,7 +1004,9 @@ export function outcomesByEpisode(candidate: RunCandidate): Map<string, EpisodeO
  * the field", which look identical if you only count failures.
  */
 export function hasEpisodeOutcomes(run: DecisionRun): boolean {
-  return (run.report?.candidates ?? []).some((candidate) => candidate.episodes !== undefined);
+  return (run.report?.candidates ?? []).some(
+    (candidate) => candidate.episodes !== undefined,
+  );
 }
 
 /** What a run concluded, as something a person reads at a glance.
@@ -959,9 +1066,12 @@ export function comparedCandidates(run: DecisionRun): string[] {
 }
 
 export function recommendedCandidateLabel(run: DecisionRun): string | null {
-  const id = run.card?.recommended?.candidate_id ?? run.recommended_candidate_id;
+  const id =
+    run.card?.recommended?.candidate_id ?? run.recommended_candidate_id;
   if (!id) return null;
-  const candidate = run.report?.candidates?.find((entry) => entry.candidate_id === id);
+  const candidate = run.report?.candidates?.find(
+    (entry) => entry.candidate_id === id,
+  );
   if (candidate) return candidateLabel(candidate);
   const stack = run.card?.recommended?.stack;
   return stack ? `${stack} · ${id}` : id;
@@ -1109,11 +1219,16 @@ export function localConfigOf(
   candidate: RegisteredCandidate,
   configs: LocalControllerConfig[],
 ): string | null {
-  const params = (candidate.spec?.params ?? {}) as Record<string, Record<string, unknown>>;
+  const params = (candidate.spec?.params ?? {}) as Record<
+    string,
+    Record<string, unknown>
+  >;
   const declared = Object.values(params)[0];
   if (!declared) return null;
   const match = configs.find((config) =>
-    Object.entries(config.params).every(([key, value]) => declared[key] === value),
+    Object.entries(config.params).every(
+      ([key, value]) => declared[key] === value,
+    ),
   );
   return match?.name ?? null;
 }
@@ -1147,7 +1262,12 @@ export interface StagedEpisode {
  */
 export function stageTestBenchEpisode(
   taskProfileId: string,
-  request: { mission_id: string; seed: number; stack: string; local_config: string },
+  request: {
+    mission_id: string;
+    seed: number;
+    stack: string;
+    local_config: string;
+  },
 ): Promise<StagedEpisode> {
   return authFetch<StagedEpisode>(
     `/task-profiles/${encodeURIComponent(taskProfileId)}/test-bench`,
@@ -1169,7 +1289,9 @@ export function stageTestBenchEpisode(
  * Undeclared is its own entry rather than being dropped: a stack whose
  * inputs nobody wrote down cannot be shown to match the others.
  */
-export function observationClasses(candidates: RunCandidate[]): (string | null)[] {
+export function observationClasses(
+  candidates: RunCandidate[],
+): (string | null)[] {
   const seen: (string | null)[] = [];
   for (const candidate of candidates) {
     const declared = candidate.local_observation_class ?? null;
@@ -1233,7 +1355,11 @@ export async function deleteTaskProfile(
  */
 function blockedBy(error: unknown): DeletionBlocked | null {
   const first = error instanceof FieldError ? error.raw[0] : undefined;
-  if (first && typeof first === "object" && typeof (first as DeletionBlocked).runs === "number") {
+  if (
+    first &&
+    typeof first === "object" &&
+    typeof (first as DeletionBlocked).runs === "number"
+  ) {
     return first as DeletionBlocked;
   }
   return null;
@@ -1248,11 +1374,17 @@ function blockedBy(error: unknown): DeletionBlocked | null {
  * Returns to `pending`, not `rejected` — "undecided again" rather than
  * "decided against".
  */
-export function withdrawConfig(runId: string, comment: string): Promise<DecisionRun> {
-  return authFetch<DecisionRun>(`/decisions/${encodeURIComponent(runId)}/config-approval/withdraw`, {
-    method: "POST",
-    body: JSON.stringify({ comment }),
-  });
+export function withdrawConfig(
+  runId: string,
+  comment: string,
+): Promise<DecisionRun> {
+  return authFetch<DecisionRun>(
+    `/decisions/${encodeURIComponent(runId)}/config-approval/withdraw`,
+    {
+      method: "POST",
+      body: JSON.stringify({ comment }),
+    },
+  );
 }
 
 // ---------------------------------------------------------------
@@ -1293,9 +1425,14 @@ export interface Critique {
 
 /** Objections to a run. `useModel` adds a language model on top of the
  *  rules — it can reorder them and add its own, never remove one. */
-export function getCritique(runId: string, useModel = false): Promise<Critique> {
+export function getCritique(
+  runId: string,
+  useModel = false,
+): Promise<Critique> {
   const suffix = useModel ? "?use_model=true" : "";
-  return authFetch<Critique>(`/decisions/${encodeURIComponent(runId)}/critique${suffix}`);
+  return authFetch<Critique>(
+    `/decisions/${encodeURIComponent(runId)}/critique${suffix}`,
+  );
 }
 
 // ---------------------------------------------------------------
@@ -1342,7 +1479,9 @@ export interface PaperExtraction {
  * Nothing is stored. What comes back is a proposal for a person to
  * correct and then register through the normal form.
  */
-export function extractCandidateFromPaper(text: string): Promise<PaperExtraction> {
+export function extractCandidateFromPaper(
+  text: string,
+): Promise<PaperExtraction> {
   return authFetch<PaperExtraction>("/candidates/from-paper", {
     method: "POST",
     body: JSON.stringify({ text }),
@@ -1433,14 +1572,21 @@ export function preflightDecision(body: {
 }
 
 /** What to do about each gate this run did not clear. */
-export function getDecisionAdvice(runId: string, useModel = false): Promise<AdviceList> {
+export function getDecisionAdvice(
+  runId: string,
+  useModel = false,
+): Promise<AdviceList> {
   const suffix = useModel ? "?use_model=true" : "";
-  return authFetch<AdviceList>(`/decisions/${encodeURIComponent(runId)}/advice${suffix}`);
+  return authFetch<AdviceList>(
+    `/decisions/${encodeURIComponent(runId)}/advice${suffix}`,
+  );
 }
 
 /** What a reader may claim about this run, and what they may not. */
 export function getReportAdvice(runId: string): Promise<AdviceList> {
-  return authFetch<AdviceList>(`/decisions/${encodeURIComponent(runId)}/report-advice`);
+  return authFetch<AdviceList>(
+    `/decisions/${encodeURIComponent(runId)}/report-advice`,
+  );
 }
 
 /** A plugin bundle drafted from a paper, with the validator's verdict.
@@ -1470,16 +1616,28 @@ export function draftPluginFromPaper(text: string): Promise<PluginDraft> {
   });
 }
 
-export function draftPluginFromPaperFile(file: File, signal?: AbortSignal): Promise<PluginDraft> {
+export function draftPluginFromPaperFile(
+  file: File,
+  signal?: AbortSignal,
+): Promise<PluginDraft> {
   const body = new FormData();
   body.append("file", file);
-  return authFetch<PluginDraft>("/plugins/from-paper/upload", { method: "POST", body, signal });
+  return authFetch<PluginDraft>("/plugins/from-paper/upload", {
+    method: "POST",
+    body,
+    signal,
+  });
 }
 
 /** Why the run ended the way it did — numbers joined to algorithm natures. */
-export function getOutcomeAdvice(runId: string, useModel = false): Promise<AdviceList> {
+export function getOutcomeAdvice(
+  runId: string,
+  useModel = false,
+): Promise<AdviceList> {
   const suffix = useModel ? "?use_model=true" : "";
-  return authFetch<AdviceList>(`/decisions/${encodeURIComponent(runId)}/outcome${suffix}`);
+  return authFetch<AdviceList>(
+    `/decisions/${encodeURIComponent(runId)}/outcome${suffix}`,
+  );
 }
 
 /** Diff a registered candidate against the paper it came from.
@@ -1494,14 +1652,17 @@ export function getReproduction(
   extraction: PaperExtraction,
   taskProfileId = "",
 ): Promise<AdviceList & { parameters: Array<Record<string, unknown>> }> {
-  return authFetch(`/candidates/${encodeURIComponent(candidateId)}/reproduction`, {
-    method: "POST",
-    body: JSON.stringify({
-      candidate_id: candidateId,
-      extraction,
-      task_profile_id: taskProfileId,
-    }),
-  });
+  return authFetch(
+    `/candidates/${encodeURIComponent(candidateId)}/reproduction`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        candidate_id: candidateId,
+        extraction,
+        task_profile_id: taskProfileId,
+      }),
+    },
+  );
 }
 
 /** Why one episode ended the way it did, from its own trace. */
