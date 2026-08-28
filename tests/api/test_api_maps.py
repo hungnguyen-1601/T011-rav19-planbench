@@ -159,6 +159,82 @@ class TestTurningAStoredMapIntoTheTwoPathsAProfileNames:
         response = client.post("/api/v1/maps/doesnotexist/materialise", headers=alice_headers)
         assert response.status_code == 404
 
+    def test_it_reads_the_id_and_version_out_of_the_path(self) -> None:
+        """One reader for the one filename shape this module invents.
+
+        The recovery needs it to know which version was asked for, and the
+        pins endpoint needs it to say which deployments are stuck on an
+        old one. Parsing it in both places would be two definitions of the
+        same convention, free to disagree.
+        """
+        from planbench_api.map_files import pinned_map_reference
+
+        assert pinned_map_reference("maps/custom/abc123__v2.pgm") == ("abc123", 2)
+        # The sidecar names the same pin as the image.
+        assert pinned_map_reference("maps/custom/abc123__v2.yaml") == ("abc123", 2)
+        assert pinned_map_reference("maps/custom/abc123__v12.pgm") == ("abc123", 12)
+
+        # Nothing that is not a pinned custom map.
+        assert pinned_map_reference("maps/open_hall.pgm") is None
+        assert pinned_map_reference("maps/custom/no_version.pgm") is None
+        assert pinned_map_reference("maps/custom/abc__vX.pgm") is None
+        assert pinned_map_reference(None) is None
+        assert pinned_map_reference("") is None
+
+    def test_recovery_refuses_to_serve_a_different_version(
+        self, client, alice_headers, map_id
+    ) -> None:
+        """**The version in the filename is the point of the filename.**
+
+        A deployment pinned to ``__v1`` keeps pointing at the walls its
+        episodes were driven on. If that file goes missing — a container
+        restart, a fresh checkout — recovery used to write whatever the
+        row holds *now* under the old name, so the deployment silently
+        began measuring a world it never agreed to while every stored
+        trace beside it kept claiming to describe the same place.
+
+        Nobody is watching when this runs, which is exactly why it has to
+        refuse rather than guess. A refusal is recoverable; a wrong grid
+        is not.
+        """
+        from planbench_api.map_files import ensure_custom_map_files
+
+        pinned = client.post(f"/api/v1/maps/{map_id}/materialise", headers=alice_headers).json()
+        pinned_path = REPO_ROOT / pinned["map"]
+        assert pinned_path.is_file()
+
+        # The map moves on, exactly as editing it in the UI would.
+        payload = bordered_map_payload()
+        payload["cells"][payload["width"] + 1] = 100
+        bumped = client.put(f"/api/v1/maps/{map_id}", json=payload, headers=alice_headers)
+        assert bumped.status_code == 200, bumped.text
+        assert bumped.json()["version"] == 2
+
+        pinned_path.unlink()
+        (REPO_ROOT / pinned["map_yaml"]).unlink()
+
+        recovered = ensure_custom_map_files(pinned["map"], REPO_ROOT, client.app.state.repos.maps)
+        assert recovered is False, "v2's grid must not be written under v1's name"
+        assert not pinned_path.is_file(), "refusing means writing nothing at all"
+
+    def test_recovery_still_works_when_the_version_matches(
+        self, client, alice_headers, map_id
+    ) -> None:
+        """The guard is about the version, not about recovery itself.
+
+        The ordinary case — the file vanished and the store still holds
+        exactly that version — has to keep working, or a container
+        restart becomes an outage.
+        """
+        from planbench_api.map_files import ensure_custom_map_files
+
+        resp = client.post(f"/api/v1/maps/{map_id}/materialise", headers=alice_headers).json()
+        (REPO_ROOT / resp["map"]).unlink()
+        (REPO_ROOT / resp["map_yaml"]).unlink()
+
+        assert ensure_custom_map_files(resp["map"], REPO_ROOT, client.app.state.repos.maps)
+        assert (REPO_ROOT / resp["map"]).is_file()
+
     def test_ensure_custom_map_files_recreates_missing_file(self, client, alice_headers, map_id):
         """If ephemeral maps/custom/ files are purged after container restart,
         ensure_custom_map_files automatically reconstructs them from database."""
