@@ -67,6 +67,19 @@ export async function wsUrl(simulationId: string, pace = false): Promise<string>
   return `${base}/ws/simulations/${simulationId}?pace=${pace}&ticket=${encodeURIComponent(ticket)}`;
 }
 
+/** One deployment holding this map at one version. */
+export interface MapPin {
+  task_profile_id: string;
+  pinned_version: number;
+  /** The store has moved past the version this deployment names. */
+  stale: boolean;
+}
+
+export interface MapPins {
+  current_version: number;
+  pins: MapPin[];
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -115,6 +128,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  /** Which deployments run this map, and which of them are behind.
+   *
+   * The map editor's answer to "why did my edit not change what the
+   * bench ran?" — a deployment names its map by a path carrying the
+   * version, so editing a map deliberately leaves every deployment filed
+   * before the edit on the old walls. */
+  mapPins: (mapId: string) => request<MapPins>(`/maps/${mapId}/pins`),
   health: () => request<{ status: string; app: string; version: string }>("/health"),
   listMaps: () => request<MapSummary[]>("/maps"),
   getMap: (id: string) => request<MapResource>(`/maps/${id}`),

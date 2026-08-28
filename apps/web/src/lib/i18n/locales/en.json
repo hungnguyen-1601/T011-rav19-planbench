@@ -2078,5 +2078,17 @@
   "plugin.errors": "What the validator refused",
   "plugin.notes": "Notes",
   "plugin.refused": "The model declined",
-  "plugin.hint": "A draft, not an import. Read it, fix what the validator named, then import it from the Algorithms page."
+  "plugin.hint": "A draft, not an import. Read it, fix what the validator named, then import it from the Algorithms page.",
+  "maps.pins.title": "Deployments running this map",
+  "maps.pins.why": "A deployment names its map by a path that carries the version, so editing a map does not move the deployments already filed on it. That is on purpose: an episode id does not record which map it ran on, so moving a deployment onto new walls would leave every result it already produced describing a place that no longer exists.",
+  "maps.pins.deployment": "Deployment",
+  "maps.pins.runsOn": "Runs on",
+  "maps.pins.version": "v{version}",
+  "maps.pins.behind": "You are editing v{current}. This deployment will keep running the older walls.",
+  "maps.pins.derive": "New deployment on this version",
+  "maps.pins.newId": "Id for the new deployment",
+  "maps.pins.newIdHint": "e.g. sudden_stop_v3",
+  "maps.pins.newIdWhy": "A new id, never the old one reused: the same id meaning two different worlds is what would make stored results unreadable. Everything else — missions, robot, thresholds — is copied.",
+  "maps.pins.made": "Filed:",
+  "bench.mapVersion": "map {id} v{version}"
 }

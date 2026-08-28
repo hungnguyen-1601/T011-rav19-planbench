@@ -2078,5 +2078,17 @@
   "plugin.errors": "Những chỗ trình kiểm tra từ chối",
   "plugin.notes": "Ghi chú",
   "plugin.refused": "Model từ chối",
-  "plugin.hint": "Đây là bản nháp, chưa phải bản import. Đọc lại, sửa những chỗ trình kiểm tra nêu tên, rồi import từ trang Thuật toán."
+  "plugin.hint": "Đây là bản nháp, chưa phải bản import. Đọc lại, sửa những chỗ trình kiểm tra nêu tên, rồi import từ trang Thuật toán.",
+  "maps.pins.title": "Deployment đang chạy map này",
+  "maps.pins.why": "Deployment trỏ tới map bằng đường dẫn có mang số version, nên sửa map không kéo theo những deployment đã hồ sơ trước đó. Đây là cố ý: mã episode không ghi lại nó chạy trên map nào, nên kéo một deployment sang bức tường mới sẽ khiến mọi kết quả nó từng tạo ra mô tả một nơi không còn tồn tại.",
+  "maps.pins.deployment": "Deployment",
+  "maps.pins.runsOn": "Chạy trên",
+  "maps.pins.version": "v{version}",
+  "maps.pins.behind": "Bạn đang sửa v{current}. Deployment này vẫn sẽ chạy bức tường cũ.",
+  "maps.pins.derive": "Tạo deployment mới trên bản này",
+  "maps.pins.newId": "Id cho deployment mới",
+  "maps.pins.newIdHint": "ví dụ sudden_stop_v3",
+  "maps.pins.newIdWhy": "Id mới, không dùng lại id cũ: một id mang hai thế giới khác nhau chính là thứ làm kết quả đã lưu không đọc được nữa. Mọi thứ còn lại — mission, robot, ngưỡng — được sao y.",
+  "maps.pins.made": "Đã tạo:",
+  "bench.mapVersion": "map {id} v{version}"
 }
