@@ -25,6 +25,7 @@ import json
 import re
 import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -133,6 +134,81 @@ def trace_for(traces_root: Path, candidate_id: str, episode: str) -> dict[str, A
     }
 
 
+class CardlessRefusal(Exception):
+    """A run with no card that this recipe still may not read."""
+
+
+#: How many episodes a cardless run contributes, and how they are picked.
+#:
+#: Not the exemplar recipe. Three of its four roles are defined on ΔU
+#: (``select_exemplars_from_report`` says so and refuses rather than
+#: substituting travel time), and a run with no card has no per-episode
+#: utility on at least one side — so a role called
+#: ``strongest_for_winner`` would be a label saying these episodes were
+#: chosen by a recipe that did not choose them.
+#:
+#: The rule instead: **every episode where the two sides disagree about
+#: reaching the goal, plus a fixed sample of the rest.** The first group
+#: is what the run is *for* — those are the episodes `build_verdict`
+#: settles on ``outcome_only`` — and the second is the control, because
+#: an arm that explains the decided ones and also invents explanations
+#: for the undecided ones is worse than one that does neither, and with
+#: only decided episodes in the set nothing would show that.
+CARDLESS_UNDECIDED_SAMPLE = 4
+
+
+def cardless_pair(report: Mapping[str, Any]) -> tuple[str, str]:
+    """The two candidates a cardless run compared, or a refusal.
+
+    **Refuses on three or more.** With a card the pair is recorded and
+    the choice was made by the statistics; without one, picking two out
+    of three is a choice made here, after the numbers are visible, which
+    is the move a preregistration exists to stop. Two candidates leave
+    nothing to choose.
+
+    Ordered by id rather than by outcome, for the same reason: ordering
+    by who won would let the reading of the run decide how the run is
+    read.
+    """
+    ids = sorted(
+        str(candidate.get("candidate_id") or "") for candidate in report.get("candidates", ())
+    )
+    ids = [candidate_id for candidate_id in ids if candidate_id]
+    if len(ids) != 2:
+        raise CardlessRefusal(
+            f"a cardless run is read only when it compared exactly two candidates; "
+            f"this one has {len(ids)}, and choosing two of them is a choice this "
+            f"script would be making after seeing the results"
+        )
+    return ids[0], ids[1]
+
+
+def cardless_episodes(report: Mapping[str, Any], candidate_a: str, candidate_b: str) -> list[str]:
+    """Which episodes of a cardless run are read, by the rule above."""
+    outcomes: dict[str, dict[str, bool]] = {}
+    for candidate in report.get("candidates", ()):
+        candidate_id = str(candidate.get("candidate_id") or "")
+        if candidate_id not in (candidate_a, candidate_b):
+            continue
+        for row in candidate.get("episodes", ()):
+            episode = str(row.get("episode_context_id") or "")
+            if episode:
+                outcomes.setdefault(episode, {})[candidate_id] = bool(row.get("success"))
+
+    order = [
+        episode
+        for episode in ((report.get("sample") or {}).get("episode_context_ids") or [])
+        if episode in outcomes
+    ]
+    decided = [
+        episode
+        for episode in order
+        if len(outcomes[episode]) == 2 and len(set(outcomes[episode].values())) == 2
+    ]
+    undecided = [episode for episode in order if episode not in set(decided)]
+    return [*decided, *undecided[:CARDLESS_UNDECIDED_SAMPLE]]
+
+
 def cases_from(report_path: Path, traces_root: Path) -> list[dict[str, Any]]:
     """The four exemplar episodes of one run, with their traces.
 
@@ -143,18 +219,32 @@ def cases_from(report_path: Path, traces_root: Path) -> list[dict[str, Any]]:
     """
     report = json.loads(report_path.read_text(encoding="utf-8"))
     pair = report.get("comparison_pair")
-    if not pair:
-        return []
-    candidate_a = pair["recommended_candidate_id"]
-    candidate_b = pair["runner_up_candidate_id"]
-    try:
-        exemplars = select_exemplars_from_report(report)
-    except ReportExemplarRefusal:
-        return []
+    if pair:
+        candidate_a = pair["recommended_candidate_id"]
+        candidate_b = pair["runner_up_candidate_id"]
+        try:
+            exemplars = select_exemplars_from_report(report)
+        except ReportExemplarRefusal:
+            return []
+        chosen = [(item.episode_context_id, item.role) for item in exemplars.exemplars]
+    else:
+        # **A run with no card is still a run somebody has to explain.**
+        # The card is refused when fewer than two candidates clear the
+        # gates, and that refusal is about a *deployment* claim. Whether
+        # this stack reached the goal in this episode and that one did
+        # not is a different claim, `build_verdict` settles it on
+        # ``outcome_only`` without any utility, and it is the claim a
+        # reader opening one episode is actually asking about.
+        try:
+            candidate_a, candidate_b = cardless_pair(report)
+        except CardlessRefusal:
+            return []
+        chosen = [
+            (episode, "cardless") for episode in cardless_episodes(report, candidate_a, candidate_b)
+        ]
 
     built: list[dict[str, Any]] = []
-    for exemplar in exemplars.exemplars:
-        episode = exemplar.episode_context_id
+    for episode, role in chosen:
         packet = build_episode_packet(
             header=header_for(report_path.parent.name),
             run_id=report_path.parent.name,
@@ -170,7 +260,7 @@ def cases_from(report_path: Path, traces_root: Path) -> list[dict[str, Any]]:
             {
                 "cluster": report_path.parent.name,
                 "episode": episode,
-                "role": exemplar.role,
+                "role": role,
                 "packet": packet,
             }
         )
