@@ -1,8 +1,9 @@
-# Thi hành plan role: P0–P8 + P12 xong, P9 dở — 2026-08-27
+# Thi hành plan role: xong cả 13 phase — 2026-08-27
 
-Báo cáo cập nhật lần 4. Bản đầu phủ P0–P2, bản hai tới P6, bản ba tới
-P8; bản này thêm **P12 (desktop)** và **nửa đầu P9 (web)**. Tên file giữ
-nguyên để link cũ không hỏng.
+Báo cáo cập nhật lần 5, và là bản **kết thúc plan**. Bản đầu phủ P0–P2,
+bản hai tới P6, bản ba tới P8, bản bốn thêm P12 và nửa P9; bản này thêm
+**đuôi P9, P10 và P11** — tức là toàn bộ phần web. Tên file giữ nguyên
+để link cũ không hỏng.
 
 Plan: `plans/2026-08-27/thiet-ke-role-engineer-reviewer-admin.md` (13
 phase). Khảo sát nền: `notes/2026-08-27/tongduyan_khao-sat-hien-trang-role.md`.
@@ -21,10 +22,11 @@ phase). Khảo sát nền: `notes/2026-08-27/tongduyan_khao-sat-hien-trang-role.
 | P7 | Reliance dẫn xuất + cảnh báo trên config | xong | `74456a9` |
 | P8 | Admin: users/roles, audit, break-glass | xong | `a2c4e51` |
 | **P12** | **Desktop: launcher, ba tài khoản, ca upgrade** | **xong (làm sớm)** | (commit) |
-| P9 | Web: session/nav/badge/banner + duyệt ba bước | **một nửa** | 2 commit |
-| P10–P11 | Web: Review Queue, dashboard, `/admin/*` | chưa bắt đầu | — |
+| P9 | Web: session/nav/badge/banner, duyệt bốn bước, `/algorithms` | xong | `f10fb1a` + 2 |
+| P10 | Web: Review Queue bốn tab, dashboard theo role | xong | `8463705` |
+| P11 | Web: `/admin/users`, `/admin/audit`, gom mục Quản trị | xong | `d99bc77` |
 
-Nhánh `tongduyan_roles-capabilities` từ `main`, **20 commit**, chưa push.
+Nhánh `tongduyan_roles-capabilities` từ `main`, chưa push remote nào.
 
 **P12 làm sớm, ra trước P9–P11.** Nó là thứ chặn phát hành, nhỏ, và
 không phụ thuộc web — để sau thì nhánh này nằm ở trạng thái "không được
@@ -146,13 +148,54 @@ vừa sửa. Đã ghi vào memory. Con số dưới là các bộ liên quan:
 | `tests/test_sweep_stop.py` | 7 pass |
 | `tests/test_reliance.py` | 16 pass |
 | `tests/api/test_api_access.py` | 18 pass |
-| `tests/api/test_api_plugin_governance.py` | 19 pass |
-| `tests/api/test_api_decision_review.py` | 21 pass |
+| `tests/api/test_api_plugin_governance.py` | 22 pass |
+| `tests/api/test_api_decision_review.py` | 28 pass |
 | `tests/api/test_api_admin.py` | 15 pass |
 | `tests/api/test_api_decisions.py` | 70 pass |
 | `tests/api/test_test_bench.py` | 29 pass |
+| `apps/web` — `role-pages.test.tsx` (mới) | 29 pass |
+| `apps/web` — `plugins.test.ts` | 13 pass (5 mới) |
+| `apps/web` — `settings-page.test.tsx` | 22 pass (1 sửa, 1 mới) |
 
-**Tổng test mới viết: 150.**
+**Tổng test mới viết: 191.**
+
+Hai bộ backend được nới thêm ở đợt này:
+
+- `test_api_plugin_governance.py` 19 → **22**, thêm ba test cho route
+  `/published`: nó thấy đúng bản hiện hành, nó là route chứ không bị đọc
+  thành bundle id, và nó trả 200-rỗng chứ không 404 khi governance tắt.
+- `test_api_decision_review.py` 21 → **28**, thêm bảy test cho hàng chờ.
+
+**Cách nghiệm thu phía web, và vì sao nó có giá trị.** Repo không có
+jsdom, nên `role-pages.test.tsx` khẳng định hai loại thứ mà một bản
+render cũng không giấu được: hàm thuần (`bundleStates`) và **sự thật về
+mã nguồn** — capability nào gác nút nào, panel gọi endpoint nào, và mọi
+khoá i18n mà file gọi có tồn tại ở **cả hai** từ điển hay không.
+
+Cái cuối không phải vặt vãnh: khoá thiếu thì hiện ra màn hình đúng chữ
+`algorithms.why.superseded`, và với người không phải tác giả thì nó đọc
+như crash.
+
+Test này bắt được hai lỗi thật ngay lúc viết:
+
+1. Regex quét khoá `t\("..."` khớp nhầm vào `act("unpublish")` — vì
+   `act(` kết thúc bằng `t(`. Đã thêm lookbehind. Nếu không, test sẽ đòi
+   bản dịch cho một tham số hàm.
+2. Mục `/algorithms` trong rail **không gác capability nào**. Cả ba gói
+   đều giữ `algorithm.catalogue`, nên gác nó chỉ giấu mục đó khỏi tài
+   khoản không có gói nào — đúng thứ cần giấu.
+
+**Đối chiếu nền để không nhận vơ lỗi có sẵn.** Trước khi kết luận,
+tôi dựng một worktree ở đúng commit `f10fb1a` và chạy cùng lệnh vitest:
+nền là **28 fail / 1378**, cây của tôi là **29 fail / 1379**. Đúng một
+file lệch — `settings-page.test.tsx`, và nó lệch vì **tôi** dời
+`/settings` sang section Quản trị. Đã sửa test (và ghi vào đó lý do href
+không dời theo). Sau khi sửa, tập lỗi của tôi trùng khít tập lỗi nền:
+
+`advisory-ui` 8, `candidates-page` 4, `decision-prose` 3, `decisions-page`
+4, `deployments-page` 1, `models-page` 1, `running-comparison` 2,
+`tokens` 2, `trace-viewer` 2, `agent-dock` 1 — **28, tất cả có sẵn trên
+`f10fb1a`**, không cái nào đụng file tôi sửa.
 
 Lần cuối chạy `tests/api/` đầy đủ (sau P6, trước khi An nhắc):
 **996 pass / 3 fail**, cả ba có sẵn trên `main`:
@@ -161,6 +204,11 @@ Lần cuối chạy `tests/api/` đầy đủ (sau P6, trước khi An nhắc):
 |---|---|
 | `test_api_advice.py::…::test_an_unknown_run_is_a_404` | `DecisionRunService` thiếu `trace_summary` |
 | `test_decision_export_golden.py` × 2 | golden `.md` checkout CRLF, so với `\n` |
+
+**Lỗi do tôi gây ở đợt này** (một, đã sửa): test hàng chờ gọi
+`POST /decisions/{id}/config-decision`, tên thật là `config-approval`,
+nên nhận 404. Đáng nói vì nó là lỗi *đúng loại mà test này để bắt* — nếu
+tôi chỉ khẳng định "trả về không phải lỗi" thay vì `== 200` thì nó đã lọt.
 
 Ngoài ra, **hai lỗi do tôi gây và đã sửa trong lúc làm**: ba cột
 `disabled_*` chèn nhầm vào bảng `models` thay vì `plugin_bundles`
@@ -210,9 +258,9 @@ mọi assertion về profile.
 
 ---
 
-## 5. P9 — web, mới xong một nửa
+## 5. P9 — web
 
-**Đã làm (2 commit):**
+**Nửa đầu (2 commit, đã báo cáo lần trước):**
 
 - `SessionUser` mang `roles` + `capabilities`; helper `can()` và hằng
   `CAPABILITIES`. Session khôi phục từ store bản cũ mặc định **rỗng**,
@@ -226,46 +274,165 @@ mọi assertion về profile.
 - `HumanActs` thành bốn bước: Send → Claim → Acknowledge → Approve, kèm
   nút Take over (đòi lý do) và Put it back. Câu dưới nút nói **thiếu
   bước nào**.
-- API client: `fetchReviewState`, `submitForReview`, `claimReview`,
-  `takeoverReview`, `releaseReview`, `cancelSubmission`.
-- 34 khoá i18n mới, **cả `en.json` lẫn `vi.json`**.
+- Cảnh báo reliance + nhãn "Tải cấu hình lịch sử" trên trang decision;
+  `GET /decisions/{id}` giờ tính `reliance_status` và `reliance_warning`
+  — chỉ ở route detail, vì đó là trang người ta quyết định có dùng cấu
+  hình hay không, và là chỗ duy nhất đáng trả tiền cho việc tra từng
+  candidate.
 
-**Còn lại trong P9:**
+**Đuôi P9 — trang `/algorithms`.** Đây là phần đáng nói nhất, vì nó vá
+một lỗ hổng về **thông tin** chứ không phải về quyền.
 
-- Trang `/algorithms` (đã thêm mục vào rail, **chưa có route**) + detail
-  + publications + audit timeline.
-- Candidate picker lọc theo publication current, hiện chip trạng thái
-  cho bundle chưa publish.
-- Nút "Tải cấu hình lịch sử" + cảnh báo reliance trên trang decision
-  (khoá i18n đã có, chưa nối vào component).
-- Trang `/admin/users` (đã thêm mục vào rail, **chưa có route**).
+Thuật toán import trước đây chỉ đến được từ một tab bên trong trang
+Models — chỗ để weights của controller mà nền tảng đã có, tức là hai
+loại vật khác nhau dưới một tiêu đề. Tệ hơn: một engineer không tìm thấy
+thuật toán của mình trong candidate picker thì **không có chỗ nào tra lý
+do**. Lý do luôn là một trong bốn: chưa ai publish, một revision mới hơn
+đã thay chỗ, host này không chạy được, hoặc reviewer đã tắt nó. Không
+cái nào trong bốn hiện ở đâu cả.
 
-**Nghiệm thu web**: `npx tsc --noEmit` sạch; `vitest` 1080/1081 pass.
-Lỗi còn lại là `agent-dock.test.tsx`, đọc file tôi không đụng — có sẵn.
-Hai lỗi khác gặp lúc làm (`decision-prose`, `decisions-page`) cũng có
-sẵn: đã đối chiếu tập khoá `en.json` trước/sau, **không mất khoá nào**,
-và hai khoá chúng đòi (`preflight.disabledDerived`, `outcome.title`)
-chưa từng tồn tại.
+Trang mới liệt kê **cả bundle chưa publish**, làm mờ, kèm đúng câu nói
+vì sao. Đó là cố ý: một thuật toán biến mất khỏi danh sách thì đọc như
+hệ thống hỏng, và người đi chọn không phân biệt được "không có" với
+"chưa ai bảo lãnh".
+
+Chip trạng thái là **phép chiếu, không phải cột lưu**. Server giữ ba sự
+thật vuông góc — được chọn không, load được không, đã publish chưa — vì
+mỗi cái do một hành động khác đặt; lưu thêm một nhãn gộp là tạo sự thật
+thứ tư tự do mâu thuẫn với ba cái kia. Gộp **để hiển thị** mới đúng là
+việc của cái chip.
+
+`bundleStates()` gán nhãn cho **cả danh sách** chứ không từng dòng, vì
+một trong bảy đáp án không suy ra được từ một dòng: `superseded` nghĩa
+là *revision khác* của cùng `plugin_id` mới là bản hiện hành, và đó là
+sự thật về các anh em của nó. `awaiting` — chưa ai publish bản nào — với
+người đi chọn thì đọc như nhau, nhưng với reviewer thì chỉ một trong hai
+là việc của họ.
+
+**Thêm route `GET /algorithms/plugins/published`**, trả danh sách id
+bundle đang hiện hành. Cách khác là mỗi dòng một request detail để biết
+đúng một bit. Route này khai báo **trước** `/{bundle_id}` — FastAPI khớp
+theo thứ tự đăng ký, để sau thì "published" bị đọc thành id và 404 vĩnh
+viễn. Có test giữ riêng điều đó.
+
+Route trả **200 với danh sách rỗng** khi governance tắt, khác với các
+hành động (publish/hold/disable) vốn trả 404. Đọc tập đã publish không
+phải là một hành động: khi chưa có publication nào thì câu trả lời trung
+thực là "không có cái nào", còn một trang list nhận 404 sẽ phải đoán xem
+có nên làm mờ hết mọi dòng hay không.
+
+Nửa dành cho reviewer — entry point, checksum của gói, lịch sử xuất bản,
+ai đã làm gì — chỉ vẽ cho người có `algorithm.inspect`. Ba nút thu hồi /
+giữ lại / tắt đều **đòi lý do**; publish thì không, vì nó là hành động
+duy nhất nói rằng không có gì sai.
+
+Bảng thuật toán import ở trang Models vẫn giữ (đó là view của người
+upload về đồ mình upload), thêm một câu trỏ sang `/algorithms`, để hai
+chỗ không cùng phán quyết một việc.
 
 ---
 
-## 6. Còn lại
+## 6. P10 — hàng chờ duyệt
 
-**P10** — Review Queue ba tab (Runs / Algorithms / Legacy), dashboard
-theo role, modal submit/takeover.
+**`GET /decisions/review-queue` chia bốn đống, server chia chứ không
+phải client lọc.** Một request là `mine` với người đang giữ, `directed`
+với người được nêu tên, `pool` với mọi người còn lại, và `sent` với
+người đã gửi nó. Cùng một dòng, bốn nghĩa, tuỳ ai hỏi — client lọc một
+danh sách phẳng sẽ phải chép lại đúng luật đó.
 
-**P11** — `/admin/*` bốn trang, dời `/settings` và `/system` vào đó.
+Route mở cho **mọi người đọc được**, không gác sau `run.review`:
+engineer cần đống `sent` để biết đã có ai nhận việc của mình chưa, và từ
+chối họ thì phải đẻ thêm một endpoint thứ hai trả cùng dữ liệu dưới tên
+khác. Ba đống của reviewer trả rỗng cho người không có capability, vì
+luật lấp đầy chúng là luật về *ai được nhận*.
 
-**Phần đuôi P9** — bốn mục ở §5.
+Mỗi dòng mang cờ `acknowledged`. Một hàng chờ chỉ nói *ai đang giữ* là
+nói dối bằng cách bỏ sót: "Bob đang giữ" đọc thành "Bob đang xử lý"
+trong khi Bob chưa mở gì. Vì acknowledgement thuộc về **claim** chứ
+không thuộc về run, đây mới là bản trung thực của cùng một dòng.
 
-Ngoài phạm vi plan (ghi từ đầu): governance cho PPO model, job queue bền
-qua restart, đồng bộ settings nhiều worker, gỡ luồng benchmark cũ,
-sandbox bảo mật thật cho plugin.
+Route khai báo trước `/decisions/{run_id}` — cùng cái bẫy thứ tự như
+trên, cũng có test riêng.
 
-**Nhánh này giờ phát hành desktop được** — ràng buộc giám khảo đã có
-test giữ. Nhưng hai mục rail (`/algorithms`, `/admin/users`) đang trỏ
-tới route chưa tồn tại, nên **đừng release trước khi xong P9 + P11**,
-nếu không người dùng bấm vào sẽ ra 404.
+**Web**: `/reviews` giờ có bốn tab — Runs / Algorithms / Inbox / Sent.
+Hai tab sau là luồng benchmark cũ, **giữ nguyên không đụng**: gộp chúng
+vào một danh sách sẽ đặt hai loại request khác nhau (một loại có claim,
+một loại không) dưới cùng một bộ nút. Tab Algorithms chỉ hiện cho người
+có `algorithm.publish` — engineer đọc danh sách thuật toán đang chờ
+reviewer thì chỉ học được rằng mình không giúp được gì.
+
+Panel hàng chờ cho **nhận** và **trả lại**, không cho ký. Nhận việc là
+một cú bấm không mất gì — claim trả lại được. Còn nói "tôi đã đọc bằng
+chứng" và ký duyệt là hành động về **nội dung** của một run cụ thể, nên
+nó nằm ở trang của run đó, chỗ có bằng chứng.
+
+Đống `sent` cố ý không có nút nào ngoài rút lại, và chỉ khi chưa ai
+nhận: giật việc khỏi tay người đang đọc là chuyện khác, server từ chối.
+
+Đống thuật toán không có nút nhận, vì nó không có request nào phía sau.
+Một run đến tay reviewer vì engineer gửi; một thuật toán import đến tay
+reviewer **bằng cách tồn tại** — có người upload, và nó nằm đó, không ai
+được dùng, cho tới khi một reviewer publish. Nó chỉ liệt kê ba trạng
+thái còn là việc của ai đó (`awaiting`, `checking`, `held`); `broken`,
+`superseded` và `disabled` đã ngã ngũ, liệt kê chúng thì thành catalogue
+chứ không còn là hàng chờ.
+
+**Dashboard theo role**: `QuickActions` giờ mỗi mục khai capability của
+nó. Một danh sách cố định sai với tất cả mọi người sau khi ba gói thôi
+lồng nhau — reviewer không giữ gói engineer thì không tạo run được, còn
+engineer được mời "publish một thuật toán" là được mời một cái 403. Khi
+**chưa đăng nhập** thì vẫn vẽ đủ và trỏ về `/login`: khách chưa có
+capability nào, lọc theo đó sẽ để lại một panel trống ngay chỗ sản phẩm.
+
+---
+
+## 6b. P11 — trang quản trị
+
+**`/admin/users`** — ba checkbox độc lập, không phải dropdown bậc thang.
+Reviewer không phải engineer cấp cao, admin không phải reviewer cấp cao,
+nên UI phải nói đúng như thế. Một người giữ cả ba, hoặc một, hoặc không
+gói nào (tài khoản ngủ).
+
+Ô **lý do gác cả bảng**: chưa nhập lý do thì mọi checkbox và mọi nút đều
+khoá. Đây là bảng người rà soát mở đầu tiên, và "ai cấp gói reviewer cho
+người này, vì sao" là một câu hỏi — trả một nửa không phải là trả lời.
+
+`demo_owner` **hiện chỗ ai đang giữ, và không bao giờ cấp được từ đây**.
+Nó là nhân nhượng của một profile triển khai chứ không phải một việc ai
+đó làm; đưa vào dropdown là biến ngoại lệ một-máy thành thứ ai cũng phát
+tán được, còn giấu hẳn thì tài khoản duy nhất có nó trông như tài khoản
+thường.
+
+Nút khoá tài khoản **không hiện cho chính mình** — nó là thứ duy nhất
+đứng giữa một admin và việc tự khoá mình khỏi máy của mình.
+
+Câu dưới bảng nói rõ khoá tài khoản nghĩa là gì: không đăng nhập được,
+token đang có chết ở request kế tiếp, **và không xoá gì cả**. Run, phê
+duyệt, import của họ vẫn nguyên — xoá dấu vết việc đã làm không phải là
+ngăn họ làm tiếp.
+
+**`/admin/audit`** — sắp theo `sequence` chứ không theo đồng hồ, và
+trang **không tự sort lại**: hai hành động có thể trùng mốc thời gian,
+và "ai làm trước" đúng là câu mà một audit trail được hỏi. Cột
+`override` đứng riêng vì đó là thứ người ta lọc đầu tiên. Vai và
+capability của người thao tác ghi **tại thời điểm đó**, không phải thứ
+họ đang giữ.
+
+**Gom mục Quản trị.** `/admin/users`, `/admin/audit` và `/settings` vào
+một section riêng trong rail. Trước đó `/settings` nằm lẫn trong nhóm
+Account cùng các trang mọi người đều có, nên ai đi tìm "đổi ai được
+publish ở đâu" phải đọc hết mới biết không mục nào là nó.
+
+**Không dời href.** `/settings` và `/system` đã được link từ release
+notes và từ desktop launcher từ 0.1.x; đổi URL để dọn menu là làm hỏng
+một bookmark để sửa không cái gì. Đổi lại, Sidebar giờ **bỏ hẳn section
+rỗng**: máy nào không ai là admin thì không thấy cả tiêu đề, chứ không
+thấy một tiêu đề trống — một tiêu đề là lời khẳng định rằng dưới nó có
+gì đó.
+
+`/algorithms` cũng được gác sau `algorithm.catalogue`. Cả ba gói đều giữ
+capability này, nên nó chỉ giấu mục đó khỏi đúng một loại tài khoản:
+loại không có gói nào.
 
 ---
 
@@ -290,17 +457,79 @@ nếu không người dùng bấm vào sẽ ra 404.
 14. **`ReviewAssignment` chứ không phải `ReviewState`** ở web —
     `ReviewState` đã nghĩa "đã đọc chưa".
 15. **Launcher cấp profile + seed roles + SoD, mỗi lần launch** (§4).
+16. **Thêm route `/algorithms/plugins/published`** — plan không có, vì
+    plan không lường trang list cần biết bản nào hiện hành mà không
+    hỏi từng dòng. Trả 200-rỗng khi governance tắt (đọc ≠ hành động).
+17. **`bundleStates()` gán nhãn cả danh sách**, không phải từng dòng —
+    `superseded` là sự thật về các anh em cùng `plugin_id`.
+18. **Hàng chờ chia đống ở server**, không phải client lọc — cùng một
+    request mang bốn nghĩa tuỳ ai hỏi.
+19. **`/decisions/review-queue` mở cho mọi người đọc được**, không gác
+    sau `run.review` — nếu không phải đẻ endpoint thứ hai cho `sent`.
+20. **Giữ nguyên href `/settings` và `/system`** khi gom section Quản
+    trị — dời URL để dọn menu là hỏng bookmark mà không sửa gì.
+21. **Sidebar bỏ hẳn section rỗng** — tiêu đề là lời khẳng định rằng
+    dưới nó có gì đó.
+22. **`QuickActions` gác theo capability** nhưng **không lọc khi chưa
+    đăng nhập** — khách không có capability nào, lọc theo đó thì panel
+    trống ngay chỗ sản phẩm.
+
+---
+
+## 7b. Còn lại sau khi plan đóng
+
+Plan 13 phase **đã xong hết**. Những thứ dưới đây nằm ngoài phạm vi và
+đã ghi là ngoài phạm vi từ đầu, không phải nợ mới:
+
+- governance cho model PPO (hiện chỉ thuật toán import có),
+- job queue bền qua restart,
+- đồng bộ settings giữa nhiều worker,
+- gỡ hẳn luồng benchmark cũ (hai tab Inbox/Sent vẫn sống),
+- sandbox bảo mật thật cho plugin — hiện chỉ tách process, **không phải
+  sandbox**: mã upload lên đọc được file và ra được mạng như server.
+
+---
+
+## 7c. Một việc An phải tự quyết: có một key thật trong lịch sử git
+
+Chạy quét secret cho `.ai-log/` trước khi commit (luật §4 CLAUDE.md) thì
+ra một chuỗi khớp dạng key OpenAI thật — tiền tố `sk-proj-…` — nằm ở
+`.ai-log/archive/2026-07-27.jsonl`, commit `3f9f7c1`.
+
+**Nó đã ở trên cả hai remote**, và nằm trong 11 nhánh remote kể cả
+`origin/main` (repo public) lẫn `org/main`.
+
+Redact bản working copy (tôi đã làm) chỉ ngăn nó đi tiếp; nó **không** gỡ
+được cái đã nằm trong lịch sử. Hai lựa chọn, và cả hai là quyết định của
+An chứ không phải của tôi:
+
+1. **Rotate key đó** — đây là cách xử lý đúng, và đúng bất kể có viết lại
+   lịch sử hay không. Key đã public thì phải coi như đã lộ.
+2. Viết lại lịch sử 11 nhánh trên hai remote (`filter-repo` + force
+   push). Rủi ro cao, phá mọi clone của cả team, và **vẫn không thu hồi
+   được** thứ đã public.
+
+Khuyến nghị: làm (1), bỏ (2).
+
+Ngoài ra quét còn khớp 7 chuỗi `sk-test-…` ở hai file archive khác. Đó là
+fixture của test, không phải key — tôi đã hoàn nguyên phần redact đó và
+loại `sk-test-` khỏi pattern, vì sửa chúng là làm bẩn archive đã commit
+mà không gỡ được gì ai dùng được.
 
 ---
 
 ## 8. Lệnh để tiếp tục
 
 ```powershell
-git switch tongduyan_roles-capabilities     # đang ở đây, cây sạch
-python -m pytest tests/desktop/ -q                        # 110 pass
-python -m pytest tests/test_roles.py tests/test_reliance.py -q
-cd apps/web; npx tsc --noEmit; npx vitest run src/lib/__tests__ src/components/__tests__
+git switch tongduyan_roles-capabilities
+python -m pytest tests/api/test_api_decision_review.py tests/api/test_api_plugin_governance.py -q
+python -m pytest tests/test_roles.py tests/test_reliance.py tests/desktop/ -q
+cd apps/web; npx tsc --noEmit
+npx vitest run src/app/__tests__/role-pages.test.tsx src/lib/__tests__
 ```
 
-Không có gì chạy nền. Không push remote nào. `.ai-log/` chưa commit —
-phải quét secret bằng regex trước.
+Không có gì chạy nền. **Không push remote nào** — An tự push, và luật
+push hai remote (`origin` + `org`) vẫn giữ.
+
+`.ai-log/` đã quét secret và commit trong phiên này. Xem §7c trước khi
+push.
