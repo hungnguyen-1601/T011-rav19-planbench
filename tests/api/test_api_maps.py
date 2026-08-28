@@ -258,3 +258,107 @@ class TestTurningAStoredMapIntoTheTwoPathsAProfileNames:
         assert recreated is True
         assert map_path.is_file()
         assert yaml_path.is_file()
+
+
+class TestWhichDeploymentsRunThisMap:
+    """The question the map editor could not answer.
+
+    A deployment names its map by path and the path carries the version,
+    so a map edited after a deployment was filed leaves that deployment
+    on the old walls. That is deliberate — ``episode_context_id`` does
+    not hash the map (HĐ-3.1), so moving a deployment silently would make
+    every stored run describe a world that no longer exists.
+
+    What was missing was anybody being told. Somebody edited a map,
+    re-ran the bench, and watched it measure the old grid with nothing on
+    screen to say why.
+    """
+
+    @pytest.fixture
+    def map_id(self, client: TestClient, alice_headers: dict[str, str]) -> str:
+        created = client.post("/api/v1/maps", json=bordered_map_payload(), headers=alice_headers)
+        assert created.status_code == 201, created.text
+        return created.json()["id"]
+
+    def _profile_on(self, client, headers, map_id: str, profile_id: str) -> dict:
+        """File a deployment whose map is this stored map, at its version."""
+        materialised = client.post(f"/api/v1/maps/{map_id}/materialise", headers=headers).json()
+        base = client.get("/api/v1/task-profiles/template", headers=headers).json()
+        base["id"] = profile_id
+        base["environment"]["map"] = materialised["map"]
+        base["environment"]["map_yaml"] = materialised["map_yaml"]
+        filed = client.post("/api/v1/task-profiles", json=base, headers=headers)
+        assert filed.status_code in (200, 201), filed.text
+        return filed.json()
+
+    def test_a_map_nobody_deployed_has_no_pins(self, client, alice_headers, map_id) -> None:
+        answered = client.get(f"/api/v1/maps/{map_id}/pins", headers=alice_headers)
+        assert answered.status_code == 200, answered.text
+        body = answered.json()
+        assert body["current_version"] == 1
+        assert body["pins"] == []
+
+    def test_it_reports_a_deployment_as_current_until_the_map_moves(
+        self, client, alice_headers, map_id
+    ) -> None:
+        self._profile_on(client, alice_headers, map_id, "pins_probe_v1")
+
+        body = client.get(f"/api/v1/maps/{map_id}/pins", headers=alice_headers).json()
+        mine = [pin for pin in body["pins"] if pin["task_profile_id"] == "pins_probe_v1"]
+        assert len(mine) == 1
+        assert mine[0]["pinned_version"] == 1
+        assert mine[0]["stale"] is False
+
+        # Edit the map. The deployment does not follow, and that is the
+        # whole design — but now it can be said out loud.
+        payload = bordered_map_payload()
+        payload["cells"][payload["width"] + 1] = 100
+        assert (
+            client.put(f"/api/v1/maps/{map_id}", json=payload, headers=alice_headers).status_code
+            == 200
+        )
+
+        body = client.get(f"/api/v1/maps/{map_id}/pins", headers=alice_headers).json()
+        assert body["current_version"] == 2
+        mine = [pin for pin in body["pins"] if pin["task_profile_id"] == "pins_probe_v1"]
+        assert mine[0]["pinned_version"] == 1
+        assert mine[0]["stale"] is True, "the deployment is behind and has to say so"
+
+    def test_stale_deployments_are_listed_first(self, client, alice_headers, map_id) -> None:
+        """Ordered by what the reader came here to find.
+
+        A map with a dozen deployments on it is a list nobody reads to the
+        end; the one that is behind is the answer to the question that
+        brought them.
+        """
+        self._profile_on(client, alice_headers, map_id, "pins_old")
+        payload = bordered_map_payload()
+        payload["cells"][payload["width"] + 1] = 100
+        client.put(f"/api/v1/maps/{map_id}", json=payload, headers=alice_headers)
+        self._profile_on(client, alice_headers, map_id, "pins_new")
+
+        pins = client.get(f"/api/v1/maps/{map_id}/pins", headers=alice_headers).json()["pins"]
+        by_id = {pin["task_profile_id"]: pin for pin in pins}
+        assert by_id["pins_old"]["stale"] is True
+        assert by_id["pins_new"]["stale"] is False
+        assert pins[0]["stale"] is True, "the stale one is what the reader is looking for"
+
+    def test_a_deployment_on_a_bundled_map_pins_nothing(
+        self, client, alice_headers, map_id
+    ) -> None:
+        """Only custom maps carry a version in their path.
+
+        A profile naming a bundled map is not pinned to a row in this
+        store at all, and reporting it as a pin would invite somebody to
+        "update" a map the editor never held.
+        """
+        body = client.get(f"/api/v1/maps/{map_id}/pins", headers=alice_headers).json()
+        assert all(pin["task_profile_id"] != "open_hall_v2" for pin in body["pins"])
+
+    def test_it_needs_an_account(self, anonymous, map_id) -> None:
+        assert anonymous.get(f"/api/v1/maps/{map_id}/pins").status_code == 401
+
+    def test_an_unknown_map_is_a_404(self, client, alice_headers) -> None:
+        assert (
+            client.get("/api/v1/maps/doesnotexist/pins", headers=alice_headers).status_code == 404
+        )
