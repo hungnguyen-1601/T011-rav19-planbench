@@ -254,6 +254,18 @@ class DecisionRunResource(BaseModel):
     config_state: str
     config_decided_by: str | None
     config_decided_at: str | None
+    #: Whether the decision above may still be acted on, derived at read
+    #: time. Separate from ``config_state`` on purpose: that one records
+    #: what a person decided and never changes, while this one is a fact
+    #: about the world now. Merging them would leave only two moves, and
+    #: both are wrong — rewriting the approval says somebody withdrew
+    #: something they did not, and leaving it alone lets a dead
+    #: recommendation read as a live one.
+    reliance_status: str = "active"
+    #: Why, when it is not ``active``. Carries the reason a person gave
+    #: rather than a code, because "revoked" tells a reader nothing they
+    #: can act on.
+    reliance_warning: dict[str, Any] | None = None
 
 
 class FindingResource(BaseModel):
@@ -667,7 +679,20 @@ def _without_episode_tables(report: dict[str, Any] | None) -> dict[str, Any] | N
     }
 
 
-def _run(stored: StoredDecisionRun, *, with_episodes: bool = True) -> DecisionRunResource:
+def _run(
+    stored: StoredDecisionRun,
+    *,
+    with_episodes: bool = True,
+    reliance: tuple[str, dict | None] = ("active", None),
+) -> DecisionRunResource:
+    """One run, as the interface reads it.
+
+    ``reliance`` is passed in rather than computed here because it needs
+    the plugin store, and most callers of this mapper are list views
+    where asking per row would mean one lookup per candidate per run.
+    The detail route, which is where a reader decides whether to act on
+    an approval, supplies the real answer.
+    """
     return DecisionRunResource(
         id=stored.id,
         task_profile_id=stored.task_profile_id,
@@ -685,6 +710,8 @@ def _run(stored: StoredDecisionRun, *, with_episodes: bool = True) -> DecisionRu
         reviewed_by=stored.reviewed_by,
         reviewed_at=stored.reviewed_at,
         config_state=stored.config_state,
+        reliance_status=reliance[0],
+        reliance_warning=reliance[1],
         config_decided_by=stored.config_decided_by,
         config_decided_at=stored.config_decided_at,
     )
@@ -1644,8 +1671,22 @@ def list_decisions(
 
 
 @router.get("/decisions/{run_id}", response_model=DecisionRunResource)
-def get_decision(run_id: str, service: Runs, _: ReadingUser) -> DecisionRunResource:
-    return _run(service.get(run_id))
+def get_decision(
+    run_id: str, service: Runs, plugins: Plugins, http_request: Request, _: ReadingUser
+) -> DecisionRunResource:
+    """One run, with whether its answer can still be acted on.
+
+    Computed here and not in the list: this is the page where somebody
+    decides whether to use a configuration, and it is the one place the
+    per-candidate lookups are worth paying for.
+    """
+    stored = service.get(run_id)
+    verdict, warning = reliance_of_run(
+        getattr(stored, "candidates", []),
+        plugins,
+        http_request.app.state.deployment.algorithm_governance,
+    )
+    return _run(stored, reliance=(verdict.value, describe_reliance(warning)))
 
 
 @router.post("/decisions/{run_id}/review", response_model=DecisionRunResource)

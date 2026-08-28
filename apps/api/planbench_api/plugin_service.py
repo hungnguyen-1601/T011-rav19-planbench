@@ -489,6 +489,21 @@ class PluginBundleService:
             return None
         return self._publications.current(plugin_id)
 
+    def published_bundle_ids(self) -> set[str]:
+        """Every bundle that is somebody's current publication.
+
+        One query for a whole list view, rather than one publication
+        lookup per row. The set is also all the answer a list needs:
+        membership means "this is what an engineer would get", absence
+        plus a sibling in the set means "a newer revision took over", and
+        absence with no sibling means nobody has published this plugin at
+        all. The list page draws those three differently, and none of
+        them requires knowing *which* revision won.
+        """
+        if self._publications is None:
+            return set()
+        return self._publications.current_bundle_ids()
+
     def publications_for_bundle(self, bundle_id: str) -> list[PluginPublication]:
         """Every publication row naming this bundle.
 

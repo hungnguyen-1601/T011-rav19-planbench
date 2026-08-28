@@ -305,6 +305,22 @@ export interface DecisionRun {
   reviewed_by: string | null;
   reviewed_at: string | null;
   config_state: ConfigState;
+  /** Whether the decision above may still be acted on.
+   *
+   * Deliberately not the same field as `config_state`: that one records
+   * what a person decided and never changes, this one is a fact about
+   * the world now. An algorithm disabled last week does not un-decide
+   * anything, and it does mean this is no longer a configuration to run.
+   */
+  reliance_status?: "active" | "suspended" | "revoked" | "unknown";
+  reliance_warning?: {
+    code: string;
+    message: string;
+    reason?: string;
+    revision?: number;
+    plugin_id?: string;
+    stack?: string;
+  } | null;
   config_decided_by: string | null;
   config_decided_at: string | null;
 }

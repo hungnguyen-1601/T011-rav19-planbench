@@ -171,6 +171,24 @@ async def import_plugin(
     return PluginBundleSummary.of(record, user.id, inspect=user.can(Capability.ALGORITHM_INSPECT))
 
 
+@router.get("/published", response_model=list[str])
+def published_bundles(plugins: Plugins, _: ActiveUser) -> list[str]:
+    """The bundles that are currently published, by id.
+
+    Declared before ``/{bundle_id}`` because FastAPI matches in
+    registration order and would otherwise read "published" as a bundle
+    id and answer 404.
+
+    A list view needs this and the detail route is the wrong place to get
+    it: asking there means one request per row to learn one bit each.
+    Empty while governance is off — which is correct rather than a
+    degradation, since with nothing published the question "is this the
+    published one?" has no answer, and the page falls back to saying
+    whether the bundle is runnable.
+    """
+    return sorted(plugins.published_bundle_ids())
+
+
 @router.get("/{bundle_id}", response_model=PluginBundleDetail)
 def get_plugin(bundle_id: str, plugins: Plugins, user: ActiveUser) -> PluginBundleDetail:
     """One bundle. How much of it comes back depends on the caller.

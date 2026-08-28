@@ -226,6 +226,61 @@ class TestUnpublishIsNotSupersede:
         )
 
 
+    def test_the_list_view_learns_the_published_set_in_one_request(
+        self, governed_client: TestClient
+    ) -> None:
+        """A list page asks once, not once per row.
+
+        The route exists because the alternative is a detail request per
+        bundle to learn one bit each, and the answer a list needs is a
+        set: in it means "this is what an engineer gets", out of it with
+        a sibling in it means "a newer revision took over", and out with
+        no sibling means nobody published this algorithm at all. The
+        three read differently to a reviewer and only the first is
+        visible from a single row.
+        """
+        first = self._published(governed_client)
+        second = self._published(
+            governed_client, source=PLANNER_SOURCE + "\n# changed\n"
+        )
+
+        published = governed_client.get(f"{PLUGINS}/published")
+        assert published.status_code == 200
+        assert published.json() == [second["id"]]
+        assert first["id"] not in published.json()
+
+        governed_client.post(f"{PLUGINS}/{second['id']}/unpublish", json={"reason": "wait"})
+        assert governed_client.get(f"{PLUGINS}/published").json() == []
+
+    def test_published_is_a_route_and_not_read_as_a_bundle_id(
+        self, governed_client: TestClient
+    ) -> None:
+        """Registered before ``/{bundle_id}``, which would swallow it.
+
+        FastAPI matches in registration order, so declaring this after
+        the detail route would make it a lookup for a bundle called
+        "published" and answer 404 forever.
+        """
+        assert governed_client.get(f"{PLUGINS}/published").status_code == 200
+        assert governed_client.get(f"{PLUGINS}/no-such-bundle").status_code == 404
+
+    def test_it_answers_empty_rather_than_404_with_governance_off(
+        self, client: TestClient
+    ) -> None:
+        """Nothing published is a true answer, not a missing feature.
+
+        The governed *acts* 404 while the flag is off, because offering a
+        kill switch nothing downstream understands is worse than not
+        offering it. Reading the set is not an act: with no publications
+        the honest answer is that none exist, and a list page that got a
+        404 here would have to guess whether to grey every row.
+        """
+        _import(client)
+        answered = client.get(f"{PLUGINS}/published")
+        assert answered.status_code == 200
+        assert answered.json() == []
+
+
 class TestHoldAndDisable:
     def test_a_held_bundle_leaves_the_catalogue_and_comes_back(
         self, governed_client: TestClient

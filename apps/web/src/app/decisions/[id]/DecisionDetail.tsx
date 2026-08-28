@@ -1778,6 +1778,18 @@ function HumanActs({
 
       {failed ? <div className="error-box">{failed}</div> : null}
 
+      {/* **Ahead of the controls, not beside them.** Somebody opening
+          this panel to copy a configuration should meet the reason it
+          may not be one to copy before they reach the button. The
+          approval itself is untouched and still shown below — an
+          algorithm withdrawn afterwards does not un-decide anything. */}
+      {run.reliance_status && run.reliance_status !== "active" ? (
+        <div className="error-box" role="status">
+          <strong>{t(`decisions.reliance.${run.reliance_status}`)}</strong>
+          {run.reliance_warning?.reason ? <div>{run.reliance_warning.reason}</div> : null}
+        </div>
+      ) : null}
+
       <label className="field">
         <span>{t("decisions.acts.comment")}</span>
         <input
@@ -1923,7 +1935,9 @@ function HumanActs({
             {/* A plain link, not a fetch: the endpoint returns text/plain
                 and the browser keeps the filename the server chose. */}
             <a href={approvedConfigUrl(run.id)} download>
-              {t("decisions.acts.download")}
+              {run.reliance_status && run.reliance_status !== "active"
+                ? t("decisions.acts.historicConfig")
+                : t("decisions.acts.download")}
             </a>
             {/* The only way out of an approval, and it exists because the
                 alternative was a wall: deleting a deployment refuses
