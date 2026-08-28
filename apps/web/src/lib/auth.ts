@@ -20,7 +20,10 @@
  */
 
 import { useSyncExternalStore } from "react";
-import { API_BASE } from "./api";
+// From `origin.ts`, not from `api.ts`: that module imports this one for
+// the session, and two modules that import each other have no defined
+// initialisation order.
+import { API_BASE } from "./origin";
 
 const TOKEN_KEY = "planbench.token";
 const USER_KEY = "planbench.user";
