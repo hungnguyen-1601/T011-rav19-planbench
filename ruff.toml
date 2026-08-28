@@ -55,6 +55,7 @@ known-first-party = [
     "planbench_tracking",
     "planbench_rl",
     "planbench_agent",
+    "planbench_analyst",
     "planbench_api",
     # The desktop launcher. Added with the package: leaving a
     # `planbench_*` package out of this list is what the comment above

@@ -82,7 +82,9 @@ from planbench_explanation.checkers import (
 )
 from planbench_explanation.ledger import PropositionOutcome
 from planbench_explanation.map_features import RouteFeatures
+from planbench_explanation.packet_facts import FactRefusal, serve_from_packet
 from planbench_explanation.protocol import (
+    HOST_FAILURE_CODES,
     AnalysisRequest,
     EvidenceReference,
     ToolRequest,
@@ -117,6 +119,12 @@ from planbench_explanation.versioning import artifact_checksum
 #: ``checker_not_implemented`` for a tool with no branch, and the next
 #: card added to the catalog lands in exactly this situation.
 AWAITING_SIDECAR: frozenset[str] = frozenset()
+
+#: The name of the one region a case packet carries: the route the run
+#: was measured along. A packet holds a single :class:`RouteFeatures`, so
+#: there is one corridor to ask about, and a checker whose region id had
+#: to be guessed is a checker nobody can call.
+ROUTE_REGION_ID = "route"
 
 
 class EvidenceMismatch(ValueError):
@@ -345,6 +353,7 @@ class ReportEvidence:
         packet: CasePacket,
         regions: Mapping[tuple[str, str], RouteFeatures] = MappingProxyType({}),
         sidecar_directory: Path | None = None,
+        sidecar_directories: Mapping[str, Path] = MappingProxyType({}),
     ) -> None:
         self.report = report
         self.packet = packet
@@ -354,9 +363,62 @@ class ReportEvidence:
         #: candidate), and re-deriving it here would put a second copy of
         #: that rule in the layer least able to keep it current.
         self.sidecar_directory = sidecar_directory
+        #: The same address, per candidate. The trace layout files a
+        #: sidecar under the candidate that produced it, and two
+        #: candidates of one comparison record the *same* episode: in one
+        #: flat directory the second file is the first file's name. A run
+        #: with one candidate still passes ``sidecar_directory`` and
+        #: every candidate resolves to it.
+        self.sidecar_directories = sidecar_directories
         self._identity = identity_of(packet)
         self.regions = regions
         self._verify_report_is_about(packet)
+
+    def _sidecar_for(self, candidate_id: str) -> Path | None:
+        """Where this candidate's sidecars live, or nowhere."""
+        return self.sidecar_directories.get(candidate_id, self.sidecar_directory)
+
+    @classmethod
+    def from_packet(
+        cls,
+        packet: CasePacket,
+        *,
+        sidecar_directory: Path | None = None,
+        sidecar_directories: Mapping[str, Path] = MappingProxyType({}),
+    ) -> ReportEvidence:
+        """Evidence for a run that left a packet and its sidecars, and no report.
+
+        A golden fixture is a packet on disk. The route through the map
+        was measured when the fixture was built and travels in
+        ``task.route``, so the clearance check has the geometry it
+        compares against — and it is the geometry the analyst was shown,
+        not a second measurement taken here.
+
+        What a fixture does not carry is a scoring report, so
+        ``latency_vs_expanded_nodes`` finds no per-episode search costs
+        and answers ``not_checkable``. That is the honest answer for a
+        run whose expansion counts nobody kept, and W1.1 changes it by
+        putting candidate measurements in the packet rather than by
+        inventing rows here.
+
+        The route is registered for every candidate under one region id,
+        because the packet carries one route. A request naming any other
+        region resolves to nothing — a refusal, rather than a
+        measurement of a corridor the caller did not ask about.
+        """
+        route = packet.task.route
+        regions = (
+            {(candidate.candidate_id, ROUTE_REGION_ID): route for candidate in packet.candidates}
+            if route is not None
+            else {}
+        )
+        return cls(
+            {},
+            packet=packet,
+            regions=regions,
+            sidecar_directory=sidecar_directory,
+            sidecar_directories=sidecar_directories,
+        )
 
     def _verify_report_is_about(self, packet: CasePacket) -> None:
         """Check the report against the packet, rather than being told.
@@ -490,6 +552,77 @@ class ReportEvidence:
                 return [row for row in episodes if isinstance(row, Mapping)]
         return []
 
+    def replay_evidence(
+        self, *, candidate_id: str, episode_context_id: str, planning_attempt: int
+    ) -> ReplayEvidence | None:
+        """One recorded attempt and the snapshot it pins, or ``None``.
+
+        ``None`` where the run predates the sidecar or the attempt was
+        never recorded — the host turns that into ``not_checkable``,
+        which is the truthful answer and the one the evidence ladder
+        already prices.
+        """
+        directory = self._sidecar_for(candidate_id)
+        if directory is None:
+            return None
+        path = directory / f"{episode_context_id}.planning_inputs.jsonl"
+        if not path.exists():
+            return None
+        header, records = read_sidecar(path)
+        if header.candidate_id != candidate_id:
+            raise EvidenceMismatch(
+                f"the sidecar at {path} is {header.candidate_id!r}'s and the request "
+                f"is about {candidate_id!r}"
+            )
+        for record in records:
+            if record.planning_attempt == planning_attempt:
+                return ReplayEvidence(
+                    record=record,
+                    snapshot=snapshot_for(path, record),
+                    inputs_loaded_from_record=True,
+                )
+        return None
+
+    def convergence_evidence(
+        self, *, candidate_id: str, episode_context_id: str, planning_attempt: int
+    ) -> ConvergenceEvidence | None:
+        """One recorded query, plus the seeds this candidate actually ran.
+
+        **The seed set comes from the run's own sidecars**, one per
+        episode, not from the report and not from the caller. The report
+        does not carry seeds — its episodes are context hashes — and a
+        caller-supplied set would be the same self-declared value the
+        evidence identity already had to stop being. What the run drew
+        from is recorded in the runs it made.
+
+        Sampling planners only: an episode whose snapshot records no
+        seed contributes none, and a candidate that never records one
+        yields no evidence rather than a sweep over a seed set of
+        ``[0]``.
+        """
+        directory = self._sidecar_for(candidate_id)
+        replay = self.replay_evidence(
+            candidate_id=candidate_id,
+            episode_context_id=episode_context_id,
+            planning_attempt=planning_attempt,
+        )
+        if replay is None or directory is None:
+            return None
+
+        seeds: list[int] = []
+        for path in sorted(directory.glob("*.planning_inputs.jsonl")):
+            header, records = read_sidecar(path)
+            if header.candidate_id != candidate_id or not records:
+                continue
+            seed = snapshot_for(path, records[0]).seed
+            if seed is not None and seed not in seeds:
+                seeds.append(seed)
+        if not seeds:
+            return None
+        return ConvergenceEvidence(
+            record=replay.record, snapshot=replay.snapshot, seeds=tuple(seeds)
+        )
+
 
 class ToolHost:
     """Serves one analysis round against one evidence source."""
@@ -550,6 +683,11 @@ class ToolHost:
             return self._replay(card, request)
         if card.tool_id == "rrt_convergence":
             return self._convergence(card, request)
+        served = serve_from_packet(card, self.analysis.packet, request.arguments)
+        if isinstance(served, FactRefusal):
+            return self._unavailable(card, request, served.code)
+        if served is not None:
+            return self._from_packet(card, request, *served)
         return self._unavailable(card, request, "tool_unavailable")
 
     # -- the two checks this platform can run ----------------------------
@@ -678,85 +816,82 @@ class ToolHost:
             return self._unavailable(card, request, str(error.code))
         return self._completed(card, request, outcome)
 
+    def _from_packet(
+        self,
+        card: ToolCard,
+        request: ToolRequest,
+        measurements: dict[str, float],
+        references: tuple[EvidenceReference, ...],
+    ) -> ToolResult:
+        """A fact query answered from the packet, signed like any result.
+
+        Reading the packet is not a new capability: it is the artifact
+        this host was built around and the one the analyst was shown.
+        What the stub host had and this one did not was the *reading*,
+        which meant a round on the real lane could verify a mechanism and
+        be told in the same breath that the packet's own decomposition
+        was unavailable.
+
+        The answer goes through the sink like a checker's, so it has an
+        artifact behind it and is signed with this build rather than with
+        the stub's zeros. A transcript still says which host ran.
+        """
+        stored = self.sink.store(
+            tool_id=card.tool_id,
+            request_id=request.request_id,
+            payload={
+                "tool": list(card.key),
+                "request": request.request_id,
+                "run_id": self.analysis.packet.run_id,
+                "arguments": dict(request.arguments),
+                "measurements": measurements,
+                "references": [reference.model_dump() for reference in references],
+            },
+        )
+        return stamped_result(
+            card,
+            request,
+            execution_status="completed",
+            input_provenance=self.input_provenance,
+            measurements=measurements,
+            references=references,
+            evidence_artifact_ref=stored.artifact_ref,
+            evidence_checksum=stored.checksum,
+            implementation_ref=self.implementation_ref,
+        )
+
     def _unavailable(self, card: ToolCard, request: ToolRequest, code: str) -> ToolResult:
         return stamped_result(
             card,
             request,
             execution_status="not_checkable",
             input_provenance="missing",
-            failure_code=code,
+            failure_code=self._declared(card, code),
         )
+
+    @staticmethod
+    def _declared(card: ToolCard, code: str) -> str:
+        """The code as the card allows it to be reported.
+
+        ``ToolSession.record`` refuses a failure code the card does not
+        declare, and it is right to: an unenumerated failure cannot be
+        told from a typo. But the refusal is raised at *record* time,
+        which kills the round — an analyst loses its whole analysis
+        because a checker and its card disagree about a word.
+
+        That disagreement is the platform's, so it is reported as the
+        platform's: ``host_internal_error`` is a declared host code, and
+        the round survives to say the check could not answer. W1.0 found
+        two of these by running the replay checkers through a session for
+        the first time; the fix for each is a card that declares what its
+        checker can raise, which is a wire change and belongs with the
+        other contract work.
+        """
+        if code in card.failure_modes or code in HOST_FAILURE_CODES:
+            return code
+        return "host_internal_error"
 
 
 def _positive(value: object) -> bool:
     """A node count that says something happened."""
     return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
-
-    def replay_evidence(
-        self, *, candidate_id: str, episode_context_id: str, planning_attempt: int
-    ) -> ReplayEvidence | None:
-        """One recorded attempt and the snapshot it pins, or ``None``.
-
-        ``None`` where the run predates the sidecar or the attempt was
-        never recorded — the host turns that into ``not_checkable``,
-        which is the truthful answer and the one the evidence ladder
-        already prices.
-        """
-        if self.sidecar_directory is None:
-            return None
-        path = self.sidecar_directory / f"{episode_context_id}.planning_inputs.jsonl"
-        if not path.exists():
-            return None
-        header, records = read_sidecar(path)
-        if header.candidate_id != candidate_id:
-            raise EvidenceMismatch(
-                f"the sidecar at {path} is {header.candidate_id!r}'s and the request "
-                f"is about {candidate_id!r}"
-            )
-        for record in records:
-            if record.planning_attempt == planning_attempt:
-                return ReplayEvidence(
-                    record=record,
-                    snapshot=snapshot_for(path, record),
-                    inputs_loaded_from_record=True,
-                )
-        return None
-
-    def convergence_evidence(
-        self, *, candidate_id: str, episode_context_id: str, planning_attempt: int
-    ) -> ConvergenceEvidence | None:
-        """One recorded query, plus the seeds this candidate actually ran.
-
-        **The seed set comes from the run's own sidecars**, one per
-        episode, not from the report and not from the caller. The report
-        does not carry seeds — its episodes are context hashes — and a
-        caller-supplied set would be the same self-declared value the
-        evidence identity already had to stop being. What the run drew
-        from is recorded in the runs it made.
-
-        Sampling planners only: an episode whose snapshot records no
-        seed contributes none, and a candidate that never records one
-        yields no evidence rather than a sweep over a seed set of
-        ``[0]``.
-        """
-        replay = self.replay_evidence(
-            candidate_id=candidate_id,
-            episode_context_id=episode_context_id,
-            planning_attempt=planning_attempt,
-        )
-        if replay is None or self.sidecar_directory is None:
-            return None
-
-        seeds: list[int] = []
-        for path in sorted(self.sidecar_directory.glob("*.planning_inputs.jsonl")):
-            header, records = read_sidecar(path)
-            if header.candidate_id != candidate_id or not records:
-                continue
-            seed = snapshot_for(path, records[0]).seed
-            if seed is not None and seed not in seeds:
-                seeds.append(seed)
-        if not seeds:
-            return None
-        return ConvergenceEvidence(
-            record=replay.record, snapshot=replay.snapshot, seeds=tuple(seeds)
-        )

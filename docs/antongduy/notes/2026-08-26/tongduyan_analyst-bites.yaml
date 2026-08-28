@@ -1,0 +1,394 @@
+name: "Rails of the analyst service (A1-A3)"
+workdir: "E:/VinAI/RoboMind_project/P-011-analyst"
+gate: >-
+  python -m pytest tests/test_analyst_guard.py tests/test_analyst_engine.py
+  tests/test_analyst_packet_view.py tests/test_analyst_identity.py
+  tests/test_analyst_service_wiring.py tests/test_analyst_runner.py
+  tests/test_analyst_budget_artifact.py tests/test_explanation_gate.py
+  tests/test_analyst_stdio.py
+  -q --no-header -p no:cacheprovider
+
+exclude:
+  - node_modules
+  - .next
+  - .ai-log
+  - artifacts
+  - maps
+  - docs
+  - presentation
+  - ros2_ws
+  - "*.db"
+  - .pytest_cache
+  - .ruff_cache
+  - .mypy_cache
+  - .codegraph
+  - .omc
+  - .venv
+  - .tmp
+  - .claude
+
+clean:
+  exit: 0
+  output_contains: "passed"
+
+bites:
+  # ---- Guard: the seven rules -------------------------------------------
+  - id: GUARD_QUANTITY_RULE_OFF
+    mo_ta: "a statement may carry its own number"
+    inject:
+      file: services/analyst_service/planbench_analyst/guard.py
+      replace: "        if quantities:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_statement_carrying_a_number_is_dropped"
+
+  - id: GUARD_NUMBER_WORDS_OFF
+    mo_ta: "numbers spelled as words stop counting as numbers"
+    inject:
+      file: services/analyst_service/planbench_analyst/guard.py
+      replace: "    for phrase in NUMBER_WORDS:"
+      with: "    for phrase in ():"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_statement_carrying_a_number_is_dropped"
+
+  - id: GUARD_BLOCKED_CLAIM_OFF
+    mo_ta: "a claim the packet's declared gap blocks is proposed anyway"
+    inject:
+      file: services/analyst_service/planbench_analyst/guard.py
+      replace: "        if proposal.proposition_type in blocked_types:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_claim_the_packet_blocks_is_dropped"
+
+  - id: GUARD_SUBJECT_CONFLICT_OFF
+    mo_ta: "rule 6: a citation about another component supports the claim"
+    inject:
+      file: services/analyst_service/planbench_analyst/guard.py
+      replace: "        if conflict is not None:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_citation_about_another_component_is_dropped"
+
+  - id: GUARD_NO_CITATION_ALLOWED
+    mo_ta: "rule 7: a proposal with nothing to lean on is submitted"
+    inject:
+      file: services/analyst_service/planbench_analyst/guard.py
+      replace: "        if not proposal.supports and not proposal.contradicts:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_proposal_with_no_citation_is_dropped"
+
+  - id: GUARD_WORDING_CEILING_OFF
+    mo_ta: "causal wording passes at proposal time"
+    inject:
+      file: services/analyst_service/planbench_analyst/guard.py
+      replace: "        if wording:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_wording_above_associated_is_dropped"
+
+  - id: GUARD_DROPS_ARE_SILENT
+    mo_ta: "blocked proposals stop being recorded, so no rule can be counted"
+    inject:
+      file: services/analyst_service/planbench_analyst/guard.py
+      replace: "    return GuardResult(response=answer, blocked=tuple(blocked), ranking=ranking, flags=flags)"
+      with: "    return GuardResult(response=answer, ranking=ranking, flags=flags)"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_one_bad_proposal_does_not_cost_a_good_one"
+
+  # ---- The critic may not delete ----------------------------------------
+  - id: CRITIC_CAN_DELETE
+    mo_ta: "the critic drops what it flagged instead of flagging it"
+    inject:
+      file: services/analyst_service/planbench_analyst/guard.py
+      replace: "    ranking, flags = critique(tuple(kept), view)"
+      with: "    ranking, flags = critique(tuple(kept), view)\n    kept = [p for p in kept if p.hypothesis_id not in {f[0] for f in flags}]"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_critic_orders_and_flags_without_removing_anything"
+
+  # ---- The input boundary ----------------------------------------------
+  - id: SANITIZE_LABELS_OFF
+    mo_ta: "component names reach the prompt as the third party wrote them"
+    inject:
+      file: services/analyst_service/planbench_analyst/sanitize.py
+      replace: "        return self.by_value.get(value, value)"
+      with: "        return value"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_component_name_never_reaches_the_model"
+
+  - id: SANITIZE_NORMALISER_OFF
+    mo_ta: "the detector matches raw text, so an obfuscated name reads as a name"
+    inject:
+      file: services/analyst_service/planbench_analyst/sanitize.py
+      replace: "    text = canonical(value)"
+      with: "    text = value"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_detector_sees_what_a_reader_would_see"
+
+  # ---- The engine ------------------------------------------------------
+  - id: ENGINE_ID_IGNORES_THE_CHECK
+    mo_ta: "the requested check drops out of the id, so two pieces of work share one name"
+    inject:
+      file: services/analyst_service/planbench_analyst/analyst.py
+      replace: "                \"arguments\": {name: str(value) for name, value in sorted(draft.arguments.items())},"
+      with: ""
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_same_sentence_asking_for_a_different_check_is_not_the_same_work"
+
+  - id: ENGINE_DEADLINE_OFF
+    mo_ta: "a call that never returns is waited on forever"
+    inject:
+      file: services/analyst_service/planbench_analyst/analyst.py
+      replace: "    if not finished.wait(timeout_s):"
+      with: "    if not finished.wait(60.0):"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_call_that_does_not_come_back_ends_the_round_at_a_known_time"
+
+  # ---- The runner and the seam (A4) -------------------------------------
+  - id: SEAM_EVIDENCE_EMPTY
+    mo_ta: "the request is built without the evidence the host holds"
+    inject:
+      file: services/analyst_service/planbench_analyst/round_host.py
+      replace: "        available_evidence=source.available_evidence,"
+      with: "        available_evidence=frozenset(),"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_request_and_the_host_are_built_from_one_source"
+
+  - id: SEAM_EVIDENCE_TAKEN_ON_TRUST
+    mo_ta: "a run with no sidecar is offered the replay tools anyway"
+    inject:
+      file: services/analyst_service/planbench_analyst/round_host.py
+      replace: "        TYPICAL_AVAILABLE_EVIDENCE if sidecar_present else PRE_SIDECAR_AVAILABLE_EVIDENCE"
+      with: "        TYPICAL_AVAILABLE_EVIDENCE"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_run_without_the_sidecar_offers_fewer_tools"
+
+  - id: RUNNER_DECLARE_SKIPPED
+    mo_ta: "requests go out before the host was told what they are for"
+    inject:
+      file: services/analyst_service/planbench_analyst/runner.py
+      replace: "        prepared.host.declare(guarded.response)"
+      with: "        pass"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_proposals_are_declared_before_any_request_is_made"
+
+  - id: RUNNER_NO_PROGRESS_OFF
+    mo_ta: "the same check is requested again, at the price of a model call"
+    inject:
+      file: services/analyst_service/planbench_analyst/runner.py
+      replace: "        if wanted and not fresh:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_asking_for_the_same_check_again_stops_the_round"
+
+  - id: RUNNER_BUDGET_TOOLS_OFF
+    mo_ta: "the tool budget stops stopping anything"
+    inject:
+      file: services/analyst_service/planbench_analyst/runner.py
+      replace: "            if spent.tool_requests >= budget.max_tool_requests:"
+      with: "            if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_tool_budget_stops_the_requests_and_says_so"
+
+  # ---- The platform's fail-closed gate (A4-ii) --------------------------
+  - id: GATE_PREREGISTRATION_OFF
+    mo_ta: "a suite somebody is still editing may be graded against"
+    inject:
+      file: packages/explanation/planbench_explanation/gate.py
+      replace: "        if suite.status != \"preregistered\":"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_working_suite_is_refused_by_a_graded_run"
+
+  - id: GATE_TAKES_A_BARE_PACKET
+    mo_ta: "a graded run accepts a packet with no provenance"
+    inject:
+      file: packages/explanation/planbench_explanation/gate.py
+      replace: "        raise GateRefusal(_BARE_PACKET_REFUSAL.format(case_id=case.case_id))"
+      with: "        return supplied"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_bare_packet_is_refused_by_a_graded_run"
+
+  - id: GATE_FIXTURE_KIND_IGNORED
+    mo_ta: "a hand-written fixture is graded as if it were recorded"
+    inject:
+      file: packages/explanation/planbench_explanation/gate.py
+      replace: "        if not dry_run and supplied.fixture_kind != \"recorded\":"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_hand_written_fixture_is_refused_by_a_graded_run"
+
+  - id: GATE_BUDGET_NOT_RECORDED
+    mo_ta: "the decision stops naming the budget the run had"
+    inject:
+      file: packages/explanation/planbench_explanation/bundle.py
+      replace: "    if effective_budget is not None and decision.effective_budget_checksum != ("
+      with: "    if False and decision.effective_budget_checksum != ("
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_feature_stays_off_when_production_gives_a_different_budget"
+
+  # ---- The wire, the gateway, and what stays back (A4-iv) ---------------
+  - id: STDIO_FRAME_CAP_OFF
+    mo_ta: "a frame may be any size, which is the shape a packet leaves through"
+    inject:
+      file: services/analyst_service/planbench_analyst/stdio_protocol.py
+      replace: "        if len(raw) > cap:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_every_frame_type_has_a_cap_and_the_cap_is_enforced"
+
+  - id: STDIO_PHASE_MACHINE_OFF
+    mo_ta: "a tool request arrives before anything was declared"
+    inject:
+      file: services/analyst_service/planbench_analyst/stdio_protocol.py
+      replace: "        if not always and frame.message_type not in _ALLOWED_AFTER.get(self.phase, frozenset()):"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_tool_request_before_anything_was_declared_is_refused"
+
+  - id: STDIO_REPLAY_ALLOWED
+    mo_ta: "a sequence number may be used twice"
+    inject:
+      file: services/analyst_service/planbench_analyst/stdio_protocol.py
+      replace: "        if frame.sequence in self.seen_sequences:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_replayed_sequence_number_is_refused"
+
+  - id: STDIO_ERROR_QUOTES_ITS_INPUT
+    mo_ta: "the refusal carries the payload it refused, into the log"
+    inject:
+      file: services/analyst_service/planbench_analyst/stdio_protocol.py
+      replace: "    reduced = _SAFE_DETAIL.sub(\"\", value)[:limit]"
+      with: "    reduced = value"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_refusal_does_not_quote_what_it_refused"
+
+  - id: GATEWAY_CONFIG_UNCHECKED
+    mo_ta: "the container may raise its own temperature mid-round"
+    inject:
+      file: services/analyst_service/planbench_analyst/model_gateway.py
+      replace: "        if config is not None and dict(config) != dict(self.bundle.generation_parameters):"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_temperature_the_bundle_did_not_freeze_is_refused"
+
+  - id: GATEWAY_MODEL_UNCHECKED
+    mo_ta: "a model swapped mid-round is served anyway"
+    inject:
+      file: services/analyst_service/planbench_analyst/model_gateway.py
+      replace: "        if model is not None and model != self.bundle.model_id:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_model_swapped_mid_round_is_refused"
+
+  - id: GATEWAY_TRUSTS_THE_ESTIMATE
+    mo_ta: "reported usage stops being checked, so a low estimate passes"
+    inject:
+      file: services/analyst_service/planbench_analyst/model_gateway.py
+      replace: "            self.input_tokens > self.budget.max_input_tokens"
+      with: "            False"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_input_usage_that_overshoots_is_caught_the_same_way"
+
+  - id: RESTRICTED_CAP_OFF
+    mo_ta: "stderr grows without limit, so a packet fits in it"
+    inject:
+      file: services/analyst_service/planbench_analyst/restricted.py
+      replace: "        if len(encoded) > room:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_restricted_stream_is_capped_and_says_how_much_went"
+
+  - id: PUBLIC_ERROR_NAMES_THE_CASE
+    mo_ta: "the submitter is told which hidden case failed"
+    inject:
+      file: services/analyst_service/planbench_analyst/restricted.py
+      replace: "    return {\"error\": code, \"case\": case_token(case_id, run_salt=run_salt)}"
+      with: "    return {\"error\": code, \"case\": case_id}"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_submitter_gets_a_code_and_a_token_not_a_case_id"
+
+  # ---- Controls ---------------------------------------------------------
+  - id: META_EXIT_CODE_PROPAGATES
+    mo_ta: "META: prove the gate's own exit code reports a failing test"
+    inject:
+      file: tests/test_analyst_guard.py
+      append: |
+
+        def test_bitekit_meta_probe() -> None:
+            assert False, "bitekit meta probe"
+    expect:
+      exit_not_zero: true
+      output_contains: "test_bitekit_meta_probe"
+
+  - id: NEG_BENIGN_EDIT
+    mo_ta: "control: a comment-only edit must NOT trip the gate"
+    inject:
+      file: services/analyst_service/planbench_analyst/guard.py
+      append: |
+
+        # bitekit benign control edit
+    expect:
+      exit: 0
+      output_contains: "passed"

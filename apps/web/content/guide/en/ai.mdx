@@ -1,0 +1,104 @@
+Two AI layers, in two places, doing two different jobs. Confusing them is
+the most common reason somebody waits for an answer the layer in front of
+them was never meant to give.
+
+The rule both obey: **AI proposes, a person decides.** No AI route in
+this system has a write verb.
+
+<GuideTabs slug="ai">
+
+<div>
+
+The dock in the corner, present on every screen; the full version is the
+assistant page.
+
+It reads what the platform **has recorded** through eleven read-only
+tools - list deployments, read a run, read a decision card, read the gate
+table, read the critique, read the recommendation - and answers from
+that. Ask about something never recorded and it says so rather than
+guessing.
+
+It **cannot** run a comparison, edit a deployment, or approve anything.
+
+Opened while standing on a run, it attaches to that run, and a chip on
+the chat frame says so - one click detaches it.
+
+<Callout kind="missing">
+
+**No conversation memory.** Ask "and what about candidate B?" and the
+model does not know which B. This is a design decision - no hidden
+context the reader cannot see - but the price is that multi-turn
+conversation does not work.
+
+</Callout>
+
+<AppLink href="/agent" />
+
+</div>
+
+<div>
+
+The *ask the model* button on the advice panels of a run. There is no
+input box; pressing it runs it.
+
+It receives the advice the **deterministic rules** already produced,
+reorders it by what should be handled first, and adds at most a few
+points the rules cannot see.
+
+Four constraints, each with a test, and each test proven to catch a real
+fault by injecting one and demanding it go red:
+
+1. **The rule layer is a floor.** The model may reorder; it may not
+   remove.
+2. **Every addition must point at a field that exists.** One that does
+   not is dropped and **counted on screen**.
+3. **No downgrading.** The model cannot push a blocking warning below a
+   note.
+4. **A dead provider costs the prose, never the rule layer.**
+
+The result separates what the rules said from what the model added.
+
+</div>
+
+<div>
+
+It needs **two** environment variables, not one:
+
+```
+PLANBENCH_AGENT_PROVIDER=auto
+PLANBENCH_AGENT_MODEL=o4-mini
+OPENAI_API_KEY=<your key>
+```
+
+<Callout kind="trap">
+
+`auto` **skips** any provider that has a key but no model name. Setting
+only the key and assuming that is enough is the most common
+misconfiguration here.
+
+</Callout>
+
+On the desktop build there is no file to edit: paste the key into the
+settings screen and it takes effect immediately, with no restart.
+
+<AppLink href="/settings" />
+
+</div>
+
+<div>
+
+With no key configured, **both layers** run on an offline keyword
+responder, and the interface says so rather than letting a green tick
+imply a model is answering.
+
+That matters when reading a result: an offline answer is still useful,
+but it is **keyword matching**, not analysis. Do not quote it as if a
+model wrote it.
+
+The deterministic layer does **not** depend on a key. Gates, decision
+cards, rule advice and rule critique all run in full with no model
+present.
+
+</div>
+
+</GuideTabs>

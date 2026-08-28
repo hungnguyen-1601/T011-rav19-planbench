@@ -1,0 +1,108 @@
+Gates run **before** any scoring. Scoring answers *which is better*; a
+gate answers *is this one considered at all*.
+
+**All six always run**, rather than stopping at the first failure:
+knowing a candidate "failed G2" without knowing whether G4 also failed is
+a diagnosis nobody can act on.
+
+Every threshold below is read from the declared deployment - no gate
+carries a constant of its own.
+
+<GuideTabs slug="gates">
+
+<div>
+
+**No-path rate ≤ the declared threshold.**
+
+This is kept apart from G3 even though both count failures, because they
+fail at different jobs: a planner that **finds no route** is failing at
+planning, while a stack that finds one and still does not arrive is
+failing at following it.
+
+A high `no_path` rate is usually a statement about map geometry and
+inflation radius, not about controller quality.
+
+</div>
+
+<div>
+
+**Zero collisions across the evaluation set, *and* a minimum number of
+runs.**
+
+The second half is what makes the first half mean anything. Zero
+collisions in ten runs is still consistent with a 26% collision rate.
+
+<Callout kind="trap">
+
+The number is an **upper bound**, not a certificate: zero collisions in N
+runs bounds the probability at roughly 3/N with 95% confidence, and only
+under the scenario distribution that was simulated. That sentence travels
+with the number every time it is quoted.
+
+</Callout>
+
+Touching a boundary counts as a collision - deliberately conservative.
+
+</div>
+
+<div>
+
+**Success rate ≥ the declared threshold.**
+
+"Success" means reaching the goal within the tolerance and the time limit
+the deployment declares. A stack that finds a path every time and never
+arrives clears G1 and fails here.
+
+</div>
+
+<div>
+
+**p99 latency ≤ the control period.**
+
+The p99 is taken over **every control step of the whole evaluation set**,
+pooled - deliberately neither the worst episode's p99, which would make
+the gate a function of the unluckiest moment on the benchmark host, nor a
+mean.
+
+<Callout kind="trap">
+
+**Proves one direction only.** The benchmark host is faster than the
+target board and runs Python rather than C++/ROS2. Failing here means it
+will fail on the target; **passing** here proves **nothing** about the
+target - and every G4 result carries that warning verbatim.
+
+</Callout>
+
+</div>
+
+<div>
+
+**Estimated memory ≤ the declared available RAM.**
+
+The estimate comes from data-structure counts multiplied by the **target
+implementation's** byte sizes, never from measured RSS: the RSS of a
+Python process is wrong by an order of magnitude against a C++ board
+budget, and wrong in a direction that cannot be predicted.
+
+RSS is still recorded alongside for leak hunting and relative comparison,
+and is named so it cannot be mistaken for what the gate is based on.
+
+</div>
+
+<div>
+
+**The observations a candidate requires ⊆ the observations the world
+provides.**
+
+A literal set comparison, which works only because the vocabulary is
+closed on both sides: an unknown token fails at parse time, so a spelling
+difference can never reach this gate and be reported as a hardware
+incompatibility that does not exist.
+
+The candidate declares *what it needs*, the deployment declares *what it
+has*. Missing means excluded - a statement about configuration, not a
+verdict on quality.
+
+</div>
+
+</GuideTabs>

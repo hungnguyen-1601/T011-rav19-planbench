@@ -19,6 +19,12 @@ research specifications nobody may execute, and the golden suite format
 that says what "good enough to show" means.
 """
 
+from planbench_explanation.budget import (
+    FRAME_TYPES,
+    PLATFORM_BUDGET_CAP,
+    AnalysisBudget,
+    BudgetRefusal,
+)
 from planbench_explanation.bundle import (
     CALIBRATION_TARGETS,
     REQUIRED_GATE_METRICS,
@@ -33,9 +39,12 @@ from planbench_explanation.bundle import (
 )
 from planbench_explanation.case_packet import (
     STANDING_UNKNOWNS,
+    CandidateMeasurements,
     CasePacket,
     CasePacketRefusal,
     DecisionFacts,
+    GateOutcome,
+    MeasuredValue,
     RobotFacts,
     TaskFacts,
     build_case_packet,
@@ -84,6 +93,7 @@ from planbench_explanation.exemplars import (
 )
 from planbench_explanation.gate import (
     CaseOutcome,
+    DryGateRun,
     GateRefusal,
     GateRun,
     gate_summary,
@@ -103,7 +113,6 @@ from planbench_explanation.golden import (
     score_case,
     score_suite,
 )
-from planbench_explanation.golden_fixtures import VISIBLE_SUITE
 from planbench_explanation.host import (
     AWAITING_SIDECAR,
     EvidenceSource,
@@ -178,6 +187,12 @@ from planbench_explanation.map_features import (
     MapFeatureRefusal,
     RouteFeatures,
     measure_route,
+)
+from planbench_explanation.packet_artifact import (
+    PacketArtifact,
+    PacketArtifactRefusal,
+    PacketProvenance,
+    load_packet_artifact,
 )
 from planbench_explanation.packet_builder import (
     EpisodeTrace,
@@ -569,6 +584,20 @@ __all__ = [
     "detect_all",
     "file_checksum",
     "find_divergence",
+    "AnalysisBudget",
+    "CandidateMeasurements",
+    "EpisodeTimeline",
+    "TimelinePoint",
+    "GateOutcome",
+    "MeasuredValue",
+    "PacketArtifact",
+    "PacketArtifactRefusal",
+    "PacketProvenance",
+    "load_packet_artifact",
+    "BudgetRefusal",
+    "FRAME_TYPES",
+    "PLATFORM_BUDGET_CAP",
+    "DryGateRun",
     "gate_summary",
     "index_metrics",
     "level_rank",
@@ -613,3 +642,21 @@ __all__ = [
     "write_sidecar",
     "write_tool_schemas",
 ]
+
+
+def __getattr__(name: str):  # type: ignore[no-untyped-def]
+    """``VISIBLE_SUITE`` resolves on demand, and only where it exists.
+
+    The visible suite carries the planted answer for every calibration
+    case. The analyst image removes ``golden_fixtures.py`` after copying
+    this package (see ``docker/Dockerfile.analyst``), because an answer
+    key inside the container is an answer key inside the exam. An eager
+    import here would make the whole package fail to load there; a lazy
+    one fails only when something actually reaches for the labels —
+    which, in the container, nothing legitimately does.
+    """
+    if name == "VISIBLE_SUITE":
+        from planbench_explanation.golden_fixtures import VISIBLE_SUITE
+
+        return VISIBLE_SUITE
+    raise AttributeError(name)

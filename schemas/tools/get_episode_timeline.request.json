@@ -1,0 +1,25 @@
+{
+  "$id": "schemas/tools/get_episode_timeline.request.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "candidate_id": {
+      "description": "Whose run of that episode. Required when both candidates drove it \u2014 an episode id is a hash of the conditions, so a comparison shares one.",
+      "type": "string"
+    },
+    "clock": {
+      "description": "'at_time' for who is ahead, 'at_progress' for who did the same work better. The two are never mixed in one row.",
+      "type": "string"
+    },
+    "episode_context_id": {
+      "description": "Which exemplar episode to read.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "episode_context_id",
+    "clock"
+  ],
+  "title": "get_episode_timeline@1.0.0 arguments",
+  "type": "object"
+}

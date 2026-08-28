@@ -300,7 +300,19 @@ class PlanningSnapshot(BaseModel):
         return planner_fingerprint(self.planner_name, dict(self.planner_parameters))
 
 
-def snapshot_filename(attempt: int) -> str:
+def snapshot_filename(attempt: int, episode_context_id: str = "") -> str:
+    """Where one attempt's snapshot is filed, beside its sidecar.
+
+    The episode id is in the name because a candidate can have more than
+    one episode in one directory — a sweep across missions does, and the
+    golden fixtures' latency family is exactly that. Named by attempt
+    alone, the second episode's first attempt overwrote the first's, and
+    every record still pointed at the old checksum: the sidecar reader
+    then reported the file as edited after the run, which is what it
+    should say about a file that was.
+    """
+    if episode_context_id:
+        return f"{episode_context_id}-attempt-{attempt:03d}.json"
     return f"attempt-{attempt:03d}.json"
 
 
@@ -438,7 +450,7 @@ class PlanningInputRecorder:
             seed=seed,
         )
         self.snapshots[attempt] = snapshot
-        snapshot_ref = snapshot_filename(attempt)
+        snapshot_ref = snapshot_filename(attempt, self.header.episode_context_id)
         if self.snapshot_dir is not None:
             self.snapshot_dir.mkdir(parents=True, exist_ok=True)
             (self.snapshot_dir / snapshot_ref).write_text(

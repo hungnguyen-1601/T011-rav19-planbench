@@ -22,6 +22,7 @@ export type IconName =
   | "cpu"
   | "sparkles"
   | "inbox"
+  | "book"
   | "info"
   | "settings"
   | "user"
@@ -98,6 +99,12 @@ const PATHS: Record<IconName, React.ReactNode> = {
     <>
       <path d="M3 12h5l2 3h4l2-3h5" />
       <path d="M5.5 5h13l2.5 7v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6l2.5-7Z" />
+    </>
+  ),
+  book: (
+    <>
+      <path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H19v15H5.5A1.5 1.5 0 0 0 4 19.5v-15Z" />
+      <path d="M4 19.5A1.5 1.5 0 0 0 5.5 21H19v-3" />
     </>
   ),
   info: (

@@ -153,6 +153,24 @@ _JSON_TYPES: dict[ArgumentKind, str] = {
 }
 
 
+#: Where a caller is meant to get an argument's value. Written on the
+#: card (W3.2) because the alternative is every caller inventing the
+#: answer: a ``region_id`` guessed to make a call go through is a checker
+#: answering about a passage nobody looked at, and the result is stamped
+#: ``recorded`` like any other.
+#:
+#: ``analyst`` means the model chooses and nothing may fill it in — a
+#: budget multiplier, a window width. Those are the arguments an
+#: auto-router leaves alone rather than defaults.
+ArgumentSource = Literal[
+    "packet_candidate",
+    "packet_episode",
+    "packet_region",
+    "packet_pair",
+    "analyst",
+]
+
+
 class ArgumentSpec(BaseModel):
     """One argument a tool takes."""
 
@@ -162,6 +180,11 @@ class ArgumentSpec(BaseModel):
     kind: ArgumentKind
     required: bool = True
     description: str = Field(min_length=1)
+    #: Where the value comes from. Defaults to ``analyst``: a card that
+    #: has not said otherwise is one no router may fill in for, which is
+    #: the safe direction — a missing route costs a model call, a wrong
+    #: fill costs a measurement about the wrong thing.
+    source: ArgumentSource = "analyst"
 
 
 #: Physical units a measurement can carry, plus the two dimensionless

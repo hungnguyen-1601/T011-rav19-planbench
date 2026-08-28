@@ -1,0 +1,33 @@
+{
+ "candidates": [
+  {
+   "candidate_id": "astar+dwa",
+   "episodes": [
+    {
+     "collision_count": 0,
+     "episode_context_id": "0dcf6a8edd13",
+     "min_clearance": 0.32,
+     "p99_latency_ms": 9.106699999392731,
+     "peak_search_nodes": 2706,
+     "peak_tree_nodes": 0
+    }
+   ]
+  },
+  {
+   "candidate_id": "rrtstar+dwa",
+   "episodes": [
+    {
+     "collision_count": 0,
+     "episode_context_id": "0dcf6a8edd13",
+     "min_clearance": 0.32,
+     "p99_latency_ms": 15.168700001595425,
+     "peak_search_nodes": 0,
+     "peak_tree_nodes": 62
+    }
+   ]
+  }
+ ],
+ "identity": {
+  "task_profile_id": "rrt_sample_starvation"
+ }
+}

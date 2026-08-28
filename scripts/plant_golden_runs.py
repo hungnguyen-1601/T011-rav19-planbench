@@ -86,6 +86,22 @@ class PlantedWorld:
     #: reviewing the suite can disagree with. Not decoration: a planted
     #: case nobody can argue with is a case nobody checked.
     rationale: str
+    #: One episode per goal, in addition to the scenario's own. Three of
+    #: the six families are about a **pattern across episodes** rather
+    #: than about one run — an association between search size and
+    #: latency, a difference that straddles zero — and a single episode
+    #: cannot carry either. G6.
+    episode_goals: tuple[tuple[float, float], ...] = ()
+    #: Which stacks run this world. ``None`` means the pair every other
+    #: world uses. The negative control needs two *tunings of one stack*
+    #: instead, because a pair that differs in nothing is the only pair
+    #: whose difference is honestly zero.
+    stacks: tuple[str, ...] | None = None
+    #: Whether the episodes are recorded at all. The insufficient-evidence
+    #: family is precisely a run whose traces nobody kept, and faking that
+    #: by deleting files afterwards would leave a fixture claiming a
+    #: recording it never had.
+    record_traces: bool = True
 
 
 def _grid(width: int, height: int, resolution: float, blocked) -> MapData:  # type: ignore[no-untyped-def]
@@ -256,31 +272,194 @@ def dwa_local_minimum() -> PlantedWorld:
     )
 
 
+def expansion_latency() -> PlantedWorld:
+    """Searches of very different sizes in one maze, timed as they ran.
+
+    The association this family plants lives **across** episodes: one
+    episode is one point, and a point has no slope. So the world is a
+    40 x 20 m hall divided by eight walls whose doorways alternate top
+    and bottom - a zigzag - and eight goals at increasing distance. The
+    detour forces the grid search to open sixteen nodes for the nearest
+    goal and roughly fifty thousand for the furthest, which is the range
+    a rank correlation needs.
+
+    Measured while tuning this world (A-star + DWA, one episode a goal):
+
+    ==========  ==============  ================
+    goal        expanded nodes  p99 tick latency
+    ==========  ==============  ================
+    2 m         16              5.0 ms
+    10 m        16 145          9.6 ms
+    14 m        19 273          14.6 ms
+    22 m        33 578          35.0 ms
+    30 m        47 726          17.4 ms
+    ==========  ==============  ================
+
+    The first draft of this world was a plain hall with wide doorways.
+    It produced a clean set of episodes and searches of 16 to 246 nodes,
+    which is nothing: latency stayed flat at 5 ms and the checker
+    correctly answered ``refuted``. A fixture has to plant a mechanism
+    big enough for the platform's own instrument to see, and that is a
+    property of the world rather than of the wording.
+
+    **The ceiling stays at ``associated``.** A longer episode runs more
+    ticks and has more chances to draw a slow one, so part of the rise
+    is the run being longer rather than the search being bigger, and
+    this platform cannot separate the two - the standing unknown every
+    packet declares. An analyst reaching for candidate latency
+    attribution here has crossed exactly that gap.
+    """
+    robot = _robot(0.18)
+    width, height = 400, 200
+    walls = [40, 80, 120, 160, 200, 240, 280, 320]
+    top_door = range(12, 30)
+    bottom_door = range(height - 30, height - 12)
+
+    def blocked(col: int, row: int) -> bool:
+        if col not in walls:
+            return False
+        door = top_door if walls.index(col) % 2 == 0 else bottom_door
+        return row not in door
+
+    return PlantedWorld(
+        case_id="latency-001",
+        family="expansion_latency",
+        map_data=_grid(width, height, 0.1, blocked),
+        scenario=_scenario(
+            robot,
+            Point2D(x=0.5, y=2.0),
+            Point2D(x=2.0, y=2.0),
+            timeout_seconds=200.0,
+        ),
+        # Eight episodes, not four: the association checker refuses fewer
+        # than eight, and it is right to - a slope through three points
+        # is a shape, not a measurement.
+        episode_goals=(
+            (6.0, 2.0),
+            (10.0, 2.0),
+            (14.0, 2.0),
+            (18.0, 2.0),
+            (22.0, 2.0),
+            (26.0, 2.0),
+            (30.0, 2.0),
+        ),
+        global_planner_name="astar",
+        plants="expansion_latency_association / global_planner",
+        rationale=(
+            "Eight goals down a zigzag corridor, each one wall further than the last. "
+            "The grid search opens sixteen nodes for the nearest and about fifty "
+            "thousand for the furthest, and the tick latency rises with it - an "
+            "association, not a cause, because a longer episode also draws more ticks "
+            "and the platform cannot split the planner's share of a tick from the "
+            "deployment's."
+        ),
+    )
+
+
+def negative_control() -> PlantedWorld:
+    """Two tunings of one stack on an easy map: nothing to explain.
+
+    The hardest case for an analyst is the one where the right answer is
+    "there is nothing here". A pair that differs in a planner would give
+    it something to say; a pair that differs in a controller's horizon
+    by a tenth of a second, on a map with no obstacle worth the name,
+    gives it a difference that is noise and a set of detections that is
+    empty.
+    """
+    robot = _robot(0.18)
+    width, height = 80, 60
+
+    def blocked(col: int, row: int) -> bool:
+        return col == 40 and row < 10
+
+    return PlantedWorld(
+        case_id="control-001",
+        family="negative_control",
+        map_data=_grid(width, height, 0.1, blocked),
+        scenario=_scenario(
+            robot,
+            Point2D(x=0.6, y=4.0),
+            Point2D(x=7.2, y=4.0),
+            timeout_seconds=60.0,
+        ),
+        episode_goals=((7.0, 3.4), (7.4, 4.6)),
+        stacks=("dwa_default", "dwa_patient"),
+        global_planner_name="astar",
+        plants="nothing - the answer is an abstention",
+        rationale=(
+            "One stack, two controller tunings, an open map and three missions. Neither "
+            "side has a detection and the utility difference is a rounding error, so "
+            "any mechanism proposed here was pattern-matched onto noise - which is the "
+            "failure this whole layer exists to prevent."
+        ),
+    )
+
+
+def insufficient_evidence() -> PlantedWorld:
+    """A run whose per-episode traces nobody kept.
+
+    Not a synthetic gap: the episodes are executed with **no recorder
+    attached**, exactly as a run predating the trace layout was. The
+    packet that comes out has candidates, a decision and the platform's
+    declared unknowns, and no observations at all - and the correct
+    answer is to say which evidence is missing rather than to reach for
+    a mechanism the run cannot support.
+    """
+    robot = _robot(0.18)
+    width, height = 70, 50
+
+    def blocked(col: int, row: int) -> bool:
+        return col == 35 and row < 20
+
+    return PlantedWorld(
+        case_id="gap-002",
+        family="insufficient_evidence",
+        map_data=_grid(width, height, 0.1, blocked),
+        scenario=_scenario(
+            robot,
+            Point2D(x=0.6, y=3.5),
+            Point2D(x=6.2, y=3.5),
+            timeout_seconds=45.0,
+        ),
+        record_traces=False,
+        global_planner_name="astar",
+        plants="insufficient evidence - every mechanism check is unavailable",
+        rationale=(
+            "The stacks ran and nothing recorded them, so no detector saw anything and "
+            "no replay is possible. A packet like this is common in practice - it is "
+            "what every run before the trace address change looks like - and the only "
+            "correct answer names the gap."
+        ),
+    )
+
+
 #: Families this script cannot stage honestly yet, and why. Printed
 #: rather than silently omitted: a suite missing two of its six families
 #: is a suite whose macro average is over four, and a reader who is not
 #: told will assume six.
-CANNOT_STAGE_YET: dict[str, str] = {
-    "expansion_latency": (
-        "needs episodes whose searches differ in expanded nodes by enough to rank, "
-        "which is a property of a sweep across contexts rather than of one world"
-    ),
-    "negative_control": (
-        "needs two candidates whose decision utility difference straddles zero - "
-        "a pairing, not a single "
-        "episode, so it belongs to the sweep this script feeds rather than here"
-    ),
-    "insufficient_evidence": (
-        "needs a run with a declared gap (perception accounting, or a missing trace); "
-        "producible, but the gap has to be declared by the packet builder, which is "
-        "E4.1 and not settled"
-    ),
-}
+CANNOT_STAGE_YET: dict[str, str] = {}
+
+#: What the six staged worlds still do **not** cover: the second variant
+#: of each family — the near-boundary and negative twins that separate
+#: "this mechanism is here" from "this shape is here and the mechanism is
+#: not". Six cases is six families and not twelve cases, and the
+#: preregistration reports counts rather than a rate below twelve.
+SECOND_VARIANTS_MISSING: tuple[str, ...] = (
+    "inflation-002",
+    "rrt-002",
+    "dwa-002",
+    "latency-002",
+    "control-002",
+    "gap-001",
+)
 
 WORLDS: tuple[PlantedWorld, ...] = (
     inflation_gap_closure(),
     rrt_sample_starvation(),
     dwa_local_minimum(),
+    expansion_latency(),
+    negative_control(),
+    insufficient_evidence(),
 )
 
 

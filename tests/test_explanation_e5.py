@@ -18,6 +18,7 @@ import pytest
 from pydantic import ValidationError
 
 from planbench_decision.objectives import PREFERENCE_PROFILES
+from planbench_explanation.budget import PLATFORM_BUDGET_CAP
 from planbench_explanation.bundle import (
     CALIBRATION_TARGETS,
     REQUIRED_GATE_METRICS,
@@ -68,6 +69,7 @@ from planbench_explanation.knowledge_contract import (
 from planbench_explanation.ledger import HypothesisProposal, KnownUnknown, PropositionOutcome
 from planbench_explanation.propositions import PropositionType
 from planbench_explanation.protocol import (
+    ANALYST_RUNNER_PROTOCOL_VERSION,
     HOST_FAILURE_CODES,
     AnalysisRequest,
     AnalysisResponse,
@@ -628,6 +630,8 @@ def bundle(**overrides) -> AnalystBundle:  # type: ignore[no-untyped-def]
         "retrieval_config_checksum": "d" * 64,
         "tool_catalog_version": TOOL_CATALOG_VERSION,
         "generation_parameters": {"temperature": 0.0},
+        "runner_protocol_version": ANALYST_RUNNER_PROTOCOL_VERSION,
+        "requested_budget": PLATFORM_BUDGET_CAP,
         "created_at": "2026-08-19T09:30:00Z",
     }
     fields.update(overrides)
@@ -655,6 +659,7 @@ def decision(target: AnalystBundle, **overrides) -> GateDecision:  # type: ignor
         "preregistration_ref": "docs/preregistration/analyst-gate-1.md",
         "decided_at": "2026-08-20T10:00:00Z",
         "targets_checksum": CALIBRATION_TARGETS.checksum,
+        "effective_budget_checksum": PLATFORM_BUDGET_CAP.checksum,
         "metrics": CALIBRATION_TARGETS.evaluate(CLEARING_RUN),
     }
     fields.update(overrides)
@@ -1223,6 +1228,51 @@ def test_a_declared_gap_stops_the_proposal_it_blocks() -> None:
     )
     response = reference_analyst(analysis(packet=blocked))
     assert response.abstained
+
+
+def test_the_blocked_claim_gate_is_still_on_for_the_second_detection() -> None:
+    """Two mapped detections, the second one blocked by a declared gap.
+
+    Eleven of the thirteen real packets carry three or four mapped
+    detection types and not one of the twelve golden fixtures carries
+    two, so the loop's second pass ran against nothing in a suite that
+    was entirely green. It compared the proposition against a name the
+    first pass had reassigned — here a pair of tool-argument strings —
+    so the comparison matched nothing and the blocked claim was
+    proposed anyway. A gate that is off says the same thing as a gate
+    that let something through, which is why this is checked by what
+    survives rather than by an exception.
+    """
+    leaky = packet(
+        observations=[observation(), observation("latency_spike")],
+        extra_unknowns=[
+            KnownUnknown(
+                id="latency_split",
+                blocks_claim_types=("expansion_latency_association",),
+                source="H4",
+            )
+        ],
+    )
+    response = reference_analyst(analysis(packet=leaky))
+    assert [item.proposition_type for item in response.proposals] == ["geometric_infeasibility"]
+
+
+def test_several_mapped_detections_do_not_kill_the_floor() -> None:
+    """The same reassignment, on the pair where it raised instead.
+
+    ``BLOCKED_BY_ARGUMENT`` holds one entry, so for every other
+    detection the second pass was comparing against ``None``. The floor
+    is what a real analyst is measured against; a floor that raises on
+    eleven of thirteen real packets is not a comparison anybody can run.
+    """
+    busy = packet(
+        observations=[observation("latency_spike"), observation("stuck_cluster")],
+    )
+    response = reference_analyst(analysis(packet=busy))
+    assert [item.proposition_type for item in response.proposals] == [
+        "expansion_latency_association",
+        "local_minimum_entrapment",
+    ]
 
 
 def test_a_mechanism_check_comes_back_not_checkable_rather_than_empty() -> None:

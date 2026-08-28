@@ -1,0 +1,117 @@
+These ten decide how you **read** a result. Pressing the right button and
+misreading the number is worse than not running it.
+
+<Section id="ung-vien-la-mot-stack" title="A candidate is a whole stack, not an algorithm">
+
+A\* and RRT\* are **global planners**; DWA is a **local controller**. They
+do not replace each other and do not belong in one table.
+
+What gets measured is a **complete navigation configuration**. So "A\*
+beat RRT\*" is usually addressed to the wrong thing - what won was a
+stack, and responsibility belongs to a **component**, not to an
+algorithm's name.
+
+</Section>
+
+<Section id="ghep-cap-episode" title="The difference is computed pair by pair">
+
+Both candidates run on the **same set of episode conditions**: same seed,
+same moving obstacles in the same places at the same moments, same sensor
+noise. The difference is taken **per pair**, not between two separate
+averages.
+
+A paired difference removes the noise of "the map happened to be kinder
+that day". Two detached averages do not.
+
+</Section>
+
+<Section id="checksum-dieu-kien" title="The conditions checksum - fairness you can check">
+
+Every set of conditions carries a checksum, so "both ran under the same
+conditions" is something you can **verify** rather than something the
+person running the benchmark asserts.
+
+Only compare runs with the same checksum. A different checksum is a
+different world.
+
+</Section>
+
+<Section id="ma-deployment-la-danh-tinh" title="A deployment id is the identity of a world">
+
+Resubmitting the same id with different contents is **refused, not
+merged**.
+
+If contents could change under the same name, every earlier result
+carrying that name would quietly become a result about something else -
+and nobody would know when.
+
+</Section>
+
+<Section id="nguong-doc-tu-deployment" title="Thresholds come from the deployment, not the code">
+
+Every gate threshold is read from the declared deployment. **No constant
+lives in the source** - a hardcoded threshold is one nobody set and
+nobody owns.
+
+The practical consequence: changing what "passing" means is an edit to
+the deployment, and that edit is part of the record.
+
+</Section>
+
+<Section id="cong-khong-phai-diem" title="A gate is not a score">
+
+Scoring answers *which is better*. A gate answers *is this one considered
+at all*. Mixing the two is how a stack that collided gets rescued by
+being fast.
+
+**All six gates always run**, rather than stopping at the first failure:
+knowing something was "rejected at G2" without knowing whether G4 also
+failed is a diagnosis nobody can act on.
+
+</Section>
+
+<Section id="khong-va-cham-la-chan-tren" title="Zero collisions is an upper bound, not a certificate">
+
+Observing zero collisions in N runs bounds the probability at roughly
+**3/N** with 95% confidence, and only **under the scenario distribution
+that was simulated**.
+
+So the safety gate also demands a minimum number of runs, and that bound
+travels with the number every time it is quoted. "No collisions" over
+five runs is not a promise - it is an observation over five runs.
+
+</Section>
+
+<Section id="sang-loc-mot-chieu" title="Screening on the benchmark host proves one direction only">
+
+The machine running the benchmark is faster than the target board and
+runs Python rather than C++/ROS2.
+
+A real-time gate that **fails** will certainly fail on the target. One
+that **passes** proves **nothing** about the target - and every result of
+that kind carries the warning verbatim.
+
+</Section>
+
+<Section id="khoang-tin-cay-vat-qua-0" title="An interval straddling zero means it was not shown">
+
+Every number arrives with a confidence interval and the number of runs
+behind it.
+
+When the 95% interval straddles zero, the decision card says plainly that
+this run does **not** demonstrate the difference it just reported.
+Reading the sign of a difference while ignoring its interval is how a
+conclusion ends up sounding stronger than the data allows.
+
+</Section>
+
+<Section id="doi-mot-thanh-phan" title="Change exactly one component per comparison">
+
+`astar+dwa` against `rrtstar+dwa`: the difference is attributable to the
+global planner.
+
+Change the planner and the controller together: the result may be
+correct, but it cannot say which component produced the difference - and
+that is usually the question you needed answered.
+
+</Section>

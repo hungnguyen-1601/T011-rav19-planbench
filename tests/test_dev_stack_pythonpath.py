@@ -36,6 +36,14 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 #: should be able to reach.
 TEST_ONLY = {".", "tests"}
 
+#: On the two local lists and deliberately absent from the API image:
+#: the desktop launcher is a different program that ships in a different
+#: artifact, and the image does not ``COPY apps/desktop`` at all. Written
+#: down as an exemption rather than left to a set difference, because
+#: "the image is missing a package" and "the image was never meant to
+#: have it" are the same shape of test failure and different bugs.
+IMAGE_EXEMPT = {"apps/desktop"}
+
 
 def pytest_pythonpath() -> list[str]:
     config = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
@@ -53,6 +61,22 @@ def dev_stack_pythonpath() -> list[str]:
     assignment = "\n".join(line for line in script.splitlines() if line.startswith("PY_PATH="))
     assert assignment, "PY_PATH is no longer assigned at the top level of dev_stack.sh"
     return re.findall(r"\$ROOT/([A-Za-z0-9_/]+)", assignment)
+
+
+def image_pythonpath() -> list[str]:
+    """The ``/app``-relative entries the API image runs with.
+
+    A third list, kept by a third mechanism, with the same failure mode
+    as the first two and one difference that makes it worse: the image
+    is built in CI and the missing import surfaces as a container that
+    exits, hours after the commit that caused it.
+    """
+    dockerfile = (REPO_ROOT / "docker" / "Dockerfile.api").read_text(encoding="utf-8")
+    assignment = "\n".join(
+        line for line in dockerfile.splitlines() if line.startswith("ENV PYTHONPATH=")
+    )
+    assert assignment, "PYTHONPATH is no longer set as a single ENV line in Dockerfile.api"
+    return re.findall(r"/app/([A-Za-z0-9_/]+)", assignment)
 
 
 class TestTheTwoPathListsAgree:
@@ -95,3 +119,41 @@ class TestTheTwoPathListsAgree:
         removed it from both lists at once."""
         assert "packages/decision" in pytest_pythonpath()
         assert "packages/decision" in dev_stack_pythonpath()
+
+
+class TestTheImageAgreesWithBoth:
+    def test_the_image_can_import_everything_the_suite_can(self) -> None:
+        missing = [
+            entry
+            for entry in pytest_pythonpath()
+            if entry not in TEST_ONLY and entry not in IMAGE_EXEMPT
+            if entry not in image_pythonpath()
+        ]
+        assert not missing, (
+            f"{missing} are on pytest's pythonpath but missing from PYTHONPATH in "
+            "docker/Dockerfile.api, so the suite imports them and the deployed API "
+            "cannot. Add them there, or to IMAGE_EXEMPT with the reason."
+        )
+
+    def test_the_image_carries_nothing_the_suite_never_sees(self) -> None:
+        extra = [entry for entry in image_pythonpath() if entry not in pytest_pythonpath()]
+        assert not extra, (
+            f"{extra} are on the image's PYTHONPATH but missing from pythonpath in "
+            "pyproject.toml, so they run in the container and are never imported by a test."
+        )
+
+    def test_the_image_copies_what_it_puts_on_the_path(self) -> None:
+        """A path entry the image never ``COPY``s is an empty directory
+        at best. The two halves are written twelve lines apart and only
+        one of them fails loudly."""
+        dockerfile = (REPO_ROOT / "docker" / "Dockerfile.api").read_text(encoding="utf-8")
+        copied = [
+            source.rstrip("/")
+            for source in re.findall(
+                r"^COPY ([A-Za-z0-9_/.]+)\s+/app/", dockerfile, flags=re.MULTILINE
+            )
+        ]
+        for entry in image_pythonpath():
+            assert any(entry == top or entry.startswith(f"{top.rstrip('/')}/") for top in copied), (
+                f"{entry} is on the image's PYTHONPATH but nothing COPYs it into /app"
+            )

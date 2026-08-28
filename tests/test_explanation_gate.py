@@ -9,10 +9,14 @@ be re-checked against the bundle and bar it claims.
 
 from __future__ import annotations
 
+from unittest import mock
+
 import pytest
 from pydantic import ValidationError
 
 from planbench_decision.objectives import PREFERENCE_PROFILES
+from planbench_explanation import golden
+from planbench_explanation.budget import PLATFORM_BUDGET_CAP
 from planbench_explanation.bundle import (
     CALIBRATION_TARGETS,
     AnalystBundle,
@@ -37,7 +41,17 @@ from planbench_explanation.gate import (
 from planbench_explanation.golden import ExpectedFinding, GoldenSuite, PlantedCase
 from planbench_explanation.knowledge import KNOWLEDGE_BASE_VERSION
 from planbench_explanation.ledger import HypothesisProposal, KnownUnknown
-from planbench_explanation.protocol import AnalysisRequest, AnalysisResponse, ToolSession
+from planbench_explanation.packet_artifact import (
+    PacketArtifact,
+    PacketProvenance,
+    packet_checksum,
+)
+from planbench_explanation.protocol import (
+    ANALYST_RUNNER_PROTOCOL_VERSION,
+    AnalysisRequest,
+    AnalysisResponse,
+    ToolSession,
+)
 from planbench_explanation.versioning import ExplanationArtifactHeader
 from planbench_explanation.waterfall import (
     ObjectiveLevels,
@@ -137,6 +151,8 @@ def bundle(**overrides) -> AnalystBundle:  # type: ignore[no-untyped-def]
         "retrieval_config_checksum": "d" * 64,
         "tool_catalog_version": TOOL_CATALOG_VERSION,
         "generation_parameters": {"temperature": 0.0},
+        "runner_protocol_version": ANALYST_RUNNER_PROTOCOL_VERSION,
+        "requested_budget": PLATFORM_BUDGET_CAP,
         "created_at": "2026-08-19T09:30:00Z",
     }
     fields.update(overrides)
@@ -162,6 +178,7 @@ def planted(case_id: str, **overrides) -> PlantedCase:  # type: ignore[no-untype
 
 
 def hidden_suite(*cases: PlantedCase) -> GoldenSuite:
+    """A hidden suite somebody is still working on. Rehearsals only."""
     return GoldenSuite(
         suite_version="hidden-1.0.0",
         visibility="hidden",
@@ -170,11 +187,78 @@ def hidden_suite(*cases: PlantedCase) -> GoldenSuite:
     )
 
 
+def preregistered(*cases: PlantedCase) -> GoldenSuite:
+    """A suite a real gate may run: hidden **and** preregistered.
+
+    Built under three patches, and the reason is worth stating rather
+    than hiding in a fixture. A preregistered suite must cover six
+    families with at least twelve variants each, and
+    ``OFFICIAL_GOLDEN_READY`` must be true — both are rules about *the
+    data being ready*, both have their own tests in
+    ``test_explanation_e5.py``, and neither is what this file is about.
+    What this file needs is a suite that **is** preregistered, so the
+    gate's fail-closed rule has something to accept.
+    """
+    chosen = cases or (planted("case-1"),)
+    if not any(case.expect_abstention for case in chosen):
+        # A family with no must-abstain variant never asks the analyst
+        # to stop, which is the rule the suite enforces and this fixture
+        # honours rather than patches: silence is a scored answer.
+        chosen = (
+            *chosen,
+            planted(
+                "case-abstain",
+                variant="must_abstain",
+                expect_abstention=True,
+                expected_findings=(),
+                expected_checker_requests=(),
+            ),
+        )
+    with (
+        mock.patch.object(golden, "OFFICIAL_GOLDEN_READY", True),
+        mock.patch.object(golden, "CASE_FAMILIES", ("inflation_gap_closure",)),
+        mock.patch.object(golden, "MIN_VARIANTS_PER_FAMILY", 1),
+    ):
+        return GoldenSuite(
+            suite_version="hidden-1.0.0",
+            visibility="hidden",
+            status="preregistered",
+            cases=chosen,
+        )
+
+
 def packets_from(mapping=None):  # type: ignore[no-untyped-def]
+    """Bare packets — what a rehearsal may be handed."""
     store = mapping or {}
 
     def source(case: PlantedCase) -> CasePacket:
         return store.get(case.case_id) or packet()
+
+    return source
+
+
+def artifacts_from(mapping=None, *, sidecar: bool = True, source_kind: str = "planted_run"):  # type: ignore[no-untyped-def]
+    """Packets wrapped in the provenance a graded run demands.
+
+    A graded run will not take a bare packet: ``fixture_kind`` has to be
+    derived from something, and the submitter's word is not it.
+    """
+    store = mapping or {}
+
+    def source(case: PlantedCase) -> PacketArtifact:
+        built = store.get(case.case_id) or packet()
+        return PacketArtifact(
+            case_id=case.case_id,
+            packet=built,
+            provenance=PacketProvenance(
+                packet_ref=f"fixtures/golden/hidden/{case.case_id}/packet.json",
+                packet_checksum=packet_checksum(built),
+                run_id=built.run_id,
+                recorded_at="2026-08-26T09:00:00Z",
+                sidecar_present=sidecar,
+                source=source_kind,  # type: ignore[arg-type]
+            ),
+        )
 
     return source
 
@@ -204,6 +288,22 @@ def crashing_analyst(analysis: AnalysisRequest) -> AnalysisResponse:
 
 
 def gate(suite=None, analyst=finding_analyst, **overrides):  # type: ignore[no-untyped-def]
+    """A graded run: preregistered suite, recorded artifacts, a decision."""
+    fields = {
+        "analyst": analyst,
+        "packets": artifacts_from(),
+        "sessions": sessions,
+        "catalog": TOOL_CATALOG,
+        "targets": CALIBRATION_TARGETS,
+        "preregistration_ref": PREREG,
+        "decided_at": DECIDED,
+    }
+    fields.update(overrides)
+    return run_gate(bundle(), suite or preregistered(), **fields)  # type: ignore[arg-type]
+
+
+def rehearsal(suite=None, analyst=finding_analyst, **overrides):  # type: ignore[no-untyped-def]
+    """A dry run: any suite, bare packets, and no decision at the end."""
     fields = {
         "analyst": analyst,
         "packets": packets_from(),
@@ -212,6 +312,7 @@ def gate(suite=None, analyst=finding_analyst, **overrides):  # type: ignore[no-u
         "targets": CALIBRATION_TARGETS,
         "preregistration_ref": PREREG,
         "decided_at": DECIDED,
+        "dry_run": True,
     }
     fields.update(overrides)
     return run_gate(bundle(), suite or hidden_suite(), **fields)  # type: ignore[arg-type]
@@ -234,15 +335,20 @@ def test_a_gate_will_not_grade_on_the_calibration_set() -> None:
         gate(visible)
 
 
-def test_a_dry_run_against_the_visible_set_is_possible_and_named_as_such() -> None:
+def test_a_dry_run_against_the_visible_set_is_possible_and_carries_no_decision() -> None:
+    """The flag alone was not enough: a rehearsal used to produce a real
+    ``GateDecision``, and ``analyst_visible`` takes one of those — so a
+    rehearsal on the calibration set could turn the feature on."""
     visible = GoldenSuite(
         suite_version="calibration-0.1.0",
         visibility="visible",
         status="calibration",
         cases=(planted("case-1"),),
     )
-    run = gate(visible, allow_visible_suite=True)
+    run = rehearsal(visible)
     assert run.suite_version == "calibration-0.1.0"
+    assert run.is_dry_run is True
+    assert not hasattr(run, "decision")
 
 
 def test_a_bundle_frozen_against_another_wire_contract_is_refused() -> None:
@@ -250,9 +356,9 @@ def test_a_bundle_frozen_against_another_wire_contract_is_refused() -> None:
     with pytest.raises(GateRefusal, match="wire contract"):
         run_gate(
             bundle(tool_catalog_version="1.0.0"),
-            hidden_suite(),
+            preregistered(),
             analyst=finding_analyst,
-            packets=packets_from(),
+            packets=artifacts_from(),
             sessions=sessions,
             catalog=TOOL_CATALOG,
             targets=CALIBRATION_TARGETS,
@@ -283,8 +389,10 @@ def test_the_decision_reports_the_whole_preregistered_bar() -> None:
 
 def test_an_analyst_that_raises_is_scored_rather_than_skipped() -> None:
     """Crashing on the hard cases must not improve the score."""
-    run = gate(hidden_suite(planted("case-1"), planted("case-2")), analyst=crashing_analyst)
-    assert run.failed_cases == ("case-1", "case-2")
+    run = gate(preregistered(planted("case-1"), planted("case-2")), analyst=crashing_analyst)
+    # Every case the suite holds, including the must-abstain one: an
+    # analyst that raises has not abstained, it has crashed.
+    assert run.failed_cases == ("case-1", "case-2", "case-abstain")
     assert not run.score.clean
     assert not run.decision.passes(CALIBRATION_TARGETS)
 
@@ -298,7 +406,7 @@ def test_one_crash_among_several_cases_is_recorded_on_the_decision() -> None:
             raise RuntimeError("timed out")
         return finding_analyst(analysis)
 
-    run = gate(hidden_suite(planted("case-1"), planted("case-2")), analyst=flaky)
+    run = gate(preregistered(planted("case-1"), planted("case-2")), analyst=flaky)
     assert run.failed_cases == ("case-2",)
     assert any("case-2" in note for note in run.decision.notes)
 
@@ -314,8 +422,8 @@ def test_a_leak_is_read_off_the_packet_the_analyst_was_shown() -> None:
             )
         ]
     )
-    run = gate(packets=packets_from({"case-1": blocked}))
-    (outcome,) = run.outcomes
+    run = gate(packets=artifacts_from({"case-1": blocked}))
+    outcome = next(item for item in run.outcomes if item.case_id == "case-1")
     assert outcome.submission.blocked_claim_leaks == ("hyp-1:geometric_infeasibility",)
     assert not run.score.clean
 
@@ -323,7 +431,7 @@ def test_a_leak_is_read_off_the_packet_the_analyst_was_shown() -> None:
 def test_the_tools_scored_come_from_the_hosts_account_of_the_round() -> None:
     """Never from the analyst's own account of itself."""
     run = gate()
-    (outcome,) = run.outcomes
+    outcome = next(item for item in run.outcomes if item.case_id == "case-1")
     assert outcome.submission.requested_tool_ids == ()
 
 
@@ -388,3 +496,108 @@ def test_a_decision_naming_another_suite_is_refused() -> None:
     other = run.decision.model_copy(update={"hidden_suite_version": "hidden-9.9.9"})
     with pytest.raises(ValidationError, match="different suite"):
         GateRun(**{**run.model_dump(), "decision": other})
+
+
+# --------------------------------------------------------------------------
+# Fail-closed: three ways to grade against the wrong thing
+# --------------------------------------------------------------------------
+
+
+def test_a_working_suite_is_refused_by_a_graded_run() -> None:
+    """A set somebody may still be editing is not a bar."""
+    with pytest.raises(GateRefusal, match="preregistered"):
+        gate(hidden_suite())
+
+
+def test_a_bare_packet_is_refused_by_a_graded_run() -> None:
+    """``fixture_kind`` has to be derived from something, and the
+    submitter's word is not it."""
+    with pytest.raises(GateRefusal, match="bare packet"):
+        gate(packets=packets_from())
+
+
+def test_a_hand_written_fixture_is_refused_by_a_graded_run() -> None:
+    with pytest.raises(GateRefusal, match="synthetic"):
+        gate(packets=artifacts_from(source_kind="hand_written"))
+
+
+def test_a_packet_from_a_run_without_the_sidecar_is_refused() -> None:
+    """Its planning inputs were reconstructed, and a threshold agreed
+    against those bakes the reconstruction's errors into the bar."""
+    with pytest.raises(GateRefusal, match="synthetic"):
+        gate(packets=artifacts_from(sidecar=False))
+
+
+def test_a_rehearsal_may_take_all_three_of_those() -> None:
+    """Asking somebody to preregister a suite and write provenance files
+    before they may rehearse is how rehearsals stop happening."""
+    run = rehearsal()
+    assert run.is_dry_run is True
+    assert run.score is not None
+
+
+# --------------------------------------------------------------------------
+# The budget the run actually ran under
+# --------------------------------------------------------------------------
+
+
+def test_the_decision_records_the_budget_the_run_ran_under() -> None:
+    run = gate()
+    assert run.effective_budget_checksum == PLATFORM_BUDGET_CAP.checksum
+    assert run.decision.effective_budget_checksum == run.effective_budget_checksum
+    assert run.requested_budget_checksum == bundle().requested_budget.checksum
+
+
+def test_a_bundle_asking_for_more_than_the_cap_runs_under_the_cap() -> None:
+    greedy = PLATFORM_BUDGET_CAP.model_copy(
+        update={"max_model_calls": 64, "max_tool_requests": 1024}
+    )
+    run = run_gate(
+        bundle(requested_budget=greedy),
+        preregistered(),
+        analyst=finding_analyst,
+        packets=artifacts_from(),
+        sessions=sessions,
+        catalog=TOOL_CATALOG,
+        targets=CALIBRATION_TARGETS,
+        preregistration_ref=PREREG,
+        decided_at=DECIDED,
+    )
+    assert run.requested_budget_checksum == greedy.checksum
+    assert run.effective_budget_checksum == PLATFORM_BUDGET_CAP.checksum
+
+
+def test_a_decision_naming_another_effective_budget_is_refused() -> None:
+    """The two halves are assembled separately and stored together."""
+    from planbench_explanation.gate import GateRun
+
+    run = gate()
+    other = run.decision.model_copy(update={"effective_budget_checksum": "f" * 64})
+    with pytest.raises(ValidationError, match="different effective budget"):
+        GateRun(**{**run.model_dump(), "decision": other})
+
+
+def test_the_feature_stays_off_when_production_gives_a_different_budget() -> None:
+    """An analyst graded with twice the tool calls it gets in production
+    was graded as a system that does not exist."""
+    from planbench_explanation.bundle import analyst_visible, why_not_visible
+
+    run = gate()
+    tighter = PLATFORM_BUDGET_CAP.model_copy(update={"max_tool_requests": 4})
+    assert not analyst_visible(
+        bundle(),
+        run.decision,
+        catalog_version=TOOL_CATALOG_VERSION,
+        targets=CALIBRATION_TARGETS,
+        production_budget=tighter,
+    )
+    assert "effective budget" in (
+        why_not_visible(
+            bundle(),
+            run.decision,
+            catalog_version=TOOL_CATALOG_VERSION,
+            targets=CALIBRATION_TARGETS,
+            production_budget=tighter,
+        )
+        or ""
+    )

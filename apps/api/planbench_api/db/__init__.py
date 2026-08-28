@@ -25,6 +25,7 @@ from planbench_api.db.session import (
     create_db_engine,
     normalise_url,
 )
+from planbench_api.db.traits_repositories import SqlTraitRepository
 
 __all__ = [
     "ApprovalRow",
@@ -37,6 +38,7 @@ __all__ = [
     "SessionFactory",
     "SimulationRow",
     "SqlRepositoryHub",
+    "SqlTraitRepository",
     "create_all",
     "create_db_engine",
     "normalise_url",

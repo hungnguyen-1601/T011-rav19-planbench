@@ -18,7 +18,12 @@ import Link from "next/link";
 
 import { Avatar } from "./Avatar";
 import { Icon, type IconName } from "./Icon";
-import { NAV_SECTIONS, isActive, type NavItem } from "@/lib/navigation";
+import {
+  NAV_SECTIONS,
+  NAV_UTILITY,
+  isActive,
+  type NavItem,
+} from "@/lib/navigation";
 import type { SessionUser } from "@/lib/auth";
 import type { Translator } from "@/lib/i18n";
 
@@ -29,8 +34,77 @@ import type { Translator } from "@/lib/i18n";
  * page whose every control answers 403 is advertising a door most of
  * the people reading it cannot open.
  */
-function visible(items: readonly NavItem[], user: SessionUser | null): NavItem[] {
+function visible(
+  items: readonly NavItem[],
+  user: SessionUser | null,
+): NavItem[] {
   return items.filter((item) => !item.admin || user?.is_admin);
+}
+
+/** One row of the rail.
+ *
+ * Extracted when the utility slot arrived: the guide's entry has to look
+ * and behave exactly like every other row — same tooltip rules when
+ * collapsed, same `aria-current` — and a second copy of this markup is a
+ * second place for those rules to drift.
+ */
+function NavEntry({
+  item,
+  collapsed,
+  pathname,
+  t,
+  onNavigate,
+}: {
+  item: NavItem;
+  collapsed: boolean;
+  pathname: string;
+  t: Translator["t"];
+  onNavigate: () => void;
+}) {
+  const label = t(item.labelKey);
+  const description = item.descriptionKey ? t(item.descriptionKey) : null;
+  const active = isActive(pathname, item.href);
+  return (
+    <Link
+      key={item.href}
+      href={item.href}
+      onClick={onNavigate}
+      // Collapsed, the tooltip carries the description too —
+      // it is the only surface left, and a rail of icons
+      // with nothing but names is what the descriptions were
+      // added to fix. Expanded, the label is already on
+      // screen so repeating it in a tooltip is noise and
+      // repeating it in an aria-label is read twice.
+      aria-label={collapsed ? label : undefined}
+      // Expanded, the description is the link's `title`;
+      // collapsed, the tooltip carries both because the
+      // label is not on screen either.
+      title={collapsed ? undefined : (description ?? undefined)}
+      data-tooltip={
+        collapsed
+          ? description
+            ? `${label} - ${description}`
+            : label
+          : undefined
+      }
+      data-tooltip-side="right"
+      aria-current={active ? "page" : undefined}
+    >
+      <Icon name={item.icon as IconName} />
+      {/* The description moved into `title`. Twelve entries
+                    × a sentence each turned the rail into a column of
+                    prose whose last item fell below the fold; the
+                    sentences are read once and then never again, which
+                    is what a tooltip is for. Nothing is lost — the
+                    keys and the strings all stay. */}
+      <span className="sidebar-label">{label}</span>
+      {item.legacy ? (
+        <span className="badge muted-badge sidebar-legacy">
+          {t("nav.legacy")}
+        </span>
+      ) : null}
+    </Link>
+  );
 }
 
 export function Sidebar({
@@ -52,7 +126,11 @@ export function Sidebar({
   onNavigate: () => void;
 }) {
   return (
-    <aside id="app-sidebar" className="sidebar" data-open={mobileOpen ? "true" : "false"}>
+    <aside
+      id="app-sidebar"
+      className="sidebar"
+      data-open={mobileOpen ? "true" : "false"}
+    >
       <div className="sidebar-brand">
         <span className="sidebar-mark" aria-hidden="true">
           <Icon name="benchmark" size={17} />
@@ -70,48 +148,35 @@ export function Sidebar({
         {NAV_SECTIONS.map((section) => (
           <div className="sidebar-section" key={section.titleKey}>
             <p className="sidebar-section-title">{t(section.titleKey)}</p>
-            {visible(section.items, user).map((item) => {
-              const label = t(item.labelKey);
-              const description = item.descriptionKey ? t(item.descriptionKey) : null;
-              const active = isActive(pathname, item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onNavigate}
-                  // Collapsed, the tooltip carries the description too —
-                  // it is the only surface left, and a rail of icons
-                  // with nothing but names is what the descriptions were
-                  // added to fix. Expanded, the label is already on
-                  // screen so repeating it in a tooltip is noise and
-                  // repeating it in an aria-label is read twice.
-                  aria-label={collapsed ? label : undefined}
-                  // Expanded, the description is the link's `title`;
-                  // collapsed, the tooltip carries both because the
-                  // label is not on screen either.
-                  title={collapsed ? undefined : (description ?? undefined)}
-                  data-tooltip={
-                    collapsed ? (description ? `${label} — ${description}` : label) : undefined
-                  }
-                  data-tooltip-side="right"
-                  aria-current={active ? "page" : undefined}
-                >
-                  <Icon name={item.icon as IconName} />
-                  {/* The description moved into `title`. Twelve entries
-                      × a sentence each turned the rail into a column of
-                      prose whose last item fell below the fold; the
-                      sentences are read once and then never again, which
-                      is what a tooltip is for. Nothing is lost — the
-                      keys and the strings all stay. */}
-                  <span className="sidebar-label">{label}</span>
-                  {item.legacy ? (
-                    <span className="badge muted-badge sidebar-legacy">{t("nav.legacy")}</span>
-                  ) : null}
-                </Link>
-              );
-            })}
+            {visible(section.items, user).map((item) => (
+              <NavEntry
+                key={item.href}
+                item={item}
+                collapsed={collapsed}
+                pathname={pathname}
+                t={t}
+                onNavigate={onNavigate}
+              />
+            ))}
           </div>
         ))}
+
+        {/* No heading. The guide is neither a place to work nor part of
+            an account, and a heading is a claim about a set — spending
+            one on a single row makes the reader parse a category to
+            learn a fact about one entry. A rule says the same thing. */}
+        <div className="sidebar-section sidebar-utility">
+          {NAV_UTILITY.map((item) => (
+            <NavEntry
+              key={item.href}
+              item={item}
+              collapsed={collapsed}
+              pathname={pathname}
+              t={t}
+              onNavigate={onNavigate}
+            />
+          ))}
+        </div>
       </nav>
 
       <div className="sidebar-footer">
@@ -119,8 +184,12 @@ export function Sidebar({
           <div className="session-card">
             <Avatar user={user} />
             <div style={{ minWidth: 0 }}>
-              <div className="session-name">{user.nickname || user.display_name}</div>
-              {user.email ? <div className="muted session-email">{user.email}</div> : null}
+              <div className="session-name">
+                {user.nickname || user.display_name}
+              </div>
+              {user.email ? (
+                <div className="muted session-email">{user.email}</div>
+              ) : null}
             </div>
           </div>
         ) : null}

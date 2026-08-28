@@ -74,6 +74,7 @@ for _package in (
     "ml",
     "services/tracking",
     "services/agent_service",
+    "services/analyst_service",
     "apps/api",
     "apps/desktop",
 ):

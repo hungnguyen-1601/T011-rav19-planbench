@@ -1838,6 +1838,49 @@ def get_replay_sync(
     )
 
 
+@router.get("/decisions/{run_id}/episodes/{episode_context_id}/verdict")
+def get_episode_verdict(
+    run_id: str,
+    episode_context_id: str,
+    service: Runs,
+    candidate_a: str = "",
+    candidate_b: str = "",
+) -> dict[str, Any]:
+    """One episode: which side it went to, and what can be said about why.
+
+    The question a reader asks with a replay open. The decision card
+    answers it for thirty episodes at once; this answers it for the one
+    on screen, and the two are different questions — a card cannot say
+    which side *this* episode went to, and this cannot say which stack
+    to deploy.
+
+    **Entirely deterministic.** The verdict is the per-episode utility
+    the scoring pass already stored, the diagnoses are the detectors
+    over the two served traces, and the contrasts come from rules
+    comparing the two sides. No model is asked, nothing here is gated,
+    and the answer is the same every time it is requested.
+
+    Three parts, kept apart on purpose. A fault found on one side is a
+    *diagnosis*; it is not an account of the difference between the two,
+    and it reads as one the moment they share a heading — most of all
+    when the fault is on the side that won. Only a finding with
+    contrastive evidence behind it is offered as bearing on the outcome.
+    What was looked at and deliberately not offered comes back as well,
+    because a list that simply omits it reads as though nobody checked.
+
+    The pair defaults to the one this run ranked. A run that ranked
+    nobody answers 409 rather than comparing whichever two were
+    registered first — which two a page compares is a claim, and
+    registration order is not one.
+    """
+    return service.episode_verdict(
+        run_id,
+        episode_context_id,
+        candidate_a=candidate_a,
+        candidate_b=candidate_b,
+    )
+
+
 @router.post("/decisions/{run_id}/config-approval/withdraw", response_model=DecisionRunResource)
 def withdraw_config(
     run_id: str, request: ReviewRequest, service: Runs, user: CurrentUser

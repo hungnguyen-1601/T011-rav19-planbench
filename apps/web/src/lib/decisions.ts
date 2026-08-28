@@ -18,6 +18,7 @@
 
 import { API_BASE } from "./api";
 import { FieldError, authFetch } from "./auth";
+import type { EpisodeVerdictView } from "./episodeVerdict";
 
 /** Which artifact a run produced. `comparison` covers both a comparison
  *  that could be ranked and one that could not — the card's presence is
@@ -757,6 +758,31 @@ export function getReplaySync(
   const query = new URLSearchParams({ candidate_a: candidateA, candidate_b: candidateB });
   return authFetch<ReplaySyncView>(
     `/decisions/${runId}/replay-sync/${episodeContextId}?${query.toString()}`,
+  );
+}
+
+/** One episode: which side it went to, and what can be said about why.
+ *
+ * Deterministic and ungated — no model is asked — so it is fetched for
+ * every reader who selects an episode. The pair defaults to the one the
+ * run ranked; a run that ranked nobody answers 409 rather than
+ * comparing whichever two were registered first.
+ *
+ * Takes a signal because a reader clicks through episodes faster than
+ * this answers, and the request that started earliest is the one that
+ * lands last often enough to matter.
+ */
+export function getEpisodeVerdict(
+  runId: string,
+  episodeContextId: string,
+  candidateA: string,
+  candidateB: string,
+  signal?: AbortSignal,
+): Promise<EpisodeVerdictView> {
+  const query = new URLSearchParams({ candidate_a: candidateA, candidate_b: candidateB });
+  return authFetch<EpisodeVerdictView>(
+    `/decisions/${runId}/episodes/${episodeContextId}/verdict?${query.toString()}`,
+    { signal },
   );
 }
 

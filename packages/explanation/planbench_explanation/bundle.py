@@ -61,6 +61,7 @@ from collections.abc import Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from planbench_explanation.budget import AnalysisBudget
 from planbench_explanation.versioning import (
     CHECKSUM_PATTERN,
     CODE_REF_PATTERN,
@@ -119,11 +120,57 @@ class AnalystBundle(BaseModel):
     #: identity: the same prompt at temperature 1.0 is a different
     #: system from the same prompt at 0.0.
     generation_parameters: dict[str, float | int | str | bool] = Field(default_factory=dict)
+    #: Wire protocol between the platform's runner and the analyst it
+    #: drives. Part of the identity: a bundle built against one frame
+    #: set and run against another is a different system, and the
+    #: symptom of getting it wrong is a round that dies half way with a
+    #: frame nobody recognises.
+    runner_protocol_version: str = Field(min_length=1)
+    #: **The object, not a checksum of it.** A bundle carrying only a
+    #: digest of its limits cannot be re-run from itself: somebody has
+    #: to find the budget that hashes to that value, and that somebody
+    #: is the party being graded. Embedded, the bundle describes itself
+    #: completely — and the checksum below still identifies it.
+    requested_budget: AnalysisBudget
     created_at: str = Field(pattern=TIMESTAMP_PATTERN)
+
+    #: Which revision of the algorithm-trait catalog this bundle was
+    #: graded against, and where the document is. **Three fields, not
+    #: one** (W1.8): a checksum alone pins a value nobody can produce a
+    #: document for once the table's current pointer has moved, which
+    #: reads as pinned and cannot be replayed. Empty on a bundle that
+    #: was graded with the traits input off — absent rather than blank,
+    #: since "no traits" and "traits nobody recorded" differ.
+    traits_revision_id: str = ""
+    traits_snapshot_checksum: str = ""
+    #: Content-addressed: the checksum is in the path, so an artifact
+    #: edited in place stops being findable instead of quietly standing
+    #: in for the one that was graded.
+    traits_snapshot_ref: str = ""
 
     @model_validator(mode="after")
     def _check(self) -> AnalystBundle:
         validate_code_ref(self.agent_code_digest, field="agent_code_digest")
+        triple = (
+            self.traits_revision_id,
+            self.traits_snapshot_checksum,
+            self.traits_snapshot_ref,
+        )
+        if any(triple) and not all(triple):
+            raise BundleRefusal(
+                "a trait snapshot is a revision id, a content checksum and a ref, "
+                f"and this bundle carries {sum(1 for item in triple if item)} of the "
+                "three. Each one alone can be true while the pair is wrong: a ref "
+                "that resolves to another revision, a checksum matching a document "
+                "the bundle does not name, an id that was reused."
+            )
+        if self.traits_snapshot_checksum and not re.fullmatch(
+            CHECKSUM_PATTERN, self.traits_snapshot_checksum
+        ):
+            raise BundleRefusal(
+                f"traits_snapshot_checksum {self.traits_snapshot_checksum!r} is not a "
+                "sha-256 hex digest"
+            )
         return self
 
     @property
@@ -145,6 +192,14 @@ class AnalystBundle(BaseModel):
             "retrieval_config_checksum": self.retrieval_config_checksum,
             "tool_catalog_version": self.tool_catalog_version,
             "generation_parameters": self.generation_parameters,
+            "runner_protocol_version": self.runner_protocol_version,
+            "requested_budget": self.requested_budget.checksum,
+            # All three, because the gate checks all three. A bundle
+            # that pinned only the checksum would be replayable exactly
+            # as long as nobody edited the table.
+            "traits_revision_id": self.traits_revision_id,
+            "traits_snapshot_checksum": self.traits_snapshot_checksum,
+            "traits_snapshot_ref": self.traits_snapshot_ref,
         }
 
     @property
@@ -287,6 +342,13 @@ class GateDecision(BaseModel):
     #: of its own and be believed.
     targets_checksum: str = Field(pattern=CHECKSUM_PATTERN)
     decided_at: str = Field(pattern=TIMESTAMP_PATTERN)
+    #: The budget the graded round actually ran under — the field-wise
+    #: minimum of what the bundle asked for and what the platform pays
+    #: for. Recorded because calibration, gate and production must all
+    #: run under the same one: an analyst graded with twice the tool
+    #: calls it gets in production was graded as a system that does not
+    #: exist.
+    effective_budget_checksum: str = Field(pattern=CHECKSUM_PATTERN)
     metrics: tuple[MetricResult, ...]
     #: Free text for the person reading the decision later. Never read
     #: by :func:`analyst_visible`.
@@ -342,7 +404,12 @@ class GateDecision(BaseModel):
         return self.internally_passed
 
 
-def verify_gate_decision(decision: GateDecision, *, targets: MetricTargets) -> None:
+def verify_gate_decision(
+    decision: GateDecision,
+    *,
+    targets: MetricTargets,
+    effective_budget: AnalysisBudget | None = None,
+) -> None:
     """Re-derive every row from the measured values and the caller's bar.
 
     The trust boundary is the ``targets`` argument. A decision states
@@ -354,6 +421,15 @@ def verify_gate_decision(decision: GateDecision, *, targets: MetricTargets) -> N
     Raises rather than returning a bool because there is nothing a
     caller should do with a decision that fails this except refuse it.
     """
+    if effective_budget is not None and decision.effective_budget_checksum != (
+        effective_budget.checksum
+    ):
+        raise BundleRefusal(
+            "the gate decision was earned under a different effective budget than the "
+            "one now in force; a bundle graded with more tool calls, more model calls "
+            "or a longer deadline than production gives it was graded as a system "
+            "that does not exist. Re-run the gate under the budget production uses."
+        )
     if decision.targets_checksum != targets.checksum:
         raise BundleRefusal(
             "the gate decision was judged against a different bar than the one "
@@ -377,6 +453,7 @@ def analyst_visible(
     *,
     catalog_version: str,
     targets: MetricTargets,
+    production_budget: AnalysisBudget | None = None,
 ) -> bool:
     """Whether the "explain why" affordance may appear for this analyst.
 
@@ -386,7 +463,14 @@ def analyst_visible(
     has since changed or against a bar nobody preregistered.
     """
     return (
-        why_not_visible(bundle, decision, catalog_version=catalog_version, targets=targets) is None
+        why_not_visible(
+            bundle,
+            decision,
+            catalog_version=catalog_version,
+            targets=targets,
+            production_budget=production_budget,
+        )
+        is None
     )
 
 
@@ -396,6 +480,7 @@ def why_not_visible(
     *,
     catalog_version: str,
     targets: MetricTargets,
+    production_budget: AnalysisBudget | None = None,
 ) -> str | None:
     """The reason the flag is off, for an operator. ``None`` when it is on.
 
@@ -411,7 +496,7 @@ def why_not_visible(
             "gate against the bundle now deployed"
         )
     try:
-        verify_gate_decision(decision, targets=targets)
+        verify_gate_decision(decision, targets=targets, effective_budget=production_budget)
     except BundleRefusal as error:
         return str(error)
     if not decision.passes(targets):

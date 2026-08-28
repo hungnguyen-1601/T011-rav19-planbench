@@ -122,6 +122,18 @@ bites:
       exit_not_zero: true
       output_contains: "test_a_decision_naming_another_suite_is_refused"
 
+  # ---- The model-free floor (added 2026-08-26, phase A-1) ---------------
+  - id: FLOOR_SECOND_DETECTION_UNGATED
+    mo_ta: "blocked-claim gate is off for every detection after the first"
+    inject:
+      file: packages/explanation/planbench_explanation/integration.py
+      replace: "        short_of = BLOCKED_BY_ARGUMENT.get(detection_type)"
+      with: "        blocked = short_of = BLOCKED_BY_ARGUMENT.get(detection_type)"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_blocked_claim_gate_is_still_on_for_the_second_detection"
+
   # ---- LLM advisor constitution ----------------------------------------
   - id: ADVISOR_DROPS_RULE_ADVICE
     mo_ta: "model ordering silently drops the rule items it omitted"

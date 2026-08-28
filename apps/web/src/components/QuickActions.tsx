@@ -1,11 +1,17 @@
 "use client";
 
-/** The five things people actually come here to start.
+/** The five things people actually come here to start, and one to read.
  *
  * Signed out, the account-scoped ones still appear but point at
  * `/login`. Hiding them would leave a visitor unable to discover that
  * the feature exists; sending them to a dead end would be worse. Sign-in
  * is the honest next step.
+ *
+ * The guide is the odd one and is here anyway. It is not a thing you
+ * start — it is the thing somebody opening this app for the first time
+ * needs before any of the other five mean anything, and the rail alone
+ * puts it below the fold of a reader's attention on the one screen where
+ * they have not yet decided what to do.
  */
 
 import Link from "next/link";
@@ -33,6 +39,7 @@ const ACTIONS: readonly Action[] = [
   { href: "/simulate", labelKey: "dashboard.action.startSimulation", icon: "play" },
   { href: "/maps", labelKey: "dashboard.action.createMap", icon: "map" },
   { href: "/reviews", labelKey: "dashboard.action.reviewInbox", icon: "inbox", session: true },
+  { href: "/guide", labelKey: "dashboard.guide.title", icon: "book" },
 ];
 
 export function QuickActions({ signedIn }: { signedIn: boolean }) {
