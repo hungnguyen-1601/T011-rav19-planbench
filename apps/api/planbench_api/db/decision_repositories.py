@@ -97,6 +97,22 @@ class SqlTaskProfileRepository:
         with self._sessions.begin() as session:
             return _to_profile(_require(session, TaskProfileRow, profile_id, "task profile"))
 
+    def replace(self, profile_id: str, profile: dict[str, Any]) -> StoredTaskProfile:
+        """Overwrite a stored deployment, keeping who filed it and when.
+
+        See the in-memory twin: `create` refuses to redefine an id, and
+        must, because a caller filing one does not know whether it is
+        taken. This is reached only once the service has established that
+        no run was ever recorded against this deployment, so the HĐ-3.1
+        damage a redefinition would do has nothing to land on.
+        """
+        with self._sessions.begin() as session:
+            row = _require(session, TaskProfileRow, profile_id, "task profile")
+            row.environment = str(profile.get("environment", {}).get("map", ""))
+            row.profile = profile
+            session.flush()
+            return _to_profile(row)
+
     def list(self) -> list[StoredTaskProfile]:
         with self._sessions.begin() as session:
             rows = session.scalars(select(TaskProfileRow).order_by(TaskProfileRow.created_at)).all()

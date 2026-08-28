@@ -119,6 +119,89 @@ class TaskProfileService:
         profile = self.validate(payload)
         return self._repository.create(profile.model_dump(mode="json"), owner_user_id=owner_user_id)
 
+    def replace(self, profile_id: str, payload: dict[str, Any]) -> StoredTaskProfile:
+        """Correct a deployment, but only while nothing has measured it.
+
+        **Why this is allowed at all, given that `create` refuses it.**
+        That refusal is not about editing; it is about *stored runs*.
+        ``episode_context_id`` hashes ``(task_profile_id, mission_id,
+        environment_variant, seed)`` and HĐ-3.1 freezes that payload, so
+        re-filing a changed deployment under the same id would produce
+        contexts hashing identically to the old world's and every stored
+        run would silently start describing somewhere that no longer
+        exists. All of that damage is done *to runs*. A deployment
+        nothing has ever run has no such runs to damage: it is a
+        description somebody typed, and correcting a description is not
+        rewriting history.
+
+        So the gate is the same one ``delete`` uses, and for the same
+        reason — a deployment nobody ran is a draft. The moment a single
+        comparison exists this refuses, and the way forward is to derive
+        a new deployment, which is what ``derive`` is for.
+
+        **The id may not move.** A payload naming a different id is not
+        an edit of this deployment, it is a second one; letting it
+        through would leave the row's key and the document's ``id``
+        disagreeing, and every reader picks a different one of the two.
+
+        The map is materialised afterwards for the same reason ``create``
+        leaves it to ``get``: the document may now name a custom map that
+        has never been written to disk, and the engine reads files.
+        """
+        stored = self._repository.get(profile_id)
+        if getattr(stored, "is_reference", False):
+            raise InvalidStateError(
+                f"deployment {profile_id!r} is a reference deployment: it is the fixed "
+                "ground imported algorithms are validated against, so it cannot be "
+                "edited or deleted"
+            )
+
+        incoming_id = str(payload.get("id", "")).strip()
+        if incoming_id != profile_id:
+            raise DomainValidationError(
+                f"this edits deployment {profile_id!r}, but the document says "
+                f"{incoming_id or '(nothing)'!r}. Renaming a deployment makes a second one; "
+                "file it under its own id instead",
+                [{"path": "id", "message": f"expected {profile_id!r}"}],
+            )
+
+        runs = self._runs.list(task_profile_id=profile_id) if self._runs is not None else []
+        if runs:
+            approved = sum(1 for run in runs if run.config_state == "approved")
+            raise InvalidStateError(
+                f"deployment {profile_id!r} has {len(runs)} stored run(s), so it can no longer "
+                "be edited: episode_context_id does not hash the environment (HĐ-3.1), and "
+                "changing this deployment would leave those runs describing a world that no "
+                "longer exists while their ids still matched. Derive a new deployment from "
+                "this one instead — it copies everything and takes its own id.",
+                [
+                    {
+                        "runs": len(runs),
+                        "approved": approved,
+                        "ranked": sum(1 for run in runs if run.recommended_candidate_id),
+                    }
+                ],
+            )
+
+        profile = self.validate(payload)
+        updated = self._repository.replace(profile_id, profile.model_dump(mode="json"))
+        ensure_profile_map_materialised(updated.profile, self._map_root, self._maps)
+        return updated
+
+    def editable(self, profile_id: str) -> bool:
+        """Whether `replace` would be allowed, without attempting it.
+
+        The list view needs this per row to decide whether to offer an
+        edit at all, and offering one that always refuses is worse than
+        offering none.
+        """
+        stored = self._repository.get(profile_id)
+        if getattr(stored, "is_reference", False):
+            return False
+        if self._runs is None:
+            return True
+        return not self._runs.list(task_profile_id=profile_id)
+
     def get(self, profile_id: str) -> StoredTaskProfile:
         stored = self._repository.get(profile_id)
         ensure_profile_map_materialised(stored.profile, self._map_root, self._maps)

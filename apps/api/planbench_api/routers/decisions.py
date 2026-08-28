@@ -144,6 +144,15 @@ class TaskProfileResource(BaseModel):
     owner_user_id: str | None
     created_at: str
     profile: dict[str, Any]
+    #: Whether ``PUT`` would be accepted: nothing has been measured
+    #: against this deployment yet, and it is not the reference one.
+    #:
+    #: Sent rather than left to the client to work out, because working
+    #: it out means counting this deployment's runs — and a count made in
+    #: the browser is a second answer, free to disagree with the one the
+    #: server would refuse on. Offering an edit that always refuses is
+    #: worse than offering none.
+    editable: bool = False
 
 
 class DerivedProfileRequest(BaseModel):
@@ -617,13 +626,14 @@ class ReviewEventResource(BaseModel):
     created_at: str
 
 
-def _profile(stored: StoredTaskProfile) -> TaskProfileResource:
+def _profile(stored: StoredTaskProfile, editable: bool = False) -> TaskProfileResource:
     return TaskProfileResource(
         id=stored.id,
         environment=stored.environment,
         owner_user_id=stored.owner_user_id,
         created_at=stored.created_at,
         profile=stored.profile,
+        editable=editable,
     )
 
 
@@ -725,7 +735,7 @@ def _run(
 def create_task_profile(
     payload: dict[str, Any], service: Profiles, user: CurrentUser
 ) -> TaskProfileResource:
-    return _profile(service.create(payload, owner_user_id=user.id))
+    return _profile(service.create(payload, owner_user_id=user.id), editable=True)
 
 
 @router.post("/task-profiles/validate", status_code=status.HTTP_204_NO_CONTENT)
@@ -792,7 +802,8 @@ def derive_task_profile(
 
 @router.get("/task-profiles", response_model=list[TaskProfileResource])
 def list_task_profiles(service: Profiles, _: ReadingUser) -> list[TaskProfileResource]:
-    return [_profile(stored) for stored in service.list()]
+    """Every deployment, each saying whether it can still be corrected."""
+    return [_profile(stored, editable=service.editable(stored.id)) for stored in service.list()]
 
 
 #: The deployment a form starts from. Registered **before**
@@ -840,6 +851,28 @@ class ProfileDeleted(BaseModel):
     #: a caller who confirmed "delete 7 runs" deserves to be told 7 were
     #: deleted, not to infer it from a 200.
     deleted_runs: int
+
+
+@router.put("/task-profiles/{profile_id}", response_model=TaskProfileResource)
+def replace_task_profile(
+    profile_id: str, payload: dict[str, Any], service: Profiles, _: CurrentUser
+) -> TaskProfileResource:
+    """Correct a deployment that nothing has measured yet.
+
+    **Not a general edit, and the difference is stored runs.** Re-filing
+    a changed deployment under an id something has already run is the
+    HĐ-3.1 failure ``create`` exists to refuse: ``episode_context_id``
+    does not hash the environment, so the old runs would keep their ids
+    while the world under them changed. A deployment nothing has run has
+    no such runs — it is a description somebody typed, usually five
+    minutes ago with one number wrong, and making them retype the whole
+    thing under a new id to fix it teaches nobody anything.
+
+    So this refuses the moment a single comparison exists, with a 409
+    carrying the counts, and points at ``derive`` — which copies
+    everything and takes an id of its own.
+    """
+    return _profile(service.replace(profile_id, payload), editable=True)
 
 
 @router.delete("/task-profiles/{profile_id}", response_model=ProfileDeleted)

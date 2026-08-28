@@ -23,6 +23,7 @@ drift from the first (§16).
 
 from __future__ import annotations
 
+import dataclasses
 import threading
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -236,6 +237,33 @@ class TaskProfileRepository:
             )
             self._items[profile_id] = stored
             return stored
+
+    def replace(self, profile_id: str, profile: dict[str, Any]) -> StoredTaskProfile:
+        """Overwrite a stored deployment, keeping who filed it and when.
+
+        Separate from `create` on purpose. `create` refuses to redefine
+        an id because the caller may not know it is taken and a silent
+        overwrite is exactly the HĐ-3.1 failure; this is reached only
+        after the service has established that nothing has ever been
+        measured against this deployment, so there is no run left to
+        mislead. The repository does not re-check that — one owner per
+        rule, and the rule spans two stores.
+
+        ``created_at`` and ``owner_user_id`` survive: correcting a
+        description does not make somebody else its author, nor make it
+        younger than it is.
+        """
+        with self._lock:
+            existing = self._items.get(profile_id)
+            if existing is None:
+                raise NotFoundError("task profile", profile_id)
+            updated = dataclasses.replace(
+                existing,
+                environment=str(profile.get("environment", {}).get("map", "")),
+                profile=profile,
+            )
+            self._items[profile_id] = updated
+            return updated
 
     def delete(self, profile_id: str) -> None:
         """Remove a deployment. Whether that is allowed is decided above.

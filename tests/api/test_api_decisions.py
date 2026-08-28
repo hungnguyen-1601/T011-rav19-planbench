@@ -152,6 +152,119 @@ class TestDeployments:
         assert response.status_code == 409, response.text
         assert "new id" in response.json()["error"]["message"]
 
+    def test_a_deployment_nothing_ran_can_be_corrected_in_place(
+        self, client, alice_headers, profile_id
+    ):
+        """A description with one number wrong is not history.
+
+        `create` refuses to redefine an id because a *stored run* under
+        that id would silently start describing a different world — the
+        environment is not in `episode_context_id` (HĐ-3.1). That damage
+        lands entirely on runs. A deployment nothing has ever run has
+        none, so correcting it destroys nothing, and making somebody
+        retype thirty fields under a new id to fix a typo teaches nobody
+        anything.
+        """
+        corrected = tiny_profile()
+        corrected["environment"]["sensor_noise"]["lidar_range_sigma_m"] = 0.05
+
+        answered = client.put(
+            f"{API}/task-profiles/{profile_id}", json=corrected, headers=alice_headers
+        )
+        assert answered.status_code == 200, answered.text
+        assert answered.json()["profile"]["environment"]["sensor_noise"][
+            "lidar_range_sigma_m"
+        ] == 0.05
+
+        stored = client.get(f"{API}/task-profiles/{profile_id}").json()
+        assert stored["profile"]["environment"]["sensor_noise"]["lidar_range_sigma_m"] == 0.05
+
+    def test_editing_keeps_who_filed_it_and_when(self, client, alice_headers, profile_id):
+        """Correcting a description does not make you its author.
+
+        Nor does it make the deployment younger than it is — the list is
+        ordered on `created_at`, so a bumped timestamp would move a row
+        somebody was looking at.
+        """
+        before = client.get(f"{API}/task-profiles/{profile_id}").json()
+        corrected = tiny_profile()
+        corrected["environment"]["sensor_noise"]["wheel_slip_fraction"] = 0.03
+        after = client.put(
+            f"{API}/task-profiles/{profile_id}", json=corrected, headers=alice_headers
+        ).json()
+
+        assert after["created_at"] == before["created_at"]
+        assert after["owner_user_id"] == before["owner_user_id"]
+
+    def test_the_id_in_the_document_may_not_move(self, client, alice_headers, profile_id):
+        """Renaming makes a second deployment, not an edited one.
+
+        Letting it through would leave the row's key and the document's
+        own `id` disagreeing, and every reader downstream picks whichever
+        of the two it happens to look at.
+        """
+        renamed = tiny_profile()
+        renamed["id"] = "something_else"
+        answered = client.put(
+            f"{API}/task-profiles/{profile_id}", json=renamed, headers=alice_headers
+        )
+        assert answered.status_code == 422, answered.text
+        assert "own id" in answered.json()["error"]["message"]
+
+    def test_a_deployment_with_a_run_refuses_the_edit(
+        self, client, alice_headers, profile_id
+    ):
+        """The gate. Once something has measured it, the answer is no.
+
+        This is the case `create`'s refusal was always about, and the
+        refusal has to name the way forward — deriving a new deployment
+        copies everything and takes its own id — or it is a wall rather
+        than a signpost.
+        """
+        # The run is filed directly rather than measured: this gate is
+        # about a run *existing*, and spending three minutes of episodes
+        # to produce one would test the simulator instead of the rule.
+        from planbench_api.decisions import StoredDecisionRun
+        from planbench_api.repositories import new_id, now_iso
+
+        client.app.state.repos.decision_runs.create(
+            StoredDecisionRun(
+                id=new_id(),
+                task_profile_id=profile_id,
+                artifact_kind="comparison",
+                contracts_version="7.0.0",
+                created_at=now_iso(),
+                created_by=None,
+                report={},
+            )
+        )
+
+        profile = profile_id
+        listed = client.get(f"{API}/task-profiles", headers=alice_headers).json()
+        mine = next(row for row in listed if row["id"] == profile)
+        assert mine["editable"] is False, "the list has to say so before anybody clicks"
+
+        answered = client.put(
+            f"{API}/task-profiles/{profile}",
+            json=client.get(f"{API}/task-profiles/{profile}").json()["profile"],
+            headers=alice_headers,
+        )
+        assert answered.status_code == 409, answered.text
+        message = answered.json()["error"]["message"]
+        assert "HĐ-3.1" in message
+        assert "erive" in message, "a refusal has to name the way forward"
+
+    def test_a_fresh_deployment_says_it_is_editable(self, client, alice_headers, profile_id):
+        """Sent by the server rather than worked out in the browser.
+
+        Working it out means counting this deployment's runs, and a count
+        made client-side is a second answer free to disagree with the one
+        the server would refuse on.
+        """
+        listed = client.get(f"{API}/task-profiles", headers=alice_headers).json()
+        mine = next(row for row in listed if row["id"] == profile_id)
+        assert mine["editable"] is True
+
     def test_a_profile_that_breaks_the_contract_is_refused(self, client, alice_headers):
         """Validation belongs to ``TaskProfile``, not to the router. A
         heading requirement is the case the platform cannot evaluate at
