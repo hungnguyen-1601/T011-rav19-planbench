@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { suggestProfileId } from "@/lib/decisions";
+import { stopMode, stopPointOf, withStopMode } from "@/lib/traffic";
 import en from "../../lib/i18n/locales/en.json";
 import viLocale from "../../lib/i18n/locales/vi.json";
 
@@ -157,5 +158,66 @@ describe("both languages", () => {
       expect(dictionaries[key], `en ${key}`).toBeTruthy();
       expect(vietnamese[key], `vi ${key}`).toBeTruthy();
     }
+  });
+});
+
+describe("a sudden stop reopened after saving", () => {
+  /** As the server stores it: the clicked point resolved to a heading
+   *  and a duration, with `stop_point` dropped. Taken from a real row —
+   *  obstacle-1 of doorway_v1, placed by clicking the map. */
+  const stored = {
+    kind: "sudden_stop",
+    start: { x: 4.931506849315069, y: 7.247553816046967 },
+    heading: -1.5527802582408414,
+    speed: 0.6,
+    stop_time: 3.2588458871586874,
+  } as const;
+
+  it("still knows where the obstacle comes to rest", () => {
+    /* The complaint this answers is "my settings were lost". They were
+       not: `stop_point` is declaration syntax the server resolves and
+       drops, deliberately — storing it would add `stop_point: null` to
+       every scenario carrying a sudden stop, change its checksum, and
+       orphan every report and golden trajectory recorded against it.
+       The motion is unchanged, and the point is still recoverable. */
+    const at = stopPointOf(stored);
+    expect(at).not.toBeNull();
+    expect(at!.x).toBeCloseTo(4.97, 1);
+    expect(at!.y).toBeCloseTo(5.29, 1);
+  });
+
+  it("reads as a duration, because that is what was stored", () => {
+    // Not a bug to be fixed by lying about the mode — the stored
+    // document really does say heading and duration.
+    expect(stopMode(stored)).toBe("time");
+  });
+
+  it("shows the same place after switching to point mode", () => {
+    /* Switching modes must not move the obstacle. If it did, somebody
+       opening a deployment, glancing at the point and switching back
+       would have silently changed the world they were about to measure. */
+    const asPoint = withStopMode(stored, "point");
+    expect(stopMode(asPoint)).toBe("point");
+    const before = stopPointOf(stored)!;
+    const after = stopPointOf(asPoint)!;
+    expect(after.x).toBeCloseTo(before.x, 6);
+    expect(after.y).toBeCloseTo(before.y, 6);
+  });
+
+  it("comes back to the same motion after a round trip through both modes", () => {
+    // point -> time -> point has to land where it started, or editing
+    // anything else on the form would drag the traffic with it.
+    const there = withStopMode(stored, "point");
+    const back = withStopMode(there, "time");
+    const again = stopPointOf(back)!;
+    expect(again.x).toBeCloseTo(stopPointOf(stored)!.x, 1);
+    expect(again.y).toBeCloseTo(stopPointOf(stored)!.y, 1);
+  });
+
+  it("says where it stops in the duration view as well", () => {
+    // The line that stops it looking like data loss.
+    const EDITOR = read("components", "TrafficEditor.tsx");
+    const timeBranch = EDITOR.slice(EDITOR.indexOf('mode === "time" ? ('));
+    expect(timeBranch.slice(0, timeBranch.indexOf("</>"))).toContain("stopPointOf(motion)");
   });
 });

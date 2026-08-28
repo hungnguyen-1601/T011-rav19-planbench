@@ -547,12 +547,16 @@ function DeploymentRow({
         <button type="button" onClick={() => onCopy(profile)}>
           {t("deployments.copy")}
         </button>
+        <DeleteDeployment id={profile.id} onDeleted={onDeleted} />
+        {/* Last, so the two buttons every row has line up down the
+            column and the one only some rows have hangs off the end.
+            Between them it made each row a different shape and the eye
+            had to re-find Delete on every line. */}
         {profile.editable ? (
           <button type="button" onClick={() => onEdit(profile)}>
             {t("deployments.edit")}
           </button>
         ) : null}
-        <DeleteDeployment id={profile.id} onDeleted={onDeleted} />
       </td>
     </tr>
   );
