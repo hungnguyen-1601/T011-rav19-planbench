@@ -1340,9 +1340,40 @@ class TestBenchService:
         on the grid itself because that is what identity means here — two
         rows holding the same occupancy are the same world however they
         got there.
+
+        **On the checksum, which is what "the grid itself" means.** This
+        used to compare whole ``MapData`` documents, and that comparison
+        could never be true: the right-hand side has been written out as
+        a map_server pair and read back, and a map read from disk takes
+        its ``name`` from the image file's stem — ``b92f3f964633__v1``
+        where the stored row says ``sudden-stop``. Same walls, same
+        resolution, same origin, different name, so every staging call
+        filed another row. One database reached 27 of them that way, and
+        the copies then went on to confuse the *next* lookup: with the
+        original edited, a stale duplicate is what an equality scan finds
+        first.
+
+        **Not `checksum()`, which hashes the name too.** That field is
+        the identity of the *document* and is right to be — it backs
+        `find_by_checksum`, which `adopt` uses to stop the library import
+        filing the same entry twice under the same name. It cannot answer
+        this question, because here the two names differ by design.
+
+        The cheap fields are compared first so that a store holding
+        hundreds of maps rejects almost all of them on three integers
+        rather than on a list of several thousand cells.
         """
         for stored in self._maps.list():
-            if stored.map_data == map_data:
+            other = stored.map_data
+            if (other.width, other.height, other.resolution) != (
+                map_data.width,
+                map_data.height,
+                map_data.resolution,
+            ):
+                continue
+            if other.origin != map_data.origin:
+                continue
+            if other.cells == map_data.cells:
                 return stored
         return None
 

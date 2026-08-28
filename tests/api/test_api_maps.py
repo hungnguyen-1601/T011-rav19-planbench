@@ -362,3 +362,111 @@ class TestWhichDeploymentsRunThisMap:
         assert (
             client.get("/api/v1/maps/doesnotexist/pins", headers=alice_headers).status_code == 404
         )
+
+
+class TestStagingDoesNotFileACopyPerClick:
+    """A map is its occupancy, and the name was never part of that.
+
+    Staging reuses the stored row holding the walls it is about to run.
+    It used to decide that by comparing whole ``MapData`` documents, and
+    that comparison could never be true: the map it holds has been
+    written out as a map_server pair and read back, and a map read from
+    disk takes its ``name`` from the image file's stem —
+    ``b92f3f964633__v1`` where the stored row says ``sudden-stop``.
+
+    Same walls, same resolution, same origin, different name. So every
+    press of "show me the world" filed another row, and the copies then
+    went on to confuse the *next* lookup: once the original had been
+    edited, a stale duplicate was what the scan found first. That is the
+    whole reason a bench kept running walls somebody had already
+    replaced.
+    """
+
+    def test_a_map_off_disk_differs_from_its_row_by_name_alone(
+        self, client, alice_headers, tmp_path
+    ) -> None:
+        """The fact the old comparison tripped over.
+
+        Written as a test rather than a comment because it is the reason
+        the rule below has to be about the checksum: if the round trip
+        ever became lossless, somebody would reasonably ask why the
+        cheaper equality was not good enough.
+        """
+        from planbench_api.map_files import materialise_map
+        from planbench_benchmark.task_map import load_environment_map
+        from planbench_schemas.task_profile import EnvironmentSpec
+
+        created = client.post("/api/v1/maps", json=bordered_map_payload(), headers=alice_headers)
+        stored = client.app.state.repos.maps.get(created.json()["id"])
+        pgm, sidecar = materialise_map(stored, tmp_path)
+        loaded = load_environment_map(EnvironmentSpec(map=pgm, map_yaml=sidecar), base_dir=tmp_path)
+
+        assert loaded != stored.map_data, "if this ever passes, revisit the rule below"
+        assert loaded.name != stored.map_data.name, "the stem is where the new name comes from"
+        # `checksum()` hashes the name as well, so it moves too — which
+        # is exactly why the reuse rule below cannot be built on it.
+        assert loaded.checksum() != stored.map_data.checksum()
+        # Field by field, so a future change that breaks the grid itself
+        # is not mistaken for this known, harmless difference.
+        assert loaded.cells == stored.map_data.cells
+        assert loaded.width == stored.map_data.width
+        assert loaded.height == stored.map_data.height
+        assert loaded.resolution == stored.map_data.resolution
+
+    def test_staging_reuses_the_stored_map_instead_of_shadowing_it(
+        self, client, alice_headers
+    ) -> None:
+        """The first staging is where the copy used to appear.
+
+        Comparing whole documents, the map read off disk never equalled
+        the row it had been written from — the name had changed — so the
+        first staging filed a second row holding the same walls under the
+        file's stem. The *second* staging then matched that shadow, which
+        is why "stage twice, get one row" was true even while every
+        deployment was quietly growing a duplicate of its own map.
+
+        So the assertion is about the row count before and after **one**
+        staging, and about which id comes back: the map somebody can find
+        in the editor, not a copy named after a file.
+        """
+        # Big enough for the template's missions: the point here is the
+        # map row, and a map they fall outside of would be refused on
+        # validation before staging ever reached it.
+        created = client.post(
+            "/api/v1/maps",
+            json=bordered_map_payload(width=30, height=14),
+            headers=alice_headers,
+        )
+        assert created.status_code == 201, created.text
+        map_id = created.json()["id"]
+
+        materialised = client.post(
+            f"/api/v1/maps/{map_id}/materialise", headers=alice_headers
+        ).json()
+        base = client.get("/api/v1/task-profiles/template", headers=alice_headers).json()
+        base["id"] = "staging_dupe_probe"
+        base["environment"]["map"] = materialised["map"]
+        base["environment"]["map_yaml"] = materialised["map_yaml"]
+        filed = client.post("/api/v1/task-profiles", json=base, headers=alice_headers)
+        assert filed.status_code in (200, 201), filed.text
+        missions = filed.json()["profile"].get("missions") or []
+        assert missions, "needs a mission to stage"
+
+        before = len(client.get("/api/v1/maps", headers=alice_headers).json())
+        staged = client.post(
+            f"/api/v1/task-profiles/staging_dupe_probe/test-bench",
+            json={
+                "mission_id": missions[0]["id"],
+                "seed": 7,
+                "stack": "astar+dwa",
+                "local_config": "dwa_coarse",
+            },
+            headers=alice_headers,
+        )
+        assert staged.status_code == 201, staged.text
+        after = len(client.get("/api/v1/maps", headers=alice_headers).json())
+
+        assert staged.json()["map_id"] == map_id, (
+            "staging must point at the stored map, not at a copy named after its file"
+        )
+        assert after == before, f"staging filed a shadow map row: {before} -> {after}"
