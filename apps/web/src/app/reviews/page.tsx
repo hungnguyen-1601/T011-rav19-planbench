@@ -12,8 +12,10 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { AlgorithmQueuePanel } from "@/components/AlgorithmQueuePanel";
 import { EmptyState } from "@/components/EmptyState";
-import { useSession } from "@/lib/auth";
+import { ReviewQueuePanel } from "@/components/ReviewQueuePanel";
+import { CAPABILITIES, can, useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import {
   answerReview,
@@ -146,7 +148,13 @@ export default function ReviewsPage() {
   const session = useSession();
   const [incoming, setIncoming] = useState<ReviewRequestView[]>([]);
   const [outgoing, setOutgoing] = useState<ReviewRequestView[]>([]);
-  const [tab, setTab] = useState<"inbox" | "sent">("inbox");
+  /* **Four tabs, two of them the old page.** Runs and algorithms are the
+     work this deployment actually generates; inbox and sent are the
+     benchmark-era request lane, still live and still answerable, kept under
+     their own headings rather than merged in. Merging them would put two
+     different kinds of request — one that carries a claim and one that does
+     not — into one list under one set of buttons. */
+  const [tab, setTab] = useState<"runs" | "algorithms" | "inbox" | "sent">("runs");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -188,6 +196,7 @@ export default function ReviewsPage() {
   if (!session) return <p className="muted">{t("common.loading")}</p>;
 
   const shown = tab === "inbox" ? incoming : outgoing;
+  const reviewsAlgorithms = can(session.user, CAPABILITIES.algorithmPublish);
   const pendingCount = incoming.filter((view) => view.request.status === "pending").length;
 
   return (
@@ -200,6 +209,27 @@ export default function ReviewsPage() {
       {error ? <div className="error-box">{error}</div> : null}
 
       <div className="toolbar" role="tablist">
+        <button
+          role="tab"
+          aria-selected={tab === "runs"}
+          className={tab === "runs" ? "primary" : ""}
+          onClick={() => setTab("runs")}
+        >
+          {t("queue.tab.runs")}
+        </button>
+        {/* Offered only to somebody who could act on it. An engineer reading
+            a list of algorithms waiting for a reviewer learns only that they
+            cannot help. */}
+        {reviewsAlgorithms ? (
+          <button
+            role="tab"
+            aria-selected={tab === "algorithms"}
+            className={tab === "algorithms" ? "primary" : ""}
+            onClick={() => setTab("algorithms")}
+          >
+            {t("queue.tab.algorithms")}
+          </button>
+        ) : null}
         <button
           role="tab"
           aria-selected={tab === "inbox"}
@@ -219,31 +249,40 @@ export default function ReviewsPage() {
         </button>
       </div>
 
-      {shown.length === 0 ? (
-        <div className="panel">
-          <EmptyState
-            icon="inbox"
-            title={tab === "inbox" ? t("reviews.empty.inbox.title") : t("reviews.empty.sent.title")}
-            body={tab === "inbox" ? t("reviews.empty.inbox.body") : t("reviews.empty.sent.body")}
-            actionHref={tab === "inbox" ? undefined : "/decisions"}
-            actionLabel={tab === "inbox" ? undefined : t("nav.benchmarks")}
-          />
-        </div>
-      ) : (
-        shown.map((view) => (
-          <RequestCard
-            key={view.request.id}
-            view={view}
-            incoming={tab === "inbox"}
-            busy={busy}
-            onAnswer={(id, decision, comment) =>
-              act(() => answerReview(id, decision, comment))
-            }
-            onComment={(id, comment) => act(() => commentOnReview(id, comment))}
-            onCancel={(id) => act(() => cancelReview(id))}
-          />
-        ))
-      )}
+      {tab === "runs" ? <ReviewQueuePanel /> : null}
+      {tab === "algorithms" && reviewsAlgorithms ? <AlgorithmQueuePanel /> : null}
+
+      {/* The legacy lane. Answering one of these is the same call the
+          benchmark page makes, so it stays exactly as it was. */}
+      {tab === "inbox" || tab === "sent" ? (
+        <>
+        {shown.length === 0 ? (
+          <div className="panel">
+            <EmptyState
+              icon="inbox"
+              title={tab === "inbox" ? t("reviews.empty.inbox.title") : t("reviews.empty.sent.title")}
+              body={tab === "inbox" ? t("reviews.empty.inbox.body") : t("reviews.empty.sent.body")}
+              actionHref={tab === "inbox" ? undefined : "/decisions"}
+              actionLabel={tab === "inbox" ? undefined : t("nav.benchmarks")}
+            />
+          </div>
+        ) : (
+          shown.map((view) => (
+            <RequestCard
+              key={view.request.id}
+              view={view}
+              incoming={tab === "inbox"}
+              busy={busy}
+              onAnswer={(id, decision, comment) =>
+                act(() => answerReview(id, decision, comment))
+              }
+              onComment={(id, comment) => act(() => commentOnReview(id, comment))}
+              onCancel={(id) => act(() => cancelReview(id))}
+            />
+          ))
+        )}
+        </>
+      ) : null}
     </>
   );
 }

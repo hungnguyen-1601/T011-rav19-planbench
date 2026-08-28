@@ -432,3 +432,134 @@ class TestAClaimDoesNotOutliveTheRightToHoldIt:
             ).status_code
             == 200
         )
+
+
+class TestTheQueue:
+    """Which pile a waiting run lands in, and for whom.
+
+    The endpoint sorts rather than filters because the answer depends on
+    who asked: one request is ``mine`` to its holder, ``directed`` to the
+    person it names, ``pool`` to everybody else and ``sent`` to whoever
+    submitted it. A flat list would leave every client re-deriving that.
+    """
+
+    def _queue(self, client, headers):
+        answered = client.get(f"{API}/decisions/review-queue", headers=headers)
+        assert answered.status_code == 200, answered.text
+        return answered.json()
+
+    def test_an_unclaimed_run_is_in_the_pool_and_in_the_owners_sent(
+        self, client: TestClient, ranked_run, alice_headers, bob_headers
+    ) -> None:
+        run_id = ranked_run["id"]
+        _submit(client, run_id, alice_headers, comment="please look")
+
+        reviewer = self._queue(client, bob_headers)
+        assert [row["run_id"] for row in reviewer["pool"]] == [run_id]
+        assert reviewer["mine"] == [] and reviewer["directed"] == []
+        assert reviewer["pool"][0]["request_comment"] == "please look"
+
+        # The same request, from the other side. An engineer cannot act
+        # on it; the only question they have is whether anybody took it.
+        owner = self._queue(client, alice_headers)
+        assert [row["run_id"] for row in owner["sent"]] == [run_id]
+        assert owner["sent"][0]["submission"] == "submitted"
+
+    def test_a_directed_request_reaches_only_the_person_it_names(
+        self, client: TestClient, ranked_run, alice_headers, bob_headers, carol_headers
+    ) -> None:
+        run_id = ranked_run["id"]
+        _submit(client, run_id, alice_headers, reviewer=BOB[0])
+
+        named = self._queue(client, bob_headers)
+        assert [row["run_id"] for row in named["directed"]] == [run_id]
+        assert named["pool"] == []
+
+        # Not in anybody else's pool: a directed request is a question
+        # asked of one person, and putting it in the open pile would make
+        # naming somebody meaningless.
+        assert self._queue(client, carol_headers)["pool"] == []
+
+    def test_claiming_moves_it_out_of_everybody_elses_list(
+        self, client: TestClient, ranked_run, alice_headers, bob_headers, carol_headers
+    ) -> None:
+        run_id = ranked_run["id"]
+        _submit(client, run_id, alice_headers)
+        assert (
+            client.post(f"{API}/decisions/{run_id}/claim", headers=bob_headers).status_code == 200
+        )
+
+        holder = self._queue(client, bob_headers)
+        assert [row["run_id"] for row in holder["mine"]] == [run_id]
+        assert holder["pool"] == []
+
+        # Held by somebody else, so it is in no pile Carol can act on.
+        # Taking it is still possible, but a takeover starts from the run
+        # rather than from a queue.
+        other = self._queue(client, carol_headers)
+        assert other["mine"] == [] and other["pool"] == [] and other["directed"] == []
+
+    def test_it_says_whether_the_holder_has_actually_read_it(
+        self, client: TestClient, ranked_run, alice_headers, bob_headers
+    ) -> None:
+        """A queue showing only who holds a review lies by omission.
+
+        "Bob has it" reads as "Bob is dealing with it" while Bob has
+        opened nothing. The acknowledgement belongs to the claim, so this
+        is the honest version of the same row.
+        """
+        run_id = ranked_run["id"]
+        _submit(client, run_id, alice_headers)
+        client.post(f"{API}/decisions/{run_id}/claim", headers=bob_headers)
+        assert self._queue(client, bob_headers)["mine"][0]["acknowledged"] is False
+
+        client.post(
+            f"{API}/decisions/{run_id}/review", json={"comment": "read it"}, headers=bob_headers
+        )
+        assert self._queue(client, bob_headers)["mine"][0]["acknowledged"] is True
+
+    def test_an_engineer_gets_their_sent_pile_and_nothing_to_act_on(
+        self, client: TestClient, ranked_run, alice_headers, engineer_headers
+    ) -> None:
+        """Open to any reader, filled by capability.
+
+        Refusing an engineer the endpoint would mean a second one
+        returning the same rows under a different name — they need
+        ``sent`` to see whether anybody picked their work up. The three
+        reviewer piles come back empty because the rule that fills them
+        is about who may claim.
+        """
+        _submit(client, ranked_run["id"], alice_headers)
+        engineer = self._queue(client, engineer_headers)
+        assert engineer["mine"] == []
+        assert engineer["directed"] == []
+        assert engineer["pool"] == []
+        assert engineer["sent"] == []
+
+    def test_an_answered_run_leaves_the_queue(
+        self, client: TestClient, ranked_run, alice_headers, bob_headers
+    ) -> None:
+        run_id = ranked_run["id"]
+        _submit(client, run_id, alice_headers)
+        client.post(f"{API}/decisions/{run_id}/claim", headers=bob_headers)
+        client.post(
+            f"{API}/decisions/{run_id}/review", json={"comment": "read it"}, headers=bob_headers
+        )
+        signed = client.post(
+            f"{API}/decisions/{run_id}/config-approval",
+            json={"decision": "approve", "comment": "fine"},
+            headers=bob_headers,
+        )
+        assert signed.status_code == 200, signed.text
+
+        # Not "answered and still listed": a queue is what is outstanding,
+        # and the record of what was decided lives on the run.
+        assert self._queue(client, bob_headers)["mine"] == []
+        assert self._queue(client, alice_headers)["sent"] == []
+
+    def test_review_queue_is_a_route_and_not_read_as_a_run_id(
+        self, client: TestClient, alice_headers
+    ) -> None:
+        """Registered ahead of ``/decisions/{run_id}``, which would eat it."""
+        assert client.get(f"{API}/decisions/review-queue", headers=alice_headers).status_code == 200
+        assert client.get(f"{API}/decisions/no-such-run", headers=alice_headers).status_code == 404

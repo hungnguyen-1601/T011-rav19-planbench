@@ -1670,6 +1670,116 @@ def list_decisions(
     ]
 
 
+class QueueItem(BaseModel):
+    """One run waiting on somebody, with enough to decide whether to take it."""
+
+    run_id: str
+    task_profile_id: str
+    created_at: str
+    created_by: str | None = None
+    #: What the *owner* is waiting for and what a *reviewer* can do are
+    #: the same fact read from two sides, so only one is stored.
+    submission: str
+    requested_reviewer_user_id: str | None = None
+    claimed_by_user_id: str | None = None
+    claimed_at: str | None = None
+    available_to_pool: bool = False
+    request_comment: str = ""
+    #: Whether the holder has said they read it. A queue that showed only
+    #: who holds a review would say a run is being dealt with while the
+    #: person holding it has opened nothing.
+    acknowledged: bool = False
+    config_state: str = "not_applicable"
+
+
+class ReviewQueue(BaseModel):
+    """Three lists, because three different people are blocked.
+
+    Split here rather than left to the client to filter: which pile a
+    run belongs in depends on who is asking — the same request is
+    ``mine`` to its holder, ``directed`` to the person it names and
+    ``pool`` to everybody else — and a client filtering a flat list would
+    each have to re-derive that rule.
+    """
+
+    #: Reviews this caller is holding. First, because they are the only
+    #: ones nobody else can move.
+    mine: list[QueueItem]
+    #: Addressed to this caller but not yet claimed.
+    directed: list[QueueItem]
+    #: Unclaimed and open to anybody with the capability.
+    pool: list[QueueItem]
+    #: Runs this caller sent, whatever state they are in. An engineer's
+    #: half of the same table: they cannot act on these, and the only
+    #: question they have is whether anybody picked them up.
+    sent: list[QueueItem]
+
+
+def _queue_item(request, run: StoredDecisionRun | None, acknowledged: bool) -> QueueItem:
+    return QueueItem(
+        run_id=request.subject_id or request.benchmark_id,
+        task_profile_id=run.task_profile_id if run else "",
+        created_at=request.created_at,
+        created_by=request.requested_by_user_id or None,
+        submission=submission_of(request),
+        requested_reviewer_user_id=request.requested_reviewer_user_id,
+        claimed_by_user_id=request.claimed_by_user_id,
+        claimed_at=request.claimed_at,
+        available_to_pool=request.available_to_pool,
+        request_comment=request.request_comment,
+        acknowledged=acknowledged,
+        config_state=run.config_state if run else "not_applicable",
+    )
+
+
+@router.get("/decisions/review-queue", response_model=ReviewQueue)
+def review_queue(reviews: Reviews, service: Runs, user: ReadingUser) -> ReviewQueue:
+    """What is waiting, sorted by who can move it.
+
+    Declared before ``/decisions/{run_id}`` — FastAPI matches in
+    registration order and would otherwise read "review-queue" as a run
+    id.
+
+    Open to any reader rather than gated on ``run.review``: an engineer
+    needs the ``sent`` pile to see whether anybody picked their work up,
+    and refusing them the endpoint would mean a second one returning the
+    same rows under a different name. The three reviewer piles come back
+    empty for a caller who cannot review, because the rule that fills
+    them is about who may claim.
+    """
+    reviewing = user.can(Capability.RUN_REVIEW)
+    queue = ReviewQueue(mine=[], directed=[], pool=[], sent=[])
+    for request in reviews.queue():
+        if not request.is_pending:
+            continue
+        run_id = request.subject_id or request.benchmark_id
+        try:
+            run = service.get(run_id)
+        except NotFoundError:
+            # A request whose run was deleted is not an error to report
+            # here; it is simply nothing anybody can act on.
+            continue
+        item = _queue_item(
+            request, run, reviews.acknowledged_under(request, service.events(run_id))
+        )
+        if request.requested_by_user_id == user.id:
+            queue.sent.append(item)
+        if not reviewing:
+            continue
+        if request.claimed_by_user_id == user.id:
+            queue.mine.append(item)
+        elif request.claimed_by_user_id is not None:
+            # Held by somebody else. It stays out of every pile a reader
+            # can act on: taking it is possible but it is a takeover, and
+            # a takeover starts from the run rather than from a queue.
+            continue
+        elif request.requested_reviewer_user_id == user.id:
+            queue.directed.append(item)
+        elif request.available_to_pool:
+            queue.pool.append(item)
+    return queue
+
+
 @router.get("/decisions/{run_id}", response_model=DecisionRunResource)
 def get_decision(
     run_id: str, service: Runs, plugins: Plugins, http_request: Request, _: ReadingUser

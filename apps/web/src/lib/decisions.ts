@@ -434,6 +434,43 @@ export interface ReviewAssignment {
   status: string | null;
 }
 
+/** One run waiting on somebody, as a queue row shows it. */
+export interface QueueItem {
+  run_id: string;
+  task_profile_id: string;
+  created_at: string;
+  created_by: string | null;
+  submission: string;
+  requested_reviewer_user_id: string | null;
+  claimed_by_user_id: string | null;
+  claimed_at: string | null;
+  available_to_pool: boolean;
+  request_comment: string;
+  /** Whether the holder has said they read it. A queue showing only who
+   * holds a review would say a run is being dealt with while the person
+   * holding it has opened nothing. */
+  acknowledged: boolean;
+  config_state: string;
+}
+
+/** Four piles, sorted by the server rather than by the client.
+ *
+ * Which pile a run belongs in depends on who asked — the same request is
+ * `mine` to its holder, `directed` to the person it names and `pool` to
+ * everybody else — so a client filtering one flat list would have to
+ * re-derive a rule the server already owns.
+ */
+export interface ReviewQueue {
+  mine: QueueItem[];
+  directed: QueueItem[];
+  pool: QueueItem[];
+  sent: QueueItem[];
+}
+
+export function fetchReviewQueue(): Promise<ReviewQueue> {
+  return authFetch<ReviewQueue>("/decisions/review-queue");
+}
+
 export function fetchReviewState(runId: string): Promise<ReviewAssignment> {
   return authFetch<ReviewAssignment>(`/decisions/${runId}/review-state`);
 }

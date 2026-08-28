@@ -225,7 +225,6 @@ class TestUnpublishIsNotSupersede:
             governed_client.get(f"{PLUGINS}/{first['id']}").json()["bundle"]["status"] == "active"
         )
 
-
     def test_the_list_view_learns_the_published_set_in_one_request(
         self, governed_client: TestClient
     ) -> None:
@@ -240,9 +239,7 @@ class TestUnpublishIsNotSupersede:
         visible from a single row.
         """
         first = self._published(governed_client)
-        second = self._published(
-            governed_client, source=PLANNER_SOURCE + "\n# changed\n"
-        )
+        second = self._published(governed_client, source=PLANNER_SOURCE + "\n# changed\n")
 
         published = governed_client.get(f"{PLUGINS}/published")
         assert published.status_code == 200
@@ -264,9 +261,7 @@ class TestUnpublishIsNotSupersede:
         assert governed_client.get(f"{PLUGINS}/published").status_code == 200
         assert governed_client.get(f"{PLUGINS}/no-such-bundle").status_code == 404
 
-    def test_it_answers_empty_rather_than_404_with_governance_off(
-        self, client: TestClient
-    ) -> None:
+    def test_it_answers_empty_rather_than_404_with_governance_off(self, client: TestClient) -> None:
         """Nothing published is a true answer, not a missing feature.
 
         The governed *acts* 404 while the flag is off, because offering a
