@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from planbench_api.auth import CataloguingUser
 from planbench_api.services import algorithms_catalogue
 from planbench_benchmark import AlgorithmInfo
 
@@ -11,7 +12,7 @@ router = APIRouter(prefix="/algorithms", tags=["algorithms"])
 
 
 @router.get("", response_model=list[AlgorithmInfo])
-def get_algorithms() -> list[AlgorithmInfo]:
+def get_algorithms(_: CataloguingUser) -> list[AlgorithmInfo]:
     """Registered navigation stacks.
 
     ``benchmarkable=False`` marks reference stacks that exist only to
@@ -21,7 +22,7 @@ def get_algorithms() -> list[AlgorithmInfo]:
 
 
 @router.get("/{algorithm_id}", response_model=AlgorithmInfo)
-def get_algorithm(algorithm_id: str) -> AlgorithmInfo:
+def get_algorithm(algorithm_id: str, _: CataloguingUser) -> AlgorithmInfo:
     from planbench_benchmark.registry import UnknownAlgorithmError
 
     for info in algorithms_catalogue():

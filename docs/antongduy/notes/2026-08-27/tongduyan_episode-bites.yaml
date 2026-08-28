@@ -1,0 +1,295 @@
+name: "Gates added by the episode scope (plan 2026-08-27)"
+workdir: "E:/VinAI/RoboMind_project/P-011-merge"
+gate: >-
+  python -m pytest tests/test_explanation_episode_packet.py
+  tests/test_explanation_episode_builder.py tests/test_explanation_episode_floor.py
+  tests/test_analyst_episode_view.py tests/test_analyst_episode_prompts.py
+  tests/test_analyst_episode_round.py tests/test_analyst_service_wiring.py
+  -q --no-header -p no:cacheprovider
+
+exclude:
+  - node_modules
+  - .next
+  - .ai-log
+  - artifacts
+  - maps
+  - docs
+  - presentation
+  - ros2_ws
+  - "*.db"
+  - .pytest_cache
+  - .ruff_cache
+  - .mypy_cache
+  - .codegraph
+  - .omc
+  - .venv
+  - .tmp
+  - .claude
+
+clean:
+  exit: 0
+  output_contains: "passed"
+
+bites:
+  # ---- who won, and the four ways an episode can be decided -------------
+  - id: A_MISSING_ROW_IS_READ_AS_A_DEFEAT
+    mo_ta: "a candidate with no row for the episode is treated as having lost it"
+    inject:
+      file: packages/explanation/planbench_explanation/episode_packet.py
+      replace: "    if outcome_a is None or outcome_b is None:"
+      with: "    if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_missing_row_is_not_a_defeat"
+
+  - id: TWO_UNLIKE_FAILURES_ARE_RANKED
+    mo_ta: "an ordering over failure reasons is invented so every episode decides"
+    inject:
+      file: packages/explanation/planbench_explanation/episode_packet.py
+      replace: "    if outcome_a.success != outcome_b.success:"
+      with: "    if outcome_a.success != outcome_b.success or outcome_a.failure_reason != outcome_b.failure_reason:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_two_unlike_failures_do_not_rank"
+
+  - id: THE_MARGIN_LOSES_ITS_DENOMINATOR
+    mo_ta: "one episode's utility travels as a figure that does not say it is one"
+    inject:
+      file: packages/explanation/planbench_explanation/episode_packet.py
+      replace: '    return MeasuredValue(value=value, unit="utility", denominator=1)'
+      with: '    return MeasuredValue(value=value, unit="utility")'
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_margin_carries_the_denominator"
+
+  - id: THE_CAVEAT_BECOMES_ADVISORY
+    mo_ta: "the sentence saying this is not the run's verdict can be reworded"
+    inject:
+      file: packages/explanation/planbench_explanation/episode_packet.py
+      replace: "    caveat: Literal[EPISODE_VERDICT_CAVEAT] = EPISODE_VERDICT_CAVEAT"
+      with: "    caveat: str = EPISODE_VERDICT_CAVEAT"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_caveat_cannot_be_reworded"
+
+  # ---- a diagnosis is not an account of the difference ------------------
+  - id: A_FAULT_ON_THE_WINNER_BECOMES_A_CONTRAST
+    mo_ta: "a detection seen only on the side that won is offered as a difference"
+    inject:
+      file: packages/explanation/planbench_explanation/episode_packet.py
+      replace: "        if on_loser is None:"
+      with: "        if on_loser is None and on_winner is None:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_detection_only_on_the_winner_explains_nothing"
+
+  - id: THE_SAME_PATTERN_ON_BOTH_SIDES_IS_A_DIFFERENCE
+    mo_ta: "a pattern belonging to the pairing is offered against one side of it"
+    inject:
+      file: packages/explanation/planbench_explanation/episode_packet.py
+      replace: "    return ratio >= WORSE_ON_LOSER_RATIO, ratio"
+      with: "    return True, ratio"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_same_detection_on_both_sides_is_ruled_out"
+
+  - id: A_VERDICT_WITH_NO_DIRECTION_STILL_NAMES_A_LOSER
+    mo_ta: "a tie is given a losing side so the differences can be listed"
+    inject:
+      file: packages/explanation/planbench_explanation/episode_packet.py
+      replace: "        return self.winner is not None and self.loser is not None"
+      with: "        return True"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_verdict_with_no_direction_offers_no_difference"
+
+  - id: A_COMPONENT_DIFFERENCE_CARRIES_A_MECHANISM
+    mo_ta: "that two stacks differ is read as support rather than as context"
+    inject:
+      file: packages/explanation/planbench_explanation/episode_packet.py
+      replace: '    "component_differs": "context",'
+      with: '    "component_differs": "support",'
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_component_difference_is_context_and_never_support"
+
+  # ---- polarity, and where it may come from -----------------------------
+  - id: POLARITY_IS_GUESSED_RATHER_THAN_LOOKED_UP
+    mo_ta: "an unmapped mechanism is assumed to hurt whoever has it"
+    inject:
+      file: packages/explanation/planbench_explanation/propositions.py
+      replace: '    return EFFECT_DIRECTION.get(value, "ambiguous")'
+      with: '    return EFFECT_DIRECTION.get(value, "harms_subject")'
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_an_unmapped_type_reads_as_ambiguous"
+
+  - id: A_HELPFUL_MECHANISM_IS_STATED_AGAINST_THE_LOSER
+    mo_ta: "a mechanism that helps whoever has it explains the other side's loss"
+    inject:
+      file: packages/explanation/planbench_explanation/episode_packet.py
+      replace: '            if direction == "benefits_subject":'
+      with: "            if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_helpful_mechanism_cannot_be_stated_against_the_loser"
+
+  # ---- what blocks a claim here is not what blocks one for the run ------
+  - id: A_RUN_GAP_BLOCKS_AN_EPISODE_CLAIM
+    mo_ta: "a gap the run could not settle removes a claim this episode can support"
+    inject:
+      file: packages/explanation/planbench_explanation/episode_packet.py
+      replace: '        return self.scope in ("global", "episode")'
+      with: "        return True"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_run_statistical_gap_carries_no_force_here"
+
+  - id: A_MISSING_SIDECAR_STOPS_BLOCKING_A_REPLAY_CLAIM
+    mo_ta: "an episode nobody recorded planning inputs for may still claim a replayed mechanism"
+    inject:
+      file: packages/explanation/planbench_explanation/episode_packet.py
+      replace: "    if not sidecar_present:"
+      with: "    if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_an_episode_without_a_sidecar_blocks_the_replayable_claim"
+
+  # ---- the budget drops findings, never their evidence ------------------
+  - id: THE_BUDGET_DROPS_THE_EVIDENCE_AND_KEEPS_THE_CONCLUSION
+    mo_ta: "the supported difference is cut before the timeline that costs the most"
+    inject:
+      file: packages/explanation/planbench_explanation/episode_packet.py
+      replace: "    for stage in reversed(BUDGET_KEEP_ORDER):"
+      with: "    for stage in BUDGET_KEEP_ORDER:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_it_drops_from_the_cheap_end_first"
+
+  - id: A_DROP_GOES_UNRECORDED
+    mo_ta: "the packet is trimmed and says nothing about what left it"
+    inject:
+      file: packages/explanation/planbench_explanation/episode_packet.py
+      replace: '            update={"omissions": (*current.omissions, *(f"dropped:{name}" for name in dropped))}'
+      with: "            update={}"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_every_drop_is_written_down"
+
+  # ---- the two halves of a paired comparison ---------------------------
+  - id: A_TRACE_FROM_ANOTHER_EPISODE_IS_ACCEPTED
+    mo_ta: "two canvases are built from two different episodes"
+    inject:
+      file: packages/explanation/planbench_explanation/episode_builder.py
+      replace: "        if served_episode and served_episode != episode_context_id:"
+      with: "        if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_a_trace_from_another_episode_is_refused"
+
+  - id: A_SIDECAR_IS_READ_BY_WHICHEVER_FILE_SORTS_FIRST
+    mo_ta: "another episode's planning attempts are reported as this one's"
+    inject:
+      file: packages/explanation/planbench_explanation/episode_builder.py
+      replace: "    if episode_context_id:\n        records = tuple("
+      with: "    if False:\n        records = tuple("
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_an_episode_reads_its_own_file_and_not_a_neighbour"
+
+  # ---- the round, and which question it was asked ----------------------
+  - id: THE_SCOPE_IS_ASSUMED_RATHER_THAN_CHECKED
+    mo_ta: "a round is graded under an arm vector that says the other scope"
+    inject:
+      file: services/analyst_service/planbench_analyst/episode_runner.py
+      replace: "    if episode and not features.episode_scope:"
+      with: "    if False:"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_an_episode_packet_under_a_run_vector_is_refused"
+
+  - id: THE_PLATFORM_PROMOTES_A_REGISTER_THE_MODEL_DID_NOT_CLAIM
+    mo_ta: "a hypothesis offered as a diagnosis is presented as bearing on the outcome"
+    inject:
+      file: services/analyst_service/planbench_analyst/episode_runner.py
+      replace: "        bearings[proposal.hypothesis_id] = positions.get(position, DIAGNOSIS)"
+      with: "        bearings[proposal.hypothesis_id] = positions.get(position, CONTRAST)"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_an_answer_with_no_register_reads_as_the_weaker_one"
+
+  - id: THE_RUN_LEVEL_PROMPT_MOVES
+    mo_ta: "adding a second scope changes the digest a frozen bundle answers to"
+    inject:
+      file: services/analyst_service/planbench_analyst/prompts.py
+      replace: 'PROMPT_VERSION = "a4.0.0"'
+      with: 'PROMPT_VERSION = "a5.0.0"'
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_run_level_checksum_does_not_move"
+
+  - id: THE_IMAGE_STOPS_BEING_ABLE_TO_IMPORT_ITSELF
+    mo_ta: "an eager import pulls the simulator back into the analyst image"
+    inject:
+      file: packages/benchmark/planbench_benchmark/__init__.py
+      replace: "import importlib"
+      with: "import importlib\n\nfrom planbench_benchmark.spec import RunRecord  # noqa: F401"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_simulator_is_not_dragged_in"
+
+  # ---- what the model is allowed to see it is looking at ---------------
+  - id: A_CANDIDATE_ID_REACHES_THE_MODEL
+    mo_ta: "the model is shown the hash a candidate is identified by"
+    inject:
+      file: services/analyst_service/planbench_analyst/episode_view.py
+      replace: "            stack.candidate_id,\n"
+      with: ""
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_model_never_sees_a_candidate_id_either"
+
+  - id: A_CANDIDATE_ID_IS_A_LEGAL_NAME_IN_A_STATEMENT
+    mo_ta: "rule 2 admits a twelve-character hash because the packet called it a name"
+    inject:
+      file: services/analyst_service/planbench_analyst/episode_view.py
+      replace: "        return frozenset(name for name in names if name)"
+      with: "        names.update(s.candidate_id for s in self._packet.candidates)\n        return frozenset(name for name in names if name)"
+      count: 1
+    expect:
+      exit_not_zero: true
+      output_contains: "test_the_model_never_sees_a_candidate_id_either"
+
+# A positive control: a change that alters no behaviour must leave the
+# gate green. Without it a gate that is red for an unrelated reason
+# would read as twenty-one bites all biting.
+positive_control:
+  mo_ta: "a comment edit changes nothing"
+  inject:
+    file: packages/explanation/planbench_explanation/episode_packet.py
+    replace: "EPISODE_PACKET_SCHEMA_VERSION = \"0.1.0\""
+    with: "EPISODE_PACKET_SCHEMA_VERSION = \"0.1.0\"  # unchanged"
+    count: 1
+  expect:
+    exit: 0

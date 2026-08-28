@@ -61,6 +61,37 @@ export type MotionKind = (typeof MOTION_KINDS)[number];
  */
 export type StopMode = "time" | "point";
 
+/** Where a sudden stop comes to rest, whichever way it was declared.
+ *
+ * **The stored form never carries `stop_point`, and that is deliberate.**
+ * The server resolves it to `heading` and `stop_time` while validating
+ * and drops it, because `_scenario_checksum` dumps without
+ * `exclude_none` — so a stored optional field would add `stop_point:
+ * null` to every scenario with a sudden stop, change its checksum, and
+ * orphan every benchmark report and golden trajectory recorded against
+ * it.
+ *
+ * The consequence is that an author who placed the stop by clicking a
+ * spot reopens the deployment and sees a direction and a duration
+ * instead. Nothing was lost — those two describe the same motion, and
+ * this returns exactly the spot that was clicked — but a form that
+ * shows neither the point nor any hint that it still exists reads as
+ * one that threw the setting away.
+ *
+ * Returns null only when the motion has no stop to speak of.
+ */
+export function stopPointOf(motion: Motion): { x: number; y: number } | null {
+  if (motion.kind !== "sudden_stop") return null;
+  if (motion.stop_point) return motion.stop_point;
+  const { start, speed, heading, stop_time } = motion;
+  // Read into locals so the narrowing survives: `positive` answers a
+  // question, it does not tell the type checker what it learned.
+  if (typeof speed !== "number" || typeof stop_time !== "number") return null;
+  if (typeof heading !== "number" || speed <= 0 || stop_time <= 0) return null;
+  const distance = speed * stop_time;
+  return point(start.x + Math.cos(heading) * distance, start.y + Math.sin(heading) * distance);
+}
+
 export function stopMode(motion: Motion): StopMode {
   return motion.kind === "sudden_stop" && motion.stop_point ? "point" : "time";
 }

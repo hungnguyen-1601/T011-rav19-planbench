@@ -110,6 +110,27 @@ Retire = Callable[[Candidate, EpisodeContext], object | None]
 #: sat at zero through it would be reporting the wrong thing.
 Progress = Callable[[int, int, str], None]
 
+#: Asked at every episode boundary. Returns a sentence when the sweep
+#: must stop, ``None`` to carry on.
+ShouldStop = Callable[[], "str | None"]
+
+
+class SweepStopped(Exception):
+    """The sweep was told to stop, and why.
+
+    Distinct from ``KeyboardInterrupt``, which this module treats as *a
+    smaller run*: an interrupted sweep keeps the episodes already on
+    disk and scores those, because the person interrupting it wanted to
+    stop waiting, not to throw the evidence away.
+
+    This is the other case. The reason a sweep is stopped here is that
+    something it depends on stopped being true — an algorithm was
+    withdrawn, the requester cancelled — and half a comparison under
+    those conditions is not a smaller answer, it is a different
+    experiment. So it propagates, and no run is stored.
+    """
+
+
 
 def _silent(_message: str) -> None:
     return None
@@ -175,6 +196,7 @@ def simulate(
     journal: Path | None = None,
     retire: Retire | None = None,
     progress: Progress | None = None,
+    should_stop: ShouldStop | None = None,
 ) -> SweepResult:
     """Run every (candidate, context) pair that has no trace yet.
 
@@ -237,6 +259,16 @@ def simulate(
     retired: dict[str, object] = {}
     covered: dict[str, list[EpisodeContext]] = {c.candidate_id: [] for c in candidates}
     for index, (context, candidate) in enumerate(iter_run_plan(contexts, candidates), start=1):
+        # **The episode boundary, and the only place a sweep may be
+        # stopped.** Mid-episode there is a half-written trace and a
+        # simulator part-way through a world; stopping there would leave
+        # exactly the kind of partial artefact `TraceLocator` then has to
+        # guess about. Asked before the pair starts, so what is on disk
+        # is always a whole number of episodes.
+        if should_stop is not None:
+            reason = should_stop()
+            if reason:
+                raise SweepStopped(reason)
         if candidate.candidate_id in retired:
             continue
         covered[candidate.candidate_id].append(context)

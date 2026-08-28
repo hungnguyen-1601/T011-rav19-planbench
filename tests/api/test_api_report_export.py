@@ -62,10 +62,15 @@ class TestDelivery:
         assert disposition.endswith('.md"')
 
     def test_requires_a_session(
-        self, client: TestClient, created_map, created_scenario, alice_headers
+        self,
+        client: TestClient,
+        anonymous: TestClient,
+        created_map,
+        created_scenario,
+        alice_headers,
     ) -> None:
         benchmark = run_benchmark(client, created_map, created_scenario, alice_headers)
-        assert export(client, benchmark["id"], {}).status_code == 401
+        assert export(anonymous, benchmark["id"], {}).status_code == 401
 
     def test_readable_by_somebody_who_does_not_own_it(
         self, client: TestClient, created_map, created_scenario, alice_headers, bob_headers

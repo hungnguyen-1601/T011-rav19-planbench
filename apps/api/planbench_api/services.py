@@ -20,6 +20,7 @@ from planbench_api.approval import (
     TransitionError,
     next_state,
 )
+from planbench_api.auth import Forbidden
 from planbench_api.errors import DomainValidationError, InvalidStateError, NotFoundError
 from planbench_api.registry_service import ModelRegistryService
 from planbench_api.repositories import (
@@ -115,11 +116,21 @@ def require_algorithm(algorithm: str, config: dict | None = None) -> None:
 
 
 class MapService:
+    """Maps, and who is allowed to change one.
+
+    **Ownership here is narrower than it looks.** A map with no owner is
+    shared, not protected: rows made before accounts existed read that
+    way, and so does a grid `adopt` handed back because the library
+    already defined it. Refusing to let anybody edit those would strand
+    them; letting anybody edit an *owned* one would let a person change
+    the ground under somebody else's stored scenario.
+    """
+
     def __init__(self, repos: RepositoryHub) -> None:
         self._repos = repos
 
-    def create(self, map_data: MapData) -> StoredMap:
-        return self._repos.maps.create(map_data)
+    def create(self, map_data: MapData, owner_user_id: str | None = None) -> StoredMap:
+        return self._repos.maps.create(map_data, owner_user_id=owner_user_id)
 
     def adopt(self, map_data: MapData) -> StoredMap:
         """Store this grid, or hand back the row that already holds it.
@@ -141,11 +152,27 @@ class MapService:
     def list(self) -> list[StoredMap]:
         return self._repos.maps.list()
 
-    def update(self, map_id: str, map_data: MapData) -> StoredMap:
+    def update(self, map_id: str, map_data: MapData, actor_user_id: str | None = None) -> StoredMap:
+        self._require_owner(self._repos.maps.get(map_id), actor_user_id)
         return self._repos.maps.update(map_id, map_data)
 
+    def archive(self, map_id: str, actor_user_id: str | None = None) -> StoredMap:
+        self._require_owner(self._repos.maps.get(map_id), actor_user_id)
+        return self._repos.maps.archive(map_id)
+
     def delete(self, map_id: str) -> None:
+        """Hard delete. Reached by the orphan sweep, not by the API."""
         self._repos.maps.delete(map_id)
+
+    @staticmethod
+    def _require_owner(stored: StoredMap, actor_user_id: str | None) -> None:
+        if stored.owner_user_id is None or actor_user_id is None:
+            return
+        if stored.owner_user_id != actor_user_id:
+            raise Forbidden(
+                f"map {stored.id} belongs to another member. Copy it to make your own — "
+                "editing it would change the ground under their stored scenarios"
+            )
 
     def validate(self, map_data: MapData) -> list[str]:
         """Semantic checks beyond schema validation (schema ran at parse)."""
@@ -159,12 +186,14 @@ class ScenarioService:
     def __init__(self, repos: RepositoryHub) -> None:
         self._repos = repos
 
-    def create(self, map_id: str, scenario: Scenario) -> StoredScenario:
+    def create(
+        self, map_id: str, scenario: Scenario, owner_user_id: str | None = None
+    ) -> StoredScenario:
         stored_map = self._repos.maps.get(map_id)
         errors = self.validate_against_map(stored_map.map_data, scenario)
         if errors:
             raise DomainValidationError("scenario is invalid for this map", errors)
-        return self._repos.scenarios.create(map_id, scenario)
+        return self._repos.scenarios.create(map_id, scenario, owner_user_id=owner_user_id)
 
     def adopt(self, map_id: str, scenario: Scenario) -> StoredScenario:
         """The scenario already stored on this map under this name, or a
@@ -189,15 +218,37 @@ class ScenarioService:
     def list(self) -> list[StoredScenario]:
         return self._repos.scenarios.list()
 
-    def update(self, scenario_id: str, map_id: str, scenario: Scenario) -> StoredScenario:
+    def update(
+        self,
+        scenario_id: str,
+        map_id: str,
+        scenario: Scenario,
+        actor_user_id: str | None = None,
+    ) -> StoredScenario:
+        self._require_owner(self._repos.scenarios.get(scenario_id), actor_user_id)
         stored_map = self._repos.maps.get(map_id)
         errors = self.validate_against_map(stored_map.map_data, scenario)
         if errors:
             raise DomainValidationError("scenario is invalid for this map", errors)
         return self._repos.scenarios.update(scenario_id, map_id, scenario)
 
+    def archive(self, scenario_id: str, actor_user_id: str | None = None) -> StoredScenario:
+        self._require_owner(self._repos.scenarios.get(scenario_id), actor_user_id)
+        return self._repos.scenarios.archive(scenario_id)
+
     def delete(self, scenario_id: str) -> None:
+        """Hard delete. Reached by the orphan sweep, not by the API."""
         self._repos.scenarios.delete(scenario_id)
+
+    @staticmethod
+    def _require_owner(stored: StoredScenario, actor_user_id: str | None) -> None:
+        """Unowned scenarios stay shared — see :class:`MapService`."""
+        if stored.owner_user_id is None or actor_user_id is None:
+            return
+        if stored.owner_user_id != actor_user_id:
+            raise Forbidden(
+                f"scenario {stored.id} belongs to another member; copy it to make your own"
+            )
 
     @staticmethod
     def validate_against_map(map_data: MapData, scenario: Scenario) -> list[str]:

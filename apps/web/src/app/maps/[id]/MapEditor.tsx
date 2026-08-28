@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { MapPainter } from "@/components/MapPainter";
+import { MapPins } from "@/components/MapPins";
 import { api } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
 import type { MapData } from "@/lib/types";
@@ -94,6 +95,11 @@ export function MapEditor() {
           {t("maps.whereArePoses")} <Link href="/decisions">{t("maps.posesLink")}</Link>
         </p>
       </div>
+
+      {/* Below the editor rather than beside it: it is what somebody
+          reads *after* saving and finding the bench unchanged, and the
+          version it keys on is the one this page just wrote. */}
+      <MapPins mapId={id} version={version} />
     </>
   );
 }

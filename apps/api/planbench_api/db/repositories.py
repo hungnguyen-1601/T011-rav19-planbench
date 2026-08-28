@@ -19,14 +19,21 @@ so a benchmark can never be left with a report but no state change.
 
 from __future__ import annotations
 
-from sqlalchemy import select
+import logging
+
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from planbench_api.accounts import (
+    CAPABILITIES,
+    AccountEvent,
     AccountLinkError,
     AuthProvider,
+    Capability,
+    LastAdministratorError,
     NicknameError,
     OAuthAccount,
+    Role,
     StoredUser,
     User,
     normalise_nickname,
@@ -40,6 +47,7 @@ from planbench_api.db.decision_repositories import (
     SqlTaskProfileRepository,
 )
 from planbench_api.db.models import (
+    AccountEventRow,
     ApprovalRow,
     BenchmarkRow,
     EpisodeRow,
@@ -48,11 +56,14 @@ from planbench_api.db.models import (
     ReviewRequestRow,
     ScenarioRow,
     SimulationRow,
+    UserRoleRow,
     UserRow,
 )
 from planbench_api.db.registry_repositories import (
     SqlModelRepository,
     SqlPluginBundleRepository,
+    SqlPluginEventRepository,
+    SqlPluginPublicationRepository,
     SqlRobotProfileRepository,
 )
 from planbench_api.db.session import SessionFactory
@@ -66,7 +77,7 @@ from planbench_api.repositories import (
     new_id,
     now_iso,
 )
-from planbench_api.review import ReviewRequest, ReviewStage, ReviewStatus
+from planbench_api.review import ReviewRequest, ReviewStage, ReviewStatus, ReviewSubject
 from planbench_benchmark import BenchmarkReport, BenchmarkSpec, RunRecord
 from planbench_metrics import EpisodeMetrics
 from planbench_planning import PlanResult
@@ -76,12 +87,14 @@ from planbench_schemas.replanning import NO_REPLANNING, ReplanningConfig
 from planbench_schemas.scenario import Scenario
 from planbench_simulator.nav_stack import StackRun
 
+logger = logging.getLogger("planbench.api.repositories")
+
 
 class SqlMapRepository:
     def __init__(self, sessions: SessionFactory) -> None:
         self._sessions = sessions
 
-    def create(self, map_data: MapData) -> StoredMap:
+    def create(self, map_data: MapData, owner_user_id: str | None = None) -> StoredMap:
         row = MapRow(
             id=new_id(),
             version=1,
@@ -92,6 +105,7 @@ class SqlMapRepository:
             checksum=map_data.checksum(),
             created_at=now_iso(),
             payload=map_data.model_dump(mode="json"),
+            owner_user_id=owner_user_id,
         )
         with self._sessions.begin() as session:
             session.add(row)
@@ -125,10 +139,12 @@ class SqlMapRepository:
             ).first()
             return _to_map(row) if row is not None else None
 
-    def list(self) -> list[StoredMap]:
+    def list(self, include_archived: bool = False) -> list[StoredMap]:
         with self._sessions.begin() as session:
-            rows = session.scalars(select(MapRow).order_by(MapRow.created_at)).all()
-            return [_to_map(row) for row in rows]
+            query = select(MapRow).order_by(MapRow.created_at)
+            if not include_archived:
+                query = query.where(MapRow.archived_at.is_(None))
+            return [_to_map(row) for row in session.scalars(query).all()]
 
     def update(self, map_id: str, map_data: MapData) -> StoredMap:
         with self._sessions.begin() as session:
@@ -143,7 +159,15 @@ class SqlMapRepository:
             session.flush()
             return _to_map(row)
 
+    def archive(self, map_id: str) -> StoredMap:
+        with self._sessions.begin() as session:
+            row = _require(session, MapRow, map_id, "map")
+            row.archived_at = now_iso()
+            session.flush()
+            return _to_map(row)
+
     def delete(self, map_id: str) -> None:
+        """Hard delete, for the orphan sweep only — see the in-memory twin."""
         with self._sessions.begin() as session:
             session.delete(_require(session, MapRow, map_id, "map"))
 
@@ -152,7 +176,9 @@ class SqlScenarioRepository:
     def __init__(self, sessions: SessionFactory) -> None:
         self._sessions = sessions
 
-    def create(self, map_id: str, scenario: Scenario) -> StoredScenario:
+    def create(
+        self, map_id: str, scenario: Scenario, owner_user_id: str | None = None
+    ) -> StoredScenario:
         row = ScenarioRow(
             id=new_id(),
             version=1,
@@ -160,6 +186,7 @@ class SqlScenarioRepository:
             name=scenario.name,
             created_at=now_iso(),
             payload=scenario.model_dump(mode="json"),
+            owner_user_id=owner_user_id,
         )
         with self._sessions.begin() as session:
             session.add(row)
@@ -169,10 +196,12 @@ class SqlScenarioRepository:
         with self._sessions.begin() as session:
             return _to_scenario(_require(session, ScenarioRow, scenario_id, "scenario"))
 
-    def list(self) -> list[StoredScenario]:
+    def list(self, include_archived: bool = False) -> list[StoredScenario]:
         with self._sessions.begin() as session:
-            rows = session.scalars(select(ScenarioRow).order_by(ScenarioRow.created_at)).all()
-            return [_to_scenario(row) for row in rows]
+            query = select(ScenarioRow).order_by(ScenarioRow.created_at)
+            if not include_archived:
+                query = query.where(ScenarioRow.archived_at.is_(None))
+            return [_to_scenario(row) for row in session.scalars(query).all()]
 
     def update(self, scenario_id: str, map_id: str, scenario: Scenario) -> StoredScenario:
         with self._sessions.begin() as session:
@@ -181,6 +210,13 @@ class SqlScenarioRepository:
             row.map_id = map_id
             row.name = scenario.name
             row.payload = scenario.model_dump(mode="json")
+            session.flush()
+            return _to_scenario(row)
+
+    def archive(self, scenario_id: str) -> StoredScenario:
+        with self._sessions.begin() as session:
+            row = _require(session, ScenarioRow, scenario_id, "scenario")
+            row.archived_at = now_iso()
             session.flush()
             return _to_scenario(row)
 
@@ -384,7 +420,7 @@ class SqlUserRepository:
         email: str = "",
         display_name: str = "",
         avatar_url: str = "",
-        is_admin: bool = False,
+        roles: frozenset[Role] | set[Role] = frozenset(),
         password_hash: str | None = None,
     ) -> User:
         key = None
@@ -399,7 +435,6 @@ class SqlUserRepository:
             email=email,
             display_name=display_name,
             avatar_url=avatar_url,
-            is_admin=is_admin,
             password_hash=password_hash,
             created_at=stamp,
             updated_at=stamp,
@@ -408,6 +443,15 @@ class SqlUserRepository:
             if key is not None and _nickname_owner(session, key) is not None:
                 raise NicknameError(f"nickname {nickname!r} is already taken")
             session.add(row)
+            for role in sorted(role.value for role in roles):
+                session.add(
+                    UserRoleRow(
+                        user_id=row.id,
+                        role=role,
+                        reason="granted at account creation",
+                        granted_at=stamp,
+                    )
+                )
             session.flush()
             return _to_user(row)
 
@@ -481,13 +525,106 @@ class SqlUserRepository:
             session.flush()
             return _to_user(row)
 
-    def set_admin(self, user_id: str, is_admin: bool) -> User:
+    def set_roles(
+        self,
+        user_id: str,
+        roles: frozenset[Role] | set[Role],
+        *,
+        granted_by_user_id: str | None = None,
+        reason: str = "",
+    ) -> User:
+        """Make this account's role set exactly ``roles``.
+
+        One transaction, and the administrator invariant is checked
+        inside it: after this write there must still be an enabled
+        account holding ``user.manage``. Checked by **capability** and
+        not by counting the ``admin`` role, because ``demo_owner``
+        carries ``user.manage`` too — count the name and the check is
+        wrong in both directions, letting the last real administrator go
+        while a demo account holds the keys, and blocking the removal of
+        a demo account that a freshly granted administrator has already
+        replaced.
+        """
+        wanted = frozenset(roles)
         with self._sessions.begin() as session:
             row = _require(session, UserRow, user_id, "user")
-            row.is_admin = is_admin
+            current = {grant.role for grant in row.roles}
+            target = {role.value for role in wanted}
+            if current == target:
+                return _to_user(row)
+
+            for grant in list(row.roles):
+                if grant.role not in target:
+                    session.delete(grant)
+            stamp = now_iso()
+            for role in sorted(target - current):
+                session.add(
+                    UserRoleRow(
+                        user_id=user_id,
+                        role=role,
+                        granted_by_user_id=granted_by_user_id,
+                        reason=reason,
+                        granted_at=stamp,
+                    )
+                )
+            row.updated_at = stamp
+            session.flush()
+            _require_a_remaining_administrator(session)
+            session.refresh(row)
+            return _to_user(row)
+
+    def set_disabled(self, user_id: str, disabled: bool) -> User:
+        """Disable or re-enable, under the same administrator invariant.
+
+        Disabling is a role change in everything but name: an account
+        that cannot sign in cannot administer anything, so leaving it out
+        of the check would let the last administrator be locked out by a
+        route that never mentions roles.
+        """
+        with self._sessions.begin() as session:
+            row = _require(session, UserRow, user_id, "user")
+            row.disabled_at = now_iso() if disabled else None
             row.updated_at = now_iso()
             session.flush()
+            _require_a_remaining_administrator(session)
             return _to_user(row)
+
+    def record_sign_in(self, user_id: str) -> None:
+        with self._sessions.begin() as session:
+            row = _require(session, UserRow, user_id, "user")
+            row.last_sign_in_at = now_iso()
+
+    def list_with_role(self, role: Role) -> list[User]:
+        with self._sessions.begin() as session:
+            rows = session.scalars(
+                select(UserRow).join(UserRoleRow).where(UserRoleRow.role == role.value)
+            ).all()
+            return [_to_user(row) for row in rows]
+
+    def record_account_event(self, event: AccountEvent) -> AccountEvent:
+        with self._sessions.begin() as session:
+            row = AccountEventRow(
+                user_id=event.user_id,
+                actor_user_id=event.actor_user_id,
+                actor_roles=event.actor_roles,
+                authorized_capability=event.authorized_capability,
+                action=event.action,
+                previous=event.previous,
+                new=event.new,
+                reason=event.reason,
+                override=event.override,
+                created_at=event.created_at or now_iso(),
+            )
+            session.add(row)
+            session.flush()
+            return _to_account_event(row)
+
+    def list_account_events(self, user_id: str | None = None) -> list[AccountEvent]:
+        with self._sessions.begin() as session:
+            query = select(AccountEventRow).order_by(AccountEventRow.sequence)
+            if user_id is not None:
+                query = query.where(AccountEventRow.user_id == user_id)
+            return [_to_account_event(row) for row in session.scalars(query).all()]
 
     def set_password(self, user_id: str, password_hash: str) -> User:
         with self._sessions.begin() as session:
@@ -567,10 +704,16 @@ class SqlReviewRepository:
     def create(self, request: ReviewRequest) -> ReviewRequest:
         row = ReviewRequestRow(
             id=request.id or new_id(),
-            benchmark_id=request.benchmark_id,
+            benchmark_id=request.benchmark_id or None,
+            subject_kind=request.subject_kind.value,
+            subject_id=request.subject or None,
             stage=request.stage.value,
             requested_by_user_id=request.requested_by_user_id,
-            reviewer_user_id=request.reviewer_user_id,
+            reviewer_user_id=request.reviewer_user_id or None,
+            requested_reviewer_user_id=request.requested_reviewer_user_id,
+            claimed_by_user_id=request.claimed_by_user_id,
+            claimed_at=request.claimed_at,
+            available_to_pool=request.available_to_pool,
             status=request.status.value,
             request_comment=request.request_comment,
             review_comment=request.review_comment,
@@ -595,6 +738,9 @@ class SqlReviewRepository:
             row.review_comment = request.review_comment
             row.reviewed_at = request.reviewed_at
             row.cancelled_at = request.cancelled_at
+            row.claimed_by_user_id = request.claimed_by_user_id
+            row.claimed_at = request.claimed_at
+            row.available_to_pool = request.available_to_pool
             session.flush()
             return _to_review(row)
 
@@ -604,13 +750,33 @@ class SqlReviewRepository:
     def list_for_reviewer(
         self, reviewer_user_id: str, status: ReviewStatus | None = None
     ) -> list[ReviewRequest]:
-        clauses = [ReviewRequestRow.reviewer_user_id == reviewer_user_id]
+        # Either column, because the two lanes name the same idea
+        # differently: a benchmark request is addressed to somebody and a
+        # decision request is *held* by somebody. An inbox that read only
+        # the older column would show a reviewer nothing they had
+        # claimed.
+        clauses = [
+            or_(
+                ReviewRequestRow.reviewer_user_id == reviewer_user_id,
+                ReviewRequestRow.claimed_by_user_id == reviewer_user_id,
+            )
+        ]
         if status is not None:
             clauses.append(ReviewRequestRow.status == status.value)
         return self._query(*clauses)
 
     def list_requested_by(self, user_id: str) -> list[ReviewRequest]:
         return self._query(ReviewRequestRow.requested_by_user_id == user_id)
+
+    def list_for_subject(self, subject_kind: str, subject_id: str) -> list[ReviewRequest]:
+        return self._query(
+            ReviewRequestRow.subject_kind == subject_kind,
+            ReviewRequestRow.subject_id == subject_id,
+        )
+
+    def list_by_kind(self, subject_kind: str) -> list[ReviewRequest]:
+        """The queue: every request in one lane, whatever its state."""
+        return self._query(ReviewRequestRow.subject_kind == subject_kind)
 
     def _query(self, *clauses) -> list[ReviewRequest]:
         with self._sessions.begin() as session:
@@ -638,6 +804,8 @@ class SqlRepositoryHub:
         self.robot_profiles = SqlRobotProfileRepository(sessions)
         self.models = SqlModelRepository(sessions)
         self.plugin_bundles = SqlPluginBundleRepository(sessions)
+        self.plugin_publications = SqlPluginPublicationRepository(sessions)
+        self.plugin_events = SqlPluginEventRepository(sessions)
         self.task_profiles = SqlTaskProfileRepository(sessions)
         self.candidates = SqlCandidateRepository(sessions)
         self.decision_runs = SqlDecisionRunRepository(sessions)
@@ -657,14 +825,78 @@ def _nickname_owner(session: Session, key: str) -> UserRow | None:
     return session.scalars(select(UserRow).where(UserRow.nickname_key == key)).first()
 
 
+#: Roles whose package includes ``user.manage``. Derived once from the
+#: capability table rather than written out, so moving the capability
+#: moves this with it.
+_ADMINISTERING_ROLES = frozenset(
+    role.value for role, granted in CAPABILITIES.items() if Capability.USER_MANAGE in granted
+)
+
+
+def _require_a_remaining_administrator(session: Session) -> None:
+    """Refuse a write that would leave nobody able to manage accounts.
+
+    Called after the change is flushed but before the transaction
+    commits, so the count it reads is the count the change produced.
+    That ordering is the whole guarantee: two administrators revoking
+    each other at the same moment each see the other still present if
+    the check runs first, and the deployment ends with nobody.
+    """
+    remaining = session.scalar(
+        select(func.count())
+        .select_from(UserRow)
+        .join(UserRoleRow, UserRoleRow.user_id == UserRow.id)
+        .where(UserRoleRow.role.in_(_ADMINISTERING_ROLES))
+        .where(UserRow.disabled_at.is_(None))
+    )
+    if not remaining:
+        raise LastAdministratorError(
+            "this would leave the deployment with no enabled account able to manage "
+            "users. Grant another account an administering role first"
+        )
+
+
+def _to_account_event(row: AccountEventRow) -> AccountEvent:
+    return AccountEvent(
+        sequence=row.sequence,
+        user_id=row.user_id,
+        actor_user_id=row.actor_user_id,
+        actor_roles=row.actor_roles or "",
+        authorized_capability=row.authorized_capability or "",
+        action=row.action,
+        previous=row.previous or "",
+        new=row.new or "",
+        reason=row.reason or "",
+        override=bool(row.override),
+        created_at=row.created_at,
+    )
+
+
 def _to_user(row: UserRow) -> User:
+    """Roles come from ``user_roles``; ``users.is_admin`` is not read.
+
+    An unrecognised role string is skipped rather than raising. A row
+    written by a newer version — or by a hand-edited database — must not
+    make an account unloadable: losing one capability is recoverable,
+    and a sign-in that raises is not.
+    """
+    roles = set()
+    for grant in row.roles:
+        try:
+            roles.add(Role(grant.role))
+        except ValueError:
+            logger.warning(
+                "ignoring unknown role on account",
+                extra={"context": {"user_id": row.id, "role": grant.role}},
+            )
     return User(
         id=row.id,
         nickname=row.nickname or "",
         email=row.email or "",
         display_name=row.display_name or "",
         avatar_url=row.avatar_url or "",
-        is_admin=bool(row.is_admin),
+        roles=frozenset(roles),
+        disabled_at=row.disabled_at or "",
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -683,12 +915,25 @@ def _to_oauth(row: OAuthAccountRow) -> OAuthAccount:
 
 
 def _to_review(row: ReviewRequestRow) -> ReviewRequest:
+    """Read a request back, whichever lane wrote it.
+
+    ``requested_reviewer_user_id`` falls back to the older
+    ``reviewer_user_id`` so a benchmark request written before the split
+    still says who was asked — the two columns held one meaning then, and
+    losing it would strand every stored request.
+    """
     return ReviewRequest(
         id=row.id,
-        benchmark_id=row.benchmark_id,
+        benchmark_id=row.benchmark_id or "",
+        subject_kind=ReviewSubject(row.subject_kind or "benchmark"),
+        subject_id=row.subject_id or row.benchmark_id or "",
         stage=ReviewStage(row.stage),
         requested_by_user_id=row.requested_by_user_id,
-        reviewer_user_id=row.reviewer_user_id,
+        requested_reviewer_user_id=row.requested_reviewer_user_id or row.reviewer_user_id,
+        claimed_by_user_id=row.claimed_by_user_id,
+        claimed_at=row.claimed_at,
+        available_to_pool=bool(row.available_to_pool),
+        reviewer_user_id=row.reviewer_user_id or "",
         status=ReviewStatus(row.status),
         request_comment=row.request_comment or "",
         review_comment=row.review_comment or "",
@@ -708,6 +953,8 @@ def _to_map(row: MapRow) -> StoredMap:
         # the column, which SQLite hands over as NULL rather than as the
         # server default the migration declares.
         kept=bool(row.kept or False),
+        owner_user_id=row.owner_user_id,
+        archived_at=row.archived_at,
     )
 
 
@@ -718,6 +965,8 @@ def _to_scenario(row: ScenarioRow) -> StoredScenario:
         map_id=row.map_id,
         created_at=row.created_at,
         scenario=Scenario.model_validate(row.payload),
+        owner_user_id=row.owner_user_id,
+        archived_at=row.archived_at,
     )
 
 

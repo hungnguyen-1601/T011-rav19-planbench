@@ -89,8 +89,8 @@ class TestReportCarriesTheSplit:
 
 
 class TestGeneralizationEndpoint:
-    def test_requires_authentication(self, client: TestClient) -> None:
-        assert client.get("/api/v1/generalization").status_code == 401
+    def test_requires_authentication(self, anonymous: TestClient) -> None:
+        assert anonymous.get("/api/v1/generalization").status_code == 401
 
     def test_empty_when_nothing_has_run(self, client: TestClient, carol_headers) -> None:
         summary = client.get("/api/v1/generalization", headers=carol_headers).json()

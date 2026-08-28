@@ -1,4 +1,12 @@
-"""Simulation session endpoints (headless run + stored result)."""
+"""Simulation session endpoints (headless run + stored result).
+
+**These had no authentication at all until contract 7.0.0**, including
+``POST /{id}/run``, which spends the machine's pinned cores on behalf of
+whoever asked. Reading is now a capability every signed-in account has;
+creating and running is ``simulation.run``, which engineers and reviewers
+hold and administrators do not — operating the deployment is not the same
+job as using it.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +14,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 
+from planbench_api.auth import ReadingUser, SimulatingUser
 from planbench_api.dependencies import get_simulation_service
 from planbench_api.repositories import StoredSimulation
 from planbench_api.schemas import (
@@ -33,12 +42,14 @@ def _resource(stored: StoredSimulation) -> SimulationResource:
 
 
 @router.get("", response_model=list[SimulationResource])
-def list_simulations(service: Service) -> list[SimulationResource]:
+def list_simulations(service: Service, _: ReadingUser) -> list[SimulationResource]:
     return [_resource(stored) for stored in service.list()]
 
 
 @router.post("", response_model=SimulationResource, status_code=status.HTTP_201_CREATED)
-def create_simulation(request: SimulationCreateRequest, service: Service) -> SimulationResource:
+def create_simulation(
+    request: SimulationCreateRequest, service: Service, _: SimulatingUser
+) -> SimulationResource:
     return _resource(
         service.create(
             request.map_id,
@@ -51,12 +62,14 @@ def create_simulation(request: SimulationCreateRequest, service: Service) -> Sim
 
 
 @router.get("/{simulation_id}", response_model=SimulationResource)
-def get_simulation(simulation_id: str, service: Service) -> SimulationResource:
+def get_simulation(simulation_id: str, service: Service, _: ReadingUser) -> SimulationResource:
     return _resource(service.get(simulation_id))
 
 
 @router.post("/{simulation_id}/run", response_model=SimulationResultResponse)
-def run_simulation(simulation_id: str, service: Service) -> SimulationResultResponse:
+def run_simulation(
+    simulation_id: str, service: Service, _: SimulatingUser
+) -> SimulationResultResponse:
     stored = service.run(simulation_id)
     assert stored.run is not None
     return SimulationResultResponse(
@@ -69,7 +82,9 @@ def run_simulation(simulation_id: str, service: Service) -> SimulationResultResp
 
 
 @router.get("/{simulation_id}/result", response_model=SimulationResultResponse)
-def get_simulation_result(simulation_id: str, service: Service) -> SimulationResultResponse:
+def get_simulation_result(
+    simulation_id: str, service: Service, _: ReadingUser
+) -> SimulationResultResponse:
     stored = service.get(simulation_id)
     return SimulationResultResponse(
         id=stored.id,

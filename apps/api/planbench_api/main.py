@@ -25,6 +25,7 @@ from planbench_api.db import (
     create_all,
     create_db_engine,
 )
+from planbench_api.deployment import guard_stored_state, load_policy
 from planbench_api.errors import register_error_handlers
 from planbench_api.logging_config import configure_logging
 from planbench_api.model_storage import LocalModelStorage
@@ -32,6 +33,7 @@ from planbench_api.oauth import ExchangeCodes, OAuthClient
 from planbench_api.plugin_service import sync_catalogue as sync_plugin_catalogue
 from planbench_api.repositories import RepositoryHub
 from planbench_api.routers import (
+    admin,
     agent,
     algorithms,
     auth,
@@ -55,6 +57,7 @@ from planbench_api.routers import (
 )
 from planbench_api.static_site import SpaStaticFiles
 from planbench_api.worker import JobQueue
+from planbench_api.ws_tickets import TicketStore
 from planbench_tracking import build_tracker
 
 API_PREFIX = "/api/v1"
@@ -159,7 +162,18 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
         Path(settings.decision_run_dir) if settings.decision_run_dir else decision_root / "runs"
     )
     app.state.repos = _build_repositories(settings, artifacts, app)
-    app.state.auth = AuthService(settings, app.state.repos.users)
+    # Resolved before anything reads it, and it can refuse: a deployment
+    # whose profile and duties setting contradict each other must not
+    # start, because every approval it then records would be a claim
+    # nobody chose to make. Storage is checked too — the dangerous case
+    # is a `.env` already cleaned up while the grant it created is still
+    # in the database.
+    app.state.deployment = load_policy(settings)
+    guard_stored_state(app.state.deployment, app.state.repos.users)
+    logging.getLogger("planbench.api").info(
+        "deployment policy resolved: %s", app.state.deployment.describe()
+    )
+    app.state.auth = AuthService(settings, app.state.repos.users, app.state.deployment)
     # Republish imported algorithms into the runtime catalogue. The set
     # lives in the benchmark registry for the life of the process, so a
     # restart has to rebuild it from what was stored — otherwise a
@@ -171,10 +185,22 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
         app.state.repos.plugin_bundles,
         app.state.plugin_install_root,
         app.state.model_storage,
+        # Under governance the catalogue is what reviewers published, not
+        # what happens to be runnable, and a restart has to rebuild it
+        # from the same source the routes write to.
+        publications=(
+            app.state.repos.plugin_publications
+            if app.state.deployment.algorithm_governance
+            else None
+        ),
     )
     # One-time codes and the provider HTTP client are app-scoped: the
     # codes must outlive a request, and the client is replaced wholesale
     # in tests so no OAuth test ever reaches the network.
+    # Single-use credentials for the playback socket, which cannot carry
+    # a header. In memory: a ticket outlives its usefulness in a minute,
+    # and a restart has already dropped the socket it was for.
+    app.state.ws_tickets = TicketStore()
     app.state.oauth_codes = ExchangeCodes()
     app.state.oauth_client = OAuthClient()
     app.state.jobs = JobQueue(settings.worker_concurrency)
@@ -229,6 +255,7 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     app.include_router(health.router, prefix=API_PREFIX)
     app.include_router(auth.router, prefix=API_PREFIX)
     app.include_router(users.router, prefix=API_PREFIX)
+    app.include_router(admin.router, prefix=API_PREFIX)
     app.include_router(reviews.router, prefix=API_PREFIX)
     app.include_router(maps.router, prefix=API_PREFIX)
     app.include_router(scenarios.router, prefix=API_PREFIX)
@@ -249,6 +276,10 @@ def create_app(artifact_dir: str | None = None) -> FastAPI:
     app.include_router(decisions.router, prefix=API_PREFIX)
     app.include_router(agent.router, prefix=API_PREFIX)
     app.include_router(settings_router.router, prefix=API_PREFIX)
+    # The socket is not a versioned resource; the ticket that opens it is
+    # an ordinary authenticated POST, so it goes where the client already
+    # looks for authenticated routes.
+    app.include_router(ws.tickets_router, prefix=API_PREFIX)
     app.include_router(ws.router)  # websockets are not under /api/v1
     # Last, and the position is the whole of it: a mount at "/" matches
     # every path, so registering it earlier would answer /api/v1 and

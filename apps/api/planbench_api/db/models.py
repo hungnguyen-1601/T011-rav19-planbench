@@ -34,6 +34,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -71,13 +72,88 @@ class UserRow(Base):
     email: Mapped[str] = mapped_column(String(320), nullable=False, default="")
     display_name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     avatar_url: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    #: Dead as of 0012, dropped in a later migration. Roles live in
+    #: ``user_roles``; keeping a second copy of "is this an
+    #: administrator" would mean a grant that forgets to update one of
+    #: them, and the one that gets forgotten is always the copy.
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     #: Only set for accounts usable with the development password login.
     password_hash: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    #: Set when an administrator disabled the account. The row and its
+    #: audit history stay; what is lost is the ability to trade a token
+    #: for a session.
+    disabled_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+    last_sign_in_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
     created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
     updated_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
 
+    roles: Mapped[list[UserRoleRow]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", lazy="selectin"
+    )
+
     __table_args__ = (UniqueConstraint("nickname_key", name="uq_users_nickname_key"),)
+
+
+class UserRoleRow(Base):
+    """One capability package held by one account.
+
+    A set, not a column, because the packages do not form a rank: an
+    administrator holds no business capability, and somebody who both
+    operates the deployment and vouches for algorithms holds two rows.
+
+    ``uq_single_demo_owner`` is a partial unique index rather than a
+    service-level check alone: ``demo_owner`` carries every capability at
+    once, so "there is exactly one" has to survive two simultaneous
+    writes.
+    """
+
+    __tablename__ = "user_roles"
+
+    user_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    role: Mapped[str] = mapped_column(String(20), primary_key=True)
+    granted_by_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    granted_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+
+    user: Mapped[UserRow] = relationship(back_populates="roles")
+
+    __table_args__ = (
+        Index("ix_user_roles_role", "role"),
+        Index(
+            "uq_single_demo_owner",
+            "role",
+            unique=True,
+            sqlite_where=text("role = 'demo_owner'"),
+            postgresql_where=text("role = 'demo_owner'"),
+        ),
+    )
+
+
+class AccountEventRow(Base):
+    """Append-only: what happened to an account, and who did it.
+
+    ``actor_roles`` and ``authorized_capability`` are stored rather than
+    resolved by joining, because revoking a role next week must not
+    rewrite what last week's entry says the caller was.
+    """
+
+    __tablename__ = "account_events"
+
+    sequence: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+    actor_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    actor_roles: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    authorized_capability: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    action: Mapped[str] = mapped_column(String(30), nullable=False)
+    previous: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    new: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+
+    __table_args__ = (Index("ix_account_events_user", "user_id"),)
 
 
 class OAuthAccountRow(Base):
@@ -107,17 +183,39 @@ class OAuthAccountRow(Base):
 
 
 class ReviewRequestRow(Base):
-    """One request for a second opinion on a benchmark."""
+    """One request for a second opinion, on a benchmark or a decision run.
+
+    Three columns describe who it is waiting on, and they are three
+    because they answer different questions. ``requested_reviewer_user_id``
+    is what the engineer asked for and never changes — it is part of what
+    they said. ``claimed_by_user_id`` is where it is now.
+    ``available_to_pool`` is whether anybody else may take it, stated
+    rather than inferred from the other two: inferring it is what left a
+    directed request stuck after its reviewer released it.
+    """
 
     __tablename__ = "review_requests"
 
     id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
-    benchmark_id: Mapped[str] = mapped_column(
-        String(ID_LENGTH), ForeignKey("benchmarks.id", ondelete="CASCADE"), nullable=False
+    #: Kept, and still the foreign key, for the benchmark lane. Null for
+    #: a decision run — that lane's integrity is enforced in the service,
+    #: inside the transaction that creates the request.
+    benchmark_id: Mapped[str | None] = mapped_column(
+        String(ID_LENGTH), ForeignKey("benchmarks.id", ondelete="CASCADE"), nullable=True
     )
+    subject_kind: Mapped[str] = mapped_column(String(20), nullable=False, default="benchmark")
+    subject_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
     stage: Mapped[str] = mapped_column(String(10), nullable=False)
     requested_by_user_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
-    reviewer_user_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+    #: The old name for "the reviewer", kept so benchmark rows written
+    #: before this load unchanged.
+    reviewer_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    requested_reviewer_user_id: Mapped[str | None] = mapped_column(
+        String(ID_LENGTH), nullable=True
+    )
+    claimed_by_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    claimed_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+    available_to_pool: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[str] = mapped_column(String(12), nullable=False)
     request_comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
     review_comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -130,6 +228,7 @@ class ReviewRequestRow(Base):
         # The inbox query: my pending requests, newest first.
         Index("ix_review_requests_reviewer", "reviewer_user_id", "status"),
         Index("ix_review_requests_requester", "requested_by_user_id"),
+        Index("ix_review_requests_subject", "subject_kind", "subject_id", "status"),
     )
 
 
@@ -292,9 +391,18 @@ class PluginBundleRow(Base):
     checksum: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     uploaded_by_user_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False, default="")
     robot_profile_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False, default="")
+    #: active | held | disabled. A third value in the column that already
+    #: answers "may this be picked?", rather than a second column beside
+    #: it — two answers to one question is how they come to disagree.
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
     validation_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     validation_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    #: Why it was retired, and by whom. Kept on the bundle rather than
+    #: only in the event trail because it is read at a distance: a stored
+    #: approval whose algorithm was turned off has to be able to say so.
+    disabled_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+    disabled_by_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    disabled_reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
     updated_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
 
@@ -337,6 +445,59 @@ class AlgorithmTraitRow(Base):
     review_status: Mapped[str] = mapped_column(String(16), nullable=False, default="none")
     reviewed_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     updated_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False, default="")
+class PluginPublicationRow(Base):
+    """One act of putting a revision in front of everyone.
+
+    Append-only history rather than a pointer per plugin. Superseded and
+    unpublished are different columns because they are different facts:
+    the first says a newer revision took its place, the second says a
+    reviewer pulled it back — and only the second is evidence about the
+    revision itself. An upsert would leave both looking like absence.
+    """
+
+    __tablename__ = "plugin_publications"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    plugin_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    bundle_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("plugin_bundles.id", ondelete="CASCADE"), nullable=False
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    published_by_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    published_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+    superseded_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+    unpublished_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+    unpublished_by_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    __table_args__ = (
+        Index("ix_plugin_publications_bundle", "bundle_id"),
+        Index(
+            "uq_plugin_publication_current",
+            "plugin_id",
+            unique=True,
+            sqlite_where=text("superseded_at IS NULL AND unpublished_at IS NULL"),
+            postgresql_where=text("superseded_at IS NULL AND unpublished_at IS NULL"),
+        ),
+    )
+
+
+class PluginEventRow(Base):
+    """Append-only: what happened to a bundle, and under which capability."""
+
+    __tablename__ = "plugin_events"
+
+    sequence: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    bundle_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    actor_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    actor_roles: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    authorized_capability: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    action: Mapped[str] = mapped_column(String(30), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
+
+    __table_args__ = (Index("ix_plugin_events_bundle", "bundle_id"),)
 
 
 class ConversationRow(Base):
@@ -399,6 +560,10 @@ class MapRow(Base):
     #: "unwanted" are different claims, and a sweep that cannot tell them
     #: apart is one nobody runs twice.
     kept: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    owner_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    #: Archived rather than deleted: an audit trail pointing at rows
+    #: somebody removed is a trail with holes in it.
+    archived_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
 
     __table_args__ = (Index("ix_maps_checksum", "checksum"),)
 
@@ -412,6 +577,8 @@ class ScenarioRow(Base):
     # deleting a map would silently erase benchmark provenance.
     map_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    owner_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    archived_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
     created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
     payload: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
 
@@ -549,6 +716,11 @@ class TaskProfileRow(Base):
     id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
     environment: Mapped[str] = mapped_column(String(200), nullable=False)
     owner_user_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    archived_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
+    #: A deployment a reviewer validates plugins against. Distinct from
+    #: ``owner_user_id IS NULL``, which already means "made before
+    #: accounts existed" — shared, but not immutable.
+    is_reference: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[str] = mapped_column(String(TIMESTAMP_LENGTH), nullable=False)
     profile: Mapped[dict] = mapped_column(JsonColumn, nullable=False)
 
@@ -668,6 +840,20 @@ class DecisionRunRow(Base):
     config_state: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="not_applicable"
     )
+    #: production | validation. A validation run is a reviewer watching
+    #: an unpublished bundle behave: same code path, different label, and
+    #: never submitted or approved.
+    purpose: Mapped[str] = mapped_column(String(20), nullable=False, default="production")
+    #: The request this run is waiting on, if any. A pointer rather than
+    #: a copy of its state: two places recording who a run is waiting on
+    #: is how they come to disagree.
+    current_review_request_id: Mapped[str | None] = mapped_column(
+        String(ID_LENGTH), nullable=True
+    )
+
+    candidates: Mapped[list[DecisionRunCandidateRow]] = relationship(
+        cascade="all, delete-orphan", lazy="selectin"
+    )
     config_decided_by: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
     config_decided_at: Mapped[str | None] = mapped_column(String(TIMESTAMP_LENGTH), nullable=True)
 
@@ -681,6 +867,37 @@ class DecisionRunRow(Base):
         Index("ix_decision_runs_review_state", "review_state"),
         Index("ix_decision_runs_config_state", "config_state"),
     )
+
+
+class DecisionRunCandidateRow(Base):
+    """Which code a run actually ran, written when it was asked for.
+
+    A stack name is a pointer, and a queue puts time between following it
+    and running it. Recording the answer is what lets the job refuse
+    loudly when the pointer moved, instead of measuring something nobody
+    chose under an id that claims otherwise.
+    """
+
+    __tablename__ = "decision_run_candidates"
+
+    run_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("decision_runs.id", ondelete="CASCADE"), primary_key=True
+    )
+    #: Position in the request, so the order somebody saw is the order
+    #: that comes back.
+    slot: Mapped[int] = mapped_column(Integer, primary_key=True)
+    stack: Mapped[str] = mapped_column(String(200), nullable=False)
+    local_config: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    #: Null for a built-in stack: nothing to pin, the code shipped with
+    #: the deployment.
+    bundle_id: Mapped[str | None] = mapped_column(String(ID_LENGTH), nullable=True)
+    plugin_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    archive_checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    runtime_profile: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+
+    __table_args__ = (Index("ix_decision_run_candidates_bundle", "bundle_id"),)
 
 
 class DecisionRunReviewRow(Base):

@@ -33,6 +33,7 @@ could disagree with it.
 
 from __future__ import annotations
 
+import logging
 import os
 import secrets
 import shutil
@@ -47,6 +48,53 @@ SEEDED_ASSETS = ("maps", "profiles")
 
 #: The account created on first launch.
 DEFAULT_NICKNAME = "admin"
+
+#: What a desktop install is, stated in the process rather than read from
+#: `.env`.
+#:
+#: **This is the line that keeps an upgrade from taking away somebody's
+#: access.** An installed copy has an `.env` written by whichever version
+#: created it, and a copy created before roles existed says nothing about
+#: a deployment profile. The server reads a missing profile as
+#: ``production`` — correct for a server, and wrong here: it would leave
+#: the one account the person signs in with holding engineer and admin
+#: and nothing else, unable to approve a configuration or import an
+#: algorithm. The launcher knows what it is; it does not need the file to
+#: tell it.
+DEPLOYMENT_PROFILE = "desktop-single-user"
+
+#: The three packages the seeded account holds, and the two extra
+#: accounts a desktop install offers.
+#:
+#: ``admin`` carries all three because one person on one machine is the
+#: whole deployment: they create the work, they review it, and they
+#: operate the app. ``engineer`` and ``reviewer`` exist so the same
+#: machine can also *show* the workflow as it behaves with two people —
+#: signing in as one of them is the only way to see what an engineer's
+#: screen actually withholds.
+SEED_ACCOUNTS = (
+    (DEFAULT_NICKNAME, "engineer+reviewer+admin"),
+    ("engineer", "engineer"),
+    ("reviewer", "reviewer"),
+)
+
+#: Defaults the profile implies, applied only where `.env` is silent.
+#:
+#: Separate from the template on purpose: the template is written once,
+#: at first run, and an installation created two versions ago will never
+#: see a line added to it. These are applied on **every** launch, so a
+#: copy whose file predates them still behaves like the desktop build it
+#: is. An explicit value in `.env` always wins — somebody who edited the
+#: file meant it.
+PROFILE_DEFAULTS = {
+    "PLANBENCH_DEPLOYMENT_PROFILE": DEPLOYMENT_PROFILE,
+    # One person cannot be two, so the separation-of-duties rule that a
+    # shared deployment needs would make this build's approve button
+    # permanently unusable. Relaxed here, and every such act is written
+    # to the trail as `self_*` so the record never claims a second human
+    # looked.
+    "PLANBENCH_SEPARATION_OF_DUTIES": "relaxed",
+}
 
 #: **A known password, on purpose, for now.**
 #:
@@ -76,8 +124,15 @@ PLANBENCH_ENABLE_DEV_LOGIN=true
 # Sign in with these. Change the password here and restart the app to
 # use a different one; the account is created from this line the first
 # time the app runs, and re-reads it on every launch after that.
-PLANBENCH_SEED_USERS={nickname}:{password}
+# `name:roles:password`. Roles are joined with `+`; the three accounts
+# exist so this machine can show the workflow both ways — as one person
+# who does everything, and as the two separate jobs the platform is
+# built around.
+PLANBENCH_SEED_USERS={seed_users}
 PLANBENCH_ADMIN_NICKNAMES={nickname}
+PLANBENCH_DEPLOYMENT_PROFILE={profile}
+# One person cannot be two. Every self-approval is recorded as `self_*`.
+PLANBENCH_SEPARATION_OF_DUTIES=relaxed
 # Sign-ins last twelve hours: this is one machine with one person on it,
 # and the server-side default of one hour is written for a shared API.
 PLANBENCH_JWT_TTL_MINUTES=720
@@ -146,12 +201,75 @@ def _export_launcher_vars(env_path: Path) -> None:
             os.environ[name] = value
 
 
+def seed_users_line(password: str) -> str:
+    """The `PLANBENCH_SEED_USERS` value for a fresh install.
+
+    The extra two accounts take their nickname as their password, the
+    same trade the main one makes and for the same reason: the API binds
+    ``127.0.0.1``, so reaching them means already being on the machine.
+    """
+    return ",".join(
+        f"{nickname}:{roles}:{password if nickname == DEFAULT_NICKNAME else nickname}"
+        for nickname, roles in SEED_ACCOUNTS
+    )
+
+
+def apply_profile_defaults(env_path: Path) -> dict[str, str]:
+    """Fill in what this build is, where the file does not say.
+
+    Returns what was applied, for the log.
+
+    **Every launch, not only the first**, and that is the whole point: a
+    copy installed before roles existed has an `.env` that will never
+    grow these lines by itself, and without them an upgrade silently
+    demotes the account its owner signs in with. Anything the file
+    states explicitly wins — including a person who set the profile to
+    ``demo``.
+
+    The seed line is filled in too, and not only the profile. A file from
+    an older build carries ``admin:<password>`` in the two-part form,
+    which names no roles at all; a reconciliation with nothing to
+    reconcile leaves the account exactly as under-privileged as before,
+    so setting the profile alone fixes nothing.
+    """
+    stated = _env_entries(env_path)
+    applied: dict[str, str] = {}
+    for name, value in PROFILE_DEFAULTS.items():
+        if stated.get(name) or os.environ.get(name):
+            continue
+        os.environ[name] = value
+        applied[name] = value
+
+    if not _states_roles(stated.get("PLANBENCH_SEED_USERS", "")):
+        nickname, password = _read_seed_account(env_path)
+        # Keep whatever password the file carries — changing somebody's
+        # credential during an upgrade is not a thing an upgrade may do.
+        line = seed_users_line(password or DEFAULT_PASSWORD)
+        if nickname != DEFAULT_NICKNAME:
+            # They renamed the account. Grant the same three packages to
+            # the name they actually use, and leave the stock two out:
+            # inventing accounts on somebody's machine is not repair.
+            line = f"{nickname}:{SEED_ACCOUNTS[0][1]}:{password or DEFAULT_PASSWORD}"
+        os.environ["PLANBENCH_SEED_USERS"] = line
+        applied["PLANBENCH_SEED_USERS"] = line
+    return applied
+
+
+def _states_roles(seed_users: str) -> bool:
+    """Whether a seed line names roles, rather than only a password."""
+    return any(entry.count(":") >= 2 for entry in seed_users.split(",") if entry.strip())
+
+
 def _read_seed_account(env_path: Path) -> tuple[str, str]:
     """The nickname and password already in `.env`, if it has them."""
     entry = _env_entries(env_path).get("PLANBENCH_SEED_USERS", "").split(",")[0]
-    if ":" in entry:
-        nickname, password = entry.split(":", 1)
-        return nickname.strip(), password.strip()
+    parts = [part.strip() for part in entry.split(":")]
+    if len(parts) >= 3:
+        # `name:roles:password` — the password is everything after the
+        # second colon, because a password may contain one.
+        return parts[0], ":".join(parts[2:])
+    if len(parts) == 2:
+        return parts[0], parts[1]
     return DEFAULT_NICKNAME, ""
 
 
@@ -197,6 +315,8 @@ def provision() -> Provisioned:
                 secret=secrets.token_urlsafe(48),
                 nickname=DEFAULT_NICKNAME,
                 password=password,
+                profile=DEPLOYMENT_PROFILE,
+                seed_users=seed_users_line(password),
                 # POSIX separators: this is a SQLAlchemy URL, and a
                 # Windows path dropped into one has backslashes that the
                 # URL parser reads as escapes.
@@ -237,11 +357,19 @@ def provision() -> Provisioned:
     if stamped:
         os.environ.setdefault("PLANBENCH_GIT_SHA", stamped)
     _export_launcher_vars(env_path)
+    applied = apply_profile_defaults(env_path)
+    if applied:
+        logging.getLogger("planbench.desktop").info(
+            "deployment defaults applied for this build: %s", ", ".join(sorted(applied))
+        )
 
     return Provisioned(root, first_run, nickname, credential)
 
 
 __all__ = [
+    "DEPLOYMENT_PROFILE",
+    "PROFILE_DEFAULTS",
+    "SEED_ACCOUNTS",
     "DEFAULT_NICKNAME",
     "DEFAULT_PASSWORD",
     "LAUNCHER_VARS",

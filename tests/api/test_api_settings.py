@@ -214,9 +214,11 @@ def test_a_missing_variable_is_appended_rather_than_lost(tmp_path) -> None:
     assert "OPENAI_API_KEY=sk-appended" in body
 
 
-def test_settings_require_a_signed_in_reader(client: TestClient, settings_env) -> None:
-    assert client.get("/api/v1/settings/agent").status_code == 401
-    assert client.put("/api/v1/settings/agent", json={"api_key": "sk-anonymous"}).status_code == 401
+def test_settings_require_a_signed_in_reader(anonymous: TestClient, settings_env) -> None:
+    assert anonymous.get("/api/v1/settings/agent").status_code == 401
+    assert (
+        anonymous.put("/api/v1/settings/agent", json={"api_key": "sk-anonymous"}).status_code == 401
+    )
 
 
 def test_an_implausibly_short_key_is_rejected_before_anything_is_written(

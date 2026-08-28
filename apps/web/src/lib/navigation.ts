@@ -30,12 +30,17 @@ export interface NavItem {
   hidden?: boolean;
   /** Requires a session; shown but marked when signed out. */
   session?: boolean;
-  /** Only an admin can do anything here, so only an admin is offered it.
+  /** The capability this page needs to be worth offering.
    *
-   * Cosmetic and stated as such: the API refuses the write regardless.
-   * Hiding the entry keeps the rail from advertising a door that
-   * answers with a 403 to most of the people who read it. */
-  admin?: boolean;
+   * Cosmetic and stated as such: the API refuses the request regardless.
+   * Hiding the entry keeps the rail from advertising a door that answers
+   * with a 403 to most of the people who read it.
+   *
+   * A capability rather than a role, for the same reason the routes name
+   * one: the mapping from role to capability lives in a single dict on
+   * the server, and a rail that named roles would be a second copy of it
+   * — free to disagree the day a capability moves between packages. */
+  capability?: string;
   /** On its way out, and still the only way to do something.
    *
    * A chip beside the name rather than a section of its own: a heading
@@ -119,6 +124,16 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         descriptionKey: "nav.desc.library",
       },
       {
+        href: "/algorithms",
+        labelKey: "nav.algorithms",
+        icon: "cpu",
+        // Held by all three packages, so this hides the entry from
+        // exactly one kind of account: one with no package at all, which
+        // is a dormant account rather than a reader.
+        capability: "algorithm.catalogue",
+        descriptionKey: "nav.desc.algorithms",
+      },
+      {
         href: "/candidates",
         labelKey: "nav.candidates",
         icon: "cpu",
@@ -157,19 +172,48 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         session: true,
         descriptionKey: "nav.desc.reviews",
       },
+      { href: "/system", labelKey: "nav.system", icon: "info", descriptionKey: "nav.desc.system" },
+    ],
+  },
+  /* **Administration, gathered rather than scattered.** These four were
+     in among the account pages, where somebody looking for "where do I
+     change who may publish?" had to read every entry to find out none of
+     them was it. Grouping them makes the rail say that running the
+     deployment is a distinct job — which is the whole claim the
+     administrator package makes.
+
+     The hrefs are unchanged. `/settings` and `/system` have been linked
+     to from release notes and from the desktop launcher since 0.1.x, and
+     moving a URL to tidy a menu breaks a bookmark to fix nothing. Every
+     entry here is capability-gated, so on a deployment where nobody is
+     an administrator the section renders as nothing at all rather than
+     as an empty heading. */
+  {
+    titleKey: "nav.section.administration",
+    items: [
+      {
+        href: "/admin/users",
+        labelKey: "nav.adminUsers",
+        icon: "user",
+        session: true,
+        capability: "user.manage",
+        descriptionKey: "nav.desc.adminUsers",
+      },
+      {
+        href: "/admin/audit",
+        labelKey: "nav.adminAudit",
+        icon: "info",
+        session: true,
+        capability: "audit.read",
+        descriptionKey: "nav.desc.adminAudit",
+      },
       {
         href: "/settings",
         labelKey: "nav.settings",
         icon: "settings",
         session: true,
-        admin: true,
+        capability: "system.configure",
         descriptionKey: "nav.desc.settings",
-      },
-      {
-        href: "/system",
-        labelKey: "nav.system",
-        icon: "info",
-        descriptionKey: "nav.desc.system",
       },
     ],
   },

@@ -20,7 +20,10 @@
  */
 
 import { useSyncExternalStore } from "react";
-import { API_BASE } from "./api";
+// From `origin.ts`, not from `api.ts`: that module imports this one for
+// the session, and two modules that import each other have no defined
+// initialisation order.
+import { API_BASE } from "./origin";
 
 const TOKEN_KEY = "planbench.token";
 const USER_KEY = "planbench.user";
@@ -37,9 +40,54 @@ export interface SessionUser {
   email: string;
   display_name: string;
   avatar_url: string;
+  /** The capability packages this account holds. For the badge. */
+  roles: string[];
+  /** What this account may do, as the server computes it.
+   *
+   * Sent alongside `roles` and this is the field to branch on. Deriving
+   * capabilities from roles here would mean the web app keeping its own
+   * copy of the role→capability table, and a second copy of that table
+   * is how a button comes to be offered to somebody the server then
+   * refuses — the worst of both, since the refusal arrives after the
+   * click. */
+  capabilities: string[];
   is_admin: boolean;
   needs_nickname: boolean;
   providers: string[];
+}
+
+/** Every capability name the interface branches on.
+ *
+ * Written out so a typo is a compile error rather than a permanently
+ * hidden button. The server is still the authority; this is only the
+ * vocabulary. */
+export const CAPABILITIES = {
+  resourceWrite: "resource.write",
+  simulationRun: "simulation.run",
+  runCreate: "run.create",
+  runSubmit: "run.submit",
+  runReview: "run.review",
+  runWithdraw: "run.withdraw",
+  algorithmCatalogue: "algorithm.catalogue",
+  algorithmInspect: "algorithm.inspect",
+  algorithmImport: "algorithm.import",
+  algorithmPublish: "algorithm.publish",
+  modelUpload: "model.upload",
+  userManage: "user.manage",
+  systemConfigure: "system.configure",
+  systemOperate: "system.operate",
+  auditRead: "audit.read",
+} as const;
+
+export type CapabilityName = (typeof CAPABILITIES)[keyof typeof CAPABILITIES];
+
+/** Whether this account holds a capability.
+ *
+ * Takes the user rather than reading the store, so a component that
+ * already has the session does not subscribe to it twice — and so this
+ * is callable from a plain function during a render pass. */
+export function can(user: SessionUser | null | undefined, capability: CapabilityName): boolean {
+  return Boolean(user?.capabilities?.includes(capability));
 }
 
 export interface Session {
@@ -70,6 +118,11 @@ function normaliseUser(raw: Partial<SessionUser> | null): SessionUser | null {
     email: raw.email ?? "",
     display_name: raw.display_name ?? "",
     avatar_url: raw.avatar_url ?? "",
+    // Defaulted to empty rather than to "everything", so a session
+    // restored from a store written by an older build offers nothing
+    // rather than offering buttons the server will refuse.
+    roles: raw.roles ?? [],
+    capabilities: raw.capabilities ?? [],
     is_admin: raw.is_admin ?? false,
     needs_nickname: raw.needs_nickname ?? !raw.nickname,
     providers: raw.providers ?? [],

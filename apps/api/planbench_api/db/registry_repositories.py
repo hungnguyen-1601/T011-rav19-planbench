@@ -22,6 +22,8 @@ from planbench_api.db.models import (
     ModelRow,
     ModelUsageRow,
     PluginBundleRow,
+    PluginEventRow,
+    PluginPublicationRow,
     RobotProfileRow,
 )
 from planbench_api.db.session import SessionFactory
@@ -37,7 +39,12 @@ from planbench_api.model_registry import (
     RobotProfile,
     ValidationStatus,
 )
-from planbench_api.plugin_registry import PluginBundleRecord
+from planbench_api.plugin_registry import (
+    OperationalStatus,
+    PluginBundleRecord,
+    PluginEvent,
+    PluginPublication,
+)
 from planbench_api.repositories import new_id
 
 
@@ -485,15 +492,182 @@ def _to_bundle(row: PluginBundleRow) -> PluginBundleRecord:
         checksum=row.checksum or "",
         uploaded_by_user_id=row.uploaded_by_user_id or "",
         robot_profile_id=row.robot_profile_id or "",
-        status=ModelStatus(row.status),
+        status=OperationalStatus(row.status),
         validation_status=ValidationStatus(row.validation_status),
         validation_message=row.validation_message or "",
+        disabled_at=row.disabled_at,
+        disabled_by_user_id=row.disabled_by_user_id,
+        disabled_reason=row.disabled_reason or "",
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
 
 
+def _to_publication(row: PluginPublicationRow) -> PluginPublication:
+    return PluginPublication(
+        id=row.id,
+        plugin_id=row.plugin_id,
+        bundle_id=row.bundle_id,
+        revision=row.revision,
+        published_by_user_id=row.published_by_user_id,
+        published_at=row.published_at,
+        superseded_at=row.superseded_at,
+        unpublished_at=row.unpublished_at,
+        unpublished_by_user_id=row.unpublished_by_user_id,
+        reason=row.reason or "",
+    )
+
+
+def _to_plugin_event(row: PluginEventRow) -> PluginEvent:
+    return PluginEvent(
+        sequence=row.sequence,
+        bundle_id=row.bundle_id,
+        revision=row.revision,
+        actor_user_id=row.actor_user_id,
+        actor_roles=row.actor_roles or "",
+        authorized_capability=row.authorized_capability or "",
+        action=row.action,
+        reason=row.reason or "",
+        created_at=row.created_at,
+    )
+
+
+class SqlPluginPublicationRepository:
+    """The publication history, and the one row that is current.
+
+    Publish is two writes in one transaction — stamp the outgoing row,
+    insert the new one — because between them the plugin would have
+    either two current publications or none, and the partial unique
+    index would reject the first of those anyway. Doing it in one
+    transaction is what makes the index a guarantee rather than a race
+    the service has to lose politely.
+    """
+
+    def __init__(self, sessions: SessionFactory) -> None:
+        self._sessions = sessions
+
+    def current(self, plugin_id: str) -> PluginPublication | None:
+        with self._sessions.begin() as session:
+            row = session.scalars(
+                select(PluginPublicationRow).where(
+                    PluginPublicationRow.plugin_id == plugin_id,
+                    PluginPublicationRow.superseded_at.is_(None),
+                    PluginPublicationRow.unpublished_at.is_(None),
+                )
+            ).first()
+            return _to_publication(row) if row is not None else None
+
+    def current_bundle_ids(self) -> set[str]:
+        """Every bundle that is somebody's current publication."""
+        with self._sessions.begin() as session:
+            rows = session.scalars(
+                select(PluginPublicationRow.bundle_id).where(
+                    PluginPublicationRow.superseded_at.is_(None),
+                    PluginPublicationRow.unpublished_at.is_(None),
+                )
+            ).all()
+            return set(rows)
+
+    def history(self, plugin_id: str) -> list[PluginPublication]:
+        with self._sessions.begin() as session:
+            rows = session.scalars(
+                select(PluginPublicationRow)
+                .where(PluginPublicationRow.plugin_id == plugin_id)
+                .order_by(PluginPublicationRow.published_at)
+            ).all()
+            return [_to_publication(row) for row in rows]
+
+    def for_bundle(self, bundle_id: str) -> list[PluginPublication]:
+        with self._sessions.begin() as session:
+            rows = session.scalars(
+                select(PluginPublicationRow)
+                .where(PluginPublicationRow.bundle_id == bundle_id)
+                .order_by(PluginPublicationRow.published_at)
+            ).all()
+            return [_to_publication(row) for row in rows]
+
+    def publish(
+        self, *, plugin_id: str, bundle_id: str, revision: int, published_by_user_id: str | None
+    ) -> PluginPublication:
+        stamp = now_iso()
+        with self._sessions.begin() as session:
+            outgoing = session.scalars(
+                select(PluginPublicationRow).where(
+                    PluginPublicationRow.plugin_id == plugin_id,
+                    PluginPublicationRow.superseded_at.is_(None),
+                    PluginPublicationRow.unpublished_at.is_(None),
+                )
+            ).first()
+            if outgoing is not None:
+                if outgoing.bundle_id == bundle_id:
+                    return _to_publication(outgoing)
+                outgoing.superseded_at = stamp
+                session.flush()
+            row = PluginPublicationRow(
+                id=new_id(),
+                plugin_id=plugin_id,
+                bundle_id=bundle_id,
+                revision=revision,
+                published_by_user_id=published_by_user_id,
+                published_at=stamp,
+            )
+            session.add(row)
+            session.flush()
+            return _to_publication(row)
+
+    def unpublish(
+        self, *, plugin_id: str, unpublished_by_user_id: str | None, reason: str = ""
+    ) -> PluginPublication | None:
+        with self._sessions.begin() as session:
+            row = session.scalars(
+                select(PluginPublicationRow).where(
+                    PluginPublicationRow.plugin_id == plugin_id,
+                    PluginPublicationRow.superseded_at.is_(None),
+                    PluginPublicationRow.unpublished_at.is_(None),
+                )
+            ).first()
+            if row is None:
+                return None
+            row.unpublished_at = now_iso()
+            row.unpublished_by_user_id = unpublished_by_user_id
+            row.reason = reason
+            session.flush()
+            return _to_publication(row)
+
+
+class SqlPluginEventRepository:
+    def __init__(self, sessions: SessionFactory) -> None:
+        self._sessions = sessions
+
+    def record(self, event: PluginEvent) -> PluginEvent:
+        with self._sessions.begin() as session:
+            row = PluginEventRow(
+                bundle_id=event.bundle_id,
+                revision=event.revision,
+                actor_user_id=event.actor_user_id,
+                actor_roles=event.actor_roles,
+                authorized_capability=event.authorized_capability,
+                action=event.action,
+                reason=event.reason,
+                created_at=event.created_at or now_iso(),
+            )
+            session.add(row)
+            session.flush()
+            return _to_plugin_event(row)
+
+    def list_for_bundle(self, bundle_id: str) -> list[PluginEvent]:
+        with self._sessions.begin() as session:
+            rows = session.scalars(
+                select(PluginEventRow)
+                .where(PluginEventRow.bundle_id == bundle_id)
+                .order_by(PluginEventRow.sequence)
+            ).all()
+            return [_to_plugin_event(row) for row in rows]
+
+
 __all__ = [
+    "SqlPluginEventRepository",
+    "SqlPluginPublicationRepository",
     "SqlModelRepository",
     "SqlPluginBundleRepository",
     "SqlRobotProfileRepository",

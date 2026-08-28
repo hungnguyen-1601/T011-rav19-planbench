@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import threading
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
 from planbench_api.approval import ApprovalRecord, BenchmarkState
@@ -45,6 +45,13 @@ class StoredMap:
     #: caller building one of these in a test does not have to know the
     #: field exists to get the ordinary case.
     kept: bool = False
+    #: Who filed it. ``None`` means "made before accounts existed, or
+    #: adopted from the library" — shared, editable by anyone holding
+    #: ``resource.write``. It does **not** mean unowned-and-protected.
+    owner_user_id: str | None = None
+    #: Set instead of deleting. An audit trail that points at rows
+    #: somebody removed is a trail with holes in it.
+    archived_at: str | None = None
 
 
 @dataclass
@@ -54,6 +61,8 @@ class StoredScenario:
     map_id: str
     created_at: str
     scenario: Scenario
+    owner_user_id: str | None = None
+    archived_at: str | None = None
 
 
 @dataclass
@@ -115,9 +124,15 @@ class MapRepository:
         self._items: dict[str, StoredMap] = {}
         self._lock = threading.Lock()
 
-    def create(self, map_data: MapData) -> StoredMap:
+    def create(self, map_data: MapData, owner_user_id: str | None = None) -> StoredMap:
         with self._lock:
-            stored = StoredMap(id=new_id(), version=1, created_at=now_iso(), map_data=map_data)
+            stored = StoredMap(
+                id=new_id(),
+                version=1,
+                created_at=now_iso(),
+                map_data=map_data,
+                owner_user_id=owner_user_id,
+            )
             self._items[stored.id] = stored
             return stored
 
@@ -138,8 +153,11 @@ class MapRepository:
                 return stored
         return None
 
-    def list(self) -> list[StoredMap]:
-        return sorted(self._items.values(), key=lambda m: m.created_at)
+    def list(self, include_archived: bool = False) -> list[StoredMap]:
+        rows = self._items.values()
+        if not include_archived:
+            rows = [row for row in rows if row.archived_at is None]
+        return sorted(rows, key=lambda m: m.created_at)
 
     def update(self, map_id: str, map_data: MapData) -> StoredMap:
         with self._lock:
@@ -151,11 +169,24 @@ class MapRepository:
                 map_data=map_data,
                 # A pin belongs to the map, not to a revision of it.
                 kept=current.kept,
+                owner_user_id=current.owner_user_id,
+                archived_at=current.archived_at,
             )
             self._items[map_id] = updated
             return updated
 
+    def archive(self, map_id: str) -> StoredMap:
+        """Take it out of the lists without taking it out of history."""
+        with self._lock:
+            current = self.get(map_id)
+            archived = replace(current, archived_at=now_iso())
+            self._items[map_id] = archived
+            return archived
+
     def delete(self, map_id: str) -> None:
+        """Hard delete. Kept for the orphan sweep, which removes rows
+        nothing has ever referenced — the one case where there is no
+        history to keep a hole out of."""
         with self._lock:
             if map_id not in self._items:
                 raise NotFoundError("map", map_id)
@@ -167,10 +198,17 @@ class ScenarioRepository:
         self._items: dict[str, StoredScenario] = {}
         self._lock = threading.Lock()
 
-    def create(self, map_id: str, scenario: Scenario) -> StoredScenario:
+    def create(
+        self, map_id: str, scenario: Scenario, owner_user_id: str | None = None
+    ) -> StoredScenario:
         with self._lock:
             stored = StoredScenario(
-                id=new_id(), version=1, map_id=map_id, created_at=now_iso(), scenario=scenario
+                id=new_id(),
+                version=1,
+                map_id=map_id,
+                created_at=now_iso(),
+                scenario=scenario,
+                owner_user_id=owner_user_id,
             )
             self._items[stored.id] = stored
             return stored
@@ -181,8 +219,11 @@ class ScenarioRepository:
         except KeyError:
             raise NotFoundError("scenario", scenario_id) from None
 
-    def list(self) -> list[StoredScenario]:
-        return sorted(self._items.values(), key=lambda s: s.created_at)
+    def list(self, include_archived: bool = False) -> list[StoredScenario]:
+        rows = self._items.values()
+        if not include_archived:
+            rows = [row for row in rows if row.archived_at is None]
+        return sorted(rows, key=lambda s: s.created_at)
 
     def update(self, scenario_id: str, map_id: str, scenario: Scenario) -> StoredScenario:
         with self._lock:
@@ -193,9 +234,18 @@ class ScenarioRepository:
                 map_id=map_id,
                 created_at=current.created_at,
                 scenario=scenario,
+                owner_user_id=current.owner_user_id,
+                archived_at=current.archived_at,
             )
             self._items[scenario_id] = updated
             return updated
+
+    def archive(self, scenario_id: str) -> StoredScenario:
+        with self._lock:
+            current = self.get(scenario_id)
+            archived = replace(current, archived_at=now_iso())
+            self._items[scenario_id] = archived
+            return archived
 
     def delete(self, scenario_id: str) -> None:
         with self._lock:
@@ -354,6 +404,8 @@ class RepositoryHub:
         from planbench_api.registry_store import (
             InMemoryModelRepository,
             InMemoryPluginBundleRepository,
+            InMemoryPluginEventRepository,
+            InMemoryPluginPublicationRepository,
             InMemoryRobotProfileRepository,
         )
         from planbench_api.user_store import InMemoryReviewRepository, InMemoryUserRepository
@@ -369,6 +421,8 @@ class RepositoryHub:
         self.robot_profiles = InMemoryRobotProfileRepository()
         self.models = InMemoryModelRepository()
         self.plugin_bundles = InMemoryPluginBundleRepository()
+        self.plugin_publications = InMemoryPluginPublicationRepository()
+        self.plugin_events = InMemoryPluginEventRepository()
         # Decision layer (HĐ-1, HĐ-2, HĐ-12/13). Imported here rather
         # than at module scope because `planbench_api.decisions` imports
         # `new_id`/`now_iso` from this module.

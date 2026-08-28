@@ -32,7 +32,15 @@ from planbench_agent.paper import (
     selectable_stacks,
 )
 from planbench_agent.plugin_author import author_plugin
-from planbench_api.auth import CurrentUser
+from planbench_api.accounts import Capability, User
+from planbench_api.auth import (
+    CurrentUser,
+    Forbidden,
+    ReadingUser,
+    SimulatingUser,
+    require_capability,
+)
+from planbench_api.decision_review import DecisionReviewService, submission_of
 from planbench_api.decision_service import (
     CandidateService,
     DecisionRunService,
@@ -44,12 +52,25 @@ from planbench_api.dependencies import (
     get_agent_service,
     get_candidate_service,
     get_decision_jobs,
+    get_decision_review_service,
     get_decision_run_service,
     get_map_root,
+    get_plugin_service,
     get_task_profile_service,
     get_test_bench_service,
 )
-from planbench_api.errors import DomainValidationError, NotFoundError
+from planbench_api.errors import DomainValidationError, InvalidStateError, NotFoundError
+from planbench_api.plugin_service import PluginBundleService
+from planbench_api.reliance import describe as describe_reliance
+from planbench_api.reliance import of_run as reliance_of_run
+from planbench_api.review import ReviewStatus
+from planbench_api.run_identity import (
+    IdentityError,
+    PinnedRun,
+    RunPurpose,
+)
+from planbench_api.run_identity import recheck as recheck_identity
+from planbench_api.run_identity import resolve as resolve_identity
 from planbench_api.worker import Job, JobQueue
 from planbench_benchmark.candidates import offered_controller_configs
 from planbench_benchmark.outcome import OUTCOME_CODES, build_outcome, outcome_advice
@@ -106,6 +127,13 @@ Profiles = Annotated[TaskProfileService, Depends(get_task_profile_service)]
 Candidates = Annotated[CandidateService, Depends(get_candidate_service)]
 Runs = Annotated[DecisionRunService, Depends(get_decision_run_service)]
 DecisionJobs = Annotated[JobQueue, Depends(get_decision_jobs)]
+#: Only for resolving a stack name to the code behind it — see
+#: :mod:`planbench_api.run_identity`. Nothing here imports algorithms.
+Plugins = Annotated[PluginBundleService, Depends(get_plugin_service)]
+Reviews = Annotated[DecisionReviewService, Depends(get_decision_review_service)]
+ReviewingUser = Annotated[User, Depends(require_capability(Capability.RUN_REVIEW))]
+SubmittingUser = Annotated[User, Depends(require_capability(Capability.RUN_SUBMIT))]
+WithdrawingUser = Annotated[User, Depends(require_capability(Capability.RUN_WITHDRAW))]
 MapRoot = Annotated[Path, Depends(get_map_root)]
 TestBench = Annotated[TestBenchService, Depends(get_test_bench_service)]
 
@@ -116,6 +144,15 @@ class TaskProfileResource(BaseModel):
     owner_user_id: str | None
     created_at: str
     profile: dict[str, Any]
+    #: Whether ``PUT`` would be accepted: nothing has been measured
+    #: against this deployment yet, and it is not the reference one.
+    #:
+    #: Sent rather than left to the client to work out, because working
+    #: it out means counting this deployment's runs — and a count made in
+    #: the browser is a second answer, free to disagree with the one the
+    #: server would refuse on. Offering an edit that always refuses is
+    #: worse than offering none.
+    editable: bool = False
 
 
 class DerivedProfileRequest(BaseModel):
@@ -177,11 +214,22 @@ class CandidateResource(BaseModel):
 class CandidateSpec(BaseModel):
     stack: str = Field(min_length=1)
     local_config: str = "dwa_coarse"
+    #: Names an imported bundle outright instead of letting the stack
+    #: name resolve to whatever is published. Only a validation run may
+    #: do this: the whole point of one is to watch a revision nobody has
+    #: vouched for yet, and the alias would silently hand back a
+    #: different one.
+    bundle_id: str | None = None
 
 
 class DecisionRequest(BaseModel):
     task_profile_id: str = Field(min_length=1)
     candidates: list[CandidateSpec] = Field(min_length=2)
+    #: ``production`` unless a reviewer is checking an algorithm. A
+    #: validation run measures the same way and carries no verdict — it
+    #: is never submitted and never approved, because it exists to look
+    #: at code nobody has published.
+    purpose: RunPurpose = RunPurpose.PRODUCTION
     scope: str = DEFAULT_SCOPE
     #: Defaults to ``N_min`` from the profile (HĐ-7.1) — the episode
     #: count is a consequence of the declared collision risk, not a taste
@@ -215,6 +263,18 @@ class DecisionRunResource(BaseModel):
     config_state: str
     config_decided_by: str | None
     config_decided_at: str | None
+    #: Whether the decision above may still be acted on, derived at read
+    #: time. Separate from ``config_state`` on purpose: that one records
+    #: what a person decided and never changes, while this one is a fact
+    #: about the world now. Merging them would leave only two moves, and
+    #: both are wrong — rewriting the approval says somebody withdrew
+    #: something they did not, and leaving it alone lets a dead
+    #: recommendation read as a live one.
+    reliance_status: str = "active"
+    #: Why, when it is not ``active``. Carries the reason a person gave
+    #: rather than a code, because "revoked" tells a reader nothing they
+    #: can act on.
+    reliance_warning: dict[str, Any] | None = None
 
 
 class FindingResource(BaseModel):
@@ -566,13 +626,14 @@ class ReviewEventResource(BaseModel):
     created_at: str
 
 
-def _profile(stored: StoredTaskProfile) -> TaskProfileResource:
+def _profile(stored: StoredTaskProfile, editable: bool = False) -> TaskProfileResource:
     return TaskProfileResource(
         id=stored.id,
         environment=stored.environment,
         owner_user_id=stored.owner_user_id,
         created_at=stored.created_at,
         profile=stored.profile,
+        editable=editable,
     )
 
 
@@ -628,7 +689,20 @@ def _without_episode_tables(report: dict[str, Any] | None) -> dict[str, Any] | N
     }
 
 
-def _run(stored: StoredDecisionRun, *, with_episodes: bool = True) -> DecisionRunResource:
+def _run(
+    stored: StoredDecisionRun,
+    *,
+    with_episodes: bool = True,
+    reliance: tuple[str, dict | None] = ("active", None),
+) -> DecisionRunResource:
+    """One run, as the interface reads it.
+
+    ``reliance`` is passed in rather than computed here because it needs
+    the plugin store, and most callers of this mapper are list views
+    where asking per row would mean one lookup per candidate per run.
+    The detail route, which is where a reader decides whether to act on
+    an approval, supplies the real answer.
+    """
     return DecisionRunResource(
         id=stored.id,
         task_profile_id=stored.task_profile_id,
@@ -646,6 +720,8 @@ def _run(stored: StoredDecisionRun, *, with_episodes: bool = True) -> DecisionRu
         reviewed_by=stored.reviewed_by,
         reviewed_at=stored.reviewed_at,
         config_state=stored.config_state,
+        reliance_status=reliance[0],
+        reliance_warning=reliance[1],
         config_decided_by=stored.config_decided_by,
         config_decided_at=stored.config_decided_at,
     )
@@ -659,7 +735,7 @@ def _run(stored: StoredDecisionRun, *, with_episodes: bool = True) -> DecisionRu
 def create_task_profile(
     payload: dict[str, Any], service: Profiles, user: CurrentUser
 ) -> TaskProfileResource:
-    return _profile(service.create(payload, owner_user_id=user.id))
+    return _profile(service.create(payload, owner_user_id=user.id), editable=True)
 
 
 @router.post("/task-profiles/validate", status_code=status.HTTP_204_NO_CONTENT)
@@ -725,8 +801,9 @@ def derive_task_profile(
 
 
 @router.get("/task-profiles", response_model=list[TaskProfileResource])
-def list_task_profiles(service: Profiles) -> list[TaskProfileResource]:
-    return [_profile(stored) for stored in service.list()]
+def list_task_profiles(service: Profiles, _: ReadingUser) -> list[TaskProfileResource]:
+    """Every deployment, each saying whether it can still be corrected."""
+    return [_profile(stored, editable=service.editable(stored.id)) for stored in service.list()]
 
 
 #: The deployment a form starts from. Registered **before**
@@ -734,7 +811,7 @@ def list_task_profiles(service: Profiles) -> list[TaskProfileResource]:
 #: whose path matches wins, and the parametrised one would swallow
 #: "template" and answer 404.
 @router.get("/task-profiles/template", response_model=dict[str, Any])
-def task_profile_template(map_root: MapRoot) -> dict[str, Any]:
+def task_profile_template(map_root: MapRoot, _: ReadingUser) -> dict[str, Any]:
     """The values a blank form opens with — read from the shipped profile.
 
     **Served rather than duplicated in the browser.** A hand-copied set
@@ -764,7 +841,7 @@ def task_profile_template(map_root: MapRoot) -> dict[str, Any]:
 
 
 @router.get("/task-profiles/{profile_id}", response_model=TaskProfileResource)
-def get_task_profile(profile_id: str, service: Profiles) -> TaskProfileResource:
+def get_task_profile(profile_id: str, service: Profiles, _: ReadingUser) -> TaskProfileResource:
     return _profile(service.get(profile_id))
 
 
@@ -774,6 +851,28 @@ class ProfileDeleted(BaseModel):
     #: a caller who confirmed "delete 7 runs" deserves to be told 7 were
     #: deleted, not to infer it from a 200.
     deleted_runs: int
+
+
+@router.put("/task-profiles/{profile_id}", response_model=TaskProfileResource)
+def replace_task_profile(
+    profile_id: str, payload: dict[str, Any], service: Profiles, _: CurrentUser
+) -> TaskProfileResource:
+    """Correct a deployment that nothing has measured yet.
+
+    **Not a general edit, and the difference is stored runs.** Re-filing
+    a changed deployment under an id something has already run is the
+    HĐ-3.1 failure ``create`` exists to refuse: ``episode_context_id``
+    does not hash the environment, so the old runs would keep their ids
+    while the world under them changed. A deployment nothing has run has
+    no such runs — it is a description somebody typed, usually five
+    minutes ago with one number wrong, and making them retype the whole
+    thing under a new id to fix it teaches nobody anything.
+
+    So this refuses the moment a single comparison exists, with a 409
+    carrying the counts, and points at ``derive`` — which copies
+    everything and takes an id of its own.
+    """
+    return _profile(service.replace(profile_id, payload), editable=True)
 
 
 @router.delete("/task-profiles/{profile_id}", response_model=ProfileDeleted)
@@ -841,7 +940,7 @@ class TestBenchResource(BaseModel):
     status_code=status.HTTP_201_CREATED,
 )
 def stage_test_bench_episode(
-    profile_id: str, request: TestBenchRequest, service: TestBench
+    profile_id: str, request: TestBenchRequest, service: TestBench, _: SimulatingUser
 ) -> TestBenchResource:
     """Assemble one episode of this deployment and hand back a simulation.
 
@@ -908,7 +1007,7 @@ class LocalControllerConfig(BaseModel):
 
 
 @router.get("/local-controllers", response_model=list[LocalControllerConfig])
-def list_local_controllers() -> list[LocalControllerConfig]:
+def list_local_controllers(_: ReadingUser) -> list[LocalControllerConfig]:
     """The named configurations a candidate may be registered with.
 
     **Served rather than copied into the client.** Registration already
@@ -938,12 +1037,12 @@ def list_local_controllers() -> list[LocalControllerConfig]:
 
 
 @router.get("/candidates", response_model=list[CandidateResource])
-def list_candidates(service: Candidates) -> list[CandidateResource]:
+def list_candidates(service: Candidates, _: ReadingUser) -> list[CandidateResource]:
     return [_candidate(stored) for stored in service.list()]
 
 
 @router.get("/candidates/{candidate_id}", response_model=CandidateResource)
-def get_candidate(candidate_id: str, service: Candidates) -> CandidateResource:
+def get_candidate(candidate_id: str, service: Candidates, _: ReadingUser) -> CandidateResource:
     return _candidate(service.get(candidate_id))
 
 
@@ -1400,7 +1499,13 @@ def preflight_decision(
 
 
 @router.post("/decisions", response_model=DecisionRunResource, status_code=status.HTTP_201_CREATED)
-def run_decision(request: DecisionRequest, service: Runs, user: CurrentUser) -> DecisionRunResource:
+def run_decision(
+    request: DecisionRequest,
+    service: Runs,
+    user: CurrentUser,
+    plugins: Plugins,
+    http_request: Request,
+) -> DecisionRunResource:
     """Run a selection and store the result, ranked or not.
 
     Synchronous on purpose at this size. The episode count comes from the
@@ -1417,23 +1522,63 @@ def run_decision(request: DecisionRequest, service: Runs, user: CurrentUser) -> 
             "a selection needs at least two *distinct* candidates. The same configuration "
             "twice is the same candidate_id (HĐ-1.3), and a candidate cannot be its own rival"
         )
+    pinned = _pin(request, plugins, http_request, user)
     return _run(
         service.run(
             task_profile_id=request.task_profile_id,
-            candidate_specs=[(spec.stack, spec.local_config) for spec in request.candidates],
+            candidate_specs=pinned.specs,
             scope=request.scope,
             episodes=request.episodes,
             created_by=user.id,
             reuse_traces=request.reuse_traces,
+            pinned=pinned,
         )
     )
+
+
+def _pin(request: DecisionRequest, plugins, http_request: Request, user) -> PinnedRun:
+    """Follow every stack name once, here, and keep the answer.
+
+    Done in the router rather than in the service because this is where
+    the caller's intent is still visible: which purpose they asked for,
+    and whether they named a bundle. By the time the engine sees a list
+    of ``(stack, local_config)`` pairs that has all been flattened away.
+    """
+    if request.purpose is RunPurpose.VALIDATION and not user.can(
+        Capability.ALGORITHM_VALIDATION_RUN
+    ):
+        raise Forbidden(
+            "a validation run measures an algorithm nobody has published yet, so it is "
+            "part of the reviewer role"
+        )
+    if request.purpose is RunPurpose.PRODUCTION and not user.can(Capability.RUN_CREATE):
+        raise Forbidden("starting a selection is part of the engineer role")
+    try:
+        return resolve_identity(
+            purpose=request.purpose,
+            task_profile_id=request.task_profile_id,
+            specs=[(spec.stack, spec.local_config) for spec in request.candidates],
+            bundle_ids=[spec.bundle_id for spec in request.candidates],
+            lookup=plugins,
+            governance=http_request.app.state.deployment.algorithm_governance,
+        )
+    except IdentityError as exc:
+        # 409 rather than 422: the request is well formed and was legal
+        # yesterday. What changed is the state of the catalogue, and that
+        # is a conflict rather than a mistake in what was typed.
+        raise InvalidStateError(str(exc)) from exc
 
 
 @router.post(
     "/decisions/jobs", response_model=DecisionJobResource, status_code=status.HTTP_202_ACCEPTED
 )
 def queue_decision(
-    request: DecisionRequest, service: Runs, jobs: DecisionJobs, user: CurrentUser
+    request: DecisionRequest,
+    service: Runs,
+    jobs: DecisionJobs,
+    user: CurrentUser,
+    plugins: Plugins,
+    http_request: Request,
 ) -> DecisionJobResource:
     """Queue a selection and hand back a job to watch. 202, not 201.
 
@@ -1455,26 +1600,63 @@ def queue_decision(
             "a selection needs at least two *distinct* candidates. The same configuration "
             "twice is the same candidate_id (HĐ-1.3), and a candidate cannot be its own rival"
         )
+    pinned = _pin(request, plugins, http_request, user)
+    governance = http_request.app.state.deployment.algorithm_governance
+
+    def recheck_at_start(run: PinnedRun) -> None:
+        try:
+            recheck_identity(run, plugins, governance)
+        except IdentityError as exc:
+            # Raised inside the worker: the job fails carrying the name of
+            # what moved, rather than measuring something else quietly.
+            raise InvalidStateError(str(exc)) from exc
+
+    def stop_if_withdrawn() -> str | None:
+        """Asked at every episode boundary, not only at the start.
+
+        A warehouse sweep is hours long, and an algorithm turned off
+        during it is turned off for a reason somebody had *while it was
+        running*. Checking once at the start would let the remaining
+        three hours go on measuring code that had just been withdrawn,
+        and then store the result as evidence.
+        """
+        for row in pinned.candidates:
+            if not row.is_imported:
+                continue
+            try:
+                record = plugins.get(row.bundle_id)
+            except NotFoundError:
+                return f"{row.stack} is no longer in the algorithm store"
+            if record.status.value == "disabled":
+                return (
+                    f"{row.stack} was disabled while this run was in progress "
+                    f"({record.disabled_reason or 'no reason recorded'})"
+                )
+        return None
+
     return _job(
         service.submit(
             jobs=jobs,
             task_profile_id=request.task_profile_id,
-            candidate_specs=[(spec.stack, spec.local_config) for spec in request.candidates],
+            candidate_specs=pinned.specs,
             scope=request.scope,
             episodes=request.episodes,
             created_by=user.id,
             reuse_traces=request.reuse_traces,
+            pinned=pinned,
+            recheck=recheck_at_start,
+            stop_check=stop_if_withdrawn,
         )
     )
 
 
 @router.get("/decisions/jobs", response_model=list[DecisionJobResource])
-def list_decision_jobs(jobs: DecisionJobs) -> list[DecisionJobResource]:
+def list_decision_jobs(jobs: DecisionJobs, _: ReadingUser) -> list[DecisionJobResource]:
     return [_job(job) for job in jobs.list()]
 
 
 @router.get("/decisions/jobs/{job_id}", response_model=DecisionJobResource)
-def get_decision_job(job_id: str, jobs: DecisionJobs) -> DecisionJobResource:
+def get_decision_job(job_id: str, jobs: DecisionJobs, _: ReadingUser) -> DecisionJobResource:
     job = jobs.get(job_id)
     if job is None:
         raise NotFoundError("decision job", job_id)
@@ -1500,6 +1682,7 @@ def cancel_decision_job(job_id: str, jobs: DecisionJobs, _: CurrentUser) -> Deci
 @router.get("/decisions", response_model=list[DecisionRunResource])
 def list_decisions(
     service: Runs,
+    _: ReadingUser,
     task_profile_id: Annotated[str | None, Query()] = None,
     ranked: Annotated[bool | None, Query()] = None,
 ) -> list[DecisionRunResource]:
@@ -1520,14 +1703,142 @@ def list_decisions(
     ]
 
 
+class QueueItem(BaseModel):
+    """One run waiting on somebody, with enough to decide whether to take it."""
+
+    run_id: str
+    task_profile_id: str
+    created_at: str
+    created_by: str | None = None
+    #: What the *owner* is waiting for and what a *reviewer* can do are
+    #: the same fact read from two sides, so only one is stored.
+    submission: str
+    requested_reviewer_user_id: str | None = None
+    claimed_by_user_id: str | None = None
+    claimed_at: str | None = None
+    available_to_pool: bool = False
+    request_comment: str = ""
+    #: Whether the holder has said they read it. A queue that showed only
+    #: who holds a review would say a run is being dealt with while the
+    #: person holding it has opened nothing.
+    acknowledged: bool = False
+    config_state: str = "not_applicable"
+
+
+class ReviewQueue(BaseModel):
+    """Three lists, because three different people are blocked.
+
+    Split here rather than left to the client to filter: which pile a
+    run belongs in depends on who is asking — the same request is
+    ``mine`` to its holder, ``directed`` to the person it names and
+    ``pool`` to everybody else — and a client filtering a flat list would
+    each have to re-derive that rule.
+    """
+
+    #: Reviews this caller is holding. First, because they are the only
+    #: ones nobody else can move.
+    mine: list[QueueItem]
+    #: Addressed to this caller but not yet claimed.
+    directed: list[QueueItem]
+    #: Unclaimed and open to anybody with the capability.
+    pool: list[QueueItem]
+    #: Runs this caller sent, whatever state they are in. An engineer's
+    #: half of the same table: they cannot act on these, and the only
+    #: question they have is whether anybody picked them up.
+    sent: list[QueueItem]
+
+
+def _queue_item(request, run: StoredDecisionRun | None, acknowledged: bool) -> QueueItem:
+    return QueueItem(
+        run_id=request.subject_id or request.benchmark_id,
+        task_profile_id=run.task_profile_id if run else "",
+        created_at=request.created_at,
+        created_by=request.requested_by_user_id or None,
+        submission=submission_of(request),
+        requested_reviewer_user_id=request.requested_reviewer_user_id,
+        claimed_by_user_id=request.claimed_by_user_id,
+        claimed_at=request.claimed_at,
+        available_to_pool=request.available_to_pool,
+        request_comment=request.request_comment,
+        acknowledged=acknowledged,
+        config_state=run.config_state if run else "not_applicable",
+    )
+
+
+@router.get("/decisions/review-queue", response_model=ReviewQueue)
+def review_queue(reviews: Reviews, service: Runs, user: ReadingUser) -> ReviewQueue:
+    """What is waiting, sorted by who can move it.
+
+    Declared before ``/decisions/{run_id}`` — FastAPI matches in
+    registration order and would otherwise read "review-queue" as a run
+    id.
+
+    Open to any reader rather than gated on ``run.review``: an engineer
+    needs the ``sent`` pile to see whether anybody picked their work up,
+    and refusing them the endpoint would mean a second one returning the
+    same rows under a different name. The three reviewer piles come back
+    empty for a caller who cannot review, because the rule that fills
+    them is about who may claim.
+    """
+    reviewing = user.can(Capability.RUN_REVIEW)
+    queue = ReviewQueue(mine=[], directed=[], pool=[], sent=[])
+    for request in reviews.queue():
+        if not request.is_pending:
+            continue
+        run_id = request.subject_id or request.benchmark_id
+        try:
+            run = service.get(run_id)
+        except NotFoundError:
+            # A request whose run was deleted is not an error to report
+            # here; it is simply nothing anybody can act on.
+            continue
+        item = _queue_item(
+            request, run, reviews.acknowledged_under(request, service.events(run_id))
+        )
+        if request.requested_by_user_id == user.id:
+            queue.sent.append(item)
+        if not reviewing:
+            continue
+        if request.claimed_by_user_id == user.id:
+            queue.mine.append(item)
+        elif request.claimed_by_user_id is not None:
+            # Held by somebody else. It stays out of every pile a reader
+            # can act on: taking it is possible but it is a takeover, and
+            # a takeover starts from the run rather than from a queue.
+            continue
+        elif request.requested_reviewer_user_id == user.id:
+            queue.directed.append(item)
+        elif request.available_to_pool:
+            queue.pool.append(item)
+    return queue
+
+
 @router.get("/decisions/{run_id}", response_model=DecisionRunResource)
-def get_decision(run_id: str, service: Runs) -> DecisionRunResource:
-    return _run(service.get(run_id))
+def get_decision(
+    run_id: str, service: Runs, plugins: Plugins, http_request: Request, _: ReadingUser
+) -> DecisionRunResource:
+    """One run, with whether its answer can still be acted on.
+
+    Computed here and not in the list: this is the page where somebody
+    decides whether to use a configuration, and it is the one place the
+    per-candidate lookups are worth paying for.
+    """
+    stored = service.get(run_id)
+    verdict, warning = reliance_of_run(
+        getattr(stored, "candidates", []),
+        plugins,
+        http_request.app.state.deployment.algorithm_governance,
+    )
+    return _run(stored, reliance=(verdict.value, describe_reliance(warning)))
 
 
 @router.post("/decisions/{run_id}/review", response_model=DecisionRunResource)
 def review_decision(
-    run_id: str, request: ReviewRequest, service: Runs, user: CurrentUser
+    run_id: str,
+    request: ReviewRequest,
+    service: Runs,
+    reviews: Reviews,
+    user: ReviewingUser,
 ) -> DecisionRunResource:
     """Record that somebody read this run's evidence.
 
@@ -1538,16 +1849,37 @@ def review_decision(
     four quietly become artifacts nobody ever looked at — which is the
     outcome that made this a separate act from approval below.
     """
-    return _run(
+    held = reviews.require_claimant(run_id, user)
+    stored = service.get(run_id)
+    if stored.created_by and stored.created_by == user.id:
+        raise Forbidden(
+            "you started this run. Reading your own evidence is not the independent check "
+            "an acknowledgement records"
+        )
+    acknowledged = _run(
         service.review(
             run_id, actor_user_id=user.id, username=user.nickname, comment=request.comment
         )
     )
+    # A run that recommends nobody has nothing to approve, so reading it
+    # *is* the whole answer and the request closes here. Most comparisons
+    # rank nobody; leaving those requests open forever would make the
+    # queue a list of things nobody can finish.
+    if stored.config_state == "not_applicable":
+        reviews.close(run_id, ReviewStatus.ACKNOWLEDGED, request.comment)
+    else:
+        _ = held
+    return acknowledged
 
 
 @router.post("/decisions/{run_id}/config-approval", response_model=DecisionRunResource)
 def decide_config(
-    run_id: str, request: ConfigDecisionRequest, service: Runs, user: CurrentUser
+    run_id: str,
+    request: ConfigDecisionRequest,
+    service: Runs,
+    reviews: Reviews,
+    user: ReviewingUser,
+    http_request: Request,
 ) -> DecisionRunResource:
     """Approve or reject this run's recommendation as a configuration.
 
@@ -1560,19 +1892,147 @@ def decide_config(
     (HĐ-14). The person who chose the candidates, the deployment and the
     episode count is not an independent check on the answer.
     """
-    return _run(
+    # **The run first, then the caller.** "This recommends nobody, so
+    # there is nothing to sign" is a fact about the artefact; "you are
+    # not holding this review" is a fact about who is asking. Asking the
+    # second first would answer an unranked run with a message about
+    # claims, sending somebody to look for a permission that would not
+    # have helped them.
+    stored = service.get(run_id)
+    if stored.config_state == "not_applicable":
+        raise InvalidStateError(
+            f"decision run {run_id} produced no Decision Card, so it recommends no "
+            "configuration and there is nothing to approve. Its gate table is still a "
+            "result and can be reviewed — POST /decisions/{id}/review"
+        )
+    if not request.comment.strip():
+        raise DomainValidationError(
+            "signing a configuration needs a comment. It is the only part of the record "
+            "that says *why*, and a signature without one is a name and a timestamp"
+        )
+    held = reviews.require_claimant(run_id, user)
+    if not reviews.acknowledged_under(held, service.events(run_id)):
+        raise Forbidden(
+            "acknowledge the evidence before signing it. The acknowledgement has to be "
+            "yours and under this claim: reading somebody else did, before they handed "
+            "the review on, is not reading"
+        )
+    relaxed = http_request.app.state.deployment.relaxed
+    decided = _run(
         service.decide_config(
             run_id,
             approve=request.decision == "approve",
             actor_user_id=user.id,
             username=user.nickname,
             comment=request.comment,
+            relaxed=relaxed,
         )
+    )
+    reviews.close(
+        run_id,
+        ReviewStatus.APPROVED if request.decision == "approve" else ReviewStatus.REJECTED,
+        request.comment,
+    )
+    return decided
+
+
+class SubmitRequest(BaseModel):
+    """Ask for a review. Naming a reviewer is optional — see the service."""
+
+    reviewer: str = ""
+    comment: str = ""
+
+
+class TakeoverRequest(BaseModel):
+    reason: str = ""
+
+
+class ReviewStateResource(BaseModel):
+    """Who a run is waiting on, derived rather than stored.
+
+    ``submission`` has no column: it is read off the live request. Two
+    places recording who a run is waiting on is how they come to
+    disagree, and this is the one that would go stale.
+    """
+
+    submission: str
+    request_id: str | None = None
+    requested_reviewer_user_id: str | None = None
+    claimed_by_user_id: str | None = None
+    claimed_at: str | None = None
+    available_to_pool: bool = False
+    status: str | None = None
+
+
+def _review_state(request) -> ReviewStateResource:
+    if request is None:
+        return ReviewStateResource(submission=submission_of(None))
+    return ReviewStateResource(
+        submission=submission_of(request),
+        request_id=request.id,
+        requested_reviewer_user_id=request.requested_reviewer_user_id,
+        claimed_by_user_id=request.claimed_by_user_id,
+        claimed_at=request.claimed_at,
+        available_to_pool=request.available_to_pool,
+        status=request.status.value,
     )
 
 
+@router.get("/decisions/{run_id}/review-state", response_model=ReviewStateResource)
+def review_state(run_id: str, reviews: Reviews, _: ReadingUser) -> ReviewStateResource:
+    return _review_state(reviews.latest(run_id))
+
+
+@router.post("/decisions/{run_id}/submit", response_model=ReviewStateResource)
+def submit_for_review(
+    run_id: str, payload: SubmitRequest, reviews: Reviews, service: Runs, user: SubmittingUser
+) -> ReviewStateResource:
+    """Send a finished run to be reviewed.
+
+    Refused for a validation run. That one exists so a reviewer can watch
+    an algorithm nobody has published yet; submitting it would ask for a
+    verdict on evidence gathered precisely because there was no verdict
+    to be had.
+    """
+    run = service.get(run_id)
+    if getattr(run, "purpose", "production") != "production":
+        raise InvalidStateError(
+            f"decision run {run_id} is a validation run. It measures an algorithm nobody "
+            "has published, so there is no configuration to sign off"
+        )
+    if run.created_by and run.created_by != user.id:
+        raise Forbidden("only the member who started a run can send it for review")
+    return _review_state(reviews.submit(run_id, user, payload.reviewer, payload.comment))
+
+
+@router.post("/decisions/{run_id}/submit/cancel", response_model=ReviewStateResource)
+def cancel_submission(run_id: str, reviews: Reviews, user: SubmittingUser) -> ReviewStateResource:
+    reviews.cancel(run_id, user)
+    return _review_state(reviews.current(run_id))
+
+
+@router.post("/decisions/{run_id}/claim", response_model=ReviewStateResource)
+def claim_review(run_id: str, reviews: Reviews, user: ReviewingUser) -> ReviewStateResource:
+    """Take a review. Atomic: two reviewers cannot both hold one."""
+    return _review_state(reviews.claim(run_id, user))
+
+
+@router.post("/decisions/{run_id}/takeover", response_model=ReviewStateResource)
+def takeover_review(
+    run_id: str, payload: TakeoverRequest, reviews: Reviews, user: ReviewingUser
+) -> ReviewStateResource:
+    """Take it from whoever holds it, or from somebody who never came back."""
+    return _review_state(reviews.takeover(run_id, user, payload.reason))
+
+
+@router.post("/decisions/{run_id}/release", response_model=ReviewStateResource)
+def release_review(run_id: str, reviews: Reviews, user: ReviewingUser) -> ReviewStateResource:
+    """Put it back in the pool, keeping who was originally asked."""
+    return _review_state(reviews.release(run_id, user))
+
+
 @router.get("/decisions/{run_id}/audit", response_model=list[ReviewEventResource])
-def decision_audit(run_id: str, service: Runs) -> list[ReviewEventResource]:
+def decision_audit(run_id: str, service: Runs, _: ReadingUser) -> list[ReviewEventResource]:
     """The append-only trail, oldest first (HĐ-14).
 
     Ordered by ``sequence`` rather than by timestamp because two acts can
@@ -1747,7 +2207,7 @@ async def candidate_from_paper_upload(
 
 @router.get("/decisions/{run_id}/traces/{candidate_id}/{episode_context_id}")
 def get_trace(
-    run_id: str, candidate_id: str, episode_context_id: str, service: Runs
+    run_id: str, candidate_id: str, episode_context_id: str, service: Runs, _: ReadingUser
 ) -> dict[str, Any]:
     """One episode's trajectory, with the map it was driven on.
 
@@ -1767,7 +2227,7 @@ def get_trace(
 
 
 @router.get("/decisions/{run_id}/explanation")
-def get_explanation(run_id: str, service: Runs) -> dict[str, Any]:
+def get_explanation(run_id: str, service: Runs, _: ReadingUser) -> dict[str, Any]:
     """The case packet: the evidence behind this run's decision (E4.1).
 
     Built while the run was scored, not on the way out. The waterfall
@@ -1783,7 +2243,7 @@ def get_explanation(run_id: str, service: Runs) -> dict[str, Any]:
 
 
 @router.get("/decisions/{run_id}/exemplars")
-def get_exemplars(run_id: str, service: Runs) -> dict[str, Any]:
+def get_exemplars(run_id: str, service: Runs, _: ReadingUser) -> dict[str, Any]:
     """Which four episodes to look at, decided by a fixed recipe.
 
     Thirty episodes and one viewer: something has to choose which pair
@@ -1804,7 +2264,7 @@ def get_replay_sync(
     candidate_a: str,
     candidate_b: str,
     service: Runs,
-    # Bounded, because this one parameter sizes both a loop and the
+    # Bounded, _: ReadingUser, because this one parameter sizes both a loop and the
     # response body and the route needs no login to reach. `steps=1e9`
     # is not a client that wants a finer chart; the ceiling is far above
     # any real one — the page asks for 200.
@@ -1883,9 +2343,22 @@ def get_episode_verdict(
 
 @router.post("/decisions/{run_id}/config-approval/withdraw", response_model=DecisionRunResource)
 def withdraw_config(
-    run_id: str, request: ReviewRequest, service: Runs, user: CurrentUser
+    run_id: str, request: ReviewRequest, service: Runs, user: WithdrawingUser
 ) -> DecisionRunResource:
     """Take an approval back, leaving both acts in the journal.
+
+    **Any reviewer, not only the one who signed.** A reviewer leaves the
+    project, or is disabled, and the approval they left behind would
+    otherwise be permanent — and permanent in a way that blocks other
+    things: a deployment refuses to be deleted while one of its runs is
+    approved. Withdrawing runs in the conservative direction, back to
+    ``pending`` rather than to ``rejected``, so the risk of letting
+    anybody with the capability do it is small and the cost of letting
+    nobody is a deployment nobody can clean up.
+
+    The comment is required for the same reason it is required on
+    signing: it is the only part of the record that says why, and this
+    one is read by whoever finds their approval gone.
 
     **Not an erasure.** The approve event stays and a withdraw event
     lands beside it, naming who took it back and why — which is what
@@ -1902,6 +2375,15 @@ def withdraw_config(
     "undecided again", not "decided against", and writing the second
     would record a verdict nobody reached.
     """
+    # The run first, then the request. Asking somebody to write a reason
+    # for withdrawing an approval that never existed sends them away to
+    # compose a sentence that will be refused anyway; the service owns
+    # the wording of that refusal, so this only decides the order.
+    if service.get(run_id).config_state == "approved" and not request.comment.strip():
+        raise DomainValidationError(
+            "withdrawing an approval needs a reason. Somebody signed this, and they are "
+            "the person who reads it"
+        )
     return _run(
         service.withdraw_config(
             run_id,
@@ -1914,7 +2396,7 @@ def withdraw_config(
 
 @router.get("/decisions/{run_id}/report.md", response_class=PlainTextResponse)
 def decision_report_markdown(
-    run_id: str, service: Runs, locale: ExportLocale = DEFAULT_EXPORT_LOCALE
+    run_id: str, service: Runs, _: ReadingUser, locale: ExportLocale = DEFAULT_EXPORT_LOCALE
 ) -> Response:
     """The whole run as one Markdown document, card or no card.
 
@@ -1949,7 +2431,7 @@ def decision_report_markdown(
 
 @router.get("/decisions/{run_id}/report.xlsx")
 def decision_report_xlsx(
-    run_id: str, service: Runs, locale: ExportLocale = DEFAULT_EXPORT_LOCALE
+    run_id: str, service: Runs, _: ReadingUser, locale: ExportLocale = DEFAULT_EXPORT_LOCALE
 ) -> Response:
     """The same run as a workbook, for a reader who works in a spreadsheet.
 
@@ -1977,11 +2459,27 @@ def decision_report_xlsx(
 
 
 @router.get("/decisions/{run_id}/approved_config.yaml", response_class=PlainTextResponse)
-def approved_config(run_id: str, service: Runs) -> str:
+def approved_config(
+    run_id: str, service: Runs, plugins: Plugins, http_request: Request, _: ReadingUser
+) -> str:
     """The deployable configuration — approved runs only (HĐ-14).
 
     Served as text rather than JSON because it is a file somebody saves,
     and because the sim-only notice inside it should be the first thing
     read rather than a field in a viewer.
+
+    **Still 200 when the algorithm behind it has been withdrawn.**
+    Refusing would not erase the approval, it would only make the
+    evidence hard to reach at the moment somebody is investigating why
+    it was withdrawn. What changes is the file: it carries the reason,
+    at the top, and says plainly that it is not a configuration to run.
     """
-    return service.approved_config(run_id)
+    stored = service.get(run_id)
+    verdict, warning = reliance_of_run(
+        getattr(stored, "candidates", []),
+        plugins,
+        http_request.app.state.deployment.algorithm_governance,
+    )
+    return service.approved_config(
+        run_id, reliance=verdict.value, warning=describe_reliance(warning)
+    )

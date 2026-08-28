@@ -23,6 +23,7 @@ drift from the first (§16).
 
 from __future__ import annotations
 
+import dataclasses
 import threading
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -55,7 +56,22 @@ ConfigState = Literal["not_applicable", "pending", "approved", "rejected"]
 
 #: What a human did. Append-only vocabulary: nothing here undoes anything,
 #: because an audit trail that can be rewound is not one (HĐ-14).
-ReviewAction = Literal["review", "approve_config", "reject_config", "withdraw_config"]
+ReviewAction = Literal[
+    "review",
+    #: What ``review`` is called from the decision lane onwards. The old
+    #: spelling stays valid so rows written before this still parse — an
+    #: audit trail that cannot be read is not an audit trail.
+    "acknowledge",
+    "approve_config",
+    "reject_config",
+    "withdraw_config",
+    #: A single-person deployment, where the same account created the run
+    #: and signed it. Recorded under its own name so the trail never
+    #: claims a second human looked.
+    "self_approve_config",
+    "self_reject_config",
+    "algorithm_disabled_after_approval",
+]
 
 
 def same_deployment(stored: dict, incoming: dict) -> bool:
@@ -96,6 +112,14 @@ class StoredTaskProfile:
     owner_user_id: str | None
     created_at: str
     profile: dict[str, Any]
+    #: A deployment a reviewer validates imported algorithms against.
+    #: Refuses to be edited or deleted, which ``owner_user_id is None``
+    #: cannot express — that already means "filed before accounts", which
+    #: is shared rather than fixed. A validation result is only
+    #: comparable across bundles if the thing they ran on did not move
+    #: between them.
+    is_reference: bool = False
+    archived_at: str | None = None
 
 
 @dataclass
@@ -132,6 +156,14 @@ class StoredDecisionRun:
     status: str | None = None
     run_uri: str | None = None
     run_checksum: str | None = None
+    #: What this run is for. A validation run carries no verdict: it is
+    #: a reviewer watching an unpublished algorithm behave, and letting
+    #: one be approved would put a conclusion on evidence gathered
+    #: precisely because nobody had vouched for the code yet.
+    purpose: str = "production"
+    #: The code each candidate resolved to, in request order. Empty for
+    #: runs stored before this was recorded — see the backfill script.
+    candidates: list[dict[str, Any]] = field(default_factory=list)
     review_state: ReviewState = "unreviewed"
     reviewed_by: str | None = None
     reviewed_at: str | None = None
@@ -206,6 +238,33 @@ class TaskProfileRepository:
             self._items[profile_id] = stored
             return stored
 
+    def replace(self, profile_id: str, profile: dict[str, Any]) -> StoredTaskProfile:
+        """Overwrite a stored deployment, keeping who filed it and when.
+
+        Separate from `create` on purpose. `create` refuses to redefine
+        an id because the caller may not know it is taken and a silent
+        overwrite is exactly the HĐ-3.1 failure; this is reached only
+        after the service has established that nothing has ever been
+        measured against this deployment, so there is no run left to
+        mislead. The repository does not re-check that — one owner per
+        rule, and the rule spans two stores.
+
+        ``created_at`` and ``owner_user_id`` survive: correcting a
+        description does not make somebody else its author, nor make it
+        younger than it is.
+        """
+        with self._lock:
+            existing = self._items.get(profile_id)
+            if existing is None:
+                raise NotFoundError("task profile", profile_id)
+            updated = dataclasses.replace(
+                existing,
+                environment=str(profile.get("environment", {}).get("map", "")),
+                profile=profile,
+            )
+            self._items[profile_id] = updated
+            return updated
+
     def delete(self, profile_id: str) -> None:
         """Remove a deployment. Whether that is allowed is decided above.
 
@@ -278,6 +337,18 @@ class CandidateRepository:
     def list(self) -> list[StoredCandidate]:
         with self._lock:
             return list(self._items.values())
+
+
+def _decision_action(approve: bool, alone: bool) -> str:
+    """What to call this in the trail.
+
+    ``self_*`` when one account both created the run and signed it. The
+    outcome is identical; the record is not, and a reader has to be able
+    to tell a second pair of eyes from the absence of one.
+    """
+    if alone:
+        return "self_approve_config" if approve else "self_reject_config"
+    return "approve_config" if approve else "reject_config"
 
 
 @dataclass
@@ -385,6 +456,7 @@ class DecisionRunRepository:
         actor_user_id: str | None,
         username: str,
         comment: str,
+        relaxed: bool = False,
     ) -> StoredDecisionRun:
         """Approve or reject this run's recommendation as a configuration.
 
@@ -422,7 +494,8 @@ class DecisionRunRepository:
                     "stands; the way to change a recommendation is a new run, which leaves "
                     "both records in place"
                 )
-            if actor_user_id is not None and actor_user_id == run.created_by:
+            own_run = actor_user_id is not None and actor_user_id == run.created_by
+            if own_run and not relaxed:
                 raise InvalidStateError(
                     f"account {actor_user_id} started decision run {run_id} and cannot approve "
                     "its own recommendation (HĐ-14, separation of duties). Whoever chose the "
@@ -434,7 +507,7 @@ class DecisionRunRepository:
             run.config_decided_at = now_iso()
             self._append(
                 run_id,
-                "approve_config" if approve else "reject_config",
+                _decision_action(approve, own_run and relaxed),
                 actor_user_id,
                 username,
                 previous,
@@ -499,6 +572,30 @@ class DecisionRunRepository:
         if stored is None:
             raise NotFoundError("decision run", run_id)
         return stored
+
+    def append_event(  # noqa: PLR0913 - one audit row, one argument each
+        self,
+        run_id: str,
+        action: ReviewAction,
+        actor_user_id: str | None,
+        username: str,
+        previous_state: str,
+        new_state: str,
+        comment: str,
+    ) -> None:
+        """Add a row to a run's journal without moving the run.
+
+        For the things that happen *to* a decision rather than *in* it —
+        an algorithm it rested on being turned off, for instance. The
+        state does not change, which is the point: the system is not
+        deciding anything on a person's behalf, only recording that the
+        ground moved.
+        """
+        with self._lock:
+            self._require(run_id)
+            self._append(
+                run_id, action, actor_user_id, username, previous_state, new_state, comment
+            )
 
     def _append(  # noqa: PLR0913 - one audit row, one argument each
         self,

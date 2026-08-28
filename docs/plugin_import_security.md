@@ -95,19 +95,37 @@ runs*, *a crash is contained*, *nothing else is*.
 
 ## 5. Who may import
 
-**Administrators only**, checked as `user.is_admin`.
+**Holders of the `algorithm.import` capability**, which under contract
+7.0.0 means the `reviewer` package. Checked with
+`require_capability("algorithm.import")`, one call in one place.
 
-Admin is granted by deployment configuration (`PLANBENCH_ADMIN_NICKNAMES`
-/ `PLANBENCH_ADMIN_EMAILS`), never by anything a user can type — see
-`account_service.apply_admin_policy`. So "who may upload code" is a
-question the deployment answers, not one the sign-up form answers.
+This replaces the interim `user.is_admin` check, and the swap is not
+cosmetic. `is_admin` conflated two unrelated jobs — running the server
+and vouching for code — so the account that rotates an API key was also
+the only account that could put a planner on the machine. They are now
+separate packages: `admin` operates the deployment and holds **no**
+`algorithm.*` capability beyond reading the catalogue and the
+kill-switch; `reviewer` vouches for code and holds no server settings.
+Somebody doing both jobs carries both roles, and the audit row names
+which capability authorised each act.
 
-This is the interim rule. A finer grant — a per-user capability, or a
-review queue — is expected later; the check is one call in one place so
-that replacing it does not mean finding it.
+Roles are granted by deployment configuration or by an administrator
+through `/admin/users`, never by anything a user can type at sign-up —
+see `account_service.apply_role_policy`. So "who may upload code" stays
+a question the deployment answers.
 
-Every other read path stays open: seeing an imported algorithm, and
-seeing why it cannot run, needs no privilege. Only creating one does.
+**Importing is no longer the whole story.** Uploading a bundle now lands
+it validated-but-unpublished; nothing an engineer can select. A second,
+separate act — `algorithm.publish` — is what puts a specific revision in
+front of everyone, and under `separation_of_duties: strict` the reviewer
+who uploaded a revision cannot be the one who publishes it. The review
+queue this section anticipated is that pair of states.
+
+Every read path stays open to any signed-in account: seeing an imported
+algorithm, and seeing why it cannot run, needs no privilege. Reading the
+*manifest in full* — entry point, file listing, conformance log — does,
+because those describe code rather than capability, and they are gated
+on `algorithm.inspect`.
 
 ## 6. Ceilings
 

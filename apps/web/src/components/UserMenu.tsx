@@ -17,6 +17,18 @@ import { clearSession, type SessionUser } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import { useDismiss } from "@/lib/useDismiss";
 
+/** Which badges to show, in a stable order.
+ *
+ * `demo_owner` replaces the rest rather than joining them: it *is* every
+ * capability, so listing it beside three business packages would read as
+ * four jobs when it is one exception.
+ */
+function roleBadges(user: SessionUser): string[] {
+  const roles = user.roles ?? [];
+  if (roles.includes("demo_owner")) return ["demo_owner"];
+  return ["engineer", "reviewer", "admin"].filter((role) => roles.includes(role));
+}
+
 export function UserMenu({ user }: { user: SessionUser | null }) {
   const { t } = useTranslation();
   const router = useRouter();
@@ -65,11 +77,21 @@ export function UserMenu({ user }: { user: SessionUser | null }) {
             </div>
             <div style={{ fontWeight: 600 }}>
               {name}
-              {user.is_admin ? (
-                <span className="badge warn" style={{ marginLeft: 6 }}>
-                  {t("topbar.admin")}
+              {/* Every package, not only the administrator one. Somebody
+                  holding two roles is doing two jobs, and a badge that
+                  showed one of them would make the other invisible —
+                  including to them, when they wonder why a button is
+                  there. A demo owner shows that name alone: it is not a
+                  third role beside the others, it is the whole set. */}
+              {roleBadges(user).map((role) => (
+                <span
+                  key={role}
+                  className={`badge ${role === "demo_owner" ? "warn" : ""}`}
+                  style={{ marginLeft: 6 }}
+                >
+                  {t(`topbar.role.${role}`)}
                 </span>
-              ) : null}
+              ))}
             </div>
             {user.email ? (
               <div className="muted session-email" style={{ fontSize: 11, maxWidth: "22ch" }}>

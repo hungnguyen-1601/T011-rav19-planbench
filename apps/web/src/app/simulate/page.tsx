@@ -143,6 +143,7 @@ export default function TestBenchPage() {
 
   const [map, setMap] = useState<MapData | null>(null);
   const [staged, setStaged] = useState<StagedEpisode | null>(null);
+  const [stagedMap, setStagedMap] = useState<{ id: string; version: number } | null>(null);
   const [plan, setPlan] = useState<PlanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -266,6 +267,11 @@ export default function TestBenchPage() {
     setStaged(episode);
     const resource = await api.getMap(episode.map_id);
     setMap(resource.map_data);
+    /* **Which walls these are.** The deployment names its map by a path
+       carrying a version, so the bench can be running an older grid than
+       the one the editor just saved — and until this was on screen there
+       was no way to tell from here. */
+    setStagedMap({ id: resource.id, version: resource.version });
     return episode;
   }, [profileId, mission, choice, seed]);
 
@@ -654,7 +660,7 @@ export default function TestBenchPage() {
             </div>
           )}
           {staged ? (
-            <footer className="deployment-condition-footer" title={staged.episode_context_id}><span>{t("bench.contextId")}</span><code>{shortContextId(staged.episode_context_id)}</code><span>{t("bench.contextIdNote")}</span></footer>
+            <footer className="deployment-condition-footer" title={staged.episode_context_id}><span>{t("bench.contextId")}</span><code>{shortContextId(staged.episode_context_id)}</code><span>{t("bench.contextIdNote")}</span>{stagedMap ? <span>{t("bench.mapVersion", { id: stagedMap.id, version: String(stagedMap.version) })}</span> : null}</footer>
           ) : null}
         </section>
       ) : null}

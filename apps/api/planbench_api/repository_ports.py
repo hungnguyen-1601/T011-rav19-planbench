@@ -21,7 +21,14 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from planbench_api.accounts import AuthProvider, OAuthAccount, StoredUser, User
+from planbench_api.accounts import (
+    AccountEvent,
+    AuthProvider,
+    OAuthAccount,
+    Role,
+    StoredUser,
+    User,
+)
 from planbench_api.approval import ApprovalRecord, BenchmarkState
 from planbench_api.repositories import (
     StoredBenchmark,
@@ -96,7 +103,7 @@ class UserRepositoryPort(Protocol):
         email: str = "",
         display_name: str = "",
         avatar_url: str = "",
-        is_admin: bool = False,
+        roles: frozenset[Role] | set[Role] = frozenset(),
         password_hash: str | None = None,
     ) -> User: ...
     def get(self, user_id: str) -> User: ...
@@ -112,7 +119,19 @@ class UserRepositoryPort(Protocol):
         display_name: str | None = None,
         avatar_url: str | None = None,
     ) -> User: ...
-    def set_admin(self, user_id: str, is_admin: bool) -> User: ...
+    def set_roles(
+        self,
+        user_id: str,
+        roles: frozenset[Role] | set[Role],
+        *,
+        granted_by_user_id: str | None = None,
+        reason: str = "",
+    ) -> User: ...
+    def set_disabled(self, user_id: str, disabled: bool) -> User: ...
+    def record_sign_in(self, user_id: str) -> None: ...
+    def list_with_role(self, role: Role) -> list[User]: ...
+    def record_account_event(self, event: AccountEvent) -> AccountEvent: ...
+    def list_account_events(self, user_id: str | None = None) -> list[AccountEvent]: ...
     def set_password(self, user_id: str, password_hash: str) -> User: ...
     def list(self) -> list[User]: ...
     def link_oauth(

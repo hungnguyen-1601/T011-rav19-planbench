@@ -1,11 +1,23 @@
-"""Authentication: who the caller is. Not what they may do.
+"""Authentication: who the caller is, and which capabilities that buys.
 
-Authorization moved out of this module in the accounts refactor. There
-is no ``require_roles`` any more, because there are no roles to require:
-every signed-in person is a member, and what they may do depends on the
-benchmark in front of them (see :mod:`planbench_api.approval`). Keeping
-a role check here would have been a second, weaker answer to a question
-that ownership already answers.
+Two questions, deliberately kept apart in one module because they share
+one thing — the token — and nothing else. ``decode_token`` answers *who*;
+``require_capability`` answers *what kind of action*. Neither answers
+*which record*: ownership does that, at the call site, and both
+conditions have to hold (HĐ-14.1).
+
+``require_roles`` is not coming back. A dependency that names roles
+spreads the role table across every router, so the day a capability
+moves between packages is the day somebody greps for it and misses one.
+Routes name the **capability** they need; the mapping from role to
+capability lives in exactly one dict here.
+
+Capability packages do not nest. ``reviewer`` is not ``engineer`` plus
+extras — it lacks ``resource.write`` and ``run.create`` on purpose, and
+``admin`` holds no business capability at all. A person who needs two
+packages holds two roles; the audit trail records which capability
+authorised each action, not the caller's highest-ranked role, because
+"highest" is not a thing here.
 
 **The token carries a user id, never a nickname.** Nicknames are how
 people find each other and they can be changed; an authorization key
@@ -26,6 +38,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
@@ -35,8 +48,15 @@ from fastapi import Depends, Request
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, ConfigDict
 
-from planbench_api.accounts import NicknameError, User
+from planbench_api.accounts import (
+    Capability,
+    NicknameError,
+    Role,
+    User,
+    roles_granting,
+)
 from planbench_api.config import Settings
+from planbench_api.deployment import DeploymentPolicy, load_policy, parse_seed_roles
 from planbench_api.errors import NotFoundError
 from planbench_api.repository_ports import UserRepositoryPort
 
@@ -83,11 +103,17 @@ class AuthService:
     which the previous in-memory directory could not manage.
     """
 
-    def __init__(self, settings: Settings, users: UserRepositoryPort) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        users: UserRepositoryPort,
+        policy: DeploymentPolicy | None = None,
+    ) -> None:
         self._users = users
         self._secret = settings.auth_secret or settings.jwt_secret or secrets.token_urlsafe(48)
         self._token_ttl = timedelta(minutes=settings.jwt_ttl_minutes)
         self._dev_login = settings.enable_dev_login
+        self._policy = policy or load_policy(settings)
         self._admin_nicknames = frozenset(
             part.strip().casefold() for part in settings.admin_nicknames.split(",") if part.strip()
         )
@@ -116,8 +142,10 @@ class AuthService:
         entries = [entry for entry in settings.seed_users.split(",") if entry.strip()]
         if entries:
             for entry in entries:
-                nickname, password = _parse_seed_entry(entry)
-                self._ensure_password_user(nickname, password)
+                nickname, roles, password = _parse_seed_entry(entry)
+                self._ensure_password_user(
+                    nickname, password, parse_seed_roles(roles, self._policy.profile)
+                )
             return
         # Fresh checkout: one usable account, password generated per
         # process and logged once. Never hardcoded, never persisted to a
@@ -133,8 +161,23 @@ class AuthService:
             # stays safe to keep in a log aggregator.
             logger.warning("developer password: %s", password)
 
-    def _ensure_password_user(self, nickname: str, password: str) -> User | None:
+    def _ensure_password_user(
+        self, nickname: str, password: str, roles: frozenset[Role] = frozenset()
+    ) -> User | None:
         """Create the account, or bring an existing one back in step.
+
+        **Roles are reconciled the same way the password is, and that is
+        what carries an installed copy across an upgrade.** A desktop
+        install created its account long before roles existed; nothing
+        else would ever grant them, so the account the person signs in
+        with every day would come back from the update holding nothing.
+        Reconciling here — on the profiles that state roles in their
+        configuration — means the upgrade is invisible to them, which is
+        the only acceptable outcome for a copy somebody else is using.
+
+        It **adds** what is missing and never removes what an
+        administrator granted through the UI: configuration describes a
+        floor, not a ceiling.
 
         Returns the account only when it was *created*, so the caller can
         tell a fresh deployment from a returning one.
@@ -163,12 +206,13 @@ class AuthService:
                     "seed account password brought in step with PLANBENCH_SEED_USERS",
                     extra={"context": {"nickname": nickname}},
                 )
+            self._reconcile_seed_roles(existing, roles)
             return None
         try:
             return self._users.create(
                 nickname=nickname,
                 display_name=nickname,
-                is_admin=nickname.casefold() in self._admin_nicknames,
+                roles=self._roles_at_creation(nickname, roles),
                 password_hash=hash_password(password),
             )
         except NicknameError as exc:
@@ -176,6 +220,46 @@ class AuthService:
             # rest of the sign-in paths are unaffected.
             logger.warning("skipping seed user %r: %s", nickname, exc)
             return None
+
+    def _roles_at_creation(self, nickname: str, roles: frozenset[Role]) -> frozenset[Role]:
+        """What a seeded account is born with.
+
+        The entry's own roles, plus ``admin`` when the deployment listed
+        this nickname as one — ``PLANBENCH_ADMIN_NICKNAMES`` predates the
+        seed roles field and installed copies still carry it, so it has
+        to keep meaning what it meant. Falls back to the default grant
+        when the entry says nothing, so an account is never created with
+        no capability at all.
+        """
+        granted = set(roles)
+        if nickname.casefold() in self._admin_nicknames:
+            granted.add(Role.ADMIN)
+        if not granted:
+            granted.update(self._policy.default_roles)
+        return frozenset(granted)
+
+    def _reconcile_seed_roles(self, user: User, roles: frozenset[Role]) -> None:
+        """Add the profile's roles to an account that predates them."""
+        if not roles or not self._policy.reconciles_seed_roles:
+            return
+        missing = roles - user.roles
+        if not missing:
+            return
+        self._users.set_roles(
+            user.id,
+            user.roles | missing,
+            reason=f"reconciled from the {self._policy.profile.value} deployment profile",
+        )
+        logger.info(
+            "granted seed account the roles its deployment profile states",
+            extra={
+                "context": {
+                    "nickname": user.nickname,
+                    "granted": sorted(role.value for role in missing),
+                    "profile": self._policy.profile.value,
+                }
+            },
+        )
 
     # -- sign-in -------------------------------------------------------
 
@@ -198,6 +282,16 @@ class AuthService:
         return stored.user
 
     def issue_token(self, user: User) -> tuple[str, int]:
+        # Stamped here rather than at each sign-in route, because this is
+        # the one place every route that hands out a session goes
+        # through — password, OAuth exchange, and whatever comes next.
+        # Failure to record it must not cost somebody their sign-in: the
+        # column exists to fill a column in an administrator's table, and
+        # that is not worth an outage.
+        try:
+            self._users.record_sign_in(user.id)
+        except Exception:  # noqa: BLE001 - never block a sign-in over bookkeeping
+            logger.warning("could not record the sign-in time", exc_info=True)
         expires_at = datetime.now(UTC) + self._token_ttl
         payload = {"sub": user.id, "exp": expires_at}
         token = jwt.encode(payload, self._secret, algorithm=ALGORITHM)
@@ -214,25 +308,46 @@ class AuthService:
         if not user_id:
             raise AuthError("malformed token payload")
         try:
-            # Read through to storage every time: a deleted account, or a
-            # renamed one, must not keep acting on a stale token body.
-            return self._users.get(str(user_id))
+            # Read through to storage every time: a deleted account, a
+            # renamed one, or one whose roles changed a minute ago must
+            # not keep acting on a stale token body.
+            user = self._users.get(str(user_id))
         except NotFoundError as exc:
             raise AuthError("this account no longer exists") from exc
+        if user.disabled:
+            # Checked here rather than at each route, because a disabled
+            # account has to stop being able to do anything at all —
+            # including the reads that carry no capability check.
+            raise AuthError("this account has been disabled")
+        return user
 
 
-def _parse_seed_entry(entry: str) -> tuple[str, str]:
-    """``name:password``, or the legacy ``name:role:password``.
+def _parse_seed_entry(entry: str) -> tuple[str, str, str]:
+    """``name:roles:password``, or ``name:password``.
 
-    The role field is accepted and discarded so an existing deployment's
-    PLANBENCH_SEED_USERS keeps working after the refactor.
+    Returns ``(nickname, roles, password)`` with ``roles`` empty for the
+    two-part form.
+
+    **The middle field means something again.** It was in the original
+    format, then spent a release being parsed and thrown away — the
+    roleless period had nothing to do with it. Reviving it rather than
+    inventing a fourth variable keeps one line describing one account,
+    which matters on a desktop install where three of them sit in a
+    template: `admin:engineer+reviewer+admin:admin`.
+
+    Roles are joined with ``+`` because ``,`` already separates entries
+    and ``:`` already separates fields. Which roles are honoured is a
+    question about the deployment profile, answered in
+    :func:`planbench_api.deployment.parse_seed_roles`, not here.
     """
     parts = entry.strip().split(":")
     if len(parts) == 2:
-        return parts[0].strip(), parts[1]
+        return parts[0].strip(), "", parts[1]
     if len(parts) >= 3:
-        return parts[0].strip(), ":".join(parts[2:])
-    raise ValueError(f"PLANBENCH_SEED_USERS entry {entry!r} must be 'name:password'")
+        return parts[0].strip(), parts[1].strip(), ":".join(parts[2:])
+    raise ValueError(
+        f"PLANBENCH_SEED_USERS entry {entry!r} must be 'name:password' or 'name:roles:password'"
+    )
 
 
 def get_auth(request: Request) -> AuthService:
@@ -262,3 +377,54 @@ def require_nickname(user: CurrentUser) -> User:
 
 
 ActiveUser = Annotated[User, Depends(require_nickname)]
+
+
+def _holders_of(capability: Capability, users: UserRepositoryPort) -> list[str]:
+    """Nicknames a caller could ask, for the refusal message.
+
+    Capped, and it names people rather than roles alone, because "ask an
+    administrator" is not actionable in a deployment where the person
+    reading it does not know who that is.
+    """
+    names: set[str] = set()
+    for role in roles_granting(capability):
+        for holder in users.list_with_role(role):
+            if holder.nickname and not holder.disabled:
+                names.add(holder.nickname)
+    return sorted(names)[:5]
+
+
+def require_capability(capability: Capability) -> Callable[..., User]:
+    """A dependency that admits callers holding ``capability``.
+
+    Routes name the capability, never the role. The mapping lives in one
+    dict in :mod:`planbench_api.accounts`, so moving a capability between
+    packages is a two-line diff there rather than a search through every
+    router — and the day somebody misses one of those greps is the day a
+    route keeps admitting a package that no longer owns the action.
+
+    This is authorisation's *first* condition. Ownership is the second,
+    and it stays at the call site: only the route knows which record the
+    caller is reaching for.
+    """
+
+    def dependency(request: Request, user: ActiveUser) -> User:
+        if user.can(capability):
+            return user
+        packages = ", ".join(role.value for role in roles_granting(capability)) or "no role"
+        message = f"this needs the {packages} role"
+        holders = _holders_of(capability, request.app.state.repos.users)
+        if holders:
+            message += f". Members who hold it: {', '.join(holders)}"
+        raise Forbidden(message)
+
+    return dependency
+
+
+#: Ready-made dependencies for the capabilities used across many routers.
+#: Declared here so a router writes ``user: ReadingUser`` rather than
+#: repeating the ``Annotated[...]`` spelling at every endpoint.
+ReadingUser = Annotated[User, Depends(require_capability(Capability.RESOURCE_READ))]
+WritingUser = Annotated[User, Depends(require_capability(Capability.RESOURCE_WRITE))]
+SimulatingUser = Annotated[User, Depends(require_capability(Capability.SIMULATION_RUN))]
+CataloguingUser = Annotated[User, Depends(require_capability(Capability.ALGORITHM_CATALOGUE))]
