@@ -161,8 +161,12 @@ describe("what stays above the strip", () => {
 describe("the deployments table is paged with the same control", () => {
   it("cuts at ten and draws the shared pager", () => {
     expect(PAGE).toContain('from "@/components/Pager"');
-    expect(PAGE).toContain("usePagination(profiles)");
-    expect(PAGE).toContain("{paged.visible.map((profile) => (");
+    /* Paged over the sorted list rather than the raw one. Paging
+       `profiles` while rendering a sorted copy would cut the wrong ten
+       — the first page would hold the ten oldest, ordered newest-first
+       among themselves, which looks like the sort simply not working. */
+    expect(PAGE).toContain("usePagination(newestFirst)");
+    expect(PAGE).toContain("paged.visible.map((profile) => (");
     expect(PAGE).toContain('labelKey="deployments.pager.label"');
   });
 

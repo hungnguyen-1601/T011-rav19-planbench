@@ -21,7 +21,7 @@
  */
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DecisionTabs } from "@/components/DecisionTabs";
 import { DeploymentForm } from "@/components/DeploymentForm";
 import { Icon } from "@/components/Icon";
@@ -80,10 +80,32 @@ export default function DeploymentsPage() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const tab = useDeploymentsTab();
+  /** Newest first.
+   *
+   * The API returns them oldest first, which is right for it — that
+   * order is stable, and several callers depend on a deployment keeping
+   * its place. It is the wrong way round for a person reading the list:
+   * the deployment somebody wants is nearly always the one they just
+   * filed, and it was landing on the last page of ten.
+   *
+   * Sorted here rather than in the repository so the change stays with
+   * the reader who wanted it. `created_at` is an ISO timestamp, so
+   * string order is time order; the id breaks a tie, because two
+   * deployments filed in the same second must not swap places between
+   * renders.
+   */
+  const newestFirst = useMemo(
+    () =>
+      [...profiles].sort(
+        (a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id),
+      ),
+    [profiles],
+  );
+
   /* Ten a page. No filters on this page, so the reset key is constant —
      the list only ever changes by something being filed or deleted, and
      both of those already re-fetch. */
-  const paged = usePagination(profiles);
+  const paged = usePagination(newestFirst);
 
   const refresh = useCallback(async () => {
     setLoading(true);
