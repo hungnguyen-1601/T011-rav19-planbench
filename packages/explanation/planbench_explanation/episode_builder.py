@@ -255,6 +255,7 @@ def build_episode_packet(
     trace_a: Mapping[str, Any] | None,
     trace_b: Mapping[str, Any] | None,
     tie_epsilon: float,
+    outcome_margin: float | None = None,
     robot: RobotFacts | None = None,
     route: RouteFeatures | None = None,
     run_packet_checksum: str = "",
@@ -287,6 +288,7 @@ def build_episode_packet(
         outcome_a=outcomes[candidate_a],
         outcome_b=outcomes[candidate_b],
         tie_epsilon=tie_epsilon,
+        outcome_margin=outcome_margin,
     )
 
     width = None

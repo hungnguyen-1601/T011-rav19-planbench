@@ -47,6 +47,28 @@ class EpisodePreregistration:
     #: the [0, 1] utility range.
     tie_epsilon: float = 0.005
 
+    #: The margin below which two episodes that both reached the goal
+    #: are one answer, as a fraction of the slower one's travel time.
+    #:
+    #: **Written down here on 2026-08-29, after the distribution was
+    #: visible, and that has to be said rather than hidden.** The branch
+    #: it feeds exists because a candidate gated out at run level is
+    #: scored on no episode at all, so every pairing with a gated side
+    #: fell through to "undecidable" — including episodes where the two
+    #: differed by a third of the journey, which then read downstream as
+    #: "these were alike".
+    #:
+    #: A tenth is not the number that separates this data; the gaps in
+    #: hand are 20-46% on one side and 1-10% on the other, and anything
+    #: from 0.11 to 0.19 would split them identically. It is a tenth
+    #: because a tenth of a journey is the smallest difference this
+    #: deployment's own efficiency objective would notice, and because a
+    #: round number nobody can tune is worth more here than a fitted one.
+    #: The honest reading is that this margin is **not validated**: it is
+    #: declared, and the first set it is applied to is the set it was
+    #: declared after seeing.
+    outcome_margin: float = 0.10
+
     #: Vetoes. A configuration that violates one is not compared on
     #: anything else, however well it reads.
     #:
@@ -204,6 +226,7 @@ class EpisodePreregistration:
     def as_dict(self) -> dict[str, object]:
         return {
             "tie_epsilon": self.tie_epsilon,
+            "outcome_margin": self.outcome_margin,
             "hard_constraints": [list(item) for item in self.hard_constraints],
             "primary_endpoint": self.primary_endpoint,
             "primary_unit": self.primary_unit,

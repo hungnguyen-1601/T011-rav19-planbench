@@ -641,3 +641,104 @@ class TestTheBudget:
         assert packet_bytes(packet) == len(
             canonical_json(packet.model_dump(mode="json")).encode("utf-8")
         )
+
+
+class TestBothArrivedAndOneTookLonger:
+    """The branch that was answering a different question from the one it looked like.
+
+    A candidate that fails a run-level gate is scored on no episode at
+    all — every row carries ``episode_decision_utility: None`` — so a
+    pairing with a gated side fell through to ``undecidable`` on all
+    thirty of its episodes, including the ones where the two differed by
+    a third of the journey. Downstream that read as "these were alike":
+    no direction, so no contrast could be attached, so the packet said
+    nothing about a difference plainly visible in the numbers.
+    """
+
+    def _pair(self, travel_a: float, travel_b: float):  # type: ignore[no-untyped-def]
+        return (
+            CandidateOutcome(
+                candidate_id="A", success=True, collision_count=0, travel_time_s=travel_a
+            ),
+            CandidateOutcome(
+                candidate_id="B", success=True, collision_count=0, travel_time_s=travel_b
+            ),
+        )
+
+    def _verdict(self, travel_a: float, travel_b: float, margin: float | None):  # type: ignore[no-untyped-def]
+        a, b = self._pair(travel_a, travel_b)
+        return build_verdict(
+            episode_context_id="ep-1",
+            candidate_a="A",
+            candidate_b="B",
+            outcome_a=a,
+            outcome_b=b,
+            tie_epsilon=0.005,
+            outcome_margin=margin,
+        )
+
+    def test_a_third_of_the_journey_decides_the_episode(self) -> None:
+        verdict = self._verdict(17.05, 24.70, 0.10)
+        assert verdict.basis == "outcome_margin"
+        assert verdict.winner == "A"
+        assert verdict.loser == "B"
+
+    def test_the_faster_side_wins_whichever_way_round_it_is(self) -> None:
+        """Less is better, and that is the whole of the policy here."""
+        assert self._verdict(24.70, 17.05, 0.10).winner == "B"
+
+    def test_a_gap_under_the_margin_stays_undecidable(self) -> None:
+        verdict = self._verdict(24.45, 24.15, 0.10)
+        assert verdict.basis == "undecidable"
+        assert verdict.winner is None
+
+    def test_without_a_margin_nothing_changes(self) -> None:
+        """`None` is the old behaviour, so no caller written before this
+        branch existed is silently re-decided by it."""
+        assert self._verdict(17.05, 24.70, None).basis == "undecidable"
+
+    def test_a_negative_margin_is_refused(self) -> None:
+        with pytest.raises(EpisodePacketRefusal):
+            self._verdict(17.05, 24.70, -0.1)
+
+    def test_utility_still_decides_when_both_sides_have_it(self) -> None:
+        """This branch is the fallback for a pairing the run could not
+        score, not a second opinion on one it could."""
+        a, b = self._pair(17.05, 24.70)
+        verdict = build_verdict(
+            episode_context_id="ep-1",
+            candidate_a="A",
+            candidate_b="B",
+            outcome_a=a.model_copy(update={"decision_utility": 0.10}),
+            outcome_b=b.model_copy(update={"decision_utility": 0.90}),
+            tie_epsilon=0.005,
+            outcome_margin=0.10,
+        )
+        assert verdict.basis == "episode_decision_utility"
+        assert verdict.winner == "B", "the slower side scored better and the run said so"
+
+    def test_a_failure_is_not_re_decided_on_time(self) -> None:
+        """A side that never arrived has a travel time only because the
+        episode was cut off at the limit; ranking on it would turn a
+        timeout into a narrow loss."""
+        a, b = self._pair(17.05, 60.0)
+        verdict = build_verdict(
+            episode_context_id="ep-1",
+            candidate_a="A",
+            candidate_b="B",
+            outcome_a=a,
+            outcome_b=b.model_copy(update={"success": False, "failure_reason": "timeout"}),
+            tie_epsilon=0.005,
+            outcome_margin=0.10,
+        )
+        assert verdict.basis == "outcome_only"
+
+    def test_a_margin_verdict_must_name_a_winner(self) -> None:
+        with pytest.raises((EpisodePacketRefusal, ValidationError)):
+            EpisodeVerdict(
+                episode_context_id="ep-1",
+                candidate_a="A",
+                candidate_b="B",
+                basis="outcome_margin",
+                undecided_reason="nobody won",
+            )

@@ -424,9 +424,7 @@ def compare_at_time(
         b=sample_at(b, index_b, deployment=deployment),
         partial_advantage=(
             partial_utility(a, index_a, deployment=deployment, settings=settings, anchors=anchors)
-            - partial_utility(
-                b, index_b, deployment=deployment, settings=settings, anchors=anchors
-            )
+            - partial_utility(b, index_b, deployment=deployment, settings=settings, anchors=anchors)
         ),
     )
 
@@ -455,8 +453,6 @@ def compare_at_progress(
         b=sample_at(b, index_b, deployment=deployment),
         partial_advantage=(
             partial_utility(a, index_a, deployment=deployment, settings=settings, anchors=anchors)
-            - partial_utility(
-                b, index_b, deployment=deployment, settings=settings, anchors=anchors
-            )
+            - partial_utility(b, index_b, deployment=deployment, settings=settings, anchors=anchors)
         ),
     )

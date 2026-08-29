@@ -258,6 +258,7 @@ def cases_from(report_path: Path, traces_root: Path) -> list[dict[str, Any]]:
             trace_a=trace_for(traces_root, candidate_a, episode),
             trace_b=trace_for(traces_root, candidate_b, episode),
             tie_epsilon=EPISODE_PREREGISTRATION.tie_epsilon,
+            outcome_margin=EPISODE_PREREGISTRATION.outcome_margin,
         )
         built.append(
             {
