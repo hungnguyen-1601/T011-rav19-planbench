@@ -338,3 +338,60 @@ class TestAnnotationsTravelWithTheirProposal:
         assert "bearing" not in HypothesisProposal.model_fields
         result = guarded(proposal(), bearing=CONTRAST)
         assert "bearing" not in result.response.proposals[0].model_dump()
+
+
+class TestOneRefNamesOneDetection:
+    """A candidate can trip the same detector twice in one episode.
+
+    The ref was the detector's name, the candidate's label and the
+    episode — unique only while that never happened. It happens: a run
+    where the local planner thrashes produces two replan storms with two
+    windows, and the view refused the whole packet because two facts
+    claimed one ref. Refusing was right; a citation naming two values is
+    one a reader cannot follow. What was wrong was the ref.
+    """
+
+    def _packet_with(self, count: int):  # type: ignore[no-untyped-def]
+        from test_explanation_episode_packet import build_packet
+
+        packet = build_packet()
+        # The second diagnosis is the one carrying a detection; the
+        # first belongs to the candidate nothing fired on.
+        diagnosis = packet.diagnoses[1]
+        first = diagnosis.detections[0]
+        detections = tuple(first.model_copy(update={"type": "replan_storm"}) for _ in range(count))
+        return packet.model_copy(
+            update={
+                "diagnoses": (
+                    *packet.diagnoses[:1],
+                    diagnosis.model_copy(update={"detections": detections}),
+                )
+            }
+        )
+
+    def test_two_of_a_kind_get_one_ref_each(self) -> None:
+        view = build_episode_view(self._packet_with(2))
+        refs = [f.ref for f in view.facts if f.ref.startswith("obs:replan_storm:")]
+        bare = [ref for ref in refs if "/" not in ref]
+        assert len(bare) == len(set(bare)) == 2, bare
+        assert all(ref.endswith(("#1", "#2")) for ref in bare), bare
+
+    def test_a_lone_detection_keeps_the_bare_ref(self) -> None:
+        """Numbered only where there is something to number: anything
+        already citing a single detection must keep resolving."""
+        view = build_episode_view(self._packet_with(1))
+        refs = [
+            f.ref for f in view.facts if f.ref.startswith("obs:replan_storm:") and "/" not in f.ref
+        ]
+        assert len(refs) == 1
+        assert "#" not in refs[0], refs[0]
+
+    def test_the_measurements_follow_their_own_detection(self) -> None:
+        """`{base}/{key}` hangs off the numbered base, so a measurement
+        cannot end up attached to the sibling."""
+        view = build_episode_view(self._packet_with(2))
+        measured = [
+            f.ref for f in view.facts if f.ref.startswith("obs:replan_storm:") and "/" in f.ref
+        ]
+        assert measured, "the fixture detection carries measurements"
+        assert all("#" in ref.split("/")[0] for ref in measured), measured

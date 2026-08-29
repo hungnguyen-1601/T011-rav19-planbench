@@ -296,8 +296,30 @@ def _diagnosis_facts(packet: EpisodePacket, aliases: Aliases) -> list[Fact]:
                     scope=scope,
                 )
             )
+        # **One ref, one detection.** The ref was the detector's name, the
+        # candidate's label and the episode, which is unique only while a
+        # candidate never trips the same detector twice in one episode.
+        # It does: a run where the local planner thrashes produces two
+        # separate replan storms with two separate windows, and both
+        # arrived claiming `obs:replan_storm:C5@…`. The view refuses a
+        # duplicated ref rather than letting one silently win, which is
+        # right — a citation that names two values is one a reader cannot
+        # follow — so the fix belongs here, in what the ref is made of.
+        #
+        # Numbered only where there is something to number. A lone
+        # detection keeps the bare ref it has always had, so nothing that
+        # cites one has to change; siblings are numbered from one, all of
+        # them, because `#1` beside `#2` says there are two while a bare
+        # ref beside `#2` reads as an error.
+        siblings: dict[str, int] = {}
+        for detection in diagnosis.detections:
+            siblings[detection.type] = siblings.get(detection.type, 0) + 1
+        occurrence: dict[str, int] = {}
         for detection in diagnosis.detections:
             base = f"obs:{detection.type}:{label}@{packet.episode_context_id}"
+            if siblings[detection.type] > 1:
+                occurrence[detection.type] = occurrence.get(detection.type, 0) + 1
+                base = f"{base}#{occurrence[detection.type]}"
             facts.append(
                 Fact(
                     ref=base,
