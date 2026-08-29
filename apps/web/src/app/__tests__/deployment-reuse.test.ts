@@ -221,3 +221,41 @@ describe("a sudden stop reopened after saving", () => {
     expect(timeBranch.slice(0, timeBranch.indexOf("</>"))).toContain("stopPointOf(motion)");
   });
 });
+
+describe("opening a deployment must not move its mission", () => {
+  it("restores the start and the goal from the document", () => {
+    /* `documentOf()` does not read the document's missions — it rebuilds
+       them from this component's `start` and `goal` on every file. So a
+       form opened on a stored deployment whose poses were never restored
+       files whatever those two happened to hold, and the goal lands
+       somewhere nobody chose. */
+    const hydration = FORM.slice(FORM.indexOf("Bring the map controls into line"));
+    const body = hydration.slice(0, hydration.indexOf("}, [draft, startFrom]);"));
+    expect(body).toContain("if (openedStart) setStart(openedStart);");
+    expect(body).toContain("if (openedGoal) setGoal(openedGoal);");
+  });
+
+  it("accepts both encodings HĐ-2 allows for a pose", () => {
+    // A profile is written with tuples; a validated model dumps objects.
+    // The store holds both, so reading only one silently drops the other
+    // and the mission comes back empty.
+    const hydration = FORM.slice(FORM.indexOf("Bring the map controls into line"));
+    const body = hydration.slice(0, hydration.indexOf("}, [draft, startFrom]);"));
+    expect(body).toContain("Array.isArray(value)");
+    expect(body).toContain('typeof each.x === "number"');
+  });
+
+  it("does not let the default library import overwrite what was opened", () => {
+    /* The race that caused this. That effect gives an *empty* form
+       something to draw by importing the default scenario and adopting
+       it — and adopting resets the mission onto the new walls. Opening a
+       stored deployment starts it anyway, because `source` is still
+       "library" and `mapData` is still null when the draft arrives, and
+       it finishes last. */
+    const guarded = FORM.slice(FORM.indexOf('source !== "library"'));
+    expect(guarded.slice(0, guarded.indexOf("beginAdoption()"))).toContain(
+      "if (startFrom) return;",
+    );
+    expect(FORM).toContain("[draft !== null, libraryName, source, startFrom]");
+  });
+});

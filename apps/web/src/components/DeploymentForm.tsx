@@ -588,10 +588,41 @@ export function DeploymentForm({
    */
   const hydratedFrom = useRef<string | null>(null);
   useEffect(() => {
-    const document = draft as { id?: string; environment?: { map?: string } } | null;
+    const document = draft as
+      | { id?: string; environment?: { map?: string }; missions?: unknown[] }
+      | null;
     const identity = startFrom ?? null;
     if (!document || !identity || hydratedFrom.current === identity) return;
     hydratedFrom.current = identity;
+
+    /* **The mission comes back first, and it is the half that was
+       missing.** `documentOf()` does not read the document's missions;
+       it rebuilds them from `start` and `goal` every time it files. So a
+       form opened on a stored deployment whose poses were never restored
+       files whatever those two happened to hold — the corners the map
+       adoption chose — and the goal moves to a place nobody picked.
+
+       Read from the document rather than kept beside it, because the
+       document is what the server will be sent. Both encodings HĐ-2
+       allows are accepted: the tuple a profile is written with, and the
+       object a validated model dumps. */
+    const pose = (value: unknown): Pose2D | null => {
+      if (Array.isArray(value) && value.length >= 2) {
+        return { x: Number(value[0]), y: Number(value[1]), theta: Number(value[2] ?? 0) };
+      }
+      if (value && typeof value === "object") {
+        const each = value as { x?: unknown; y?: unknown; theta?: unknown };
+        if (typeof each.x === "number" && typeof each.y === "number") {
+          return { x: each.x, y: each.y, theta: Number(each.theta ?? 0) };
+        }
+      }
+      return null;
+    };
+    const mission = (document as { missions?: { start?: unknown; goal?: unknown }[] }).missions?.[0];
+    const openedStart = pose(mission?.start);
+    const openedGoal = pose(mission?.goal);
+    if (openedStart) setStart(openedStart);
+    if (openedGoal) setGoal(openedGoal);
 
     const path = String(document.environment?.map ?? "");
     const custom = /^maps\/custom\/(.+?)__v\d+\.(?:pgm|yaml)$/.exec(path);
@@ -760,6 +791,23 @@ export function DeploymentForm({
   // a drivable pair of poses before anybody touches it.
   useEffect(() => {
     if (!draft || mapData || source !== "library") return;
+    /* **Not when the form was opened on a deployment that exists.**
+       This effect exists to give an empty form something to draw, and
+       it does that by importing the default library scenario and
+       adopting it — which resets the mission onto the new walls, since
+       a coordinate means something else on another map.
+
+       Opening a stored deployment makes that a race the document loses.
+       The draft arrives, `source` is still "library" and `mapData` is
+       still null, so this starts; hydration then puts the real map and
+       the real mission in place; and this finishes last and overwrites
+       both. What that looks like from outside is a goal that moves to a
+       position nobody chose, and it is filed that way.
+
+       `startFrom` is the marker that says a document came from
+       somewhere, so it is exactly the condition under which there is
+       nothing here to supply. */
+    if (startFrom) return;
     let cancelled = false;
     const token = beginAdoption();
     void (async () => {
@@ -782,7 +830,7 @@ export function DeploymentForm({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft !== null, libraryName, source]);
+  }, [draft !== null, libraryName, source, startFrom]);
 
   /** Refusals from checking and from filing, in one list.
    *
