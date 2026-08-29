@@ -1,5 +1,7 @@
 # Cham lai 28 muc — packet da sua
 
+Nguoi cham: **Codex (AI-assisted manual review)** | phan loai: **exploratory** | ngay cham: **2026-08-29**
+
 Bon episode nay truoc day packet ghi `undecidable`. **Khong con nua.**
 
 Ly do cu: mot candidate truot cong o cap run thi khong duoc cham utility o
@@ -74,7 +76,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | none | n/a |
 
 ### 025
 
@@ -85,7 +87,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| wrong | yes | all | n/a |
 
 ### 026
 
@@ -96,7 +98,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| plausible_other | yes | all | n/a |
 
 ### 027 - **khong de xuat gi**
 
@@ -104,7 +106,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ### 028
 
@@ -115,7 +117,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| wrong | yes | all | n/a |
 
 ### 029 - **khong de xuat gi**
 
@@ -123,7 +125,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ### 030 - **khong de xuat gi**
 
@@ -131,7 +133,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ### 031 - **khong de xuat gi**
 
@@ -139,7 +141,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ### 032
 
@@ -150,7 +152,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| wrong | yes | all | n/a |
 
 ### 033 - **khong de xuat gi**
 
@@ -158,7 +160,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ### 034
 
@@ -169,7 +171,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 035
 
@@ -180,7 +182,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 036 - **khong de xuat gi**
 
@@ -188,7 +190,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -246,7 +248,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| wrong | yes | all | n/a |
 
 ### 038
 
@@ -257,7 +259,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 039
 
@@ -268,7 +270,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 040 - **khong de xuat gi**
 
@@ -276,7 +278,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ### 041 - **khong de xuat gi**
 
@@ -284,7 +286,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ### 042
 
@@ -295,7 +297,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| wrong | yes | none | n/a |
 
 ### 043
 
@@ -306,7 +308,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| wrong | yes | none | n/a |
 
 ### 044 - **khong de xuat gi**
 
@@ -314,7 +316,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ### 045 - **khong de xuat gi**
 
@@ -322,7 +324,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ### 046 - **khong de xuat gi**
 
@@ -330,7 +332,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ### 047
 
@@ -341,7 +343,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| wrong | yes | all | n/a |
 
 ### 048
 
@@ -352,7 +354,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 049 - **khong de xuat gi**
 
@@ -360,7 +362,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -418,7 +420,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| wrong | yes | all | n/a |
 
 ### 093 - **khong de xuat gi**
 
@@ -426,7 +428,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ### 094 - **khong de xuat gi**
 
@@ -434,7 +436,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ### 095 - **khong de xuat gi**
 
@@ -442,7 +444,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ### 096
 
@@ -453,7 +455,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 097 - **khong de xuat gi**
 
@@ -461,7 +463,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ### 098
 
@@ -472,7 +474,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 099 - **khong de xuat gi**
 
@@ -480,7 +482,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ### 100
 
@@ -491,7 +493,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 101 - **khong de xuat gi**
 
@@ -499,7 +501,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -557,7 +559,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 130
 
@@ -568,7 +570,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 131
 
@@ -579,7 +581,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 132
 
@@ -590,7 +592,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 133 - **khong de xuat gi**
 
@@ -598,7 +600,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ### 134 - **khong de xuat gi**
 
@@ -606,7 +608,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ### 135
 
@@ -617,7 +619,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 136
 
@@ -628,7 +630,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| wrong | yes | all | n/a |
 
 ### 137
 
@@ -639,7 +641,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 138
 
@@ -650,7 +652,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 139
 
@@ -661,7 +663,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| wrong | yes | all | n/a |
 
 ### 140
 
@@ -672,6 +674,6 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| wrong | yes | all | n/a |
 
 ---
