@@ -351,6 +351,13 @@ def score_round(outcome: Any, view: Any) -> dict[str, Any]:
         "contrast_count": sum(1 for item in outcome.of(CONTRAST)),
         "diagnosis_count": sum(1 for item in outcome.of(DIAGNOSIS)),
         "blocked": blocked,
+        # What the round did that is not visible in its proposals. The
+        # rewording arm was measured by inferring a retry from a doubled
+        # token count, which worked and should not have been necessary:
+        # the runner already knows, and a figure reconstructed from cost
+        # is a figure that stops being reconstructable the moment a turn
+        # changes length.
+        "flags": [list(item) for item in outcome.flags],
         # What the guard removed. Read as effort, never as a violation.
         "verdict_contradictions_blocked": blocked.count("contradicts_verdict"),
         "contrast_contract_unmet_blocked": blocked.count("contrast_contract_unmet"),
