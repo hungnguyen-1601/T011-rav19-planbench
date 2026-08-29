@@ -15,7 +15,18 @@
 
 import { API_BASE } from "./api";
 import { authFetch, loadSession } from "./auth";
-import type { ModelStatus, ValidationStatus } from "./models";
+import type { ValidationStatus } from "./models";
+
+/** May this revision be picked, and if not, is that final.
+ *
+ * A third value on the field that already answered the question rather
+ * than a second field beside it. `held` is a reviewer pulling a revision
+ * back while they look at something; `disabled` is terminal, and
+ * terminal on purpose — "turn it back on" and "upload the fixed one"
+ * should not both exist, because only the second is honest about what
+ * changed in between.
+ */
+export type BundleStatus = "active" | "held" | "disabled";
 
 export interface PluginBundleSummary {
   id: string;
@@ -24,13 +35,17 @@ export interface PluginBundleSummary {
   description: string;
   plugin_id: string;
   plugin_version: string;
+  /** Which upload of this `plugin_id` this is. Publication names a
+   * revision rather than a bundle, so this is what a history row and a
+   * pinned run both point at. */
+  revision: number;
   role: string;
   requirements: string[];
   robot_profile_id: string;
   original_filename: string;
   file_size: number;
   checksum: string;
-  status: ModelStatus;
+  status: BundleStatus;
   validation_status: ValidationStatus;
   validation_message: string;
   owned: boolean;
@@ -64,10 +79,82 @@ export interface HostCompatibility {
   oracle_providers: string[];
 }
 
+/** One act of putting a revision in front of everybody.
+ *
+ * Append-only, and the two closing dates are separate columns because
+ * they are separate facts: `superseded_at` means a newer revision took
+ * its place, `unpublished_at` means somebody withdrew it and nothing
+ * replaced it. A single `ended_at` would answer "is it current?"
+ * equally well and "why did it stop?" not at all, which is the question
+ * a reader of the history is actually asking.
+ */
+export interface PluginPublication {
+  bundle_id: string;
+  revision: number;
+  published_at: string;
+  published_by_user_id: string | null;
+  superseded_at: string | null;
+  unpublished_at: string | null;
+  reason: string;
+  is_current: boolean;
+}
+
+export interface PluginEvent {
+  sequence: number;
+  revision: number;
+  actor_user_id: string | null;
+  actor_roles: string;
+  authorized_capability: string;
+  action: string;
+  reason: string;
+  created_at: string;
+}
+
 export interface PluginBundleDetail {
   bundle: PluginBundleSummary;
   compatibility: HostCompatibility;
+  /** The revision an engineer would actually get, or `null` while
+   * nobody has published one. Sent to every reader, not just a
+   * reviewer: "why is this not in my picker?" is a question the person
+   * picking has to be able to answer without asking one. */
+  published_revision: number | null;
+  /** The half that describes code rather than capability. Absent — not
+   * empty — for a reader without `algorithm.inspect`, so a component
+   * that finds them missing should draw nothing rather than an empty
+   * box. */
+  manifest?: Record<string, unknown> | null;
+  entry_point?: string | null;
+  publications?: PluginPublication[] | null;
 }
+
+export function pluginEvents(bundleId: string): Promise<PluginEvent[]> {
+  return authFetch<PluginEvent[]>(`/algorithms/plugins/${bundleId}/events`);
+}
+
+/** The five governed acts, which differ only in the word in the path.
+ *
+ * All five answer 404 rather than 403 while
+ * `PLANBENCH_ALGORITHM_GOVERNANCE` is off, because the truth is "this
+ * deployment has not turned publishing on" rather than "you may not" —
+ * and a caller that can tell the difference hides the button instead of
+ * offering one that always fails.
+ */
+function govern(
+  bundleId: string,
+  act: string,
+  reason: string,
+): Promise<PluginBundleSummary> {
+  return authFetch<PluginBundleSummary>(`/algorithms/plugins/${bundleId}/${act}`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export const publishPlugin = (id: string, reason = "") => govern(id, "publish", reason);
+export const unpublishPlugin = (id: string, reason: string) => govern(id, "unpublish", reason);
+export const holdPlugin = (id: string, reason: string) => govern(id, "hold", reason);
+export const releasePluginHold = (id: string, reason = "") => govern(id, "release-hold", reason);
+export const disablePlugin = (id: string, reason: string) => govern(id, "disable", reason);
 
 export interface ImportFields {
   name: string;
@@ -87,7 +174,7 @@ export function getPlugin(bundleId: string): Promise<PluginBundleDetail> {
 
 export function setPluginStatus(
   bundleId: string,
-  status: ModelStatus,
+  status: BundleStatus,
 ): Promise<PluginBundleSummary> {
   return authFetch<PluginBundleSummary>(`/algorithms/plugins/${bundleId}`, {
     method: "PATCH",
@@ -196,6 +283,56 @@ export function blockedReason(bundle: PluginBundleSummary): string | null {
   if (bundle.status !== "active") return "disabled";
   if (bundle.validation_status === "failed") return "failed";
   return "unverified";
+}
+
+/** What to call each bundle's state, in one word a reader can act on.
+ *
+ * A projection, not a stored field. The server keeps three orthogonal
+ * facts — may it be picked, did it load, is it published — because each
+ * is set by a different act, and a stored label collapsing them would be
+ * a fourth fact free to disagree with the other three. Collapsing them
+ * *here*, for display, is what a status chip is for.
+ *
+ * Labels the whole list at once because one of the seven answers cannot
+ * be reached from a single row: `superseded` means *another* revision of
+ * the same `plugin_id` is the published one, so the verdict needs the
+ * siblings. `awaiting` — nobody has published any of them — reads the
+ * same to a picker but not to a reviewer, who has something to do about
+ * exactly one of the two.
+ */
+export type BundleState =
+  | "disabled"
+  | "held"
+  | "broken"
+  | "checking"
+  | "published"
+  | "superseded"
+  | "awaiting";
+
+export function bundleStates(
+  bundles: readonly PluginBundleSummary[],
+  publishedIds: readonly string[],
+): Map<string, BundleState> {
+  const published = new Set(publishedIds);
+  const pluginsWithOne = new Set(
+    bundles.filter((bundle) => published.has(bundle.id)).map((bundle) => bundle.plugin_id),
+  );
+  return new Map(
+    bundles.map((bundle) => {
+      let state: BundleState;
+      if (bundle.status === "disabled") state = "disabled";
+      else if (bundle.status === "held") state = "held";
+      else if (bundle.validation_status === "failed") state = "broken";
+      else if (bundle.validation_status !== "loaded") state = "checking";
+      else if (published.has(bundle.id)) state = "published";
+      else state = pluginsWithOne.has(bundle.plugin_id) ? "superseded" : "awaiting";
+      return [bundle.id, state] as const;
+    }),
+  );
+}
+
+export function publishedBundleIds(): Promise<string[]> {
+  return authFetch<string[]>("/algorithms/plugins/published");
 }
 
 /** The stack id a benchmark would name this plugin by.

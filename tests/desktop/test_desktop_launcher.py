@@ -86,7 +86,16 @@ class TestFirstRun:
         provisioned = provision()
 
         assert (provisioned.nickname, provisioned.password) == (DEFAULT_NICKNAME, DEFAULT_PASSWORD)
-        assert _env_values(data_root)["PLANBENCH_SEED_USERS"] == "admin:admin"
+        # `name:roles:password`, and two more accounts beside it. The
+        # extra pair is how one machine can show the workflow as it
+        # behaves with two people: signing in as the engineer is the only
+        # way to see what that screen actually withholds.
+        seeded = _env_values(data_root)["PLANBENCH_SEED_USERS"]
+        assert (
+            seeded.split(",")[0] == f"{DEFAULT_NICKNAME}:engineer+reviewer+admin:{DEFAULT_PASSWORD}"
+        )
+        assert "engineer:engineer:engineer" in seeded
+        assert "reviewer:reviewer:reviewer" in seeded
 
     def test_the_session_secret_is_still_generated_per_installation(self, data_root) -> None:
         """The known password is not licence to weaken the token secret.

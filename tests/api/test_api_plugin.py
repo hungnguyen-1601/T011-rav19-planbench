@@ -19,11 +19,11 @@ PAPER = (
 
 
 class TestTheRouteIsClosedAndWritesNothing:
-    def test_requires_authentication(self, client):
-        assert client.post("/api/v1/plugins/from-paper", json={"text": PAPER}).status_code == 401
+    def test_requires_authentication(self, anonymous):
+        assert anonymous.post("/api/v1/plugins/from-paper", json={"text": PAPER}).status_code == 401
 
-    def test_upload_requires_authentication(self, client):
-        response = client.post(
+    def test_upload_requires_authentication(self, anonymous):
+        response = anonymous.post(
             "/api/v1/plugins/from-paper/upload",
             files={"file": ("p.txt", io.BytesIO(PAPER.encode()), "text/plain")},
         )

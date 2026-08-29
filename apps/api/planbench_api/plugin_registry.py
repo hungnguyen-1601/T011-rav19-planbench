@@ -21,13 +21,13 @@ from __future__ import annotations
 import io
 import json
 import zipfile
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from planbench_api.model_registry import (
-    ModelStatus,
     RegistryError,
     ValidationStatus,
 )
@@ -276,6 +276,76 @@ def _package_dir(manifest_member: str) -> str:
     return parts[0]
 
 
+class OperationalStatus(StrEnum):
+    """Whether a bundle may be picked, and if not, whether that is final.
+
+    A third value on the column that already answers the question,
+    rather than a second column beside it. ``held`` is a reviewer
+    pulling a revision back while they look at something; ``disabled``
+    is terminal, and terminal on purpose — "turn it back on" and "upload
+    the fixed one" should not both exist, because only the second is
+    honest about what changed in between.
+
+    Wire-compatible with the two values ``ModelStatus`` had, so rows
+    written before this load unchanged.
+    """
+
+    ACTIVE = "active"
+    HELD = "held"
+    DISABLED = "disabled"
+
+
+class PluginPublication(BaseModel):
+    """One act of putting a revision in front of everyone.
+
+    ``superseded_at`` and ``unpublished_at`` are separate because they
+    are separate facts. A newer revision replacing this one says nothing
+    about whether this one was any good; a reviewer withdrawing it says
+    exactly that. Collapsing both into "no longer current" would leave a
+    stored approval unable to tell which happened — and that is the
+    difference between a recommendation that is merely old and one that
+    was taken back.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str = ""
+    plugin_id: str
+    bundle_id: str
+    revision: int
+    published_by_user_id: str | None = None
+    published_at: str = ""
+    superseded_at: str | None = None
+    unpublished_at: str | None = None
+    unpublished_by_user_id: str | None = None
+    reason: str = ""
+
+    @property
+    def is_current(self) -> bool:
+        return self.superseded_at is None and self.unpublished_at is None
+
+    @property
+    def was_withdrawn(self) -> bool:
+        """Pulled back by a person, as opposed to replaced by a revision."""
+        return self.unpublished_at is not None
+
+
+class PluginEvent(BaseModel):
+    """Append-only: what happened to a bundle, under which capability."""
+
+    model_config = ConfigDict(frozen=True)
+
+    sequence: int = 0
+    bundle_id: str
+    revision: int = 0
+    actor_user_id: str | None = None
+    actor_roles: str = ""
+    authorized_capability: str = ""
+    action: str
+    reason: str = ""
+    created_at: str = ""
+
+
 class PluginBundleRecord(BaseModel):
     """One imported algorithm, as stored.
 
@@ -317,9 +387,12 @@ class PluginBundleRecord(BaseModel):
     checksum: str = ""
     uploaded_by_user_id: str = ""
     robot_profile_id: str = ""
-    status: ModelStatus = ModelStatus.ACTIVE
+    status: OperationalStatus = OperationalStatus.ACTIVE
     validation_status: ValidationStatus = ValidationStatus.PENDING
     validation_message: str = ""
+    disabled_at: str | None = None
+    disabled_by_user_id: str | None = None
+    disabled_reason: str = ""
     created_at: str = ""
     updated_at: str = ""
 
@@ -335,7 +408,7 @@ class PluginBundleRecord(BaseModel):
         about this deployment's providers, recomputed on every read
         rather than stored here.
         """
-        return self.status is ModelStatus.ACTIVE and self.validation_status in {
+        return self.status is OperationalStatus.ACTIVE and self.validation_status in {
             ValidationStatus.STRUCTURAL,
             ValidationStatus.LOADED,
         }
@@ -370,7 +443,7 @@ class PluginBundleSummary(BaseModel):
     original_filename: str
     file_size: int
     checksum: str
-    status: ModelStatus
+    status: OperationalStatus
     validation_status: ValidationStatus
     validation_message: str
     owned: bool
@@ -378,7 +451,17 @@ class PluginBundleSummary(BaseModel):
     updated_at: str
 
     @classmethod
-    def of(cls, record: PluginBundleRecord, viewer_id: str) -> PluginBundleSummary:
+    def of(
+        cls, record: PluginBundleRecord, viewer_id: str, inspect: bool = False
+    ) -> PluginBundleSummary:
+        """The list view. ``inspect`` decides how much of it is filled in.
+
+        One place, so that "what may an engineer see about an imported
+        algorithm?" has one answer rather than one per endpoint. The
+        checksum is the field worth naming: it identifies the exact bytes
+        that ran, which is precisely what a reviewer needs and what a
+        picker does not.
+        """
         return cls(
             id=record.id,
             name=record.name,
@@ -392,7 +475,7 @@ class PluginBundleSummary(BaseModel):
             robot_profile_id=record.robot_profile_id,
             original_filename=record.original_filename,
             file_size=record.file_size,
-            checksum=record.checksum,
+            checksum=record.checksum if inspect else "",
             status=record.status,
             validation_status=record.validation_status,
             validation_message=record.validation_message,

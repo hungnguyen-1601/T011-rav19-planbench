@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 
+from planbench_api.auth import ReadingUser, WritingUser
 from planbench_api.dependencies import get_map_service, get_scenario_service
 from planbench_api.repositories import StoredScenario
 from planbench_api.schemas import (
@@ -41,35 +42,40 @@ def _resource(stored: StoredScenario) -> ScenarioResource:
 
 
 @router.get("", response_model=list[ScenarioResource])
-def list_scenarios(service: Service) -> list[ScenarioResource]:
+def list_scenarios(service: Service, _: ReadingUser) -> list[ScenarioResource]:
     return [_resource(stored) for stored in service.list()]
 
 
 @router.post("", response_model=ScenarioResource, status_code=status.HTTP_201_CREATED)
-def create_scenario(request: ScenarioCreateRequest, service: Service) -> ScenarioResource:
-    return _resource(service.create(request.map_id, request.scenario))
+def create_scenario(
+    request: ScenarioCreateRequest, service: Service, user: WritingUser
+) -> ScenarioResource:
+    return _resource(service.create(request.map_id, request.scenario, owner_user_id=user.id))
 
 
 @router.get("/{scenario_id}", response_model=ScenarioResource)
-def get_scenario(scenario_id: str, service: Service) -> ScenarioResource:
+def get_scenario(scenario_id: str, service: Service, _: ReadingUser) -> ScenarioResource:
     return _resource(service.get(scenario_id))
 
 
 @router.put("/{scenario_id}", response_model=ScenarioResource)
 def update_scenario(
-    scenario_id: str, request: ScenarioCreateRequest, service: Service
+    scenario_id: str, request: ScenarioCreateRequest, service: Service, user: WritingUser
 ) -> ScenarioResource:
-    return _resource(service.update(scenario_id, request.map_id, request.scenario))
+    return _resource(
+        service.update(scenario_id, request.map_id, request.scenario, actor_user_id=user.id)
+    )
 
 
 @router.delete("/{scenario_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_scenario(scenario_id: str, service: Service) -> None:
-    service.delete(scenario_id)
+def archive_scenario(scenario_id: str, service: Service, user: WritingUser) -> None:
+    """Archive rather than delete — see the maps router for why."""
+    service.archive(scenario_id, actor_user_id=user.id)
 
 
 @router.post("/validate", response_model=ValidationReport)
 def validate_scenario(
-    request: ScenarioCreateRequest, service: Service, maps: Maps
+    request: ScenarioCreateRequest, service: Service, maps: Maps, _: ReadingUser
 ) -> ValidationReport:
     """Check a scenario against a map with the real engine.
 
@@ -85,7 +91,7 @@ def validate_scenario(
 
 @router.post("/preview", response_model=ScenarioPreview)
 def preview_scenario(
-    request: ScenarioPreviewRequest, service: Service, maps: Maps
+    request: ScenarioPreviewRequest, service: Service, maps: Maps, _: ReadingUser
 ) -> ScenarioPreview:
     """Where the moving obstacles are at ``time``, plus the verdict.
 

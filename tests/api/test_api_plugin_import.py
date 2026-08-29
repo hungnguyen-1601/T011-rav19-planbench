@@ -20,7 +20,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from conftest import ADMIN, ALICE, auth_headers
+from conftest import ADMIN, ENGINEER, auth_headers
 
 MANIFEST_PATH = "vfh_plus/.planbench-plugin/plugin.json"
 
@@ -110,7 +110,17 @@ def bundle_zip(
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
         for name, text in contents.items():
-            archive.writestr(name, text)
+            # **A fixed timestamp, or the same contents are two archives.**
+            # `writestr` with a plain name stamps each entry with the
+            # current time, and a zip timestamp has two-second
+            # resolution — so building this twice inside one second gives
+            # identical bytes and building it either side of a boundary
+            # does not. Bundle identity is the checksum of those bytes
+            # (HĐ-1.3), which made "the same archive is refused twice"
+            # pass on a fast machine and fail on a loaded one.
+            entry = zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
+            entry.external_attr = 0o644 << 16
+            archive.writestr(entry, text)
     return buffer.getvalue()
 
 
@@ -146,16 +156,26 @@ def admin(client):
 
 @pytest.fixture
 def member(client):
-    return auth_headers(client, ALICE)
+    """Engineer and nothing else — the package that stops here."""
+    return auth_headers(client, ENGINEER)
 
 
-class TestOnlyAdministratorsMayPutCodeOnTheServer:
-    def test_a_member_is_refused(self, client, member):
+class TestOnlyReviewersMayPutCodeOnTheServer:
+    """The gate moved from a boolean to a capability, and it moved *jobs*.
+
+    ``is_admin`` conflated running the server with vouching for code, so
+    the account that rotates an API key was also the only one that could
+    put a planner on the machine. Importing is the reviewer package now;
+    the administrator package holds no ``algorithm.*`` beyond reading
+    the catalogue and the kill switch.
+    """
+
+    def test_an_engineer_is_refused(self, client, member):
         response = import_bundle(client, member)
         assert response.status_code == 403, response.text
-        assert "administrator" in message(response)
+        assert "reviewer" in message(response)
 
-    def test_an_administrator_may_import(self, client, admin):
+    def test_a_reviewer_may_import(self, client, admin):
         assert import_bundle(client, admin).status_code == 201
 
     def test_reading_needs_no_privilege(self, client, admin, member):
@@ -164,8 +184,8 @@ class TestOnlyAdministratorsMayPutCodeOnTheServer:
         assert listed.status_code == 200
         assert [row["plugin_id"] for row in listed.json()] == ["org.vinai.vfh-plus"]
 
-    def test_anonymous_callers_get_nothing(self, client):
-        assert client.get("/api/v1/algorithms/plugins").status_code == 401
+    def test_anonymous_callers_get_nothing(self, anonymous):
+        assert anonymous.get("/api/v1/algorithms/plugins").status_code == 401
 
 
 class TestTheArchiveIsCheckedBeforeAnythingIsRegistered:

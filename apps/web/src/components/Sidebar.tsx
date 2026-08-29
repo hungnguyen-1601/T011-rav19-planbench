@@ -29,16 +29,19 @@ import type { Translator } from "@/lib/i18n";
 
 /** The entries this reader is offered.
  *
- * An `admin` entry is dropped for everyone else. Cosmetic and stated as
- * such — the API refuses the write either way — but a rail that lists a
- * page whose every control answers 403 is advertising a door most of
- * the people reading it cannot open.
+ * An entry naming a capability the reader does not hold is dropped.
+ * Cosmetic and stated as such — the API refuses the request either way —
+ * but a rail that lists a page whose every control answers 403 is
+ * advertising a door most of the people reading it cannot open.
+ *
+ * Filtered on the capability rather than on a role: the server sends
+ * what this account may do, and matching that exactly means the rail
+ * cannot drift from it when a capability moves between packages.
  */
-function visible(
-  items: readonly NavItem[],
-  user: SessionUser | null,
-): NavItem[] {
-  return items.filter((item) => !item.admin || user?.is_admin);
+function visible(items: readonly NavItem[], user: SessionUser | null): NavItem[] {
+  return items.filter(
+    (item) => !item.capability || Boolean(user?.capabilities?.includes(item.capability)),
+  );
 }
 
 /** One row of the rail.
@@ -145,26 +148,38 @@ export function Sidebar({
       </div>
 
       <nav aria-label={t("sidebar.label")}>
-        {NAV_SECTIONS.map((section) => (
-          <div className="sidebar-section" key={section.titleKey}>
-            <p className="sidebar-section-title">{t(section.titleKey)}</p>
-            {visible(section.items, user).map((item) => (
-              <NavEntry
-                key={item.href}
-                item={item}
-                collapsed={collapsed}
-                pathname={pathname}
-                t={t}
-                onNavigate={onNavigate}
-              />
-            ))}
-          </div>
-        ))}
+        {NAV_SECTIONS.map((section) => {
+          const items = visible(section.items, user);
+          // A heading is a claim that there is something under it. On a
+          // deployment where nobody holds the administrator package,
+          // every entry in that section is hidden, and the heading alone
+          // would advertise a set with no members.
+          if (items.length === 0) return null;
+          return (
+            <div className="sidebar-section" key={section.titleKey}>
+              <p className="sidebar-section-title">{t(section.titleKey)}</p>
+              {items.map((item) => (
+                <NavEntry
+                  key={item.href}
+                  item={item}
+                  collapsed={collapsed}
+                  pathname={pathname}
+                  t={t}
+                  onNavigate={onNavigate}
+                />
+              ))}
+            </div>
+          );
+        })}
 
         {/* No heading. The guide is neither a place to work nor part of
             an account, and a heading is a claim about a set — spending
             one on a single row makes the reader parse a category to
-            learn a fact about one entry. A rule says the same thing. */}
+            learn a fact about one entry. A rule says the same thing.
+
+            Outside the loop above, so the rule that hides an empty
+            section does not reach it: this row has no capability behind
+            it and is never empty. */}
         <div className="sidebar-section sidebar-utility">
           {NAV_UTILITY.map((item) => (
             <NavEntry

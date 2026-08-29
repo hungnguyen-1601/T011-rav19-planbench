@@ -18,8 +18,8 @@ from planbench_agent.tools import FORBIDDEN_CAPABILITIES
 
 
 class TestCapabilities:
-    def test_requires_authentication(self, client):
-        assert client.get("/api/v1/agent/capabilities").status_code == 401
+    def test_requires_authentication(self, anonymous):
+        assert anonymous.get("/api/v1/agent/capabilities").status_code == 401
 
     def test_it_names_the_provider_and_whether_it_is_a_model(self, client, alice_headers):
         """A mock answer and a model answer read alike; this is how a
@@ -61,8 +61,8 @@ class TestCapabilities:
 
 
 class TestChat:
-    def test_requires_authentication(self, client):
-        assert client.post("/api/v1/agent/chat", json={"message": "hi"}).status_code == 401
+    def test_requires_authentication(self, anonymous):
+        assert anonymous.post("/api/v1/agent/chat", json={"message": "hi"}).status_code == 401
 
     def test_an_empty_message_is_rejected_by_the_schema(self, client, alice_headers):
         response = client.post("/api/v1/agent/chat", json={"message": ""}, headers=alice_headers)

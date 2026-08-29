@@ -44,6 +44,8 @@ const ALICE = {
   email: "alice@example.com",
   display_name: "Alice Example",
   avatar_url: "",
+  roles: [],
+  capabilities: [],
   is_admin: false,
   needs_nickname: false,
   providers: ["google"],

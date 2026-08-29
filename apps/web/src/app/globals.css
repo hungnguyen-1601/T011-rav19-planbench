@@ -6118,3 +6118,29 @@ tr.is-previewing > td { background: var(--accent-soft); }
 }
 
 .guide-capability[data-allowed="false"] { color: var(--muted); }
+/* --- Deployment banner ---------------------------------------------
+ *
+ * Says out loud that this deployment runs under relaxed rules. Not
+ * dismissible: the risk it exists for is somebody mistaking a
+ * demonstration machine for the product as it ships, and a banner that
+ * can be closed is a banner that is closed.
+ */
+.deployment-banner {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-md);
+  background: var(--warn-soft);
+  font-size: var(--fs-caption);
+  line-height: 1.5;
+}
+
+.deployment-banner strong {
+  letter-spacing: 0.02em;
+}
+
+/* Louder, because every capability sits in one pair of hands. */
+.deployment-banner-demo {
+  border-color: var(--err);
+  background: var(--err-soft);
+}

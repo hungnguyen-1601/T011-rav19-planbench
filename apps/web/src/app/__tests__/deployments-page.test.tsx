@@ -1196,3 +1196,29 @@ describe("the mission map has its own grid switch", () => {
     expect(FORM.indexOf("const [showGrid, setShowGrid]")).toBeLessThan(guard);
   });
 });
+
+
+describe("the deployments already on file", () => {
+  it("puts the newest at the top", () => {
+    /* The API returns them oldest first, which is right for it: that
+       order is stable and other callers rely on a deployment keeping its
+       place. It is the wrong way round for somebody reading the list —
+       the one they want is nearly always the one they just filed, and it
+       was landing on the last page of ten. */
+    expect(PAGE).toContain("b.created_at.localeCompare(a.created_at)");
+    expect(PAGE).toContain("usePagination(newestFirst)");
+  });
+
+  it("breaks a tie on the id so rows cannot swap between renders", () => {
+    // Two deployments filed in the same second have equal timestamps,
+    // and a comparator returning 0 leaves their order to the sort's
+    // stability rather than to anything this code decided.
+    expect(PAGE).toContain("|| b.id.localeCompare(a.id)");
+  });
+
+  it("sorts a copy rather than the state array", () => {
+    // `Array.prototype.sort` mutates. Sorting `profiles` in place would
+    // reorder the state React is holding without telling it.
+    expect(PAGE).toContain("[...profiles].sort(");
+  });
+});

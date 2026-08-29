@@ -18,10 +18,14 @@ import threading
 import uuid
 
 from planbench_api.accounts import (
+    AccountEvent,
     AccountLinkError,
     AuthProvider,
+    Capability,
+    LastAdministratorError,
     NicknameError,
     OAuthAccount,
+    Role,
     StoredUser,
     User,
     normalise_nickname,
@@ -41,6 +45,7 @@ class InMemoryUserRepository:
         self._users: dict[str, StoredUser] = {}
         self._by_nickname: dict[str, str] = {}
         self._oauth: dict[str, OAuthAccount] = {}
+        self._account_events: list[AccountEvent] = []
         self._lock = threading.RLock()
 
     # -- users ---------------------------------------------------------
@@ -52,7 +57,7 @@ class InMemoryUserRepository:
         email: str = "",
         display_name: str = "",
         avatar_url: str = "",
-        is_admin: bool = False,
+        roles: frozenset[Role] | set[Role] = frozenset(),
         password_hash: str | None = None,
     ) -> User:
         with self._lock:
@@ -69,7 +74,7 @@ class InMemoryUserRepository:
                 email=email,
                 display_name=display_name,
                 avatar_url=avatar_url,
-                is_admin=is_admin,
+                roles=frozenset(roles),
                 created_at=stamp,
                 updated_at=stamp,
             )
@@ -142,12 +147,85 @@ class InMemoryUserRepository:
             self._users[user_id] = stored.model_copy(update={"user": user})
             return user
 
-    def set_admin(self, user_id: str, is_admin: bool) -> User:
+    def set_roles(
+        self,
+        user_id: str,
+        roles: frozenset[Role] | set[Role],
+        *,
+        granted_by_user_id: str | None = None,
+        reason: str = "",
+    ) -> User:
+        """Replace the role set, under the same administrator invariant.
+
+        The lock plays the part the SQL transaction plays: the check runs
+        after the change is applied and rolls it back on refusal, so two
+        concurrent revocations cannot each see the other's administrator
+        still standing.
+        """
         with self._lock:
             stored = self.get_stored(user_id)
-            user = stored.user.model_copy(update={"is_admin": is_admin, "updated_at": now_iso()})
+            previous = stored.user
+            user = previous.model_copy(update={"roles": frozenset(roles), "updated_at": now_iso()})
             self._users[user_id] = stored.model_copy(update={"user": user})
+            try:
+                self._require_a_remaining_administrator()
+            except LastAdministratorError:
+                self._users[user_id] = stored.model_copy(update={"user": previous})
+                raise
             return user
+
+    def set_disabled(self, user_id: str, disabled: bool) -> User:
+        with self._lock:
+            stored = self.get_stored(user_id)
+            previous = stored.user
+            user = previous.model_copy(
+                update={"disabled_at": now_iso() if disabled else "", "updated_at": now_iso()}
+            )
+            self._users[user_id] = stored.model_copy(update={"user": user})
+            try:
+                self._require_a_remaining_administrator()
+            except LastAdministratorError:
+                self._users[user_id] = stored.model_copy(update={"user": previous})
+                raise
+            return user
+
+    def record_sign_in(self, user_id: str) -> None:
+        with self._lock:
+            stored = self.get_stored(user_id)
+            user = stored.user.model_copy(update={"updated_at": now_iso()})
+            self._users[user_id] = stored.model_copy(update={"user": user})
+
+    def list_with_role(self, role: Role) -> list[User]:
+        with self._lock:
+            return [stored.user for stored in self._users.values() if role in stored.user.roles]
+
+    def record_account_event(self, event: AccountEvent) -> AccountEvent:
+        with self._lock:
+            stamped = event.model_copy(
+                update={
+                    "sequence": len(self._account_events) + 1,
+                    "created_at": event.created_at or now_iso(),
+                }
+            )
+            self._account_events.append(stamped)
+            return stamped
+
+    def list_account_events(self, user_id: str | None = None) -> list[AccountEvent]:
+        with self._lock:
+            if user_id is None:
+                return list(self._account_events)
+            return [event for event in self._account_events if event.user_id == user_id]
+
+    def _require_a_remaining_administrator(self) -> None:
+        for stored in self._users.values():
+            if stored.user.disabled:
+                continue
+            if Capability.USER_MANAGE in stored.user.capabilities:
+                return
+        raise LastAdministratorError(
+            "this would leave the deployment with no enabled account able to manage "
+            "users. Grant another account an administering role first"
+        )
 
     def set_password(self, user_id: str, password_hash: str) -> User:
         """Replace the credential an account signs in with."""
@@ -248,8 +326,25 @@ class InMemoryReviewRepository:
         return self._sorted(
             request
             for request in self._items.values()
-            if request.reviewer_user_id == reviewer_user_id
+            if (
+                request.reviewer_user_id == reviewer_user_id
+                or request.claimed_by_user_id == reviewer_user_id
+            )
             and (status is None or request.status is status)
+        )
+
+    def list_for_subject(self, subject_kind: str, subject_id: str) -> list[ReviewRequest]:
+        return self._sorted(
+            request
+            for request in self._items.values()
+            if request.subject_kind.value == subject_kind and request.subject == subject_id
+        )
+
+    def list_by_kind(self, subject_kind: str) -> list[ReviewRequest]:
+        return self._sorted(
+            request
+            for request in self._items.values()
+            if request.subject_kind.value == subject_kind
         )
 
     def list_requested_by(self, user_id: str) -> list[ReviewRequest]:

@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import {
   type PluginBundleSummary,
   blockedReason,
+  bundleStates,
   isSelectable,
   stackIdFor,
 } from "@/lib/plugins";
@@ -24,6 +25,7 @@ function bundle(overrides: Partial<PluginBundleSummary> = {}): PluginBundleSumma
     description: "",
     plugin_id: "org.vinai.vfh-plus",
     plugin_version: "0.1.0",
+    revision: 1,
     role: "local",
     requirements: ["lidar_2d"],
     robot_profile_id: "p1",
@@ -93,5 +95,57 @@ describe("the name a report will quote", () => {
     expect(stackIdFor(bundle({ name: "Something else", version: "9" }))).toBe(
       "astar+org.vinai.vfh-plus",
     );
+  });
+});
+
+describe("what to call a bundle's state", () => {
+  it("names the published revision as the one a benchmark gets", () => {
+    const one = bundle({ id: "b1", revision: 1 });
+    expect(bundleStates([one], ["b1"]).get("b1")).toBe("published");
+  });
+
+  it("tells a superseded revision apart from one nobody published", () => {
+    // Same plugin, two uploads, the newer one published. The older is
+    // not merely unpublished — somebody replaced it, and a reviewer
+    // reading the list has nothing to do about that.
+    const old = bundle({ id: "b1", revision: 1 });
+    const fresh = bundle({ id: "b2", revision: 2 });
+    const states = bundleStates([old, fresh], ["b2"]);
+    expect(states.get("b1")).toBe("superseded");
+    expect(states.get("b2")).toBe("published");
+
+    // Nothing published at all is the other case, and it *is* somebody's
+    // job: it is waiting for a reviewer.
+    expect(bundleStates([old, fresh], []).get("b1")).toBe("awaiting");
+  });
+
+  it("puts a reviewer's decision ahead of the conformance verdict", () => {
+    // A held or disabled bundle that also happens to have failed its
+    // suite is reported as held: that is the fact somebody can act on,
+    // and the failure is what the detail panel is for.
+    expect(
+      bundleStates([bundle({ status: "held", validation_status: "failed" })], []).get("b1"),
+    ).toBe("held");
+    expect(
+      bundleStates([bundle({ status: "disabled", validation_status: "loaded" })], ["b1"]).get("b1"),
+    ).toBe("disabled");
+  });
+
+  it("does not call an unrun bundle broken", () => {
+    // "structural" means nobody has run it, which is not the same as
+    // having run it and found it misbehaving. Reporting both as failed
+    // would send somebody to fix code that may be fine.
+    expect(bundleStates([bundle({ validation_status: "structural" })], []).get("b1")).toBe(
+      "checking",
+    );
+    expect(bundleStates([bundle({ validation_status: "failed" })], []).get("b1")).toBe("broken");
+  });
+
+  it("reads an empty published set as governance being off", () => {
+    // No publications means the deployment never turned publishing on,
+    // and every runnable bundle is then simply waiting rather than
+    // hidden.
+    const states = bundleStates([bundle({ id: "b1" }), bundle({ id: "b2" })], []);
+    expect([...states.values()]).toEqual(["awaiting", "awaiting"]);
   });
 });

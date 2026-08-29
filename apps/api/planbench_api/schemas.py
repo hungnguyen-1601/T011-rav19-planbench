@@ -182,9 +182,25 @@ class SimulationResultResponse(BaseModel):
     metrics: EpisodeMetrics | None = None
 
 
+class DeploymentState(BaseModel):
+    """What kind of deployment this is, for the interface to say so.
+
+    On the health endpoint rather than behind a session, because the
+    banner it feeds has to be up before anybody signs in: "this machine
+    approves its own work" is context for reading the login page too.
+    Neither field is a secret — both describe rules, not data.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    profile: str
+    separation_of_duties: str
+
+
 class HealthResponse(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     status: str
     app: str
     version: str
+    deployment: DeploymentState | None = None

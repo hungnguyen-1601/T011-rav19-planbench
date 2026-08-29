@@ -240,8 +240,8 @@ class TestUploadIsPicky:
         assert response.status_code == 201
         assert "not valid JSON" in response.json()["validation_message"]
 
-    def test_upload_requires_a_signed_in_member(self, client: TestClient, profile_id) -> None:
-        response = client.post(
+    def test_upload_requires_a_signed_in_member(self, anonymous: TestClient, profile_id) -> None:
+        response = anonymous.post(
             "/api/v1/models/upload",
             data={"name": "anon", "robot_profile_id": profile_id},
             files={"model_file": ("m.zip", checkpoint(), "application/zip")},

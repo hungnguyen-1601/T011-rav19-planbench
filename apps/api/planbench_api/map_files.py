@@ -25,7 +25,36 @@ if TYPE_CHECKING:
     from planbench_api.repository_ports import MapRepositoryPort
     from planbench_schemas.task_profile import TaskProfile
 
-__all__ = ["ensure_custom_map_files", "ensure_profile_map_materialised", "materialise_map"]
+__all__ = [
+    "ensure_custom_map_files",
+    "ensure_profile_map_materialised",
+    "materialise_map",
+    "pinned_map_reference",
+]
+
+
+def pinned_map_reference(map_path: str | None) -> tuple[str, int] | None:
+    """The map id and version a profile's path pins, or ``None``.
+
+    One reader for the one filename shape this module invents, because
+    two places now need it: the recovery below, which must not serve a
+    different version than the one asked for, and the endpoint that tells
+    a person which deployments are pinned to the map they are editing.
+    Parsing it twice would be two definitions of the same convention.
+
+    Returns ``None`` for anything that is not a custom map — a profile
+    naming a bundled map pins nothing, and neither does a path shaped
+    some other way.
+    """
+    if not map_path or not str(map_path).startswith("maps/custom/"):
+        return None
+    stem = Path(str(map_path)).stem
+    if "__v" not in stem:
+        return None
+    map_id, _, version = stem.rpartition("__v")
+    if not map_id or not version.isdigit():
+        return None
+    return map_id, int(version)
 
 
 def materialise_map(
@@ -103,15 +132,51 @@ def ensure_custom_map_files(
     # Extract exact requested stem: e.g. "7d52494dc3b5__v1"
     requested_stem = Path(map_rel_path).stem
     map_id_candidate = requested_stem.split("__v")[0] if "__v" in requested_stem else requested_stem
+    pinned = pinned_map_reference(map_rel_path)
+    requested_version = pinned[1] if pinned else None
+
+    def _recover(stored: StoredMap) -> bool:
+        """Write the pair back, but only when it is the version asked for.
+
+        **The version in the filename is the whole point of the
+        filename.** ``materialise_map`` names a map ``<id>__v<version>``
+        precisely so that editing a map after a deployment was filed
+        lands in a *different* file and leaves that deployment pointing
+        at the walls its episodes were driven on. Recovery that wrote
+        whatever the row holds now under the name of an older version
+        would undo that in the one situation nobody is watching: the file
+        is missing, so this runs, so the deployment silently starts
+        measuring a world it never agreed to — and every stored trace
+        beside it keeps claiming to describe the same place.
+
+        A refusal is recoverable and a wrong grid is not. Whoever hits
+        this can derive a deployment on the current version, which is the
+        supported way to move a comparison onto new walls.
+        """
+        if requested_version is not None and stored.version != requested_version:
+            _log.error(
+                "ensure_custom_map_files: refusing to recover %s. The deployment pins map "
+                "%s at v%s and the store now holds v%s; writing the newer grid under the "
+                "older name would change the walls under runs already recorded against it. "
+                "Derive a deployment on the current version instead "
+                "(POST /api/v1/task-profiles/derive).",
+                map_rel_path,
+                stored.id,
+                requested_version,
+                stored.version,
+            )
+            return False
+        materialise_map(stored, map_root, stem=requested_stem)
+        return full_path.is_file()
 
     try:
         stored_map = map_repo.get(map_id_candidate)
-        # Materialise with the exact requested stem (e.g. v1) so the profile's expected file is created
-        materialise_map(stored_map, map_root, stem=requested_stem)
-        # Also materialise with current version (e.g. v2)
-        materialise_map(stored_map, map_root)
-        _log.warning("ensure_custom_map_files: recovered map %s from DB (direct id)", map_rel_path)
-        return full_path.is_file()
+        recovered = _recover(stored_map)
+        if recovered:
+            _log.warning(
+                "ensure_custom_map_files: recovered map %s from DB (direct id)", map_rel_path
+            )
+        return recovered
     except Exception as exc:
         _log.debug("ensure_custom_map_files: direct get(%s) failed: %s", map_id_candidate, exc)
 
@@ -119,12 +184,13 @@ def ensure_custom_map_files(
         for stored in map_repo.list():
             safe_id = "".join(char if char.isalnum() or char in "-_" else "_" for char in stored.id)
             if safe_id == map_id_candidate or stored.id == map_id_candidate:
-                materialise_map(stored, map_root, stem=requested_stem)
-                materialise_map(stored, map_root)
-                _log.warning(
-                    "ensure_custom_map_files: recovered map %s from DB (list scan)", map_rel_path
-                )
-                return full_path.is_file()
+                recovered = _recover(stored)
+                if recovered:
+                    _log.warning(
+                        "ensure_custom_map_files: recovered map %s from DB (list scan)",
+                        map_rel_path,
+                    )
+                return recovered
     except Exception as exc:
         _log.warning("ensure_custom_map_files: list scan failed: %s", exc)
 

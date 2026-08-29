@@ -46,13 +46,25 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 class UserResource(BaseModel):
-    """The signed-in account, as the frontend needs it."""
+    """The signed-in account, as the frontend needs it.
+
+    ``capabilities`` is sent alongside ``roles`` on purpose, and it is
+    the field the interface should branch on. Shipping only the roles
+    would mean the web app carrying its own copy of the role→capability
+    table, and two copies of that table is exactly how a button ends up
+    offered to somebody the server will refuse — the worst of both, since
+    the refusal arrives after the click.
+
+    ``is_admin`` stays for the clients that already read it.
+    """
 
     id: str
     nickname: str
     email: str = ""
     display_name: str = ""
     avatar_url: str = ""
+    roles: list[str] = []
+    capabilities: list[str] = []
     is_admin: bool = False
     needs_nickname: bool = False
     providers: list[str] = []
@@ -92,6 +104,7 @@ def _accounts(request: Request) -> AccountService:
         request.app.state.repos.users,
         admin_nicknames=settings.admin_nicknames,
         admin_emails=settings.admin_emails,
+        policy=getattr(request.app.state, "deployment", None),
     )
 
 
@@ -116,6 +129,8 @@ def _resource(user: User, accounts: AccountService) -> UserResource:
         email=user.email,
         display_name=user.display_name,
         avatar_url=user.avatar_url,
+        roles=sorted(role.value for role in user.roles),
+        capabilities=sorted(capability.value for capability in user.capabilities),
         is_admin=user.is_admin,
         needs_nickname=user.needs_nickname,
         providers=[provider.value for provider in accounts.providers(user.id)],

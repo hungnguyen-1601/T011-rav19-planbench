@@ -63,17 +63,41 @@ class TestLogin:
         body = response.json()
         assert body["nickname"] == BOB[0]
         assert body["is_admin"] is False
-        # No password hash, no token, nothing but the profile.
+        # No password hash, no token, nothing but the profile — plus what
+        # the caller may do, which the interface has to be told rather
+        # than work out. Sending roles alone would make the web app keep
+        # its own copy of the role→capability table, and a second copy of
+        # that table is how a button gets offered to somebody the server
+        # then refuses.
         assert set(body) == {
             "id",
             "nickname",
             "email",
             "display_name",
             "avatar_url",
+            "roles",
+            "capabilities",
             "is_admin",
             "needs_nickname",
             "providers",
         }
+
+    def test_me_reports_capabilities_rather_than_leaving_them_to_be_inferred(
+        self, client: TestClient
+    ) -> None:
+        """A seeded account can act, and the response says how.
+
+        Pinned as a property, not as a list: the point is that the two
+        fields agree with the server's own table, so moving a capability
+        between packages keeps this test honest instead of breaking it.
+        """
+        from planbench_api.accounts import CAPABILITIES, Role
+
+        body = client.get("/api/v1/auth/me", headers=auth_headers(client, BOB)).json()
+        roles = {Role(name) for name in body["roles"]}
+        assert roles, "a seeded account with no role at all could sign in and do nothing"
+        expected = set().union(*(CAPABILITIES[role] for role in roles))
+        assert {capability.value for capability in expected} == set(body["capabilities"])
 
 
 class TestDevLoginFlag:
@@ -102,8 +126,8 @@ class TestDevLoginFlag:
 
 
 class TestAccessControl:
-    def test_benchmarks_require_authentication(self, client: TestClient) -> None:
-        response = client.get("/api/v1/benchmarks")
+    def test_benchmarks_require_authentication(self, anonymous: TestClient) -> None:
+        response = anonymous.get("/api/v1/benchmarks")
         assert response.status_code == 401
 
     def test_invalid_token_rejected(self, client: TestClient) -> None:
