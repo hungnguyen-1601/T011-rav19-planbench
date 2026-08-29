@@ -368,3 +368,124 @@ class TestNotAskingTheModelWhereItIsAlwaysWrong:
             catalog=TOOL_CATALOG,
         )
         assert provider.calls
+
+
+class TestAskingAgainWhenOnlyTheWordingWasWrong:
+    """A round lost over punctuation is a round worth asking twice.
+
+    On the episodes the analyst is best at - one side reached the goal
+    and the other did not, where a blind scoring pass marked it right 43
+    times out of 44 - nine of its eleven silences were "every proposal
+    was refused (quantity_in_statement)". It knew the answer and wrote
+    the number instead of citing it.
+
+    What this must not become is a way to talk the guard round. A claim
+    handing the episode to the wrong side is not badly worded, and
+    inviting a rewrite there would invite the same claim in safer words.
+    """
+
+    def _numeric(self) -> dict[str, object]:
+        return hypothesis(statement="the controller stopped for 51 seconds on the losing side")
+
+    def test_a_second_turn_is_taken_and_can_rescue_the_round(self) -> None:
+        provider = MockProvider(script=[answer(self._numeric()), answer(hypothesis())])
+        result = run_episode_round(
+            analysis_for(None),
+            build_episode_view(build_packet()),
+            provider,
+            features=RoundFeatures(episode_scope=True, reword_once=True),
+            catalog=TOOL_CATALOG,
+        )
+        assert len(provider.calls) == 2
+        assert result.response.proposals, "the reworded answer was thrown away"
+        assert ("reworded_once", "kept_second") in result.flags
+
+    def test_the_second_turn_is_told_what_was_removed(self) -> None:
+        provider = MockProvider(script=[answer(self._numeric()), answer(hypothesis())])
+        run_episode_round(
+            analysis_for(None),
+            build_episode_view(build_packet()),
+            provider,
+            features=RoundFeatures(episode_scope=True, reword_once=True),
+            catalog=TOOL_CATALOG,
+        )
+        second = provider.calls[1].messages[0].text
+        assert "quantity_in_statement" in second
+
+    def test_both_turns_are_paid_for(self) -> None:
+        """A retry billed as one turn is a spend cap on nothing."""
+        provider = MockProvider(script=[answer(self._numeric()), answer(hypothesis())])
+        result = run_episode_round(
+            analysis_for(None),
+            build_episode_view(build_packet()),
+            provider,
+            features=RoundFeatures(episode_scope=True, reword_once=True),
+            catalog=TOOL_CATALOG,
+        )
+        one = answer(hypothesis())
+        assert result.cost.input_tokens == 2 * one.input_tokens
+
+    def test_it_stops_at_one_retry(self) -> None:
+        provider = MockProvider(script=[answer(self._numeric()), answer(self._numeric())])
+        result = run_episode_round(
+            analysis_for(None),
+            build_episode_view(build_packet()),
+            provider,
+            features=RoundFeatures(episode_scope=True, reword_once=True),
+            catalog=TOOL_CATALOG,
+        )
+        assert len(provider.calls) == 2, "a loop would spend a caller's money one turn at a time"
+        assert result.response.abstained
+        assert ("reworded_once", "kept_first") in result.flags
+
+    def test_a_round_that_kept_something_is_not_retried(self) -> None:
+        provider = MockProvider(script=[answer(hypothesis())])
+        run_episode_round(
+            analysis_for(None),
+            build_episode_view(build_packet()),
+            provider,
+            features=RoundFeatures(episode_scope=True, reword_once=True),
+            catalog=TOOL_CATALOG,
+        )
+        assert len(provider.calls) == 1
+
+    def test_the_retry_is_off_unless_asked_for(self) -> None:
+        provider = MockProvider(script=[answer(self._numeric()), answer(hypothesis())])
+        run_episode_round(
+            analysis_for(None),
+            build_episode_view(build_packet()),
+            provider,
+            features=RoundFeatures(episode_scope=True),
+            catalog=TOOL_CATALOG,
+        )
+        assert len(provider.calls) == 1
+
+    def test_a_wrong_claim_is_not_invited_to_try_again(self) -> None:
+        """The property the whole retry hangs on.
+
+        A statement handing the episode to the side the platform did not
+        name is not badly worded — it is wrong. Offering a rewrite there
+        asks for the same claim in safer words, and the guard would have
+        one fewer reason to refuse it the second time. Written as a test
+        rather than trusted to the constant, because adding one rule to
+        `REWORDABLE_RULES` is a one-word change and nothing else here
+        noticed when it was made.
+        """
+        from planbench_analyst.episode_runner import REWORDABLE_RULES
+
+        assert "contradicts_verdict" not in REWORDABLE_RULES
+        winner = build_episode_view(build_packet()).packet.verdict.winner
+        provider = MockProvider(
+            script=[
+                answer(hypothesis(statement=f"{winner} lost this episode to the other stack")),
+                answer(hypothesis()),
+            ]
+        )
+        run_episode_round(
+            analysis_for(None),
+            build_episode_view(build_packet()),
+            provider,
+            features=RoundFeatures(episode_scope=True, reword_once=True),
+            catalog=TOOL_CATALOG,
+        )
+        assert len(provider.calls) == 1, "a claim about the wrong side was offered a second try"

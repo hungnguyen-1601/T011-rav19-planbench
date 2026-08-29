@@ -30,6 +30,7 @@ from planbench_analyst.analyst import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_TIMEOUT_S,
     AnalystRefusal,
+    RoundCost,
     catalog_text,
     propose,
 )
@@ -42,6 +43,7 @@ from planbench_analyst.episode_guard import (
 )
 from planbench_analyst.episode_prompts import (
     CONTRAST_CITATION_RULE,
+    EPISODE_REVISION_PREFACE,
     EPISODE_SYSTEM,
     build_episode_user_turn,
     episode_prompt_checksum,
@@ -253,7 +255,124 @@ def run_episode_round(
     )
     # The guard reads proposals and knows nothing about what the round
     # spent getting them. Attached here, where both are in hand.
-    return replace(result, cost=report.cost)
+    result = replace(result, cost=report.cost)
+
+    if flags.reword_once and _lost_everything_to_wording(result):
+        result = _reworded(
+            analysis,
+            view,
+            provider,
+            flags,
+            cards,
+            first=result,
+            turn=turn,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
+        )
+    return result
+
+
+#: Rules a rewrite can satisfy, because they are about how a sentence is
+#: written rather than about whether it is true.
+#:
+#: ``quantity_in_statement`` is the whole reason this exists: on the
+#: episodes the analyst is *best* at — one side reached the goal, the
+#: other did not, where a blind scoring pass marked it right 43 times
+#: out of 44 — nine of its eleven silences were "every proposal was
+#: refused (quantity_in_statement)". It knew the answer and wrote the
+#: number instead of citing it, and the round was lost over punctuation.
+#:
+#: ``contradicts_verdict`` is deliberately absent. A statement handing
+#: the episode to the side the platform did not name is not badly
+#: worded, it is wrong, and inviting a rewrite would be inviting the
+#: same claim in safer words.
+REWORDABLE_RULES: frozenset[str] = frozenset({"quantity_in_statement", "wording_above_associated"})
+
+
+def _lost_everything_to_wording(result: EpisodeRoundResult) -> bool:
+    """Every proposal removed, and every removal one a rewrite could fix."""
+    if result.response.proposals or not result.blocked:
+        return False
+    return all(item.rule in REWORDABLE_RULES for item in result.blocked)
+
+
+def _reworded(
+    analysis: EpisodeRound,
+    view: EpisodeView,
+    provider: LLMProvider,
+    flags: RoundFeatures,
+    cards: ToolCatalog,
+    *,
+    first: EpisodeRoundResult,
+    turn: str,
+    max_tokens: int,
+    timeout_s: float,
+) -> EpisodeRoundResult:
+    """One more turn, told exactly what was removed and why.
+
+    **One, not a loop.** A round that cannot say it in two turns is a
+    round whose problem is not the wording, and a loop would spend a
+    caller's money discovering that one turn at a time.
+
+    The first answer is kept if the second is empty too: a second
+    silence is still the honest answer, and it costs the reader nothing
+    to be told the first reason rather than a later one.
+    """
+    complaints = "\n".join(
+        f"- removed by rule `{item.rule}`: {item.detail}" for item in first.blocked
+    )
+    revision = (
+        turn
+        + EPISODE_REVISION_PREFACE
+        + "Every hypothesis you offered was removed before it reached the reader:\n"
+        + complaints
+        + "\nSay the same things again without what was refused. Cite the ref for "
+        "any number rather than writing the number.\n"
+    )
+    request = LLMRequest(
+        system=EPISODE_SYSTEM + (CONTRAST_CITATION_RULE if flags.contrast_citation_rule else ""),
+        messages=(LLMMessage.user(revision),),
+        output_schema=episode_schema(discriminated_union=flags.discriminated_union),
+        max_tokens=max_tokens,
+    )
+    answer = provider.complete(request)
+    positions = declared_bearings(_payload_of(answer))
+    report = propose(
+        analysis,
+        view,  # type: ignore[arg-type]
+        _Replayed(answer, provider),
+        discriminated_union=flags.discriminated_union,
+        max_tokens=max_tokens,
+        timeout_s=timeout_s,
+        menu=cards,
+    )
+    bearings = {
+        proposal.hypothesis_id: positions.get(position, DIAGNOSIS)
+        for position, proposal in enumerate(report.response.proposals)
+    }
+    second = episode_guard(
+        report.response,
+        view,
+        catalog=cards,
+        bearings=bearings,
+        critic=flags.critic,
+    )
+    # Both turns were paid for whichever answer is kept, so both are
+    # counted. A retry billed as one turn is a cap on nothing.
+    spent = RoundCost(
+        input_tokens=first.cost.input_tokens + report.cost.input_tokens,
+        output_tokens=first.cost.output_tokens + report.cost.output_tokens,
+    )
+    kept = second if second.response.proposals else first
+    return replace(
+        kept,
+        cost=spent,
+        blocked=(*first.blocked, *second.blocked),
+        flags=(
+            *kept.flags,
+            ("reworded_once", "kept_second" if second.response.proposals else "kept_first"),
+        ),
+    )
 
 
 class _Replayed:

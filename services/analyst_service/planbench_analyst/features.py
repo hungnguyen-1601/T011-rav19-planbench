@@ -77,6 +77,13 @@ class RoundFeatures:
     filter_tool_menu: bool = False
     #: W3: route to a checker deterministically after the model declares.
     auto_route_checker: bool = False
+    #: Ask once more when every proposal was removed over how it was
+    #: written rather than over what it claimed.
+    #:
+    #: Off by default for the same reason as the gate beside it. See
+    #: :data:`planbench_analyst.episode_runner.REWORDABLE_RULES` for
+    #: which removals count and which deliberately do not.
+    reword_once: bool = False
     #: Do not spend a provider call on an episode with no losing side.
     #:
     #: Off by default, because every arm already measured ran with the
