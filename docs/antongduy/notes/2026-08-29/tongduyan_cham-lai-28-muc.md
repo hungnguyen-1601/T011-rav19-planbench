@@ -1,28 +1,24 @@
-# Cham lai: 28 muc tren 4 episode `undecidable`
+# Cham lai 28 muc — packet da sua
 
-Cham lai vi mot ly do cu the, khong phai vi diem cu xau.
+Bon episode nay truoc day packet ghi `undecidable`. **Khong con nua.**
 
-Bon episode nay deu co **ca hai ben ve dich**, va chenh nhau ro:
+Ly do cu: mot candidate truot cong o cap run thi khong duoc cham utility o
+bat ky episode nao, nen verdict roi xuong `undecidable` — du hai ben chenh
+20-46% thoi gian ve dich. Downstream doc thanh "hai ben nhu nhau", khong co
+huong nen khong contrast nao duoc gan, packet khong noi gi ve mot khac biet
+nhin bang mat cung thay.
 
-| episode | travel A / B | chenh |
-|---|---|---|
-| `3e3973656a9d` | 17,05s / 24,70s | **31,0%** |
-| `3f3271808c9d` | 16,20s / 21,60s | **25,0%** |
-| `685501eb617d` | 16,10s / 20,20s | **20,3%** |
-| `a646b0f7b414` | 17,55s / 32,35s | **45,7%** |
+Da them co so `outcome_margin`: ca hai ve dich, ben cham hon >=10% thi thua.
+Bon episode nay gio **co nguoi thang**, va moi cai co **1 contrast support**
+cho ky truoc la 0.
 
-Packet ghi `undecidable` **khong** vi hai ben ngang nhau, ma vi mot ben
-khong duoc cham utility (no truot cong o cap run). Nen cau kieu "C5 gap
-stuck_cluster" co the dung ve su kien du packet khong tuyen ai thang.
+Nen cham lai tren packet MOI ben duoi, khong phai tren tri nho ky truoc.
+So thu tu muc giu nguyen de ghep voi key.
 
-**R1 hoi: cau nay co dung vung truoc packet khong** — tuc doi chieu voi
-so lieu trong packet, khong phai doi chieu voi phan quyet. Mot cau ke dung
-cai da xay ra la `holds`, ke ca khi packet khong tuyen ai thang.
-
-`wrong` danh cho cau **noi sai su that**: gan detector cho ben khong bi
-no ban, doi chieu nguoc, hoac suy dien xa hon thu do duoc.
-
-Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
+- **R1** `holds` / `plausible_other` / `wrong` — cau co dung vung truoc packet
+- **R2** `yes` / `no` — subject dung thanh phan cau noi toi
+- **R3** `all` / `some` / `none` — ref mo duoc VA noi dung co che
+- **R5** `correct` / `should_have` — cho khong de xuat gi
 
 ---
 
@@ -33,7 +29,16 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 <details open><summary><b>PACKET</b></summary>
 
-**Phan quyet**: undecidable | thang: `-` | thua: `-`
+**Phan quyet**: outcome_margin | thang: `C1` | thua: `C5`
+
+**Khac biet giua hai ben**
+
+| ref | strength | noi gi | so kem theo |
+|---|---|---|---|
+| `contrast:component_differs:2` | **context** | the two stacks differ in local_controller, local_controller_config; a mechanism that explains the difference has to live in one of those | - |
+| `contrast:detection_only_on_loser:1` | **support** | stuck_cluster fired on C5 and not on C1 | stopped seconds = 4.8; stops = 1 |
+| `contrast:divergence_precedes_outcome:3` | **context** | the two runs parted at 3.0 m along the route, where replan fired on one side | - |
+| `contrast:outcome_differs:4` | **context** | C1 ended this episode ahead of C5 on worst clearance, travel time | min clearance loser = 0.296756; min clearance winner = 0.406214; travel time s loser = 24.7; travel time s winner = 17.05 |
 
 **Detector da ban**
 
@@ -69,7 +74,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | none | n/a |
+|  |  |  | n/a |
 
 ### 025
 
@@ -80,7 +85,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 026
 
@@ -91,7 +96,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 027 - **khong de xuat gi**
 
@@ -99,7 +104,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ### 028
 
@@ -110,7 +115,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 029 - **khong de xuat gi**
 
@@ -118,7 +123,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ### 030 - **khong de xuat gi**
 
@@ -126,7 +131,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ### 031 - **khong de xuat gi**
 
@@ -134,7 +139,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ### 032
 
@@ -145,7 +150,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 033 - **khong de xuat gi**
 
@@ -153,7 +158,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ### 034
 
@@ -164,7 +169,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 035
 
@@ -175,7 +180,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 036 - **khong de xuat gi**
 
@@ -183,7 +188,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ---
 
@@ -196,7 +201,16 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 <details open><summary><b>PACKET</b></summary>
 
-**Phan quyet**: undecidable | thang: `-` | thua: `-`
+**Phan quyet**: outcome_margin | thang: `C1` | thua: `C5`
+
+**Khac biet giua hai ben**
+
+| ref | strength | noi gi | so kem theo |
+|---|---|---|---|
+| `contrast:component_differs:2` | **context** | the two stacks differ in local_controller, local_controller_config; a mechanism that explains the difference has to live in one of those | - |
+| `contrast:detection_only_on_loser:1` | **support** | stuck_cluster fired on C5 and not on C1 | stopped seconds = 4.9; stops = 1 |
+| `contrast:divergence_precedes_outcome:3` | **context** | the two runs parted at 2.3 m along the route, where replan fired on one side | - |
+| `contrast:outcome_differs:4` | **context** | C1 ended this episode ahead of C5 on worst clearance, travel time | min clearance loser = 0.368427; min clearance winner = 0.402013; travel time s loser = 21.6; travel time s winner = 16.2 |
 
 **Detector da ban**
 
@@ -232,7 +246,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 038
 
@@ -243,7 +257,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 039
 
@@ -254,7 +268,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 040 - **khong de xuat gi**
 
@@ -262,7 +276,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ### 041 - **khong de xuat gi**
 
@@ -270,7 +284,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ### 042
 
@@ -281,7 +295,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | none | n/a |
+|  |  |  | n/a |
 
 ### 043
 
@@ -292,7 +306,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | none | n/a |
+|  |  |  | n/a |
 
 ### 044 - **khong de xuat gi**
 
@@ -300,7 +314,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ### 045 - **khong de xuat gi**
 
@@ -308,7 +322,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ### 046 - **khong de xuat gi**
 
@@ -316,7 +330,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ### 047
 
@@ -327,7 +341,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 048
 
@@ -338,7 +352,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 049 - **khong de xuat gi**
 
@@ -346,7 +360,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ---
 
@@ -359,7 +373,16 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 <details open><summary><b>PACKET</b></summary>
 
-**Phan quyet**: undecidable | thang: `-` | thua: `-`
+**Phan quyet**: outcome_margin | thang: `C1` | thua: `C5`
+
+**Khac biet giua hai ben**
+
+| ref | strength | noi gi | so kem theo |
+|---|---|---|---|
+| `contrast:component_differs:2` | **context** | the two stacks differ in local_controller, local_controller_config; a mechanism that explains the difference has to live in one of those | - |
+| `contrast:detection_only_on_loser:1` | **support** | stuck_cluster fired on C5 and not on C1 | stopped seconds = 5.1; stops = 1 |
+| `contrast:divergence_precedes_outcome:3` | **context** | the two runs parted at 2.2 m along the route, where replan fired on one side | - |
+| `contrast:outcome_differs:4` | **context** | C1 ended this episode ahead of C5 on travel time | travel time s loser = 20.2; travel time s winner = 16.1 |
 
 **Detector da ban**
 
@@ -395,7 +418,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 093 - **khong de xuat gi**
 
@@ -403,7 +426,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ### 094 - **khong de xuat gi**
 
@@ -411,7 +434,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ### 095 - **khong de xuat gi**
 
@@ -419,7 +442,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ### 096
 
@@ -430,7 +453,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 097 - **khong de xuat gi**
 
@@ -438,7 +461,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ### 098
 
@@ -449,7 +472,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 099 - **khong de xuat gi**
 
@@ -457,7 +480,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ### 100
 
@@ -468,7 +491,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 101 - **khong de xuat gi**
 
@@ -476,7 +499,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ---
 
@@ -489,7 +512,16 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 <details open><summary><b>PACKET</b></summary>
 
-**Phan quyet**: undecidable | thang: `-` | thua: `-`
+**Phan quyet**: outcome_margin | thang: `C1` | thua: `C5`
+
+**Khac biet giua hai ben**
+
+| ref | strength | noi gi | so kem theo |
+|---|---|---|---|
+| `contrast:component_differs:2` | **context** | the two stacks differ in local_controller, local_controller_config; a mechanism that explains the difference has to live in one of those | - |
+| `contrast:detection_only_on_loser:1` | **support** | stuck_cluster fired on C5 and not on C1 | stopped seconds = 13.15; stops = 1 |
+| `contrast:divergence_precedes_outcome:3` | **context** | the two runs parted at 2.3 m along the route, where replan fired on one side | - |
+| `contrast:outcome_differs:4` | **context** | C1 ended this episode ahead of C5 on worst clearance, travel time | min clearance loser = 0.320665; min clearance winner = 0.38505; travel time s loser = 32.35; travel time s winner = 17.55 |
 
 **Detector da ban**
 
@@ -525,7 +557,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 130
 
@@ -536,7 +568,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 131
 
@@ -547,7 +579,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 132
 
@@ -558,7 +590,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 133 - **khong de xuat gi**
 
@@ -566,7 +598,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ### 134 - **khong de xuat gi**
 
@@ -574,7 +606,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a |  |
 
 ### 135
 
@@ -585,7 +617,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 136
 
@@ -596,7 +628,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 137
 
@@ -607,7 +639,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 138
 
@@ -618,7 +650,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 139
 
@@ -629,7 +661,7 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ### 140
 
@@ -640,6 +672,6 @@ Cac muc giu nguyen so thu tu cu, de ghep lai voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+|  |  |  | n/a |
 
 ---
