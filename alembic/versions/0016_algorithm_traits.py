@@ -20,8 +20,8 @@ the same as somebody signing it as a trait row. Only an approved row may
 back a promoted claim, the same rule the knowledge base runs under, so
 seeding as approved would grant that on nobody's signature.
 
-Revision ID: 0012
-Revises: 0011
+Revision ID: 0016
+Revises: 0015
 Create Date: 2026-08-26
 """
 
@@ -35,8 +35,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 from alembic import op
 
-revision: str = "0012"
-down_revision: str | None = "0011"
+revision: str = "0016"
+down_revision: str | None = "0015"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
