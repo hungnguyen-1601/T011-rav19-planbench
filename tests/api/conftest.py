@@ -69,6 +69,12 @@ def isolate_environment(monkeypatch) -> None:
     """
     monkeypatch.setenv("PLANBENCH_SEED_USERS", SEED_USERS)
     monkeypatch.setenv("PLANBENCH_ENABLE_DEV_LOGIN", "true")
+    # Publishing is off unless a test turns it on. Left unpinned, a
+    # developer who enabled it in their own `.env` to try the feature
+    # made the tests that assert what happens *without* it fail on their
+    # machine and nowhere else — which is this docstring's whole subject.
+    # `governed` sets it back to "true" after calling this.
+    monkeypatch.setenv("PLANBENCH_ALGORITHM_GOVERNANCE", "false")
     # Seed roles are honoured on single-person profiles only, and the
     # suite needs them honoured. The alternative — granting through the
     # admin API in a fixture — would make every test depend on the very
