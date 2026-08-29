@@ -424,10 +424,7 @@ function CandidateComparison({ run }: { run: DecisionRun }) {
           <summary>
             <Icon name="chevronRight" size={14} />
             <span>{t("decisions.gates.detail")}</span>
-            <Hint
-              text={t("decisions.gates.note")}
-              label={t("decisions.gates.detail")}
-            />
+            <Hint text={t("decisions.gates.note")} label={t("decisions.gates.detail")} />
             <span className={`badge ${summary.tone}`}>
               {t(summary.key, {
                 total: String(summary.total),
@@ -596,10 +593,7 @@ function TracePanel({ run }: { run: DecisionRun }) {
   //
   // Unset means automatic: that replay switches when it reaches its own
   // end.
-  const [finalFor, setFinalFor] = useState<{ a: boolean; b: boolean }>({
-    a: false,
-    b: false,
-  });
+  const [finalFor, setFinalFor] = useState<{ a: boolean; b: boolean }>({ a: false, b: false });
   const [sync, setSync] = useState<SyncSlot>({ state: "idle" });
   /** Empty until the recipe answers, and empty for a run too old to
    *  carry per-episode utility — the plain list is the honest fallback,
@@ -625,8 +619,7 @@ function TracePanel({ run }: { run: DecisionRun }) {
           ]),
         ),
       );
-      await Promise.all(
-        candidates.map(async (candidate) => {
+      await Promise.all(candidates.map(async (candidate) => {
           const outcome = outcomesByEpisode(candidate).get(episode);
           if (!outcome) {
             if (currentRequest === requestId.current) {
@@ -638,11 +631,7 @@ function TracePanel({ run }: { run: DecisionRun }) {
             return;
           }
           try {
-            const trace = await getTrace(
-              run.id,
-              candidate.candidate_id,
-              episode,
-            );
+            const trace = await getTrace(run.id, candidate.candidate_id, episode);
             if (currentRequest === requestId.current) {
               setSlots((current) => ({
                 ...current,
@@ -1003,10 +992,7 @@ function TracePanel({ run }: { run: DecisionRun }) {
             // timestamps on purpose — that is the whole difference
             // between the modes, and it is why the warning above is
             // not optional.
-            const at =
-              syncMode === "progress"
-                ? sideTime(view, scan.time, side)
-                : playback.time;
+            const at = syncMode === "progress" ? sideTime(view, scan.time, side) : playback.time;
             return (
               <CandidateEpisode
                 key={candidate.candidate_id}
@@ -1026,9 +1012,7 @@ function TracePanel({ run }: { run: DecisionRun }) {
                   }))
                 }
                 onSeek={(seconds) => seekFrom(side, seconds)}
-                isReferenceRuler={
-                  view?.reference_source_candidate_id === candidate.candidate_id
-                }
+                isReferenceRuler={view?.reference_source_candidate_id === candidate.candidate_id}
                 onRetry={() => void loadPair(episodeId)}
                 view25d={view25d}
                 onView25dChange={setView25d}
@@ -2069,12 +2053,9 @@ function CopyRunId({ id }: { id: string }) {
   // Cleared on unmount as well as before each new timer: copying twice
   // and then leaving the page would otherwise set state on a component
   // that is gone.
-  useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current);
-    },
-    [],
-  );
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
 
   const copy = async () => {
     const result = await copyDecisionId(
@@ -2413,12 +2394,7 @@ function CardPanel({ run }: { run: DecisionRun }) {
       <div className="panel-head">
         <h3>
           {t("decisions.card.title")}{" "}
-          <Hint
-            text={t("decisions.card.scopeNote", {
-              scope: card.experiment_scope,
-            })}
-            label={t("decisions.card.title")}
-          />
+          <Hint text={t("decisions.card.scopeNote", { scope: card.experiment_scope })} label={t("decisions.card.title")} />
         </h3>
         <span className="badge ok">{card.status}</span>
       </div>

@@ -109,7 +109,24 @@ export default function DeploymentsPage() {
      both of those already re-fetch. */
   const paged = usePagination(newestFirst);
 
+  const signedIn = session !== null;
+
   const refresh = useCallback(async () => {
+    /* **Do not ask when there is nobody to ask as.** Reading deployments
+       needs an account, so a signed-out visitor got a 401 and this page
+       printed the server's own words at them — `missing bearer token`,
+       which describes the request rather than their situation and reads
+       like something broke.
+
+       The session lives in `sessionStorage`, so it does not survive a
+       new tab; landing here from a bookmark in a fresh window is the
+       ordinary way to arrive signed out, not an edge case. */
+    if (!signedIn) {
+      setProfiles([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       setProfiles(await listTaskProfiles());
@@ -119,7 +136,7 @@ export default function DeploymentsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [signedIn]);
 
   useEffect(() => {
     void refresh();
@@ -382,7 +399,23 @@ export default function DeploymentsPage() {
             labelKey: "deployments.tabs.list",
             content: (
               <>
-                {loading ? (
+                {!signedIn ? (
+                  /* Before the empty state, because "no deployments
+                     filed yet" is a claim about the store and this
+                     reader has not been allowed to look. */
+                  <div className="deployment-empty-banner">
+                    <span className="deployment-empty-icon" aria-hidden="true">
+                      <Icon name="user" size={24} />
+                    </span>
+                    <div>
+                      <strong>{t("deployments.signedOut.title")}</strong>
+                      <p>{t("deployments.signedOut.body")}</p>
+                    </div>
+                    <Link href="/login" className="quick-action primary">
+                      {t("nav.signIn")}
+                    </Link>
+                  </div>
+                ) : loading ? (
                   <div className="deployment-loading"><span className="skeleton" />{t("common.loading")}</div>
                 ) : profiles.length === 0 ? (
                   <div className="deployment-empty-banner">

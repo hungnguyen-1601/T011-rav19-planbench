@@ -145,10 +145,17 @@ describe("the page is reachable and translated", () => {
     /* `/algorithms` was the other one. It moved here in P3 and was
        removed in P6 — regrouped first, deleted only once this page
        carried everything it did, including the observation classes it
-       was the sole place to read. */
-    expect(NAV_SECTIONS.flatMap((section) => section.items).map((item) => item.href)).not.toContain(
-      "/algorithms",
-    );
+       was the sole place to read.
+
+       The href came back later for a different job: governing imported
+       algorithms, which have a publication state and a reviewer and are
+       not in the registry at all. So the absent href is no longer the
+       thing worth asserting — what has to stay true is that the registry
+       is read *here*, and that the other page does not grow a second
+       copy of it. */
+    const algorithms = readFileSync(join(APP, "algorithms", "page.tsx"), "utf8");
+    expect(algorithms).not.toContain("algorithms.builtIn");
+    expect(algorithms).not.toContain("global_observation_class");
     expect(PAGE).toContain("StackTable");
     expect(PAGE).toContain("stack.global_observation_class");
   });

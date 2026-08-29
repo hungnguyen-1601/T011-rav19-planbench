@@ -259,3 +259,41 @@ describe("opening a deployment must not move its mission", () => {
     expect(FORM).toContain("[draft !== null, libraryName, source, startFrom]");
   });
 });
+
+describe("the deployments page when nobody is signed in", () => {
+  it("does not ask for a list it is not allowed to have", () => {
+    /* Reading deployments needs an account, so a signed-out visitor got
+       a 401 and the page printed the server's own words at them —
+       "missing bearer token", which describes the request rather than
+       their situation and reads like something broke. */
+    const refresh = PAGE.slice(PAGE.indexOf("const refresh = useCallback"));
+    const body = refresh.slice(0, refresh.indexOf("}, [signedIn]);"));
+    expect(body).toContain("if (!signedIn) {");
+    expect(body).toContain("setError(null);");
+  });
+
+  it("re-asks once somebody signs in", () => {
+    // The guard is only right if the fetch comes back afterwards; a
+    // dependency on the session is what makes that happen.
+    expect(PAGE).toContain("}, [signedIn]);");
+    expect(PAGE).toContain("const signedIn = session !== null;");
+  });
+
+  it("invites a sign-in instead of claiming the store is empty", () => {
+    /* "No deployments filed yet" is a claim about the store, and this
+       reader has not been allowed to look. Ordered before the empty
+       state for that reason. */
+    const list = PAGE.slice(PAGE.indexOf('id: "list"'));
+    expect(list.indexOf("!signedIn ?")).toBeLessThan(list.indexOf("profiles.length === 0"));
+    expect(PAGE).toContain("deployments.signedOut.title");
+  });
+
+  it("says the session is per tab, which is how people arrive here signed out", () => {
+    // sessionStorage does not survive a new window, so this is the
+    // ordinary way to land here, not an edge case.
+    for (const dict of [dictionaries, vietnamese]) {
+      expect(dict["deployments.signedOut.body"]).toBeTruthy();
+    }
+    expect(dictionaries["deployments.signedOut.body"]).toMatch(/tab/i);
+  });
+});

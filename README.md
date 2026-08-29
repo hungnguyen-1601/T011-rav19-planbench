@@ -16,7 +16,7 @@ Nền tảng mô phỏng và so sánh thuật toán điều hướng cho robot d
 AMR/AGV - và, quan trọng hơn, một quy trình để **trả lời câu hỏi "nên
 triển khai thuật toán nào"** bằng bằng chứng người khác kiểm lại được.
 
-**Dùng thử:** <https://planbench-web.onrender.com/>
+**Tải app tại:** <https://github.com/hungnguyen-1601/T011-rav19-planbench/releases/latest/download/PlanBench-Setup.exe>
 
 **Chỉ mô phỏng - không điều khiển robot thật. Không dùng Gazebo.**
 
@@ -275,6 +275,9 @@ Thứ tự dưới đây là thứ tự phụ thuộc - mỗi bước cần th�
 Bỏ qua được những bước đã có sẵn dữ liệu: định dùng bản đồ và kịch bản
 dựng sẵn thì bắt đầu thẳng từ §4.3.
 
+**Không phải tài khoản nào cũng làm được mọi bước.** Ai được làm gì nằm ở
+§4.11; đọc trước nếu một nút không hiện ra ở chỗ hướng dẫn nói là có.
+
 ### 4.1. Bản đồ - vẽ thế giới robot chạy trong đó
 
 Vào **Bản đồ**.
@@ -403,7 +406,7 @@ Mở một run. Trang đọc từ trên xuống theo đúng thứ tự nên đ�
 
 Ở mục **Phản biện**, bấm **Kiểm bằng luật** trước - nó chạy bộ luật tất
 định, không cần cấu hình gì. **Hỏi thêm model** là lớp AI phía trên, cần
-key (§5.4).
+key (§5.5).
 
 Cuối trang là **Đọc, và quyết định**: ghi chú lại kết luận của bạn, đánh
 dấu đã đọc, và nếu muốn áp dụng thì **Duyệt làm cấu hình** rồi tải
@@ -446,7 +449,7 @@ Kết quả hiển thị tách rõ ý nào của **luật**, ý nào của **mod
 luật, và không đẩy được một cảnh báo chặn xuống dưới một ghi chú.
 
 Chưa cấu hình key thì cả hai lớp chạy bằng bộ khớp từ khoá offline, và
-giao diện nói thẳng điều đó. Cách bật model thật: §5.4.
+giao diện nói thẳng điều đó. Cách bật model thật: §5.5.
 
 ### 4.9. Mang kết quả ra ngoài
 
@@ -468,15 +471,120 @@ Khi đang chờ, **chính chủ không tự duyệt được** - đó là toàn 
 của việc nhờ. Hủy yêu cầu lúc nào cũng được. Việc đang chờ bạn nằm ở
 trang **Duyệt**.
 
+### 4.11. Ai được làm gì - ba gói quyền
+
+PlanBench chia quyền thành **ba gói độc lập**: `engineer`, `reviewer`,
+`admin`. Chúng **không lồng nhau** - reviewer không phải engineer cấp
+cao, admin không phải reviewer cấp cao. Một người giữ cả ba, hoặc một,
+hoặc không gói nào.
+
+Lý do không xếp bậc thang: publish một thuật toán là **chữ ký của
+reviewer**, không phải đặc quyền của người quản trị. Cho admin quyền đó
+vì "admin thì làm gì cũng được" là biến một chữ ký thành một cấp bậc.
+
+| Việc | engineer | reviewer | admin |
+|---|:--:|:--:|:--:|
+| Đọc map, scenario, deployment, kết quả | ✅ | ✅ | ✅ |
+| Xem catalogue thuật toán | ✅ | ✅ | ✅ |
+| Tạo/sửa map, scenario, deployment | ✅ | | |
+| Chạy mô phỏng, chạy so sánh | ✅ | ✅ | |
+| Gửi một run đi duyệt | ✅ | | |
+| Nhận, đọc và **ký duyệt** một run | | ✅ | |
+| Thu hồi phê duyệt | | ✅ | |
+| Import thuật toán, xem mã, **xuất bản** | | ✅ | |
+| Tắt một thuật toán (lý do quản trị) | | ✅ | |
+| Tắt một thuật toán (**kill switch** lúc sự cố) | | | ✅ |
+| Cấp/thu quyền, khoá tài khoản | | | ✅ |
+| Đọc nhật ký phân quyền | | ✅ | ✅ |
+| Đổi cấu hình hệ thống | | | ✅ |
+
+Reviewer **chạy mô phỏng được** - để tự xem một thuật toán chưa xuất bản
+cư xử thế nào trước khi bảo lãnh nó. Không có quyền đó thì reviewer phải
+nhờ engineer chạy hộ đúng thứ mình sắp ký.
+
+Admin **không duyệt run và không xuất bản thuật toán**. Đường duy nhất
+admin chạm vào một thuật toán là kill switch, và nó ghi vào nhật ký dưới
+một tên khác với `algorithm.disable` - vì đó là hai việc khác nhau, và
+chờ reviewer có mặt không phải là cách ứng phó sự cố.
+
+#### Duyệt một run: bốn bước
+
+Gửi → Nhận → Đọc → Ký.
+
+1. **Gửi** - *chủ run* làm, và kiểm theo quyền sở hữu chứ không theo
+   role: người khác dù có quyền cũng không gửi hộ được. Để trống ô
+   reviewer thì run vào **hàng chờ chung**; điền tên thì gửi đích danh.
+2. **Nhận** - reviewer lấy nó khỏi hàng chờ. Hai người không cùng giữ
+   một run.
+3. **Đọc** - nói "tôi đã đọc bằng chứng". Việc này gắn vào **lần nhận**,
+   không gắn vào run: ai nhận lại từ người khác thì phải tự đọc lại.
+4. **Ký** - duyệt hoặc từ chối, bắt buộc kèm nhận xét.
+
+Reviewer **không có quyền gửi**, nên mở một run chưa được gửi thì không
+thấy nút nào - đó là đúng, không phải hỏng. Chủ run phải gửi trước.
+
+**Thuật toán import thì khác**: không ai gửi cả. Nó đến tay reviewer
+bằng cách tồn tại, và nằm đó không ai dùng được cho tới khi một reviewer
+xuất bản. Vì thế tab Thuật toán trong trang Duyệt không có nút "Nhận".
+
+#### Tách trách nhiệm
+
+`PLANBENCH_SEPARATION_OF_DUTIES` nhận `strict` (mặc định) hoặc `relaxed`.
+
+- **`strict`** - không ai ký run của chính mình, và reviewer import một
+  bản thì không tự xuất bản bản đó. Cần hai tài khoản reviewer.
+- **`relaxed`** - cùng người làm cả hai, **chỉ bật được trên profile
+  một-người**. Không phải bỏ luật: hành động vẫn vào nhật ký, chỉ là
+  dưới tên `self_*`, vì trên máy một người không có cặp mắt thứ hai nào
+  để đợi.
+
+#### Profile triển khai
+
+`PLANBENCH_DEPLOYMENT_PROFILE`:
+
+| Profile | Dùng khi | Tách trách nhiệm |
+|---|---|---|
+| `production` | **mặc định khi biến vắng mặt** - máy nhiều người dùng chung | `strict` |
+| `desktop-single-user` | bản desktop, một người một máy | cho phép `relaxed` |
+| `demo` | máy trình diễn | cho phép `relaxed`, kèm banner không tắt được |
+
+Mặc định là `production` **khi biến không được đặt** - fail-closed. Một
+máy quên cấu hình sẽ siết chặt hơn mức cần, chứ không lỏng hơn.
+
+Có một role thứ tư, `demo_owner`, mang mọi quyền. Nó **không cấp được từ
+trang Users & access** và không có trong bảng trên: đó là nhân nhượng
+của một profile triển khai chứ không phải một việc ai đó làm. Gỡ nó là
+một runbook, xem `docs/DEMO-PROFILE.md`.
+
+#### Xuất bản thuật toán
+
+Cổng này mặc định **tắt**. Bật bằng `PLANBENCH_ALGORITHM_GOVERNANCE=true`.
+
+Tắt thì mọi bundle chạy được đều được đưa ra dùng, như trước. Bật thì
+một thuật toán import **chỉ vào picker sau khi có reviewer xuất bản** -
+và trang **Thuật toán** nói rõ từng bundle đang ở trạng thái nào: đã
+xuất bản, bị bản mới thay, chờ reviewer, đang giữ lại, chạy hỏng, hay đã
+tắt. Trước khi có trang đó, một thuật toán vắng mặt khỏi picker không có
+chỗ nào tra lý do.
+
 ## 5. Chạy PlanBench
 
-### 5.1. Web đã triển khai - không cần cài gì
+### 5.1. Tải app - cách nhanh nhất
+
+Bản desktop cho Windows, không cần cài Python hay Node:
+
+<https://github.com/hungnguyen-1601/T011-rav19-planbench/releases/latest/download/PlanBench-Setup.exe>
+
+Nó chạy `desktop-single-user`, và tạo sẵn ba tài khoản để thử ba gói
+quyền ở §4.11: `admin`, `engineer`, `reviewer`.
+
+### 5.2. Web đã triển khai
 
 <https://planbench-web.onrender.com/>
 
 Đăng nhập rồi làm theo §4.
 
-### 5.2. Chạy cục bộ
+### 5.3. Chạy cục bộ
 
 Lần đầu cần cài dependency - xem §6.
 
@@ -503,7 +611,7 @@ vào `sys.path` khi có thứ gì đó đặt chúng vào. `serve.py` đọc dan
 đường dẫn từ `pyproject.toml` - cùng danh sách pytest dùng - rồi mới khởi
 động.
 
-### 5.3. Chạy qua API
+### 5.4. Chạy qua API
 
 Mở `http://localhost:8000/docs`, bấm **Authorize**, thử trực tiếp từ
 trình duyệt. Hoặc bằng `curl`:
@@ -529,7 +637,7 @@ curl -H "Authorization: Bearer <token>" \
   http://localhost:8000/api/v1/decisions/<run_id>
 ```
 
-### 5.4. Bật model thật cho AI
+### 5.5. Bật model thật cho AI
 
 Trong `.env`:
 
