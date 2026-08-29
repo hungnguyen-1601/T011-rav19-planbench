@@ -93,6 +93,13 @@ ARMS: dict[str, RoundFeatures] = {
     # Differs from ep_b1 by one sentence in the system and nothing
     # else, so a difference in what survives rule 10 is that sentence.
     "ep_cite_two": RoundFeatures(episode_scope=True, contrast_citation_rule=True),
+    # Differs from ep_b1 by one behaviour: a round whose every proposal
+    # was removed over how it was written gets told what was removed and
+    # asked once more. Its control is inside itself - the first turn is
+    # the baseline for that round - so it needs no paired arm, which is
+    # as well, because the packets changed under `outcome_margin` and
+    # nothing run before today compares with anything run after it.
+    "ep_reword": RoundFeatures(episode_scope=True, reword_once=True),
 }
 
 

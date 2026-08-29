@@ -163,6 +163,23 @@ class EpisodePreregistration:
     #: is the flattering one.
     stage_one_repeats: int = 1
     stage_two_repeats: int = 3
+    #: What the rewording arm runs at instead, and why it is not three.
+    #:
+    #: **Two, because the budget left is 1.39 USD and three repeats
+    #: estimate at 0.93 with a seven per cent error already observed on
+    #: the last estimate.** Written before the arm ran rather than after,
+    #: and the reason is money rather than results: nothing about this
+    #: arm has been measured yet, so there is no result it could be
+    #: chosen to flatter.
+    #:
+    #: Two is enough for what this arm asks, because it carries its own
+    #: control: a round where every proposal was removed over wording is
+    #: the baseline, and the second turn is the intervention, so the
+    #: comparison is inside each round rather than against another arm.
+    #: A paired arm would also have been the wrong control - the packets
+    #: changed under `outcome_margin`, so nothing run today compares with
+    #: the sweeps run before it.
+    reword_arm_repeats: int = 2
     stage_two_arms: int = 2
     #: What lets an arm through: it violated no hard constraint, and it
     #: did not drop more of its own proposals than the baseline did.
@@ -238,6 +255,7 @@ class EpisodePreregistration:
             "cases_per_cluster": self.cases_per_cluster,
             "stage_one_repeats": self.stage_one_repeats,
             "stage_two_repeats": self.stage_two_repeats,
+            "reword_arm_repeats": self.reword_arm_repeats,
             "stage_two_arms": self.stage_two_arms,
             "stage_two_rule": self.stage_two_rule,
             "stage_two_tiebreak": self.stage_two_tiebreak,
