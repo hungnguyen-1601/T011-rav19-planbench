@@ -77,6 +77,13 @@ class RoundFeatures:
     filter_tool_menu: bool = False
     #: W3: route to a checker deterministically after the model declares.
     auto_route_checker: bool = False
+    #: Append the rule saying a contrast cites two kinds of ref.
+    #:
+    #: A prompt arm rather than an input arm: it changes nothing the
+    #: model is shown about this episode, only what it is told the
+    #: platform will accept. Off by default, because every arm already
+    #: measured ran without it.
+    contrast_citation_rule: bool = False
     #: The round is about one episode rather than the whole run.
     #:
     #: Not an input toggle like the four above: it selects **which

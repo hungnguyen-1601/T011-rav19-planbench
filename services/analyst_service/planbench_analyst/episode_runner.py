@@ -40,6 +40,7 @@ from planbench_analyst.episode_guard import (
     episode_guard,
 )
 from planbench_analyst.episode_prompts import (
+    CONTRAST_CITATION_RULE,
     EPISODE_SYSTEM,
     build_episode_user_turn,
     episode_prompt_checksum,
@@ -159,7 +160,7 @@ def run_episode_round(
         ),
     )
     request = LLMRequest(
-        system=EPISODE_SYSTEM,
+        system=EPISODE_SYSTEM + (CONTRAST_CITATION_RULE if flags.contrast_citation_rule else ""),
         messages=(LLMMessage.user(turn),),
         output_schema=episode_schema(discriminated_union=flags.discriminated_union),
         max_tokens=max_tokens,

@@ -252,3 +252,35 @@ class TestWhatTheModelWasShown:
             catalog=TOOL_CATALOG,
         )
         assert "<<<RUN_CONTEXT" not in quiet.calls[0].messages[0].text
+
+
+class TestTheArmThatAsksForTwoCitations:
+    def test_the_rule_reaches_the_model_when_the_arm_is_on(self) -> None:
+        from planbench_analyst.episode_prompts import CONTRAST_CITATION_RULE
+
+        provider = MockProvider(script=[answer(hypothesis())])
+        view = build_episode_view(build_packet())
+        run_episode_round(
+            analysis_for(view),
+            view,
+            provider,
+            features=RoundFeatures(episode_scope=True, contrast_citation_rule=True),
+            catalog=TOOL_CATALOG,
+        )
+        assert CONTRAST_CITATION_RULE in provider.calls[0].system
+
+    def test_and_not_when_it_is_off(self) -> None:
+        """`ep_b1` and this arm differ by this sentence and nothing else,
+        so a difference in what survives rule 10 is attributable to it."""
+        from planbench_analyst.episode_prompts import CONTRAST_CITATION_RULE
+
+        provider = MockProvider(script=[answer(hypothesis())])
+        view = build_episode_view(build_packet())
+        run_episode_round(
+            analysis_for(view),
+            view,
+            provider,
+            features=RoundFeatures(episode_scope=True),
+            catalog=TOOL_CATALOG,
+        )
+        assert CONTRAST_CITATION_RULE not in provider.calls[0].system

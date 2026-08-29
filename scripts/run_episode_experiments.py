@@ -90,6 +90,9 @@ ARMS: dict[str, RoundFeatures] = {
     ),
     "ep_no_union": RoundFeatures(episode_scope=True, discriminated_union=False),
     "ep_run_context": RoundFeatures(episode_scope=True, run_context=True),
+    # Differs from ep_b1 by one sentence in the system and nothing
+    # else, so a difference in what survives rule 10 is that sentence.
+    "ep_cite_two": RoundFeatures(episode_scope=True, contrast_citation_rule=True),
 }
 
 

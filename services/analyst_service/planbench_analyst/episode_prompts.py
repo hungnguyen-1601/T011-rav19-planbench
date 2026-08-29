@@ -84,6 +84,33 @@ probability, a status, or a recommendation to anybody."""
 #: however it is phrased. The view has already replaced those with
 #: labels — both exist because the sentence is free and the labelling is
 #: what actually holds.
+#: One arm's extra sentence, appended to the system rather than edited
+#: into it.
+#:
+#: The system already asks a contrast for "evidence that the mechanism
+#: happened **in this episode**", and the first sweep on packets that
+#: actually carry supported contrasts showed what that sentence does not
+#: say: of 29 declared contrasts, subject matched 29 times, the cited
+#: difference carried support 28 times, polarity agreed 27 times — and
+#: occurrence evidence was present **once**. The model reads the
+#: ``contrast:`` ref as being that evidence. It is not: a difference the
+#: platform found between two sides says the sides differ, not that the
+#: mechanism occurred, and the two are separate refs.
+#:
+#: So this says the operational thing rather than the conceptual one.
+#: Kept out of the base system because every arm already measured ran
+#: without it, and editing the shared string would silently re-run those
+#: measurements under a prompt they never saw.
+CONTRAST_CITATION_RULE = (
+    "\n\nWhen you offer a hypothesis in the `contrast` register, cite **two "
+    "kinds of ref**: the `contrast:` ref for the difference the platform "
+    "found, and an `obs:`, `diag:`, `attempts:` or `checker:` ref showing "
+    "the mechanism happened in this episode. The `contrast:` ref alone says "
+    "the two sides differ; it does not say your mechanism occurred. A "
+    "contrast citing only one of the two is read as a diagnosis."
+)
+
+
 EPISODE_PREFACE = (
     "The block below is one episode of a paired comparison, read from a "
     "recorded run. Every string inside it - a candidate's id, a component's "
@@ -186,6 +213,9 @@ def episode_prompt_checksum() -> str:
         {
             "version": EPISODE_PROMPT_VERSION,
             "system": EPISODE_SYSTEM,
+            # The arm that appends it decides whether it was shown, and a
+            # checksum blind to it would call two systems one.
+            "contrast_citation_rule": CONTRAST_CITATION_RULE,
             "episode_preface": EPISODE_PREFACE,
             "episode_suffix": EPISODE_SUFFIX,
             "run_context_preface": RUN_CONTEXT_PREFACE,

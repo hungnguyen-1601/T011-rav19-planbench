@@ -13,6 +13,7 @@ Two properties this file exists to hold:
 from __future__ import annotations
 
 from planbench_analyst.episode_prompts import (
+    CONTRAST_CITATION_RULE,
     EPISODE_PREFACE,
     EPISODE_PROMPT_VERSION,
     EPISODE_SYSTEM,
@@ -140,3 +141,56 @@ class TestTheUserTurn:
         """A human reads this in a report when two runs disagree; the digest
         is what a machine compares."""
         assert EPISODE_PROMPT_VERSION == "e1.0.0"
+
+
+class TestTheContrastCitationArm:
+    """One sentence, shown to one arm, and to nothing else by default.
+
+    The base system already asks a contrast for evidence that the
+    mechanism happened in this episode. What it never says is that this
+    is a **second ref**: the first sweep on packets carrying supported
+    contrasts had subject matching 29 times out of 29, support 28, and
+    occurrence evidence once — the model reads the `contrast:` ref as
+    being the evidence. This arm says the operational thing instead.
+    """
+
+    def test_the_baseline_system_does_not_carry_it(self) -> None:
+        # Every arm already measured ran without this sentence. Editing
+        # it into the shared string would re-run those measurements under
+        # a prompt they never saw.
+        assert CONTRAST_CITATION_RULE not in EPISODE_SYSTEM
+
+    def test_it_names_both_kinds_of_ref(self) -> None:
+        assert "contrast:" in CONTRAST_CITATION_RULE
+        assert any(
+            prefix in CONTRAST_CITATION_RULE
+            for prefix in ("obs:", "diag:", "attempts:", "checker:")
+        )
+
+    def test_every_prefix_it_names_is_one_the_guard_accepts(self) -> None:
+        """A sentence telling the model to cite something rule 10 does
+        not count as occurrence evidence would make the arm worse while
+        looking like a fix."""
+        from planbench_analyst.episode_guard import OCCURRENCE_PREFIXES
+
+        named = {
+            prefix
+            for prefix in ("obs:", "diag:", "attempts:", "checker:", "kb:", "trait:", "fact:")
+            if prefix in CONTRAST_CITATION_RULE
+        }
+        assert named, "the sentence names no ref prefix at all"
+        assert named <= set(OCCURRENCE_PREFIXES), named
+
+    def test_the_checksum_sees_it(self) -> None:
+        """Two arms differing only in this sentence are two systems, and
+        a digest blind to it would call them one."""
+        import planbench_analyst.episode_prompts as prompts
+
+        before = prompts.episode_prompt_checksum()
+        original = prompts.CONTRAST_CITATION_RULE
+        try:
+            prompts.CONTRAST_CITATION_RULE = original + " and say so twice."
+            assert prompts.episode_prompt_checksum() != before
+        finally:
+            prompts.CONTRAST_CITATION_RULE = original
+        assert prompts.episode_prompt_checksum() == before
