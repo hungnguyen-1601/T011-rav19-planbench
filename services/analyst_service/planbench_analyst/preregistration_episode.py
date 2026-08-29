@@ -117,7 +117,17 @@ class EpisodePreregistration:
     #: preregistered, deterministic, and already used by the replay page,
     #: so the episodes an arm is read on are the episodes a reader would
     #: have opened anyway.
-    case_selection: str = "four_exemplar_roles_per_cluster"
+    case_selection: str = "four_exemplar_roles_per_cluster_or_cardless_rule"
+    #: The cardless clusters do not use the exemplar recipe — three of
+    #: its four roles are defined on ΔU, which a run with no card does
+    #: not have on both sides — so they contribute every episode where
+    #: the two sides disagree about reaching the goal plus a fixed
+    #: sample of the rest. That makes cluster sizes unequal (nine
+    #: against four), which is why the endpoint is read **per cluster**
+    #: and reported as counts: an unequal cluster pooled into a rate
+    #: would weigh one run more heavily than another for no reason but
+    #: how many of its episodes were decidable.
+    cardless_case_selection: str = "all_disagreements_plus_fixed_control_sample"
     clusters: tuple[str, ...] = (
         "sudden_stop_v5_local_controller_selection",
         "sudden_stop_v6_full_stack_selection",
@@ -176,7 +186,19 @@ class EpisodePreregistration:
 
     #: What the whole thing may cost. Read by the runner, which stops
     #: rather than continuing past it.
-    max_usd: float = 3.0
+    #:
+    #: **Raised from 3.00 to 4.50 on 2026-08-29, with An's approval, and
+    #: the reason is scope rather than results.** Three USD paid for the
+    #: twelve cases of `case_selection`; the set is now seventeen,
+    #: because a run the platform refused to write a decision card for
+    #: turned out to be readable — a card needs two candidates through
+    #: six gates, while `outcome_only` needs neither, and that cluster
+    #: carries the five hardest explanations in the experiment plus the
+    #: four undecided episodes an arm has to decline on. The ceiling
+    #: covers a larger question, not a second attempt at the same one:
+    #: nothing already measured is re-run, and no arm was selected on
+    #: anything this buys.
+    max_usd: float = 4.5
     model: str = "o4-mini"
 
     def as_dict(self) -> dict[str, object]:
@@ -188,6 +210,7 @@ class EpisodePreregistration:
             "report_as": self.report_as,
             "secondary_endpoints": list(self.secondary_endpoints),
             "case_selection": self.case_selection,
+            "cardless_case_selection": self.cardless_case_selection,
             "clusters": list(self.clusters),
             "cases_per_cluster": self.cases_per_cluster,
             "stage_one_repeats": self.stage_one_repeats,
