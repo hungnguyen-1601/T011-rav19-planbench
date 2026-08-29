@@ -2108,7 +2108,7 @@
   "paper.title": "From a paper",
   "paper.subtitle": "Paste a method description and see what this platform could actually run. Nothing is stored and nothing is executed until you register it.",
   "paper.upload": "Upload a file",
-  "paper.uploadHint": "No file chosen. The file is read in the browser and never kept.",
+  "paper.uploadHint": "No file chosen. The file is read in the browser and not stored anywhere.",
   "paper.text": "Or paste the text",
   "paper.placeholder": "Paste the method section — the parameters, the robot, the conditions it claims.",
   "paper.read": "Read it",
@@ -2161,5 +2161,8 @@
   "deployments.editLockedWhy": "A comparison has already run against this deployment, so it can no longer be changed: an episode id does not record which world it ran in, and editing this one would leave those results describing somewhere that no longer exists. Copy it instead.",
   "deployments.column.measured": "Measured",
   "deployments.notMeasured": "Not yet",
-  "deployments.notMeasuredWhy": "No comparison has run against this deployment, so it can still be corrected in place."
+  "deployments.notMeasuredWhy": "No comparison has run against this deployment, so it can still be corrected in place.",
+  "deployments.signedOut.title": "Sign in to see the deployments on file",
+  "deployments.signedOut.body": "A deployment says what a comparison will run on, so reading them needs an account. Your session lives in this tab only — a new window starts signed out.",
+  "nav.signIn": "Sign in"
 }

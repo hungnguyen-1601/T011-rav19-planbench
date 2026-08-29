@@ -10,9 +10,14 @@
  * revision took over", "it cannot run on this host" or "a reviewer
  * turned it off", and none of those were visible anywhere.
  *
- * So this page lists both kinds together — what shipped with the
- * deployment and what somebody imported — and every imported row says
- * which state it is in. A bundle nobody has published still appears,
+ * So this page lists every imported algorithm and says which state each
+ * is in.
+ *
+ * **The built-in catalogue is deliberately not here.** `/candidates`
+ * shows it, with the observation classes that made it the reason an
+ * older `/algorithms` page was deleted rather than regrouped. A second,
+ * thinner copy on this page undid that decision without noticing it had
+ * been made, and nothing this page answers needed it. A bundle nobody has published still appears,
  * greyed, saying so. That is deliberate: an algorithm simply missing
  * from a list reads as a broken system, and the person picking cannot
  * tell "not here" from "not yet vouched for".
@@ -26,8 +31,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { AlgorithmDetail } from "@/components/AlgorithmDetail";
 import { EmptyState } from "@/components/EmptyState";
-import { CAPABILITIES, authFetch, can, useSession } from "@/lib/auth";
-import type { AlgorithmInfo } from "@/lib/benchmarkTypes";
+import { CAPABILITIES, can, useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import {
   bundleStates,
@@ -54,7 +58,6 @@ const TONE: Record<BundleState, string> = {
 export default function AlgorithmsPage() {
   const { t } = useTranslation();
   const session = useSession();
-  const [builtIn, setBuiltIn] = useState<AlgorithmInfo[]>([]);
   const [bundles, setBundles] = useState<PluginBundleSummary[]>([]);
   const [states, setStates] = useState<Map<string, BundleState>>(new Map());
   const [selected, setSelected] = useState<string | null>(null);
@@ -64,8 +67,7 @@ export default function AlgorithmsPage() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [registry, imported, published] = await Promise.all([
-        authFetch<AlgorithmInfo[]>("/algorithms"),
+      const [imported, published] = await Promise.all([
         listPlugins(),
         // A deployment with governance off answers 404 here. That is not
         // a failure: with nothing published, every bundle's state is
@@ -73,10 +75,6 @@ export default function AlgorithmsPage() {
         // makes `bundleStates` say.
         publishedBundleIds().catch(() => [] as string[]),
       ]);
-      // Imported algorithms already appear in the catalogue, under
-      // `<global>+<plugin id>`. Listing them in both tables would say
-      // there are two of each.
-      setBuiltIn(registry.filter((entry) => !entry.id.includes(".")));
       setBundles(imported);
       setStates(bundleStates(imported, published));
       setFailed(null);
@@ -101,33 +99,6 @@ export default function AlgorithmsPage() {
       </header>
 
       {failed ? <div className="error-box">{failed}</div> : null}
-
-      <div className="panel">
-        <div className="panel-head">
-          <h3>{t("algorithms.builtIn")}</h3>
-        </div>
-        <p className="muted small">{t("algorithms.builtInNote")}</p>
-        <table>
-          <thead>
-            <tr>
-              <th>{t("algorithms.col.id")}</th>
-              <th>{t("algorithms.col.kind")}</th>
-              <th>{t("algorithms.col.description")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {builtIn.map((entry) => (
-              <tr key={entry.id}>
-                <td>
-                  <code>{entry.id}</code>
-                </td>
-                <td className="muted">{entry.kind}</td>
-                <td className="muted">{entry.description}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
 
       <div className="panel">
         <div className="panel-head">
