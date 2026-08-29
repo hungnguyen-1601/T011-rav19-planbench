@@ -77,6 +77,14 @@ class RoundFeatures:
     filter_tool_menu: bool = False
     #: W3: route to a checker deterministically after the model declares.
     auto_route_checker: bool = False
+    #: Do not spend a provider call on an episode with no losing side.
+    #:
+    #: Off by default, because every arm already measured ran with the
+    #: model asked on every episode, and a default that changed
+    #: behaviour would silently re-run those measurements under a
+    #: different system. The evidence for turning it on is in
+    #: :data:`planbench_analyst.episode_runner.UNDECIDED_BASES`.
+    model_only_where_it_helps: bool = False
     #: Append the rule saying a contrast cites two kinds of ref.
     #:
     #: A prompt arm rather than an input arm: it changes nothing the

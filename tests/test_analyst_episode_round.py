@@ -284,3 +284,87 @@ class TestTheArmThatAsksForTwoCitations:
             catalog=TOOL_CATALOG,
         )
         assert CONTRAST_CITATION_RULE not in provider.calls[0].system
+
+
+class TestNotAskingTheModelWhereItIsAlwaysWrong:
+    """An episode with no losing side is one the model must not be asked about.
+
+    The evidence is a scored sweep, not a hunch: on `undecidable`
+    episodes the analyst made 28 statements and a person scoring them
+    blind marked all 28 wrong, while the rounds where it declined were
+    all marked correct declines. On `outcome_only` episodes of the same
+    cluster - same map, same pairing - it scored 43 right out of 44. A
+    mechanism needs a side to be the mechanism of, and where there is
+    none the model supplies one anyway.
+
+    So the gate is not about the model being weak. It is about asking a
+    question that has no answer, which the platform can tell before it
+    spends anything.
+    """
+
+    def _undecided_view(self):  # type: ignore[no-untyped-def]
+        packet = build_packet()
+        verdict = packet.verdict.model_copy(
+            update={"basis": "undecidable", "winner": None, "loser": None}
+        )
+        return build_episode_view(packet.model_copy(update={"verdict": verdict}))
+
+    def test_no_provider_call_is_made(self) -> None:
+        provider = MockProvider(script=[answer(hypothesis())])
+        run_episode_round(
+            analysis_for(None),
+            self._undecided_view(),
+            provider,
+            features=RoundFeatures(episode_scope=True, model_only_where_it_helps=True),
+            catalog=TOOL_CATALOG,
+        )
+        assert not provider.calls, "the model was asked about an episode with no losing side"
+
+    def test_the_round_costs_nothing(self) -> None:
+        result = run_episode_round(
+            analysis_for(None),
+            self._undecided_view(),
+            MockProvider(script=[answer(hypothesis())]),
+            features=RoundFeatures(episode_scope=True, model_only_where_it_helps=True),
+            catalog=TOOL_CATALOG,
+        )
+        assert result.cost.input_tokens == 0
+        assert result.cost.output_tokens == 0
+
+    def test_it_says_the_model_was_not_asked(self) -> None:
+        """Not the same as an abstention. An abstention says the analyst
+        looked and found nothing; this says nobody looked, and scoring
+        the two the same way would credit a gate as a judgement."""
+        result = run_episode_round(
+            analysis_for(None),
+            self._undecided_view(),
+            MockProvider(script=[answer(hypothesis())]),
+            features=RoundFeatures(episode_scope=True, model_only_where_it_helps=True),
+            catalog=TOOL_CATALOG,
+        )
+        assert ("model_not_asked", "undecidable") in result.flags
+
+    def test_a_decided_episode_still_reaches_the_model(self) -> None:
+        provider = MockProvider(script=[answer(hypothesis())])
+        run_episode_round(
+            analysis_for(None),
+            build_episode_view(build_packet()),
+            provider,
+            features=RoundFeatures(episode_scope=True, model_only_where_it_helps=True),
+            catalog=TOOL_CATALOG,
+        )
+        assert provider.calls, "a decided episode is exactly what the model is for"
+
+    def test_the_gate_is_off_unless_asked_for(self) -> None:
+        """Every arm already measured ran with the model asked on every
+        episode; a default that changed that would re-run those
+        measurements under a system they never ran."""
+        provider = MockProvider(script=[answer(hypothesis())])
+        run_episode_round(
+            analysis_for(None),
+            self._undecided_view(),
+            provider,
+            features=RoundFeatures(episode_scope=True),
+            catalog=TOOL_CATALOG,
+        )
+        assert provider.calls

@@ -36,6 +36,7 @@ from planbench_analyst.analyst import (
 from planbench_analyst.episode_guard import (
     CONTRAST,
     DIAGNOSIS,
+    EpisodeAnnotation,
     EpisodeRoundResult,
     episode_guard,
 )
@@ -48,11 +49,64 @@ from planbench_analyst.episode_prompts import (
 )
 from planbench_analyst.episode_view import EpisodeView, run_context_block
 from planbench_analyst.features import RoundFeatures
+from planbench_explanation.episode_floor import episode_floor
+from planbench_explanation.protocol import AnalysisResponse
 from planbench_explanation.tools import ToolCatalog
+
+#: Verdict bases on which the platform names no losing side.
+#:
+#: Not a taste: on the twelve rounds of the first scored sweep that ran
+#: against an ``undecidable`` episode, the analyst made twenty-eight
+#: statements and a human scoring them blind marked **all twenty-eight
+#: wrong** — while the twenty rounds where it declined were all marked
+#: correct declines. Within the same cluster, on the same map and the
+#: same pairing, statements about ``outcome_only`` episodes scored 43
+#: right out of 44. So the difference is not the map and not the model:
+#: it is that an episode with no losing side gives a mechanism nothing
+#: to be a mechanism *of*, and the model fills the gap anyway.
+#:
+#: ``not_comparable`` is here for the same reason, argued rather than
+#: measured: it is the other basis that leaves ``winner`` unset, and a
+#: rule that covered one and not the other would be a rule about a
+#: string rather than about what the platform knows.
+UNDECIDED_BASES: frozenset[str] = frozenset({"undecidable", "not_comparable"})
 
 
 class EpisodeScopeRefusal(AnalystRefusal):
     """The packet and the arm vector disagree about the question asked."""
+
+
+def floor_only_round(analysis: EpisodeRound, view: EpisodeView) -> EpisodeRoundResult:
+    """The platform's own answer, with no provider call and no cost.
+
+    **Not an abstention.** An abstention says the analyst looked and
+    found nothing; this says the platform did not ask, and the two must
+    not be scored the same way. What the reader gets is the floor — what
+    fired, and a difference only where one was found — which on these
+    episodes is everything there was to say.
+    """
+    answer = episode_floor(view.packet)
+    response = AnalysisResponse(
+        analysis_run_id=analysis.analysis_run_id,
+        analyst_bundle_id=analysis.analyst_bundle_id,
+        proposals=tuple(answer.proposals),
+        abstained=not answer.proposals,
+        abstention_reason=(
+            None
+            if answer.proposals
+            else "no model was asked: this episode has no losing side, and nothing fired to report"
+        ),
+    )
+    return EpisodeRoundResult(
+        response=response,
+        annotations={
+            proposal.hypothesis_id: EpisodeAnnotation(
+                bearing=answer.bearings[proposal.hypothesis_id]
+            )
+            for proposal in answer.proposals
+        },
+        flags=(("model_not_asked", view.packet.verdict.basis),),
+    )
 
 
 def check_scope(features: RoundFeatures, *, episode: bool) -> None:
@@ -151,6 +205,9 @@ def run_episode_round(
     flags = features or RoundFeatures(episode_scope=True)
     check_scope(flags, episode=True)
     cards = catalog or analysis.catalog
+
+    if flags.model_only_where_it_helps and view.packet.verdict.basis in UNDECIDED_BASES:
+        return floor_only_round(analysis, view)
 
     turn = build_episode_user_turn(
         view.serialize(),
