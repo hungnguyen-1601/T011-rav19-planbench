@@ -1,0 +1,335 @@
+[
+ {
+  "index": 1,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "307c6a94d0f0",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 2,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "40b620398486",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 3,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "4874a8da74e7",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 4,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "501a98d1fd9a",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 5,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "50f9cae5941c",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 6,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "56f2bbdf0e74",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-934ca3dca31f9546"
+ },
+ {
+  "index": 7,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "6a4888cdcf9e",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 8,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "7323e60af732",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 9,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "75974f6bd2c9",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 10,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "7764fd5de7a5",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 11,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "8c3bfce9bb13",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 12,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "8ca3fa8191d8",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-2b61141a2dee5229"
+ },
+ {
+  "index": 13,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "8ca3fa8191d8",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-625887f8a22a1fbd"
+ },
+ {
+  "index": 14,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "91ec9d58e922",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 15,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "9c30ffabf757",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-dc40f26b6ddbe846"
+ },
+ {
+  "index": 16,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "b219dbb9c044",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-e1380ec8ab90e225"
+ },
+ {
+  "index": 17,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "b219dbb9c044",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-f9c9d6a1cd92e95d"
+ },
+ {
+  "index": 18,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "b7a810e6fc00",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 19,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "b94539aed2d1",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 20,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "bdd393fb3bb8",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 21,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "c20848d51f24",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-34a83c5953715c0c"
+ },
+ {
+  "index": 22,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "c20848d51f24",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-d5c0285fcf47a622"
+ },
+ {
+  "index": 23,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "c31f07beacd6",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 24,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "c697c0cac1bb",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-a02ce7ec93fff0ae"
+ },
+ {
+  "index": 25,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "d0a5c200c750",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-c7e0464fffe19e3a"
+ },
+ {
+  "index": 26,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "d663910f7e0f",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-9e72e4b149e2fec3"
+ },
+ {
+  "index": 27,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "e87fc5b937ab",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 28,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "e9a1c89e9dbf",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 29,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "f11b8bfc70ba",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 30,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "f4a50b33adf9",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-bf29f537cebbd712"
+ },
+ {
+  "index": 31,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "f4a50b33adf9",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-594d30ec393f9f0c"
+ },
+ {
+  "index": 32,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "f4a50b33adf9",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-2753ed683dbac89c"
+ },
+ {
+  "index": 33,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "f56b11845b7e",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-b94293f1192cd212"
+ },
+ {
+  "index": 34,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "fd58ce16a90d",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-6e51ec9818944aaf"
+ },
+ {
+  "index": 35,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "fd58ce16a90d",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-1eb3eeed6f461ca4"
+ },
+ {
+  "index": 36,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "ff9c3d241c53",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-7be0903fef0e6a0f"
+ },
+ {
+  "index": 37,
+  "stage": "holdout-b1",
+  "arm": "ep_b1",
+  "episode": "ff9c3d241c53",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-6d1ecd54a760d8d3"
+ }
+]

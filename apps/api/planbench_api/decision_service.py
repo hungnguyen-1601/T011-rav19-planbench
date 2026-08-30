@@ -1266,6 +1266,7 @@ class DecisionRunService:
             write_artifact,
         )
         from planbench_explanation.catalog import TOOL_CATALOG, TOOL_CATALOG_VERSION
+        from planbench_explanation.magnitudes import render, unresolvable
         from planbench_explanation.versioning import artifact_checksum
 
         body = self.episode_verdict(
@@ -1341,8 +1342,33 @@ class DecisionRunService:
             body["audit"] = {"model_failed": str(failed)}
             return body
 
+        # **The figures are filled in here, not by whoever renders this.**
+        #
+        # A statement may name a magnitude as a ref in braces rather than
+        # writing the number, which is what lets it past rule 2 at all.
+        # The slot has to be filled from the packet's own index, and the
+        # index lives on this side; a client asked to do it would need
+        # the whole fact table and a second copy of the rule for what
+        # counts as fillable.
+        #
+        # The artifact below keeps what the model actually wrote, slots
+        # and all. That separation is the point: the record holds the
+        # analyst's words, the reader gets the platform's numbers in
+        # them, and the two can be compared afterwards by anybody who
+        # wonders whether a figure was ever really cited.
+        served = outcome.response.model_dump(mode="json")
+        facts = {fact.ref: fact.value for fact in view.facts}
+        for proposal in served.get("proposals", ()):
+            statement = proposal.get("hypothesis_statement") or ""
+            if unresolvable(statement, facts):
+                # The guard refuses these before they reach here, so a
+                # slot arriving unfillable means the two disagree. Left
+                # as written rather than papered over: a sentence with a
+                # visible slot is a bug somebody can see and report.
+                continue
+            proposal["hypothesis_statement"] = render(statement, facts)
         model_part = {
-            "response": outcome.response.model_dump(mode="json"),
+            "response": served,
             "annotations": dict(outcome.annotations),
         }
         audit = {
@@ -1369,7 +1395,15 @@ class DecisionRunService:
                 episode_context_id=episode_context_id,
                 key=key,
             ),
-            {"model": model_part, "audit": audit, "verdict": body["verdict"]},
+            {
+                # As the analyst wrote it, placeholders intact.
+                "model": {
+                    "response": outcome.response.model_dump(mode="json"),
+                    "annotations": dict(outcome.annotations),
+                },
+                "audit": audit,
+                "verdict": body["verdict"],
+            },
         )
 
         body["audit"] = audit

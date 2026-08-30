@@ -100,6 +100,12 @@ ARMS: dict[str, RoundFeatures] = {
     # as well, because the packets changed under `outcome_margin` and
     # nothing run before today compares with anything run after it.
     "ep_reword": RoundFeatures(episode_scope=True, reword_once=True),
+    # Differs from ep_b1 by one behaviour: the model may state a
+    # magnitude as a ref in braces instead of writing the figure.
+    # The floor fallback is deliberately NOT on here - it is
+    # deterministic and already measured, and turning both on at
+    # once would leave neither attributable.
+    "ep_magnitudes": RoundFeatures(episode_scope=True, magnitude_placeholders=True),
 }
 
 

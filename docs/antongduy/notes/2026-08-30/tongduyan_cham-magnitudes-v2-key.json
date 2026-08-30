@@ -1,0 +1,344 @@
+[
+ {
+  "index": 1,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "307c6a94d0f0",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-97e11a2ac6d02c3d"
+ },
+ {
+  "index": 2,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "40b620398486",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 3,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "4874a8da74e7",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 4,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "501a98d1fd9a",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 5,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "50f9cae5941c",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-52ce69bbfeefe592"
+ },
+ {
+  "index": 6,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "50f9cae5941c",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-85fcf8069fdea252"
+ },
+ {
+  "index": 7,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "56f2bbdf0e74",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 8,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "6a4888cdcf9e",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 9,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "7323e60af732",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 10,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "75974f6bd2c9",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 11,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "7764fd5de7a5",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-0815718bf978a5f6"
+ },
+ {
+  "index": 12,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "7764fd5de7a5",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-5128376931303de7"
+ },
+ {
+  "index": 13,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "8c3bfce9bb13",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-35aa30210ec7b01c"
+ },
+ {
+  "index": 14,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "8ca3fa8191d8",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 15,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "91ec9d58e922",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-f9833cc8803aa8fc"
+ },
+ {
+  "index": 16,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "9c30ffabf757",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-22bebf1057517b91"
+ },
+ {
+  "index": 17,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "b219dbb9c044",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-1ae82d6ee64ceb58"
+ },
+ {
+  "index": 18,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "b219dbb9c044",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-7aa564eab7287a46"
+ },
+ {
+  "index": 19,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "b7a810e6fc00",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 20,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "b94539aed2d1",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-fc2e205be6f8a12a"
+ },
+ {
+  "index": 21,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "b94539aed2d1",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-328af2e2e7eeefbd"
+ },
+ {
+  "index": 22,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "bdd393fb3bb8",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 23,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "c20848d51f24",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-3f78b1a6ab6c416d"
+ },
+ {
+  "index": 24,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "c31f07beacd6",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 25,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "c697c0cac1bb",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-2a69b1143c4897e2"
+ },
+ {
+  "index": 26,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "d0a5c200c750",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-8546b567ca81a136"
+ },
+ {
+  "index": 27,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "d663910f7e0f",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-6f1f339118920780"
+ },
+ {
+  "index": 28,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "e87fc5b937ab",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 29,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "e9a1c89e9dbf",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-b4080cc3ecc14065"
+ },
+ {
+  "index": 30,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "f11b8bfc70ba",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-b35d735b57650b7b"
+ },
+ {
+  "index": 31,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "f11b8bfc70ba",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-918fb4b53f084bbf"
+ },
+ {
+  "index": 32,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "f4a50b33adf9",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-4d450214c8fc9fc5"
+ },
+ {
+  "index": 33,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "f4a50b33adf9",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-09b4759dcb105ab2"
+ },
+ {
+  "index": 34,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "f56b11845b7e",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 35,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "fd58ce16a90d",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-bab483e2e0e4140d"
+ },
+ {
+  "index": 36,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "fd58ce16a90d",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-81667e2ecaef76ac"
+ },
+ {
+  "index": 37,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "fd58ce16a90d",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-57ca94fa7e6b8875"
+ },
+ {
+  "index": 38,
+  "stage": "holdout-magnitudes",
+  "arm": "ep_magnitudes",
+  "episode": "ff9c3d241c53",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-4b9500c615da789c"
+ }
+]

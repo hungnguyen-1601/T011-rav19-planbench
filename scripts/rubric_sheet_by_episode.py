@@ -242,6 +242,24 @@ def packet_table(view: Any) -> list[str]:
     return lines
 
 
+def readable(statement: str, view: Any) -> str:
+    """The sentence as a reader meets it, slots filled.
+
+    A statement may name a magnitude as a ref in braces rather than
+    writing the figure; the platform fills it in when somebody opens the
+    episode. A scorer shown the raw slot is judging a sentence nobody is
+    ever served, so this fills them the same way the API does — and
+    leaves the slot visible when it cannot, because a scorer owed a
+    number should see that one is missing rather than a tidied sentence.
+    """
+    from planbench_explanation.magnitudes import render, unresolvable
+
+    facts = {fact.ref: fact.value for fact in view.facts}
+    if unresolvable(statement, facts):
+        return statement
+    return render(statement, facts)
+
+
 def render_item(number: int, item: dict[str, Any]) -> list[str]:
     if item["hypothesis_id"] == "-abstained-":
         return [
@@ -291,7 +309,14 @@ def main() -> int:
     sweep = _sweep()
     views: dict[str, Any] = {}
     for report in sorted(Path(args.runs).glob("*/*/comparison_report.json")):
-        for case in sweep.cases_from(report, Path(args.traces)):
+        # **Every episode, not the four exemplars.** A sheet is built
+        # from whatever a sweep read, and a sweep run with
+        # --every-episode reads all thirty; asking for the exemplars
+        # here left twenty-seven episodes with items to score and no
+        # packet above them to score against. It did not even say so
+        # until later, so the first sheet built this way was scored by
+        # somebody reading three packets and judging thirty episodes.
+        for case in sweep.cases_from(report, Path(args.traces), every_episode=True):
             views[case["episode"]] = (case, sweep.build_episode_view(case["packet"]))
 
     by_episode: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -318,6 +343,9 @@ def main() -> int:
             lines += packet_table(view)
         for item in group:
             number += 1
+            entry = views.get(episode)
+            if entry is not None and item.get("statement"):
+                item = {**item, "statement": readable(item["statement"], entry[1])}
             lines += render_item(number, item)
             key_rows.append(
                 {
