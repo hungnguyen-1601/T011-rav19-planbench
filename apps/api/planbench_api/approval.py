@@ -10,11 +10,20 @@ The states are unchanged from the role-based design, so benchmarks
 recorded before this refactor still load and still mean the same thing.
 What changed is **who** may drive them.
 
-Authority is ownership, not role. The person who created a benchmark can
-carry it all the way to ACCEPTED on their own: that is the ordinary case
-and it needs no second person. Review is opt-in — when the owner asks a
-named member to look, that member becomes the only one who can answer,
-and the owner loses the corresponding self-service action until they do.
+Authority here is ownership. That is a statement about *this* module and
+this state machine only: benchmarks are the older lane, and the person
+who created one can carry it all the way to ACCEPTED on their own.
+Review is opt-in — when the owner asks a named member to look, that
+member becomes the only one who can answer, and the owner loses the
+corresponding self-service action until they do.
+
+Decision runs, the lane that replaced this one, work differently under
+contract 7.0.0: a capability (``run.review``) gates the act of approving
+at all, and the named-reviewer rule becomes claim-then-acknowledge. This
+machine is deliberately **not** migrated to that model — rewriting the
+rules a stored benchmark was decided under would make its audit trail
+describe a process that never happened. Requests carry ``subject_kind``
+so the two lanes can share one table without sharing one rulebook.
 
 Two capabilities therefore decide everything:
 
@@ -41,17 +50,25 @@ from pydantic import BaseModel, ConfigDict
 class Role(StrEnum):
     """What an account is, for audit purposes.
 
-    Only ``MEMBER`` and ``ADMIN`` are ever written now. The rest are
-    retained so audit rows recorded by earlier versions still parse —
-    an audit trail that cannot be read is not an audit trail, and the
-    alternative (rewriting historical rows in a migration) would edit
-    the record of who did what.
+    Every value here is retained so audit rows recorded by earlier
+    versions still parse — an audit trail that cannot be read is not an
+    audit trail, and the alternative (rewriting historical rows in a
+    migration) would edit the record of who did what.
 
-    ``ENGINEER`` and ``APPROVER`` are the oldest pair, from the original
-    role-based design; ``OPERATOR`` and ``REVIEWER`` came next. Nothing
-    assigns any of the four, and nothing branches on Role for
-    authorisation — see the module docstring. A stored role is a label
-    on a past event, never a permission.
+    Four eras are visible in this enum, which is why it reads oddly:
+    ``ENGINEER``/``APPROVER`` from the original role-based design,
+    ``OPERATOR``/``REVIEWER`` from the one after it, ``MEMBER`` from the
+    roleless period when ownership carried all authority, and ``ADMIN``
+    throughout.
+
+    Under contract 7.0.0 roles exist again, as capability packages in
+    :mod:`planbench_api.auth` — and two of these names come back into
+    use with the same spelling and a wider meaning. That is survivable
+    precisely because **nothing branches on this enum for
+    authorisation**: a stored role is a label on a past event, never a
+    permission. New audit rows record the caller's whole role set and
+    the capability that authorised the action; this field stays for the
+    rows that predate that.
     """
 
     MEMBER = "member"

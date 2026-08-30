@@ -16,7 +16,7 @@ from planbench_api.model_registry import (
     RegistryError,
     RobotProfile,
 )
-from planbench_api.plugin_registry import PluginBundleRecord
+from planbench_api.plugin_registry import PluginBundleRecord, PluginEvent, PluginPublication
 from planbench_api.repositories import new_id
 
 
@@ -265,8 +265,97 @@ class InMemoryPluginBundleRepository:
         return None
 
 
+class InMemoryPluginPublicationRepository:
+    """The publication history, in memory. See the SQL twin for the shape."""
+
+    def __init__(self) -> None:
+        self._items: list[PluginPublication] = []
+        self._lock = threading.RLock()
+
+    def current(self, plugin_id: str) -> PluginPublication | None:
+        with self._lock:
+            for row in self._items:
+                if row.plugin_id == plugin_id and row.is_current:
+                    return row
+            return None
+
+    def current_bundle_ids(self) -> set[str]:
+        with self._lock:
+            return {row.bundle_id for row in self._items if row.is_current}
+
+    def history(self, plugin_id: str) -> list[PluginPublication]:
+        with self._lock:
+            return [row for row in self._items if row.plugin_id == plugin_id]
+
+    def for_bundle(self, bundle_id: str) -> list[PluginPublication]:
+        with self._lock:
+            return [row for row in self._items if row.bundle_id == bundle_id]
+
+    def publish(
+        self, *, plugin_id: str, bundle_id: str, revision: int, published_by_user_id: str | None
+    ) -> PluginPublication:
+        with self._lock:
+            stamp = now_iso()
+            for index, row in enumerate(self._items):
+                if row.plugin_id == plugin_id and row.is_current:
+                    if row.bundle_id == bundle_id:
+                        return row
+                    self._items[index] = row.model_copy(update={"superseded_at": stamp})
+                    break
+            published = PluginPublication(
+                id=new_id(),
+                plugin_id=plugin_id,
+                bundle_id=bundle_id,
+                revision=revision,
+                published_by_user_id=published_by_user_id,
+                published_at=stamp,
+            )
+            self._items.append(published)
+            return published
+
+    def unpublish(
+        self, *, plugin_id: str, unpublished_by_user_id: str | None, reason: str = ""
+    ) -> PluginPublication | None:
+        with self._lock:
+            for index, row in enumerate(self._items):
+                if row.plugin_id == plugin_id and row.is_current:
+                    withdrawn = row.model_copy(
+                        update={
+                            "unpublished_at": now_iso(),
+                            "unpublished_by_user_id": unpublished_by_user_id,
+                            "reason": reason,
+                        }
+                    )
+                    self._items[index] = withdrawn
+                    return withdrawn
+            return None
+
+
+class InMemoryPluginEventRepository:
+    def __init__(self) -> None:
+        self._items: list[PluginEvent] = []
+        self._lock = threading.RLock()
+
+    def record(self, event: PluginEvent) -> PluginEvent:
+        with self._lock:
+            stamped = event.model_copy(
+                update={
+                    "sequence": len(self._items) + 1,
+                    "created_at": event.created_at or now_iso(),
+                }
+            )
+            self._items.append(stamped)
+            return stamped
+
+    def list_for_bundle(self, bundle_id: str) -> list[PluginEvent]:
+        with self._lock:
+            return [event for event in self._items if event.bundle_id == bundle_id]
+
+
 __all__ = [
     "InMemoryModelRepository",
     "InMemoryPluginBundleRepository",
+    "InMemoryPluginEventRepository",
+    "InMemoryPluginPublicationRepository",
     "InMemoryRobotProfileRepository",
 ]

@@ -8,8 +8,8 @@ from planbench_benchmark import SEARCH_SPACES
 
 
 class TestTuningResults:
-    def test_unauthenticated_is_rejected(self, client: TestClient) -> None:
-        assert client.get("/api/v1/tuning").status_code == 401
+    def test_unauthenticated_is_rejected(self, anonymous: TestClient) -> None:
+        assert anonymous.get("/api/v1/tuning").status_code == 401
 
     def test_returns_a_dict_shaped_response(self, client: TestClient, alice_headers) -> None:
         """Doesn't require scripts/tune_hyperparameters.py to have been

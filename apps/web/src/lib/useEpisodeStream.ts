@@ -60,6 +60,16 @@ export function useEpisodeStream(): EpisodeStream {
   const [speed, setSpeed] = useState(1);
 
   const socketRef = useRef<WebSocket | null>(null);
+  /** Which connection attempt is current.
+   *
+   * Opening a socket now costs a round trip first — the ticket — and in
+   * that window the caller can pick another episode or the component can
+   * unmount. Without this, the ticket for the abandoned attempt still
+   * arrives and still opens a socket, and two sockets then write frames
+   * into the same state. Incremented by `closeSocket`, so every path
+   * that gives up on a connection invalidates the one in flight.
+   */
+  const attemptRef = useRef(0);
   const rafRef = useRef<number | null>(null);
   const lastTickRef = useRef<number | null>(null);
   const framesRef = useRef<TrajectoryPoint[]>([]);
@@ -70,6 +80,7 @@ export function useEpisodeStream(): EpisodeStream {
   }, [speed]);
 
   const closeSocket = useCallback(() => {
+    attemptRef.current += 1;
     socketRef.current?.close();
     socketRef.current = null;
   }, []);
@@ -96,52 +107,79 @@ export function useEpisodeStream(): EpisodeStream {
       setPlayhead(0);
       setPhase("connecting");
 
-      // pace=false: receive the whole episode promptly, pace it locally.
-      const socket = new WebSocket(wsUrl(simulationId, false));
-      socketRef.current = socket;
+      const attempt = attemptRef.current;
 
-      socket.onmessage = (event) => {
-        const message = JSON.parse(event.data as string) as WsMessage;
-        switch (message.type) {
-          case "start":
-            setPlanPath(message.plan_path);
-            setPlanRoutes(message.plans ?? []);
-            setPhase("streaming");
-            setPlaying(true);
-            lastTickRef.current = null;
-            break;
-          case "state": {
-            const frame: TrajectoryPoint = {
-              time: message.time,
-              x: message.x,
-              y: message.y,
-              theta: message.theta,
-              linear_velocity: message.linear_velocity,
-              angular_velocity: message.angular_velocity,
-              obstacles: message.obstacles,
-            };
-            framesRef.current = [...framesRef.current, frame];
-            setFrames(framesRef.current);
-            break;
+      const wire = (socket: WebSocket) => {
+        socket.onmessage = (event) => {
+          const message = JSON.parse(event.data as string) as WsMessage;
+          switch (message.type) {
+            case "start":
+              setPlanPath(message.plan_path);
+              setPlanRoutes(message.plans ?? []);
+              setPhase("streaming");
+              setPlaying(true);
+              lastTickRef.current = null;
+              break;
+            case "state": {
+              const frame: TrajectoryPoint = {
+                time: message.time,
+                x: message.x,
+                y: message.y,
+                theta: message.theta,
+                linear_velocity: message.linear_velocity,
+                angular_velocity: message.angular_velocity,
+                obstacles: message.obstacles,
+              };
+              framesRef.current = [...framesRef.current, frame];
+              setFrames(framesRef.current);
+              break;
+            }
+            case "result":
+              setMetrics(message.metrics);
+              setStatus(message.status);
+              setReason(message.reason);
+              setPhase("complete");
+              break;
+            case "error":
+              // Includes the server's refusal of a spent or missing
+              // ticket, which arrives as a message rather than as a
+              // failed upgrade precisely so it can be read and shown.
+              setError(`${message.code}: ${message.message}`);
+              setPhase("error");
+              setPlaying(false);
+              break;
           }
-          case "result":
-            setMetrics(message.metrics);
-            setStatus(message.status);
-            setReason(message.reason);
-            setPhase("complete");
-            break;
-          case "error":
-            setError(`${message.code}: ${message.message}`);
-            setPhase("error");
-            setPlaying(false);
-            break;
-        }
+        };
+        socket.onerror = () => {
+          setError("WebSocket connection failed");
+          setPhase("error");
+          setPlaying(false);
+        };
       };
-      socket.onerror = () => {
-        setError("WebSocket connection failed");
-        setPhase("error");
-        setPlaying(false);
-      };
+
+      // pace=false: receive the whole episode promptly, pace it locally.
+      //
+      // The URL is awaited because the ticket authorising the socket
+      // cannot travel as a header. The socket is created inside the
+      // callback, and an attempt the caller has since abandoned is
+      // dropped rather than connected.
+      void wsUrl(simulationId, false)
+        .then((url) => {
+          if (attempt !== attemptRef.current) return;
+          const socket = new WebSocket(url);
+          socketRef.current = socket;
+          wire(socket);
+        })
+        .catch((caught: unknown) => {
+          if (attempt !== attemptRef.current) return;
+          // A refusal here is the ticket request failing, which is an
+          // ordinary authenticated call: signed out, or lacking the
+          // capability to run a simulation. Its sentence says which, and
+          // "WebSocket connection failed" would say neither.
+          setError(caught instanceof Error ? caught.message : "could not open the replay");
+          setPhase("error");
+          setPlaying(false);
+        });
     },
     [closeSocket],
   );

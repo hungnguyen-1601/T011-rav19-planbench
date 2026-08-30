@@ -20,7 +20,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from planbench_explanation.case_packet import EpisodeTimeline, RobotFacts
+from planbench_explanation.case_packet import STANDING_UNKNOWNS, EpisodeTimeline, RobotFacts
 from planbench_explanation.contrast import CandidateComponents
 from planbench_explanation.detectors import (
     Detection,
@@ -386,10 +386,37 @@ def build_episode_packet(
         has_clearance=has_clearance,
         has_latency=has_latency,
     )
-    carried = tuple(
+    # **The standing gaps arrive whether a caller remembers them or not.**
+    #
+    # They reached an episode only when somebody passed them in, and the
+    # default is to pass nothing, so in practice they never arrived:
+    # `blocked_claim_types` promised "global gaps and this episode's own"
+    # and delivered the second half. Fifteen statements of a type this
+    # platform declares unadjudicable — H4's latency accounting is not
+    # finished — went out to a reader and were caught by a person
+    # reading them one at a time.
+    #
+    # The comment above `STANDING_UNKNOWNS` predicted that and named the
+    # wrong victim: "an analyst that has to remember which attributions
+    # are unavailable will eventually not." It was the scorer who had to
+    # remember.
+    #
+    # `build_case_packet` has always started from them at run scope and
+    # refuses to let a caller drop one; this does the same. What a gap is
+    # worth *here* is still the scoping table's answer, not an
+    # assumption: `classify_unknown` already returns "global" for these
+    # and `ScopedUnknown.blocks` already says global blocks. Both were
+    # written for this and neither had a caller.
+    standing = tuple(
+        scoped.unknown
+        for scoped in (classify_unknown(unknown) for unknown in STANDING_UNKNOWNS)
+        if scoped.blocks
+    )
+    already = {unknown.id for unknown in standing}
+    carried = standing + tuple(
         scoped.unknown
         for scoped in (classify_unknown(unknown) for unknown in run_context_unknowns)
-        if scoped.blocks
+        if scoped.blocks and scoped.unknown.id not in already
     )
     context_only = tuple(
         scoped.unknown

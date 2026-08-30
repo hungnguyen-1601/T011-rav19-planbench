@@ -1,0 +1,52 @@
+<Section id="he-thong-lam-gi" title="Hệ thống làm gì">
+
+PlanBench trả lời **một** câu hỏi: *nên triển khai cấu hình điều hướng
+nào cho kho hàng này* - và trả lời bằng bằng chứng người khác kiểm lại
+được.
+
+Đo trên robot thật thì đắt, chậm, và không lặp lại được: mỗi lượt tốn
+hàng chục phút, cần robot rảnh và sàn trống, một lần va chạm là hỏng
+thiết bị, và tình huống vừa hỏng không dựng lại được để xem lại. Nền tảng
+này thay việc đó bằng mô phỏng - **chỉ mô phỏng, không điều khiển robot
+thật, không cấp chứng nhận an toàn.**
+
+Cái nó thêm vào so với "chạy thử vài lần rồi chọn" là ba thứ: điều kiện
+bị khoá và kiểm lại được, một bộ cổng tách khỏi điểm số, và mọi con số đi
+kèm khoảng tin cậy cùng số lượt chạy đứng sau.
+
+</Section>
+
+<Section id="luong-tong-the" title="Luồng tổng thể">
+
+Bốn việc, theo thứ tự phụ thuộc:
+
+1. **Khai thế giới** - bản đồ, robot, cảm biến, mission, ngưỡng. Đây là
+   phần cố định của phép so.
+2. **Chọn cái đem so** - hai cấu hình điều hướng hoàn chỉnh.
+3. **Chạy** - cả hai trên cùng một tập điều kiện episode.
+4. **Đọc** - cổng trước, điểm sau; rồi mang kết quả ra ngoài hoặc nhờ
+   người thứ hai duyệt.
+
+Chi tiết từng bước ở [Bảy bước vận hành](/guide/operation). Muốn thấy một
+kết quả trước khi đọc gì thêm thì đi
+[Năm phút đầu](/guide/getting-started).
+
+</Section>
+
+<Section id="thuat-ngu" title="Thuật ngữ">
+
+Bốn từ dùng suốt tài liệu này, và chúng không phải từ đồng nghĩa của nhau:
+
+- **Triển khai** - bản khai một thế giới cụ thể. Bản đồ, robot, cảm biến,
+  mission, ngưỡng, trọng số. Mọi thứ *cố định* trong phép so.
+- **Ứng viên** - một cấu hình điều hướng hoàn chỉnh: bộ lập kế hoạch toàn
+  cục + bộ điều khiển cục bộ + cấu hình của nó. Không phải "một thuật
+  toán".
+- **Episode** - một lượt chạy: một mission, một seed, một tập vật cản
+  động tại những thời điểm xác định.
+- **Phép so** - hai ứng viên chạy trên **cùng** tập episode, kết quả là
+  một thẻ quyết định.
+
+Vì sao mấy phân biệt này quan trọng khi đọc số: [Mười khái niệm](/guide/concepts).
+
+</Section>

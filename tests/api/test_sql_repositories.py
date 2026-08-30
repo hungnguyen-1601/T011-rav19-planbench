@@ -580,10 +580,22 @@ class TestUserRepositories:
         assert accounts[0].provider_email == "new@example.com"
 
     def test_admin_can_be_granted_and_revoked(self, hub):
+        """Granting is a role change now, and ``is_admin`` follows it.
+
+        Revoking needs somebody else holding ``user.manage`` first: a
+        deployment is never allowed to end up with nobody who can manage
+        accounts, and the check does not make an exception for the
+        account that is on its way out.
+        """
+        from planbench_api.accounts import Role
+
+        keeper = hub.users.create(nickname="keeper", roles={Role.ADMIN})
         user = hub.users.create(nickname="dave")
-        assert hub.users.set_admin(user.id, True).is_admin is True
+        assert user.is_admin is False
+        assert hub.users.set_roles(user.id, frozenset({Role.ADMIN})).is_admin is True
         assert hub.users.get(user.id).is_admin is True
-        assert hub.users.set_admin(user.id, False).is_admin is False
+        assert hub.users.set_roles(user.id, frozenset()).is_admin is False
+        assert hub.users.get(keeper.id).is_admin is True
 
     def test_password_hashes_are_not_on_the_public_user(self, hub):
         user = hub.users.create(nickname="alice", password_hash="not-a-real-hash")

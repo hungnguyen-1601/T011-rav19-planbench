@@ -48,6 +48,7 @@ from planbench_api.errors import (
 from planbench_api.map_files import ensure_profile_map_materialised, materialise_map
 from planbench_api.repositories import StoredMap, now_iso
 from planbench_api.repository_ports import MapRepositoryPort
+from planbench_api.run_identity import PinnedRun
 from planbench_api.worker import Job, JobQueue
 from planbench_benchmark.candidates import (
     LOCAL_CONTROLLER_CONFIGS,
@@ -132,6 +133,89 @@ class TaskProfileService:
         profile = self.validate(payload)
         return self._repository.create(profile.model_dump(mode="json"), owner_user_id=owner_user_id)
 
+    def replace(self, profile_id: str, payload: dict[str, Any]) -> StoredTaskProfile:
+        """Correct a deployment, but only while nothing has measured it.
+
+        **Why this is allowed at all, given that `create` refuses it.**
+        That refusal is not about editing; it is about *stored runs*.
+        ``episode_context_id`` hashes ``(task_profile_id, mission_id,
+        environment_variant, seed)`` and HĐ-3.1 freezes that payload, so
+        re-filing a changed deployment under the same id would produce
+        contexts hashing identically to the old world's and every stored
+        run would silently start describing somewhere that no longer
+        exists. All of that damage is done *to runs*. A deployment
+        nothing has ever run has no such runs to damage: it is a
+        description somebody typed, and correcting a description is not
+        rewriting history.
+
+        So the gate is the same one ``delete`` uses, and for the same
+        reason — a deployment nobody ran is a draft. The moment a single
+        comparison exists this refuses, and the way forward is to derive
+        a new deployment, which is what ``derive`` is for.
+
+        **The id may not move.** A payload naming a different id is not
+        an edit of this deployment, it is a second one; letting it
+        through would leave the row's key and the document's ``id``
+        disagreeing, and every reader picks a different one of the two.
+
+        The map is materialised afterwards for the same reason ``create``
+        leaves it to ``get``: the document may now name a custom map that
+        has never been written to disk, and the engine reads files.
+        """
+        stored = self._repository.get(profile_id)
+        if getattr(stored, "is_reference", False):
+            raise InvalidStateError(
+                f"deployment {profile_id!r} is a reference deployment: it is the fixed "
+                "ground imported algorithms are validated against, so it cannot be "
+                "edited or deleted"
+            )
+
+        incoming_id = str(payload.get("id", "")).strip()
+        if incoming_id != profile_id:
+            raise DomainValidationError(
+                f"this edits deployment {profile_id!r}, but the document says "
+                f"{incoming_id or '(nothing)'!r}. Renaming a deployment makes a second one; "
+                "file it under its own id instead",
+                [{"path": "id", "message": f"expected {profile_id!r}"}],
+            )
+
+        runs = self._runs.list(task_profile_id=profile_id) if self._runs is not None else []
+        if runs:
+            approved = sum(1 for run in runs if run.config_state == "approved")
+            raise InvalidStateError(
+                f"deployment {profile_id!r} has {len(runs)} stored run(s), so it can no longer "
+                "be edited: episode_context_id does not hash the environment (HĐ-3.1), and "
+                "changing this deployment would leave those runs describing a world that no "
+                "longer exists while their ids still matched. Derive a new deployment from "
+                "this one instead — it copies everything and takes its own id.",
+                [
+                    {
+                        "runs": len(runs),
+                        "approved": approved,
+                        "ranked": sum(1 for run in runs if run.recommended_candidate_id),
+                    }
+                ],
+            )
+
+        profile = self.validate(payload)
+        updated = self._repository.replace(profile_id, profile.model_dump(mode="json"))
+        ensure_profile_map_materialised(updated.profile, self._map_root, self._maps)
+        return updated
+
+    def editable(self, profile_id: str) -> bool:
+        """Whether `replace` would be allowed, without attempting it.
+
+        The list view needs this per row to decide whether to offer an
+        edit at all, and offering one that always refuses is worse than
+        offering none.
+        """
+        stored = self._repository.get(profile_id)
+        if getattr(stored, "is_reference", False):
+            return False
+        if self._runs is None:
+            return True
+        return not self._runs.list(task_profile_id=profile_id)
+
     def get(self, profile_id: str) -> StoredTaskProfile:
         stored = self._repository.get(profile_id)
         ensure_profile_map_materialised(stored.profile, self._map_root, self._maps)
@@ -142,6 +226,12 @@ class TaskProfileService:
 
     def delete(self, profile_id: str, *, delete_runs: bool = False) -> int:
         """Remove a deployment; return how many runs went with it.
+
+        A **reference** deployment is refused outright. It is the fixed
+        ground a reviewer validates imported algorithms against, and two
+        validation runs are only comparable if what they ran on did not
+        change between them — so it is not the owner who may not delete
+        it, it is nobody.
 
         **Two cases, and the difference is whether anything was
         measured.** A deployment nobody ever ran is a draft: deleting it
@@ -163,7 +253,13 @@ class TaskProfileService:
         spans two stores, and only something that can see both can state
         it once.
         """
-        self._repository.get(profile_id)  # 404 before anything else
+        stored = self._repository.get(profile_id)
+        if getattr(stored, "is_reference", False):
+            raise InvalidStateError(
+                f"deployment {profile_id!r} is a reference deployment: it is the fixed "
+                "ground imported algorithms are validated against, so it cannot be "
+                "edited or deleted"
+            )
         runs = self._runs.list(task_profile_id=profile_id) if self._runs is not None else []
 
         # An approved run is not more data. Somebody signed a
@@ -410,6 +506,31 @@ class CandidateService:
         return self._repository.list()
 
 
+def _candidate_bundle(run) -> dict | None:
+    """The imported bundle the recommended candidate ran, if there was one.
+
+    Reads the pinned identity rather than resolving the stack name now:
+    the name points at whatever is published today, and this file is
+    about what was measured then.
+    """
+    recommended_id = run.recommended_candidate_id
+    for entry in getattr(run, "candidates", []) or []:
+        if not entry.get("bundle_id"):
+            continue
+        # Matched on stack rather than candidate_id, because the pinned
+        # row records what was asked for and the card records the hash of
+        # what it became.
+        if recommended_id and entry.get("stack") not in str(run.card or ""):
+            continue
+        return {
+            "bundle_id": entry.get("bundle_id"),
+            "plugin_id": entry.get("plugin_id"),
+            "revision": entry.get("revision"),
+            "archive_checksum": entry.get("archive_checksum"),
+        }
+    return None
+
+
 class DecisionRunService:
     """Runs a selection through the shared chain and stores the result."""
 
@@ -439,6 +560,7 @@ class DecisionRunService:
         episodes: int | None = None,
         created_by: str | None = None,
         reuse_traces: bool = True,
+        pinned: PinnedRun | None = None,
     ) -> StoredDecisionRun:
         """Execute the selection, then store whatever it produced.
 
@@ -461,7 +583,9 @@ class DecisionRunService:
             quiet=True,
             map_base_dir=self._repo_root,
         )
-        return self._store(report, stored_profile, scope=scope, created_by=created_by)
+        return self._store(
+            report, stored_profile, scope=scope, created_by=created_by, pinned=pinned
+        )
 
     def submit(
         self,
@@ -473,6 +597,9 @@ class DecisionRunService:
         episodes: int | None = None,
         created_by: str | None = None,
         reuse_traces: bool = True,
+        pinned: PinnedRun | None = None,
+        recheck=None,
+        stop_check=None,
     ) -> Job:
         """Queue the selection instead of running it inside the request.
 
@@ -503,7 +630,33 @@ class DecisionRunService:
                 job.total = total
                 job.message = what
 
+            def should_stop() -> str | None:
+                """Asked at every episode boundary.
+
+                Two things can make a queued sweep stop being the right
+                thing to run: the person who asked for it cancelled, or
+                something it depends on was withdrawn. Both are checked
+                here rather than only before the first episode, because
+                a three-hour warehouse sweep spends almost all of its
+                life *after* that point.
+                """
+                if jobs.is_cancelled(job.id):
+                    return "cancelled by the account that started it"
+                if stop_check is not None:
+                    return stop_check()
+                return None
+
             ensure_profile_map_materialised(stored_profile.profile, self._repo_root, self._maps)
+
+            # **Re-checked, not re-resolved.** Between the request and
+            # this line a reviewer can publish a new revision or withdraw
+            # the one that was pinned. Asking the question again would
+            # quietly measure whatever is current now, under a run id
+            # that claims to be about what was requested; comparing
+            # against the pin lets the job fail with the name of the
+            # thing that moved, which is recoverable.
+            if recheck is not None and pinned is not None:
+                recheck(pinned)
 
             report = run_comparison(
                 profile_path=profile_path,
@@ -516,8 +669,12 @@ class DecisionRunService:
                 quiet=True,
                 map_base_dir=self._repo_root,
                 progress=progress,
+                should_stop=should_stop,
             )
-            stored = self._store(report, stored_profile, scope=scope, created_by=created_by)
+            stored = self._store(
+                report, stored_profile, scope=scope, created_by=created_by, pinned=pinned
+            )
+            job.run_id = stored.id
             # The finished run's id, so a client watching the job knows
             # where to look without searching the list for something that
             # appeared recently — "recent" is not an identity.
@@ -530,7 +687,15 @@ class DecisionRunService:
         # "60/60". A denominator that changes under the reader is worse
         # than one that arrives a second late, so the sweep reports both
         # numbers itself when it has them.
-        return jobs.submit(job_id, "decision_run", work, total=0)
+        return jobs.submit(
+            job_id,
+            "decision_run",
+            work,
+            total=0,
+            created_by=created_by,
+            purpose=(pinned.purpose.value if pinned is not None else "production"),
+            pinned=pinned,
+        )
 
     def get(self, run_id: str) -> StoredDecisionRun:
         return self._runs.get(run_id)
@@ -557,13 +722,22 @@ class DecisionRunService:
         actor_user_id: str | None,
         username: str,
         comment: str = "",
+        relaxed: bool = False,
     ) -> StoredDecisionRun:
+        """``relaxed`` comes from the deployment, never from the request.
+
+        It is the single-person install's answer to "may one account both
+        create a run and sign it?". Passed down rather than read here so
+        the store stays a state machine with no opinion about where it is
+        running — and so a caller cannot ask for it.
+        """
         return self._runs.decide_config(
             run_id,
             approve=approve,
             actor_user_id=actor_user_id,
             username=username,
             comment=comment,
+            relaxed=relaxed,
         )
 
     def withdraw_config(
@@ -1234,7 +1408,9 @@ class DecisionRunService:
             tool_catalog_version=TOOL_CATALOG_VERSION,
         )
 
-    def approved_config(self, run_id: str) -> str:
+    def approved_config(
+        self, run_id: str, reliance: str = "active", warning: dict | None = None
+    ) -> str:
         """The deployable configuration, as YAML — approved runs only.
 
         HĐ-14: *"only a Decision Card in the APPROVED state can export
@@ -1271,10 +1447,22 @@ class DecisionRunService:
             ),
             "task_profile_id": run.task_profile_id,
             "experiment_scope": run.experiment_scope,
+            # **The two questions, kept apart.** ``approval.status`` below
+            # says what a person decided and never changes.
+            # ``reliance_status`` says whether that decision may still be
+            # acted on, and is derived when this file is generated — an
+            # algorithm disabled last week does not un-decide anything,
+            # but it does mean this is no longer a configuration to run.
+            "reliance_status": reliance,
             "candidate": {
                 "candidate_id": recommended.get("candidate_id"),
                 "stack": recommended.get("stack"),
                 "params_ref": recommended.get("params_ref"),
+                # Which bundle, at which revision. Without it a warning
+                # about "the algorithm behind this" could not name it,
+                # and a reader could not resolve the stack back to the
+                # code — the alias points at whatever is published now.
+                "bundle": _candidate_bundle(run),
             },
             "decision": {
                 "status": run.status,
@@ -1293,12 +1481,22 @@ class DecisionRunService:
                 "created_at": run.created_at,
             },
             "approval": {
+                # What a person decided, and when. Paired with
+                # ``reliance_status`` above and deliberately not merged
+                # with it: this one is a record of a human act and never
+                # changes, that one is a fact about the world now.
+                "status": run.config_state,
                 "approved_by": run.config_decided_by,
                 "approved_at": run.config_decided_at,
                 "reviewed_by": run.reviewed_by,
                 "reviewed_at": run.reviewed_at,
             },
         }
+        if warning:
+            # Ahead of everything else in the file: somebody opening this
+            # to copy a number should meet the reason it may not be a
+            # number to copy before they reach it.
+            payload = {"artifact": payload.pop("artifact"), "warning": warning, **payload}
         return yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
 
     # -- internals -----------------------------------------------------
@@ -1320,6 +1518,7 @@ class DecisionRunService:
         *,
         scope: str,
         created_by: str | None,
+        pinned: PinnedRun | None = None,
     ) -> StoredDecisionRun:
         card = report.get("decision_card")
         # HĐ-13: the manifest is what somebody else rebuilds the card
@@ -1337,6 +1536,23 @@ class DecisionRunService:
                 contracts_version=CONTRACTS_VERSION,
                 created_at=now_iso(),
                 created_by=created_by,
+                purpose=(pinned.purpose.value if pinned is not None else "production"),
+                # Written in the same transaction as the run, so a stored
+                # measurement can always say what it measured.
+                candidates=[
+                    {
+                        "slot": row.slot,
+                        "stack": row.stack,
+                        "local_config": row.local_config,
+                        "bundle_id": row.bundle_id,
+                        "plugin_id": row.plugin_id,
+                        "revision": row.revision,
+                        "archive_checksum": row.archive_checksum,
+                        "provider_fingerprint": row.provider_fingerprint,
+                        "runtime_profile": row.runtime_profile,
+                    }
+                    for row in (pinned.candidates if pinned is not None else ())
+                ],
                 report=report,
                 card=card,
                 manifest=manifest,
@@ -1486,7 +1702,7 @@ class TestBenchService:
 
         stored_map = self._existing_map(map_data) or self._maps.create(map_data)
         stored_scenario = self._existing_scenario(
-            stored_map.id, scenario.name
+            stored_map.id, scenario
         ) or self._scenarios.create(stored_map.id, scenario)
 
         # Through the service rather than the repository, so the same
@@ -1521,21 +1737,69 @@ class TestBenchService:
         on the grid itself because that is what identity means here — two
         rows holding the same occupancy are the same world however they
         got there.
+
+        **On the checksum, which is what "the grid itself" means.** This
+        used to compare whole ``MapData`` documents, and that comparison
+        could never be true: the right-hand side has been written out as
+        a map_server pair and read back, and a map read from disk takes
+        its ``name`` from the image file's stem — ``b92f3f964633__v1``
+        where the stored row says ``sudden-stop``. Same walls, same
+        resolution, same origin, different name, so every staging call
+        filed another row. One database reached 27 of them that way, and
+        the copies then went on to confuse the *next* lookup: with the
+        original edited, a stale duplicate is what an equality scan finds
+        first.
+
+        **Not `checksum()`, which hashes the name too.** That field is
+        the identity of the *document* and is right to be — it backs
+        `find_by_checksum`, which `adopt` uses to stop the library import
+        filing the same entry twice under the same name. It cannot answer
+        this question, because here the two names differ by design.
+
+        The cheap fields are compared first so that a store holding
+        hundreds of maps rejects almost all of them on three integers
+        rather than on a list of several thousand cells.
         """
         for stored in self._maps.list():
-            if stored.map_data == map_data:
+            other = stored.map_data
+            if (other.width, other.height, other.resolution) != (
+                map_data.width,
+                map_data.height,
+                map_data.resolution,
+            ):
+                continue
+            if other.origin != map_data.origin:
+                continue
+            if other.cells == map_data.cells:
                 return stored
         return None
 
-    def _existing_scenario(self, map_id: str, name: str) -> Any | None:
-        """The scenario for this context, if it has been staged before.
+    def _existing_scenario(self, map_id: str, scenario: Any) -> Any | None:
+        """A stored scenario identical to the one about to be staged.
 
-        Matched on the name, which :func:`scenario_for` sets to the
-        ``episode_context_id`` — so the lookup key is the hash of the
-        conditions rather than a label somebody typed.
+        **Matched on content, and it used to be matched on the name.**
+        The name is the ``episode_context_id``, and the old docstring
+        called that "the hash of the conditions" — which is exactly the
+        thing HĐ-3.1 says it is not. That id hashes the deployment id,
+        the mission, the environment variant and the seed; it does *not*
+        hash the traffic, the noise or the thresholds.
+
+        So editing a deployment and staging it again produced the same
+        name, the name matched a row built from the *old* document, and
+        the bench replayed a world the deployment no longer described.
+        Removing an obstacle changed nothing on screen — the strongest
+        possible symptom, and one nothing else in the system would have
+        contradicted, because a staged episode reaches no gate and no
+        card.
+
+        Comparing the scenario itself asks the question that was meant
+        all along: is the world already stored the world we are about to
+        run? A row that differs is left alone rather than overwritten —
+        an earlier staged episode still describes what it actually ran,
+        and these rows are cheap.
         """
         for stored in self._scenarios.list():
-            if stored.map_id == map_id and stored.scenario.name == name:
+            if stored.map_id == map_id and stored.scenario == scenario:
                 return stored
         return None
 

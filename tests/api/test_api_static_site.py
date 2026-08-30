@@ -27,9 +27,15 @@ def web_root(tmp_path):
     (root / "decisions").mkdir(parents=True)
     (root / "maps").mkdir(parents=True)
     (root / "_next").mkdir(parents=True)
+    (root / "guide").mkdir(parents=True)
     (root / "index.html").write_text("<html>home</html>", encoding="utf-8")
     (root / "login.html").write_text("<html>login</html>", encoding="utf-8")
+    (root / "guide" / "operation.html").write_text("<html>operation</html>", encoding="utf-8")
     (root / "decisions" / "_.html").write_text("<html>decision shell</html>", encoding="utf-8")
+    # A real page *under* a dynamic route. Nothing in the app has one
+    # today; it is here because the order the two rules run in is a
+    # claim the code makes and this is the only thing that checks it.
+    (root / "decisions" / "list.html").write_text("<html>decision list</html>", encoding="utf-8")
     (root / "maps" / "_.html").write_text("<html>map shell</html>", encoding="utf-8")
     (root / "_next" / "app.js").write_text("console.log(1)", encoding="utf-8")
     # `next export` writes this, and its presence changes how a miss
@@ -136,3 +142,62 @@ def test_a_web_dir_that_is_not_a_directory_is_a_warning_not_a_crash(tmp_path, mo
 
     with TestClient(app, raise_server_exceptions=False) as probe:
         assert probe.get("/api/v1/health").status_code == 200
+
+
+def test_an_exported_page_is_served_without_its_extension(desktop_client: TestClient) -> None:
+    """`/login` is the URL a person types, and the one a reload asks for.
+
+    The export writes `login.html`; nothing writes a file called
+    `login`. Before this, every static page in the app was reachable
+    only by client-side navigation — a reload, a pasted link or a
+    bookmark got the not-found page. Nobody had hit it because the
+    desktop app opens at `/` and the router never asks the server
+    again.
+    """
+    response = desktop_client.get("/login")
+    assert response.status_code == 200
+    assert "login" in response.text
+
+
+def test_a_page_one_level_down_is_served_without_its_extension(
+    desktop_client: TestClient,
+) -> None:
+    """The guide is the first feature whose pages live under a segment.
+
+    `/guide/operation` is two segments, and `guide` is *not* a dynamic
+    route — so the shell rule does not apply and the file has to be
+    found by name.
+    """
+    response = desktop_client.get("/guide/operation")
+    assert response.status_code == 200
+    assert "operation" in response.text
+
+
+def test_serving_a_page_by_name_does_not_shadow_the_dynamic_shell(
+    desktop_client: TestClient,
+) -> None:
+    """A record id is tried as a page first, and must still fall through.
+
+    The extensionless rule runs before the shell rule, so this is the
+    case that says the new rule did not eat the old one: there is no
+    `decisions/9f2c.html`, and the answer has to be the shell.
+    """
+    response = desktop_client.get("/decisions/9f2c-not-a-real-id")
+    assert response.status_code == 200
+    assert "decision shell" in response.text
+
+
+def test_a_real_page_under_a_dynamic_route_beats_the_shell(
+    desktop_client: TestClient,
+) -> None:
+    """`/decisions/list` is a page, not a record id, and must win.
+
+    The two rules overlap on exactly this shape, and the shell would
+    answer it just as happily — with a blank screen, because the page
+    it hydrates reads an id that is really the word "list". Serving the
+    page first is what keeps a missing export a 404 instead of a shell
+    that renders nothing.
+    """
+    response = desktop_client.get("/decisions/list")
+    assert response.status_code == 200
+    assert "decision list" in response.text

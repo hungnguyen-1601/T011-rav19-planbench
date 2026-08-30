@@ -53,6 +53,7 @@ from planbench_benchmark.pipeline import (
     AcceptanceFailure,
     GateOnlyDeployment,
     Progress,
+    ShouldStop,
     SweepResult,
     TraceLocator,
     check_delta_u,
@@ -465,6 +466,9 @@ def run_comparison(
     evidence_class: str = "production",
     min_episodes_before_stop: int | None = None,
     progress: Progress | None = None,
+    #: Consulted at every episode boundary. A sweep stopped this way
+    #: raises rather than scoring what it has: see ``SweepStopped``.
+    should_stop: ShouldStop | None = None,
 ) -> dict[str, object]:
     def say(message: str) -> None:
         if not quiet:
@@ -564,6 +568,7 @@ def run_comparison(
                 journal=destination / "run_journal.jsonl",
                 retire=watch.retire if watch is not None else None,
                 progress=progress,
+                should_stop=should_stop,
             )
             contexts_by_candidate = sweep.contexts_by_candidate
         except KeyboardInterrupt:

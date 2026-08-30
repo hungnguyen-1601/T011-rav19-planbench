@@ -21,7 +21,7 @@
  */
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DecisionTabs } from "@/components/DecisionTabs";
 import { DeploymentForm } from "@/components/DeploymentForm";
 import { Icon } from "@/components/Icon";
@@ -35,6 +35,8 @@ import {
 import { usePagination } from "@/lib/pagination";
 import {
   createTaskProfile,
+  replaceTaskProfile,
+  suggestProfileId,
   deleteTaskProfile,
   listTaskProfiles,
   type DeletionBlocked,
@@ -80,12 +82,51 @@ export default function DeploymentsPage() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const tab = useDeploymentsTab();
+  /** Newest first.
+   *
+   * The API returns them oldest first, which is right for it — that
+   * order is stable, and several callers depend on a deployment keeping
+   * its place. It is the wrong way round for a person reading the list:
+   * the deployment somebody wants is nearly always the one they just
+   * filed, and it was landing on the last page of ten.
+   *
+   * Sorted here rather than in the repository so the change stays with
+   * the reader who wanted it. `created_at` is an ISO timestamp, so
+   * string order is time order; the id breaks a tie, because two
+   * deployments filed in the same second must not swap places between
+   * renders.
+   */
+  const newestFirst = useMemo(
+    () =>
+      [...profiles].sort(
+        (a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id),
+      ),
+    [profiles],
+  );
+
   /* Ten a page. No filters on this page, so the reset key is constant —
      the list only ever changes by something being filed or deleted, and
      both of those already re-fetch. */
-  const paged = usePagination(profiles);
+  const paged = usePagination(newestFirst);
+
+  const signedIn = session !== null;
 
   const refresh = useCallback(async () => {
+    /* **Do not ask when there is nobody to ask as.** Reading deployments
+       needs an account, so a signed-out visitor got a 401 and this page
+       printed the server's own words at them — `missing bearer token`,
+       which describes the request rather than their situation and reads
+       like something broke.
+
+       The session lives in `sessionStorage`, so it does not survive a
+       new tab; landing here from a bookmark in a fresh window is the
+       ordinary way to arrive signed out, not an edge case. */
+    if (!signedIn) {
+      setProfiles([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       setProfiles(await listTaskProfiles());
@@ -95,7 +136,7 @@ export default function DeploymentsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [signedIn]);
 
   useEffect(() => {
     void refresh();
@@ -108,16 +149,72 @@ export default function DeploymentsPage() {
    *  Refusals come back whole: the sentence for the reader and, since
    *  the server started addressing them, one entry per offending field
    *  for the form to outline. Nothing here decides anything. */
+  /** Which deployment the form is *correcting*, if it is correcting one.
+   *
+   * Null covers both filing something new and duplicating: a duplicate
+   * is a new deployment that happens to start from an old one's text,
+   * and treating it as an edit would send a PUT at the id it was copied
+   * from. Held apart from `openedFrom` for exactly that reason — the two
+   * differ only in this field, and everything else about them is the
+   * same act. */
+  const [editing, setEditing] = useState<string | null>(null);
+  /** Which deployment the draft was opened from, either way. Passed to
+   *  the form so it can bring its map controls into line. */
+  const [openedFrom, setOpenedFrom] = useState<string | null>(null);
+
+  const openCopy = useCallback(
+    (row: TaskProfileSummary) => {
+      /* The id is suggested, not silently assigned. It is the
+         deployment's identity and it goes into every episode_context_id
+         hash, so a name nobody chose is a name nobody recognises three
+         weeks later. Filling the field and leaving it editable is the
+         middle path: fast for the ordinary case, still a decision. */
+      const document = {
+        ...(row.profile as ProfileDraft),
+        id: suggestProfileId(row.id, profiles.map((each) => each.id)),
+      } as ProfileDraft;
+      setEditing(null);
+      setOpenedFrom(row.id);
+      setFormDraft(document);
+      setDraft("");
+      setError(null);
+      setFiled(null);
+      setFieldErrors([]);
+      deploymentsTabStore.set("create");
+    },
+    [profiles],
+  );
+
+  const openEdit = useCallback((row: TaskProfileSummary) => {
+    setEditing(row.id);
+    setOpenedFrom(row.id);
+    setFormDraft(row.profile as ProfileDraft);
+    setDraft("");
+    setError(null);
+    setFiled(null);
+    setFieldErrors([]);
+    deploymentsTabStore.set("create");
+  }, []);
+
   const file = async (profile: ProfileDraft) => {
     setBusy(true);
     setError(null);
     setFiled(null);
     setFieldErrors([]);
     try {
-      const created = await createTaskProfile(profile);
-      setFiled(created.id);
+      /* One handler for both, because filing and correcting are the same
+         act from the form's side: it hands over a document. Which verb
+         goes out is a fact about where the document came from, and the
+         server owns the rule either way — a PUT at a deployment that has
+         been measured is refused there, not here. */
+      const saved = editing
+        ? await replaceTaskProfile(editing, profile)
+        : await createTaskProfile(profile);
+      setFiled(saved.id);
       setDraft("");
       setFormDraft(null);
+      setEditing(null);
+      setOpenedFrom(null);
       await refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -263,6 +360,7 @@ export default function DeploymentsPage() {
                           setFieldErrors([]);
                         }}
                         onSubmit={file}
+                        startFrom={openedFrom}
                         busy={busy}
                         fieldErrors={fieldErrors}
                       />
@@ -301,7 +399,23 @@ export default function DeploymentsPage() {
             labelKey: "deployments.tabs.list",
             content: (
               <>
-                {loading ? (
+                {!signedIn ? (
+                  /* Before the empty state, because "no deployments
+                     filed yet" is a claim about the store and this
+                     reader has not been allowed to look. */
+                  <div className="deployment-empty-banner">
+                    <span className="deployment-empty-icon" aria-hidden="true">
+                      <Icon name="user" size={24} />
+                    </span>
+                    <div>
+                      <strong>{t("deployments.signedOut.title")}</strong>
+                      <p>{t("deployments.signedOut.body")}</p>
+                    </div>
+                    <Link href="/login" className="quick-action primary">
+                      {t("nav.signIn")}
+                    </Link>
+                  </div>
+                ) : loading ? (
                   <div className="deployment-loading"><span className="skeleton" />{t("common.loading")}</div>
                 ) : profiles.length === 0 ? (
                   <div className="deployment-empty-banner">
@@ -336,12 +450,27 @@ export default function DeploymentsPage() {
                             <th>{t("deployments.column.risk")}</th>
                             <th>{t("deployments.column.replanning")}</th>
                             <th>{t("deployments.column.nMin")}</th>
+                            {/* Whether anything has been measured against this
+                                deployment. A column of its own rather than a word
+                                wedged between two buttons: it is a fact about the
+                                deployment, like the noise and the thresholds beside
+                                it, and it is also what decides whether the row can
+                                be edited — so it belongs where somebody scanning
+                                the table reads facts, not where they reach for
+                                actions. */}
+                            <th>{t("deployments.column.measured")}</th>
                             <th />
                           </tr>
                         </thead>
                         <tbody>
                           {paged.visible.map((profile) => (
-                            <DeploymentRow key={profile.id} profile={profile} onDeleted={refresh} />
+                            <DeploymentRow
+                              key={profile.id}
+                              profile={profile}
+                              onDeleted={refresh}
+                              onCopy={openCopy}
+                              onEdit={openEdit}
+                            />
                           ))}
                         </tbody>
                       </table>
@@ -369,9 +498,13 @@ export default function DeploymentsPage() {
 function DeploymentRow({
   profile,
   onDeleted,
+  onCopy,
+  onEdit,
 }: {
   profile: TaskProfileSummary;
   onDeleted: () => void;
+  onCopy: (profile: TaskProfileSummary) => void;
+  onEdit: (profile: TaskProfileSummary) => void;
 }) {
   const { t } = useTranslation();
   const constraints = constraintsOf(profile);
@@ -426,7 +559,37 @@ function DeploymentRow({
         {constraints.n_min_evaluation_episodes ?? "—"}
       </td>
       <td>
+        {/* The badge carries the consequence in its tooltip either way.
+            "Measured" on its own reads as a label; what a reader needs
+            is why it stops them editing, and what to do instead. */}
+        {profile.editable ? (
+          <span className="muted small" title={t("deployments.notMeasuredWhy")}>
+            {t("deployments.notMeasured")}
+          </span>
+        ) : (
+          <span className="badge warn" title={t("deployments.editLockedWhy")}>
+            {t("deployments.editLocked")}
+          </span>
+        )}
+      </td>
+      <td className="row-actions">
+        {/* Copy first, because it is the one that always works. Editing
+            is offered only while nothing has measured this deployment —
+            the server says which, and a button that always refuses is
+            worse than no button. */}
+        <button type="button" onClick={() => onCopy(profile)}>
+          {t("deployments.copy")}
+        </button>
         <DeleteDeployment id={profile.id} onDeleted={onDeleted} />
+        {/* Last, so the two buttons every row has line up down the
+            column and the one only some rows have hangs off the end.
+            Between them it made each row a different shape and the eye
+            had to re-find Delete on every line. */}
+        {profile.editable ? (
+          <button type="button" onClick={() => onEdit(profile)}>
+            {t("deployments.edit")}
+          </button>
+        ) : null}
       </td>
     </tr>
   );

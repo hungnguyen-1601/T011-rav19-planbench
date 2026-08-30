@@ -33,9 +33,11 @@ class Settings(BaseSettings):
     # Production must set AUTH_SECRET (see docs/DEPLOYMENT.md).
     jwt_secret: str = ""
     jwt_ttl_minutes: int = 60
-    # "name:password" entries, comma separated (a legacy third ":role"
-    # field is accepted and ignored — everyone is a member now). Only
-    # usable when dev login is enabled.
+    # "name:roles:password" entries, comma separated; "name:password"
+    # still parses. Roles are joined with "+" and are honoured only on
+    # a single-person profile — on a shared server they are ignored
+    # with a warning, because a reviewer grown out of an environment
+    # variable grew silently. Only usable when dev login is enabled.
     seed_users: str = ""
     # Username/password sign-in. Off unless explicitly enabled, so a
     # deployment cannot accidentally expose a password login next to
@@ -67,6 +69,46 @@ class Settings(BaseSettings):
     # Emails are matched only when the provider verified them.
     admin_nicknames: str = ""
     admin_emails: str = ""
+
+    # Which kind of deployment this is. Absent means `production`, and
+    # that direction is deliberate: a server already running has no such
+    # variable, and the safe reading of silence is the strict one. The
+    # desktop launcher sets its own profile in-process before Settings
+    # loads, so an installed copy with an older .env still identifies
+    # itself correctly (see planbench_desktop.provision).
+    deployment_profile: str = "production"
+
+    # Whether one person may carry a decision run through their own
+    # approval gate. `strict` everywhere a second human exists;
+    # `relaxed` only for a single-person install, and then every such act
+    # is written to the audit trail as `self_*` so the record never
+    # claims somebody else looked. Never inferred from how many
+    # reviewers currently exist: that number changes when an account is
+    # disabled, and a rule that flips silently is not a rule.
+    separation_of_duties: str = "strict"
+
+    # The demo profile's single all-capability account, bound on first
+    # sign-in and thereafter keyed by the immutable user id. Email is
+    # preferred because a provider verified it; the nickname form is for
+    # a local dev-login account the deployment created itself.
+    demo_owner_email: str = ""
+    demo_owner_nickname: str = ""
+
+    # Whether publishing gates the catalogue. Off means the resolver
+    # behaves exactly as it did before contract 7.0.0 — every runnable
+    # bundle is offered — so this phase can land without changing what
+    # any deployment currently runs. It is turned on once the rest of
+    # the chain exists: pinned run identity, a job that stops when a
+    # bundle is disabled, and reliance derived on read. Turning it on
+    # earlier would give an operator a kill switch whose consequences
+    # nothing downstream understands yet.
+    algorithm_governance: bool = False
+
+    # What a brand-new account gets. Only `engineer` or nothing:
+    # reviewer and admin are grants somebody makes deliberately, and a
+    # sign-up form that hands them out is a sign-up form that hands out
+    # the deployment.
+    default_roles: str = "engineer"
 
     # Artifact storage root for trajectories and reports.
     artifact_dir: str = "artifacts"

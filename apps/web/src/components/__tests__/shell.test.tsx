@@ -36,6 +36,8 @@ const ALICE: SessionUser = {
   email: "alice@example.com",
   display_name: "Alice Example",
   avatar_url: "",
+  roles: [],
+  capabilities: [],
   is_admin: false,
   needs_nickname: false,
   providers: ["google"],
@@ -167,7 +169,7 @@ describe("Sidebar — collapsed", () => {
        description too — a rail of icons with nothing but names is what
        the descriptions were added to fix. */
     const html = sidebar({ collapsed: true });
-    expect(html).toContain('data-tooltip="Maps — Draw the walls a deployment runs in"');
+    expect(html).toContain('data-tooltip="Maps - Draw the walls a deployment runs in"');
     expect(html).toContain('aria-label="Maps"');
   });
 

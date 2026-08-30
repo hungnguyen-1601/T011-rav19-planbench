@@ -1,0 +1,98 @@
+Five ways to run this. Pick by what you are doing, not by which is more
+"proper".
+
+<GuideTabs slug="running">
+
+<div>
+
+The deployed web app - nothing to install. Sign in and follow
+[Seven steps](/guide/operation).
+
+This is the route for somebody who wants to use it rather than build it.
+
+</div>
+
+<div>
+
+```bash
+bash scripts/dev_stack.sh start     # http://localhost:3000
+bash scripts/dev_stack.sh status
+bash scripts/dev_stack.sh logs
+bash scripts/dev_stack.sh stop
+```
+
+The script runs `alembic upgrade head` **before** starting the API, and
+prints which sign-in methods are enabled. If the migration fails it stops
+and says so rather than starting the API on an old schema - an API
+running happily against the wrong schema is how data gets written that
+somebody has to repair by hand later.
+
+First time through, install the dependencies: Python 3.12 and Node 20 or
+newer.
+
+</div>
+
+<div>
+
+API only, no bash needed:
+
+```
+.venv\Scripts\python.exe scripts\serve.py --reload --migrate
+```
+
+<Callout kind="trap">
+
+**Do not call `python -m uvicorn planbench_api.main:app` directly.** The
+project is not installed as a package, so the directories under
+`packages/` and `services/` are only on `sys.path` when something puts
+them there. `serve.py` reads that list from `pyproject.toml` - the same
+list pytest uses - and only then starts.
+
+</Callout>
+
+</div>
+
+<div>
+
+One installer, one machine, one person. No Docker, Node or Python needed
+first - the build carries its own interpreter.
+
+Everything you create lives under `%LOCALAPPDATA%\PlanBench`: the
+database, artifacts, maps, profiles, and the `.env` holding the local
+account and the API key.
+
+Windows SmartScreen will warn that the publisher is unknown - the
+installer is not code-signed.
+
+The API key is pasted into the settings screen; no file to edit.
+
+</div>
+
+<div>
+
+Open `/docs` to try it from the browser, or use `curl`:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/decisions \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_profile_id": "open_hall_v2",
+    "candidates": [
+      {"stack": "astar+dwa", "local_config": "dwa_coarse"},
+      {"stack": "astar+dwa", "local_config": "dwa_balanced"}
+    ],
+    "episodes": 30
+  }'
+```
+
+It answers `201` with an `id`; read the result with
+`GET /api/v1/decisions/<id>`.
+
+This route earns its keep when queueing many comparisons from a script.
+It goes through **the same gates and the same comparison** as the
+interface - there is no shortcut here.
+
+</div>
+
+</GuideTabs>

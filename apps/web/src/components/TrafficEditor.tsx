@@ -42,6 +42,7 @@ import {
   parkedFromTheStart,
   placementsFor,
   stopMode,
+  stopPointOf,
   updateObstacle,
   withStopMode,
 } from "@/lib/traffic";
@@ -319,6 +320,21 @@ export function TrafficEditor({
                     patchMotion(index, { ...motion, heading: (degrees * Math.PI) / 180 }),
                   { step: 1, note: t("deployments.form.traffic.headingNote") },
                 )}
+                {/* Where those two numbers put it. Shown because the
+                    stored form is always this one — the server resolves
+                    a clicked point into a heading and a duration and
+                    keeps only those — so somebody who placed the stop on
+                    the map reopens the deployment and finds a mode they
+                    did not choose. Nothing was lost, and this is the
+                    line that says so: it is the spot that was clicked. */}
+                {stopPointOf(motion) ? (
+                  <span className="muted small">
+                    {t("deployments.form.traffic.stopsAt", {
+                      x: stopPointOf(motion)!.x.toFixed(1),
+                      y: stopPointOf(motion)!.y.toFixed(1),
+                    })}
+                  </span>
+                ) : null}
               </>
             ) : (
               /* Read-only on purpose: the point is placed by clicking
@@ -327,8 +343,8 @@ export function TrafficEditor({
                  mode was added to avoid, in a second place. */
               <span className="muted">
                 {t("deployments.form.traffic.stopsAt", {
-                  x: (motion.stop_point?.x ?? 0).toFixed(1),
-                  y: (motion.stop_point?.y ?? 0).toFixed(1),
+                  x: (stopPointOf(motion)?.x ?? 0).toFixed(1),
+                  y: (stopPointOf(motion)?.y ?? 0).toFixed(1),
                 })}
               </span>
             )}

@@ -29,13 +29,39 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** Import `api.ts` fresh, with the environment these cases describe. */
+/** Import `api.ts` fresh, with the environment these cases describe.
+ *
+ * The window stub carries a `sessionStorage` as well as a location,
+ * because the client now reads the session on every request. An empty
+ * one is the signed-out case and is all these cases need — what is under
+ * test here is the address, not the credential.
+ */
 async function load(options: { env?: string; origin?: string }) {
   if (options.env === undefined) delete process.env[ENV_KEY];
   else process.env[ENV_KEY] = options.env;
   if (options.origin === undefined) vi.stubGlobal("window", undefined);
-  else vi.stubGlobal("window", { location: { origin: options.origin } });
+  else {
+    vi.stubGlobal("window", {
+      location: { origin: options.origin },
+      sessionStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    });
+  }
   return import("@/lib/api");
+}
+
+/** Answer the ticket request with a fixed ticket. */
+function stubTicket(ticket = "tk-1") {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({ ticket, expires_in: 60 }),
+    })),
+  );
 }
 
 describe("API_BASE", () => {
@@ -66,16 +92,41 @@ describe("API_BASE", () => {
 
 describe("wsUrl", () => {
   it("follows the same origin the REST calls use", async () => {
+    stubTicket();
     const { wsUrl } = await load({ origin: "http://127.0.0.1:53412" });
-    expect(wsUrl("sim-1")).toBe("ws://127.0.0.1:53412/ws/simulations/sim-1?pace=false");
+    expect(await wsUrl("sim-1")).toBe(
+      "ws://127.0.0.1:53412/ws/simulations/sim-1?pace=false&ticket=tk-1",
+    );
   });
 
   it("upgrades to wss when the page is served over https", async () => {
     /* `http` -> `ws` and `https` -> `wss` come out of the same one-line
        replacement; the second is the one nobody tests by hand. */
+    stubTicket();
     const { wsUrl } = await load({ origin: "https://planbench.example" });
-    expect(wsUrl("sim-1", true)).toBe(
-      "wss://planbench.example/ws/simulations/sim-1?pace=true",
+    expect(await wsUrl("sim-1", true)).toBe(
+      "wss://planbench.example/ws/simulations/sim-1?pace=true&ticket=tk-1",
     );
+  });
+
+  it("asks the API for the ticket before building the URL", async () => {
+    /* The socket carries a single-use ticket rather than the bearer
+       token, because a browser cannot set a header on a WebSocket and a
+       token in a query string lands in every log on the path. */
+    stubTicket();
+    const { wsUrl } = await load({ origin: "http://127.0.0.1:53412" });
+    await wsUrl("sim-1");
+    const called = vi.mocked(fetch).mock.calls[0];
+    expect(called[0]).toBe("http://127.0.0.1:53412/api/v1/ws/tickets");
+    expect((called[1] as RequestInit).method).toBe("POST");
+  });
+
+  it("escapes the ticket instead of pasting it in", async () => {
+    // `token_urlsafe` will not produce one, but the URL is built by
+    // concatenation and a value that needed escaping would silently
+    // truncate the query string.
+    stubTicket("a b&c");
+    const { wsUrl } = await load({ origin: "http://127.0.0.1:53412" });
+    expect(await wsUrl("sim-1")).toContain("ticket=a%20b%26c");
   });
 });

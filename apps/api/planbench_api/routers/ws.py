@@ -12,23 +12,82 @@ Two delivery modes (query parameters):
 - ``pace=false``: every frame is delivered as fast as the socket allows,
   no skipping. Use when the client owns playback (pause/scrub/speed) —
   this is what the web UI does.
+
+**Authentication is a ticket, not the bearer token.** The socket used to
+accept every connection unconditionally, which made a recorded run
+readable by anyone who could guess an id. A browser cannot put a header
+on a WebSocket, and the usual workaround — passing the JWT as a query
+parameter — writes an hour-long credential into every access log on the
+path. So the caller mints a single-use, one-minute ticket over ordinary
+HTTP first (``POST /api/v1/ws/tickets``) and connects with that; see
+:mod:`planbench_api.ws_tickets`.
+
+Two routers, and the split is the point. The socket lives outside
+``/api/v1`` because a WebSocket route is not a versioned resource; the
+ticket endpoint is an ordinary authenticated POST and belongs with every
+other one, under the prefix. Putting them together only *looked* tidy —
+it left the one route in this file that needs a bearer token sitting
+where no other API route is, which is exactly where a client goes
+looking for it and does not find it.
 """
 
 from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 
+from planbench_api.auth import SimulatingUser
 from planbench_api.config import get_settings
 from planbench_api.errors import NotFoundError
+from planbench_api.ws_tickets import TICKET_TTL
 
+#: The socket itself. Mounted without a prefix (see the module docstring).
 router = APIRouter()
+
+#: The HTTP half, mounted under the API prefix like every other route
+#: that authenticates with a bearer token.
+tickets_router = APIRouter(prefix="/ws", tags=["ws"])
+
+#: Closed before the handshake completes, per RFC 6455 §7.4.2's private
+#: range. A browser cannot read a status code from a rejected upgrade, so
+#: the ticket is also refused *after* accepting, with a message — that is
+#: the path a person actually sees.
+WS_UNAUTHORISED = 4401
+
+
+class TicketResponse(BaseModel):
+    """A one-minute, single-use credential for one socket."""
+
+    ticket: str
+    expires_in: int
+
+
+@tickets_router.post("/tickets", response_model=TicketResponse)
+def mint_ticket(request: Request, user: SimulatingUser) -> TicketResponse:
+    """Trade a bearer token for something safe to put in a URL."""
+    ticket = request.app.state.ws_tickets.issue(user.id)
+    return TicketResponse(ticket=ticket.value, expires_in=int(TICKET_TTL.total_seconds()))
 
 
 @router.websocket("/ws/simulations/{simulation_id}")
 async def stream_simulation(websocket: WebSocket, simulation_id: str) -> None:
     await websocket.accept()
+    # Accepted first, then checked, so the refusal arrives as a message a
+    # browser can actually read. A rejected upgrade gives the page a bare
+    # "connection failed" and nothing to show anyone.
+    viewer = websocket.app.state.ws_tickets.redeem(websocket.query_params.get("ticket", ""))
+    if viewer is None:
+        await websocket.send_json(
+            {
+                "type": "error",
+                "code": "unauthorised",
+                "message": "this socket needs a ticket from POST /api/v1/ws/tickets",
+            }
+        )
+        await websocket.close(code=WS_UNAUTHORISED)
+        return
     repos = websocket.app.state.repos
     try:
         speed = float(websocket.query_params.get("speed", "1.0"))

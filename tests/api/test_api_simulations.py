@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from blocked_route import blocked_scenario, two_doorway_map
+from conftest import ws_url
 from fastapi.testclient import TestClient
 
 
@@ -174,7 +175,9 @@ class TestWebSocket:
         client.post(f"/api/v1/simulations/{simulation['id']}/run")
         # speed=50: ~11.5 s of simulation replays in ~0.23 s of real time,
         # yielding >5 state frames under the 60 Hz rate cap.
-        with client.websocket_connect(f"/ws/simulations/{simulation['id']}?speed=50") as websocket:
+        with client.websocket_connect(
+            ws_url(client, f"/ws/simulations/{simulation['id']}", speed="50")
+        ) as websocket:
             first, states, message = drain(websocket)
             assert first["type"] == "start"
             assert first["plan_path"]
@@ -190,7 +193,7 @@ class TestWebSocket:
         run = client.post(f"/api/v1/simulations/{simulation['id']}/run").json()
         total = len(run["result"]["trajectory"])
         with client.websocket_connect(
-            f"/ws/simulations/{simulation['id']}?speed=1000"
+            ws_url(client, f"/ws/simulations/{simulation['id']}", speed="1000")
         ) as websocket:
             _, states, message = drain(websocket)
         assert message["type"] == "result"
@@ -205,7 +208,7 @@ class TestWebSocket:
         run = client.post(f"/api/v1/simulations/{simulation['id']}/run").json()
         total = len(run["result"]["trajectory"])
         with client.websocket_connect(
-            f"/ws/simulations/{simulation['id']}?pace=false"
+            ws_url(client, f"/ws/simulations/{simulation['id']}", pace="false")
         ) as websocket:
             _, states, message = drain(websocket)
         assert states == total
@@ -215,13 +218,15 @@ class TestWebSocket:
         self, client: TestClient, created_map: dict, created_scenario: dict
     ) -> None:
         simulation = create_simulation(client, created_map, created_scenario)
-        with client.websocket_connect(f"/ws/simulations/{simulation['id']}") as websocket:
+        with client.websocket_connect(
+            ws_url(client, f"/ws/simulations/{simulation['id']}")
+        ) as websocket:
             message = websocket.receive_json()
             assert message["type"] == "error"
             assert message["code"] == "not_ready"
 
     def test_unknown_simulation_reports_error(self, client: TestClient) -> None:
-        with client.websocket_connect("/ws/simulations/missing") as websocket:
+        with client.websocket_connect(ws_url(client, "/ws/simulations/missing")) as websocket:
             message = websocket.receive_json()
             assert message["type"] == "error"
             assert message["code"] == "not_found"

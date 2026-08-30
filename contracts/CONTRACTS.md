@@ -1,6 +1,6 @@
 # CONTRACTS.md — Planner Selector
 
-> **Phiên bản hợp đồng:** `contracts_version: 6.9.0`
+> **Phiên bản hợp đồng:** `contracts_version: 7.0.0`
 > **Trạng thái:** cần cả nhóm đọc và ký ở mục 16. Phase 1 (schema gốc) đã hiện thực theo bản 1.1.0; bản 2.0.0 sửa G5 — xem lịch sử phiên bản ở mục 18.
 > **Vị trí:** `contracts/CONTRACTS.md` ở gốc repo (trước đây là `docs/antongduy/CONTRACTS_1.md`).
 > **Tài liệu mẹ:** `docs/antongduy/de-tai-moi-planner-selector.md`. Khi hai tài liệu mâu thuẫn, **CONTRACTS.md thắng** — plan là lý do, contract là luật.
@@ -909,7 +909,7 @@ Chỉ tính trên bộ `evaluation`. **Cấm gộp bộ `neighborhood` vào** �
 
 ```json
 {
-  "contracts_version": "6.9.0",
+  "contracts_version": "7.0.0",
   "recommendation_scope": "MISSION_LEVEL | DEPLOYMENT_LEVEL | ROBUST_DEPLOYMENT_LEVEL",
   "experiment_scope": "full_stack_selection",
   "decision_mode": "technical | business_adjusted",
@@ -972,7 +972,7 @@ Mọi lần ra quyết định ghi một `manifest.json`:
 
 ```json
 {
-  "contracts_version": "6.9.0",
+  "contracts_version": "7.0.0",
   "git_sha": "...",
   "docker_image_digest": "sha256:...",
   "task_profile_id": "warehouse_a_v1",
@@ -1029,16 +1029,73 @@ Hệ quả vận hành phải nói thẳng, vì nó là một cái bẫy im lặ
 
 ## HĐ-14 — Vai trò và phê duyệt
 
-| Vai | Được làm | Không được làm |
-|---|---|---|
-| `engineer` | tạo task, đăng ký candidate, chạy benchmark, xem mọi bằng chứng | phê duyệt |
-| `approver` | toàn bộ quyền của engineer, cộng Approve / Reject / comment | — |
+### 14.1. Ba tầng, ba câu hỏi khác nhau
 
-- Audit log **chỉ ghi thêm**, không sửa, không xóa.
+Quyền là **giao** của ba điều kiện, không phải một bảng tra:
+
+| Tầng | Trả lời | Cơ chế |
+|---|---|---|
+| Role → capability | được làm **loại hành động** nào | `user_roles(user_id, role)`; mỗi role là một **gói capability cố định trong code** |
+| Ownership | được làm trên **bản ghi** nào | `owner_user_id` / `created_by` |
+| Separation of duties | có được duyệt **thứ mình tạo** không | so `created_by` / `uploaded_by`; nới bằng đúng một setting tường minh (14.5) |
+
+```
+allowed = has_capability(user, "resource.write") and owns(user, resource)
+```
+
+Ba gói nghiệp vụ **độc lập, không lồng nhau**. Một người mang **nhiều role**; ai cần vừa vận hành vừa kiểm thuật toán thì mang `admin + reviewer`, và hành động publish của họ vẫn ghi audit dưới capability của reviewer. Đây là chỗ khác biệt so với mô hình "admin có mọi quyền": một tài khoản vận hành **không** tự nhiên duyệt được kết luận kỹ thuật.
+
+### 14.2. Ba gói
+
+| Gói | Có | Không có |
+|---|---|---|
+| `engineer` | `resource.read`, `resource.write`, `simulation.run`, `run.create`, `run.cancel`, `run.submit`, `algorithm.catalogue` | mọi thứ thuộc duyệt và thuộc thuật toán |
+| `reviewer` | `resource.read`, `simulation.run`, `run.review`, `run.withdraw`, `algorithm.{catalogue,inspect,import,validate,validation_run,publish,disable}`, `model.{upload,validate}`, `audit.read` | `resource.write`, `run.create`, `run.submit` |
+| `admin` | `resource.read`, `algorithm.catalogue`, `system.{kill_switch,configure,operate}`, `user.manage`, `audit.read` | mọi capability nghiệp vụ: không tạo run, không duyệt, không publish |
+
+`demo_owner` là **ngoại lệ theo deployment profile**, không phải vai nghiệp vụ: mang toàn bộ capability, đúng một người mỗi database, chỉ tồn tại dưới `PLANBENCH_DEPLOYMENT_PROFILE=demo`, và profile `production` **từ chối khởi động** khi còn tài khoản mang nó.
+
+### 14.3. Thuật toán ngoài phải được publish trước khi ai đó dùng để kết luận
+
+- Engineer chỉ chọn được thuật toán **built-in** hoặc bundle đang là **publication current**. Import xong, validate xong vẫn chưa dùng được: publish là một hành động của reviewer, và đó là điều làm vai reviewer có nghĩa.
+- Cổng của publish là **structural + bộ conformance tất định**, không phải kết quả một phép so. Lấy kết quả benchmark làm điều kiện cho code vào catalogue là mở đường chọn deployment cho tới khi plugin qua — đúng thứ §17 cấm.
+- Revision mới **tự làm mất hiệu lực** publication cũ; muốn dùng bản mới thì publish lại. Run đã pin một revision vẫn tái lập được bằng revision đó, không bao giờ bằng "bản mới nhất".
+- `disable` là **terminal**: dùng lại phải upload revision mới. `hold` mới là tạm ngưng.
+
+### 14.4. Duyệt là ba bước, và bước nào cũng phải của cùng một người
+
+`Submit → Claim → Acknowledge → Approve/Reject`, với `comment` bắt buộc ở bước quyết định.
+
+- **Acknowledge phải thuộc về người đang claim.** Người A đọc bằng chứng rồi nhả việc, người B nhận việc và ký dựa trên chữ ký của A là một chữ ký không ai đọc gì. Điều kiện: tồn tại sự kiện acknowledge có `actor_user_id == claimed_by` **và** `acknowledged_at >= claimed_at` của lần claim hiện tại.
+- **Run không có Decision Card vẫn phải được đọc.** Phần lớn phép so không xếp hạng được (dưới 2 candidate qua cổng, HĐ-11); chúng vẫn trả lời "ai bị loại ở đâu, sau bao nhiêu lần chạy". Trạng thái của chúng đóng ở `acknowledged`, **không** ở `approved` — không có cấu hình nào để duyệt.
+- **Withdraw không xoá approval.** Nó thêm một sự kiện bên cạnh và trả `config_state` về `pending`. Bất kỳ reviewer nào cũng withdraw được, có comment: một approval không rút được khi người ký đã rời đi là một approval khoá luôn cả deployment.
+
+### 14.5. Separation of duties
+
+Ba luật **không setting nào nới**: người tạo run không tự duyệt run đó (dưới `strict`); reviewer chỉ quyết định run mình đang claim; **validation run không bao giờ approve được**.
+
+`separation_of_duties: strict | relaxed` — `strict` là mặc định của mọi deployment nhiều người. `relaxed` chỉ cho deployment một người (desktop, demo) và khi bật thì hành động tự-duyệt, tự-publish phải ghi audit dưới action `self_*`, và Decision Card mang nhãn `approval: self`. Không bao giờ được suy luật này từ số lượng reviewer đang có: số đó đổi khi một tài khoản bị khoá, và một luật lật im lặng là một luật không tồn tại.
+
+### 14.6. Bằng chứng không bao giờ mất, nhưng "còn dựa vào được" thì có
+
+Hai câu hỏi khác nhau, hai trường khác nhau, không được ép vào một:
+
+| Trường | Trả lời |
+|---|---|
+| `approval.status` | *con người đã quyết định gì lúc đó* — không sự kiện nào trên bundle sửa được nó |
+| `reliance_status` | *quyết định đó còn dùng được cho việc mới không* — **dẫn xuất** lúc đọc, không lưu |
+
+`active` · `suspended` (bundle bị hold hoặc unpublish) · `revoked` (bundle bị disable) · `unknown` (run cũ không pin được định danh bundle). Revision mới thay revision cũ **không** hạ reliance: "có bản mới" không chứng minh bản cũ sai. `approved_config.yaml` của một run reliance ≠ `active` vẫn tải được, kèm cảnh báo — chặn tải là làm bằng chứng khó tiếp cận đúng lúc cần điều tra nhất.
+
+Hệ thống **không tự withdraw** thay người. Một bundle bị tắt vì lỗi bảo mật, vì crash, vì dependency, hay vì đang điều tra — không ca nào tự chứng minh khuyến nghị ban đầu là sai.
+
+### 14.7. Bất biến
+
+- Audit log **chỉ ghi thêm**, không sửa, không xóa. Mọi sự kiện mang `actor_user_id`, `actor_roles` (ảnh chụp lúc đó), `authorized_capability` (capability *thực sự* cho phép hành động, do endpoint quyết định), và `reason` khi là hành động thay người khác.
 - Chỉ Decision Card ở trạng thái `APPROVED` mới xuất được `approved_config.yaml`.
 - **Hệ thống ở chế độ sim-only:** không tồn tại đường dẫn kỹ thuật nào từ UI tới robot thật. Việc "triển khai" chỉ là xuất một file cấu hình.
 
-Không cần IAM cấp doanh nghiệp. Hai vai trò, một bảng, một cột `role`.
+**Vi phạm trông như thế nào:** một tài khoản duyệt chính run mình tạo mà audit không có `self_`. Một `approved_config.yaml` trỏ tới thuật toán không ai publish. Hai người cùng claim một request. Một approval biến mất khỏi lịch sử sau khi bị rút. Một run được ký mà không có acknowledge nào mang tên người ký.
 
 ---
 
@@ -1153,6 +1210,7 @@ Hai định danh frozen của contract (`candidate_id`, `episode_context_id`) d�
 
 | Phiên bản | Ngày | Loại | Nội dung |
 |---|---|---|---|
+| 7.0.0 | 2026-08-27 | **MAJOR** | **HĐ-14 viết lại toàn bộ.** Bản cũ (hai vai `engineer`/`approver`, "một cột `role`") đã không còn tồn tại trong code từ lần refactor accounts — quyền chuyển hết sang ownership, ai cũng duyệt được run của người khác, ba nhóm route không có xác thực. Bản mới: ba gói capability **độc lập, không lồng nhau** (`engineer`/`reviewer`/`admin`, một người mang nhiều gói) cộng `demo_owner` là ngoại lệ theo deployment profile; thuật toán ngoài phải **được reviewer publish** mới dùng để kết luận được, và cổng publish là conformance tất định chứ không phải một phép so; duyệt là `Submit → Claim → Acknowledge → Approve` với acknowledge **phải thuộc người đang claim**; run không có card đóng ở `acknowledged` chứ không phải `approved`; `reliance_status` tách khỏi `approval.status` để một thuật toán bị tắt sau khi duyệt không làm biến mất lịch sử cũng không làm một khuyến nghị chết trông như đang sống; `separation_of_duties: strict\|relaxed` là setting tường minh, không suy từ số reviewer đang có. Đổi nghĩa của chữ "approved" ⇒ MAJOR, cùng loại 2.0.0 và 3.0.0. Chi tiết dưới đây. |
 | 1.0.0 | 2026-08-08 | — | Bản đầu, viết cùng `de-tai-moi-planner-selector.md`. |
 | 1.1.0 | 2026-08-09 | MINOR | Bốn thay đổi, chi tiết dưới đây. |
 | 2.0.0 | 2026-08-09 | **MAJOR** | Sửa G5: bỏ `peak_rss_mb ≤ available_ram_mb`, thay bằng `memory_estimate_mb`. Chi tiết dưới đây. |
@@ -1185,6 +1243,22 @@ Hai định danh frozen của contract (`candidate_id`, `episode_context_id`) d�
 | 6.9.0 | 2026-08-14 | MINOR | **Bảo đảm phanh nay tính cả vật cản đang lại gần.** ① **HĐ-2.6: `environment.v_obstacle_max`** — tiêu chuẩn vận tốc khả nhận chặn tốc độ theo lần quét **hiện tại**, tức chỉ hứa *dừng kịp trước vật cản đang đứng*. Đo được ngày 14-08 trên `astar+dwa`, robot mặc định: một xe đẩy lao thẳng ở **0,2 m/s** — chậm hơn người đi bộ — đưa robot qua 6–25 bước liên tiếp mà tiêu chuẩn của chính nó chấm là khả nhận, rồi **va chạm**; với trọng số **đang ship** cũng va chạm, ở tốc độ vật cản còn thấp hơn. Biên mới `(v+u)·T + v²/(2a) + u·v/a ≤ headroom` cộng thêm quãng vật cản đi trong lúc robot phanh; với `u = 0` nó **trở về đúng công thức cũ từng float một**, nên deployment không khai giữ nguyên hành vi và không lượt chạy đã lưu nào mất hiệu lực. ② **Ba nghĩa, `null` là mặc định**: `null` = chưa khai, hành vi cũ, **không mang tuyên bố an toàn**; số dương = đã khai **và bị kiểm chứng** lúc nạp; `0.0` = tuyên bố *"ở đây không gì chuyển động"*, hợp lệ và **bị từ chối** nếu environment khai vật cản động. Mặc định **không** phải `0.0`: mọi profile viết trước bản này đều khai traffic nên sẽ tự trượt validator của chính pha này. Cùng tiền lệ `robustness_margin: float | None`. ③ **Validator toàn phần**: cả bốn luật chuyển động có cận trên đóng dạng (`waypoint`/`random_walk`/`sudden_stop` = `speed`; `periodic` = `π·|end−start|/period`), nên một profile khai 1,0 m/s cạnh một `WaypointMotion` 1,5 m/s **bị từ chối lúc nạp** thay vì sinh ra 300 episode trả lời câu hỏi khác. Luật chuyển động tương lai không chứng minh được cận trên phải từ chối tường minh, không được mặc định bằng 0. ④ **Khai trên deployment, không trên candidate** — cùng lý lẽ 2.3 và 2.5: một ứng viên được chọn tốc độ traffic mà nó phải phanh trước là tự chọn đề thi, và nếu chỉ một ứng viên phanh đúng thì phép so **đo an toàn** chứ không đo tầng nó tuyên bố đang so. ⑤ **HĐ-13: manifest ghi `v_obstacle_max`** — `episode_context_id` không băm nó, nên cùng deployment cùng seed có và không có biên là **hai thí nghiệm** dùng chung mọi context id; khai nó ⇒ **`task_profile_id` mới**. Cùng bản này, manifest **bắt đầu thật sự ghi `replanning`**: trường đã có trong model và trong schema từ 6.4.0 nhưng chưa bao giờ được serialise, và `additionalProperties: false` không bắt được một thuộc tính **vắng mặt**. Thêm trường có mặc định, không xoá gì, không đổi ngữ nghĩa cổng ⇒ MINOR. |
 | 6.6.0 | 2026-08-13 | MINOR | **HĐ-4.1: đặc quyền lưới replan đã được gỡ.** Điều khoản viết ở 6.1.0 nêu một luật và một việc phải làm trước khi chấm candidate `monolithic`; bản này làm việc đó. `nav_stack._replan` dựng lưới từ chính tia LiDAR robot nhận được (`_map_as_the_robot_sees_it`) thay vì `engine.dynamic_obstacles_now()`, đúng lời giải điều khoản chỉ định và loại trừ phương án cấp ground truth cho cả hai bên. Ba tính chất có test: tia tới hạn tầm xa không đánh dấu gì · một tia một ô · nhiễu tới được planner nhưng không tới được phép kiểm va chạm. **Không đổi số liệu nào đã lưu**: `ReplanningConfig.enabled` mặc định False và tầng quyết định không bật nó, nên `_replan` chưa từng chạy trong một lượt chạy đánh giá nào. Không trường nào bị xoá, không ngữ nghĩa metric hay cổng nào đổi ⇒ MINOR. |
 | 6.7.0 | 2026-08-13 | MINOR | **HĐ-2.5: bốn trục nhiễu mới, mặc định tắt.** `SensorNoise` thêm `localization_drift_m`, `localization_jump_probability` (sai số định vị — **chỉ phép đo**, tới `Observation.pose` và không bao giờ tới phép kiểm va chạm), `lidar_dropout_probability` (tia mất, báo về **tầm xa nhất** chứ không phải 0 — tia mất đọc ra thành khoảng trống với costmap), `odometry_bias_fraction` (lệch hệ thống, rút một lần cho cả episode nên nó **tích luỹ** thay vì triệt tiêu như trượt bánh) và `command_latency_steps` (**đổi thế giới thật**). `manifest.schema.json` thêm cả năm trường. **Mọi trường mặc định 0**, nên profile viết trước bản này giữ nguyên hành vi tới từng float và chưa lượt đo nào bị ảnh hưởng; bật một trục lên là **đổi thế giới** ⇒ phải khai `task_profile_id` mới (HĐ-13). Không trường nào bị xoá, không ngữ nghĩa metric hay cổng nào đổi ⇒ MINOR. |
+
+**Chi tiết 7.0.0 — vai trò được viết lại vì bản cũ đã không còn tồn tại trong code.**
+
+Bản 1.0.0 viết HĐ-14 thành hai vai `engineer` / `approver` và một cột `role`. Code từng hiện thực đúng thế (`OPERATOR/REVIEWER/ADMIN` + `require_roles()`), rồi **gỡ sạch** ở lần refactor accounts: `accounts.py` nói thẳng "there are no roles to require: every signed-in person is a member", quyền chuyển hết sang ownership, và `approval.Role` giữ lại bốn tên cũ **chỉ để đọc audit**. Từ lúc đó tới 2026-08-27, hợp đồng nói một đằng và hệ chạy một nẻo: bất kỳ tài khoản nào cũng duyệt được run của người khác, `is_admin` chỉ khoá hai thứ (import plugin, ghi API key), và ba nhóm route (`simulations`, `scenarios`, `ws`) không có xác thực nào. Một điều khoản mà code không thực hiện là điều khoản không tồn tại; bản này viết lại nó theo thứ sẽ được hiện thực, thay vì để nguyên thứ đã chết.
+
+**Vì sao MAJOR chứ không MINOR.** Không thêm trường: đổi *ai được ký*. Dưới bản cũ một run có thể đi từ `pending` sang `approved` bằng một tài khoản bất kỳ không phải người tạo; dưới bản này nó phải qua submit → claim → acknowledge của **cùng một reviewer**, và trước đó thuật toán trong run phải đã được publish. Nghĩa của chính chữ "approved" đổi, đúng loại với 2.0.0 và 3.0.0. Nghĩa vụ chạy lại lát cắt dọc rơi vào `tests/test_vertical_slice.py`: nó đọc manifest và trace từ đĩa rồi tính lại metric, không đi qua tầng tài khoản, nên "chạy lại" ở đây là chạy nó và thấy nó xanh — role không được phép chạm vào số nào của phép đo.
+
+**Ba thứ bản này thêm mà bản cũ không có khái niệm.**
+
+① **Publish là một hành động, không phải một hệ quả.** Bản cũ không phân biệt "đã import" với "được phép dùng để kết luận", nên một bundle vừa validate xong là đã nằm trong picker của mọi người. Cổng publish cố ý **không** phải một phép so: `_retire_previous()` từng tự tắt revision cũ ngay khi revision mới validate xong — máy tự quyết định cái gì đang chạy — và thay nó là một con trỏ do người ký.
+
+② **`reliance_status` tách khỏi `approval.status`.** Trước bản này, một thuật toán bị tắt sau khi cấu hình đã được duyệt không để lại dấu vết nào trên chính cấu hình đó: file vẫn tải về, vẫn đọc như một khuyến nghị còn hiệu lực. Ép hai câu hỏi vào một trường thì chỉ có hai lối ra, và cả hai đều sai — sửa `config_state` là viết thay con người rằng approval đã bị rút, còn để nguyên là để một khuyến nghị chết trông như đang sống.
+
+③ **Acknowledge gắn với người đang claim.** Bản cũ có `reviewed_by` ở mức run, đọc được là "đã từng có người xem". Câu đó không đủ để cấp quyền ký: nó vẫn đúng sau khi người xem đã nhả việc cho người khác.
+
+**Một điều khoản cũ bị bỏ, có chủ ý.** Câu "Không cần IAM cấp doanh nghiệp. Hai vai trò, một bảng, một cột `role`" đã sai theo cả hai hướng cùng lúc: quá nhiều (một cột `role` không diễn tả được một người vừa vận hành vừa kiểm thuật toán) và quá ít (nó không nói gì về thuật toán ngoài, thứ mà bản 1.0.0 chưa có).
 
 **Chi tiết 6.1.0 — bốn chỗ nới đều cho cả hai bên, nên không phép kiểm đối xứng nào bắt được.**
 

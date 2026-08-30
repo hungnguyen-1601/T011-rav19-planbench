@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { AgentSettingsForm } from "@/components/AgentSettingsForm";
-import { fieldErrorsOf, useSession } from "@/lib/auth";
+import { CAPABILITIES, can, fieldErrorsOf, useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import { getAgentSettings, saveAgentKey, type AgentSettings } from "@/lib/settings";
 
@@ -93,7 +93,7 @@ export default function SettingsPage() {
       ) : settings ? (
         <AgentSettingsForm
           settings={settings}
-          canEdit={session?.user.is_admin ?? false}
+          canEdit={can(session?.user, CAPABILITIES.systemConfigure)}
           saving={saving}
           saved={saved}
           error={saveError}

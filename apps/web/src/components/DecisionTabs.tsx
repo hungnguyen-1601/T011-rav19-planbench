@@ -34,29 +34,44 @@ import { useRef, type KeyboardEvent, type ReactNode } from "react";
 import { tabAfterKey } from "@/lib/decisionTabs";
 import { useTranslation } from "@/lib/i18n";
 
-export interface DecisionTabSpec {
+/** A label, in one of the only two ways a caller can honestly have one.
+ *
+ * `string | string` would compile and say nothing: handed `"G1"`, the
+ * component cannot tell whether that is a key it must look up or text
+ * already in the reader's language. Every caller here has a key; the
+ * guide's tab titles come from a manifest holding both languages side by
+ * side, so there is no key to pass. Separate *fields* are what let the
+ * component know which it was given — and `?: never` is what stops a
+ * caller from supplying both and leaving the answer to precedence.
+ */
+export type Labelled =
+  { labelKey: string; label?: never } | { label: string; labelKey?: never };
+
+export type DecisionTabSpec = {
   id: string;
-  /** Translation key for the tab's label. */
-  labelKey: string;
   content: ReactNode;
+} & Labelled;
+
+/** The text of either half. */
+function labelText(source: Labelled, t: (key: string) => string): string {
+  return source.label !== undefined ? source.label : t(source.labelKey);
 }
 
-export function DecisionTabs({
-  tabs,
-  active,
-  onSelect,
-  labelKey,
-}: {
-  tabs: DecisionTabSpec[];
-  active: string;
-  onSelect: (id: string) => void;
-  /** Translation key naming the strip, for a screen reader. */
-  labelKey: string;
-}) {
+export function DecisionTabs(
+  props: {
+    tabs: DecisionTabSpec[];
+    active: string;
+    onSelect: (id: string) => void;
+  } & Labelled,
+) {
+  const { tabs, active, onSelect } = props;
   const { t } = useTranslation();
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
 
-  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+  const onKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
     const next = tabAfterKey(event.key, index, tabs.length);
     if (next === null) return;
     // Arrows scroll the page by default, and `Home`/`End` jump it to an
@@ -73,7 +88,11 @@ export function DecisionTabs({
 
   return (
     <div className="decision-tabs">
-      <div className="decision-tablist" role="tablist" aria-label={t(labelKey)}>
+      <div
+        className="decision-tablist"
+        role="tablist"
+        aria-label={labelText(props, t)}
+      >
         {tabs.map((tab, index) => (
           <button
             key={tab.id}
@@ -90,7 +109,7 @@ export function DecisionTabs({
             onKeyDown={(event) => onKeyDown(event, index)}
             onClick={() => onSelect(tab.id)}
           >
-            {t(tab.labelKey)}
+            {labelText(tab, t)}
           </button>
         ))}
       </div>

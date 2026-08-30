@@ -296,6 +296,12 @@ export default function ModelsPage() {
           <div className="panel-head">
             <h3>{t("plugins.listTitle")}</h3>
           </div>
+          {/* Whose page this is *not*. The row below says what you
+              uploaded and whether it loaded; whether a benchmark is
+              offered it is a reviewer's decision, made on `/algorithms`,
+              and repeating that verdict here would be a second copy free
+              to fall behind the first. */}
+          <p className="muted small">{t("plugins.governedElsewhere")}</p>
           {/* **A separate table, not extra rows in the models one.** They
               are unusable in different ways and fixed by different acts:
               a model fails on a shape, an algorithm fails on a capability

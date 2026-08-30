@@ -39,7 +39,15 @@ def sql_app(tmp_path, monkeypatch):
 
 @pytest.fixture
 def sql_client(sql_app) -> TestClient:
-    return TestClient(sql_app, raise_server_exceptions=False)
+    """Signed in as alice, matching the in-memory ``client`` fixture.
+
+    Reading a stored map or a run needs an account now, so an anonymous
+    client would test the door rather than the storage these cases are
+    about.
+    """
+    signed_in = TestClient(sql_app, raise_server_exceptions=False)
+    signed_in.headers.update(auth_headers(signed_in, ALICE))
+    return signed_in
 
 
 def test_the_app_actually_selected_the_sql_backend(sql_app):
@@ -207,6 +215,7 @@ def test_data_outlives_the_application_instance(tmp_path, monkeypatch):
 
     first = create_app(artifact_dir=str(tmp_path / "artifacts"))
     with TestClient(first) as client:
+        client.headers.update(auth_headers(client, ALICE))
         map_id = client.post("/api/v1/maps", json=bordered_map_payload()).json()["id"]
     first.state.sessions.dispose()
 
@@ -215,6 +224,7 @@ def test_data_outlives_the_application_instance(tmp_path, monkeypatch):
     second = create_app(artifact_dir=str(tmp_path / "artifacts"))
     try:
         with TestClient(second) as client:
+            client.headers.update(auth_headers(client, ALICE))
             assert client.get(f"/api/v1/maps/{map_id}").status_code == 200
     finally:
         second.state.sessions.dispose()
@@ -230,10 +240,12 @@ def test_in_memory_backend_loses_data_on_restart(tmp_path, monkeypatch):
     first = create_app(artifact_dir=str(tmp_path / "artifacts"))
     assert first.state.sessions is None
     with TestClient(first) as client:
+        client.headers.update(auth_headers(client, ALICE))
         map_id = client.post("/api/v1/maps", json=bordered_map_payload()).json()["id"]
 
     second = create_app(artifact_dir=str(tmp_path / "artifacts"))
     with TestClient(second, raise_server_exceptions=False) as client:
+        client.headers.update(auth_headers(client, ALICE))
         assert client.get(f"/api/v1/maps/{map_id}").status_code == 404
     get_settings.cache_clear()
 

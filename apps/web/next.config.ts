@@ -1,3 +1,4 @@
+import createMDX from "@next/mdx";
 import type { NextConfig } from "next";
 
 /**
@@ -13,6 +14,11 @@ import type { NextConfig } from "next";
  * builds have to stay the same app — a second config is a second app
  * that drifts.
  *
+ * `withMDX` compiles `.mdx` **imports**, not `.mdx` pages: the articles
+ * live under `content/guide/` and are pulled in by a registry, so
+ * `pageExtensions` is deliberately left alone — an article is not a route
+ * and must not become one by sitting in a directory.
+ *
  * `images.unoptimized` is set unconditionally, not only for the export.
  * The optimiser needs a server, so `export` refuses to build without it;
  * setting it in both places keeps the two builds rendering images the
@@ -23,4 +29,6 @@ const nextConfig: NextConfig = {
   images: { unoptimized: true },
 };
 
-export default nextConfig;
+const withMDX = createMDX({});
+
+export default withMDX(nextConfig);

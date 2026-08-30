@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from planbench_api.db.models import (
     CandidateRow,
+    DecisionRunCandidateRow,
     DecisionRunReviewRow,
     DecisionRunRow,
     TaskProfileRow,
@@ -95,6 +96,22 @@ class SqlTaskProfileRepository:
     def get(self, profile_id: str) -> StoredTaskProfile:
         with self._sessions.begin() as session:
             return _to_profile(_require(session, TaskProfileRow, profile_id, "task profile"))
+
+    def replace(self, profile_id: str, profile: dict[str, Any]) -> StoredTaskProfile:
+        """Overwrite a stored deployment, keeping who filed it and when.
+
+        See the in-memory twin: `create` refuses to redefine an id, and
+        must, because a caller filing one does not know whether it is
+        taken. This is reached only once the service has established that
+        no run was ever recorded against this deployment, so the HĐ-3.1
+        damage a redefinition would do has nothing to land on.
+        """
+        with self._sessions.begin() as session:
+            row = _require(session, TaskProfileRow, profile_id, "task profile")
+            row.environment = str(profile.get("environment", {}).get("map", ""))
+            row.profile = profile
+            session.flush()
+            return _to_profile(row)
 
     def list(self) -> list[StoredTaskProfile]:
         with self._sessions.begin() as session:
@@ -198,9 +215,15 @@ class SqlDecisionRunRepository:
             config_state=run.config_state,
             config_decided_by=run.config_decided_by,
             config_decided_at=run.config_decided_at,
+            purpose=run.purpose,
         )
         with self._sessions.begin() as session:
             session.add(row)
+            # One transaction with the run itself. A run whose candidates
+            # failed to write would be a stored measurement that cannot
+            # say what it measured, which is worse than no run at all.
+            for entry in run.candidates:
+                session.add(DecisionRunCandidateRow(run_id=run.id, **entry))
             session.flush()
             return _to_run(row)
 
@@ -356,6 +379,30 @@ class SqlDecisionRunRepository:
             session.flush()
             return _to_run(row)
 
+    def append_event(  # noqa: PLR0913 - one audit row, one argument each
+        self,
+        run_id: str,
+        action: str,
+        actor_user_id: str | None,
+        username: str,
+        previous_state: str,
+        new_state: str,
+        comment: str,
+    ) -> None:
+        """A row in the journal without a state change — see the in-memory twin."""
+        with self._sessions.begin() as session:
+            _require(session, DecisionRunRow, run_id, "decision run")
+            _append_event(
+                session,
+                run_id,
+                action,
+                actor_user_id,
+                username,
+                previous_state,
+                new_state,
+                comment,
+            )
+
     def events(self, run_id: str) -> list[ReviewEvent]:
         with self._sessions.begin() as session:
             _require(session, DecisionRunRow, run_id, "decision run")
@@ -425,6 +472,8 @@ def _to_profile(row: TaskProfileRow) -> StoredTaskProfile:
         owner_user_id=row.owner_user_id,
         created_at=row.created_at,
         profile=row.profile,
+        is_reference=bool(row.is_reference or False),
+        archived_at=row.archived_at,
     )
 
 
@@ -460,6 +509,21 @@ def _to_run(row: DecisionRunRow) -> StoredDecisionRun:
         reviewed_by=row.reviewed_by,
         reviewed_at=row.reviewed_at,
         config_state=row.config_state,  # type: ignore[arg-type]
+        purpose=row.purpose or "production",
+        candidates=[
+            {
+                "slot": entry.slot,
+                "stack": entry.stack,
+                "local_config": entry.local_config or "",
+                "bundle_id": entry.bundle_id,
+                "plugin_id": entry.plugin_id,
+                "revision": entry.revision,
+                "archive_checksum": entry.archive_checksum,
+                "provider_fingerprint": entry.provider_fingerprint or "",
+                "runtime_profile": entry.runtime_profile or "",
+            }
+            for entry in sorted(row.candidates, key=lambda entry: entry.slot)
+        ],
         config_decided_by=row.config_decided_by,
         config_decided_at=row.config_decided_at,
     )

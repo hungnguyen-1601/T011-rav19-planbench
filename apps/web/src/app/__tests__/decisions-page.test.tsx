@@ -1180,7 +1180,7 @@ describe("the column head names what actually differs", () => {
     /* The accessible name used the stack, which is identical on both
        sides of a local-controller comparison — so a screen reader heard
        the same label twice. */
-    expect(DETAIL).toContain("} — ${names.heading}`}");
+    expect(DETAIL).toContain("} - ${names.heading}`}");
     expect(DETAIL).not.toContain("} — ${candidate.stack_label}`}");
   });
 
