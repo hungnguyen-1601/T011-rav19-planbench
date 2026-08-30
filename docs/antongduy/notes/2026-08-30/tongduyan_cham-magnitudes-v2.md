@@ -2,6 +2,12 @@
 
 38 muc | 30 episode | nguon: `holdout-magnitudes`
 
+Nguoi cham: **Codex (AI-assisted manual review)** | phan loai: **holdout magnitudes** |
+ngay cham: **2026-08-30** | trang thai: **complete - 30/30 packet**
+
+> Magnitude trong statement duoc doi chieu voi so da render trong PACKET v2.
+> proposition_type duoc doc la hypothesis dang de nghi xet, khong phai claim da verified.
+
 Moi episode: doc khoi **PACKET** mot lan, roi cham moi muc duoi no.
 
 - **R1** hypothesis dung vung truoc packet khong - `holds` / `plausible_other` / `wrong`
@@ -68,7 +74,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ---
 
@@ -122,7 +128,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -177,7 +183,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -224,7 +230,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -288,7 +294,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 006
 
@@ -300,7 +306,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ---
 
@@ -357,7 +363,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -411,7 +417,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -465,7 +471,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -520,7 +526,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -578,7 +584,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 012
 
@@ -589,7 +595,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ---
 
@@ -647,7 +653,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ---
 
@@ -704,7 +710,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -764,7 +770,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| plausible_other | yes | all | n/a |
 
 ---
 
@@ -821,7 +827,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| wrong | no | all | n/a |
 
 ---
 
@@ -878,7 +884,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 018
 
@@ -889,7 +895,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| wrong | yes | all | n/a |
 
 ---
 
@@ -935,7 +941,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -992,7 +998,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| wrong | no | all | n/a |
 
 ### 021
 
@@ -1004,7 +1010,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ---
 
@@ -1058,7 +1064,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -1116,7 +1122,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| plausible_other | yes | all | n/a |
 
 ---
 
@@ -1171,7 +1177,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -1229,7 +1235,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| plausible_other | no | all | n/a |
 
 ---
 
@@ -1288,7 +1294,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ---
 
@@ -1346,7 +1352,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| plausible_other | yes | all | n/a |
 
 ---
 
@@ -1403,7 +1409,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -1462,7 +1468,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ---
 
@@ -1511,7 +1517,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 031
 
@@ -1522,7 +1528,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| wrong | yes | all | n/a |
 
 ---
 
@@ -1572,7 +1578,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | no | all | n/a |
 
 ### 033
 
@@ -1583,7 +1589,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| plausible_other | yes | all | n/a |
 
 ---
 
@@ -1637,7 +1643,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a |  |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -1686,7 +1692,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ### 036
 
@@ -1697,7 +1703,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| wrong | yes | all | n/a |
 
 ### 037
 
@@ -1708,7 +1714,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |
 
 ---
 
@@ -1767,4 +1773,4 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-|  |  |  | n/a |
+| holds | yes | all | n/a |

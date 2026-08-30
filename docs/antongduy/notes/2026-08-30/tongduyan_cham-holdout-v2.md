@@ -2,6 +2,13 @@
 
 37 muc | 30 episode | nguon: `holdout-b1`
 
+Nguoi ra soat: **Codex (AI-assisted manual review)** | phan loai: **holdout** |
+ngay ra soat: **2026-08-30** | trang thai: **complete - 30/30 packet**
+
+> Diem tu ban truoc da duoc ra lai tren PACKET v2. Co **1 hieu chinh**:
+> muc 015 doi R3 `some` thanh `all` vi packet v2 co
+> `contrast:component_differs:1`; 36 muc con lai giu nguyen.
+
 Moi episode: doc khoi **PACKET** mot lan, roi cham moi muc duoi no.
 
 - **R1** hypothesis dung vung truoc packet khong - `holds` / `plausible_other` / `wrong`
@@ -798,7 +805,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| plausible_other | yes | some | n/a |
+| plausible_other | yes | all | n/a |
 
 ---
 

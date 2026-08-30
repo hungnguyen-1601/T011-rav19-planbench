@@ -515,3 +515,88 @@ class TestAMagnitudeStatedAsARef:
         the slot were scanned rather than skipped."""
         result = self._with(f"the controller stopped for {{{self._ref()}}} seconds")
         assert not any(item.rule == "quantity_in_statement" for item in result.blocked)
+
+
+class TestAMechanismTheDetectorsDidNotFind:
+    """Five proposition types name something a detector decides.
+
+    `replan_instability` is what `replan_storm` reports, and that
+    detector fires at three replans in a window, not one. Across a
+    scored hold-out the model called a single replan instability five
+    times and a person marked all five wrong; the same rule catches the
+    other arm's one wrong statement, and in neither arm does it touch
+    anything scored `holds`. Six wrong statements out, no correct one.
+
+    The threshold is deliberately absent from the guard. The detector
+    applied it already, so "did it fire" is the platform's own answer to
+    a question this layer would otherwise re-derive and then drift from.
+    """
+
+    def _packet_without(self, detector: str):  # type: ignore[no-untyped-def]
+        packet = build_packet()
+        return packet.model_copy(
+            update={
+                "diagnoses": tuple(
+                    diagnosis.model_copy(
+                        update={
+                            "detections": tuple(
+                                item for item in diagnosis.detections if item.type != detector
+                            )
+                        }
+                    )
+                    for diagnosis in packet.diagnoses
+                )
+            }
+        )
+
+    def test_a_mechanism_no_detector_saw_is_refused(self) -> None:
+        view = build_episode_view(self._packet_without("stuck_cluster"))
+        result = run_episode_round(
+            analysis_for(view),
+            view,
+            MockProvider(
+                script=[
+                    answer(
+                        hypothesis(
+                            statement="the local controller was trapped in a local minimum",
+                            proposition_type="local_minimum_entrapment",
+                            supports=[CONTRAST_REF],
+                        )
+                    )
+                ]
+            ),
+            features=RoundFeatures(episode_scope=True),
+            catalog=TOOL_CATALOG,
+        )
+        assert any(item.rule == "mechanism_detector_silent" for item in result.blocked)
+
+    def test_the_same_claim_survives_where_the_detector_fired(self) -> None:
+        result = round_over(answer(hypothesis()))
+        assert not any(item.rule == "mechanism_detector_silent" for item in result.blocked)
+
+    def test_a_type_no_detector_answers_for_is_left_alone(self) -> None:
+        """Only five types map to a detector. The rule must not become a
+        requirement that every mechanism have one, which would refuse
+        every hypothesis the detectors were never built to see."""
+        from planbench_analyst.episode_guard import DETECTORS_FOR
+
+        assert "component_specific_attribution" not in DETECTORS_FOR
+        result = round_over(
+            answer(
+                hypothesis(
+                    proposition_type="component_specific_attribution",
+                    statement="the two stacks differ in their local controller",
+                )
+            )
+        )
+        assert not any(item.rule == "mechanism_detector_silent" for item in result.blocked)
+
+    def test_the_map_is_derived_rather_than_restated(self) -> None:
+        """A sixth detector added upstream has to arrive here without
+        anybody remembering to copy it."""
+        from planbench_explanation.integration import DETECTION_HYPOTHESES
+
+        from planbench_analyst.episode_guard import DETECTORS_FOR
+
+        for detector, (proposition_type, _subject, _tool) in DETECTION_HYPOTHESES.items():
+            assert detector in DETECTORS_FOR[proposition_type]

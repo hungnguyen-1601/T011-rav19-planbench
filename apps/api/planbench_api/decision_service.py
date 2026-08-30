@@ -1289,7 +1289,28 @@ class DecisionRunService:
         if refusal:
             raise InvalidStateError(refusal)
 
-        features = RoundFeatures(episode_scope=True)
+        # **What a deployment actually runs, rather than the bare
+        # baseline the arms were measured against.**
+        #
+        # Three of the four are on because each was measured and each
+        # earned it, and all three are free at read time: the
+        # placeholder is a prompt sentence that took silence from 60 per
+        # cent of hold-out rounds to 43; the floor answers the rounds
+        # that still end with nothing, which was eighteen of eighteen
+        # with no model call at all; the rewording turn costs a second
+        # call and only on a round that already lost everything, and it
+        # rescued six of the fifteen it fired on.
+        #
+        # `ep_b1` — none of them — stays the arm every measurement is
+        # reported against. What a reader is served and what an
+        # experiment compares are different questions, and a baseline
+        # that quietly gained features would answer neither.
+        features = RoundFeatures(
+            episode_scope=True,
+            magnitude_placeholders=True,
+            floor_when_silent=True,
+            reword_once=True,
+        )
         runtime = episode_runtime_config(
             features,
             source_manifest_hash=body["packet"]["header"]["source_manifest_checksum"],
