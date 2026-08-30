@@ -163,6 +163,32 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/* **Between the counts and the shortcuts, and that is deliberate.**
+          Somebody opening this app for the first time has just read seven
+          numbers about a workspace they do not yet understand, and the
+          row under them is a set of verbs — create, run, review — that
+          assume they already know which one they want. The guide belongs
+          exactly there: after the evidence that something is here, before
+          the demand that they do something with it.
+
+          Shown to everybody rather than only on a first visit. There is
+          no reliable way to know a first visit — the session is per tab,
+          so a returning reader looks new every morning — and a row that
+          appears and disappears is one somebody cannot find again when
+          they finally want it. */}
+      <Link href="/guide" className="panel dashboard-guide-card">
+        <span className="dashboard-guide-icon" aria-hidden="true">
+          <Icon name="book" size={22} />
+        </span>
+        <span className="dashboard-guide-text">
+          <strong>{t("dashboard.guideCard.title")}</strong>
+          <span className="muted">{t("dashboard.guideCard.body")}</span>
+        </span>
+        <span className="dashboard-guide-go" aria-hidden="true">
+          <Icon name="chevronRight" size={18} />
+        </span>
+      </Link>
+
       <QuickActions signedIn={signedIn} />
 
       <div className="dashboard-columns dashboard-activity-grid">

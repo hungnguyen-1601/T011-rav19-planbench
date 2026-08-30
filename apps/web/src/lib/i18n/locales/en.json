@@ -2164,5 +2164,7 @@
   "deployments.notMeasuredWhy": "No comparison has run against this deployment, so it can still be corrected in place.",
   "deployments.signedOut.title": "Sign in to see the deployments on file",
   "deployments.signedOut.body": "A deployment says what a comparison will run on, so reading them needs an account. Your session lives in this tab only — a new window starts signed out.",
-  "nav.signIn": "Sign in"
+  "nav.signIn": "Sign in",
+  "dashboard.guideCard.title": "New here? Read the operating guide",
+  "dashboard.guideCard.body": "What a deployment is, what a comparison measures, and why a gate can refuse to name a winner. Fifteen minutes, and the numbers above start meaning something."
 }

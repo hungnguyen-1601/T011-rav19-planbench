@@ -6144,3 +6144,54 @@ tr.is-previewing > td { background: var(--accent-soft); }
   border-color: var(--err);
   background: var(--err-soft);
 }
+
+/* The operating-guide card on the dashboard, between the stat row and the
+   shortcuts. Built as one row rather than a panel with a heading: it is a
+   single destination, and a heading over one link is a heading over
+   nothing. The accent stripe on the left is what separates it from the
+   panels above and below without giving it their weight - it should read
+   as an offer, not as another section of the workspace. */
+.dashboard-guide-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-left: 3px solid var(--accent);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.dashboard-guide-card:hover {
+  border-color: var(--accent);
+  background: var(--panel-2);
+  text-decoration: none;
+}
+
+.dashboard-guide-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--accent);
+}
+
+.dashboard-guide-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.dashboard-guide-text strong { font-size: 14px; font-weight: 600; }
+.dashboard-guide-text .muted { font-size: 12.5px; line-height: 1.5; }
+
+.dashboard-guide-go { flex: 0 0 auto; color: var(--muted); display: inline-grid; place-items: center; }
+.dashboard-guide-card:hover .dashboard-guide-go { color: var(--accent); }
+
+@media (max-width: 640px) {
+  .dashboard-guide-icon { display: none; }
+}
