@@ -141,6 +141,11 @@ from planbench_analyst.preregistration import (
     Preregistration,
     preregistration_checksum,
 )
+from planbench_analyst.preregistration_episode import (
+    EPISODE_PREREGISTRATION,
+    EpisodePreregistration,
+    episode_preregistration_checksum,
+)
 from planbench_analyst.prompts import (
     ANALYST_SYSTEM,
     PROMPT_VERSION,
@@ -264,7 +269,10 @@ __all__ = [
     "build_packet_view",
     "cache_key",
     "CONTRACT_TERMS",
+    "EPISODE_PREREGISTRATION",
     "EPISODE_PROMPT_VERSION",
+    "EpisodePreregistration",
+    "episode_preregistration_checksum",
     "EpisodeRound",
     "EpisodeScopeRefusal",
     "check_scope",

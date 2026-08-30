@@ -33,18 +33,31 @@ export function comparedPair(run: DecisionRun): [string, string] | null {
   return [winner, runnerUp];
 }
 
-/** The two candidates to draw, winner first.
+/** The two candidates to draw, in the order they were filed.
  *
- * Falls back to the first two entries only when the run has no card —
- * a comparison that ranked nobody still has two canvases worth showing,
- * and there is no winner to get the order wrong.
+ * **Which two, not which first.** A run can carry more than the pair the
+ * statistics compared — an eliminated candidate is still in the report —
+ * so the pair has to be looked up rather than taken off the top. What it
+ * must not do is reorder them, and it used to: it put the recommended
+ * one first, so a reader who filed `astar+dwa` as candidate A and the
+ * other as B opened the run and found the canvases calling their A "B".
+ *
+ * "Candidate A" here is the reader's own word. The launch form asks for
+ * "Candidate A (stack, controller)" and the report keeps that order;
+ * renaming it by rank means the page contradicts the form somebody
+ * filled in, and the rank is already on screen in the conclusion, said
+ * in words, where it belongs.
+ *
+ * Falls back to the first two entries when the run has no card, or when
+ * the recorded pair names something the report does not carry — a
+ * comparison that ranked nobody still has two canvases worth showing.
  */
 export function panelCandidates(run: DecisionRun, candidates: RunCandidate[]): RunCandidate[] {
   const pair = comparedPair(run);
   if (!pair) return candidates.slice(0, 2);
-  const byId = new Map(candidates.map((candidate) => [candidate.candidate_id, candidate]));
-  const ordered = pair.map((id) => byId.get(id)).filter((c): c is RunCandidate => Boolean(c));
-  return ordered.length === 2 ? ordered : candidates.slice(0, 2);
+  const named = new Set(pair);
+  const chosen = candidates.filter((candidate) => named.has(candidate.candidate_id));
+  return chosen.length === 2 ? chosen : candidates.slice(0, 2);
 }
 
 /** How far both runs got. Past this the panels are not comparable, so

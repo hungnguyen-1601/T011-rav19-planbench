@@ -73,6 +73,7 @@ PHASES_LANDED = [
     "model_gateway",
     "packet_view",
     "preregistration",
+    "preregistration_episode",
     "prompts",
     "restricted",
     "round_host",

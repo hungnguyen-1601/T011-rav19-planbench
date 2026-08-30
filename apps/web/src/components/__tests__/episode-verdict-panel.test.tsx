@@ -129,6 +129,15 @@ const html = (slot: VerdictSlot, episodeSelected = true) =>
     <EpisodeVerdictPanel slot={slot} episodeSelected={episodeSelected} />,
   );
 
+const withModelButton = (slot: VerdictSlot) =>
+  renderToStaticMarkup(
+    <EpisodeVerdictPanel
+      slot={slot}
+      episodeSelected
+      onAskTheModel={() => undefined}
+    />,
+  );
+
 describe("before an episode is chosen", () => {
   it("asks for one rather than explaining the one the replay opened on", () => {
     const markup = html({ state: "idle" }, false);
@@ -209,5 +218,69 @@ describe("when the run cannot answer", () => {
   it("shows the reason rather than an empty panel", () => {
     const markup = html({ state: "unavailable", message: "this run ranked nobody" });
     expect(markup).toContain("this run ranked nobody");
+  });
+});
+
+describe("the model half", () => {
+  it("offers nothing where the deployment offers nothing", () => {
+    // The control is absent rather than disabled: one that appears and
+    // then refuses is worse than one that was never there.
+    expect(html(ready())).not.toContain("Ask the model");
+  });
+
+  it("offers the control where a reader may use it", () => {
+    const markup = withModelButton(ready());
+    expect(markup).toContain("Ask the model");
+    expect(markup).toContain("it decides nothing");
+  });
+
+  it("says what was kept and what the rules dropped", () => {
+    const markup = withModelButton(
+      ready({
+        model: {
+          response: {
+            abstained: false,
+            abstention_reason: null,
+            proposals: [
+              {
+                hypothesis_id: "h1",
+                hypothesis_statement: "the runner up stalled where the winner did not",
+                proposition_type: "local_minimum_entrapment",
+                proposed_subject: "local_controller",
+              },
+            ],
+          },
+          annotations: { h1: { bearing: "diagnosis" } },
+        },
+        audit: { blocked: [{ hypothesis_id: "h2", rule: "no_citation", detail: "" }] },
+      }),
+    );
+    expect(markup).toContain("The model proposed");
+    expect(markup).toContain("Kept 1, dropped 1");
+    expect(markup).toContain("Observation");
+  });
+
+  it("says a model that could not be reached changed nothing", () => {
+    const markup = withModelButton(
+      ready({ model: null, audit: { model_failed: "the provider is unreachable" } }),
+    );
+    expect(markup).toContain("worked out without it");
+    expect(markup).toContain("took this episode"), "the verdict is still there";
+  });
+
+  it("reports an abstention as an answer", () => {
+    const markup = withModelButton(
+      ready({
+        model: {
+          response: {
+            abstained: true,
+            abstention_reason: "nothing here maps to a mechanism this catalog checks",
+            proposals: [],
+          },
+          annotations: {},
+        },
+      }),
+    );
+    expect(markup).toContain("proposed nothing");
   });
 });

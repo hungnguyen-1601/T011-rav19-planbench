@@ -42,6 +42,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "@/components/Icon";
 import { askAgent, type ChatContext, type ChatTurn } from "@/lib/agent";
+import { DockAnalyst } from "@/components/DockAnalyst";
+import { episodeForRun, useEpisodeSelection } from "@/lib/episodeSelection";
 import { useSession } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import { useDismiss } from "@/lib/useDismiss";
@@ -86,6 +88,11 @@ export function AgentDock() {
   const session = useSession();
   const pathname = usePathname();
   const runId = runOnScreen(pathname);
+  // Which episode the reader pointed at on this run, if any. Empty
+  // for a run whose replay nobody has chosen from, and empty the
+  // moment they walk to another run: an id belonging to the page
+  // before would put the model in front of the wrong record.
+  const episodeId = episodeForRun(runId, useEpisodeSelection());
   // Attached by default, because a question typed on a run's page is
   // almost always about that run. Detaching is one click and it stays
   // detached only until the page changes: the reader who walked to a
@@ -128,7 +135,11 @@ export function AgentDock() {
     setDraft("");
     setError(null);
     const context: ChatContext | undefined =
-      attached && runId ? { run_id: runId } : undefined;
+      attached && runId
+        ? episodeId
+          ? { run_id: runId, episode_context_id: episodeId }
+          : { run_id: runId }
+        : undefined;
     setEntries((prev) => [...prev, { role: "user", text: message }]);
     setBusy(true);
     const controller = new AbortController();
@@ -200,6 +211,19 @@ export function AgentDock() {
             </div>
           ) : null}
 
+          {/* **The analyst takes the dock when there is an episode to
+              answer about.** It answers one fixed question against one
+              packet and its answer goes through the ten rules, which is
+              why it can be shown at all; the composer below answers
+              anything and cannot, because prose has nothing in it for a
+              rule to read. The chat stays for the pages where no
+              episode is selected, which is most of them — an analyst
+              with no packet has nothing to be right about. */}
+          {session && runId && episodeId ? (
+            <div className="agent-dock-log">
+              <DockAnalyst runId={runId} episodeId={episodeId} />
+            </div>
+          ) : (
           <div className="agent-dock-log" role="log" aria-live="polite">
             {/* Signed out, the composer would take a question and get a
                 401 back. Saying so up front costs the reader nothing;
@@ -254,7 +278,9 @@ export function AgentDock() {
             ) : null}
             <div ref={endOfThread} />
           </div>
+          )}
 
+          {session && runId && episodeId ? null : (
           <form
             className="agent-dock-composer"
             onSubmit={(event) => {
@@ -287,6 +313,7 @@ export function AgentDock() {
               </button>
             )}
           </form>
+          )}
 
           {/* Papers, plugin drafts and the capability table live on the
               full page. Named here so the dock is a shortcut to the

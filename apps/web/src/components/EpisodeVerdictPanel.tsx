@@ -42,6 +42,8 @@ export function EpisodeVerdictPanel({
   slot,
   episodeSelected,
   onSeek,
+  onAskTheModel,
+  asking = false,
 }: {
   slot: VerdictSlot;
   /** Whether a reader has pointed at an episode. Not "whether the
@@ -50,6 +52,12 @@ export function EpisodeVerdictPanel({
    *  question nobody asked. */
   episodeSelected: boolean;
   onSeek?: (side: "a" | "b", seconds: number) => void;
+  /** Absent unless this deployment allows a model to be asked **and**
+   *  this reader may be shown the answer. Absent is how the control
+   *  stays off the page: one that appears and then refuses is worse
+   *  than one that was never there. */
+  onAskTheModel?: () => void;
+  asking?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -160,6 +168,62 @@ export function EpisodeVerdictPanel({
             ))}
           </ul>
         </details>
+      )}
+
+      {/* The model's part, and only where somebody decided it may be
+          read. Nothing here says a model explained the outcome: it
+          proposed, the platform kept what its rules allowed, and both
+          counts are on screen. */}
+      {onAskTheModel && (
+        <div className="episode-verdict-model">
+          <button
+            type="button"
+            className="secondary"
+            onClick={onAskTheModel}
+            disabled={asking}
+          >
+            {asking ? t("episodeVerdict.asking") : t("episodeVerdict.askTheModel")}
+          </button>
+          <span className="muted"> {t("episodeVerdict.previewOnly")}</span>
+        </div>
+      )}
+      {view.audit?.model_failed && (
+        <p className="muted">{t("episodeVerdict.modelFailed")}</p>
+      )}
+      {view.model && (
+        <div className="episode-verdict-proposals">
+          <h4>{t("episodeVerdict.modelSuggested")}</h4>
+          {view.model.response.abstained ? (
+            <p className="muted">
+              {t("episodeVerdict.modelAbstained", {
+                reason: view.model.response.abstention_reason ?? "",
+              })}
+            </p>
+          ) : (
+            <ul>
+              {view.model.response.proposals.map((proposal) => (
+                <li key={proposal.hypothesis_id}>
+                  <span className="contrast-strength contrast-context">
+                    {t(
+                      `episodeVerdict.bearing.${
+                        view.model?.annotations[proposal.hypothesis_id]?.bearing ?? "diagnosis"
+                      }`,
+                    )}
+                  </span>{" "}
+                  {proposal.hypothesis_statement}
+                </li>
+              ))}
+            </ul>
+          )}
+          {view.audit?.blocked && view.audit.blocked.length > 0 && (
+            <p className="muted">
+              {t("episodeVerdict.modelKept", {
+                kept: view.model.response.proposals.length,
+                dropped: view.audit.blocked.length,
+              })}
+            </p>
+          )}
+        </div>
       )}
 
       {view.omissions.length > 0 && (

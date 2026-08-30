@@ -24,6 +24,7 @@ from __future__ import annotations
 import base64
 import json
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -1217,6 +1218,225 @@ class DecisionRunService:
             "candidate_b": candidate_b,
             "episode_context_id": episode_context_id,
         }
+
+    def episode_analysis(
+        self,
+        run_id: str,
+        episode_context_id: str,
+        *,
+        candidate_a: str = "",
+        candidate_b: str = "",
+        policy: Any,
+        provider: Any,
+        caller: str,
+        is_admin: bool,
+        ledger: Any,
+        in_flight: Any,
+        artifact_root: Path,
+        tie_epsilon: float = EPISODE_TIE_EPSILON,
+    ) -> dict[str, Any]:
+        """The deterministic answer, plus what a model made of it.
+
+        **The deterministic half is served either way.** A refusal at any
+        gate below removes the model's part and nothing else: a reader
+        who cannot be shown a model's answer is still owed the verdict,
+        the diagnoses and the differences, and a route that returned
+        nothing would have made the model the feature rather than the
+        layer on top of it.
+
+        Four gates, in this order, each of which is somebody's decision
+        rather than this code's: the mode this deployment runs in,
+        whether this caller may read what the model wrote, what they
+        have already spent today, and whether the identical question is
+        already in flight.
+        """
+        from planbench_analyst.episode_prompts import episode_prompt_checksum
+        from planbench_analyst.episode_runner import (
+            EpisodeRound,
+            episode_runtime_config,
+            run_episode_round,
+        )
+        from planbench_analyst.episode_view import build_episode_view
+        from planbench_analyst.features import RoundFeatures
+        from planbench_api.episode_analysis import (
+            artifact_path,
+            dedup_key,
+            today,
+            visible_to,
+            write_artifact,
+        )
+        from planbench_explanation.catalog import TOOL_CATALOG, TOOL_CATALOG_VERSION
+        from planbench_explanation.magnitudes import render, unresolvable
+        from planbench_explanation.versioning import artifact_checksum
+
+        body = self.episode_verdict(
+            run_id,
+            episode_context_id,
+            candidate_a=candidate_a,
+            candidate_b=candidate_b,
+            tie_epsilon=tie_epsilon,
+        )
+        body["mode"] = policy.mode
+        body["model"] = None
+        body["audit"] = None
+
+        if policy.mode == "off":
+            # Absent here, not broken: the verdict route beside this
+            # one keeps answering, and a 404 says the feature is not
+            # part of this deployment rather than that it failed.
+            raise NotFoundError("episode analyst", f"{run_id}/{episode_context_id}")
+        refusal = policy.refusal(now=datetime.now(UTC).isoformat())
+        if refusal:
+            raise InvalidStateError(refusal)
+
+        # **What a deployment actually runs, rather than the bare
+        # baseline the arms were measured against.**
+        #
+        # Three of the four are on because each was measured and each
+        # earned it, and all three are free at read time: the
+        # placeholder is a prompt sentence that took silence from 60 per
+        # cent of hold-out rounds to 43; the floor answers the rounds
+        # that still end with nothing, which was eighteen of eighteen
+        # with no model call at all; the rewording turn costs a second
+        # call and only on a round that already lost everything, and it
+        # rescued six of the fifteen it fired on.
+        #
+        # `ep_b1` — none of them — stays the arm every measurement is
+        # reported against. What a reader is served and what an
+        # experiment compares are different questions, and a baseline
+        # that quietly gained features would answer neither.
+        features = RoundFeatures(
+            episode_scope=True,
+            magnitude_placeholders=True,
+            floor_when_silent=True,
+            reword_once=True,
+        )
+        runtime = episode_runtime_config(
+            features,
+            source_manifest_hash=body["packet"]["header"]["source_manifest_checksum"],
+            catalog_version=TOOL_CATALOG_VERSION,
+        )
+        runtime_checksum = artifact_checksum(runtime)
+        packet_checksum = artifact_checksum(body["packet"])
+        key = dedup_key(
+            packet_checksum=packet_checksum,
+            runtime_config_checksum=runtime_checksum,
+        )
+
+        spend_refusal = ledger.check(caller, policy=policy, today=today())
+        if spend_refusal:
+            raise InvalidStateError(spend_refusal)
+
+        # **The same question, asked at the same time, is answered once.**
+        # Two rounds of a non-deterministic model give two answers to a
+        # question asked once, and two readers on the same episode would
+        # be shown different explanations of it. This coalesces the
+        # concurrent case; it is not a cache, and a request that arrives
+        # after the first has finished runs its own round.
+        slot, owned = in_flight.start(key)
+        if not owned:
+            slot.done.wait(timeout=policy.timeout_s)
+            body["audit"] = {"served_from": "in_flight", "dedup_key": key}
+            if slot.answer is not None and visible_to(policy, is_admin=is_admin):
+                body["model"] = slot.answer
+            return body
+
+        packet = self._episode_packet_of(body)
+        view = build_episode_view(packet)
+        try:
+            outcome = run_episode_round(
+                EpisodeRound(
+                    analysis_run_id=f"{run_id}:{episode_context_id}",
+                    analyst_bundle_id=f"episode:{episode_prompt_checksum()[:16]}",
+                    catalog=TOOL_CATALOG,
+                ),
+                view,
+                provider,
+                features=features,
+                catalog=TOOL_CATALOG,
+            )
+        except Exception as failed:  # noqa: BLE001 - the provider boundary
+            # The round is the layer on top. Losing it must not lose the
+            # verdict underneath, so the failure is reported in the audit
+            # and the deterministic half is returned as it stands.
+            in_flight.finish(key, answer=None, error=failed)
+            body["audit"] = {"model_failed": str(failed)}
+            return body
+
+        # **The figures are filled in here, not by whoever renders this.**
+        #
+        # A statement may name a magnitude as a ref in braces rather than
+        # writing the number, which is what lets it past rule 2 at all.
+        # The slot has to be filled from the packet's own index, and the
+        # index lives on this side; a client asked to do it would need
+        # the whole fact table and a second copy of the rule for what
+        # counts as fillable.
+        #
+        # The artifact below keeps what the model actually wrote, slots
+        # and all. That separation is the point: the record holds the
+        # analyst's words, the reader gets the platform's numbers in
+        # them, and the two can be compared afterwards by anybody who
+        # wonders whether a figure was ever really cited.
+        served = outcome.response.model_dump(mode="json")
+        facts = {fact.ref: fact.value for fact in view.facts}
+        for proposal in served.get("proposals", ()):
+            statement = proposal.get("hypothesis_statement") or ""
+            if unresolvable(statement, facts):
+                # The guard refuses these before they reach here, so a
+                # slot arriving unfillable means the two disagree. Left
+                # as written rather than papered over: a sentence with a
+                # visible slot is a bug somebody can see and report.
+                continue
+            proposal["hypothesis_statement"] = render(statement, facts)
+        model_part = {
+            "response": served,
+            "annotations": dict(outcome.annotations),
+        }
+        audit = {
+            "blocked": [
+                {"hypothesis_id": item.hypothesis_id, "rule": item.rule, "detail": item.detail}
+                for item in outcome.blocked
+            ],
+            "prompt_checksum": episode_prompt_checksum(),
+            "runtime_config_checksum": runtime_checksum,
+            "packet_checksum": packet_checksum,
+            "dedup_key": key,
+        }
+        in_flight.finish(key, answer=model_part, error=None)
+        ledger.record(caller, today=today(), tokens=outcome.cost.output_tokens)
+
+        # Written in every mode that runs a round, shadow included: the
+        # artifact is how a shadow round is read at all, and a mode that
+        # ran a model and kept no record of it would be spending for
+        # nothing.
+        write_artifact(
+            artifact_path(
+                artifact_root,
+                run_id=run_id,
+                episode_context_id=episode_context_id,
+                key=key,
+            ),
+            {
+                # As the analyst wrote it, placeholders intact.
+                "model": {
+                    "response": outcome.response.model_dump(mode="json"),
+                    "annotations": dict(outcome.annotations),
+                },
+                "audit": audit,
+                "verdict": body["verdict"],
+            },
+        )
+
+        body["audit"] = audit
+        if visible_to(policy, is_admin=is_admin):
+            body["model"] = model_part
+        return body
+
+    def _episode_packet_of(self, body: Mapping[str, Any]) -> Any:
+        """The packet this response was built from, back as an object."""
+        from planbench_explanation.episode_packet import EpisodePacket
+
+        return EpisodePacket.model_validate(body["packet"])
 
     def _episode_header(self, run: Any) -> Any:
         """The provenance header an episode packet carries.

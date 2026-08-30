@@ -1,0 +1,389 @@
+[
+ {
+  "index": 1,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "1d18a81ba501",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 0,
+  "hypothesis_id": "hyp-7e4b9ff56ee3da0c"
+ },
+ {
+  "index": 2,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "1d18a81ba501",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 1,
+  "hypothesis_id": "hyp-02abd632f797bb3f"
+ },
+ {
+  "index": 3,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "31a398df5569",
+  "cluster": "sudden_stop_v6_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 4,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "31a398df5569",
+  "cluster": "sudden_stop_v6_full_stack_selection_06f40334",
+  "repeat": 1,
+  "hypothesis_id": "hyp-98069c277eaeb5cb"
+ },
+ {
+  "index": 5,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "3e3973656a9d",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 1,
+  "hypothesis_id": "hyp-a6a2ec49a17cd532"
+ },
+ {
+  "index": 6,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "3e3973656a9d",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 0,
+  "hypothesis_id": "hyp-18945e74a5a76e53"
+ },
+ {
+  "index": 7,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "3e3973656a9d",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 1,
+  "hypothesis_id": "hyp-17092404a15d7a65"
+ },
+ {
+  "index": 8,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "3f3271808c9d",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 1,
+  "hypothesis_id": "hyp-8a0ab8b7ed0d3891"
+ },
+ {
+  "index": 9,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "3f3271808c9d",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 0,
+  "hypothesis_id": "hyp-95e82d87f069b15e"
+ },
+ {
+  "index": 10,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "4ec011c9a0c3",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 1,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 11,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "4ec011c9a0c3",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 0,
+  "hypothesis_id": "hyp-b133b8c52382ad4f"
+ },
+ {
+  "index": 12,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "4ec011c9a0c3",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 0,
+  "hypothesis_id": "hyp-99488cf40085047c"
+ },
+ {
+  "index": 13,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "501a98d1fd9a",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_c23dddbd",
+  "repeat": 0,
+  "hypothesis_id": "hyp-157cad4093910ef0"
+ },
+ {
+  "index": 14,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "501a98d1fd9a",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_c23dddbd",
+  "repeat": 1,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 15,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "50f9cae5941c",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_c23dddbd",
+  "repeat": 0,
+  "hypothesis_id": "hyp-0069d2922f1d6ba3"
+ },
+ {
+  "index": 16,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "50f9cae5941c",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_c23dddbd",
+  "repeat": 1,
+  "hypothesis_id": "hyp-c5c3e53aa123857c"
+ },
+ {
+  "index": 17,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "50f9cae5941c",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_c23dddbd",
+  "repeat": 1,
+  "hypothesis_id": "hyp-3b96330862080070"
+ },
+ {
+  "index": 18,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "6637b6e1f8e1",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 0,
+  "hypothesis_id": "hyp-193cee1d545de588"
+ },
+ {
+  "index": 19,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "6637b6e1f8e1",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 0,
+  "hypothesis_id": "hyp-37c0927c5a06d9e1"
+ },
+ {
+  "index": 20,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "6637b6e1f8e1",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 1,
+  "hypothesis_id": "hyp-70e4ec1955dd88eb"
+ },
+ {
+  "index": 21,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "6637b6e1f8e1",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 1,
+  "hypothesis_id": "hyp-60f4acd5149778c3"
+ },
+ {
+  "index": 22,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "6637b6e1f8e1",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 0,
+  "hypothesis_id": "hyp-79c336e24f926d96"
+ },
+ {
+  "index": 23,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "685501eb617d",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 0,
+  "hypothesis_id": "hyp-d52cc7a543f20772"
+ },
+ {
+  "index": 24,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "685501eb617d",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 0,
+  "hypothesis_id": "hyp-6f44941bd6b6912c"
+ },
+ {
+  "index": 25,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "685501eb617d",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 1,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 26,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "76db6b6c6ca1",
+  "cluster": "sudden_stop_v6_full_stack_selection_06f40334",
+  "repeat": 1,
+  "hypothesis_id": "hyp-d49fb44bfd25b0ed"
+ },
+ {
+  "index": 27,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "76db6b6c6ca1",
+  "cluster": "sudden_stop_v6_full_stack_selection_06f40334",
+  "repeat": 1,
+  "hypothesis_id": "hyp-a813dfb8b8794d0f"
+ },
+ {
+  "index": 28,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "76db6b6c6ca1",
+  "cluster": "sudden_stop_v6_full_stack_selection_06f40334",
+  "repeat": 1,
+  "hypothesis_id": "hyp-a07f8d090f13b37a"
+ },
+ {
+  "index": 29,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "76db6b6c6ca1",
+  "cluster": "sudden_stop_v6_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-01a9341290e9ec0e"
+ },
+ {
+  "index": 30,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "7c2cc3d5019f",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 0,
+  "hypothesis_id": "hyp-00de9fc2bbcdee06"
+ },
+ {
+  "index": 31,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "7c2cc3d5019f",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 1,
+  "hypothesis_id": "hyp-38cc8bd37e1fb950"
+ },
+ {
+  "index": 32,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "a646b0f7b414",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 33,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "a646b0f7b414",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 1,
+  "hypothesis_id": "hyp-8881fe8d90990973"
+ },
+ {
+  "index": 34,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "d0a5c200c750",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_c23dddbd",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 35,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "d0a5c200c750",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_c23dddbd",
+  "repeat": 1,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 36,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "d3265359df38",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 37,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "d3265359df38",
+  "cluster": "doorway_v1_full_stack_selection_c23dddbd",
+  "repeat": 1,
+  "hypothesis_id": "hyp-8f4b005c5cff4c2f"
+ },
+ {
+  "index": 38,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "d4de2e64507f",
+  "cluster": "sudden_stop_v6_full_stack_selection_06f40334",
+  "repeat": 1,
+  "hypothesis_id": "hyp-348a4a71bab5ae8c"
+ },
+ {
+  "index": 39,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "d4de2e64507f",
+  "cluster": "sudden_stop_v6_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-6c52843bc9084e88"
+ },
+ {
+  "index": 40,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "e87fc5b937ab",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_c23dddbd",
+  "repeat": 0,
+  "hypothesis_id": "hyp-e242e472421da13f"
+ },
+ {
+  "index": 41,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "e87fc5b937ab",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_c23dddbd",
+  "repeat": 1,
+  "hypothesis_id": "-abstained-"
+ },
+ {
+  "index": 42,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "fff606f44b13",
+  "cluster": "sudden_stop_v6_full_stack_selection_06f40334",
+  "repeat": 1,
+  "hypothesis_id": "hyp-6136b8a00c962e26"
+ },
+ {
+  "index": 43,
+  "stage": "stage5-reword",
+  "arm": "ep_reword",
+  "episode": "fff606f44b13",
+  "cluster": "sudden_stop_v6_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "-abstained-"
+ }
+]

@@ -338,3 +338,52 @@ class TestDetectorsOverAServedTrace:
         it were."""
         _, notes = detections_for(trace())
         assert any("arc length" in note for note in notes)
+
+
+class TestTheStandingGapsCannotBeLeftOut:
+    """What the platform can never adjudicate reaches every episode.
+
+    These were arriving only when a caller passed them in, and the
+    default is to pass nothing, so in practice they never arrived:
+    `blocked_claim_types` promised "global gaps and this episode's own"
+    and delivered the second half. Fifteen statements of a type H4
+    declares unadjudicable went out to a reader and were caught by a
+    person reading them one at a time — which is precisely what the
+    comment above `STANDING_UNKNOWNS` says will happen to anybody made
+    to remember them.
+
+    `build_case_packet` has started from them at run scope all along.
+    The two scopes disagreeing about what is permanently unknowable is
+    not a scope difference; it is one of them being wrong.
+    """
+
+    def test_a_caller_that_passes_nothing_still_gets_them(self) -> None:
+        packet = build()
+        assert "candidate_latency_attribution" in packet.blocked_claim_types
+        assert "perception_attribution" in packet.blocked_claim_types
+
+    def test_they_arrive_beside_the_episode_own_gaps(self) -> None:
+        """Not instead of: an episode with no sidecar keeps that gap too."""
+        packet = build()
+        blocked = set(packet.blocked_claim_types)
+        assert {"candidate_latency_attribution"} <= blocked
+        assert {"sampling_budget_insufficiency", "geometric_infeasibility"} <= blocked
+
+    def test_every_standing_gap_that_blocks_globally_is_carried(self) -> None:
+        from planbench_explanation.case_packet import STANDING_UNKNOWNS
+        from planbench_explanation.episode_packet import classify_unknown
+
+        packet = build()
+        carried = {unknown.id for unknown in packet.known_unknowns}
+        for unknown in STANDING_UNKNOWNS:
+            if classify_unknown(unknown).blocks:
+                assert unknown.id in carried, unknown.id
+
+    def test_a_caller_naming_one_again_does_not_double_it(self) -> None:
+        """A run context that repeats a standing gap must not produce two
+        entries with one id: a reader would take that for two findings."""
+        from planbench_explanation.case_packet import STANDING_UNKNOWNS
+
+        packet = build(run_context_unknowns=tuple(STANDING_UNKNOWNS))
+        ids = [unknown.id for unknown in packet.known_unknowns]
+        assert len(ids) == len(set(ids)), ids

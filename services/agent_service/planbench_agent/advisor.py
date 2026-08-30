@@ -306,7 +306,8 @@ def advise_with_model(
                 # half of the pair that carries the weight, missing. The
                 # rules are held to naming one; an addition that does not
                 # is kept, at the severity it earned by saying nothing.
-                severity="material" if item.severity == "blocking" and not item.do_not
+                severity="material"
+                if item.severity == "blocking" and not item.do_not
                 else item.severity,
                 claim=item.claim,
                 ground=item.ground,

@@ -77,6 +77,35 @@ class RoundFeatures:
     filter_tool_menu: bool = False
     #: W3: route to a checker deterministically after the model declares.
     auto_route_checker: bool = False
+    #: Tell the model it may state a magnitude as a ref in braces.
+    #:
+    #: The other half of the same problem `floor_when_silent` covers
+    #: from behind: that one stops a blank screen, this one stops the
+    #: sentence being lost in the first place.
+    magnitude_placeholders: bool = False
+    #: Show the platform's own answer when nothing the model said survived.
+    #:
+    #: Sixty per cent of hold-out rounds ended blank, every one because a
+    #: number in a sentence took the sentence with it, while the floor —
+    #: what fired, and a difference only where one was found — was
+    #: computable from the packet for nothing the whole time. Off by
+    #: default like the rest: it changes what a reader is shown, and no
+    #: arm already measured was measured with it.
+    floor_when_silent: bool = False
+    #: Ask once more when every proposal was removed over how it was
+    #: written rather than over what it claimed.
+    #:
+    #: Off by default for the same reason as the gate beside it. See
+    #: :data:`planbench_analyst.episode_runner.REWORDABLE_RULES` for
+    #: which removals count and which deliberately do not.
+    reword_once: bool = False
+    #: Append the rule saying a contrast cites two kinds of ref.
+    #:
+    #: A prompt arm rather than an input arm: it changes nothing the
+    #: model is shown about this episode, only what it is told the
+    #: platform will accept. Off by default, because every arm already
+    #: measured ran without it.
+    contrast_citation_rule: bool = False
     #: The round is about one episode rather than the whole run.
     #:
     #: Not an input toggle like the four above: it selects **which
