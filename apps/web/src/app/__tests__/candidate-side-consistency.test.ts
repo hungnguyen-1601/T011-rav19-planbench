@@ -48,13 +48,18 @@ describe("which candidate is A", () => {
     expect(table).not.toContain("const candidates = run.report?.candidates");
   });
 
-  it("the recommended candidate is the one called A", () => {
-    // Not an arbitrary convention: `comparedPair` returns the pair the
-    // statistics used, recommended first, and the canvases have drawn
-    // it that way since they were written. The table moved to match
-    // them rather than the other way round, because a colour means
-    // identity here and the canvases own the colours.
+  it("candidate A is whoever the reader filed as A", () => {
+    // Not the winner. The launch form asks for "Candidate A (stack,
+    // controller)" and the report keeps that order, so ranking them
+    // again on the way to the canvas renames somebody's own input —
+    // which is what happened: a reader filed astar+dwa as A and the
+    // canvases below called it B. `panelCandidates` still looks the
+    // pair up, because a run can carry a third candidate the
+    // statistics did not compare; what it must not do is sort them.
     const sync = readFileSync(join(process.cwd(), "src", "lib", "replaySync.ts"), "utf8");
-    expect(sync).toContain("recommended_candidate_id");
+    const body = sync.slice(sync.indexOf("export function panelCandidates"));
+    const fn = body.slice(0, body.indexOf("\n}"));
+    expect(fn).toContain("candidates.filter(");
+    expect(fn).not.toContain("pair.map(");
   });
 });
