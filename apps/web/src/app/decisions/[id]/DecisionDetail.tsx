@@ -1471,7 +1471,14 @@ function EpisodeOutcomes({
   const { t } = useTranslation();
   const [failuresOnly, setFailuresOnly] = useState(false);
   const [page, setPage] = useState(0);
-  const candidates = run.report?.candidates ?? [];
+  // **The same order the canvases use.** This table read the report's
+  // own list while the replay below it reads `panelCandidates`, which
+  // puts the recommended candidate first — so a run whose winner was
+  // filed second had its columns in one order and its canvases labelled
+  // A and B in the other, on one screen, for the same two stacks. The
+  // comment on `panelCandidates` states the rule this broke: one page
+  // must not call the same candidate two things.
+  const candidates = panelCandidates(run, run.report?.candidates ?? []);
   const episodes = run.report?.sample?.episode_context_ids ?? [];
 
   // **Follow the selection onto its page.** Exemplar chips and the
