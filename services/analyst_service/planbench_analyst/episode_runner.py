@@ -37,6 +37,7 @@ from planbench_analyst.analyst import (
 from planbench_analyst.episode_guard import (
     CONTRAST,
     DIAGNOSIS,
+    EpisodeAnnotation,
     EpisodeRoundResult,
     episode_guard,
 )
@@ -44,12 +45,15 @@ from planbench_analyst.episode_prompts import (
     CONTRAST_CITATION_RULE,
     EPISODE_REVISION_PREFACE,
     EPISODE_SYSTEM,
+    MAGNITUDE_PLACEHOLDER_RULE,
     build_episode_user_turn,
     episode_prompt_checksum,
     episode_schema,
 )
 from planbench_analyst.episode_view import EpisodeView, run_context_block
 from planbench_analyst.features import RoundFeatures
+from planbench_explanation.episode_floor import episode_floor
+from planbench_explanation.protocol import AnalysisResponse
 from planbench_explanation.tools import ToolCatalog
 
 
@@ -162,7 +166,11 @@ def run_episode_round(
         ),
     )
     request = LLMRequest(
-        system=EPISODE_SYSTEM + (CONTRAST_CITATION_RULE if flags.contrast_citation_rule else ""),
+        system=(
+            EPISODE_SYSTEM
+            + (CONTRAST_CITATION_RULE if flags.contrast_citation_rule else "")
+            + (MAGNITUDE_PLACEHOLDER_RULE if flags.magnitude_placeholders else "")
+        ),
         messages=(LLMMessage.user(turn),),
         output_schema=episode_schema(discriminated_union=flags.discriminated_union),
         max_tokens=max_tokens,
@@ -212,7 +220,58 @@ def run_episode_round(
             max_tokens=max_tokens,
             timeout_s=timeout_s,
         )
+    if flags.floor_when_silent and not result.response.proposals:
+        result = _floor_after_silence(analysis, view, result)
     return result
+
+
+def _floor_after_silence(
+    analysis: EpisodeRound, view: EpisodeView, silent: EpisodeRoundResult
+) -> EpisodeRoundResult:
+    """What the platform can say when nothing the model said survived.
+
+    **Sixty per cent of hold-out rounds ended with a blank screen**, and
+    every one of them for the same reason: the model wrote a number into
+    a sentence and rule 2 removed the sentence. It knew what happened
+    and said it in a form the platform cannot check. Meanwhile the floor
+    — what fired, and a difference only where one was found — was
+    computable the whole time, from the packet, for nothing.
+    So the reader gets that rather than nothing.
+
+    **It is labelled, not passed off.** The flag says the floor answered
+    and the guard's own reasons stay on the result, because the one
+    thing worse than a blank panel is a panel that reads as the
+    analyst's when the analyst's words were all refused. Whoever renders
+    this owes the reader that distinction; what this function owes them
+    is not to blur it here.
+
+    Deliberately not an abstention either: an abstention is the analyst
+    deciding there was nothing worth proposing, and the analyst decided
+    the opposite — loudly, several times, in sentences nobody could
+    check.
+    """
+    answer = episode_floor(view.packet)
+    if not answer.proposals:
+        # Nothing fired and nothing differed. The silence was the honest
+        # answer after all, and dressing it up would be inventing one.
+        return silent
+    response = AnalysisResponse(
+        analysis_run_id=analysis.analysis_run_id,
+        analyst_bundle_id=analysis.analyst_bundle_id,
+        proposals=tuple(answer.proposals),
+        abstained=False,
+    )
+    return replace(
+        silent,
+        response=response,
+        annotations={
+            proposal.hypothesis_id: EpisodeAnnotation(
+                bearing=answer.bearings[proposal.hypothesis_id]
+            )
+            for proposal in answer.proposals
+        },
+        flags=(*silent.flags, ("answered_by_floor", silent.response.abstention_reason or "")),
+    )
 
 
 #: Rules a rewrite can satisfy, because they are about how a sentence is
@@ -273,7 +332,11 @@ def _reworded(
         "any number rather than writing the number.\n"
     )
     request = LLMRequest(
-        system=EPISODE_SYSTEM + (CONTRAST_CITATION_RULE if flags.contrast_citation_rule else ""),
+        system=(
+            EPISODE_SYSTEM
+            + (CONTRAST_CITATION_RULE if flags.contrast_citation_rule else "")
+            + (MAGNITUDE_PLACEHOLDER_RULE if flags.magnitude_placeholders else "")
+        ),
         messages=(LLMMessage.user(revision),),
         output_schema=episode_schema(discriminated_union=flags.discriminated_union),
         max_tokens=max_tokens,

@@ -214,6 +214,30 @@ class EpisodePreregistration:
     #: over ep_shortlist (10) and ep_run_context (12).
     stage_two_tiebreak: str = "baseline_plus_fewest_guard_drops_then_by_name"
 
+    #: The hold-out cluster, and how its episodes are chosen.
+    #:
+    #: **Every episode of it, and one pass over each.** Not the exemplar
+    #: recipe: that yields four episodes from one run, and four is too
+    #: few to say whether anything generalises. Not more repeats either —
+    #: repeats measure how much one model varies on one episode, which
+    #: stages two and three already measured, while what is missing is
+    #: whether the numbers survive episodes nobody tuned against.
+    #:
+    #: Taking all of them is also the only selection with nothing to
+    #: choose: any subset of a cluster whose contents are already visible
+    #: is a subset somebody picked.
+    #:
+    #: What this cluster does **not** hold out, said here rather than in
+    #: a footnote: it is the same map and the same deployment as
+    #: `sudden_stop_custom_v2`, so it tests the prompt, the rewording
+    #: rules and the rubric against a new pairing, and tests neither the
+    #: map's geometry nor the `outcome_margin` threshold. Every one of
+    #: its thirty episodes decides on utility, so the threshold is not
+    #: exercised at all — which is the honest position for a number
+    #: declared after its own distribution was visible.
+    holdout_case_selection: str = "every_episode_of_the_cluster_once"
+    holdout_arm: str = "ep_b1"
+
     #: Judged blind, by one person, against the rubric fixed on 26-08.
     rubric: str = "r0.1.0"
     scoring: str = "blind_to_arm_single_scorer"
@@ -262,6 +286,8 @@ class EpisodePreregistration:
             "rubric": self.rubric,
             "scoring": self.scoring,
             "holdout": self.holdout,
+            "holdout_case_selection": self.holdout_case_selection,
+            "holdout_arm": self.holdout_arm,
             "conclusion_class": self.conclusion_class,
             "max_usd": self.max_usd,
             "model": self.model,

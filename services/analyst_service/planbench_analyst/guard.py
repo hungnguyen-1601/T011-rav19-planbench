@@ -49,6 +49,7 @@ from planbench_analyst.packet_view import PacketView
 from planbench_explanation.catalog import ToolCatalog
 from planbench_explanation.ledger import HypothesisProposal
 from planbench_explanation.levels import check_phrases
+from planbench_explanation.magnitudes import PLACEHOLDER, placeholders_in
 from planbench_explanation.protocol import AnalysisResponse
 
 __all__ = [
@@ -127,6 +128,14 @@ def quantities_in(statement: str, identifiers: frozenset[str]) -> tuple[str, ...
     region ids, episode ids, objectives. A token that is one of them is
     a name, whatever digits it contains.
     """
+    # **A placeholder is a ref, not a figure.** `{obs:…/stopped_seconds}`
+    # names the fact the number comes from and is filled in when
+    # somebody reads the sentence, so the digits never pass through
+    # here. Stripped before the scan rather than exempted inside it: a
+    # ref can carry digits of its own — an episode id, a `#2` on a
+    # sibling detection — and every one of them would read as a
+    # quantity.
+    statement = PLACEHOLDER.sub(" ", statement)
     found: list[str] = []
     lowered = statement.casefold()
     for phrase in NUMBER_WORDS:
@@ -255,6 +264,28 @@ def guard(
         if missing:
             blocked.append(
                 Blocked(proposal.hypothesis_id, "ref_not_in_packet", f"{sorted(set(missing))}")
+            )
+            continue
+        # **A slot the packet cannot fill.** The placeholder buys the
+        # analyst a legal way to state a magnitude, and the price is
+        # that the ref has to resolve to a number here — otherwise a
+        # sentence renders a figure out of a detector's name, or out of
+        # a measurement nobody made, and reads exactly like one that
+        # was checked.
+        unfillable = tuple(
+            ref
+            for ref in placeholders_in(proposal.hypothesis_statement)
+            if (fact := view.fact(ref)) is None
+            or isinstance(fact.value, bool)
+            or not isinstance(fact.value, (int, float))
+        )
+        if unfillable:
+            blocked.append(
+                Blocked(
+                    proposal.hypothesis_id,
+                    "magnitude_not_in_packet",
+                    f"{sorted(set(unfillable))}",
+                )
             )
             continue
         quantities = quantities_in(proposal.hypothesis_statement, identifiers)

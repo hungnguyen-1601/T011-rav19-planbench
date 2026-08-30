@@ -2,6 +2,8 @@
 
 Nguoi cham: **Codex (AI-assisted manual review)** | phan loai: **exploratory** | ngay cham: **2026-08-29**
 
+Ghi chu hieu chinh rubric: `proposition_type` la **ho hypothesis duoc de xuat**, khong phai claim da verified. **R1** cham mechanism/hypothesis doc lap voi ket qua episode; diagnosis khong can giai thich winner-loser. **R2** cham subject rieng, khong dung subject de tu dong ha R1. **R3** cham ref. Wording manh la loi guard rieng, khong tru diem manual. **R5** chi `correct` khi packet khong co detection/contrast dang bao.
+
 Bon episode nay truoc day packet ghi `undecidable`. **Khong con nua.**
 
 Ly do cu: mot candidate truot cong o cap run thi khong duoc cham utility o
@@ -76,7 +78,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| holds | yes | none | n/a |
+| wrong | yes | none | n/a |
 
 ### 025
 
@@ -87,7 +89,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 026
 
@@ -98,7 +100,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| plausible_other | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 027 - **khong de xuat gi**
 
@@ -152,7 +154,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 033 - **khong de xuat gi**
 
@@ -248,7 +250,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 038
 
@@ -297,7 +299,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | none | n/a |
+| wrong | no | none | n/a |
 
 ### 043
 
@@ -308,7 +310,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | none | n/a |
+| wrong | no | none | n/a |
 
 ### 044 - **khong de xuat gi**
 
@@ -343,7 +345,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 048
 
@@ -420,7 +422,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 093 - **khong de xuat gi**
 
@@ -630,7 +632,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 137
 
@@ -663,7 +665,7 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 140
 
@@ -674,6 +676,6 @@ So thu tu muc giu nguyen de ghep voi key.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ---

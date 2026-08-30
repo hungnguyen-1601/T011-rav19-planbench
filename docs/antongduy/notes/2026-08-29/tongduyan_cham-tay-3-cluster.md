@@ -4,6 +4,8 @@
 
 Nguoi cham: **Codex (AI-assisted manual review)** | phan loai: **exploratory** | ngay cham: **2026-08-29**
 
+Ghi chu hieu chinh rubric: `proposition_type` la **ho hypothesis duoc de xuat**, khong phai claim da verified. **R1** cham mechanism/hypothesis doc lap voi ket qua episode; diagnosis khong can giai thich winner-loser. **R2** cham subject rieng, khong dung subject de tu dong ha R1. **R3** cham ref. Wording manh la loi guard rieng, khong tru diem manual. **R5** chi `correct` khi packet khong co detection/contrast dang bao.
+
 Moi episode: doc khoi **PACKET** mot lan, roi cham moi muc duoi no.
 
 - **R1** hypothesis dung vung truoc packet khong - `holds` / `plausible_other` / `wrong`
@@ -250,7 +252,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 015 - **khong de xuat gi**
 
@@ -258,7 +260,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 016 - **khong de xuat gi**
 
@@ -266,7 +268,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 017 - **khong de xuat gi**
 
@@ -274,7 +276,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 018
 
@@ -285,7 +287,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 019
 
@@ -304,7 +306,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 021
 
@@ -315,7 +317,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 022
 
@@ -326,7 +328,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | none | n/a |
+| wrong | no | all | n/a |
 
 ### 023 - **khong de xuat gi**
 
@@ -334,7 +336,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -391,7 +393,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 026
 
@@ -402,7 +404,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 027 - **khong de xuat gi**
 
@@ -410,7 +412,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 028
 
@@ -429,7 +431,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 030 - **khong de xuat gi**
 
@@ -437,7 +439,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 031 - **khong de xuat gi**
 
@@ -445,7 +447,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 032
 
@@ -456,7 +458,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 033 - **khong de xuat gi**
 
@@ -464,7 +466,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 034
 
@@ -475,7 +477,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 035
 
@@ -486,7 +488,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 036 - **khong de xuat gi**
 
@@ -494,7 +496,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -540,7 +542,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 038
 
@@ -551,7 +553,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 039
 
@@ -562,7 +564,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 040 - **khong de xuat gi**
 
@@ -570,7 +572,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 041 - **khong de xuat gi**
 
@@ -578,7 +580,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 042
 
@@ -589,7 +591,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | none | n/a |
+| wrong | no | none | n/a |
 
 ### 043
 
@@ -600,7 +602,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | none | n/a |
+| wrong | no | none | n/a |
 
 ### 044 - **khong de xuat gi**
 
@@ -608,7 +610,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 045 - **khong de xuat gi**
 
@@ -616,7 +618,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 046 - **khong de xuat gi**
 
@@ -624,7 +626,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 047
 
@@ -635,7 +637,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 048
 
@@ -646,7 +648,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 049 - **khong de xuat gi**
 
@@ -654,7 +656,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -878,7 +880,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 062
 
@@ -889,7 +891,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 063 - **khong de xuat gi**
 
@@ -897,7 +899,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 064
 
@@ -908,7 +910,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 065
 
@@ -919,7 +921,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | no | all | n/a |
+| holds | no | all | n/a |
 
 ### 066
 
@@ -950,7 +952,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 069
 
@@ -961,7 +963,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 070
 
@@ -1030,7 +1032,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 072 - **khong de xuat gi**
 
@@ -1327,7 +1329,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 093 - **khong de xuat gi**
 
@@ -1335,7 +1337,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 094 - **khong de xuat gi**
 
@@ -1343,7 +1345,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 095 - **khong de xuat gi**
 
@@ -1351,7 +1353,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 096
 
@@ -1362,7 +1364,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 097 - **khong de xuat gi**
 
@@ -1370,7 +1372,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 098
 
@@ -1381,7 +1383,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 099 - **khong de xuat gi**
 
@@ -1389,7 +1391,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 100
 
@@ -1400,7 +1402,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 101 - **khong de xuat gi**
 
@@ -1408,7 +1410,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -1455,7 +1457,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 103
 
@@ -1466,7 +1468,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 104
 
@@ -1477,7 +1479,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 105
 
@@ -1499,7 +1501,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 107
 
@@ -1510,7 +1512,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 108
 
@@ -1521,7 +1523,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 109 - **khong de xuat gi**
 
@@ -1529,7 +1531,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 110
 
@@ -1540,7 +1542,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 111
 
@@ -1551,7 +1553,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 112
 
@@ -1562,7 +1564,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 113
 
@@ -1573,7 +1575,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 114 - **khong de xuat gi**
 
@@ -1581,7 +1583,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 115
 
@@ -1592,7 +1594,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 116
 
@@ -1603,7 +1605,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 117
 
@@ -1614,7 +1616,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | no | all | n/a |
 
 ### 118
 
@@ -1625,7 +1627,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ---
 
@@ -1831,7 +1833,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 130
 
@@ -1842,7 +1844,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 131
 
@@ -1853,7 +1855,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 132
 
@@ -1864,7 +1866,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 133 - **khong de xuat gi**
 
@@ -1872,7 +1874,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 134 - **khong de xuat gi**
 
@@ -1880,7 +1882,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 135
 
@@ -1891,7 +1893,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 136
 
@@ -1902,7 +1904,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ### 137
 
@@ -1913,7 +1915,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 138
 
@@ -1924,7 +1926,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 139
 
@@ -1935,7 +1937,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 140
 
@@ -1946,7 +1948,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ---
 
@@ -1990,7 +1992,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 142
 
@@ -2001,7 +2003,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | no | all | n/a |
 
 ### 143 - **khong de xuat gi**
 
@@ -2009,7 +2011,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 144 - **khong de xuat gi**
 
@@ -2017,7 +2019,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 145 - **khong de xuat gi**
 
@@ -2025,7 +2027,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 146 - **khong de xuat gi**
 
@@ -2033,7 +2035,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 147 - **khong de xuat gi**
 
@@ -2041,7 +2043,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 148 - **khong de xuat gi**
 
@@ -2049,7 +2051,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 149 - **khong de xuat gi**
 
@@ -2057,7 +2059,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -2559,7 +2561,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 181 - **khong de xuat gi**
 
@@ -2567,7 +2569,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 182
 
@@ -2578,7 +2580,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 183
 
@@ -2589,7 +2591,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 184
 
@@ -2600,7 +2602,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 185
 
@@ -2611,7 +2613,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | all | n/a |
+| holds | yes | all | n/a |
 
 ### 186
 
@@ -2622,7 +2624,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | yes | some | n/a |
+| holds | yes | some | n/a |
 
 ### 187 - **khong de xuat gi**
 
@@ -2630,7 +2632,7 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |
 
 ### 188 - **khong de xuat gi**
 
@@ -2638,4 +2640,4 @@ Dung doan.
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | correct |
+| n/a | n/a | n/a | should_have |

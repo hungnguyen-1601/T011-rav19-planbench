@@ -219,7 +219,9 @@ def cardless_episodes(report: Mapping[str, Any], candidate_a: str, candidate_b: 
     return [*decided, *undecided[:CARDLESS_UNDECIDED_SAMPLE]]
 
 
-def cases_from(report_path: Path, traces_root: Path) -> list[dict[str, Any]]:
+def cases_from(
+    report_path: Path, traces_root: Path, *, every_episode: bool = False
+) -> list[dict[str, Any]]:
     """The four exemplar episodes of one run, with their traces.
 
     The recipe is preregistered and deterministic, and the replay page
@@ -237,6 +239,12 @@ def cases_from(report_path: Path, traces_root: Path) -> list[dict[str, Any]]:
         except ReportExemplarRefusal:
             return []
         chosen = [(item.episode_context_id, item.role) for item in exemplars.exemplars]
+        if every_episode:
+            roles = dict(chosen)
+            chosen = [
+                (episode, roles.get(episode, "holdout"))
+                for episode in ((report.get("sample") or {}).get("episode_context_ids") or [])
+            ]
     else:
         # **A run with no card is still a run somebody has to explain.**
         # The card is refused when fewer than two candidates clear the
@@ -403,6 +411,16 @@ def main() -> int:
     )
     parser.add_argument("--dry-run", action="store_true", help="Build the cases and stop.")
     parser.add_argument(
+        "--every-episode",
+        action="store_true",
+        help=(
+            "Read every episode of each run rather than the four exemplars. "
+            "What the hold-out cluster is read with: four episodes from one "
+            "run is too few to say anything generalises, and any subset of a "
+            "cluster already on screen is a subset somebody chose."
+        ),
+    )
+    parser.add_argument(
         "--env-file",
         default="",
         help=(
@@ -454,7 +472,7 @@ def main() -> int:
 
     cases: list[dict[str, Any]] = []
     for path in seen.values():
-        cases.extend(cases_from(path, traces_root))
+        cases.extend(cases_from(path, traces_root, every_episode=args.every_episode))
 
     clusters = sorted({case["cluster"] for case in cases})
     print(f"{len(cases)} cases across {len(clusters)} clusters")

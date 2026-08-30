@@ -405,3 +405,113 @@ class TestAskingAgainWhenOnlyTheWordingWasWrong:
             catalog=TOOL_CATALOG,
         )
         assert len(provider.calls) == 1, "a claim about the wrong side was offered a second try"
+
+
+class TestTheFloorAnswersWhenNothingSurvived:
+    """A blank panel is the one thing worse than a short answer.
+
+    Sixty per cent of hold-out rounds ended with nothing on screen, and
+    every one of them for the same reason: the model wrote a number into
+    a sentence and rule 2 took the sentence with it. It knew what had
+    happened. Meanwhile the floor — what fired, and a difference only
+    where one was found — was computable from the packet, for nothing,
+    the whole time.
+
+    What this must never do is pass the platform's sentences off as the
+    analyst's. The flag says who answered; a reader owed that
+    distinction is owed it by whoever renders this, and the least this
+    layer can do is not blur it.
+    """
+
+    def _all_blocked(self) -> dict[str, object]:
+        return hypothesis(statement="the controller stopped for 51 seconds on the losing side")
+
+    def test_the_reader_gets_the_platform_answer_instead_of_nothing(self) -> None:
+        result = round_over(
+            answer(self._all_blocked()),
+            features=RoundFeatures(episode_scope=True, floor_when_silent=True),
+        )
+        assert result.response.proposals, "the round went out blank"
+        assert not result.response.abstained
+
+    def test_it_says_the_floor_answered(self) -> None:
+        result = round_over(
+            answer(self._all_blocked()),
+            features=RoundFeatures(episode_scope=True, floor_when_silent=True),
+        )
+        assert any(name == "answered_by_floor" for name, _ in result.flags)
+
+    def test_the_guard_reasons_survive_the_swap(self) -> None:
+        """Why the model's own words went is still on the result: a
+        substitution that erased the refusals would hide the failure it
+        is covering for."""
+        result = round_over(
+            answer(self._all_blocked()),
+            features=RoundFeatures(episode_scope=True, floor_when_silent=True),
+        )
+        assert any(item.rule == "quantity_in_statement" for item in result.blocked)
+
+    def test_a_round_that_said_something_is_untouched(self) -> None:
+        result = round_over(
+            answer(hypothesis()),
+            features=RoundFeatures(episode_scope=True, floor_when_silent=True),
+        )
+        assert not any(name == "answered_by_floor" for name, _ in result.flags)
+
+    def test_it_is_off_unless_asked_for(self) -> None:
+        result = round_over(answer(self._all_blocked()))
+        assert result.response.abstained
+        assert not any(name == "answered_by_floor" for name, _ in result.flags)
+
+
+class TestAMagnitudeStatedAsARef:
+    """The sentence the analyst kept losing, now kept.
+
+    `the controller stopped for 1.3 seconds` is removed by rule 2, and
+    should be: 1.3 is a figure a reader cannot open. The same sentence
+    written as `stopped for {obs:…/stopped_seconds}` says the same thing
+    against a fact the platform measured, so it survives — and the
+    digits a reader eventually sees come from the packet at the moment
+    of reading rather than from the model's memory of it.
+
+    The price is that the ref has to resolve to a number. A slot naming
+    a detector renders a figure out of a name; a slot naming nothing
+    renders one out of a measurement nobody made. Both read exactly like
+    a figure that was checked.
+    """
+
+    def _with(self, statement: str):  # type: ignore[no-untyped-def]
+        return round_over(answer(hypothesis(statement=statement)))
+
+    def _ref(self) -> str:
+        view = build_episode_view(build_packet())
+        return next(fact.ref for fact in view.facts if fact.ref.endswith("/stopped_seconds"))
+
+    def test_a_written_figure_still_goes(self) -> None:
+        result = self._with("the controller stopped for 51 seconds on the losing side")
+        assert any(item.rule == "quantity_in_statement" for item in result.blocked)
+
+    def test_the_same_claim_as_a_ref_survives(self) -> None:
+        result = self._with(f"the controller stopped for {{{self._ref()}}} seconds")
+        assert result.response.proposals, [item.rule for item in result.blocked]
+
+    def test_a_slot_the_packet_cannot_fill_is_refused(self) -> None:
+        result = self._with("the controller stopped for {obs:invented@nowhere/seconds} seconds")
+        assert any(item.rule == "magnitude_not_in_packet" for item in result.blocked)
+
+    def test_a_slot_naming_something_that_is_not_a_number_is_refused(self) -> None:
+        """It would render, and read as a quantity, while naming a
+        detector — the failure that looks most like success."""
+        view = build_episode_view(build_packet())
+        observation = next(
+            fact.ref for fact in view.facts if fact.ref.startswith("obs:") and "/" not in fact.ref
+        )
+        result = self._with(f"the controller stopped for {{{observation}}} seconds")
+        assert any(item.rule == "magnitude_not_in_packet" for item in result.blocked)
+
+    def test_the_ref_inside_a_slot_is_not_read_as_a_quantity(self) -> None:
+        """Refs carry digits of their own — an episode id, a `#2` on a
+        sibling detection — and every one of them would trip rule 2 if
+        the slot were scanned rather than skipped."""
+        result = self._with(f"the controller stopped for {{{self._ref()}}} seconds")
+        assert not any(item.rule == "quantity_in_statement" for item in result.blocked)

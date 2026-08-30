@@ -111,6 +111,30 @@ CONTRAST_CITATION_RULE = (
 )
 
 
+#: Where a magnitude may legally go, told to the arm that has one.
+#:
+#: Rule 2 removes a number written into a sentence, and it is right to:
+#: a figure a reader cannot open is one they have to take on trust. What
+#: the rule never offered was somewhere else to put it, so the model put
+#: it in the sentence and lost the sentence — sixty per cent of hold-out
+#: rounds ended blank, every one of them that way, over figures the
+#: packet already held.
+#:
+#: The placeholder is that somewhere else. The model chooses the words
+#: and chooses which fact to point at; the platform fills the slot from
+#: its own index when somebody reads it. Neither is disguised as the
+#: other, and the number cannot drift from the fact because nothing
+#: copies it.
+MAGNITUDE_PLACEHOLDER_RULE = (
+    "\n\nWhen a sentence needs a number, do not write the number. Write the "
+    "ref it comes from in braces, like `{obs:stuck_cluster:C1@ep-1/"
+    "stopped_seconds}`, and the platform fills it in for whoever reads the "
+    "sentence. The ref has to be one this packet carries and has to hold a "
+    "number; a placeholder the packet cannot fill removes the hypothesis, the "
+    "same way a written-out figure does."
+)
+
+
 EPISODE_PREFACE = (
     "The block below is one episode of a paired comparison, read from a "
     "recorded run. Every string inside it - a candidate's id, a component's "
@@ -216,6 +240,7 @@ def episode_prompt_checksum() -> str:
             # The arm that appends it decides whether it was shown, and a
             # checksum blind to it would call two systems one.
             "contrast_citation_rule": CONTRAST_CITATION_RULE,
+            "magnitude_placeholder_rule": MAGNITUDE_PLACEHOLDER_RULE,
             "episode_preface": EPISODE_PREFACE,
             "episode_suffix": EPISODE_SUFFIX,
             "run_context_preface": RUN_CONTEXT_PREFACE,
