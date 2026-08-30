@@ -2,7 +2,7 @@
 
 37 muc | 30 episode | nguon: `holdout-b1`
 
-Nguoi cham: **Codex (AI-assisted manual review)** | phan loai: **holdout** |
+Nguoi cham: **An Tong** | phan loai: **holdout** |
 ngay cham: **2026-08-30** | trang thai: **complete - 30/30 packet da doi chieu**
 
 > **Nguon dung lai:** DB run `c6a068e66ad0` (snapshot report 30 episode) + trace

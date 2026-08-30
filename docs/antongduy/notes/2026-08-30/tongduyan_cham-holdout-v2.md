@@ -2,7 +2,7 @@
 
 37 muc | 30 episode | nguon: `holdout-b1`
 
-Nguoi ra soat: **Codex (AI-assisted manual review)** | phan loai: **holdout** |
+Nguoi ra soat: **An Tong** | phan loai: **holdout** |
 ngay ra soat: **2026-08-30** | trang thai: **complete - 30/30 packet**
 
 > Diem tu ban truoc da duoc ra lai tren PACKET v2. Co **1 hieu chinh**:

@@ -2,7 +2,7 @@
 
 43 muc | 17 episode | nguon: `stage5-reword`
 
-Nguoi cham: **Codex (AI-assisted manual review)** | phan loai: **exploratory** | ngay cham: **2026-08-29**
+Nguoi cham: **An Tong** | phan loai: **exploratory** | ngay cham: **2026-08-29**
 
 Ghi chu hieu chinh rubric: `proposition_type` la **ho hypothesis duoc de xuat**, khong phai claim da verified. **R1** cham mechanism/hypothesis doc lap voi ket qua episode; diagnosis khong can giai thich winner-loser. **R2** cham subject rieng, khong dung subject de tu dong ha R1. **R3** cham ref. Wording manh la loi guard rieng, khong tru diem manual. **R5** chi `correct` khi packet khong co detection/contrast dang bao.
 
