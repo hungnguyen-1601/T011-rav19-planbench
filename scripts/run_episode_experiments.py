@@ -66,16 +66,34 @@ from planbench_analyst.preregistration_episode import (  # noqa: E402
 from planbench_explanation.catalog import TOOL_CATALOG, TOOL_CATALOG_VERSION  # noqa: E402
 from planbench_explanation.episode_builder import build_episode_packet  # noqa: E402
 from planbench_explanation.episode_floor import episode_floor  # noqa: E402
-from planbench_explanation.exemplars import (  # noqa: E402
+from planbench_explanation.exemplars import (  # noqa: E402  # noqa: E402
+    CardlessPairRefusal,
     ReportExemplarRefusal,
+    cardless_pair,
     select_exemplars_from_report,
 )
 from planbench_explanation.knowledge import KNOWLEDGE_BASE_VERSION  # noqa: E402
 from planbench_explanation.versioning import ExplanationArtifactHeader  # noqa: E402
 
-#: What o4-mini bills, per million tokens. Used to stop, not to invoice:
-#: the run halts on the preregistered ceiling, and the number it prints
-#: is an estimate a reader should check against the provider's own.
+#: o4-mini's list price per million tokens, applied to every token as
+#: though none were discounted. **An upper bound on the bill, not the
+#: bill** — and the gap is large enough to matter to whoever reads the
+#: number this script prints.
+#:
+#: Measured on 2026-08-30: the `holdout-deployment` sweep printed $0.6805
+#: against 273,458 in and 86,286 out; the provider charged $0.30, a
+#: little under half. Repeated episodes share a long prefix — the system
+#: prompt, the tool catalogue, the rubric — and a cached input token
+#: bills at a fraction of a fresh one, which the token counts here do not
+#: separate. Nothing in the response tells this script which tokens were
+#: cached, so the honest arithmetic is the pessimistic one.
+#:
+#: **Do not "correct" these downward to match an observed bill.** They
+#: gate spending: `--budget-usd` stops the sweep when the estimate
+#: reaches the ceiling, so overestimating stops early and underestimating
+#: overspends somebody's money. One measurement of a cache hit rate is
+#: not a rate. What is worth fixing is how the figure is *reported* —
+#: hence the wording where it is printed.
 PRICE_IN_PER_M = 1.10
 PRICE_OUT_PER_M = 4.40
 
@@ -106,6 +124,22 @@ ARMS: dict[str, RoundFeatures] = {
     # deterministic and already measured, and turning both on at
     # once would leave neither attributable.
     "ep_magnitudes": RoundFeatures(episode_scope=True, magnitude_placeholders=True),
+    # **What a reader is actually served.** The three features the
+    # episode route turns on, mirrored here so the configuration people
+    # meet can be measured rather than inferred from three arms that
+    # each carried one of them.
+    #
+    # It attributes nothing, and is not meant to: three behaviours are
+    # on at once and two guard rules landed underneath it. The question
+    # it answers is "how good is the thing we ship", which is not "what
+    # did each flag buy" and is the one a demo decision rests on.
+    # `ep_b1` stays the baseline every attribution is reported against.
+    "ep_deployment": RoundFeatures(
+        episode_scope=True,
+        magnitude_placeholders=True,
+        floor_when_silent=True,
+        reword_once=True,
+    ),
 }
 
 
@@ -150,10 +184,6 @@ def trace_for(traces_root: Path, candidate_id: str, episode: str) -> dict[str, A
     }
 
 
-class CardlessRefusal(Exception):
-    """A run with no card that this recipe still may not read."""
-
-
 #: How many episodes a cardless run contributes, and how they are picked.
 #:
 #: Not the exemplar recipe. Three of its four roles are defined on ΔU
@@ -171,32 +201,6 @@ class CardlessRefusal(Exception):
 #: for the undecided ones is worse than one that does neither, and with
 #: only decided episodes in the set nothing would show that.
 CARDLESS_UNDECIDED_SAMPLE = 4
-
-
-def cardless_pair(report: Mapping[str, Any]) -> tuple[str, str]:
-    """The two candidates a cardless run compared, or a refusal.
-
-    **Refuses on three or more.** With a card the pair is recorded and
-    the choice was made by the statistics; without one, picking two out
-    of three is a choice made here, after the numbers are visible, which
-    is the move a preregistration exists to stop. Two candidates leave
-    nothing to choose.
-
-    Ordered by id rather than by outcome, for the same reason: ordering
-    by who won would let the reading of the run decide how the run is
-    read.
-    """
-    ids = sorted(
-        str(candidate.get("candidate_id") or "") for candidate in report.get("candidates", ())
-    )
-    ids = [candidate_id for candidate_id in ids if candidate_id]
-    if len(ids) != 2:
-        raise CardlessRefusal(
-            f"a cardless run is read only when it compared exactly two candidates; "
-            f"this one has {len(ids)}, and choosing two of them is a choice this "
-            f"script would be making after seeing the results"
-        )
-    return ids[0], ids[1]
 
 
 def cardless_episodes(report: Mapping[str, Any], candidate_a: str, candidate_b: str) -> list[str]:
@@ -261,7 +265,7 @@ def cases_from(
         # reader opening one episode is actually asking about.
         try:
             candidate_a, candidate_b = cardless_pair(report)
-        except CardlessRefusal:
+        except CardlessPairRefusal:
             return []
         chosen = [
             (episode, "cardless") for episode in cardless_episodes(report, candidate_a, candidate_b)
@@ -365,6 +369,26 @@ def score_round(outcome: Any, view: Any) -> dict[str, Any]:
         "contrast_count": sum(1 for item in outcome.of(CONTRAST)),
         "diagnosis_count": sum(1 for item in outcome.of(DIAGNOSIS)),
         "blocked": blocked,
+        # **What the rule objected to, not only that it objected.**
+        #
+        # Only the rule name was kept, and it made the largest question
+        # about this scope unanswerable after the fact: rule 2 refused a
+        # hundred and nine proposals across ninety rounds and thirty-six
+        # rounds were offered a rewrite, of which twenty-one still ended
+        # in silence. Reading those twenty-one is the cheapest work
+        # available — and it could not be done, because what the model
+        # had written was gone and only the word
+        # ``quantity_in_statement`` was left.
+        #
+        # ``detail`` is the guard's own account: for rule 2 it is the
+        # tokens it read as figures, so a false positive is visible
+        # without re-running anything. Kept beside `blocked` rather than
+        # replacing it, so the counts above and every artifact already
+        # written stay comparable.
+        "blocked_detail": [
+            {"rule": item.rule, "hypothesis_id": item.hypothesis_id, "detail": item.detail}
+            for item in outcome.blocked
+        ],
         # What the round did that is not visible in its proposals. The
         # rewording arm was measured by inferring a retry from a doubled
         # token count, which worked and should not have been necessary:
@@ -598,7 +622,11 @@ def main() -> int:
         "cases": len(cases),
         "input_tokens": spent_in,
         "output_tokens": spent_out,
+        # An upper bound, kept under its old name so artifacts already
+        # written stay comparable. The flag beside it says what it is,
+        # for anything reading these later.
         "estimated_usd": round(estimate, 4),
+        "usd_is_upper_bound": True,
         # Written whether or not the ceiling stopped it. A run that
         # halted and did not say so would read as a run that covered
         # everything asked of it.
@@ -610,7 +638,14 @@ def main() -> int:
     out = REPO_ROOT / "artifacts" / "analyst-episode-experiments" / f"{args.label}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(artifact, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"\nin={spent_in} out={spent_out} ~${estimate:.2f}")
+    # Named as the bound it is. The earlier wording — a bare "~$" — was
+    # read as the bill and reported onward as one; the sweep it was
+    # printed for cost a little under half what it said.
+    print(
+        f"\nin={spent_in} out={spent_out} "
+        f"at most ${estimate:.2f} (list price, no cache discount — "
+        f"check the provider for what was billed)"
+    )
     if stopped:
         print(f"STOPPED at {stopped} — the ceiling was reached, not the end of the plan")
     print(f"wrote {out}")

@@ -101,6 +101,24 @@ def episode_floor(packet: EpisodePacket) -> EpisodeFloorAnswer:
     proposals: list[HypothesisProposal] = []
     bearings: dict[str, Bearing] = {}
 
+    # **The diagnosis loop does not consult ``blocked``, and that is the
+    # decision, not an oversight.**
+    #
+    # It became visible when the packet started withdrawing
+    # ``component_specific_attribution`` on episodes whose every contrast
+    # is `context`, which is most of the ones the floor exists for. Had
+    # this loop checked, the fallback would have gone silent exactly
+    # where the model already had.
+    #
+    # It may speak because it is not making the claim the type names. The
+    # sentence is "stuck cluster was detected on C1 in this episode" — a
+    # detector firing, with no mechanism and no component blamed — the
+    # subject is ``task_geometry`` rather than either stack, and none of
+    # it reaches the guard: the floor is the platform stating what it
+    # recorded, not a model proposing what it believes.
+    #
+    # The contrast loop below *does* check, because there the type is
+    # load-bearing: it names a mechanism and states it against a side.
     index = 0
     for diagnosis in packet.diagnoses:
         for detection in diagnosis.detections:

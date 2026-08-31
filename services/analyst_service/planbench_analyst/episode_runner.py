@@ -284,11 +284,30 @@ def _floor_after_silence(
 #: refused (quantity_in_statement)". It knew the answer and wrote the
 #: number instead of citing it, and the round was lost over punctuation.
 #:
+#: ``magnitude_not_in_packet`` joins them for the same reason one step
+#: on. The placeholder is the legal way to state a figure, and this rule
+#: fires when the ref inside the braces resolves to nothing — the model
+#: asked the packet for a number the packet does not hold. That is a
+#: citation chosen wrongly, not a claim held wrongly: the finding may be
+#: exactly right and reachable by naming a ref that does resolve, or by
+#: dropping the figure. A hold-out episode with a supported contrast
+#: went silent on this alone.
+#:
+#: **Added by reasoning rather than by measurement**, unlike the two
+#: above, which were counted on recorded arms before they were written.
+#: What bounds the risk is that a rewrite is re-guarded like any other
+#: round: a retry that cites a second ref nothing backs is refused
+#: again, and the cost of being wrong is one extra call.
+#:
 #: ``contradicts_verdict`` is deliberately absent. A statement handing
 #: the episode to the side the platform did not name is not badly
 #: worded, it is wrong, and inviting a rewrite would be inviting the
-#: same claim in safer words.
-REWORDABLE_RULES: frozenset[str] = frozenset({"quantity_in_statement", "wording_above_associated"})
+#: same claim in safer words. ``claim_blocked_by_packet`` is absent for
+#: the same reason: the packet has withdrawn the right to make that kind
+#: of claim here, and no wording restores it.
+REWORDABLE_RULES: frozenset[str] = frozenset(
+    {"quantity_in_statement", "wording_above_associated", "magnitude_not_in_packet"}
+)
 
 
 def _lost_everything_to_wording(result: EpisodeRoundResult) -> bool:
@@ -377,6 +396,17 @@ def _reworded(
         flags=(
             *kept.flags,
             ("reworded_once", "kept_second" if second.response.proposals else "kept_first"),
+            # **Which turn each refusal belongs to.** `blocked` above is
+            # both turns concatenated, which is right for a spend count
+            # and useless for the question that matters: of the rounds
+            # offered a rewrite, the ones that fell silent anyway are
+            # where the wording rules are costing answers, and a merged
+            # list cannot say whether the second turn repeated the first
+            # mistake or made a new one. Recorded as a flag rather than
+            # a new field so nothing downstream has to change to ignore
+            # it.
+            ("blocked_first_turn", str(len(first.blocked))),
+            ("blocked_second_turn", str(len(second.blocked))),
         ),
     )
 
