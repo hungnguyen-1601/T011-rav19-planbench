@@ -1139,7 +1139,11 @@ class DecisionRunService:
             build_episode_packet,
         )
         from planbench_explanation.episode_floor import episode_floor
-        from planbench_explanation.exemplars import compared_pair
+        from planbench_explanation.exemplars import (
+            CardlessPairRefusal,
+            cardless_pair,
+            compared_pair,
+        )
         from planbench_explanation.packet_builder import DeploymentThresholds
 
         run = self._runs.get(run_id)
@@ -1148,11 +1152,29 @@ class DecisionRunService:
         if not candidate_a or not candidate_b:
             pair = compared_pair(report)
             if pair is None:
-                raise InvalidStateError(
-                    "this run ranked nobody, so it names no pair to compare; ask for "
-                    "two candidates explicitly if you want a specific comparison"
-                )
-            candidate_a, candidate_b = pair
+                # **A run with no card is still a run somebody has to
+                # explain.** The card is refused when fewer than two
+                # candidates clear the gates, and that refusal is about a
+                # deployment claim; whether one stack reached the goal in
+                # this episode and the other did not is a different claim,
+                # settled without utility, and it is the one a reader with
+                # a replay open is asking. Refusing it sent them a
+                # sentence about ranking when they had asked about an
+                # episode.
+                #
+                # The pair is still not guessed: `cardless_pair` reads a
+                # run that compared exactly two candidates and refuses
+                # three, because choosing two of three after the numbers
+                # are visible is a choice nobody made.
+                try:
+                    candidate_a, candidate_b = cardless_pair(report)
+                except CardlessPairRefusal as refusal:
+                    raise InvalidStateError(
+                        f"{refusal}; ask for two candidates explicitly if you want a "
+                        "specific comparison"
+                    ) from refusal
+            else:
+                candidate_a, candidate_b = pair
 
         traces: dict[str, dict[str, Any] | None] = {}
         for candidate_id in (candidate_a, candidate_b):

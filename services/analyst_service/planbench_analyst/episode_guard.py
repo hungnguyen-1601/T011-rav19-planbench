@@ -1,4 +1,4 @@
-"""Two more rules, for the two ways an episode answer can go wrong.
+"""The rules an episode answer needs and a run-scope one does not.
 
 The eight rules in :mod:`planbench_analyst.guard` run over an episode
 round unchanged — they ask about refs, quantities, blocked types, tool
@@ -20,6 +20,26 @@ nothing about this episode at all. Unmet, the proposal is **kept and
 demoted** to a diagnosis rather than dropped — the observation is
 usually real and only the register was wrong.
 
+**Rule 11 — a mechanism the detectors look for and did not find.** Five
+proposition types name something a detector decides, and the detector
+already applied its threshold; absence is read, not re-derived.
+
+**Rule 12 — a component this episode records nothing about.** The
+subject taxonomy is wider than any packet, and a claim may only blame
+what the comparison declared or what something measured.
+
+**Rule 13 — both sides weighed where nothing reached ``support``.**
+Rule 11 withdraws one proposition type; the claim came back under
+another. This asks the packet rather than the type, and drops rather
+than demotes, because the comparison is in the sentence.
+
+A third rule for the same family lives in the packet rather than here:
+``EpisodePacket.blocked_claim_types`` refuses
+``component_specific_attribution`` outright when no contrast reached
+``support`` strength. It belongs there because the model is told before
+it drafts — a refusal at this layer costs a round and returns silence,
+and silence is the failure this scope is being measured on.
+
 The annotations these rules read and write travel beside the response,
 never inside it: ``HypothesisProposal`` forbids extra fields, and adding
 one would bump the explanation schema and rebuild every fixture to
@@ -28,6 +48,7 @@ record something only this scope asks about.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from planbench_analyst.analyst import RoundCost
@@ -71,6 +92,44 @@ _WINNING_WORDS: tuple[str, ...] = (
     "did better",
     "came out ahead",
 )
+
+
+#: A stand-in for the losing side's label, so one pattern per winning
+#: phrase serves every episode rather than being rebuilt per round.
+_LOSER = "\x00loser\x00"
+
+#: How many words may sit between the label and the claim.
+#:
+#: **Because none was allowed, and an adverb was enough to walk past
+#: the rule.** The check was ``f"{label} {word}" in sentence``, which
+#: catches "C5 wins" and misses "C5 clearly wins", "C5 ultimately won"
+#: and "C5 is clearly faster" — on the one hard constraint whose
+#: ceiling is zero, and whose whole job is to stop the analyst handing
+#: the episode to the side the platform did not name.
+#:
+#: Three, measured rather than guessed: run over every statement that
+#: survived on all four recorded arms, a gap of zero, one, two and
+#: three each flag exactly nothing. The widening is free on the data in
+#: hand, so it is taken at the widest value that was tested.
+_ADVERB_GAP = 3
+
+
+def _victory_pattern(phrase: str) -> re.Pattern[str]:
+    """The label, then the phrase, with room for an adverb at each join.
+
+    The gap has to be allowed *inside* a phrase as well as before it.
+    "is faster" is two words, and "is clearly faster" puts the adverb
+    between them — which is where English puts it.
+    """
+    gap = rf"(?:\W+\w+){{0,{_ADVERB_GAP}}}\W+"
+    return re.compile(
+        re.escape(_LOSER) + "".join(gap + re.escape(word) for word in phrase.split()) + r"(?!\w)"
+    )
+
+
+_CLAIMS_VICTORY: dict[str, re.Pattern[str]] = {
+    phrase: _victory_pattern(phrase) for phrase in _WINNING_WORDS
+}
 
 
 @dataclass(frozen=True)
@@ -128,8 +187,7 @@ def contradicts_verdict(proposal: HypothesisProposal, view: EpisodeView) -> str 
     loser_label = view.aliases.label_for(str(verdict.loser))
     sentence = proposal.hypothesis_statement.lower()
     for word in _WINNING_WORDS:
-        marker = f"{loser_label.lower()} {word}"
-        if marker in sentence:
+        if _CLAIMS_VICTORY[word].search(sentence.replace(loser_label.lower(), _LOSER)):
             return f"the statement says {loser_label} {word}, and this episode went the other way"
     return None
 
@@ -169,13 +227,46 @@ def contract_terms_met(
         for ref in cited
         if (fact := view.fact(ref.ref)) is not None and fact.subject is not None
     }
-    if not subjects or proposal.proposed_subject in subjects:
-        # No cited fact attributes anything: rule 6 already refuses a
-        # citation that names a *different* component, so silence here
-        # is silence and not a match against something.
+    # **The contrast doing the supporting has to be about the component
+    # being blamed.** The term used to be granted on an empty set —
+    # rule 6 refuses a citation naming a *different* component, so
+    # silence was read as silence rather than as a match. That holds
+    # while every supporting contrast carries a subject, and stopped
+    # holding when one arrived without: a `near_miss_cluster` contrast
+    # has no mechanism behind it and therefore no owner, so a claim
+    # citing it named whichever component it liked and collected
+    # `subject_match` for having cited nothing that could disagree.
+    #
+    # Read off the *supporting* contrasts rather than off everything
+    # cited. An observation is about a candidate, not a component, and
+    # requiring the whole citation list to agree would refuse the
+    # ordinary shape of a finding: one contrast that carries the
+    # mechanism, one `obs:` that shows it happened here.
+    #
+    # Measured before it was written: on the last sweep exactly one
+    # statement loses the term, and it is one a scorer marked `wrong` —
+    # "local_controller refused to traverse a passage of width …",
+    # resting on a contrast with no subject at all. No statement marked
+    # `explains` is touched.
+    supporting_subjects = {
+        fact.subject
+        for ref in supporting
+        if (fact := view.fact(ref)) is not None and fact.subject is not None
+    }
+    if supporting:
+        matched = proposal.proposed_subject in supporting_subjects
+    else:
+        matched = not subjects or proposal.proposed_subject in subjects
+    if matched:
         met.append("subject_match")
 
-    if effect_direction(proposal.proposition_type) == "harms_subject":
+    # **Polarity is the registry's word about the mechanism the packet
+    # put behind this contrast**, not only about the type the model
+    # chose. A supporting contrast that names a different mechanism is
+    # not evidence that this one harms the side it is stated against.
+    if effect_direction(proposal.proposition_type) == "harms_subject" and (
+        not supporting or matched
+    ):
         met.append("polarity_match")
 
     annotation = EpisodeAnnotation(
@@ -227,6 +318,108 @@ def _detector_silent(proposal: HypothesisProposal, view: EpisodeView) -> str | N
     if wanted & fired or wanted & cited:
         return None
     return f"{sorted(wanted)} did not fire in this episode"
+
+
+#: The components a candidate declares, which are in scope on every
+#: episode by virtue of being the thing compared.
+DECLARED_COMPONENT_FIELDS: tuple[str, ...] = (
+    "global_planner",
+    "local_controller",
+    "local_controller_config",
+)
+
+
+def _subject_absent_from_episode(proposal: HypothesisProposal, view: EpisodeView) -> str | None:
+    """Rule 12. A component this episode records nothing about.
+
+    The subject taxonomy is wider than any one episode. Eight subjects
+    may be named; a comparison declares three components per side, and
+    the rest — ``costmap_inflation``, ``task_geometry``, the providers —
+    enter a packet only when something measured them: an inflation
+    margin, a passage width. When nothing did, the packet holds no fact
+    about that subject, and a sentence blaming it blames a part of the
+    stack this episode did not observe.
+
+    A hand-scored arm produced exactly that: *"costmap_inflation refused
+    to maintain clearance above the minimum threshold 0.15"*, on a
+    packet with no robot block, no inflation margin and no threshold
+    anywhere — only ``min_clearance = 0.148568``, from which 0.15 was
+    rounded into a limit nobody set. The previous rubric read it as
+    plausible with every reference opening, because each ref did open.
+    What none of them was about was costmap inflation.
+
+    **The declared components stay in scope regardless of which facts
+    carry a subject.** ``obs:`` and ``diag:`` facts record none, so
+    demanding a subject-bearing fact for every proposal refuses ordinary
+    findings about the local controller — it did, on thirteen of
+    twenty-five proposals, before this was narrowed to the subjects a
+    packet has to earn.
+    """
+    declared = {
+        field
+        for candidate in view.packet.candidates
+        for field in DECLARED_COMPONENT_FIELDS
+        if getattr(candidate, field, None)
+    }
+    subject = proposal.proposed_subject
+    if subject in declared or view.refs_for_subject(subject):
+        return None
+    return f"this episode records nothing about {subject}"
+
+
+def _compares_without_support(proposal: HypothesisProposal, view: EpisodeView) -> str | None:
+    """Rule 13. Both sides weighed on a packet that can carry nothing.
+
+    Rule 11 withdraws ``component_specific_attribution`` when no contrast
+    reached ``support``. The claim moved: the deployment arm made the
+    same comparison under ``local_minimum_entrapment``, subject
+    ``global_planner``, citing ``component_differs`` — "global_planner of
+    C5 triggered a replan during the stuck cluster while C1 did not".
+    Both statements a scorer marked `wrong` on that arm are that shape,
+    and neither came from a rewrite. Blocking one proposition type
+    blocked a label, not a move.
+
+    So the condition is the packet's, not the type's: where nothing
+    reached ``support``, a sentence weighing the two sides against each
+    other has nothing under it whatever it is called.
+
+    **Dropped rather than demoted.** Rule 10 keeps an over-claimed
+    proposal as a diagnosis, which is right when the register was the
+    only thing wrong — an observation about one side stays true when it
+    stops claiming to explain the verdict. It is not right here: the
+    comparison is in the sentence, so demoting relabels a claim the
+    reader still meets in full.
+
+    **Why it is not simply "unmet contract plus a comparison".** That was
+    the first draft, and measuring it first is the reason it is not the
+    code: on the deployment arm it removed five of the six episodes a
+    scorer marked `explains`. Explaining why one side beat the other
+    *is* comparing them, and most such statements miss a contract term
+    while being exactly what this scope exists to produce. Restricted to
+    packets with no supported contrast, the same measurement catches the
+    two wrong statements and touches no `explains` on any of the three
+    recorded arms.
+
+    Read against labels, like rule 9: a candidate id never reaches the
+    model, so a sentence can only name the two sides by their labels.
+    """
+    if any(
+        fact.ref.startswith("contrast:") and str(fact.value) == "support" for fact in view.facts
+    ):
+        return None
+    verdict = view.packet.verdict
+    labels = {
+        view.aliases.label_for(str(verdict.candidate_a)),
+        view.aliases.label_for(str(verdict.candidate_b)),
+    }
+    sentence = proposal.hypothesis_statement
+    named = {label for label in labels if re.search(rf"\b{re.escape(label)}\b", sentence)}
+    if len(named) < 2:
+        return None
+    return (
+        f"the statement weighs {sorted(named)} against each other and no contrast in this "
+        "packet reached support strength"
+    )
 
 
 def episode_guard(
@@ -282,6 +475,25 @@ def episode_guard(
         silent = _detector_silent(proposal, view)
         if silent is not None:
             blocked.append(Blocked(proposal.hypothesis_id, "mechanism_detector_silent", silent))
+            continue
+
+        # **Blamed a part of the stack this episode did not observe.**
+        # Checked here, after the detector rule, because both are about
+        # whether the thing named was seen at all and neither depends on
+        # the register the proposal was offered in.
+        absent = _subject_absent_from_episode(proposal, view)
+        if absent is not None:
+            blocked.append(Blocked(proposal.hypothesis_id, "subject_absent_from_episode", absent))
+            continue
+
+        # **Weighed both sides on a packet with nothing at support
+        # strength.** Beside rules 11 and 12 because all three ask
+        # whether there was anything to say, not which register it was
+        # said in — and this one has to run before the register branch
+        # below, which would otherwise keep it as a diagnosis.
+        unbacked = _compares_without_support(proposal, view)
+        if unbacked is not None:
+            blocked.append(Blocked(proposal.hypothesis_id, "compares_without_support", unbacked))
             continue
 
         contradiction = contradicts_verdict(proposal, view)

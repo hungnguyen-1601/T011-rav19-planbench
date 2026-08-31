@@ -238,8 +238,88 @@ class EpisodePreregistration:
     holdout_case_selection: str = "every_episode_of_the_cluster_once"
     holdout_arm: str = "ep_b1"
 
+    #: How many times the hold-out cluster is read per arm.
+    #:
+    #: **Raised from the one implied by ``holdout_case_selection`` to
+    #: three on 2026-08-30, and the reason is that one reading turned out
+    #: not to measure what it was read as.** Two arms scored under r0.2.0
+    #: each landed six episodes at `explains` out of the eighteen whose
+    #: packet could answer — and they were not the same six. Four of the
+    #: six differ. A count that holds still while its membership turns
+    #: over is a count whose run-to-run variation is at least as large as
+    #: the difference between the arms, and nothing run at one reading
+    #: per episode can separate the two.
+    #:
+    #: Three is the smallest number that says anything about that: it
+    #: gives every episode a majority, so "this episode is explained" and
+    #: "this episode is sometimes explained" stop being the same
+    #: observation. It is not enough for an interval and is not claimed
+    #: to be.
+    #:
+    #: **The cluster is still read whole.** Reading only the eighteen
+    #: episodes that carry a supported contrast would cost a third less
+    #: of the scorer's afternoon and would have been defensible — the
+    #: property is the packet's and is computed before any output is
+    #: seen — but it would end comparison with the three arms already
+    #: scored, whose `describes_only` and `silent_correctly` counts are
+    #: over all thirty.
+    holdout_repeats: int = 3
+
+    #: What counts as an episode the packet could have explained.
+    #:
+    #: The denominator for the one number this scope is about — the
+    #: share of episodes where an arm said why one side beat the other —
+    #: and it is computed rather than judged, so a scorer is not also
+    #: deciding which episodes had an answer available.
+    #:
+    #: **Narrowed on 2026-08-31, and the direction has to be declared
+    #: because it flatters the result.** A contrast is graded `support`
+    #: by kind, and the two detection kinds qualify because a detector
+    #: firing on one side and not the other is evidence about a
+    #: mechanism — except where the registry names no mechanism.
+    #: `near_miss_cluster` has no entry, so its contrasts arrived with
+    #: no proposition and no owner while still counting as `support`;
+    #: two of the three statements a scorer marked `wrong` on the last
+    #: sweep rested on one, blaming two different components. Demoting
+    #: those to `context` removes one episode from the eighteen.
+    #:
+    #: That episode scored `describes_only`, `describes_only`, `wrong`
+    #: across its three readings — no `explains` at all — so the
+    #: measured rate moves from 10/18 to 10/17, from 0.56 to 0.59,
+    #: **upward, on a change to the platform rather than to the arm.**
+    #: Both are to be reported wherever either is. The reasoning stands
+    #: on its own — a detection with no mechanism behind it cannot
+    #: license a claim about a component — and it was written down
+    #: before the arithmetic was run, but neither fact makes a rate that
+    #: rose after a guard change safe to quote alone.
+    holdout_denominator: str = "episodes_with_a_supported_contrast"
+
     #: Judged blind, by one person, against the rubric fixed on 26-08.
-    rubric: str = "r0.1.0"
+    #:
+    #: **Amended to r0.2.0 on 2026-08-30, and the amendment makes the
+    #: bar harder rather than easier.** r0.1.0 scores statements: of the
+    #: sentences an arm wrote, how many hold against the packet and cite
+    #: it. That is a precision measure, and it is maxed by saying
+    #: nothing — which is what happened. On `holdout-b1` the arm
+    #: abstained on nineteen of thirty-seven blocks, every abstention
+    #: was marked `should_have`, and none of that reaches the headline,
+    #: because r0.1.0 has no denominator for a sentence never written.
+    #: Half the sample was invisible to the number reported for it.
+    #:
+    #: R6 adds the question the experiment was for: on this episode, did
+    #: the arm say **why one side beat the other**. It is scored per
+    #: episode rather than per statement, over the episodes whose packet
+    #: carries a `support`-strength contrast — a denominator the sheet
+    #: computes, so a scorer is not also deciding which episodes had an
+    #: answer available.
+    #:
+    #: Amending a rubric after seeing results is the move this project
+    #: forbids, so the direction matters: nothing that scored under
+    #: r0.1.0 is rescored more leniently, r0.1.0's marks are kept as
+    #: they were, and the new axis can only lower an arm's standing.
+    #: Artifacts already written keep their own `preregistration_checksum`
+    #: and are not restated under the new id.
+    rubric: str = "r0.2.0"
     scoring: str = "blind_to_arm_single_scorer"
 
     #: The ceiling on this experiment, stated as data so a report cannot
@@ -287,6 +367,8 @@ class EpisodePreregistration:
             "scoring": self.scoring,
             "holdout": self.holdout,
             "holdout_case_selection": self.holdout_case_selection,
+            "holdout_repeats": self.holdout_repeats,
+            "holdout_denominator": self.holdout_denominator,
             "holdout_arm": self.holdout_arm,
             "conclusion_class": self.conclusion_class,
             "max_usd": self.max_usd,

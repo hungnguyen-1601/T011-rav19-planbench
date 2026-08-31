@@ -191,9 +191,19 @@ class TestWhichTwoAreCompared:
         body = verdict_of(client, "run_ep_order", "ep00", alice_headers).json()
         assert {body["candidate_a"], body["candidate_b"]} == {"winner", "runner_up"}
 
-    def test_a_run_that_ranked_nobody_refuses_rather_than_picking(
+    def test_a_run_that_ranked_nobody_is_still_read_as_its_two_candidates(
         self, client: TestClient, app, alice_headers: dict[str, str]
     ) -> None:
+        """This used to be a 409, and the reason was half right.
+
+        Picking two candidates out of a list is a claim and the
+        registration order is not one — that still holds, and three
+        candidates are still refused. But a run that compared exactly
+        two leaves nothing to pick, and refusing it answered an episode
+        question with a sentence about ranking. A reader opening a
+        cardless run to watch one side fail got told the run named no
+        winner, which they already knew.
+        """
         seed(
             app,
             "run_ep_unranked",
@@ -204,7 +214,8 @@ class TestWhichTwoAreCompared:
             pair=None,
         )
         response = verdict_of(client, "run_ep_unranked", "ep00", alice_headers)
-        assert response.status_code == 409
+        assert response.status_code == 200, response.json()
+        assert {response.json()["candidate_a"], response.json()["candidate_b"]} == {"one", "two"}
 
     def test_an_explicit_pair_overrides_the_default(
         self, client: TestClient, app, alice_headers: dict[str, str]
@@ -307,3 +318,92 @@ class TestWhatTheAnswerSurvivesWithout:
         body = response.json()
         assert body["verdict"]["winner"] == "winner"
         assert body["packet"]["timelines"] == []
+
+
+class TestARunThatRankedNobody:
+    """A run with no card is still a run somebody has to explain.
+
+    A card is refused when fewer than two candidates clear the six
+    gates, and that refusal is about a **deployment** claim: nobody may
+    be told which stack to ship. Whether one stack reached the goal in
+    this episode and the other did not is a different claim, settled
+    without any utility, and it is the one a reader with a replay open
+    is asking. The route used to answer it with a sentence about
+    ranking — reported from a real run of `Wide_corridor_v4`, opened
+    deliberately to watch an `outcome_only` episode.
+
+    The pair is still not guessed. Two candidates leave nothing to
+    choose; three would be a choice made after the numbers are visible,
+    which is exactly what nobody made.
+    """
+
+    def test_two_candidates_and_no_card_still_answer(
+        self,
+        client: TestClient,
+        app,
+        alice_headers,  # type: ignore[no-untyped-def]
+    ) -> None:
+        seed(
+            app,
+            "run_no_card",
+            candidates=[
+                candidate("aaa", [episode_row("ep00", None, success=True)]),
+                candidate(
+                    "bbb", [episode_row("ep00", None, success=False)], global_planner="rrtstar"
+                ),
+            ],
+            pair=None,
+        )
+        response = verdict_of(client, "run_no_card", "ep00", alice_headers)
+        assert response.status_code == 200, response.json()
+        body = response.json()
+        assert body["verdict"]["basis"] == "outcome_only"
+        assert body["verdict"]["winner"] == "aaa"
+
+    def test_the_pair_is_ordered_by_id_rather_than_by_outcome(
+        self,
+        client: TestClient,
+        app,
+        alice_headers,  # type: ignore[no-untyped-def]
+    ) -> None:
+        """Ordering by who won would let the reading of a run decide how
+        the run is read."""
+        seed(
+            app,
+            "run_no_card_reversed",
+            candidates=[
+                candidate("zzz", [episode_row("ep00", None, success=True)]),
+                candidate(
+                    "aaa", [episode_row("ep00", None, success=False)], global_planner="rrtstar"
+                ),
+            ],
+            pair=None,
+        )
+        body = verdict_of(client, "run_no_card_reversed", "ep00", alice_headers).json()
+        assert body["verdict"]["candidate_a"] == "aaa"
+        assert body["verdict"]["candidate_b"] == "zzz"
+        assert body["verdict"]["winner"] == "zzz", "the later id still won the episode"
+
+    def test_three_candidates_and_no_card_are_refused(
+        self,
+        client: TestClient,
+        app,
+        alice_headers,  # type: ignore[no-untyped-def]
+    ) -> None:
+        seed(
+            app,
+            "run_no_card_three",
+            candidates=[
+                candidate("aaa", [episode_row("ep00", None, success=True)]),
+                candidate(
+                    "bbb", [episode_row("ep00", None, success=False)], global_planner="rrtstar"
+                ),
+                candidate(
+                    "ccc", [episode_row("ep00", None, success=False)], global_planner="astar"
+                ),
+            ],
+            pair=None,
+        )
+        response = verdict_of(client, "run_no_card_three", "ep00", alice_headers)
+        assert response.status_code >= 400
+        assert "exactly two" in response.json()["error"]["message"]
