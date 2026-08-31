@@ -29,7 +29,8 @@ from pathlib import Path
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[1]
-RUBRIC = "r0.1.0"
+RUBRIC = "r0.2.0"
+RUBRIC_COLUMNS = ["R1", "R2", "R3", "R5"]
 
 
 def _sweep():  # type: ignore[no-untyped-def]
@@ -69,6 +70,15 @@ def items_from(payload: dict[str, Any], stage: str) -> list[dict[str, Any]]:
             "episode": row["episode"],
             "role": row["role"],
             "repeat": row["repeat"],
+            # **Who is speaking.** With the floor fallback on, a round
+            # whose every proposal was refused still returns sentences —
+            # deterministic ones built from the packet, reporting what
+            # fired. A scorer shown those without being told would credit
+            # the analyst for statements no model wrote, and the number
+            # that matters most — `explains` over the episodes a packet
+            # could answer — would be inflated by exactly the rounds
+            # where the analyst failed hardest.
+            "by_floor": any(flag[0] == "answered_by_floor" for flag in (row.get("flags") or [])),
         }
         if row["abstained"]:
             items.append(
@@ -109,6 +119,24 @@ def header(items: list[dict[str, Any]], episodes: int, sources: list[str]) -> li
         "- **R3** moi ref mo duoc trong packet **va** noi ve dung mechanism"
         " - `all` / `some` / `none`",
         "- **R5** cho khong de xuat gi: im lang co dung cho khong - `correct` / `should_have`",
+        "",
+        "**R6 cham theo episode, khong theo cau.** R1-R5 hoi *cau nay co dung khong*;"
+        " mot arm im lang ca episode van dat diem cao, va do la chuyen da xay ra."
+        " R6 hoi dung cau hoi cua thi nghiem: **episode nay, no co noi duoc vi sao"
+        " ben thang hon ben thua khong**.",
+        "",
+        "- `explains` - neu mot mechanism khac nhau giua hai ben **va** noi vao"
+        " ket qua, co ref mo duoc",
+        "- `describes_only` - dung, nhung chi ta chuyen gi xay ra; khong tra loi"
+        " vi sao ben nay hon",
+        "- `silent_wrongly` - packet co du de tra loi ma khong noi gi",
+        "- `silent_correctly` - packet that su khong do duoc cau why",
+        "- `wrong` - khang dinh mot why ma packet phan lai",
+        "",
+        "Mau so **do sheet tinh, khong phai nguoi cham quyet**: episode nao co it"
+        " nhat mot contrast `support` thi duoi tieu de co dong"
+        " `packet co the tra loi why`. Cham `silent_correctly` o mot episode nhu"
+        " the la mau thuan voi packet.",
         "",
         "Khong muc nao noi arm nao viet no, cung khong noi no thuoc luot chay nao.",
         "Dung doan.",
@@ -242,6 +270,106 @@ def packet_table(view: Any) -> list[str]:
     return lines
 
 
+def marks_already_given(path: Path) -> dict[tuple[str, int], list[str]]:
+    """R1-R5 as a previous sheet was scored, keyed by episode and block.
+
+    **So an amended rubric does not cost a re-read of what was already
+    read.** r0.2.0 adds one judgement per episode and changes none of
+    the per-statement ones, so asking for all thirty-seven blocks again
+    would be asking somebody to re-derive marks they have already made,
+    with the previous answers visible on the next monitor. The parts
+    that did not change are carried, and the sheet only leaves blank
+    what is genuinely new.
+
+    Ordering is what makes the key safe: blocks are numbered from a
+    hash of the item's own identity, so the same artifacts regenerate in
+    the same order and block 007 of an episode is the same sentence it
+    was. The episode id is carried alongside the number anyway, so a
+    sheet built from a *different* set of artifacts fails to match
+    rather than silently pasting one episode's marks onto another's.
+    """
+    carried: dict[tuple[str, int], list[str]] = {}
+    episode = ""
+    number = 0
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("# Episode `"):
+            episode = line.split("`")[1]
+            # The packet under this heading is itself a four-column
+            # table. Without this the first block of the episode after
+            # it would inherit the previous episode's number and claim
+            # rows out of a packet as somebody's marks.
+            number = 0
+        elif line.startswith("### "):
+            digits = line[4:7]
+            number = int(digits) if digits.isdigit() else 0
+        elif line.startswith("|") and number and episode:
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+            # The header names the columns and the rule below it is all
+            # dashes; neither is somebody's judgement, and the first row
+            # that is wins because `setdefault` keeps it.
+            if len(cells) != 4 or cells == RUBRIC_COLUMNS or not set("".join(cells)) - set("-"):
+                continue
+            carried[(episode, number)] = cells
+            # One table per block, and it is the one directly under the
+            # heading. Anything below it belongs to something else.
+            number = 0
+    return carried
+
+
+def answerable(view: Any) -> bool:
+    """Did this episode's packet carry an answer to *why one side won*.
+
+    **The sheet decides this, not the scorer.** R6 asks whether an arm
+    explained the difference, and an arm that says nothing has two very
+    different excuses: the packet held a mechanism and it missed it, or
+    the packet held none and silence was the only honest move. Leaving
+    that to the person scoring makes them re-derive the denominator by
+    eye, thirty times, from the same table the sheet already printed —
+    and a denominator somebody eyeballs is one an arm can be flattered
+    by.
+
+    `support` is the strength the packet itself assigns to a contrast
+    that carries evidence, as against `context`, which only says the two
+    stacks differ somewhere. So the predicate is the packet's own word
+    for "this one can be leaned on", not a second opinion about it.
+    """
+    return any(
+        fact.ref.startswith("contrast:") and str(fact.value) == "support" for fact in view.facts
+    )
+
+
+def episode_mark(view: Any | None, by_floor: bool = False) -> list[str]:
+    """The one judgement that is about the episode rather than a sentence.
+
+    Carries who wrote the sentences below it. The floor answers from the
+    packet when a round loses everything, and what it produces reads like
+    an analyst's output while being neither a mechanism nor an
+    explanation — "stuck cluster was detected on C1". Scored blind
+    against `explains` it would count as the analyst succeeding on the
+    rounds where the analyst was refused outright.
+    """
+    if view is None:
+        return []
+    note = (
+        "> **packet co the tra loi why** - co contrast `support`."
+        if answerable(view)
+        else "> packet khong co contrast `support`."
+    )
+    lines = [
+        "**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**",
+        "",
+        note,
+    ]
+    if by_floor:
+        lines += [
+            ">",
+            "> **KHONG PHAI MODEL VIET.** Moi de xuat cua model deu bi tu choi;"
+            " cac cau duoi day do floor sinh tu packet. Voi R6 day la"
+            " analyst **im lang** - `explains` khong the cham o day.",
+        ]
+    return lines + ["", "| R6 |", "|---|", "|  |", ""]
+
+
 def readable(statement: str, view: Any) -> str:
     """The sentence as a reader meets it, slots filled.
 
@@ -260,7 +388,10 @@ def readable(statement: str, view: Any) -> str:
     return render(statement, facts)
 
 
-def render_item(number: int, item: dict[str, Any]) -> list[str]:
+def render_item(number: int, item: dict[str, Any], carried: list[str] | None = None) -> list[str]:
+    def row(default: list[str]) -> str:
+        return "| " + " | ".join(carried or default) + " |"
+
     if item["hypothesis_id"] == "-abstained-":
         return [
             f"### {number:03d} - **khong de xuat gi**",
@@ -269,7 +400,7 @@ def render_item(number: int, item: dict[str, Any]) -> list[str]:
             "",
             "| R1 | R2 | R3 | R5 |",
             "|---|---|---|---|",
-            "| n/a | n/a | n/a |  |",
+            row(["n/a", "n/a", "n/a", ""]),
             "",
         ]
     refs = ", ".join("`" + ref + "`" for ref in item["supports"]) or "-"
@@ -289,7 +420,13 @@ def render_item(number: int, item: dict[str, Any]) -> list[str]:
     ]
     if item["contract"]:
         lines.append("- contract: " + ", ".join("`" + term + "`" for term in item["contract"]))
-    lines += ["", "| R1 | R2 | R3 | R5 |", "|---|---|---|---|", "|  |  |  | n/a |", ""]
+    lines += [
+        "",
+        "| R1 | R2 | R3 | R5 |",
+        "|---|---|---|---|",
+        row(["", "", "", "n/a"]),
+        "",
+    ]
     return lines
 
 
@@ -299,7 +436,13 @@ def main() -> int:
     parser.add_argument("--runs", required=True, help="Where the comparison reports are.")
     parser.add_argument("--traces", required=True)
     parser.add_argument("--out", required=True)
+    parser.add_argument(
+        "--carry",
+        help="A sheet already scored under the previous rubric: its R1-R5 marks "
+        "are copied in, so only what the amendment added is left blank.",
+    )
     args = parser.parse_args()
+    carried = marks_already_given(Path(args.carry)) if args.carry else {}
 
     items: list[dict[str, Any]] = []
     for path in args.artifacts:
@@ -341,23 +484,41 @@ def main() -> int:
                 "",
             ]
             lines += packet_table(view)
-        for item in group:
-            number += 1
-            entry = views.get(episode)
-            if entry is not None and item.get("statement"):
-                item = {**item, "statement": readable(item["statement"], entry[1])}
-            lines += render_item(number, item)
-            key_rows.append(
-                {
-                    "index": number,
-                    "stage": item["stage"],
-                    "arm": item["arm"],
-                    "episode": item["episode"],
-                    "cluster": item["cluster"],
-                    "repeat": item["repeat"],
-                    "hypothesis_id": item["hypothesis_id"],
-                }
+        # **One R6 per round, not per episode.** With repeats above one
+        # an episode is several rounds, and they disagree: on the
+        # three-reading sweep the model spoke on some readings of an
+        # episode and was refused outright on others, twelve times out
+        # of eighteen. A single mark for the episode would ask the
+        # scorer to average that by eye, and the majority — the whole
+        # reason for reading three times — would never be written down.
+        #
+        # The round number is not the arm, so showing it hides nothing
+        # the sheet is meant to hide.
+        rounds = sorted({item["repeat"] for item in group})
+        for repeat in rounds:
+            batch = [item for item in group if item["repeat"] == repeat]
+            if len(rounds) > 1:
+                lines += ["## Luot " + str(repeat + 1) + "/" + str(len(rounds)), ""]
+            lines += episode_mark(
+                entry[1] if entry is not None else None,
+                by_floor=any(item.get("by_floor") for item in batch),
             )
+            for item in batch:
+                number += 1
+                if entry is not None and item.get("statement"):
+                    item = {**item, "statement": readable(item["statement"], entry[1])}
+                lines += render_item(number, item, carried.get((episode, number)))
+                key_rows.append(
+                    {
+                        "index": number,
+                        "stage": item["stage"],
+                        "arm": item["arm"],
+                        "episode": item["episode"],
+                        "cluster": item["cluster"],
+                        "repeat": item["repeat"],
+                        "hypothesis_id": item["hypothesis_id"],
+                    }
+                )
 
     out = Path(args.out)
     out.write_text("\n".join(lines), encoding="utf-8")
@@ -366,6 +527,8 @@ def main() -> int:
     print("wrote " + str(out))
     print("wrote " + str(key))
     print(f"{number} muc | {len(by_episode)} episode")
+    if args.carry:
+        print(f"{len(carried)} muc mang sang tu {args.carry}; R6 con trong")
     return 0
 
 
