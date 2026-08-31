@@ -2174,5 +2174,7 @@
   "deployments.notMeasuredWhy": "Chưa comparison nào chạy trên deployment này, nên vẫn sửa trực tiếp được.",
   "deployments.signedOut.title": "Đăng nhập để xem các deployment đã hồ sơ",
   "deployments.signedOut.body": "Deployment mô tả thế giới mà một so sánh sẽ chạy trên đó, nên đọc chúng cần có tài khoản. Phiên đăng nhập chỉ sống trong tab này — mở cửa sổ mới là bắt đầu ở trạng thái chưa đăng nhập.",
-  "nav.signIn": "Đăng nhập"
+  "nav.signIn": "Đăng nhập",
+  "dashboard.guideCard.title": "Lần đầu dùng? Đọc hướng dẫn vận hành",
+  "dashboard.guideCard.body": "Deployment là gì, một so sánh đo cái gì, và vì sao một cổng có thể từ chối gọi tên người thắng. Mười lăm phút, và mấy con số phía trên bắt đầu có nghĩa."
 }

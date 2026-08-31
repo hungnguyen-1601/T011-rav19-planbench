@@ -139,6 +139,38 @@ def _request(
     back to anonymous access, so sending one unconditionally would turn
     "no token configured" into "updates are broken".
     """
+    try:
+        return _fetch(url, token, accept=accept, on_progress=on_progress)
+    except _Unauthorized:
+        # **A bad credential must not cost the update.** The token is an
+        # optional convenience — it buys a bigger rate limit against a
+        # public repository — so a token that has expired, been revoked
+        # or been mistyped should leave the machine exactly where a
+        # machine with no token stands, not worse off. Before this, a
+        # stale `PLANBENCH_GITHUB_TOKEN` turned every check into
+        # "answered 401" and the app silently stopped updating, with the
+        # cause sitting in an environment variable nobody was looking at.
+        if not token:
+            raise
+        logger.warning(
+            "the credential in %s was refused; checking anonymously instead",
+            TOKEN_ENV,
+        )
+        return _fetch(url, "", accept=accept, on_progress=on_progress)
+
+
+class _Unauthorized(UpdateError):
+    """GitHub refused the credential itself, not the request."""
+
+
+def _fetch(
+    url: str,
+    token: str,
+    *,
+    accept: str,
+    on_progress: Callable[[int, int | None], None] | None = None,
+) -> bytes:
+    """One attempt at ``url``. `_request` decides whether to try again."""
     request = urllib.request.Request(url)  # noqa: S310 - https, built from constants
     request.add_header("Accept", accept)
     if token:
@@ -165,6 +197,12 @@ def _request(
                 on_progress(read, total)
             return b"".join(chunks)
     except urllib.error.HTTPError as exc:
+        # 401 alone. A 403 from this API is nearly always the rate limit
+        # rather than the credential, and retrying that one without the
+        # token would drop from the signed budget onto the anonymous one,
+        # which is the smaller of the two.
+        if exc.code == 401:
+            raise _Unauthorized(f"{url} answered 401") from exc
         raise UpdateError(f"{url} answered {exc.code}") from exc
     except (urllib.error.URLError, OSError, TimeoutError) as exc:
         raise UpdateError(f"could not reach {url}: {exc}") from exc

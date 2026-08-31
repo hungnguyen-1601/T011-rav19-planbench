@@ -13,8 +13,10 @@ the fallback path exists precisely because neither is guaranteed.
 
 from __future__ import annotations
 
+import inspect
 import os
 import sqlite3
+import threading
 
 import pytest
 
@@ -358,3 +360,91 @@ class TestTheSourceRootList:
             root.endswith("apps\\desktop") or root.endswith("apps/desktop") for root in roots
         )
         assert not any(root.rstrip("\\/").endswith("tests") for root in roots)
+
+
+class TestAWindowOntoSomebodyElsesInstance:
+    """A second window outlives the server it borrowed. Say so.
+
+    Opening the app while it is already running does not start a second
+    server - one SQLite file, one writer - so the new window points at
+    the first process's port. Close the first window and that server
+    goes with it, and the second window is left showing a page whose
+    only symptom is a header pill reading "System unavailable": true,
+    and it names neither the cause nor the cure.
+    """
+
+    @staticmethod
+    def _watch(monkeypatch, answers: list[bool]) -> tuple[list[bool], list[tuple[int, str]]]:
+        """Run the watcher to completion over a scripted set of probes.
+
+        Sleeping is removed rather than shortened, so the test does not
+        pay for the poll interval and does not depend on it either. The
+        probe count at the moment the page is replaced is what the tests
+        read: it says *when* the watcher gave up, which is the decision
+        being pinned.
+        """
+        from planbench_desktop import main
+
+        probed: list[bool] = []
+        shown: list[tuple[int, str]] = []
+        replies = iter(answers)
+
+        def probe(port: int, timeout: float = 1.0) -> bool:
+            answer = next(replies)
+            probed.append(answer)
+            return answer
+
+        monkeypatch.setattr("planbench_desktop.server.is_healthy", probe)
+        monkeypatch.setattr(main.time, "sleep", lambda _seconds: None)
+
+        done = threading.Event()
+
+        class Window:
+            def load_html(self, html: str) -> None:
+                shown.append((len(probed), html))
+                done.set()
+
+        main._watch_instance(4242, Window())
+        done.wait(5.0)
+        return probed, shown
+
+    def test_the_page_is_replaced_once_the_instance_stops_answering(self, monkeypatch) -> None:
+        _, shown = self._watch(monkeypatch, [False, False, False])
+
+        assert shown, "the window was never told the instance had gone"
+        page = shown[0][1]
+        # The property, not the wording: whatever it says, it has to say
+        # it in both languages this app is used in, and it has to be a
+        # page rather than a blank window.
+        assert "PlanBench" in page
+        assert "closed" in page and "đóng" in page
+
+    def test_a_single_missed_probe_does_not_take_the_page_away(self, monkeypatch) -> None:
+        """One failure is what a busy machine looks like.
+
+        Replacing the page under somebody who is still working in it is
+        the worse of the two mistakes, so the watcher wants three
+        failures in a row and any success resets the count. The first
+        probe here fails and the second succeeds; if a single failure
+        were enough, the page would be gone after one.
+        """
+        probed, shown = self._watch(monkeypatch, [False, True, False, False, False])
+
+        assert shown, "the watcher never finished"
+        at, _page = shown[0]
+        assert at == len(probed) == 5
+        # Stated as the property rather than as the number: the run of
+        # failures that ends it has to be consecutive.
+        assert probed[-3:] == [False, False, False]
+
+    def test_a_window_onto_our_own_server_is_not_watched(self) -> None:
+        """The owner's window has nothing to watch: it *is* the server.
+
+        A watcher there would poll a port that stops answering only when
+        the process is already on its way out, and could race the
+        shutdown into showing this message on the way to closing. So the
+        watch is off unless a caller names somebody else's port.
+        """
+        from planbench_desktop import main
+
+        assert inspect.signature(main.open_window).parameters["attached_to"].default is None

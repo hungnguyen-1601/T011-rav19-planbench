@@ -136,6 +136,64 @@ describe("the dashboard shows something worth looking at", () => {
   });
 });
 
+describe("the way in for somebody who has never used this", () => {
+  /** Seven counts and a row of verbs assume a reader who already knows
+   *  what a deployment is and what a comparison measures. The guide is
+   *  where that is explained, and before this it was reachable only from
+   *  a sidebar entry among a dozen others - so the dashboard, which is
+   *  the first page anybody sees, offered no way into it.
+   */
+  it("offers the operating guide from the dashboard", () => {
+    expect(DASHBOARD).toContain('href="/guide"');
+    expect(DASHBOARD).toContain("dashboard.guideCard.title");
+  });
+
+  it("puts it between the counts and the shortcuts", () => {
+    /** Position is the claim, not decoration. Above the stat row it
+     *  would push aside the evidence that a workspace exists; below the
+     *  shortcuts it arrives after the reader has already been asked to
+     *  choose one. Pinned as an ordering rather than a line number, so
+     *  editing the page around it does not turn this red.
+     */
+    const guide = DASHBOARD.indexOf('href="/guide"');
+    const actions = DASHBOARD.indexOf("<QuickActions");
+    const stats = DASHBOARD.lastIndexOf("StatCard", guide);
+
+    expect(stats).toBeGreaterThan(-1);
+    expect(guide).toBeGreaterThan(stats);
+    expect(actions).toBeGreaterThan(guide);
+  });
+
+  it("is shown to everybody rather than only to a signed-out visitor", () => {
+    /** A returning reader looks new every morning: the session lives in
+     *  `sessionStorage`, so it does not survive a new tab. Hiding the
+     *  guide once somebody has an account would take it away from the
+     *  people most likely to want it a second time.
+     */
+    const card = DASHBOARD.slice(
+      DASHBOARD.lastIndexOf("<Link", DASHBOARD.indexOf('href="/guide"')),
+      DASHBOARD.indexOf("<QuickActions"),
+    );
+    expect(card).not.toContain("signedIn");
+  });
+});
+
+describe("signing in lands on the dashboard", () => {
+  /** `/decisions` is one job among several, and landing there reads as
+   *  the app's whole purpose to somebody arriving for the first time.
+   *  The dashboard is where the counts, the shortcuts and the guide are.
+   *
+   *  All three doors, because there are three: the password form, the
+   *  provider callback, and the page that asks a new account for a name.
+   */
+  const doors = ["login/page.tsx", "auth/callback/page.tsx", "welcome/page.tsx"];
+
+  it.each(doors)("%s sends the reader to the dashboard", (door) => {
+    const source = readFileSync(join(APP, ...door.split("/")), "utf8");
+    expect(source).not.toContain('"/decisions"');
+  });
+});
+
 describe("no page hardcodes English where a key belongs", () => {
   /** Every page goes through the shell, and the shell is translated. */
   it("uses the translator on every page", () => {

@@ -70,7 +70,12 @@ function SignIn() {
     setError(null);
     try {
       const session = await login(username, password);
-      router.push(session.user.needs_nickname ? "/welcome" : "/decisions");
+    /* **Dashboard, not the comparison list.** Signing in used to land on
+       `/decisions`, which is one job among several and reads as the
+       app's whole purpose to somebody arriving for the first time. The
+       dashboard is where the counts, the shortcuts and the guide are —
+       what a reader needs before they know which page they want. */
+      router.push(session.user.needs_nickname ? "/welcome" : "/");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

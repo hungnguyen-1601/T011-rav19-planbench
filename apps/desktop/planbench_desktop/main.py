@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -78,7 +79,7 @@ def running_instance(root: Path) -> int | None:
     return port if is_healthy(port) else None
 
 
-def open_window(url: str) -> None:
+def open_window(url: str, *, attached_to: int | None = None) -> None:
     """Show the app, and return when the person closes it.
 
     `pywebview` renders through WebView2, which Windows 11 ships. When it
@@ -87,6 +88,15 @@ def open_window(url: str) -> None:
     that still looks like an application, and nothing extra to install.
     Falling back beats failing, because the alternative for somebody who
     just installed this is a window that never appears.
+
+    ``attached_to`` is the port of *another* process's server, passed when
+    this window is a second window onto an instance that was already
+    running. That window outlives the thing it is showing: close the first
+    window and the server goes with it, leaving this one displaying a page
+    whose only symptom is the header pill reading "System unavailable" —
+    an accurate sentence that names neither the cause nor the cure. When a
+    port is given, this watches it and replaces the page with an
+    explanation the moment it stops answering.
     """
     try:
         import webview
@@ -96,11 +106,64 @@ def open_window(url: str) -> None:
         return
 
     try:
-        webview.create_window(WINDOW_TITLE, url, width=1440, height=900)
+        window = webview.create_window(WINDOW_TITLE, url, width=1440, height=900)
+        if attached_to is not None:
+            _watch_instance(attached_to, window)
         webview.start()
     except Exception as exc:  # pragma: no cover - depends on the machine
         logger.warning("pywebview failed to start (%s); opening in a browser window", exc)
         _open_in_browser(url)
+
+
+# Shown in place of the app when the instance a second window was
+# attached to has closed. Both languages, because this window has no
+# access to the app's own translations any more — the app is gone.
+GONE_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"><title>PlanBench</title></head>
+<body style="margin:0;display:grid;place-items:center;height:100vh;
+ font-family:Segoe UI,system-ui,sans-serif;background:#0f1115;color:#e6e8ee">
+  <div style="max-width:34rem;padding:2rem;line-height:1.6">
+    <h1 style="font-size:1.25rem;margin:0 0 1rem">PlanBench đã đóng</h1>
+    <p style="margin:0 0 1rem;color:#9aa3b2">Cửa sổ này đang xem một bản
+      PlanBench đang chạy sẵn, và bản đó vừa được đóng lại. Không có gì
+      hỏng và không mất dữ liệu — đóng cửa sổ này rồi mở lại PlanBench.</p>
+    <h2 style="font-size:1rem;margin:1.5rem 0 .5rem">PlanBench has closed</h2>
+    <p style="margin:0;color:#9aa3b2">This window was showing an instance
+      of PlanBench that was already running, and that instance has now
+      been closed. Nothing is broken and no data is lost — close this
+      window and open PlanBench again.</p>
+  </div>
+</body></html>"""
+
+
+def _watch_instance(port: int, window: object) -> None:
+    """Say so, once the instance this window is borrowing has gone.
+
+    Three failures rather than one: a single missed probe is what a
+    busy machine looks like, and replacing the page under somebody who
+    is still using it would be the worse mistake of the two. The thread
+    is a daemon so a person closing the window is never made to wait for
+    a poll to come round.
+    """
+    import threading
+
+    from planbench_desktop.server import is_healthy
+
+    def watch() -> None:
+        missed = 0
+        while missed < 3:
+            time.sleep(2.0)
+            if is_healthy(port, timeout=2.0):
+                missed = 0
+                continue
+            missed += 1
+        logger.info("the instance on %s has closed; this window has nothing to show", port)
+        try:
+            window.load_html(GONE_HTML)  # type: ignore[attr-defined]
+        except Exception:  # pragma: no cover - the window may already be gone
+            logger.debug("could not replace the page; the window was probably closed")
+
+    threading.Thread(target=watch, name="instance-watch", daemon=True).start()
 
 
 def _open_in_browser(url: str) -> None:
@@ -164,7 +227,7 @@ def main() -> int:
     existing = running_instance(provisioned.root)
     if existing is not None:
         logger.info("another instance is serving on %s; opening a window onto it", existing)
-        open_window(f"http://127.0.0.1:{existing}")
+        open_window(f"http://127.0.0.1:{existing}", attached_to=existing)
         return 0
 
     from planbench_desktop.server import DesktopServer, free_port

@@ -16,9 +16,11 @@ Nền tảng mô phỏng và so sánh thuật toán điều hướng cho robot d
 AMR/AGV - và, quan trọng hơn, một quy trình để **trả lời câu hỏi "nên
 triển khai thuật toán nào"** bằng bằng chứng người khác kiểm lại được.
 
-**Tải app tại:** <https://github.com/hungnguyen-1601/T011-rav19-planbench/releases/latest/download/PlanBench-Setup.exe>
+**Tải app tại:** [https://github.com/hungnguyen-1601/T011-rav19-planbench/releases/latest/download/PlanBench-Setup.exe](https://github.com/hungnguyen-1601/T011-rav19-planbench/releases/latest/download/PlanBench-Setup.exe)
 
-**Chỉ mô phỏng - không điều khiển robot thật. Không dùng Gazebo.**
+**Chỉ mô phỏng - không điều khiển robot thật.**
+
+![PlanBench so hai thuật toán điều hướng trên cùng một map, cùng một mission và cùng một bộ seed](docs/assets/planbench-thumbnail.png)
 
 ---
 
@@ -224,10 +226,10 @@ danh sách ứng viên bị loại kèm cổng đã loại chúng.
 
 Hai thứ khác nhau, đừng nhầm:
 
-| | Trợ lý hội thoại | Lớp cố vấn |
-|---|---|---|
-| Ở đâu | dock nổi trên mọi trang + trang **Trợ lý AI** | nút *Hỏi thêm model* trên các panel advice |
-| Làm gì | đọc bản ghi bằng **11 tool chỉ-đọc** rồi trả lời | xếp lại thứ tự advice luật + thêm **tối đa 3** ý |
+|             | Trợ lý hội thoại                                                     | Lớp cố vấn                                                                        |
+| ----------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| Ở đâu    | dock nổi trên mọi trang + trang **Trợ lý AI**                  | nút *Hỏi thêm model* trên các panel advice                                     |
+| Làm gì    | đọc bản ghi bằng **11 tool chỉ-đọc** rồi trả lời          | xếp lại thứ tự advice luật + thêm **tối đa 3** ý                       |
 | Ràng buộc | không chạy được phép so, không sửa deployment, không duyệt gì | không xoá được advice luật, mọi ý thêm phải trỏ vào một field có thật |
 
 Bốn luật của lớp cố vấn, mỗi luật có test và mỗi test đã được chứng minh
@@ -394,15 +396,15 @@ qua, cấu hình triển khai không xếp hạng được, hay run bị dừng 
 
 Mở một run. Trang đọc từ trên xuống theo đúng thứ tự nên đọc:
 
-| Mục | Trả lời câu gì |
-|---|---|
-| **Run này kết luận gì** | ai thắng, cách biệt bao nhiêu, khoảng tin cậy có vắt qua 0 không |
-| **Nên triển khai cái nào** | khuyến nghị theo ba tình huống ưu tiên khác nhau |
-| **Kết quả so sánh** | từng metric, bên nào dẫn, chênh bao nhiêu |
-| **Bảng cổng** | ai bị loại, ở cổng nào, với bằng chứng gì |
-| **Episode** | từng lượt chạy đạt hay trượt; lọc riêng những lượt có trượt |
-| **Phát lại** | hai canvas cùng một episode, một playhead chung |
-| **Phản biện** | chỗ nào trong lập luận này yếu |
+| Mục                                 | Trả lời câu gì                                                          |
+| ------------------------------------ | --------------------------------------------------------------------------- |
+| **Run này kết luận gì**    | ai thắng, cách biệt bao nhiêu, khoảng tin cậy có vắt qua 0 không   |
+| **Nên triển khai cái nào** | khuyến nghị theo ba tình huống ưu tiên khác nhau                     |
+| **Kết quả so sánh**         | từng metric, bên nào dẫn, chênh bao nhiêu                             |
+| **Bảng cổng**                | ai bị loại, ở cổng nào, với bằng chứng gì                          |
+| **Episode**                    | từng lượt chạy đạt hay trượt; lọc riêng những lượt có trượt |
+| **Phát lại**                 | hai canvas cùng một episode, một playhead chung                          |
+| **Phản biện**                | chỗ nào trong lập luận này yếu                                        |
 
 Ở mục **Phản biện**, bấm **Kiểm bằng luật** trước - nó chạy bộ luật tất
 định, không cần cấu hình gì. **Hỏi thêm model** là lớp AI phía trên, cần
@@ -482,21 +484,21 @@ Lý do không xếp bậc thang: publish một thuật toán là **chữ ký c�
 reviewer**, không phải đặc quyền của người quản trị. Cho admin quyền đó
 vì "admin thì làm gì cũng được" là biến một chữ ký thành một cấp bậc.
 
-| Việc | engineer | reviewer | admin |
-|---|:--:|:--:|:--:|
-| Đọc map, scenario, deployment, kết quả | ✅ | ✅ | ✅ |
-| Xem catalogue thuật toán | ✅ | ✅ | ✅ |
-| Tạo/sửa map, scenario, deployment | ✅ | | |
-| Chạy mô phỏng, chạy so sánh | ✅ | ✅ | |
-| Gửi một run đi duyệt | ✅ | | |
-| Nhận, đọc và **ký duyệt** một run | | ✅ | |
-| Thu hồi phê duyệt | | ✅ | |
-| Import thuật toán, xem mã, **xuất bản** | | ✅ | |
-| Tắt một thuật toán (lý do quản trị) | | ✅ | |
-| Tắt một thuật toán (**kill switch** lúc sự cố) | | | ✅ |
-| Cấp/thu quyền, khoá tài khoản | | | ✅ |
-| Đọc nhật ký phân quyền | | ✅ | ✅ |
-| Đổi cấu hình hệ thống | | | ✅ |
+| Việc                                                       | engineer | reviewer | admin |
+| ----------------------------------------------------------- | :------: | :------: | :---: |
+| Đọc map, scenario, deployment, kết quả                  |    ✅    |    ✅    |  ✅  |
+| Xem catalogue thuật toán                                  |    ✅    |    ✅    |  ✅  |
+| Tạo/sửa map, scenario, deployment                         |    ✅    |          |      |
+| Chạy mô phỏng, chạy so sánh                            |    ✅    |    ✅    |      |
+| Gửi một run đi duyệt                                    |    ✅    |          |      |
+| Nhận, đọc và **ký duyệt** một run               |          |    ✅    |      |
+| Thu hồi phê duyệt                                        |          |    ✅    |      |
+| Import thuật toán, xem mã,**xuất bản**           |          |    ✅    |      |
+| Tắt một thuật toán (lý do quản trị)                  |          |    ✅    |      |
+| Tắt một thuật toán (**kill switch** lúc sự cố) |          |          |  ✅  |
+| Cấp/thu quyền, khoá tài khoản                          |          |          |  ✅  |
+| Đọc nhật ký phân quyền                                |          |    ✅    |  ✅  |
+| Đổi cấu hình hệ thống                                 |          |          |  ✅  |
 
 Reviewer **chạy mô phỏng được** - để tự xem một thuật toán chưa xuất bản
 cư xử thế nào trước khi bảo lãnh nó. Không có quyền đó thì reviewer phải
@@ -542,11 +544,11 @@ xuất bản. Vì thế tab Thuật toán trong trang Duyệt không có nút "N
 
 `PLANBENCH_DEPLOYMENT_PROFILE`:
 
-| Profile | Dùng khi | Tách trách nhiệm |
-|---|---|---|
-| `production` | **mặc định khi biến vắng mặt** - máy nhiều người dùng chung | `strict` |
-| `desktop-single-user` | bản desktop, một người một máy | cho phép `relaxed` |
-| `demo` | máy trình diễn | cho phép `relaxed`, kèm banner không tắt được |
+| Profile                 | Dùng khi                                                                    | Tách trách nhiệm                                   |
+| ----------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `production`          | **mặc định khi biến vắng mặt** - máy nhiều người dùng chung | `strict`                                            |
+| `desktop-single-user` | bản desktop, một người một máy                                         | cho phép`relaxed`                                  |
+| `demo`                | máy trình diễn                                                            | cho phép`relaxed`, kèm banner không tắt được |
 
 Mặc định là `production` **khi biến không được đặt** - fail-closed. Một
 máy quên cấu hình sẽ siết chặt hơn mức cần, chứ không lỏng hơn.
@@ -573,14 +575,20 @@ chỗ nào tra lý do.
 
 Bản desktop cho Windows, không cần cài Python hay Node:
 
-<https://github.com/hungnguyen-1601/T011-rav19-planbench/releases/latest/download/PlanBench-Setup.exe>
+[https://github.com/hungnguyen-1601/T011-rav19-planbench/releases/latest/download/PlanBench-Setup.exe](https://github.com/hungnguyen-1601/T011-rav19-planbench/releases/latest/download/PlanBench-Setup.exe)
 
 Nó chạy `desktop-single-user`, và tạo sẵn ba tài khoản để thử ba gói
 quyền ở §4.11: `admin`, `engineer`, `reviewer`.
 
+Các tài khoản dùng thử: 
+admin:admin 
+engineer:engineer
+reviewer:reviewer
+
+
 ### 5.2. Web đã triển khai
 
-<https://planbench-web.onrender.com/>
+[https://planbench-web.onrender.com/](https://planbench-web.onrender.com/)
 
 Đăng nhập rồi làm theo §4.
 
@@ -758,7 +766,6 @@ lên máy chủ. Đổi chỗ nút bấm thì không giải quyết được - m
 **khai** entry point, nó không **chứa** code, nên import manifest cho một
 thuật toán chưa cài chỉ cho ra trạng thái "đã đăng ký nhưng thiếu runtime".
 
-
 ### 9.3. Phát lại - mới xong một nửa
 
 Đồng bộ theo **thời gian tuyệt đối** đã chạy. Đồng bộ theo **quãng đường
@@ -796,13 +803,13 @@ tích. Phân tích cơ chế là §9.1.
 
 ## 10. Tài liệu
 
-| File | Nội dung |
-|---|---|
-| `docs/architecture.md` | kiến trúc và các quyết định thiết kế |
-| `docs/KNOWN_LIMITATIONS.md` | **điều chưa kiểm chứng** - đọc trước khi trích số |
-| `docs/IMPLEMENTATION_STATUS.md` | trạng thái từng mốc |
-| `docs/TEST_REPORT.md` | kết quả chạy thật |
-| `docs/API_CONTRACT.md` | hợp đồng API |
-| `docs/plugin_author_guide.md` | cắm thuật toán của bạn vào |
-| `docs/ROS2_INTEGRATION.md` | ROS2 + Nav2 |
-| `docs/antongduy/` | ghi chép, kế hoạch và báo cáo theo ngày |
+| File                              | Nội dung                                                          |
+| --------------------------------- | ------------------------------------------------------------------ |
+| `docs/architecture.md`          | kiến trúc và các quyết định thiết kế                      |
+| `docs/KNOWN_LIMITATIONS.md`     | **điều chưa kiểm chứng** - đọc trước khi trích số |
+| `docs/IMPLEMENTATION_STATUS.md` | trạng thái từng mốc                                            |
+| `docs/TEST_REPORT.md`           | kết quả chạy thật                                              |
+| `docs/API_CONTRACT.md`          | hợp đồng API                                                    |
+| `docs/plugin_author_guide.md`   | cắm thuật toán của bạn vào                                   |
+| `docs/ROS2_INTEGRATION.md`      | ROS2 + Nav2                                                        |
+| `docs/antongduy/`               | ghi chép, kế hoạch và báo cáo theo ngày                     |
