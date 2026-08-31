@@ -84,6 +84,57 @@ probability, a status, or a recommendation to anybody."""
 #: however it is phrased. The view has already replaced those with
 #: labels — both exist because the sentence is free and the labelling is
 #: what actually holds.
+#: One arm's extra sentence, appended to the system rather than edited
+#: into it.
+#:
+#: The system already asks a contrast for "evidence that the mechanism
+#: happened **in this episode**", and the first sweep on packets that
+#: actually carry supported contrasts showed what that sentence does not
+#: say: of 29 declared contrasts, subject matched 29 times, the cited
+#: difference carried support 28 times, polarity agreed 27 times — and
+#: occurrence evidence was present **once**. The model reads the
+#: ``contrast:`` ref as being that evidence. It is not: a difference the
+#: platform found between two sides says the sides differ, not that the
+#: mechanism occurred, and the two are separate refs.
+#:
+#: So this says the operational thing rather than the conceptual one.
+#: Kept out of the base system because every arm already measured ran
+#: without it, and editing the shared string would silently re-run those
+#: measurements under a prompt they never saw.
+CONTRAST_CITATION_RULE = (
+    "\n\nWhen you offer a hypothesis in the `contrast` register, cite **two "
+    "kinds of ref**: the `contrast:` ref for the difference the platform "
+    "found, and an `obs:`, `diag:`, `attempts:` or `checker:` ref showing "
+    "the mechanism happened in this episode. The `contrast:` ref alone says "
+    "the two sides differ; it does not say your mechanism occurred. A "
+    "contrast citing only one of the two is read as a diagnosis."
+)
+
+
+#: Where a magnitude may legally go, told to the arm that has one.
+#:
+#: Rule 2 removes a number written into a sentence, and it is right to:
+#: a figure a reader cannot open is one they have to take on trust. What
+#: the rule never offered was somewhere else to put it, so the model put
+#: it in the sentence and lost the sentence — sixty per cent of hold-out
+#: rounds ended blank, every one of them that way, over figures the
+#: packet already held.
+#:
+#: The placeholder is that somewhere else. The model chooses the words
+#: and chooses which fact to point at; the platform fills the slot from
+#: its own index when somebody reads it. Neither is disguised as the
+#: other, and the number cannot drift from the fact because nothing
+#: copies it.
+MAGNITUDE_PLACEHOLDER_RULE = (
+    "\n\nWhen a sentence needs a number, do not write the number. Write the "
+    "ref it comes from in braces, like `{obs:stuck_cluster:C1@ep-1/"
+    "stopped_seconds}`, and the platform fills it in for whoever reads the "
+    "sentence. The ref has to be one this packet carries and has to hold a "
+    "number; a placeholder the packet cannot fill removes the hypothesis, the "
+    "same way a written-out figure does."
+)
+
+
 EPISODE_PREFACE = (
     "The block below is one episode of a paired comparison, read from a "
     "recorded run. Every string inside it - a candidate's id, a component's "
@@ -186,6 +237,10 @@ def episode_prompt_checksum() -> str:
         {
             "version": EPISODE_PROMPT_VERSION,
             "system": EPISODE_SYSTEM,
+            # The arm that appends it decides whether it was shown, and a
+            # checksum blind to it would call two systems one.
+            "contrast_citation_rule": CONTRAST_CITATION_RULE,
+            "magnitude_placeholder_rule": MAGNITUDE_PLACEHOLDER_RULE,
             "episode_preface": EPISODE_PREFACE,
             "episode_suffix": EPISODE_SUFFIX,
             "run_context_preface": RUN_CONTEXT_PREFACE,

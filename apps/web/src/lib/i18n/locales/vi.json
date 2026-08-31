@@ -1766,6 +1766,7 @@
   "agentDock.contextDetach": "Hỏi chuyện khác",
   "agentDock.contextAttach": "Hỏi về lượt chạy đang mở trên trang này",
   "agentDock.contextLost": "Câu hỏi này không gắn với lượt chạy đang mở - bản ghi không tra ra.",
+  "agentDock.analyst.pickAnEpisode": "Chọn một episode trong phần phát lại của một run, analyst sẽ trả lời về đúng episode đó.",
   "agentDock.openFull": "Mở trang trợ lý đầy đủ - bài báo, bản nháp plugin, quyền hạn của nó",
   "agent.name": "Trợ lý",
   "agent.placeholder": "Hỏi về những gì nền tảng đã ghi lại…",
@@ -1898,6 +1899,15 @@
   "episodeVerdict.outcome.replans": "Số lần replan",
   "episodeVerdict.outcome.noRecord": "Không có bản ghi cho episode này. Đó không phải là thua: ứng viên này có thể chưa từng chạy nó, có thể bị loại trước đó, hoặc không được ghi lại.",
   "episodeVerdict.noPathAttempts": "Planner trả về không có đường ở {count} trong {total} lần thử.",
+  "episodeVerdict.askTheModel": "Hỏi model",
+  "episodeVerdict.asking": "Đang hỏi…",
+  "episodeVerdict.previewOnly": "Bản xem nội bộ. Điều model đề xuất được kiểm trước khi hiện, và nó không quyết định gì.",
+  "episodeVerdict.modelSuggested": "Model đề xuất",
+  "episodeVerdict.modelAbstained": "Model không đề xuất gì: {reason}",
+  "episodeVerdict.modelFailed": "Không gọi được model. Mọi thứ ở trên được tính mà không cần nó.",
+  "episodeVerdict.modelKept": "Giữ {kept}, bỏ {dropped} theo luật của nền tảng.",
+  "episodeVerdict.bearing.diagnosis": "Quan sát",
+  "episodeVerdict.bearing.contrast": "Liên quan kết cục",
   "nav.guide": "Hướng dẫn",
   "nav.desc.guide": "Cách vận hành, và cách đọc kết quả cho đúng",
   "guide.rail": "Các bài hướng dẫn",
@@ -2164,5 +2174,7 @@
   "deployments.notMeasuredWhy": "Chưa comparison nào chạy trên deployment này, nên vẫn sửa trực tiếp được.",
   "deployments.signedOut.title": "Đăng nhập để xem các deployment đã hồ sơ",
   "deployments.signedOut.body": "Deployment mô tả thế giới mà một so sánh sẽ chạy trên đó, nên đọc chúng cần có tài khoản. Phiên đăng nhập chỉ sống trong tab này — mở cửa sổ mới là bắt đầu ở trạng thái chưa đăng nhập.",
-  "nav.signIn": "Đăng nhập"
+  "nav.signIn": "Đăng nhập",
+  "dashboard.guideCard.title": "Lần đầu dùng? Đọc hướng dẫn vận hành",
+  "dashboard.guideCard.body": "Deployment là gì, một so sánh đo cái gì, và vì sao một cổng có thể từ chối gọi tên người thắng. Mười lăm phút, và mấy con số phía trên bắt đầu có nghĩa."
 }

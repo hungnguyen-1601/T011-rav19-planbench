@@ -1766,6 +1766,7 @@
   "agentDock.contextDetach": "Ask about something else instead",
   "agentDock.contextAttach": "Ask about the run open on this page",
   "agentDock.contextLost": "This question was not attached to the open run - the record did not resolve.",
+  "agentDock.analyst.pickAnEpisode": "Pick an episode from a run's replay and the analyst will answer about that one.",
   "agentDock.openFull": "Open the full agent - papers, plugin drafts, what it may do",
   "agent.name": "Agent",
   "agent.placeholder": "Ask about what this platform recorded…",
@@ -1898,6 +1899,15 @@
   "episodeVerdict.outcome.replans": "Replans",
   "episodeVerdict.outcome.noRecord": "No record for this episode. That is not a loss: this candidate may never have run it, may have been eliminated before it, or may not have been recorded.",
   "episodeVerdict.noPathAttempts": "The planner returned no path on {count} of {total} attempts.",
+  "episodeVerdict.askTheModel": "Ask the model",
+  "episodeVerdict.asking": "Asking…",
+  "episodeVerdict.previewOnly": "Internal preview. What a model proposes is checked before it is shown, and it decides nothing.",
+  "episodeVerdict.modelSuggested": "The model proposed",
+  "episodeVerdict.modelAbstained": "The model proposed nothing: {reason}",
+  "episodeVerdict.modelFailed": "The model could not be reached. Everything above was worked out without it.",
+  "episodeVerdict.modelKept": "Kept {kept}, dropped {dropped} against the platform's rules.",
+  "episodeVerdict.bearing.diagnosis": "Observation",
+  "episodeVerdict.bearing.contrast": "Bears on the outcome",
   "nav.guide": "Guide",
   "nav.desc.guide": "How to run it, and how to read what it says",
   "guide.rail": "Guide articles",
@@ -2164,5 +2174,7 @@
   "deployments.notMeasuredWhy": "No comparison has run against this deployment, so it can still be corrected in place.",
   "deployments.signedOut.title": "Sign in to see the deployments on file",
   "deployments.signedOut.body": "A deployment says what a comparison will run on, so reading them needs an account. Your session lives in this tab only — a new window starts signed out.",
-  "nav.signIn": "Sign in"
+  "nav.signIn": "Sign in",
+  "dashboard.guideCard.title": "New here? Read the operating guide",
+  "dashboard.guideCard.body": "What a deployment is, what a comparison measures, and why a gate can refuse to name a winner. Fifteen minutes, and the numbers above start meaning something."
 }

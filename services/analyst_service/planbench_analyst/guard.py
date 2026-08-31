@@ -49,6 +49,7 @@ from planbench_analyst.packet_view import PacketView
 from planbench_explanation.catalog import ToolCatalog
 from planbench_explanation.ledger import HypothesisProposal
 from planbench_explanation.levels import check_phrases
+from planbench_explanation.magnitudes import PLACEHOLDER, placeholders_in
 from planbench_explanation.protocol import AnalysisResponse
 
 __all__ = [
@@ -120,6 +121,44 @@ NUMBER_WORDS: frozenset[str] = frozenset(
 _NUMERIC = re.compile(r"^[+-]?(?:\d+(?:[.,]\d+)?(?:[eE][+-]?\d+)?)\s*%?$")
 
 
+#: How a name is written when it is not standing alone.
+_POSSESSIVE: tuple[str, ...] = ("'s", "’s", "'", "’")
+
+
+def _names_only(token: str, known: set[str]) -> bool:
+    """Is every digit-bearing part of this token a name the packet uses?
+
+    **Because the bare token is the only form the check used to
+    recognise.** ``identifiers`` holds candidate labels — ``C1``, ``C5``
+    — and the docstring above has always said a token that is one of
+    them is a name whatever digits it carries. The membership test was
+    against the token exactly, so it recognised ``C1`` and nothing else:
+    ``C1's``, ``C1/C5`` and ``C1-side`` all fell through to the
+    digit-bearing branch and were reported as quantities.
+
+    That is not a corner. Rule 2 is the single largest thing standing
+    between this analyst and an answer — 109 of 211 refusals on the
+    three-reading hold-out, and present in thirteen of the fifteen
+    rounds where a packet could have been explained and was not — and a
+    possessive is how anyone writes a comparison between two named
+    sides.
+
+    Split rather than stripped, so a real quantity welded to a name
+    stays a quantity: ``C1-2.05`` has a digit-bearing part that is not a
+    name and is still refused. ``30-episode`` likewise — thirty is not
+    a label here. And ``C1s`` stays refused: a possessive is a form of
+    the name, a plural is a different word, and the conservative reading
+    costs a sentence nobody writes.
+    """
+    for suffix in _POSSESSIVE:
+        if token.endswith(suffix):
+            token = token[: -len(suffix)]
+            break
+    parts = [part for part in re.split(r"[/\-]", token) if part]
+    numeric = [part for part in parts if any(character.isdigit() for character in part)]
+    return bool(numeric) and all(part.casefold() in known for part in numeric)
+
+
 def quantities_in(statement: str, identifiers: frozenset[str]) -> tuple[str, ...]:
     """Quantities the statement carries, as written.
 
@@ -127,6 +166,14 @@ def quantities_in(statement: str, identifiers: frozenset[str]) -> tuple[str, ...
     region ids, episode ids, objectives. A token that is one of them is
     a name, whatever digits it contains.
     """
+    # **A placeholder is a ref, not a figure.** `{obs:…/stopped_seconds}`
+    # names the fact the number comes from and is filled in when
+    # somebody reads the sentence, so the digits never pass through
+    # here. Stripped before the scan rather than exempted inside it: a
+    # ref can carry digits of its own — an episode id, a `#2` on a
+    # sibling detection — and every one of them would read as a
+    # quantity.
+    statement = PLACEHOLDER.sub(" ", statement)
     found: list[str] = []
     lowered = statement.casefold()
     for phrase in NUMBER_WORDS:
@@ -140,6 +187,8 @@ def quantities_in(statement: str, identifiers: frozenset[str]) -> tuple[str, ...
     for token in re.findall(r"[^\s,;:()\[\]]+", statement):
         cleaned = token.strip(".;:,")
         if not cleaned or cleaned.casefold() in known:
+            continue
+        if _names_only(cleaned, known):
             continue
         if any(character.isdigit() for character in cleaned) and _NUMERIC.match(cleaned):
             found.append(cleaned)
@@ -255,6 +304,28 @@ def guard(
         if missing:
             blocked.append(
                 Blocked(proposal.hypothesis_id, "ref_not_in_packet", f"{sorted(set(missing))}")
+            )
+            continue
+        # **A slot the packet cannot fill.** The placeholder buys the
+        # analyst a legal way to state a magnitude, and the price is
+        # that the ref has to resolve to a number here — otherwise a
+        # sentence renders a figure out of a detector's name, or out of
+        # a measurement nobody made, and reads exactly like one that
+        # was checked.
+        unfillable = tuple(
+            ref
+            for ref in placeholders_in(proposal.hypothesis_statement)
+            if (fact := view.fact(ref)) is None
+            or isinstance(fact.value, bool)
+            or not isinstance(fact.value, (int, float))
+        )
+        if unfillable:
+            blocked.append(
+                Blocked(
+                    proposal.hypothesis_id,
+                    "magnitude_not_in_packet",
+                    f"{sorted(set(unfillable))}",
+                )
             )
             continue
         quantities = quantities_in(proposal.hypothesis_statement, identifiers)

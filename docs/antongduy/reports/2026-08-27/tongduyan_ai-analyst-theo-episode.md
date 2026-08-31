@@ -934,3 +934,178 @@ gian sim, không tốn tiền.
 định thiết kế thí nghiệm (cần một so sánh không suy biến), **không phải** chọn
 theo kết quả của arm — arm chưa chạy trên các map này. Nhưng nó vẫn là một lựa
 chọn có thể làm đẹp số, nên ghi thành amendment và kết luận vẫn để `exploratory`.
+
+---
+
+## P5 (phần 5) — Ba cluster, một arm prompt, và kết luận
+
+### Mở khoá được cluster thứ ba
+
+Câu hỏi của An: *"Có thể lấy run không có decision card để phân tích không? Đôi
+khi việc 1 agent bị stuck cũng rất đáng để phân tích tại sao?"* — trả lời được,
+và nó gỡ đúng nút thắt.
+
+Card bị từ chối khi dưới hai candidate qua sáu cổng, và đó là từ chối về một
+khẳng định **triển khai**: không ai được bảo nên ship stack nào. Nó không nói gì
+về việc stack này tới đích trong episode này còn stack kia thì không — khẳng
+định khác hẳn, `build_verdict` giải quyết bằng `outcome_only` **không cần
+utility, không cần cổng**, và đó mới là câu người mở một episode ra đang hỏi.
+
+Chặn chỉ là cơ học, ở hai chỗ, và cả hai từ chối **có lý** ở chỗ chúng đứng:
+
+- `cases_from` trả rỗng khi thiếu `comparison_pair`, mà `comparison_pair` được
+  ghi **bên trong khối sinh card**;
+- `select_exemplars_from_report` từ chối vì ba trên bốn vai của nó định nghĩa
+  trên ΔU.
+
+Cả hai bảo vệ *run scope*. Packet episode không cần thứ chúng bảo vệ.
+
+Hai quyết định không được để script tuỳ ý, nên viết thành luật:
+
+- **Ba candidate trở lên ⇒ từ chối.** Chọn hai trong ba sau khi đã thấy số là
+  chính cái preregistration sinh ra để cấm. Hai thì không có gì để chọn.
+- **Thứ tự cặp theo `candidate_id`, không theo ai thắng** — xếp theo kết quả là
+  để cách đọc run quyết định run được đọc thế nào.
+- Chọn episode: **mọi episode hai bên bất đồng về việc tới đích, cộng 4 episode
+  đầu trong phần còn lại**. Nhóm sau là đối chứng: arm giải thích được ca quyết
+  được mà cũng bịa lời giải cho ca không quyết được thì tệ hơn arm không làm gì,
+  và bộ chỉ toàn ca quyết được không phân biệt nổi hai loại đó.
+
+`doorway_v1` cho **9 packet**: 5 `outcome_only` (DWA timeout, VFH+ tới đích), 4
+`undecidable` không mang contrast nào.
+
+Trên đường tới đó còn một cổng lọc cũ trong `main()` vẫn loại report thiếu
+`comparison_pair` — đúng và vô hại hồi report như vậy không sinh case nào, thành
+loại âm thầm ngay khi `cases_from` biết đọc chúng. Dry run báo 2 cluster trong
+khi có 3.
+
+### Bug ref trùng, do dữ liệu mới phơi ra
+
+Lượt chạy đầu chết ở case đầu tiên, **trước mọi lượt gọi API, 0 đồng**:
+
+```
+EpisodeViewRefusal: two facts claim the ref 'obs:replan_storm:C5@4ec011c9a0c3'
+```
+
+Ref quan sát là `obs:{detector}:{label}@{episode}` — chỉ duy nhất chừng nào một
+candidate không kích cùng detector hai lần trong một episode. `doorway_v1` làm
+đúng thế: local planner giật sinh **hai** replan storm với hai cửa sổ. View từ
+chối cả packet thay vì để một cái thắng ngầm — chỗ đó đúng, không sửa. Sai ở
+thành phần của ref. Anh em cùng loại giờ đánh số từ 1, **tất cả**, vì ref trần
+đứng cạnh `#2` đọc như lỗi; detection đơn độc giữ nguyên ref cũ.
+
+### Kết quả trên ba cluster
+
+102 vòng, **$1,35**, không vi phạm veto:
+
+| Arm | Vòng | Abstain | Proposal | Contrast | Guard gỡ | Tỷ lệ gỡ |
+|---|---|---|---|---|---|---|
+| `ep_b1` | 51 | 24 | 33 | 1 | 70 | 0,68 |
+| `ep_no_union` | 51 | 21 | 45 | 0 | 76 | 0,63 |
+
+Contrast vẫn gần 0 — nhưng **lý do đổi hẳn**. Packet giờ có contrast support,
+model **có** trích chúng (`detection_only_on_loser` 34 lần). Không còn là thiếu
+dữ liệu. Trong 29 contrast được khai:
+
+| Điều khoản | Đạt |
+|---|---|
+| `subject_match` | 29/29 |
+| `contrast_support` | 28/29 |
+| `polarity_match` | 27/29 |
+| **`occurrence_evidence`** | **1/29** |
+
+Ba trên bốn gần như luôn đạt. **Mọi lần hạ cấp đều vì cùng một điều khoản.**
+
+Đọc câu thật: model dùng `obs:` khi khai `diagnosis` và `contrast:` khi khai
+`contrast`, **không bao giờ cả hai cùng lúc**. Hợp đồng đòi hai trích dẫn — một
+nói hai bên khác nhau, một nói cơ chế **đã xảy ra** ở episode này. Model đưa
+một, vì system nói khái niệm (*"evidence that the mechanism happened in this
+episode"*) mà không nói thao tác (*"đó là một ref thứ hai"*).
+
+### Arm prompt: đúng chỗ nhắm, hỏng chỗ không nhắm
+
+`ep_cite_two` khác `ep_b1` **đúng một câu**, thêm vào system chứ không sửa vào
+nó (mọi arm đã đo đều chạy không có nó; sửa thẳng là âm thầm chạy lại phép đo cũ
+dưới prompt chúng chưa từng thấy). Câu đó vào prompt checksum, và có test chốt
+**mọi prefix nó nêu phải là prefix `OCCURRENCE_PREFIXES` thật sự tính** — không
+có test đó thì một arm bảo model trích thứ guard bỏ qua sẽ trông như bản sửa.
+
+51 vòng, **$0,66**:
+
+| | `ep_b1` | `ep_no_union` | **`ep_cite_two`** |
+|---|---|---|---|
+| contrast khai | 16 | 13 | 16 |
+| `subject_match` | 16/16 | 13/13 | 16/16 |
+| `polarity_match` | 15/16 | 12/13 | 14/16 |
+| **`occurrence_evidence`** | 1/16 | 0/13 | **14/16** |
+| **`contrast_support`** | 15/16 | 13/13 | **5/16** |
+| **contrast sống sót** | 1 | 0 | **4** |
+
+`occurrence_evidence` **1/16 → 14/16**. Câu đó làm đúng việc của nó.
+
+`contrast_support` **15/16 → 5/16**. Đếm ref ra cơ chế:
+
+```
+ep_b1        {1 ref: 10, 2 ref: 6}   detection_only_on_loser 13 · component_differs 6
+ep_cite_two  {1 ref:  2, 2 ref: 14}  component_differs 11 · detection_only_on_loser 5
+```
+
+Model **đã** trích hai ref như được bảo. Nhưng nó đổi luôn **loại** contrast:
+từ `detection_only_on_loser` (strength `support`) sang `component_differs`
+(strength `context`). Ghép một contrast cấu trúc với ref quan sát nghe thuận hơn
+là ghép contrast dựa trên detection với chính ref của detection đó.
+
+**Đây là phát hiện đáng ghi hơn con số:** hợp đồng là **phép hội** bốn điều
+khoản, và model xử lý nó như một **ngân sách** — được bảo thêm một trích dẫn thì
+nó bỏ bớt chỗ khác. Sửa một mệnh đề làm lỗi **dịch chuyển**, không biến mất.
+
+Ròng vẫn tốt hơn: contrast sống sót 1 → 4, tỷ lệ guard gỡ 0,68 → 0,59, abstain
+24 → 20, proposal 33 → 45.
+
+### Vì sao dừng ở đây
+
+Đây đã là lần thứ hai sửa prompt rồi đo lại **trên đúng 17 case đó**. Lần thứ ba
+là điều chỉnh prompt cho vừa một bộ cụ thể không có hold-out —
+`holdout: False` và `conclusion_class: exploratory` đã khai từ đầu chính vì lý
+do này. Số sẽ đẹp lên; nó thôi nói được điều gì về bộ episode khác.
+
+Việc để dành, theo thứ tự đúng phương pháp: **sinh cluster thứ tư làm hold-out
+trước**, rồi mới chạy arm nêu cả hai ràng buộc (trích một ref `contrast:` mà
+platform đánh dấu `support`, **cộng** một ref occurrence).
+
+### P5 trả lời được gì
+
+**Trả lời được:**
+
+- **Không arm nào vi phạm veto nào** trên 153 vòng của ba cluster, kể cả
+  `candidate_ids_in_final = 0`.
+- Hợp đồng bằng chứng bị model xử như ngân sách, và **`occurrence_evidence` là
+  điều khoản chặn**: 1/29 khi không được nhắc, 14/16 khi được nhắc.
+- Một câu prompt dịch được lỗi từ mệnh đề này sang mệnh đề khác, không xoá được
+  nó — nêu được cơ chế, không chỉ nêu triệu chứng.
+- Chi phí ~0,013 USD mỗi episode mỗi arm với o4-mini.
+- Run **không có decision card** vẫn phân tích được, và cho những giải thích khó
+  nhất trong cả bộ cộng phần đối chứng để đo abstention.
+
+**Không trả lời được:** arm nào giải thích *đúng* hơn. Endpoint chính đòi chấm
+tay theo rubric r0.1.0, và 4 sheet đã sinh (**84 + 80 + 123 + 65 = 352 mục**),
+mù arm, chưa chấm.
+
+### Tổng chi
+
+| Lượt | USD |
+|---|---|
+| Stage 1 lần đầu (view rò id — bỏ) | 1,00 |
+| Stage 1 chạy lại | 0,87 |
+| Stage 2 | 0,89 |
+| Stage 3 (ba cluster, 2 arm × 3 lượt) | 1,35 |
+| Stage 4 (`ep_cite_two`, 3 lượt) | 0,66 |
+| **Tổng** | **4,77** / trần đã nâng 4,50 |
+
+Trần preregistration nâng $3,00 → $4,50 ngày 2026-08-29 với lý do **phạm vi**
+(bộ case từ 12 lên 17 vì mở khoá được cluster không card), ghi trong docstring
+`EpisodePreregistration`. Tổng thực tế **vượt trần $0,27** vì arm `ep_cite_two`
+là quyết định phát sinh sau khi nâng trần — ghi lại ở đây thay vì lặng lẽ, và
+lần sau trần phải nâng **trước** khi thêm arm chứ không phải sau.
+
+Sinh dữ liệu bằng sim: **0 USD**.

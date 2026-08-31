@@ -176,6 +176,23 @@ class ApiAgentGateway:
         report = self._lookup_run(run_id).report or {}
         return [item.model_dump(mode="json") for item in outcome_advice(build_outcome(report))]
 
+    def get_episode_verdict(self, run_id: str, episode_context_id: str) -> dict[str, Any]:
+        """One episode's own answer, straight from the deterministic route.
+
+        Trimmed to what a sentence can be built from: the packet itself
+        is several kilobytes of facts a tool result has no reason to
+        carry, and the model reads the panel's conclusions rather than
+        re-deriving them.
+        """
+        body = self._runs.episode_verdict(run_id, episode_context_id)
+        return {
+            "verdict": body["verdict"],
+            "diagnoses": body["diagnoses"],
+            "contrasts": body["contrasts"],
+            "ruled_out": body["ruled_out"],
+            "omissions": body["omissions"],
+        }
+
     def get_recommendation(self, task_profile_id: str | None = None) -> dict[str, Any]:
         """Which algorithm this deployment should use, from stored runs.
 

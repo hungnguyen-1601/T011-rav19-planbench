@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from planbench_agent.provider import LLMMessage, LLMProvider, LLMRequest
@@ -30,23 +30,30 @@ from planbench_analyst.analyst import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_TIMEOUT_S,
     AnalystRefusal,
+    RoundCost,
     catalog_text,
     propose,
 )
 from planbench_analyst.episode_guard import (
     CONTRAST,
     DIAGNOSIS,
+    EpisodeAnnotation,
     EpisodeRoundResult,
     episode_guard,
 )
 from planbench_analyst.episode_prompts import (
+    CONTRAST_CITATION_RULE,
+    EPISODE_REVISION_PREFACE,
     EPISODE_SYSTEM,
+    MAGNITUDE_PLACEHOLDER_RULE,
     build_episode_user_turn,
     episode_prompt_checksum,
     episode_schema,
 )
 from planbench_analyst.episode_view import EpisodeView, run_context_block
 from planbench_analyst.features import RoundFeatures
+from planbench_explanation.episode_floor import episode_floor
+from planbench_explanation.protocol import AnalysisResponse
 from planbench_explanation.tools import ToolCatalog
 
 
@@ -159,7 +166,11 @@ def run_episode_round(
         ),
     )
     request = LLMRequest(
-        system=EPISODE_SYSTEM,
+        system=(
+            EPISODE_SYSTEM
+            + (CONTRAST_CITATION_RULE if flags.contrast_citation_rule else "")
+            + (MAGNITUDE_PLACEHOLDER_RULE if flags.magnitude_placeholders else "")
+        ),
         messages=(LLMMessage.user(turn),),
         output_schema=episode_schema(discriminated_union=flags.discriminated_union),
         max_tokens=max_tokens,
@@ -186,12 +197,217 @@ def run_episode_round(
     for position, proposal in enumerate(kept):
         bearings[proposal.hypothesis_id] = positions.get(position, DIAGNOSIS)
 
-    return episode_guard(
+    result = episode_guard(
         report.response,
         view,
         catalog=cards,
         bearings=bearings,
         critic=flags.critic,
+    )
+    # The guard reads proposals and knows nothing about what the round
+    # spent getting them. Attached here, where both are in hand.
+    result = replace(result, cost=report.cost)
+
+    if flags.reword_once and _lost_everything_to_wording(result):
+        result = _reworded(
+            analysis,
+            view,
+            provider,
+            flags,
+            cards,
+            first=result,
+            turn=turn,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
+        )
+    if flags.floor_when_silent and not result.response.proposals:
+        result = _floor_after_silence(analysis, view, result)
+    return result
+
+
+def _floor_after_silence(
+    analysis: EpisodeRound, view: EpisodeView, silent: EpisodeRoundResult
+) -> EpisodeRoundResult:
+    """What the platform can say when nothing the model said survived.
+
+    **Sixty per cent of hold-out rounds ended with a blank screen**, and
+    every one of them for the same reason: the model wrote a number into
+    a sentence and rule 2 removed the sentence. It knew what happened
+    and said it in a form the platform cannot check. Meanwhile the floor
+    — what fired, and a difference only where one was found — was
+    computable the whole time, from the packet, for nothing.
+    So the reader gets that rather than nothing.
+
+    **It is labelled, not passed off.** The flag says the floor answered
+    and the guard's own reasons stay on the result, because the one
+    thing worse than a blank panel is a panel that reads as the
+    analyst's when the analyst's words were all refused. Whoever renders
+    this owes the reader that distinction; what this function owes them
+    is not to blur it here.
+
+    Deliberately not an abstention either: an abstention is the analyst
+    deciding there was nothing worth proposing, and the analyst decided
+    the opposite — loudly, several times, in sentences nobody could
+    check.
+    """
+    answer = episode_floor(view.packet)
+    if not answer.proposals:
+        # Nothing fired and nothing differed. The silence was the honest
+        # answer after all, and dressing it up would be inventing one.
+        return silent
+    response = AnalysisResponse(
+        analysis_run_id=analysis.analysis_run_id,
+        analyst_bundle_id=analysis.analyst_bundle_id,
+        proposals=tuple(answer.proposals),
+        abstained=False,
+    )
+    return replace(
+        silent,
+        response=response,
+        annotations={
+            proposal.hypothesis_id: EpisodeAnnotation(
+                bearing=answer.bearings[proposal.hypothesis_id]
+            )
+            for proposal in answer.proposals
+        },
+        flags=(*silent.flags, ("answered_by_floor", silent.response.abstention_reason or "")),
+    )
+
+
+#: Rules a rewrite can satisfy, because they are about how a sentence is
+#: written rather than about whether it is true.
+#:
+#: ``quantity_in_statement`` is the whole reason this exists: on the
+#: episodes the analyst is *best* at — one side reached the goal, the
+#: other did not, where a blind scoring pass marked it right 43 times
+#: out of 44 — nine of its eleven silences were "every proposal was
+#: refused (quantity_in_statement)". It knew the answer and wrote the
+#: number instead of citing it, and the round was lost over punctuation.
+#:
+#: ``magnitude_not_in_packet`` joins them for the same reason one step
+#: on. The placeholder is the legal way to state a figure, and this rule
+#: fires when the ref inside the braces resolves to nothing — the model
+#: asked the packet for a number the packet does not hold. That is a
+#: citation chosen wrongly, not a claim held wrongly: the finding may be
+#: exactly right and reachable by naming a ref that does resolve, or by
+#: dropping the figure. A hold-out episode with a supported contrast
+#: went silent on this alone.
+#:
+#: **Added by reasoning rather than by measurement**, unlike the two
+#: above, which were counted on recorded arms before they were written.
+#: What bounds the risk is that a rewrite is re-guarded like any other
+#: round: a retry that cites a second ref nothing backs is refused
+#: again, and the cost of being wrong is one extra call.
+#:
+#: ``contradicts_verdict`` is deliberately absent. A statement handing
+#: the episode to the side the platform did not name is not badly
+#: worded, it is wrong, and inviting a rewrite would be inviting the
+#: same claim in safer words. ``claim_blocked_by_packet`` is absent for
+#: the same reason: the packet has withdrawn the right to make that kind
+#: of claim here, and no wording restores it.
+REWORDABLE_RULES: frozenset[str] = frozenset(
+    {"quantity_in_statement", "wording_above_associated", "magnitude_not_in_packet"}
+)
+
+
+def _lost_everything_to_wording(result: EpisodeRoundResult) -> bool:
+    """Every proposal removed, and every removal one a rewrite could fix."""
+    if result.response.proposals or not result.blocked:
+        return False
+    return all(item.rule in REWORDABLE_RULES for item in result.blocked)
+
+
+def _reworded(
+    analysis: EpisodeRound,
+    view: EpisodeView,
+    provider: LLMProvider,
+    flags: RoundFeatures,
+    cards: ToolCatalog,
+    *,
+    first: EpisodeRoundResult,
+    turn: str,
+    max_tokens: int,
+    timeout_s: float,
+) -> EpisodeRoundResult:
+    """One more turn, told exactly what was removed and why.
+
+    **One, not a loop.** A round that cannot say it in two turns is a
+    round whose problem is not the wording, and a loop would spend a
+    caller's money discovering that one turn at a time.
+
+    The first answer is kept if the second is empty too: a second
+    silence is still the honest answer, and it costs the reader nothing
+    to be told the first reason rather than a later one.
+    """
+    complaints = "\n".join(
+        f"- removed by rule `{item.rule}`: {item.detail}" for item in first.blocked
+    )
+    revision = (
+        turn
+        + EPISODE_REVISION_PREFACE
+        + "Every hypothesis you offered was removed before it reached the reader:\n"
+        + complaints
+        + "\nSay the same things again without what was refused. Cite the ref for "
+        "any number rather than writing the number.\n"
+    )
+    request = LLMRequest(
+        system=(
+            EPISODE_SYSTEM
+            + (CONTRAST_CITATION_RULE if flags.contrast_citation_rule else "")
+            + (MAGNITUDE_PLACEHOLDER_RULE if flags.magnitude_placeholders else "")
+        ),
+        messages=(LLMMessage.user(revision),),
+        output_schema=episode_schema(discriminated_union=flags.discriminated_union),
+        max_tokens=max_tokens,
+    )
+    answer = provider.complete(request)
+    positions = declared_bearings(_payload_of(answer))
+    report = propose(
+        analysis,
+        view,  # type: ignore[arg-type]
+        _Replayed(answer, provider),
+        discriminated_union=flags.discriminated_union,
+        max_tokens=max_tokens,
+        timeout_s=timeout_s,
+        menu=cards,
+    )
+    bearings = {
+        proposal.hypothesis_id: positions.get(position, DIAGNOSIS)
+        for position, proposal in enumerate(report.response.proposals)
+    }
+    second = episode_guard(
+        report.response,
+        view,
+        catalog=cards,
+        bearings=bearings,
+        critic=flags.critic,
+    )
+    # Both turns were paid for whichever answer is kept, so both are
+    # counted. A retry billed as one turn is a cap on nothing.
+    spent = RoundCost(
+        input_tokens=first.cost.input_tokens + report.cost.input_tokens,
+        output_tokens=first.cost.output_tokens + report.cost.output_tokens,
+    )
+    kept = second if second.response.proposals else first
+    return replace(
+        kept,
+        cost=spent,
+        blocked=(*first.blocked, *second.blocked),
+        flags=(
+            *kept.flags,
+            ("reworded_once", "kept_second" if second.response.proposals else "kept_first"),
+            # **Which turn each refusal belongs to.** `blocked` above is
+            # both turns concatenated, which is right for a spend count
+            # and useless for the question that matters: of the rounds
+            # offered a rewrite, the ones that fell silent anyway are
+            # where the wording rules are costing answers, and a merged
+            # list cannot say whether the second turn repeated the first
+            # mistake or made a new one. Recorded as a flag rather than
+            # a new field so nothing downstream has to change to ignore
+            # it.
+            ("blocked_first_turn", str(len(first.blocked))),
+            ("blocked_second_turn", str(len(second.blocked))),
+        ),
     )
 
 

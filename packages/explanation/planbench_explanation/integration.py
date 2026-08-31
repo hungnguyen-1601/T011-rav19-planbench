@@ -96,6 +96,44 @@ DETECTION_HYPOTHESES: dict[str, tuple[PropositionType, Subject, str]] = {
         "global_planner",
         "latency_vs_expanded_nodes",
     ),
+    # **`near_miss_cluster` is deliberately absent, and this note is
+    # what keeps it from being filled in carelessly.**
+    #
+    # It fires in six of the thirty hold-out episodes — the second most
+    # common detector here — and until 2026-08-31 its absence was silent
+    # rather than deliberate: the contrast it produced still carried
+    # ``support`` strength with no mechanism and no owner behind it, so
+    # a claim citing it could blame any component and nothing in the
+    # guard would disagree. Two of the three statements a scorer marked
+    # `wrong` on the last sweep were exactly that, and they blamed two
+    # different components. The strength is now demoted to ``context``
+    # where the mechanism is unknown, which stops the leak; this entry
+    # stays empty because the leak was the bug, not the emptiness.
+    #
+    # **What it must not be mapped to.** ``clearance_refusal`` says a
+    # controller chose not to enter a gap; ``geometric_infeasibility``
+    # says the gap was too small for the footprint. Both need evidence
+    # this packet does not carry: no controller decision is recorded,
+    # and the standing unknowns say in as many words that no passage
+    # width was measured. The model reached for ``clearance_refusal``
+    # anyway and rendered a minimum clearance as "a passage of width X"
+    # — a measurement nobody took, phrased as one that was.
+    #
+    # **What it would take.** A proposition of its own, say
+    # ``near_miss_association``, whose semantics stop at what the
+    # detector saw: the robot passed within X of an obstacle, on this
+    # side and not the other. Enough to say "A held more room than B",
+    # not enough to say why — which is the honest ceiling of a
+    # clearance sample. It needs an owner too, and the owner is not
+    # obvious: clearance is shaped by the costmap inflation, the local
+    # controller's tolerance and the global path at once, which is
+    # probably why this entry was never written.
+    #
+    # Not added here because nothing can measure it yet. A new
+    # proposition type reaches ``effect_direction``, the promotion
+    # matrix and every fixture, and no recorded arm has produced one —
+    # it would ship as an assertion rather than a finding, on the one
+    # scope where this project has learned to measure before changing.
 }
 
 #: The mechanism check each hypothesis would ultimately need, and the

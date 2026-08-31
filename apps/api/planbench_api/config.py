@@ -184,6 +184,35 @@ class Settings(BaseSettings):
     # Ceiling on episodes the agent may propose in one benchmark.
     agent_max_episodes: int = 60
 
+    # -- episode analyst (plan 2026-08-27) -----------------------------
+    #
+    # Whether a model may be asked why one episode went the way it did,
+    # and who may read the answer. **Off by default and off in every
+    # deployment that has not said otherwise**: the deterministic
+    # verdict and the model-free floor are served either way, and they
+    # are what the panel is built on. The model is the layer on top.
+    #
+    #   off               the route answers 404
+    #   shadow            the round runs and is written to an artifact;
+    #                     nothing model-written reaches the response
+    #   internal_preview  administrators read it; requires
+    #                     `episode_analyst_report_ref`
+    #   production        refused in this build — the mode exists so
+    #                     that granting it later is a grant and not a
+    #                     redesign
+    episode_analyst_mode: str = "off"
+    # The exploratory report the preview was opened on. A mode that
+    # turned on with nothing behind it would be a decision nobody
+    # recorded.
+    episode_analyst_report_ref: str = ""
+    # Per caller per day. Both, because a call returning a long answer
+    # and one returning a short answer cost differently, and a cap on
+    # one of them is a cap on neither.
+    episode_analyst_max_calls_per_day: int = 20
+    episode_analyst_max_tokens_per_day: int = 400_000
+    # Where a shadow round's artifact is written.
+    episode_analyst_artifact_root: str = "artifacts/analyst-episode"
+
     # -- decision layer (Phase 6.2) ------------------------------------
     #
     # Where a task profile's relative paths resolve. Every profile names

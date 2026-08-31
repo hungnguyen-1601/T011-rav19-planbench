@@ -75,10 +75,22 @@ EPISODE_VERDICT_CAVEAT = (
 
 VerdictBasis = Literal[
     "episode_decision_utility",
+    "outcome_margin",
     "outcome_only",
     "not_comparable",
     "undecidable",
 ]
+
+#: The column ``outcome_margin`` ranks on, and the direction it ranks in.
+#:
+#: One column, named here rather than chosen per call, because a basis
+#: that ranked on whichever column happened to differ would rank every
+#: episode and mean nothing. Travel time because it is the one the
+#: deployment profile already treats as an efficiency objective, and
+#: because less of it is better under every preference profile this
+#: platform ships — a claim that would need re-examining before a second
+#: column joined it.
+OUTCOME_MARGIN_COLUMN = "travel_time_s"
 
 ContrastKind = Literal[
     "outcome_differs",
@@ -195,6 +207,11 @@ class EpisodeVerdict(BaseModel):
             )
         if self.basis in ("not_comparable", "undecidable") and self.winner is not None:
             raise EpisodePacketRefusal(f"basis {self.basis!r} cannot name a winner")
+        if self.basis == "outcome_margin" and self.winner is None:
+            raise EpisodePacketRefusal(
+                "outcome_margin is the basis for an episode decided on a measured "
+                "column; with no winner it is undecidable and should say so"
+            )
         return self
 
     @property
@@ -258,6 +275,30 @@ class EpisodeContrast(BaseModel):
 
     @property
     def strength(self) -> Literal["context", "support"]:
+        """What this difference may carry on its own.
+
+        **A detection with no mechanism behind it carries nothing.** The
+        two detection kinds are graded ``support`` because a detector
+        firing on one side and not the other is evidence about a
+        mechanism — but only where the registry says which mechanism,
+        and which component owns it. ``near_miss_cluster`` has no entry
+        in ``DETECTION_HYPOTHESES``, so its contrasts arrive with
+        ``proposition_type`` and ``subject`` both ``None``, and a
+        strength of ``support`` then licenses a claim about a component
+        that nothing in the packet names.
+
+        It is the second most common detector in the hold-out cluster —
+        six of thirty episodes — and two of the three statements a
+        scorer marked `wrong` on the last sweep rest on it, each
+        blaming a different component: one the global planner, one the
+        local controller, neither contradicted by anything.
+
+        Demoted rather than withheld. The detection is real and stays in
+        the packet as an observation and a difference; what it stops
+        doing is standing behind an attribution.
+        """
+        if self.kind.startswith("detection_") and self.proposition_type is None:
+            return "context"
         return CONTRAST_STRENGTH[self.kind]
 
     @model_validator(mode="after")
@@ -329,6 +370,7 @@ def build_verdict(
     outcome_a: CandidateOutcome | None,
     outcome_b: CandidateOutcome | None,
     tie_epsilon: float,
+    outcome_margin: float | None = None,
 ) -> EpisodeVerdict:
     """Who won this episode, on the strongest basis the data supports.
 
@@ -395,6 +437,52 @@ def build_verdict(
             winner=winner,
             loser=loser,
         )
+
+    # **Both arrived, and one took materially longer.**
+    #
+    # This branch exists because the one below it was answering a
+    # different question from the one it appeared to answer. A candidate
+    # that fails a run-level gate is scored on no episode at all — every
+    # one of its rows carries ``episode_decision_utility: None`` — so a
+    # pairing where one side is gated out fell through to "undecidable"
+    # on all thirty of its episodes, including the ones where the two
+    # differed by a third of the journey. "Undecidable" then read as
+    # "these were alike" to everything downstream: no direction, so no
+    # contrast could be attached, so the packet offered nothing about a
+    # difference anybody could see in the numbers.
+    #
+    # The margin is **passed in and required**, exactly like
+    # ``tie_epsilon`` and for the same reason: this branch was written
+    # after somebody had already seen how far apart these episodes were,
+    # and a threshold chosen at that point is a threshold chosen to
+    # produce the answer that was wanted. ``None`` keeps the old
+    # behaviour, so no existing caller is silently re-decided.
+    if (
+        outcome_margin is not None
+        and outcome_a.success
+        and outcome_b.success
+        and (value_a := getattr(outcome_a, OUTCOME_MARGIN_COLUMN)) is not None
+        and (value_b := getattr(outcome_b, OUTCOME_MARGIN_COLUMN)) is not None
+    ):
+        if outcome_margin < 0:
+            raise EpisodePacketRefusal(
+                "outcome_margin is a margin, and a negative margin is not one"
+            )
+        slowest = max(value_a, value_b)
+        gap = abs(value_a - value_b) / slowest if slowest else 0.0
+        if gap >= outcome_margin:
+            # Less is better, which is the whole of the policy here and
+            # is why the column is fixed rather than passed: a caller
+            # free to name the column would also be free to name one
+            # where the direction is arguable.
+            winner = candidate_a if value_a < value_b else candidate_b
+            loser = candidate_b if value_a < value_b else candidate_a
+            return EpisodeVerdict(
+                **common,
+                basis="outcome_margin",
+                winner=winner,
+                loser=loser,
+            )
 
     # Both reached the goal, or neither did, and no utility was scored.
     # Two different failure reasons do **not** rank: this repository has
@@ -963,10 +1051,33 @@ class EpisodePacket(BaseModel):
         :attr:`run_context_unknowns` and carry no force: they describe
         what thirty episodes could not settle, and this is one episode
         with its own recording.
+
+        And one thing the packet's own shape forbids: see below.
         """
         blocked: set[PropositionType] = set()
         for unknown in self.known_unknowns:
             blocked.update(unknown.blocks_claim_types)
+        # **Nothing to lean on, so no component may be blamed.**
+        #
+        # Attributing the outcome to a component is the strongest thing
+        # this scope can say, and what licenses it is a contrast the
+        # packet itself marked ``support``. With none, the only
+        # difference on offer is ``component_differs``, which says in its
+        # own words that a mechanism "has to live in one of those" — it
+        # names where to look and asserts nothing about what happened.
+        #
+        # Two hand-scored arms attributed anyway, on episodes carrying no
+        # supported contrast at all: "the global_planner component
+        # difference explains why C5 achieved higher min clearance", and
+        # a path "causing C1 to traverse closer to obstacles and slow
+        # down". Both read as findings and rest on the difference alone.
+        #
+        # Declared here rather than refused in the guard so the model is
+        # told before it drafts. A rule that only refuses costs a round
+        # and hands back silence, which on this scope is the failure
+        # already being measured.
+        if not any(contrast.strength == "support" for contrast in self.contrasts):
+            blocked.add("component_specific_attribution")
         return tuple(sorted(blocked))  # type: ignore[return-value]
 
 

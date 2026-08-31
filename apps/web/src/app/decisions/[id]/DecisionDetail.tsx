@@ -51,6 +51,8 @@ import {
   selectedEpisode,
   type SelectionOrigin,
 } from "@/lib/episodeVerdict";
+import { clearEpisodeSelection, setEpisodeSelection } from "@/lib/episodeSelection";
+import { getCapabilities, type Capabilities } from "@/lib/agent";
 import { commonProgress, panelCandidates, sideProgress, sideTime } from "@/lib/replaySync";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { panelPlan } from "@/lib/explainPanel";
@@ -79,6 +81,7 @@ import {
   getDecision,
   getTrace,
   getEpisodeVerdict,
+  postEpisodeAnalysis,
   getReplaySync,
   getExemplars,
   noCardReason,
@@ -566,6 +569,12 @@ function TracePanel({ run }: { run: DecisionRun }) {
    *  about — with the confidence of one that was. */
   const [selectionOrigin, setSelectionOrigin] = useState<SelectionOrigin>("default");
   const [verdict, setVerdict] = useState<VerdictSlot>({ state: "idle" });
+  /** What this deployment allows, and whether this reader is one of
+   *  the people who may be shown it. Read once: the control is drawn
+   *  from it, and a button that appears and then refuses is worse
+   *  than one that was never there. */
+  const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
+  const [asking, setAsking] = useState(false);
   const [slots, setSlots] = useState<Record<string, TraceSlot>>({});
   const [mode, setMode] = useState<"flat" | "raised">("flat");
   /* **One camera for the pair.** Each `Scene25D` used to keep its own
@@ -729,6 +738,46 @@ function TracePanel({ run }: { run: DecisionRun }) {
    * enough to show episode A's finding under episode B's heading.
    */
   useEffect(() => {
+    let live = true;
+    getCapabilities()
+      .then((found) => live && setCapabilities(found))
+      .catch(() => live && setCapabilities(null));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const mayAsk =
+    capabilities?.episode_analyst_mode !== undefined &&
+    capabilities.episode_analyst_mode !== "off" &&
+    Boolean(capabilities.episode_analyst_visible);
+
+  const askTheModel = useCallback(async () => {
+    const chosen = selectedEpisode({ episodeId, origin: selectionOrigin });
+    if (!chosen || candidates.length < 2 || asking) return;
+    setAsking(true);
+    try {
+      const answered = await postEpisodeAnalysis(
+        run.id,
+        chosen,
+        candidates[0].candidate_id,
+        candidates[1].candidate_id,
+      );
+      setVerdict({ state: "ready", view: answered });
+    } catch {
+      // The deterministic half is already on screen and stays there.
+      // A failed request to the model half is not a reason to take it
+      // away, and the panel says nothing new rather than something wrong.
+    } finally {
+      setAsking(false);
+    }
+  }, [asking, candidates, episodeId, run.id, selectionOrigin]);
+
+  // A selection that outlived this page would attach the next question
+  // to an episode chosen before it, and nothing on screen would say so.
+  useEffect(() => clearEpisodeSelection, []);
+
+  useEffect(() => {
     const chosen = selectedEpisode({ episodeId, origin: selectionOrigin });
     if (!chosen || candidates.length < 2) {
       setVerdict({ state: "idle" });
@@ -832,6 +881,11 @@ function TracePanel({ run }: { run: DecisionRun }) {
   const chooseEpisode = (episode: string, scroll = false) => {
     setEpisodeId(episode);
     setSelectionOrigin("user");
+    // Published for the dock, which floats over this page from the
+    // shell and cannot see this state. Only from here: the episode the
+    // replay opened on is a default, and a question attached to it
+    // would be a question about something nobody pointed at.
+    setEpisodeSelection({ runId: run.id, episodeContextId: episode });
     if (scroll) window.setTimeout(() => comparisonRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
 
@@ -981,6 +1035,8 @@ function TracePanel({ run }: { run: DecisionRun }) {
           }
           episodeSelected={Boolean(selectedEpisode({ episodeId, origin: selectionOrigin }))}
           onSeek={seekFrom}
+          onAskTheModel={mayAsk ? askTheModel : undefined}
+          asking={asking}
         />
         <div className="episode-comparison-grid">
           {/* The same choice the comparison grid made. Two panels on one
@@ -1415,7 +1471,14 @@ function EpisodeOutcomes({
   const { t } = useTranslation();
   const [failuresOnly, setFailuresOnly] = useState(false);
   const [page, setPage] = useState(0);
-  const candidates = run.report?.candidates ?? [];
+  // **The same order the canvases use.** This table read the report's
+  // own list while the replay below it reads `panelCandidates`, which
+  // puts the recommended candidate first — so a run whose winner was
+  // filed second had its columns in one order and its canvases labelled
+  // A and B in the other, on one screen, for the same two stacks. The
+  // comment on `panelCandidates` states the rule this broke: one page
+  // must not call the same candidate two things.
+  const candidates = panelCandidates(run, run.report?.candidates ?? []);
   const episodes = run.report?.sample?.episode_context_ids ?? [];
 
   // **Follow the selection onto its page.** Exemplar chips and the

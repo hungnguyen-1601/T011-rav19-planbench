@@ -272,6 +272,81 @@ class TestResolvingTheContext:
         assert _resolve_context(self._agent(), None) == ""
 
 
+class TestTheEpisodeOnScreen:
+    """An episode is a third identifier, and no more than an identifier.
+
+    Two failures this guards. One: an episode id the run never ran would
+    put the model in front of a record that does not exist and it would
+    talk about it, which is the failure the whole context mechanism was
+    built to avoid. Two: the replay opens on the first episode so its
+    canvases are not blank, so a dock that always sent one would attach
+    every question to an episode nobody chose.
+    """
+
+    @staticmethod
+    def _agent(**gateway):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(gateway=SimpleNamespace(**gateway))
+
+    def _run(self, episodes):
+        return self._agent(
+            get_decision_run=lambda run_id: {
+                "identity": {"task_profile_id": "open_hall_v2"},
+                "sample": {"episode_context_ids": episodes},
+            },
+            get_deployment=lambda profile_id: {"id": profile_id},
+        )
+
+    def test_an_episode_the_run_ran_is_named(self):
+        from planbench_api.routers.agent import ChatContext, _resolve_context
+
+        preamble = _resolve_context(
+            self._run(["ep00", "ep01"]),
+            ChatContext(run_id="r-1", episode_context_id="ep01"),
+        )
+        assert "episode ep01" in preamble
+        assert "decision run r-1" in preamble
+
+    def test_an_episode_the_run_never_ran_is_dropped(self):
+        from planbench_api.routers.agent import ChatContext, _resolve_context
+
+        preamble = _resolve_context(
+            self._run(["ep00"]),
+            ChatContext(run_id="r-1", episode_context_id="ep99"),
+        )
+        assert "ep99" not in preamble
+        assert "decision run r-1" in preamble, "the run still resolved"
+
+    def test_no_episode_is_the_ordinary_case(self):
+        from planbench_api.routers.agent import ChatContext, _resolve_context
+
+        preamble = _resolve_context(self._run(["ep00"]), ChatContext(run_id="r-1"))
+        assert "episode" not in preamble
+
+    def test_the_episode_reads_first_because_it_is_the_narrowest(self):
+        from planbench_api.routers.agent import ChatContext, _resolve_context
+
+        preamble = _resolve_context(
+            self._run(["ep00"]),
+            ChatContext(run_id="r-1", episode_context_id="ep00"),
+        )
+        assert preamble.index("episode ep00") < preamble.index("decision run r-1")
+
+
+class TestTheEpisodeVerdictTool:
+    def test_the_dock_can_ask_for_one_episode(self, client, alice_headers):
+        """A decision card ranks candidates over every episode and cannot
+        say which side any one of them went to. Without this tool the
+        model would answer that question from a replay it cannot see."""
+        body = client.get("/api/v1/agent/capabilities", headers=alice_headers).json()
+        assert "get_episode_verdict" in body["tools"]
+
+    def test_it_is_read_only_like_every_other_tool(self, client, alice_headers):
+        body = client.get("/api/v1/agent/capabilities", headers=alice_headers).json()
+        assert body["forbidden"], "the forbidden list is what makes read-only a claim"
+
+
 class TestTheContextAgainstARealRun:
     """The stubs above describe the rule; this one meets the gateway.
 

@@ -303,6 +303,33 @@ def build_registry(
             handler=lambda args: gateway.get_outcome(str(args["run_id"])),
         ),
         Tool(
+            name="get_episode_verdict",
+            description=(
+                "Which of the two stacks took one episode of a run, what happened "
+                "on each side of it, and which differences between them carry "
+                "evidence. Deterministic, and the only grounded answer about a "
+                "single episode: read it before saying anything about one, because "
+                "a decision card ranks candidates over every episode and cannot "
+                "say which side any one of them went to."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "run_id": {"type": "string", "description": "Run id."},
+                    "episode_context_id": {
+                        "type": "string",
+                        "description": "Which episode of that run.",
+                    },
+                },
+                "required": ["run_id", "episode_context_id"],
+                "additionalProperties": False,
+            },
+            effect=Effect.READ,
+            handler=lambda args: gateway.get_episode_verdict(
+                str(args["run_id"]), str(args["episode_context_id"])
+            ),
+        ),
+        Tool(
             name="get_recommendation",
             description=(
                 "Which algorithm a deployment should use, argued from its stored "

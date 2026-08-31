@@ -53,15 +53,22 @@ describe("which two candidates the page is about", () => {
     const candidates = [candidate("eliminated"), candidate("runner_up"), candidate("winner")];
 
     expect(comparedPair(run(PAIR, candidates))).toEqual(["winner", "runner_up"]);
+    // The pair, in the order the report filed them — the eliminated one
+    // is dropped, the other two keep their places.
     expect(panelCandidates(run(PAIR, candidates), candidates).map((c) => c.candidate_id)).toEqual([
-      "winner",
       "runner_up",
+      "winner",
     ]);
   });
 
-  it("puts the winner on the left, whatever order the report used", () => {
+  it("leaves the reader's own order alone", () => {
+    // It used to put the winner first. "Candidate A" is the word the
+    // launch form asked the reader for, and the report keeps that
+    // order; ranking it again on the way to the canvas told somebody
+    // who filed astar+dwa as A that their A was B. The rank is on the
+    // page already, in the conclusion, in words.
     const candidates = [candidate("runner_up"), candidate("winner")];
-    expect(panelCandidates(run(PAIR, candidates), candidates)[0].candidate_id).toBe("winner");
+    expect(panelCandidates(run(PAIR, candidates), candidates)[0].candidate_id).toBe("runner_up");
   });
 
   it("has no pair when the run ranked nobody", () => {

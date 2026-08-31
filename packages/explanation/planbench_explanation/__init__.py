@@ -183,6 +183,12 @@ from planbench_explanation.levels import (
     level_rank,
     weakest,
 )
+from planbench_explanation.magnitudes import (
+    MagnitudeRefusal,
+    placeholders_in,
+    render,
+    unresolvable,
+)
 from planbench_explanation.map_features import (
     MapFeatureRefusal,
     RouteFeatures,
@@ -528,6 +534,10 @@ __all__ = [
     "RunOutcome",
     "SIDECAR_FILENAME",
     "SIDECAR_SCHEMA_VERSION",
+    "MagnitudeRefusal",
+    "placeholders_in",
+    "render",
+    "unresolvable",
     "STANDING_UNKNOWNS",
     "SUM_TOLERANCE",
     "ScoreBoard",

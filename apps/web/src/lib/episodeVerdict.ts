@@ -116,6 +116,21 @@ export interface EpisodeVerdictView {
     bearings: Record<string, string>;
   };
   omissions: string[];
+  /** Present only on the analysis route, and only where the
+   *  deployment and the reader's role both allow it. */
+  model?: {
+    response: {
+      abstained: boolean;
+      abstention_reason: string | null;
+      proposals: EpisodeFloorProposal[];
+    };
+    annotations: Record<string, { bearing: string }>;
+  } | null;
+  audit?: {
+    blocked?: { hypothesis_id: string; rule: string; detail: string }[];
+    model_failed?: string;
+  } | null;
+  mode?: string;
   candidate_a: string;
   candidate_b: string;
   episode_context_id: string;

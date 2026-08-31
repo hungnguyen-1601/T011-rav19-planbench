@@ -310,6 +310,49 @@ class ReportExemplarRefusal(ExemplarRefusal):
     """A stored report cannot support the preregistered selection."""
 
 
+class CardlessPairRefusal(ValueError):
+    """A run with no card that still may not be read as a pair."""
+
+
+def cardless_pair(report: Mapping[str, Any]) -> tuple[str, str]:
+    """The two candidates a run with no card compared, or a refusal.
+
+    A card is refused when fewer than two candidates clear the six
+    gates, and that refusal is about a **deployment** claim: nobody may
+    be told which stack to ship. It says nothing about whether one stack
+    reached the goal in a given episode and the other did not, which is
+    a different claim, settled without any utility at all, and the one a
+    reader with a replay open is actually asking.
+
+    So the pair is looked up rather than refused — but only where there
+    is nothing to look up wrongly.
+
+    **Refuses on three or more.** With a card the pair is recorded and
+    the statistics chose it; without one, picking two out of three is a
+    choice made after the numbers are visible, which is the move a
+    preregistration exists to stop. Two candidates leave nothing to
+    choose.
+
+    Ordered by id rather than by outcome, for the same reason: ordering
+    by who won would let the reading of a run decide how the run is
+    read.
+    """
+    ids = [
+        candidate_id
+        for candidate_id in sorted(
+            str(candidate.get("candidate_id") or "") for candidate in report.get("candidates", ())
+        )
+        if candidate_id
+    ]
+    if len(ids) != 2:
+        raise CardlessPairRefusal(
+            f"a run with no card is read as a pair only when it compared exactly two "
+            f"candidates; this one has {len(ids)}, and choosing two of them is a choice "
+            f"nobody has made"
+        )
+    return ids[0], ids[1]
+
+
 def compared_pair(report: Mapping[str, Any]) -> tuple[str, str] | None:
     """Which two candidates the paired comparison was about.
 
