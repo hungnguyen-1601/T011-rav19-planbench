@@ -464,3 +464,129 @@ class TestTheHandoff:
         log = tmp_path / "installer.log"
 
         assert f'/LOG="{log}"' in self._script(tmp_path, log=log)
+
+
+class TestARefusedCredential:
+    """A token that GitHub will not accept must cost nothing.
+
+    The credential is optional everywhere else in this module — it buys
+    a larger rate limit against a repository that is public anyway — so
+    a machine whose token has expired, been revoked or been mistyped
+    should end up exactly where a machine with no token stands. It did
+    not: every check answered 401, `offer` logged a failure and returned
+    False, and the app stopped updating with the cause sitting in an
+    environment variable nobody had reason to look at.
+    """
+
+    @staticmethod
+    def _urlopen(monkeypatch, *, payload: bytes, bodies: dict[str, bytes] | None = None):
+        """Refuse any signed request; answer any unsigned one.
+
+        ``bodies`` maps a substring of the URL to what that URL answers,
+        for the tests that need the two endpoints to differ; ``payload``
+        is what everything else answers.
+        """
+        seen: list[str] = []
+
+        class Answer:
+            headers: dict[str, str] = {}
+
+            def __init__(self, body: bytes) -> None:
+                self.body = body
+
+            def read(self, *_args) -> bytes:
+                return self.body
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_exc) -> bool:
+                return False
+
+        def fake_urlopen(request, timeout=None):
+            credential = request.get_header("Authorization") or ""
+            seen.append(credential)
+            if credential:
+                raise updater.urllib.error.HTTPError(
+                    request.full_url, 401, "Bad credentials", {}, None
+                )
+            for key, body in (bodies or {}).items():
+                if key in request.full_url:
+                    return Answer(body)
+            return Answer(payload)
+
+        monkeypatch.setattr(updater.urllib.request, "urlopen", fake_urlopen)
+        return seen
+
+    def test_it_retries_without_the_token_and_gets_its_answer(self, monkeypatch) -> None:
+        seen = self._urlopen(monkeypatch, payload=b"the body")
+
+        assert (
+            updater._request("https://x/y", "stale-token", accept="application/json") == b"the body"
+        )
+        # Signed first, because a working token is the cheaper path; the
+        # unsigned attempt is what makes the outcome the same as having
+        # no token at all rather than worse than it.
+        assert [bool(credential) for credential in seen] == [True, False]
+
+    def test_an_unsigned_401_is_still_a_failure(self, monkeypatch) -> None:
+        """Nothing to fall back to, so this one has to be reported.
+
+        Retrying an already-anonymous request would be an infinite loop
+        dressed as resilience.
+        """
+
+        def fake_urlopen(request, timeout=None):
+            raise updater.urllib.error.HTTPError(request.full_url, 401, "no", {}, None)
+
+        monkeypatch.setattr(updater.urllib.request, "urlopen", fake_urlopen)
+        with pytest.raises(updater.UpdateError):
+            updater._request("https://x/y", accept="application/json")
+
+    def test_a_rate_limit_is_not_retried_anonymously(self, monkeypatch) -> None:
+        """403 keeps the token, because dropping it makes the limit worse.
+
+        A 403 from this API is nearly always the hourly budget rather
+        than the credential, and the anonymous budget is the smaller of
+        the two — so retrying unsigned would trade a wait for a refusal.
+        """
+        attempts: list[str] = []
+
+        def fake_urlopen(request, timeout=None):
+            attempts.append(request.get_header("Authorization") or "")
+            raise updater.urllib.error.HTTPError(request.full_url, 403, "rate limited", {}, None)
+
+        monkeypatch.setattr(updater.urllib.request, "urlopen", fake_urlopen)
+        with pytest.raises(updater.UpdateError):
+            updater._request("https://x/y", "good-token", accept="application/json")
+        assert len(attempts) == 1
+
+    def test_the_whole_flow_still_finds_a_release(self, monkeypatch, tmp_path) -> None:
+        """The point of the fix, stated end to end.
+
+        With a stale token set, `offer` must reach the same conclusion an
+        unconfigured machine reaches: there is a newer version, and it
+        asks.
+
+        Through the **API** path specifically. The manifest is fetched
+        unsigned already, so it would have survived a bad token without
+        any of this; the listing is the request that carries the
+        credential, and the only way to reach it is to make the manifest
+        unusable — which is what a machine sees whenever the newest tag
+        in the repository is not a desktop release.
+        """
+        monkeypatch.setenv(updater.TOKEN_ENV, "stale-token")
+        seen = self._urlopen(
+            monkeypatch,
+            payload=json.dumps([_release_payload("desktop-v9.9.9")]).encode(),
+            bodies={"releases/latest/download": b"{}"},
+        )
+        asked: list[str] = []
+        monkeypatch.setattr(updater, "ask", lambda release: asked.append(release.version) or False)
+
+        updater.offer("0.1.0", tmp_path, ["python"])
+
+        assert asked == ["9.9.9"]
+        # The manifest unsigned, then the listing signed and refused,
+        # then the listing again without the token.
+        assert [bool(credential) for credential in seen] == [False, True, False]
