@@ -1,13 +1,22 @@
-# Cham tay, mu arm - gom theo episode (rubric r0.1.0)
+# Cham tay, mu arm - gom theo episode (rubric r0.2.0)
 
-37 muc | 30 episode | nguon: `holdout-b1`
+38 muc | 30 episode | nguon: `holdout-magnitudes`
 
-Nguoi ra soat: **An Tong** | phan loai: **holdout** |
-ngay ra soat: **2026-08-30** | trang thai: **complete - 30/30 packet**
 
-> Diem tu ban truoc da duoc ra lai tren PACKET v2. Co **1 hieu chinh**:
-> muc 015 doi R3 `some` thanh `all` vi packet v2 co
-> `contrast:component_differs:1`; 36 muc con lai giu nguyen.
+> **Ban nay do Claude cham, KHONG phai An.** Prereg ghi
+> `scoring: blind_to_arm_single_scorer`; nguoi cham nay **khong mu arm** -
+> no biet day la `holdout-magnitudes` va da du doan truoc ket qua. Ban nay
+> la ban chi bao, **khong thay duoc** mot luot An cham mu cho viec so arm
+> chinh thuc.
+>
+> Cot R1-R5 mang sang tu ban r0.1.0 nen dung **tu vung cu**
+> (`plausible_other`, khong co cot R4). Chua so duoc voi ban An cham lai
+> `holdout-b1`. **Chi cot R6 la so duoc.**
+>
+> Nua im lang cua R6 (`silent_wrongly` / `silent_correctly`) la **tat dinh**:
+> (arm im lang?) x (packet co contrast `support`?). Khong co phan doan trong do.
+> Chi 17 episode co noi la can doc, va 2 trong so do nam ngay ranh gioi -
+> danh dau bang comment trong file.
 
 Moi episode: doc khoi **PACKET** mot lan, roi cham moi muc duoi no.
 
@@ -15,6 +24,16 @@ Moi episode: doc khoi **PACKET** mot lan, roi cham moi muc duoi no.
 - **R2** `subject` co dung thanh phan cau noi toi khong - `yes` / `no`
 - **R3** moi ref mo duoc trong packet **va** noi ve dung mechanism - `all` / `some` / `none`
 - **R5** cho khong de xuat gi: im lang co dung cho khong - `correct` / `should_have`
+
+**R6 cham theo episode, khong theo cau.** R1-R5 hoi *cau nay co dung khong*; mot arm im lang ca episode van dat diem cao, va do la chuyen da xay ra. R6 hoi dung cau hoi cua thi nghiem: **episode nay, no co noi duoc vi sao ben thang hon ben thua khong**.
+
+- `explains` - neu mot mechanism khac nhau giua hai ben **va** noi vao ket qua, co ref mo duoc
+- `describes_only` - dung, nhung chi ta chuyen gi xay ra; khong tra loi vi sao ben nay hon
+- `silent_wrongly` - packet co du de tra loi ma khong noi gi
+- `silent_correctly` - packet that su khong do duoc cau why
+- `wrong` - khang dinh mot why ma packet phan lai
+
+Mau so **do sheet tinh, khong phai nguoi cham quyet**: episode nao co it nhat mot contrast `support` thi duoi tieu de co dong `packet co the tra loi why`. Cham `silent_correctly` o mot episode nhu the la mau thuan voi packet.
 
 Khong muc nao noi arm nao viet no, cung khong noi no thuoc luot chay nao.
 Dung doan.
@@ -65,13 +84,25 @@ Dung doan.
 
 </details>
 
-### 001 - **khong de xuat gi**
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> every proposal was refused before submission (quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
+> **packet co the tra loi why** - co contrast `support`.
+
+| explains |
+|---|
+| explains |
+
+### 001
+
+> The local_controller on C5 entered a local minimum entrapment (stuck_cluster) lasting 6 seconds, more severe than in C1, which delayed its progress relative to C1.
+
+- register: `diagnosis` | subject: `local_controller` | type: `local_minimum_entrapment`
+- refs: `contrast:component_differs:2`, `contrast:detection_worse_on_loser:1`
+- contract: `contrast_support`, `subject_match`, `polarity_match`
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | should_have |
+| holds | yes | all | n/a |
 
 ---
 
@@ -118,6 +149,14 @@ Dung doan.
 > One episode. There is no confidence interval on a single sample, and this is not the run's verdict: the decision card ranks candidates over every episode that was run.
 
 </details>
+
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
+
+> **packet co the tra loi why** - co contrast `support`.
+
+| silent_wrongly |
+|---|
+| silent_wrongly |
 
 ### 002 - **khong de xuat gi**
 
@@ -174,6 +213,14 @@ Dung doan.
 
 </details>
 
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
+
+> packet khong co contrast `support`.
+
+| silent_correctly |
+|---|
+| silent_correctly |
+
 ### 003 - **khong de xuat gi**
 
 > every proposal was refused before submission (quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
@@ -220,6 +267,14 @@ Dung doan.
 > One episode. There is no confidence interval on a single sample, and this is not the run's verdict: the decision card ranks candidates over every episode that was run.
 
 </details>
+
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
+
+> packet khong co contrast `support`.
+
+| silent_correctly |
+|---|
+| silent_correctly |
 
 ### 004 - **khong de xuat gi**
 
@@ -281,13 +336,37 @@ Dung doan.
 
 </details>
 
-### 005 - **khong de xuat gi**
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> every proposal was refused before submission (quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
+> **packet co the tra loi why** - co contrast `support`.
+
+| explains |
+|---|
+| explains |
+
+### 005
+
+> local_controller experienced a more severe stuck_cluster on C1 than on C5, causing C1 to be stopped for 21.7 s
+
+- register: `diagnosis` | subject: `local_controller` | type: `local_minimum_entrapment`
+- refs: `contrast:detection_worse_on_loser:3`
+- contract: `contrast_support`, `subject_match`, `polarity_match`
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | should_have |
+| holds | yes | all | n/a |
+
+### 006
+
+> global_planner triggered a replan_storm on C1 but not on C5, causing additional replanning of 3 replans
+
+- register: `diagnosis` | subject: `global_planner` | type: `replan_instability`
+- refs: `contrast:detection_only_on_loser:2`
+- contract: `contrast_support`, `subject_match`, `polarity_match`
+
+| R1 | R2 | R3 | R5 |
+|---|---|---|---|
+| holds | yes | all | n/a |
 
 ---
 
@@ -338,17 +417,21 @@ Dung doan.
 
 </details>
 
-### 006
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> The local_controller in C5 encountered a stuck_cluster detection with greater severity, resulting in longer stops than C1 in this episode
+> **packet co the tra loi why** - co contrast `support`.
 
-- register: `diagnosis` | subject: `local_controller` | type: `local_minimum_entrapment`
-- refs: `contrast:detection_worse_on_loser:2`
-- contract: `contrast_support`, `subject_match`, `polarity_match`
+| silent_wrongly |
+|---|
+| silent_wrongly |
+
+### 007 - **khong de xuat gi**
+
+> every proposal was refused before submission (quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| holds | yes | all | n/a |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -396,7 +479,15 @@ Dung doan.
 
 </details>
 
-### 007 - **khong de xuat gi**
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
+
+> packet khong co contrast `support`.
+
+| silent_correctly |
+|---|
+| silent_correctly |
+
+### 008 - **khong de xuat gi**
 
 > every proposal was refused before submission (quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
 
@@ -450,9 +541,17 @@ Dung doan.
 
 </details>
 
-### 008 - **khong de xuat gi**
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> every proposal was refused before submission (quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
+> **packet co the tra loi why** - co contrast `support`.
+
+| silent_wrongly |
+|---|
+| silent_wrongly |
+
+### 009 - **khong de xuat gi**
+
+> every proposal was refused before submission (magnitude_not_in_packet, quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
@@ -505,7 +604,15 @@ Dung doan.
 
 </details>
 
-### 009 - **khong de xuat gi**
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
+
+> **packet co the tra loi why** - co contrast `support`.
+
+| silent_wrongly |
+|---|
+| silent_wrongly |
+
+### 010 - **khong de xuat gi**
 
 > every proposal was refused before submission (quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
 
@@ -559,13 +666,36 @@ Dung doan.
 
 </details>
 
-### 010 - **khong de xuat gi**
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> every proposal was refused before submission (quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
+> **packet co the tra loi why** - co contrast `support`.
+
+| explains |
+|---|
+| explains |
+
+### 011
+
+> The local_controller on C5 experienced a local minimum entrapment via a stuck_cluster that lasted 5.8, delaying C5 more than C1
+
+- register: `contrast` | subject: `local_controller` | type: `local_minimum_entrapment`
+- refs: `contrast:detection_worse_on_loser:1`, `obs:stuck_cluster:C5@7764fd5de7a5`
+- contract: `contrast_support`, `occurrence_evidence`, `subject_match`, `polarity_match`
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | should_have |
+| holds | yes | all | n/a |
+
+### 012
+
+> The local_controller on C1 experienced a local minimum entrapment via a stuck_cluster that lasted 1.3, causing a minor delay
+
+- register: `diagnosis` | subject: `local_controller` | type: `local_minimum_entrapment`
+- refs: `obs:stuck_cluster:C1@7764fd5de7a5`
+
+| R1 | R2 | R3 | R5 |
+|---|---|---|---|
+| holds | yes | all | n/a |
 
 ---
 
@@ -613,13 +743,27 @@ Dung doan.
 
 </details>
 
-### 011 - **khong de xuat gi**
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> every proposal was refused before submission (quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
+> **packet co the tra loi why** - co contrast `support`.
+
+| describes_only |
+
+*(ranh gioi: co mechanism dung ben thua va cite dung contrast `support`, nhung dung o cho so sanh muc do nang - khong noi tiep vao ket qua. Chat thi `describes_only`, rong thi `explains`.)*
+|---|
+| describes_only |  <!-- ranh gioi: chat thi describes_only, rong thi explains -->
+
+### 013
+
+> The local_controller on C5 experienced a local minimum entrapment in this episode, as shown by a stuck cluster lasting 5.9 seconds, which is materially worse than on C1
+
+- register: `diagnosis` | subject: `local_controller` | type: `local_minimum_entrapment`
+- refs: `contrast:component_differs:2`, `contrast:detection_worse_on_loser:1`
+- contract: `contrast_support`, `subject_match`, `polarity_match`
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | should_have |
+| holds | yes | all | n/a |
 
 ---
 
@@ -670,28 +814,21 @@ Dung doan.
 
 </details>
 
-### 012
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> Local_controller on C1 was trapped in a local minimum longer than on C5, causing C1 to lose to C5
+> **packet co the tra loi why** - co contrast `support`.
 
-- register: `diagnosis` | subject: `local_controller` | type: `local_minimum_entrapment`
-- refs: `contrast:detection_worse_on_loser:2`
-- contract: `contrast_support`, `subject_match`, `polarity_match`
+| silent_wrongly |
+|---|
+| silent_correctly |
 
-| R1 | R2 | R3 | R5 |
-|---|---|---|---|
-| holds | yes | all | n/a |
+### 014 - **khong de xuat gi**
 
-### 013
-
-> Global_planner on C1 experienced a latency spike in this episode
-
-- register: `diagnosis` | subject: `global_planner` | type: `component_specific_attribution`
-- refs: `obs:latency_spike:C1@8ca3fa8191d8`
+> every proposal was refused before submission (claim_blocked_by_packet, quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| holds | yes | all | n/a |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -741,13 +878,25 @@ Dung doan.
 
 </details>
 
-### 014 - **khong de xuat gi**
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> every proposal was refused before submission (quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
+> **packet co the tra loi why** - co contrast `support`.
+
+| wrong |
+|---|
+| wrong |
+
+### 015
+
+> costmap_inflation refused to maintain clearance above the minimum threshold 0.15, leading to the near miss cluster on C1
+
+- register: `diagnosis` | subject: `costmap_inflation` | type: `clearance_refusal`
+- refs: `contrast:detection_only_on_loser:1`
+- contract: `contrast_support`, `subject_match`, `polarity_match`
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | should_have |
+| plausible_other | yes | all | n/a |
 
 ---
 
@@ -795,17 +944,24 @@ Dung doan.
 
 </details>
 
-### 015
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> global_planner of C5 maintained a larger minimum clearance than the global_planner of C1 in this episode
+> packet khong co contrast `support`.
 
-- register: `diagnosis` | subject: `global_planner` | type: `component_specific_attribution`
-- refs: `contrast:component_differs:1`, `diag:C1.min_clearance`, `diag:C5.min_clearance`
-- contract: `occurrence_evidence`, `subject_match`
+| describes_only |
+|---|
+| describes_only |
+
+### 016
+
+> The local_controller of C5 initiated a replan during the episode, with a replan count of 1.
+
+- register: `diagnosis` | subject: `local_controller` | type: `replan_instability`
+- refs: `diag:C5.replan_count`
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| plausible_other | yes | all | n/a |
+| wrong | no | all | n/a |
 
 ---
 
@@ -853,27 +1009,35 @@ Dung doan.
 
 </details>
 
-### 016
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> The global_planner of C5 was C6, whereas C1 used C2
+> packet khong co contrast `support`.
 
-- register: `diagnosis` | subject: `global_planner` | type: `component_specific_attribution`
-- refs: `fact:candidate:C5.global_planner`, `fact:candidate:C1.global_planner`
-
-| R1 | R2 | R3 | R5 |
-|---|---|---|---|
-| holds | yes | all | n/a |
+| describes_only |
+|---|
+| describes_only |
 
 ### 017
 
-> The local_controller of C5 was C7, whereas C1 used C3
+> C1 experienced a stuck cluster that halted its progress for 3.1
 
-- register: `diagnosis` | subject: `local_controller` | type: `component_specific_attribution`
-- refs: `fact:candidate:C5.local_controller`, `fact:candidate:C1.local_controller`
+- register: `diagnosis` | subject: `local_controller` | type: `local_minimum_entrapment`
+- refs: `obs:stuck_cluster:C1@b219dbb9c044/stopped_seconds`
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
 | holds | yes | all | n/a |
+
+### 018
+
+> C5 triggered a single replan during the episode (1)
+
+- register: `diagnosis` | subject: `global_planner` | type: `replan_instability`
+- refs: `diag:C5.replan_count`
+
+| R1 | R2 | R3 | R5 |
+|---|---|---|---|
+| wrong | yes | all | n/a |
 
 ---
 
@@ -913,7 +1077,15 @@ Dung doan.
 
 </details>
 
-### 018 - **khong de xuat gi**
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
+
+> packet khong co contrast `support`.
+
+| silent_correctly |
+|---|
+| silent_correctly |
+
+### 019 - **khong de xuat gi**
 
 > every proposal was refused before submission (quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
 
@@ -967,13 +1139,38 @@ Dung doan.
 
 </details>
 
-### 019 - **khong de xuat gi**
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> every proposal was refused before submission (quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
+> **packet co the tra loi why** - co contrast `support`.
+
+| describes_only |
+
+*(ranh gioi: co mechanism dung ben thua va cite dung contrast `support`, nhung dung o cho so sanh muc do nang - khong noi tiep vao ket qua. Chat thi `describes_only`, rong thi `explains`.)*
+|---|
+| describes_only |  <!-- ranh gioi: chat thi describes_only, rong thi explains -->
+
+### 020
+
+> local_controller replan_count was 1 on C5, while C1 had 0
+
+- register: `diagnosis` | subject: `local_controller` | type: `replan_instability`
+- refs: `diag:C5.replan_count`, `diag:C1.replan_count`
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | should_have |
+| wrong | no | all | n/a |
+
+### 021
+
+> local_controller experienced more severe entrapment on C5, with a stuck_cluster causing a stop of 5.7 seconds, compared to 1.65 seconds on C1
+
+- register: `contrast` | subject: `local_controller` | type: `local_minimum_entrapment`
+- refs: `contrast:detection_worse_on_loser:1`, `obs:stuck_cluster:C5@b94539aed2d1/stopped_seconds`, `obs:stuck_cluster:C1@b94539aed2d1/stopped_seconds`
+- contract: `contrast_support`, `occurrence_evidence`, `subject_match`, `polarity_match`
+
+| R1 | R2 | R3 | R5 |
+|---|---|---|---|
+| holds | yes | all | n/a |
 
 ---
 
@@ -1021,9 +1218,17 @@ Dung doan.
 
 </details>
 
-### 020 - **khong de xuat gi**
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> every proposal was refused before submission (quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
+> **packet co the tra loi why** - co contrast `support`.
+
+| silent_wrongly |
+|---|
+| silent_wrongly |
+
+### 022 - **khong de xuat gi**
+
+> every proposal was refused before submission (wording_above_associated); an abstention with a reason beats a claim the platform would refuse
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
@@ -1075,23 +1280,21 @@ Dung doan.
 
 </details>
 
-### 021
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> The global_planner of C5 produced a path with higher minimum clearance than the global_planner of C1
+> packet khong co contrast `support`.
+
+| wrong |
+|---|
+| wrong |
+
+### 023
+
+> The global_planner of C1 generated a path with lower minimum clearance than C5, causing C1 to traverse closer to obstacles and slow down
 
 - register: `diagnosis` | subject: `global_planner` | type: `component_specific_attribution`
-- refs: `fact:candidate:C1.global_planner`, `fact:candidate:C5.global_planner`, `contrast:outcome_differs:3/min_clearance_loser`, `contrast:outcome_differs:3/min_clearance_winner`
-
-| R1 | R2 | R3 | R5 |
-|---|---|---|---|
-| plausible_other | yes | all | n/a |
-
-### 022
-
-> The local_controller of C5 achieved a faster traversal to the goal than the local_controller of C1
-
-- register: `diagnosis` | subject: `local_controller` | type: `component_specific_attribution`
-- refs: `fact:candidate:C1.local_controller`, `fact:candidate:C5.local_controller`, `contrast:outcome_differs:3/travel_time_s_loser`, `contrast:outcome_differs:3/travel_time_s_winner`
+- refs: `contrast:component_differs:1`, `contrast:outcome_differs:3/min_clearance_loser`, `contrast:outcome_differs:3/min_clearance_winner`
+- contract: `subject_match`
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
@@ -1144,7 +1347,15 @@ Dung doan.
 
 </details>
 
-### 023 - **khong de xuat gi**
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
+
+> **packet co the tra loi why** - co contrast `support`.
+
+| silent_wrongly |
+|---|
+| silent_wrongly |
+
+### 024 - **khong de xuat gi**
 
 > every proposal was refused before submission (quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
 
@@ -1199,12 +1410,20 @@ Dung doan.
 
 </details>
 
-### 024
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> local_controller on the losing candidate replanned more frequently than on the winning candidate, indicating potential instability
+> **packet co the tra loi why** - co contrast `support`.
+
+| describes_only |
+|---|
+| describes_only |
+
+### 025
+
+> local_controller on C1 triggered 3 replans, indicating more frequent recovery actions after the entrapment
 
 - register: `diagnosis` | subject: `local_controller` | type: `replan_instability`
-- refs: `diag:C1.replan_count`, `diag:C5.replan_count`
+- refs: `diag:C1.replan_count`
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
@@ -1257,17 +1476,25 @@ Dung doan.
 
 </details>
 
-### 025
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> The local_controller on C5 triggered a replan during the stuck_cluster delay, introducing instability that C1 did not experience
+> **packet co the tra loi why** - co contrast `support`.
 
-- register: `contrast` | subject: `local_controller` | type: `replan_instability`
-- refs: `contrast:detection_worse_on_loser:1`, `diag:C5.replan_count`, `diag:C1.replan_count`
-- contract: `contrast_support`, `occurrence_evidence`, `subject_match`, `polarity_match`
+| explains |
+|---|
+| explains |
+
+### 026
+
+> Local_controller on C5 experienced more local_minimum_entrapment than C1, as shown by stuck_cluster on C5 lasting 5.7, which delayed C5 relative to C1.
+
+- register: `diagnosis` | subject: `local_controller` | type: `local_minimum_entrapment`
+- refs: `contrast:component_differs:2`, `contrast:detection_worse_on_loser:1`
+- contract: `contrast_support`, `subject_match`, `polarity_match`
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| wrong | no | some | n/a |
+| holds | yes | all | n/a |
 
 ---
 
@@ -1315,12 +1542,20 @@ Dung doan.
 
 </details>
 
-### 026
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> global_planner of C5 produced trajectories with higher minimum clearance than global_planner of C1 in this episode
+> packet khong co contrast `support`.
+
+| wrong |
+|---|
+| wrong |
+
+### 027
+
+> The global_planner component difference explains why C5 achieved higher min clearance 0.22 and lower travel time 26.2.
 
 - register: `diagnosis` | subject: `global_planner` | type: `component_specific_attribution`
-- refs: `contrast:component_differs:1`, `contrast:outcome_differs:3/min_clearance_winner`, `contrast:outcome_differs:3/min_clearance_loser`
+- refs: `contrast:component_differs:1`, `contrast:outcome_differs:3`
 - contract: `subject_match`
 
 | R1 | R2 | R3 | R5 |
@@ -1376,9 +1611,17 @@ Dung doan.
 
 </details>
 
-### 027 - **khong de xuat gi**
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> every proposal was refused before submission (quantity_in_statement, wording_above_associated); an abstention with a reason beats a claim the platform would refuse
+> **packet co the tra loi why** - co contrast `support`.
+
+| silent_wrongly |
+|---|
+| silent_wrongly |
+
+### 028 - **khong de xuat gi**
+
+> every proposal was refused before submission (quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
@@ -1431,13 +1674,25 @@ Dung doan.
 
 </details>
 
-### 028 - **khong de xuat gi**
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> every proposal was refused before submission (quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
+> **packet co the tra loi why** - co contrast `support`.
+
+| explains |
+|---|
+| explains |
+
+### 029
+
+> The local_controller on C5 entrapped in a local minimum and triggered a stuck_cluster that delayed it by 5.75 seconds, compared to 1.3 seconds for C1
+
+- register: `diagnosis` | subject: `local_controller` | type: `local_minimum_entrapment`
+- refs: `contrast:detection_worse_on_loser:1`
+- contract: `contrast_support`, `subject_match`, `polarity_match`
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | should_have |
+| holds | yes | all | n/a |
 
 ---
 
@@ -1477,13 +1732,35 @@ Dung doan.
 
 </details>
 
-### 029 - **khong de xuat gi**
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> every proposal was refused before submission (quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
+> packet khong co contrast `support`.
+
+| describes_only |
+|---|
+| describes_only |
+
+### 030
+
+> The local_controller for C1 experienced a local minimum entrapment lasting 10.25 seconds.
+
+- register: `diagnosis` | subject: `local_controller` | type: `local_minimum_entrapment`
+- refs: `obs:stuck_cluster:C1@f11b8bfc70ba`
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| n/a | n/a | n/a | should_have |
+| holds | yes | all | n/a |
+
+### 031
+
+> The global_planner for C1 initiated 2 replans in this episode.
+
+- register: `diagnosis` | subject: `global_planner` | type: `replan_instability`
+- refs: `diag:C1.replan_count`
+
+| R1 | R2 | R3 | R5 |
+|---|---|---|---|
+| wrong | yes | all | n/a |
 
 ---
 
@@ -1524,38 +1801,35 @@ Dung doan.
 
 </details>
 
-### 030
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> local_controller of C5 experienced a stuck cluster in this episode
+> packet khong co contrast `support`.
 
-- register: `diagnosis` | subject: `local_controller` | type: `local_minimum_entrapment`
-- refs: `obs:stuck_cluster:C5@f4a50b33adf9`
-
-| R1 | R2 | R3 | R5 |
-|---|---|---|---|
-| holds | yes | all | n/a |
-
-### 031
-
-> local_controller of C1 experienced a stuck cluster in this episode
-
-- register: `diagnosis` | subject: `local_controller` | type: `local_minimum_entrapment`
-- refs: `obs:stuck_cluster:C1@f4a50b33adf9`
-
-| R1 | R2 | R3 | R5 |
-|---|---|---|---|
-| holds | yes | all | n/a |
+| describes_only |
+|---|
+| describes_only |
 
 ### 032
 
-> local_controller of C1 encountered a near miss cluster in this episode
+> local_controller of C5 performed a replan event with count 1
 
-- register: `diagnosis` | subject: `costmap_inflation` | type: `clearance_refusal`
-- refs: `obs:near_miss_cluster:C1@f4a50b33adf9`
+- register: `diagnosis` | subject: `local_controller` | type: `component_specific_attribution`
+- refs: `diag:C5.replan_count`
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
 | holds | no | all | n/a |
+
+### 033
+
+> costmap_inflation prevented closer passage when C1 had a near miss cluster with minimum clearance 0.15
+
+- register: `diagnosis` | subject: `costmap_inflation` | type: `clearance_refusal`
+- refs: `obs:near_miss_cluster:C1@f4a50b33adf9/min_clearance_m`
+
+| R1 | R2 | R3 | R5 |
+|---|---|---|---|
+| plausible_other | yes | all | n/a |
 
 ---
 
@@ -1603,17 +1877,21 @@ Dung doan.
 
 </details>
 
-### 033
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> global_planner of C5 produced a path with higher minimum clearance than global_planner of C1 in this episode
+> packet khong co contrast `support`.
 
-- register: `diagnosis` | subject: `global_planner` | type: `component_specific_attribution`
-- refs: `contrast:component_differs:1`, `contrast:outcome_differs:3/min_clearance_winner`, `contrast:outcome_differs:3/min_clearance_loser`, `fact:candidate:C1.global_planner`, `fact:candidate:C5.global_planner`
-- contract: `subject_match`
+| silent_correctly |
+|---|
+| silent_wrongly |
+
+### 034 - **khong de xuat gi**
+
+> every proposal was refused before submission (quantity_in_statement); an abstention with a reason beats a claim the platform would refuse
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
-| plausible_other | yes | all | n/a |
+| n/a | n/a | n/a | should_have |
 
 ---
 
@@ -1653,23 +1931,42 @@ Dung doan.
 
 </details>
 
-### 034
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> The local_controller of C5 encountered a local minimum entrapment, as indicated by the stuck_cluster detection
+> packet khong co contrast `support`.
+
+| describes_only |
+|---|
+| describes_only |
+
+### 035
+
+> Candidate C1 experienced a local minimum entrapment lasting 2.1 seconds.
 
 - register: `diagnosis` | subject: `local_controller` | type: `local_minimum_entrapment`
-- refs: `obs:stuck_cluster:C5@fd58ce16a90d`
+- refs: `obs:stuck_cluster:C1@fd58ce16a90d`
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
 | holds | yes | all | n/a |
 
-### 035
+### 036
 
-> The local_controller of C1 encountered a local minimum entrapment, as indicated by the stuck_cluster detection
+> The global_planner of C5 invoked 1 replanning attempts.
+
+- register: `diagnosis` | subject: `global_planner` | type: `replan_instability`
+- refs: `diag:C5.replan_count`
+
+| R1 | R2 | R3 | R5 |
+|---|---|---|---|
+| wrong | yes | all | n/a |
+
+### 037
+
+> Candidate C5 experienced a local minimum entrapment lasting 5.85 seconds.
 
 - register: `diagnosis` | subject: `local_controller` | type: `local_minimum_entrapment`
-- refs: `obs:stuck_cluster:C1@fd58ce16a90d`
+- refs: `obs:stuck_cluster:C5@fd58ce16a90d`
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|
@@ -1722,24 +2019,21 @@ Dung doan.
 
 </details>
 
-### 036
+**R6 - episode nay co giai thich duoc vi sao ben thang hon khong?**
 
-> local_controller on C5 experienced a more severe stuck_cluster event, stopping for more seconds than on C1 in this episode
+> **packet co the tra loi why** - co contrast `support`.
 
-- register: `diagnosis` | subject: `local_controller` | type: `component_specific_attribution`
-- refs: `contrast:detection_worse_on_loser:1`
+| explains |
+|---|
+| explains |
 
-| R1 | R2 | R3 | R5 |
-|---|---|---|---|
-| holds | yes | all | n/a |
+### 038
 
-### 037
+> local_controller on C5 experienced a local minimum entrapment in this episode, with a stuck_cluster detection lasting 6.05 s that delayed its progress and led to its slower travel time compared to C1
 
-> The local_controller difference explains the slower travel time on C5 because it triggered a longer stuck_cluster stop in this episode
-
-- register: `diagnosis` | subject: `local_controller` | type: `component_specific_attribution`
-- refs: `contrast:component_differs:2`, `contrast:detection_worse_on_loser:1`, `contrast:outcome_differs:4`
-- contract: `contrast_support`, `subject_match`
+- register: `diagnosis` | subject: `local_controller` | type: `local_minimum_entrapment`
+- refs: `contrast:component_differs:2`, `contrast:detection_worse_on_loser:1`
+- contract: `contrast_support`, `subject_match`, `polarity_match`
 
 | R1 | R2 | R3 | R5 |
 |---|---|---|---|

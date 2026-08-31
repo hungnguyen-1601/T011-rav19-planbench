@@ -1,0 +1,479 @@
+[
+ {
+  "index": 1,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "307c6a94d0f0",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-d38902baf25a2528"
+ },
+ {
+  "index": 2,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "40b620398486",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-9fce308589f873b4"
+ },
+ {
+  "index": 3,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "4874a8da74e7",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-002"
+ },
+ {
+  "index": 4,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "4874a8da74e7",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-001"
+ },
+ {
+  "index": 5,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "4874a8da74e7",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-003"
+ },
+ {
+  "index": 6,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "501a98d1fd9a",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-9d6904bf3d4a40b3"
+ },
+ {
+  "index": 7,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "501a98d1fd9a",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-5c36d492b418984f"
+ },
+ {
+  "index": 8,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "50f9cae5941c",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-9b47da8b4b08a4f0"
+ },
+ {
+  "index": 9,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "50f9cae5941c",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-c6b33239facc1a4c"
+ },
+ {
+  "index": 10,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "56f2bbdf0e74",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-eab3584a63633c82"
+ },
+ {
+  "index": 11,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "6a4888cdcf9e",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-139683b1f100d7c1"
+ },
+ {
+  "index": 12,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "7323e60af732",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-001"
+ },
+ {
+  "index": 13,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "7323e60af732",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-contrast-001"
+ },
+ {
+  "index": 14,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "7323e60af732",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-002"
+ },
+ {
+  "index": 15,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "75974f6bd2c9",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-002"
+ },
+ {
+  "index": 16,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "75974f6bd2c9",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-001"
+ },
+ {
+  "index": 17,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "75974f6bd2c9",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-contrast-001"
+ },
+ {
+  "index": 18,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "7764fd5de7a5",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-52eb7a55058fe10f"
+ },
+ {
+  "index": 19,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "8c3bfce9bb13",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-4cf36ab167f41918"
+ },
+ {
+  "index": 20,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "8ca3fa8191d8",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-74a6bb3648002431"
+ },
+ {
+  "index": 21,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "91ec9d58e922",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-f87502c4348cd8e4"
+ },
+ {
+  "index": 22,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "9c30ffabf757",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-002"
+ },
+ {
+  "index": 23,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "9c30ffabf757",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-001"
+ },
+ {
+  "index": 24,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "b219dbb9c044",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-002"
+ },
+ {
+  "index": 25,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "b219dbb9c044",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-001"
+ },
+ {
+  "index": 26,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "b7a810e6fc00",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-c305bb0dd90532ac"
+ },
+ {
+  "index": 27,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "b7a810e6fc00",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-8e263b7fd0697334"
+ },
+ {
+  "index": 28,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "b94539aed2d1",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-d4e8b5ce565321f2"
+ },
+ {
+  "index": 29,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "bdd393fb3bb8",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-001"
+ },
+ {
+  "index": 30,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "bdd393fb3bb8",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-contrast-001"
+ },
+ {
+  "index": 31,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "bdd393fb3bb8",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-002"
+ },
+ {
+  "index": 32,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "c20848d51f24",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-86f4bfce02cb30ee"
+ },
+ {
+  "index": 33,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "c20848d51f24",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-5a117f56cc28af7d"
+ },
+ {
+  "index": 34,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "c31f07beacd6",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-1ebe6a1a5b39b325"
+ },
+ {
+  "index": 35,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "c697c0cac1bb",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-9b3e27cf12561071"
+ },
+ {
+  "index": 36,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "d0a5c200c750",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-76954983621f1b36"
+ },
+ {
+  "index": 37,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "d663910f7e0f",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-371b596b007efcbe"
+ },
+ {
+  "index": 38,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "e87fc5b937ab",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-003"
+ },
+ {
+  "index": 39,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "e87fc5b937ab",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-002"
+ },
+ {
+  "index": 40,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "e87fc5b937ab",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-001"
+ },
+ {
+  "index": 41,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "e87fc5b937ab",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-contrast-002"
+ },
+ {
+  "index": 42,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "e9a1c89e9dbf",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-ec0a6c14f16b05c0"
+ },
+ {
+  "index": 43,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "f11b8bfc70ba",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-001"
+ },
+ {
+  "index": 44,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "f11b8bfc70ba",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-002"
+ },
+ {
+  "index": 45,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "f4a50b33adf9",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-3dae9c467f2935d9"
+ },
+ {
+  "index": 46,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "f4a50b33adf9",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "hyp-6473d1c6a16d70ff"
+ },
+ {
+  "index": 47,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "f56b11845b7e",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-001"
+ },
+ {
+  "index": 48,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "f56b11845b7e",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-002"
+ },
+ {
+  "index": 49,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "fd58ce16a90d",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-001"
+ },
+ {
+  "index": 50,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "fd58ce16a90d",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-002"
+ },
+ {
+  "index": 51,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "ff9c3d241c53",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-contrast-001"
+ },
+ {
+  "index": 52,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "ff9c3d241c53",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-001"
+ },
+ {
+  "index": 53,
+  "stage": "holdout-deployment",
+  "arm": "ep_deployment",
+  "episode": "ff9c3d241c53",
+  "cluster": "sudden_stop_custom_v2_full_stack_selection_06f40334",
+  "repeat": 0,
+  "hypothesis_id": "floor-diag-002"
+ }
+]

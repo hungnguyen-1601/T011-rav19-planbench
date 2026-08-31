@@ -2,7 +2,7 @@
 
 38 muc | 30 episode | nguon: `holdout-magnitudes`
 
-Nguoi cham: **Codex (AI-assisted manual review)** | phan loai: **holdout magnitudes** |
+Nguoi cham: **An Tong** | phan loai: **holdout magnitudes** |
 ngay cham: **2026-08-30** | trang thai: **complete - 30/30 packet**
 
 > Magnitude trong statement duoc doi chieu voi so da render trong PACKET v2.

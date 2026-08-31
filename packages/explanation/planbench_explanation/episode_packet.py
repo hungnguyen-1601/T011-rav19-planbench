@@ -275,6 +275,30 @@ class EpisodeContrast(BaseModel):
 
     @property
     def strength(self) -> Literal["context", "support"]:
+        """What this difference may carry on its own.
+
+        **A detection with no mechanism behind it carries nothing.** The
+        two detection kinds are graded ``support`` because a detector
+        firing on one side and not the other is evidence about a
+        mechanism — but only where the registry says which mechanism,
+        and which component owns it. ``near_miss_cluster`` has no entry
+        in ``DETECTION_HYPOTHESES``, so its contrasts arrive with
+        ``proposition_type`` and ``subject`` both ``None``, and a
+        strength of ``support`` then licenses a claim about a component
+        that nothing in the packet names.
+
+        It is the second most common detector in the hold-out cluster —
+        six of thirty episodes — and two of the three statements a
+        scorer marked `wrong` on the last sweep rest on it, each
+        blaming a different component: one the global planner, one the
+        local controller, neither contradicted by anything.
+
+        Demoted rather than withheld. The detection is real and stays in
+        the packet as an observation and a difference; what it stops
+        doing is standing behind an attribution.
+        """
+        if self.kind.startswith("detection_") and self.proposition_type is None:
+            return "context"
         return CONTRAST_STRENGTH[self.kind]
 
     @model_validator(mode="after")
@@ -1027,10 +1051,33 @@ class EpisodePacket(BaseModel):
         :attr:`run_context_unknowns` and carry no force: they describe
         what thirty episodes could not settle, and this is one episode
         with its own recording.
+
+        And one thing the packet's own shape forbids: see below.
         """
         blocked: set[PropositionType] = set()
         for unknown in self.known_unknowns:
             blocked.update(unknown.blocks_claim_types)
+        # **Nothing to lean on, so no component may be blamed.**
+        #
+        # Attributing the outcome to a component is the strongest thing
+        # this scope can say, and what licenses it is a contrast the
+        # packet itself marked ``support``. With none, the only
+        # difference on offer is ``component_differs``, which says in its
+        # own words that a mechanism "has to live in one of those" — it
+        # names where to look and asserts nothing about what happened.
+        #
+        # Two hand-scored arms attributed anyway, on episodes carrying no
+        # supported contrast at all: "the global_planner component
+        # difference explains why C5 achieved higher min clearance", and
+        # a path "causing C1 to traverse closer to obstacles and slow
+        # down". Both read as findings and rest on the difference alone.
+        #
+        # Declared here rather than refused in the guard so the model is
+        # told before it drafts. A rule that only refuses costs a round
+        # and hands back silence, which on this scope is the failure
+        # already being measured.
+        if not any(contrast.strength == "support" for contrast in self.contrasts):
+            blocked.add("component_specific_attribution")
         return tuple(sorted(blocked))  # type: ignore[return-value]
 
 

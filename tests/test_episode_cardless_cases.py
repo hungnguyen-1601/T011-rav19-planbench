@@ -30,6 +30,8 @@ from typing import Any
 
 import pytest
 
+from planbench_explanation.exemplars import CardlessPairRefusal
+
 REPO = Path(__file__).resolve().parents[1]
 
 
@@ -81,13 +83,13 @@ class TestWhichTwoCandidatesItReads:
 
     def test_three_candidates_are_refused(self) -> None:
         sweep = _sweep()
-        with pytest.raises(sweep.CardlessRefusal) as refusal:
+        with pytest.raises(CardlessPairRefusal) as refusal:
             sweep.cardless_pair(report(candidates=3))
         assert "exactly two" in str(refusal.value)
 
     def test_one_candidate_is_refused_too(self) -> None:
         sweep = _sweep()
-        with pytest.raises(sweep.CardlessRefusal):
+        with pytest.raises(CardlessPairRefusal):
             sweep.cardless_pair(report(candidates=1))
 
 
