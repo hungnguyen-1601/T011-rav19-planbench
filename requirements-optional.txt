@@ -57,18 +57,25 @@
 #   4. LLM thật cho Trợ lý AI
 # ===================================================================
 #
-#   .venv/bin/pip install openai==2.50.0        # gemini, openai, openrouter,
-#                                               # groq, deepseek, xai, local
 #   .venv/bin/pip install anthropic             # claude
 #
-# Chỉ cần khi bạn dán API key vào `.env`. Không có key, trợ lý chạy bằng
-# provider **mock tất định**: trả lời bằng khớp từ khóa, offline, không
-# gọi mạng — và giao diện nói rõ điều đó thay vì giả vờ là model viết.
+# **`openai` đã chuyển sang `requirements.txt`** và không còn optional.
+# Nó phục vụ gemini, openai, openrouter, groq, deepseek, xai và local —
+# tất cả trừ claude. Lý do chuyển: bản desktop cài đúng
+# `requirements.txt` vào một embeddable Python, nên để SDK ở đây nghĩa
+# là ô dán API key trong trang Cài đặt nhận được key rồi vĩnh viễn
+# không dùng được nó, và người dùng bản cài không có cách nào thêm gói.
+#
+# `anthropic` vẫn ở đây vì trang Cài đặt chưa có đường dán key cho nó;
+# khi nào có thì nó cũng phải chuyển theo, vì cùng một lý do.
+#
+# Không có key thì trợ lý chạy bằng provider **mock tất định**: trả lời
+# bằng khớp từ khóa, offline, không gọi mạng — và giao diện nói rõ điều
+# đó thay vì giả vờ là model viết.
 #
 # Trang Agent có bảng liệt kê từng provider còn thiếu gì, nên "vì sao vẫn
 # là mock?" trả lời được từ giao diện chứ không phải từ log.
 #
-# openai==2.50.0
 # anthropic
 
 # ===================================================================
