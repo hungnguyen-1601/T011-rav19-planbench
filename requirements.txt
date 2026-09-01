@@ -85,6 +85,28 @@ PyJWT==2.13.0
 # fastapi.testclient dùng, nên test cần nó kể cả khi không bật OAuth.
 httpx==0.28.1
 
+# ---------- SDK cho Trợ lý AI ----------
+# **Bắt buộc, không optional, và lý do nằm ở bản đóng gói.**
+#
+# Trang Cài đặt có ô dán API key, và `AgentSettings.ready` chỉ bật khi
+# có key **và** SDK đã cài (`provider_status()` gọi
+# `_can_import("openai")`). Trên bản chạy từ source thì người dùng tự
+# `pip install openai` được, nên để nó ở `requirements-optional.txt`
+# nghe hợp lý. Trên bản desktop thì không: `build_desktop.ps1` cài đúng
+# file này vào runtime, runtime là embeddable Python đọc `._pth` chứ
+# không phải venv, và người dùng không có cách nào thêm gói vào đó.
+#
+# Kết quả là ô dán key nhận key, lưu key, rồi không bao giờ dùng được —
+# một nút bấm không thể thành công trên chính artifact được phát hành.
+# Đó là lỗi sản phẩm, không phải lựa chọn thiết kế, nên SDK đi cùng app.
+#
+# Ghim 3.3.1 vì đó là bản đã chạy thật: mọi lượt thí nghiệm analyst
+# ngày 30-31/08 đi qua nó. 2.50.0 nhỏ hơn 0.8 MB và dùng lại httpx
+# 0.28.1 ở trên thay vì kéo thêm httpx2, nhưng ship một bản khác bản
+# đã thử là đúng loại lỗi vừa gặp — dev và bản cài chạy hai thứ khác
+# nhau. Cỡ tăng: 11 MB chưa nén trên installer 92 MB.
+openai==3.3.1
+
 # ---------- Simulator, planner, metrics ----------
 # Sidecar YAML của định dạng map_server (planbench_schemas.map_io).
 PyYAML==6.0.3
