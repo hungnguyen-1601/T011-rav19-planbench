@@ -219,10 +219,14 @@ export function AgentDock() {
               rule to read. The chat stays for the pages where no
               episode is selected, which is most of them — an analyst
               with no packet has nothing to be right about. */}
+          {/* Rendered as a sibling of the log rather than inside it.
+              The analyst owns both halves — a scrolling body and a
+              composer pinned under it — because an input that lives in
+              the scroll region walks off the bottom as soon as an
+              answer arrives, which is where the reader was about to
+              type. */}
           {session && runId && episodeId ? (
-            <div className="agent-dock-log">
-              <DockAnalyst runId={runId} episodeId={episodeId} />
-            </div>
+            <DockAnalyst runId={runId} episodeId={episodeId} />
           ) : (
           <div className="agent-dock-log" role="log" aria-live="polite">
             {/* Signed out, the composer would take a question and get a
@@ -315,12 +319,6 @@ export function AgentDock() {
           </form>
           )}
 
-          {/* Papers, plugin drafts and the capability table live on the
-              full page. Named here so the dock is a shortcut to the
-              agent rather than a smaller, quieter version of it. */}
-          <p className="agent-dock-more muted small">
-            <Link href="/agent">{t("agentDock.openFull")}</Link>
-          </p>
         </div>
       ) : null}
 

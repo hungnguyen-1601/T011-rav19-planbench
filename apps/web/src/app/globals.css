@@ -5619,12 +5619,13 @@ tr.is-previewing > td { background: var(--accent-soft); }
    The gap above separates turns, not the parts of one. */
 .agent-dock-log .chat-bubble > p + p { margin-top: var(--space-1); }
 
-/* Sits under the composer rather than in the header: it is where the
-   conversation goes next, not what it is. */
-.agent-dock-more {
+/* What the reader should know about the answers, under the box they
+   type into -- the place a chat puts its own caveat. No top border:
+   the composer above already draws one, and a second line under it
+   reads as a third region rather than a footnote to the second. */
+.agent-dock-note {
   margin: 0;
-  padding: var(--space-2) var(--space-3);
-  border-top: 1px solid var(--border);
+  padding: 0 var(--space-3) var(--space-3);
 }
 
 .agent-dock-composer {
@@ -5634,6 +5635,18 @@ tr.is-previewing > td { background: var(--accent-soft); }
   border-top: 1px solid var(--border);
 }
 .agent-dock-composer input { flex: 1; min-width: 0; }
+
+/* Square, and only as wide as its glyph, so the box beside it gets the
+   rest of the row. A send button carrying the word "Send" took a fifth
+   of a 380px dock to say what an arrow says. */
+.agent-dock-send {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  padding: 0;
+}
 
 /* On a phone the panel is the screen. A 380px card floating over a
    360px viewport is a card with its own margins clipped. */
