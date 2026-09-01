@@ -45,14 +45,8 @@ import {
   pageWindow,
 } from "@/lib/episodePages";
 import { ProgressSync, type SyncSlot } from "@/components/ProgressSync";
-import { EpisodeVerdictPanel, type VerdictSlot } from "@/components/EpisodeVerdictPanel";
-import {
-  answersCurrentSelection,
-  selectedEpisode,
-  type SelectionOrigin,
-} from "@/lib/episodeVerdict";
+import { selectedEpisode, type SelectionOrigin } from "@/lib/episodeVerdict";
 import { clearEpisodeSelection, setEpisodeSelection } from "@/lib/episodeSelection";
-import { getCapabilities, type Capabilities } from "@/lib/agent";
 import { commonProgress, panelCandidates, sideProgress, sideTime } from "@/lib/replaySync";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { panelPlan } from "@/lib/explainPanel";
@@ -80,8 +74,6 @@ import {
   withdrawConfig,
   getDecision,
   getTrace,
-  getEpisodeVerdict,
-  postEpisodeAnalysis,
   getReplaySync,
   getExemplars,
   noCardReason,
@@ -568,13 +560,6 @@ function TracePanel({ run }: { run: DecisionRun }) {
    *  to tell the two apart, or it explains an episode never asked
    *  about — with the confidence of one that was. */
   const [selectionOrigin, setSelectionOrigin] = useState<SelectionOrigin>("default");
-  const [verdict, setVerdict] = useState<VerdictSlot>({ state: "idle" });
-  /** What this deployment allows, and whether this reader is one of
-   *  the people who may be shown it. Read once: the control is drawn
-   *  from it, and a button that appears and then refuses is worse
-   *  than one that was never there. */
-  const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
-  const [asking, setAsking] = useState(false);
   const [slots, setSlots] = useState<Record<string, TraceSlot>>({});
   const [mode, setMode] = useState<"flat" | "raised">("flat");
   /* **One camera for the pair.** Each `Scene25D` used to keep its own
@@ -730,82 +715,10 @@ function TracePanel({ run }: { run: DecisionRun }) {
     };
   }, [candidates, episodeId, run.id]);
 
-  /** The episode verdict, for the episode a reader **chose**.
-   *
-   * Aborted when the selection moves, and checked again at render: a
-   * reader clicks through episodes faster than this answers, and the
-   * request that started earliest is the one that lands last often
-   * enough to show episode A's finding under episode B's heading.
-   */
-  useEffect(() => {
-    let live = true;
-    getCapabilities()
-      .then((found) => live && setCapabilities(found))
-      .catch(() => live && setCapabilities(null));
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  const mayAsk =
-    capabilities?.episode_analyst_mode !== undefined &&
-    capabilities.episode_analyst_mode !== "off" &&
-    Boolean(capabilities.episode_analyst_visible);
-
-  const askTheModel = useCallback(async () => {
-    const chosen = selectedEpisode({ episodeId, origin: selectionOrigin });
-    if (!chosen || candidates.length < 2 || asking) return;
-    setAsking(true);
-    try {
-      const answered = await postEpisodeAnalysis(
-        run.id,
-        chosen,
-        candidates[0].candidate_id,
-        candidates[1].candidate_id,
-      );
-      setVerdict({ state: "ready", view: answered });
-    } catch {
-      // The deterministic half is already on screen and stays there.
-      // A failed request to the model half is not a reason to take it
-      // away, and the panel says nothing new rather than something wrong.
-    } finally {
-      setAsking(false);
-    }
-  }, [asking, candidates, episodeId, run.id, selectionOrigin]);
-
   // A selection that outlived this page would attach the next question
   // to an episode chosen before it, and nothing on screen would say so.
+  // The dock reads it; this page publishes it and clears it.
   useEffect(() => clearEpisodeSelection, []);
-
-  useEffect(() => {
-    const chosen = selectedEpisode({ episodeId, origin: selectionOrigin });
-    if (!chosen || candidates.length < 2) {
-      setVerdict({ state: "idle" });
-      return;
-    }
-    const controller = new AbortController();
-    setVerdict({ state: "loading" });
-    getEpisodeVerdict(
-      run.id,
-      chosen,
-      candidates[0].candidate_id,
-      candidates[1].candidate_id,
-      controller.signal,
-    )
-      .then((view) => setVerdict({ state: "ready", view }))
-      .catch((caught: unknown) => {
-        if (controller.signal.aborted) return;
-        const message = caught instanceof Error ? caught.message : String(caught);
-        // A run that ranked nobody is a state, not a fault: there is no
-        // pair to compare, and saying so is the answer.
-        setVerdict(
-          message.includes("409")
-            ? { state: "unavailable", message }
-            : { state: "error", message },
-        );
-      });
-    return () => controller.abort();
-  }, [candidates, episodeId, run.id, selectionOrigin]);
 
   const traces = candidates.flatMap((candidate) => {
     const slot = slots[candidate.candidate_id];
@@ -1009,35 +922,16 @@ function TracePanel({ run }: { run: DecisionRun }) {
           />
         )}
         <EpisodeLegend />
-        {/* **Three separate readings, never one heading.** What the
-            episode went to, what happened on each side, and which
-            differences carry evidence. A fault on the winning side is a
-            diagnosis; presented under the difference heading it would
-            explain the other side's loss with the winner's problem.
-
-            Rendered only for an episode a reader chose: the replay opens
-            on the first one so the canvases are not blank, and that is a
-            default rather than a question anybody asked. */}
-        <EpisodeVerdictPanel
-          slot={
-            answersCurrentSelection(
-              verdict.state === "ready" ? verdict.view : null,
-              {
-                episode: selectedEpisode({ episodeId, origin: selectionOrigin }),
-                candidateA: candidates[0]?.candidate_id ?? "",
-                candidateB: candidates[1]?.candidate_id ?? "",
-              },
-            )
-              ? verdict
-              : verdict.state === "ready"
-                ? { state: "loading" }
-                : verdict
-          }
-          episodeSelected={Boolean(selectedEpisode({ episodeId, origin: selectionOrigin }))}
-          onSeek={seekFrom}
-          onAskTheModel={mayAsk ? askTheModel : undefined}
-          asking={asking}
-        />
+        {/* **The episode analyst lives in the dock, not here.** This
+            page rendered the same verdict, the same per-side readings
+            and the same differences directly under the replay, and the
+            dock showed them again beside it - one answer in two places,
+            with the page's copy pushing the candidate panels a screen
+            further down. The page's job is the replay and the pair; the
+            analyst's is the one question about the episode on screen,
+            and it is asked from the dock. What stays here is the
+            selection: this page publishes which episode a reader chose,
+            and the dock reads it. */}
         <div className="episode-comparison-grid">
           {/* The same choice the comparison grid made. Two panels on one
               page naming a candidate by different fields is worse than
