@@ -8,7 +8,7 @@
  *
  * What it cannot cover is clicking, so the *behaviour* behind each
  * control is tested at the store level instead (see sidebar.test.ts,
- * theme.test.ts). Recorded in docs/KNOWN_LIMITATIONS.md.
+ * theme.test.ts). Recorded in docs/reference/KNOWN_LIMITATIONS.md.
  */
 
 import { readFileSync } from "node:fs";

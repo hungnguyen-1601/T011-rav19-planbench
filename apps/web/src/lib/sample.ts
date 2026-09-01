@@ -9,7 +9,7 @@
  * Everything here is a decision, and every decision is in this file
  * rather than in the component, because the repo has no jsdom: a rule
  * that lives inside JSX is a rule no test can reach (see
- * `docs/KNOWN_LIMITATIONS.md`). The component's remaining job is to look
+ * `docs/reference/KNOWN_LIMITATIONS.md`). The component's remaining job is to look
  * up two i18n keys and render.
  *
  * Nothing here calls `t()`. These functions choose *which* key; the

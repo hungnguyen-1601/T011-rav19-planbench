@@ -89,7 +89,7 @@ def create_all(engine: Engine) -> None:
 
     For tests and throwaway SQLite files. A deployment uses Alembic, so
     that schema changes are reviewable and reversible — see
-    ``docs/DEPLOYMENT.md``.
+    ``docs/reference/DEPLOYMENT.md``.
     """
     Base.metadata.create_all(engine)
 

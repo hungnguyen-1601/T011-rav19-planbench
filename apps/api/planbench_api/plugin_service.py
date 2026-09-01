@@ -4,7 +4,7 @@ Two things happen in this module and neither of them executes a plugin.
 A bundle is stored and its manifest is read (P1); preflight then answers
 "could this run on this deployment?" from the manifest and the provider
 graph alone. Extraction and the conformance run are P2's, and the
-ordering is the point — see `docs/plugin_import_security.md` §1.
+ordering is the point — see `docs/reference/plugin_import_security.md` §1.
 
 **A bundle whose manifest does not parse is refused rather than stored
 as FAILED.** That is the one place this diverges from the model

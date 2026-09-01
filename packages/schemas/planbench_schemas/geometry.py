@@ -11,7 +11,8 @@ import math
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-# Project-wide tolerance for float comparisons (see docs/architecture.md).
+# Project-wide tolerance for float comparisons
+# (see docs/reference/decision-log.md, and D08 which is stated in terms of it).
 EPS = 1e-9
 
 _TWO_PI = 2.0 * math.pi

@@ -7,7 +7,7 @@ deployment cụ thể, chỉ mô phỏng, không điều khiển robot thật. W
 (FastAPI + Next.js) và một desktop app Windows đóng gói từ cùng cây mã.
 
 **`contracts/CONTRACTS.md` là luật.** Khi nó mâu thuẫn với bất kỳ tài
-liệu nào khác — kể cả `docs/antongduy/de-tai-moi-planner-selector.md` —
+liệu nào khác — kể cả `docs/journal/antongduy/de-tai-moi-planner-selector.md` —
 contract thắng. Các điều khoản được trích dẫn khắp code dưới dạng
 `HĐ-x.y`; sửa code chạm vào một điều khoản thì đọc điều khoản đó trước.
 
@@ -42,7 +42,7 @@ repo public và được biên dịch cứng vào mọi bản app đã cài ở
 người khác chết và mọi bản đã cài mất cập nhật, im lặng. Chuyển CI sang
 `org` thì cần quyền admin để thêm Actions secret, mà không ai bên này có
 (`admin=False` trên cả hai repo, đo 2026-08-26). Chi tiết:
-`docs/DESKTOP-RELEASE.md` mục "Two remotes".
+`docs/reference/DESKTOP-RELEASE.md` mục "Two remotes".
 
 ---
 
@@ -57,7 +57,7 @@ git switch -c tongduyan_<mô-tả-ngắn>    # trước dòng code đầu tiên,
 
 Đây là luật về **nơi làm việc**, không phải luật cấm chạm `main`. Việc
 đã xong vẫn về `main` bằng merge rồi push, và release vẫn cần tag trên
-`main` — xem `docs/DESKTOP-RELEASE.md`. Cái bị cấm là checkout `main`
+`main` — xem `docs/reference/DESKTOP-RELEASE.md`. Cái bị cấm là checkout `main`
 rồi sửa code ngay trên đó.
 
 Nếu phát hiện mình đang đứng trên `main` mà đã có thay đổi chưa commit:
@@ -103,10 +103,19 @@ protection đã chặn push vì lý do này hai lần trong một buổi.
 
 ---
 
-## 5. Docs — `docs/antongduy/`
+## 5. Docs — `docs/`
 
-Thư mục này **được commit** (ngoại lệ so với thói quen gitignore), vì cả
-team đọc.
+`docs/` chia bốn tầng, và **ghi nhầm tầng là lỗi hay gặp nhất**:
+
+| Tầng | Chứa gì | Ai sửa |
+|---|---|---|
+| `docs/00-product.md` … `03-gaps.md` | bốn file onboarding — sản phẩm, kiến trúc, tính năng, nợ | sửa khi một sự thật **lâu dài** về sản phẩm đổi |
+| `docs/reference/` | tra cứu khi làm việc — API, giới hạn, vận hành, decision log | sửa khi code làm nó sai |
+| `docs/journal/<tên>/` | nhật ký theo ngày của từng người | **chỉ thêm, không sửa bài cũ** |
+| `docs/archive/` | đã bị thay, giữ để tra lịch sử | **đừng sửa, đừng trích số** |
+
+Nhật ký của mình nằm ở `docs/journal/antongduy/`. Thư mục `docs/` **được
+commit** (ngoại lệ so với thói quen gitignore), vì cả team đọc.
 
 | Folder | Chứa gì | Khi nào ghi |
 |---|---|---|
@@ -114,7 +123,7 @@ team đọc.
 | `notes/` | **đã nhìn thấy gì** — khảo sát, đánh giá, research | sau khi khảo sát xong, kể cả khi không đổi dòng code nào |
 | `plans/` | kế hoạch **chờ An duyệt** trước khi làm | sau khi chốt plan cùng An |
 
-Đường dẫn: `<folder>/<YYYY-MM-DD>/tongduyan_<mô-tả-không-dấu>.md`
+Đường dẫn: `docs/journal/antongduy/<folder>/<YYYY-MM-DD>/tongduyan_<mô-tả-không-dấu>.md`
 (riêng `plans/` không bắt buộc tiền tố).
 
 Cuối một loạt việc phải có report **phủ hết** mọi task đã làm — kể cả
@@ -149,7 +158,7 @@ Hai phiên lập kế hoạch khác nhau ⇒ **hai file plan riêng**, dù cùng
 
 - **Không tự restart server.** An tự chạy; đừng bật `next dev` thứ hai,
   nó xoá `.next` của An.
-- Trước khi release desktop: đọc `docs/DESKTOP-RELEASE.md`. Deploy ở dự
+- Trước khi release desktop: đọc `docs/reference/DESKTOP-RELEASE.md`. Deploy ở dự
   án này = bump `apps/desktop/planbench_desktop/VERSION`, commit, push,
   đẩy tag `desktop-v<X.Y.Z>`. Tag và VERSION lệch nhau thì CI từ chối.
 - **Cổng release là smoke gate** trong `scripts/desktop/smoke_stage.py`,

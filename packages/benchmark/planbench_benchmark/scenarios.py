@@ -148,7 +148,7 @@ def doorway() -> tuple[MapData, Scenario]:
     The gap cannot go much below 1.4 m: A* plans on a grid inflated by
     ``robot.radius + sqrt(2) * resolution`` (0.65 m here), so a narrower
     doorway is closed on the planning grid even though the 0.6 m robot
-    would physically fit. See docs/KNOWN_LIMITATIONS.md.
+    would physically fit. See docs/reference/KNOWN_LIMITATIONS.md.
     """
     builder = _MapBuilder("doorway", 12.0, 9.0)
     builder.wall(5.5, 0.0, 6.5, 3.7).wall(5.5, 5.3, 6.5, 9.0)

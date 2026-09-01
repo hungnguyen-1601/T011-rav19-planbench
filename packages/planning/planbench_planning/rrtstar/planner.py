@@ -278,7 +278,7 @@ def _edge_cost(grid: OccupancyGrid, a: Point2D, b: Point2D) -> float:
     constant per cell, so it is discontinuous at every cell edge, and
     whether the guarantee survives has **not** been verified. Recorded
     as a known limitation rather than left to be discovered — see
-    ``docs/KNOWN_LIMITATIONS.md``.
+    ``docs/reference/KNOWN_LIMITATIONS.md``.
 
     What does survive, and is what the rewiring machinery actually
     needs, is that the cost is additive along a path and monotone in

@@ -1,13 +1,28 @@
 #!/usr/bin/env python3
 """
-Submit .ai-log/session.jsonl to grading server.
+Submit .ai-log/session.jsonl to grading server, and rotate it either way.
 Called by git pre-push hook or manually.
 
-After a successful submit, the live log is rotated:
-  - Moved into .ai-log/archive/YYYY-MM-DD.jsonl (appended, never overwritten)
-  - The live session.jsonl is recreated empty by the next hook write
+The live log is rotated on every push:
+  - Each entry is appended to .ai-log/archive/<its own date>.jsonl
+  - Appended, never overwritten; the hook recreates session.jsonl
+  - Rotation happens whether or not a server is configured
 
 If the POST fails, the pending file is restored so nothing is lost.
+
+**Rotation used to be conditional on submitting, and that lost the point
+of it.** `AI_LOG_SERVER` is unset on this machine, so `main` returned at
+its first line — before the rename — and the live file simply grew: five
+hundred and forty-two entries across two days had to be filed by hand on
+2026-08-31, and three pushes before that committed a session file that
+should have been empty. The archive is the record of the work; submitting
+it somewhere is a separate errand, and failing at the errand is no reason
+to skip the record.
+
+**Entries are filed under the day they happened, not the day the push
+ran.** The two differ whenever a session crosses midnight or a rotation
+is late, and a reader asking what was done on the 30th should not have to
+know when somebody happened to push.
 """
 
 import contextlib
@@ -77,15 +92,49 @@ def _normalize_for_ingest(entry: dict) -> dict:
     return entry
 
 
-def _archive(pending: Path) -> None:
-    """Append pending file to today's archive. Never overwrites existing data."""
-    if not pending.exists() or pending.stat().st_size == 0:
-        return
+def _day_of(line: bytes, fallback: str) -> str:
+    """The date an entry belongs under.
+
+    ``fallback`` carries the day of the line before it, so a line this
+    cannot parse is filed beside its neighbours rather than dropped or
+    swept into today. Nothing here is allowed to lose a line: an entry
+    that cannot be read is still evidence that something happened.
+    """
+    with contextlib.suppress(Exception):
+        stamp = json.loads(line.decode("utf-8"))["ts"]
+        if isinstance(stamp, str) and len(stamp) >= 10:
+            return stamp[:10]
+    return fallback
+
+
+def _archive_lines(lines: list[bytes]) -> dict[str, int]:
+    """Append each line to the archive for the day it happened.
+
+    Appended, never overwritten, and grouped so one open per day does
+    the work rather than one per line. Returns what went where, which is
+    what the caller prints — a rotation that says nothing is a rotation
+    nobody notices has stopped.
+    """
+    if not lines:
+        return {}
     ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
     today = datetime.now(UTC).strftime("%Y-%m-%d")
-    archive_file = ARCHIVE_DIR / f"{today}.jsonl"
-    with open(pending, "rb") as src, open(archive_file, "ab") as dst:
-        shutil.copyfileobj(src, dst)
+    by_day: dict[str, list[bytes]] = {}
+    day = today
+    for line in lines:
+        day = _day_of(line, day)
+        by_day.setdefault(day, []).append(line)
+    for name, rows in by_day.items():
+        with open(ARCHIVE_DIR / f"{name}.jsonl", "ab") as fh:
+            fh.write(b"\n".join(rows) + b"\n")
+    return {name: len(rows) for name, rows in by_day.items()}
+
+
+def _read_lines(path: Path) -> list[bytes]:
+    """The file as lines, with blanks dropped and no trailing empty."""
+    if not path.exists():
+        return []
+    return [line for line in path.read_bytes().split(b"\n") if line.strip()]
 
 
 def _restore_pending(pending: Path) -> None:
@@ -107,13 +156,36 @@ def _restore_pending(pending: Path) -> None:
         pending.rename(LOG_FILE)
 
 
+def _rotate_only(pending: Path) -> None:
+    """File the batch and stop, for when there is nowhere to submit it.
+
+    The whole file goes, not the first `BATCH_LIMIT`: that ceiling exists
+    to keep a POST under the server's own limit, and with no POST there is
+    nothing to defer.
+    """
+    filed = _archive_lines(_read_lines(pending))
+    pending.unlink()
+    where = ", ".join(f"{name} (+{count})" for name, count in sorted(filed.items()))
+    print(f"[ai-log] Archived {sum(filed.values())} entries → {where}", file=sys.stderr)
+
+
 def main():
-    if not SERVER_URL:
-        print("[ai-log] AI_LOG_SERVER not set — skipping submission.", file=sys.stderr)
+    if not LOG_FILE.exists() or LOG_FILE.stat().st_size == 0:
+        print("[ai-log] No logs to rotate.", file=sys.stderr)
         sys.exit(0)
 
-    if not LOG_FILE.exists() or LOG_FILE.stat().st_size == 0:
-        print("[ai-log] No logs to submit.", file=sys.stderr)
+    if not SERVER_URL:
+        # **Rotate anyway.** Returning here was the bug: no server meant no
+        # archiving either, so the live file grew without limit and every
+        # push committed a session log that should have been empty. The
+        # archive is the record of the work; the POST is an errand.
+        pending = LOG_FILE.with_name(f"session.pending.{int(time.time())}.jsonl")
+        try:
+            LOG_FILE.rename(pending)
+        except FileNotFoundError:
+            sys.exit(0)
+        print("[ai-log] AI_LOG_SERVER not set — archiving locally.", file=sys.stderr)
+        _rotate_only(pending)
         sys.exit(0)
 
     # Atomic rename closes the race window: hook writes that arrive after this
@@ -125,23 +197,29 @@ def main():
         print("[ai-log] No logs to submit.", file=sys.stderr)
         sys.exit(0)
 
+    # **Which raw lines back the batch, not only the parsed entries.**
+    # The batch is what gets POSTed; the raw lines beside it are what gets
+    # archived, and the two have to name the same set. Archiving the whole
+    # pending file while also handing the leftover back to the live log
+    # filed those entries twice — 107 of them are duplicated in
+    # archive/2026-08-30.jsonl, in one run beginning at index 500, which is
+    # BATCH_LIMIT exactly.
     entries = []
-    leftover_lines = []
-    with open(pending, encoding="utf-8") as f:
-        for line in f:
-            stripped = line.strip()
-            if not stripped:
-                continue
-            if len(entries) >= BATCH_LIMIT:
-                leftover_lines.append(line)
-                continue
-            # An unparseable line is dropped rather than aborting the batch.
-            with contextlib.suppress(json.JSONDecodeError):
-                entries.append(_normalize_for_ingest(json.loads(stripped)))
+    submitted_lines: list[bytes] = []
+    leftover_lines: list[bytes] = []
+    for line in _read_lines(pending):
+        if len(entries) >= BATCH_LIMIT:
+            leftover_lines.append(line)
+            continue
+        submitted_lines.append(line)
+        # An unparseable line is dropped from the batch rather than
+        # aborting it, and still archived: it is evidence either way.
+        with contextlib.suppress(json.JSONDecodeError, UnicodeDecodeError):
+            entries.append(_normalize_for_ingest(json.loads(line.decode("utf-8"))))
 
     if not entries:
         # Nothing to send; archive whatever was there (probably junk) and bail.
-        _archive(pending)
+        _archive_lines(submitted_lines + leftover_lines)
         pending.unlink()
         print("[ai-log] No valid entries to submit.", file=sys.stderr)
         sys.exit(0)
@@ -180,15 +258,19 @@ def main():
         print(f"[ai-log] Submit failed: {e} — logs kept locally.", file=sys.stderr)
         sys.exit(0)  # Don't block push on server error
 
-    # Success: archive the submitted batch, then handle any leftover.
-    _archive(pending)
+    # Success: archive exactly what was submitted, then hand the leftover
+    # back. The leftover is deliberately *not* archived here — it has not
+    # been submitted, and the next push will archive it when it is.
+    filed = _archive_lines(submitted_lines)
     pending.unlink()
+    where = ", ".join(f"{name} (+{count})" for name, count in sorted(filed.items()))
+    print(f"[ai-log] Archived {sum(filed.values())} entries → {where}", file=sys.stderr)
 
     if leftover_lines:
         # More than BATCH_LIMIT entries existed; put the rest back so the
         # next push picks them up.
-        with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.writelines(leftover_lines)
+        with open(LOG_FILE, "ab") as f:
+            f.write(b"\n".join(leftover_lines) + b"\n")
         print(
             f"[ai-log] {len(leftover_lines)} entries deferred to next push.",
             file=sys.stderr,

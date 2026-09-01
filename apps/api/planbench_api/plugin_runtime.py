@@ -4,7 +4,7 @@ This is the module where the uploader's code finally runs, and every
 line before it exists so that this moment can be refused. Extraction
 happens only after preflight says the plugin may run here, and the run
 itself happens in a child process — crash and interpreter isolation, not
-a sandbox (`docs/plugin_import_security.md` §2).
+a sandbox (`docs/reference/plugin_import_security.md` §2).
 
 **Behaviour is a separate verdict from structure.** P1's answer is "this
 archive is a bundle"; this module's is "the object inside it does what

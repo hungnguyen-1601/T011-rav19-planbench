@@ -12,7 +12,7 @@
  * clicking. What each control *does* is covered as data in
  * `lib/__tests__/traffic.test.ts`; what a click on the canvas does is
  * still only covered by hand (see the checklist in
- * docs/antongduy/reports/2026-08-15/).
+ * docs/journal/antongduy/reports/2026-08-15/).
  */
 
 import { readFileSync } from "node:fs";

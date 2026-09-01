@@ -14,7 +14,7 @@
  * Exported, and taking everything through props, so a test can render it
  * with `renderToStaticMarkup`. That is not architecture for its own
  * sake: this repo has no jsdom, so a component the tests cannot import
- * is a component nothing checks (`docs/KNOWN_LIMITATIONS.md`).
+ * is a component nothing checks (`docs/reference/KNOWN_LIMITATIONS.md`).
  */
 
 import { Hint } from "@/components/Hint";

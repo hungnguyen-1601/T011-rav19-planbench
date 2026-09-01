@@ -1,7 +1,7 @@
 /** The insights and the bars, rendered.
  *
  * `renderToStaticMarkup` covers first render with no browser, which is
- * where every claim below lives (`docs/KNOWN_LIMITATIONS.md`).
+ * where every claim below lives (`docs/reference/KNOWN_LIMITATIONS.md`).
  */
 
 import { readFileSync } from "node:fs";

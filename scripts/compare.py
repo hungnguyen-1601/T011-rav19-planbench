@@ -28,7 +28,7 @@ says which situation it is in ``gate_only_deployment``, separately from
 survived" invites a better candidate, "this deployment cannot rank" says
 no candidate ever will. No shipped profile is in that state today — both
 halls declare ``success_rate_min: 0.95`` — but the hall was there for a
-day, and ``docs/KNOWN_LIMITATIONS.md`` L6 says why it may be again.
+day, and ``docs/reference/KNOWN_LIMITATIONS.md`` L6 says why it may be again.
 
 Usage::
 

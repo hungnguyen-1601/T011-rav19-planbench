@@ -174,7 +174,7 @@ class TestTheDeterministicHalfIsAlwaysServed:
     ) -> None:
         configure(
             "internal_preview",
-            episode_analyst_report_ref="docs/antongduy/reports/2026-08-27/…",
+            episode_analyst_report_ref="docs/journal/antongduy/reports/2026-08-27/…",
             episode_analyst_artifact_root=str(tmp_path),
         )
         seeded(app, "run_ep_preview_admin")
@@ -188,7 +188,7 @@ class TestTheDeterministicHalfIsAlwaysServed:
     ) -> None:
         configure(
             "internal_preview",
-            episode_analyst_report_ref="docs/antongduy/reports/2026-08-27/…",
+            episode_analyst_report_ref="docs/journal/antongduy/reports/2026-08-27/…",
             episode_analyst_artifact_root=str(tmp_path),
         )
         seeded(app, "run_ep_preview_reader")
