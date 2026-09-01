@@ -1767,7 +1767,6 @@
   "agentDock.contextAttach": "Ask about the run open on this page",
   "agentDock.contextLost": "This question was not attached to the open run - the record did not resolve.",
   "agentDock.analyst.pickAnEpisode": "Pick an episode from a run's replay and the analyst will answer about that one.",
-  "agentDock.openFull": "Open the full agent - papers, plugin drafts, what it may do",
   "agent.name": "Agent",
   "agent.placeholder": "Ask about what this platform recorded…",
   "agent.attachedPlaceholder": "Add a question about this paper, or send it as it is",

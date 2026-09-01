@@ -1767,7 +1767,6 @@
   "agentDock.contextAttach": "Hỏi về lượt chạy đang mở trên trang này",
   "agentDock.contextLost": "Câu hỏi này không gắn với lượt chạy đang mở - bản ghi không tra ra.",
   "agentDock.analyst.pickAnEpisode": "Chọn một episode trong phần phát lại của một run, analyst sẽ trả lời về đúng episode đó.",
-  "agentDock.openFull": "Mở trang trợ lý đầy đủ - bài báo, bản nháp plugin, quyền hạn của nó",
   "agent.name": "Trợ lý",
   "agent.placeholder": "Hỏi về những gì nền tảng đã ghi lại…",
   "agent.attachedPlaceholder": "Thêm câu hỏi về bài báo này, hoặc gửi luôn",
