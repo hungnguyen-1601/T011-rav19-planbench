@@ -1256,6 +1256,7 @@ class DecisionRunService:
         in_flight: Any,
         artifact_root: Path,
         tie_epsilon: float = EPISODE_TIE_EPSILON,
+        question: str = "",
     ) -> dict[str, Any]:
         """The deterministic answer, plus what a model made of it.
 
@@ -1343,6 +1344,7 @@ class DecisionRunService:
         key = dedup_key(
             packet_checksum=packet_checksum,
             runtime_config_checksum=runtime_checksum,
+            question=question,
         )
 
         spend_refusal = ledger.check(caller, policy=policy, today=today())
@@ -1376,6 +1378,7 @@ class DecisionRunService:
                 provider,
                 features=features,
                 catalog=TOOL_CATALOG,
+                question=question,
             )
         except Exception as failed:  # noqa: BLE001 - the provider boundary
             # The round is the layer on top. Losing it must not lose the
@@ -1413,6 +1416,20 @@ class DecisionRunService:
         model_part = {
             "response": served,
             "annotations": dict(outcome.annotations),
+            # **Who wrote the sentences below.** When every proposal is
+            # refused the floor answers from the packet, in fixed phrasing
+            # that reads exactly like an answer. A reader told the model
+            # replied, and shown template text, has been told something
+            # untrue by omission - and the question they typed makes that
+            # worse, because the text will not be about it.
+            "answered_by": (
+                "floor"
+                if any(name == "answered_by_floor" for name, _ in outcome.flags)
+                else "model"
+            ),
+            # Echoed so a reader can see what was actually asked, and so a
+            # recorded round says which question it answered.
+            "question": question.strip(),
         }
         audit = {
             "blocked": [

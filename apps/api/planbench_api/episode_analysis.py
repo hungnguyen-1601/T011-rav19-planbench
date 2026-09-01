@@ -214,15 +214,30 @@ class InFlightRegistry:
             return len(self._running)
 
 
-def dedup_key(*, packet_checksum: str, runtime_config_checksum: str) -> str:
+def dedup_key(
+    *, packet_checksum: str, runtime_config_checksum: str, question: str = ""
+) -> str:
     """What makes two analyses the same question.
 
     The packet **after** budgeting, because what a round was given is
-    what was left; and the configuration, because the same facts under a
-    different arm vector are a different system being asked.
+    what was left; the configuration, because the same facts under a
+    different arm vector are a different system being asked; and the
+    question, because once a reader can type one, two readers asking
+    different things about one episode are not asking the same thing.
+
+    **The question had to join them the day it became typeable.** Keyed
+    on packet and configuration alone, the second question asked about an
+    episode would have been served the first one's answer — silently, and
+    looking exactly like a reply to what was asked. Empty means the fixed
+    question, so every key recorded before this still hashes the same and
+    the artifacts already written stay addressable.
     """
     material = json.dumps(
-        {"packet": packet_checksum, "config": runtime_config_checksum},
+        {
+            "packet": packet_checksum,
+            "config": runtime_config_checksum,
+            **({"question": question.strip()} if question.strip() else {}),
+        },
         sort_keys=True,
     )
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
