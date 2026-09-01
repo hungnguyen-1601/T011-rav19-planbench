@@ -1442,6 +1442,10 @@ class DecisionRunService:
                 # As the analyst wrote it, placeholders intact.
                 "model": {
                     "response": outcome.response.model_dump(mode="json"),
+                    # Dataclasses, and `write_artifact` knows how to
+                    # record one. Encoding them here as well would put
+                    # the same rule in two places, and the writer is
+                    # the place every caller already goes through.
                     "annotations": dict(outcome.annotations),
                 },
                 "audit": audit,

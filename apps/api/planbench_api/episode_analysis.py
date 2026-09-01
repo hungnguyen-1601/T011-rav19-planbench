@@ -38,7 +38,7 @@ import json
 import threading
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -292,9 +292,35 @@ def artifact_path(root: Path, *, run_id: str, episode_context_id: str, key: str)
     return root / run_id / episode_context_id / f"{key}.json"
 
 
+def _encodable(value: object) -> object:
+    """A dataclass as its fields, for the encoder that cannot take one.
+
+    **The round's own annotations are dataclasses**, and every payload
+    written here carries them: which register the guard kept a proposal
+    in, which of the contract's four terms it met, what it cited. The
+    caller passed them through untouched and `json.dumps` refused —
+    which is what happened the first time any deployment turned the
+    analyst on. The round died writing the record of a model call it had
+    already made and paid for, and the reader got a 500.
+
+    Encoding belongs here rather than at each call site because there is
+    one writer and several callers, and a rule every caller has to
+    remember is a rule one of them will not.
+
+    Anything else still raises. A silent `str()` would put the repr of
+    an object into an audit record and make it look like data.
+    """
+    if is_dataclass(value) and not isinstance(value, type):
+        return asdict(value)
+    raise TypeError(f"cannot record an object of type {type(value).__name__} in an artifact")
+
+
 def write_artifact(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, default=_encodable),
+        encoding="utf-8",
+    )
 
 
 def today(now: float | None = None) -> str:
