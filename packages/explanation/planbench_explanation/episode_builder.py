@@ -152,8 +152,36 @@ def _first_route(trace: Mapping[str, Any]) -> list[tuple[float, float]] | None:
     for route in routes:
         points = route.get("points") if isinstance(route, Mapping) else None
         if points:
-            return [(float(x), float(y)) for x, y in points]
+            return [_vertex(item) for item in points]
     return None
+
+
+def _vertex(item: object) -> tuple[float, float]:
+    """One route vertex, however the trace wrote it down.
+
+    **Because this read the wrong shape and took the episode panel down
+    with it.** The producer writes ``{"x": …, "y": …}`` — see
+    ``decision_service._planned_routes`` — and the replay view in the
+    same file reads it that way. This read ``for x, y in points``
+    instead, which unpacks a mapping into its *keys*, so the first
+    vertex asked for ``float("x")`` and the panel answered 500 with the
+    reason in a log nobody could reach.
+
+    It survived this long because it only runs when the E4.5 sidecar
+    recorded a polyline. An episode without one leaves
+    ``planned_routes`` empty, ``_first_route`` returns ``None``, and
+    everything downstream carries on — which is every fixture the suite
+    had.
+
+    The pair form is accepted as well rather than replaced. Two readers
+    of one structure disagreeing is what caused this, and a reader that
+    understands only the shape it happened to be shown is the same
+    mistake with the sides swapped.
+    """
+    if isinstance(item, Mapping):
+        return (float(item["x"]), float(item["y"]))
+    x, y = item  # type: ignore[misc]
+    return (float(x), float(y))
 
 
 #: How a recorded sidecar is named beside its trace.
