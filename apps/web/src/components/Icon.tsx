@@ -41,6 +41,7 @@ export type IconName =
   | "refresh"
   | "check"
   | "copy"
+  | "send"
   | "alert";
 
 const PATHS: Record<IconName, React.ReactNode> = {
@@ -166,6 +167,15 @@ const PATHS: Record<IconName, React.ReactNode> = {
     </>
   ),
   check: <path d="m5 13 4 4L19 7" />,
+  /* The paper plane every composer ends with. Two strokes rather than
+     one closed shape: the fold down its middle is what stops it reading
+     as a plain triangle at 14px. */
+  send: (
+    <>
+      <path d="M22 2 11 13" />
+      <path d="M22 2 15 22l-4-9-9-4Z" />
+    </>
+  ),
   copy: (
     <>
       <rect x="9" y="9" width="11" height="11" rx="2" />
