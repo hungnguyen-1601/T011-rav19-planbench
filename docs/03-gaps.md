@@ -140,22 +140,36 @@ lớn; mục còn lại ghi ở đây để không ai phải phát hiện lại.
 | `TEST_REPORT.md` đọc như trạng thái hôm nay | Khai rõ là ảnh chụp có ngày, và hai test file nó nhắc đã không còn |
 | ~50 file code/test và `CLAUDE.md`, `README.md`, `contracts/CONTRACTS.md` trỏ đường dẫn `docs/` cũ | Trỏ lại toàn bộ; `deployment.py` và test ghim nó sửa cùng lượt |
 
+### 4.1b. Đã sửa trong đợt rà 2026-09-01 (phần AI)
+
+| Nợ | Đã làm gì |
+|---|---|
+| `README.md` §3.7 chỉ khai **hai** lớp AI, trong khi có bốn mặt hiện ra cho người dùng | Viết lại thành bảng bốn mặt, mỗi mặt một cột trạng thái |
+| §3.7 và `AI_CAPABILITIES.md` ghi **11** tool chỉ-đọc; `tools.py` có **12** | Sửa cả hai |
+| Không chỗ nào trong README nói analyst **mặc định tắt** và `production` **bị từ chối trong build này** | Khai ở §3.7, §4.8 và §9.1 |
+| §4.8 không nhắc panel *Từ paper*, dù nó đã nối vào API và có UI | Thêm mục riêng, kèm câu "chất lượng chưa ai đo" |
+| §9.2 vẫn nói import plugin "chưa có đường vào" — sai từ 24-08 | Viết lại theo `routers/plugins.py`: 12 endpoint, hai chỗ hở thật còn lại |
+| §9 nhảy từ 9.3 sang 9.6 | Đánh số lại 9.4, 9.5 |
+| §5.5 không nói bản desktop **đã đóng gói `openai`**, cũng không nói `anthropic` chưa có đường vào từ UI | Bổ sung cả hai |
+
 ### 4.2. Còn lại
 
 - **`docs/architecture_diagram.md` chưa từng tồn tại** nhưng từng được
   trích. Đã ghi chú tại chỗ; không có gì để khôi phục.
 - **`../README.md` §6** còn dòng nháp *"Sẽ gộp vào đây khi bản nháp này
   được chốt"*, trỏ tới `README.old.md` vẫn nằm ở gốc repo.
-- **`../README.md` §9** nhảy từ 9.3 sang 9.6 — thiếu 9.4 và 9.5.
 - **`../JOURNAL.md` và `../WORKLOG.md`** ở gốc repo là **template cohort
   chưa điền** (`[Tên Team]`, `[YYYY-MM-DD]`).
 - **`archive/gate-g1/README.md`** còn ô `[CẦN ĐIỀN: Tên nhóm]`.
 - **26 file trong `journal/antongduy/` không phải `.md`** — script eval,
   JSON kết quả, mock HTML. Chúng là bằng chứng đi kèm note, không phải tài
   liệu đứng riêng.
-- **`KNOWN_LIMITATIONS.md` (110 KB) chưa được rà từng mục.** Đợt này chỉ
-  kiểm đường dẫn nó trích, không kiểm từng mục còn đúng không. Mục nào ghi
-  "chưa hỗ trợ" thì nên kiểm lại code trước khi tin.
+- **`KNOWN_LIMITATIONS.md`: đã rà phần khẳng định phủ định (01-09),
+  chưa rà phần số đo.** 54 câu dạng "chưa có / không hỗ trợ" đã được kiểm
+  lại với code; bốn chỗ sai đã sửa tại chỗ và liệt ở đầu file (mục 48, 89,
+  47, và ba mục neo vào trang leaderboard đã bị gỡ). Còn lại: mỗi mục trích
+  một con số đo được thì con số đó chưa ai dò lại — và file vẫn giữ tiêu đề
+  M1–M13, từ vựng đã chết từ đợt chuyển hướng 08-08.
 
 ---
 

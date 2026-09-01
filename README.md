@@ -1,15 +1,3 @@
----
-title: PlanBench API
-emoji: 🚀
-colorFrom: blue
-colorTo: indigo
-sdk: gradio
-sdk_version: 5.16.0
-python_version: "3.12"
-app_file: app.py
-pinned: false
----
-
 # Agentic AI PlanBench
 
 Nền tảng mô phỏng và so sánh thuật toán điều hướng cho robot di động
@@ -230,25 +218,47 @@ danh sách ứng viên bị loại kèm cổng đã loại chúng.
 
 ### 3.7. Lớp AI
 
-Hai thứ khác nhau, đừng nhầm:
+**AI ở đây không phải một tính năng, nó là một tầng phủ lên tầng luật.**
+Mỗi chỗ AI xuất hiện đều có một tầng luật tất định chạy trước và chạy
+được một mình - 76 luật cố vấn và 15 luật phản biện, cùng một kiểu
+`Advice`. Rút API key ra thì mất phần văn model viết, không mất lời
+khuyên. Đó là lý do phần dưới nói được "cái gì đã chạy" mà không phải
+nói kèm "nếu model còn sống".
 
-|             | Trợ lý hội thoại                                                     | Lớp cố vấn                                                                        |
-| ----------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| Ở đâu    | dock nổi trên mọi trang + trang **Trợ lý AI**                  | nút *Hỏi thêm model* trên các panel advice                                     |
-| Làm gì    | đọc bản ghi bằng **11 tool chỉ-đọc** rồi trả lời          | xếp lại thứ tự advice luật + thêm **tối đa 3** ý                       |
-| Ràng buộc | không chạy được phép so, không sửa deployment, không duyệt gì | không xoá được advice luật, mọi ý thêm phải trỏ vào một field có thật |
+Bốn mặt AI hiện ra cho người dùng, và **trạng thái từng mặt khác nhau**:
 
-Bốn luật của lớp cố vấn, mỗi luật có test và mỗi test đã được chứng minh
-là **bắt được lỗi thật** bằng cách tiêm lỗi vào rồi đòi nó đỏ:
+| Mặt | Làm gì | Hôm nay |
+|---|---|---|
+| **Lớp cố vấn** - nút *Hỏi thêm model* trên các panel advice | xếp lại thứ tự lời khuyên luật đã sinh, thêm **tối đa 3** ý; mỗi ý phải trỏ vào một field có thật | **đang chạy**; model tắt mặc định, bật theo từng lượt bấm (`?use_model=true`) |
+| **Trợ lý hội thoại** - dock nổi trên mọi trang + trang **Trợ lý AI** | đọc bản ghi bằng **12 tool chỉ-đọc** rồi trả lời | **đang chạy**; **không có trí nhớ hội thoại** - §9.4 |
+| **Analyst theo episode** - tab trong dock, gắn với episode đang chọn | giải thích **cơ chế** sinh ra chênh lệch, không chỉ thuật lại ai thắng | **tắt mặc định**, và chế độ `production` **bị từ chối trong bản build này** - §9.1 |
+| **Đọc paper → bản nháp** - panel *Từ paper* | paper → bản nháp phương án, hoặc paper → bản nháp plugin; schema đóng kín theo registry, validator tất định quyết nhận/từ chối | **chạy được**, chất lượng **chưa ai đo** - §9.5 |
+
+Bốn luật của lớp cố vấn, mỗi luật có test và mỗi test **đã được chứng
+minh là bắt được lỗi thật** bằng cách tiêm lỗi vào rồi đòi nó đỏ:
 
 1. Tầng luật là sàn - model sắp lại được, bỏ bớt thì không.
 2. Citation trỏ vào field không tồn tại thì bị bỏ và **đếm công khai**.
 3. Model không đẩy được cảnh báo `blocking` xuống dưới `disclosure`.
 4. Provider chết thì mất phần văn, không mất tầng luật.
 
+Và một luật trên cả bốn mặt: **không route AI nào có động từ ghi**. Cái
+giữ nó không phải một lời hứa trong tài liệu - test gọi `/openapi.json`
+rồi kiểm động từ của từng route, và kiểm thêm bằng hành vi: chạy
+preflight xong thì danh sách quyết định phải không đổi.
+
+**Cái chưa được chứng minh là chất lượng câu chữ model viết.** Toàn bộ
+test của lớp AI chạy trên provider script sẵn: chúng nói cái khung đúng,
+chúng không nói gì về việc model viết hay hay dở. Đúng một mặt đã được
+chấm tay và chấm mù - analyst theo episode, 90 lượt trên cụm holdout -
+và số của nó ở §9.1. Ba mặt còn lại chưa có phép đo nào.
+
 Dock biết **run đang mở trên màn hình** - nó gửi kèm định danh, server tra
 lại qua đúng gateway mà tool đi qua, và chip trên khung chat nói rõ câu
 hỏi đang gắn với run nào (bấm một cái là gỡ).
+
+Bản đồ đầy đủ từng điểm AI chạm vào vòng đời một quyết định, kèm endpoint
+và test của từng điểm: [`docs/reference/AI_CAPABILITIES.md`](docs/reference/AI_CAPABILITIES.md).
 
 ### 3.8. Cắm thuật toán của bạn vào
 
@@ -422,9 +432,9 @@ dấu đã đọc, và nếu muốn áp dụng thì **Duyệt làm cấu hình**
 
 ### 4.8. Dùng AI
 
-Hai lớp AI, hai chỗ khác nhau, hai việc khác nhau.
+Bốn chỗ, bốn việc khác nhau, và **hai trong bốn chưa dùng được ngay**.
 
-#### Trợ lý hội thoại
+#### Trợ lý hội thoại - dùng được ngay
 
 Dock nổi góc phải màn hình, có mặt trên mọi trang; bản đầy đủ ở trang
 **Trợ lý AI**.
@@ -444,7 +454,12 @@ Nó **không** chạy được phép so, không sửa được cấu hình tri�
 duyệt được gì. Và nó chỉ nói những gì tool trả về - hỏi một thứ chưa được
 ghi lại thì nó nói là chưa có, chứ không đoán.
 
-#### Lớp cố vấn
+**Một lượt là một lượt.** Không có lịch sử hội thoại nào được gửi kèm, nên
+*"còn ứng viên B thì sao?"* là câu model không hiểu. Đây là quyết định
+thiết kế chứ không phải lỗi chưa sửa - lý do ở §9.4 - nhưng lúc dùng thì
+phải hỏi trọn câu.
+
+#### Lớp cố vấn - dùng được ngay
 
 Nút *Hỏi thêm model* trên các panel lời khuyên trong trang một run.
 
@@ -456,8 +471,50 @@ Kết quả hiển thị tách rõ ý nào của **luật**, ý nào của **mod
 ý bị bỏ vì trỏ vào chỗ không tồn tại. Model không xoá được lời khuyên của
 luật, và không đẩy được một cảnh báo chặn xuống dưới một ghi chú.
 
-Chưa cấu hình key thì cả hai lớp chạy bằng bộ khớp từ khoá offline, và
-giao diện nói thẳng điều đó. Cách bật model thật: §5.5.
+**Không bấm nút thì không có lượt gọi model nào.** Panel vẫn đầy đủ lời
+khuyên - đó là phần luật, và nó là phần bắt buộc phải đúng.
+
+#### Đọc paper → bản nháp - dùng được, nhưng tự kiểm
+
+Panel *Từ paper*: dán mô tả cấu hình trong một bài báo (hoặc tải PDF lên),
+nhận về **bản nháp** - một phương án để đăng ký, hoặc một plugin bundle
+cho Algorithm Host.
+
+Hai thứ giữ cho nó không bịa: schema đầu ra đóng kín theo registry (model
+không gọi tên được một planner repo này không có) và một validator tất
+định chạy lại từng luật của manifest. Sai hình dạng thì **bị từ chối kèm
+lỗi được gọi tên**, không bao giờ tự sửa.
+
+Nhưng: nền tảng **không lưu paper**, và **chất lượng bản nháp chưa ai
+đo** - mới chạy tay đúng một lần (Gemini, 18-08, paper Theta*). Coi nó là
+điểm khởi đầu có người duyệt, không phải kết quả. Code plugin sinh ra có
+`TODO` đánh dấu thật và **chưa chạy được** cho tới khi người viết hoàn
+thiện.
+
+#### Analyst theo episode - **mặc định tắt**
+
+Đây là mặt AI trả lời câu *"vì sao"*, và là mặt duy nhất đã được chấm mù.
+Nhưng bật ra dùng thì chưa.
+
+- `PLANBENCH_EPISODE_ANALYST_MODE` mặc định `off`, và ở chế độ đó endpoint
+  trả **404**.
+- `shadow` chạy vòng phân tích rồi ghi ra artifact, **không có gì
+  model viết lọt vào câu trả lời**.
+- `internal_preview` cho quản trị viên đọc, và đòi khai
+  `PLANBENCH_EPISODE_ANALYST_REPORT_REF` - một chế độ bật lên mà không có
+  gì đứng sau là một quyết định không ai ghi lại.
+- `production` **bị từ chối vô điều kiện trong bản build này**.
+
+Nghĩa là: người dùng thường **chưa đọc được phần analyst viết**. Thứ họ
+thấy trong tab đó là verdict tất định và tầng model-free - hai thứ chạy
+không cần model, và là thứ panel được dựng trên. Vì sao còn khoá: §9.1.
+
+Quota khi bật: 20 lượt gọi và 400k token mỗi người mỗi ngày.
+
+#### Chưa cấu hình key thì sao
+
+Cả bốn mặt chạy bằng bộ khớp từ khoá offline, và giao diện nói thẳng điều
+đó thay vì giả vờ có model. Cách bật model thật: §5.5.
 
 ### 4.9. Mang kết quả ra ngoài
 
@@ -497,7 +554,7 @@ vì "admin thì làm gì cũng được" là biến một chữ ký thành một
 | Tạo/sửa map, scenario, deployment                         |    ✅    |          |      |
 | Chạy mô phỏng, chạy so sánh                            |    ✅    |    ✅    |      |
 | Gửi một run đi duyệt                                    |    ✅    |          |      |
-| Nhận, đọc và **ký duyệt** một run               |          |    ✅    |      |
+| Nhận, đọc và**ký duyệt** một run               |          |    ✅    |      |
 | Thu hồi phê duyệt                                        |          |    ✅    |      |
 | Import thuật toán, xem mã,**xuất bản**           |          |    ✅    |      |
 | Tắt một thuật toán (lý do quản trị)                  |          |    ✅    |      |
@@ -586,11 +643,10 @@ Bản desktop cho Windows, không cần cài Python hay Node:
 Nó chạy `desktop-single-user`, và tạo sẵn ba tài khoản để thử ba gói
 quyền ở §4.11: `admin`, `engineer`, `reviewer`.
 
-Các tài khoản dùng thử: 
-admin:admin 
+Các tài khoản dùng thử:
+admin:admin
 engineer:engineer
 reviewer:reviewer
-
 
 ### 5.2. Web đã triển khai
 
@@ -676,6 +732,18 @@ PYTHONPATH="services/agent_service:packages/schemas:packages/planning:packages/m
 
 `Determinist: False` nghĩa là đang chạy model thật.
 
+**Bản desktop đã đóng gói sẵn SDK `openai`** (bản 3.3.1 - đúng bản mọi
+lượt chấm analyst 30-31/08 đi qua). Nó phục vụ cả openai, gemini,
+openrouter, groq, deepseek, xai và endpoint local, nên trên máy đã cài
+app thì chỉ cần dán key ở trang **Cài đặt**, không phải cài thêm gì -
+bản đóng gói chạy trên một Python nhúng mà người dùng không thêm package
+vào được, nên để SDK ở nhóm tuỳ chọn đồng nghĩa với việc ô dán key không
+làm gì cả.
+
+`anthropic` thì **vẫn tuỳ chọn và chưa có đường vào từ giao diện**: trang
+Cài đặt chưa có ô key cho nó. Muốn dùng Claude thì chạy từ source và
+`pip install anthropic`.
+
 ## 6. Cài đặt
 
 Từ đầu, sau khi `git clone`:
@@ -758,27 +826,32 @@ lý do nó chưa lên cao hơn:
 - **Sàn model-free (`reference_analyst`) crash trên packet thật** - một
   lỗi che biến, đã ghi nhận, chưa sửa.
 
+Vì ba món nợ đó, chế độ `production` của analyst **bị từ chối vô điều
+kiện trong bản build này**, và mặc định là `off`. Đây là một cái khoá cố
+ý chứ không phải một hạng mục quên bật: mở nó ra là để một model nói về
+cơ chế ở mức 0.56 với một người đang định ký một quyết định. Cách bật hai
+chế độ còn lại: §4.8.
+
 Kế hoạch: `docs/journal/antongduy/plans/2026-08-24/ai-analyst-duong-ngan.md`.
 
-### 9.2. Import thuật toán qua giao diện - chưa có đường vào
+### 9.2. Import thuật toán qua giao diện - đã có đường vào, còn hai chỗ hở
 
-§2 nói "ai cũng cắm được thuật toán của mình vào". Hôm nay câu đó **chỉ
-đúng nếu bạn là dev có quyền vào máy chạy benchmark**.
+Mục này trước đây viết "chưa có đường vào". **Câu đó đã sai từ 24-08** và
+được sửa ở đây: `POST /algorithms/plugins` nhận bundle, kèm cả vòng đời
+quản trị - `validate`, `publish`, `unpublish`, `hold`, `disable`, và một
+sổ sự kiện cho từng bundle. Giao diện là trang **Thuật toán**, và ai được
+xuất bản thì §4.11 nói.
 
-Phần khó đã xong: SDK, algorithm host, lane subprocess có deadline thật
-và kill được khi treo, bộ kiểm tính tuân thủ, và discovery đọc manifest
-**không import code**. Phần thiếu là đường vào:
+Hai chỗ còn hở, và cả hai đều là chỗ hở thật:
 
-- không có endpoint nhận bundle, không có chỗ lưu, không có bước giải nén
-  có kiểm;
-- **catalogue chỉ có một nguồn** - danh sách thuật toán đọc thẳng từ một
-  dict khai cứng trong mã, chưa có nguồn thứ hai cho plugin đã import;
-- không có UI.
-
-Hệ quả: một người dùng không phải dev vẫn phải nhờ người cài `planner.py`
-lên máy chủ. Đổi chỗ nút bấm thì không giải quyết được - một manifest chỉ
-**khai** entry point, nó không **chứa** code, nên import manifest cho một
-thuật toán chưa cài chỉ cho ra trạng thái "đã đăng ký nhưng thiếu runtime".
+- **Một manifest khai entry point, nó không chứa code.** Import manifest
+  cho một thuật toán chưa cài lên máy chạy benchmark chỉ cho ra trạng
+  thái "đã đăng ký nhưng thiếu runtime". Người dùng không phải dev vẫn
+  phải nhờ ai đó đặt `planner.py` lên máy chủ.
+- **Cổng xuất bản mặc định tắt** (`PLANBENCH_ALGORITHM_GOVERNANCE`). Tắt
+  thì mọi bundle chạy được đều vào picker; đó là hành vi cũ, giữ lại để
+  không phá máy đang chạy, nhưng nó không phải hành vi đúng cho một máy
+  nhiều người dùng chung.
 
 ### 9.3. Phát lại - mới xong một nửa
 
@@ -791,7 +864,7 @@ Cảnh báo bắt buộc đi kèm chế độ đó ("cùng chỗ ≠ cùng tình
 động đã ở chỗ khác vì hai robot tới nơi ở hai thời điểm khác nhau) cũng
 chưa có.
 
-### 9.6. Trợ lý hội thoại - không có trí nhớ
+### 9.4. Trợ lý hội thoại - không có trí nhớ
 
 `/agent/chat` **không gửi lịch sử hội thoại**. Hỏi "còn ứng viên B thì
 sao?" là model không biết B nào. Đây là một quyết định thiết kế có lý do
@@ -802,7 +875,7 @@ Và trợ lý **không phân tích cơ chế**. Hỏi "vì sao dwa_coarse thắn
 đọc advice tất định rồi thuật lại - đó là thuật lại luật, không phải phân
 tích. Phân tích cơ chế là §9.1.
 
-### 9.7. Những thứ nhỏ hơn nhưng nên biết
+### 9.5. Những thứ nhỏ hơn nhưng nên biết
 
 - **Chưa gọi model thật trong CI.** Toàn bộ test của lớp AI dùng provider
   script sẵn. Chúng chứng minh cái khung đúng; chúng không nói gì về chất
@@ -813,7 +886,21 @@ tích. Phân tích cơ chế là §9.1.
 - **Chưa có phép so nào giữa cách diễn đạt của template và của model.**
   Nguyên tắc đã chốt: template là chuẩn vĩnh viễn, model không thắng rõ
   thì không ship phần văn - phép so đó chưa chạy.
-- Danh sách đầy đủ, cập nhật liên tục: `docs/reference/KNOWN_LIMITATIONS.md`.
+- **Đọc paper → bản nháp: chưa ai đo chất lượng.** Cái đã kiểm là phần
+  từ chối - schema đóng kín, validator tất định, ví dụ trong tài liệu của
+  An làm fixture neo. Cái chưa kiểm là phần chấp nhận: một bản nháp được
+  nhận có đúng tham số paper nêu hay không thì mới chạy tay một lần
+  (Gemini, 18-08). Không có bộ golden, không có số.
+- **Trang Cài đặt chỉ có một ô key.** Nó trỏ vào `openai` - vốn phục vụ
+  cả gemini, openrouter, groq, deepseek, xai và endpoint local. Muốn dùng
+  Claude thì phải chạy từ source: §5.5.
+- Danh sách đầy đủ, cập nhật liên tục:
+  [`docs/reference/KNOWN_LIMITATIONS.md`](docs/reference/KNOWN_LIMITATIONS.md).
+  Đọc nó như **một chồng lớp trầm tích chứ không phải ảnh chụp hôm nay**:
+  mục chỉ được thêm vào theo ngày, nên "chưa có X" ở một mục cũ không
+  đảm bảo hôm nay vẫn chưa có X. Đợt rà 01-09 đã kiểm lại 54 câu khẳng
+  định phủ định và sửa bốn chỗ đã sai; phần số đo trong file thì chưa ai
+  dò lại.
 
 ## 10. Tài liệu
 
@@ -821,28 +908,28 @@ tích. Phân tích cơ chế là §9.1.
 cho người mới, và bốn file dưới đây là đường ngắn nhất tới bốn câu hỏi
 người tiếp nhận dự án hỏi trước tiên.
 
-| File | Trả lời |
-| --- | --- |
-| [`docs/00-product.md`](docs/00-product.md) | sản phẩm là gì, phục vụ **ai**, cố ý **không** làm gì |
-| [`docs/01-architecture.md`](docs/01-architecture.md) | kiến trúc, LLM đứng ở đâu, bất biến nào không được phá |
-| [`docs/02-features.md`](docs/02-features.md) | tính năng nổi bật, cái nào chạy thật, đo bằng gì |
-| [`docs/03-gaps.md`](docs/03-gaps.md) | chưa tốt / chưa hoàn thiện, xếp theo mức nghiêm trọng |
+| File                                                  | Trả lời                                                                   |
+| ----------------------------------------------------- | --------------------------------------------------------------------------- |
+| [`docs/00-product.md`](docs/00-product.md)           | sản phẩm là gì, phục vụ**ai**, cố ý **không** làm gì |
+| [`docs/01-architecture.md`](docs/01-architecture.md) | kiến trúc, LLM đứng ở đâu, bất biến nào không được phá       |
+| [`docs/02-features.md`](docs/02-features.md)         | tính năng nổi bật, cái nào chạy thật, đo bằng gì                 |
+| [`docs/03-gaps.md`](docs/03-gaps.md)                 | chưa tốt / chưa hoàn thiện, xếp theo mức nghiêm trọng              |
 
 Tra cứu khi đang làm việc - [`docs/reference/`](docs/reference/README.md):
 
-| File | Nội dung |
-| --- | --- |
-| `docs/reference/KNOWN_LIMITATIONS.md` | **điều chưa kiểm chứng** - đọc trước khi trích số |
-| `docs/reference/api.md` | bản đồ 161 route theo nhóm; nguồn sự thật là `/openapi.json` |
-| `docs/reference/decision-log.md` | D01-D15 và trạng thái hôm nay - code trích bằng ID |
-| `docs/reference/architecture_planner_selector.md` | kiến trúc chi tiết: toán, ký hiệu, ánh xạ HĐ |
-| `docs/reference/plugin_author_guide.md` | cắm thuật toán của bạn vào |
-| `docs/reference/DESKTOP-RELEASE.md` | runbook release desktop |
-| `docs/reference/ROS2_INTEGRATION.md` | ROS2 + Nav2 |
-| `docs/reference/TEST_REPORT.md` | ảnh chụp output test **có ngày**, không phải trạng thái hôm nay |
+| File                                                | Nội dung                                                                     |
+| --------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `docs/reference/KNOWN_LIMITATIONS.md`             | **điều chưa kiểm chứng** - đọc trước khi trích số            |
+| `docs/reference/api.md`                           | bản đồ 161 route theo nhóm; nguồn sự thật là`/openapi.json`         |
+| `docs/reference/decision-log.md`                  | D01-D15 và trạng thái hôm nay - code trích bằng ID                      |
+| `docs/reference/architecture_planner_selector.md` | kiến trúc chi tiết: toán, ký hiệu, ánh xạ HĐ                         |
+| `docs/reference/plugin_author_guide.md`           | cắm thuật toán của bạn vào                                              |
+| `docs/reference/DESKTOP-RELEASE.md`               | runbook release desktop                                                       |
+| `docs/reference/ROS2_INTEGRATION.md`              | ROS2 + Nav2                                                                   |
+| `docs/reference/TEST_REPORT.md`                   | ảnh chụp output test**có ngày**, không phải trạng thái hôm nay |
 
-| Thư mục | Vai |
-| --- | --- |
-| [`docs/journal/`](docs/journal/README.md) | nhật ký theo ngày của từng người; `antongduy/` có [INDEX theo chủ đề](docs/journal/antongduy/INDEX.md) |
-| [`docs/archive/`](docs/archive/README.md) | tài liệu đã bị thay - đọc để tra lịch sử, **đừng trích số** |
-| [`contracts/CONTRACTS.md`](contracts/CONTRACTS.md) | **luật.** Khi mâu thuẫn với bất kỳ tài liệu nào, contract thắng |
+| Thư mục                                           | Vai                                                                                                               |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| [`docs/journal/`](docs/journal/README.md)          | nhật ký theo ngày của từng người;`antongduy/` có [INDEX theo chủ đề](docs/journal/antongduy/INDEX.md) |
+| [`docs/archive/`](docs/archive/README.md)          | tài liệu đã bị thay - đọc để tra lịch sử,**đừng trích số**                                   |
+| [`contracts/CONTRACTS.md`](contracts/CONTRACTS.md) | **luật.** Khi mâu thuẫn với bất kỳ tài liệu nào, contract thắng                                   |
