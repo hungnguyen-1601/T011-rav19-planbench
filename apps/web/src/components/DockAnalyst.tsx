@@ -26,6 +26,10 @@ export function DockAnalyst({ runId, episodeId }: { runId: string; episodeId: st
   const { t } = useTranslation();
   const [slot, setSlot] = useState<VerdictSlot>({ state: "idle" });
   const [asking, setAsking] = useState(false);
+  /** What the reader typed. Empty is the question this scope's quality
+   *  figures were measured on, and sending empty is how somebody asks
+   *  for the answer those figures describe. */
+  const [question, setQuestion] = useState("");
 
   // The deterministic half, fetched whenever the reader points at a
   // different episode. It costs nothing and needs no model, so there is
@@ -51,7 +55,7 @@ export function DockAnalyst({ runId, episodeId }: { runId: string; episodeId: st
     if (!runId || !episodeId || asking) return;
     setAsking(true);
     try {
-      const view = await postEpisodeAnalysis(runId, episodeId, "", "");
+      const view = await postEpisodeAnalysis(runId, episodeId, "", "", undefined, question);
       setSlot({ state: "ready", view });
     } catch (caught) {
       // The deterministic verdict is already on screen and stays there.
@@ -70,12 +74,44 @@ export function DockAnalyst({ runId, episodeId }: { runId: string; episodeId: st
   if (!runId || !episodeId) {
     return <p className="muted small">{t("agentDock.analyst.pickAnEpisode")}</p>;
   }
+  const answeredByFloor =
+    slot.state === "ready" && slot.view.model?.answered_by === "floor";
   return (
-    <EpisodeVerdictPanel
-      slot={slot}
-      episodeSelected
-      onAskTheModel={() => void ask()}
-      asking={asking}
-    />
+    <>
+      <EpisodeVerdictPanel
+        slot={slot}
+        episodeSelected
+        onAskTheModel={() => void ask()}
+        asking={asking}
+      />
+      {/* **Said, not left to be inferred.** When every proposal is
+          refused the platform answers from the packet in fixed phrasing,
+          and that text reads exactly like the model's. A reader who
+          typed a question and is shown template sentences that are not
+          about it has been told something untrue by omission. */}
+      {answeredByFloor ? (
+        <p className="muted small" role="status">
+          {t("agentDock.analyst.answeredByFloor")}
+        </p>
+      ) : null}
+      <label className="agent-dock-analyst-ask">
+        <span className="visually-hidden">{t("agentDock.analyst.questionLabel")}</span>
+        <input
+          type="text"
+          value={question}
+          maxLength={1000}
+          placeholder={t("agentDock.analyst.questionPlaceholder")}
+          onChange={(event) => setQuestion(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !asking) void ask();
+          }}
+          disabled={asking}
+        />
+      </label>
+      {/* Left empty on purpose is a real choice, not an oversight: it
+          asks the one question every quality figure for this scope was
+          measured against. Anything typed here is outside that. */}
+      <p className="muted small">{t("agentDock.analyst.questionHint")}</p>
+    </>
   );
 }

@@ -125,6 +125,15 @@ export interface EpisodeVerdictView {
       proposals: EpisodeFloorProposal[];
     };
     annotations: Record<string, { bearing: string }>;
+    /** Who wrote the sentences above. `floor` means every proposal the
+     *  model made was refused and the platform answered from the packet
+     *  in fixed phrasing — which reads exactly like an answer and is
+     *  not one, most of all when a reader typed a question it will not
+     *  be about. */
+    answered_by?: "model" | "floor";
+    /** What was asked, echoed back. Empty is the fixed question this
+     *  scope's quality figures were measured on. */
+    question?: string;
   } | null;
   audit?: {
     blocked?: { hypothesis_id: string; rule: string; detail: string }[];

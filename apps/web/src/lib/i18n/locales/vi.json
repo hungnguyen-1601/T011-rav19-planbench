@@ -2176,5 +2176,9 @@
   "deployments.signedOut.body": "Deployment mô tả thế giới mà một so sánh sẽ chạy trên đó, nên đọc chúng cần có tài khoản. Phiên đăng nhập chỉ sống trong tab này — mở cửa sổ mới là bắt đầu ở trạng thái chưa đăng nhập.",
   "nav.signIn": "Đăng nhập",
   "dashboard.guideCard.title": "Lần đầu dùng? Đọc hướng dẫn vận hành",
-  "dashboard.guideCard.body": "Deployment là gì, một so sánh đo cái gì, và vì sao một cổng có thể từ chối gọi tên người thắng. Mười lăm phút, và mấy con số phía trên bắt đầu có nghĩa."
+  "dashboard.guideCard.body": "Deployment là gì, một so sánh đo cái gì, và vì sao một cổng có thể từ chối gọi tên người thắng. Mười lăm phút, và mấy con số phía trên bắt đầu có nghĩa.",
+  "agentDock.analyst.questionLabel": "Câu hỏi của bạn về episode này",
+  "agentDock.analyst.questionPlaceholder": "Hỏi về episode này, hoặc để trống",
+  "agentDock.analyst.questionHint": "Để trống thì analyst trả lời đúng câu hỏi mà mọi con số chất lượng của nó được đo trên đó. Câu bạn gõ nằm ngoài phép đo ấy, và vẫn chịu đúng các luật bằng chứng như cũ.",
+  "agentDock.analyst.answeredByFloor": "Mọi câu model viết đều bị từ chối, nên nền tảng trả lời bằng bằng chứng đã ghi. Phần chữ bên dưới là của nền tảng, không phải của model, và không nói về câu bạn hỏi."
 }

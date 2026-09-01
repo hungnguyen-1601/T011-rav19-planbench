@@ -1006,12 +1006,20 @@ export function postEpisodeAnalysis(
   candidateA: string,
   candidateB: string,
   signal?: AbortSignal,
+  question = "",
 ): Promise<EpisodeVerdictView> {
   return authFetch<EpisodeVerdictView>(
     `/decisions/${runId}/episodes/${episodeContextId}/analysis`,
     {
       method: "POST",
-      body: JSON.stringify({ candidate_a: candidateA, candidate_b: candidateB }),
+      body: JSON.stringify({
+        candidate_a: candidateA,
+        candidate_b: candidateB,
+        // Empty is the question this scope was measured on. Sent either
+        // way, so the server decides what empty means rather than two
+        // clients each deciding for themselves.
+        question,
+      }),
       signal,
     },
   );
