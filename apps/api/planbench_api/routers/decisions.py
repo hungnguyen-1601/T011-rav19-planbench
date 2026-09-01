@@ -2370,12 +2370,23 @@ def _episode_policy(settings: Any) -> EpisodeAnalystPolicy:
 
 
 class EpisodeAnalysisRequest(BaseModel):
-    """Which pair, and where the reader is looking."""
+    """Which pair, where the reader is looking, and what they asked."""
 
     model_config = ConfigDict(extra="forbid")
 
     candidate_a: str = ""
     candidate_b: str = ""
+    #: What the reader typed, or empty for the question this scope was
+    #: measured on.
+    #:
+    #: **Bounded, and it is the packet that keeps it honest.** A question
+    #: chooses what to answer; it cannot add a fact, cannot lift a rule,
+    #: and cannot make the guard accept a claim the episode does not
+    #: support - a reader asking for something the packet cannot show is
+    #: answered by naming the evidence that is missing. The cap is on
+    #: length alone, because a long question is a way to spend somebody
+    #: else's tokens and nothing more.
+    question: str = Field("", max_length=1000)
 
 
 @router.post("/decisions/{run_id}/episodes/{episode_context_id}/analysis")
@@ -2406,6 +2417,7 @@ def post_episode_analysis(
     return service.episode_analysis(
         run_id,
         episode_context_id,
+        question=payload.question,
         candidate_a=payload.candidate_a,
         candidate_b=payload.candidate_b,
         policy=policy,

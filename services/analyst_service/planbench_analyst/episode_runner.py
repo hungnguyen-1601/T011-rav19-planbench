@@ -144,6 +144,7 @@ def run_episode_round(
     features: RoundFeatures | None = None,
     catalog: ToolCatalog | None = None,
     run_measurements: Mapping[str, object] = {},
+    question: str = "",
     max_tokens: int = DEFAULT_MAX_TOKENS,
     timeout_s: float = DEFAULT_TIMEOUT_S,
 ) -> EpisodeRoundResult:
@@ -164,6 +165,10 @@ def run_episode_round(
         run_context_text=(
             run_context_block(view.packet, run_measurements) if flags.run_context else ""
         ),
+        # Empty is the fixed question, and the fixed question is what every
+        # measurement of this scope was taken against. A reader who types
+        # one is asking something nothing has graded.
+        reader_question=question,
     )
     request = LLMRequest(
         system=(

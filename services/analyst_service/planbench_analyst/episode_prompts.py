@@ -159,6 +159,32 @@ RUN_CONTEXT_PREFACE = (
 
 RUN_CONTEXT_SUFFIX = "\nRUN_CONTEXT"
 
+#: A question the reader typed, shown when one was asked.
+#:
+#: **The question chooses what to answer, never what may be said.** The
+#: packet stays the only evidence, every rule still applies, and a
+#: question asking for something the packet cannot support is answered by
+#: saying so. Without this the analyst asked one fixed question, and a
+#: reader wanting "why is this one safer" rather than "why did this one
+#: win" had no way to ask it.
+#:
+#: **What it costs, stated here rather than found later.** Every quality
+#: figure this scope reports was measured on the fixed question: ten of
+#: eighteen episodes explained by a majority of readings, one wrong
+#: statement in ninety. Those describe the analyst answering *that*
+#: question. A reader who changes it is outside what was measured, and a
+#: report has to say so rather than carry the old numbers forward.
+READER_QUESTION_PREFACE = (
+    "\n\nA reader asked the question below about this episode. Answer it "
+    "from the packet above and nothing else: the question may not add a "
+    "fact, and one the packet cannot answer is answered by naming the "
+    "evidence that is missing.\n"
+    "<<<QUESTION\n"
+)
+
+READER_QUESTION_SUFFIX = "\nQUESTION"
+
+
 #: What a revision turn in an episode round is told.
 EPISODE_REVISION_PREFACE = (
     "Checks already run in this round, and what the platform's own checkers "
@@ -208,8 +234,16 @@ def build_episode_user_turn(
     *,
     run_context_text: str = "",
     candidates_text: str = "",
+    reader_question: str = "",
 ) -> str:
-    """The user turn, one block per kind of thing the model is given."""
+    """The user turn, one block per kind of thing the model is given.
+
+    ``reader_question`` is what somebody typed. It goes **last**, after
+    the packet and the tool catalogue, so the model reads what it is
+    allowed to say before it reads what it was asked - and empty means
+    the fixed question, which is what every measurement of this scope
+    was taken against.
+    """
     turn = (
         EPISODE_PREFACE
         + episode_text
@@ -222,6 +256,8 @@ def build_episode_user_turn(
         turn += RUN_CONTEXT_PREFACE + run_context_text + RUN_CONTEXT_SUFFIX
     if candidates_text:
         turn += CANDIDATE_PREFACE + candidates_text + CANDIDATE_SUFFIX
+    if reader_question.strip():
+        turn += READER_QUESTION_PREFACE + reader_question.strip() + READER_QUESTION_SUFFIX
     return turn
 
 
@@ -250,6 +286,12 @@ def episode_prompt_checksum() -> str:
             "catalog_suffix": CATALOG_SUFFIX,
             "candidate_preface": CANDIDATE_PREFACE,
             "candidate_suffix": CANDIDATE_SUFFIX,
+            # The preface, never the question. The wrapper is part of
+            # the system a calibration describes; what a reader typed
+            # is not, and folding it in would give every question its
+            # own prompt identity.
+            "reader_question_preface": READER_QUESTION_PREFACE,
+            "reader_question_suffix": READER_QUESTION_SUFFIX,
             # Both shapes, because the arm that runs decides which one the
             # model was asked for and a checksum over one of them would
             # call two systems one.
