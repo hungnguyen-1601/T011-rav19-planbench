@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     # Auth. An empty secret means "generate a random one per process":
     # fine for development, and no secret ever lives in the repository.
-    # Production must set AUTH_SECRET (see docs/DEPLOYMENT.md).
+    # Production must set AUTH_SECRET (see docs/reference/DEPLOYMENT.md).
     jwt_secret: str = ""
     jwt_ttl_minutes: int = 60
     # "name:roles:password" entries, comma separated; "name:password"
@@ -131,7 +131,7 @@ class Settings(BaseSettings):
 
     # Imported algorithm bundles. Deliberately generous for now and
     # expected to come down once real bundles have been measured — see
-    # docs/plugin_import_security.md §6.
+    # docs/reference/plugin_import_security.md §6.
     #
     # `max_plugin_extracted_mb` is the one that matters and the one that
     # is easy to leave out: a compressed size says nothing about what
@@ -151,7 +151,7 @@ class Settings(BaseSettings):
     #   postgresql://user:pass@host:5432/planbench   (production)
     #   sqlite:///./planbench.db                     (single process only)
     # The schema is applied with Alembic, never on startup; db_create_all
-    # exists for throwaway SQLite. See docs/DEPLOYMENT.md.
+    # exists for throwaway SQLite. See docs/reference/DEPLOYMENT.md.
     database_url: str = ""
     db_echo: bool = False
     db_create_all: bool = False

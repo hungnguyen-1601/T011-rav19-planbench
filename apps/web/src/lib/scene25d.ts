@@ -79,7 +79,7 @@ export interface Scene25D {
   start: ScreenPoint | null;
   goal: ScreenPoint | null;
   robot: RobotMarker | null;
-  /** Dynamic obstacles at this frame — see docs/KNOWN_LIMITATIONS.md:
+  /** Dynamic obstacles at this frame — see docs/reference/KNOWN_LIMITATIONS.md:
    * drawn after every facet, so they are never occluded by a wall. */
   obstacles: ObstacleMarker[];
   /** The planner's keep-out around each of those, as a flat footprint on

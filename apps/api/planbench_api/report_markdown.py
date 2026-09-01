@@ -690,7 +690,7 @@ def _limitations(stored: StoredBenchmark, report: BenchmarkReport) -> list[str]:
     else:
         lines.append(
             "- Nothing specific to this run. The platform-wide limitations still "
-            "apply — see `docs/KNOWN_LIMITATIONS.md`."
+            "apply — see `docs/reference/KNOWN_LIMITATIONS.md`."
         )
     lines.append("")
     return lines

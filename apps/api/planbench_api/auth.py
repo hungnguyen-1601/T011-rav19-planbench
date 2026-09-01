@@ -27,7 +27,7 @@ immutable account id and every permission check resolves through it.
 **Secrets come from the environment.** ``AUTH_SECRET`` signs tokens and
 the OAuth state cookie. Unset, a random per-process secret is generated:
 development stays frictionless, tokens simply do not survive a restart,
-and nothing is ever committed. Production must set it — docs/DEPLOYMENT.md.
+and nothing is ever committed. Production must set it — docs/reference/DEPLOYMENT.md.
 
 **Password login is opt-in.** ``PLANBENCH_ENABLE_DEV_LOGIN=true`` turns
 it on; otherwise the endpoint refuses and the login page does not show

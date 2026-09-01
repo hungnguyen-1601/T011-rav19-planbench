@@ -116,7 +116,7 @@ class Scenario(BaseModel):
     # Failure-to-progress uses straight-line goal distance, so a legitimate
     # detour that leads away from the goal for longer than this window is
     # reported as a failure. Scenarios with long detours must widen it
-    # (see docs/KNOWN_LIMITATIONS.md).
+    # (see docs/reference/KNOWN_LIMITATIONS.md).
     progress_time_window: float = Field(default=30.0, gt=0)
     progress_min_decrease: float = Field(default=0.05, gt=0)
 

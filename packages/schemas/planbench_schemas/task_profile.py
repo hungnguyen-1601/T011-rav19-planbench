@@ -683,7 +683,7 @@ class TaskProfile(BaseModel):
     #: because a strong enough gradient makes almost every edge expensive
     #: and the tree stops converging on anything. So this is a working
     #: value, not an optimum, and it has not been calibrated against real
-    #: deployment data — see ``docs/KNOWN_LIMITATIONS.md``.
+    #: deployment data — see ``docs/reference/KNOWN_LIMITATIONS.md``.
     #:
     #: Zero switches the gradient off: every planner reverts to pure
     #: distance.

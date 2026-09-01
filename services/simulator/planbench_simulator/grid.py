@@ -3,7 +3,8 @@
 Wraps an immutable :class:`planbench_schemas.map.MapData`. All
 operations are pure (no mutation, no global state) and deterministic.
 
-Safety conventions (see docs/architecture.md):
+Safety conventions (decisions D07 and D10 in
+docs/reference/decision-log.md):
 - World coordinates outside the map are reported as occupied.
 - UNKNOWN cells count as occupied when ``unknown_as_occupied`` is True
   (the default).

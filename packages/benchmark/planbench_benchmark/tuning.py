@@ -18,7 +18,7 @@ via ``scripts/tune_hyperparameters.py`` and the result is cached to
 ``astar+ppo`` is deliberately not tunable here: "tuning" a trained
 policy means retraining per trial, which is a different, much more
 expensive process than an Optuna search over a handful of numeric
-weights — see docs/KNOWN_LIMITATIONS.md.
+weights — see docs/reference/KNOWN_LIMITATIONS.md.
 """
 
 from __future__ import annotations

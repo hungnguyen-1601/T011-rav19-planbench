@@ -3,7 +3,7 @@
 > **Phiên bản hợp đồng:** `contracts_version: 7.0.0`
 > **Trạng thái:** cần cả nhóm đọc và ký ở mục 16. Phase 1 (schema gốc) đã hiện thực theo bản 1.1.0; bản 2.0.0 sửa G5 — xem lịch sử phiên bản ở mục 18.
 > **Vị trí:** `contracts/CONTRACTS.md` ở gốc repo (trước đây là `docs/antongduy/CONTRACTS_1.md`).
-> **Tài liệu mẹ:** `docs/antongduy/de-tai-moi-planner-selector.md`. Khi hai tài liệu mâu thuẫn, **CONTRACTS.md thắng** — plan là lý do, contract là luật.
+> **Tài liệu mẹ:** `docs/journal/antongduy/de-tai-moi-planner-selector.md`. Khi hai tài liệu mâu thuẫn, **CONTRACTS.md thắng** — plan là lý do, contract là luật.
 
 ---
 
@@ -1262,7 +1262,7 @@ Bản 1.0.0 viết HĐ-14 thành hai vai `engineer` / `approver` và một cột
 
 **Chi tiết 6.1.0 — bốn chỗ nới đều cho cả hai bên, nên không phép kiểm đối xứng nào bắt được.**
 
-Lượt kiểm ngày 2026-08-11 (`docs/antongduy/notes/2026-08-11/tongduyan_xac-minh-lech-huong-muc-tieu.md`) tìm được bốn chỗ mà một hằng số mô tả thế giới đã được đặt theo thứ công cụ chịu nổi. Điểm chung của cả bốn: **không cái nào thiên vị candidate nào**. 53 test công bằng vẫn xanh với tất cả, vì chúng kiểm đối xứng, còn bốn chỗ này nới **đều cho cả hai bên**. Chúng không phá tính công bằng của phép so; chúng phá tính đúng đắn của thế giới mà phép so diễn ra trong đó.
+Lượt kiểm ngày 2026-08-11 (`docs/journal/antongduy/notes/2026-08-11/tongduyan_xac-minh-lech-huong-muc-tieu.md`) tìm được bốn chỗ mà một hằng số mô tả thế giới đã được đặt theo thứ công cụ chịu nổi. Điểm chung của cả bốn: **không cái nào thiên vị candidate nào**. 53 test công bằng vẫn xanh với tất cả, vì chúng kiểm đối xứng, còn bốn chỗ này nới **đều cho cả hai bên**. Chúng không phá tính công bằng của phép so; chúng phá tính đúng đắn của thế giới mà phép so diễn ra trong đó.
 
 Nặng nhất là `control_period`, vì nó vừa là ngưỡng G4 vừa là thứ có một **vòng lặp tự thưởng**: code chậm ⇒ khai chu kỳ dài ⇒ ngưỡng cổng rộng hơn. Kiểm lại thì vòng lặp đó không đóng — `simulation_dt` bị chặn ở 0,05 nên nới chu kỳ không mua được thời gian chạy — và nhượng bộ 10 Hz đã lỗi thời từ lúc 3.0.0 đổi sang p99 gộp và Phase 5.1 ghim nhân. Có test khẳng định cả hai điều đó, để động lực nới lại không bao giờ xuất hiện.
 

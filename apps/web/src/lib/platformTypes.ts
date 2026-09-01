@@ -1,5 +1,5 @@
 /** Types for the M5/M6/M8 surfaces: library, leaderboard, failures,
- *  background jobs and the agent. Mirrors docs/API_CONTRACT.md. */
+ *  background jobs and the agent. Mirrors docs/reference/api.md. */
 
 import type { ObservationClass } from "./benchmarkTypes";
 

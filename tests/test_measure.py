@@ -273,7 +273,7 @@ class TestAGateOnlyDeploymentIsMeasuredButNotScored:
 
     Run against a synthetic fixture rather than a shipped profile. The
     reference hall was in this state for a day (2026-08-11 to 08-12) and
-    may be again — ``docs/KNOWN_LIMITATIONS.md`` L6 — but none of the
+    may be again — ``docs/reference/KNOWN_LIMITATIONS.md`` L6 — but none of the
     profiles that ship declare 1.00 right now, so without a fixture this
     whole path would go untested until the question is settled.
     """

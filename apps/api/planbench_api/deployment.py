@@ -254,7 +254,7 @@ def guard_stored_state(policy: DeploymentPolicy, users) -> None:
     named = ", ".join(sorted(user.label for user in active))
     raise DeploymentError(
         f"the demo owner role is still assigned to {named}, and this deployment is "
-        f"{policy.profile.value!r}. Run the removal procedure in docs/DEMO-PROFILE.md "
+        f"{policy.profile.value!r}. Run the removal procedure in docs/reference/DEMO-PROFILE.md "
         "before serving it: grant that account real roles, revoke demo_owner, then start"
     )
 
