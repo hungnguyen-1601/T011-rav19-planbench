@@ -5,7 +5,7 @@ This is the format `map_server`/`nav2_map_server` itself reads and
 writes — PGM only here, not PNG: `map_server` outputs PGM by default,
 and decoding PNG correctly needs a real image codec (Pillow), which is
 a heavier dependency than one grayscale-map format justifies. See
-docs/KNOWN_LIMITATIONS.md.
+docs/reference/KNOWN_LIMITATIONS.md.
 
 YAML fields read (ROS map_server's own names, not renamed):
 

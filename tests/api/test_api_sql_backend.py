@@ -7,7 +7,7 @@ in-memory backend, and a mismatch would only surface here.
 
 The database is SQLite so the suite needs nothing installed. PostgreSQL
 is the production target and is *not* exercised — see
-docs/KNOWN_LIMITATIONS.md.
+docs/reference/KNOWN_LIMITATIONS.md.
 """
 
 from __future__ import annotations

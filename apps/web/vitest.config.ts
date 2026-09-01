@@ -21,7 +21,7 @@ import { defineConfig } from "vitest/config";
  * installed, so component assertions go through `renderToStaticMarkup` —
  * real rendered HTML, no browser. That covers first render, which is
  * where the collapsed/expanded and signed-in/signed-out differences
- * live; it does not cover clicking. See docs/KNOWN_LIMITATIONS.md.
+ * live; it does not cover clicking. See docs/reference/KNOWN_LIMITATIONS.md.
  */
 export default defineConfig({
   plugins: [mdx()],

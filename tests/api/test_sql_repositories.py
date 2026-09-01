@@ -9,7 +9,7 @@ someone deploys with a database.
 What SQLite does *not* prove: PostgreSQL-specific behaviour (JSONB
 operators, concurrent transactions, real connection pooling). Those need
 a live PostgreSQL, which this environment has no way to start — see
-docs/KNOWN_LIMITATIONS.md.
+docs/reference/KNOWN_LIMITATIONS.md.
 """
 
 from __future__ import annotations

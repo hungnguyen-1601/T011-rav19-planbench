@@ -5,7 +5,7 @@ left and why that was wrong.** HĐ-14 as of contract 7.0.0 defines three
 independent capability packages — engineer, reviewer, admin — plus a
 deployment-profile exception, ``demo_owner``. The tables live in
 :mod:`planbench_api.auth`; the reasoning is in
-``docs/antongduy/plans/2026-08-27/thiet-ke-role-engineer-reviewer-admin.md``.
+``docs/journal/antongduy/plans/2026-08-27/thiet-ke-role-engineer-reviewer-admin.md``.
 
 The platform first split people into ``operator`` and ``reviewer``,
 which forced a single person doing their own work to sign out and back

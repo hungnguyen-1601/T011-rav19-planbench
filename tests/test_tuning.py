@@ -86,7 +86,7 @@ class TestTuningCache:
 
     def test_the_checked_in_cache_is_valid_if_present(self) -> None:
         """Doesn't require it to exist (scripts/tune_hyperparameters.py
-        must be run manually first — see docs/KNOWN_LIMITATIONS.md), but
+        must be run manually first — see docs/reference/KNOWN_LIMITATIONS.md), but
         if it does, it must actually parse."""
         from planbench_benchmark.tuning import CACHE_PATH
 

@@ -592,7 +592,7 @@ class TestTheTwoHallsStayInStep:
         collapses the scale and the deployment stops being able to rank
         anything (HĐ-8.4) — a consequence worth deciding on deliberately
         rather than inheriting. Tracked as L6 in
-        ``docs/KNOWN_LIMITATIONS.md``.
+        ``docs/reference/KNOWN_LIMITATIONS.md``.
 
         So changing this line is allowed and expected; changing it
         *silently*, or changing one hall without the other, is not.

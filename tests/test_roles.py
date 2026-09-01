@@ -192,7 +192,7 @@ class TestTheDemoOwnerGuard:
         # operator hunting through a table at the moment they are least
         # able to: the deployment will not start.
         assert owner.nickname in message
-        assert "docs/DEMO-PROFILE.md" in message
+        assert "docs/reference/DEMO-PROFILE.md" in message
 
     def test_a_demo_deployment_starts_with_its_demo_owner(self) -> None:
         users = InMemoryUserRepository()

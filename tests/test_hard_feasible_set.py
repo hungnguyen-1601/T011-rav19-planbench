@@ -1,7 +1,7 @@
 """Phase 1 — one hard feasible set, owned by the deployment.
 
 The defect this closes is measured in
-``docs/antongduy/notes/2026-08-13/tongduyan_hai-vung-cam-mot-con-robot.md``:
+``docs/journal/antongduy/notes/2026-08-13/tongduyan_hai-vung-cam-mot-con-robot.md``:
 two layers held two different answers to *"may the robot be here"* —
 0.31 m for the controller, 0.61 m for the planner — and the whole 0.30 m
 difference was a grid-quantisation term.

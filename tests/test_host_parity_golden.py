@@ -1,6 +1,6 @@
 """H0 parity baseline: what the legacy runtime does before AlgorithmHost.
 
-Plan ``docs/antongduy/plans/2026-08-17/algorithm-host-mo-rong-cho-global-
+Plan ``docs/journal/antongduy/plans/2026-08-17/algorithm-host-mo-rong-cho-global-
 va-local-planner.md`` wraps the current runtime in an AlgorithmHost (H2)
 and promises the wrap changes nothing. This file is that promise turned
 into a fact, the same way ``test_dwa_core_refactor.py`` was for P2: the

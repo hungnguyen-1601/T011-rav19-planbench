@@ -7,7 +7,7 @@ is the only way to test this at all without live credentials, and it
 means the suite gives the same answer on a laptop, in CI, and in a
 checkout with no OAuth configured.
 
-What the stub cannot prove is recorded in docs/KNOWN_LIMITATIONS.md: that
+What the stub cannot prove is recorded in docs/reference/KNOWN_LIMITATIONS.md: that
 the real endpoints still speak this shape.
 """
 

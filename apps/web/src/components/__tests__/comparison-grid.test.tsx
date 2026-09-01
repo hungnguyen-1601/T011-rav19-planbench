@@ -3,7 +3,7 @@
  * This is the file the extraction was for. `renderToStaticMarkup` gives
  * real HTML with no browser, which covers first render — and first
  * render is where every claim below lives. What it cannot cover is
- * clicking, which this table does not do (`docs/KNOWN_LIMITATIONS.md`).
+ * clicking, which this table does not do (`docs/reference/KNOWN_LIMITATIONS.md`).
  *
  * `useTranslation` reads a context with a default, so no provider is
  * needed: the markup comes out in English.

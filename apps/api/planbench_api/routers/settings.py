@@ -21,7 +21,7 @@ what makes it survive a restart; neither alone is enough.
 
 The model list is one entry on purpose. `o4-mini` is the model this
 deployment has actually been run and scored against
-(`docs/antongduy/notes/2026-08-24/`), and offering a picker of models
+(`docs/journal/antongduy/notes/2026-08-24/`), and offering a picker of models
 nobody has evaluated would be offering a choice the evidence cannot
 support. Later versions add entries; the shape here already carries a
 list so that adding one is data, not a redesign.
@@ -137,7 +137,7 @@ def save_agent_settings(
     deployment makes and is shared by every signed-in reader, so setting
     it is a deployment decision rather than a personal preference — the
     same reasoning that limits importing an algorithm
-    (`docs/plugin_import_security.md` §5).
+    (`docs/reference/plugin_import_security.md` §5).
 
     The environment is set directly rather than through
     :func:`load_provider_keys`, which by design refuses to overwrite a

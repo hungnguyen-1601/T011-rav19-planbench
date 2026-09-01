@@ -1,4 +1,4 @@
-/** TypeScript mirrors of the backend API contract (docs/API_CONTRACT.md). */
+/** TypeScript mirrors of the backend API contract (docs/reference/api.md). */
 
 import type { ReplanningConfig } from "./benchmarkTypes";
 

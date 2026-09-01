@@ -2,8 +2,10 @@
 
 /** Receive an episode over WebSocket and pace its display locally.
  *
- * The socket delivers the episode recorded by the backend (see D16 in
- * docs/architecture.md); the client keeps a playhead so pause, resume,
+ * The socket delivers the episode recorded by the backend (replay
+ * contract in docs/reference/api.md, section WebSocket -- the episode
+ * ran headless first, so this is playback, not a live run); the client
+ * keeps a playhead so pause, resume,
  * speed and scrub work without renegotiating the connection.
  */
 

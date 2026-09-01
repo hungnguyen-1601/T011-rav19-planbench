@@ -324,7 +324,7 @@ class ExchangeCodes:
     In memory, because the codes live for seconds and losing them on a
     restart only means signing in again. It does mean a multi-worker
     deployment needs sticky routing or a shared store — recorded in
-    docs/KNOWN_LIMITATIONS.md rather than papered over.
+    docs/reference/KNOWN_LIMITATIONS.md rather than papered over.
     """
 
     def __init__(self, ttl_seconds: int = EXCHANGE_TTL_SECONDS) -> None:

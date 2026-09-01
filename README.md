@@ -164,9 +164,15 @@ Hai ứng viên chạy trên **cùng một tập `episode_context`**: cùng seed
 cùng vị trí vật cản, cùng nhiễu cảm biến. Hiệu số được tính theo từng
 cặp, không phải giữa hai trung bình rời nhau.
 
-Stack đã đăng ký: `astar+dwa` · `astar+dwa_predictive` · `rrtstar+dwa` ·
-`rrtstar+dwa_predictive` · `astar+pure_pursuit` · `rrtstar+pure_pursuit` ·
+Stack **tranh được thắng thua** (`production_eligible`): `astar+dwa` ·
+`astar+dwa_predictive` · `rrtstar+dwa` · `rrtstar+dwa_predictive` ·
 `astar+ppo`.
+
+`astar+pure_pursuit` và `rrtstar+pure_pursuit` cũng có trong registry
+nhưng mang `reference=True`: chúng **bỏ qua cảm biến**, tồn tại để chạy
+thử đường ống, và mô tả trong code nói thẳng là không được dùng để rút kết
+luận benchmark. Trích danh sách stack ở đâu thì trích kèm cờ này - xem
+`docs/reference/decision-log.md` mục D12.
 
 ### 3.4. Sáu cổng khả thi - G1 đến G6
 
@@ -556,7 +562,7 @@ máy quên cấu hình sẽ siết chặt hơn mức cần, chứ không lỏng 
 Có một role thứ tư, `demo_owner`, mang mọi quyền. Nó **không cấp được từ
 trang Users & access** và không có trong bảng trên: đó là nhân nhượng
 của một profile triển khai chứ không phải một việc ai đó làm. Gỡ nó là
-một runbook, xem `docs/DEMO-PROFILE.md`.
+một runbook, xem `docs/reference/DEMO-PROFILE.md`.
 
 #### Xuất bản thuật toán
 
@@ -728,13 +734,21 @@ người định dựa vào nền tảng này cần biết chỗ nào chưa đ�
 
 ### 9.1. Phần "vì sao" - đang xây dở, đây là hạng mục lớn nhất
 
-Hệ hiện chỉ chỉ ra được **ai thắng**. Nó chưa nói được **vì sao**.
+Hệ chỉ ra được **ai thắng**. Nói được **vì sao** thì mới một phần.
 
-Cụ thể: tầng contract phía nền tảng đã xong (16 tool card, 4 checker,
-promotion matrix, thang bằng chứng, sidecar). Nhưng **con agent đi tìm
-nguyên nhân thì chưa viết** - `services/analyst_service/` chưa tồn tại.
+Tầng contract phía nền tảng đã xong (16 tool card, 4 checker, promotion
+matrix, thang bằng chứng, sidecar). Con agent đi tìm nguyên nhân **cũng đã
+viết**: `services/analyst_service/` với hơn 20 module, nối vào API
+(`routers/agent.py`, `routers/decisions.py`, có quota theo ngày) và vào web
+(`components/DockAnalyst.tsx`), scope theo **một episode đang chọn**.
 
-Kèm theo đó:
+Nó đã được chấm mù trên cụm holdout - 90 lượt, giải thích được outcome ở
+**0.56** (đa số ≥2/3 lượt, mẫu số 18, so với 0.11 ở arm đầu), 1 câu sai
+trên 90 lượt, **0 vi phạm ràng buộc cứng**. Số và cách đọc:
+`docs/journal/antongduy/reports/2026-08-31/tongduyan_hieu-nang-that-va-tuong-guard-v2.md`.
+
+**0.56 chưa phải mức tin được mà không đọc lại**, và ba món nợ dưới đây là
+lý do nó chưa lên cao hơn:
 
 - **Bộ golden chỉ dựng được 3/6 họ.** Ba họ còn lại cần một sweep nhiều
   context chứ không phải một episode. `OFFICIAL_GOLDEN_READY` vẫn là
@@ -744,7 +758,7 @@ Kèm theo đó:
 - **Sàn model-free (`reference_analyst`) crash trên packet thật** - một
   lỗi che biến, đã ghi nhận, chưa sửa.
 
-Kế hoạch: `docs/antongduy/plans/2026-08-24/ai-analyst-duong-ngan.md`.
+Kế hoạch: `docs/journal/antongduy/plans/2026-08-24/ai-analyst-duong-ngan.md`.
 
 ### 9.2. Import thuật toán qua giao diện - chưa có đường vào
 
@@ -793,23 +807,42 @@ tích. Phân tích cơ chế là §9.1.
 - **Chưa gọi model thật trong CI.** Toàn bộ test của lớp AI dùng provider
   script sẵn. Chúng chứng minh cái khung đúng; chúng không nói gì về chất
   lượng model viết. (Đã đo tay một lần trên 3 run × 2 model - kết quả ở
-  `docs/antongduy/notes/2026-08-24/`.)
+  `docs/journal/antongduy/notes/2026-08-24/`.)
 - **Vài test frontend đang đỏ**, đòi những khoá dịch chưa từng tồn tại.
   Chưa dọn.
 - **Chưa có phép so nào giữa cách diễn đạt của template và của model.**
   Nguyên tắc đã chốt: template là chuẩn vĩnh viễn, model không thắng rõ
   thì không ship phần văn - phép so đó chưa chạy.
-- Danh sách đầy đủ, cập nhật liên tục: `docs/KNOWN_LIMITATIONS.md`.
+- Danh sách đầy đủ, cập nhật liên tục: `docs/reference/KNOWN_LIMITATIONS.md`.
 
 ## 10. Tài liệu
 
-| File                              | Nội dung                                                          |
-| --------------------------------- | ------------------------------------------------------------------ |
-| `docs/architecture.md`          | kiến trúc và các quyết định thiết kế                      |
-| `docs/KNOWN_LIMITATIONS.md`     | **điều chưa kiểm chứng** - đọc trước khi trích số |
-| `docs/IMPLEMENTATION_STATUS.md` | trạng thái từng mốc                                            |
-| `docs/TEST_REPORT.md`           | kết quả chạy thật                                              |
-| `docs/API_CONTRACT.md`          | hợp đồng API                                                    |
-| `docs/plugin_author_guide.md`   | cắm thuật toán của bạn vào                                   |
-| `docs/ROS2_INTEGRATION.md`      | ROS2 + Nav2                                                        |
-| `docs/antongduy/`               | ghi chép, kế hoạch và báo cáo theo ngày                     |
+**Bắt đầu ở [`docs/README.md`](docs/README.md)** - nó xếp sẵn thứ tự đọc
+cho người mới, và bốn file dưới đây là đường ngắn nhất tới bốn câu hỏi
+người tiếp nhận dự án hỏi trước tiên.
+
+| File | Trả lời |
+| --- | --- |
+| [`docs/00-product.md`](docs/00-product.md) | sản phẩm là gì, phục vụ **ai**, cố ý **không** làm gì |
+| [`docs/01-architecture.md`](docs/01-architecture.md) | kiến trúc, LLM đứng ở đâu, bất biến nào không được phá |
+| [`docs/02-features.md`](docs/02-features.md) | tính năng nổi bật, cái nào chạy thật, đo bằng gì |
+| [`docs/03-gaps.md`](docs/03-gaps.md) | chưa tốt / chưa hoàn thiện, xếp theo mức nghiêm trọng |
+
+Tra cứu khi đang làm việc - [`docs/reference/`](docs/reference/README.md):
+
+| File | Nội dung |
+| --- | --- |
+| `docs/reference/KNOWN_LIMITATIONS.md` | **điều chưa kiểm chứng** - đọc trước khi trích số |
+| `docs/reference/api.md` | bản đồ 161 route theo nhóm; nguồn sự thật là `/openapi.json` |
+| `docs/reference/decision-log.md` | D01-D15 và trạng thái hôm nay - code trích bằng ID |
+| `docs/reference/architecture_planner_selector.md` | kiến trúc chi tiết: toán, ký hiệu, ánh xạ HĐ |
+| `docs/reference/plugin_author_guide.md` | cắm thuật toán của bạn vào |
+| `docs/reference/DESKTOP-RELEASE.md` | runbook release desktop |
+| `docs/reference/ROS2_INTEGRATION.md` | ROS2 + Nav2 |
+| `docs/reference/TEST_REPORT.md` | ảnh chụp output test **có ngày**, không phải trạng thái hôm nay |
+
+| Thư mục | Vai |
+| --- | --- |
+| [`docs/journal/`](docs/journal/README.md) | nhật ký theo ngày của từng người; `antongduy/` có [INDEX theo chủ đề](docs/journal/antongduy/INDEX.md) |
+| [`docs/archive/`](docs/archive/README.md) | tài liệu đã bị thay - đọc để tra lịch sử, **đừng trích số** |
+| [`contracts/CONTRACTS.md`](contracts/CONTRACTS.md) | **luật.** Khi mâu thuẫn với bất kỳ tài liệu nào, contract thắng |

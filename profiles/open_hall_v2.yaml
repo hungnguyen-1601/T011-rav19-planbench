@@ -126,7 +126,7 @@ constraints:
   # deployment whose declared threshold is 0.95 is saying that one
   # failure in twenty on an easy symmetric mission is acceptable, and
   # that is not what this hall means. Tracked in
-  # `docs/KNOWN_LIMITATIONS.md` (L6). The platform now *handles* 1.00
+  # `docs/reference/KNOWN_LIMITATIONS.md` (L6). The platform now *handles* 1.00
   # legibly rather than crashing on it, so the remaining work is the
   # decision, not the mechanism.
   #

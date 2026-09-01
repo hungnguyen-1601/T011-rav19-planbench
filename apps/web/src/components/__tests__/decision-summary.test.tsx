@@ -2,7 +2,7 @@
  *
  * `renderToStaticMarkup` gives real HTML with no browser, which covers
  * first render — and first render is where every claim below lives
- * (`docs/KNOWN_LIMITATIONS.md`). `useTranslation` reads a context with a
+ * (`docs/reference/KNOWN_LIMITATIONS.md`). `useTranslation` reads a context with a
  * default, so the markup comes out in English with no provider.
  */
 

@@ -10,7 +10,7 @@ Two things these tests protect:
    table-by-table and column-by-column against ``Base.metadata``.
 
 SQLite is not PostgreSQL: this proves the migration's structure, not its
-behaviour under a production dialect. See docs/KNOWN_LIMITATIONS.md.
+behaviour under a production dialect. See docs/reference/KNOWN_LIMITATIONS.md.
 """
 
 from __future__ import annotations

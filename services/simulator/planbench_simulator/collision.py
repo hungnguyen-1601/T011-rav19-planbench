@@ -1,6 +1,7 @@
 """Static collision checks and clearance for a circular robot.
 
-Boundary-contact rule (project-wide, see docs/architecture.md): contact
+Boundary-contact rule (project-wide, decision D08 in
+docs/reference/decision-log.md): contact
 counts as collision. The robot collides with an obstacle iff the
 distance between their surfaces is at most EPS, i.e.
 ``clearance <= EPS``.

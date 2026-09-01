@@ -12,7 +12,7 @@ uploaded bytes *are* — so the record is its own type rather than a
 one JSON member. That is metadata parsing: no member is written to disk
 and no plugin code runs. Extraction is P2's job and happens only after
 preflight has said the plugin may run at all — see
-`docs/plugin_import_security.md` §1 for the ordering and why it is the
+`docs/reference/plugin_import_security.md` §1 for the ordering and why it is the
 ordering.
 """
 
@@ -45,7 +45,7 @@ ZIP_MAGIC = b"PK\x03\x04"
 #: The lane an imported bundle is measured in. Not configurable: the
 #: host never falls back between lanes, so a plugin declaring the
 #: in-process lane and being run in a subprocess would be measured in a
-#: lane it did not declare. See `docs/plugin_import_security.md` §7.
+#: lane it did not declare. See `docs/reference/plugin_import_security.md` §7.
 REQUIRED_LANE = "subprocess"
 
 #: Roles the subprocess lane can actually drive. ``SubprocessPlugin``

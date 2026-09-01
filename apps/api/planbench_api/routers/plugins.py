@@ -12,7 +12,7 @@ point, file listing, conformance log — needs `algorithm.inspect`,
 because those describe code rather than capability. Importing one runs
 the uploader's code on this server, and publishing one puts it in front
 of everybody; both are the reviewer package
-(`docs/plugin_import_security.md` §5).
+(`docs/reference/plugin_import_security.md` §5).
 
 **The governance routes are behind a flag.** Publish, unpublish, hold
 and disable answer 404 until `PLANBENCH_ALGORITHM_GOVERNANCE` is on,
