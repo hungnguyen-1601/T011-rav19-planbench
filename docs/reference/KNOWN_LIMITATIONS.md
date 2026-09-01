@@ -2,6 +2,42 @@
 
 Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
 
+> **Đọc file này như một chồng lớp trầm tích, không như một ảnh chụp hôm
+> nay.** Mục được **thêm** theo ngày và hầu như không bị xoá; một hạn chế
+> đã hết thì cách ghi là gạch ngang mục cũ rồi viết vì sao nó hết, chứ
+> không phải xoá dòng — vì "chỗ này từng hỏng như thế nào" là thứ có giá
+> trị đúng bằng "chỗ này còn hỏng không".
+>
+> Hệ quả **một mục ghi "chưa có X" không đảm bảo hôm nay vẫn chưa có X.**
+> Trước khi trích một mục ra ngoài, kiểm lại code.
+>
+> **Tên mục M1–M13 là từ vựng đã chết.** Chuỗi milestone đó dừng ở đợt
+> chuyển hướng 08-08; giữ nguyên tiêu đề vì các mục bên dưới trích lẫn
+> nhau theo số, nhưng đừng đọc chúng như lộ trình còn hiệu lực.
+
+## Đợt rà 2026-09-01 — mục nào đã sai
+
+Rà theo **lời khẳng định phủ định** ("chưa có", "không hỗ trợ"): 54 câu,
+kiểm từng câu lại với code. Bốn chỗ đã sai, sửa tại chỗ bên dưới và ghi
+lại ở đây để không ai phải phát hiện lại:
+
+| Mục | Nói gì | Thật ra |
+|---|---|---|
+| 48 | "Chưa có endpoint model registry" | `routers/models.py` có **6 route model** (upload, list, detail, patch, delete, validate). Chính file này, mục "Model Registry" phía dưới, mô tả kỹ vòng đời upload đó — hai mục **mâu thuẫn nhau trong cùng một file** |
+| 89 | "Backend lưu và trả về đầy đủ [lịch sử hội thoại]" | Sai, và sai theo hướng nguy hiểm: `/agent/chat` **không giữ hội thoại nào**. Mục 49 ngay trong file này nói đúng điều ngược lại |
+| 47 | "trang replay chưa nối vào `obstacleSnapshots`" | `TraceViewer.tsx` vẽ `trace.dynamic_obstacles` theo từng bước |
+| 111 · 125 · 146 | neo vào "trang leaderboard" | Trang đó **không còn** trong web app; route `GET /leaderboard` thì còn. Bản thân hạn chế vẫn đúng — thứ hạng chưa tính độ khó, F05 chưa tổng hợp — chỉ là chỗ nó xuất hiện đã khác |
+
+Đã kiểm lại và **vẫn đúng**: origin xoay bị từ chối (mục 1–2), DWA không
+lùi (11), không có refresh token (17, 61), không có `jsdom` (50, 68–69),
+chưa có adapter `MonolithicPolicy` (L2), `average_rank_score` chưa nối
+vào đâu (111), không có xuất PDF, không có retry lúc mở database (56),
+đổi nickname chỉ có ở bước onboarding (63).
+
+**Chưa rà:** phần số đo và phần suy luận của từng mục — đợt này chỉ kiểm
+những câu khẳng định một thứ **có hay không có** trong code. Một mục nói
+"đo được 0.42" thì con số đó chưa ai dò lại.
+
 ## Core simulator (M1)
 
 1. **Map cần tường bao.** LiDAR coi vùng ngoài map là "không phản xạ"
@@ -178,17 +214,22 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     preview xuống nên traffic hiện ở cả khung phẳng lẫn 2.5D (2026-08-15,
     Phase 2b). Phần **replay** thì chưa: `TrajectoryPoint.obstacles` có
     sẵn dữ liệu nhưng trang replay chưa nối vào `obstacleSnapshots`, nên
-    xem lại một episode ở 2.5D vẫn thấy hành lang trống. Ngoài ra 2.5D
+    xem lại một episode ở 2.5D vẫn thấy hành lang trống. **Câu đó đã hết
+    đúng** (kiểm lại 2026-09-01): `TraceViewer.tsx` dựng vật cản động từ
+    `trace.dynamic_obstacles` theo từng bước phát lại. Ngoài ra 2.5D
     **chỉ hiển thị, không đặt điểm được** — traffic được vẽ trên khung
     phẳng, và đó là chủ ý chứ không phải thiếu sót. Lớp **traffic đã
     khai** thêm ở 2026-08-16 (lộ trình, điểm cầm được, vòng lang thang —
     `lib/trafficOverlay`) cũng chỉ vẽ ở khung phẳng, cùng lý do: phép
     chiếu 2.5D không có nghịch đảo, một pixel trên màn ứng với cả một tia
     xuyên qua cảnh chứ không với một điểm.
-48. **Chưa có endpoint model registry.** `/algorithms` hiển thị registry
-    stack (gồm `astar+ppo` và `model_path` nó đòi), nhưng danh sách
-    checkpoint đã train thì chưa có API — metadata mới nằm ở file sidecar
-    cạnh checkpoint.
+48. ~~**Chưa có endpoint model registry.**~~ **Đã có** (kiểm lại
+    2026-09-01): `routers/models.py` phục vụ `GET /models`,
+    `POST /models/upload`, `GET/PATCH/DELETE /models/{id}` và
+    `POST /models/{id}/validate`, kèm trang **Kho mô hình**. Vòng đời
+    upload và phần bảo mật của nó mô tả ở mục "Model Registry và trợ lý
+    hội thoại" phía dưới file này. Câu cũ giữ lại vì nó ghi đúng trạng
+    thái lúc M9: khi đó metadata mới nằm ở file sidecar cạnh checkpoint.
 49. **Agent console không lưu hội thoại.** Mỗi lượt độc lập; `history`
     chưa được truyền lại. Cần bảng riêng khi có PostgreSQL.
 50. **Component test dừng ở lần render đầu; không có test cho thao tác
@@ -426,8 +467,13 @@ Cập nhật liên tục. Mỗi mục ghi rõ phạm vi và hướng xử lý.
     giây, không gọi mạng) sự khác biệt không quan sát được, nhưng nó là
     khác biệt thật.
 
-89. **Lịch sử hội thoại chưa có UI liệt kê.** Backend lưu và trả về đầy
-    đủ; giao diện hiện chỉ có "Cuộc trò chuyện mới".
+89. **Lịch sử hội thoại chưa có UI liệt kê** — nhưng ~~"backend lưu và
+    trả về đầy đủ"~~ **là sai** (kiểm lại 2026-09-01). `/agent/chat`
+    **không giữ hội thoại nào**: mỗi lượt độc lập, không có transcript
+    nào được lưu, đúng như mục 49 nói. Đây không phải hạng mục quên làm —
+    dựng một rail lịch sử đòi quyết định trước xem transcript sống ở đâu
+    và ai được đọc, và đó là câu hỏi về dữ liệu chứ không phải về bố cục
+    (`app/agent/page.tsx`, khối chú thích đầu file).
 
 ## Lưu trữ (kiểm chứng 2026-08-03)
 
