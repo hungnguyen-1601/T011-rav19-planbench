@@ -22,7 +22,7 @@ phải tin suông.
 | 5f | **Nên chọn thuật toán nào** | 12 luật đọc `decision_runs`: khả thi trên chính profile trước, card sau, tách ΔU theo từng mission; 3 bậc bằng chứng, bậc 3 là refusal kèm phép so nên chạy | `GET /task-profiles/{id}/recommendation[?use_model=true]` + tool chat `get_recommendation` | `test_recommendation.py`, `test_api_recommendation.py`, `test_agent_recommendation_tool.py` |
 | 5g | **Phân tích một episode** | Analyst đọc bằng chứng của episode đang chọn và giải thích **cơ chế** tạo ra chênh lệch. Guard tất định chặn quy kết không có chỗ dựa; có quota theo ngày | `POST /decisions/{id}/episodes/{eid}/analysis` · `GET .../verdict` | 28 file `test_analyst_*.py`, `test_api_episode_analysis.py`, `test_api_episode_verdict.py` |
 | 6 | Ký duyệt | — (con người, HĐ-14) | — | — |
-| * | Hỏi đáp mọi lúc | 11 công cụ chỉ đọc trên database | `POST /agent/chat` | `test_api_agent.py` |
+| * | Hỏi đáp mọi lúc | 12 công cụ chỉ đọc trên database | `POST /agent/chat` | `test_api_agent.py` |
 
 > **5g đo được đến đâu.** Đây là mục duy nhất trong bảng mà chất lượng đầu
 > ra đã được **chấm tay, mù arm**: 90 lượt trên cụm holdout, giải thích
