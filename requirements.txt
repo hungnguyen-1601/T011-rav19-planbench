@@ -78,7 +78,7 @@ pydantic-settings==2.14.2
 
 # ---------- Xác thực ----------
 # bcrypt dùng trực tiếp: passlib 1.7.4 không tương thích bcrypt 5.x
-# (xem docs/KNOWN_LIMITATIONS.md).
+# (xem docs/reference/KNOWN_LIMITATIONS.md).
 bcrypt==5.0.0
 PyJWT==2.13.0
 # Gọi token endpoint của Google/GitHub **phía server**. Cũng là thứ

@@ -10,7 +10,7 @@
 # here: training is a separate workload, and pulling torch into the API
 # image would add gigabytes for code the API never executes. The
 # astar+ppo stack therefore cannot be run from this image — see
-# docs/DEPLOYMENT.md.
+# docs/reference/DEPLOYMENT.md.
 
 fastapi==0.141.1
 uvicorn[standard]==0.52.0
@@ -20,7 +20,7 @@ python-multipart==0.0.32
 websockets==16.1.1
 
 # Auth: bcrypt directly (passlib 1.7.4 is incompatible with bcrypt 5.x)
-# plus PyJWT. See docs/KNOWN_LIMITATIONS.md.
+# plus PyJWT. See docs/reference/KNOWN_LIMITATIONS.md.
 bcrypt==5.0.0
 PyJWT==2.13.0
 
