@@ -32,10 +32,12 @@ services:
     dockerfilePath: ./docker/Dockerfile.api
     dockerContext: .
     healthCheckPath: /api/v1/health
-    # A bare string, no `sh -c "…"` wrapper: Render already runs this
-    # through a shell, so an embedded quoted command arrives as one
-    # giant token and dash answers `sh: 1: <everything>: not found`.
-    dockerCommand: alembic upgrade head && uvicorn planbench_api.main:app --host 0.0.0.0 --port 8000
+    # One token, deliberately. Render tokenizes this field rather than
+    # handing it to a shell — `a && b` and quoted strings both arrive
+    # mangled (`sh: 1: <entire command>: not found`, twice) — so the
+    # real command lives in the script, which the image marks
+    # executable. It runs `alembic upgrade head`, then execs uvicorn.
+    dockerCommand: /app/start-api.sh
     envVars:
       # Neon connection string (postgresql://…?sslmode=require). Entered
       # in the dashboard, never committed. `db/session.py` rewrites the
