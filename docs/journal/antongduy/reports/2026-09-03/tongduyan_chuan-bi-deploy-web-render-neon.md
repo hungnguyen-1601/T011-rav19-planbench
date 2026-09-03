@@ -73,3 +73,39 @@
 - Không sửa file `.py` nào ⇒ không cần ruff/pytest.
 - Chưa build image ở máy này (httpx là thay đổi pin thuần; build thật
   diễn ra trên Render lúc deploy).
+
+## Bổ sung cùng ngày: setup Neon CLI theo prompt của console
+
+An tạo project Neon (`wild-surf-10729491`, org `org-super-glade-33615520`,
+branch `production`) và đưa prompt setup 7 bước. Đã chạy trong `P-011`:
+
+- `npm i -g neon@latest` + `neon login` — OK.
+- `neon skills -y` — **bỏ qua**: đòi Node ≥ 22.20.0, máy đang 22.17.1
+  cài hệ thống (không nvm, winget không có trong PATH shell). Chỉ là
+  skill hỗ trợ agent, không chặn bước nào sau. Muốn có: nâng Node rồi
+  chạy lại.
+- `neon mcp -y` — cài MCP server cho 8 client. **Lưu ý bảo mật:** lệnh
+  mint một API key **account-wide** (id 3307555, CLI tự cảnh báo
+  "reaches everything your account can"). Demo chỉ cần một project —
+  cân nhắc `neon api-keys revoke 3307555` sau khi xong việc.
+- `neon link … -y` — ghi `.neon/` và kéo `DATABASE_URL`,
+  `DATABASE_URL_UNPOOLED`, `NEON_BRANCH` vào `.env` gốc repo. Cả `.env`
+  lẫn `.neon` nằm trong `.gitignore` (dòng `.neon` do CLI tự thêm) —
+  secret không vào git và không in ra terminal (hook `.ai-log` ghi tool
+  call nguyên văn).
+- `neon config init` + rút `neon.ts` về `defineConfig({})` đúng prompt;
+  CLI tạo `package.json`/`package-lock.json` gốc repo cho
+  `@neon/config`, `@neon/env` — commit để `neon deploy` tái lập được.
+- `neon deploy` — "No changes — branch production already matches the
+  policy". Kết nối Neon hoạt động.
+
+**Giá trị điền vào Render:** PlanBench đọc `PLANBENCH_DATABASE_URL` —
+copy **giá trị** từ `.env`, khuyên dùng dòng `DATABASE_URL_UNPOOLED`:
+SQLAlchemy tự quản pool; URL pooled đi qua PgBouncer transaction mode
+có thể gây bất ngờ với alembic/prepared statement, và một instance free
+không cần pooler.
+
+**Sự cố giữa phiên:** HEAD bị chuyển về `main` giữa hai lượt làm việc
+(phiên khác/thao tác tay), nên các file Neon sinh ra lúc đang đứng
+nhầm trên `main`. Đã switch lại nhánh — untracked file đi theo, WIP
+của An trong index không suy suyển — và commit tại nhánh.
