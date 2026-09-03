@@ -223,6 +223,71 @@ quota. Tiến trình API không bao giờ giải tuần tự file người dùng
 đó là ranh giới tiến trình chứ chưa phải ranh giới cách ly. Xem
 KNOWN_LIMITATIONS #77 trước khi mở upload cho người dùng không tin cậy.
 
+## Render free + Neon — bản web demo công khai
+
+> Khảo sát và lý do chọn:
+> `docs/journal/antongduy/notes/2026-09-03/tongduyan_khao-sat-deploy-web-mien-phi.md`.
+> IaC: [`render.yaml`](../../render.yaml) ở gốc repo — deploy tái lập từ
+> git, không phải bấm tay trên dashboard như bản `planbench-web` cũ.
+
+**Bản này để làm gì:** cho người có link *đọc* sản phẩm — decision,
+Decision Card, tầng giải thích, replay đã seed. **Không phải** nơi chạy
+phép so mới: free instance chia 0.1 vCPU, ngủ sau 15 phút idle, không
+disk bền. Số đo từ máy này không có giá trị bằng chứng (HĐ-7.4 pin core
+là có lý do). Nơi chạy thật vẫn là desktop app hoặc compose trên VPS.
+
+### Dựng lần đầu
+
+1. **Neon** (neon.tech, free tier): tạo project, lấy connection string
+   dạng `postgresql://…?sslmode=require`. `db/session.py` tự đổi scheme
+   sang `postgresql+psycopg://`, không phải sửa gì.
+2. **Render**: New → Blueprint, trỏ vào repo `origin`. Render đọc
+   `render.yaml`, tạo hai service free: `planbench-api`,
+   `planbench-web`. Nếu tên đã bị bản cũ chiếm — xoá/đổi tên service cũ
+   trước, vì bốn biến URL trong `render.yaml` viết theo đúng hai tên này.
+3. Dashboard hỏi hai biến `sync: false` — điền thẳng vào ô, **không dán
+   vào chat hay commit**:
+   - `PLANBENCH_DATABASE_URL` — connection string Neon;
+   - `PLANBENCH_SEED_USERS` — `nickname:roles:password`, phân cách bằng
+     `,`; nickname `admin` khớp `PLANBENCH_DEMO_OWNER_NICKNAME` để tài
+     khoản đó nhận `demo_owner` lần đăng nhập đầu (xem
+     [DEMO-PROFILE.md](./DEMO-PROFILE.md)).
+4. Deploy xong, mở `https://planbench-web.onrender.com` — lần đầu trong
+   ngày chờ cold start ~1 phút. **Tự mở trước khi gửi link cho ai.**
+
+### Đổi domain = đổi 4 biến
+
+Cùng một lần, không sót cái nào — thiếu một là "app lên mà không đăng
+nhập được / không gọi API được":
+
+| Biến | Ở đâu | Vai trò |
+|---|---|---|
+| `PLANBENCH_API_PUBLIC_URL` | api | suy ra OAuth callback |
+| `PLANBENCH_WEB_APP_URL` | api | nơi browser về sau đăng nhập |
+| `PLANBENCH_CORS_ORIGINS` | api | JSON list, phải chứa origin web |
+| `NEXT_PUBLIC_API_URL` | web | **build arg** — đổi là rebuild image, không phải restart |
+
+### Khác gì compose, và vì sao
+
+- **Migration chạy trong start command** (`alembic upgrade head &&
+  uvicorn …`), không phải service `migrate` riêng. Lý do compose tách
+  (hai replica cùng upgrade là race) không áp ở đây: free = đúng một
+  replica, còn pre-deploy command của Render là tính năng trả phí. Lên
+  paid + nhiều instance thì chuyển sang `preDeployCommand` **trước khi**
+  scale.
+- **Không có volume artifact.** `PLANBENCH_ARTIFACT_DIR=/data/artifacts`
+  là disk ephemeral — mọi restart/redeploy mồ côi replay đã ghi (URI
+  `file://` còn trong DB, file mất). Chấp nhận cho demo; dữ liệu trưng
+  bày phải seed lại được.
+- **Không đặt key LLM** (`OPENAI_API_KEY`, …). Subprocess lane của
+  plugin kế thừa nguyên env (không phải sandbox — xem
+  `plugin_import_security.md`), demo owner lại cầm admin, nên key nào
+  đặt lên đây coi như đọc được từ plugin import. Không key ⇒ mock
+  advisor tất định, degrade có báo.
+- **Neon thay Postgres của Render** vì free Postgres của Render hết hạn
+  sau 30 ngày; Neon free 0.5 GB không hết hạn (autosuspend khi idle,
+  connect đầu tiên đánh thức — cộng thêm vào cold start).
+
 ## Backup
 
 Ba thứ phải backup **cùng nhau**, và đây là điểm dễ sai nhất:

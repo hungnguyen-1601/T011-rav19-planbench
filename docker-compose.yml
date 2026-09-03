@@ -81,7 +81,10 @@ services:
       PLANBENCH_SEED_USERS: ${PLANBENCH_SEED_USERS:-}
       PLANBENCH_ADMIN_NICKNAMES: ${PLANBENCH_ADMIN_NICKNAMES:-}
       PLANBENCH_ADMIN_EMAILS: ${PLANBENCH_ADMIN_EMAILS:-}
-      PLANBENCH_CORS_ORIGINS: '["http://localhost:3000"]'
+      # JSON list. Externalized because a real domain must change this
+      # together with the three URL variables above — see
+      # docs/reference/DEPLOYMENT.md, "Đổi domain = đổi 4 biến".
+      PLANBENCH_CORS_ORIGINS: ${PLANBENCH_CORS_ORIGINS:-["http://localhost:3000"]}
       PLANBENCH_ARTIFACT_DIR: /data/artifacts
       # Uploaded PPO checkpoints. Must be absolute and inside the volume:
       # the default is the relative `artifacts/models`, which resolves

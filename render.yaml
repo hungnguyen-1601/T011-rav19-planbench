@@ -1,0 +1,93 @@
+# Render Blueprint: the free-tier web demo (API + web, both plan: free).
+#
+# What this is — and is not. This deployment exists so someone with a
+# link can *read* the product: decisions, Decision Cards, the
+# explanation layer, episode replays seeded from a real machine. It is
+# not a measurement platform. Free instances share 0.1 vCPU, sleep
+# after 15 minutes idle, and keep no disk across restarts, so a
+# decision run started here is slow, can die mid-run, and its numbers
+# carry no evidential weight (HĐ-7.4 pins cores for a reason). The
+# trustworthy path for new runs remains a real machine — the desktop
+# build or compose on a VPS.
+#
+# The database is NOT declared here. Render's free Postgres expires
+# after 30 days; the demo uses Neon (free tier) instead, and its
+# connection string is entered once in the Render dashboard
+# (PLANBENCH_DATABASE_URL below is `sync: false` for exactly that
+# reason — a secret never belongs in this file). Setup runbook:
+# docs/reference/DEPLOYMENT.md, section "Render free + Neon".
+#
+# Migrations run in the start command, NOT in a separate one-shot job
+# as docker-compose.yml does. The compose rationale (two replicas both
+# running `upgrade head` is a race) does not apply here: a free
+# instance is exactly one replica and Render's pre-deploy command is
+# paid-only. If this ever moves to a paid plan with >1 instance, move
+# `alembic upgrade head` into `preDeployCommand` before scaling.
+
+services:
+  - type: web
+    name: planbench-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./docker/Dockerfile.api
+    dockerContext: .
+    healthCheckPath: /api/v1/health
+    dockerCommand: sh -c "alembic upgrade head && uvicorn planbench_api.main:app --host 0.0.0.0 --port 8000"
+    envVars:
+      # Neon connection string (postgresql://…?sslmode=require). Entered
+      # in the dashboard, never committed. `db/session.py` rewrites the
+      # scheme to postgresql+psycopg:// itself.
+      - key: PLANBENCH_DATABASE_URL
+        sync: false
+      # Signs tokens and the OAuth state cookie. Generated once by
+      # Render and persisted — an empty value would mean a random secret
+      # per process, signing everyone out on every restart.
+      - key: AUTH_SECRET
+        generateValue: true
+      # ---- The four URL variables. A domain change means changing ALL
+      # of them together (plus NEXT_PUBLIC_API_URL on planbench-web) —
+      # see docs/reference/DEPLOYMENT.md, "Đổi domain = đổi 4 biến".
+      - key: PLANBENCH_API_PUBLIC_URL
+        value: https://planbench-api.onrender.com
+      - key: PLANBENCH_WEB_APP_URL
+        value: https://planbench-web.onrender.com
+      - key: PLANBENCH_CORS_ORIGINS
+        value: '["https://planbench-web.onrender.com"]'
+      # ---- Demo profile: one demo_owner holds every capability, with
+      # the permanent banner saying so. See docs/reference/DEMO-PROFILE.md.
+      - key: PLANBENCH_DEPLOYMENT_PROFILE
+        value: demo
+      - key: PLANBENCH_SEPARATION_OF_DUTIES
+        value: relaxed
+      - key: PLANBENCH_ENABLE_DEV_LOGIN
+        value: "true"
+      - key: PLANBENCH_DEMO_OWNER_NICKNAME
+        value: admin
+      # Password accounts, `nickname:roles:password` comma-separated,
+      # only honoured while dev login is on. Entered in the dashboard —
+      # a password does not belong in this file.
+      - key: PLANBENCH_SEED_USERS
+        sync: false
+      # 512 MB RAM and a shared 0.1 vCPU: one worker, or the instance
+      # spends its life swapping instead of serving.
+      - key: PLANBENCH_WORKER_CONCURRENCY
+        value: "1"
+      # LLM keys are deliberately ABSENT. The plugin subprocess lane
+      # inherits the host environment wholesale (subprocess_lane.py — a
+      # documented non-sandbox), and the demo owner holds admin, so any
+      # key set here is readable by an imported plugin. No key ⇒ the
+      # deterministic mock advisor, which degrades loudly, not silently.
+
+  - type: web
+    name: planbench-web
+    runtime: docker
+    plan: free
+    dockerfilePath: ./docker/Dockerfile.web
+    dockerContext: .
+    envVars:
+      # Baked into the client bundle at BUILD time (Dockerfile.web
+      # declares the matching ARG; Render passes env vars as build args
+      # for Docker builds). Changing it therefore requires a rebuild,
+      # not a restart.
+      - key: NEXT_PUBLIC_API_URL
+        value: https://planbench-api.onrender.com
