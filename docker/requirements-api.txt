@@ -23,6 +23,11 @@ websockets==16.1.1
 # plus PyJWT. See docs/reference/KNOWN_LIMITATIONS.md.
 bcrypt==5.0.0
 PyJWT==2.13.0
+# OAuth token exchange. `oauth.py` imports it lazily inside the callback
+# handler, so an image without it boots, serves /health green, and then
+# raises ModuleNotFoundError the first time someone signs in — the one
+# failure a healthcheck cannot see.
+httpx==0.28.1
 
 # Simulator and planners.
 numpy==2.5.1

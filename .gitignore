@@ -216,3 +216,4 @@ build/
 dist/
 artifacts/analyst-experiments/
 artifacts/analyst-episode-experiments/
+.neon
